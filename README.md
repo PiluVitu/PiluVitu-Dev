@@ -5,7 +5,7 @@
 ---
 
 <p align="center">
-  <a href= "https://decodificador.piluvitu.dev"><img alt="Deploy Gif" src="../portifólio/assets/Gravação%20de%20tela%20de%202023-06-01%2014-57-30.gif" width="100%"></a>
+  <a href= "https://decodificador.piluvitu.dev"><img alt="Deploy Gif" src="" width="100%"></a>
 </p>
 
 ## 🤔 **Sobre**
