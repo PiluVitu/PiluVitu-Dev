@@ -1,7 +1,19 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html
+  lang="pt-BR"
+  class="">
   <head>
     <meta charset="UTF-8" />
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com" />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin />
+    <link
+      rel="image_src"
+      href="./assets/Images/facebook_cover_photo_2.png" />
     <meta
       http-equiv="X-UA-Compatible"
       content="IE=edge" />
@@ -9,7 +21,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0" />
     <!-- Primary Meta Tags -->
-    <title>Paulo Victor Torres Silva</title>
+    <title>Paulo Victor Torres Silva Front-End Developer</title>
     <meta
       name="title"
       content="Paulo Victor Torres Silva" />
@@ -19,7 +31,7 @@
       type="image/x-icon" />
     <meta
       name="description"
-      content="Programador, capacitado para atender a suas demandas e executar seus projetos." />
+      content="Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em Javascript | React | TailwindCss" />
 
     <!-- Open Graph / Facebook -->
     <meta
@@ -33,7 +45,7 @@
       content="Paulo Victor Torres Silva" />
     <meta
       property="og:description"
-      content="Programador, capacitado para atender a suas demandas e executar seus projetos." />
+      content="Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em Javascript | React | TailwindCss" />
     <meta
       property="og:image"
       content="./assets/Images/facebook_cover_photo_2.png" />
@@ -50,10 +62,15 @@
       content="Paulo Victor Torres Silva" />
     <meta
       property="twitter:description"
-      content="Programador, capacitado para atender a suas demandas e executar seus projetos." />
+      content="Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em Javascript | React | TailwindCss" />
     <meta
       property="twitter:image"
       content="./assets/Images/facebook_cover_photo_2.png" />
+
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet" />
+
     <link
       rel="stylesheet"
       href="./assets/Css/reset.css" />
@@ -62,15 +79,256 @@
       href="./assets/Css/style.css" />
   </head>
   <body>
-    <h1>Paulo Victor Torres Silva</h1>
-    <div class="progressBar">
-      <progress
-        value="70"
-        max="100"></progress>
-        <p>Em Progresso</p>
+    <div class="wrapper">
+      <header>
+        <section>
+          <img
+            src="./assets/Images/BestProfileIcon2.png"
+            alt="profile photo"
+            id="profilePhoto" />
+          <h1>Paulo Victor Torres Silva</h1>
+          <p>Front-End Developer | React | TailwindCss</p>
+        </section>
+        <div class="switch">
+          <button
+            id="toggleThemeMode"
+            tabindex="1"
+            class="">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 314.09 314.09">
+              <defs>
+                <style>
+                  .cls-1 {
+                    fill: #af8ec1;
+                  }
+                  .cls-2 {
+                    fill: none;
+                  }
+                </style>
+              </defs>
+              <g
+                id="Livello_2"
+                data-name="Livello 2">
+                <g
+                  id="Livello_10"
+                  data-name="Livello 10">
+                  <path
+                    class="cls-1"
+                    d="M270,217.38l0,0a127.47,127.47,0,0,1-160.49,57.53c.77.05,43.6,2.93,57.78-7.87,0,0-69.5-8.18-68.47-83.46,0,0,8.51,14.64,23.84,14.64s25.89-18.39,25.89-36.45-21.46-41.22-45.65-41.22S38.61,141.08,47.78,221.07A127.39,127.39,0,0,1,80.21,56.12C79.26,57.54,55.83,92.51,58,110c0,0,42-56,106.57-17.28,0,0-17,0-24.65,13.26s2.9,31.62,18.51,40.69,46.43,2.15,58.58-18.76S231.57,62,157.81,29.71h.05A127.36,127.36,0,0,1,283.55,136.58c-.62-1.17-20.39-38.71-36.9-45.1.42.93,28.88,63.79-35.34,102,0,0,8-14.92,0-28s-29.22-12.45-44.61-3-23.9,39.85-11.26,60.47S206.61,267,270,217.38Z" />
+                  <rect
+                    class="cls-2"
+                    width="314.09"
+                    height="314.09" />
+                </g>
+              </g>
+            </svg>
+          </button>
+          <span class="tracker"></span>
+        </div>
+      </header>
+      <main>
+        <section
+          class="card projectOne"
+          tabindex="2">
+          <h2>RocketMovies</h2>
+          <div class="toggledDescription">
+            <a
+              href="https://rocket-movies.piluvitu.dev"
+              target="_blank"
+              rel="noreferrer"
+              tabindex="3">
+              <img
+                src="./assets/Images/PagesGifs/Gravação de tela de 2023-04-17 19-09-24.gif"
+                alt="Gif mostrando a usabilidade da aplicação web"
+                title="RocketMovies"
+                loading="lazy" />
+            </a>
+
+            <p>
+              Rocket movies é o front de uma aplicação que tem como objetivo servir como local para
+              armazenar suas opiniões e avaliações de filmes que você já viu.
+            </p>
+            <p>
+              Totalmente estruturado com <strong>react</strong>, separando cada componente por
+              função clara e especifica, além de ser estilizado usando
+              <strong>StyledComponents</strong>.
+            </p>
+            <div class="tags">
+              <span>React</span>
+              <span>Node</span>
+              <span>StyledComponents</span>
+              <span>Front-End</span>
+            </div>
+          </div>
+        </section>
+        <section
+          class="card projectTwo"
+          tabindex="4">
+          <h2>RocketNotes</h2>
+          <div class="toggledDescription">
+            <a
+              href="https://rocketnotes.piluvitu.dev"
+              target="_blank"
+              rel="noreferrer"
+              tabindex="5">
+              <img
+                src="./assets/Images/PagesGifs/rocektnotesexemple.gif"
+                alt="Gif mostrando a usabilidade da aplicação web"
+                title="RocketNotes"
+                loading="lazy" />
+            </a>
+            <p>
+              Rocket Notes é uma aplicação que tem como objetivo servir como bloco de notas
+              aprimorado para o usuário, onde pode-se filtrar notas por tags e titulo, inserir links
+              uteis e acessa-los assim que clica na nota.
+            </p>
+            <p>
+              Totalmente estruturado com <strong>react</strong>, separando cada componente por
+              função clara e especifica, além de ser estilizado usando
+              <strong>StyledComponents</strong>, <strong>backend</strong> feito em
+              <strong>NodeJs</strong>, com ajuda do <strong>Express</strong>, integrando tudo com
+              <strong>mySQL</strong> e automatizando toda a criação de tabelas com o
+              <strong>Knex</strong>
+            </p>
+            <div class="tags">
+              <span>React</span>
+              <span>Node</span>
+              <span>StyledComponents</span>
+              <span>Full-Stack</span>
+            </div>
+          </div>
+        </section>
+        <section
+          class="card projectThree"
+          tabindex="6">
+          <h2>GitFav</h2>
+          <div class="toggledDescription">
+            <a
+              href="https://git-fav.piluvitu.dev"
+              target="_blank"
+              rel="noreferrer"
+              tabindex="7">
+              <img
+                src="./assets/Images/PagesGifs/Gravação de tela de 2023-06-02 13-29-18.gif"
+                alt="Gif mostrando a usabilidade da aplicação web"
+                title="RocketNotes"
+                loading="lazy" />
+            </a>
+
+            <p>
+              GitFav é uma aplicação que tem como objetivo servir como local para salvar os seus
+              usuários favoritos do github, apenas inserindo o nick deles, recebendo dados deles
+              diretamente do github.
+            </p>
+            <p>
+              Feito com <strong>HTML</strong>, <strong>CSS</strong> e <strong>Js</strong> usado
+              principalmente para <strong>consumir a API</strong> do <strong>github</strong> e
+              tratar seus dados, para mostra-lo de maneira facilitada e organizada ao usuário.
+            </p>
+            <div class="tags">
+              <span>HTML</span>
+              <span>CSS</span>
+              <span>Js</span>
+              <span>API</span>
+              <span>GitHub</span>
+              <span>Front-End</span>
+            </div>
+          </div>
+        </section>
+        <section
+          class="card projectFour"
+          tabindex="8">
+          <h2>DoctorCare</h2>
+          <div class="toggledDescription">
+            <a
+              href="https://doctor-care.piluvitu.dev"
+              target="_blank"
+              rel="noreferrer"
+              tabindex="9">
+              <img
+                src="./assets/Images/PagesGifs/Gravação de tela de 2023-06-02 13-36-38.gif"
+                alt="Gif mostrando a usabilidade da aplicação web"
+                title="RocketNotes"
+                loading="lazy" />
+            </a>
+
+            <p>
+              Doctor care é uma landingPage para uma clinica médica, com o intuito de expor suas
+              especialidades, converter novos clientes em potencial, além de alcançar mais
+              visibilidade.
+            </p>
+            <p>
+              Totalmente estruturado com <strong>HTML</strong>, <strong>CSS</strong> e
+              <strong>Javascript</strong> que foi usado para manipular eventos na página e deixar
+              mais interativa, juntamente com a biblioteca <strong>scrollReveal</strong>.
+            </p>
+            <div class="tags">
+              <span>HTML</span>
+              <span>CSS</span>
+              <span>Javascript</span>
+              <span>ScrollReveal</span>
+              <span>Front-End</span>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <div class="social">
+          <a
+            href="https://www.linkedin.com/in/pilu-vitu/"
+            tabindex="10">
+            <ion-icon name="logo-linkedin"></ion-icon>
+            <span class="sr-only">LinkedIn</span>
+          </a>
+          <a
+            href="https://github.com/PiluVitu"
+            tabindex="11">
+            <ion-icon name="logo-github"></ion-icon>
+            <span class="sr-only">GitHub</span>
+          </a>
+          <a
+            href="https://www.instagram.com/pilu.dev/"
+            tabindex="12">
+            <ion-icon name="logo-instagram"></ion-icon>
+            <span class="sr-only">Instagram</span>
+          </a>
+          <a
+            href="https://twitter.com/PiluVitu"
+            tabindex="13">
+            <ion-icon name="logo-twitter"></ion-icon>
+            <span class="sr-only">Twitter</span>
+          </a>
+          <a
+            href="https://wa.me/message/6UOZCKTOYGUNE1"
+            tabindex="14">
+            <ion-icon name="logo-whatsapp"></ion-icon>
+            <span class="sr-only">WhatsApp</span>
+          </a>
+          <a
+            href="https://www.twitch.tv/piluvitu"
+            tabindex="15">
+            <ion-icon name="logo-twitch"></ion-icon>
+            <span class="sr-only">Twitch</span>
+          </a>
+        </div>
+        <section class="copyright">
+          <small
+            >Feito com &hearts; pelo
+            <a
+              href="#"
+              tabindex="16"
+              >Pilu Vitu</a
+            ></small
+          >
+        </section>
+      </footer>
     </div>
-    <img
-      src="./assets/Images/umMomentoAmigo.jpg"
-      alt="Um momento amigo meme" />
+    <script
+      type="module"
+      src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script
+      type="module"
+      src="./assets/Js/index.js"></script>
   </body>
 </html>

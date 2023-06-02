@@ -1,16 +1,349 @@
+:root {
+  font-size: 62.5%;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  --stroke-color: #ffffff50;
+
+  --surface-color: #ffffff10;
+  --surface-color-hover: #ffffff05;
+
+  --highlight-color: #ffffff20;
+
+  --text-color: #ffffff;
+
+  --text-md-size: 1.6rem;
+  --text-md-lh: 2.4rem;
+  --text-md-wgt: medium;
+
+  --text-sm-size: 1.4rem;
+  --text-sm-lh: 2.4rem;
+  --text-sm-wgt: regular;
+
+  color: var(--text-color);
+  background: rgb(0, 0, 0);
+  background: -moz-radial-gradient(
+    circle,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(99, 51, 174, 1) 66%,
+    rgba(170, 126, 238, 1) 100%
+  );
+  background: -webkit-radial-gradient(
+    circle,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(99, 51, 174, 1) 66%,
+    rgba(170, 126, 238, 1) 100%
+  );
+  background: radial-gradient(
+    circle,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(99, 51, 174, 1) 66%,
+    rgba(170, 126, 238, 1) 100%
+  );
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr="#000000",endColorstr="#aa7eee",GradientType=1);
+
+  /* --text-sm-size: 1.4rem
+  --text-sm-lh: 2.4rem
+  --text-sm-wgt: regular */
+
+  transition: color 0.3s;
+}
+
+* {
+  padding: 0;
+  margin: 0;
+
+  list-style: none;
+  text-decoration: none;
+
+  box-sizing: border-box;
+}
+
 body {
-  width: 100%;
+  font-size: 1.6rem;
   height: 100vh;
+  width: 100%;
+}
+
+.wrapper {
+  margin-inline: auto;
+  height: 100%;
+
+  max-width: 58.8rem;
 
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 150px;
-}
-h1 {
-  font-size: xx-large;
 }
 
-.progressBar {
+header {
+  width: 100%;
   text-align: center;
+}
+header section {
+  padding: 2.4rem 2.4rem;
+}
+header section img {
+  width: 11.2rem;
+  height: 11.2rem;
+
+  border: 2px solid var(--stroke-color);
+  border-radius: 50%;
+
+  margin-bottom: 0.8rem;
+}
+header section h1 {
+  font-size: var(--text-md-size);
+  font-weight: var(--text-md-wgt);
+  line-height: var(--text-md-lh);
+
+  margin-bottom: 0.8rem;
+}
+header .switch {
+  position: relative;
+  width: 6.4rem;
+  padding-block: 4px;
+
+  margin: 0 auto;
+
+  cursor: pointer;
+}
+header .switch button {
+  position: absolute;
+  z-index: 1;
+
+  top: 50%;
+  transform: translateY(-50%);
+
+  animation: slideOut 0.4s forwards;
+
+  border: none;
+
+  width: 3.2rem;
+  height: 3.2rem;
+  padding: 0.8rem;
+  border-radius: 50%;
+
+  display: grid;
+  place-items: center;
+
+  cursor: pointer;
+
+  background: var(--text-color);
+}
+.light header .switch button {
+  animation: slideIn 0.4s forwards;
+}
+
+
+header .switch .tracker {
+  display: block;
+  background-color: var(--surface-color-color);
+  border-radius: 9999px;
+  backdrop-filter: blur(0.4rem);
+  -webkit-backdrop-filter: blur(0.4rem);
+
+  border: 1px solid var(--stroke-color);
+
+  width: 64px;
+  height: 24px;
+}
+
+main {
+  width: 100%;
+  padding: 2.4rem;
+}
+main .card + .card {
+  margin-top: 1.6rem;
+}
+main .card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.6rem 2.4rem;
+  cursor: pointer;
+
+  border: 1px solid var(--stroke-color);
+  border-radius: 0.8rem;
+
+  width: 100%;
+
+  background-color: var(--surface-color);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  transition: all 0.3s;
+}
+main .card:hover {
+  background-color: var(--surface-color-hover);
+  border-color: var(--text-color);
+}
+main .card h2 {
+  font-size: var(--text-md-size);
+  font-weight: var(--text-md-wgt);
+  line-height: var(--text-md-lh);
+}
+main .card .toggledDescription {
+  position: absolute;
+  text-align: center;
+  transform: rotateX(-90deg);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+main .card.show .toggledDescription {
+  position: initial;
+  transform: rotateX(0);
+  transform-origin: top center;
+  transition: all 0.5s ease-out;
+}
+main .card .toggledDescription a,
+main .card .toggledDescription img {
+  text-align: center;
+  border-radius: 1rem;
+  width: 100%;
+}
+main .card .toggledDescription p {
+  text-align: center;
+}
+main .card .toggledDescription .tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+main .card .toggledDescription .tags span {
+  padding: 0.5rem;
+  background-color: var(--highlight-color);
+  border-radius: 2rem;
+}
+
+footer .social {
+  padding: 2.4rem;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+footer .social a {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  border-radius: 50%;
+}
+footer .social a span {
+  position: absolute;
+  text-align: center;
+  bottom: -40%;
+  transform: rotateX(-90deg);
+}
+footer .social a:hover span,
+footer .social a:focus span {
+  transform: rotateX(0);
+  transform-origin: top center;
+  transition: all 0.5s ease-out;
+}
+footer .social a ion-icon {
+  font-size: 3.2rem;
+  color: var(--text-color);
+
+  border-radius: 50%;
+  padding: 1.6rem;
+}
+footer .social a ion-icon:hover {
+  background-color: var(--highlight-color);
+}
+footer .social a span {
+  color: var(--text-color);
+}
+footer .copyright {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.4rem;
+}
+footer .copyright a {
+  color: var(--text-color);
+  text-decoration: underline;
+}
+
+.light {
+  font-size: 62.5%;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  --stroke-color: #73494950;
+
+  --surface-color: #73494910;
+  --surface-color-hover: #73494905;
+
+  --highlight-color: #73494920;
+
+  --text-color: #5f3939;
+
+  --text-md-size: 1.6rem;
+  --text-md-lh: 2.4rem;
+  --text-md-wgt: medium;
+
+  --text-sm-size: 1.4rem;
+  --text-sm-lh: 2.4rem;
+  --text-sm-wgt: regular;
+
+  color: var(--text-color);
+
+  background: rgb(191, 113, 84);
+  background: -moz-radial-gradient(
+    circle,
+    rgba(191, 113, 84, 1) 0%,
+    rgba(217, 162, 130, 1) 48%,
+    rgba(242, 211, 153, 1) 100%
+  );
+  background: -webkit-radial-gradient(
+    circle,
+    rgba(191, 113, 84, 1) 0%,
+    rgba(217, 162, 130, 1) 48%,
+    rgba(242, 211, 153, 1) 100%
+  );
+  background: radial-gradient(
+    circle,
+    rgba(191, 113, 84, 1) 0%,
+    rgba(217, 162, 130, 1) 48%,
+    rgba(242, 211, 153, 1) 100%
+  );
+
+  /* --text-sm-size: 1.4rem
+  --text-sm-lh: 2.4rem
+  --text-sm-wgt: regular */
+
+  transition: color 0.2s;
+}
+
+@keyframes slideIn {
+  from {
+    left: 0;
+  }
+
+  to {
+    left: 50%;
+  }
+}
+@keyframes slideOut {
+  from {
+    left: 50%;
+  }
+
+  to {
+    left: 0;
+  }
 }
