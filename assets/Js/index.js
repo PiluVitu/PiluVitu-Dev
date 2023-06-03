@@ -11,8 +11,8 @@ toggleButton.addEventListener('click', () => {
   webPage.classList.toggle('light')
   const hasLight = webPage.classList.contains('light')
   hasLight
-    ? (profilePhoto.src = './assets/Images/BestProfileIcon.png')
-    : (profilePhoto.src = './assets/Images/BestProfileIcon2.png')
+    ? (profilePhoto.src = './assets/Images/BestProfileIcon.webp')
+    : (profilePhoto.src = './assets/Images/BestProfileIcon2.webp')
 
   hasLight ? (toggleButton.innerHTML = svgFiles.pyro) : (toggleButton.innerHTML = svgFiles.eletro)
 })
