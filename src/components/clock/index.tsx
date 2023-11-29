@@ -1,17 +1,23 @@
-export default function Clock() {
-  function setActualTimeInClock() {
-    const date = new Date();
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    const formatDate = `${String(hours).padStart(2, "0")} : ${String(
-      minutes,
-    ).padStart(2, "0")}`;
+"use client";
 
-    return formatDate;
-  }
+import { useEffect, useState } from "react";
+
+export default function Clock() {
+  const [dateTime, setDateTime] = useState(new Date());
+
+  useEffect(() => {
+    const intervalID = setInterval(() => {
+      setDateTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(intervalID);
+  });
+  const hours = String(dateTime.getHours()).padStart(2, "0");
+  const minutes = String(dateTime.getMinutes()).padStart(2, "0");
+  const formatDate = `${hours} : ${minutes}`;
   return (
-    <time dateTime={setActualTimeInClock()} className="text-neutral-500">
-      {setActualTimeInClock()}
+    <time dateTime={formatDate} className="text-neutral-500">
+      {formatDate}
     </time>
   );
 }
