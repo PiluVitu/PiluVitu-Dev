@@ -18,10 +18,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className={inter.className}>
-      <body className="flex h-screen w-full items-center justify-between">
+      <body className="flex h-screen w-full items-center justify-between max-lg:flex-col">
         <NavAside />
         {children}
-        <aside></aside>
+        <span></span>
       </body>
     </html>
   );
