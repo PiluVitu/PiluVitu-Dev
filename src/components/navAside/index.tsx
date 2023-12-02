@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import {
   Article,
   At,
@@ -10,75 +8,76 @@ import {
   Terminal,
   User,
 } from "@phosphor-icons/react/dist/ssr";
+import ActiveLink from "../activeLink";
 
 export default function NavAside() {
   return (
-    <aside className="flex h-full items-center justify-center border-r-2 border-neutral-700 px-5 max-lg:fixed max-lg:bottom-0 max-lg:h-fit max-lg:w-full max-lg:border-r-0 max-lg:border-t-2 max-lg:p-5">
+    <aside className="flex h-full items-center justify-center border-r-2 border-neutral-700 bg-neutral-800 px-5 max-lg:fixed max-lg:bottom-0 max-lg:h-fit max-lg:w-full max-lg:border-r-0 max-lg:border-t-2 max-lg:p-5">
       <nav className="max-lg:w-full max-lg:px-24 max-sm:px-2">
         <ul className="flex flex-col items-center justify-center gap-5 max-lg:w-full max-lg:flex-row max-lg:items-center max-lg:justify-between max-sm:flex-wrap">
           <li>
-            <Link href="/">
+            <ActiveLink href="/">
               <HouseSimple
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/work">
+            <ActiveLink href="/work">
               <Buildings
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/blog">
+            <ActiveLink href="/blog">
               <Article
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/store">
+            <ActiveLink href="/store">
               <ShoppingBag
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/stack">
+            <ActiveLink href="/stack">
               <Stack
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/about">
+            <ActiveLink href="/about">
               <User
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/contact">
+            <ActiveLink href="/contact">
               <At
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
           <li>
-            <Link href="/">
+            <ActiveLink href="/">
               <Terminal
                 size={24}
-                className="fill-neutral-500 transition-all hover:fill-neutral-400"
+                className="fill-current transition-all hover:fill-neutral-400"
               />
-            </Link>
+            </ActiveLink>
           </li>
         </ul>
       </nav>
