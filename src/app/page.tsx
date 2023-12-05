@@ -1,6 +1,8 @@
-import Clock from "@/components/clock";
-import ContentSection from "@/components/contentSection";
+import { ButtonLink } from "@/components/ButtonLink";
+import Clock from "@/components/Clock";
+import { ContentSection } from "@/components/ContentSection";
 import {
+  ArrowRight,
   GithubLogo,
   InstagramLogo,
   LinkedinLogo,
@@ -14,7 +16,7 @@ import profileImage from "../../public/zoro-2-1384x752.jpg";
 
 export default function Home() {
   return (
-    <main className="flex max-w-2xl flex-col items-center justify-center pb-24 pt-10">
+    <main className="flex max-w-xl flex-col items-center justify-center pb-24 pt-10">
       <header className="flex flex-col items-center justify-center">
         <Clock />
         <section className="flex flex-col items-center justify-center">
@@ -72,31 +74,72 @@ export default function Home() {
         </section>
         <span>Status Discord e spotify</span>
       </header>
-      <main>
-        <ContentSection title="Sobre">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit. Voluptates
-          doloribus accusantium iste dicta quod quibusdam totam officiis
-          deleniti. Excepturi consectetur molestiae laudantium aperiam eius,
-          molestias facere maiores fugit sit accusamus.
-        </ContentSection>
-        <ContentSection title="Trabalho">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit. Voluptates
-          doloribus accusantium iste dicta quod quibusdam totam officiis
-          deleniti. Excepturi consectetur molestiae laudantium aperiam eius,
-          molestias facere maiores fugit sit accusamus.
-        </ContentSection>
-        <ContentSection title="Loja">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit. Voluptates
-          doloribus accusantium iste dicta quod quibusdam totam officiis
-          deleniti. Excepturi consectetur molestiae laudantium aperiam eius,
-          molestias facere maiores fugit sit accusamus.
-        </ContentSection>
-        <ContentSection title="Blog">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit. Voluptates
-          doloribus accusantium iste dicta quod quibusdam totam officiis
-          deleniti. Excepturi consectetur molestiae laudantium aperiam eius,
-          molestias facere maiores fugit sit accusamus.
-        </ContentSection>
+      <main className="flex flex-col items-start justify-center gap-6">
+        <ContentSection.Root>
+          <ContentSection.Title title="Sobre" />
+          <ContentSection.Content>
+            <p>
+              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
+              atque provident suscipit voluptates!
+            </p>{" "}
+            <p>
+              Nulla nesciunt expedita culpa molestiae laudantium vitae
+              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
+              tempore aperiam!
+            </p>
+          </ContentSection.Content>
+        </ContentSection.Root>
+        <ContentSection.Root>
+          <ContentSection.Title title="Trabalho" />
+          <ContentSection.Content>
+            <p>
+              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
+              atque provident suscipit voluptates!
+            </p>{" "}
+            <p>
+              Nulla nesciunt expedita culpa molestiae laudantium vitae
+              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
+              tempore aperiam!
+            </p>
+            <ButtonLink href="#">
+              Veja mais <ArrowRight size={18} className="fill-neutral-500" />
+            </ButtonLink>
+          </ContentSection.Content>
+        </ContentSection.Root>
+        <ContentSection.Root>
+          <ContentSection.Title title="Loja" />
+          <ContentSection.Content>
+            <p>
+              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
+              atque provident suscipit voluptates!
+            </p>{" "}
+            <p>
+              Nulla nesciunt expedita culpa molestiae laudantium vitae
+              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
+              tempore aperiam!
+            </p>
+            <ButtonLink href="#">
+              Veja mais <ArrowRight size={18} className="fill-neutral-500" />
+            </ButtonLink>
+          </ContentSection.Content>
+        </ContentSection.Root>
+        <ContentSection.Root>
+          <ContentSection.Title title="Blog" />
+          <ContentSection.Content>
+            <p>
+              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
+              atque provident suscipit voluptates!
+            </p>{" "}
+            <p>
+              Nulla nesciunt expedita culpa molestiae laudantium vitae
+              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
+              tempore aperiam!
+            </p>
+            <ButtonLink href="#">
+              Veja mais <ArrowRight size={18} className="fill-neutral-500" />
+            </ButtonLink>
+          </ContentSection.Content>
+        </ContentSection.Root>
       </main>
       <footer>
         <p>&copy; 2023 protifolio by @piluvitu </p>
