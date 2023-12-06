@@ -12,7 +12,7 @@ import ActiveLink from "../ActiveLink";
 
 export default function NavAside() {
   return (
-    <aside className="fixed left-0 top-0 z-50 flex h-full items-center justify-center border-r-2 border-neutral-700 bg-neutral-800 px-5 max-lg:bottom-1 max-lg:h-min max-lg:w-full max-lg:border-r-0 max-lg:border-t-2 max-lg:p-5">
+    <aside className="fixed bottom-0 left-0 z-50 flex h-full items-center justify-center border-r-2 border-neutral-700 bg-neutral-800 px-5  max-lg:h-min max-lg:w-full max-lg:border-r-0 max-lg:border-t-2 max-lg:p-5">
       <nav className="max-lg:w-full max-lg:px-24 max-sm:px-2">
         <ul className="flex flex-col items-center justify-center gap-5 max-lg:w-full max-lg:flex-row max-lg:items-center max-lg:justify-between max-sm:flex-wrap">
           <li>

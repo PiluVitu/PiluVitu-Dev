@@ -3,6 +3,8 @@ import Clock from "@/components/Clock";
 import { ContentSection } from "@/components/ContentSection";
 import {
   ArrowRight,
+  EnvelopeSimple,
+  FilePdf,
   GithubLogo,
   InstagramLogo,
   LinkedinLogo,
@@ -16,8 +18,8 @@ import profileImage from "../../public/zoro-2-1384x752.jpg";
 
 export default function Home() {
   return (
-    <main className="flex max-w-xl flex-col items-center justify-center pb-24 pt-10">
-      <header className="flex flex-col items-center justify-center">
+    <main className="flex max-w-xl flex-col items-center justify-center gap-10 pb-24 pt-10">
+      <header className="flex w-full flex-col items-center justify-center gap-4">
         <Clock />
         <section className="flex flex-col items-center justify-center">
           <Image
@@ -25,36 +27,38 @@ export default function Home() {
             alt="Profile Image"
             width={100}
             height={100}
-            className="rounded-full"
+            className="mb-4 rounded-full"
           ></Image>
-          <h1>Paulo Victor T Silva</h1>
-          <h2>Desenvolvedor Full-Stack</h2>
+          <h1 className="text-2xl">Paulo Victor T Silva</h1>
+          <h2 className="text-xl text-neutral-400">Desenvolvedor Full-Stack</h2>
         </section>
-        <h2>Disponível para novas oportunidades</h2>
-        <ul className="flex items-center justify-center gap-5">
+        <h2 className="text-sm text-neutral-400">
+          Disponível para novas oportunidades
+        </h2>
+        <ul className="flex items-center justify-center gap-7 py-4">
           <li>
             <Link href="/linkedin" target="_blank">
-              <LinkedinLogo size={22} />
+              <LinkedinLogo size={24} />
             </Link>
           </li>
           <li>
             <Link href="/github" target="_blank">
-              <GithubLogo size={22} />
+              <GithubLogo size={24} />
             </Link>
           </li>
           <li>
             <Link href="/instagram" target="_blank">
-              <InstagramLogo size={22} />
+              <InstagramLogo size={24} />
             </Link>
           </li>
           <li>
             <Link href="/twitter" target="_blank">
-              <TwitterLogo size={22} />
+              <TwitterLogo size={24} />
             </Link>
           </li>
           <li>
             <Link href="/whatsapp" target="_blank">
-              <WhatsappLogo size={22} />
+              <WhatsappLogo size={24} />
             </Link>
           </li>
           <li>
@@ -64,15 +68,15 @@ export default function Home() {
           </li>
         </ul>
         <section className="flex items-center justify-center gap-5">
-          <button className="flex items-center justify-center rounded-lg bg-neutral-50 p-2">
-            Entre em Contato
-          </button>{" "}
+          <ButtonLink href="#">
+            Entre em Contato <EnvelopeSimple size={20} />
+          </ButtonLink>{" "}
           ou{" "}
-          <button className="flex items-center justify-center rounded-lg bg-neutral-50 p-2">
-            Baixe meu CV
-          </button>
+          <ButtonLink href="https://drive.google.com/uc?export=download&id=1aoHtajache8u334A1_m95fRsCcfPpAHr">
+            Baixe meu CV <FilePdf size={20} />
+          </ButtonLink>
         </section>
-        <span>Status Discord e spotify</span>
+        <span className="text-neutral-400">Status Discord e spotify</span>
       </header>
       <main className="flex flex-col items-start justify-center gap-6">
         <ContentSection.Root>
