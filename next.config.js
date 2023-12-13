@@ -23,7 +23,7 @@ const nextConfig = {
         permanent: true,
       },
       {
-        source: "/whatsapp",
+        source: "/zap",
         destination: "https://wa.me/message/6UOZCKTOYGUNE1",
         permanent: true,
       },

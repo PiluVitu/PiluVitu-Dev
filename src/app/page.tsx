@@ -58,7 +58,7 @@ export default function Home() {
             </Link>
           </li>
           <li>
-            <Link href="/whatsapp" target="_blank">
+            <Link href="/zap" target="_blank">
               <WhatsappLogo size={24} />
             </Link>
           </li>

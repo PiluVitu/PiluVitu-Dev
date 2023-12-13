@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Paulo Victor Torres Silva FullStack Developer",
+  title: "Paulo Victor Torres Silva - FullStack Developer",
   description:
     "Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node | Jest",
 };
