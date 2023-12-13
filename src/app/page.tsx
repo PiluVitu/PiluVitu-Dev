@@ -14,14 +14,15 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
-import profileImage from "../../public/zoro-2-1384x752.jpg";
+import profileImage from "../../public/images/profile-2.jpg";
+import profile from "../mock/profile.json";
 
 export default function Home() {
   return (
-    <main className="flex max-w-xl flex-col items-center justify-center gap-10 pb-24 pt-10">
+    <main className="flex max-w-xl flex-col items-center justify-center gap-10 pb-24 pt-10 max-sm:mx-2 max-sm:pb-40">
       <header className="flex w-full flex-col items-center justify-center gap-4">
         <Clock />
-        <section className="flex flex-col items-center justify-center">
+        <section className="flex flex-col items-center justify-center pt-3">
           <Image
             src={profileImage}
             alt="Profile Image"
@@ -29,8 +30,8 @@ export default function Home() {
             height={100}
             className="mb-4 rounded-full"
           ></Image>
-          <h1 className="text-2xl">Paulo Victor T Silva</h1>
-          <h2 className="text-xl text-neutral-400">Desenvolvedor Full-Stack</h2>
+          <h1 className="text-2xl">{profile.name}</h1>
+          <h2 className="text-xl text-neutral-400">{profile.role}</h2>
         </section>
         <h2 className="text-sm text-neutral-400">
           Disponível para novas oportunidades
@@ -67,8 +68,8 @@ export default function Home() {
             </Link>
           </li>
         </ul>
-        <section className="flex items-center justify-center gap-5">
-          <ButtonLink href="#">
+        <section className="flex w-full items-center justify-center gap-5 max-lg:flex-col max-lg:gap-2">
+          <ButtonLink href="mailto:pilutechinformatica@gmail.com">
             Entre em Contato <EnvelopeSimple size={20} />
           </ButtonLink>{" "}
           ou{" "}
@@ -76,22 +77,12 @@ export default function Home() {
             Baixe meu CV <FilePdf size={20} />
           </ButtonLink>
         </section>
-        <span className="text-neutral-400">Status Discord e spotify</span>
+        <span className="text-neutral-400">{profile.localy}</span>
       </header>
-      <main className="flex flex-col items-start justify-center gap-6">
+      <main className="flex flex-col items-start justify-center gap-6 max-md:gap-8">
         <ContentSection.Root>
           <ContentSection.Title title="Sobre" />
-          <ContentSection.Content>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
-              atque provident suscipit voluptates!
-            </p>{" "}
-            <p>
-              Nulla nesciunt expedita culpa molestiae laudantium vitae
-              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
-              tempore aperiam!
-            </p>
-          </ContentSection.Content>
+          <ContentSection.Content>{profile.bio}</ContentSection.Content>
         </ContentSection.Root>
         <ContentSection.Root>
           <ContentSection.Title title="Trabalho" />
