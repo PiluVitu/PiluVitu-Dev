@@ -14,7 +14,8 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
-import profileImage from "../../public/images/profile-2.jpg";
+import profileImage from "../../public/images/profile-2.webp";
+import rocketMovies from "../../public/images/rocket-movies.webp";
 import profile from "../mock/profile.json";
 
 export default function Home() {
@@ -33,7 +34,7 @@ export default function Home() {
           <h1 className="text-2xl">{profile.name}</h1>
           <h2 className="text-xl text-neutral-400">{profile.role}</h2>
         </section>
-        <h2 className="text-sm text-neutral-400">
+        <h2 className="animate-pulse rounded-md border-2 border-[#1972a4] p-2 text-sm text-neutral-400">
           Disponível para novas oportunidades
         </h2>
         <ul className="flex items-center justify-center gap-7 py-4">
@@ -87,15 +88,10 @@ export default function Home() {
         <ContentSection.Root>
           <ContentSection.Title title="Trabalho" />
           <ContentSection.Content>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
-              atque provident suscipit voluptates!
-            </p>{" "}
-            <p>
-              Nulla nesciunt expedita culpa molestiae laudantium vitae
-              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
-              tempore aperiam!
-            </p>
+            <ContentSection.ImageContent
+              title="Rocket Movies"
+              url={rocketMovies}
+            ></ContentSection.ImageContent>
             <ButtonLink href="#">
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>

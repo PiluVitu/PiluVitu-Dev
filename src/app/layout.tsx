@@ -6,7 +6,27 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Paulo Victor Torres Silva - FullStack Developer",
+  generator: "Next.js",
+  applicationName: "Portfólio | Paulo Victor Torres Silva",
+  referrer: "origin-when-cross-origin",
+  keywords: [
+    "Next.js",
+    "React",
+    "JavaScript",
+    "DevHatt",
+    "DevHat",
+    "TypeScript",
+  ],
+  creator: "Paulo Victor Torres Silva",
+  formatDetection: {
+    address: false,
+    telephone: false,
+  },
+  publisher: "PiluTech",
+  title: {
+    template: "%s | Paulo Victor Torres Silva",
+    default: "Paulo Victor Torres Silva | FullStack Developer",
+  },
   description:
     "Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node | Jest",
 };
