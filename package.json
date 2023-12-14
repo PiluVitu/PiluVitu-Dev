@@ -1,24 +1,32 @@
 {
-  "name": "portifolio",
-  "version": "1.0.0",
-  "description": "Portifólio de Paulo Victor Torres Silva, o piluvitu ",
-  "type": "module",
+  "name": "my-app",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/PiluVitu/PiluVitu-Dev.git"
+  "dependencies": {
+    "@phosphor-icons/react": "^2.0.15",
+    "next": "14.0.3",
+    "react": "^18",
+    "react-dom": "^18"
   },
-  "author": "Paulo Victor Torres Silva",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/PiluVitu/PiluVitu-Dev/issues"
-  },
-  "homepage": "https://github.com/PiluVitu/PiluVitu-Dev#readme",
   "devDependencies": {
-    "vite": "^4.3.9"
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.3",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "postcss": "^8",
+    "prettier": "^3.1.0",
+    "prettier-plugin-tailwindcss": "^0.5.7",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5"
   }
 }
