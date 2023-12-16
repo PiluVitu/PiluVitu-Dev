@@ -2,6 +2,7 @@ import { ButtonLink } from "@/components/ButtonLink";
 import Clock from "@/components/Clock";
 import { ContentSection } from "@/components/ContentSection";
 import {
+  AppWindow,
   ArrowRight,
   EnvelopeSimple,
   FilePdf,
@@ -15,6 +16,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
+import octopost from "../../public/images/octopost.webp";
 import profileImage from "../../public/images/profile-2.webp";
 import rocketMovies from "../../public/images/rocket-movies.webp";
 import profile from "../mock/profile.json";
@@ -94,6 +96,9 @@ export default function Home() {
               url={rocketMovies}
             >
               <FilmStrip size={20} className="fill-neutral-400" />
+            </ContentSection.ImageContent>
+            <ContentSection.ImageContent title="Octopost" url={octopost}>
+              <AppWindow size={20} className="fill-neutral-400" />
             </ContentSection.ImageContent>
             <ButtonLink href="#">
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
