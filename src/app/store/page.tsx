@@ -6,8 +6,14 @@ export const metadata: Metadata = {
 
 export default function Store() {
   return (
-    <>
-      <h1>STORANDO</h1>
-    </>
+    <div className="flex h-screen flex-col items-center justify-center">
+      <h1>Store</h1>
+      <a href="https://imgflip.com/i/89jit1">
+        <img
+          src="https://i.imgflip.com/89jit1.jpg"
+          title="made at imgflip.com"
+        />
+      </a>
+    </div>
   );
 }
