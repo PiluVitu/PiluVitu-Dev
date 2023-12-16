@@ -5,7 +5,7 @@ import {
   HouseSimple,
   ShoppingBag,
   Stack,
-  User
+  User,
 } from "@phosphor-icons/react/dist/ssr";
 import ActiveLink from "../ActiveLink";
 
