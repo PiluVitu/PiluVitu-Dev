@@ -5,8 +5,7 @@ import {
   HouseSimple,
   ShoppingBag,
   Stack,
-  Terminal,
-  User,
+  User
 } from "@phosphor-icons/react/dist/ssr";
 import ActiveLink from "../ActiveLink";
 
@@ -66,14 +65,6 @@ export default function NavAside() {
           <li>
             <ActiveLink href="/contact">
               <At
-                size={24}
-                className="fill-current transition-all hover:fill-neutral-400"
-              />
-            </ActiveLink>
-          </li>
-          <li>
-            <ActiveLink href="/">
-              <Terminal
                 size={24}
                 className="fill-current transition-all hover:fill-neutral-400"
               />
