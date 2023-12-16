@@ -13,8 +13,11 @@ export function ContentSectionImageContent({
   url,
 }: IContentSectionImageContent) {
   return (
-    <main className="flex h-fit w-full flex-col justify-center gap-3 rounded-md border border-neutral-700 px-2 pb-2 pt-3 text-sm text-neutral-200 ">
-      {title}
+    <main className="hover:backdropbackdrop-brightness-125 flex h-fit w-full flex-col justify-center gap-3 rounded-md border border-neutral-700 px-2 pb-2 pt-3 text-sm text-neutral-200 backdrop-brightness-110 transition-all">
+      <div className="flex items-center justify-start gap-2">
+        {children}
+        {title}
+      </div>
       <Image
         src={url}
         alt={`${title} image preview`}

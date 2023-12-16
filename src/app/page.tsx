@@ -5,6 +5,7 @@ import {
   ArrowRight,
   EnvelopeSimple,
   FilePdf,
+  FilmStrip,
   GithubLogo,
   InstagramLogo,
   LinkedinLogo,
@@ -91,7 +92,9 @@ export default function Home() {
             <ContentSection.ImageContent
               title="Rocket Movies"
               url={rocketMovies}
-            ></ContentSection.ImageContent>
+            >
+              <FilmStrip size={20} className="fill-neutral-400" />
+            </ContentSection.ImageContent>
             <ButtonLink href="#">
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>
