@@ -19,6 +19,7 @@ import Link from "next/link";
 import octopost from "../../public/images/octopost.webp";
 import profileImage from "../../public/images/profile-2.webp";
 import rocketMovies from "../../public/images/rocket-movies.webp";
+import { ItemSimple } from "../components/ItemSimple/index";
 import profile from "../mock/profile.json";
 
 export default function Home() {
@@ -108,15 +109,9 @@ export default function Home() {
         <ContentSection.Root>
           <ContentSection.Title title="Loja" />
           <ContentSection.Content>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
-              atque provident suscipit voluptates!
-            </p>{" "}
-            <p>
-              Nulla nesciunt expedita culpa molestiae laudantium vitae
-              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
-              tempore aperiam!
-            </p>
+            <ItemSimple.Root>
+              <Image src={} width={48} height={48}/>
+            </ItemSimple.Root>
             <ButtonLink href="#">
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>
