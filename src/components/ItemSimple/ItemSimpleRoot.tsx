@@ -1,7 +1,11 @@
-export function ItemSimpleRoot() {
+interface IItemSimpleRootProps {
+  children: React.ReactNode;
+}
+
+export function ItemSimpleRoot({ children }: IItemSimpleRootProps) {
   return (
-    <>
-      <h1>Testando k k k k </h1>
-    </>
+    <div className="flex w-full cursor-pointer items-start justify-between gap-4">
+      {children}
+    </div>
   );
 }
