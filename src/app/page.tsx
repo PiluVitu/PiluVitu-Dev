@@ -16,9 +16,12 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
+import landingPage from "../../public/images/LandingPageIcon.png";
+import landingPageOptimization from "../../public/images/LandingPageOptimizationIcon.png";
 import octopost from "../../public/images/octopost.webp";
 import profileImage from "../../public/images/profile-2.webp";
 import rocketMovies from "../../public/images/rocket-movies.webp";
+import { ItemSimple } from "../components/ItemSimple/index";
 import profile from "../mock/profile.json";
 
 export default function Home() {
@@ -100,7 +103,7 @@ export default function Home() {
             <ContentSection.ImageContent title="Octopost" url={octopost}>
               <AppWindow size={20} className="fill-neutral-400" />
             </ContentSection.ImageContent>
-            <ButtonLink href="#">
+            <ButtonLink href="/work" redirect={false}>
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>
           </ContentSection.Content>
@@ -108,16 +111,26 @@ export default function Home() {
         <ContentSection.Root>
           <ContentSection.Title title="Loja" />
           <ContentSection.Content>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
-              atque provident suscipit voluptates!
-            </p>{" "}
-            <p>
-              Nulla nesciunt expedita culpa molestiae laudantium vitae
-              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
-              tempore aperiam!
-            </p>
-            <ButtonLink href="#">
+            <ItemSimple.Root>
+              <ItemSimple.Image url={landingPage} title="Icone de Teste" />
+              <ItemSimple.Title
+                title="Desenvolvimento de LandingPages"
+                subtitle="As melhores landing pages para seu negocio, seja ele uma loja ou produto digital"
+              />
+              <ItemSimple.Text type="price" text={1000} />
+            </ItemSimple.Root>
+            <ItemSimple.Root>
+              <ItemSimple.Image
+                url={landingPageOptimization}
+                title="Icone de Teste"
+              />
+              <ItemSimple.Title
+                title="Otimização de Sites"
+                subtitle="Otimizando o seu site para uma melhor experiência de usuário e velocidade de carregamento"
+              />
+              <ItemSimple.Text type="price" text={500} />
+            </ItemSimple.Root>
+            <ButtonLink href="/store" redirect={false}>
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>
           </ContentSection.Content>
@@ -125,16 +138,14 @@ export default function Home() {
         <ContentSection.Root>
           <ContentSection.Title title="Blog" />
           <ContentSection.Content>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Sint
-              atque provident suscipit voluptates!
-            </p>{" "}
-            <p>
-              Nulla nesciunt expedita culpa molestiae laudantium vitae
-              praesentium adipisci, at suscipit perferendis, earum aliquam saepe
-              tempore aperiam!
-            </p>
-            <ButtonLink href="#">
+            <ItemSimple.Root>
+              <ItemSimple.Title
+                title="Como TypeScript revolucionou minha maneira de programar e acelerou meu processo de aprendizagem no js vanilla"
+                tags={["Web", "TypeScript"]}
+              />
+              <ItemSimple.Text type="default" text="10/11/2000" />
+            </ItemSimple.Root>
+            <ButtonLink href="/blog" redirect={false}>
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
             </ButtonLink>
           </ContentSection.Content>
