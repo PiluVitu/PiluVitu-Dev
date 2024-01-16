@@ -10,6 +10,7 @@ import {
   GithubLogo,
   InstagramLogo,
   LinkedinLogo,
+  ListChecks,
   TwitchLogo,
   TwitterLogo,
   WhatsappLogo,
@@ -96,12 +97,24 @@ export default function Home() {
           <ContentSection.Content>
             <ContentSection.ImageContent
               title="Rocket Movies"
-              url={rocketMovies}
+              path={rocketMovies}
+              url="https://rocket-movies.piluvitu.dev/"
             >
               <FilmStrip size={20} className="fill-neutral-400" />
             </ContentSection.ImageContent>
-            <ContentSection.ImageContent title="Octopost" url={octopost}>
+            <ContentSection.ImageContent
+              title="Octopost"
+              path={octopost}
+              url="https://github.com/devhatt/octopost"
+            >
               <AppWindow size={20} className="fill-neutral-400" />
+            </ContentSection.ImageContent>
+            <ContentSection.ImageContent
+              title="ToDo"
+              path={octopost}
+              url="https://todo.piluvitu.dev/"
+            >
+              <ListChecks size={20} className="fill-neutral-400" />
             </ContentSection.ImageContent>
             <ButtonLink href="/work" redirect={false}>
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
