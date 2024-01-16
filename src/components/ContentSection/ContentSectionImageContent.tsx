@@ -2,6 +2,8 @@ import Image, { StaticImageData } from "next/image";
 import { default as Link } from "next/link";
 import { ReactNode } from "react";
 
+//TODO: Adicionar tags das tecnologias dos projetos abaixo da imagem
+
 interface IContentSectionImageContent {
   children?: ReactNode;
   title: string;
