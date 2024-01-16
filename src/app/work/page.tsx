@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function Work() {
   return (
-    <main className="ml-16 grid h-screen w-full grid-cols-4 items-center pl-4">
+    <main className="ml-16 grid h-screen w-full grid-cols-4 items-center pl-4 pt-8">
       <aside className="h-full w-full border-r-2 border-neutral-700">
         <h1>Work</h1>
       </aside>
