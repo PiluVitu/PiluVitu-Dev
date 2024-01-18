@@ -117,7 +117,7 @@ export default function Home() {
                 title="Desenvolvimento de LandingPages"
                 subtitle="As melhores landing pages para seu negocio, seja ele uma loja ou produto digital"
               />
-              <ItemSimple.Text type="price" text={1000} />
+              <ItemSimple.Text type="price" text={3000} />
             </ItemSimple.Root>
             <ItemSimple.Root>
               <ItemSimple.Image
@@ -128,7 +128,7 @@ export default function Home() {
                 title="Otimização de Sites"
                 subtitle="Otimizando o seu site para uma melhor experiência de usuário e velocidade de carregamento"
               />
-              <ItemSimple.Text type="price" text={500} />
+              <ItemSimple.Text type="price" text={2000} />
             </ItemSimple.Root>
             <ButtonLink href="/store" redirect={false}>
               Veja mais <ArrowRight size={18} className="fill-neutral-500" />
