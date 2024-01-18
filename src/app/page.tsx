@@ -80,7 +80,7 @@ export default function Home() {
             Entre em Contato <EnvelopeSimple size={20} />
           </ButtonLink>{" "}
           ou{" "}
-          <ButtonLink href="https://drive.google.com/uc?export=download&id=1aoHtajache8u334A1_m95fRsCcfPpAHr">
+          <ButtonLink href="https://drive.google.com/uc?export=download&id=1GrfIBwCN-l86hrC70G6cQTjSCmOLxVba">
             Baixe meu CV <FilePdf size={20} />
           </ButtonLink>
         </section>
