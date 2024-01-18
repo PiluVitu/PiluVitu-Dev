@@ -164,7 +164,7 @@ export default function Home() {
           </ContentSection.Content>
         </ContentSection.Root>
       </main>
-      <footer>
+      <footer className="pt-10">
         <p>&copy; 2023 protifolio by @piluvitu </p>
         <p>Inspired by @justinmfarrugia</p>
       </footer>
