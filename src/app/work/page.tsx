@@ -10,15 +10,35 @@ export const metadata: Metadata = {
 
 export default function Work() {
   return (
-    <main className="ml-16 grid max-h-screen w-full grid-cols-4 items-center pl-4">
-      <aside className="h-full max-h-screen overflow-hidden border-r-2 border-neutral-700">
-        <h1 className="mt-8">Work</h1>
+    <main className="ml-16 grid max-h-screen w-full grid-cols-6 items-center pl-5">
+      <aside className="flex h-full max-h-screen flex-col gap-3 overflow-hidden border-r-2 border-neutral-700 text-sm">
+        <h1 className="mt-8 pl-3">Work</h1>
+        <div className="flex flex-col gap-2">
+          <span className="pl-3 text-neutral-600 brightness-150">
+            Vendo agora
+          </span>
+          <div className=" overflow-hidden">
+            <section className="mr-2 flex flex-col gap-1 rounded-2xl bg-neutral-800 p-4 pl-3 brightness-125">
+              <h2>Guia Atual</h2>
+              <p className="text-pretty h-fit text-neutral-600 brightness-150">
+                Dignissimos nam ipsa quasi dolore esse, vero cum dicta a, aut
+                rerum quidem cupiditate consectetur odit quam doloribus fugiat
+                vitae non laudantium.
+              </p>
+            </section>
+          </div>
+        </div>
+        <div>
+          <span className="pl-3">Próximos</span>
+        </div>
       </aside>
-      <section className="gap col-span-3 mx-auto flex max-h-screen w-full flex-col items-center justify-start gap-10 overflow-auto pb-24 pt-10">
+      <section className="gap col-span-5 mx-auto flex max-h-screen w-full flex-col items-center justify-start gap-10 overflow-auto pb-24 pt-10">
         <Image
           src={octopost}
           alt="Jajajja"
           width={540}
+          priority
+          quality={80}
           className="rounded-xl"
         />
         <div className="flex w-[33.75rem] flex-col gap-6">
