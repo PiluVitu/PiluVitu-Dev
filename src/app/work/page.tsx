@@ -51,50 +51,35 @@ export default function Work() {
                 </p>
               </li>
             </ul>
-            <p>
-              Lorem ipsum dolor sit amet consectetur adipisicing elit. Soluta
-              fugit aperiam, sequi natus porro eius labore quod fuga quae cum
-              consequuntur asperiores quam incidunt, blanditiis qui odio impedit
-              quo voluptatum! Lorem ipsum dolor sit amet consectetur adipisicing
-              elit. Delectus, maiores, perferendis ab ipsa nam deleniti
-              veritatis consequatur nemo eum, perspiciatis ratione? Illo nobis
-              id obcaecati odio! Adipisci minus unde quas! Lorem ipsum dolor sit
-              amet, consectetur adipisicing elit. Impedit aperiam facere
-              accusantium blanditiis, beatae vitae tempore ab pariatur, non
-              distinctio eius quos, est maxime ipsa voluptas? Magnam doloremque
-              omnis aliquid? Lorem ipsum dolor sit amet consectetur adipisicing
-              elit. Numquam consequatur non voluptate animi nam reprehenderit
-              doloremque nemo aut vel iste similique provident, exercitationem
-              corrupti perspiciatis. Hic obcaecati sint expedita vel! Lorem
-              ipsum dolor sit amet consectetur adipisicing elit. Sit, magni.
-              Mollitia ex, ullam modi velit nostrum quae a ea soluta porro
-              ducimus ad labore commodi quidem, veritatis cumque eos laudantium.
-              Lorem ipsum dolor sit amet consectetur adipisicing elit.
-              Dignissimos rem illo necessitatibus consequuntur consectetur quam
-              quisquam, at culpa obcaecati, animi veniam, sint explicabo velit
-              eos quos odio quaerat quasi quia! Lorem ipsum dolor sit amet
-              consectetur adipisicing elit. Ea, cumque? Recusandae minima fugiat
-              nulla inventore cumque cupiditate iste architecto. Itaque, optio.
-              Sapiente sint eius deserunt eligendi reprehenderit! Maiores,
-              blanditiis earum. Lorem ipsum dolor sit, amet consectetur
-              adipisicing elit. Libero dolor similique mollitia repellat
-              perferendis consectetur cupiditate, molestiae alias minus beatae
-              repellendus laborum, quisquam pariatur quis fugiat adipisci
-              recusandae cumque voluptate. Lorem ipsum dolor sit amet
-              consectetur adipisicing elit. Possimus exercitationem, architecto,
-              deserunt laborum magnam molestiae beatae facere odit dolor
-              repellendus nulla incidunt iure cum minima. In delectus minus
-              aperiam modi? Lorem ipsum dolor, sit amet consectetur adipisicing
-              elit. Cupiditate, expedita officiis dolor eveniet minus ea commodi
-              magnam quidem corrupti necessitatibus tempora a sint earum ab
-              ipsam facere non, voluptatibus consectetur. Lorem ipsum dolor sit
-              amet consectetur adipisicing elit. Perspiciatis incidunt voluptate
-              est distinctio perferendis? Fugiat ad, eos saepe earum ex est
-              aliquam magnam facilis voluptate eveniet excepturi obcaecati odio.
-              Sunt? Lorem, ipsum dolor sit amet consectetur adipisicing elit.
-              Asperiores ipsa necessitatibus architecto eligendi repudiandae
-              beatae consectetur amet ad, dolores nemo exercitationem fuga,
-              quisquam aliquam, iste modi cumque inventore? Aliquam, aperiam?
+            <p className="text-pretty whitespace-pre-wrap">
+              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Incidunt
+              quibusdam officiis minus expedita laboriosam voluptatibus eum
+              recusandae ipsum reprehenderit voluptatum nisi, alias nihil magnam
+              ab, perferendis, quasi doloremque voluptas illo?
+            </p>
+            <p className="text-pretty whitespace-pre-wrap">
+              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Incidunt
+              quibusdam officiis minus expedita laboriosam voluptatibus eum
+              recusandae ipsum reprehenderit voluptatum nisi, alias nihil magnam
+              ab, perferendis, quasi doloremque voluptas illo?
+            </p>
+            <p className="text-pretty whitespace-pre-wrap">
+              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Incidunt
+              quibusdam officiis minus expedita laboriosam voluptatibus eum
+              recusandae ipsum reprehenderit voluptatum nisi, alias nihil magnam
+              ab, perferendis, quasi doloremque voluptas illo?
+            </p>
+            <p className="text-pretty whitespace-pre-wrap">
+              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Incidunt
+              quibusdam officiis minus expedita laboriosam voluptatibus eum
+              recusandae ipsum reprehenderit voluptatum nisi, alias nihil magnam
+              ab, perferendis, quasi doloremque voluptas illo?
+            </p>
+            <p className="text-pretty whitespace-pre-wrap">
+              Lorem ipsum dolor, sit amet consectetur adipisicing elit. Incidunt
+              quibusdam officiis minus expedita laboriosam voluptatibus eum
+              recusandae ipsum reprehenderit voluptatum nisi, alias nihil magnam
+              ab, perferendis, quasi doloremque voluptas illo?
             </p>
           </section>
         </div>
