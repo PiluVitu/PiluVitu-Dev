@@ -4,8 +4,8 @@
     "image": "/images/rocket-movies.webp",
     "date": "Dec 23 - Atual",
     "role": "Desenvolvedor FullStack",
-    "shortDescription": "",
-    "description": "",
-    "text": [""]
+    "shortDescription": "OctoPost é um aplicativo de redes sociais único que permite aos usuários fazerem publicações em várias plataformas de mídia social, tudo dentro de uma única interface unificada.",
+    "jobDescription": "- Desenvolvimento de um componente de pré-visualização do projeto.\n- Resolução de problemas de escala dentro da aplicação.\n- Implementação e integração de uma ferramenta de visualização de componentes (Ladle).\n- Integração da ferramenta de feedback de erros (Sentry) na aplicação.\n- Otimização dos linters (Stylelint e ESLint) para melhorar a qualidade do código.\n- Participação ativa na implementação de uma ferramenta de rastreamento de eventos do usuário (Snowplow).",
+    "description": [""]
   }
 }
