@@ -1,16 +1,22 @@
 import { Metadata } from "next";
-import Image from "next/image";
 
-import octopost from "../../../public/images/octopost.webp";
+const data = [
+  {
+    id: "Octopost",
+    image: "/images/octopost.webp",
+  },
+];
+
+import Image from "next/image";
 
 export const metadata: Metadata = {
   title: "Trabalhos",
 };
-//TODO: Versão mobile o menu vai ficar escondido e será exibido quando arrastar da esquerda para direita
+//TODO: Versão mobile o menu vai ficar escondido e será exibido quando arrastar da esquerda para direita e tera botão na esquerda
 
 export default function Work() {
   return (
-    <main className="ml-16 grid max-h-screen w-full grid-cols-6 items-center pl-5">
+    <main className="ml-16 grid max-h-screen w-full grid-cols-5 items-center pl-5">
       <aside className="flex h-full max-h-screen flex-col gap-3 overflow-hidden border-r-2 border-neutral-700 text-sm">
         <h1 className="mt-8 pl-3">Work</h1>
         <div className="flex flex-col gap-2">
@@ -18,7 +24,7 @@ export default function Work() {
             Vendo agora
           </span>
           <div className=" overflow-hidden">
-            <section className="mr-2 flex flex-col gap-1 rounded-2xl bg-neutral-800 p-4 pl-3 brightness-125">
+            <section className="mr-4 flex flex-col gap-1 rounded-2xl bg-neutral-800 p-4 pl-3 brightness-125">
               <h2>Guia Atual</h2>
               <p className="text-pretty h-fit text-neutral-600 brightness-150">
                 Dignissimos nam ipsa quasi dolore esse, vero cum dicta a, aut
@@ -29,20 +35,21 @@ export default function Work() {
           </div>
         </div>
         <div>
-          <span className="pl-3">Próximos</span>
+          <span className="pl-3 text-neutral-600 brightness-150">Próximos</span>
         </div>
       </aside>
-      <section className="gap col-span-5 mx-auto flex max-h-screen w-full flex-col items-center justify-start gap-10 overflow-auto pb-24 pt-10">
+      <section className="gap col-span-4 mx-auto flex max-h-screen w-full flex-col items-center justify-start gap-10 overflow-auto pb-24 pt-10">
         <Image
-          src={octopost}
+          src={data[0].image}
           alt="Jajajja"
-          width={540}
+          className="rounded-xl"
           priority
           quality={80}
-          className="rounded-xl"
+          width={540}
+          height={280}
         />
         <div className="flex w-[33.75rem] flex-col gap-6">
-          <h2 className="text-2xl">Octopost</h2>
+          <h2 className="text-2xl">{data[0].id}</h2>
           <section className="flex flex-col gap-6">
             <ul className="flex w-full flex-col gap-1">
               <li className="flex gap-2">
