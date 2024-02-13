@@ -29,12 +29,22 @@ export const metadata: Metadata = {
   },
   description:
     "Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node | Jest",
+  openGraph: {
+    images: [
+      {
+        url: "public/images/opengraph-image.png",
+      },
+      {
+        url: "public/images/twitter-image.png",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   return (
     <html lang="pt-BR" className={inter.className}>

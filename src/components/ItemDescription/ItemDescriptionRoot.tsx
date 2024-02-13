@@ -1,8 +1,11 @@
-import { ReactNode } from "react";
-interface IItemDescriptionRoot {
-  children: ReactNode;
-}
-
-export function ItemDescriptionRoot({ children }: IItemDescriptionRoot) {
-  return <div className="flex w-[33.75rem] flex-col gap-6">{children}</div>;
+export function ItemDescriptionRoot({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="ml-16 grid max-h-screen w-full grid-cols-5 items-center pl-5">
+      {children}
+    </main>
+  );
 }

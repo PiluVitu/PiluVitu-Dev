@@ -1,6 +1,8 @@
 import { ButtonLink } from "@/components/ButtonLink";
 import Clock from "@/components/Clock";
 import { ContentSection } from "@/components/ContentSection";
+import { ItemSimple } from "@/components/ItemSimple/index";
+import profile from "@/mock/profile.json";
 import {
   AppWindow,
   ArrowRight,
@@ -17,13 +19,11 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import Link from "next/link";
-import landingPage from "../../public/images/LandingPageIcon.png";
-import landingPageOptimization from "../../public/images/LandingPageOptimizationIcon.png";
-import octopost from "../../public/images/octopost.webp";
-import profileImage from "../../public/images/profile-2.webp";
-import rocketMovies from "../../public/images/rocket-movies.webp";
-import { ItemSimple } from "../components/ItemSimple/index";
-import profile from "../mock/profile.json";
+import landingPage from "public/images/LandingPageIcon.png";
+import landingPageOptimization from "public/images/LandingPageOptimizationIcon.png";
+import octopost from "public/images/octopost.webp";
+import profileImage from "public/images/profile-2.webp";
+import rocketMovies from "public/images/rocket-movies.webp";
 
 export default function Home() {
   return (

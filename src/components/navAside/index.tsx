@@ -23,7 +23,7 @@ export default function NavAside() {
             </ActiveLink>
           </li>
           <li>
-            <ActiveLink href="/work">
+            <ActiveLink href="/work/0">
               <Buildings
                 size={24}
                 className="fill-current transition-all hover:fill-neutral-400"

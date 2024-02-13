@@ -1,6 +1,7 @@
 import { ItemDescriptionDate } from "./ItemDescriptionDate";
 import { ItemDescriptionImage } from "./ItemDescriptionImage";
-import { ItemDescriptionItems } from "./ItemDescriptionItems";
+import { ItemDescriptionItem } from "./ItemDescriptionItem";
+import { ItemDescriptionItemsList } from "./ItemDescriptionItemsList";
 import { ItemDescriptionItemsWrapper } from "./ItemDescriptionItemsWrapper";
 import { ItemDescriptionParagraph } from "./ItemDescriptionParagraph";
 import { ItemDescriptionRoot } from "./ItemDescriptionRoot";
@@ -17,7 +18,8 @@ export const ItemDescription = {
   Title: ItemDescriptionTitle,
   Tag: ItemDescriptionTag,
   ItemsWrapper: ItemDescriptionItemsWrapper,
-  Items: ItemDescriptionItems,
+  ItemsList: ItemDescriptionItemsList,
+  Item: ItemDescriptionItem,
   SectionWrapper: ItemDescriptionSectionWrapper,
   SectionTitle: ItemDescriptionSectionTitle,
   SectionParagraph: ItemDescriptionSectionParagraph,

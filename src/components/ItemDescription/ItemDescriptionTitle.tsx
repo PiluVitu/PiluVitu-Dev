@@ -1,3 +1,3 @@
-export function ItemDescriptionTitle() {
-  return <h2 className="text-2xl">Octopost</h2>;
+export function ItemDescriptionTitle({ title }: { title: string }) {
+  return <h2 className="text-2xl">{title}</h2>;
 }
