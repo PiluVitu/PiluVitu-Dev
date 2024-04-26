@@ -35,7 +35,7 @@ export function ProjectCard(props: Project) {
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                Deploy
+                Demo
               </Link>
             </Button>
           ) : (
@@ -44,7 +44,7 @@ export function ProjectCard(props: Project) {
               variant="destructive"
               className="cursor-not-allowed"
             >
-              Deploy
+              Demo
             </Button>
           )}
           <Button asChild variant="ghost">
@@ -53,7 +53,7 @@ export function ProjectCard(props: Project) {
               rel="noopener noreferrer nofollow"
               target="_blank"
             >
-              Repo
+              Code
             </Link>
           </Button>
         </section>
