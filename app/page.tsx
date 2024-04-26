@@ -50,7 +50,7 @@ export default function Home() {
       </main>
       <aside
         id="left side"
-        className="flex flex-col gap-14 pb-4 xl:col-span-2 xl:h-[945px] xl:overflow-y-auto"
+        className="flex flex-col gap-14 pb-4 xl:col-span-2 xl:max-h-[790px] xl:overflow-y-scroll xl:pb-0"
       >
         <PageSection>
           {Socials.map((social: Social) => (
