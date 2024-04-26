@@ -62,10 +62,11 @@ export function ProjectCard(props: Project) {
         {props.image && (
           <Image
             alt="DevHatt"
-            fill
             loading="lazy"
+            width={256}
+            height={144}
             src={props.image}
-            className=" transition-transform hover:scale-x-110"
+            className=" object-cover transition-transform hover:scale-x-110"
           />
         )}
       </div>
