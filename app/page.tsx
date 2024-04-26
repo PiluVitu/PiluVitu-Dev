@@ -9,7 +9,7 @@ import { Project, Projects } from '@/mocks/projects'
 import { Social, Socials } from '@/mocks/social'
 export default function Home() {
   return (
-    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 2xl:grid 2xl:grid-cols-3">
+    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 2xl:grid 2xl:grid-cols-3">
       <main
         id="left side"
         className="col-span-1 flex flex-col items-start justify-between"
