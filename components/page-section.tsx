@@ -8,13 +8,19 @@ export function PageSection({
   title?: string
 }) {
   if (!title) {
-    return <section className="flex flex-col gap-4">{children}</section>
+    return (
+      <section className="flex flex-col gap-4 2xl:flex-row 2xl:flex-wrap">
+        {children}
+      </section>
+    )
   }
 
   return (
     <section className="flex flex-col gap-4">
       <h2 className="my-3 text-xl">{title}</h2>
-      {children}
+      <section className="flex flex-col gap-4 2xl:flex-row 2xl:flex-wrap">
+        {children}
+      </section>
     </section>
   )
 }
