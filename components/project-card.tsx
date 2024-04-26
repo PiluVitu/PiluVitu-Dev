@@ -8,7 +8,7 @@ import Link from 'next/link'
 
 export function ProjectCard(props: Project) {
   return (
-    <Card className="flex h-fit justify-between p-5">
+    <Card className="flex h-fit flex-col justify-between gap-4 p-5 md:flex-row">
       <section className="flex flex-col justify-center gap-4">
         <Avatar className="mb-2 flex h-11 w-11 flex-shrink-0 rounded-xl">
           {props.image && (
