@@ -7,7 +7,7 @@ export function SocialCard(props: Social) {
   return (
     <Button
       variant="outline"
-      className="flex h-fit items-center justify-start gap-5 p-4  2xl:h-48 2xl:w-48 2xl:flex-col 2xl:items-start 2xl:py-8"
+      className="flex h-fit items-center justify-start gap-5 p-4  xl:h-48 xl:w-48 xl:flex-col xl:items-start xl:py-8"
       asChild
     >
       <Link href={props.socialLink} rel="noopener noreferrer" target="_blank">
@@ -19,7 +19,7 @@ export function SocialCard(props: Social) {
             {props.altImage}
           </AvatarFallback>
         </Avatar>
-        <p className="2xl:h-20 2xl:w-full 2xl:text-wrap 2xl:text-left">
+        <p className="xl:h-20 xl:w-full xl:text-wrap xl:text-left">
           {props.socialDescription}
         </p>
       </Link>

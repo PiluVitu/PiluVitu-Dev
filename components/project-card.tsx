@@ -8,7 +8,7 @@ import Link from 'next/link'
 
 export function ProjectCard(props: Project) {
   return (
-    <Card className="flex h-fit flex-col justify-between gap-4 p-5 md:flex-row 2xl:min-h-[454px] 2xl:w-80 2xl:flex-col">
+    <Card className="flex h-fit flex-col justify-between gap-4 p-5 md:flex-row xl:min-h-[454px] xl:w-80 xl:flex-col">
       <section className="flex flex-col justify-center gap-4">
         <Avatar className="mb-2 flex h-11 w-11 flex-shrink-0 rounded-xl">
           {props.image && (
@@ -58,7 +58,7 @@ export function ProjectCard(props: Project) {
           </Button>
         </section>
       </section>
-      <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border 2xl:mx-auto">
+      <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
         {props.image && (
           <Image
             alt="DevHatt"
