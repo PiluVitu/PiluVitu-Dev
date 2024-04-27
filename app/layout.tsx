@@ -16,6 +16,21 @@ export const metadata: Metadata = {
     'DevHatt',
     'DevHat',
     'TypeScript',
+    'PiluVitu',
+    'Pilu Vitu',
+    'Paulo Victor',
+    'PiluVituDev',
+    'Pilu Vitu Dev',
+    'Paulo Victor Dev',
+    'Paulo Dev',
+    'Devopos',
+    'PiluTech',
+    'TechPilu',
+    'Paulo Victor DevOps',
+    'Pilu Vitu DevOps',
+    'PiluVitu DevOps',
+    'Pilu Devopos',
+    'Tecnologia',
   ],
   creator: 'Paulo Victor Torres Silva',
   formatDetection: {
@@ -28,7 +43,7 @@ export const metadata: Metadata = {
     default: 'Paulo Victor Torres Silva | FullStack Developer',
   },
   description:
-    'Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node | Jest',
+    'Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node',
 }
 
 export default function RootLayout({

@@ -1,3 +1,4 @@
+import { ArticleCard } from '@/components/article-card'
 import { JobCard } from '@/components/job-card'
 import { ModeToggle } from '@/components/mode-toggle'
 import { PageSection } from '@/components/page-section'
@@ -63,7 +64,7 @@ export default function Home() {
           ))}
         </PageSection>
         <PageSection title="Artigos">
-          <p>Em breve</p>
+          <ArticleCard />
         </PageSection>
       </aside>
     </div>
