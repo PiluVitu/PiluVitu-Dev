@@ -58,7 +58,7 @@ export default function Home() {
             <SocialCard key={social.id} {...social} />
           ))}
         </PageSection>
-        <PageSection title="Projects">
+        <PageSection title="Projetos">
           {Projects.map((project: Project) => (
             <ProjectCard key={project.id} {...project} />
           ))}
