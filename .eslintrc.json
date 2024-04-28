@@ -1,8 +1,7 @@
 {
   "extends": [
-    "@rocketseat/eslint-config/next",
     "next/core-web-vitals",
     "plugin:storybook/recommended",
-    "prettier"
+    "@rocketseat/eslint-config/next"
   ]
 }
