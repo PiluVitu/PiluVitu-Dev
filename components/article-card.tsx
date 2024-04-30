@@ -14,7 +14,7 @@ export function ArticleCard() {
       const response = await fetch(
         'https://dev.to/api/articles?username=piluvitu',
         {
-          next: { revalidate: 15 },
+          next: { revalidate: 43200 },
         },
       )
       const data = await response.json()
