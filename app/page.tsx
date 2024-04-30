@@ -1,4 +1,5 @@
 import { ArticleCard } from '@/components/article-card'
+import { EmailCard } from '@/components/email-card'
 import { JobCard } from '@/components/job-card'
 import { ModeToggle } from '@/components/mode-toggle'
 import { PageSection } from '@/components/page-section'
@@ -57,6 +58,7 @@ export default function Home() {
           {Socials.map((social: Social) => (
             <SocialCard key={social.id} {...social} />
           ))}
+          <EmailCard />
         </PageSection>
         <PageSection title="Projetos">
           {Projects.map((project: Project) => (

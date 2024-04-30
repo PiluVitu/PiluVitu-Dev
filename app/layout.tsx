@@ -1,4 +1,5 @@
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from '@/components/ui/sonner'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
@@ -31,6 +32,14 @@ export const metadata: Metadata = {
     'PiluVitu DevOps',
     'Pilu Devopos',
     'Tecnologia',
+    'Desenvolvedor',
+    'Programador',
+    'FullStack',
+    'Fullstack',
+    'Desenvolvedor Web',
+    'Desenvolvedor Web FullStack',
+    'Desenvolvedor Web Fullstack',
+    'Desenvolvedor Web Full Stack',
   ],
   creator: 'Paulo Victor Torres Silva',
   formatDetection: {
@@ -61,6 +70,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

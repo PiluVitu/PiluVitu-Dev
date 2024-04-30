@@ -1,39 +1,54 @@
+'use client'
+
 import { Card } from '@/components/ui/card'
-import { DataArticle, DataItem } from '@/hooks/usefetch-data'
+import { DataArticle } from '@/hooks/usefetch-data'
 import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
-export async function useFetchData() {
-  const dados = await axios.get<DataItem>(
-    'https://dev.to/api/articles?username=piluvitu',
-  )
+export function ArticleCard() {
+  const [articles, setArticles] = useState<DataArticle[]>([])
 
-  return dados.data
-}
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data } = await axios.get(
+        'https://dev.to/api/articles?username=piluvitu',
+      )
 
-export async function ArticleCard() {
-  const articles = await useFetchData()
+      setArticles(data)
+    }
+
+    fetchData()
+  }, [])
 
   return (
     <>
       {articles.map((article: DataArticle) => (
         <Card
           key={article.id}
-          className="flex h-fit flex-col justify-between gap-4 p-5 md:flex-row xl:h-fit xl:w-80 xl:flex-col"
+          className="flex h-fit  flex-col justify-between gap-4 p-5 md:flex-row xl:h-fit xl:w-80 xl:flex-col"
         >
           <section className="flex flex-col justify-center gap-4">
-            <h3>{article.title}</h3>
+            <h3 className="line-clamp-2 max-h-14 text-xl">{article.title}</h3>
             <p className="text-muted-foreground">
               Tempo de leitura: {article.reading_time_minutes}min
             </p>
+            <div className="flex items-center justify-between">
+              <p className="flex items-center text-muted-foreground">
+                👍 {article.positive_reactions_count}
+              </p>
+              <p className="flex items-center text-muted-foreground">
+                💬 {article.comments_count}
+              </p>
+            </div>
           </section>
           <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
             {article.social_image && (
               <Link
-                href={article.canonical_url}
-                rel="noopener noreferrer nofollow"
+                href={article.url}
                 target="_blank"
+                rel="noopener noreferrer nofollow"
               >
                 <Image
                   alt="DevHatt"
