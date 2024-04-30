@@ -2,7 +2,6 @@
 
 import { Card } from '@/components/ui/card'
 import { DataArticle } from '@/hooks/usefetch-data'
-import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -12,9 +11,13 @@ export function ArticleCard() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data } = await axios.get(
+      const response = await fetch(
         'https://dev.to/api/articles?username=piluvitu',
+        {
+          next: { revalidate: 15 },
+        },
       )
+      const data = await response.json()
 
       setArticles(data)
     }
