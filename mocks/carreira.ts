@@ -76,25 +76,4 @@ export const Carreiras: Carreira[] = [
       'Consumo de APIs',
     ],
   },
-  {
-    id: nanoid(),
-    orgName: 'Aride',
-    orgDescription:
-      'Seguro digital de bicicletas, a cobertura de queda acidental oferece proteção contra danos materiais causados à bicicleta em caso de acidentes não intencionais',
-    orgLink: 'https://aride.com.br/',
-    image:
-      'https://aride.com.br/wp-content/uploads/2023/06/FAVICON-ARIDE-150x150.png',
-    altImage: 'AR',
-    title: 'Software Engineer',
-    role: 'Front-End',
-    location: 'São Paulo, São Paulo, Brasil - Remoto',
-    date: '20 Mar, 2024 - Atualmente',
-    atribuitions: [
-      'Criação de componentes',
-      'Refatoração de componentes',
-      'Configuração de ambiente',
-      'Criação de Páginas responsivas',
-      'Consumo de APIs',
-    ],
-  },
 ]
