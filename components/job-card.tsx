@@ -38,11 +38,11 @@ export function JobCard(props: Carreira) {
                   {props.date}
                 </time>
               </section>
-              <p className="flex h-5 items-center space-x-4 text-base">
-                <span>{props.title}</span>
-                <Separator orientation="vertical" />
-                <span>{props.role}</span>
-              </p>
+              <div className="flex h-5 items-center space-x-4 text-base">
+                <p>{props.title}</p>
+                <Separator orientation="vertical" decorative />
+                <p>{props.role}</p>
+              </div>
               <p className="text-muted-foreground">{props.location}</p>
             </section>
           </div>
@@ -55,9 +55,9 @@ export function JobCard(props: Carreira) {
         </DialogHeader>
         <section>
           <h4>Atribuições:</h4>
-          <ul>
+          <ul className="list-inside list-disc">
             {props.atribuitions.map((atribuicao: string) => (
-              <li key={atribuicao}> - {atribuicao}</li>
+              <li key={atribuicao}>{atribuicao}</li>
             ))}
           </ul>
         </section>

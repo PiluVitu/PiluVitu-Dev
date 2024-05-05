@@ -58,7 +58,7 @@ export function ProjectCard(props: Project) {
           </Button>
         </section>
       </section>
-      <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
+      <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
         {props.image && (
           <Image
             alt="DevHatt"
@@ -66,7 +66,7 @@ export function ProjectCard(props: Project) {
             width={288}
             height={144}
             src={props.image}
-            className=" object-cover transition-transform hover:scale-x-110"
+            className=" object-cover"
           />
         )}
       </div>

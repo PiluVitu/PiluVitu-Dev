@@ -44,8 +44,6 @@ export default function Home() {
             {Carreiras.map((carreira: Carreira) => (
               <JobCard key={carreira.id} {...carreira} />
             ))}
-
-            <div className="flex items-start gap-5 p-4"></div>
           </section>
         </header>
         <div className="mb-32 grid text-center lg:mb-0 lg:grid-cols-4 lg:text-left"></div>

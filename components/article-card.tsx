@@ -30,7 +30,7 @@ export function ArticleCard() {
       {articles.map((article: DataArticle) => (
         <Card
           key={article.id}
-          className="flex h-fit  flex-col justify-between gap-4 p-5 md:flex-row xl:h-fit xl:w-80 xl:flex-col"
+          className="flex h-fit  flex-col justify-between gap-4 p-5 transition-all md:flex-row xl:h-fit xl:w-80 xl:flex-col"
         >
           <section className="flex flex-col justify-center gap-4">
             <h3 className="line-clamp-2 max-h-14 text-xl">{article.title}</h3>
@@ -46,7 +46,7 @@ export function ArticleCard() {
               </p>
             </div>
           </section>
-          <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
+          <div className="relative my-auto flex h-fit w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
             {article.social_image && (
               <Link
                 href={article.url}
@@ -59,7 +59,7 @@ export function ArticleCard() {
                   width={288}
                   height={144}
                   src={article.social_image}
-                  className=" object-cover transition-transform hover:scale-x-110"
+                  className=" object-cover"
                 />
               </Link>
             )}
