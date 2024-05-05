@@ -11,10 +11,10 @@ import { Project, Projects } from '@/mocks/projects'
 import { Social, Socials } from '@/mocks/social'
 export default function Home() {
   return (
-    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 xl:grid xl:grid-cols-3">
+    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 xl:grid xl:grid-cols-3 xl:overflow-hidden">
       <main
         id="left side"
-        className="col-span-1 flex flex-col items-start justify-between"
+        className="col-span-1 flex h-full flex-col items-start"
       >
         <header className="flex flex-col gap-6">
           <Avatar className="mb-2 flex h-24 w-24 flex-shrink-0 rounded-xl">
@@ -39,18 +39,19 @@ export default function Home() {
             </p>
           </section>
 
-          <section className="flex flex-col gap-4">
+          <section className="flex h-full flex-col justify-start gap-4 overflow-hidden">
             <h2 className="my-3 text-xl">Carreira</h2>
-            {Carreiras.map((carreira: Carreira) => (
-              <JobCard key={carreira.id} {...carreira} />
-            ))}
+            <section className=" flex flex-col gap-4 overflow-y-auto xl:h-[calc(100vh-71%)] 2xl:h-[calc(100vh-90%)]">
+              {Carreiras.map((carreira: Carreira) => (
+                <JobCard key={carreira.id} {...carreira} />
+              ))}
+            </section>
           </section>
         </header>
-        <div className="mb-32 grid text-center lg:mb-0 lg:grid-cols-4 lg:text-left"></div>
       </main>
       <aside
         id="left side"
-        className="flex flex-col gap-14 pb-4 xl:col-span-2 xl:max-h-[calc(100vh-64px)] xl:overflow-y-auto xl:pb-0"
+        className="mt-14 flex flex-col gap-14 pb-4 xl:col-span-2 xl:mt-0 xl:max-h-[calc(100vh-64px)] xl:overflow-y-auto xl:pb-0"
       >
         <PageSection>
           {Socials.map((social: Social) => (
