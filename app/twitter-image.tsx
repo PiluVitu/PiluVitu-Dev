@@ -19,10 +19,10 @@ export default async function Image() {
       <div tw="flex flex-col w-full h-full items-center justify-center bg-[#3a3f41]">
         <div tw="flex w-full">
           <div tw="flex flex-col items-center justify-center w-full">
-            <h2 tw="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+            <h2 tw="text-5xl sm:text-6xl font-bold tracking-tight text-white">
               piluvitu.dev
             </h2>
-            <h3 tw="text-xl sm:text-2xl font-bold tracking-tight text-zinc-300">
+            <h3 tw="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-300">
               <strong tw="text-lime-500">DevOps</strong> Engineer
             </h3>
           </div>
