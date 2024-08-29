@@ -5,6 +5,8 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { PageSection } from '@/components/page-section'
 import { ProjectCard } from '@/components/project-card'
 import { SocialCard } from '@/components/social-card'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Carreira, Carreiras } from '@/mocks/carreira'
 import { Project, Projects } from '@/mocks/projects'
@@ -29,13 +31,27 @@ export default function Home() {
           </h1>
 
           <section className="flex flex-col gap-2">
-            <p>Desenvolvedor Fullstack na Devhatt</p>
+            <p>
+              <strong className="text-lime-500">DevOps</strong> Engineer na{' '}
+              <Button
+                asChild
+                variant="link"
+                className="h-fit p-0 text-[#4a65fc]"
+              >
+                <Link
+                  href=""
+                  rel="noopener noreferrer nofollow"
+                  target="_blank"
+                >
+                  Devhatt
+                </Link>
+              </Button>
+            </p>
             <p className="text-pretty text-muted-foreground">
-              Desenvolvedor Web Full Stack com foco em TypeScript, React e
-              NodeJS, determinado a criar aplicações inovadoras que aprimorem a
-              qualidade de vida das pessoas. Ativamente em busca de
-              oportunidades profissionais para contribuir com minha paixão pelo
-              desenvolvimento web
+              DevOps Engineer que acelera a entrega de software e otimiza
+              processos. Tenho experiência em automatizar pipelines de CI/CD e
+              implementar aplicações em nuvem. Entre em contato para discutir
+              como posso ajudar seu time a alcançar seus objetivos!
             </p>
           </section>
 

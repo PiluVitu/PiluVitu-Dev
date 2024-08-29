@@ -29,7 +29,7 @@ export function ProjectCard(props: Project) {
         </section>
         <section className="flex items-center gap-4">
           {props.deployLink ? (
-            <Button asChild variant="ghost">
+            <Button asChild variant="default">
               <Link
                 href={props.deployLink}
                 rel="noopener noreferrer"
@@ -47,7 +47,7 @@ export function ProjectCard(props: Project) {
               Demo
             </Button>
           )}
-          <Button asChild variant="ghost">
+          <Button asChild variant="secondary">
             <Link
               href={props.repoLink}
               rel="noopener noreferrer nofollow"

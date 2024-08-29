@@ -27,12 +27,13 @@ export const Carreiras: Carreira[] = [
     location: 'São Paulo, São Paulo, Brasil - Remoto',
     date: '01 Mai, 2023 - Atualmente',
     atribuitions: [
-      'Implementação de CD ',
-      'Implementação de CI de testes e build',
+      'Implementação de CI/CD ',
       'Dockerização de aplicações',
-      'Criação de ambiente de stage',
-      'Incorporação e configuração de novas ferramentas para aumentar a eficiência.',
-      'Proatividade na busca por melhorias contínuas.',
+      'Criação e gerenciamento de pipilines(GitHub Actions)',
+      'Criação e gerenciamento de ambientes de desenvolvimento/produção na AWS',
+      'Implementação de monitoramento(Prometheus, Grafana Faro)',
+      'Criação e configuração de serviços usando ferramentas IAC(Ansible e Terraform)',
+      'Deploy de aplicações de front e back em cloud provider(AWS)',
     ],
   },
   {
