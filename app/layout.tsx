@@ -43,6 +43,14 @@ export const metadata: Metadata = {
     'Desenvolvedor Web FullStack',
     'Desenvolvedor Web Fullstack',
     'Desenvolvedor Web Full Stack',
+    'Terraform',
+    'k8s',
+    'kubernets',
+    'argoCD',
+    'docker',
+    'CI/CD',
+    'CI',
+    'CD',
   ],
   creator: 'Paulo Victor Torres Silva',
   formatDetection: {
@@ -52,10 +60,10 @@ export const metadata: Metadata = {
   publisher: 'PiluTech',
   title: {
     template: '%s | Paulo Victor Torres Silva',
-    default: 'Paulo Victor Torres Silva | FullStack Developer',
+    default: 'Paulo Victor Torres Silva | DevOps Engineer',
   },
   description:
-    'Programador, capacitado para atender a suas demandas e executar seus projetos. Especializado em TypeScript | React | TailwindCss | Node',
+    'DevOps Engineer que acelera a entrega de software e otimiza processos.Tenho experiência em automatizar pipelines de CI/ CD e implementar aplicações em nuvem.Entre em contato para discutir como posso ajudar seu time a alcançar seus objetivos!',
 }
 
 export default function RootLayout({
