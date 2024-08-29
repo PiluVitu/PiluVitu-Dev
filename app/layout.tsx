@@ -64,6 +64,10 @@ export const metadata: Metadata = {
   },
   description:
     'DevOps Engineer que acelera a entrega de software e otimiza processos.Tenho experiência em automatizar pipelines de CI/ CD e implementar aplicações em nuvem.Entre em contato para discutir como posso ajudar seu time a alcançar seus objetivos!',
+  openGraph: {
+    siteName: 'piluvitu.dev',
+    url: 'https://piluvitu.dev/',
+  },
 }
 
 export default function RootLayout({
