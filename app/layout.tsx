@@ -62,6 +62,7 @@ export const metadata: Metadata = {
     template: '%s | Paulo Victor Torres Silva',
     default: 'Paulo Victor Torres Silva | DevOps Engineer',
   },
+  metadataBase: new URL('https://piluvitu.dev/'),
   description:
     'DevOps Engineer que acelera a entrega de software e otimiza processos.Tenho experiência em automatizar pipelines de CI/ CD e implementar aplicações em nuvem.Entre em contato para discutir como posso ajudar seu time a alcançar seus objetivos!',
   openGraph: {
