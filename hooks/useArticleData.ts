@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 export type DataArticle = {
   type_of?: string
@@ -36,10 +37,21 @@ export type DataArticle = {
   }
 }
 
-export async function useFetchData() {
-  const dados = await axios.get<DataArticle[]>(
+const fetchData = async () => {
+  const response = await axios.get<DataArticle[]>(
     'https://dev.to/api/articles?username=piluvitu',
   )
 
-  return dados.data
+  return response?.data
+}
+
+export function UseArticleData() {
+  const query = useQuery({
+    queryFn: fetchData,
+    queryKey: ['articles-data'],
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 5 * 1000,
+  })
+
+  return query
 }
