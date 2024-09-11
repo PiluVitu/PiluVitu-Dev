@@ -65,7 +65,7 @@ export const Carreiras: Carreira[] = [
     image:
       'https://aride.com.br/wp-content/uploads/2023/06/FAVICON-ARIDE-150x150.png',
     altImage: 'AR',
-    title: 'Software Engineer',
+    title: 'Software Developer',
     role: 'Front-End',
     location: 'São Paulo, São Paulo, Brasil - Remoto',
     date: '20 Mar, 2024 - Atualmente',
