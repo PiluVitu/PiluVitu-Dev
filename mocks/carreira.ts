@@ -44,7 +44,7 @@ export const Carreiras: Carreira[] = [
     image:
       'https://creatorspace.imgix.net/users/clvcq3cpx00szrx01tp252b95/pKsIsqvUYb6ORJ97-Icon%25207.png?w=300&h=300',
     altImage: 'DH',
-    title: 'Software Engineer',
+    title: 'Software Developer',
     role: 'Full-Stack',
     location: 'São Paulo, São Paulo, Brasil - Remoto',
     date: '12 Dez, 2023 - 30 Mar, 2024',
