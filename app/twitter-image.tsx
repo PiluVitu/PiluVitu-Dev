@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og'
 export const runtime = 'edge'
 
 // Image metadata
-export const alt = 'piluvitu.dev DevOps Engineer'
+export const alt = 'piluvitu.dev DevOps Developer'
 export const size = {
   width: 1200,
   height: 630,

@@ -10,7 +10,7 @@ import { Social, Socials } from '@/mocks/social'
 import { Bio } from '@/components/bio'
 export default function Home() {
   return (
-    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 xl:grid xl:grid-cols-3 xl:overflow-hidden">
+    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 xl:grid xl:grid-cols-3 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
       <main
         id="left side"
         className="col-span-1 flex h-full flex-col items-start"
@@ -19,10 +19,11 @@ export default function Home() {
           <Bio />
           <section className="flex h-full flex-col justify-start gap-4 overflow-hidden">
             <h2 className="my-3 text-xl">Carreira</h2>
-            <section className=" flex flex-col gap-4 overflow-y-auto xl:h-[calc(100vh-71%)] 2xl:h-[calc(100vh-90%)]">
+            <section className=" flex flex-col gap-4 overflow-y-auto xl:h-80 xl:overflow-y-scroll 2xl:h-[calc(100vh-80%)] 2xl:overflow-y-auto">
               {Carreiras.map((carreira: Carreira) => (
                 <JobCard key={carreira.id} {...carreira} />
               ))}
+              <div className="h-32"></div>
             </section>
           </section>
         </header>

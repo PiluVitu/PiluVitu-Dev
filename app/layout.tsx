@@ -52,6 +52,7 @@ export const metadata: Metadata = {
     'CI/CD',
     'CI',
     'CD',
+    'linux',
   ],
   creator: 'Paulo Victor Torres Silva',
   formatDetection: {
@@ -61,7 +62,7 @@ export const metadata: Metadata = {
   publisher: 'PiluTech',
   title: {
     template: '%s | Paulo Victor Torres Silva',
-    default: 'Paulo Victor Torres Silva | DevOps Engineer',
+    default: 'Paulo Victor Torres Silva | DevOps Developer',
   },
   metadataBase: new URL('https://piluvitu.dev/'),
   description:

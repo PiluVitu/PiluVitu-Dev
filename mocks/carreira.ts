@@ -70,11 +70,12 @@ export const Carreiras: Carreira[] = [
     location: 'São Paulo, São Paulo, Brasil - Remoto',
     date: '20 Mar, 2024 - Atualmente',
     atribuitions: [
-      'Criação de componentes',
-      'Refatoração de componentes',
+      'Criação e refatoração de componentes(MUI)',
+      'Resolução de bugs e tratamento de erros com base em relatório(Rollbar)',
+      'Desenvolvimento de novas features(React + TS)',
       'Configuração de ambiente',
-      'Criação de Páginas responsivas',
-      'Consumo de APIs',
+      'Criação de Páginas responsivas(Styled Components)',
+      'Consumo de APIs(Axios)',
     ],
   },
 ]

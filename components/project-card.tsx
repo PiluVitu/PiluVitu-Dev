@@ -21,7 +21,14 @@ export function ProjectCard(props: Project) {
             {props.altImage}
           </AvatarFallback>
         </Avatar>
-        <h3>{props.projectName}</h3>
+        <h3 className="text-lg font-bold">{props.projectName}</h3>
+        <p
+          className="line-clamp-6 max-h-48 text-muted-foreground"
+          title={props.description}
+        >
+          {props.description}
+        </p>
+
         <section className="flex flex-wrap items-center gap-4">
           {props.tags.map((tag: string) => (
             <Badge key={tag}>{tag}</Badge>
@@ -47,29 +54,35 @@ export function ProjectCard(props: Project) {
               Demo
             </Button>
           )}
-          <Button asChild variant="secondary">
-            <Link
-              href={props.repoLink}
-              rel="noopener noreferrer nofollow"
-              target="_blank"
-            >
+          {props.repoLink ? (
+            <Button asChild variant="secondary">
+              <Link
+                href={props.repoLink}
+                rel="noopener noreferrer nofollow"
+                target="_blank"
+              >
+                Code
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="secondary" disabled>
               Code
-            </Link>
-          </Button>
+            </Button>
+          )}
         </section>
+        <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
+          {props.image && (
+            <Image
+              alt="DevHatt"
+              loading="lazy"
+              width={288}
+              height={144}
+              src={props.image}
+              className=" object-cover"
+            />
+          )}
+        </div>
       </section>
-      <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
-        {props.image && (
-          <Image
-            alt="DevHatt"
-            loading="lazy"
-            width={288}
-            height={144}
-            src={props.image}
-            className=" object-cover"
-          />
-        )}
-      </div>
     </Card>
   )
 }

@@ -31,6 +31,13 @@ export const Socials: Social[] = [
   },
   {
     id: nanoid(),
+    socialDescription: 'Me siga no BlueSky',
+    socialLink: 'https://bsky.app/profile/piluvitu.dev',
+    image: '/bsky.png',
+    altImage: 'BSKY',
+  },
+  {
+    id: nanoid(),
     socialDescription: 'Segue no GranGran',
     socialLink: 'https://piluvitu.dev/instagram',
     image: '/instagram.png',

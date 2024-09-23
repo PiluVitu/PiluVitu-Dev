@@ -36,3 +36,15 @@ yarn-error.log*
 next-env.d.ts
 
 *storybook.log
+
+# sst
+.sst
+
+# open-next
+.open-next
+
+# sst
+.sst
+
+# open-next
+.open-next
