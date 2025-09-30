@@ -2,6 +2,11 @@
   "extends": [
     "next/core-web-vitals",
     "plugin:storybook/recommended",
-    "@rocketseat/eslint-config/next"
-  ]
+    "@rocketseat/eslint-config/next",
+    "prettier"
+  ],
+  "plugins": ["storybook", "prettier"],
+  "rules": {
+    "prettier/prettier": "error"
+  }
 }

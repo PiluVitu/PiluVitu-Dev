@@ -1,16 +1,16 @@
-import { ArticleSection } from '@/components/article-section'
-import { EmailCard } from '@/components/email-card'
-import { JobCard } from '@/components/job-card'
-import { PageSection } from '@/components/page-section'
-import { ProjectCard } from '@/components/project-card'
-import { SocialCard } from '@/components/social-card'
-import { Carreira, Carreiras } from '@/mocks/carreira'
-import { Project, Projects } from '@/mocks/projects'
-import { Social, Socials } from '@/mocks/social'
-import { Bio } from '@/components/bio'
+import { ArticleSection } from "@/components/article-section";
+import { Bio } from "@/components/bio";
+import { EmailCard } from "@/components/email-card";
+import { JobCard } from "@/components/job-card";
+import { PageSection } from "@/components/page-section";
+import { ProjectCard } from "@/components/project-card";
+import { SocialCard } from "@/components/social-card";
+import { Carreira, Carreiras } from "@/mocks/carreira";
+import { Project, Projects } from "@/mocks/projects";
+import { Social, Socials } from "@/mocks/social";
 export default function Home() {
   return (
-    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pb-4 lg:pt-10 xl:grid xl:grid-cols-3 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
+    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pt-10 lg:pb-4 xl:grid xl:grid-cols-3 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
       <main
         id="left side"
         className="col-span-1 flex h-full flex-col items-start"
@@ -19,7 +19,7 @@ export default function Home() {
           <Bio />
           <section className="flex h-full flex-col justify-start gap-4 overflow-hidden">
             <h2 className="my-3 text-xl">Carreira</h2>
-            <section className=" flex flex-col gap-4 overflow-y-auto xl:h-80 xl:overflow-y-scroll 2xl:h-[calc(100vh-80%)] 2xl:overflow-y-auto">
+            <section className="flex flex-col gap-4 overflow-y-auto xl:h-80 xl:overflow-y-scroll 2xl:h-[calc(100vh-80%)] 2xl:overflow-y-auto">
               {Carreiras.map((carreira: Carreira) => (
                 <JobCard key={carreira.id} {...carreira} />
               ))}
@@ -48,5 +48,5 @@ export default function Home() {
         </PageSection>
       </aside>
     </div>
-  )
+  );
 }

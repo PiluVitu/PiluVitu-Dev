@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { ModeToggle } from './mode-toggle'
-import { Button } from './ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
+import { Button } from './ui/button'
 
 export function Bio() {
   return (
     <>
-      <Avatar className="mb-2 flex h-24 w-24 flex-shrink-0 rounded-xl">
+      <Avatar className="mb-2 flex h-24 w-24 shrink-0 rounded-xl">
         <AvatarImage src="/profile-2.jpg" alt="Paulo Victor Profile Pic" />
         <AvatarFallback className="rounded-xl">PV</AvatarFallback>
       </Avatar>
@@ -19,18 +19,19 @@ export function Bio() {
 
       <section className="flex flex-col gap-2">
         <p>
-          <strong className="text-lime-500">DevOps</strong> Developer na{' '}
+          <strong className="text-lime-500">FullStackOps</strong>{' '}na{' '}
           <Button asChild variant="link" className="h-fit p-0 text-[#4a65fc]">
             <Link href="" rel="noopener noreferrer nofollow" target="_blank">
-              Devhatt
+              ViralizePlus
             </Link>
           </Button>
         </p>
         <p className="text-pretty text-muted-foreground">
-          DevOps Developer que acelera a entrega de software e otimiza
-          processos. Tenho experiência em automatizar pipelines de CI/CD e
-          implementar aplicações em nuvem. Entre em contato para discutir como
-          posso ajudar seu time a alcançar seus objetivos!
+          Desenvolvedor FullStack com foco em DevOps, apaixonado por 
+          tecnologia e automação. Trabalho com desenvolvimento de aplicações 
+          web modernas, CI/CD, infraestrutura como código e soluções em nuvem. 
+          Sempre buscando aprender e compartilhar conhecimento com a comunidade. 
+          Vamos conversar sobre tecnologia e projetos interessantes!
         </p>
       </section>
     </>

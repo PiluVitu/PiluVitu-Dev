@@ -29,13 +29,13 @@ export const Socials: Social[] = [
     image: '/twitter.png',
     altImage: 'TW',
   },
-  {
-    id: nanoid(),
-    socialDescription: 'Me siga no BlueSky',
-    socialLink: 'https://bsky.app/profile/piluvitu.dev',
-    image: '/bsky.png',
-    altImage: 'BSKY',
-  },
+  // {
+  //   id: nanoid(),
+  //   socialDescription: 'Me siga no BlueSky',
+  //   socialLink: 'https://bsky.app/profile/piluvitu.dev',
+  //   image: '/bsky.png',
+  //   altImage: 'BSKY',
+  // },
   {
     id: nanoid(),
     socialDescription: 'Segue no GranGran',
@@ -43,11 +43,11 @@ export const Socials: Social[] = [
     image: '/instagram.png',
     altImage: 'IN',
   },
-  {
-    id: nanoid(),
-    socialDescription: 'Xama no Zap',
-    socialLink: 'https://wa.me/message/6UOZCKTOYGUNE1',
-    image: '/whatsapp.png',
-    altImage: 'WZP',
-  },
+  // {
+  //   id: nanoid(),
+  //   socialDescription: 'Xama no Zap',
+  //   socialLink: 'https://wa.me/message/6UOZCKTOYGUNE1',
+  //   image: '/whatsapp.png',
+  //   altImage: 'WZP',
+  // },
 ]
