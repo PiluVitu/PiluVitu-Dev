@@ -1,14 +1,14 @@
-import { ThemeProvider } from '@/components/theme-provider'
-import { Toaster } from '@/components/ui/sonner'
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
+import { ThemeProvider } from '@/components/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
 
-import { ReactQueryProvider } from '@/utils/providers/react-query-provider'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/next'
+import { ReactQueryProvider } from '@/utils/providers/react-query-provider';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   generator: 'Next.js',
@@ -71,12 +71,12 @@ export const metadata: Metadata = {
     siteName: 'piluvitu.dev',
     url: 'https://piluvitu.dev/',
   },
-}
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
@@ -96,5 +96,5 @@ export default function RootLayout({
         </ReactQueryProvider>
       </body>
     </html>
-  )
+  );
 }

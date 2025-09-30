@@ -1,15 +1,15 @@
-import { ImageResponse } from 'next/og'
+import { ImageResponse } from 'next/og';
 
-export const runtime = 'edge'
+export const runtime = 'edge';
 
 // Image metadata
-export const alt = 'piluvitu.dev DevOps Developer'
+export const alt = 'piluvitu.dev DevOps Developer';
 export const size = {
   width: 1200,
   height: 630,
-}
+};
 
-export const contentType = 'image/png'
+export const contentType = 'image/png';
 
 // Image generation
 export default async function Image() {
@@ -35,5 +35,5 @@ export default async function Image() {
       // size config to also set the ImageResponse's width and height.
       ...size,
     },
-  )
+  );
 }

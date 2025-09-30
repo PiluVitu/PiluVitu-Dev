@@ -1,7 +1,7 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import { Social } from '@/mocks/social'
-import Link from 'next/link'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Social } from '@/mocks/social';
+import Link from 'next/link';
 
 export function SocialCard(props: Social) {
   return (
@@ -24,5 +24,5 @@ export function SocialCard(props: Social) {
         </p>
       </Link>
     </Button>
-  )
+  );
 }
