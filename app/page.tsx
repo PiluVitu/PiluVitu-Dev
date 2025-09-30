@@ -1,13 +1,13 @@
-import { ArticleSection } from '@/components/article-section'
-import { Bio } from '@/components/bio'
-import { EmailCard } from '@/components/email-card'
-import { JobCard } from '@/components/job-card'
-import { PageSection } from '@/components/page-section'
-import { ProjectCard } from '@/components/project-card'
-import { SocialCard } from '@/components/social-card'
-import { Carreira, Carreiras } from '@/mocks/carreira'
-import { Project, Projects } from '@/mocks/projects'
-import { Social, Socials } from '@/mocks/social'
+import { ArticleSection } from '@/components/article-section';
+import { Bio } from '@/components/bio';
+import { EmailCard } from '@/components/email-card';
+import { JobCard } from '@/components/job-card';
+import { PageSection } from '@/components/page-section';
+import { ProjectCard } from '@/components/project-card';
+import { SocialCard } from '@/components/social-card';
+import { Carreira, Carreiras } from '@/mocks/carreira';
+import { Project, Projects } from '@/mocks/projects';
+import { Social, Socials } from '@/mocks/social';
 export default function Home() {
   return (
     <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pt-10 lg:pb-4 xl:grid xl:grid-cols-3 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
@@ -48,5 +48,5 @@ export default function Home() {
         </PageSection>
       </aside>
     </div>
-  )
+  );
 }

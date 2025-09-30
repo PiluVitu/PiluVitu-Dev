@@ -1,10 +1,10 @@
-'use client'
+'use client';
 
-import { DataArticle, UseArticleData } from '@/hooks/useArticleData'
-import { ArticleCard } from './article-card'
+import { DataArticle, UseArticleData } from '@/hooks/useArticleData';
+import { ArticleCard } from './article-card';
 
 export function ArticleSection() {
-  const { data } = UseArticleData()
+  const { data } = UseArticleData();
 
   return (
     <>
@@ -12,5 +12,5 @@ export function ArticleSection() {
         <ArticleCard key={article.id} article={article} />
       ))}
     </>
-  )
+  );
 }

@@ -1,7 +1,7 @@
-import { DataArticle } from '@/hooks/useArticleData'
-import Image from 'next/image'
-import Link from 'next/link'
-import { Card } from './ui/card'
+import { DataArticle } from '@/hooks/useArticleData';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Card } from './ui/card';
 
 export function ArticleCard({ article }: { article: DataArticle }) {
   return (
@@ -42,5 +42,5 @@ export function ArticleCard({ article }: { article: DataArticle }) {
         )}
       </div>
     </Card>
-  )
+  );
 }
