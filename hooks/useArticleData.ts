@@ -1,57 +1,57 @@
-import { useQuery } from '@tanstack/react-query'
-import axios from 'axios'
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 export type DataArticle = {
-  type_of?: string
-  id: number
-  title: string
-  description?: string
-  readable_publish_date?: string
-  slug?: string
-  path?: string
-  url: string
-  comments_count?: number
-  public_reactions_count?: number
-  collection_id?: number
-  published_timestamp?: string
-  positive_reactions_count?: number
-  cover_image?: string
-  social_image: string
-  canonical_url?: string
-  created_at?: string
-  edited_at?: string
-  crossposted_at?: string
-  published_at?: string
-  last_comment_at?: string
-  reading_time_minutes: number
-  tag_list?: Array<string>
-  tags?: string
+  type_of?: string;
+  id: number;
+  title: string;
+  description?: string;
+  readable_publish_date?: string;
+  slug?: string;
+  path?: string;
+  url: string;
+  comments_count?: number;
+  public_reactions_count?: number;
+  collection_id?: number;
+  published_timestamp?: string;
+  positive_reactions_count?: number;
+  cover_image?: string;
+  social_image: string;
+  canonical_url?: string;
+  created_at?: string;
+  edited_at?: string;
+  crossposted_at?: string;
+  published_at?: string;
+  last_comment_at?: string;
+  reading_time_minutes: number;
+  tag_list?: Array<string>;
+  tags?: string;
   user?: {
-    name: string
-    username: string
-    twitter_username: string
-    github_username: string
-    user_id: number
-    website_url: string
-    profile_image: string
-    profile_image_90: string
-  }
-}
+    name: string;
+    username: string;
+    twitter_username: string;
+    github_username: string;
+    user_id: number;
+    website_url: string;
+    profile_image: string;
+    profile_image_90: string;
+  };
+};
 
 const fetchData = async () => {
   const response = await axios.get<DataArticle[]>(
-    'https://dev.to/api/articles?username=piluvitu',
-  )
+    "https://dev.to/api/articles?username=piluvitu",
+  );
 
-  return response?.data
-}
+  return response?.data;
+};
 
 export function UseArticleData() {
   const query = useQuery({
     queryFn: fetchData,
-    queryKey: ['articles-data'],
+    queryKey: ["articles-data"],
     refetchOnWindowFocus: true,
     refetchInterval: 60 * 5 * 1000,
-  })
+  });
 
-  return query
+  return query;
 }

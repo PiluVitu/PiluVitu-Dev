@@ -3,16 +3,16 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'media.dev.to',
-        port: '',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "media.dev.to",
+        port: "",
+        pathname: "/**",
       },
       {
-        protocol: 'https',
-        hostname: 'media2.dev.to',
-        port: '',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "media2.dev.to",
+        port: "",
+        pathname: "/**",
       },
     ],
   },
@@ -20,6 +20,6 @@ const nextConfig = {
     // Suppress hydration warnings from browser extensions
     suppressHydrationWarning: true,
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;

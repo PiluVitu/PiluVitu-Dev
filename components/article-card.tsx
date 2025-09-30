@@ -1,13 +1,13 @@
-import Link from 'next/link'
-import { Card } from './ui/card'
-import { DataArticle } from '@/hooks/useArticleData'
-import Image from 'next/image'
+import Link from "next/link";
+import { Card } from "./ui/card";
+import { DataArticle } from "@/hooks/useArticleData";
+import Image from "next/image";
 
 export function ArticleCard({ article }: { article: DataArticle }) {
   return (
     <Card
       key={article.id}
-      className="flex h-fit  flex-col justify-between gap-4 p-5 transition-all md:flex-row xl:h-fit xl:w-80 xl:flex-col"
+      className="flex h-fit flex-col justify-between gap-4 p-5 transition-all md:flex-row xl:h-fit xl:w-80 xl:flex-col"
     >
       <section className="flex flex-col justify-center gap-4">
         <h3 className="line-clamp-2 max-h-14 text-xl">{article.title}</h3>
@@ -15,10 +15,10 @@ export function ArticleCard({ article }: { article: DataArticle }) {
           Tempo de leitura: {article.reading_time_minutes}min
         </p>
         <div className="flex items-center justify-between">
-          <p className="flex items-center text-muted-foreground">
+          <p className="text-muted-foreground flex items-center">
             👍 {article.positive_reactions_count}
           </p>
-          <p className="flex items-center text-muted-foreground">
+          <p className="text-muted-foreground flex items-center">
             💬 {article.comments_count}
           </p>
         </div>
@@ -36,11 +36,11 @@ export function ArticleCard({ article }: { article: DataArticle }) {
               width={288}
               height={144}
               src={article.social_image}
-              className=" object-cover"
+              className="object-cover"
             />
           </Link>
         )}
       </div>
     </Card>
-  )
+  );
 }

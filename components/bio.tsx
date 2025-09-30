@@ -1,7 +1,7 @@
-import Link from 'next/link'
-import { ModeToggle } from './mode-toggle'
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
-import { Button } from './ui/button'
+import Link from "next/link";
+import { ModeToggle } from "./mode-toggle";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Button } from "./ui/button";
 
 export function Bio() {
   return (
@@ -19,21 +19,21 @@ export function Bio() {
 
       <section className="flex flex-col gap-2">
         <p>
-          <strong className="text-lime-500">FullStackOps</strong>{' '}na{' '}
+          <strong className="text-lime-500">FullStackOps</strong> na{" "}
           <Button asChild variant="link" className="h-fit p-0 text-[#4a65fc]">
             <Link href="" rel="noopener noreferrer nofollow" target="_blank">
               ViralizePlus
             </Link>
           </Button>
         </p>
-        <p className="text-pretty text-muted-foreground">
-          Desenvolvedor FullStack com foco em DevOps, apaixonado por 
-          tecnologia e automação. Trabalho com desenvolvimento de aplicações 
-          web modernas, CI/CD, infraestrutura como código e soluções em nuvem. 
-          Sempre buscando aprender e compartilhar conhecimento com a comunidade. 
-          Vamos conversar sobre tecnologia e projetos interessantes!
+        <p className="text-muted-foreground text-pretty">
+          Desenvolvedor FullStack com foco em DevOps, apaixonado por tecnologia
+          e automação. Trabalho com desenvolvimento de aplicações web modernas,
+          CI/CD, infraestrutura como código e soluções em nuvem. Sempre buscando
+          aprender e compartilhar conhecimento com a comunidade. Vamos conversar
+          sobre tecnologia e projetos interessantes!
         </p>
       </section>
     </>
-  )
+  );
 }

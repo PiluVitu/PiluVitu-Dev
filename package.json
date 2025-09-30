@@ -10,6 +10,8 @@
     "start": "next start",
     "storybook": "storybook dev -p 6006",
     "style-fix": "eslint --fix",
+    "prettier:check": "prettier --check .",
+    "prettier:fix": "prettier --write .",
     "prepare": "husky"
   },
   "dependencies": {

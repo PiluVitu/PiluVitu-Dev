@@ -1,10 +1,10 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Project } from '@/mocks/projects'
-import Image from 'next/image'
-import Link from 'next/link'
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Project } from "@/mocks/projects";
+import Image from "next/image";
+import Link from "next/link";
 
 export function ProjectCard(props: Project) {
   return (
@@ -14,7 +14,7 @@ export function ProjectCard(props: Project) {
           {props.image && (
             <AvatarImage
               src={props.projectLogo}
-              alt={props.projectName + ' Logo'}
+              alt={props.projectName + " Logo"}
             />
           )}
           <AvatarFallback className="rounded-xl">
@@ -23,7 +23,7 @@ export function ProjectCard(props: Project) {
         </Avatar>
         <h3 className="text-lg font-bold">{props.projectName}</h3>
         <p
-          className="line-clamp-6 max-h-48 text-muted-foreground"
+          className="text-muted-foreground line-clamp-6 max-h-48"
           title={props.description}
         >
           {props.description}
@@ -78,11 +78,11 @@ export function ProjectCard(props: Project) {
               width={288}
               height={144}
               src={props.image}
-              className=" object-cover"
+              className="object-cover"
             />
           )}
         </div>
       </section>
     </Card>
-  )
+  );
 }
