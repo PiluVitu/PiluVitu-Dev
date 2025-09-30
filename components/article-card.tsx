@@ -23,7 +23,7 @@ export function ArticleCard({ article }: { article: DataArticle }) {
           </p>
         </div>
       </section>
-      <div className="relative my-auto flex h-fit w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
+      <div className="relative my-auto flex h-fit w-72 shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
         {article.social_image && (
           <Link
             href={article.url}

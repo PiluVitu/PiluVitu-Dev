@@ -80,7 +80,7 @@ export function EmailCard() {
           variant="outline"
           className="flex h-fit items-center justify-start gap-5 p-4  xl:h-48 xl:w-48 xl:flex-col xl:items-start xl:py-8"
         >
-          <Avatar className="flex h-10 w-10 flex-shrink-0 rounded-xl">
+          <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
             <AvatarImage src="/email.png" alt="Icone de email" />
             <AvatarFallback className="rounded-xl">EM</AvatarFallback>
           </Avatar>

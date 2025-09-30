@@ -11,7 +11,7 @@ export function SocialCard(props: Social) {
       asChild
     >
       <Link href={props.socialLink} rel="noopener noreferrer" target="_blank">
-        <Avatar className="flex h-10 w-10 flex-shrink-0 rounded-xl">
+        <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
           {props.image && (
             <AvatarImage src={props.image} alt={props.altImage} />
           )}

@@ -10,7 +10,7 @@ export function ProjectCard(props: Project) {
   return (
     <Card className="flex h-fit flex-col justify-between gap-4 p-5 md:flex-row xl:min-h-[454px] xl:w-80 xl:flex-col">
       <section className="flex flex-col justify-center gap-4">
-        <Avatar className="mb-2 flex h-11 w-11 flex-shrink-0 rounded-xl">
+        <Avatar className="mb-2 flex h-11 w-11 shrink-0 rounded-xl">
           {props.image && (
             <AvatarImage
               src={props.projectLogo}
@@ -70,7 +70,7 @@ export function ProjectCard(props: Project) {
             </Button>
           )}
         </section>
-        <div className="relative my-auto flex h-44 w-72 flex-shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
+        <div className="relative my-auto flex h-44 w-72 shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
           {props.image && (
             <Image
               alt="DevHatt"
