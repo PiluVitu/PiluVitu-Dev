@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { ModeToggle } from "./mode-toggle";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Button } from "./ui/button";
+import Link from 'next/link'
+import { ModeToggle } from './mode-toggle'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
+import { Button } from './ui/button'
 
 export function Bio() {
   return (
@@ -19,7 +19,7 @@ export function Bio() {
 
       <section className="flex flex-col gap-2">
         <p>
-          <strong className="text-lime-500">FullStackOps</strong> na{" "}
+          <strong className="text-lime-500">FullStackOps</strong> na{' '}
           <Button asChild variant="link" className="h-fit p-0 text-[#4a65fc]">
             <Link href="" rel="noopener noreferrer nofollow" target="_blank">
               ViralizePlus
@@ -35,5 +35,5 @@ export function Bio() {
         </p>
       </section>
     </>
-  );
+  )
 }

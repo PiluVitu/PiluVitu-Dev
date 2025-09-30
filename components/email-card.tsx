@@ -1,13 +1,13 @@
-"use client";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+'use client'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import ReCAPTCHA from "react-google-recaptcha";
+} from '@/components/ui/dialog'
+import ReCAPTCHA from 'react-google-recaptcha'
 
 import {
   FormControl,
@@ -16,62 +16,62 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { zodResolver } from "@hookform/resolvers/zod";
-import axios from "axios";
-import { useState } from "react";
-import { FormProvider, useForm } from "react-hook-form";
-import { toast } from "sonner";
-import { z } from "zod";
+} from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { zodResolver } from '@hookform/resolvers/zod'
+import axios from 'axios'
+import { useState } from 'react'
+import { FormProvider, useForm } from 'react-hook-form'
+import { toast } from 'sonner'
+import { z } from 'zod'
 
 const formSchema = z.object({
   nome: z.string().min(2, {
-    message: "Username must be at least 2 characters.",
+    message: 'Username must be at least 2 characters.',
   }),
-  email: z.string().email({ message: "Email inválido" }),
+  email: z.string().email({ message: 'Email inválido' }),
   assunto: z.string().min(2, {
-    message: "O assunto deve ter no min 5 caracteres",
+    message: 'O assunto deve ter no min 5 caracteres',
   }),
   mensagem: z.string().min(10, {
-    message: "O assunto deve ter no min 10 caracteres",
+    message: 'O assunto deve ter no min 10 caracteres',
   }),
-});
+})
 
 export function EmailCard() {
-  const [captcha, setCaptcha] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [captcha, setCaptcha] = useState(false)
+  const [open, setOpen] = useState(false)
 
   // 1. Define your form.
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      nome: "",
-      email: "",
-      assunto: "",
-      mensagem: "",
+      nome: '',
+      email: '',
+      assunto: '',
+      mensagem: '',
     },
-  });
+  })
 
   // 2. Define a submit handler.
   const onSubmit = form.handleSubmit(
     async (values: z.infer<typeof formSchema>) => {
-      axios.defaults.headers.post["Content-Type"] = "application/json";
-      setOpen(false);
-      toast("✅ Muito obrigado por entrar em contato, irei retornar em breve");
-      form.reset();
+      axios.defaults.headers.post['Content-Type'] = 'application/json'
+      setOpen(false)
+      toast('✅ Muito obrigado por entrar em contato, irei retornar em breve')
+      form.reset()
       axios
         .post(
-          "https://formsubmit.co/ajax/pilutechinformatica@gmail.com",
+          'https://formsubmit.co/ajax/pilutechinformatica@gmail.com',
           values,
         )
         .then((response) => {
-          console.log("✅ ", response);
+          console.log('✅ ', response)
         })
-        .catch((error) => console.log("❌ ", error));
+        .catch((error) => console.log('❌ ', error))
     },
-  );
+  )
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -180,5 +180,5 @@ export function EmailCard() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

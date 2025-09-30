@@ -1,6 +1,6 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -9,10 +9,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { Carreira } from "@/mocks/carreira";
-import Link from "next/link";
+} from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
+import { Carreira } from '@/mocks/carreira'
+import Link from 'next/link'
 
 export function JobCard(props: Carreira) {
   return (
@@ -24,7 +24,7 @@ export function JobCard(props: Carreira) {
         >
           <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
             {props.image && (
-              <AvatarImage src={props.image} alt={props.orgName + " Logo"} />
+              <AvatarImage src={props.image} alt={props.orgName + ' Logo'} />
             )}
             <AvatarFallback className="rounded-xl">
               {props.altImage}
@@ -74,5 +74,5 @@ export function JobCard(props: Carreira) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

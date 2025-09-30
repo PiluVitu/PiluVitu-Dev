@@ -1,4 +1,4 @@
-import { nanoid } from "nanoid";
+import { nanoid } from 'nanoid';
 export type Project = {
   id: string;
   projectName: string;
@@ -14,26 +14,26 @@ export type Project = {
 export const Projects: Project[] = [
   {
     id: nanoid(),
-    projectName: "Live PRs",
-    projectLogo: "/pr-live-dark.svg",
+    projectName: 'Live PRs',
+    projectLogo: '/pr-live-dark.svg',
     description:
-      "Live PRs é um agregador de pull request onde foi solicitada a sua revisão, de acordo com o repositorio que você seleciona, podendo ser de colaboração ou de organização, ele reune todos os PRs em cards, mostrando estado do pr e checks de CI, assignees e outras informações.",
+      'Live PRs é um agregador de pull request onde foi solicitada a sua revisão, de acordo com o repositorio que você seleciona, podendo ser de colaboração ou de organização, ele reune todos os PRs em cards, mostrando estado do pr e checks de CI, assignees e outras informações.',
     tags: [
-      "React",
-      "Next",
-      "Go",
-      "Tailwind",
-      "GitHub Actions",
-      "Docker",
-      "Aws",
-      "Grafana",
-      "Prometheus",
-      "Sentry",
+      'React',
+      'Next',
+      'Go',
+      'Tailwind',
+      'GitHub Actions',
+      'Docker',
+      'Aws',
+      'Grafana',
+      'Prometheus',
+      'Sentry',
     ],
-    deployLink: "https://pr-live-folder-front.vercel.app/",
-    repoLink: "",
-    image: "/live-prs.png",
-    altImage: "LPR",
+    deployLink: 'https://pr-live-folder-front.vercel.app/',
+    repoLink: '',
+    image: '/live-prs.png',
+    altImage: 'LPR',
   },
   // {
   //   id: nanoid(),
