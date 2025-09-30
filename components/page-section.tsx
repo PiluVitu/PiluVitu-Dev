@@ -1,18 +1,18 @@
-import { ReactNode } from 'react';
+import { ReactNode } from 'react'
 
 export function PageSection({
   children,
   title = '',
 }: {
-  children: ReactNode;
-  title?: string;
+  children: ReactNode
+  title?: string
 }) {
   if (!title) {
     return (
       <section className="flex flex-col gap-4 xl:flex-row xl:flex-wrap">
         {children}
       </section>
-    );
+    )
   }
 
   return (
@@ -22,5 +22,5 @@ export function PageSection({
         {children}
       </section>
     </section>
-  );
+  )
 }

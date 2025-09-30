@@ -1,7 +1,7 @@
-import Link from 'next/link';
-import { ModeToggle } from './mode-toggle';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Button } from './ui/button';
+import Link from 'next/link'
+import { ModeToggle } from './mode-toggle'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
+import { Button } from './ui/button'
 
 export function Bio() {
   return (
@@ -35,5 +35,5 @@ export function Bio() {
         </p>
       </section>
     </>
-  );
+  )
 }
