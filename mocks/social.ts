@@ -1,11 +1,11 @@
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid'
 export type Social = {
-  id: string;
-  socialDescription: string;
-  socialLink: string;
-  image?: string;
-  altImage: string;
-};
+  id: string
+  socialDescription: string
+  socialLink: string
+  image?: string
+  altImage: string
+}
 
 export const Socials: Social[] = [
   {
@@ -50,4 +50,4 @@ export const Socials: Social[] = [
   //   image: '/whatsapp.png',
   //   altImage: 'WZP',
   // },
-];
+]

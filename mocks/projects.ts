@@ -1,15 +1,15 @@
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid'
 export type Project = {
-  id: string;
-  projectName: string;
-  projectLogo: string;
-  description: string;
-  tags: string[];
-  deployLink: string;
-  repoLink: string;
-  image?: string;
-  altImage: string;
-};
+  id: string
+  projectName: string
+  projectLogo: string
+  description: string
+  tags: string[]
+  deployLink: string
+  repoLink: string
+  image?: string
+  altImage: string
+}
 
 export const Projects: Project[] = [
   {
@@ -81,4 +81,4 @@ export const Projects: Project[] = [
   //   image: '/petdex.png',
   //   altImage: 'PD',
   // },
-];
+]

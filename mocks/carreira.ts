@@ -1,17 +1,17 @@
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid'
 export type Carreira = {
-  id: string;
-  orgName: string;
-  orgDescription: string;
-  orgLink: string;
-  image?: string;
-  altImage: string;
-  title: string;
-  role: string;
-  location: string;
-  date: string;
-  atribuitions: string[];
-};
+  id: string
+  orgName: string
+  orgDescription: string
+  orgLink: string
+  image?: string
+  altImage: string
+  title: string
+  role: string
+  location: string
+  date: string
+  atribuitions: string[]
+}
 
 export const Carreiras: Carreira[] = [
   {
@@ -98,4 +98,4 @@ export const Carreiras: Carreira[] = [
       'Deploy de aplicações de front e back em cloud provider(AWS)',
     ],
   },
-];
+]
