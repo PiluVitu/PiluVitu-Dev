@@ -1,0 +1,19 @@
+orgSlug: viralizeplus
+order: 0
+orgName: ViralizePlus
+orgDescription: Sua comunidade de desenvolvimento open source!
+orgLink: https://www.viralizeplus.com.br/
+image: https://viralizeplusprod.s3.us-east-1.amazonaws.com/Group+1597881566.png
+altImage: VP
+title: Developer
+role: FullStackOps
+location: São Paulo, São Paulo, Brasil - Remoto
+date: Dez, 2024 - Atualmente
+atribuitions:
+  - Implementação de CI/CD
+  - Dockerização de aplicações e integração com ECS
+  - Criação e gerenciamento de pipelines(GitHub Actions)
+  - Criação e configuração de serviços usando ferramentas IAC(Terraform)
+  - Deploy de aplicações de front e back na AWS
+  - Implementação de telemetria e trace de log(openTelymetry)
+  - Otimização de custos da infra em 40%

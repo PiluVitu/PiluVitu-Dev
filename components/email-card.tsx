@@ -57,7 +57,6 @@ export function EmailCard() {
   // 2. Define a submit handler.
   const onSubmit = form.handleSubmit(
     async (values: z.infer<typeof formSchema>) => {
-      axios.defaults.headers.post['Content-Type'] = 'application/json'
       setOpen(false)
       toast('✅ Muito obrigado por entrar em contato, irei retornar em breve')
       form.reset()
@@ -65,6 +64,7 @@ export function EmailCard() {
         .post(
           'https://formsubmit.co/ajax/pilutechinformatica@gmail.com',
           values,
+          { headers: { 'Content-Type': 'application/json' } },
         )
         .then((response) => {
           console.log('✅ ', response)

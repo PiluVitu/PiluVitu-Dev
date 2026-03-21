@@ -1,0 +1,16 @@
+orgSlug: redeconfia
+order: 2
+orgName: RedeConfia
+orgDescription: Plataforma de infraestrutura e soluções digitais
+orgLink: https://redeconfia.com.br/
+image: https://redeconfia.com.br/assets/home-logo-C3ApN9Xe.svg
+altImage: RC
+title: Developer
+role: DevOps
+location: São Paulo, São Paulo, Brasil - Remoto
+date: Dez, 2024 - Dez, 2024
+atribuitions:
+  - Implementação de infraestrutura multi-cloud com Terraform, integrando Cloudflare e Render
+  - Arquitetou e implementou ambientes segregados (staging/produção) automatizados por IAC
+  - Desenvolvimento de pipelines CI/CD
+  - Análise e implementação de estratégia de precificação otimizada, garantindo melhor custo-benefício da infraestrutura

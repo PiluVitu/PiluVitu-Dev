@@ -1,12 +1,6 @@
-import { ThemeProvider } from '@/components/theme-provider'
-import { Toaster } from '@/components/ui/sonner'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-
-import { ReactQueryProvider } from '@/utils/providers/react-query-provider'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -81,19 +75,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
-        <ReactQueryProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-            disableTransitionOnChange
-          >
-            {children}
-            <Toaster />
-            <Analytics />
-            <SpeedInsights />
-          </ThemeProvider>
-        </ReactQueryProvider>
+        {children}
       </body>
     </html>
   )

@@ -1,0 +1,20 @@
+orgSlug: dev-hatt
+order: 3
+orgName: Dev Hatt
+orgDescription: Sua comunidade de desenvolvimento open source!
+orgLink: https://bento.me/devhatt
+image: >-
+  https://creatorspace.imgix.net/users/clvcq3cpx00szrx01tp252b95/pKsIsqvUYb6ORJ97-Icon%25207.png?w=300&h=300
+altImage: DH
+title: Developer
+role: DevOps
+location: São Paulo, São Paulo, Brasil - Remoto
+date: Mai, 2023 - Out, 2024
+atribuitions:
+  - Implementação de CI/CD
+  - Dockerização de aplicações
+  - Criação e gerenciamento de pipilines(GitHub Actions)
+  - Criação e gerenciamento de ambientes de desenvolvimento/produção na AWS
+  - Implementação de monitoramento(Prometheus, Grafana Faro)
+  - Criação e configuração de serviços usando ferramentas IAC(Ansible e Terraform)
+  - Deploy de aplicações de front e back em cloud provider(AWS)
