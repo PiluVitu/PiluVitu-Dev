@@ -5382,14 +5382,12 @@
           })(summary.split('|').map((value) => value.trim()))
         },
         renderSummaryItems = (summaryItems) =>
-          summaryItems
-            .slice(0, 8)
-            .map((item) =>
-              react.createElement(ArgText, {
-                key: item,
-                text: '' === item ? '""' : item,
-              }),
-            ),
+          summaryItems.slice(0, 8).map((item) =>
+            react.createElement(ArgText, {
+              key: item,
+              text: '' === item ? '""' : item,
+            }),
+          ),
         ArgSummary = ({ value, initialExpandedArgs }) => {
           let { summary, detail } = value,
             [isOpen, setIsOpen] = (0, react.useState)(!1),
@@ -5419,14 +5417,12 @@
                       AlignedDetails,
                       null,
                       ((summaryItems) =>
-                        summaryItems
-                          .slice(8)
-                          .map((item) =>
-                            react.createElement(ArgText, {
-                              key: item,
-                              text: '' === item ? '""' : item,
-                            }),
-                          ))(summaryItems),
+                        summaryItems.slice(8).map((item) =>
+                          react.createElement(ArgText, {
+                            key: item,
+                            text: '' === item ? '""' : item,
+                          }),
+                        ))(summaryItems),
                     ),
                     react.createElement(
                       ExpandButton,
