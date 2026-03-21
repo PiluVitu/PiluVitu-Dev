@@ -6,15 +6,15 @@ Site pessoal / portfolio em **Next.js 16** (App Router), **React 19**, **TypeScr
 
 Pastas relevantes:
 
-| Área | Caminho |
-|------|---------|
-| Rotas e layout | `app/` |
+| Área                       | Caminho       |
+| -------------------------- | ------------- |
+| Rotas e layout             | `app/`        |
 | Componentes de página e UI | `components/` |
-| Utilitários | `lib/` |
-| Hooks | `hooks/` |
-| Dados mock | `mocks/` |
-| Stories | `stories/` |
-| Config Storybook | `.storybook/` |
+| Utilitários                | `lib/`        |
+| Hooks                      | `hooks/`      |
+| Dados mock                 | `mocks/`      |
+| Stories                    | `stories/`    |
+| Config Storybook           | `.storybook/` |
 
 Alias de importação: `@/*` → raiz do repositório (ver `tsconfig.json`).
 
@@ -33,13 +33,13 @@ pnpm install
 
 Todos os comandos abaixo correm na **raiz** (`piluvitu-dev/`).
 
-| Objetivo | Comando |
-|----------|---------|
+| Objetivo                    | Comando                                                     |
+| --------------------------- | ----------------------------------------------------------- |
 | Servidor de desenvolvimento | `pnpm dev` → [http://localhost:3000](http://localhost:3000) |
-| Build de produção | `pnpm build` |
-| Servidor após build | `pnpm start` |
-| Storybook | `pnpm storybook` → porta **6006** |
-| Build estático do Storybook | `pnpm build-storybook` (saída em `storybook-static/`) |
+| Build de produção           | `pnpm build`                                                |
+| Servidor após build         | `pnpm start`                                                |
+| Storybook                   | `pnpm storybook` → porta **6006**                           |
+| Build estático do Storybook | `pnpm build-storybook` (saída em `storybook-static/`)       |
 
 ## Testes
 
