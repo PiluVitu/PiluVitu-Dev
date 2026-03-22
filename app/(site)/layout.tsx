@@ -22,12 +22,12 @@ export default async function SiteLayout({
       >
         {isDraftMode ? (
           <div
-            className="fixed bottom-0 left-0 right-0 z-[100] flex flex-wrap items-center justify-between gap-3 border-t border-amber-600/40 bg-amber-500 px-4 py-3 text-sm text-amber-950 shadow-lg"
+            className="fixed right-0 bottom-0 left-0 z-[100] flex flex-wrap items-center justify-between gap-3 border-t border-amber-600/40 bg-amber-500 px-4 py-3 text-sm text-amber-950 shadow-lg"
             role="status"
           >
             <span className="font-medium">
-              Pré-visualização (draft mode) — alterações do Keystatic refletem ao
-              recarregar
+              Pré-visualização (draft mode) — alterações do Keystatic refletem
+              ao recarregar
             </span>
             <form method="POST" action="/preview/end">
               <button

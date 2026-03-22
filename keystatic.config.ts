@@ -45,7 +45,10 @@ export default config({
             { label: 'Roxo', value: '#a855f7' },
             { label: 'Violeta', value: '#8b5cf6' },
             { label: 'Índigo', value: '#6366f1' },
-            { label: 'Branco suave (destaca no fundo escuro)', value: '#f8fafc' },
+            {
+              label: 'Branco suave (destaca no fundo escuro)',
+              value: '#f8fafc',
+            },
             { label: 'Cinza claro', value: '#94a3b8' },
           ],
         }),
