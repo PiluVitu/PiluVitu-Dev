@@ -18,11 +18,11 @@ const fallbackProfile: SiteProfileContent = {
   displayName: 'Paulo Victor Torres Silva',
   avatarSrc: '/profile-2.jpg',
   avatarAlt: 'Paulo Victor Profile Pic',
-  roleHighlight: 'FullStackOps',
+  roleHighlight: 'Site Reliability Engineer (SRE)',
   companyName: 'ViralizePlus',
   companyLink: 'https://www.viralizeplus.com.br/',
   companyLinkColor: '#4a65fc',
-  bio: 'Desenvolvedor FullStack com foco em DevOps, apaixonado por tecnologia e automação. Trabalho com desenvolvimento de aplicações web modernas, CI/CD, infraestrutura como código e soluções em nuvem. Sempre buscando aprender e compartilhar conhecimento com a comunidade. Vamos conversar sobre tecnologia e projetos interessantes!',
+  bio: 'DevOps Engineer com 3 anos de experiência focado em garantir que sistemas em nuvem operem com alta disponibilidade e custo eficiente. Especialista em transformar operações manuais em processos automatizados e seguros, utilizando ferramentas de mercado para monitorar a saúde das aplicações em tempo real e antecipar falhas antes que afetem o usuário final.',
 }
 
 export default async function Home() {
