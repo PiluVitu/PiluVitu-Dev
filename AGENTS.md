@@ -74,6 +74,7 @@ O hook **pre-commit** (Husky) executa `pnpm prettier:fix` (ver `.husky/pre-commi
 - **Não commitar** ficheiros `.env` nem segredos. O `.gitignore` ignora `.env*.local`.
 - Variável pública usada no código: `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` (ex.: `components/email-card.tsx`). Definir em ambiente local/produção sem expor chaves privadas no repositório.
 - **Keystatic (modo GitHub)**: após configurar em `/keystatic`, replicar `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` no ambiente local e na Vercel; ver `.env.example`. O repositório alvo é configurável com `KEYSTATIC_GITHUB_REPO` (`owner/name`; há default em `keystatic.config.ts`). Na GitHub App, registar callback OAuth para `http://localhost:3000/api/keystatic/github/oauth/callback` e para o domínio de produção.
+- **Keystatic e deploy na Vercel**: cada **Save** no Keystatic faz **commit** no ramo que estiveres a usar no editor. Se esse ramo for **`main`**, o push dispara normalmente o **deploy de produção** na Vercel (como qualquer outro commit em `main`). Para iterar à vontade e usar só a **pré-visualização** (draft + ramo) sem publicar já, cria ou escolhe **outro ramo** no seletor do Keystatic (ex. `content/atualizacao-bio`), guarda aí, prevê no site com o link de preview; quando estiveres satisfeito, abre **PR para `main`** ou faz merge — aí sim o conteúdo passa a produção no próximo deploy.
 
 ## Commits e pull requests
 
