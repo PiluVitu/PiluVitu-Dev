@@ -1,13 +1,22 @@
 import { collection, config, fields, singleton } from '@keystatic/core'
 
 /** Repositório GitHub `owner/name` (ex.: PiluVitu/PiluVitu-Dev). Override: KEYSTATIC_GITHUB_REPO */
-const githubRepo =
-  process.env.KEYSTATIC_GITHUB_REPO?.trim() || 'PiluVitu/PiluVitu-Dev'
+function githubRepoFromEnv(): { owner: string; name: string } {
+  const raw =
+    process.env.KEYSTATIC_GITHUB_REPO?.trim() ?? 'PiluVitu/PiluVitu-Dev'
+  const [owner, name, ...rest] = raw.split('/').map((s) => s.trim())
+  if (!owner || !name || rest.some(Boolean)) {
+    throw new Error(
+      'KEYSTATIC_GITHUB_REPO must be owner/name (e.g. PiluVitu/PiluVitu-Dev)',
+    )
+  }
+  return { owner, name }
+}
 
 export default config({
   storage: {
     kind: 'github',
-    repo: githubRepo,
+    repo: githubRepoFromEnv(),
   },
   singletons: {
     siteProfile: singleton({
