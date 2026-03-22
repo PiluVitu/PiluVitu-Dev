@@ -171,8 +171,7 @@ function OgGridCell({
   const bg = brandBackgroundForFa(cell.fontawesomeIcon)
 
   if (cell.iconMode === 'image' && cell.image?.trim()) {
-    const src =
-      resolvedImageSrc ?? absolutizeAsset(cell.image.trim(), baseUrl)
+    const src = resolvedImageSrc ?? absolutizeAsset(cell.image.trim(), baseUrl)
     return (
       <div
         style={{
@@ -274,121 +273,119 @@ export default async function Image() {
   )
 
   return new ImageResponse(
-    (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#062c1e',
+      }}
+    >
       <div
         style={{
-          width: '100%',
-          height: '100%',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#062c1e',
+          flexDirection: 'column',
+          background: '#ffffff',
+          borderRadius: 28,
+          borderWidth: 1,
+          borderStyle: 'solid',
+          borderColor: '#e4e4e7',
+          padding: 40,
+          width: 920,
+          boxShadow:
+            '0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0,0,0,0.06)',
         }}
       >
         <div
           style={{
             display: 'flex',
-            flexDirection: 'column',
-            background: '#ffffff',
-            borderRadius: 28,
-            borderWidth: 1,
-            borderStyle: 'solid',
-            borderColor: '#e4e4e7',
-            padding: 40,
-            width: 920,
-            boxShadow:
-              '0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0,0,0,0.06)',
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            width: '100%',
           }}
         >
+          <img
+            src={avatarSrc}
+            width={192}
+            height={192}
+            alt=""
+            style={{
+              borderRadius: 9999,
+              flexShrink: 0,
+              objectFit: 'cover',
+            }}
+          />
           <div
             style={{
               display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              width: '100%',
+              flexDirection: 'column',
+              gap: 12,
+              marginLeft: 28,
+              flex: 1,
+              minWidth: 0,
             }}
           >
-            <img
-              src={avatarSrc}
-              width={192}
-              height={192}
-              alt=""
-              style={{
-                borderRadius: 9999,
-                flexShrink: 0,
-                objectFit: 'cover',
-              }}
-            />
             <div
               style={{
                 display: 'flex',
-                flexDirection: 'column',
+                flexDirection: 'row',
                 gap: 12,
-                marginLeft: 28,
-                flex: 1,
-                minWidth: 0,
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  gap: 12,
-                }}
-              >
-                {cells.slice(0, 4).map((cell, i) => (
-                  <OgGridCell
-                    key={i}
-                    cell={cell}
-                    baseUrl={baseUrl}
-                    resolvedImageSrc={resolvedCellImages[i] ?? null}
-                  />
-                ))}
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  gap: 12,
-                }}
-              >
-                {cells.slice(4, 8).map((cell, i) => (
-                  <OgGridCell
-                    key={i + 4}
-                    cell={cell}
-                    baseUrl={baseUrl}
-                    resolvedImageSrc={resolvedCellImages[i + 4] ?? null}
-                  />
-                ))}
-              </div>
+              {cells.slice(0, 4).map((cell, i) => (
+                <OgGridCell
+                  key={i}
+                  cell={cell}
+                  baseUrl={baseUrl}
+                  resolvedImageSrc={resolvedCellImages[i] ?? null}
+                />
+              ))}
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                gap: 12,
+              }}
+            >
+              {cells.slice(4, 8).map((cell, i) => (
+                <OgGridCell
+                  key={i + 4}
+                  cell={cell}
+                  baseUrl={baseUrl}
+                  resolvedImageSrc={resolvedCellImages[i + 4] ?? null}
+                />
+              ))}
             </div>
           </div>
-          <div
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: 32,
+            width: '100%',
+          }}
+        >
+          <p
             style={{
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: 32,
-              width: '100%',
+              margin: 0,
+              fontSize: 40,
+              fontWeight: 700,
+              color: '#0a0a0a',
+              letterSpacing: -0.5,
             }}
           >
-            <p
-              style={{
-                margin: 0,
-                fontSize: 40,
-                fontWeight: 700,
-                color: '#0a0a0a',
-                letterSpacing: -0.5,
-              }}
-            >
-              {handleText}
-            </p>
-            <VisitCardLogoOg />
-          </div>
+            {handleText}
+          </p>
+          <VisitCardLogoOg />
         </div>
       </div>
-    ),
+    </div>,
     {
       ...size,
     },

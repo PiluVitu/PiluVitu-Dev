@@ -1,7 +1,4 @@
-import type {
-  VisitCardIconMode,
-  VisitCardItem,
-} from '@/lib/site-content'
+import type { VisitCardIconMode, VisitCardItem } from '@/lib/site-content'
 
 export type ResolvedCell =
   | { kind: 'empty' }
