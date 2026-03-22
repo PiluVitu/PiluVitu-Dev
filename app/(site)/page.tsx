@@ -35,7 +35,7 @@ export default async function Home() {
   const projectList: Project[] = projects
 
   return (
-    <div className="min-h-screen items-start gap-16 pl-6 pr-4 pt-2 pb-2 sm:pl-8 sm:pr-4 md:gap-20 md:pl-20 md:pr-4 md:pt-20 md:pb-20 lg:pt-10 lg:pb-4 xl:h-screen xl:max-h-screen xl:min-h-0 xl:overflow-hidden xl:grid xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 2xl:mx-auto 2xl:max-w-[1920px]">
+    <div className="min-h-screen items-start gap-16 pt-2 pr-4 pb-2 pl-6 sm:pr-4 sm:pl-8 md:gap-20 md:pt-20 md:pr-4 md:pb-20 md:pl-20 lg:pt-10 lg:pb-4 xl:grid xl:h-screen xl:max-h-screen xl:min-h-0 xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
       <main
         id="profile"
         className="col-span-12 flex min-h-0 flex-col items-start xl:col-span-3 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-2"
@@ -46,7 +46,7 @@ export default async function Home() {
       </main>
       <aside
         id="left-side"
-        className="mt-14 flex min-h-0 flex-col pb-4 xl:col-span-9 xl:mt-0 xl:overflow-y-auto xl:overscroll-y-contain xl:pb-4 xl:pr-1"
+        className="mt-14 flex min-h-0 flex-col pb-4 xl:col-span-9 xl:mt-0 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1 xl:pb-4"
       >
         <HomeBentoLayout
           carreiraList={carreiraList}

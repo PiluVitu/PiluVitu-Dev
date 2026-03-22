@@ -24,7 +24,10 @@ export function HomeBentoLayout({
 }: HomeBentoLayoutProps) {
   return (
     <div className="flex min-h-0 flex-col gap-10 xl:gap-12">
-      <section aria-labelledby="carreira-heading" className="flex flex-col gap-4">
+      <section
+        aria-labelledby="carreira-heading"
+        className="flex flex-col gap-4"
+      >
         <div className="flex flex-col gap-1">
           <p className="text-muted-foreground text-xs font-medium tracking-widest uppercase">
             Visão geral
@@ -55,7 +58,10 @@ export function HomeBentoLayout({
         </div>
       </section>
 
-      <section aria-labelledby="projetos-heading" className="flex flex-col gap-4">
+      <section
+        aria-labelledby="projetos-heading"
+        className="flex flex-col gap-4"
+      >
         <h2
           id="projetos-heading"
           className="text-xl font-semibold tracking-tight"
@@ -64,13 +70,23 @@ export function HomeBentoLayout({
         </h2>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {projectList.map((project) => (
-            <ProjectCard key={project.id} className="w-full xl:w-full" {...project} />
+            <ProjectCard
+              key={project.id}
+              className="w-full xl:w-full"
+              {...project}
+            />
           ))}
         </div>
       </section>
 
-      <section aria-labelledby="artigos-heading" className="flex flex-col gap-4">
-        <h2 id="artigos-heading" className="text-xl font-semibold tracking-tight">
+      <section
+        aria-labelledby="artigos-heading"
+        className="flex flex-col gap-4"
+      >
+        <h2
+          id="artigos-heading"
+          className="text-xl font-semibold tracking-tight"
+        >
           Artigos
         </h2>
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
