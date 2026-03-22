@@ -18,6 +18,7 @@ const fallbackProfile: SiteProfileContent = {
   roleHighlight: 'FullStackOps',
   companyName: 'ViralizePlus',
   companyLink: 'https://www.viralizeplus.com.br/',
+  companyLinkColor: '#4a65fc',
   bio: 'Desenvolvedor FullStack com foco em DevOps, apaixonado por tecnologia e automação. Trabalho com desenvolvimento de aplicações web modernas, CI/CD, infraestrutura como código e soluções em nuvem. Sempre buscando aprender e compartilhar conhecimento com a comunidade. Vamos conversar sobre tecnologia e projetos interessantes!',
 }
 

@@ -5,8 +5,27 @@ import keystaticConfig from '../keystatic.config'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
 import type { Social } from '@/mocks/social'
+import { draftMode } from 'next/headers'
+import { unstable_noStore as noStore } from 'next/cache'
 
 const reader = createReader(process.cwd(), keystaticConfig)
+
+const HEX_COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+function normalizeHexColor(
+  raw: string | undefined | null,
+  fallback: string,
+): string {
+  const s = (raw ?? '').trim()
+  return HEX_COLOR.test(s) ? s : fallback
+}
+
+async function skipCacheWhenDraft(): Promise<void> {
+  const { isEnabled } = await draftMode()
+  if (isEnabled) {
+    noStore()
+  }
+}
 
 export type SiteProfileContent = {
   displayName: string
@@ -15,6 +34,8 @@ export type SiteProfileContent = {
   roleHighlight: string
   companyName: string
   companyLink: string
+  /** Cor do nome da empresa (hex), ex. #4a65fc */
+  companyLinkColor: string
   bio: string
 }
 
@@ -23,10 +44,24 @@ function sortByOrder<T extends { order: number }>(items: T[]): T[] {
 }
 
 export async function getSiteProfile(): Promise<SiteProfileContent | null> {
-  return reader.singletons.siteProfile.read()
+  await skipCacheWhenDraft()
+  const data = await reader.singletons.siteProfile.read()
+  if (!data) return null
+  const entry = data as typeof data & { companyLinkColor?: string }
+  return {
+    displayName: entry.displayName,
+    avatarSrc: entry.avatarSrc,
+    avatarAlt: entry.avatarAlt,
+    roleHighlight: entry.roleHighlight,
+    companyName: entry.companyName,
+    companyLink: entry.companyLink,
+    companyLinkColor: normalizeHexColor(entry.companyLinkColor, '#4a65fc'),
+    bio: entry.bio,
+  }
 }
 
 export async function getSocials(): Promise<Social[]> {
+  await skipCacheWhenDraft()
   const items = await reader.collections.socials.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
@@ -51,6 +86,7 @@ export async function getSocials(): Promise<Social[]> {
 }
 
 export async function getCarreiras(): Promise<Carreira[]> {
+  await skipCacheWhenDraft()
   const items = await reader.collections.carreiras.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
@@ -87,6 +123,7 @@ export async function getCarreiras(): Promise<Carreira[]> {
 }
 
 export async function getProjects(): Promise<Project[]> {
+  await skipCacheWhenDraft()
   const items = await reader.collections.projects.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()

@@ -4,6 +4,7 @@ avatarAlt: Paulo Victor Profile Picture
 roleHighlight: DevOps
 companyName: Reapho
 companyLink: https://reapho.app/
+companyLinkColor: '#14b8a6'
 bio: >-
   Desenvolvedor FullStack com foco em DevOps, apaixonado por tecnologia e
   automação. Trabalho com desenvolvimento de aplicações web modernas, CI/CD,

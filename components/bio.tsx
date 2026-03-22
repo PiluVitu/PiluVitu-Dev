@@ -34,7 +34,8 @@ export function Bio({ profile }: BioProps) {
                 <Button
                   asChild
                   variant="link"
-                  className="h-fit p-0 text-[#4a65fc]"
+                  className="h-fit p-0"
+                  style={{ color: profile.companyLinkColor }}
                 >
                   <Link
                     href={companyHref}
@@ -45,7 +46,9 @@ export function Bio({ profile }: BioProps) {
                   </Link>
                 </Button>
               ) : (
-                <span className="text-[#4a65fc]">{profile.companyName}</span>
+                <span style={{ color: profile.companyLinkColor }}>
+                  {profile.companyName}
+                </span>
               )}
             </>
           ) : null}
