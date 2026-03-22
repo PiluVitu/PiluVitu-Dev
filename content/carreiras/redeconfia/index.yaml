@@ -6,8 +6,12 @@ orgLink: https://redeconfia.com.br/
 image: https://redeconfia.com.br/assets/home-logo-C3ApN9Xe.svg
 altImage: RC
 title: Site Reliability Engineer
-location: São Paulo, São Paulo, Brasil - Remoto
+location: Remoto
 date: Dez, 2024 - Dez, 2024
 atribuitions:
-  - Ambiente híbrido integrando AWS, Render e Cloudflare via infraestrutura como código, com segurança na borda e isolamento de ambientes
-  - Módulos padronizados para criação ágil de novos recursos, mantendo padrões de segurança e disponibilidade em expansões
+  - >-
+    Ambiente híbrido integrando AWS, Render e Cloudflare via infraestrutura como
+    código, com segurança na borda e isolamento de ambientes
+  - >-
+    Módulos padronizados para criação ágil de novos recursos, mantendo padrões
+    de segurança e disponibilidade em expansões
