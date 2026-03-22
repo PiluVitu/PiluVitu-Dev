@@ -2,14 +2,14 @@ orgSlug: aride
 order: 1
 orgName: Aride
 orgDescription: >-
-  Seguro digital de bicicletas, a cobertura de queda acidental oferece
-  proteção contra danos materiais causados à bicicleta em caso de
-  acidentes não intencionais
+  Seguro digital de bicicletas, a cobertura de queda acidental oferece proteção
+  contra danos materiais causados à bicicleta em caso de acidentes não
+  intencionais
 orgLink: https://aride.com.br/
 image: https://aride.com.br/wp-content/uploads/2023/06/FAVICON-ARIDE-150x150.png
 altImage: AR
 title: Software Developer
-location: São Paulo, São Paulo, Brasil - Remoto
+location: Remoto
 date: Mar, 2024 - Atualmente
 atribuitions:
   - Criação e refatoração de componentes(MUI)
