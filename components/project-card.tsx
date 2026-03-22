@@ -91,7 +91,8 @@ export function ProjectCard(props: ProjectCardProps) {
             width={288}
             height={144}
             src={project.image}
-            className="h-auto w-full object-cover object-center"
+            className="w-full object-cover object-center"
+            style={{ width: '100%', height: 'auto' }}
           />
         </div>
       ) : null}

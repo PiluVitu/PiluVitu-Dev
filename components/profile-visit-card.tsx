@@ -99,19 +99,16 @@ function GridCellButton({
 
   if (cell.kind === 'email') {
     return (
-      <EmailContactDialog>
-        <button
-          type="button"
-          className={cn(cellClass, 'cursor-pointer')}
-          aria-label={cell.ariaLabel}
-        >
-          <CellGlyph
-            iconMode={cell.iconMode}
-            fontawesomeIcon={cell.fontawesomeIcon}
-            image={cell.image}
-            sizeClass="size-7"
-          />
-        </button>
+      <EmailContactDialog
+        triggerClassName={cn(cellClass, 'cursor-pointer')}
+        triggerAriaLabel={cell.ariaLabel}
+      >
+        <CellGlyph
+          iconMode={cell.iconMode}
+          fontawesomeIcon={cell.fontawesomeIcon}
+          image={cell.image}
+          sizeClass="size-7"
+        />
       </EmailContactDialog>
     )
   }

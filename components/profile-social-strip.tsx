@@ -69,20 +69,17 @@ export function ProfileSocialStrip({ socials }: ProfileSocialStripProps) {
           <StripGlyph social={social} />
         </Link>
       ))}
-      <EmailContactDialog>
-        <button
-          type="button"
-          className={cn(squircleClass, 'cursor-pointer')}
-          aria-label="Enviar mensagem por email"
-        >
-          {emailIcon ? (
-            <FontAwesomeIcon
-              icon={emailIcon}
-              className="text-foreground size-7"
-              aria-hidden
-            />
-          ) : null}
-        </button>
+      <EmailContactDialog
+        triggerClassName={cn(squircleClass, 'cursor-pointer')}
+        triggerAriaLabel="Enviar mensagem por email"
+      >
+        {emailIcon ? (
+          <FontAwesomeIcon
+            icon={emailIcon}
+            className="text-foreground size-7"
+            aria-hidden
+          />
+        ) : null}
       </EmailContactDialog>
     </nav>
   )

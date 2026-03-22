@@ -39,10 +39,17 @@ const formSchema = z.object({
 })
 
 type EmailContactDialogProps = {
+  /** Conteúdo do gatilho (ícone, texto); não uses `<button>` — o Trigger já é um botão. */
   children: React.ReactNode
+  triggerClassName?: string
+  triggerAriaLabel?: string
 }
 
-export function EmailContactDialog({ children }: EmailContactDialogProps) {
+export function EmailContactDialog({
+  children,
+  triggerClassName,
+  triggerAriaLabel,
+}: EmailContactDialogProps) {
   const [captcha, setCaptcha] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -76,7 +83,13 @@ export function EmailContactDialog({ children }: EmailContactDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogTrigger
+        type="button"
+        className={triggerClassName}
+        aria-label={triggerAriaLabel}
+      >
+        {children}
+      </DialogTrigger>
       <DialogContent>
         <FormProvider {...form}>
           <form onSubmit={onSubmit} className="space-y-8">
