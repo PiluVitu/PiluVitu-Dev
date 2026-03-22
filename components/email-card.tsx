@@ -17,6 +17,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -39,7 +40,12 @@ const formSchema = z.object({
   }),
 })
 
-export function EmailCard() {
+type EmailCardProps = {
+  /** Mesma célula compacta da grelha que os SocialCard (variant bento). */
+  variant?: 'default' | 'bento'
+}
+
+export function EmailCard({ variant = 'default' }: EmailCardProps) {
   const [captcha, setCaptcha] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -73,18 +79,25 @@ export function EmailCard() {
     },
   )
 
-  return (
+  const dialog = (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild className="flex">
         <Button
           variant="outline"
-          className="flex h-fit items-center justify-start gap-5 p-4 xl:h-48 xl:w-48 xl:flex-col xl:items-start xl:py-8"
+          className={cn(
+            'flex items-center justify-start gap-5 p-4',
+            variant === 'bento'
+              ? 'h-full min-h-[132px] w-full flex-col items-center justify-center gap-3 rounded-3xl text-center text-sm leading-snug xl:min-h-[148px]'
+              : 'h-fit xl:h-48 xl:w-48 xl:flex-col xl:items-start xl:py-8',
+          )}
         >
           <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
             <AvatarImage src="/email.png" alt="Icone de email" />
             <AvatarFallback className="rounded-xl">EM</AvatarFallback>
           </Avatar>
-          <p>Me mande um email</p>
+          <p className={cn(variant === 'bento' && 'line-clamp-3 w-full')}>
+            Me mande um email
+          </p>
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -181,4 +194,12 @@ export function EmailCard() {
       </DialogContent>
     </Dialog>
   )
+
+  if (variant === 'bento') {
+    return (
+      <div className="flex h-full min-h-[132px] w-full min-w-0">{dialog}</div>
+    )
+  }
+
+  return dialog
 }

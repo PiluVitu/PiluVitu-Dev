@@ -1,10 +1,5 @@
-import { ArticleSection } from '@/components/article-section'
 import { Bio } from '@/components/bio'
-import { EmailCard } from '@/components/email-card'
-import { JobCard } from '@/components/job-card'
-import { PageSection } from '@/components/page-section'
-import { ProjectCard } from '@/components/project-card'
-import { SocialCard } from '@/components/social-card'
+import { HomeBentoLayout } from '@/components/home-bento-layout'
 import {
   getCarreiras,
   getProjects,
@@ -40,42 +35,24 @@ export default async function Home() {
   const projectList: Project[] = projects
 
   return (
-    <div className="max-h-screen items-start gap-24 p-2 md:p-20 lg:p-20 lg:pt-10 lg:pb-4 xl:grid xl:grid-cols-3 xl:overflow-hidden 2xl:mx-auto 2xl:max-w-[1920px]">
+    <div className="min-h-screen items-start gap-16 pl-6 pr-4 pt-2 pb-2 sm:pl-8 sm:pr-4 md:gap-20 md:pl-20 md:pr-4 md:pt-20 md:pb-20 lg:pt-10 lg:pb-4 xl:h-screen xl:max-h-screen xl:min-h-0 xl:overflow-hidden xl:grid xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 2xl:mx-auto 2xl:max-w-[1920px]">
       <main
-        id="left side"
-        className="col-span-1 flex h-full flex-col items-start"
+        id="profile"
+        className="col-span-12 flex min-h-0 flex-col items-start xl:col-span-3 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-2"
       >
         <header className="flex flex-col gap-6">
           <Bio profile={siteProfile} />
-          <section className="flex h-full flex-col justify-start gap-4 overflow-hidden">
-            <h2 className="my-3 text-xl">Carreira</h2>
-            <section className="flex flex-col gap-4 overflow-y-auto xl:h-80 xl:overflow-y-scroll 2xl:h-[calc(100vh-80%)] 2xl:overflow-y-auto">
-              {carreiraList.map((carreira: Carreira) => (
-                <JobCard key={carreira.id} {...carreira} />
-              ))}
-              <div className="h-32"></div>
-            </section>
-          </section>
         </header>
       </main>
       <aside
-        id="left side"
-        className="mt-14 flex flex-col gap-14 pb-4 xl:col-span-2 xl:mt-0 xl:max-h-[calc(100vh-64px)] xl:overflow-y-auto xl:pb-0"
+        id="left-side"
+        className="mt-14 flex min-h-0 flex-col pb-4 xl:col-span-9 xl:mt-0 xl:overflow-y-auto xl:overscroll-y-contain xl:pb-4 xl:pr-1"
       >
-        <PageSection>
-          {socialList.map((social: Social) => (
-            <SocialCard key={social.id} {...social} />
-          ))}
-          <EmailCard />
-        </PageSection>
-        <PageSection title="Projetos">
-          {projectList.map((project: Project) => (
-            <ProjectCard key={project.id} {...project} />
-          ))}
-        </PageSection>
-        <PageSection title="Artigos">
-          <ArticleSection />
-        </PageSection>
+        <HomeBentoLayout
+          carreiraList={carreiraList}
+          socialList={socialList}
+          projectList={projectList}
+        />
       </aside>
     </div>
   )

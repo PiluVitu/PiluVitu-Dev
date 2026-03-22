@@ -1,13 +1,21 @@
 import { DataArticle } from '@/hooks/useArticleData'
+import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Card } from './ui/card'
 
-export function ArticleCard({ article }: { article: DataArticle }) {
+type ArticleCardProps = {
+  article: DataArticle
+  className?: string
+}
+
+export function ArticleCard({ article, className }: ArticleCardProps) {
   return (
     <Card
-      key={article.id}
-      className="flex h-fit flex-col justify-between gap-4 p-5 transition-all md:flex-row xl:h-fit xl:w-80 xl:flex-col"
+      className={cn(
+        'flex h-fit w-full flex-col justify-between gap-4 rounded-3xl p-5 transition-all md:flex-row xl:h-fit xl:flex-col',
+        className,
+      )}
     >
       <section className="flex flex-col justify-center gap-4">
         <h3 className="line-clamp-2 max-h-14 text-xl">{article.title}</h3>

@@ -20,7 +20,7 @@ export function JobCard(props: Carreira) {
       <DialogTrigger asChild className="flex">
         <Button
           variant="outline"
-          className="flex h-fit w-full cursor-pointer items-start gap-5 p-4"
+          className="flex h-fit w-full cursor-pointer items-start gap-5 rounded-3xl p-4"
         >
           <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
             {props.image && (
