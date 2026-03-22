@@ -2,7 +2,6 @@ import { DataArticle } from '@/hooks/useArticleData'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Card } from './ui/card'
 
 type ArticleCardProps = {
   article: DataArticle
@@ -11,9 +10,15 @@ type ArticleCardProps = {
 
 export function ArticleCard({ article, className }: ArticleCardProps) {
   return (
-    <Card
+    <Link
+      href={article.url}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
       className={cn(
-        'flex h-fit w-full flex-col justify-between gap-4 rounded-3xl p-5 transition-all md:flex-row xl:h-fit xl:flex-col',
+        'bg-card text-card-foreground border shadow-sm',
+        'flex h-fit w-full flex-col justify-between gap-4 rounded-3xl p-5 transition-all',
+        'hover:-translate-y-0.5 hover:shadow-md',
+        'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         className,
       )}
     >
@@ -31,24 +36,18 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
           </p>
         </div>
       </section>
-      <div className="relative my-auto flex h-fit w-72 shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
-        {article.social_image && (
-          <Link
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-          >
-            <Image
-              alt="DevHatt"
-              loading="lazy"
-              width={288}
-              height={144}
-              src={article.social_image}
-              className="object-cover"
-            />
-          </Link>
-        )}
-      </div>
-    </Card>
+      {article.social_image ? (
+        <div className="relative my-auto flex h-fit w-72 shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
+          <Image
+            alt=""
+            loading="lazy"
+            width={288}
+            height={144}
+            src={article.social_image}
+            className="object-cover"
+          />
+        </div>
+      ) : null}
+    </Link>
   )
 }

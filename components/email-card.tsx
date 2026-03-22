@@ -85,7 +85,7 @@ export function EmailCard({ variant = 'default' }: EmailCardProps) {
         <Button
           variant="outline"
           className={cn(
-            'flex items-center justify-start gap-5 p-4',
+            'flex cursor-pointer items-center justify-start gap-5 p-4',
             variant === 'bento'
               ? 'h-full min-h-[132px] w-full flex-col items-center justify-center gap-3 rounded-3xl text-center text-sm leading-snug xl:min-h-[148px]'
               : 'h-fit xl:h-48 xl:w-48 xl:flex-col xl:items-start xl:py-8',
@@ -200,7 +200,7 @@ export function EmailCard({ variant = 'default' }: EmailCardProps) {
     <div
       className={cn(
         variant === 'bento'
-          ? 'flex h-full min-h-[132px] w-full min-w-0'
+          ? 'flex h-full min-h-[132px] w-full min-w-0 cursor-pointer'
           : 'contents',
       )}
     >

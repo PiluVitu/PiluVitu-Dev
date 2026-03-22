@@ -17,7 +17,7 @@ export function ProjectCard(props: ProjectCardProps) {
   return (
     <Card
       className={cn(
-        'flex h-fit flex-col justify-between gap-4 rounded-3xl p-5 md:flex-row xl:min-h-[454px] xl:w-80 xl:flex-col',
+        'flex h-fit flex-col justify-between gap-4 rounded-3xl p-5 xl:min-h-[454px] xl:w-80 xl:flex-col',
         className,
       )}
     >

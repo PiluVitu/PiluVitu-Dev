@@ -40,7 +40,7 @@ export function HomeBentoLayout({
             Carreira
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {carreiraList.map((carreira) => (
             <JobCard key={carreira.id} {...carreira} />
           ))}
@@ -55,7 +55,7 @@ export function HomeBentoLayout({
         <h2 id="links-heading" className="text-xl font-semibold tracking-tight">
           Links
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
           {socialList.map((social) => (
             <SocialCard key={social.id} variant="bento" {...social} />
           ))}
@@ -74,7 +74,7 @@ export function HomeBentoLayout({
         >
           Projetos
         </h2>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           {projectList.map((project) => (
             <ProjectCard
               key={project.id}
@@ -96,7 +96,7 @@ export function HomeBentoLayout({
         >
           Artigos
         </h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <ArticleSection />
         </div>
       </section>
