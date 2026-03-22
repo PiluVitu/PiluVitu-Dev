@@ -37,14 +37,14 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
         </div>
       </section>
       {article.social_image ? (
-        <div className="relative my-auto flex h-fit w-72 shrink-0 overflow-hidden rounded-lg border xl:mx-auto">
+        <div className="relative mx-auto flex h-fit w-72 max-w-full shrink-0 overflow-hidden rounded-lg border">
           <Image
             alt=""
             loading="lazy"
             width={288}
             height={144}
             src={article.social_image}
-            className="object-cover"
+            className="h-auto w-full object-cover object-center"
           />
         </div>
       ) : null}

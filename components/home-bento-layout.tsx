@@ -29,17 +29,12 @@ export function HomeBentoLayout({
         className="flex flex-col gap-4"
         suppressHydrationWarning
       >
-        <div className="flex flex-col gap-1">
-          <p className="text-muted-foreground text-xs font-medium tracking-widest uppercase">
-            Visão geral
-          </p>
-          <h2
-            id="carreira-heading"
-            className="text-xl font-semibold tracking-tight"
-          >
-            Carreira
-          </h2>
-        </div>
+        <h2
+          id="carreira-heading"
+          className="text-xl font-semibold tracking-tight"
+        >
+          Carreira
+        </h2>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {carreiraList.map((carreira) => (
             <JobCard key={carreira.id} {...carreira} />

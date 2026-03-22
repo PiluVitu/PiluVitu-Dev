@@ -82,19 +82,19 @@ export function ProjectCard(props: ProjectCardProps) {
             </Button>
           )}
         </section>
-        <div className="relative my-auto flex h-44 w-72 shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2 xl:mx-auto">
-          {project.image && (
-            <Image
-              alt="DevHatt"
-              loading="lazy"
-              width={288}
-              height={144}
-              src={project.image}
-              className="object-cover"
-            />
-          )}
-        </div>
       </section>
+      {project.image ? (
+        <div className="relative mx-auto flex h-fit w-72 max-w-full shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2">
+          <Image
+            alt=""
+            loading="lazy"
+            width={288}
+            height={144}
+            src={project.image}
+            className="h-auto w-full object-cover object-center"
+          />
+        </div>
+      ) : null}
     </Card>
   )
 }
