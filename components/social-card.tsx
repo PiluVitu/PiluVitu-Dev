@@ -1,7 +1,9 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { getVisitCardFaIcon } from '@/lib/visit-card-fontawesome'
 import { cn } from '@/lib/utils'
 import { Social } from '@/mocks/social'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Link from 'next/link'
 
 type SocialCardProps = Social & {
@@ -11,6 +13,12 @@ type SocialCardProps = Social & {
 
 export function SocialCard(props: SocialCardProps) {
   const { variant = 'default', ...social } = props
+
+  const useImage = social.iconMode === 'image' && Boolean(social.image?.trim())
+  const faDef = !useImage
+    ? (getVisitCardFaIcon(social.fontawesomeIcon) ??
+      getVisitCardFaIcon('solid__link'))
+    : undefined
 
   return (
     <Button
@@ -24,14 +32,28 @@ export function SocialCard(props: SocialCardProps) {
       asChild
     >
       <Link href={social.socialLink} rel="noopener noreferrer" target="_blank">
-        <Avatar className="flex h-10 w-10 shrink-0 rounded-xl">
-          {social.image && (
-            <AvatarImage src={social.image} alt={social.altImage} />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+          {useImage ? (
+            <Avatar className="h-10 w-10 rounded-xl">
+              <AvatarImage src={social.image!} alt={social.altImage} />
+              <AvatarFallback className="rounded-xl">
+                {social.altImage}
+              </AvatarFallback>
+            </Avatar>
+          ) : faDef ? (
+            <FontAwesomeIcon
+              icon={faDef}
+              className="h-8 w-8 text-foreground"
+              aria-hidden
+            />
+          ) : (
+            <Avatar className="h-10 w-10 rounded-xl">
+              <AvatarFallback className="rounded-xl">
+                {social.altImage}
+              </AvatarFallback>
+            </Avatar>
           )}
-          <AvatarFallback className="rounded-xl">
-            {social.altImage}
-          </AvatarFallback>
-        </Avatar>
+        </div>
         <p
           className={cn(
             variant === 'bento'

@@ -37,9 +37,12 @@ export type DataArticle = {
   }
 }
 
+const devToUsername =
+  process.env.NEXT_PUBLIC_DEVTO_USERNAME?.trim() || 'piluvitu'
+
 const fetchData = async () => {
   const response = await axios.get<DataArticle[]>(
-    'https://dev.to/api/articles?username=piluvitu',
+    `https://dev.to/api/articles?username=${encodeURIComponent(devToUsername)}`,
   )
 
   return response?.data

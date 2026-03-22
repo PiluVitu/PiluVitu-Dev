@@ -1,10 +1,13 @@
 import { Bio } from '@/components/bio'
 import { HomeBentoLayout } from '@/components/home-bento-layout'
+import { getLatestDevToArticleUrl } from '@/lib/dev-to'
 import {
   getCarreiras,
   getProjects,
   getSiteProfile,
   getSocials,
+  getVisitCard,
+  VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
 import type { Carreira } from '@/mocks/carreira'
@@ -23,14 +26,24 @@ const fallbackProfile: SiteProfileContent = {
 }
 
 export default async function Home() {
-  const [profile, socials, carreiras, projects] = await Promise.all([
+  const [
+    profile,
+    socials,
+    carreiras,
+    projects,
+    latestDevArticleUrl,
+    visitCardRaw,
+  ] = await Promise.all([
     getSiteProfile(),
     getSocials(),
     getCarreiras(),
     getProjects(),
+    getLatestDevToArticleUrl(),
+    getVisitCard(),
   ])
 
   const siteProfile = profile ?? fallbackProfile
+  const visitCard = visitCardRaw ?? VISIT_CARD_FALLBACK
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
   const projectList: Project[] = projects
@@ -44,7 +57,12 @@ export default async function Home() {
           suppressHydrationWarning
         >
           <header className="flex flex-col gap-6">
-            <Bio profile={siteProfile} />
+            <Bio
+              profile={siteProfile}
+              socials={socialList}
+              latestDevArticleUrl={latestDevArticleUrl}
+              visitCard={visitCard}
+            />
           </header>
         </main>
         <aside
@@ -54,7 +72,6 @@ export default async function Home() {
         >
           <HomeBentoLayout
             carreiraList={carreiraList}
-            socialList={socialList}
             projectList={projectList}
           />
         </aside>

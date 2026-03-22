@@ -1,25 +1,20 @@
 import { ArticleSection } from '@/components/article-section'
-import { EmailCard } from '@/components/email-card'
 import { JobCard } from '@/components/job-card'
 import { ProjectCard } from '@/components/project-card'
-import { SocialCard } from '@/components/social-card'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
-import type { Social } from '@/mocks/social'
 
 type HomeBentoLayoutProps = {
   carreiraList: Carreira[]
-  socialList: Social[]
   projectList: Project[]
 }
 
 /**
  * Arranjo estilo “bento” (referência tipo Kasbu): grelha com células de tamanhos
- * combinados, cantos muito arredondados e secções claras (Carreira → Links → Projetos → Artigos).
+ * combinados, cantos muito arredondados e secções claras (Carreira → Projetos → Artigos).
  */
 export function HomeBentoLayout({
   carreiraList,
-  socialList,
   projectList,
 }: HomeBentoLayoutProps) {
   return (
@@ -39,22 +34,6 @@ export function HomeBentoLayout({
           {carreiraList.map((carreira) => (
             <JobCard key={carreira.id} {...carreira} />
           ))}
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="links-heading"
-        className="flex flex-col gap-4"
-        suppressHydrationWarning
-      >
-        <h2 id="links-heading" className="text-xl font-semibold tracking-tight">
-          Links
-        </h2>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
-          {socialList.map((social) => (
-            <SocialCard key={social.id} variant="bento" {...social} />
-          ))}
-          <EmailCard variant="bento" />
         </div>
       </section>
 

@@ -1,0 +1,38 @@
+handle: piluvitu
+items:
+  - ariaLabel: Último artigo no DEV.to
+    linkType: latestDevArticle
+    url: ''
+    iconMode: fontawesome
+    fontawesomeIcon: brands__dev
+    image: ''
+  - ariaLabel: GitHub
+    linkType: manual
+    url: https://github.com/PiluVitu
+    iconMode: fontawesome
+    fontawesomeIcon: brands__github
+    image: ''
+  - ariaLabel: LinkedIn
+    linkType: manual
+    url: https://www.linkedin.com/in/pilu-vitu/
+    iconMode: fontawesome
+    fontawesomeIcon: brands__linkedinIn
+    image: ''
+  - ariaLabel: X (Twitter)
+    linkType: manual
+    url: https://twitter.com/PiluVitu
+    iconMode: fontawesome
+    fontawesomeIcon: brands__xTwitter
+    image: ''
+  - ariaLabel: Instagram
+    linkType: manual
+    url: https://www.instagram.com/pilu.dev/
+    iconMode: fontawesome
+    fontawesomeIcon: brands__instagram
+    image: ''
+  - ariaLabel: Enviar mensagem por email
+    linkType: emailContact
+    url: ''
+    iconMode: fontawesome
+    fontawesomeIcon: solid__envelope
+    image: ''

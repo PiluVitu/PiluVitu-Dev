@@ -1,4 +1,6 @@
 import { collection, config, fields, singleton } from '@keystatic/core'
+import { fontawesomeIconSelectField } from './lib/keystatic-fontawesome-icon-select-field'
+import { VISIT_CARD_FA_SELECT_OPTIONS } from './lib/visit-card-fontawesome'
 
 /** Repositório GitHub `owner/name` (ex.: PiluVitu/PiluVitu-Dev). Override: KEYSTATIC_GITHUB_REPO */
 function githubRepoFromEnv(): { owner: string; name: string } {
@@ -78,6 +80,75 @@ export default config({
         }),
       },
     }),
+    visitCard: singleton({
+      label: 'Cartão de visita (triplo clique na foto)',
+      path: 'content/site/visit-card/',
+      previewUrl: '/preview/start?branch={branch}&to=/',
+      schema: {
+        handle: fields.text({
+          label: 'Texto do rodapé do cartão',
+          description: 'Ex.: o teu @ ou nome curto.',
+        }),
+        items: fields.array(
+          fields.object({
+            ariaLabel: fields.text({
+              label: 'Acessibilidade (aria-label do botão)',
+            }),
+            linkType: fields.select({
+              label: 'Destino do link',
+              defaultValue: 'manual',
+              options: [
+                { label: 'URL fixa (manual)', value: 'manual' },
+                {
+                  label: 'Último artigo publicado (dev.to, utilizador em .env)',
+                  value: 'latestDevArticle',
+                },
+                {
+                  label: 'Formulário de email (reCAPTCHA do site)',
+                  value: 'emailContact',
+                },
+              ],
+            }),
+            url: fields.text({
+              label: 'URL',
+              description:
+                'Obrigatório se o destino for URL fixa. Para dev.to ou email, deixa vazio.',
+            }),
+            iconMode: fields.select({
+              label: 'Tipo de ícone',
+              description:
+                'Plataformas: Font Awesome. Logos de projeto/empresa: imagem em public/.',
+              defaultValue: 'fontawesome',
+              options: [
+                { label: 'Font Awesome (ícone vectorial)', value: 'fontawesome' },
+                { label: 'Imagem (ficheiro em /public)', value: 'image' },
+              ],
+            }),
+            fontawesomeIcon: fontawesomeIconSelectField({
+              label: 'Ícone Font Awesome',
+              description:
+                'Pré-visualização ao vivo: abre /keystatic/icon-preview no mesmo site. Documentação: https://docs.fontawesome.com/web/use-with/react/',
+              defaultValue: 'brands__github',
+              options: VISIT_CARD_FA_SELECT_OPTIONS,
+            }),
+            image: fields.text({
+              label: 'Imagem (path em public/)',
+              description: 'Se o tipo de ícone for Imagem, ex.: /github.png',
+            }),
+          }),
+          {
+            label: 'Células (até 8, ordem = posição na grelha)',
+            itemLabel: (props) => {
+              const o = props as {
+                fields: { ariaLabel: { value: string } }
+              }
+              return o.fields.ariaLabel.value?.trim() || 'Célula'
+            },
+            validation: { length: { max: 8 } },
+          },
+        ),
+      },
+    }),
   },
   collections: {
     socials: collection({
@@ -90,9 +161,24 @@ export default config({
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),
         socialDescription: fields.text({ label: 'Descrição / CTA' }),
         socialLink: fields.text({ label: 'URL' }),
+        iconMode: fields.select({
+          label: 'Tipo de ícone',
+          defaultValue: 'fontawesome',
+          options: [
+            { label: 'Font Awesome', value: 'fontawesome' },
+            { label: 'Imagem (path em /public)', value: 'image' },
+          ],
+        }),
+        fontawesomeIcon: fontawesomeIconSelectField({
+          label: 'Ícone Font Awesome',
+          description:
+            'Se o tipo for Font Awesome. Pré-visualização: /keystatic/icon-preview',
+          defaultValue: 'brands__github',
+          options: VISIT_CARD_FA_SELECT_OPTIONS,
+        }),
         image: fields.text({
           label: 'Ícone (path em public/)',
-          description: 'Opcional, ex.: /github.png',
+          description: 'Se o tipo for Imagem, ex.: /github.png',
         }),
         altImage: fields.text({ label: 'Abreviatura / alt' }),
       },

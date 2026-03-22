@@ -1,5 +1,7 @@
 import { DataArticle } from '@/hooks/useArticleData'
 import { cn } from '@/lib/utils'
+import { faComment, faThumbsUp } from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Image from 'next/image'
 import Link from 'next/link'
 
@@ -9,6 +11,9 @@ type ArticleCardProps = {
 }
 
 export function ArticleCard({ article, className }: ArticleCardProps) {
+  const reactions = article.positive_reactions_count ?? 0
+  const comments = article.comments_count ?? 0
+
   return (
     <Link
       href={article.url}
@@ -28,11 +33,33 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
           Tempo de leitura: {article.reading_time_minutes}min
         </p>
         <div className="flex items-center justify-between">
-          <p className="text-muted-foreground flex items-center">
-            👍 {article.positive_reactions_count}
+          <p className="text-muted-foreground flex items-center gap-2">
+            <FontAwesomeIcon
+              icon={faThumbsUp}
+              className={cn(
+                'h-4 w-4 shrink-0 transition-colors',
+                reactions > 0 ? 'text-success' : 'text-muted-foreground',
+              )}
+              aria-hidden
+            />
+            <span
+              className={cn(reactions > 0 && 'font-medium text-success')}
+            >
+              {reactions}
+            </span>
           </p>
-          <p className="text-muted-foreground flex items-center">
-            💬 {article.comments_count}
+          <p className="text-muted-foreground flex items-center gap-2">
+            <FontAwesomeIcon
+              icon={faComment}
+              className={cn(
+                'h-4 w-4 shrink-0 transition-colors',
+                comments > 0 ? 'text-success' : 'text-muted-foreground',
+              )}
+              aria-hidden
+            />
+            <span className={cn(comments > 0 && 'font-medium text-success')}>
+              {comments}
+            </span>
           </p>
         </div>
       </section>

@@ -2,5 +2,7 @@ key: linkedin
 order: 1
 socialDescription: Vamos nos conectar
 socialLink: https://www.linkedin.com/in/pilu-vitu/
-image: /linkedin.png
+iconMode: fontawesome
+fontawesomeIcon: brands__linkedinIn
+image: ''
 altImage: LKDN

@@ -30,6 +30,9 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -56,6 +59,19 @@
       height: 0;
     }
   }
+
+  @keyframes visit-card-3d-wobble {
+    0%,
+    100% {
+      transform: rotateY(-16deg) rotateX(5deg);
+    }
+
+    50% {
+      transform: rotateY(16deg) rotateX(-5deg);
+    }
+  }
+
+  --animate-visit-card-3d: visit-card-3d-wobble 7s ease-in-out infinite;
 }
 
 @utility container {
@@ -110,6 +126,8 @@
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
     --ring: 346.8 77.2% 49.8%;
+    --success: 142 76% 36%;
+    --success-foreground: 356 100% 97%;
     --radius: 0.75rem;
   }
 
@@ -133,6 +151,8 @@
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 346.8 77.2% 49.8%;
+    --success: 142 71% 48%;
+    --success-foreground: 144 61% 12%;
   }
 }
 

@@ -1,22 +1,33 @@
 import Link from 'next/link'
-import type { SiteProfileContent } from '@/lib/site-content'
+import type { SiteProfileContent, VisitCardContent } from '@/lib/site-content'
+import type { Social } from '@/mocks/social'
 import { ModeToggle } from './mode-toggle'
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
+import { ProfileVisitCard } from './profile-visit-card'
+import { ProfileSocialStrip } from './profile-social-strip'
 import { Button } from './ui/button'
 
 type BioProps = {
   profile: SiteProfileContent
+  socials: Social[]
+  latestDevArticleUrl: string | null
+  visitCard: VisitCardContent
 }
 
-export function Bio({ profile }: BioProps) {
+export function Bio({
+  profile,
+  socials,
+  latestDevArticleUrl,
+  visitCard,
+}: BioProps) {
   const companyHref = profile.companyLink.trim()
 
   return (
     <>
-      <Avatar className="mb-2 flex h-24 w-24 shrink-0 rounded-xl">
-        <AvatarImage src={profile.avatarSrc} alt={profile.avatarAlt} />
-        <AvatarFallback className="rounded-xl">PV</AvatarFallback>
-      </Avatar>
+      <ProfileVisitCard
+        profile={profile}
+        visitCard={visitCard}
+        latestDevArticleUrl={latestDevArticleUrl}
+      />
       <section>
         <ModeToggle />
       </section>
@@ -54,6 +65,7 @@ export function Bio({ profile }: BioProps) {
           ) : null}
         </p>
         <p className="text-muted-foreground text-pretty">{profile.bio}</p>
+        <ProfileSocialStrip socials={socials} />
       </section>
     </>
   )

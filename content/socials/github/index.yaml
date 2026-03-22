@@ -2,5 +2,7 @@ key: github
 order: 0
 socialDescription: Acesse o meu Github
 socialLink: https://github.com/PiluVitu
-image: /github.png
+iconMode: fontawesome
+fontawesomeIcon: brands__github
+image: ''
 altImage: GH

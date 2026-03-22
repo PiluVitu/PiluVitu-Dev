@@ -3,7 +3,8 @@ import 'server-only'
 import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
-import type { Social } from '@/mocks/social'
+import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
+import type { Social, SocialIconMode } from '@/mocks/social'
 import { draftMode } from 'next/headers'
 import { unstable_noStore as noStore } from 'next/cache'
 
@@ -36,6 +37,39 @@ export type SiteProfileContent = {
   bio: string
 }
 
+export type VisitCardLinkType = 'manual' | 'latestDevArticle' | 'emailContact'
+
+export type VisitCardIconMode = 'fontawesome' | 'image'
+
+export type VisitCardItem = {
+  ariaLabel: string
+  linkType: VisitCardLinkType
+  url: string
+  iconMode: VisitCardIconMode
+  /** Chave do mapa em `lib/visit-card-fontawesome.ts` */
+  fontawesomeIcon: string
+  image?: string
+}
+
+export type VisitCardContent = {
+  handle: string
+  items: VisitCardItem[]
+}
+
+/** Se o singleton `visitCard` não existir no CMS. */
+export const VISIT_CARD_FALLBACK: VisitCardContent = {
+  handle: 'piluvitu',
+  items: [
+    {
+      ariaLabel: 'Último artigo no DEV',
+      linkType: 'latestDevArticle',
+      url: '',
+      iconMode: 'fontawesome',
+      fontawesomeIcon: 'brands__dev',
+    },
+  ],
+}
+
 function sortByOrder<T extends { order: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.order - b.order)
 }
@@ -58,18 +92,56 @@ export async function getSiteProfile(): Promise<SiteProfileContent | null> {
   }
 }
 
+export async function getVisitCard(): Promise<VisitCardContent | null> {
+  await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
+  const data = await reader.singletons.visitCard.read()
+  if (!data) return null
+
+  const rawItems = [...data.items]
+  const items: VisitCardItem[] = rawItems.slice(0, 8).map((row) => {
+    const linkType = row.linkType as VisitCardLinkType
+    const iconMode = row.iconMode as VisitCardIconMode
+    const image = (row.image ?? '').trim()
+    return {
+      ariaLabel: (row.ariaLabel ?? '').trim(),
+      linkType:
+        linkType === 'latestDevArticle' ||
+        linkType === 'emailContact' ||
+        linkType === 'manual'
+          ? linkType
+          : 'manual',
+      url: (row.url ?? '').trim(),
+      iconMode: iconMode === 'image' ? 'image' : 'fontawesome',
+      fontawesomeIcon: (row.fontawesomeIcon ?? 'brands__github').trim(),
+      image: image ? image : undefined,
+    }
+  })
+
+  return {
+    handle: (data.handle ?? '').trim() || 'piluvitu',
+    items,
+  }
+}
+
 export async function getSocials(): Promise<Social[]> {
   await skipCacheWhenDraft()
   const reader = await getKeystaticReader()
   const items = await reader.collections.socials.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
+    const iconMode = (entry.iconMode === 'image' ? 'image' : 'fontawesome') as SocialIconMode
+    const faRaw = (entry.fontawesomeIcon ?? '').trim()
+    const fontawesomeIcon =
+      faRaw || SOCIAL_SLUG_DEFAULT_FA[slug] || 'solid__link'
     return {
       id: slug,
       socialDescription: entry.socialDescription,
       socialLink: entry.socialLink,
       image: image ? image : undefined,
       altImage: entry.altImage,
+      iconMode,
+      fontawesomeIcon,
       order: entry.order ?? 0,
     }
   })
@@ -80,6 +152,8 @@ export async function getSocials(): Promise<Social[]> {
       socialLink: row.socialLink,
       image: row.image,
       altImage: row.altImage,
+      iconMode: row.iconMode,
+      fontawesomeIcon: row.fontawesomeIcon,
     }),
   )
 }
