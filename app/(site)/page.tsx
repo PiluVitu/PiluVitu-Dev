@@ -39,6 +39,7 @@ export default async function Home() {
       <main
         id="profile"
         className="col-span-12 flex min-h-0 flex-col items-start xl:col-span-3 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-2"
+        suppressHydrationWarning
       >
         <header className="flex flex-col gap-6">
           <Bio profile={siteProfile} />
@@ -47,6 +48,7 @@ export default async function Home() {
       <aside
         id="left-side"
         className="mt-14 flex min-h-0 flex-col pb-4 xl:col-span-9 xl:mt-0 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1 xl:pb-4"
+        suppressHydrationWarning
       >
         <HomeBentoLayout
           carreiraList={carreiraList}

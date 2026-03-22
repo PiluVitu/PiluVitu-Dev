@@ -27,6 +27,7 @@ export function HomeBentoLayout({
       <section
         aria-labelledby="carreira-heading"
         className="flex flex-col gap-4"
+        suppressHydrationWarning
       >
         <div className="flex flex-col gap-1">
           <p className="text-muted-foreground text-xs font-medium tracking-widest uppercase">
@@ -46,7 +47,11 @@ export function HomeBentoLayout({
         </div>
       </section>
 
-      <section aria-labelledby="links-heading" className="flex flex-col gap-4">
+      <section
+        aria-labelledby="links-heading"
+        className="flex flex-col gap-4"
+        suppressHydrationWarning
+      >
         <h2 id="links-heading" className="text-xl font-semibold tracking-tight">
           Links
         </h2>
@@ -61,6 +66,7 @@ export function HomeBentoLayout({
       <section
         aria-labelledby="projetos-heading"
         className="flex flex-col gap-4"
+        suppressHydrationWarning
       >
         <h2
           id="projetos-heading"
@@ -82,6 +88,7 @@ export function HomeBentoLayout({
       <section
         aria-labelledby="artigos-heading"
         className="flex flex-col gap-4"
+        suppressHydrationWarning
       >
         <h2
           id="artigos-heading"

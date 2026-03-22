@@ -195,11 +195,16 @@ export function EmailCard({ variant = 'default' }: EmailCardProps) {
     </Dialog>
   )
 
-  if (variant === 'bento') {
-    return (
-      <div className="flex h-full min-h-[132px] w-full min-w-0">{dialog}</div>
-    )
-  }
-
-  return dialog
+  /* Wrapper único evita mismatch de hidratação (div só no branch bento). Em modo default, `contents` não cria caixa de layout. */
+  return (
+    <div
+      className={cn(
+        variant === 'bento'
+          ? 'flex h-full min-h-[132px] w-full min-w-0'
+          : 'contents',
+      )}
+    >
+      {dialog}
+    </div>
+  )
 }
