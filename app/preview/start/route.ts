@@ -17,7 +17,6 @@ export async function GET(request: Request) {
 
   const draft = await draftMode()
   draft.enable()
-
   ;(await cookies()).set('ks-branch', branch)
 
   const toUrl = new URL(to, url.origin)
