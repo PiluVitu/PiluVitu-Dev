@@ -6,7 +6,6 @@ export type Carreira = {
   image?: string
   altImage: string
   title: string
-  role: string
   location: string
   date: string
   atribuitions: string[]

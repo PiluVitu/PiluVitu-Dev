@@ -10,7 +10,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Separator } from '@/components/ui/separator'
 import { Carreira } from '@/mocks/carreira'
 import Link from 'next/link'
 
@@ -38,11 +37,7 @@ export function JobCard(props: Carreira) {
                   {props.date}
                 </time>
               </section>
-              <div className="flex h-5 items-center space-x-4 text-base">
-                <p>{props.title}</p>
-                <Separator orientation="vertical" decorative />
-                <p>{props.role}</p>
-              </div>
+              <p className="text-base">{props.title}</p>
               <p className="text-muted-foreground">{props.location}</p>
             </section>
           </div>
@@ -62,15 +57,17 @@ export function JobCard(props: Carreira) {
           </ul>
         </section>
         <DialogFooter>
-          <Button asChild>
-            <Link
-              href={props.orgLink}
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Saiba mais sobre {props.orgName.toLowerCase()}
-            </Link>
-          </Button>
+          {props.orgLink.trim() ? (
+            <Button asChild>
+              <Link
+                href={props.orgLink}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Saiba mais sobre {props.orgName.toLowerCase()}
+              </Link>
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

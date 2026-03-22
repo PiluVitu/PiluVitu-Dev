@@ -5,15 +5,10 @@ orgDescription: Sua comunidade de desenvolvimento open source!
 orgLink: https://www.viralizeplus.com.br/
 image: https://viralizeplusprod.s3.us-east-1.amazonaws.com/Group+1597881566.png
 altImage: VP
-title: Developer
-role: FullStackOps
+title: Site Reliability Engineer
 location: São Paulo, São Paulo, Brasil - Remoto
 date: Dez, 2024 - Atualmente
 atribuitions:
-  - Implementação de CI/CD
-  - Dockerização de aplicações e integração com ECS
-  - Criação e gerenciamento de pipelines(GitHub Actions)
-  - Criação e configuração de serviços usando ferramentas IAC(Terraform)
-  - Deploy de aplicações de front e back na AWS
-  - Implementação de telemetria e trace de log(openTelymetry)
-  - Otimização de custos da infra em 40%
+  - Reestruturação das entregas com GitHub Actions, eliminando falhas manuais e acelerando a disponibilidade de novas versões em cerca de 60%
+  - Estratégias de eficiência na AWS com ajuste de consumo de recursos, com economia de cerca de 40% na fatura mensal
+  - Sistema de monitoramento com Grafana para visibilidade 24/7 da saúde da aplicação, reduzindo o tempo de resolução de incidentes

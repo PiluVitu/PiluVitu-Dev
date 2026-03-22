@@ -1,0 +1,12 @@
+orgSlug: seven-consulting
+order: 1
+orgName: 7Consulting
+orgDescription: Consultoria em resiliência e continuidade de negócio em nuvem.
+orgLink: ''
+altImage: 7C
+title: Site Reliability Engineer
+location: Remoto
+date: Dez, 2025
+atribuitions:
+  - Estratégia de proteção na AWS para continuidade mesmo em falhas regionais críticas
+  - Replicação automática de dados e servidores para recuperação rápida e suporte a alta demanda sem interrupções perceptíveis aos clientes

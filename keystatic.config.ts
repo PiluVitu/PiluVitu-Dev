@@ -208,7 +208,6 @@ export default config({
         }),
         altImage: fields.text({ label: 'Iniciais / alt curto' }),
         title: fields.text({ label: 'Título do cargo' }),
-        role: fields.text({ label: 'Papel (ex.: Front-End)' }),
         location: fields.text({ label: 'Localização' }),
         date: fields.text({
           label: 'Período',
