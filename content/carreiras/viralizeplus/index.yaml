@@ -6,9 +6,15 @@ orgLink: https://www.viralizeplus.com.br/
 image: https://viralizeplusprod.s3.us-east-1.amazonaws.com/Group+1597881566.png
 altImage: VP
 title: Site Reliability Engineer
-location: São Paulo, São Paulo, Brasil - Remoto
+location: Remoto
 date: Dez, 2024 - Atualmente
 atribuitions:
-  - Reestruturação das entregas com GitHub Actions, eliminando falhas manuais e acelerando a disponibilidade de novas versões em cerca de 60%
-  - Estratégias de eficiência na AWS com ajuste de consumo de recursos, com economia de cerca de 40% na fatura mensal
-  - Sistema de monitoramento com Grafana para visibilidade 24/7 da saúde da aplicação, reduzindo o tempo de resolução de incidentes
+  - >-
+    Reestruturação das entregas com GitHub Actions, eliminando falhas manuais e
+    acelerando a disponibilidade de novas versões em cerca de 60%
+  - >-
+    Estratégias de eficiência na AWS com ajuste de consumo de recursos, com
+    economia de cerca de 40% na fatura mensal
+  - >-
+    Sistema de monitoramento com Grafana para visibilidade 24/7 da saúde da
+    aplicação, reduzindo o tempo de resolução de incidentes
