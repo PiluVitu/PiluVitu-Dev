@@ -18,7 +18,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
         'bg-card text-card-foreground border shadow-sm',
         'flex h-fit w-full flex-col justify-between gap-4 rounded-3xl p-5 transition-all',
         'hover:-translate-y-0.5 hover:shadow-md',
-        'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'focus-visible:ring-ring focus-visible:ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
         className,
       )}
     >
