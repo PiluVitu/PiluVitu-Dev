@@ -6,7 +6,7 @@ export default function KeystaticIconPreviewLayout({
   children: React.ReactNode
 }>) {
   return (
-    <div className="min-h-screen bg-background p-6 text-foreground sm:p-10">
+    <div className="bg-background text-foreground min-h-screen p-6 sm:p-10">
       {children}
     </div>
   )

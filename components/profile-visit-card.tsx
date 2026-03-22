@@ -4,9 +4,7 @@ import { EmailContactDialog } from '@/components/email-contact-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { UseArticleData } from '@/hooks/useArticleData'
-import {
-  getVisitCardFaIcon,
-} from '@/lib/visit-card-fontawesome'
+import { getVisitCardFaIcon } from '@/lib/visit-card-fontawesome'
 import type {
   SiteProfileContent,
   VisitCardContent,
@@ -157,7 +155,7 @@ function GridCellButton({
       <div
         className={cn(
           cellClass,
-          'pointer-events-none border-transparent bg-muted/70',
+          'bg-muted/70 pointer-events-none border-transparent',
         )}
         aria-hidden
       />
@@ -214,7 +212,7 @@ function VisitCardSurface({
   return (
     <div
       className={cn(
-        'w-full rounded-3xl border border-border bg-card p-6 text-card-foreground shadow-md sm:p-8',
+        'border-border bg-card text-card-foreground w-full rounded-3xl border p-6 shadow-md sm:p-8',
       )}
     >
       <div className="flex flex-row items-start gap-3 sm:gap-4">
@@ -229,10 +227,10 @@ function VisitCardSurface({
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="text-lg font-semibold tracking-tight text-foreground">
+        <p className="text-foreground text-lg font-semibold tracking-tight">
           {handleText}
         </p>
-        <VisitCardLogo className="shrink-0 text-foreground" />
+        <VisitCardLogo className="text-foreground shrink-0" />
       </div>
     </div>
   )
@@ -264,12 +262,7 @@ export function ProfileVisitCard({
         latestDevArticleUrl,
         devProfileFallback,
       ),
-    [
-      visitCard.items,
-      articleUrl,
-      latestDevArticleUrl,
-      devProfileFallback,
-    ],
+    [visitCard.items, articleUrl, latestDevArticleUrl, devProfileFallback],
   )
 
   const handleText =
@@ -299,7 +292,7 @@ export function ProfileVisitCard({
       <button
         type="button"
         onClick={onAvatarClick}
-        className="mb-2 shrink-0 cursor-pointer rounded-xl ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="ring-offset-background focus-visible:ring-ring mb-2 shrink-0 cursor-pointer rounded-xl transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
         aria-label="Foto de perfil — triplo clique para abrir o cartão de visita"
       >
         <Avatar className="flex h-24 w-24 rounded-xl">
@@ -311,7 +304,7 @@ export function ProfileVisitCard({
       <Dialog open={open3d} onOpenChange={setOpen3d}>
         <DialogContent className="max-w-[min(92vw,460px)] border-0 bg-transparent p-6 shadow-none sm:p-8">
           <DialogTitle className="sr-only">Cartão de visita em 3D</DialogTitle>
-          <div className="perspective-[1400px] w-full">
+          <div className="w-full perspective-[1400px]">
             <div
               className="animate-visit-card-3d mx-auto w-full max-w-[400px] will-change-transform [transform-style:preserve-3d]"
               style={{ transformStyle: 'preserve-3d' }}

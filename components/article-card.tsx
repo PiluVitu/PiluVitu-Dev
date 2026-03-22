@@ -42,9 +42,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
               )}
               aria-hidden
             />
-            <span
-              className={cn(reactions > 0 && 'font-medium text-success')}
-            >
+            <span className={cn(reactions > 0 && 'text-success font-medium')}>
               {reactions}
             </span>
           </p>
@@ -57,7 +55,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
               )}
               aria-hidden
             />
-            <span className={cn(comments > 0 && 'font-medium text-success')}>
+            <span className={cn(comments > 0 && 'text-success font-medium')}>
               {comments}
             </span>
           </p>

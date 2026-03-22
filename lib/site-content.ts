@@ -130,7 +130,9 @@ export async function getSocials(): Promise<Social[]> {
   const items = await reader.collections.socials.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
-    const iconMode = (entry.iconMode === 'image' ? 'image' : 'fontawesome') as SocialIconMode
+    const iconMode = (
+      entry.iconMode === 'image' ? 'image' : 'fontawesome'
+    ) as SocialIconMode
     const faRaw = (entry.fontawesomeIcon ?? '').trim()
     const fontawesomeIcon =
       faRaw || SOCIAL_SLUG_DEFAULT_FA[slug] || 'solid__link'

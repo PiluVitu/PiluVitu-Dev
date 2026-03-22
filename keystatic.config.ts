@@ -120,7 +120,10 @@ export default config({
                 'Plataformas: Font Awesome. Logos de projeto/empresa: imagem em public/.',
               defaultValue: 'fontawesome',
               options: [
-                { label: 'Font Awesome (ícone vectorial)', value: 'fontawesome' },
+                {
+                  label: 'Font Awesome (ícone vectorial)',
+                  value: 'fontawesome',
+                },
                 { label: 'Imagem (ficheiro em /public)', value: 'image' },
               ],
             }),

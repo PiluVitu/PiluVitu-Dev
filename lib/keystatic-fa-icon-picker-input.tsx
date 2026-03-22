@@ -69,10 +69,7 @@ export function FontAwesomeIconSelectInput({
         const def = getVisitCardFaIcon(opt.value)
         const pathLabel = faStorageKeyToPathLabel(opt.value)
         return (
-          <Item
-            key={opt.value}
-            textValue={`${opt.label} ${pathLabel}`}
-          >
+          <Item key={opt.value} textValue={`${opt.label} ${pathLabel}`}>
             <FaPickerIconSlot icon={def} />
             <Text>{opt.label}</Text>
             <Text slot="description" truncate={1}>

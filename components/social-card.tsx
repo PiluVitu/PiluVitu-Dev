@@ -43,7 +43,7 @@ export function SocialCard(props: SocialCardProps) {
           ) : faDef ? (
             <FontAwesomeIcon
               icon={faDef}
-              className="h-8 w-8 text-foreground"
+              className="text-foreground h-8 w-8"
               aria-hidden
             />
           ) : (

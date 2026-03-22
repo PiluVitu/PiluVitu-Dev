@@ -29,7 +29,7 @@ function StripGlyph({ social }: { social: Social }) {
     getVisitCardFaIcon('solid__link')
   if (!def) {
     return (
-      <span className="text-xs font-bold text-muted-foreground">
+      <span className="text-muted-foreground text-xs font-bold">
         {social.altImage}
       </span>
     )
@@ -38,7 +38,7 @@ function StripGlyph({ social }: { social: Social }) {
   return (
     <FontAwesomeIcon
       icon={def}
-      className="size-7 text-foreground"
+      className="text-foreground size-7"
       aria-hidden
     />
   )
@@ -78,7 +78,7 @@ export function ProfileSocialStrip({ socials }: ProfileSocialStripProps) {
           {emailIcon ? (
             <FontAwesomeIcon
               icon={emailIcon}
-              className="size-7 text-foreground"
+              className="text-foreground size-7"
               aria-hidden
             />
           ) : null}

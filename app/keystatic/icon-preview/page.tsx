@@ -13,7 +13,7 @@ export default function KeystaticIconPreviewPage() {
       <nav>
         <Link
           href="/keystatic"
-          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4"
         >
           ← Voltar ao Keystatic
         </Link>
@@ -24,11 +24,11 @@ export default function KeystaticIconPreviewPage() {
         </h1>
         <p className="text-muted-foreground text-sm leading-relaxed">
           No site, os SVG seguem{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">
+          <code className="bg-muted text-foreground rounded px-1.5 py-0.5">
             currentColor
           </code>{' '}
           com{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">
+          <code className="bg-muted text-foreground rounded px-1.5 py-0.5">
             text-foreground
           </code>{' '}
           (tema claro / escuro). Abaixo, dois fundos de referência para ver o
@@ -54,7 +54,7 @@ export default function KeystaticIconPreviewPage() {
           return (
             <li
               key={opt.value}
-              className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm"
+              className="border-border bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-sm"
             >
               <div className="flex items-center gap-3">
                 <div
@@ -69,10 +69,10 @@ export default function KeystaticIconPreviewPage() {
                 >
                   <FontAwesomeIcon icon={icon} className="size-8" />
                 </div>
-                <div className="flex min-w-0 flex-1 items-center justify-center rounded-lg border border-border bg-background px-2 py-3">
+                <div className="border-border bg-background flex min-w-0 flex-1 items-center justify-center rounded-lg border px-2 py-3">
                   <FontAwesomeIcon
                     icon={icon}
-                    className="size-8 text-foreground"
+                    className="text-foreground size-8"
                   />
                 </div>
               </div>
