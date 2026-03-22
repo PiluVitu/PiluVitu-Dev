@@ -9,8 +9,11 @@ import type {
   SiteProfileContent,
   VisitCardContent,
   VisitCardIconMode,
-  VisitCardItem,
 } from '@/lib/site-content'
+import {
+  resolveVisitCardCells,
+  type ResolvedCell,
+} from '@/lib/visit-card-cells'
 import { cn } from '@/lib/utils'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Image from 'next/image'
@@ -19,74 +22,6 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 const squircleBase =
   'inline-flex shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
-
-type ResolvedCell =
-  | { kind: 'empty' }
-  | {
-      kind: 'email'
-      ariaLabel: string
-      iconMode: VisitCardIconMode
-      fontawesomeIcon: string
-      image?: string
-    }
-  | {
-      kind: 'link'
-      href: string
-      ariaLabel: string
-      iconMode: VisitCardIconMode
-      fontawesomeIcon: string
-      image?: string
-    }
-
-function resolveVisitCardCells(
-  items: VisitCardItem[],
-  latestClient: string | undefined,
-  latestServer: string | null,
-  devProfileFallback: string,
-): ResolvedCell[] {
-  const devUrl = latestClient ?? latestServer ?? devProfileFallback
-  const out: ResolvedCell[] = []
-  for (const item of items.slice(0, 8)) {
-    if (item.linkType === 'emailContact') {
-      out.push({
-        kind: 'email',
-        ariaLabel: item.ariaLabel || 'Email',
-        iconMode: item.iconMode,
-        fontawesomeIcon: item.fontawesomeIcon,
-        image: item.image,
-      })
-      continue
-    }
-    if (item.linkType === 'latestDevArticle') {
-      out.push({
-        kind: 'link',
-        href: devUrl,
-        ariaLabel: item.ariaLabel || 'DEV',
-        iconMode: item.iconMode,
-        fontawesomeIcon: item.fontawesomeIcon,
-        image: item.image,
-      })
-      continue
-    }
-    const href = item.url.trim()
-    if (!href) {
-      out.push({ kind: 'empty' })
-      continue
-    }
-    out.push({
-      kind: 'link',
-      href,
-      ariaLabel: item.ariaLabel || 'Link',
-      iconMode: item.iconMode,
-      fontawesomeIcon: item.fontawesomeIcon,
-      image: item.image,
-    })
-  }
-  while (out.length < 8) {
-    out.push({ kind: 'empty' })
-  }
-  return out.slice(0, 8)
-}
 
 function CellGlyph({
   iconMode,
