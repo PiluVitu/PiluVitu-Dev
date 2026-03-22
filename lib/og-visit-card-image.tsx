@@ -9,6 +9,7 @@ import {
   VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
+import { getCanonicalSiteUrl } from '@/lib/site-url'
 import {
   resolveVisitCardCells,
   type ResolvedCell,
@@ -67,14 +68,6 @@ const BRAND_BG_BY_FA: Record<string, string> = {
   solid__house: '#fafafa',
   solid__briefcase: '#fafafa',
   solid__code: '#fafafa',
-}
-
-function getMetadataBaseUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (fromEnv) return fromEnv.replace(/\/$/, '')
-  if (process.env.VERCEL_URL)
-    return `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '')}`
-  return 'https://piluvitu.dev'
 }
 
 function absolutizeAsset(path: string, base: string): string {
@@ -231,7 +224,7 @@ function VisitCardLogoOg() {
 }
 
 export default async function Image() {
-  const baseUrl = getMetadataBaseUrl()
+  const baseUrl = getCanonicalSiteUrl()
   const [siteProfile, visitCardRaw, latestArticle] = await Promise.all([
     getSiteProfile(),
     getVisitCard(),
