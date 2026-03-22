@@ -5,7 +5,8 @@
   "scripts": {
     "build": "next build",
     "build-storybook": "storybook build",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
+    "dev:turbo": "next dev",
     "lint": "eslint .",
     "start": "next start",
     "storybook": "storybook dev -p 6006",

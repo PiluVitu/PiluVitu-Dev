@@ -26,7 +26,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
+.env
+.env.local
 
 # vercel
 .vercel
@@ -49,5 +50,6 @@ next-env.d.ts
 # open-next
 .open-next
 
-#env
-.env
+
+#pnpm-store
+.pnpm-store

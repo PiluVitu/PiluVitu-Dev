@@ -1,8 +1,13 @@
 import { collection, config, fields, singleton } from '@keystatic/core'
 
+/** Repositório GitHub `owner/name` (ex.: PiluVitu/PiluVitu-Dev). Override: KEYSTATIC_GITHUB_REPO */
+const githubRepo =
+  process.env.KEYSTATIC_GITHUB_REPO?.trim() || 'PiluVitu/PiluVitu-Dev'
+
 export default config({
   storage: {
-    kind: 'local',
+    kind: 'github',
+    repo: githubRepo,
   },
   singletons: {
     siteProfile: singleton({
