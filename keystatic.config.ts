@@ -13,6 +13,12 @@ function githubRepoFromEnv(): { owner: string; name: string } {
   return { owner, name }
 }
 
+/** `owner/name` para APIs que esperam o literal (ex.: `createGitHubReader`). */
+export function getGithubRepoSlash(): `${string}/${string}` {
+  const { owner, name } = githubRepoFromEnv()
+  return `${owner}/${name}` as `${string}/${string}`
+}
+
 export default config({
   storage: {
     kind: 'github',
@@ -22,7 +28,7 @@ export default config({
     siteProfile: singleton({
       label: 'Perfil (bio)',
       path: 'content/site/profile/',
-      previewUrl: '/preview/start?to=/',
+      previewUrl: '/preview/start?branch={branch}&to=/',
       schema: {
         displayName: fields.text({ label: 'Nome completo' }),
         avatarSrc: fields.text({
@@ -78,7 +84,7 @@ export default config({
       label: 'Redes sociais',
       slugField: 'key',
       path: 'content/socials/*/',
-      previewUrl: '/preview/start?to=/',
+      previewUrl: '/preview/start?branch={branch}&to=/',
       schema: {
         key: fields.slug({ name: { label: 'Identificador' } }),
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),
@@ -95,7 +101,7 @@ export default config({
       label: 'Carreira',
       slugField: 'orgSlug',
       path: 'content/carreiras/*/',
-      previewUrl: '/preview/start?to=/',
+      previewUrl: '/preview/start?branch={branch}&to=/',
       schema: {
         orgSlug: fields.slug({
           name: { label: 'Slug da organização' },
@@ -128,7 +134,7 @@ export default config({
       label: 'Projetos',
       slugField: 'projectSlug',
       path: 'content/projects/*/',
-      previewUrl: '/preview/start?to=/',
+      previewUrl: '/preview/start?branch={branch}&to=/',
       schema: {
         projectSlug: fields.slug({ name: { label: 'Slug do projeto' } }),
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),

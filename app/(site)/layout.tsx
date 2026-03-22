@@ -26,8 +26,9 @@ export default async function SiteLayout({
             role="status"
           >
             <span className="font-medium">
-              Pré-visualização (draft mode) — alterações do Keystatic refletem
-              ao recarregar
+              Pré-visualização (draft) — conteúdo lido do ramo GitHub do
+              Keystatic; recarrega após guardar. O site público só atualiza após
+              merge e novo deploy.
             </span>
             <form method="POST" action="/preview/end">
               <button

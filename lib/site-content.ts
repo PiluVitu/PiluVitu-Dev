@@ -1,14 +1,11 @@
 import 'server-only'
 
-import { createReader } from '@keystatic/core/reader'
-import keystaticConfig from '../keystatic.config'
+import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
 import type { Social } from '@/mocks/social'
 import { draftMode } from 'next/headers'
 import { unstable_noStore as noStore } from 'next/cache'
-
-const reader = createReader(process.cwd(), keystaticConfig)
 
 const HEX_COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
@@ -45,6 +42,7 @@ function sortByOrder<T extends { order: number }>(items: T[]): T[] {
 
 export async function getSiteProfile(): Promise<SiteProfileContent | null> {
   await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
   const data = await reader.singletons.siteProfile.read()
   if (!data) return null
   const entry = data as typeof data & { companyLinkColor?: string }
@@ -62,6 +60,7 @@ export async function getSiteProfile(): Promise<SiteProfileContent | null> {
 
 export async function getSocials(): Promise<Social[]> {
   await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
   const items = await reader.collections.socials.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
@@ -87,6 +86,7 @@ export async function getSocials(): Promise<Social[]> {
 
 export async function getCarreiras(): Promise<Carreira[]> {
   await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
   const items = await reader.collections.carreiras.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
@@ -124,6 +124,7 @@ export async function getCarreiras(): Promise<Carreira[]> {
 
 export async function getProjects(): Promise<Project[]> {
   await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
   const items = await reader.collections.projects.all()
   const mapped = items.map(({ slug, entry }) => {
     const image = (entry.image ?? '').trim()
