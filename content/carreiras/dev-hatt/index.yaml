@@ -7,9 +7,13 @@ image: >-
   https://creatorspace.imgix.net/users/clvcq3cpx00szrx01tp252b95/pKsIsqvUYb6ORJ97-Icon%25207.png?w=300&h=300
 altImage: DH
 title: DevOps / SRE Engineer
-location: São Paulo, São Paulo, Brasil - Remoto
+location: Remoto
 date: Dez, 2023 - Out, 2024
 atribuitions:
-  - Esteiras de automação e conteinerização do zero, substituindo processos manuais por fluxos contínuos e confiáveis
+  - >-
+    Esteiras de automação e conteinerização do zero, substituindo processos
+    manuais por fluxos contínuos e confiáveis
   - Automação da configuração de servidores com infraestrutura como código
-  - Primeiros alertas de saúde do sistema, dando visibilidade proativa de performance ao time de desenvolvimento
+  - >-
+    Primeiros alertas de saúde do sistema, dando visibilidade proativa de
+    performance ao time de desenvolvimento
