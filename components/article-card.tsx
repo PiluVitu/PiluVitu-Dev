@@ -28,7 +28,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
       )}
     >
       <section className="flex flex-col justify-center gap-4">
-        <h3 className="line-clamp-2 max-h-14 text-xl">{article.title}</h3>
+        <h3 className="truncate text-xl">{article.title}</h3>
         <p className="text-muted-foreground">
           Tempo de leitura: {article.reading_time_minutes}min
         </p>
