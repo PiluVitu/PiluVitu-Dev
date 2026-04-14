@@ -50,13 +50,17 @@ export async function aggregateFeeds(): Promise<AggregatedFeedsResponse> {
         const link = item.link ?? item.guid ?? ''
         const publishedAt =
           item.isoDate ??
-          (item.pubDate ? new Date(item.pubDate).toISOString() : new Date(0).toISOString())
+          (item.pubDate
+            ? new Date(item.pubDate).toISOString()
+            : new Date(0).toISOString())
 
         return {
           id: link || `${source.id}-${publishedAt}`,
           title: (item.title ?? '').trim(),
           link,
-          snippet: truncate(item.contentSnippet ?? item.content ?? item.summary ?? ''),
+          snippet: truncate(
+            item.contentSnippet ?? item.content ?? item.summary ?? '',
+          ),
           publishedAt,
           coverImage: extractCoverImage(item),
           source: {
@@ -75,11 +79,17 @@ export async function aggregateFeeds(): Promise<AggregatedFeedsResponse> {
     if (result.status === 'fulfilled') {
       items.push(...result.value)
     } else {
-      console.error(`[feed-aggregator] Failed to fetch "${sources[i].name}":`, result.reason)
+      console.error(
+        `[feed-aggregator] Failed to fetch "${sources[i].name}":`,
+        result.reason,
+      )
     }
   })
 
-  items.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+  items.sort(
+    (a, b) =>
+      new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+  )
 
   const feedsIndex = sources
     .filter((_, i) => results[i].status === 'fulfilled')
@@ -90,7 +100,9 @@ export async function aggregateFeeds(): Promise<AggregatedFeedsResponse> {
       category: s.category,
     }))
 
-  const categories = [...new Set(feedsIndex.map((f) => f.category).filter(Boolean))] as string[]
+  const categories = [
+    ...new Set(feedsIndex.map((f) => f.category).filter(Boolean)),
+  ] as string[]
 
   return { items, feeds: feedsIndex, categories }
 }

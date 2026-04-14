@@ -43,10 +43,7 @@ export default function FeedPage() {
   }
 
   const filtered: AggregatedPost[] = (data?.items ?? []).filter((post) => {
-    if (
-      selectedFeeds.length > 0 &&
-      !selectedFeeds.includes(post.source.id)
-    )
+    if (selectedFeeds.length > 0 && !selectedFeeds.includes(post.source.id))
       return false
     if (
       selectedCategories.length > 0 &&
@@ -67,7 +64,10 @@ export default function FeedPage() {
   const sliced = filtered.slice(0, visible)
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10" suppressHydrationWarning>
+    <main
+      className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10"
+      suppressHydrationWarning
+    >
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold">Feed</h1>
         <p className="text-muted-foreground text-sm">
@@ -105,9 +105,9 @@ export default function FeedPage() {
       {!isLoading && !isError && sliced.length === 0 && (
         <div className="text-muted-foreground py-16 text-center text-sm">
           Nenhum post encontrado.
-          {(search || selectedFeeds.length > 0 || selectedCategories.length > 0) && (
-            <> Tente limpar os filtros.</>
-          )}
+          {(search ||
+            selectedFeeds.length > 0 ||
+            selectedCategories.length > 0) && <> Tente limpar os filtros.</>}
         </div>
       )}
 

@@ -46,7 +46,7 @@ export function FeedPostCard({ post, className }: FeedPostCardProps) {
             {post.source.category ? ` · ${post.source.category}` : ''}
           </span>
         </div>
-        <h3 className="line-clamp-2 text-base font-semibold leading-snug">
+        <h3 className="line-clamp-2 text-base leading-snug font-semibold">
           {post.title}
         </h3>
         {post.snippet ? (
