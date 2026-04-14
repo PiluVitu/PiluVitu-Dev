@@ -1,0 +1,81 @@
+name: Trivy Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Toda segunda-feira às 08:00 UTC (05:00 BRT)
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy-fs:
+    name: Filesystem & Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy — filesystem (vulnerabilities + secrets)
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "vuln,secret"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          format: "sarif"
+          output: "trivy-fs-results.sarif"
+          exit-code: "0" # não bloqueia o pipeline; apenas reporta
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-fs-results.sarif"
+          category: "trivy-fs"
+
+  trivy-secrets-strict:
+    name: Secret Scan (fail on findings)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy — secrets only (modo estrito)
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "secret"
+          severity: "CRITICAL,HIGH,MEDIUM,LOW"
+          format: "table"
+          exit-code: "1" # bloqueia PR se encontrar segredo
+
+  trivy-config:
+    name: Misconfiguration Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy — config misconfigurations
+        uses: aquasecurity/trivy-action@0.31.0
+        with:
+          scan-type: "config"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          format: "sarif"
+          output: "trivy-config-results.sarif"
+          exit-code: "0"
+
+      - name: Upload config SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-config-results.sarif"
+          category: "trivy-config"
