@@ -1,12 +1,14 @@
 import { ArticleSection } from '@/components/article-section'
 import { JobCard } from '@/components/job-card'
 import { ProjectCard } from '@/components/project-card'
+import type { ArticleCardView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
 
 type HomeBentoLayoutProps = {
   carreiraList: Carreira[]
   projectList: Project[]
+  initialBlogPosts: ArticleCardView[]
 }
 
 /**
@@ -16,6 +18,7 @@ type HomeBentoLayoutProps = {
 export function HomeBentoLayout({
   carreiraList,
   projectList,
+  initialBlogPosts,
 }: HomeBentoLayoutProps) {
   return (
     <div className="flex min-h-0 flex-col gap-10 xl:gap-12">
@@ -71,7 +74,7 @@ export function HomeBentoLayout({
           Artigos
         </h2>
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <ArticleSection />
+          <ArticleSection initialBlogPosts={initialBlogPosts} />
         </div>
       </section>
     </div>
