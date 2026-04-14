@@ -16,16 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All commands run from the repository root using **pnpm**.
 
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Dev server at http://localhost:3000 (webpack) |
-| `pnpm dev:turbo` | Dev server with Turbopack |
-| `pnpm build` | Production build + type validation |
-| `pnpm lint` | ESLint (flat config) |
-| `pnpm style-fix` | ESLint auto-fix |
-| `pnpm prettier:check` | Check Prettier formatting |
-| `pnpm prettier:fix` | Auto-format (also runs via Husky pre-commit hook) |
-| `pnpm storybook` | Storybook at port 6006 |
+| Command               | Purpose                                           |
+| --------------------- | ------------------------------------------------- |
+| `pnpm dev`            | Dev server at http://localhost:3000 (webpack)     |
+| `pnpm dev:turbo`      | Dev server with Turbopack                         |
+| `pnpm build`          | Production build + type validation                |
+| `pnpm lint`           | ESLint (flat config)                              |
+| `pnpm style-fix`      | ESLint auto-fix                                   |
+| `pnpm prettier:check` | Check Prettier formatting                         |
+| `pnpm prettier:fix`   | Auto-format (also runs via Husky pre-commit hook) |
+| `pnpm storybook`      | Storybook at port 6017                            |
 
 **Type checking without full build:** `pnpm exec tsc --noEmit`
 
@@ -45,23 +45,25 @@ All commands run from the repository root using **pnpm**.
 
 ### Key directories
 
-| Path | Purpose |
-|---|---|
-| `components/ui/` | shadcn/ui primitives (15 components) |
-| `components/` | Page-level components (bio, cards, email form, visit card) |
-| `lib/` | Server utilities: Keystatic readers, dev.to client, icon mapping |
-| `hooks/` | Client hooks — `useArticleData.ts` (TanStack Query for dev.to) |
-| `mocks/` | Type definitions and fallback data |
-| `stories/` | Storybook stories |
-| `content/` | Keystatic CMS content (YAML) |
+| Path             | Purpose                                                          |
+| ---------------- | ---------------------------------------------------------------- |
+| `components/ui/` | shadcn/ui primitives (15 components)                             |
+| `components/`    | Page-level components (bio, cards, email form, visit card)       |
+| `lib/`           | Server utilities: Keystatic readers, dev.to client, icon mapping |
+| `hooks/`         | Client hooks — `useArticleData.ts` (TanStack Query for dev.to)   |
+| `mocks/`         | Type definitions and fallback data                               |
+| `stories/`       | Storybook stories                                                |
+| `content/`       | Keystatic CMS content (YAML)                                     |
 
 ### Content structure (Keystatic YAML)
 
 **Singletons:**
+
 - `content/site/profile/` — display name, avatar, role, bio, company
 - `content/site/visit-card/` — up to 8 cells for the 3D card (triple-click avatar)
 
 **Collections:**
+
 - `content/socials/*/` — social links with order, icon mode, FA icon or image
 - `content/carreiras/*/` — career history entries
 - `content/projects/*/` — project showcase entries
