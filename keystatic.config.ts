@@ -245,5 +245,43 @@ export default config({
         altImage: fields.text({ label: 'Abrev. / alt' }),
       },
     }),
+    feeds: collection({
+      label: 'Feeds RSS',
+      slugField: 'name',
+      path: 'content/feeds/*/',
+      schema: {
+        name: fields.slug({
+          name: {
+            label: 'Nome',
+            description: 'Nome amigável exibido no agregador (ex.: CSS Tricks)',
+          },
+        }),
+        url: fields.text({
+          label: 'URL do feed RSS/Atom',
+          description: 'Ex.: https://css-tricks.com/feed/',
+        }),
+        siteUrl: fields.text({
+          label: 'URL do site (opcional)',
+          description: 'Link para o site de origem',
+        }),
+        category: fields.text({
+          label: 'Categoria (opcional)',
+          description: 'Ex.: tech, design, carreira — usado nos filtros',
+        }),
+        accentColor: fields.text({
+          label: 'Cor de destaque (hex)',
+          description: 'Ex.: #3b82f6 — aparece como badge de cor no card',
+        }),
+        order: fields.integer({
+          label: 'Ordem (menor primeiro)',
+          defaultValue: 0,
+        }),
+        enabled: fields.checkbox({
+          label: 'Ativo',
+          description: 'Desmarque para pausar este feed sem apagar',
+          defaultValue: true,
+        }),
+      },
+    }),
   },
 })

@@ -3,6 +3,7 @@ import 'server-only'
 import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
+import type { FeedSource } from '@/mocks/feeds'
 import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
 import type { Social, SocialIconMode } from '@/mocks/social'
 import { draftMode } from 'next/headers'
@@ -228,4 +229,21 @@ export async function getProjects(): Promise<Project[]> {
       altImage: row.altImage,
     }),
   )
+}
+
+export async function getFeeds(): Promise<FeedSource[]> {
+  await skipCacheWhenDraft()
+  const reader = await getKeystaticReader()
+  const items = await reader.collections.feeds.all()
+  const mapped = items.map(({ slug, entry }) => ({
+    id: slug,
+    name: entry.name,
+    url: (entry.url ?? '').trim(),
+    siteUrl: (entry.siteUrl ?? '').trim() || undefined,
+    category: (entry.category ?? '').trim() || undefined,
+    accentColor: normalizeHexColor(entry.accentColor, '#64748b'),
+    order: entry.order ?? 0,
+    enabled: entry.enabled ?? true,
+  }))
+  return sortByOrder(mapped)
 }
