@@ -1,4 +1,4 @@
-import { DataArticle } from '@/hooks/useArticleData'
+import type { ArticleCardView } from '@/lib/article-feed'
 import { cn } from '@/lib/utils'
 import { faComment, faThumbsUp } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -6,19 +6,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 type ArticleCardProps = {
-  article: DataArticle
+  article: ArticleCardView
   className?: string
 }
 
 export function ArticleCard({ article, className }: ArticleCardProps) {
-  const reactions = article.positive_reactions_count ?? 0
-  const comments = article.comments_count ?? 0
+  const reactions = article.reactionsCount
+  const comments = article.commentsCount
 
   return (
     <Link
-      href={article.url}
-      target="_blank"
-      rel="noopener noreferrer nofollow"
+      href={article.href}
+      target={article.isExternal ? '_blank' : undefined}
+      rel={article.isExternal ? 'noopener noreferrer nofollow' : undefined}
       className={cn(
         'bg-card text-card-foreground border shadow-sm',
         'flex h-fit w-full flex-col justify-between gap-4 rounded-3xl p-5 transition-all',
@@ -30,7 +30,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
       <section className="flex flex-col justify-center gap-4">
         <h3 className="truncate text-xl">{article.title}</h3>
         <p className="text-muted-foreground">
-          Tempo de leitura: {article.reading_time_minutes}min
+          Tempo de leitura: {article.readingTimeMinutes}min
         </p>
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground flex items-center gap-2">
@@ -61,14 +61,14 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
           </p>
         </div>
       </section>
-      {article.social_image ? (
+      {article.socialImage ? (
         <div className="relative mx-auto flex h-fit w-72 max-w-full shrink-0 overflow-hidden rounded-lg border">
           <Image
             alt=""
             loading="lazy"
             width={288}
             height={144}
-            src={article.social_image}
+            src={article.socialImage}
             className="h-auto w-full object-cover object-center"
           />
         </div>

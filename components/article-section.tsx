@@ -1,14 +1,26 @@
 'use client'
 
-import { DataArticle, UseArticleData } from '@/hooks/useArticleData'
+import { UseArticleData } from '@/hooks/useArticleData'
+import {
+  type ArticleCardView,
+  devToToView,
+  mergeFeed,
+} from '@/lib/article-feed'
 import { ArticleCard } from './article-card'
 
-export function ArticleSection() {
+type ArticleSectionProps = {
+  initialBlogPosts?: ArticleCardView[]
+}
+
+export function ArticleSection({ initialBlogPosts = [] }: ArticleSectionProps) {
   const { data } = UseArticleData()
+
+  const devtoPosts = (data ?? []).map(devToToView)
+  const merged = mergeFeed(devtoPosts, initialBlogPosts)
 
   return (
     <>
-      {data?.map((article: DataArticle) => (
+      {merged.map((article) => (
         <ArticleCard key={article.id} article={article} />
       ))}
     </>

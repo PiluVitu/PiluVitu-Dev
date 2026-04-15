@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Next.js 16** (App Router), **React 19**, **TypeScript** strict mode
 - **Tailwind CSS 4** + **shadcn/ui** (New York style, CSS variables, slate base)
-- **Keystatic 0.5** — GitHub-based CMS; content stored as YAML in `content/`
+- **Keystatic 0.5** — GitHub-based CMS; content stored as YAML in `content/` (site config, socials, careers, projects)
+- **TinaCMS 3** (devDep) — blog editor only; generates admin UI at `public/admin/`; content stored in private repo `PiluVitu/piluvitu-blog`
 - **TanStack Query 5** — data fetching (dev.to API)
 - **Font Awesome 7** (`free-brands-svg-icons`, `free-solid-svg-icons`)
 - **Storybook 10** — component documentation and manual UI verification
@@ -26,6 +27,8 @@ All commands run from the repository root using **pnpm**.
 | `pnpm prettier:check` | Check Prettier formatting                         |
 | `pnpm prettier:fix`   | Auto-format (also runs via Husky pre-commit hook) |
 | `pnpm storybook`      | Storybook at port 6017                            |
+| `pnpm tina:dev`       | Dev server + TinaCMS editor at /admin             |
+| `pnpm tina:build`     | Build TinaCMS admin then Next.js (use on Vercel)  |
 
 **Type checking without full build:** `pnpm exec tsc --noEmit`
 
@@ -71,8 +74,10 @@ All commands run from the repository root using **pnpm**.
 ### Data flow
 
 1. Server components call readers in `lib/site-content.ts` (`getSiteProfile()`, `getSocials()`, `getCarreiras()`, `getProjects()`, `getVisitCard()`) — these read Keystatic YAML at build/request time.
-2. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; username from `NEXT_PUBLIC_DEVTO_USERNAME`.
-3. The visit card (`components/profile-visit-card.tsx`) opens on triple-click of the avatar, showing a 3D animated card with cells configured in Keystatic.
+2. `lib/blog-posts.ts` (`getBlogPosts()`, `getBlogPost()`) fetches MDX posts from the private `PiluVitu/piluvitu-blog` repo at build/ISR time via `@octokit/rest` using `BLOG_REPO_TOKEN`. Posts are cached 30 min (ISR tag `blog-posts`).
+3. `lib/article-feed.ts` provides `ArticleCardView` — a unified type for both dev.to and blog posts. `devToToView()` and `blogPostToView()` convert each source. `mergeFeed()` merges and sorts by date.
+4. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; merged with server-fetched blog posts in `ArticleSection`.
+5. The visit card (`components/profile-visit-card.tsx`) opens on triple-click of the avatar, showing a 3D animated card with cells configured in Keystatic.
 
 ### Font Awesome in the CMS
 
@@ -86,6 +91,28 @@ Permitted image hosts are configured in `next.config.mjs` (`images.remotePattern
 
 Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` expose `text-success` via Tailwind. Used for positive metric indicators (e.g., article reactions > 0).
 
+### Blog (TinaCMS)
+
+- **Content repo**: `PiluVitu/piluvitu-blog` (private) — MDX files at `content/posts/*.mdx`
+- **Editor**: access at `/admin` after `pnpm tina:build` generates `public/admin/` static files
+- **Setup**: create project at https://app.tina.io pointing at `PiluVitu/piluvitu-blog`, copy `NEXT_PUBLIC_TINA_CLIENT_ID` + `TINA_TOKEN` to `.env.local`
+- **Reading posts server-side**: `lib/blog-posts.ts` — Octokit reads files from `piluvitu-blog`, parses MDX frontmatter, returns typed `BlogPost[]`
+- **Individual post route**: `app/(site)/posts/[slug]/page.tsx` — MDX rendered with `next-mdx-remote/rsc`, code syntax via `rehype-pretty-code`, mermaid via client-side `components/mdx/mermaid-block.tsx`
+- **Mermaid in posts**: write fenced code block with lang `mermaid` — renders as interactive SVG diagram client-side
+- **Drafts**: set `draft: true` in frontmatter — hidden in production, visible in Next.js draft mode
+- **ISR**: posts revalidated every 30 min (tag `blog-posts`). After publishing, wait up to 30 min or trigger on-demand revalidation.
+- **Vercel build command**: change to `pnpm tina:build` (runs `tinacms build && next build`)
+
+### Key directories (updated)
+
+| Path                       | Purpose                                            |
+| -------------------------- | -------------------------------------------------- |
+| `components/mdx/`          | MDX custom components (MermaidBlock, etc.)         |
+| `app/(site)/posts/[slug]/` | Individual blog post route                         |
+| `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo    |
+| `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters |
+| `tina/config.tsx`          | TinaCMS schema (posts collection) + slug preview button |
+
 ## Environment variables
 
 See `.env.example`. Key variables:
@@ -95,6 +122,10 @@ See `.env.example`. Key variables:
 - `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — Keystatic GitHub OAuth
 - `KEYSTATIC_GITHUB_REPO` — target repo (`owner/name`; defaults in `keystatic.config.ts`)
 - `NEXT_PUBLIC_VISIT_CARD_HANDLE` — optional override for visit card dev.to handle
+- `NEXT_PUBLIC_TINA_CLIENT_ID`, `TINA_TOKEN` — TinaCMS Cloud credentials (from app.tina.io)
+- `BLOG_REPO_TOKEN` — GitHub fine-grained PAT with `Contents: read` on `piluvitu-blog`
+- `BLOG_REPO_OWNER` — GitHub org/user owning the blog repo (default: `PiluVitu`)
+- `BLOG_REPO_NAME` — blog content repo name (default: `piluvitu-blog`)
 
 ## Keystatic & Vercel deployment
 

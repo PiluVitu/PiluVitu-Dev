@@ -10,6 +10,8 @@ import {
   VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
+import { getBlogPosts } from '@/lib/blog-posts'
+import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
 import type { Social } from '@/mocks/social'
@@ -33,6 +35,7 @@ export default async function Home() {
     projects,
     latestDevArticleUrl,
     visitCardRaw,
+    blogPosts,
   ] = await Promise.all([
     getSiteProfile(),
     getSocials(),
@@ -40,6 +43,7 @@ export default async function Home() {
     getProjects(),
     getLatestDevToArticleUrl(),
     getVisitCard(),
+    getBlogPosts(),
   ])
 
   const siteProfile = profile ?? fallbackProfile
@@ -47,6 +51,7 @@ export default async function Home() {
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
   const projectList: Project[] = projects
+  const initialBlogPosts = blogPosts.map(blogPostToView)
 
   return (
     <div className="min-h-screen pt-2 pr-4 pb-2 pl-6 sm:pr-4 sm:pl-8 xl:grid xl:h-screen xl:max-h-screen xl:min-h-0 xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 xl:overflow-hidden xl:pt-10 xl:pr-8 xl:pb-4 xl:pl-14 2xl:mx-auto 2xl:max-w-[1920px]">
@@ -73,6 +78,7 @@ export default async function Home() {
           <HomeBentoLayout
             carreiraList={carreiraList}
             projectList={projectList}
+            initialBlogPosts={initialBlogPosts}
           />
         </aside>
       </div>

@@ -45,6 +45,20 @@ const nextConfig = {
         port: "",
         pathname: "/**",
       },
+      // TinaCMS media uploads stored in piluvitu-blog repo
+      {
+        protocol: "https",
+        hostname: "raw.githubusercontent.com",
+        port: "",
+        pathname: "/PiluVitu/piluvitu-blog/**",
+      },
+      // Tina Cloud media
+      {
+        protocol: "https",
+        hostname: "assets.tina.io",
+        port: "",
+        pathname: "/**",
+      },
     ],
   },
 };
