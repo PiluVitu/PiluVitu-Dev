@@ -56,3 +56,6 @@ next-env.d.ts
 
 # git worktrees
 .worktrees
+
+# tina
+tina/__generated__/.cache
