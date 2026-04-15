@@ -111,7 +111,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 | `app/(site)/posts/[slug]/` | Individual blog post route                         |
 | `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo    |
 | `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters |
-| `tina/config.ts`           | TinaCMS schema (posts collection)                  |
+| `tina/config.tsx`          | TinaCMS schema (posts collection) + slug preview button |
 
 ## Environment variables
 

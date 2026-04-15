@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "tina:build": "tinacms build && next build",
-    "tina:dev": "tinacms dev -c \"next dev --webpack\"",
+    "tina:build": "dotenv -e .env.local -- tinacms build --skip-cloud-checks && next build",
+    "tina:dev": "dotenv -e .env.local -- tinacms dev -c \"next dev --webpack\"",
     "build-storybook": "storybook build",
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
@@ -36,6 +36,7 @@
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
+    "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.94.5",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
@@ -77,6 +78,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-google-recaptcha": "^2.1.9",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.1",
     "eslint-config-prettier": "^10.1.8",
@@ -87,7 +89,7 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "storybook": "^10.3.1",
     "tailwindcss": "^4.2.2",
-    "typescript": "^5.9.3",
-    "tinacms": "^3.7.2"
+    "tinacms": "^3.7.2",
+    "typescript": "^5.9.3"
   }
 }
