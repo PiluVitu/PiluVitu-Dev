@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "tinacms build && next build",
     "tina:build": "dotenv -e .env.local -- tinacms build --skip-cloud-checks && next build",
     "tina:dev": "dotenv -e .env.local -- tinacms dev -c \"next dev --webpack\"",
     "build-storybook": "storybook build",
