@@ -93,9 +93,7 @@ async function _fetchAllPosts(): Promise<BlogPost[]> {
           fm.publishedAt != null
             ? new Date(fm.publishedAt as string | Date).toISOString()
             : new Date().toISOString(),
-        readingTimeMinutes:
-          (fm.readingTimeMinutes as number | undefined) ??
-          estimateReadingTime(body),
+        readingTimeMinutes: estimateReadingTime(body),
         bodyMdx: body,
         draft: (fm.draft as boolean | undefined) ?? false,
       } satisfies BlogPost
