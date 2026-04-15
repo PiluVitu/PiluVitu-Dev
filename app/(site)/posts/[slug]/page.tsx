@@ -7,6 +7,9 @@ import rehypeAutolinkHeadings from 'rehype-autolink-headings'
 import rehypePrettyCode from 'rehype-pretty-code'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
+import { faArrowLeft } from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 
 type PostPageProps = {
   params: Promise<{ slug: string }>
@@ -82,6 +85,13 @@ export default async function PostPage({ params }: PostPageProps) {
   return (
     <article className="mx-auto w-full max-w-3xl px-4 py-12">
       <header className="mb-10 flex flex-col gap-4">
+        <Link
+          href="/#artigos-heading"
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-2 text-sm transition-colors"
+        >
+          <FontAwesomeIcon icon={faArrowLeft} className="h-3.5 w-3.5" aria-hidden />
+          Artigos
+        </Link>
         <h1 className="text-4xl leading-tight font-bold tracking-tight">
           {post.title}
         </h1>
