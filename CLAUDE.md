@@ -105,12 +105,12 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Key directories (updated)
 
-| Path                       | Purpose                                            |
-| -------------------------- | -------------------------------------------------- |
-| `components/mdx/`          | MDX custom components (MermaidBlock, etc.)         |
-| `app/(site)/posts/[slug]/` | Individual blog post route                         |
-| `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo    |
-| `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters |
+| Path                       | Purpose                                                 |
+| -------------------------- | ------------------------------------------------------- |
+| `components/mdx/`          | MDX custom components (MermaidBlock, etc.)              |
+| `app/(site)/posts/[slug]/` | Individual blog post route                              |
+| `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo         |
+| `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters      |
 | `tina/config.tsx`          | TinaCMS schema (posts collection) + slug preview button |
 
 ## Environment variables
