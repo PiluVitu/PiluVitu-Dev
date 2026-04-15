@@ -15,6 +15,7 @@
     "style-fix": "eslint . --fix",
     "prettier:check": "prettier --check \"**/*.{js,ts,tsx,json,md,css}\"",
     "prettier:fix": "prettier --write \"**/*.{js,ts,tsx,json,md,css}\"",
+    "test:e2e": "playwright test",
     "prepare": "husky"
   },
   "dependencies": {
@@ -68,6 +69,7 @@
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^5.0.2",
+    "@playwright/test": "^1.59.1",
     "@storybook/addon-docs": "^10.3.1",
     "@storybook/addon-onboarding": "^10.3.1",
     "@storybook/nextjs": "^10.3.1",
