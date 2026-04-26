@@ -43,7 +43,7 @@ export function ArticleCard({ article, className }: ArticleCardProps) {
             className="flex h-36 w-full flex-col items-start justify-end gap-2 bg-gradient-to-br from-slate-800 to-slate-950 p-4"
             aria-hidden
           >
-            <p className="line-clamp-3 text-sm font-semibold leading-snug text-white">
+            <p className="line-clamp-3 text-sm leading-snug font-semibold text-white">
               {article.title}
             </p>
             <span className="text-xs text-slate-400">

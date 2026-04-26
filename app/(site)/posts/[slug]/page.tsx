@@ -89,7 +89,11 @@ export default async function PostPage({ params }: PostPageProps) {
           href="/#artigos-heading"
           className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-2 text-sm transition-colors"
         >
-          <FontAwesomeIcon icon={faArrowLeft} className="h-3.5 w-3.5" aria-hidden />
+          <FontAwesomeIcon
+            icon={faArrowLeft}
+            className="h-3.5 w-3.5"
+            aria-hidden
+          />
           Artigos
         </Link>
         <h1 className="text-4xl leading-tight font-bold tracking-tight">

@@ -29,10 +29,10 @@ test.describe('Seção de Artigos — home', () => {
   test('cards de artigo não exibem contadores de like ou comentário', async ({
     page,
   }) => {
-    const section = page.locator(
-      'section[aria-labelledby="artigos-heading"]',
-    )
-    await expect(section.locator('[aria-label="like"], [aria-label="comment"]')).toHaveCount(0)
+    const section = page.locator('section[aria-labelledby="artigos-heading"]')
+    await expect(
+      section.locator('[aria-label="like"], [aria-label="comment"]'),
+    ).toHaveCount(0)
     // Também verifica ausência dos ícones via role implícito de imagem SVG com esses rótulos
     await expect(section.locator('svg[data-icon="thumbs-up"]')).toHaveCount(0)
     await expect(section.locator('svg[data-icon="comment"]')).toHaveCount(0)
@@ -53,9 +53,7 @@ test.describe('Card de artigo — fallback de imagem', () => {
     }
 
     // Pelo menos um card deve ter o fallback (div com gradiente) ou uma imagem real
-    const fallbacks = section.locator(
-      'div.bg-gradient-to-br.from-slate-800',
-    )
+    const fallbacks = section.locator('div.bg-gradient-to-br.from-slate-800')
     const images = section.locator('img')
 
     const fallbackCount = await fallbacks.count()
