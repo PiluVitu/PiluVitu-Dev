@@ -1,0 +1,17 @@
+{
+  "name": "Mini Kanban",
+  "short_name": "Kanban",
+  "description": "Mini Kanban board pessoal com localStorage",
+  "start_url": "/tasks",
+  "display": "standalone",
+  "background_color": "#020817",
+  "theme_color": "#020817",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
