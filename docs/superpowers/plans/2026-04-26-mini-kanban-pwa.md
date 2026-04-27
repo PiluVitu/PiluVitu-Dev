@@ -48,6 +48,7 @@
 ## Task 1: Instalar dependências @dnd-kit
 
 **Files:**
+
 - Modify: `package.json` (automático via pnpm)
 
 - [ ] **Step 1: Instalar os três pacotes**
@@ -78,6 +79,7 @@ git commit -m "chore: add @dnd-kit packages for kanban drag and drop"
 ## Task 2: Tipos, schema Zod e constantes
 
 **Files:**
+
 - Create: `lib/kanban-schema.ts`
 
 - [ ] **Step 1: Criar `lib/kanban-schema.ts`**
@@ -192,6 +194,7 @@ git commit -m "feat(kanban): add types, zod schema and tag color constants"
 ## Task 3: Hook useKanbanStore (reducer + localStorage)
 
 **Files:**
+
 - Create: `hooks/use-kanban-store.ts`
 
 - [ ] **Step 1: Criar `hooks/use-kanban-store.ts`**
@@ -461,6 +464,7 @@ git commit -m "feat(kanban): add useKanbanStore with reducer and localStorage pe
 ## Task 4: Helpers de export/import
 
 **Files:**
+
 - Create: `lib/kanban-export.ts`
 
 - [ ] **Step 1: Criar `lib/kanban-export.ts`**
@@ -519,6 +523,7 @@ git commit -m "feat(kanban): add export/import helpers with zod validation"
 ## Task 5: Arquivos PWA (manifest, service worker, ícone)
 
 **Files:**
+
 - Create: `public/manifest.json`
 - Create: `public/sw.js`
 - Create: `public/icons/icon.svg`
@@ -610,6 +615,7 @@ git commit -m "feat(kanban): add PWA manifest, service worker and icon"
 ## Task 6: TagBadge + Storybook story
 
 **Files:**
+
 - Create: `components/kanban/tag-badge.tsx`
 - Create: `stories/TagBadge.stories.tsx`
 
@@ -698,6 +704,7 @@ git commit -m "feat(kanban): add TagBadge component and Storybook story"
 ## Task 7: KanbanCard + Storybook story
 
 **Files:**
+
 - Create: `components/kanban/kanban-card.tsx`
 - Create: `stories/KanbanCard.stories.tsx`
 
@@ -903,6 +910,7 @@ git commit -m "feat(kanban): add KanbanCard component and Storybook stories"
 ## Task 8: CardModal + Storybook story
 
 **Files:**
+
 - Create: `components/kanban/card-modal.tsx`
 - Create: `stories/CardModal.stories.tsx`
 
@@ -1184,7 +1192,12 @@ export const Edicao: Story = {
       id: 'c1',
       title: 'Implementar OAuth',
       description: 'Usar GitHub OAuth2 com PKCE',
-      links: [{ url: 'https://docs.github.com/en/apps/oauth-apps', label: 'Docs GitHub' }],
+      links: [
+        {
+          url: 'https://docs.github.com/en/apps/oauth-apps',
+          label: 'Docs GitHub',
+        },
+      ],
       tagIds: ['t1', 't3'],
       createdAt: new Date().toISOString(),
     },
@@ -1225,6 +1238,7 @@ git commit -m "feat(kanban): add CardModal component and Storybook stories"
 ## Task 9: TagManagerDialog + Storybook story
 
 **Files:**
+
 - Create: `components/kanban/tag-manager-dialog.tsx`
 - Create: `stories/TagManagerDialog.stories.tsx`
 
@@ -1412,6 +1426,7 @@ git commit -m "feat(kanban): add TagManagerDialog component and Storybook storie
 ## Task 10: BoardHeader
 
 **Files:**
+
 - Create: `components/kanban/board-header.tsx`
 
 - [ ] **Step 1: Criar `components/kanban/board-header.tsx`**
@@ -1524,6 +1539,7 @@ git commit -m "feat(kanban): add BoardHeader with export, import and tag manager
 ## Task 11: ColumnHeader + AddCardButton
 
 **Files:**
+
 - Create: `components/kanban/column-header.tsx`
 - Create: `components/kanban/add-card-button.tsx`
 
@@ -1649,6 +1665,7 @@ git commit -m "feat(kanban): add ColumnHeader and AddCardButton components"
 ## Task 12: KanbanColumn + Storybook story
 
 **Files:**
+
 - Create: `components/kanban/kanban-column.tsx`
 - Create: `stories/KanbanColumn.stories.tsx`
 
@@ -1893,6 +1910,7 @@ git commit -m "feat(kanban): add KanbanColumn component and Storybook stories"
 ## Task 13: KanbanBoard (DnD raiz + DragOverlay)
 
 **Files:**
+
 - Create: `components/kanban/kanban-board.tsx`
 
 - [ ] **Step 1: Criar `components/kanban/kanban-board.tsx`**
@@ -2149,6 +2167,7 @@ git commit -m "feat(kanban): add KanbanBoard with DndContext and DragOverlay"
 ## Task 14: Página `/tasks`
 
 **Files:**
+
 - Create: `app/(site)/tasks/page.tsx`
 
 - [ ] **Step 1: Criar `app/(site)/tasks/page.tsx`**
@@ -2178,6 +2197,7 @@ pnpm dev
 ```
 
 Abrir `http://localhost:3000/tasks`. Esperar:
+
 - Título "Mini Kanban" visível
 - Botão "Nova coluna" visível
 - Botões "Exportar", "Importar", "Tags" no header
@@ -2203,6 +2223,7 @@ git commit -m "feat(kanban): add /tasks route for Mini Kanban PWA"
 ## Task 15: Testes Playwright E2E
 
 **Files:**
+
 - Create: `e2e/kanban.spec.ts`
 
 - [ ] **Step 1: Criar `e2e/kanban.spec.ts`**
@@ -2288,7 +2309,9 @@ test.describe('Mini Kanban Board', () => {
     await page.getByRole('button', { name: 'Salvar' }).click()
 
     await expect(page.getByText('Card com tag')).toBeVisible()
-    const card = page.locator('[data-card-id]').filter({ hasText: 'Card com tag' })
+    const card = page
+      .locator('[data-card-id]')
+      .filter({ hasText: 'Card com tag' })
     await expect(card.getByText('Frontend')).toBeVisible()
   })
 
@@ -2404,6 +2427,7 @@ data-card-id={card.id}
 ```
 
 Retestar:
+
 ```bash
 pnpm test:e2e -- e2e/kanban.spec.ts
 ```
@@ -2422,6 +2446,7 @@ git commit -m "test(kanban): add Playwright E2E tests for all critical flows"
 ## Task 16: Atualizar CLAUDE.md
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 - [ ] **Step 1: Adicionar seção Kanban ao CLAUDE.md**
@@ -2429,11 +2454,11 @@ git commit -m "test(kanban): add Playwright E2E tests for all critical flows"
 Localizar a seção `### Key directories (updated)` em `CLAUDE.md` e adicionar as seguintes linhas na tabela:
 
 ```markdown
-| `components/kanban/`       | Kanban board: Board, Column, Card, modais, headers  |
-| `app/(site)/tasks/`        | Rota `/tasks` — Mini Kanban PWA                     |
-| `hooks/use-kanban-store.ts`| Reducer Kanban + persistência localStorage           |
-| `lib/kanban-schema.ts`     | Tipos TypeScript + schema Zod + TAG_COLORS           |
-| `lib/kanban-export.ts`     | Export (download JSON) + parseImport (validação Zod) |
+| `components/kanban/` | Kanban board: Board, Column, Card, modais, headers |
+| `app/(site)/tasks/` | Rota `/tasks` — Mini Kanban PWA |
+| `hooks/use-kanban-store.ts`| Reducer Kanban + persistência localStorage |
+| `lib/kanban-schema.ts` | Tipos TypeScript + schema Zod + TAG_COLORS |
+| `lib/kanban-export.ts` | Export (download JSON) + parseImport (validação Zod) |
 ```
 
 - [ ] **Step 2: Adicionar nota sobre @dnd-kit e Playwright Kanban**
