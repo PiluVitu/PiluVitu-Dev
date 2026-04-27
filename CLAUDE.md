@@ -112,6 +112,20 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 | `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo         |
 | `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters      |
 | `tina/config.tsx`          | TinaCMS schema (posts collection) + slug preview button |
+| `components/kanban/`       | Kanban board: Board, Column, Card, modais, headers      |
+| `app/(site)/tasks/`        | Rota `/tasks` — Mini Kanban PWA                         |
+| `hooks/use-kanban-store.ts`| Reducer Kanban + persistência localStorage              |
+| `lib/kanban-schema.ts`     | Tipos TypeScript + schema Zod + TAG_COLORS              |
+| `lib/kanban-export.ts`     | Export (download JSON) + parseImport (validação Zod)    |
+
+### Mini Kanban PWA (`/tasks`)
+
+- **Rota:** `app/(site)/tasks/page.tsx` dentro do layout do site
+- **Estado:** `useKanbanStore` (`hooks/use-kanban-store.ts`) — `useReducer` + `localStorage` (chave `"kanban-state"`)
+- **Drag and drop:** `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities`
+- **PWA:** `public/manifest.json` + `public/sw.js` + `public/icons/icon.svg`; SW registrado via `useEffect` em `KanbanBoard`
+- **Export/Import:** `lib/kanban-export.ts` — download JSON / validação Zod antes de importar
+- **E2E:** `e2e/kanban.spec.ts` cobre todos os fluxos críticos (criar coluna, criar card, editar, tags, links, deletar, export/import)
 
 ## Environment variables
 
