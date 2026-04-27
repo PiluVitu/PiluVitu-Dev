@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { KanbanColumn } from '@/components/kanban/kanban-column'
 import { DndContext } from '@dnd-kit/core'
-import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { TAG_COLORS } from '@/lib/kanban-schema'
 import { fn } from 'storybook/test'
 
@@ -35,9 +38,12 @@ const meta = {
   tags: ['autodocs'],
   parameters: { layout: 'centered' },
   decorators: [
-    (Story: React.ComponentType) => (
+    (Story) => (
       <DndContext>
-        <SortableContext items={['col1']} strategy={horizontalListSortingStrategy}>
+        <SortableContext
+          items={['col1']}
+          strategy={horizontalListSortingStrategy}
+        >
           <Story />
         </SortableContext>
       </DndContext>
