@@ -68,7 +68,7 @@ export function KanbanColumn({
         ref={setSortableRef}
         style={style}
         className={cn(
-          'flex w-72 shrink-0 flex-col rounded-lg border bg-muted/50',
+          'bg-muted/50 flex w-72 shrink-0 flex-col rounded-lg border',
           isDragging && 'opacity-50',
         )}
       >
@@ -84,7 +84,7 @@ export function KanbanColumn({
           ref={setDropRef}
           className={cn(
             'flex min-h-[100px] flex-1 flex-col gap-2 p-2',
-            isOver && 'rounded-b-lg bg-muted/80',
+            isOver && 'bg-muted/80 rounded-b-lg',
           )}
         >
           <SortableContext

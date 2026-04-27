@@ -34,7 +34,12 @@ export const Edicao: Story = {
       id: 'c1',
       title: 'Implementar OAuth',
       description: 'Usar GitHub OAuth2 com PKCE',
-      links: [{ url: 'https://docs.github.com/en/apps/oauth-apps', label: 'Docs GitHub' }],
+      links: [
+        {
+          url: 'https://docs.github.com/en/apps/oauth-apps',
+          label: 'Docs GitHub',
+        },
+      ],
       tagIds: ['t1', 't3'],
       createdAt: new Date().toISOString(),
     },

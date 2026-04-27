@@ -154,15 +154,11 @@ export function KanbanBoard() {
                 onTitleChange={(title) =>
                   dispatch({ type: 'UPDATE_COLUMN_TITLE', columnId, title })
                 }
-                onDelete={() =>
-                  dispatch({ type: 'DELETE_COLUMN', columnId })
-                }
+                onDelete={() => dispatch({ type: 'DELETE_COLUMN', columnId })}
                 onAddCard={(data) =>
                   dispatch({ type: 'ADD_CARD', columnId, ...data })
                 }
-                onUpdateCard={(card) =>
-                  dispatch({ type: 'UPDATE_CARD', card })
-                }
+                onUpdateCard={(card) => dispatch({ type: 'UPDATE_CARD', card })}
                 onDeleteCard={(cardId) =>
                   dispatch({ type: 'DELETE_CARD', cardId, columnId })
                 }
@@ -173,7 +169,7 @@ export function KanbanBoard() {
 
         <div className="w-72 shrink-0">
           {addingColumn ? (
-            <div className="flex flex-col gap-2 rounded-lg border bg-muted/50 p-3">
+            <div className="bg-muted/50 flex flex-col gap-2 rounded-lg border p-3">
               <Input
                 autoFocus
                 placeholder="Título da coluna"
@@ -200,7 +196,7 @@ export function KanbanBoard() {
           ) : (
             <Button
               variant="outline"
-              className="w-full border-dashed text-muted-foreground"
+              className="text-muted-foreground w-full border-dashed"
               onClick={() => setAddingColumn(true)}
             >
               <PlusIcon className="mr-2 h-4 w-4" />
@@ -221,7 +217,7 @@ export function KanbanBoard() {
           />
         )}
         {activeId && state.columns[activeId] && (
-          <div className="h-16 w-72 rounded-lg border bg-muted/50 opacity-80" />
+          <div className="bg-muted/50 h-16 w-72 rounded-lg border opacity-80" />
         )}
       </DragOverlay>
     </DndContext>

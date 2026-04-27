@@ -59,7 +59,7 @@ export function ColumnHeader({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+        className="text-muted-foreground hover:text-destructive h-7 w-7 shrink-0"
         onClick={onDelete}
         aria-label={`Deletar coluna ${title}`}
       >

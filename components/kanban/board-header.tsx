@@ -39,11 +39,7 @@ export function BoardHeader({ state, dispatch }: BoardHeaderProps) {
     <div className="mb-6 flex items-center justify-between">
       <h1 className="text-2xl font-bold">Mini Kanban</h1>
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => exportState(state)}
-        >
+        <Button variant="outline" size="sm" onClick={() => exportState(state)}>
           <DownloadIcon className="mr-2 h-4 w-4" />
           Exportar
         </Button>
@@ -75,7 +71,9 @@ export function BoardHeader({ state, dispatch }: BoardHeaderProps) {
       {showTagManager && (
         <TagManagerDialog
           tags={state.tags}
-          onAddTag={(label, color) => dispatch({ type: 'ADD_TAG', label, color })}
+          onAddTag={(label, color) =>
+            dispatch({ type: 'ADD_TAG', label, color })
+          }
           onDeleteTag={(tagId) => dispatch({ type: 'DELETE_TAG', tagId })}
           onClose={() => setShowTagManager(false)}
         />

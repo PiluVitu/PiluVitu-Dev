@@ -58,7 +58,7 @@ export function KanbanCard({
           <p className="line-clamp-3 text-sm font-medium">{card.title}</p>
           {card.links.length > 0 && (
             <div
-              className="flex items-center gap-1 text-muted-foreground"
+              className="text-muted-foreground flex items-center gap-1"
               data-testid="card-link-indicator"
             >
               <Link2Icon className="h-3 w-3" />

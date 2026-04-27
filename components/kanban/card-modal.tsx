@@ -65,7 +65,12 @@ export function CardModal({
 
   function handleSave() {
     if (!title.trim()) return
-    onSave({ title: title.trim(), description: description.trim(), links, tagIds })
+    onSave({
+      title: title.trim(),
+      description: description.trim(),
+      links,
+      tagIds,
+    })
   }
 
   function addLink() {
@@ -142,7 +147,7 @@ export function CardModal({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  className="text-muted-foreground hover:text-destructive h-8 w-8"
                   onClick={() => removeLink(i)}
                 >
                   <Cross2Icon className="h-3.5 w-3.5" />
@@ -171,7 +176,7 @@ export function CardModal({
                     onClick={() => toggleTag(tag.id)}
                     className={`rounded-full transition-opacity ${
                       tagIds.includes(tag.id)
-                        ? 'opacity-100 ring-2 ring-ring ring-offset-2'
+                        ? 'ring-ring opacity-100 ring-2 ring-offset-2'
                         : 'opacity-40'
                     }`}
                   >
@@ -207,7 +212,7 @@ export function CardModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mr-auto text-muted-foreground hover:text-destructive"
+                  className="text-muted-foreground hover:text-destructive mr-auto"
                   onClick={() => setConfirmDelete(true)}
                 >
                   <TrashIcon className="mr-2 h-3.5 w-3.5" />

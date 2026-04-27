@@ -12,7 +12,7 @@ export function AddCardButton({ onClick }: AddCardButtonProps) {
     <Button
       variant="ghost"
       size="sm"
-      className="w-full justify-start text-muted-foreground hover:text-foreground"
+      className="text-muted-foreground hover:text-foreground w-full justify-start"
       onClick={onClick}
     >
       <PlusIcon className="mr-2 h-4 w-4" />

@@ -105,18 +105,18 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Key directories (updated)
 
-| Path                       | Purpose                                                 |
-| -------------------------- | ------------------------------------------------------- |
-| `components/mdx/`          | MDX custom components (MermaidBlock, etc.)              |
-| `app/(site)/posts/[slug]/` | Individual blog post route                              |
-| `lib/blog-posts.ts`        | Server reader for posts from piluvitu-blog repo         |
-| `lib/article-feed.ts`      | Unified ArticleCardView type + devto/blog adapters      |
-| `tina/config.tsx`          | TinaCMS schema (posts collection) + slug preview button |
-| `components/kanban/`       | Kanban board: Board, Column, Card, modais, headers      |
-| `app/(site)/tasks/`        | Rota `/tasks` — Mini Kanban PWA                         |
-| `hooks/use-kanban-store.ts`| Reducer Kanban + persistência localStorage              |
-| `lib/kanban-schema.ts`     | Tipos TypeScript + schema Zod + TAG_COLORS              |
-| `lib/kanban-export.ts`     | Export (download JSON) + parseImport (validação Zod)    |
+| Path                        | Purpose                                                 |
+| --------------------------- | ------------------------------------------------------- |
+| `components/mdx/`           | MDX custom components (MermaidBlock, etc.)              |
+| `app/(site)/posts/[slug]/`  | Individual blog post route                              |
+| `lib/blog-posts.ts`         | Server reader for posts from piluvitu-blog repo         |
+| `lib/article-feed.ts`       | Unified ArticleCardView type + devto/blog adapters      |
+| `tina/config.tsx`           | TinaCMS schema (posts collection) + slug preview button |
+| `components/kanban/`        | Kanban board: Board, Column, Card, modais, headers      |
+| `app/(site)/tasks/`         | Rota `/tasks` — Mini Kanban PWA                         |
+| `hooks/use-kanban-store.ts` | Reducer Kanban + persistência localStorage              |
+| `lib/kanban-schema.ts`      | Tipos TypeScript + schema Zod + TAG_COLORS              |
+| `lib/kanban-export.ts`      | Export (download JSON) + parseImport (validação Zod)    |
 
 ### Mini Kanban PWA (`/tasks`)
 

@@ -156,7 +156,9 @@ test.describe('Mini Kanban Board', () => {
     })
 
     await expect(page.getByText('Importado', { exact: true })).toBeVisible()
-    await expect(page.getByText('Card importado', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('Card importado', { exact: true }),
+    ).toBeVisible()
   })
 
   test('importar arquivo JSON inválido exibe toast de erro', async ({

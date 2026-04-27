@@ -56,7 +56,7 @@ export function TagManagerDialog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive h-7 w-7"
                     onClick={() => onDeleteTag(tag.id)}
                     aria-label={`Deletar tag ${tag.label}`}
                   >
@@ -85,7 +85,7 @@ export function TagManagerDialog({
                   onClick={() => setSelectedColor(color)}
                   className={`h-6 w-6 rounded-full transition-transform ${
                     selectedColor === color
-                      ? 'scale-125 ring-2 ring-ring ring-offset-1'
+                      ? 'ring-ring scale-125 ring-2 ring-offset-1'
                       : ''
                   }`}
                   style={{ backgroundColor: color }}
@@ -97,7 +97,11 @@ export function TagManagerDialog({
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground text-sm">Preview:</span>
                 <TagBadge
-                  tag={{ id: 'preview', label: label.trim(), color: selectedColor }}
+                  tag={{
+                    id: 'preview',
+                    label: label.trim(),
+                    color: selectedColor,
+                  }}
                 />
               </div>
             )}
