@@ -37,11 +37,13 @@ All commands run from the repository root using **pnpm**.
 | `pnpm tina:dev`       | Dev server + TinaCMS editor at /admin             |
 | `pnpm tina:build`     | Build TinaCMS admin then Next.js (use on Vercel)  |
 
+| `pnpm test` | Jest unit tests (lib/tools/\*) |
+| `pnpm test:watch` | Jest in watch mode |
+| `pnpm test:e2e` | Playwright E2E tests |
+
 **Type checking without full build:** `pnpm exec tsc --noEmit`
 
-**No test suite** — use Storybook for UI verification.
-
-**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `pnpm build`
+**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `pnpm test` → `pnpm build`
 
 ## Architecture
 
@@ -133,6 +135,22 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **PWA:** `public/manifest.json` + `public/sw.js` + `public/icons/icon.svg`; SW registrado via `useEffect` em `KanbanBoard`
 - **Export/Import:** `lib/kanban-export.ts` — download JSON / validação Zod antes de importar
 - **E2E:** `e2e/kanban.spec.ts` cobre todos os fluxos críticos (criar coluna, criar card, editar, tags, links, deletar, export/import)
+
+### Tools dashboard (`/tools`)
+
+- **Rota:** `app/(site)/tools/page.tsx` (landing) + `app/(site)/tools/[slug]/page.tsx` por ferramenta
+- **Registro central:** `lib/tools-registry.ts` — array `TOOLS` com `{ slug, title, description, icon, group }`. Adicionar ferramenta = 1 entrada no registry + 1 página + 1 componente.
+- **Separação lógica/UI:** `lib/tools/*` contém **TypeScript puro, sem React/Next/DOM**. Funções puras testáveis em Jest e portáveis para CLI futura. `components/tools/*` contém os componentes React que usam as libs.
+- **Testes:** Jest cobre `lib/tools/*` (algoritmos CPF/CNPJ, Base64, JWT, JSON, UUID). Rodar com `pnpm test`.
+- **E2E:** `e2e/tools.spec.ts` cobre fluxos críticos de cada ferramenta.
+- **Ferramentas v1:** QR Reader (câmera, `@zxing/browser`), QR Generator (`qrcode`), CPF, CNPJ, JSON, Base64, JWT decode, UUID v4.
+- **Como adicionar uma nova ferramenta:**
+  1. Criar `lib/tools/<slug>.ts` com lógica pura + `lib/tools/<slug>.test.ts`
+  2. Criar `components/tools/<slug>-tool.tsx` (UI React)
+  3. Criar `components/tools/<slug>-tool.stories.tsx`
+  4. Adicionar entrada em `lib/tools-registry.ts`
+  5. Criar `app/(site)/tools/<slug>/page.tsx`
+  6. Adicionar casos no `e2e/tools.spec.ts`
 
 ## Environment variables
 
