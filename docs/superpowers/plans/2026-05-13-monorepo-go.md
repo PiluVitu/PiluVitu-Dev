@@ -15,56 +15,59 @@
 ## Mapa de arquivos
 
 ### Criados (novos)
-| Arquivo | Responsabilidade |
-|---|---|
-| `packages/tools/package.json` | Manifesto do pacote @piluvitu/tools |
-| `packages/tools/tsconfig.json` | TypeScript config do pacote |
-| `packages/tools/jest.config.ts` | Jest config isolado do pacote |
-| `packages/tools/src/index.ts` | Barrel de re-exports |
-| `go.work` | Go workspace na raiz |
-| `Makefile` | Atalhos de dev/build/test |
-| `apps/api/go.mod` | Módulo Go |
-| `apps/api/cmd/api/main.go` | Entry point HTTP server |
-| `apps/api/cmd/cli/main.go` | Entry point CLI binary |
-| `apps/api/internal/tools/cpf.go` + `cpf_test.go` | Validação/geração CPF |
-| `apps/api/internal/tools/cnpj.go` + `cnpj_test.go` | Validação/geração CNPJ |
-| `apps/api/internal/tools/base64.go` + `base64_test.go` | Encode/decode Base64 |
-| `apps/api/internal/tools/jwt.go` + `jwt_test.go` | Decode JWT |
-| `apps/api/internal/tools/jsonformat.go` + `jsonformat_test.go` | Format/minify/validate JSON |
-| `apps/api/internal/tools/uuid.go` + `uuid_test.go` | Geração UUID v4 |
-| `apps/api/internal/tools/qrencode.go` + `qrencode_test.go` | QR code encode → PNG bytes |
-| `apps/api/internal/tools/qrdecode.go` + `qrdecode_test.go` | QR code decode de imagem |
-| `apps/api/internal/handlers/tools.go` + `tools_test.go` | HTTP handlers |
-| `apps/api/internal/router/router.go` | chi router |
-| `apps/api/Dockerfile` | Multi-stage build Go |
-| `apps/web/Dockerfile` | Build Next.js |
-| `infra/docker-compose.yml` | Stack local dev |
-| `infra/docker-compose.test.yml` | Containers teste integração |
-| `infra/seed/data.json` | Dados de seed |
+
+| Arquivo                                                        | Responsabilidade                    |
+| -------------------------------------------------------------- | ----------------------------------- |
+| `packages/tools/package.json`                                  | Manifesto do pacote @piluvitu/tools |
+| `packages/tools/tsconfig.json`                                 | TypeScript config do pacote         |
+| `packages/tools/jest.config.ts`                                | Jest config isolado do pacote       |
+| `packages/tools/src/index.ts`                                  | Barrel de re-exports                |
+| `go.work`                                                      | Go workspace na raiz                |
+| `Makefile`                                                     | Atalhos de dev/build/test           |
+| `apps/api/go.mod`                                              | Módulo Go                           |
+| `apps/api/cmd/api/main.go`                                     | Entry point HTTP server             |
+| `apps/api/cmd/cli/main.go`                                     | Entry point CLI binary              |
+| `apps/api/internal/tools/cpf.go` + `cpf_test.go`               | Validação/geração CPF               |
+| `apps/api/internal/tools/cnpj.go` + `cnpj_test.go`             | Validação/geração CNPJ              |
+| `apps/api/internal/tools/base64.go` + `base64_test.go`         | Encode/decode Base64                |
+| `apps/api/internal/tools/jwt.go` + `jwt_test.go`               | Decode JWT                          |
+| `apps/api/internal/tools/jsonformat.go` + `jsonformat_test.go` | Format/minify/validate JSON         |
+| `apps/api/internal/tools/uuid.go` + `uuid_test.go`             | Geração UUID v4                     |
+| `apps/api/internal/tools/qrencode.go` + `qrencode_test.go`     | QR code encode → PNG bytes          |
+| `apps/api/internal/tools/qrdecode.go` + `qrdecode_test.go`     | QR code decode de imagem            |
+| `apps/api/internal/handlers/tools.go` + `tools_test.go`        | HTTP handlers                       |
+| `apps/api/internal/router/router.go`                           | chi router                          |
+| `apps/api/Dockerfile`                                          | Multi-stage build Go                |
+| `apps/web/Dockerfile`                                          | Build Next.js                       |
+| `infra/docker-compose.yml`                                     | Stack local dev                     |
+| `infra/docker-compose.test.yml`                                | Containers teste integração         |
+| `infra/seed/data.json`                                         | Dados de seed                       |
 
 ### Movidos (git mv)
-| De | Para |
-|---|---|
-| `lib/tools/*.ts` + `*.test.ts` | `packages/tools/src/` |
-| `app/`, `components/`, `lib/`, `hooks/`, `mocks/`, `public/`, `content/`, `tina/`, `utils/` | `apps/web/` (mesmo nome) |
-| `keystatic.config.ts`, `next.config.mjs`, `next-env.d.ts` | `apps/web/` |
-| `tsconfig.json`, `jest.config.ts`, `jest.setup.ts`, `playwright.config.ts` | `apps/web/` |
-| `components.json`, `postcss.config.mjs` | `apps/web/` |
-| `.storybook/` | `apps/web/.storybook/` |
-| `stories/*.stories.tsx` | Colocado em `apps/web/components/<componente>/` |
-| `e2e/kanban.spec.ts` | `apps/web/app/(site)/tasks/kanban.e2e.ts` |
-| `e2e/tools.spec.ts` | `apps/web/app/(site)/tools/tools.e2e.ts` |
-| `e2e/articles.spec.ts` | `apps/web/app/(site)/articles.e2e.ts` (ou junto do componente) |
+
+| De                                                                                          | Para                                                           |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `lib/tools/*.ts` + `*.test.ts`                                                              | `packages/tools/src/`                                          |
+| `app/`, `components/`, `lib/`, `hooks/`, `mocks/`, `public/`, `content/`, `tina/`, `utils/` | `apps/web/` (mesmo nome)                                       |
+| `keystatic.config.ts`, `next.config.mjs`, `next-env.d.ts`                                   | `apps/web/`                                                    |
+| `tsconfig.json`, `jest.config.ts`, `jest.setup.ts`, `playwright.config.ts`                  | `apps/web/`                                                    |
+| `components.json`, `postcss.config.mjs`                                                     | `apps/web/`                                                    |
+| `.storybook/`                                                                               | `apps/web/.storybook/`                                         |
+| `stories/*.stories.tsx`                                                                     | Colocado em `apps/web/components/<componente>/`                |
+| `e2e/kanban.spec.ts`                                                                        | `apps/web/app/(site)/tasks/kanban.e2e.ts`                      |
+| `e2e/tools.spec.ts`                                                                         | `apps/web/app/(site)/tools/tools.e2e.ts`                       |
+| `e2e/articles.spec.ts`                                                                      | `apps/web/app/(site)/articles.e2e.ts` (ou junto do componente) |
 
 ### Modificados
-| Arquivo | O que muda |
-|---|---|
-| `pnpm-workspace.yaml` | `packages: ["apps/web", "packages/tools"]` |
-| `package.json` (raiz) | Vira workspace mínimo |
-| `apps/web/package.json` | Adiciona `@piluvitu/tools: workspace:*`, name `@piluvitu/web` |
-| `apps/web/jest.config.ts` | `testMatch` sem restrição a `lib/tools/` |
-| `apps/web/playwright.config.ts` | `testMatch: ["**/*.e2e.ts"]`, remove `testDir` |
-| `apps/web/.storybook/main.ts` | glob atualizado para colocated |
+
+| Arquivo                         | O que muda                                                    |
+| ------------------------------- | ------------------------------------------------------------- |
+| `pnpm-workspace.yaml`           | `packages: ["apps/web", "packages/tools"]`                    |
+| `package.json` (raiz)           | Vira workspace mínimo                                         |
+| `apps/web/package.json`         | Adiciona `@piluvitu/tools: workspace:*`, name `@piluvitu/web` |
+| `apps/web/jest.config.ts`       | `testMatch` sem restrição a `lib/tools/`                      |
+| `apps/web/playwright.config.ts` | `testMatch: ["**/*.e2e.ts"]`, remove `testDir`                |
+| `apps/web/.storybook/main.ts`   | glob atualizado para colocated                                |
 
 ---
 
@@ -73,6 +76,7 @@
 ### Task 1: Criar scaffolding de packages/tools
 
 **Files:**
+
 - Create: `packages/tools/package.json`
 - Create: `packages/tools/tsconfig.json`
 - Create: `packages/tools/jest.config.ts`
@@ -166,14 +170,15 @@ mkdir -p packages/tools/src
 ### Task 2: Atualizar pnpm-workspace.yaml e instalar
 
 **Files:**
+
 - Modify: `pnpm-workspace.yaml`
 
 - [ ] **Substituir conteúdo de `pnpm-workspace.yaml`:**
 
 ```yaml
 packages:
-  - "apps/web"
-  - "packages/tools"
+  - 'apps/web'
+  - 'packages/tools'
 
 allowBuilds:
   better-sqlite3: false
@@ -202,6 +207,7 @@ Expected: warning sobre `apps/web` não encontrado — OK. `packages/tools` deve
 ### Task 3: Mover tools TypeScript para packages/tools/src
 
 **Files:**
+
 - Move: `lib/tools/*.ts` → `packages/tools/src/`
 
 - [ ] **git mv de todos os arquivos (fonte + testes):**
@@ -261,6 +267,7 @@ git commit -m "feat: extract @piluvitu/tools workspace package from lib/tools"
 ### Task 4: Preparar package.json e criar apps/web
 
 **Files:**
+
 - Create: `apps/web/package.json`
 - Modify: `package.json` (raiz)
 
@@ -274,11 +281,13 @@ cp package.json apps/web/package.json
 - [ ] **Editar `apps/web/package.json`** — mudar o `name` para `@piluvitu/web` e adicionar `@piluvitu/tools` em `dependencies`:
 
 No campo `"name"`:
+
 ```json
 "name": "@piluvitu/web",
 ```
 
 No campo `"dependencies"`, adicionar:
+
 ```json
 "@piluvitu/tools": "workspace:*",
 ```
@@ -305,6 +314,7 @@ No campo `"dependencies"`, adicionar:
 ### Task 5: git mv de todos os arquivos Next.js para apps/web
 
 **Files:**
+
 - Move: todos os diretórios e configs Next.js → `apps/web/`
 
 - [ ] **Mover diretórios:**
@@ -349,10 +359,11 @@ mv .env.example apps/web/.env.example 2>/dev/null || true
 - [ ] **Atualizar `pnpm-workspace.yaml` — adicionar `apps/web`:**
 
 Já está no arquivo. Confirmar que está assim:
+
 ```yaml
 packages:
-  - "apps/web"
-  - "packages/tools"
+  - 'apps/web'
+  - 'packages/tools'
 ```
 
 - [ ] **Rodar pnpm install:**
@@ -375,6 +386,7 @@ git commit -m "chore: move Next.js app to apps/web workspace"
 ### Task 6: Atualizar configs em apps/web
 
 **Files:**
+
 - Modify: `apps/web/tsconfig.json`
 - Modify: `apps/web/jest.config.ts`
 - Modify: `apps/web/playwright.config.ts`
@@ -448,10 +460,7 @@ export default defineConfig({
 import type { StorybookConfig } from '@storybook/nextjs'
 
 const config: StorybookConfig = {
-  stories: [
-    './**/*.mdx',
-    './**/*.stories.@(js|jsx|mjs|ts|tsx)',
-  ],
+  stories: ['./**/*.mdx', './**/*.stories.@(js|jsx|mjs|ts|tsx)'],
   addons: [
     '@storybook/addon-onboarding',
     '@storybook/addon-docs',
@@ -481,6 +490,7 @@ git commit -m "chore: update jest/playwright/storybook configs for apps/web colo
 ### Task 7: Atualizar imports @/lib/tools → @piluvitu/tools
 
 **Files:**
+
 - Modify: todos arquivos em `apps/web/` que importam de `@/lib/tools/*`
 
 - [ ] **Encontrar todos os imports a atualizar:**
@@ -537,6 +547,7 @@ git commit -m "chore: update imports from @/lib/tools to @piluvitu/tools"
 ### Task 8: Migrar stories para colocalizadas e e2e para colocalizados
 
 **Files:**
+
 - Move: `apps/web/stories/*.stories.tsx` → `apps/web/components/<componente>/`
 - Move: `apps/web/e2e/*.spec.ts` → `apps/web/app/(site)/<rota>/*.e2e.ts`
 - Delete: arquivos de exemplo do Storybook
@@ -558,6 +569,7 @@ ls apps/web/components/
 ```
 
 Mover cada story para junto do componente correspondente. Padrão:
+
 - `FeedPostCard.stories.tsx` → `apps/web/components/<nome-do-componente>/feed-post-card.stories.tsx`
 - `FeedFilters.stories.tsx` → mesma pasta do componente FeedFilters
 - `FeedLoadMore.stories.tsx` → mesma pasta do componente FeedLoadMore
@@ -669,6 +681,7 @@ git commit -m "chore: monorepo migration complete — web and tools verified"
 ### Task 10: Criar estrutura Go e go.work
 
 **Files:**
+
 - Create: `apps/api/go.mod`
 - Create: `apps/api/cmd/api/main.go` (stub)
 - Create: `apps/api/cmd/cli/main.go` (stub)
@@ -810,6 +823,7 @@ git commit -m "feat: scaffold apps/api Go module with chi router stub"
 ### Task 11: CPF e CNPJ em Go
 
 **Files:**
+
 - Create: `apps/api/internal/tools/cpf.go` + `cpf_test.go`
 - Create: `apps/api/internal/tools/cnpj.go` + `cnpj_test.go`
 
@@ -1044,6 +1058,7 @@ git commit -m "feat(go): add CPF and CNPJ validation and generation"
 ### Task 12: Base64, UUID e JSON em Go
 
 **Files:**
+
 - Create: `apps/api/internal/tools/base64.go` + `base64_test.go`
 - Create: `apps/api/internal/tools/uuid.go` + `uuid_test.go`
 - Create: `apps/api/internal/tools/jsonformat.go` + `jsonformat_test.go`
@@ -1268,6 +1283,7 @@ git commit -m "feat(go): add Base64, UUID, and JSON format tools"
 ### Task 13: JWT decode em Go
 
 **Files:**
+
 - Create: `apps/api/internal/tools/jwt.go` + `jwt_test.go`
 
 - [ ] **Escrever teste (`apps/api/internal/tools/jwt_test.go`):**
@@ -1388,6 +1404,7 @@ git commit -m "feat(go): add JWT decode tool"
 ### Task 14: QR encode e QR decode em Go
 
 **Files:**
+
 - Create: `apps/api/internal/tools/qrencode.go` + `qrencode_test.go`
 - Create: `apps/api/internal/tools/qrdecode.go` + `qrdecode_test.go`
 
@@ -1511,6 +1528,7 @@ git commit -m "feat(go): add QR encode and decode tools"
 ### Task 15: Helpers de response e handlers HTTP
 
 **Files:**
+
 - Create: `apps/api/internal/handlers/tools.go`
 - Create: `apps/api/internal/handlers/tools_test.go`
 
@@ -1777,6 +1795,7 @@ git commit -m "feat(go): add HTTP handlers for all 8 tools"
 ### Task 16: Router chi completo
 
 **Files:**
+
 - Modify: `apps/api/internal/router/router.go`
 
 - [ ] **Atualizar `apps/api/internal/router/router.go` com todas as rotas:**
@@ -1837,8 +1856,9 @@ rm api
 ```
 
 Expected:
+
 ```json
-{"ok":true,"result":true}
+{ "ok": true, "result": true }
 ```
 
 - [ ] **Commit:**
@@ -1855,6 +1875,7 @@ git commit -m "feat(go): wire all tool routes in chi router"
 ### Task 17: CLI com cobra (todos os subcomandos)
 
 **Files:**
+
 - Modify: `apps/api/cmd/cli/main.go`
 
 - [ ] **Substituir `apps/api/cmd/cli/main.go` com todos os subcomandos:**
@@ -2078,6 +2099,7 @@ rm piluvitu
 ```
 
 Expected:
+
 ```
 $ ./piluvitu cpf validate "529.982.247-25"
 válido
@@ -2099,6 +2121,7 @@ git commit -m "feat(go): add cobra CLI with all 8 tool subcommands"
 ### Task 18: Dockerfiles
 
 **Files:**
+
 - Create: `apps/api/Dockerfile`
 - Create: `apps/web/Dockerfile`
 
@@ -2171,6 +2194,7 @@ git commit -m "feat: add Docker multi-stage builds for api and web"
 ### Task 19: docker-compose e Makefile
 
 **Files:**
+
 - Create: `infra/docker-compose.yml`
 - Create: `infra/docker-compose.test.yml`
 - Create: `infra/seed/data.json`
@@ -2185,18 +2209,18 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     ports:
-      - "8080:8080"
+      - '8080:8080'
     environment:
-      PORT: "8080"
+      PORT: '8080'
 
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
     ports:
-      - "3333:3333"
+      - '3333:3333'
     environment:
-      NEXT_PUBLIC_API_URL: "http://api:8080"
+      NEXT_PUBLIC_API_URL: 'http://api:8080'
     depends_on:
       - api
 ```
@@ -2210,10 +2234,10 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     environment:
-      PORT: "8081"
-      GO_ENV: "test"
+      PORT: '8081'
+      GO_ENV: 'test'
     ports:
-      - "8081:8081"
+      - '8081:8081'
 ```
 
 - [ ] **Criar `infra/seed/data.json`:**
@@ -2266,6 +2290,7 @@ clean:
 - [ ] **Criar diretório bin no .gitignore:**
 
 Adicionar ao `.gitignore` raiz:
+
 ```
 /bin/
 apps/api/api
@@ -2287,6 +2312,7 @@ git commit -m "feat: add docker-compose, Makefile, and infra scaffolding"
 ### Task 20: Atualizar CLAUDE.md
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 - [ ] **Atualizar a seção "Commands" no CLAUDE.md** — refletir nova estrutura de comandos:
@@ -2296,20 +2322,20 @@ git commit -m "feat: add docker-compose, Makefile, and infra scaffolding"
 
 Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
-| Comando | Propósito |
-|---|---|
-| `make dev` | Dev server web + Go API em paralelo |
-| `make dev-web` | Só o Next.js em http://localhost:3333 |
-| `make dev-api` | Só a Go API em http://localhost:8080 |
-| `make build-api` | Compila binário Go API em bin/api |
-| `make build-cli` | Compila CLI Go em bin/piluvitu |
-| `make test` | Todos os testes (pnpm -r test + go test) |
-| `make lint` | ESLint + go vet |
-| `pnpm --filter @piluvitu/web dev` | Dev Next.js direto |
-| `pnpm --filter @piluvitu/web build` | Build Next.js |
-| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017 |
-| `pnpm --filter @piluvitu/web test:e2e` | Playwright E2E |
-| `pnpm -r test` | Testes de todos os workspaces |
+| Comando                                 | Propósito                                |
+| --------------------------------------- | ---------------------------------------- |
+| `make dev`                              | Dev server web + Go API em paralelo      |
+| `make dev-web`                          | Só o Next.js em http://localhost:3333    |
+| `make dev-api`                          | Só a Go API em http://localhost:8080     |
+| `make build-api`                        | Compila binário Go API em bin/api        |
+| `make build-cli`                        | Compila CLI Go em bin/piluvitu           |
+| `make test`                             | Todos os testes (pnpm -r test + go test) |
+| `make lint`                             | ESLint + go vet                          |
+| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                       |
+| `pnpm --filter @piluvitu/web build`     | Build Next.js                            |
+| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                        |
+| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                           |
+| `pnpm -r test`                          | Testes de todos os workspaces            |
 ```
 
 - [ ] **Atualizar seção "Colocation rules"** no CLAUDE.md — adicionar:
@@ -2319,13 +2345,13 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
 Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories/` ou `e2e/` separados.
 
-| Camada | Fonte | Teste | Story |
-|---|---|---|---|
-| Componente React | `bio.tsx` | `bio.test.tsx` | `bio.stories.tsx` |
-| Página Next.js | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
-| Lib TS pura | `cpf.ts` | `cpf.test.ts` | — |
-| Handler Go | `tools.go` | `tools_test.go` | — |
-| Lib Go pura | `cpf.go` | `cpf_test.go` | — |
+| Camada           | Fonte      | Teste           | Story              |
+| ---------------- | ---------- | --------------- | ------------------ |
+| Componente React | `bio.tsx`  | `bio.test.tsx`  | `bio.stories.tsx`  |
+| Página Next.js   | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
+| Lib TS pura      | `cpf.ts`   | `cpf.test.ts`   | —                  |
+| Handler Go       | `tools.go` | `tools_test.go` | —                  |
+| Lib Go pura      | `cpf.go`   | `cpf_test.go`   | —                  |
 ```
 
 - [ ] **Commit final:**
@@ -2400,13 +2426,13 @@ git commit -m "chore: final cleanup and verification — monorepo complete"
 
 ## Resumo das fases
 
-| Fase | Tarefas | Resultado |
-|---|---|---|
-| 1 — packages/tools | 1-3 | @piluvitu/tools isolado, testes passando |
-| 2 — apps/web | 4-9 | Next.js em apps/web, colocation completa, build ok |
-| 3 — Go scaffold | 10 | apps/api compila, router stub, go.work |
-| 4 — Go tools | 11-14 | 8 ferramentas com testes unitários Go |
-| 5 — HTTP API | 15-16 | 13 endpoints funcionando, smoke tested |
-| 6 — CLI | 17 | Binário `piluvitu` com todos os subcomandos |
-| 7 — Infra | 18-19 | Dockerfiles + docker-compose + Makefile |
-| 8 — Cleanup | 20-21 | CLAUDE.md atualizado, verificação final |
+| Fase               | Tarefas | Resultado                                          |
+| ------------------ | ------- | -------------------------------------------------- |
+| 1 — packages/tools | 1-3     | @piluvitu/tools isolado, testes passando           |
+| 2 — apps/web       | 4-9     | Next.js em apps/web, colocation completa, build ok |
+| 3 — Go scaffold    | 10      | apps/api compila, router stub, go.work             |
+| 4 — Go tools       | 11-14   | 8 ferramentas com testes unitários Go              |
+| 5 — HTTP API       | 15-16   | 13 endpoints funcionando, smoke tested             |
+| 6 — CLI            | 17      | Binário `piluvitu` com todos os subcomandos        |
+| 7 — Infra          | 18-19   | Dockerfiles + docker-compose + Makefile            |
+| 8 — Cleanup        | 20-21   | CLAUDE.md atualizado, verificação final            |

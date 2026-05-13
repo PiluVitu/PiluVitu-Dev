@@ -93,13 +93,13 @@ Ordem de execução: **Monorepo → CLI/API Go → Chrome Extension**. Este spec
 
 Todo teste e story fica no mesmo diretório do arquivo fonte. Nunca em pastas separadas como `stories/` ou `e2e/`.
 
-| Camada | Fonte | Teste | Story |
-|---|---|---|---|
-| Componente React | `bio.tsx` | `bio.test.tsx` | `bio.stories.tsx` |
-| Página Next.js | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
-| Lib TypeScript pura | `cpf.ts` | `cpf.test.ts` | — |
-| Handler Go | `tools.go` | `tools_test.go` | — |
-| Lib Go pura | `cpf.go` | `cpf_test.go` | — |
+| Camada              | Fonte      | Teste           | Story              |
+| ------------------- | ---------- | --------------- | ------------------ |
+| Componente React    | `bio.tsx`  | `bio.test.tsx`  | `bio.stories.tsx`  |
+| Página Next.js      | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
+| Lib TypeScript pura | `cpf.ts`   | `cpf.test.ts`   | —                  |
+| Handler Go          | `tools.go` | `tools_test.go` | —                  |
+| Lib Go pura         | `cpf.go`   | `cpf_test.go`   | —                  |
 
 Os diretórios `stories/` e `e2e/` da raiz atual são dissolvidos — arquivos migram para junto de seus componentes.
 
@@ -140,6 +140,7 @@ Os diretórios `stories/` e `e2e/` da raiz atual são dissolvidos — arquivos m
 `apps/web/package.json` adiciona `"@piluvitu/tools": "workspace:*"`.
 
 Imports antigos → novos:
+
 ```ts
 // antes
 import { validateCpf } from '@/lib/tools/cpf'
@@ -198,6 +199,7 @@ POST /tools/qr/decode         {"image":"<base64>"} → texto
 ```
 
 Resposta padrão:
+
 ```json
 { "ok": true,  "result": "..." }
 { "ok": false, "error": "mensagem" }
@@ -219,14 +221,14 @@ Builder compila `cmd/api` e `cmd/cli`. Imagem final `distroless` com só o biná
 
 ## 6. Ajustes de config em apps/web
 
-| Config | Mudança |
-|---|---|
-| `tsconfig.json` | `paths: { "@/*": ["./*"] }` — continua, agora relativo a `apps/web/` |
-| `jest.config.ts` | `testMatch: ["**/*.test.{ts,tsx}"]` — glob pega colocated |
-| `playwright.config.ts` | `testMatch: ["**/*.e2e.ts"]`, `webServer.cwd: "apps/web"` |
-| `.storybook/main.ts` | `stories: ["./**/*.stories.tsx"]` — relativo a `apps/web/` |
-| `.env.local` | move para `apps/web/.env.local` |
-| Husky hooks | permanecem na raiz — `pnpm -r prettier:fix && pnpm -r lint` |
+| Config                 | Mudança                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `tsconfig.json`        | `paths: { "@/*": ["./*"] }` — continua, agora relativo a `apps/web/` |
+| `jest.config.ts`       | `testMatch: ["**/*.test.{ts,tsx}"]` — glob pega colocated            |
+| `playwright.config.ts` | `testMatch: ["**/*.e2e.ts"]`, `webServer.cwd: "apps/web"`            |
+| `.storybook/main.ts`   | `stories: ["./**/*.stories.tsx"]` — relativo a `apps/web/`           |
+| `.env.local`           | move para `apps/web/.env.local`                                      |
+| Husky hooks            | permanecem na raiz — `pnpm -r prettier:fix && pnpm -r lint`          |
 
 ---
 
@@ -305,15 +307,15 @@ services:
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
-    ports: ["8080:8080"]
+    ports: ['8080:8080']
     environment:
-      PORT: "8080"
+      PORT: '8080'
 
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-    ports: ["3333:3333"]
+    ports: ['3333:3333']
     depends_on: [api]
 ```
 
@@ -326,8 +328,8 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     environment:
-      PORT: "8081"
-      GO_ENV: "test"
+      PORT: '8081'
+      GO_ENV: 'test'
 ```
 
 Usado com `go test -tags=integration ./...`. Por ora as ferramentas não têm DB — o arquivo existe pronto para crescer (Postgres, Redis, etc.).
@@ -336,14 +338,14 @@ Usado com `go test -tags=integration ./...`. Por ora as ferramentas não têm DB
 
 ## 11. Estratégia de testes
 
-| Tipo | Ferramenta | Localização |
-|---|---|---|
-| Unit TypeScript | Jest (node env) | `packages/tools/src/*.test.ts` |
-| Unit/componente React | Jest + jsdom | `apps/web/**/*.test.tsx` colocado |
-| E2E web | Playwright | `apps/web/**/*.e2e.ts` colocado |
-| Stories | Storybook | `apps/web/**/*.stories.tsx` colocado |
-| Unit Go | `go test` | `apps/api/internal/**/*_test.go` colocado |
-| Integração Go | `go test -tags=integration` | `apps/api/cmd/**/*_test.go` |
+| Tipo                  | Ferramenta                  | Localização                               |
+| --------------------- | --------------------------- | ----------------------------------------- |
+| Unit TypeScript       | Jest (node env)             | `packages/tools/src/*.test.ts`            |
+| Unit/componente React | Jest + jsdom                | `apps/web/**/*.test.tsx` colocado         |
+| E2E web               | Playwright                  | `apps/web/**/*.e2e.ts` colocado           |
+| Stories               | Storybook                   | `apps/web/**/*.stories.tsx` colocado      |
+| Unit Go               | `go test`                   | `apps/api/internal/**/*_test.go` colocado |
+| Integração Go         | `go test -tags=integration` | `apps/api/cmd/**/*_test.go`               |
 
 Comando raiz único: `make test` roda tudo.
 
