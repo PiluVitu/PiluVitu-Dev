@@ -13,6 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Storybook 10** — component documentation and manual UI verification
 - **Vercel** — hosting with ISR; no CI/CD workflows in `.github/workflows/`
 
+## Dependency security policy
+
+- **pnpm ≥ 11 required.** pnpm 11 blocks lifecycle scripts by default (supply-chain defense).
+- **Adding a dependency that needs install scripts:** add it explicitly to `allowBuilds` in `pnpm-workspace.yaml`. Never set `dangerouslyAllowAllBuilds: true`.
+- **`minimumReleaseAge: 1440`** (set in `pnpm-workspace.yaml`): pnpm skips versions published less than 24 h ago, giving the community time to detect and report malicious releases.
+- Run `pnpm audit` periodically and before releases.
+
 ## Commands
 
 All commands run from the repository root using **pnpm**.

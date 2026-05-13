@@ -1,8 +1,17 @@
 packages:
   - "."
 
+# Only the packages listed below may run lifecycle scripts during installation.
+# All other install scripts are blocked by default (pnpm 11 default).
 allowBuilds:
+  better-sqlite3: false
+  core-js: false
   core-js-pure: true
   esbuild: true
+  protobufjs: false
   sharp: true
   unrs-resolver: true
+
+# Ignore package versions published less than 24h ago (1440 min).
+# Defense against supply-chain attacks where malicious versions are published and quickly pulled.
+minimumReleaseAge: 1440
