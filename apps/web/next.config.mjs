@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Keystatic lê YAML em runtime; o trace serverless da Vercel pode não os
   // incluir nas revalidações ISR — sem isto, carreiras/projetos/redes podem
