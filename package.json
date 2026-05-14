@@ -8,5 +8,8 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "prettier:fix": "pnpm -r prettier:fix"
+  },
+  "devDependencies": {
+    "next": "16.2.1"
   }
 }
