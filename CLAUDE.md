@@ -22,28 +22,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands run from the repository root using **pnpm**.
+Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
-| Command               | Purpose                                           |
-| --------------------- | ------------------------------------------------- |
-| `pnpm dev`            | Dev server at http://localhost:3000 (webpack)     |
-| `pnpm dev:turbo`      | Dev server with Turbopack                         |
-| `pnpm build`          | Production build + type validation                |
-| `pnpm lint`           | ESLint (flat config)                              |
-| `pnpm style-fix`      | ESLint auto-fix                                   |
-| `pnpm prettier:check` | Check Prettier formatting                         |
-| `pnpm prettier:fix`   | Auto-format (also runs via Husky pre-commit hook) |
-| `pnpm storybook`      | Storybook at port 6017                            |
-| `pnpm tina:dev`       | Dev server + TinaCMS editor at /admin             |
-| `pnpm tina:build`     | Build TinaCMS admin then Next.js (use on Vercel)  |
+| Comando                                 | Propósito                                |
+| --------------------------------------- | ---------------------------------------- |
+| `make dev`                              | Dev server web + Go API em paralelo      |
+| `make dev-web`                          | Só o Next.js em http://localhost:3333    |
+| `make dev-api`                          | Só a Go API em http://localhost:8080     |
+| `make build-api`                        | Compila binário Go API em bin/api        |
+| `make build-cli`                        | Compila CLI Go em bin/piluvitu           |
+| `make test`                             | Todos os testes (pnpm -r test + go test) |
+| `make lint`                             | ESLint + go vet                          |
+| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                       |
+| `pnpm --filter @piluvitu/web build`     | Build Next.js                            |
+| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                        |
+| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                           |
+| `pnpm -r test`                          | Testes de todos os workspaces            |
 
-| `pnpm test` | Jest unit tests (lib/tools/\*) |
-| `pnpm test:watch` | Jest in watch mode |
-| `pnpm test:e2e` | Playwright E2E tests |
+**Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
-**Type checking without full build:** `pnpm exec tsc --noEmit`
-
-**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `pnpm test` → `pnpm build`
+**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
 
 ## Architecture
 
@@ -151,6 +149,29 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
   4. Adicionar entrada em `lib/tools-registry.ts`
   5. Criar `app/(site)/tools/<slug>/page.tsx`
   6. Adicionar casos no `e2e/tools.spec.ts`
+
+## Colocation rules (lei do projeto)
+
+Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories/` ou `e2e/` separados.
+
+| Camada           | Fonte      | Teste           | Story              |
+| ---------------- | ---------- | --------------- | ------------------ |
+| Componente React | `bio.tsx`  | `bio.test.tsx`  | `bio.stories.tsx`  |
+| Página Next.js   | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
+| Lib TS pura      | `cpf.ts`   | `cpf.test.ts`   | —                  |
+| Handler Go       | `tools.go` | `tools_test.go` | —                  |
+| Lib Go pura      | `cpf.go`   | `cpf_test.go`   | —                  |
+
+E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `app/(site)/tasks/kanban.e2e.ts`).
+
+## Go API (apps/api)
+
+- **Module:** `github.com/PiluVitu/api`, Go 1.23
+- **HTTP router:** chi v5 — 13 endpoints under `/tools` + `/health`
+- **CLI:** cobra — `piluvitu <tool> <subcommand>` (e.g., `piluvitu cpf validate "123"`)
+- **Layer rules:** `internal/tools/` is pure Go (no HTTP, no cobra); `internal/handlers/` delegates to it; `cmd/` only parses args
+- **Tests:** colocated `*_test.go` files, run with `make test-go` or `cd apps/api && go test ./...`
+- **Build:** `make build-api` → `bin/api`, `make build-cli` → `bin/piluvitu`
 
 ## Environment variables
 
