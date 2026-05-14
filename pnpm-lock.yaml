@@ -256,6 +256,34 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/tools:
+    dependencies:
+      '@zxing/browser':
+        specifier: ^0.2.0
+        version: 0.2.0(@zxing/library@0.22.0)
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
+    devDependencies:
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/qrcode':
+        specifier: ^1.5.6
+        version: 1.5.6
+      jest:
+        specifier: ^30.4.2
+        version: 30.4.2(@types/node@25.5.0)(babel-plugin-macros@3.1.0)
+      jest-environment-jsdom:
+        specifier: ^30.4.1
+        version: 30.4.1
+      ts-jest:
+        specifier: ^29.4.9
+        version: 29.4.9(@babel/core@7.29.0)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.0))(esbuild@0.27.4)(jest-util@30.4.1)(jest@30.4.2(@types/node@25.5.0)(babel-plugin-macros@3.1.0))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
 packages:
 
   '@0no-co/graphql.web@1.2.0':
