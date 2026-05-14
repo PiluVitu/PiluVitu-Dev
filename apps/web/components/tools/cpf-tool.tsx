@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CopyButton } from './copy-button'
-import { gerarCPF, validarCPF } from '@/lib/tools/cpf'
+import { gerarCPF, validarCPF } from '@piluvitu/tools/cpf'
 
 export function CpfTool() {
   const [generated, setGenerated] = useState('')

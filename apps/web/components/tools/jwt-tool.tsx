@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { decodeJWT, type JwtParts } from '@/lib/tools/jwt-decode'
+import { decodeJWT, type JwtParts } from '@piluvitu/tools/jwt-decode'
 
 export function JwtTool() {
   const [token, setToken] = useState('')

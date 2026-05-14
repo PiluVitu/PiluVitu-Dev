@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { formatJSON, minifyJSON, validateJSON } from '@/lib/tools/json-format'
+import { formatJSON, minifyJSON, validateJSON } from '@piluvitu/tools/json-format'
 
 export function JsonTool() {
   const [input, setInput] = useState('')

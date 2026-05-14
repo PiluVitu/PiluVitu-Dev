@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { encodeQRPng, encodeQRSvg } from '@/lib/tools/qr-encode'
+import { encodeQRPng, encodeQRSvg } from '@piluvitu/tools/qr-encode'
 
 export function QrGeneratorTool() {
   const [text, setText] = useState('')

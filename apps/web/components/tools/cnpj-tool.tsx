@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CopyButton } from './copy-button'
-import { gerarCNPJ, validarCNPJ } from '@/lib/tools/cnpj'
+import { gerarCNPJ, validarCNPJ } from '@piluvitu/tools/cnpj'
 
 export function CnpjTool() {
   const [generated, setGenerated] = useState('')

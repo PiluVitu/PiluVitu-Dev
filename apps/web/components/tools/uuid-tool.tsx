@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from './copy-button'
-import { uuidV4 } from '@/lib/tools/uuid'
+import { uuidV4 } from '@piluvitu/tools/uuid'
 
 export function UuidTool() {
   const [uuids, setUuids] = useState<string[]>([])
