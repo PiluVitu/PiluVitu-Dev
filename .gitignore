@@ -63,3 +63,8 @@ tina/__generated__/.cache
 # playwright
 test-results/
 .playwright-mcp/
+
+# build artifacts
+/bin/
+apps/api/api
+apps/api/piluvitu

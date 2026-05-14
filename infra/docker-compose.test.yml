@@ -1,0 +1,10 @@
+services:
+  api-test:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PORT: '8081'
+      GO_ENV: 'test'
+    ports:
+      - '8081:8081'
