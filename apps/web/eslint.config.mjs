@@ -18,5 +18,8 @@ export default defineConfig([
     'next-env.d.ts',
     'storybook-static/**',
     'node_modules/**',
+    'tina/__generated__/**',
+    '**/*.tsbuildinfo',
+    'public/**',
   ]),
 ])

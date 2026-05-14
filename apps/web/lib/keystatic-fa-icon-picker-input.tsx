@@ -64,7 +64,7 @@ export function FontAwesomeIconSelectInput({
       autoFocus={autoFocus}
       width={{ mobile: 'auto', tablet: 'auto' }}
     >
-      {(item) => {
+      {(item: FaSelectOption) => {
         const opt = item as unknown as FaSelectOption
         const def = getVisitCardFaIcon(opt.value)
         const pathLabel = faStorageKeyToPathLabel(opt.value)
