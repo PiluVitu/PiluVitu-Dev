@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web (lint + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @piluvitu/web lint
+
+      - name: Typecheck
+        run: pnpm --filter @piluvitu/web exec tsc --noEmit
+
+      - name: Test (tools package)
+        run: pnpm --filter @piluvitu/tools test
+
+      - name: Test (web)
+        run: pnpm --filter @piluvitu/web test
+
+      - name: Build
+        run: pnpm --filter @piluvitu/web build
+        env:
+          # tinacms build precisa rodar sem tocar na nuvem em CI
+          NEXT_PUBLIC_TINA_CLIENT_ID: ""
+          TINA_TOKEN: ""
+
+  api:
+    name: API (vet + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build api
+        run: go build -o /tmp/api ./cmd/api
+
+      - name: Build cli
+        run: go build -o /tmp/piluvitu ./cmd/cli
