@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 4 concluída: TMDb + handlers de sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
+- **Status:** em construção (Fase 5 concluída: voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -177,6 +177,10 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Sub-interfaces:** `SheetsReader` (`GetCategories`, `ReadMovies`) e `PosterSearcher` (`SearchPoster`) ficam no pacote `handlers/votacao`. Desacoplam testes dos pacotes concretos `gsheets`/`tmdb`. Stubs em `*_test.go`.
 - **auth.WithUserForTests:** helper exportado em `internal/auth/middleware.go` que outros pacotes usam pra plantar um `*votacao.User` no ctx do request nos testes (mesma chave que `RequireAuth` usa).
 - **Wiring opcional:** `gsheets.Client` e `tmdb.Client` só são construídos no `main.go` se `GSHEETS_MOVIES_SPREADSHEET_ID` e `TMDB_API_KEY` estiverem setados, respectivamente. Sem eles os handlers respondem 503 (categorias) ou criam sessões sem pôsteres (CreateSession).
+- **Votos (`POST /votacao/sessions/{id}/votes`, RequireAuth):** body `{"movie_id": <int>}`. 201 ok. 409 se já votou (UNIQUE no DB). 400 sem movie_id. Idempotência pela constraint.
+- **Fechar (`POST /votacao/sessions/{id}/close`, RequireAdmin):** computa winner via `votacao.ComputeWinner` (maior contagem; empate por menor movie_id), grava `closed_at` e `winner_movie_id`. 404 se sessão já estava fechada. Retorna `{"winner_movie_id": id|null}`.
+- **Resultados (`GET /votacao/sessions/{id}/results`, RequireAuth):** retorna `{"results":[{movie_id,count},...], "total_votes":N}` ordenado por count desc + movie_id asc.
+- **GetSession agora inclui `has_voted`** quando o caller está autenticado.
 
 ### Tools dashboard (`/tools`)
 
