@@ -8,18 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/handlers"
 )
 
 // Deps holds external dependencies injected into the router.
 type Deps struct {
-	// DB is the SQLite connection used by the health check. May be nil
-	// in tests that don't need DB connectivity.
-	DB *sql.DB
+	DB           *sql.DB
+	Sessions     *scs.SessionManager
+	AuthHandlers *auth.Handlers
 }
 
 var defaultAllowedOrigins = []string{
@@ -33,7 +35,20 @@ func New(deps Deps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(corsOptions()))
 
+	if deps.Sessions != nil {
+		r.Use(deps.Sessions.LoadAndSave)
+	}
+
 	r.Get("/health", healthHandler(deps.DB))
+
+	if deps.AuthHandlers != nil {
+		r.Route("/auth", func(r chi.Router) {
+			r.Get("/google/login", deps.AuthHandlers.Login)
+			r.Get("/google/callback", deps.AuthHandlers.Callback)
+			r.Get("/me", deps.AuthHandlers.Me)
+			r.Post("/logout", deps.AuthHandlers.Logout)
+		})
+	}
 
 	r.Route("/tools", func(r chi.Router) {
 		r.Post("/cpf/validate", handlers.ValidateCPF)
@@ -80,7 +95,7 @@ func corsOptions() cors.Options {
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           300,
 	}
 }
