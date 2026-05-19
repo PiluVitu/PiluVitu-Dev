@@ -1,0 +1,13 @@
+secrets:
+  - id: jwt-token
+    paths:
+      # JWT de exemplo usado como fixture em teste E2E. Não é credencial real.
+      - "apps/web/app/(site)/tools/tools.e2e.ts"
+
+misconfigurations:
+  - id: DS-0026
+    paths:
+      # A imagem distroless da API não inclui shell/curl/wget, então não há
+      # como rodar HEALTHCHECK do Docker dentro dela. A saúde é verificada
+      # pelo orquestrador (Cloud Run probe ou docker-compose) via GET /health.
+      - "apps/api/Dockerfile"

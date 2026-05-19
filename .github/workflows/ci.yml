@@ -49,6 +49,13 @@ jobs:
 
       - name: Build (next only — TinaCMS roda na Vercel com secrets reais)
         run: pnpm --filter @piluvitu/web build:ci
+        env:
+          # Valores dummy: o Keystatic precisa que essas env vars existam
+          # durante o build da rota /api/keystatic, mesmo sem OAuth real.
+          KEYSTATIC_GITHUB_CLIENT_ID: "ci-dummy"
+          KEYSTATIC_GITHUB_CLIENT_SECRET: "ci-dummy"
+          KEYSTATIC_SECRET: "ci-dummy-secret-32-chars-padding-x"
+          NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG: "ci-dummy"
 
   api:
     name: API (vet + test + build)
@@ -62,7 +69,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.25"
           cache-dependency-path: apps/api/go.sum
 
       - name: Download modules
