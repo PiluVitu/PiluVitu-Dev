@@ -43,6 +43,12 @@ func RequireAuth(sm *scs.SessionManager, store *votacao.Store) func(http.Handler
 	}
 }
 
+// WithUserForTests attaches a user to the context exactly as RequireAuth would.
+// Intended for downstream packages' tests; do not call from production code.
+func WithUserForTests(ctx context.Context, u *votacao.User) context.Context {
+	return context.WithValue(ctx, userCtxKey, u)
+}
+
 // RequireAdmin first applies RequireAuth, then rejects non-admins with 403.
 func RequireAdmin(sm *scs.SessionManager, store *votacao.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
