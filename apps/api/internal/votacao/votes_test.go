@@ -75,3 +75,17 @@ func TestListVotesBySession_Empty(t *testing.T) {
 		t.Errorf("expected empty slice, got %d", len(got))
 	}
 }
+
+func TestInsertVote_NonExistentMovieReturnsWrappedError(t *testing.T) {
+	s, sess, _, user := setupVoteScenario(t)
+	ctx := context.Background()
+
+	// movie_id 999999 doesn't exist — should fail FK constraint, NOT match ErrAlreadyVoted
+	err := s.InsertVote(ctx, sess.ID, user.ID, 999999)
+	if err == nil {
+		t.Fatal("expected error for non-existent movie_id")
+	}
+	if errors.Is(err, votacao.ErrAlreadyVoted) {
+		t.Errorf("FK violation should NOT be ErrAlreadyVoted, got: %v", err)
+	}
+}

@@ -24,7 +24,7 @@ func (s *Store) InsertVote(ctx context.Context, sessionID, userID, movieID int64
 		INSERT INTO votes (session_id, user_id, movie_id) VALUES (?, ?, ?)
 	`, sessionID, userID, movieID)
 	if err != nil {
-		if isUniqueViolation(err) {
+		if isVotesUniqueViolation(err) {
 			return ErrAlreadyVoted
 		}
 		return fmt.Errorf("votacao: insert vote: %w", err)
@@ -58,11 +58,16 @@ func (s *Store) ListVotesBySession(ctx context.Context, sessionID int64) ([]Vote
 	return out, nil
 }
 
-// isUniqueViolation matches modernc.org/sqlite UNIQUE constraint errors.
-// We fall back to string matching to avoid coupling to the driver's internal types.
-func isUniqueViolation(err error) bool {
+// isVotesUniqueViolation matches the specific UNIQUE constraint on (session_id, user_id)
+// in the votes table. We match the SQLite error string rather than coupling to the
+// modernc driver's internal error type. If schema.sql adds another UNIQUE to the votes
+// table later, that one will NOT trigger ErrAlreadyVoted (it falls through to a wrapped error).
+func isVotesUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") &&
+		strings.Contains(msg, "votes.session_id") &&
+		strings.Contains(msg, "votes.user_id")
 }
