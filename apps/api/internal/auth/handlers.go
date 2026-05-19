@@ -99,3 +99,34 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 
 // ErrSessionUserMissing is returned when a session does not carry a user_id.
 var ErrSessionUserMissing = errors.New("auth: session has no user")
+
+// Me returns the currently logged-in user as JSON, or 401 if no session.
+func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
+	userID := h.deps.Sessions.GetInt64(r.Context(), sessionUserIDKey)
+	if userID == 0 {
+		jsonError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	user, err := h.deps.Store.GetUserByID(r.Context(), userID)
+	if err != nil {
+		jsonError(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":       user.ID,
+		"email":    user.Email,
+		"name":     user.Name,
+		"picture":  user.Picture,
+		"is_admin": user.IsAdmin,
+	})
+}
+
+// Logout destroys the current session, if any. Always returns 204.
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	if err := h.deps.Sessions.Destroy(r.Context()); err != nil {
+		http.Error(w, "logout failed", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

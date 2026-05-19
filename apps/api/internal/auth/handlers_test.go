@@ -180,3 +180,101 @@ func withSessions(t *testing.T, h *auth.Handlers) func(http.Handler) http.Handle
 	t.Helper()
 	return h.Sessions().LoadAndSave
 }
+
+func TestMe_NotLoggedIn_Returns401(t *testing.T) {
+	h := newCallbackHandlersWith(t, &stubExchanger{}, &stubVerifier{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	withSessions(t, h)(http.HandlerFunc(h.Me)).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d", rec.Code)
+	}
+}
+
+func TestMe_LoggedIn_ReturnsUser(t *testing.T) {
+	ex := &stubExchanger{
+		exchangeFn: func(ctx context.Context, code string) (*oauth2.Token, error) {
+			return makeIDTokenWithToken("raw"), nil
+		},
+	}
+	vr := &stubVerifier{claims: &auth.Claims{Sub: "s", Email: "u@x.com", Name: "U"}}
+	h := newCallbackHandlersWith(t, ex, vr)
+
+	jar := newJar(t)
+	srv := httptest.NewServer(withSessions(t, h)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cb":
+			h.Callback(w, r)
+		case "/me":
+			h.Me(w, r)
+		}
+	})))
+	defer srv.Close()
+	client := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+
+	cbReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/cb?code=c&state=s", nil)
+	cbReq.AddCookie(&http.Cookie{Name: "piluvitu_oauth_state", Value: "s"})
+	resp, err := client.Do(cbReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	resp, err = client.Get(srv.URL + "/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	body := make([]byte, 1024)
+	n, _ := resp.Body.Read(body)
+	if !strings.Contains(string(body[:n]), `"email":"u@x.com"`) {
+		t.Errorf("body = %s", body[:n])
+	}
+}
+
+func TestLogout_DestroysSession(t *testing.T) {
+	ex := &stubExchanger{
+		exchangeFn: func(ctx context.Context, code string) (*oauth2.Token, error) {
+			return makeIDTokenWithToken("raw"), nil
+		},
+	}
+	vr := &stubVerifier{claims: &auth.Claims{Sub: "s2", Email: "u2@x.com", Name: "U2"}}
+	h := newCallbackHandlersWith(t, ex, vr)
+
+	jar := newJar(t)
+	srv := httptest.NewServer(withSessions(t, h)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cb":
+			h.Callback(w, r)
+		case "/logout":
+			h.Logout(w, r)
+		case "/me":
+			h.Me(w, r)
+		}
+	})))
+	defer srv.Close()
+	client := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+
+	cbReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/cb?code=c&state=s", nil)
+	cbReq.AddCookie(&http.Cookie{Name: "piluvitu_oauth_state", Value: "s"})
+	resp, _ := client.Do(cbReq)
+	resp.Body.Close()
+
+	logoutReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/logout", nil)
+	resp, err := client.Do(logoutReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d", resp.StatusCode)
+	}
+
+	resp, _ = client.Get(srv.URL + "/me")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("after logout /me = %d, want 401", resp.StatusCode)
+	}
+}
