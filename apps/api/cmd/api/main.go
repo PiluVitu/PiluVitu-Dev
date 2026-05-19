@@ -9,7 +9,9 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/gsheets"
+	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
 	"github.com/PiluVitu/api/internal/router"
+	"github.com/PiluVitu/api/internal/tmdb"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -18,7 +20,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-
 	dbPath := os.Getenv("SQLITE_PATH")
 	if dbPath == "" {
 		dbPath = "/data/votacao.db"
@@ -41,30 +42,37 @@ func main() {
 		sm.Cookie.Secure = true
 	}
 	authHandlers := auth.NewHandlers(auth.HandlersDeps{
-		Store:     store,
-		Sessions:  sm,
-		Config:    cfg,
+		Store: store, Sessions: sm, Config: cfg,
 		Exchanger: auth.NewGoogleTokenExchanger(cfg),
 		Verifier:  auth.NewGoogleIDTokenVerifier(),
 	})
 
-	// Optional gsheets client — only built when both env vars are set. Failure
-	// is logged but does not abort startup so Phase 3 stays decoupled from
-	// real Google credentials in local dev.
+	var sheetsClient handlersvotacao.SheetsReader
 	if sheetID := os.Getenv("GSHEETS_MOVIES_SPREADSHEET_ID"); sheetID != "" {
 		rangeA1 := os.Getenv("GSHEETS_MOVIES_RANGE")
 		if rangeA1 == "" {
 			rangeA1 = "A2:F"
 		}
-		if _, gerr := gsheets.NewClient(context.Background(), sheetID, rangeA1); gerr != nil {
+		c, gerr := gsheets.NewClient(context.Background(), sheetID, rangeA1)
+		if gerr != nil {
 			fmt.Fprintf(os.Stderr, "gsheets: %v (continuing without sheets)\n", gerr)
+		} else {
+			sheetsClient = c
 		}
 	}
 
+	var postersClient handlersvotacao.PosterSearcher
+	if key := os.Getenv("TMDB_API_KEY"); key != "" {
+		postersClient = tmdb.NewClient(key)
+	}
+
+	votH := handlersvotacao.NewHandlers(handlersvotacao.Deps{
+		Store: store, Sheets: sheetsClient, Posters: postersClient,
+	})
+
 	handler := router.New(router.Deps{
-		DB:           store.DB(),
-		Sessions:     sm,
-		AuthHandlers: authHandlers,
+		DB: store.DB(), Sessions: sm,
+		AuthHandlers: authHandlers, VotacaoHandlers: votH, Store: store,
 	})
 
 	addr := ":" + port

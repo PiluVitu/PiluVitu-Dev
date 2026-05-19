@@ -15,13 +15,17 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/handlers"
+	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/votacao"
 )
 
 // Deps holds external dependencies injected into the router.
 type Deps struct {
-	DB           *sql.DB
-	Sessions     *scs.SessionManager
-	AuthHandlers *auth.Handlers
+	DB              *sql.DB
+	Sessions        *scs.SessionManager
+	AuthHandlers    *auth.Handlers
+	VotacaoHandlers *handlersvotacao.Handlers
+	Store           *votacao.Store
 }
 
 var defaultAllowedOrigins = []string{
@@ -47,6 +51,15 @@ func New(deps Deps) http.Handler {
 			r.Get("/google/callback", deps.AuthHandlers.Callback)
 			r.Get("/me", deps.AuthHandlers.Me)
 			r.Post("/logout", deps.AuthHandlers.Logout)
+		})
+	}
+
+	if deps.VotacaoHandlers != nil && deps.Store != nil && deps.Sessions != nil {
+		r.Route("/votacao", func(r chi.Router) {
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/categorias", deps.VotacaoHandlers.GetCategorias)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions", deps.VotacaoHandlers.ListSessions)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}", deps.VotacaoHandlers.GetSession)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions", deps.VotacaoHandlers.CreateSession)
 		})
 	}
 
