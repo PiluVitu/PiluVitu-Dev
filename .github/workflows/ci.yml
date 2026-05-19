@@ -47,12 +47,8 @@ jobs:
       - name: Test (web)
         run: pnpm --filter @piluvitu/web test
 
-      - name: Build
-        run: pnpm --filter @piluvitu/web build
-        env:
-          # tinacms build precisa rodar sem tocar na nuvem em CI
-          NEXT_PUBLIC_TINA_CLIENT_ID: ""
-          TINA_TOKEN: ""
+      - name: Build (next only — TinaCMS roda na Vercel com secrets reais)
+        run: pnpm --filter @piluvitu/web build:ci
 
   api:
     name: API (vet + test + build)

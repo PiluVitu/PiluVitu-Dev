@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tinacms build --skip-cloud-checks && next build",
+    "build:ci": "next build",
     "tina:build": "dotenv -e .env.local -- tinacms build --skip-cloud-checks && next build",
     "tina:dev": "dotenv -e .env.local -- tinacms dev -c \"next dev --webpack\"",
     "build-storybook": "storybook build",
