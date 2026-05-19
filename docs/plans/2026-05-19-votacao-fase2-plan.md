@@ -4,7 +4,7 @@
 
 **Goal:** Adicionar Google OAuth ao Go API com sessões persistidas em SQLite via `alexedwards/scs`, expondo `/auth/google/login`, `/auth/google/callback`, `/auth/me`, `POST /auth/logout`, e middleware `RequireAuth` / `RequireAdmin` para uso nas fases seguintes.
 
-**Architecture:** OAuth confidencial server-side (`golang.org/x/oauth2/google`), state CSRF via cookie HttpOnly de curto prazo. ID token validado por `google.golang.org/api/idtoken`. Sessões em cookie HttpOnly Lax persistidas em SQLite (`scs/sqlite3store` cria tabela `sessions` automaticamente — não está no `schema.sql` da Fase 1). Trocadores e verificador definidos via interface para permitir stub em testes sem chamar Google.
+**Architecture:** OAuth confidencial server-side (`golang.org/x/oauth2/google`), state CSRF via cookie HttpOnly de curto prazo. ID token validado por `google.golang.org/api/idtoken`. Sessões em cookie HttpOnly Lax persistidas em SQLite. A tabela `sessions` é criada pelo próprio `auth.NewSessionManager` (via `CREATE TABLE IF NOT EXISTS`) — `scs/sqlite3store` só faz SELECT/REPLACE/DELETE, ele NÃO cria a tabela. Fica fora de `votacao/schema.sql` porque é uma preocupação do pacote `auth`, não do domínio votação. Trocadores e verificador definidos via interface para permitir stub em testes sem chamar Google.
 
 **Tech Stack:** Go 1.25, `github.com/alexedwards/scs/v2`, `github.com/alexedwards/scs/sqlite3store`, `golang.org/x/oauth2`, `google.golang.org/api/idtoken`, chi v5.
 
@@ -2016,7 +2016,7 @@ git commit -m "docs(claude): document /auth/* endpoints + scs session setup"
 
 ## Notes for the implementer
 
-- **Don't add a `sessions` table to `schema.sql`.** `sqlite3store.New(db)` creates it on first use. Mixing it in would break idempotency.
+- **Don't add a `sessions` table to `votacao/schema.sql`.** It lives in the `auth` package (created idempotently by `NewSessionManager`). Heads up: `sqlite3store.New(db)` does NOT create the table itself — the upstream library only reads/writes, so `auth.NewSessionManager` runs `CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, data BLOB NOT NULL, expiry REAL NOT NULL)` + an `expiry` index before returning the manager. This panics on failure (boot-time only).
 - **`idtoken.Validate` vs JWKS by hand:** `google.golang.org/api/idtoken` caches Google's public keys with the right refresh semantics. Don't roll a manual JWKS fetcher.
 - **`oauth2.Token.Extra("id_token")` returns `any`.** Always type-assert to string and check for empty — Google's spec guarantees it for `scope=openid`, but defense-in-depth.
 - **CORS `AllowCredentials: true` is incompatible with `AllowedOrigins: ["*"]`.** Both go-chi/cors and the browser will reject. Keep origins explicit.

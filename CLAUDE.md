@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 1 concluída: DB + store + volume Docker).
+- **Status:** em construção (Fase 2 concluída: Auth Google via OAuth + scs sessions; Fase 1 entregou DB + store + volume Docker).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -148,6 +148,14 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Tabelas:** `users` (Google OAuth + admin allowlist), `voting_sessions` (open/closed + winner), `session_movies` (categoria UNIQUE por sessão), `votes` (UNIQUE por session+user), `backups` (Drive metadata).
 - **Health check:** `GET /health` retorna `{"ok":true,"db":"up"|"down"}` baseado em `db.PingContext` (timeout 2s); fallback `{"ok":true}` quando `Deps.DB` é `nil` (usado em testes).
 - **Próximas fases:** auth Google OAuth (Fase 2), Sheets reader + sorteio (Fase 3), TMDb + sessions handlers (Fase 4), votes + close + results (Fase 5), Drive backup + cron (Fase 6), Next.js UI (Fase 7), polimento (Fase 8).
+
+#### Auth Google (`internal/auth`)
+
+- **Fluxo:** `GET /auth/google/login` gera state CSRF (cookie HttpOnly Lax, 10 min) e redireciona pro Google. `GET /auth/google/callback` valida state, troca code, valida ID token via `google.golang.org/api/idtoken`, dá upsert no `users` aplicando `ADMIN_EMAILS` (case-insensitive), grava `user_id` na sessão scs, redireciona pra `WEB_REDIRECT_URL`. `GET /auth/me` retorna o user logado (JSON) ou 401. `POST /auth/logout` destrói a sessão (204).
+- **Sessões:** `alexedwards/scs/v2` com `sqlite3store`. A tabela `sessions(token TEXT PRIMARY KEY, data BLOB NOT NULL, expiry REAL NOT NULL)` + índice em `expiry` é criada idempotentemente por `auth.NewSessionManager` (o pacote `sqlite3store` só faz SELECT/REPLACE/DELETE, não cria a tabela). Cookie `piluvitu_session`, HttpOnly, SameSite=Lax, lifetime 7 dias. `SESSION_COOKIE_SECURE=true` em produção (Cloud Run/Tunnel).
+- **Middleware:** `auth.RequireAuth(sm, store)` e `auth.RequireAdmin(sm, store)` — anexam `*votacao.User` em `r.Context()` (`auth.UserFromContext`). Não-logado → 401. Não-admin → 403.
+- **Testabilidade:** `TokenExchanger` + `IDTokenVerifier` são interfaces. Em produção: `auth.NewGoogleTokenExchanger(cfg)` (wrapper sobre `*oauth2.Config` por causa do variadic `AuthCodeURL`) e `auth.NewGoogleIDTokenVerifier()`. Em testes: `stubExchanger`/`stubVerifier` em `internal/auth/helper_test.go`.
+- **CORS:** `AllowCredentials: true` (necessário pro cookie de sessão atravessar fetch do Next.js). Origens explícitas via `CORS_ALLOWED_ORIGINS`, sem `*`.
 
 ### Tools dashboard (`/tools`)
 
@@ -206,6 +214,10 @@ See `.env.example`. Key variables:
 - `BLOG_REPO_NAME` — blog content repo name (default: `piluvitu-blog`)
 - `SQLITE_PATH` — caminho do arquivo SQLite usado pela feature `votacao` (default `/data/votacao.db` dentro do container Go API)
 - `CORS_ALLOWED_ORIGINS` — origins permitidos pela Go API (csv); default `http://localhost:3333,https://piluvitu.com.br`
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL` — OAuth Client ID type "Web application" do Google Cloud Console. Redirect URL precisa estar registrada no console e bater 1:1 com a env.
+- `WEB_REDIRECT_URL` — pra onde o browser vai depois do callback bem-sucedido (default `http://localhost:3333/votacao`).
+- `ADMIN_EMAILS` — CSV de e-mails admin. Comparação case-insensitive contra o e-mail do ID token.
+- `SESSION_COOKIE_SECURE` — `true` em produção (HTTPS), `false` em dev local (HTTP).
 
 ## Keystatic & Vercel deployment
 
