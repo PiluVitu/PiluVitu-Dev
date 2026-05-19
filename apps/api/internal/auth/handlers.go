@@ -125,7 +125,7 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 // Logout destroys the current session, if any. Always returns 204.
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := h.deps.Sessions.Destroy(r.Context()); err != nil {
-		http.Error(w, "logout failed", http.StatusInternalServerError)
+		jsonError(w, http.StatusInternalServerError, "logout failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
