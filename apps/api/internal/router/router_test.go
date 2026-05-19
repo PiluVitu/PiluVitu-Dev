@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/oauth2"
+
+	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -148,4 +152,47 @@ func TestHealthWithoutDB_StillUp(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d", resp.StatusCode)
 	}
+}
+
+func TestAuthMe_Unauthenticated_Returns401(t *testing.T) {
+	store, err := votacao.NewStore(filepath.Join(t.TempDir(), "x.db"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	sm := auth.NewSessionManager(store.DB())
+	h := auth.NewHandlers(auth.HandlersDeps{
+		Store:     store,
+		Sessions:  sm,
+		Config:    auth.Config{ClientID: "cid", WebRedirectURL: "http://web"},
+		Exchanger: &fakeExchanger{},
+		Verifier:  &fakeVerifier{},
+	})
+
+	srv := httptest.NewServer(New(Deps{DB: store.DB(), Sessions: sm, AuthHandlers: h}))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/auth/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d", resp.StatusCode)
+	}
+}
+
+type fakeExchanger struct{}
+
+func (fakeExchanger) AuthCodeURL(state string) string {
+	return "https://example/o?state=" + state
+}
+func (fakeExchanger) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+	return nil, nil
+}
+
+type fakeVerifier struct{}
+
+func (fakeVerifier) Verify(ctx context.Context, idToken, audience string) (*auth.Claims, error) {
+	return nil, nil
 }
