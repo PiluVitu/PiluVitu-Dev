@@ -19,6 +19,9 @@ services:
       GSHEETS_MOVIES_SPREADSHEET_ID: ${GSHEETS_MOVIES_SPREADSHEET_ID:-}
       GSHEETS_MOVIES_RANGE: ${GSHEETS_MOVIES_RANGE:-A2:F}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
+      GDRIVE_BACKUP_FOLDER_ID: ${GDRIVE_BACKUP_FOLDER_ID:-}
+      GDRIVE_BACKUP_KEEP: ${GDRIVE_BACKUP_KEEP:-30}
+      BACKUP_CRON: ${BACKUP_CRON:-0 3 * * *}
     volumes:
       - api-data:/data
       - ./secrets:/secrets:ro

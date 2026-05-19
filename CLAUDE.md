@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 5 concluída: voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
+- **Status:** em construção (Fase 6 concluída: Drive backup + cron; Fase 5 entregou voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -181,6 +181,15 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Fechar (`POST /votacao/sessions/{id}/close`, RequireAdmin):** computa winner via `votacao.ComputeWinner` (maior contagem; empate por menor movie_id), grava `closed_at` e `winner_movie_id`. 404 se sessão já estava fechada. Retorna `{"winner_movie_id": id|null}`.
 - **Resultados (`GET /votacao/sessions/{id}/results`, RequireAuth):** retorna `{"results":[{movie_id,count},...], "total_votes":N}` ordenado por count desc + movie_id asc.
 - **GetSession agora inclui `has_voted`** quando o caller está autenticado.
+
+#### Backup + Cron (`internal/gdrive`, `internal/backup`, `internal/handlers/admin`)
+
+- **gdrive.Client:** wrapper sobre `google.golang.org/api/drive/v3`. `Upload` (multipart, scope drive.file) + `Rotate` (lista por createdTime desc, deleta os antigos além do `keep`). Test seam: `NewClientWithService` aceita um `*drive.Service` apontado pra `httptest.Server`.
+- **backup.Runner:** `Run(ctx, trigger)` faz `VACUUM INTO` num arquivo temp, sobe via `gdrive.Uploader`, insere row em `backups` (com `trigger_type` "cron"/"manual"/"session_close"), chama Rotate. Falhas propagam.
+- **backup.Start:** registra `func(ctx)` no `robfig/cron/v3` com o spec dado. Tarefa roda em goroutine separada do scheduler; runs longos não bloqueiam ticks.
+- **handlers/admin:** `POST /admin/backup` (RequireAdmin) dispara `Runner.Run(ctx, "manual")` síncrono → 204. `GET /admin/backups` (RequireAdmin) retorna últimos 50 do `backups` table.
+- **session_close trigger:** `CloseSession` (em `handlers/votacao/votes.go`), após fechar com sucesso, dispara `Runner.Run` async via goroutine com timeout de 30s. Falha do backup é logada, não bloqueia a resposta.
+- **Wiring opcional:** `runner` só é construído no `main.go` se `GDRIVE_BACKUP_FOLDER_ID` setado. Sem isso, /admin/backup responde 503 e o cron não inicia.
 
 ### Tools dashboard (`/tools`)
 
@@ -247,6 +256,9 @@ See `.env.example`. Key variables:
 - `GSHEETS_MOVIES_SPREADSHEET_ID` — ID da planilha (extraído da URL do Sheets). Sem isso o gsheets fica desligado.
 - `GSHEETS_MOVIES_RANGE` — A1 notation. Default `A2:F` (pula header).
 - `TMDB_API_KEY` — chave do TMDb (https://themoviedb.org/settings/api). Vazio → pôsteres desabilitados.
+- `GDRIVE_BACKUP_FOLDER_ID` — ID da pasta Drive onde os snapshots vão. Vazio → backup desabilitado.
+- `GDRIVE_BACKUP_KEEP` — quantos backups mais recentes manter (default 30).
+- `BACKUP_CRON` — cron spec 5-fields (default `0 3 * * *` — 03:00 local).
 
 ## Keystatic & Vercel deployment
 
