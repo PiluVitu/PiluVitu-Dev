@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/PiluVitu/api/internal/auth"
+	"github.com/PiluVitu/api/internal/gsheets"
 	"github.com/PiluVitu/api/internal/router"
 	"github.com/PiluVitu/api/internal/votacao"
 )
@@ -45,6 +47,19 @@ func main() {
 		Exchanger: auth.NewGoogleTokenExchanger(cfg),
 		Verifier:  auth.NewGoogleIDTokenVerifier(),
 	})
+
+	// Optional gsheets client — only built when both env vars are set. Failure
+	// is logged but does not abort startup so Phase 3 stays decoupled from
+	// real Google credentials in local dev.
+	if sheetID := os.Getenv("GSHEETS_MOVIES_SPREADSHEET_ID"); sheetID != "" {
+		rangeA1 := os.Getenv("GSHEETS_MOVIES_RANGE")
+		if rangeA1 == "" {
+			rangeA1 = "A2:F"
+		}
+		if _, gerr := gsheets.NewClient(context.Background(), sheetID, rangeA1); gerr != nil {
+			fmt.Fprintf(os.Stderr, "gsheets: %v (continuing without sheets)\n", gerr)
+		}
+	}
 
 	handler := router.New(router.Deps{
 		DB:           store.DB(),
