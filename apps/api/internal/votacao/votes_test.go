@@ -89,3 +89,26 @@ func TestInsertVote_NonExistentMovieReturnsWrappedError(t *testing.T) {
 		t.Errorf("FK violation should NOT be ErrAlreadyVoted, got: %v", err)
 	}
 }
+
+func TestHasVoted_False(t *testing.T) {
+	s, sess, _, user := setupVoteScenario(t)
+	ok, err := s.HasVoted(context.Background(), sess.ID, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("HasVoted should be false before voting")
+	}
+}
+
+func TestHasVoted_True(t *testing.T) {
+	s, sess, movie, user := setupVoteScenario(t)
+	_ = s.InsertVote(context.Background(), sess.ID, user.ID, movie.ID)
+	ok, err := s.HasVoted(context.Background(), sess.ID, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Error("HasVoted should be true after voting")
+	}
+}

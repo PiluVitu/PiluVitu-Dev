@@ -58,6 +58,19 @@ func (s *Store) ListVotesBySession(ctx context.Context, sessionID int64) ([]Vote
 	return out, nil
 }
 
+// HasVoted returns true if the user has already voted in the session.
+func (s *Store) HasVoted(ctx context.Context, sessionID, userID int64) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM votes WHERE session_id=? AND user_id=?)`,
+		sessionID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists == 1, nil
+}
+
 // isVotesUniqueViolation matches the specific UNIQUE constraint on (session_id, user_id)
 // in the votes table. We match the SQLite error string rather than coupling to the
 // modernc driver's internal error type. If schema.sql adds another UNIQUE to the votes
