@@ -2,6 +2,7 @@
   "name": "piluvitu-monorepo",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.1.1",
   "scripts": {
     "dev": "pnpm --filter @piluvitu/web dev",
     "build": "pnpm --filter @piluvitu/web build",

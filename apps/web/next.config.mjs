@@ -2,6 +2,16 @@
 const nextConfig = {
   output: 'standalone',
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // mermaid + langium têm deep imports de vscode-jsonrpc/languageserver-* que
+  // Turbopack não consegue resolver pelo walk-up do .pnpm. Como mermaid já é
+  // carregado lazy em components/mdx/mermaid-block.tsx (dynamic import dentro
+  // de useEffect, só roda no client), basta marcá-los como externals do server
+  // pra Turbopack não tentar fazer o bundle dessa cadeia.
+  serverExternalPackages: [
+    "mermaid",
+    "@mermaid-js/parser",
+    "langium",
+  ],
   // Keystatic lê YAML em runtime; o trace serverless da Vercel pode não os
   // incluir nas revalidações ISR — sem isto, carreiras/projetos/redes podem
   // aparecer vazios em produção.
