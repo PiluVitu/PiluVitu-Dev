@@ -1,0 +1,8 @@
+# JWT de exemplo usado como fixture em teste E2E. Não é um secret real.
+# https://github.com/PiluVitu/PiluVitu-Dev/blob/main/apps/web/app/(site)/tools/tools.e2e.ts
+jwt-token:apps/web/app/(site)/tools/tools.e2e.ts
+
+# A imagem distroless da API não inclui shell, curl ou wget, portanto não há
+# como rodar um HEALTHCHECK do Docker dentro dela. A saúde é verificada pelo
+# orquestrador (Cloud Run probe ou docker-compose) chamando GET /health.
+DS-0026:apps/api/Dockerfile
