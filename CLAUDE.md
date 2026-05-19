@@ -137,6 +137,18 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Export/Import:** `lib/kanban-export.ts` — download JSON / validação Zod antes de importar
 - **E2E:** `e2e/kanban.spec.ts` cobre todos os fluxos críticos (criar coluna, criar card, editar, tags, links, deletar, export/import)
 
+### Votação de Filmes (`/votacao`)
+
+- **Status:** em construção (Fase 1 concluída: DB + store + volume Docker).
+- **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
+- **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
+- **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
+- **Schema embutido:** `apps/api/internal/votacao/schema.sql` aplicado idempotentemente no startup via `//go:embed` (CREATE TABLE IF NOT EXISTS).
+- **Store por entidade:** `users.go`, `sessions.go`, `movies.go`, `votes.go`, `backups.go` — todos no pacote `internal/votacao`. Testes colocated (`*_test.go`), `helper_test.go` com `newTestStore()`.
+- **Tabelas:** `users` (Google OAuth + admin allowlist), `voting_sessions` (open/closed + winner), `session_movies` (categoria UNIQUE por sessão), `votes` (UNIQUE por session+user), `backups` (Drive metadata).
+- **Health check:** `GET /health` retorna `{"ok":true,"db":"up"|"down"}` baseado em `db.PingContext` (timeout 2s); fallback `{"ok":true}` quando `Deps.DB` é `nil` (usado em testes).
+- **Próximas fases:** auth Google OAuth (Fase 2), Sheets reader + sorteio (Fase 3), TMDb + sessions handlers (Fase 4), votes + close + results (Fase 5), Drive backup + cron (Fase 6), Next.js UI (Fase 7), polimento (Fase 8).
+
 ### Tools dashboard (`/tools`)
 
 - **Rota:** `app/(site)/tools/page.tsx` (landing) + `app/(site)/tools/[slug]/page.tsx` por ferramenta
@@ -170,10 +182,12 @@ E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `a
 ## Go API (apps/api)
 
 - **Module:** `github.com/PiluVitu/api`, Go 1.23
-- **HTTP router:** chi v5 — 13 endpoints under `/tools` + `/health`
+- **HTTP router:** chi v5 — 13 endpoints under `/tools` + `/health` (DB-aware)
+- **Router DI:** `router.New(router.Deps{DB: store.DB()})` — `Deps` injeta o `*sql.DB` usado pelo health check; testes podem passar `Deps{}` para subir sem DB.
 - **CORS:** `github.com/go-chi/cors` middleware. Origins permitidos lidos de `CORS_ALLOWED_ORIGINS` (csv) ou caem no default (`http://localhost:3333,https://piluvitu.com.br`). Defaults definidos em `internal/router/router.go`.
+- **Persistência:** SQLite via `modernc.org/sqlite` (puro Go, sem CGo). Volume Docker `api-data` montado em `/data`. Path configurável via env `SQLITE_PATH` (default `/data/votacao.db`). Schema aplicado idempotentemente em `votacao.NewStore`.
 - **CLI:** cobra — `piluvitu <tool> <subcommand>` (e.g., `piluvitu cpf validate "123"`)
-- **Layer rules:** `internal/tools/` is pure Go (no HTTP, no cobra); `internal/handlers/` delegates to it; `cmd/` only parses args
+- **Layer rules:** `internal/tools/` is pure Go (no HTTP, no cobra); `internal/handlers/` delegates to it; `internal/votacao/` é o pacote de domínio (Store + entidades); `cmd/` only parses args
 - **Tests:** colocated `*_test.go` files, run with `make test-go` or `cd apps/api && go test ./...`
 - **Build:** `make build-api` → `bin/api`, `make build-cli` → `bin/piluvitu`
 
@@ -190,6 +204,8 @@ See `.env.example`. Key variables:
 - `BLOG_REPO_TOKEN` — GitHub fine-grained PAT with `Contents: read` on `piluvitu-blog`
 - `BLOG_REPO_OWNER` — GitHub org/user owning the blog repo (default: `PiluVitu`)
 - `BLOG_REPO_NAME` — blog content repo name (default: `piluvitu-blog`)
+- `SQLITE_PATH` — caminho do arquivo SQLite usado pela feature `votacao` (default `/data/votacao.db` dentro do container Go API)
+- `CORS_ALLOWED_ORIGINS` — origins permitidos pela Go API (csv); default `http://localhost:3333,https://piluvitu.com.br`
 
 ## Keystatic & Vercel deployment
 

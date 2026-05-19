@@ -10,6 +10,9 @@ services:
       # Origins permitidos pelo CORS (separados por vírgula).
       # Default (se omitido): http://localhost:3333 + https://piluvitu.com.br
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3333,https://piluvitu.com.br}
+      SQLITE_PATH: '/data/votacao.db'
+    volumes:
+      - api-data:/data
     restart: unless-stopped
 
   web:
@@ -36,3 +39,6 @@ services:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN não definido — copie infra/.env.example para infra/.env}
     depends_on:
       - api
+
+volumes:
+  api-data:

@@ -1,9 +1,12 @@
 package router
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -12,23 +15,25 @@ import (
 	"github.com/PiluVitu/api/internal/handlers"
 )
 
-// defaultAllowedOrigins é usado quando CORS_ALLOWED_ORIGINS não está definido.
+// Deps holds external dependencies injected into the router.
+type Deps struct {
+	// DB is the SQLite connection used by the health check. May be nil
+	// in tests that don't need DB connectivity.
+	DB *sql.DB
+}
+
 var defaultAllowedOrigins = []string{
 	"http://localhost:3333",
 	"https://piluvitu.com.br",
 }
 
-func New() http.Handler {
+func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(corsOptions()))
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok":true}`))
-	})
+	r.Get("/health", healthHandler(deps.DB))
 
 	r.Route("/tools", func(r chi.Router) {
 		r.Post("/cpf/validate", handlers.ValidateCPF)
@@ -47,6 +52,26 @@ func New() http.Handler {
 	})
 
 	return r
+}
+
+func healthHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if db != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"ok":false,"db":"down"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true,"db":"up"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}
 }
 
 func corsOptions() cors.Options {
