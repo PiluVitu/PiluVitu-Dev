@@ -185,3 +185,33 @@ func TestGetSession_NotFound_404(t *testing.T) {
 		t.Errorf("status = %d", rec.Code)
 	}
 }
+
+func TestGetSession_HasVotedTrueAfterInsertVote(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	sess, _ := store.CreateVotingSession(context.Background(), "X", admin.ID, "{}")
+	_ = store.InsertSessionMovies(context.Background(), []votacao.SessionMovie{
+		{SessionID: sess.ID, Category: "terror", Title: "M", Type: "filme"},
+	})
+	movies, _ := store.GetSessionMovies(context.Background(), sess.ID)
+	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movies[0].ID)
+
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/votacao/sessions/1", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "1")
+	req = req.WithContext(auth.WithUserForTests(context.WithValue(req.Context(), chi.RouteCtxKey, rctx), admin))
+	h.GetSession(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var out struct {
+		HasVoted bool `json:"has_voted"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if !out.HasVoted {
+		t.Error("has_voted should be true")
+	}
+}

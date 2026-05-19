@@ -175,7 +175,18 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	movies, _ := h.deps.Store.GetSessionMovies(r.Context(), session.ID)
-	writeSessionJSON(w, http.StatusOK, session, movies)
+
+	hasVoted := false
+	if user := auth.UserFromContext(r.Context()); user != nil {
+		hasVoted, _ = h.deps.Store.HasVoted(r.Context(), session.ID, user.ID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"session":   session,
+		"movies":    movies,
+		"has_voted": hasVoted,
+	})
 }
 
 func writeSessionJSON(w http.ResponseWriter, status int, session *votacao.VotingSession, movies []votacao.SessionMovie) {
