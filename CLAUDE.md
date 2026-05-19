@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 3 concluída: Sheets reader + sorteio puro; Fase 2 entregou Auth Google; Fase 1 entregou DB + store + volume Docker).
+- **Status:** em construção (Fase 4 concluída: TMDb + handlers de sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -165,6 +165,18 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **SortOnePerCategory (`internal/votacao/sortear.go`):** função pura. Filtra por `Types` / `IncludeWatched` / `Categories`, agrupa por categoria, sorteia 1 por grupo. Categorias iteradas em ordem alfabética → saída estável. Determinístico com `*rand.Rand` injetado. Retorna `ErrNoCandidates` se nenhum sobrevive aos filtros. 9 testes em `sortear_test.go` cobrem happy path, todos os filtros, sem candidatos, determinismo e ordenação.
 - **Direção de dependência:** `SheetMovie` mora em `internal/votacao/` (domínio); `gsheets` importa `votacao` pra retornar o tipo. One-way dep.
 - **Secret mount:** `infra/secrets/google-sa.json` é montado em `/secrets:ro` dentro do container (bind path `./secrets` no compose). Compose não falha se o arquivo não existir; quem usa gsheets em runtime é que vai dar erro. Em `main.go`, o cliente só é construído se `GSHEETS_MOVIES_SPREADSHEET_ID` estiver setado, e falhas de construção apenas logam — não abortam o startup.
+
+#### TMDb + handlers de sessions (`internal/tmdb`, `internal/handlers/votacao`)
+
+- **tmdb.Client (`SearchPoster`):** GET TMDb v3 `/search/movie` ou `/search/tv` (média serie → tv). Fail-soft: 404 ou results vazio → `("", 0, nil)`. Apenas 5xx, 4xx (≠404) ou erro de parse propaga. Pôster final = `https://image.tmdb.org/t/p/w500` + `poster_path`.
+- **handlers/votacao.Handlers (mounted em `/votacao/*`):**
+  - `GetCategorias` (GET, RequireAuth) — `SheetsReader.GetCategories`. 503 se sheets desligado, 502 se Sheets falha.
+  - `CreateSession` (POST, RequireAdmin) — lê Sheets → `votacao.SortOnePerCategory` → `fetchPosters` paralelo (errgroup limit=5, timeout 3s/each) → grava session + session_movies. 422 se nenhum filme bate filtros. 400 se title vazio ou JSON inválido. 502 se sheets falha. Aplica `auth.UserFromContext` pro `created_by`.
+  - `ListSessions` (GET, RequireAuth) — paginação via `?limit` (default 20) e `?offset` (default 0).
+  - `GetSession` (GET, RequireAuth) — retorna `{session, movies}`. 404 se não existir.
+- **Sub-interfaces:** `SheetsReader` (`GetCategories`, `ReadMovies`) e `PosterSearcher` (`SearchPoster`) ficam no pacote `handlers/votacao`. Desacoplam testes dos pacotes concretos `gsheets`/`tmdb`. Stubs em `*_test.go`.
+- **auth.WithUserForTests:** helper exportado em `internal/auth/middleware.go` que outros pacotes usam pra plantar um `*votacao.User` no ctx do request nos testes (mesma chave que `RequireAuth` usa).
+- **Wiring opcional:** `gsheets.Client` e `tmdb.Client` só são construídos no `main.go` se `GSHEETS_MOVIES_SPREADSHEET_ID` e `TMDB_API_KEY` estiverem setados, respectivamente. Sem eles os handlers respondem 503 (categorias) ou criam sessões sem pôsteres (CreateSession).
 
 ### Tools dashboard (`/tools`)
 
@@ -230,6 +242,7 @@ See `.env.example`. Key variables:
 - `GOOGLE_APPLICATION_CREDENTIALS` — caminho do JSON da Service Account dentro do container (default `/secrets/google-sa.json`).
 - `GSHEETS_MOVIES_SPREADSHEET_ID` — ID da planilha (extraído da URL do Sheets). Sem isso o gsheets fica desligado.
 - `GSHEETS_MOVIES_RANGE` — A1 notation. Default `A2:F` (pula header).
+- `TMDB_API_KEY` — chave do TMDb (https://themoviedb.org/settings/api). Vazio → pôsteres desabilitados.
 
 ## Keystatic & Vercel deployment
 
