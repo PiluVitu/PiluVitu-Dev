@@ -1,13 +1,18 @@
 package router
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/PiluVitu/api/internal/votacao"
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	srv := httptest.NewServer(New())
+	srv := httptest.NewServer(New(Deps{}))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/health")
@@ -22,7 +27,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestCORS_AllowedOrigin_GET(t *testing.T) {
-	srv := httptest.NewServer(New())
+	srv := httptest.NewServer(New(Deps{}))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/health", nil)
@@ -41,7 +46,7 @@ func TestCORS_AllowedOrigin_GET(t *testing.T) {
 }
 
 func TestCORS_BlockedOrigin_GET(t *testing.T) {
-	srv := httptest.NewServer(New())
+	srv := httptest.NewServer(New(Deps{}))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/health", nil)
@@ -60,7 +65,7 @@ func TestCORS_BlockedOrigin_GET(t *testing.T) {
 }
 
 func TestCORS_Preflight_AllowedOrigin(t *testing.T) {
-	srv := httptest.NewServer(New())
+	srv := httptest.NewServer(New(Deps{}))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/tools/cpf/validate", nil)
@@ -104,5 +109,43 @@ func TestAllowedOrigins_ParsesEnv(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("[%d] got %q want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestHealthWithDB_Up(t *testing.T) {
+	store, err := votacao.NewStore(filepath.Join(t.TempDir(), "x.db"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	srv := httptest.NewServer(New(Deps{DB: store.DB()}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"db":"up"`) {
+		t.Errorf("body = %s", body)
+	}
+}
+
+func TestHealthWithoutDB_StillUp(t *testing.T) {
+	srv := httptest.NewServer(New(Deps{}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d", resp.StatusCode)
 	}
 }
