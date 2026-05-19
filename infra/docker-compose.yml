@@ -7,6 +7,10 @@ services:
       - '8080:8080'
     environment:
       PORT: '8080'
+      # Origins permitidos pelo CORS (separados por vírgula).
+      # Default (se omitido): http://localhost:3333 + https://piluvitu.com.br
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3333,https://piluvitu.com.br}
+    restart: unless-stopped
 
   web:
     build:
@@ -16,5 +20,19 @@ services:
       - '3333:3333'
     environment:
       NEXT_PUBLIC_API_URL: 'http://api:8080'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Cloudflare Tunnel — exposição pública da API sem abrir portas
+  # Sobe só com: docker compose --profile tunnel up -d   (ou: make tunnel-up)
+  # Token gerado em: dash.cloudflare.com → Zero Trust → Networks → Tunnels
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN não definido — copie infra/.env.example para infra/.env}
     depends_on:
       - api

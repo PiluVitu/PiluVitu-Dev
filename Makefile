@@ -1,4 +1,5 @@
-.PHONY: dev dev-web dev-api build-api build-cli test lint clean
+.PHONY: dev dev-web dev-api build-api build-cli test test-go test-web test-e2e lint clean \
+        compose-up compose-down tunnel-up tunnel-down tunnel-logs
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -32,3 +33,25 @@ lint:
 
 clean:
 	rm -rf bin/ apps/api/api apps/api/piluvitu
+
+# --- Docker Compose ---
+compose-up:
+	cd infra && docker compose up -d --build api web
+
+compose-down:
+	cd infra && docker compose down
+
+# --- Cloudflare Tunnel ---
+# Requer infra/.env com CLOUDFLARE_TUNNEL_TOKEN
+# Só sobe api + cloudflared (web fica na Vercel, não precisa rodar localmente)
+tunnel-up:
+	cd infra && docker compose --env-file .env --profile tunnel up -d --build api cloudflared
+
+tunnel-down:
+	cd infra && docker compose --profile tunnel down
+
+tunnel-logs:
+	cd infra && docker compose logs -f cloudflared
+
+tunnel-status:
+	cd infra && docker compose ps

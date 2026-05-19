@@ -1,5 +1,7 @@
 FROM node:22-alpine AS base
-RUN npm install -g pnpm@latest
+ENV CI=true \
+    PNPM_VERSION=11.0.0
+RUN npm install -g pnpm@${PNPM_VERSION}
 
 FROM base AS deps
 WORKDIR /app
