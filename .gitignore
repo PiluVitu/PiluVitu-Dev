@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -11,7 +12,9 @@
 
 # next.js
 /.next/
+**/.next/
 /out/
+**/out/
 
 # production
 /build
@@ -63,3 +66,8 @@ tina/__generated__/.cache
 # playwright
 test-results/
 .playwright-mcp/
+
+# build artifacts
+/bin/
+apps/api/api
+apps/api/piluvitu

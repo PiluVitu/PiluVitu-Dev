@@ -1,0 +1,33 @@
+{
+  "name": "@piluvitu/tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cpf": "./src/cpf.ts",
+    "./cnpj": "./src/cnpj.ts",
+    "./base64": "./src/base64.ts",
+    "./jwt-decode": "./src/jwt-decode.ts",
+    "./json-format": "./src/json-format.ts",
+    "./uuid": "./src/uuid.ts",
+    "./qr-encode": "./src/qr-encode.ts",
+    "./qr-decode": "./src/qr-decode.ts"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/qrcode": "^1.5.6",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@zxing/browser": "^0.2.0",
+    "qrcode": "^1.5.4"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  }
+}

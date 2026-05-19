@@ -1,5 +1,6 @@
 packages:
-  - "."
+  - "apps/web"
+  - "packages/tools"
 
 # Only the packages listed below may run lifecycle scripts during installation.
 # All other install scripts are blocked by default (pnpm 11 default).

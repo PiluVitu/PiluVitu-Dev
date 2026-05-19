@@ -11,7 +11,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **TanStack Query 5** — data fetching (dev.to API)
 - **Font Awesome 7** (`free-brands-svg-icons`, `free-solid-svg-icons`)
 - **Storybook 10** — component documentation and manual UI verification
-- **Vercel** — hosting with ISR; no CI/CD workflows in `.github/workflows/`
+- **Vercel** — hosting do frontend com ISR
+- **Cloudflare Tunnel** — exposição pública atual da Go API rodando localmente via Docker (ver seção "Hosting da API")
+- **Google Cloud Run** — destino futuro da Go API; workflow `deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables
+- **GitHub Actions** — CI (`ci.yml`) bloqueia PR; `deploy-api.yml` aguarda credenciais GCP; `trivy.yml` para scan de segurança
 
 ## Dependency security policy
 
@@ -22,28 +25,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands run from the repository root using **pnpm**.
+Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
-| Command               | Purpose                                           |
-| --------------------- | ------------------------------------------------- |
-| `pnpm dev`            | Dev server at http://localhost:3000 (webpack)     |
-| `pnpm dev:turbo`      | Dev server with Turbopack                         |
-| `pnpm build`          | Production build + type validation                |
-| `pnpm lint`           | ESLint (flat config)                              |
-| `pnpm style-fix`      | ESLint auto-fix                                   |
-| `pnpm prettier:check` | Check Prettier formatting                         |
-| `pnpm prettier:fix`   | Auto-format (also runs via Husky pre-commit hook) |
-| `pnpm storybook`      | Storybook at port 6017                            |
-| `pnpm tina:dev`       | Dev server + TinaCMS editor at /admin             |
-| `pnpm tina:build`     | Build TinaCMS admin then Next.js (use on Vercel)  |
+| Comando                                 | Propósito                                |
+| --------------------------------------- | ---------------------------------------- |
+| `make dev`                              | Dev server web + Go API em paralelo      |
+| `make dev-web`                          | Só o Next.js em http://localhost:3333    |
+| `make dev-api`                          | Só a Go API em http://localhost:8080     |
+| `make build-api`                        | Compila binário Go API em bin/api        |
+| `make build-cli`                        | Compila CLI Go em bin/piluvitu           |
+| `make test`                             | Todos os testes (pnpm -r test + go test) |
+| `make lint`                             | ESLint + go vet                          |
+| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                       |
+| `pnpm --filter @piluvitu/web build`     | Build Next.js                            |
+| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                        |
+| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                           |
+| `pnpm -r test`                          | Testes de todos os workspaces            |
 
-| `pnpm test` | Jest unit tests (lib/tools/\*) |
-| `pnpm test:watch` | Jest in watch mode |
-| `pnpm test:e2e` | Playwright E2E tests |
+**Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
-**Type checking without full build:** `pnpm exec tsc --noEmit`
-
-**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `pnpm test` → `pnpm build`
+**Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
 
 ## Architecture
 
@@ -152,6 +153,30 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
   5. Criar `app/(site)/tools/<slug>/page.tsx`
   6. Adicionar casos no `e2e/tools.spec.ts`
 
+## Colocation rules (lei do projeto)
+
+Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories/` ou `e2e/` separados.
+
+| Camada           | Fonte      | Teste           | Story              |
+| ---------------- | ---------- | --------------- | ------------------ |
+| Componente React | `bio.tsx`  | `bio.test.tsx`  | `bio.stories.tsx`  |
+| Página Next.js   | `page.tsx` | `page.test.tsx` | `page.stories.tsx` |
+| Lib TS pura      | `cpf.ts`   | `cpf.test.ts`   | —                  |
+| Handler Go       | `tools.go` | `tools_test.go` | —                  |
+| Lib Go pura      | `cpf.go`   | `cpf_test.go`   | —                  |
+
+E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `app/(site)/tasks/kanban.e2e.ts`).
+
+## Go API (apps/api)
+
+- **Module:** `github.com/PiluVitu/api`, Go 1.23
+- **HTTP router:** chi v5 — 13 endpoints under `/tools` + `/health`
+- **CORS:** `github.com/go-chi/cors` middleware. Origins permitidos lidos de `CORS_ALLOWED_ORIGINS` (csv) ou caem no default (`http://localhost:3333,https://piluvitu.com.br`). Defaults definidos em `internal/router/router.go`.
+- **CLI:** cobra — `piluvitu <tool> <subcommand>` (e.g., `piluvitu cpf validate "123"`)
+- **Layer rules:** `internal/tools/` is pure Go (no HTTP, no cobra); `internal/handlers/` delegates to it; `cmd/` only parses args
+- **Tests:** colocated `*_test.go` files, run with `make test-go` or `cd apps/api && go test ./...`
+- **Build:** `make build-api` → `bin/api`, `make build-cli` → `bin/piluvitu`
+
 ## Environment variables
 
 See `.env.example`. Key variables:
@@ -173,3 +198,73 @@ Each **Save** in Keystatic commits directly to the active branch. If editing on 
 ## Import alias
 
 `@/*` maps to the repository root (configured in `tsconfig.json`).
+
+## Hosting da API (Cloudflare Tunnel)
+
+Enquanto o GCP não estiver provisionado, a Go API é exposta publicamente via Cloudflare Tunnel rodando como container ao lado da API.
+
+### Setup inicial (uma vez só)
+
+1. **Crie o tunnel na Cloudflare** — `dash.cloudflare.com` → Zero Trust → Networks → Tunnels → **Create a tunnel** → tipo `Cloudflared` → escolha um nome (ex.: `piluvitu-api`).
+2. **Copie o token** que aparece na tela ("Install and run a connector") — é a string longa após `--token`.
+3. **Adicione um Public Hostname** no mesmo tunnel:
+   - Subdomain: `api`
+   - Domain: (escolha seu domínio Cloudflare)
+   - Service Type: `HTTP`
+   - URL: `api:8080` (nome do serviço no Docker Compose, não `localhost`)
+4. **Salve o token localmente**:
+   ```bash
+   cp infra/.env.example infra/.env
+   # edite infra/.env e cole o token em CLOUDFLARE_TUNNEL_TOKEN
+   ```
+
+### Operação diária
+
+| Comando             | Faz o quê                                                 |
+| ------------------- | --------------------------------------------------------- |
+| `make tunnel-up`    | Sobe api + web + cloudflared (build + detached)           |
+| `make tunnel-down`  | Derruba tudo                                              |
+| `make tunnel-logs`  | Tail do log do cloudflared (útil pra debug de conexão)    |
+| `make compose-up`   | Sobe só api + web (sem expor publicamente)                |
+
+Depois de `make tunnel-up`, a API responde em `https://api.SEUDOMINIO.com`. Esse valor vai em `NEXT_PUBLIC_API_URL` na Vercel.
+
+### Limitações conhecidas
+
+- A API só fica online enquanto seu Mac/PC estiver com o Docker rodando.
+- URL **persiste** entre restarts (é o mesmo subdomínio Cloudflare), então não precisa atualizar a Vercel a cada `docker compose down/up`.
+- Quando migrar pra Cloud Run, basta cadastrar as variáveis GCP no GitHub (o workflow `deploy-api.yml` já está pronto) e mudar `NEXT_PUBLIC_API_URL` na Vercel pra URL do Cloud Run.
+
+## CI / CD
+
+### Workflows GitHub Actions
+
+| Workflow              | Trigger                                              | Faz o quê                                                                                                                |
+| --------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `ci.yml`              | PR + push em `main`                                  | Em paralelo: web (`lint` + `tsc --noEmit` + `jest` + `next build`) e api (`go vet` + `go test -race` + `go build`).      |
+| `deploy-api.yml`      | push em `main` que toca `apps/api/**` + dispatch     | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU). |
+| `trivy.yml`           | push/PR em `main` + cron semanal                     | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                          |
+
+### Secrets/Vars necessários no GitHub (Settings → Secrets and variables → Actions)
+
+**Variables** (não são secretas, ficam em "Variables"):
+
+- `GCP_PROJECT_ID` — ID do projeto GCP (ex.: `piluvitu-prod`)
+- `GCP_REGION` — região do Cloud Run (ex.: `southamerica-east1`)
+- `AR_REPOSITORY` — nome do repositório Artifact Registry (ex.: `api`)
+- `CLOUD_RUN_SERVICE` — nome do serviço Cloud Run (ex.: `piluvitu-api`)
+
+**Secrets**:
+
+- `GCP_WORKLOAD_IDENTITY_PROVIDER` — recurso completo do provider WIF (`projects/NNN/locations/global/workloadIdentityPools/POOL/providers/PROVIDER`)
+- `GCP_DEPLOY_SA_EMAIL` — e-mail da service account de deploy (ex.: `deployer@PROJECT.iam.gserviceaccount.com`)
+
+### Vercel
+
+- **Root Directory:** `apps/web`
+- **Install Command:** `pnpm install --frozen-lockfile` (Vercel detecta `pnpm-workspace.yaml` na raiz automaticamente)
+- **Build Command:** `pnpm tina:build` (ou `pnpm build` se não estiver usando TinaCMS)
+- **Output Directory:** `.next` (default)
+- **Node version:** 22.x
+- **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `TINA_TOKEN`, `BLOG_REPO_*`, `KEYSTATIC_*`)
+- **NEXT_PUBLIC_API_URL:** apontar pra URL do Cloud Run depois do primeiro deploy

@@ -13,6 +13,11 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  # Suprime findings catalogados em .trivyignore.yaml (JWT fixture E2E,
+  # HEALTHCHECK impossível em distroless). Aceita CVE IDs, misconfig IDs e secret IDs.
+  TRIVY_IGNOREFILE: .trivyignore.yaml
+
 jobs:
   trivy-fs:
     name: Filesystem & Dependency Scan

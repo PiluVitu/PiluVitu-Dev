@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web (lint + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @piluvitu/web lint
+
+      - name: Typecheck
+        run: pnpm --filter @piluvitu/web exec tsc --noEmit
+
+      - name: Test (tools package)
+        run: pnpm --filter @piluvitu/tools test
+
+      - name: Test (web)
+        run: pnpm --filter @piluvitu/web test
+
+      - name: Build (next only — TinaCMS roda na Vercel com secrets reais)
+        run: pnpm --filter @piluvitu/web build:ci
+        env:
+          # Valores dummy: o Keystatic precisa que essas env vars existam
+          # durante o build da rota /api/keystatic, mesmo sem OAuth real.
+          KEYSTATIC_GITHUB_CLIENT_ID: "ci-dummy"
+          KEYSTATIC_GITHUB_CLIENT_SECRET: "ci-dummy"
+          KEYSTATIC_SECRET: "ci-dummy-secret-32-chars-padding-x"
+          NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG: "ci-dummy"
+
+  api:
+    name: API (vet + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build api
+        run: go build -o /tmp/api ./cmd/api
+
+      - name: Build cli
+        run: go build -o /tmp/piluvitu ./cmd/cli
