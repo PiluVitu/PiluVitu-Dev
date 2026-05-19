@@ -78,3 +78,31 @@ func TestGetUserByID(t *testing.T) {
 		t.Errorf("email = %q", got.Email)
 	}
 }
+
+func TestUpsertUser_DowngradeFromAdmin(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	u, _ := s.UpsertUser(ctx, "sub", "p@x.com", "P", "", []string{"p@x.com"})
+	if !u.IsAdmin {
+		t.Fatal("precondition: should start admin")
+	}
+	u, err := s.UpsertUser(ctx, "sub", "p@x.com", "P", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.IsAdmin {
+		t.Error("should be demoted when removed from allowlist")
+	}
+}
+
+func TestUpsertUser_EmptyPictureRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	u, err := s.UpsertUser(context.Background(), "sub", "x@x.com", "X", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Picture != "" {
+		t.Errorf("Picture = %q, want empty string", u.Picture)
+	}
+}

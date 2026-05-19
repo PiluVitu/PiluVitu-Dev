@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -32,7 +33,7 @@ func (s *Store) UpsertUser(ctx context.Context, sub, email, name, picture string
 			is_admin = excluded.is_admin
 	`, sub, email, name, nullableStr(picture), boolToInt(isAdmin))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("votacao: upsert user: %w", err)
 	}
 	return s.GetUserByGoogleSub(ctx, sub)
 }
@@ -59,7 +60,7 @@ func scanUser(row *sql.Row) (*User, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("votacao: scan user: %w", err)
 	}
 	u.Picture = picture.String
 	u.IsAdmin = isAdminInt == 1
