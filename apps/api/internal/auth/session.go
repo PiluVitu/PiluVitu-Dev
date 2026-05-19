@@ -28,6 +28,8 @@ CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);
 //
 // The `sessions` table is ensured on first call; it is intentionally kept
 // outside of the votacao package's schema.sql.
+//
+// sqlite3store spawns a cleanup goroutine that lives for the process lifetime (no StopCleanup is called in this binary). That's intentional for the long-running server; goleak tests, if added later, must use sqlite3store.NewWithCleanupInterval(db, 0).
 func NewSessionManager(db *sql.DB) *scs.SessionManager {
 	if _, err := db.Exec(sessionsSchema); err != nil {
 		// Cannot return an error from this signature without rippling

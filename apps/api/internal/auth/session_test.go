@@ -1,10 +1,10 @@
 package auth_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/PiluVitu/api/internal/auth"
@@ -69,10 +69,10 @@ func TestNewSessionManager_CookieAttributes(t *testing.T) {
 	if setCookie == "" {
 		t.Fatal("expected Set-Cookie header")
 	}
-	if !contains(setCookie, "HttpOnly") {
+	if !strings.Contains(setCookie, "HttpOnly") {
 		t.Error("session cookie must be HttpOnly")
 	}
-	if !contains(setCookie, "SameSite=Lax") {
+	if !strings.Contains(setCookie, "SameSite=Lax") {
 		t.Error("session cookie must be SameSite=Lax")
 	}
 }
@@ -101,15 +101,4 @@ func TestSessionDataPersistsAcrossManagerInstances(t *testing.T) {
 	if got != 7 {
 		t.Errorf("got = %d, want 7 (cross-instance persistence broken)", got)
 	}
-	_ = context.Background()
-}
-
-func contains(s, sub string) bool { return len(s) >= len(sub) && (indexOf(s, sub) >= 0) }
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
