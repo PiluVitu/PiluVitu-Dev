@@ -12,6 +12,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/PiluVitu/api/internal/auth"
+	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
 	"github.com/PiluVitu/api/internal/votacao"
 )
@@ -196,6 +197,28 @@ type fakeVerifier struct{}
 
 func (fakeVerifier) Verify(ctx context.Context, idToken, audience string) (*auth.Claims, error) {
 	return nil, nil
+}
+
+func TestAdminBackup_RequiresAdmin(t *testing.T) {
+	store, _ := votacao.NewStore(filepath.Join(t.TempDir(), "x.db"))
+	t.Cleanup(func() { _ = store.Close() })
+	sm := auth.NewSessionManager(store.DB())
+	authH := auth.NewHandlers(auth.HandlersDeps{
+		Store: store, Sessions: sm,
+		Config:    auth.Config{ClientID: "cid", WebRedirectURL: "http://web"},
+		Exchanger: &fakeExchanger{}, Verifier: &fakeVerifier{},
+	})
+	adminH := handlersadmin.NewHandlers(handlersadmin.Deps{Store: store})
+
+	srv := httptest.NewServer(New(Deps{
+		DB: store.DB(), Sessions: sm,
+		AuthHandlers: authH, AdminHandlers: adminH, Store: store,
+	}))
+	defer srv.Close()
+	resp, _ := http.Post(srv.URL+"/admin/backup", "application/json", nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d", resp.StatusCode)
+	}
 }
 
 func TestVotacaoSessions_RequiresAuth(t *testing.T) {

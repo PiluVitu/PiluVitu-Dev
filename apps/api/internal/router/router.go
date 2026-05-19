@@ -15,6 +15,7 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/handlers"
+	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
 	"github.com/PiluVitu/api/internal/votacao"
 )
@@ -25,6 +26,7 @@ type Deps struct {
 	Sessions        *scs.SessionManager
 	AuthHandlers    *auth.Handlers
 	VotacaoHandlers *handlersvotacao.Handlers
+	AdminHandlers   *handlersadmin.Handlers
 	Store           *votacao.Store
 }
 
@@ -63,6 +65,13 @@ func New(deps Deps) http.Handler {
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Post("/sessions/{id}/votes", deps.VotacaoHandlers.CreateVote)
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}/results", deps.VotacaoHandlers.GetResults)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/close", deps.VotacaoHandlers.CloseSession)
+		})
+	}
+
+	if deps.AdminHandlers != nil && deps.Store != nil && deps.Sessions != nil {
+		r.Route("/admin", func(r chi.Router) {
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/backup", deps.AdminHandlers.CreateBackup)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/backups", deps.AdminHandlers.ListBackups)
 		})
 	}
 

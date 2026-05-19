@@ -1,10 +1,12 @@
 package votacao
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -67,6 +69,13 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonError(w, http.StatusInternalServerError, "close failed")
 		return
+	}
+	if h.deps.Backuper != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_ = h.deps.Backuper.Run(ctx, "session_close")
+		}()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if winner != nil {

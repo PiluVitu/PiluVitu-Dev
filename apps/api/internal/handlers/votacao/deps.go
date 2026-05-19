@@ -18,11 +18,17 @@ type PosterSearcher interface {
 	SearchPoster(ctx context.Context, title, mediaType string) (url string, tmdbID int64, err error)
 }
 
+// Backuper is invoked by CloseSession (async) after a successful close.
+type Backuper interface {
+	Run(ctx context.Context, trigger string) error
+}
+
 // Deps wires the votacao HTTP handlers to their collaborators.
 type Deps struct {
-	Store   *votacao.Store
-	Sheets  SheetsReader
-	Posters PosterSearcher
+	Store    *votacao.Store
+	Sheets   SheetsReader
+	Posters  PosterSearcher
+	Backuper Backuper // OPTIONAL: nil → skip backup on close
 }
 
 // Handlers is the HTTP-layer entry point for /votacao/* routes.
