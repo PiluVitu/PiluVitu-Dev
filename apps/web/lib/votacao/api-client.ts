@@ -32,18 +32,16 @@ export const votacaoApi = {
   logout: () => call<void>('/auth/logout', { method: 'POST' }),
 
   listSessions: () => call<SessionListResponse>('/votacao/sessions'),
-  getSession: (id: number) =>
-    call<SessionDetail>(`/votacao/sessions/${id}`),
+  getSession: (id: number) => call<SessionDetail>(`/votacao/sessions/${id}`),
   vote: (id: number, movieId: number) =>
     call<void>(`/votacao/sessions/${id}/votes`, {
       method: 'POST',
       body: JSON.stringify({ movie_id: movieId }),
     }),
   closeSession: (id: number) =>
-    call<{ winner_movie_id: number | null }>(
-      `/votacao/sessions/${id}/close`,
-      { method: 'POST' },
-    ),
+    call<{ winner_movie_id: number | null }>(`/votacao/sessions/${id}/close`, {
+      method: 'POST',
+    }),
   results: (id: number) =>
     call<ResultsResponse>(`/votacao/sessions/${id}/results`),
 

@@ -25,7 +25,7 @@ export default function VotacaoPage() {
             <Skeleton className="h-10 w-32" />
           ) : user.data ? (
             <>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {user.data.name} {user.data.is_admin && '(admin)'}
               </span>
               {user.data.is_admin && (

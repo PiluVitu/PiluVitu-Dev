@@ -21,7 +21,7 @@ export function CreateSessionForm() {
 
   return (
     <form
-      className="space-y-4 max-w-md"
+      className="max-w-md space-y-4"
       onSubmit={(e) => {
         e.preventDefault()
         if (!title.trim()) {

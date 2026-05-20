@@ -71,8 +71,8 @@ export default function SessionDetailPage({
       </header>
 
       {!user.data && !user.isLoading && (
-        <div className="rounded-md border bg-muted/50 p-4">
-          <p className="text-sm mb-2">Você precisa estar logado pra votar.</p>
+        <div className="bg-muted/50 rounded-md border p-4">
+          <p className="mb-2 text-sm">Você precisa estar logado pra votar.</p>
           <LoginButton />
         </div>
       )}

@@ -12,7 +12,7 @@ export function SessionCard({ session }: { session: VotingSession }) {
           <SessionStatusBadge status={session.Status} />
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
           </p>
         </CardContent>

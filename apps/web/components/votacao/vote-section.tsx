@@ -31,7 +31,7 @@ export function VoteSection({
   return (
     <div className="space-y-6">
       {lockedReason && (
-        <p className="rounded-md border bg-muted px-4 py-3 text-sm">
+        <p className="bg-muted rounded-md border px-4 py-3 text-sm">
           {lockedReason}
         </p>
       )}

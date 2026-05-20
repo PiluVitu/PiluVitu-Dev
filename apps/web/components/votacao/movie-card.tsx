@@ -17,13 +17,13 @@ export function MovieCard({ movie, selected, onSelect, disabled }: Props) {
       onClick={onSelect}
       disabled={disabled}
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left transition-all',
-        selected && 'ring-2 ring-primary',
+        'group bg-card relative flex flex-col overflow-hidden rounded-lg border text-left transition-all',
+        selected && 'ring-primary ring-2',
         disabled && 'cursor-not-allowed opacity-60',
         !disabled && 'hover:shadow-lg',
       )}
     >
-      <div className="aspect-[2/3] w-full bg-muted">
+      <div className="bg-muted aspect-[2/3] w-full">
         {movie.PosterURL ? (
           <Image
             src={movie.PosterURL}
@@ -33,17 +33,17 @@ export function MovieCard({ movie, selected, onSelect, disabled }: Props) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
+          <div className="text-muted-foreground flex h-full items-center justify-center">
             sem pôster
           </div>
         )}
       </div>
       <div className="p-3">
-        <p className="text-xs text-muted-foreground uppercase tracking-wide">
+        <p className="text-muted-foreground text-xs tracking-wide uppercase">
           {movie.Category}
         </p>
-        <h3 className="font-semibold leading-tight">{movie.Title}</h3>
-        <p className="text-xs text-muted-foreground mt-1">
+        <h3 className="leading-tight font-semibold">{movie.Title}</h3>
+        <p className="text-muted-foreground mt-1 text-xs">
           {movie.Type === 'serie' ? 'Série' : 'Filme'}
           {movie.WasWatched && ' • já assistido'}
         </p>

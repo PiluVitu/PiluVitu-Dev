@@ -70,6 +70,13 @@ const nextConfig = {
         port: "",
         pathname: "/**",
       },
+      // TMDb poster CDN (Votação de Filmes)
+      {
+        protocol: "https",
+        hostname: "image.tmdb.org",
+        port: "",
+        pathname: "/**",
+      },
     ],
   },
 };

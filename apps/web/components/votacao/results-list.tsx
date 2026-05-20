@@ -18,7 +18,7 @@ export function ResultsList({ sessionId, movies }: Props) {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         Total de votos: <strong>{data.total_votes}</strong>
       </p>
       <ul className="space-y-2">
@@ -35,12 +35,12 @@ export function ResultsList({ sessionId, movies }: Props) {
                   {movie?.Title ?? `Filme ${r.movie_id}`}
                 </p>
                 {movie && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     {movie.Category}
                   </p>
                 )}
               </div>
-              <span className="text-sm font-mono">
+              <span className="font-mono text-sm">
                 {r.count} ({pct}%)
               </span>
             </li>

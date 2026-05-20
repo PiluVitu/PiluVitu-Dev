@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 6 concluída: Drive backup + cron; Fase 5 entregou voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
+- **Status:** em construção (Fase 7 concluída: Next.js UI MVP; Fase 6 entregou Drive backup + cron; Fase 5 entregou voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -190,6 +190,15 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **handlers/admin:** `POST /admin/backup` (RequireAdmin) dispara `Runner.Run(ctx, "manual")` síncrono → 204. `GET /admin/backups` (RequireAdmin) retorna últimos 50 do `backups` table.
 - **session_close trigger:** `CloseSession` (em `handlers/votacao/votes.go`), após fechar com sucesso, dispara `Runner.Run` async via goroutine com timeout de 30s. Falha do backup é logada, não bloqueia a resposta.
 - **Wiring opcional:** `runner` só é construído no `main.go` se `GDRIVE_BACKUP_FOLDER_ID` setado. Sem isso, /admin/backup responde 503 e o cron não inicia.
+
+#### UI Votação (`apps/web/app/(site)/votacao`)
+
+- **Rotas:** `/votacao` (lista + login state), `/votacao/[id]` (detalhe + votar + resultados quando fechada + botão admin pra encerrar), `/votacao/admin` (form criar sessão — só admin enxerga).
+- **API client:** `apps/web/lib/votacao/api-client.ts` faz fetch com `credentials: 'include'` contra `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`). Para login, o componente `<LoginButton>` faz navegação top-level pro endpoint `/auth/google/login` da API.
+- **TanStack Query:** hooks em `apps/web/hooks/votacao/`. Queries para me/list/detail/results; mutations para vote/create/close. `onSuccess` invalida queries pra refletir mudança imediata.
+- **Componentes:** `apps/web/components/votacao/` (MovieCard, VoteSection, ResultsList, SessionCard, SessionStatusBadge, CreateSessionForm, LoginButton, LogoutButton).
+- **Next/Image:** posters do TMDb (`image.tmdb.org/t/p/w500/...`) — `image.tmdb.org` registrado em `next.config.mjs` `images.remotePatterns`.
+- **Skip da Fase 8:** Storybook completo de cada componente + E2E exaustivo (`votacao.spec.ts`). Só uma story de exemplo (`movie-card.stories.tsx`) e nenhum E2E nesta fase.
 
 ### Tools dashboard (`/tools`)
 
@@ -259,6 +268,7 @@ See `.env.example`. Key variables:
 - `GDRIVE_BACKUP_FOLDER_ID` — ID da pasta Drive onde os snapshots vão. Vazio → backup desabilitado.
 - `GDRIVE_BACKUP_KEEP` — quantos backups mais recentes manter (default 30).
 - `BACKUP_CRON` — cron spec 5-fields (default `0 3 * * *` — 03:00 local).
+- `NEXT_PUBLIC_API_URL` — base URL da Go API consumida pelo front (default `http://localhost:8080`).
 
 ## Keystatic & Vercel deployment
 
