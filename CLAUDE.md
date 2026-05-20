@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 7 concluída: Next.js UI MVP; Fase 6 entregou Drive backup + cron; Fase 5 entregou voto + fechar + resultados; Fase 4 entregou TMDb+sessions; Fase 3 entregou Sheets+sorteio; Fase 2 entregou Auth; Fase 1 entregou DB).
+- **Status:** entregue (Fase 8 concluída: Storybook + E2E mocada).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -198,7 +198,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **TanStack Query:** hooks em `apps/web/hooks/votacao/`. Queries para me/list/detail/results; mutations para vote/create/close. `onSuccess` invalida queries pra refletir mudança imediata.
 - **Componentes:** `apps/web/components/votacao/` (MovieCard, VoteSection, ResultsList, SessionCard, SessionStatusBadge, CreateSessionForm, LoginButton, LogoutButton).
 - **Next/Image:** posters do TMDb (`image.tmdb.org/t/p/w500/...`) — `image.tmdb.org` registrado em `next.config.mjs` `images.remotePatterns`.
-- **Skip da Fase 8:** Storybook completo de cada componente + E2E exaustivo (`votacao.spec.ts`). Só uma story de exemplo (`movie-card.stories.tsx`) e nenhum E2E nesta fase.
+- **Fase 8:** stories Storybook em cada componente (`apps/web/components/votacao/*.stories.tsx`) e E2E Playwright happy path em `apps/web/app/(site)/votacao/votacao.e2e.ts` (intercepta `localhost:8080` via `page.route()`, dispensando API real).
 
 ### Tools dashboard (`/tools`)
 
