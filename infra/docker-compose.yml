@@ -15,8 +15,16 @@ services:
       WEB_REDIRECT_URL: ${WEB_REDIRECT_URL:-http://localhost:3333/votacao}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/secrets/google-sa.json}
+      GSHEETS_MOVIES_SPREADSHEET_ID: ${GSHEETS_MOVIES_SPREADSHEET_ID:-}
+      GSHEETS_MOVIES_RANGE: ${GSHEETS_MOVIES_RANGE:-A2:F}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      GDRIVE_BACKUP_FOLDER_ID: ${GDRIVE_BACKUP_FOLDER_ID:-}
+      GDRIVE_BACKUP_KEEP: ${GDRIVE_BACKUP_KEEP:-30}
+      BACKUP_CRON: ${BACKUP_CRON:-0 3 * * *}
     volumes:
       - api-data:/data
+      - ./secrets:/secrets:ro
     restart: unless-stopped
 
   web:

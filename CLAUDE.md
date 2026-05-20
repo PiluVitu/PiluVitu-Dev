@@ -139,7 +139,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 ### Votação de Filmes (`/votacao`)
 
-- **Status:** em construção (Fase 2 concluída: Auth Google via OAuth + scs sessions; Fase 1 entregou DB + store + volume Docker).
+- **Status:** entregue (Fase 8 concluída: Storybook + E2E mocada).
 - **Design:** `docs/plans/2026-05-19-votacao-filmes-design.md`
 - **Plano Fase 1:** `docs/plans/2026-05-19-votacao-fase1-plan.md`
 - **Persistência:** SQLite (`modernc.org/sqlite`, puro Go, sem CGo) em `/data/votacao.db` dentro do container Go API, volume Docker `api-data`.
@@ -156,6 +156,49 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Middleware:** `auth.RequireAuth(sm, store)` e `auth.RequireAdmin(sm, store)` — anexam `*votacao.User` em `r.Context()` (`auth.UserFromContext`). Não-logado → 401. Não-admin → 403.
 - **Testabilidade:** `TokenExchanger` + `IDTokenVerifier` são interfaces. Em produção: `auth.NewGoogleTokenExchanger(cfg)` (wrapper sobre `*oauth2.Config` por causa do variadic `AuthCodeURL`) e `auth.NewGoogleIDTokenVerifier()`. Em testes: `stubExchanger`/`stubVerifier` em `internal/auth/helper_test.go`.
 - **CORS:** `AllowCredentials: true` (necessário pro cookie de sessão atravessar fetch do Next.js). Origens explícitas via `CORS_ALLOWED_ORIGINS`, sem `*`.
+
+#### Sheets reader + sorteio (`internal/gsheets`, `internal/votacao/sortear.go`)
+
+- **gsheets.Client:** wrapper sobre `google.golang.org/api/sheets/v4`. Constructor de prod (`NewClient`) usa Application Default Credentials (Service Account JSON via `GOOGLE_APPLICATION_CREDENTIALS`). Constructor de teste (`NewClientWithService`) recebe um `*sheets.Service` já configurado — usado nos testes apontando pra um `httptest.Server` com fixtures JSON (`option.WithEndpoint(srv.URL) + option.WithoutAuthentication()`).
+- **ReadMovies:** lê o range `GSHEETS_MOVIES_RANGE` da planilha `GSHEETS_MOVIES_SPREADSHEET_ID` e retorna `[]votacao.SheetMovie`. Linhas sem título ou categoria são puladas. Categoria é normalizada pra lowercase + trim. Tipo aceita "filme"/"série" (case-insensitive); default `filme`. Watched aceita "sim/yes/true/1" case-insensitive.
+- **GetCategories:** retorna lista deduplicada e ordenada de categorias presentes na planilha — usado pelo modal "Nova votação" no front (Fase 7).
+- **SortOnePerCategory (`internal/votacao/sortear.go`):** função pura. Filtra por `Types` / `IncludeWatched` / `Categories`, agrupa por categoria, sorteia 1 por grupo. Categorias iteradas em ordem alfabética → saída estável. Determinístico com `*rand.Rand` injetado. Retorna `ErrNoCandidates` se nenhum sobrevive aos filtros. 9 testes em `sortear_test.go` cobrem happy path, todos os filtros, sem candidatos, determinismo e ordenação.
+- **Direção de dependência:** `SheetMovie` mora em `internal/votacao/` (domínio); `gsheets` importa `votacao` pra retornar o tipo. One-way dep.
+- **Secret mount:** `infra/secrets/google-sa.json` é montado em `/secrets:ro` dentro do container (bind path `./secrets` no compose). Compose não falha se o arquivo não existir; quem usa gsheets em runtime é que vai dar erro. Em `main.go`, o cliente só é construído se `GSHEETS_MOVIES_SPREADSHEET_ID` estiver setado, e falhas de construção apenas logam — não abortam o startup.
+
+#### TMDb + handlers de sessions (`internal/tmdb`, `internal/handlers/votacao`)
+
+- **tmdb.Client (`SearchPoster`):** GET TMDb v3 `/search/movie` ou `/search/tv` (média serie → tv). Fail-soft: 404 ou results vazio → `("", 0, nil)`. Apenas 5xx, 4xx (≠404) ou erro de parse propaga. Pôster final = `https://image.tmdb.org/t/p/w500` + `poster_path`.
+- **handlers/votacao.Handlers (mounted em `/votacao/*`):**
+  - `GetCategorias` (GET, RequireAuth) — `SheetsReader.GetCategories`. 503 se sheets desligado, 502 se Sheets falha.
+  - `CreateSession` (POST, RequireAdmin) — lê Sheets → `votacao.SortOnePerCategory` → `fetchPosters` paralelo (errgroup limit=5, timeout 3s/each) → grava session + session_movies. 422 se nenhum filme bate filtros. 400 se title vazio ou JSON inválido. 502 se sheets falha. Aplica `auth.UserFromContext` pro `created_by`.
+  - `ListSessions` (GET, RequireAuth) — paginação via `?limit` (default 20) e `?offset` (default 0).
+  - `GetSession` (GET, RequireAuth) — retorna `{session, movies}`. 404 se não existir.
+- **Sub-interfaces:** `SheetsReader` (`GetCategories`, `ReadMovies`) e `PosterSearcher` (`SearchPoster`) ficam no pacote `handlers/votacao`. Desacoplam testes dos pacotes concretos `gsheets`/`tmdb`. Stubs em `*_test.go`.
+- **auth.WithUserForTests:** helper exportado em `internal/auth/middleware.go` que outros pacotes usam pra plantar um `*votacao.User` no ctx do request nos testes (mesma chave que `RequireAuth` usa).
+- **Wiring opcional:** `gsheets.Client` e `tmdb.Client` só são construídos no `main.go` se `GSHEETS_MOVIES_SPREADSHEET_ID` e `TMDB_API_KEY` estiverem setados, respectivamente. Sem eles os handlers respondem 503 (categorias) ou criam sessões sem pôsteres (CreateSession).
+- **Votos (`POST /votacao/sessions/{id}/votes`, RequireAuth):** body `{"movie_id": <int>}`. 201 ok. 409 se já votou (UNIQUE no DB). 400 sem movie_id. Idempotência pela constraint.
+- **Fechar (`POST /votacao/sessions/{id}/close`, RequireAdmin):** computa winner via `votacao.ComputeWinner` (maior contagem; empate por menor movie_id), grava `closed_at` e `winner_movie_id`. 404 se sessão já estava fechada. Retorna `{"winner_movie_id": id|null}`.
+- **Resultados (`GET /votacao/sessions/{id}/results`, RequireAuth):** retorna `{"results":[{movie_id,count},...], "total_votes":N}` ordenado por count desc + movie_id asc.
+- **GetSession agora inclui `has_voted`** quando o caller está autenticado.
+
+#### Backup + Cron (`internal/gdrive`, `internal/backup`, `internal/handlers/admin`)
+
+- **gdrive.Client:** wrapper sobre `google.golang.org/api/drive/v3`. `Upload` (multipart, scope drive.file) + `Rotate` (lista por createdTime desc, deleta os antigos além do `keep`). Test seam: `NewClientWithService` aceita um `*drive.Service` apontado pra `httptest.Server`.
+- **backup.Runner:** `Run(ctx, trigger)` faz `VACUUM INTO` num arquivo temp, sobe via `gdrive.Uploader`, insere row em `backups` (com `trigger_type` "cron"/"manual"/"session_close"), chama Rotate. Falhas propagam.
+- **backup.Start:** registra `func(ctx)` no `robfig/cron/v3` com o spec dado. Tarefa roda em goroutine separada do scheduler; runs longos não bloqueiam ticks.
+- **handlers/admin:** `POST /admin/backup` (RequireAdmin) dispara `Runner.Run(ctx, "manual")` síncrono → 204. `GET /admin/backups` (RequireAdmin) retorna últimos 50 do `backups` table.
+- **session_close trigger:** `CloseSession` (em `handlers/votacao/votes.go`), após fechar com sucesso, dispara `Runner.Run` async via goroutine com timeout de 30s. Falha do backup é logada, não bloqueia a resposta.
+- **Wiring opcional:** `runner` só é construído no `main.go` se `GDRIVE_BACKUP_FOLDER_ID` setado. Sem isso, /admin/backup responde 503 e o cron não inicia.
+
+#### UI Votação (`apps/web/app/(site)/votacao`)
+
+- **Rotas:** `/votacao` (lista + login state), `/votacao/[id]` (detalhe + votar + resultados quando fechada + botão admin pra encerrar), `/votacao/admin` (form criar sessão — só admin enxerga).
+- **API client:** `apps/web/lib/votacao/api-client.ts` faz fetch com `credentials: 'include'` contra `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`). Para login, o componente `<LoginButton>` faz navegação top-level pro endpoint `/auth/google/login` da API.
+- **TanStack Query:** hooks em `apps/web/hooks/votacao/`. Queries para me/list/detail/results; mutations para vote/create/close. `onSuccess` invalida queries pra refletir mudança imediata.
+- **Componentes:** `apps/web/components/votacao/` (MovieCard, VoteSection, ResultsList, SessionCard, SessionStatusBadge, CreateSessionForm, LoginButton, LogoutButton).
+- **Next/Image:** posters do TMDb (`image.tmdb.org/t/p/w500/...`) — `image.tmdb.org` registrado em `next.config.mjs` `images.remotePatterns`.
+- **Fase 8:** stories Storybook em cada componente (`apps/web/components/votacao/*.stories.tsx`) e E2E Playwright happy path em `apps/web/app/(site)/votacao/votacao.e2e.ts` (intercepta `localhost:8080` via `page.route()`, dispensando API real).
 
 ### Tools dashboard (`/tools`)
 
@@ -218,6 +261,14 @@ See `.env.example`. Key variables:
 - `WEB_REDIRECT_URL` — pra onde o browser vai depois do callback bem-sucedido (default `http://localhost:3333/votacao`).
 - `ADMIN_EMAILS` — CSV de e-mails admin. Comparação case-insensitive contra o e-mail do ID token.
 - `SESSION_COOKIE_SECURE` — `true` em produção (HTTPS), `false` em dev local (HTTP).
+- `GOOGLE_APPLICATION_CREDENTIALS` — caminho do JSON da Service Account dentro do container (default `/secrets/google-sa.json`).
+- `GSHEETS_MOVIES_SPREADSHEET_ID` — ID da planilha (extraído da URL do Sheets). Sem isso o gsheets fica desligado.
+- `GSHEETS_MOVIES_RANGE` — A1 notation. Default `A2:F` (pula header).
+- `TMDB_API_KEY` — chave do TMDb (https://themoviedb.org/settings/api). Vazio → pôsteres desabilitados.
+- `GDRIVE_BACKUP_FOLDER_ID` — ID da pasta Drive onde os snapshots vão. Vazio → backup desabilitado.
+- `GDRIVE_BACKUP_KEEP` — quantos backups mais recentes manter (default 30).
+- `BACKUP_CRON` — cron spec 5-fields (default `0 3 * * *` — 03:00 local).
+- `NEXT_PUBLIC_API_URL` — base URL da Go API consumida pelo front (default `http://localhost:8080`).
 
 ## Keystatic & Vercel deployment
 

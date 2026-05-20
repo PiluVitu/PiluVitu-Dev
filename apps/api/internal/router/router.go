@@ -15,13 +15,19 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/handlers"
+	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
+	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/votacao"
 )
 
 // Deps holds external dependencies injected into the router.
 type Deps struct {
-	DB           *sql.DB
-	Sessions     *scs.SessionManager
-	AuthHandlers *auth.Handlers
+	DB              *sql.DB
+	Sessions        *scs.SessionManager
+	AuthHandlers    *auth.Handlers
+	VotacaoHandlers *handlersvotacao.Handlers
+	AdminHandlers   *handlersadmin.Handlers
+	Store           *votacao.Store
 }
 
 var defaultAllowedOrigins = []string{
@@ -47,6 +53,25 @@ func New(deps Deps) http.Handler {
 			r.Get("/google/callback", deps.AuthHandlers.Callback)
 			r.Get("/me", deps.AuthHandlers.Me)
 			r.Post("/logout", deps.AuthHandlers.Logout)
+		})
+	}
+
+	if deps.VotacaoHandlers != nil && deps.Store != nil && deps.Sessions != nil {
+		r.Route("/votacao", func(r chi.Router) {
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/categorias", deps.VotacaoHandlers.GetCategorias)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions", deps.VotacaoHandlers.ListSessions)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}", deps.VotacaoHandlers.GetSession)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions", deps.VotacaoHandlers.CreateSession)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Post("/sessions/{id}/votes", deps.VotacaoHandlers.CreateVote)
+			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}/results", deps.VotacaoHandlers.GetResults)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/close", deps.VotacaoHandlers.CloseSession)
+		})
+	}
+
+	if deps.AdminHandlers != nil && deps.Store != nil && deps.Sessions != nil {
+		r.Route("/admin", func(r chi.Router) {
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/backup", deps.AdminHandlers.CreateBackup)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/backups", deps.AdminHandlers.ListBackups)
 		})
 	}
 
