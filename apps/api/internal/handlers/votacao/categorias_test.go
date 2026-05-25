@@ -2,7 +2,6 @@ package votacao_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -57,9 +56,7 @@ func TestCategorias_ReturnsList(t *testing.T) {
 	var body struct {
 		Categories []string `json:"categories"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
+	unwrap(t, rec, &body)
 	if len(body.Categories) != 3 || body.Categories[0] != "ação" {
 		t.Errorf("body = %+v", body)
 	}

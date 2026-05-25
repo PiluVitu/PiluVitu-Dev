@@ -55,7 +55,7 @@ export default function SessionDetailPage({
     )
   }
 
-  const { session, movies, has_voted } = detail.data
+  const { session, movies, has_voted, voted_movie_id } = detail.data
   const closed = session.Status === 'closed'
 
   return (
@@ -80,7 +80,11 @@ export default function SessionDetailPage({
       {closed ? (
         <section className="space-y-4">
           <h2 className="text-xl font-semibold">Resultados</h2>
-          <ResultsList sessionId={id} movies={movies} />
+          <ResultsList
+            sessionId={id}
+            movies={movies}
+            votedMovieId={voted_movie_id}
+          />
         </section>
       ) : (
         <VoteSection
@@ -88,6 +92,7 @@ export default function SessionDetailPage({
           movies={movies}
           alreadyVoted={has_voted}
           closed={closed}
+          votedMovieId={voted_movie_id}
         />
       )}
 

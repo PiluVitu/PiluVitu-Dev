@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexedwards/scs/v2"
 
+	"github.com/PiluVitu/api/internal/httpx"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -29,12 +30,12 @@ func RequireAuth(sm *scs.SessionManager, store *votacao.Store) func(http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID := sm.GetInt64(r.Context(), sessionUserIDKey)
 			if userID == 0 {
-				jsonError(w, http.StatusUnauthorized, "not authenticated")
+				httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
 				return
 			}
 			user, err := store.GetUserByID(r.Context(), userID)
 			if err != nil {
-				jsonError(w, http.StatusUnauthorized, "user not found")
+				httpx.Error(w, http.StatusUnauthorized, "user_not_found", "Usuário não encontrado.")
 				return
 			}
 			ctx := context.WithValue(r.Context(), userCtxKey, user)
@@ -55,7 +56,7 @@ func RequireAdmin(sm *scs.SessionManager, store *votacao.Store) func(http.Handle
 		return RequireAuth(sm, store)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
 			if user == nil || !user.IsAdmin {
-				jsonError(w, http.StatusForbidden, "admin only")
+				httpx.Error(w, http.StatusForbidden, "admin_only", "Acesso restrito a administradores.")
 				return
 			}
 			next.ServeHTTP(w, r)

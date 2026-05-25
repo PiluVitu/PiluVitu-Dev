@@ -1,8 +1,9 @@
 package votacao
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/PiluVitu/api/internal/httpx"
 )
 
 // GetCategorias returns the deduplicated list of categories present in the
@@ -10,20 +11,13 @@ import (
 // disabled in dev), 502 on upstream error.
 func (h *Handlers) GetCategorias(w http.ResponseWriter, r *http.Request) {
 	if h.deps.Sheets == nil {
-		jsonError(w, http.StatusServiceUnavailable, "sheets reader disabled")
+		httpx.Error(w, http.StatusServiceUnavailable, "sheets_disabled", "Integração com a planilha está desativada.")
 		return
 	}
 	cats, err := h.deps.Sheets.GetCategories(r.Context())
 	if err != nil {
-		jsonError(w, http.StatusBadGateway, "sheets read failed")
+		httpx.Error(w, http.StatusBadGateway, "sheets_read_failed", "Falha ao ler a planilha de filmes.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"categories": cats})
-}
-
-func jsonError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	httpx.Data(w, http.StatusOK, map[string]any{"categories": cats})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/PiluVitu/api/internal/auth"
+	"github.com/PiluVitu/api/internal/httpx"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -26,28 +27,28 @@ func (h *Handlers) CreateVote(w http.ResponseWriter, r *http.Request) {
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		jsonError(w, http.StatusUnauthorized, "not authenticated")
+		httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
 		return
 	}
 	var body voteBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, http.StatusBadRequest, "invalid json")
+		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo da requisição inválido.")
 		return
 	}
 	if body.MovieID <= 0 {
-		jsonError(w, http.StatusBadRequest, "movie_id required")
+		httpx.Error(w, http.StatusBadRequest, "movie_id_required", "Selecione um filme para votar.")
 		return
 	}
 	err := h.deps.Store.InsertVote(r.Context(), sessionID, user.ID, body.MovieID)
 	if errors.Is(err, votacao.ErrAlreadyVoted) {
-		jsonError(w, http.StatusConflict, "already voted")
+		httpx.Error(w, http.StatusConflict, "already_voted", "Você já votou nesta sessão.")
 		return
 	}
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "insert vote failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Não foi possível registrar o voto.")
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+	httpx.DataMsg(w, http.StatusCreated, nil, httpx.Success("Voto registrado."))
 }
 
 // CloseSession (admin) closes the session, computing winner from current votes.
@@ -58,16 +59,16 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "list votes failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
 		return
 	}
 	winner := votacao.ComputeWinner(votes)
 	if err := h.deps.Store.CloseVotingSession(r.Context(), sessionID, winner); err != nil {
 		if errors.Is(err, votacao.ErrNotFound) {
-			jsonError(w, http.StatusNotFound, "session not open")
+			httpx.Error(w, http.StatusNotFound, "session_not_open", "Sessão não está aberta.")
 			return
 		}
-		jsonError(w, http.StatusInternalServerError, "close failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao encerrar a sessão.")
 		return
 	}
 	if h.deps.Backuper != nil {
@@ -77,12 +78,11 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 			_ = h.deps.Backuper.Run(ctx, "session_close")
 		}()
 	}
-	w.Header().Set("Content-Type", "application/json")
 	if winner != nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{"winner_movie_id": *winner})
+		httpx.Data(w, http.StatusOK, map[string]any{"winner_movie_id": *winner})
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"winner_movie_id": nil})
+	httpx.Data(w, http.StatusOK, map[string]any{"winner_movie_id": nil})
 }
 
 // GetResults returns the tally as { movie_id: count }. Anyone authenticated
@@ -95,7 +95,7 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "list votes failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os resultados.")
 		return
 	}
 	tally := votacao.TallyVotes(votes)
@@ -116,15 +116,14 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"results": rows, "total_votes": len(votes)})
+	httpx.Data(w, http.StatusOK, map[string]any{"results": rows, "total_votes": len(votes)})
 }
 
 func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
-		jsonError(w, http.StatusBadRequest, "invalid id")
+		httpx.Error(w, http.StatusBadRequest, "invalid_id", "Identificador inválido.")
 		return 0, false
 	}
 	return id, true

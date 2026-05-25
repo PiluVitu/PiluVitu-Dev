@@ -112,3 +112,28 @@ func TestHasVoted_True(t *testing.T) {
 		t.Error("HasVoted should be true after voting")
 	}
 }
+
+func TestGetUserVote_NotVoted(t *testing.T) {
+	s, sess, _, user := setupVoteScenario(t)
+	movieID, voted, err := s.GetUserVote(context.Background(), sess.ID, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if voted || movieID != 0 {
+		t.Errorf("expected (0,false), got (%d,%v)", movieID, voted)
+	}
+}
+
+func TestGetUserVote_ReturnsVotedMovie(t *testing.T) {
+	s, sess, movie, user := setupVoteScenario(t)
+	if err := s.InsertVote(context.Background(), sess.ID, user.ID, movie.ID); err != nil {
+		t.Fatal(err)
+	}
+	movieID, voted, err := s.GetUserVote(context.Background(), sess.ID, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !voted || movieID != movie.ID {
+		t.Errorf("expected (%d,true), got (%d,%v)", movie.ID, movieID, voted)
+	}
+}

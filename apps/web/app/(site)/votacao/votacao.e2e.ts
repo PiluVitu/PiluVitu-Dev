@@ -1,6 +1,29 @@
 import { test, expect, type Page } from '@playwright/test'
 
-const BASE_API = 'http://localhost:8080'
+// Routes are matched host-agnostically (`**/path`) so the mocks apply
+// regardless of NEXT_PUBLIC_API_URL (localhost:8080 in CI, 8081 in dev, the
+// tunnel host in prod). Hardcoding the host here previously broke the suite
+// when the API port changed.
+
+type Notification = {
+  type: 'error' | 'warning' | 'success' | 'info'
+  code?: string
+  message: string
+}
+
+// envelope mirrors the Go internal/httpx response shape so the mocked API
+// matches production: { ok, data, notifications }.
+function envelope(data: unknown, notifications: Notification[] = []) {
+  return JSON.stringify({ ok: true, data, notifications })
+}
+
+function errorEnvelope(code: string, message: string) {
+  return JSON.stringify({
+    ok: false,
+    data: null,
+    notifications: [{ type: 'error', code, message }],
+  })
+}
 
 const mockUser = {
   id: 1,
@@ -55,53 +78,54 @@ interface MockOptions {
 async function mockAPI(page: Page, options: MockOptions = {}) {
   const { loggedIn = true, hasVoted = false, sessionStatus = 'open' } = options
 
-  await page.route(`${BASE_API}/auth/me`, (route) => {
+  await page.route(`**/auth/me`, (route) => {
     if (loggedIn) {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(mockUser),
+        body: envelope(mockUser),
       })
     } else {
       route.fulfill({
         status: 401,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'not authenticated' }),
+        body: errorEnvelope('not_authenticated', 'Você precisa estar logado.'),
       })
     }
   })
-  await page.route(`${BASE_API}/votacao/sessions`, (route) => {
+  await page.route(`**/votacao/sessions`, (route) => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
+      body: envelope({
         sessions: [{ ...mockSession, Status: sessionStatus }],
       }),
     })
   })
-  await page.route(`${BASE_API}/votacao/sessions/1`, (route) => {
+  await page.route(`**/votacao/sessions/1`, (route) => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
+      body: envelope({
         session: { ...mockSession, Status: sessionStatus },
         movies: mockMovies,
         has_voted: hasVoted,
+        voted_movie_id: hasVoted ? mockMovies[0].ID : null,
       }),
     })
   })
-  await page.route(`${BASE_API}/votacao/sessions/1/votes`, (route) => {
+  await page.route(`**/votacao/sessions/1/votes`, (route) => {
     route.fulfill({
       status: 201,
       contentType: 'application/json',
-      body: '{}',
+      body: envelope(null, [{ type: 'success', message: 'Voto registrado.' }]),
     })
   })
-  await page.route(`${BASE_API}/votacao/sessions/1/results`, (route) => {
+  await page.route(`**/votacao/sessions/1/results`, (route) => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
+      body: envelope({
         results: [
           { movie_id: 1, count: 2 },
           { movie_id: 2, count: 1 },
@@ -151,11 +175,16 @@ test.describe('/votacao/[id] detail', () => {
     })
   })
 
-  test('hides vote button when already voted', async ({ page }) => {
+  test('hides vote button and highlights the voted movie when already voted', async ({
+    page,
+  }) => {
     await mockAPI(page, { hasVoted: true })
     await page.goto('/votacao/1')
-    await expect(page.getByText(/você já votou/i)).toBeVisible()
+    // Banner names the chosen movie (mockMovies[0] = "A Coisa").
+    await expect(page.getByText(/você votou em "A Coisa"/i)).toBeVisible()
     await expect(page.getByRole('button', { name: /^votar$/i })).toHaveCount(0)
+    // The chosen card carries the "Seu voto" badge.
+    await expect(page.getByText('Seu voto')).toBeVisible()
   })
 
   test('shows results when session is closed', async ({ page }) => {

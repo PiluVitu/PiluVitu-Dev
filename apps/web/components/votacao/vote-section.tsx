@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { MovieCard } from './movie-card'
 import { useVoteMutation } from '@/hooks/votacao/use-vote-mutation'
+import { errorMessage } from '@/lib/votacao/api-client'
 import type { SessionMovie } from '@/lib/votacao/types'
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   movies: SessionMovie[]
   alreadyVoted: boolean
   closed: boolean
+  /** Movie the current user voted for, or null. Highlights its card. */
+  votedMovieId?: number | null
 }
 
 export function VoteSection({
@@ -18,14 +21,19 @@ export function VoteSection({
   movies,
   alreadyVoted,
   closed,
+  votedMovieId,
 }: Props) {
   const [selected, setSelected] = useState<number | null>(null)
   const mutation = useVoteMutation(sessionId)
 
+  const votedMovie = movies.find((m) => m.ID === votedMovieId)
+
   const lockedReason = closed
     ? 'Sessão encerrada — votação fechada.'
     : alreadyVoted
-      ? 'Você já votou nesta sessão.'
+      ? votedMovie
+        ? `Você votou em "${votedMovie.Title}".`
+        : 'Você já votou nesta sessão.'
       : null
 
   return (
@@ -41,6 +49,7 @@ export function VoteSection({
             key={m.ID}
             movie={m}
             selected={selected === m.ID}
+            youVoted={votedMovieId != null && m.ID === votedMovieId}
             onSelect={() => setSelected(m.ID)}
             disabled={!!lockedReason}
           />
@@ -54,7 +63,7 @@ export function VoteSection({
               if (!selected) return
               mutation.mutate(selected, {
                 onSuccess: () => toast.success('Voto registrado'),
-                onError: (err) => toast.error(String(err)),
+                onError: (err) => toast.error(errorMessage(err)),
               })
             }}
           >

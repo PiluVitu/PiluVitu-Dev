@@ -5,27 +5,18 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/PiluVitu/api/internal/httpx"
 	"github.com/PiluVitu/api/internal/tools"
 )
 
-type apiResponse struct {
-	OK     bool   `json:"ok"`
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
+// ok wraps a successful tool result in the standard envelope.
 func ok(w http.ResponseWriter, result any) {
-	writeJSON(w, http.StatusOK, apiResponse{OK: true, Result: result})
+	httpx.Data(w, http.StatusOK, result)
 }
 
-func fail(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, apiResponse{OK: false, Error: msg})
+// fail emits a standardized error notification with a machine-readable code.
+func fail(w http.ResponseWriter, status int, code, msg string) {
+	httpx.Error(w, status, code, msg)
 }
 
 func readBody(r *http.Request) ([]byte, error) {
@@ -73,7 +64,7 @@ func DecodeBase64(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	decoded, err := tools.DecodeBase64(body.Value)
 	if err != nil {
-		fail(w, http.StatusBadRequest, err.Error())
+		fail(w, http.StatusBadRequest, "decode_failed", err.Error())
 		return
 	}
 	ok(w, decoded)
@@ -87,7 +78,7 @@ func DecodeJWT(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	parts, err := tools.DecodeJWT(body.Value)
 	if err != nil {
-		fail(w, http.StatusBadRequest, err.Error())
+		fail(w, http.StatusBadRequest, "decode_failed", err.Error())
 		return
 	}
 	ok(w, parts)
@@ -105,7 +96,7 @@ func FormatJSON(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	result := tools.FormatJSON(body.Value, body.Indent)
 	if !result.OK {
-		fail(w, http.StatusBadRequest, result.Error)
+		fail(w, http.StatusBadRequest, "invalid_json", result.Error)
 		return
 	}
 	ok(w, result.Value)
@@ -117,7 +108,7 @@ func MinifyJSON(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	result := tools.MinifyJSON(body.Value)
 	if !result.OK {
-		fail(w, http.StatusBadRequest, result.Error)
+		fail(w, http.StatusBadRequest, "invalid_json", result.Error)
 		return
 	}
 	ok(w, result.Value)
@@ -149,7 +140,7 @@ func EncodeQR(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	png, err := tools.EncodeQR(body.Value, 256)
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
+		fail(w, http.StatusInternalServerError, "qr_encode_failed", err.Error())
 		return
 	}
 	encoded := tools.EncodeBase64(string(png))
@@ -162,12 +153,12 @@ func DecodeQR(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(b, &body)
 	imgBytes, err := tools.DecodeBase64(body.Image)
 	if err != nil {
-		fail(w, http.StatusBadRequest, "imagem base64 inválida")
+		fail(w, http.StatusBadRequest, "invalid_base64", "Imagem base64 inválida.")
 		return
 	}
 	text, err := tools.DecodeQRFromBytes([]byte(imgBytes))
 	if err != nil {
-		fail(w, http.StatusBadRequest, err.Error())
+		fail(w, http.StatusBadRequest, "qr_decode_failed", err.Error())
 		return
 	}
 	ok(w, text)

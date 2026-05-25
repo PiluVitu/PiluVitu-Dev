@@ -11,9 +11,8 @@ import (
 )
 
 type apiResp struct {
-	OK     bool            `json:"ok"`
-	Result json.RawMessage `json:"result"`
-	Error  string          `json:"error"`
+	OK   bool            `json:"ok"`
+	Data json.RawMessage `json:"data"`
 }
 
 func TestValidateCPFHandler(t *testing.T) {
@@ -27,7 +26,7 @@ func TestValidateCPFHandler(t *testing.T) {
 		t.Fatalf("esperado ok=true")
 	}
 	var result bool
-	json.Unmarshal(resp.Result, &result)
+	json.Unmarshal(resp.Data, &result)
 	if !result {
 		t.Error("CPF válido retornou false")
 	}
@@ -44,7 +43,7 @@ func TestValidateCPFHandlerInvalid(t *testing.T) {
 		t.Fatalf("handler deve retornar ok=true mesmo para CPF inválido (ok indica sucesso da request)")
 	}
 	var result bool
-	json.Unmarshal(resp.Result, &result)
+	json.Unmarshal(resp.Data, &result)
 	if result {
 		t.Error("CPF inválido retornou true")
 	}

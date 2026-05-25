@@ -11,6 +11,10 @@ const config: Config = {
     '^@piluvitu/tools$': '<rootDir>/../../packages/tools/src/index.ts',
   },
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  // Build output mirrors package.json + source, causing Haste name collisions
+  // and duplicate test discovery. Keep Jest pointed at source only.
+  modulePathIgnorePatterns: ['<rootDir>/.next/'],
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.next/'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 }
 

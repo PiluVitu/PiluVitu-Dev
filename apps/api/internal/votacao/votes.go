@@ -2,6 +2,7 @@ package votacao
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -56,6 +57,22 @@ func (s *Store) ListVotesBySession(ctx context.Context, sessionID int64) ([]Vote
 		return nil, fmt.Errorf("votacao: rows votes: %w", err)
 	}
 	return out, nil
+}
+
+// GetUserVote returns the movie the user voted for in the session. voted is
+// false (and movieID 0) when the user has not voted yet.
+func (s *Store) GetUserVote(ctx context.Context, sessionID, userID int64) (movieID int64, voted bool, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`SELECT movie_id FROM votes WHERE session_id=? AND user_id=?`,
+		sessionID, userID,
+	).Scan(&movieID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return movieID, true, nil
 }
 
 // HasVoted returns true if the user has already voted in the session.

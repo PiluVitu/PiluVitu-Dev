@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { useCreateSession } from '@/hooks/votacao/use-create-session'
+import { errorMessage } from '@/lib/votacao/api-client'
 import { useRouter } from 'next/navigation'
 
 export function CreateSessionForm() {
@@ -40,7 +41,7 @@ export function CreateSessionForm() {
               toast.success('Sessão criada')
               router.push(`/votacao/${data.session.ID}`)
             },
-            onError: (err) => toast.error(String(err)),
+            onError: (err) => toast.error(errorMessage(err)),
           },
         )
       }}

@@ -38,7 +38,7 @@ func TestCreateBackup_HappyPath(t *testing.T) {
 	h := admin.NewHandlers(admin.Deps{Store: store, Runner: runner})
 	rec := httptest.NewRecorder()
 	h.CreateBackup(rec, httptest.NewRequest(http.MethodPost, "/admin/backup", nil))
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d", rec.Code)
 	}
 	if runner.calls != 1 || runner.trigger != "manual" {
@@ -76,11 +76,13 @@ func TestListBackups_Empty(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	var out struct {
-		Backups []votacao.Backup `json:"backups"`
+		Data struct {
+			Backups []votacao.Backup `json:"backups"`
+		} `json:"data"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if len(out.Backups) != 0 {
-		t.Errorf("got %d", len(out.Backups))
+	if len(out.Data.Backups) != 0 {
+		t.Errorf("got %d", len(out.Data.Backups))
 	}
 }
 
@@ -94,10 +96,12 @@ func TestListBackups_PopulatedAfterInsert(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	var out struct {
-		Backups []votacao.Backup `json:"backups"`
+		Data struct {
+			Backups []votacao.Backup `json:"backups"`
+		} `json:"data"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if len(out.Backups) != 1 || out.Backups[0].TriggerType != "cron" {
-		t.Errorf("backups = %+v", out.Backups)
+	if len(out.Data.Backups) != 1 || out.Data.Backups[0].TriggerType != "cron" {
+		t.Errorf("backups = %+v", out.Data.Backups)
 	}
 }

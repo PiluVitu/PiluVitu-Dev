@@ -33,6 +33,8 @@ export interface SessionDetail {
   session: VotingSession
   movies: SessionMovie[]
   has_voted: boolean
+  /** Movie the current user voted for, or null if they haven't voted. */
+  voted_movie_id: number | null
 }
 
 export interface SessionListResponse {

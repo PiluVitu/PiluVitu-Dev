@@ -2,7 +2,6 @@ package votacao_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,7 +95,7 @@ func TestCloseSession_ComputesWinner(t *testing.T) {
 	var out struct {
 		Winner *int64 `json:"winner_movie_id"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	unwrap(t, rec, &out)
 	if out.Winner == nil || *out.Winner != movie.ID {
 		t.Errorf("winner = %v, want %d", out.Winner, movie.ID)
 	}
@@ -142,7 +141,7 @@ func TestGetResults_Tally(t *testing.T) {
 		} `json:"results"`
 		TotalVotes int `json:"total_votes"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	unwrap(t, rec, &out)
 	if out.TotalVotes != 2 {
 		t.Errorf("total = %d", out.TotalVotes)
 	}

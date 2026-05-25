@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/PiluVitu/api/internal/auth"
+	"github.com/PiluVitu/api/internal/httpx"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -28,28 +29,30 @@ type createSessionBody struct {
 // CreateSession (admin) reads sheets → filters+sorts → fetches TMDb posters → inserts session+movies.
 func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if h.deps.Sheets == nil {
-		jsonError(w, http.StatusServiceUnavailable, "sheets reader disabled")
+		httpx.Error(w, http.StatusServiceUnavailable, "sheets_disabled", "Integração com a planilha está desativada.")
 		return
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		jsonError(w, http.StatusUnauthorized, "not authenticated")
+		httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
 		return
 	}
 
 	var body createSessionBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, http.StatusBadRequest, "invalid json")
+		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo da requisição inválido.")
 		return
 	}
 	if body.Title == "" {
-		jsonError(w, http.StatusBadRequest, "title required")
+		httpx.Errors(w, http.StatusBadRequest, httpx.Notification{
+			Type: httpx.NotifyError, Code: "title_required", Message: "Informe um título para a sessão.", Field: "title",
+		})
 		return
 	}
 
 	movies, err := h.deps.Sheets.ReadMovies(r.Context())
 	if err != nil {
-		jsonError(w, http.StatusBadGateway, "sheets read failed")
+		httpx.Error(w, http.StatusBadGateway, "sheets_read_failed", "Falha ao ler a planilha de filmes.")
 		return
 	}
 	picked, err := votacao.SortOnePerCategory(movies, votacao.SortOptions{
@@ -59,10 +62,10 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}, rand.New(rand.NewSource(time.Now().UnixNano())))
 	if err != nil {
 		if errors.Is(err, votacao.ErrNoCandidates) {
-			jsonError(w, http.StatusUnprocessableEntity, "no movies match the filters")
+			httpx.Error(w, http.StatusUnprocessableEntity, "no_candidates", "Nenhum filme corresponde aos filtros escolhidos.")
 			return
 		}
-		jsonError(w, http.StatusInternalServerError, "sort failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao sortear os filmes.")
 		return
 	}
 
@@ -71,7 +74,7 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 	sortJSON, _ := json.Marshal(body)
 	session, err := h.deps.Store.CreateVotingSession(r.Context(), body.Title, user.ID, string(sortJSON))
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "create session failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao criar a sessão.")
 		return
 	}
 
@@ -96,12 +99,15 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 		sessionMovies = append(sessionMovies, sm)
 	}
 	if err := h.deps.Store.InsertSessionMovies(r.Context(), sessionMovies); err != nil {
-		jsonError(w, http.StatusInternalServerError, "insert movies failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao salvar os filmes da sessão.")
 		return
 	}
 
 	stored, _ := h.deps.Store.GetSessionMovies(r.Context(), session.ID)
-	writeSessionJSON(w, http.StatusCreated, session, stored)
+	httpx.DataMsg(w, http.StatusCreated, map[string]any{
+		"session": session,
+		"movies":  stored,
+	}, httpx.Success("Sessão criada."))
 }
 
 type pickedMovie struct {
@@ -150,11 +156,10 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 	offset := atoiOr(r.URL.Query().Get("offset"), 0)
 	sessions, err := h.deps.Store.ListVotingSessions(r.Context(), limit, offset)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "list failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao listar as sessões.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"sessions": sessions})
+	httpx.Data(w, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
 // GetSession (logged) returns one session + movies + whether the caller voted.
@@ -162,39 +167,34 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		jsonError(w, http.StatusBadRequest, "invalid id")
+		httpx.Error(w, http.StatusBadRequest, "invalid_id", "Identificador inválido.")
 		return
 	}
 	session, err := h.deps.Store.GetVotingSession(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, votacao.ErrNotFound) {
-			jsonError(w, http.StatusNotFound, "session not found")
+			httpx.Error(w, http.StatusNotFound, "session_not_found", "Sessão não encontrada.")
 			return
 		}
-		jsonError(w, http.StatusInternalServerError, "get session failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar a sessão.")
 		return
 	}
 	movies, _ := h.deps.Store.GetSessionMovies(r.Context(), session.ID)
 
 	hasVoted := false
+	var votedMovieID *int64
 	if user := auth.UserFromContext(r.Context()); user != nil {
-		hasVoted, _ = h.deps.Store.HasVoted(r.Context(), session.ID, user.ID)
+		if mid, voted, _ := h.deps.Store.GetUserVote(r.Context(), session.ID, user.ID); voted {
+			hasVoted = true
+			votedMovieID = &mid
+		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"session":   session,
-		"movies":    movies,
-		"has_voted": hasVoted,
-	})
-}
-
-func writeSessionJSON(w http.ResponseWriter, status int, session *votacao.VotingSession, movies []votacao.SessionMovie) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"session": session,
-		"movies":  movies,
+	httpx.Data(w, http.StatusOK, map[string]any{
+		"session":        session,
+		"movies":         movies,
+		"has_voted":      hasVoted,
+		"voted_movie_id": votedMovieID,
 	})
 }
 

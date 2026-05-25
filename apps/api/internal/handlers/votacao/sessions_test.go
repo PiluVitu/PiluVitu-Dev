@@ -3,7 +3,6 @@ package votacao_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -70,9 +69,7 @@ func TestCreateSession_HappyPath(t *testing.T) {
 		Session *votacao.VotingSession `json:"session"`
 		Movies  []votacao.SessionMovie `json:"movies"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatal(err)
-	}
+	unwrap(t, rec, &out)
 	if out.Session == nil || out.Session.Title != "Sexta" {
 		t.Errorf("session = %+v", out.Session)
 	}
@@ -141,7 +138,7 @@ func TestListSessions(t *testing.T) {
 	var out struct {
 		Sessions []votacao.VotingSession `json:"sessions"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	unwrap(t, rec, &out)
 	if len(out.Sessions) != 2 {
 		t.Errorf("got %d", len(out.Sessions))
 	}
@@ -166,7 +163,7 @@ func TestGetSession_HappyPath(t *testing.T) {
 	var out struct {
 		Session *votacao.VotingSession `json:"session"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	unwrap(t, rec, &out)
 	if out.Session == nil || out.Session.ID != sess.ID {
 		t.Errorf("session mismatch")
 	}
@@ -208,10 +205,14 @@ func TestGetSession_HasVotedTrueAfterInsertVote(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	var out struct {
-		HasVoted bool `json:"has_voted"`
+		HasVoted     bool   `json:"has_voted"`
+		VotedMovieID *int64 `json:"voted_movie_id"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	unwrap(t, rec, &out)
 	if !out.HasVoted {
 		t.Error("has_voted should be true")
+	}
+	if out.VotedMovieID == nil || *out.VotedMovieID != movies[0].ID {
+		t.Errorf("voted_movie_id = %v, want %d", out.VotedMovieID, movies[0].ID)
 	}
 }

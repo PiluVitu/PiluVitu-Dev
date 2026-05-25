@@ -1,12 +1,12 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
 
+	"github.com/PiluVitu/api/internal/httpx"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -37,7 +37,7 @@ func (h *Handlers) Sessions() *scs.SessionManager { return h.deps.Sessions }
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	state, err := GenerateState()
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao iniciar o login.")
 		return
 	}
 	SetStateCookie(w, state)
@@ -50,51 +50,44 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	stateQuery := r.URL.Query().Get("state")
 	if code == "" || stateQuery == "" {
-		http.Error(w, "missing code or state", http.StatusBadRequest)
+		httpx.Error(w, http.StatusBadRequest, "oauth_missing_params", "Requisição de login incompleta.")
 		return
 	}
 	stateCookie, err := ConsumeStateCookie(w, r)
 	if err != nil {
-		http.Error(w, "missing state cookie", http.StatusBadRequest)
+		httpx.Error(w, http.StatusBadRequest, "oauth_state_missing", "Sessão de login expirada. Tente novamente.")
 		return
 	}
 	if stateCookie != stateQuery {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		httpx.Error(w, http.StatusBadRequest, "oauth_state_mismatch", "Falha de validação do login. Tente novamente.")
 		return
 	}
 
 	tok, err := h.deps.Exchanger.Exchange(r.Context(), code)
 	if err != nil {
-		http.Error(w, "exchange failed", http.StatusBadGateway)
+		httpx.Error(w, http.StatusBadGateway, "oauth_exchange_failed", "Não foi possível concluir o login com o Google.")
 		return
 	}
 	rawID, _ := tok.Extra("id_token").(string)
 	if rawID == "" {
-		http.Error(w, "no id_token in oauth response", http.StatusInternalServerError)
+		httpx.Error(w, http.StatusInternalServerError, "oauth_no_id_token", "Resposta de login inválida do Google.")
 		return
 	}
 	claims, err := h.deps.Verifier.Verify(r.Context(), rawID, h.deps.Config.ClientID)
 	if err != nil {
-		http.Error(w, "invalid id token", http.StatusUnauthorized)
+		httpx.Error(w, http.StatusUnauthorized, "oauth_invalid_token", "Não foi possível validar sua identidade.")
 		return
 	}
 
 	user, err := h.deps.Store.UpsertUser(r.Context(), claims.Sub, claims.Email, claims.Name, claims.Picture, h.deps.Config.AdminEmails)
 	if err != nil {
-		http.Error(w, "upsert user failed", http.StatusInternalServerError)
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao registrar o usuário.")
 		return
 	}
 
 	h.deps.Sessions.Put(r.Context(), sessionUserIDKey, user.ID)
 
 	http.Redirect(w, r, h.deps.Config.WebRedirectURL, http.StatusFound)
-}
-
-// jsonError is a small helper used by future handlers. Kept private.
-func jsonError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // ErrSessionUserMissing is returned when a session does not carry a user_id.
@@ -104,16 +97,15 @@ var ErrSessionUserMissing = errors.New("auth: session has no user")
 func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 	userID := h.deps.Sessions.GetInt64(r.Context(), sessionUserIDKey)
 	if userID == 0 {
-		jsonError(w, http.StatusUnauthorized, "not authenticated")
+		httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
 		return
 	}
 	user, err := h.deps.Store.GetUserByID(r.Context(), userID)
 	if err != nil {
-		jsonError(w, http.StatusUnauthorized, "user not found")
+		httpx.Error(w, http.StatusUnauthorized, "user_not_found", "Usuário não encontrado.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	httpx.Data(w, http.StatusOK, map[string]any{
 		"id":       user.ID,
 		"email":    user.Email,
 		"name":     user.Name,
@@ -122,11 +114,11 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout destroys the current session, if any. Always returns 204.
+// Logout destroys the current session, if any. Always returns 200.
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := h.deps.Sessions.Destroy(r.Context()); err != nil {
-		jsonError(w, http.StatusInternalServerError, "logout failed")
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao encerrar a sessão.")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	httpx.Data(w, http.StatusOK, nil)
 }

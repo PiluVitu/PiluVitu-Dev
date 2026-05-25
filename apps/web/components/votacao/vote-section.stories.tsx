@@ -76,6 +76,7 @@ export const AlreadyVoted: Story = {
     movies: mockMovies,
     alreadyVoted: true,
     closed: false,
+    votedMovieId: 2,
   },
 }
 

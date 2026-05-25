@@ -31,6 +31,9 @@ const baseMovie = {
 
 export const Default: Story = { args: { movie: baseMovie } }
 export const Selected: Story = { args: { movie: baseMovie, selected: true } }
+export const YouVoted: Story = {
+  args: { movie: baseMovie, youVoted: true, disabled: true },
+}
 export const NoPoster: Story = {
   args: { movie: { ...baseMovie, PosterURL: '' } },
 }
