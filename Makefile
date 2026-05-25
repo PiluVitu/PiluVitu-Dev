@@ -1,14 +1,27 @@
-.PHONY: dev dev-web dev-api build-api build-cli test test-go test-web test-e2e lint clean \
+.PHONY: dev dev-web dev-api build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
 
+# Hot reload via air (config in apps/api/.air.toml). air is run through
+# `go run` so it needs no global install and stays out of the API's go.mod.
+# .env is sourced before launch so air's child binary inherits it (and keeps
+# it across reloads). Edits to .env still need a restart.
 dev-api:
-	cd apps/api && go run ./cmd/api
+	mkdir -p apps/api/tmp
+	cd apps/api && set -a && [ -f .env ] && . ./.env; set +a && go run github.com/air-verse/air@latest
 
 dev:
 	make -j2 dev-web dev-api
+
+# Escape hatch: free the dev ports if a process got stuck (rare with air,
+# handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
+stop:
+	@for p in 8081 3333; do \
+		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
+		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
+	done
 
 build-api:
 	cd apps/api && go build -o ../../bin/api ./cmd/api

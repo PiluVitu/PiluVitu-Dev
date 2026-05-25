@@ -32,6 +32,9 @@ yarn-error.log*
 .env
 .env.local
 
+# Service account JSON e outros segredos locais
+infra/secrets/
+
 # vercel
 .vercel
 
@@ -71,3 +74,6 @@ test-results/
 /bin/
 apps/api/api
 apps/api/piluvitu
+
+# SQLite local (make dev-api fora do docker)
+apps/api/tmp/

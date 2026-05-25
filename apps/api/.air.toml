@@ -1,0 +1,28 @@
+# Hot reload for the Go API — dev only, invoked by `make dev-api`.
+#
+# Why air instead of `go run`: `go run` compiles to a temp binary and runs it
+# as a child; on Ctrl+C `go run` dies but the child can survive and keep the
+# port bound. air owns the child's lifecycle — it SIGINTs then kills the binary
+# on every rebuild and on exit, so :8081 is freed cleanly.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Compile into tmp/ (already gitignored). Build errors are surfaced and the
+  # previous binary keeps running until the next successful build.
+  cmd = "go build -o ./tmp/air-bin ./cmd/api"
+  bin = "./tmp/air-bin"
+  include_ext = ["go"]
+  # tmp holds the build output AND the dev SQLite DB; never watch/rebuild on it.
+  exclude_dir = ["tmp", "bin"]
+  exclude_regex = ["_test\\.go"]
+  stop_on_error = true
+  # Graceful shutdown: SIGINT the binary, wait, then SIGKILL — frees the port.
+  send_interrupt = true
+  kill_delay = "1s"
+  # Debounce rapid saves so we rebuild once, not per-keystroke.
+  delay = 300
+
+[misc]
+  # Do NOT wipe tmp_dir on exit — the dev DB (tmp/votacao.db) lives there.
+  clean_on_exit = false
