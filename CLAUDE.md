@@ -266,12 +266,14 @@ E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `a
 
 ## Environment variables
 
-**Fonte única para a API:** `apps/api/.env` (ignorado pelo git). Carregado em dois caminhos:
+**Fonte única para a API:** `apps/api/.env` (ignorado pelo git, valores de **DEV**). Carregado em dois caminhos:
 
-- `make dev-api` — o target carrega o `.env` via `set -a; . ./.env; set +a` antes do `go run`.
-- `docker compose` (em `infra/`) — declara `env_file: ../apps/api/.env` no service `api`, injetando todas as vars dentro do container em runtime.
+- `make dev-api` — o target carrega o `.env` via `set -a; . ./.env; set +a` antes do air. Roda em dev (localhost:8081, cookie sem Secure).
+- `docker compose` (em `infra/`) — `env_file: ../apps/api/.env` injeta as vars no container, **mas o bloco `environment:` do service `api` sobrescreve com os valores de PROD** (`GOOGLE_OAUTH_REDIRECT_URL=https://promeia.piluvitu.com.br/...`, `WEB_REDIRECT_URL=https://piluvitu.com.br/votacao`, `SESSION_COOKIE_SECURE=true`, `CORS_ALLOWED_ORIGINS=https://piluvitu.com.br`, + paths internos `/data` e `/secrets`). Assim `make dev` fica dev e `make tunnel-up`/`compose-up` (container) sai em prod, sem togglar o `.env`.
 
-Pra prod (Vercel/Cloud Run/Cloudflare Tunnel) as vars são cadastradas direto no painel; o `.env` é só dev local.
+**Domínios de prod:** web `https://piluvitu.com.br` (Vercel) + API `https://promeia.piluvitu.com.br` (Cloudflare Tunnel). São o **mesmo domínio registrável** (`piluvitu.com.br`) → web↔API são same-site → o cookie de sessão `SameSite=Lax` é enviado nos `fetch(credentials:'include')` sem precisar de `SameSite=None`. (DNS do `piluvitu.com.br` migrado da Vercel pra Cloudflare; site segue hospedado na Vercel.)
+
+Na Vercel cadastrar `NEXT_PUBLIC_API_URL=https://promeia.piluvitu.com.br`. No Google Console registrar `https://promeia.piluvitu.com.br/auth/google/callback`.
 
 See `.env.example`. Key variables:
 

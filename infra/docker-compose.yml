@@ -5,14 +5,24 @@ services:
       dockerfile: apps/api/Dockerfile
     ports:
       - '8080:8080'
-    # env_file injeta todas as vars do apps/api/.env no container em runtime.
-    # Mantemos só defaults fixos / overrides no environment:.
+    # env_file injeta todas as vars do apps/api/.env (valores de DEV) no container.
+    # O bloco environment: abaixo SOBRESCREVE com os valores de PROD — então o
+    # `make dev`/air (host, lê o .env direto) continua em dev, e o container
+    # (compose-up / tunnel-up) sai em prod. Não precisa togglar o .env.
     env_file:
       - ../apps/api/.env
     environment:
+      # Infra do container (paths internos + porta).
       PORT: '8080'
       SQLITE_PATH: '/data/votacao.db'
       GOOGLE_APPLICATION_CREDENTIALS: '/secrets/google-sa.json'
+      # Prod (tunnel em https://promeia.piluvitu.com.br, web em piluvitu.com.br).
+      # promeia.* e piluvitu.com.br são o MESMO domínio registrável → same-site,
+      # então o cookie SameSite=Lax basta (sem precisar de SameSite=None).
+      GOOGLE_OAUTH_REDIRECT_URL: 'https://promeia.piluvitu.com.br/auth/google/callback'
+      WEB_REDIRECT_URL: 'https://piluvitu.com.br/votacao'
+      SESSION_COOKIE_SECURE: 'true'
+      CORS_ALLOWED_ORIGINS: 'https://piluvitu.com.br'
     volumes:
       - api-data:/data
       - ./secrets:/secrets:ro
