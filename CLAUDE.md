@@ -31,7 +31,8 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | --------------------------------------- | ---------------------------------------- |
 | `make dev`                              | Dev server web + Go API em paralelo      |
 | `make dev-web`                          | Só o Next.js em http://localhost:3333    |
-| `make dev-api`                          | Só a Go API em http://localhost:8080     |
+| `make dev-api`                          | Go API com **hot reload** (air)          |
+| `make stop`                             | Libera as portas 8081/3333 se travarem   |
 | `make build-api`                        | Compila binário Go API em bin/api        |
 | `make build-cli`                        | Compila CLI Go em bin/piluvitu           |
 | `make test`                             | Todos os testes (pnpm -r test + go test) |
@@ -45,6 +46,10 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 **Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
 **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
+
+### Go hot reload (air)
+
+`make dev-api` roda a Go API via [air](https://github.com/air-verse/air) (config em `apps/api/.air.toml`), que recompila a cada `.go` salvo e — diferente do `go run` — é dono do ciclo de vida do binário: manda SIGINT + kill no processo a cada rebuild e na saída, liberando a `:8081` limpinha no Ctrl+C. air roda via `go run github.com/air-verse/air@latest` (sem instalar nada global, fora do `go.mod` da API). O binário compilado e o SQLite de dev ficam em `apps/api/tmp/` (gitignored); por isso `clean_on_exit = false` (não apagar o `votacao.db`). Editar o `.env` ainda exige restart (ele é carregado no launch). Hot reload é só dev nativo no host — em Docker a API roda o binário do `Dockerfile`. Se uma porta ficar presa após um crash, `make stop` mata o que estiver escutando em 8081/3333 (macOS/BSD-safe).
 
 ## Architecture
 
@@ -180,7 +185,7 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 - **Votos (`POST /votacao/sessions/{id}/votes`, RequireAuth):** body `{"movie_id": <int>}`. 201 ok. 409 se já votou (UNIQUE no DB). 400 sem movie_id. Idempotência pela constraint.
 - **Fechar (`POST /votacao/sessions/{id}/close`, RequireAdmin):** computa winner via `votacao.ComputeWinner` (maior contagem; empate por menor movie_id), grava `closed_at` e `winner_movie_id`. 404 se sessão já estava fechada. Retorna `{"winner_movie_id": id|null}`.
 - **Resultados (`GET /votacao/sessions/{id}/results`, RequireAuth):** retorna `{"results":[{movie_id,count},...], "total_votes":N}` ordenado por count desc + movie_id asc.
-- **GetSession agora inclui `has_voted`** quando o caller está autenticado.
+- **GetSession agora inclui `has_voted` e `voted_movie_id`** quando o caller está autenticado. `voted_movie_id` (nullable) vem de `Store.GetUserVote(session, user)` e diz QUAL filme o usuário votou — o front usa pra destacar visualmente o card escolhido.
 
 #### Backup + Cron (`internal/gdrive`, `internal/backup`, `internal/handlers/admin`)
 
@@ -195,6 +200,9 @@ Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` e
 
 - **Rotas:** `/votacao` (lista + login state), `/votacao/[id]` (detalhe + votar + resultados quando fechada + botão admin pra encerrar), `/votacao/admin` (form criar sessão — só admin enxerga).
 - **API client:** `apps/web/lib/votacao/api-client.ts` faz fetch com `credentials: 'include'` contra `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`). Para login, o componente `<LoginButton>` faz navegação top-level pro endpoint `/auth/google/login` da API.
+- **Envelope + erros no front:** `call<T>()` desembrulha o envelope `{ok,data,notifications}` e retorna `data` direto (por isso os hooks/types continuam consumindo o shape "cru"). Em falha, lança `ApiError` (exporta `status`, `code`, `notifications` e um `.message` pt-BR limpo, tirado da primeira notification de erro). Componentes mostram erro via `toast.error(errorMessage(err))` — `errorMessage()` cobre `ApiError`, `Error` e desconhecidos. Nunca usar `String(err)` (vaza o `Error: 409 Conflict: {...}`).
+- **Destaque do voto do usuário:** `SessionDetail.voted_movie_id` propaga pro `<VoteSection votedMovieId>` → `<MovieCard youVoted>` (anel `ring-success` verde + badge "✓ Seu voto", e o card não esmaece quando a votação trava) e pro banner ("Você votou em "…"."). Em sessão encerrada, `<ResultsList votedMovieId>` marca a linha do voto com a tag "seu voto". Cores usam o token `--color-success` (exposto em `@theme` no `globals.css`).
+- **E2E mocks (`votacao.e2e.ts`):** `page.route()` usa globs host-agnósticos (`**/auth/me`, `**/votacao/sessions`, …) pra casar com qualquer `NEXT_PUBLIC_API_URL`, e os corpos mockados seguem o envelope (`envelope(data, notes)` / `errorEnvelope(code, msg)`). Não hardcodar `localhost:8080` — quebrava quando a porta da API mudava.
 - **TanStack Query:** hooks em `apps/web/hooks/votacao/`. Queries para me/list/detail/results; mutations para vote/create/close. `onSuccess` invalida queries pra refletir mudança imediata.
 - **Componentes:** `apps/web/components/votacao/` (MovieCard, VoteSection, ResultsList, SessionCard, SessionStatusBadge, CreateSessionForm, LoginButton, LogoutButton).
 - **Next/Image:** posters do TMDb (`image.tmdb.org/t/p/w500/...`) — `image.tmdb.org` registrado em `next.config.mjs` `images.remotePatterns`.
@@ -239,10 +247,18 @@ E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `a
 - **Persistência:** SQLite via `modernc.org/sqlite` (puro Go, sem CGo). Volume Docker `api-data` montado em `/data`. Path configurável via env `SQLITE_PATH` (default `/data/votacao.db`). Schema aplicado idempotentemente em `votacao.NewStore`.
 - **CLI:** cobra — `piluvitu <tool> <subcommand>` (e.g., `piluvitu cpf validate "123"`)
 - **Layer rules:** `internal/tools/` is pure Go (no HTTP, no cobra); `internal/handlers/` delegates to it; `internal/votacao/` é o pacote de domínio (Store + entidades); `cmd/` only parses args
-- **Tests:** colocated `*_test.go` files, run with `make test-go` or `cd apps/api && go test ./...`
+- **Response envelope (`internal/httpx`):** TODA rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null, "notifications": [{type,code,message,field?}] }`. Mensagens (erros, avisos, confirmações) vivem SEMPRE em `notifications` — nunca solte um body cru. Helpers: `httpx.Data(w, status, payload)` (sucesso), `httpx.DataMsg(w, status, payload, notes...)` (sucesso + toast), `httpx.Error(w, status, code, msg)` (1 erro), `httpx.Errors(w, status, notes...)` (validação multi-campo). `notifications` serializa como `[]` (nunca `null`). `code` é snake_case estável (`already_voted`, `not_authenticated`, `admin_only`, `session_not_found`, `no_candidates`, `sheets_disabled`, `invalid_json`, `internal_error`, …); `message` é pt-BR voltada ao usuário. Login/Callback (`/auth/google/*`) continuam sendo REDIRECTS no caminho feliz; só os erros deles usam o envelope. `GET /health` é a única exceção (mantém `{"ok":true,"db":"up"}` pros health checks de infra). Respostas que antes eram 204 (logout, voto, backup) agora são 200/201 com envelope.
+- **Tests:** colocated `*_test.go` files, run with `make test-go` or `cd apps/api && go test ./...`. Testes de handler decodam o envelope: ver `internal/handlers/votacao/envelope_test.go` (`unwrap(t, rec, &target)`) e `internal/httpx/respond_test.go`.
 - **Build:** `make build-api` → `bin/api`, `make build-cli` → `bin/piluvitu`
 
 ## Environment variables
+
+**Fonte única para a API:** `apps/api/.env` (ignorado pelo git). Carregado em dois caminhos:
+
+- `make dev-api` — o target carrega o `.env` via `set -a; . ./.env; set +a` antes do `go run`.
+- `docker compose` (em `infra/`) — declara `env_file: ../apps/api/.env` no service `api`, injetando todas as vars dentro do container em runtime.
+
+Pra prod (Vercel/Cloud Run/Cloudflare Tunnel) as vars são cadastradas direto no painel; o `.env` é só dev local.
 
 See `.env.example`. Key variables:
 
