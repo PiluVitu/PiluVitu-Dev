@@ -21,6 +21,13 @@
     "test:e2e": "playwright test",
     "prepare": "husky"
   },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{js,mjs,cjs,json,md,css}": "prettier --write"
+  },
   "dependencies": {
     "@piluvitu/tools": "workspace:*",
     "@dnd-kit/core": "^6.3.1",
