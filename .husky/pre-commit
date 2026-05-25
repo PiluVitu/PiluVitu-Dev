@@ -1,1 +1,1 @@
- pnpm prettier:fix
+pnpm exec lint-staged
