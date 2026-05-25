@@ -113,6 +113,38 @@ func TestHasVoted_True(t *testing.T) {
 	}
 }
 
+func TestListSessionVotesWithUsers(t *testing.T) {
+	s, sess, movie, user := setupVoteScenario(t)
+	ctx := context.Background()
+
+	// No votes yet.
+	empty, err := s.ListSessionVotesWithUsers(ctx, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("expected 0 vote details, got %d", len(empty))
+	}
+
+	if err := s.InsertVote(ctx, sess.ID, user.ID, movie.ID); err != nil {
+		t.Fatal(err)
+	}
+	details, err := s.ListSessionVotesWithUsers(ctx, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(details) != 1 {
+		t.Fatalf("expected 1 vote detail, got %d", len(details))
+	}
+	d := details[0]
+	if d.UserID != user.ID || d.UserName != "Seed" || d.UserEmail != "seed@example.com" {
+		t.Errorf("voter = %+v", d)
+	}
+	if d.MovieID != movie.ID || d.MovieTitle != "M" || d.Category != "terror" {
+		t.Errorf("movie = %+v", d)
+	}
+}
+
 func TestGetUserVote_NotVoted(t *testing.T) {
 	s, sess, _, user := setupVoteScenario(t)
 	movieID, voted, err := s.GetUserVote(context.Background(), sess.ID, user.ID)

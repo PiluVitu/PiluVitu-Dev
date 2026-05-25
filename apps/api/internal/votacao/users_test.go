@@ -27,6 +27,41 @@ func TestUpsertUser_Insert(t *testing.T) {
 	}
 }
 
+func TestListUsers_EmptyAndPopulated(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	empty, err := s.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("expected 0 users, got %d", len(empty))
+	}
+
+	if _, err := s.UpsertUser(ctx, "sub-a", "a@x.com", "Alice", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertUser(ctx, "sub-b", "b@x.com", "Bob", "", []string{"b@x.com"}); err != nil {
+		t.Fatal(err)
+	}
+
+	users, err := s.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(users) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(users))
+	}
+	// Newest first (Bob inserted last) — ties broken by id DESC.
+	if users[0].Email != "b@x.com" || !users[0].IsAdmin {
+		t.Errorf("first user = %+v, want Bob/admin", users[0])
+	}
+	if users[1].Email != "a@x.com" {
+		t.Errorf("second user = %+v, want Alice", users[1])
+	}
+}
+
 func TestUpsertUser_UpdatesExisting(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

@@ -1,9 +1,12 @@
 import type {
+  AdminUsersResponse,
+  BackupsResponse,
   CategoriesResponse,
   CreateSessionBody,
   ResultsResponse,
   SessionDetail,
   SessionListResponse,
+  SessionVotesResponse,
   User,
 } from './types'
 
@@ -102,6 +105,13 @@ export const votacaoApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  // Admin-only
+  adminUsers: () => call<AdminUsersResponse>('/admin/users'),
+  adminSessionVotes: (id: number) =>
+    call<SessionVotesResponse>(`/votacao/sessions/${id}/votes`),
+  adminBackups: () => call<BackupsResponse>('/admin/backups'),
+  adminCreateBackup: () => call<null>('/admin/backup', { method: 'POST' }),
 }
 
 export const loginHref = `${apiBase}/auth/google/login`

@@ -56,3 +56,46 @@ export interface CreateSessionBody {
   include_watched: boolean
   categories: string[]
 }
+
+// --- Admin ---
+
+export interface AdminUser {
+  id: number
+  name: string
+  email: string
+  picture: string
+  is_admin: boolean
+  created_at: string
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[]
+}
+
+export interface SessionVote {
+  user_id: number
+  user_name: string
+  user_email: string
+  movie_id: number
+  movie_title: string
+  category: string
+  created_at: string
+}
+
+export interface SessionVotesResponse {
+  votes: SessionVote[]
+  total: number
+}
+
+export interface Backup {
+  ID: number
+  DriveFileID: string
+  DriveFileName: string
+  SizeBytes: number
+  TriggerType: 'cron' | 'manual' | 'session_close'
+  CreatedAt: string
+}
+
+export interface BackupsResponse {
+  backups: Backup[]
+}

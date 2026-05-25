@@ -119,6 +119,32 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 	httpx.Data(w, http.StatusOK, map[string]any{"results": rows, "total_votes": len(votes)})
 }
 
+// ListSessionVotes (admin) returns who voted for what in the session.
+func (h *Handlers) ListSessionVotes(w http.ResponseWriter, r *http.Request) {
+	sessionID, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	details, err := h.deps.Store.ListSessionVotesWithUsers(r.Context(), sessionID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os votos.")
+		return
+	}
+	out := make([]map[string]any, 0, len(details))
+	for _, d := range details {
+		out = append(out, map[string]any{
+			"user_id":     d.UserID,
+			"user_name":   d.UserName,
+			"user_email":  d.UserEmail,
+			"movie_id":    d.MovieID,
+			"movie_title": d.MovieTitle,
+			"category":    d.Category,
+			"created_at":  d.CreatedAt,
+		})
+	}
+	httpx.Data(w, http.StatusOK, map[string]any{"votes": out, "total": len(out)})
+}
+
 func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)

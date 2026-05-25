@@ -46,6 +46,32 @@ func (s *Store) GetUserByID(ctx context.Context, id int64) (*User, error) {
 	return scanUser(s.db.QueryRowContext(ctx, userSelect+`WHERE id = ?`, id))
 }
 
+// ListUsers returns every registered user, newest first.
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.QueryContext(ctx, userSelect+`ORDER BY created_at DESC, id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("votacao: list users: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]User, 0)
+	for rows.Next() {
+		var u User
+		var picture sql.NullString
+		var isAdminInt int
+		if err := rows.Scan(&u.ID, &u.GoogleSub, &u.Email, &u.Name, &picture, &isAdminInt, &u.CreatedAt); err != nil {
+			return nil, fmt.Errorf("votacao: scan user: %w", err)
+		}
+		u.Picture = picture.String
+		u.IsAdmin = isAdminInt == 1
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("votacao: rows users: %w", err)
+	}
+	return out, nil
+}
+
 const userSelect = `
 	SELECT id, google_sub, email, name, picture, is_admin, created_at
 	FROM users

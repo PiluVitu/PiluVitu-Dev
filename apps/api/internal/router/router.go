@@ -64,6 +64,7 @@ func New(deps Deps) http.Handler {
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions", deps.VotacaoHandlers.CreateSession)
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Post("/sessions/{id}/votes", deps.VotacaoHandlers.CreateVote)
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}/results", deps.VotacaoHandlers.GetResults)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/sessions/{id}/votes", deps.VotacaoHandlers.ListSessionVotes)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/close", deps.VotacaoHandlers.CloseSession)
 		})
 	}
@@ -72,6 +73,7 @@ func New(deps Deps) http.Handler {
 		r.Route("/admin", func(r chi.Router) {
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/backup", deps.AdminHandlers.CreateBackup)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/backups", deps.AdminHandlers.ListBackups)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/users", deps.AdminHandlers.ListUsers)
 		})
 	}
 

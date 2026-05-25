@@ -67,6 +67,30 @@ func TestCreateBackup_RunnerError(t *testing.T) {
 	}
 }
 
+func TestListUsers_ReturnsUsers(t *testing.T) {
+	store := newStore(t)
+	_, _ = store.UpsertUser(context.Background(), "s1", "a@x.com", "Alice", "", nil)
+	_, _ = store.UpsertUser(context.Background(), "s2", "b@x.com", "Bob", "", []string{"b@x.com"})
+	h := admin.NewHandlers(admin.Deps{Store: store})
+	rec := httptest.NewRecorder()
+	h.ListUsers(rec, httptest.NewRequest(http.MethodGet, "/admin/users", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var out struct {
+		Data struct {
+			Users []struct {
+				Email   string `json:"email"`
+				IsAdmin bool   `json:"is_admin"`
+			} `json:"users"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if len(out.Data.Users) != 2 {
+		t.Fatalf("users = %d, want 2", len(out.Data.Users))
+	}
+}
+
 func TestListBackups_Empty(t *testing.T) {
 	store := newStore(t)
 	h := admin.NewHandlers(admin.Deps{Store: store})

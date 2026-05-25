@@ -59,6 +59,48 @@ func (s *Store) ListVotesBySession(ctx context.Context, sessionID int64) ([]Vote
 	return out, nil
 }
 
+// VoteDetail is one vote enriched with the voter and the chosen movie, for the
+// admin "who voted for what" view.
+type VoteDetail struct {
+	UserID     int64
+	UserName   string
+	UserEmail  string
+	MovieID    int64
+	MovieTitle string
+	Category   string
+	CreatedAt  time.Time
+}
+
+// ListSessionVotesWithUsers returns every vote in the session joined with the
+// voter and the movie they picked, oldest first. Admin-only at the HTTP layer.
+func (s *Store) ListSessionVotesWithUsers(ctx context.Context, sessionID int64) ([]VoteDetail, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT u.id, u.name, u.email, m.id, m.title, m.category, v.created_at
+		FROM votes v
+		JOIN users u ON u.id = v.user_id
+		JOIN session_movies m ON m.id = v.movie_id
+		WHERE v.session_id = ?
+		ORDER BY v.created_at ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("votacao: list session votes: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]VoteDetail, 0)
+	for rows.Next() {
+		var d VoteDetail
+		if err := rows.Scan(&d.UserID, &d.UserName, &d.UserEmail, &d.MovieID, &d.MovieTitle, &d.Category, &d.CreatedAt); err != nil {
+			return nil, fmt.Errorf("votacao: scan vote detail: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("votacao: rows vote detail: %w", err)
+	}
+	return out, nil
+}
+
 // GetUserVote returns the movie the user voted for in the session. voted is
 // false (and movieID 0) when the user has not voted yet.
 func (s *Store) GetUserVote(ctx context.Context, sessionID, userID int64) (movieID int64, voted bool, err error) {

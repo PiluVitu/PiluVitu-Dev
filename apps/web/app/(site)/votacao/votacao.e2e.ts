@@ -69,6 +69,48 @@ const mockMovies = [
   },
 ]
 
+const mockSessionVotes = [
+  {
+    user_id: 1,
+    user_name: 'Admin',
+    user_email: 'admin@example.com',
+    movie_id: 1,
+    movie_title: 'A Coisa',
+    category: 'terror',
+    created_at: new Date().toISOString(),
+  },
+]
+
+const mockAdminUsers = [
+  {
+    id: 1,
+    name: 'Admin',
+    email: 'admin@example.com',
+    picture: '',
+    is_admin: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    name: 'Maria S.',
+    email: 'maria@example.com',
+    picture: '',
+    is_admin: false,
+    created_at: new Date().toISOString(),
+  },
+]
+
+const mockBackups = [
+  {
+    ID: 1,
+    DriveFileID: 'f1',
+    DriveFileName: 'votacao.db',
+    SizeBytes: 1_200_000,
+    TriggerType: 'manual' as const,
+    CreatedAt: new Date().toISOString(),
+  },
+]
+
 interface MockOptions {
   loggedIn?: boolean
   hasVoted?: boolean
@@ -114,7 +156,19 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       }),
     })
   })
+  // Same path serves POST (cast a vote) and GET (admin: who voted for what).
   await page.route(`**/votacao/sessions/1/votes`, (route) => {
+    if (route.request().method() === 'GET') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({
+          votes: mockSessionVotes,
+          total: mockSessionVotes.length,
+        }),
+      })
+      return
+    }
     route.fulfill({
       status: 201,
       contentType: 'application/json',
@@ -132,6 +186,20 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
         ],
         total_votes: 3,
       }),
+    })
+  })
+  await page.route(`**/admin/users`, (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: envelope({ users: mockAdminUsers }),
+    })
+  })
+  await page.route(`**/admin/backups`, (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: envelope({ backups: mockBackups }),
     })
   })
 }
@@ -192,5 +260,37 @@ test.describe('/votacao/[id] detail', () => {
     await page.goto('/votacao/1')
     await expect(page.getByText(/resultados/i)).toBeVisible()
     await expect(page.getByText(/total de votos/i)).toBeVisible()
+  })
+})
+
+test.describe('/votacao/admin dashboard', () => {
+  test('lists registered users and backups', async ({ page }) => {
+    await mockAPI(page)
+    await page.goto('/votacao/admin')
+    await expect(page.getByText('Usuários cadastrados')).toBeVisible()
+    await expect(page.getByText('maria@example.com')).toBeVisible()
+    await expect(page.getByText(/fazer backup agora/i)).toBeVisible()
+  })
+
+  test('expands a session to reveal who voted for what', async ({ page }) => {
+    await mockAPI(page)
+    await page.goto('/votacao/admin')
+    await expect(page.getByRole('heading', { name: 'Sessões' })).toBeVisible()
+    await page.getByRole('button', { name: /ver votos/i }).click()
+    // mockSessionVotes: Admin -> A Coisa
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.getByText(/1 voto/i)).toBeVisible()
+  })
+
+  test('blocks non-admins', async ({ page }) => {
+    await page.route(`**/auth/me`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({ ...mockUser, is_admin: false }),
+      }),
+    )
+    await page.goto('/votacao/admin')
+    await expect(page.getByText(/acesso negado/i)).toBeVisible()
   })
 })

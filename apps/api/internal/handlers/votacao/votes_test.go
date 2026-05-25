@@ -120,6 +120,34 @@ func TestCloseSession_AlreadyClosed_404(t *testing.T) {
 	}
 }
 
+func TestListSessionVotes_AdminSeesWhoVotedWhat(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	sess, movie := setupSessionWithMovie(t, store, admin)
+	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movie.ID)
+
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
+	rec := httptest.NewRecorder()
+	h.ListSessionVotes(rec, reqWithID(http.MethodGet, intStr(sess.ID), "", admin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Votes []struct {
+			UserName   string `json:"user_name"`
+			MovieTitle string `json:"movie_title"`
+		} `json:"votes"`
+		Total int `json:"total"`
+	}
+	unwrap(t, rec, &out)
+	if out.Total != 1 || len(out.Votes) != 1 {
+		t.Fatalf("votes = %+v, total = %d", out.Votes, out.Total)
+	}
+	if out.Votes[0].UserName != "Admin" || out.Votes[0].MovieTitle != "M" {
+		t.Errorf("detail = %+v", out.Votes[0])
+	}
+}
+
 func TestGetResults_Tally(t *testing.T) {
 	store := openTestStore(t)
 	admin := makeAdmin(t, store)
