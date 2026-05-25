@@ -255,11 +255,66 @@ test.describe('/votacao/[id] detail', () => {
     await expect(page.getByText('Seu voto')).toBeVisible()
   })
 
-  test('shows results when session is closed', async ({ page }) => {
+  test('shows results with a winner badge when closed', async ({ page }) => {
     await mockAPI(page, { sessionStatus: 'closed' })
     await page.goto('/votacao/1')
     await expect(page.getByText(/resultados/i)).toBeVisible()
     await expect(page.getByText(/total de votos/i)).toBeVisible()
+    // results mock: movie 1 has 2 votes vs movie 2 with 1 → clear winner.
+    await expect(page.getByText(/🏆 vencedor/i)).toBeVisible()
+  })
+
+  test('admin can create a runoff from a tied closed session', async ({
+    page,
+  }) => {
+    await mockAPI(page, { sessionStatus: 'closed' })
+    // Override results to a tie, and mock the runoff POST → new session id 2.
+    await page.route(`**/votacao/sessions/1/results`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({
+          results: [
+            { movie_id: 1, count: 1 },
+            { movie_id: 2, count: 1 },
+          ],
+          total_votes: 2,
+        }),
+      }),
+    )
+    const runoffSession = {
+      ...mockSession,
+      ID: 2,
+      Title: 'Desempate — Sexta 22/05',
+    }
+    await page.route(`**/votacao/sessions/1/runoff`, (route) =>
+      route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: envelope({ session: runoffSession, movies: mockMovies }, [
+          { type: 'success', message: 'Votação de desempate criada.' },
+        ]),
+      }),
+    )
+    await page.route(`**/votacao/sessions/2`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({
+          session: runoffSession,
+          movies: mockMovies,
+          has_voted: false,
+          voted_movie_id: null,
+        }),
+      }),
+    )
+
+    await page.goto('/votacao/1')
+    await expect(page.getByText(/empate entre 2 filmes/i)).toBeVisible()
+    await page
+      .getByRole('button', { name: /criar votação de desempate/i })
+      .click()
+    await expect(page).toHaveURL(/\/votacao\/2$/)
   })
 })
 

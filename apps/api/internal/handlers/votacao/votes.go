@@ -119,6 +119,86 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 	httpx.Data(w, http.StatusOK, map[string]any{"results": rows, "total_votes": len(votes)})
 }
 
+// CreateRunoff (admin) starts a tie-break session containing only the movies
+// tied at the top of a CLOSED session. Votes start fresh. 422 if there is no
+// tie; 409 if the source session is still open.
+func (h *Handlers) CreateRunoff(w http.ResponseWriter, r *http.Request) {
+	sourceID, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
+		return
+	}
+	source, err := h.deps.Store.GetVotingSession(r.Context(), sourceID)
+	if err != nil {
+		if errors.Is(err, votacao.ErrNotFound) {
+			httpx.Error(w, http.StatusNotFound, "session_not_found", "Sessão não encontrada.")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar a sessão.")
+		return
+	}
+	if source.Status != "closed" {
+		httpx.Error(w, http.StatusConflict, "session_not_closed", "Encerre a sessão antes de criar o desempate.")
+		return
+	}
+
+	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sourceID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
+		return
+	}
+	tiedIDs, _ := votacao.ComputeTopMovies(votes)
+	if len(tiedIDs) < 2 {
+		httpx.Error(w, http.StatusUnprocessableEntity, "no_tie", "Não há empate para desempatar.")
+		return
+	}
+	tied := make(map[int64]bool, len(tiedIDs))
+	for _, id := range tiedIDs {
+		tied[id] = true
+	}
+
+	movies, err := h.deps.Store.GetSessionMovies(r.Context(), sourceID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os filmes.")
+		return
+	}
+
+	newSession, err := h.deps.Store.CreateVotingSession(r.Context(), "Desempate — "+source.Title, user.ID, "{}")
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao criar o desempate.")
+		return
+	}
+	runoffMovies := make([]votacao.SessionMovie, 0, len(tiedIDs))
+	for _, m := range movies {
+		if !tied[m.ID] {
+			continue
+		}
+		runoffMovies = append(runoffMovies, votacao.SessionMovie{
+			SessionID:   newSession.ID,
+			Category:    m.Category,
+			Title:       m.Title,
+			Type:        m.Type,
+			PosterURL:   m.PosterURL,
+			TMDbID:      m.TMDbID,
+			WasWatched:  m.WasWatched,
+			SheetNumber: m.SheetNumber,
+		})
+	}
+	if err := h.deps.Store.InsertSessionMovies(r.Context(), runoffMovies); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao salvar os filmes do desempate.")
+		return
+	}
+	stored, _ := h.deps.Store.GetSessionMovies(r.Context(), newSession.ID)
+	httpx.DataMsg(w, http.StatusCreated, map[string]any{
+		"session": newSession,
+		"movies":  stored,
+	}, httpx.Success("Votação de desempate criada."))
+}
+
 // ListSessionVotes (admin) returns who voted for what in the session.
 func (h *Handlers) ListSessionVotes(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := parseID(w, r)

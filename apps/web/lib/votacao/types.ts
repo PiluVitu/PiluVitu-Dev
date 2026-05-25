@@ -46,6 +46,11 @@ export interface ResultsResponse {
   total_votes: number
 }
 
+export interface RunoffResponse {
+  session: VotingSession
+  movies: SessionMovie[]
+}
+
 export interface CategoriesResponse {
   categories: string[]
 }

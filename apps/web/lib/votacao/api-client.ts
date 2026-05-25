@@ -4,6 +4,7 @@ import type {
   CategoriesResponse,
   CreateSessionBody,
   ResultsResponse,
+  RunoffResponse,
   SessionDetail,
   SessionListResponse,
   SessionVotesResponse,
@@ -96,6 +97,8 @@ export const votacaoApi = {
     call<{ winner_movie_id: number | null }>(`/votacao/sessions/${id}/close`, {
       method: 'POST',
     }),
+  createRunoff: (id: number) =>
+    call<RunoffResponse>(`/votacao/sessions/${id}/runoff`, { method: 'POST' }),
   results: (id: number) =>
     call<ResultsResponse>(`/votacao/sessions/${id}/results`),
 

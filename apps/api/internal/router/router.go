@@ -66,6 +66,7 @@ func New(deps Deps) http.Handler {
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}/results", deps.VotacaoHandlers.GetResults)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/sessions/{id}/votes", deps.VotacaoHandlers.ListSessionVotes)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/close", deps.VotacaoHandlers.CloseSession)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/runoff", deps.VotacaoHandlers.CreateRunoff)
 		})
 	}
 
