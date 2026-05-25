@@ -51,6 +51,15 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
 `make dev-api` roda a Go API via [air](https://github.com/air-verse/air) (config em `apps/api/.air.toml`), que recompila a cada `.go` salvo e — diferente do `go run` — é dono do ciclo de vida do binário: manda SIGINT + kill no processo a cada rebuild e na saída, liberando a `:8081` limpinha no Ctrl+C. air roda via `go run github.com/air-verse/air@latest` (sem instalar nada global, fora do `go.mod` da API). O binário compilado e o SQLite de dev ficam em `apps/api/tmp/` (gitignored); por isso `clean_on_exit = false` (não apagar o `votacao.db`). Editar o `.env` ainda exige restart (ele é carregado no launch). Hot reload é só dev nativo no host — em Docker a API roda o binário do `Dockerfile`. Se uma porta ficar presa após um crash, `make stop` mata o que estiver escutando em 8081/3333 (macOS/BSD-safe).
 
+### Pre-commit hook (lint-staged)
+
+`.husky/pre-commit` roda **`pnpm exec lint-staged`** — formata/linta só os arquivos staged (antes era `prettier --write "**/*"`, que varria o repo inteiro incluindo `.next/`). Configs em dois níveis (lint-staged usa a mais próxima de cada arquivo, com cwd no diretório dela):
+
+- **Root `package.json`** → `*.{js,ts,tsx,json,md,css}: prettier --write` (arquivos da raiz / fora de apps/web). `prettier` + `prettier-plugin-tailwindcss` estão nas devDeps do root pra resolverem onde o hook roda.
+- **`apps/web/package.json`** → `*.{ts,tsx}: [eslint --fix, prettier --write]` e demais assets só prettier. Fica em apps/web (não no root) porque o ESLint 9 flat config (`eslint.config.mjs`) e o plugin tailwind precisam resolver com cwd em apps/web.
+
+Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e CI).
+
 ## Architecture
 
 ### App Router structure
@@ -315,12 +324,12 @@ Enquanto o GCP não estiver provisionado, a Go API é exposta publicamente via C
 
 ### Operação diária
 
-| Comando             | Faz o quê                                                 |
-| ------------------- | --------------------------------------------------------- |
-| `make tunnel-up`    | Sobe api + web + cloudflared (build + detached)           |
-| `make tunnel-down`  | Derruba tudo                                              |
-| `make tunnel-logs`  | Tail do log do cloudflared (útil pra debug de conexão)    |
-| `make compose-up`   | Sobe só api + web (sem expor publicamente)                |
+| Comando            | Faz o quê                                              |
+| ------------------ | ------------------------------------------------------ |
+| `make tunnel-up`   | Sobe api + web + cloudflared (build + detached)        |
+| `make tunnel-down` | Derruba tudo                                           |
+| `make tunnel-logs` | Tail do log do cloudflared (útil pra debug de conexão) |
+| `make compose-up`  | Sobe só api + web (sem expor publicamente)             |
 
 Depois de `make tunnel-up`, a API responde em `https://api.SEUDOMINIO.com`. Esse valor vai em `NEXT_PUBLIC_API_URL` na Vercel.
 
@@ -334,11 +343,11 @@ Depois de `make tunnel-up`, a API responde em `https://api.SEUDOMINIO.com`. Esse
 
 ### Workflows GitHub Actions
 
-| Workflow              | Trigger                                              | Faz o quê                                                                                                                |
-| --------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `ci.yml`              | PR + push em `main`                                  | Em paralelo: web (`lint` + `tsc --noEmit` + `jest` + `next build`) e api (`go vet` + `go test -race` + `go build`).      |
-| `deploy-api.yml`      | push em `main` que toca `apps/api/**` + dispatch     | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU). |
-| `trivy.yml`           | push/PR em `main` + cron semanal                     | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                          |
+| Workflow         | Trigger                                          | Faz o quê                                                                                                                 |
+| ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`         | PR + push em `main`                              | Em paralelo: web (`lint` + `tsc --noEmit` + `jest` + `next build`) e api (`go vet` + `go test -race` + `go build`).       |
+| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU). |
+| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                          |
 
 ### Secrets/Vars necessários no GitHub (Settings → Secrets and variables → Actions)
 
