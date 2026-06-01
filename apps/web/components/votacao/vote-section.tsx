@@ -10,37 +10,42 @@ import type { SessionMovie } from '@/lib/votacao/types'
 interface Props {
   sessionId: number
   movies: SessionMovie[]
-  alreadyVoted: boolean
   closed: boolean
-  /** Movie the current user voted for, or null. Highlights its card. */
-  votedMovieId?: number | null
+  /** Movies the current user already approved. */
+  votedMovieIds: number[]
 }
 
 export function VoteSection({
   sessionId,
   movies,
-  alreadyVoted,
   closed,
-  votedMovieId,
+  votedMovieIds,
 }: Props) {
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(votedMovieIds),
+  )
   const mutation = useVoteMutation(sessionId)
 
-  const votedMovie = movies.find((m) => m.ID === votedMovieId)
-
-  const lockedReason = closed
-    ? 'Sessão encerrada — votação fechada.'
-    : alreadyVoted
-      ? votedMovie
-        ? `Você votou em "${votedMovie.Title}".`
-        : 'Você já votou nesta sessão.'
-      : null
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6">
-      {lockedReason && (
+      {closed && (
         <p className="bg-muted rounded-md border px-4 py-3 text-sm">
-          {lockedReason}
+          Sessão encerrada — votação fechada.
+        </p>
+      )}
+      {!closed && (
+        <p className="text-muted-foreground text-sm">
+          Aprove quantos filmes quiser. Você pode mudar seu voto até a sessão
+          ser encerrada.
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -48,26 +53,25 @@ export function VoteSection({
           <MovieCard
             key={m.ID}
             movie={m}
-            selected={selected === m.ID}
-            youVoted={votedMovieId != null && m.ID === votedMovieId}
-            onSelect={() => setSelected(m.ID)}
-            disabled={!!lockedReason}
+            selected={selected.has(m.ID)}
+            youVoted={selected.has(m.ID)}
+            onSelect={() => !closed && toggle(m.ID)}
+            disabled={closed}
           />
         ))}
       </div>
-      {!lockedReason && (
+      {!closed && (
         <div className="flex justify-end">
           <Button
-            disabled={!selected || mutation.isPending}
-            onClick={() => {
-              if (!selected) return
-              mutation.mutate(selected, {
+            disabled={mutation.isPending}
+            onClick={() =>
+              mutation.mutate(Array.from(selected), {
                 onSuccess: () => toast.success('Voto registrado'),
                 onError: (err) => toast.error(errorMessage(err)),
               })
-            }}
+            }
           >
-            {mutation.isPending ? 'Enviando…' : 'Votar'}
+            {mutation.isPending ? 'Enviando…' : `Votar (${selected.size})`}
           </Button>
         </div>
       )}
