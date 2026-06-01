@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { SessionStatusBadge } from '@/components/votacao/session-status-badge'
 import { VoteSection } from '@/components/votacao/vote-section'
 import { ResultsList } from '@/components/votacao/results-list'
-import { RunoffButton } from '@/components/votacao/runoff-button'
+import { TiebreakRoulette } from '@/components/votacao/tiebreak-roulette'
 import { LoginButton } from '@/components/votacao/login-button'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
@@ -122,7 +122,7 @@ export default function SessionDetailPage({
 
       {user.data?.is_admin && closed && (
         <div className="border-t pt-4">
-          <RunoffButton sessionId={id} />
+          <TiebreakRoulette sessionId={id} movies={movies} />
         </div>
       )}
     </main>
