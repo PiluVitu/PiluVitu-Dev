@@ -133,7 +133,17 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	httpx.Data(w, http.StatusOK, map[string]any{"results": rows, "total_votes": len(votes)})
+	voters, err := h.deps.Store.CountVoters(r.Context(), sessionID)
+	if err != nil {
+		logging.FromContext(r.Context()).Error("results: count voters", "err", err, "session_id", sessionID)
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os resultados.")
+		return
+	}
+	httpx.Data(w, http.StatusOK, map[string]any{
+		"results":      rows,
+		"total_votes":  len(votes),
+		"total_voters": voters,
+	})
 }
 
 // CreateRunoff (admin) starts a tie-break session containing only the movies

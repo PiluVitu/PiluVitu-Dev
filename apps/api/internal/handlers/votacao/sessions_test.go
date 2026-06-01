@@ -183,36 +183,22 @@ func TestGetSession_NotFound_404(t *testing.T) {
 	}
 }
 
-func TestGetSession_HasVotedTrueAfterInsertVote(t *testing.T) {
+func TestGetSession_ReturnsVotedMovieIDs(t *testing.T) {
 	store := openTestStore(t)
 	admin := makeAdmin(t, store)
-	sess, _ := store.CreateVotingSession(context.Background(), "X", admin.ID, "{}")
-	_ = store.InsertSessionMovies(context.Background(), []votacao.SessionMovie{
-		{SessionID: sess.ID, Category: "terror", Title: "M", Type: "filme"},
-	})
-	movies, _ := store.GetSessionMovies(context.Background(), sess.ID)
-	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movies[0].ID)
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, admin.ID, []int64{movies[0].ID, movies[1].ID})
 
 	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/votacao/sessions/1", nil)
-	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", "1")
-	req = req.WithContext(auth.WithUserForTests(context.WithValue(req.Context(), chi.RouteCtxKey, rctx), admin))
-	h.GetSession(rec, req)
+	h.GetSession(rec, reqWithID(http.MethodGet, intStr(sess.ID), "", admin))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
 	var out struct {
-		HasVoted     bool   `json:"has_voted"`
-		VotedMovieID *int64 `json:"voted_movie_id"`
+		HasVoted      bool    `json:"has_voted"`
+		VotedMovieIDs []int64 `json:"voted_movie_ids"`
 	}
 	unwrap(t, rec, &out)
-	if !out.HasVoted {
-		t.Error("has_voted should be true")
-	}
-	if out.VotedMovieID == nil || *out.VotedMovieID != movies[0].ID {
-		t.Errorf("voted_movie_id = %v, want %d", out.VotedMovieID, movies[0].ID)
+	if !out.HasVoted || len(out.VotedMovieIDs) != 2 {
+		t.Fatalf("want has_voted + 2 ids, got %+v", out)
 	}
 }
