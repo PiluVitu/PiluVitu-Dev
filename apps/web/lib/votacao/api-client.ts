@@ -4,7 +4,7 @@ import type {
   CategoriesResponse,
   CreateSessionBody,
   ResultsResponse,
-  RunoffResponse,
+  TiebreakResponse,
   SessionDetail,
   SessionListResponse,
   SessionVotesResponse,
@@ -88,17 +88,20 @@ export const votacaoApi = {
 
   listSessions: () => call<SessionListResponse>('/votacao/sessions'),
   getSession: (id: number) => call<SessionDetail>(`/votacao/sessions/${id}`),
-  vote: (id: number, movieId: number) =>
-    call<void>(`/votacao/sessions/${id}/votes`, {
+  vote: (id: number, movieIds: number[]) =>
+    call<{ voted_movie_ids: number[] }>(`/votacao/sessions/${id}/votes`, {
       method: 'POST',
-      body: JSON.stringify({ movie_id: movieId }),
+      body: JSON.stringify({ movie_ids: movieIds }),
     }),
   closeSession: (id: number) =>
     call<{ winner_movie_id: number | null }>(`/votacao/sessions/${id}/close`, {
       method: 'POST',
     }),
-  createRunoff: (id: number) =>
-    call<RunoffResponse>(`/votacao/sessions/${id}/runoff`, { method: 'POST' }),
+  tiebreak: (id: number, entropy: string) =>
+    call<TiebreakResponse>(`/votacao/sessions/${id}/tiebreak`, {
+      method: 'POST',
+      body: JSON.stringify({ entropy }),
+    }),
   results: (id: number) =>
     call<ResultsResponse>(`/votacao/sessions/${id}/results`),
 

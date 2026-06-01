@@ -5,7 +5,7 @@ import { votacaoApi } from '@/lib/votacao/api-client'
 export function useVoteMutation(sessionId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (movieId: number) => votacaoApi.vote(sessionId, movieId),
+    mutationFn: (movieIds: number[]) => votacaoApi.vote(sessionId, movieIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['votacao', 'sessions', sessionId] })
       qc.invalidateQueries({
