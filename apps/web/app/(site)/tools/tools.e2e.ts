@@ -156,3 +156,23 @@ test.describe('QR Reader — permissão negada', () => {
     await context.close()
   })
 })
+
+test.describe('Roleta', () => {
+  test('sorteia um vencedor usando aleatório do navegador', async ({
+    page,
+  }) => {
+    await page.goto('/tools/roleta')
+    await expect(page.getByTestId('roleta-options')).toBeVisible()
+
+    // Crypto-only path needs no camera permission.
+    await page.getByTestId('roleta-spin-crypto').click()
+
+    await expect(page.getByTestId('roleta-winner')).toBeVisible({
+      timeout: 10000,
+    })
+    const text = (await page.getByTestId('roleta-winner').textContent()) ?? ''
+    expect(
+      ['Pizza', 'Sushi', 'Hambúrguer', 'Tapioca'].some((o) => text.includes(o)),
+    ).toBe(true)
+  })
+})
