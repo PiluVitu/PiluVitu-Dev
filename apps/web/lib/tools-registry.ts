@@ -3,6 +3,7 @@ import {
   faArrowsLeftRight,
   faBuilding,
   faCode,
+  faDharmachakra,
   faFingerprint,
   faIdCard,
   faKey,
@@ -75,6 +76,13 @@ export const TOOLS: ToolMeta[] = [
     description: 'Gerador de UUID v4',
     icon: faFingerprint,
     group: 'dev',
+  },
+  {
+    slug: 'roleta',
+    title: 'Roleta / Sorteio',
+    description: 'Sorteio com entropia da câmera',
+    icon: faDharmachakra,
+    group: 'geradores',
   },
 ]
 
