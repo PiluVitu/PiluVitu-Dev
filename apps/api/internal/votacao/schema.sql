@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS voting_sessions (
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   closed_at         DATETIME,
   winner_movie_id   INTEGER REFERENCES session_movies(id),
+  winner_method     TEXT,
   sort_options_json TEXT NOT NULL DEFAULT '{}'
 );
 
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS votes (
   user_id     INTEGER NOT NULL REFERENCES users(id),
   movie_id    INTEGER NOT NULL REFERENCES session_movies(id),
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (session_id, user_id)
+  UNIQUE (session_id, user_id, movie_id)
 );
 
 CREATE TABLE IF NOT EXISTS backups (
@@ -57,3 +58,16 @@ CREATE INDEX IF NOT EXISTS idx_session_movies_session ON session_movies(session_
 CREATE INDEX IF NOT EXISTS idx_votes_session ON votes(session_id);
 CREATE INDEX IF NOT EXISTS idx_voting_sessions_created ON voting_sessions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backups_created ON backups(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tiebreaks (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id      INTEGER NOT NULL REFERENCES voting_sessions(id) ON DELETE CASCADE,
+  triggered_by    INTEGER NOT NULL REFERENCES users(id),
+  tied_ids_json   TEXT NOT NULL,
+  client_entropy  TEXT NOT NULL,
+  server_nonce    TEXT NOT NULL,
+  winner_movie_id INTEGER NOT NULL REFERENCES session_movies(id),
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tiebreaks_session ON tiebreaks(session_id);
