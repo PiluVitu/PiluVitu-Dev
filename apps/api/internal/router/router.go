@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/PiluVitu/api/internal/handlers"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/logging"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -37,6 +39,8 @@ var defaultAllowedOrigins = []string{
 
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(logging.Middleware(slog.Default()))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(corsOptions()))

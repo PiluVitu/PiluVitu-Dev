@@ -12,6 +12,7 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/httpx"
+	"github.com/PiluVitu/api/internal/logging"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -45,6 +46,7 @@ func (h *Handlers) CreateVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		logging.FromContext(r.Context()).Error("vote: insert failed", "err", err, "session_id", sessionID, "user_id", user.ID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Não foi possível registrar o voto.")
 		return
 	}
@@ -59,6 +61,7 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
+		logging.FromContext(r.Context()).Error("close: tally failed", "err", err, "session_id", sessionID, "code", "internal_error")
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
 		return
 	}
@@ -68,6 +71,7 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusNotFound, "session_not_open", "Sessão não está aberta.")
 			return
 		}
+		logging.FromContext(r.Context()).Error("close: store failed", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao encerrar a sessão.")
 		return
 	}
@@ -95,6 +99,7 @@ func (h *Handlers) GetResults(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
+		logging.FromContext(r.Context()).Error("results: list votes failed", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os resultados.")
 		return
 	}
@@ -138,6 +143,7 @@ func (h *Handlers) CreateRunoff(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusNotFound, "session_not_found", "Sessão não encontrada.")
 			return
 		}
+		logging.FromContext(r.Context()).Error("runoff: get session failed", "err", err, "source_id", sourceID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar a sessão.")
 		return
 	}
@@ -148,6 +154,7 @@ func (h *Handlers) CreateRunoff(w http.ResponseWriter, r *http.Request) {
 
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sourceID)
 	if err != nil {
+		logging.FromContext(r.Context()).Error("runoff: list votes failed", "err", err, "source_id", sourceID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
 		return
 	}
@@ -163,12 +170,14 @@ func (h *Handlers) CreateRunoff(w http.ResponseWriter, r *http.Request) {
 
 	movies, err := h.deps.Store.GetSessionMovies(r.Context(), sourceID)
 	if err != nil {
+		logging.FromContext(r.Context()).Error("runoff: get movies failed", "err", err, "source_id", sourceID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os filmes.")
 		return
 	}
 
 	newSession, err := h.deps.Store.CreateVotingSession(r.Context(), "Desempate — "+source.Title, user.ID, "{}")
 	if err != nil {
+		logging.FromContext(r.Context()).Error("runoff: create session failed", "err", err, "source_id", sourceID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao criar o desempate.")
 		return
 	}
@@ -189,6 +198,7 @@ func (h *Handlers) CreateRunoff(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if err := h.deps.Store.InsertSessionMovies(r.Context(), runoffMovies); err != nil {
+		logging.FromContext(r.Context()).Error("runoff: insert movies failed", "err", err, "new_session_id", newSession.ID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao salvar os filmes do desempate.")
 		return
 	}
@@ -207,6 +217,7 @@ func (h *Handlers) ListSessionVotes(w http.ResponseWriter, r *http.Request) {
 	}
 	details, err := h.deps.Store.ListSessionVotesWithUsers(r.Context(), sessionID)
 	if err != nil {
+		logging.FromContext(r.Context()).Error("list-votes: store failed", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar os votos.")
 		return
 	}
