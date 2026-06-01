@@ -4,7 +4,7 @@ const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 test.describe('/tools landing', () => {
-  test('exibe os 8 cards agrupados', async ({ page }) => {
+  test('exibe os 9 cards agrupados', async ({ page }) => {
     await page.goto('/tools')
     for (const slug of [
       'qr-reader',
@@ -15,6 +15,7 @@ test.describe('/tools landing', () => {
       'base64',
       'jwt',
       'uuid',
+      'roleta',
     ]) {
       await expect(page.locator(`a[href="/tools/${slug}"]`)).toBeVisible()
     }

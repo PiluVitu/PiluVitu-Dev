@@ -29,7 +29,7 @@ export function RoletaTool() {
       idx,
       digestPrefix: digestHex.slice(0, 8),
     })
-    setWinnerId(options[idx].id as number)
+    setWinnerId(idx)
     setSpinning(true)
   }
 
@@ -43,7 +43,10 @@ export function RoletaTool() {
           id="roleta-options"
           rows={5}
           value={raw}
-          onChange={(e) => setRaw(e.target.value)}
+          onChange={(e) => {
+            setRaw(e.target.value)
+            setWinnerId(null)
+          }}
           data-testid="roleta-options"
         />
       </div>
