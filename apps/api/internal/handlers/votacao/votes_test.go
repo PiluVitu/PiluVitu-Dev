@@ -262,6 +262,35 @@ func TestGetResults_Tally(t *testing.T) {
 	}
 }
 
+func TestCloseSession_LeavesTieUnresolved(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	v2, err := store.UpsertUser(context.Background(), "sub-v2-close", "v2@x.com", "V2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
+	ctx := context.Background()
+	// 1 vote each → tie.
+	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{movies[0].ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{movies[1].ID})
+
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
+	rec := httptest.NewRecorder()
+	h.CloseSession(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		WinnerMovieID *int64 `json:"winner_movie_id"`
+	}
+	unwrap(t, rec, &out)
+	if out.WinnerMovieID != nil {
+		t.Fatalf("tie must leave winner null, got %v", *out.WinnerMovieID)
+	}
+}
+
 func intStr(i int64) string {
 	return strconvFormatInt(i)
 }

@@ -73,20 +73,31 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
-		logging.FromContext(r.Context()).Error("close: tally failed", "err", err, "session_id", sessionID)
+		logging.FromContext(r.Context()).Error("close: tally", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
 		return
 	}
-	winner := votacao.ComputeWinner(votes)
+	// Approval voting: a clear top => winner now; a tie => leave it null for the
+	// roulette tiebreak (the deterministic lowest-id break is gone).
+	top, _ := votacao.ComputeTopMovies(votes)
+	var winner *int64
+	if len(top) == 1 {
+		winner = &top[0]
+	}
 	if err := h.deps.Store.CloseVotingSession(r.Context(), sessionID, winner); err != nil {
 		if errors.Is(err, votacao.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "session_not_open", "Sessão não está aberta.")
 			return
 		}
-		logging.FromContext(r.Context()).Error("close: store failed", "err", err, "session_id", sessionID)
+		logging.FromContext(r.Context()).Error("close: persist", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao encerrar a sessão.")
 		return
 	}
+	// Record winner_method='votes' when there was a clear winner.
+	if winner != nil {
+		_ = h.deps.Store.SetSessionWinner(r.Context(), sessionID, *winner, "votes")
+	}
+	logging.With(r.Context(), "session_id", sessionID, "tie", len(top) > 1, "top", top).Info("session_closed")
 	if h.deps.Backuper != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
