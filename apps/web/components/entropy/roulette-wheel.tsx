@@ -32,6 +32,8 @@ const EXTRA_TURNS = 6
 /**
  * Conic-gradient roulette. Lands deterministically on `winnerId` when spinning.
  * Pure presentation — it does not decide the winner; the caller passes it in.
+ * The accumulated angle is tracked in a ref so repeat spins always rotate
+ * forward (never snap backward) regardless of the previous resting angle.
  */
 export function RouletteWheel({
   options,
@@ -41,7 +43,13 @@ export function RouletteWheel({
   className,
 }: Props) {
   const [angle, setAngle] = useState(0)
+  const accRef = useRef(0)
   const firedRef = useRef(false)
+  const onSpinEndRef = useRef(onSpinEnd)
+  useEffect(() => {
+    onSpinEndRef.current = onSpinEnd
+  })
+
   const n = Math.max(options.length, 1)
   const slice = 360 / n
 
@@ -51,18 +59,27 @@ export function RouletteWheel({
       0,
       options.findIndex((o) => o.id === winnerId),
     )
+    // Angle (mod 360) that puts the winning slice's center under the top pointer.
+    const offset = 360 - (idx * slice + slice / 2)
+    const cur = ((accRef.current % 360) + 360) % 360
+    // Always move forward: full turns + the forward delta to reach `offset`.
+    const delta = EXTRA_TURNS * 360 + ((((offset - cur) % 360) + 360) % 360)
+    const target = accRef.current + delta
+    accRef.current = target
     firedRef.current = false
-    const target = EXTRA_TURNS * 360 + (360 - (idx * slice + slice / 2))
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- CSS transition requires synchronous angle update inside effect
+
     setAngle(target)
     const t = setTimeout(() => {
       if (!firedRef.current) {
         firedRef.current = true
-        onSpinEnd?.(winnerId)
+        onSpinEndRef.current?.(winnerId)
       }
     }, SPIN_MS + 50)
     return () => clearTimeout(t)
-  }, [spinning, winnerId, options, slice, onSpinEnd])
+    // `options`/`slice` are read at spin start only; `onSpinEnd` via ref — so a
+    // re-render during the spin doesn't reset the timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinning, winnerId])
 
   const gradient = options
     .map(

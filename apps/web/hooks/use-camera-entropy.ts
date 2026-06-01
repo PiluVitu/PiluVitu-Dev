@@ -8,7 +8,7 @@ export interface EntropyResult {
   digestHex: string
   source: EntropySource
 }
-type State = 'idle' | 'capturing' | 'done' | 'error'
+type State = 'idle' | 'capturing' | 'done'
 
 const FRAME_COUNT = 3
 const FRAME_GAP_MS = 60
@@ -24,7 +24,6 @@ function wait(ms: number): Promise<void> {
  */
 export function useCameraEntropy() {
   const [state, setState] = useState<State>('idle')
-  const [error, setError] = useState<string | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   const stop = useCallback(() => {
@@ -34,7 +33,6 @@ export function useCameraEntropy() {
 
   const capture = useCallback(async (): Promise<EntropyResult> => {
     setState('capturing')
-    setError(null)
     const frames: Uint8Array[] = []
     let source: EntropySource = 'crypto-only'
 
@@ -76,5 +74,5 @@ export function useCameraEntropy() {
     return { digestHex, source }
   }, [stop])
 
-  return { capture, stop, state, error: error ?? undefined }
+  return { capture, stop, state }
 }

@@ -1,5 +1,6 @@
 'use client'
 import { Button } from '@/components/ui/button'
+import { log } from '@/lib/log'
 import {
   useCameraEntropy,
   type EntropyResult,
@@ -33,7 +34,13 @@ export function CameraEntropyCapture({
       <Button
         type="button"
         disabled={disabled || busy}
-        onClick={async () => onEntropy(await capture())}
+        onClick={async () => {
+          try {
+            onEntropy(await capture())
+          } catch (err) {
+            log.error('entropy', 'capture failed', String(err))
+          }
+        }}
         data-testid="capture-entropy"
       >
         {busy ? 'Capturando…' : label}
