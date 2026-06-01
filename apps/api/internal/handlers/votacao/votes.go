@@ -17,10 +17,11 @@ import (
 )
 
 type voteBody struct {
-	MovieID int64 `json:"movie_id"`
+	MovieIDs []int64 `json:"movie_ids"`
 }
 
-// CreateVote (logged) registers a vote. 409 on duplicate (UNIQUE).
+// CreateVote (logged) replaces the caller's approvals for the session with the
+// given movie_ids. Editable until the session closes. Empty set clears votes.
 func (h *Handlers) CreateVote(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := parseID(w, r)
 	if !ok {
@@ -31,26 +32,37 @@ func (h *Handlers) CreateVote(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not_authenticated", "Você precisa estar logado.")
 		return
 	}
+	session, err := h.deps.Store.GetVotingSession(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, votacao.ErrNotFound) {
+			httpx.Error(w, http.StatusNotFound, "session_not_found", "Sessão não encontrada.")
+			return
+		}
+		logging.FromContext(r.Context()).Error("vote: load session", "err", err, "session_id", sessionID)
+		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao carregar a sessão.")
+		return
+	}
+	if session.Status == "closed" {
+		httpx.Error(w, http.StatusConflict, "session_closed", "Sessão encerrada — votação fechada.")
+		return
+	}
 	var body voteBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo da requisição inválido.")
 		return
 	}
-	if body.MovieID <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "movie_id_required", "Selecione um filme para votar.")
-		return
-	}
-	err := h.deps.Store.InsertVote(r.Context(), sessionID, user.ID, body.MovieID)
-	if errors.Is(err, votacao.ErrAlreadyVoted) {
-		httpx.Error(w, http.StatusConflict, "already_voted", "Você já votou nesta sessão.")
-		return
-	}
-	if err != nil {
-		logging.FromContext(r.Context()).Error("vote: insert failed", "err", err, "session_id", sessionID, "user_id", user.ID)
+	if err := h.deps.Store.ReplaceUserVotes(r.Context(), sessionID, user.ID, body.MovieIDs); err != nil {
+		if errors.Is(err, votacao.ErrMovieNotInSession) {
+			httpx.Error(w, http.StatusBadRequest, "movie_not_in_session", "Um dos filmes não pertence a esta sessão.")
+			return
+		}
+		logging.FromContext(r.Context()).Error("vote: replace", "err", err, "session_id", sessionID, "user_id", user.ID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Não foi possível registrar o voto.")
 		return
 	}
-	httpx.DataMsg(w, http.StatusCreated, nil, httpx.Success("Voto registrado."))
+	logging.With(r.Context(), "session_id", sessionID, "user_id", user.ID, "movie_ids", body.MovieIDs).
+		Info("votes_replaced")
+	httpx.DataMsg(w, http.StatusOK, map[string]any{"voted_movie_ids": body.MovieIDs}, httpx.Success("Voto registrado."))
 }
 
 // CloseSession (admin) closes the session, computing winner from current votes.
