@@ -12,7 +12,10 @@
     "./json-format": "./src/json-format.ts",
     "./uuid": "./src/uuid.ts",
     "./qr-encode": "./src/qr-encode.ts",
-    "./qr-decode": "./src/qr-decode.ts"
+    "./qr-decode": "./src/qr-decode.ts",
+    "./prng": "./src/prng.ts",
+    "./entropy": "./src/entropy.ts",
+    "./roleta": "./src/roleta.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

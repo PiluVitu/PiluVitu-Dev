@@ -82,7 +82,7 @@ describe('call (via votacaoApi)', () => {
         },
       ],
     })
-    await expect(votacaoApi.vote(1, 3)).rejects.toMatchObject({
+    await expect(votacaoApi.vote(1, [3])).rejects.toMatchObject({
       name: 'ApiError',
       status: 409,
       code: 'already_voted',

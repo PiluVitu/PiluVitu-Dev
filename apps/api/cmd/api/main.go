@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 )
 
 func main() {
+	initLogger()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -128,4 +130,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// initLogger configures the process-wide slog default: JSON in production,
+// human-readable text in dev. Prod is detected by SESSION_COOKIE_SECURE=true.
+func initLogger() {
+	level := slog.LevelInfo
+	var handler slog.Handler
+	if strings.EqualFold(os.Getenv("SESSION_COOKIE_SECURE"), "true") {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	}
+	slog.SetDefault(slog.New(handler))
 }

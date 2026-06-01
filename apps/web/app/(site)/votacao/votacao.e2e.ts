@@ -41,6 +41,7 @@ const mockSession = {
   CreatedAt: new Date().toISOString(),
   ClosedAt: null,
   WinnerMovieID: null,
+  WinnerMethod: null,
   SortOptionsJSON: '{}',
 }
 
@@ -113,12 +114,16 @@ const mockBackups = [
 
 interface MockOptions {
   loggedIn?: boolean
-  hasVoted?: boolean
+  votedMovieIds?: number[]
   sessionStatus?: 'open' | 'closed'
 }
 
 async function mockAPI(page: Page, options: MockOptions = {}) {
-  const { loggedIn = true, hasVoted = false, sessionStatus = 'open' } = options
+  const {
+    loggedIn = true,
+    votedMovieIds = [],
+    sessionStatus = 'open',
+  } = options
 
   await page.route(`**/auth/me`, (route) => {
     if (loggedIn) {
@@ -151,12 +156,12 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       body: envelope({
         session: { ...mockSession, Status: sessionStatus },
         movies: mockMovies,
-        has_voted: hasVoted,
-        voted_movie_id: hasVoted ? mockMovies[0].ID : null,
+        has_voted: votedMovieIds.length > 0,
+        voted_movie_ids: votedMovieIds,
       }),
     })
   })
-  // Same path serves POST (cast a vote) and GET (admin: who voted for what).
+  // Same path serves POST (cast votes) and GET (admin: who voted for what).
   await page.route(`**/votacao/sessions/1/votes`, (route) => {
     if (route.request().method() === 'GET') {
       route.fulfill({
@@ -169,10 +174,13 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       })
       return
     }
+    const body = route.request().postDataJSON() as { movie_ids: number[] }
     route.fulfill({
-      status: 201,
+      status: 200,
       contentType: 'application/json',
-      body: envelope(null, [{ type: 'success', message: 'Voto registrado.' }]),
+      body: envelope({ voted_movie_ids: body.movie_ids }, [
+        { type: 'success', message: 'Voto registrado.' },
+      ]),
     })
   })
   await page.route(`**/votacao/sessions/1/results`, (route) => {
@@ -185,6 +193,7 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
           { movie_id: 2, count: 1 },
         ],
         total_votes: 3,
+        total_voters: 3,
       }),
     })
   })
@@ -231,28 +240,64 @@ test.describe('/votacao listing', () => {
 })
 
 test.describe('/votacao/[id] detail', () => {
-  test('renders movies and submits vote (happy path)', async ({ page }) => {
+  test('renders movies and submits a single vote (happy path)', async ({
+    page,
+  }) => {
     await mockAPI(page)
     await page.goto('/votacao/1')
     await expect(page.getByText('A Coisa')).toBeVisible()
     await expect(page.getByText('Forrest Gump')).toBeVisible()
     await page.getByText('A Coisa').click()
-    await page.getByRole('button', { name: /votar/i }).click()
+    await page.getByRole('button', { name: /votar \(1\)/i }).click()
     await expect(page.getByText(/voto registrado/i)).toBeVisible({
       timeout: 5_000,
     })
   })
 
-  test('hides vote button and highlights the voted movie when already voted', async ({
+  test('approval voting: selects multiple movies and submits', async ({
     page,
   }) => {
-    await mockAPI(page, { hasVoted: true })
+    await mockAPI(page)
+    // Tighten the vote POST mock so it asserts the new array-shaped body and
+    // echoes the approved set back in the envelope.
+    await page.route('**/votacao/sessions/*/votes', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
+      }
+      const body = route.request().postDataJSON() as { movie_ids: number[] }
+      expect(Array.isArray(body.movie_ids)).toBe(true)
+      expect(body.movie_ids).toEqual(expect.arrayContaining([1, 2]))
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({ voted_movie_ids: body.movie_ids }, [
+          { type: 'success', message: 'Voto registrado.' },
+        ]),
+      })
+    })
+
     await page.goto('/votacao/1')
-    // Banner names the chosen movie (mockMovies[0] = "A Coisa").
-    await expect(page.getByText(/você votou em "A Coisa"/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /^votar$/i })).toHaveCount(0)
-    // The chosen card carries the "Seu voto" badge.
-    await expect(page.getByText('Seu voto')).toBeVisible()
+    await page.getByText('A Coisa').click()
+    await page.getByText('Forrest Gump').click()
+    await page.getByRole('button', { name: /votar \(2\)/i }).click()
+    await expect(page.getByText(/voto registrado/i)).toBeVisible({
+      timeout: 5_000,
+    })
+  })
+
+  test('pre-selects the user approved movies and highlights them', async ({
+    page,
+  }) => {
+    await mockAPI(page, { votedMovieIds: [1] })
+    await page.goto('/votacao/1')
+    // The previously approved card carries the "Seu voto" badge (exact text —
+    // the helper sentence "Você pode mudar seu voto" must not match)…
+    await expect(page.getByText('Seu voto', { exact: true })).toBeVisible()
+    // …and the vote button reflects the pre-selected count (editable).
+    await expect(
+      page.getByRole('button', { name: /votar \(1\)/i }),
+    ).toBeVisible()
   })
 
   test('shows results with a winner badge when closed', async ({ page }) => {
@@ -264,11 +309,16 @@ test.describe('/votacao/[id] detail', () => {
     await expect(page.getByText(/🏆 vencedor/i)).toBeVisible()
   })
 
-  test('admin can create a runoff from a tied closed session', async ({
-    page,
-  }) => {
+  test('tiebreak roulette: admin draws a winner', async ({ page }) => {
+    // Force the crypto-only entropy path (no camera in CI).
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.reject(new Error('no camera')) },
+        configurable: true,
+      })
+    })
     await mockAPI(page, { sessionStatus: 'closed' })
-    // Override results to a tie, and mock the runoff POST → new session id 2.
+    // Override results to a tie so the TiebreakRoulette mounts.
     await page.route(`**/votacao/sessions/1/results`, (route) =>
       route.fulfill({
         status: 200,
@@ -279,42 +329,28 @@ test.describe('/votacao/[id] detail', () => {
             { movie_id: 2, count: 1 },
           ],
           total_votes: 2,
+          total_voters: 2,
         }),
       }),
     )
-    const runoffSession = {
-      ...mockSession,
-      ID: 2,
-      Title: 'Desempate — Sexta 22/05',
-    }
-    await page.route(`**/votacao/sessions/1/runoff`, (route) =>
-      route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: envelope({ session: runoffSession, movies: mockMovies }, [
-          { type: 'success', message: 'Votação de desempate criada.' },
-        ]),
-      }),
-    )
-    await page.route(`**/votacao/sessions/2`, (route) =>
-      route.fulfill({
+    await page.route('**/votacao/sessions/*/tiebreak', async (route) => {
+      await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: envelope({
-          session: runoffSession,
-          movies: mockMovies,
-          has_voted: false,
-          voted_movie_id: null,
+          winner_movie_id: 1,
+          tied_movie_ids: [1, 2],
+          server_nonce: 'abcd',
         }),
-      }),
-    )
+      })
+    })
 
     await page.goto('/votacao/1')
-    await expect(page.getByText(/empate entre 2 filmes/i)).toBeVisible()
-    await page
-      .getByRole('button', { name: /criar votação de desempate/i })
-      .click()
-    await expect(page).toHaveURL(/\/votacao\/2$/)
+    await page.getByTestId('capture-entropy').click()
+    // Allow up to ~10s for the wheel animation to settle.
+    await expect(page.getByText(/vencedor do desempate/i)).toBeVisible({
+      timeout: 10_000,
+    })
   })
 })
 

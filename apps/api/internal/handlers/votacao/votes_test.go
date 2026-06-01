@@ -2,6 +2,7 @@ package votacao_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,44 +40,48 @@ func setupSessionWithMovie(t *testing.T, store *votacao.Store, admin *votacao.Us
 	return sess, &movies[0]
 }
 
-func TestCreateVote_HappyPath(t *testing.T) {
+func setupSessionWithMovies(t *testing.T, store *votacao.Store, admin *votacao.User, cats ...string) (*votacao.VotingSession, []votacao.SessionMovie) {
+	t.Helper()
+	ctx := context.Background()
+	sess, err := store.CreateVotingSession(ctx, "X", admin.ID, "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]votacao.SessionMovie, 0, len(cats))
+	for i, c := range cats {
+		rows = append(rows, votacao.SessionMovie{
+			SessionID: sess.ID, Category: c, Title: fmt.Sprintf("M%d", i), Type: "filme",
+		})
+	}
+	if err := store.InsertSessionMovies(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	movies, _ := store.GetSessionMovies(ctx, sess.ID)
+	return sess, movies
+}
+
+func TestCreateVote_ApprovesMultiple(t *testing.T) {
 	store := openTestStore(t)
 	user := makeAdmin(t, store)
-	sess, movie := setupSessionWithMovie(t, store, user)
+	sess, movies := setupSessionWithMovies(t, store, user, "Ação", "Drama")
 	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 
-	body := `{"movie_id":` + intStr(movie.ID) + `}`
+	body := `{"movie_ids":[` + intStr(movies[0].ID) + `,` + intStr(movies[1].ID) + `]}`
 	rec := httptest.NewRecorder()
 	h.CreateVote(rec, reqWithID(http.MethodPost, intStr(sess.ID), body, user))
-	if rec.Code != http.StatusCreated {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-}
-
-func TestCreateVote_DuplicateReturns409(t *testing.T) {
-	store := openTestStore(t)
-	user := makeAdmin(t, store)
-	sess, movie := setupSessionWithMovie(t, store, user)
-	h := newH(t, &stubSheets{}, &stubPosters{}, store)
-
-	_ = store.InsertVote(context.Background(), sess.ID, user.ID, movie.ID)
-	body := `{"movie_id":` + intStr(movie.ID) + `}`
-	rec := httptest.NewRecorder()
-	h.CreateVote(rec, reqWithID(http.MethodPost, intStr(sess.ID), body, user))
-	if rec.Code != http.StatusConflict {
-		t.Errorf("status = %d, want 409", rec.Code)
+	var out struct {
+		VotedMovieIDs []int64 `json:"voted_movie_ids"`
 	}
-}
-
-func TestCreateVote_NoMovieID_400(t *testing.T) {
-	store := openTestStore(t)
-	user := makeAdmin(t, store)
-	sess, _ := setupSessionWithMovie(t, store, user)
-	h := newH(t, &stubSheets{}, &stubPosters{}, store)
-	rec := httptest.NewRecorder()
-	h.CreateVote(rec, reqWithID(http.MethodPost, intStr(sess.ID), `{}`, user))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d", rec.Code)
+	unwrap(t, rec, &out)
+	if len(out.VotedMovieIDs) != 2 {
+		t.Fatalf("want 2 approvals, got %v", out.VotedMovieIDs)
+	}
+	got, _ := store.GetUserVotes(context.Background(), sess.ID, user.ID)
+	if len(got) != 2 {
+		t.Fatalf("store should have 2 votes, got %d", len(got))
 	}
 }
 
@@ -84,7 +89,7 @@ func TestCloseSession_ComputesWinner(t *testing.T) {
 	store := openTestStore(t)
 	admin := makeAdmin(t, store)
 	sess, movie := setupSessionWithMovie(t, store, admin)
-	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movie.ID)
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, admin.ID, []int64{movie.ID})
 
 	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
@@ -120,90 +125,11 @@ func TestCloseSession_AlreadyClosed_404(t *testing.T) {
 	}
 }
 
-// setupTiedClosedSession builds a closed session where two movies tie 1–1.
-func setupTiedClosedSession(t *testing.T, store *votacao.Store, admin *votacao.User) *votacao.VotingSession {
-	t.Helper()
-	ctx := context.Background()
-	user2, _ := store.UpsertUser(ctx, "u2", "u2@x.com", "U2", "", nil)
-	sess, err := store.CreateVotingSession(ctx, "Sexta", admin.ID, "{}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.InsertSessionMovies(ctx, []votacao.SessionMovie{
-		{SessionID: sess.ID, Category: "terror", Title: "A", Type: "filme"},
-		{SessionID: sess.ID, Category: "drama", Title: "B", Type: "filme"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	movies, _ := store.GetSessionMovies(ctx, sess.ID)
-	_ = store.InsertVote(ctx, sess.ID, admin.ID, movies[0].ID)
-	_ = store.InsertVote(ctx, sess.ID, user2.ID, movies[1].ID)
-	if err := store.CloseVotingSession(ctx, sess.ID, nil); err != nil {
-		t.Fatal(err)
-	}
-	return sess
-}
-
-func TestCreateRunoff_TieCreatesNewSessionWithTiedMovies(t *testing.T) {
-	store := openTestStore(t)
-	admin := makeAdmin(t, store)
-	sess := setupTiedClosedSession(t, store, admin)
-
-	h := newH(t, &stubSheets{}, &stubPosters{}, store)
-	rec := httptest.NewRecorder()
-	h.CreateRunoff(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	var out struct {
-		Session *votacao.VotingSession `json:"session"`
-		Movies  []votacao.SessionMovie `json:"movies"`
-	}
-	unwrap(t, rec, &out)
-	if out.Session == nil || out.Session.Title != "Desempate — Sexta" {
-		t.Errorf("session = %+v", out.Session)
-	}
-	if out.Session != nil && out.Session.Status != "open" {
-		t.Errorf("runoff should be open, got %q", out.Session.Status)
-	}
-	if len(out.Movies) != 2 {
-		t.Errorf("movies = %d, want 2 (the tied ones)", len(out.Movies))
-	}
-}
-
-func TestCreateRunoff_NoTie_422(t *testing.T) {
-	store := openTestStore(t)
-	admin := makeAdmin(t, store)
-	sess, movie := setupSessionWithMovie(t, store, admin)
-	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movie.ID)
-	_ = store.CloseVotingSession(context.Background(), sess.ID, nil)
-
-	h := newH(t, &stubSheets{}, &stubPosters{}, store)
-	rec := httptest.NewRecorder()
-	h.CreateRunoff(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("status = %d, want 422", rec.Code)
-	}
-}
-
-func TestCreateRunoff_OpenSession_409(t *testing.T) {
-	store := openTestStore(t)
-	admin := makeAdmin(t, store)
-	sess, _ := setupSessionWithMovie(t, store, admin)
-
-	h := newH(t, &stubSheets{}, &stubPosters{}, store)
-	rec := httptest.NewRecorder()
-	h.CreateRunoff(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
-	if rec.Code != http.StatusConflict {
-		t.Errorf("status = %d, want 409", rec.Code)
-	}
-}
-
 func TestListSessionVotes_AdminSeesWhoVotedWhat(t *testing.T) {
 	store := openTestStore(t)
 	admin := makeAdmin(t, store)
 	sess, movie := setupSessionWithMovie(t, store, admin)
-	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movie.ID)
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, admin.ID, []int64{movie.ID})
 
 	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
@@ -232,8 +158,8 @@ func TestGetResults_Tally(t *testing.T) {
 	admin := makeAdmin(t, store)
 	sess, movie := setupSessionWithMovie(t, store, admin)
 	user2, _ := store.UpsertUser(context.Background(), "u2", "u2@x.com", "u2", "", nil)
-	_ = store.InsertVote(context.Background(), sess.ID, admin.ID, movie.ID)
-	_ = store.InsertVote(context.Background(), sess.ID, user2.ID, movie.ID)
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, admin.ID, []int64{movie.ID})
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, user2.ID, []int64{movie.ID})
 
 	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
@@ -254,6 +180,35 @@ func TestGetResults_Tally(t *testing.T) {
 	}
 	if len(out.Results) != 1 || out.Results[0].Count != 2 {
 		t.Errorf("results = %+v", out.Results)
+	}
+}
+
+func TestCloseSession_LeavesTieUnresolved(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	v2, err := store.UpsertUser(context.Background(), "sub-v2-close", "v2@x.com", "V2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
+	ctx := context.Background()
+	// 1 vote each → tie.
+	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{movies[0].ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{movies[1].ID})
+
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
+	rec := httptest.NewRecorder()
+	h.CloseSession(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		WinnerMovieID *int64 `json:"winner_movie_id"`
+	}
+	unwrap(t, rec, &out)
+	if out.WinnerMovieID != nil {
+		t.Fatalf("tie must leave winner null, got %v", *out.WinnerMovieID)
 	}
 }
 

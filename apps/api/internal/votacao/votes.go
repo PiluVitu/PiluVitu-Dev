@@ -2,15 +2,14 @@ package votacao
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
-// ErrAlreadyVoted is returned by InsertVote when the user already voted in this session.
-var ErrAlreadyVoted = errors.New("votacao: already voted")
+// ErrMovieNotInSession is returned by ReplaceUserVotes when a movie_id does not
+// belong to the target session.
+var ErrMovieNotInSession = errors.New("votacao: movie not in session")
 
 type Vote struct {
 	ID        int64
@@ -20,17 +19,43 @@ type Vote struct {
 	CreatedAt time.Time
 }
 
-func (s *Store) InsertVote(ctx context.Context, sessionID, userID, movieID int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO votes (session_id, user_id, movie_id) VALUES (?, ?, ?)
-	`, sessionID, userID, movieID)
+// ReplaceUserVotes sets the user's approvals for a session to exactly movieIDs
+// (transactional: delete all then insert the new set). An empty/nil set clears
+// the user's votes. Every movieID must belong to the session.
+func (s *Store) ReplaceUserVotes(ctx context.Context, sessionID, userID int64, movieIDs []int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		if isVotesUniqueViolation(err) {
-			return ErrAlreadyVoted
-		}
-		return fmt.Errorf("votacao: insert vote: %w", err)
+		return fmt.Errorf("votacao: begin replace votes: %w", err)
 	}
-	return nil
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, mid := range movieIDs {
+		var ok int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM session_movies WHERE id=? AND session_id=?)`,
+			mid, sessionID,
+		).Scan(&ok); err != nil {
+			return fmt.Errorf("votacao: validate movie: %w", err)
+		}
+		if ok == 0 {
+			return ErrMovieNotInSession
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM votes WHERE session_id=? AND user_id=?`, sessionID, userID,
+	); err != nil {
+		return fmt.Errorf("votacao: clear votes: %w", err)
+	}
+	for _, mid := range movieIDs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO votes (session_id, user_id, movie_id) VALUES (?, ?, ?)`,
+			sessionID, userID, mid,
+		); err != nil {
+			return fmt.Errorf("votacao: insert vote: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListVotesBySession(ctx context.Context, sessionID int64) ([]Vote, error) {
@@ -101,20 +126,35 @@ func (s *Store) ListSessionVotesWithUsers(ctx context.Context, sessionID int64) 
 	return out, nil
 }
 
-// GetUserVote returns the movie the user voted for in the session. voted is
-// false (and movieID 0) when the user has not voted yet.
-func (s *Store) GetUserVote(ctx context.Context, sessionID, userID int64) (movieID int64, voted bool, err error) {
-	err = s.db.QueryRowContext(ctx,
-		`SELECT movie_id FROM votes WHERE session_id=? AND user_id=?`,
+// GetUserVotes returns the movie_ids the user approved in the session (asc),
+// or an empty slice when they have not voted.
+func (s *Store) GetUserVotes(ctx context.Context, sessionID, userID int64) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT movie_id FROM votes WHERE session_id=? AND user_id=? ORDER BY movie_id ASC`,
 		sessionID, userID,
-	).Scan(&movieID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
-	}
+	)
 	if err != nil {
-		return 0, false, err
+		return nil, fmt.Errorf("votacao: get user votes: %w", err)
 	}
-	return movieID, true, nil
+	defer rows.Close()
+	out := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// CountVoters returns the number of distinct users who voted in the session.
+func (s *Store) CountVoters(ctx context.Context, sessionID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT user_id) FROM votes WHERE session_id=?`, sessionID,
+	).Scan(&n)
+	return n, err
 }
 
 // HasVoted returns true if the user has already voted in the session.
@@ -128,18 +168,4 @@ func (s *Store) HasVoted(ctx context.Context, sessionID, userID int64) (bool, er
 		return false, err
 	}
 	return exists == 1, nil
-}
-
-// isVotesUniqueViolation matches the specific UNIQUE constraint on (session_id, user_id)
-// in the votes table. We match the SQLite error string rather than coupling to the
-// modernc driver's internal error type. If schema.sql adds another UNIQUE to the votes
-// table later, that one will NOT trigger ErrAlreadyVoted (it falls through to a wrapped error).
-func isVotesUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "UNIQUE constraint failed") &&
-		strings.Contains(msg, "votes.session_id") &&
-		strings.Contains(msg, "votes.user_id")
 }

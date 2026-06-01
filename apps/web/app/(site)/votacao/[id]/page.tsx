@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button'
 import { SessionStatusBadge } from '@/components/votacao/session-status-badge'
 import { VoteSection } from '@/components/votacao/vote-section'
 import { ResultsList } from '@/components/votacao/results-list'
-import { RunoffButton } from '@/components/votacao/runoff-button'
+import { TiebreakRoulette } from '@/components/votacao/tiebreak-roulette'
 import { LoginButton } from '@/components/votacao/login-button'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
 import { useCloseSession } from '@/hooks/votacao/use-close-session'
+import { errorMessage } from '@/lib/votacao/api-client'
 import { toast } from 'sonner'
 
 export default function SessionDetailPage({
@@ -45,7 +46,7 @@ export default function SessionDetailPage({
     return (
       <main className="container mx-auto max-w-3xl px-4 py-12">
         <p className="text-destructive">
-          {String(detail.error ?? 'Sessão não encontrada.')}
+          {detail.error ? errorMessage(detail.error) : 'Sessão não encontrada.'}
         </p>
         {!user.data && (
           <div className="mt-4">
@@ -56,7 +57,7 @@ export default function SessionDetailPage({
     )
   }
 
-  const { session, movies, has_voted, voted_movie_id } = detail.data
+  const { session, movies, voted_movie_ids } = detail.data
   const closed = session.Status === 'closed'
 
   return (
@@ -84,16 +85,17 @@ export default function SessionDetailPage({
           <ResultsList
             sessionId={id}
             movies={movies}
-            votedMovieId={voted_movie_id}
+            votedMovieIds={voted_movie_ids}
+            winnerMethod={session.WinnerMethod}
+            winnerMovieId={session.WinnerMovieID}
           />
         </section>
       ) : (
         <VoteSection
           sessionId={id}
           movies={movies}
-          alreadyVoted={has_voted}
           closed={closed}
-          votedMovieId={voted_movie_id}
+          votedMovieIds={voted_movie_ids}
         />
       )}
 
@@ -110,7 +112,7 @@ export default function SessionDetailPage({
                       ? `Encerrada. Vencedor: ${data.winner_movie_id}`
                       : 'Encerrada sem votos.',
                   ),
-                onError: (err) => toast.error(String(err)),
+                onError: (err) => toast.error(errorMessage(err)),
               })
             }
           >
@@ -121,7 +123,7 @@ export default function SessionDetailPage({
 
       {user.data?.is_admin && closed && (
         <div className="border-t pt-4">
-          <RunoffButton sessionId={id} />
+          <TiebreakRoulette sessionId={id} movies={movies} />
         </div>
       )}
     </main>

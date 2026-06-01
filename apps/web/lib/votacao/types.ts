@@ -14,6 +14,7 @@ export interface VotingSession {
   CreatedAt: string
   ClosedAt?: string | null
   WinnerMovieID?: number | null
+  WinnerMethod?: 'votes' | 'roulette' | null
   SortOptionsJSON: string
 }
 
@@ -33,8 +34,8 @@ export interface SessionDetail {
   session: VotingSession
   movies: SessionMovie[]
   has_voted: boolean
-  /** Movie the current user voted for, or null if they haven't voted. */
-  voted_movie_id: number | null
+  /** Movies the current user approved (empty when they haven't voted). */
+  voted_movie_ids: number[]
 }
 
 export interface SessionListResponse {
@@ -44,11 +45,13 @@ export interface SessionListResponse {
 export interface ResultsResponse {
   results: { movie_id: number; count: number }[]
   total_votes: number
+  total_voters: number
 }
 
-export interface RunoffResponse {
-  session: VotingSession
-  movies: SessionMovie[]
+export interface TiebreakResponse {
+  winner_movie_id: number
+  tied_movie_ids: number[]
+  server_nonce: string
 }
 
 export interface CategoriesResponse {

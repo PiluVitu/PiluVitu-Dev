@@ -65,18 +65,17 @@ export const CanVote: Story = {
   args: {
     sessionId: 1,
     movies: mockMovies,
-    alreadyVoted: false,
     closed: false,
+    votedMovieIds: [],
   },
 }
 
-export const AlreadyVoted: Story = {
+export const WithApprovals: Story = {
   args: {
     sessionId: 1,
     movies: mockMovies,
-    alreadyVoted: true,
     closed: false,
-    votedMovieId: 2,
+    votedMovieIds: [mockMovies[0].ID],
   },
 }
 
@@ -84,7 +83,7 @@ export const Closed: Story = {
   args: {
     sessionId: 1,
     movies: mockMovies,
-    alreadyVoted: false,
     closed: true,
+    votedMovieIds: [],
   },
 }

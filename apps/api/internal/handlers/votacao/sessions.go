@@ -181,20 +181,18 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	movies, _ := h.deps.Store.GetSessionMovies(r.Context(), session.ID)
 
-	hasVoted := false
-	var votedMovieID *int64
+	votedMovieIDs := []int64{}
 	if user := auth.UserFromContext(r.Context()); user != nil {
-		if mid, voted, _ := h.deps.Store.GetUserVote(r.Context(), session.ID, user.ID); voted {
-			hasVoted = true
-			votedMovieID = &mid
+		if ids, err := h.deps.Store.GetUserVotes(r.Context(), session.ID, user.ID); err == nil {
+			votedMovieIDs = ids
 		}
 	}
 
 	httpx.Data(w, http.StatusOK, map[string]any{
-		"session":        session,
-		"movies":         movies,
-		"has_voted":      hasVoted,
-		"voted_movie_id": votedMovieID,
+		"session":         session,
+		"movies":          movies,
+		"has_voted":       len(votedMovieIDs) > 0,
+		"voted_movie_ids": votedMovieIDs,
 	})
 }
 

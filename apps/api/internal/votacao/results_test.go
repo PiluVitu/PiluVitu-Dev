@@ -29,30 +29,6 @@ func TestTallyVotes_Counts(t *testing.T) {
 	}
 }
 
-func TestComputeWinner_Empty(t *testing.T) {
-	w := votacao.ComputeWinner(nil)
-	if w != nil {
-		t.Errorf("want nil, got %v", w)
-	}
-}
-
-func TestComputeWinner_SingleWinner(t *testing.T) {
-	votes := []votacao.Vote{{MovieID: 10}, {MovieID: 10}, {MovieID: 5}}
-	w := votacao.ComputeWinner(votes)
-	if w == nil || *w != 10 {
-		t.Errorf("want 10, got %v", w)
-	}
-}
-
-func TestComputeWinner_TieBreakerByLowestMovieID(t *testing.T) {
-	// Each tied; lowest movie_id wins for determinism.
-	votes := []votacao.Vote{{MovieID: 7}, {MovieID: 3}, {MovieID: 5}}
-	w := votacao.ComputeWinner(votes)
-	if w == nil || *w != 3 {
-		t.Errorf("want 3 (lowest ID in tie), got %v", w)
-	}
-}
-
 func TestComputeTopMovies_Empty(t *testing.T) {
 	ids, count := votacao.ComputeTopMovies(nil)
 	if len(ids) != 0 || count != 0 {

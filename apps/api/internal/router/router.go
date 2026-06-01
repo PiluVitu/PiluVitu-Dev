@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/PiluVitu/api/internal/handlers"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/logging"
 	"github.com/PiluVitu/api/internal/votacao"
 )
 
@@ -37,6 +39,8 @@ var defaultAllowedOrigins = []string{
 
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(logging.Middleware(slog.Default()))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(corsOptions()))
@@ -66,7 +70,7 @@ func New(deps Deps) http.Handler {
 			r.With(auth.RequireAuth(deps.Sessions, deps.Store)).Get("/sessions/{id}/results", deps.VotacaoHandlers.GetResults)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/sessions/{id}/votes", deps.VotacaoHandlers.ListSessionVotes)
 			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/close", deps.VotacaoHandlers.CloseSession)
-			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/runoff", deps.VotacaoHandlers.CreateRunoff)
+			r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/sessions/{id}/tiebreak", deps.VotacaoHandlers.Tiebreak)
 		})
 	}
 

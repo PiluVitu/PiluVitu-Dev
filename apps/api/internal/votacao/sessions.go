@@ -16,6 +16,7 @@ type VotingSession struct {
 	CreatedAt       time.Time
 	ClosedAt        *time.Time
 	WinnerMovieID   *int64
+	WinnerMethod    *string
 	SortOptionsJSON string
 }
 
@@ -102,7 +103,7 @@ func (s *Store) CloseVotingSession(ctx context.Context, id int64, winnerMovieID 
 }
 
 const votingSessionSelect = `
-	SELECT id, title, status, created_by, created_at, closed_at, winner_movie_id, sort_options_json
+	SELECT id, title, status, created_by, created_at, closed_at, winner_movie_id, winner_method, sort_options_json
 	FROM voting_sessions
 `
 
@@ -125,7 +126,8 @@ func scanVotingSessionRow(r rowScanner) (*VotingSession, error) {
 	var v VotingSession
 	var closedAt sql.NullTime
 	var winnerID sql.NullInt64
-	if err := r.Scan(&v.ID, &v.Title, &v.Status, &v.CreatedBy, &v.CreatedAt, &closedAt, &winnerID, &v.SortOptionsJSON); err != nil {
+	var winnerMethod sql.NullString
+	if err := r.Scan(&v.ID, &v.Title, &v.Status, &v.CreatedBy, &v.CreatedAt, &closedAt, &winnerID, &winnerMethod, &v.SortOptionsJSON); err != nil {
 		return nil, err
 	}
 	if closedAt.Valid {
@@ -135,6 +137,10 @@ func scanVotingSessionRow(r rowScanner) (*VotingSession, error) {
 	if winnerID.Valid {
 		id := winnerID.Int64
 		v.WinnerMovieID = &id
+	}
+	if winnerMethod.Valid {
+		m := winnerMethod.String
+		v.WinnerMethod = &m
 	}
 	return &v, nil
 }
