@@ -190,6 +190,32 @@ func TestReplaceUserVotesRejectsForeignMovie(t *testing.T) {
 	}
 }
 
+func TestReplaceUserVotesRejectionIsNonDestructive(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	user := seedUser(t, s)
+	sess, movies := seedSessionMovies(t, s, user.ID, "Ação", "Drama")
+
+	// Seed a valid approval set first.
+	if err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{movies[0].ID, movies[1].ID}); err != nil {
+		t.Fatalf("seed votes: %v", err)
+	}
+
+	// A replace containing a foreign movie id must be rejected AND must not
+	// touch the existing votes.
+	err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{movies[0].ID, 99999})
+	if !errors.Is(err, votacao.ErrMovieNotInSession) {
+		t.Fatalf("want ErrMovieNotInSession, got %v", err)
+	}
+	got, err := s.GetUserVotes(ctx, sess.ID, user.ID)
+	if err != nil {
+		t.Fatalf("get votes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rejected replace must leave existing 2 votes intact, got %v", got)
+	}
+}
+
 func TestCountVoters(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
