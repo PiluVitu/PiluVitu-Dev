@@ -5,8 +5,10 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -19,18 +21,17 @@ func Middleware(base *slog.Logger) func(http.Handler) http.Handler {
 		base = slog.Default()
 	}
 	return func(next http.Handler) http.Handler {
-		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			reqID := middleware.GetReqID(r.Context())
-			// Expose the request ID in the response header so callers can
-			// correlate requests with log entries.
+			if reqID == "" {
+				// Standalone use (no RequestID middleware ahead, e.g. tests).
+				reqID = fmt.Sprintf("local-%d", time.Now().UnixNano())
+			}
 			w.Header().Set(middleware.RequestIDHeader, reqID)
 			l := base.With("request_id", reqID)
 			ctx := context.WithValue(r.Context(), ctxKey{}, l)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-		// Ensure a request id + X-Request-Id header exist even when this
-		// middleware is used standalone (e.g. in tests).
-		return middleware.RequestID(inner)
 	}
 }
 

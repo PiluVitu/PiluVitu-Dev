@@ -61,7 +61,7 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	votes, err := h.deps.Store.ListVotesBySession(r.Context(), sessionID)
 	if err != nil {
-		logging.FromContext(r.Context()).Error("close: tally failed", "err", err, "session_id", sessionID, "code", "internal_error")
+		logging.FromContext(r.Context()).Error("close: tally failed", "err", err, "session_id", sessionID)
 		httpx.Error(w, http.StatusInternalServerError, "internal_error", "Falha ao apurar os votos.")
 		return
 	}
