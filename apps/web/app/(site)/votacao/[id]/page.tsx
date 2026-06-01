@@ -10,6 +10,7 @@ import { LoginButton } from '@/components/votacao/login-button'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
 import { useCloseSession } from '@/hooks/votacao/use-close-session'
+import { errorMessage } from '@/lib/votacao/api-client'
 import { toast } from 'sonner'
 
 export default function SessionDetailPage({
@@ -45,7 +46,7 @@ export default function SessionDetailPage({
     return (
       <main className="container mx-auto max-w-3xl px-4 py-12">
         <p className="text-destructive">
-          {String(detail.error ?? 'Sessão não encontrada.')}
+          {detail.error ? errorMessage(detail.error) : 'Sessão não encontrada.'}
         </p>
         {!user.data && (
           <div className="mt-4">
@@ -111,7 +112,7 @@ export default function SessionDetailPage({
                       ? `Encerrada. Vencedor: ${data.winner_movie_id}`
                       : 'Encerrada sem votos.',
                   ),
-                onError: (err) => toast.error(String(err)),
+                onError: (err) => toast.error(errorMessage(err)),
               })
             }
           >
