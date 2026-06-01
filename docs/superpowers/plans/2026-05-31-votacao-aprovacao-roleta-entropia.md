@@ -1656,23 +1656,45 @@ git commit -m "feat(api): idempotent migrate — rebuild votes UNIQUE + add winn
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `apps/api/internal/votacao/votes_test.go` (use existing helpers like `newTestStore` and whatever seed helpers the file already has — seed a session + movies first the same way the existing tests do):
+The real helpers in this file are `newTestStore(t)` and `seedUser(t, s)`; a second user comes from `s.UpsertUser(ctx, sub, email, name, pic, adminEmails)`. Add `"fmt"` to the imports and add this multi-movie helper near the top of `votes_test.go`:
+
+```go
+func seedSessionMovies(t *testing.T, s *votacao.Store, userID int64, cats ...string) (*votacao.VotingSession, []votacao.SessionMovie) {
+	t.Helper()
+	ctx := context.Background()
+	sess, err := s.CreateVotingSession(ctx, "X", userID, "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]votacao.SessionMovie, 0, len(cats))
+	for i, c := range cats {
+		rows = append(rows, votacao.SessionMovie{
+			SessionID: sess.ID, Category: c, Title: fmt.Sprintf("M%d", i), Type: "filme",
+		})
+	}
+	if err := s.InsertSessionMovies(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	movies, _ := s.GetSessionMovies(ctx, sess.ID)
+	return sess, movies
+}
+```
+
+Then append the new tests:
 
 ```go
 func TestReplaceUserVotes(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	u := mustUser(t, s, "sub-rv", "rv@example.com")
-	sess := mustSession(t, s, u.ID)
-	m1 := mustMovie(t, s, sess.ID, "Ação", "A")
-	m2 := mustMovie(t, s, sess.ID, "Comédia", "B")
-	m3 := mustMovie(t, s, sess.ID, "Drama", "C")
+	user := seedUser(t, s)
+	sess, movies := seedSessionMovies(t, s, user.ID, "Ação", "Comédia", "Drama")
+	m1, m2, m3 := movies[0].ID, movies[1].ID, movies[2].ID
 
 	// First submission: approve m1 + m2.
-	if err := s.ReplaceUserVotes(ctx, sess.ID, u.ID, []int64{m1.ID, m2.ID}); err != nil {
+	if err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{m1, m2}); err != nil {
 		t.Fatalf("replace 1: %v", err)
 	}
-	got, err := s.GetUserVotes(ctx, sess.ID, u.ID)
+	got, err := s.GetUserVotes(ctx, sess.ID, user.ID)
 	if err != nil {
 		t.Fatalf("get votes: %v", err)
 	}
@@ -1681,19 +1703,19 @@ func TestReplaceUserVotes(t *testing.T) {
 	}
 
 	// Re-submission replaces the set: now only m3.
-	if err := s.ReplaceUserVotes(ctx, sess.ID, u.ID, []int64{m3.ID}); err != nil {
+	if err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{m3}); err != nil {
 		t.Fatalf("replace 2: %v", err)
 	}
-	got, _ = s.GetUserVotes(ctx, sess.ID, u.ID)
-	if len(got) != 1 || got[0] != m3.ID {
+	got, _ = s.GetUserVotes(ctx, sess.ID, user.ID)
+	if len(got) != 1 || got[0] != m3 {
 		t.Fatalf("want [m3], got %v", got)
 	}
 
 	// Empty set clears the user's votes.
-	if err := s.ReplaceUserVotes(ctx, sess.ID, u.ID, nil); err != nil {
+	if err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, nil); err != nil {
 		t.Fatalf("replace empty: %v", err)
 	}
-	got, _ = s.GetUserVotes(ctx, sess.ID, u.ID)
+	got, _ = s.GetUserVotes(ctx, sess.ID, user.ID)
 	if len(got) != 0 {
 		t.Fatalf("want empty, got %v", got)
 	}
@@ -1702,11 +1724,10 @@ func TestReplaceUserVotes(t *testing.T) {
 func TestReplaceUserVotesRejectsForeignMovie(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	u := mustUser(t, s, "sub-fm", "fm@example.com")
-	sess := mustSession(t, s, u.ID)
-	_ = mustMovie(t, s, sess.ID, "Ação", "A")
+	user := seedUser(t, s)
+	sess, _ := seedSessionMovies(t, s, user.ID, "Ação")
 
-	err := s.ReplaceUserVotes(ctx, sess.ID, u.ID, []int64{99999})
+	err := s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{99999})
 	if !errors.Is(err, votacao.ErrMovieNotInSession) {
 		t.Fatalf("want ErrMovieNotInSession, got %v", err)
 	}
@@ -1715,14 +1736,15 @@ func TestReplaceUserVotesRejectsForeignMovie(t *testing.T) {
 func TestCountVoters(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	u1 := mustUser(t, s, "sub-c1", "c1@example.com")
-	u2 := mustUser(t, s, "sub-c2", "c2@example.com")
-	sess := mustSession(t, s, u1.ID)
-	m1 := mustMovie(t, s, sess.ID, "Ação", "A")
-	m2 := mustMovie(t, s, sess.ID, "Comédia", "B")
+	u1 := seedUser(t, s)
+	u2, err := s.UpsertUser(ctx, "sub-c2", "c2@example.com", "C2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, movies := seedSessionMovies(t, s, u1.ID, "Ação", "Comédia")
 
-	_ = s.ReplaceUserVotes(ctx, sess.ID, u1.ID, []int64{m1.ID, m2.ID})
-	_ = s.ReplaceUserVotes(ctx, sess.ID, u2.ID, []int64{m1.ID})
+	_ = s.ReplaceUserVotes(ctx, sess.ID, u1.ID, []int64{movies[0].ID, movies[1].ID})
+	_ = s.ReplaceUserVotes(ctx, sess.ID, u2.ID, []int64{movies[0].ID})
 
 	voters, err := s.CountVoters(ctx, sess.ID)
 	if err != nil {
@@ -1734,7 +1756,7 @@ func TestCountVoters(t *testing.T) {
 }
 ```
 
-> Note: `mustUser`/`mustSession`/`mustMovie` — reuse the seed helpers already present in `votes_test.go`/`helper_test.go`. If they don't exist with these exact names, define thin wrappers in `helper_test.go` calling the real store methods (`CreateOrUpdateUser`/`CreateVotingSession`/`InsertSessionMovies`+`GetSessionMovies`). Match the existing test file's conventions.
+> **Also update the now-broken existing tests in `votes_test.go`** (they reference the removed `InsertVote`/`GetUserVote`/`ErrAlreadyVoted`): replace every `s.InsertVote(ctx, sess.ID, user.ID, movie.ID)` call with `s.ReplaceUserVotes(ctx, sess.ID, user.ID, []int64{movie.ID})`; delete `TestInsertVote_DuplicateReturnsErrAlreadyVoted` (no longer applies — re-approving the same movie is now idempotent at the set level); delete `TestGetUserVote_NotVoted` and `TestGetUserVote_ReturnsVotedMovie` (replaced by `TestReplaceUserVotes`). Keep `TestHasVoted_*` but switch their seeding to `ReplaceUserVotes`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1859,27 +1881,44 @@ git commit -m "feat(api): approval voting store (ReplaceUserVotes/GetUserVotes/C
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `apps/api/internal/handlers/votacao/votes_test.go` (follow the file's existing handler-test setup — it builds a `Handlers` with a real store and uses `auth.WithUserForTests` + `unwrap`):
+The real helpers in this package are `openTestStore(t)`, `makeAdmin(t, store)`, `newH(t, sheets, posters, store)`, `reqWithID(method, id, body, user)`, `intStr(int64)`, the `stubSheets{}`/`stubPosters{}` stubs, and `unwrap`. `setupSessionWithMovie` only inserts ONE movie — add `"fmt"` to imports and add a multi-movie helper to `votes_test.go`:
 
 ```go
-func TestCreateVoteApprovesMultiple(t *testing.T) {
-	h, store := newTestHandlers(t) // reuse the existing helper in this package
+func setupSessionWithMovies(t *testing.T, store *votacao.Store, admin *votacao.User, cats ...string) (*votacao.VotingSession, []votacao.SessionMovie) {
+	t.Helper()
 	ctx := context.Background()
-	u := seedUser(t, store, "voter@example.com")
-	sess := seedSession(t, store, u.ID)
-	m1 := seedMovie(t, store, sess.ID, "Ação", "A")
-	m2 := seedMovie(t, store, sess.ID, "Drama", "B")
+	sess, err := store.CreateVotingSession(ctx, "X", admin.ID, "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]votacao.SessionMovie, 0, len(cats))
+	for i, c := range cats {
+		rows = append(rows, votacao.SessionMovie{
+			SessionID: sess.ID, Category: c, Title: fmt.Sprintf("M%d", i), Type: "filme",
+		})
+	}
+	if err := store.InsertSessionMovies(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	movies, _ := store.GetSessionMovies(ctx, sess.ID)
+	return sess, movies
+}
+```
 
-	body := fmt.Sprintf(`{"movie_ids":[%d,%d]}`, m1.ID, m2.ID)
-	req := httptest.NewRequest(http.MethodPost,
-		fmt.Sprintf("/votacao/sessions/%d/votes", sess.ID), strings.NewReader(body))
-	req = withChiID(req, "id", fmt.Sprint(sess.ID)) // existing helper to set chi URL param
-	req = auth.WithUserForTests(req, u)
+Then append the new test:
+
+```go
+func TestCreateVote_ApprovesMultiple(t *testing.T) {
+	store := openTestStore(t)
+	user := makeAdmin(t, store)
+	sess, movies := setupSessionWithMovies(t, store, user, "Ação", "Drama")
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
+
+	body := `{"movie_ids":[` + intStr(movies[0].ID) + `,` + intStr(movies[1].ID) + `]}`
 	rec := httptest.NewRecorder()
-	h.CreateVote(rec, req)
-
+	h.CreateVote(rec, reqWithID(http.MethodPost, intStr(sess.ID), body, user))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d (%s)", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var out struct {
 		VotedMovieIDs []int64 `json:"voted_movie_ids"`
@@ -1888,15 +1927,14 @@ func TestCreateVoteApprovesMultiple(t *testing.T) {
 	if len(out.VotedMovieIDs) != 2 {
 		t.Fatalf("want 2 approvals, got %v", out.VotedMovieIDs)
 	}
-
-	got, _ := store.GetUserVotes(ctx, sess.ID, u.ID)
+	got, _ := store.GetUserVotes(context.Background(), sess.ID, user.ID)
 	if len(got) != 2 {
 		t.Fatalf("store should have 2 votes, got %d", len(got))
 	}
 }
 ```
 
-> Reuse the existing helpers in this test package (`newTestHandlers`, `seedUser`, `seedSession`, `seedMovie`, `withChiID`). If their names differ, match what's already in `votes_test.go`/`sessions_test.go` — do NOT invent new infra.
+> **Also update the now-broken existing tests in this file:** `TestCreateVote_HappyPath` sends `{"movie_id":...}` and expects 201 — change its body to `{"movie_ids":[...]}` and expected status to `http.StatusOK` (or delete it, superseded by the test above). Delete `TestCreateVote_DuplicateReturns409` (approval voting has no duplicate-409). Delete any runoff handler test in this file (e.g. `TestCreateRunoff_*`) — the endpoint is removed in Task 6.4.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1982,22 +2020,18 @@ git commit -m "feat(api): vote endpoint accepts movie_ids[] (approval voting)"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `apps/api/internal/handlers/votacao/sessions_test.go`:
+`sessions_test.go` already has a GetSession test that asserts `voted_movie_id` (singular, ~line 209). **Replace that existing test function** with this one (uses the real `openTestStore`/`makeAdmin`/`newH`/`reqWithID`/`intStr`/`unwrap` helpers and the `setupSessionWithMovies` helper added in Task 4.4):
 
 ```go
-func TestGetSessionReturnsVotedMovieIDs(t *testing.T) {
-	h, store := newTestHandlers(t)
-	u := seedUser(t, store, "gs@example.com")
-	sess := seedSession(t, store, u.ID)
-	m1 := seedMovie(t, store, sess.ID, "Ação", "A")
-	m2 := seedMovie(t, store, sess.ID, "Drama", "B")
-	_ = store.ReplaceUserVotes(context.Background(), sess.ID, u.ID, []int64{m1.ID, m2.ID})
+func TestGetSession_ReturnsVotedMovieIDs(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
+	_ = store.ReplaceUserVotes(context.Background(), sess.ID, admin.ID, []int64{movies[0].ID, movies[1].ID})
 
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/votacao/sessions/%d", sess.ID), nil)
-	req = withChiID(req, "id", fmt.Sprint(sess.ID))
-	req = auth.WithUserForTests(req, u)
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
-	h.GetSession(rec, req)
+	h.GetSession(rec, reqWithID(http.MethodGet, intStr(sess.ID), "", admin))
 
 	var out struct {
 		HasVoted      bool    `json:"has_voted"`
@@ -2012,7 +2046,7 @@ func TestGetSessionReturnsVotedMovieIDs(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd apps/api && go test ./internal/handlers/votacao/ -run TestGetSessionReturnsVotedMovieIDs`
+Run: `cd apps/api && go test ./internal/handlers/votacao/ -run TestGetSession_ReturnsVotedMovieIDs`
 Expected: FAIL (response still has `voted_movie_id` singular and calls `GetUserVote`).
 
 - [ ] **Step 3: Update GetSession**
@@ -2529,23 +2563,22 @@ import (
 func TestCreateTiebreakAndSetWinner(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	u := mustUser(t, s, "tb-sub", "tb@example.com")
-	sess := mustSession(t, s, u.ID)
-	m1 := mustMovie(t, s, sess.ID, "Ação", "A")
-	m2 := mustMovie(t, s, sess.ID, "Drama", "B")
+	user := seedUser(t, s)
+	sess, movies := seedSessionMovies(t, s, user.ID, "Ação", "Drama") // helper from Task 4.3
+	m2 := movies[1].ID
 
 	tb := votacao.TiebreakRecord{
 		SessionID:     sess.ID,
-		TriggeredBy:   u.ID,
+		TriggeredBy:   user.ID,
 		TiedIDsJSON:   "[1,2]",
 		ClientEntropy: "deadbeef",
 		ServerNonce:   "cafef00d",
-		WinnerMovieID: m2.ID,
+		WinnerMovieID: m2,
 	}
 	if err := s.CreateTiebreak(ctx, tb); err != nil {
 		t.Fatalf("create tiebreak: %v", err)
 	}
-	if err := s.SetSessionWinner(ctx, sess.ID, m2.ID, "roulette"); err != nil {
+	if err := s.SetSessionWinner(ctx, sess.ID, m2, "roulette"); err != nil {
 		t.Fatalf("set winner: %v", err)
 	}
 
@@ -2553,10 +2586,12 @@ func TestCreateTiebreakAndSetWinner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get session: %v", err)
 	}
-	if got.WinnerMovieID == nil || *got.WinnerMovieID != m2.ID {
+	if got.WinnerMovieID == nil || *got.WinnerMovieID != m2 {
 		t.Fatalf("winner not set: %+v", got)
 	}
-	_ = m1
+	if _, err := s.GetTiebreakBySession(ctx, sess.ID); err != nil {
+		t.Fatalf("audit row missing: %v", err)
+	}
 }
 ```
 
@@ -2672,26 +2707,25 @@ git commit -m "feat(api): tiebreaks store + winner_method on sessions"
 Append to `apps/api/internal/handlers/votacao/votes_test.go`:
 
 ```go
-func TestCloseSessionLeavesTieUnresolved(t *testing.T) {
-	h, store := newTestHandlers(t)
+func TestCloseSession_LeavesTieUnresolved(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	v2, err := store.UpsertUser(context.Background(), "sub-v2-close", "v2@x.com", "V2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
 	ctx := context.Background()
-	admin := seedUser(t, store, "admin-close@example.com")
-	v2 := seedUser(t, store, "v2-close@example.com")
-	sess := seedSession(t, store, admin.ID)
-	m1 := seedMovie(t, store, sess.ID, "Ação", "A")
-	m2 := seedMovie(t, store, sess.ID, "Drama", "B")
 	// 1 vote each → tie.
-	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{m1.ID})
-	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{m2.ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{movies[0].ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{movies[1].ID})
 
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/votacao/sessions/%d/close", sess.ID), nil)
-	req = withChiID(req, "id", fmt.Sprint(sess.ID))
-	req = auth.WithUserForTests(req, admin)
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
-	h.CloseSession(rec, req)
+	h.CloseSession(rec, reqWithID(http.MethodPost, intStr(sess.ID), "", admin))
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d (%s)", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var out struct {
 		WinnerMovieID *int64 `json:"winner_movie_id"`
@@ -2705,7 +2739,7 @@ func TestCloseSessionLeavesTieUnresolved(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd apps/api && go test ./internal/handlers/votacao/ -run TestCloseSessionLeavesTieUnresolved`
+Run: `cd apps/api && go test ./internal/handlers/votacao/ -run TestCloseSession_LeavesTieUnresolved`
 Expected: FAIL (current `ComputeWinner` picks lowest id on tie → returns a winner).
 
 - [ ] **Step 3: Update CloseSession**
@@ -2774,38 +2808,33 @@ package votacao_test
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
-
-	"github.com/PiluVitu/api/internal/auth"
 )
 
-func TestTiebreakPicksAmongTiedAndPersists(t *testing.T) {
-	h, store := newTestHandlers(t)
+func TestTiebreak_PicksAmongTiedAndPersists(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	v2, err := store.UpsertUser(context.Background(), "sub-tb2", "tb2@x.com", "TB2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
 	ctx := context.Background()
-	admin := seedUser(t, store, "admin-tb@example.com")
-	v2 := seedUser(t, store, "v2-tb@example.com")
-	sess := seedSession(t, store, admin.ID)
-	m1 := seedMovie(t, store, sess.ID, "Ação", "A")
-	m2 := seedMovie(t, store, sess.ID, "Drama", "B")
-	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{m1.ID})
-	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{m2.ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{movies[0].ID})
+	_ = store.ReplaceUserVotes(ctx, sess.ID, v2.ID, []int64{movies[1].ID})
 	// Close it first (tie → winner null).
 	_ = store.CloseVotingSession(ctx, sess.ID, nil)
 
 	entropy := hex.EncodeToString(make([]byte, 32)) // 64 hex chars
-	body := fmt.Sprintf(`{"entropy":%q}`, entropy)
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/votacao/sessions/%d/tiebreak", sess.ID), strings.NewReader(body))
-	req = withChiID(req, "id", fmt.Sprint(sess.ID))
-	req = auth.WithUserForTests(req, admin)
+	body := `{"entropy":"` + entropy + `"}`
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
-	h.Tiebreak(rec, req)
+	h.Tiebreak(rec, reqWithID(http.MethodPost, intStr(sess.ID), body, admin))
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d (%s)", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var out struct {
 		WinnerMovieID int64   `json:"winner_movie_id"`
@@ -2813,7 +2842,7 @@ func TestTiebreakPicksAmongTiedAndPersists(t *testing.T) {
 		ServerNonce   string  `json:"server_nonce"`
 	}
 	unwrap(t, rec, &out)
-	if out.WinnerMovieID != m1.ID && out.WinnerMovieID != m2.ID {
+	if out.WinnerMovieID != movies[0].ID && out.WinnerMovieID != movies[1].ID {
 		t.Fatalf("winner must be one of the tied movies, got %d", out.WinnerMovieID)
 	}
 	if out.ServerNonce == "" {
@@ -2830,23 +2859,19 @@ func TestTiebreakPicksAmongTiedAndPersists(t *testing.T) {
 	}
 }
 
-func TestTiebreakRejectsNoTie(t *testing.T) {
-	h, store := newTestHandlers(t)
+func TestTiebreak_RejectsNoTie(t *testing.T) {
+	store := openTestStore(t)
+	admin := makeAdmin(t, store)
+	sess, movies := setupSessionWithMovies(t, store, admin, "Ação", "Drama")
 	ctx := context.Background()
-	admin := seedUser(t, store, "admin-nt@example.com")
-	sess := seedSession(t, store, admin.ID)
-	m1 := seedMovie(t, store, sess.ID, "Ação", "A")
-	_ = seedMovie(t, store, sess.ID, "Drama", "B")
-	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{m1.ID}) // clear winner m1
-	_ = store.CloseVotingSession(ctx, sess.ID, &m1.ID)
+	_ = store.ReplaceUserVotes(ctx, sess.ID, admin.ID, []int64{movies[0].ID}) // clear winner
+	_ = store.CloseVotingSession(ctx, sess.ID, &movies[0].ID)
 
 	entropy := hex.EncodeToString(make([]byte, 32))
-	body := fmt.Sprintf(`{"entropy":%q}`, entropy)
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/votacao/sessions/%d/tiebreak", sess.ID), strings.NewReader(body))
-	req = withChiID(req, "id", fmt.Sprint(sess.ID))
-	req = auth.WithUserForTests(req, admin)
+	body := `{"entropy":"` + entropy + `"}`
+	h := newH(t, &stubSheets{}, &stubPosters{}, store)
 	rec := httptest.NewRecorder()
-	h.Tiebreak(rec, req)
+	h.Tiebreak(rec, reqWithID(http.MethodPost, intStr(sess.ID), body, admin))
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("want 422 no_tie, got %d (%s)", rec.Code, rec.Body.String())
@@ -3422,4 +3447,6 @@ git commit -m "chore: prettier + final verification for approval voting + roulet
 
 **Type consistency:** `voted_movie_ids` (backend `sessions.go` + types.ts + vote-section + results-list + page) ✓; `total_voters` (GetResults + ResultsResponse + ResultsList) ✓; `WinnerMethod`/`winner_method` (Go struct + scans + types.ts + ResultsList) ✓; `tiebreak(id, entropy)` (api-client + hook + component) ✓; `ReplaceUserVotes`/`GetUserVotes`/`CountVoters` consistentes entre store, handlers e testes ✓; `RouletteWheel` props (`winnerId`, `spinning`, `onSpinEnd`) idênticas em todos os consumidores ✓.
 
-**Placeholder scan:** sem TBD/TODO; cada step com código real. Pontos que dependem de helpers de teste existentes (`newTestHandlers`, `seedUser/seedSession/seedMovie`, `withChiID`, `mustUser/mustSession/mustMovie`) estão marcados para reaproveitar a infra já presente nos `*_test.go` (não inventar) — verificar nomes reais ao abrir cada arquivo de teste.
+**Placeholder scan:** sem TBD/TODO; cada step com código real. Os snippets de teste usam os helpers REAIS já presentes nos `*_test.go`: store (`internal/votacao`) — `newTestStore`, `seedUser(t,s)`, `s.UpsertUser(ctx,sub,email,name,pic,adminEmails)`, `seedSessionMovies` (helper novo adicionado na Task 4.3); handlers (`internal/handlers/votacao`) — `openTestStore`, `makeAdmin`, `newH(t,sheets,posters,store)`, `reqWithID(method,id,body,user)`, `intStr`, `setupSessionWithMovies` (helper novo na Task 4.4), stubs `stubSheets{}`/`stubPosters{}`, e `unwrap`. `auth.WithUserForTests` recebe/retorna um `context.Context` (já embutido em `reqWithID`).
+
+**Testes existentes que quebram (tratados no plano):** `internal/votacao/votes_test.go` — `TestInsertVote_*` e `TestGetUserVote_*` (Task 4.3 instrui trocar `InsertVote`→`ReplaceUserVotes` e remover os obsoletos); `internal/handlers/votacao/votes_test.go` — `TestCreateVote_HappyPath`/`TestCreateVote_DuplicateReturns409` e o teste de runoff (Tasks 4.4 e 6.4); `internal/handlers/votacao/sessions_test.go` — o teste que assertava `voted_movie_id` (Task 4.5). `ComputeWinner` permanece em `results.go` (ainda testado em `results_test.go`); só deixa de ser chamado no handler.
