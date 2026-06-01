@@ -97,7 +97,9 @@ func (h *Handlers) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// Record winner_method='votes' when there was a clear winner.
 	if winner != nil {
-		_ = h.deps.Store.SetSessionWinner(r.Context(), sessionID, *winner, "votes")
+		if err := h.deps.Store.SetSessionWinner(r.Context(), sessionID, *winner, "votes"); err != nil {
+			logging.FromContext(r.Context()).Error("close: set winner method", "err", err, "session_id", sessionID)
+		}
 	}
 	logging.With(r.Context(), "session_id", sessionID, "tie", len(top) > 1, "top", top).Info("session_closed")
 	if h.deps.Backuper != nil {
