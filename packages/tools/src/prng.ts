@@ -33,6 +33,9 @@ export function sfc32(a: number, b: number, c: number, d: number): Prng {
     if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
       throw new Error('int: maxExclusive must be a positive integer')
     }
+    // Rejection sampling for an unbiased result in [0, maxExclusive). Assumes
+    // maxExclusive <= 2^32 (true for all real callers — option/movie counts);
+    // for n > 2^32 `limit` would be 0 and this would loop.
     const limit = 0x100000000 - (0x100000000 % maxExclusive)
     let x = nextUint32()
     while (x >= limit) x = nextUint32()

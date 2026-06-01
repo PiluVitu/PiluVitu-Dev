@@ -1,4 +1,10 @@
-import { toHex, fromHex, cryptoRandomBytes, mixEntropy } from './entropy'
+import {
+  toHex,
+  fromHex,
+  cryptoRandomBytes,
+  mixEntropy,
+  mixEntropyHex,
+} from './entropy'
 
 describe('entropy', () => {
   it('toHex/fromHex round-trip', () => {
@@ -27,5 +33,14 @@ describe('entropy', () => {
     const a = await mixEntropy(new Uint8Array([1, 2, 3]))
     const b = await mixEntropy(new Uint8Array([1, 2, 3]))
     expect(toHex(a)).not.toBe(toHex(b))
+  })
+
+  it('fromHex rejects invalid hex characters', () => {
+    expect(() => fromHex('gg')).toThrow()
+  })
+
+  it('mixEntropyHex returns a 64-char hex string', async () => {
+    const hex = await mixEntropyHex(new Uint8Array([1, 2, 3]))
+    expect(hex).toMatch(/^[0-9a-f]{64}$/)
   })
 })
