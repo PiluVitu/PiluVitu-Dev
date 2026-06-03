@@ -83,6 +83,7 @@ export default async function Home() {
             carreiraList={carreiraList}
             projectList={projectList}
             initialBlogPosts={initialBlogPosts}
+            profileName={siteProfile.displayName}
           />
         </aside>
       </div>
