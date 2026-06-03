@@ -2,6 +2,7 @@
 import { LoginButton } from '@/components/votacao/login-button'
 import { LogoutButton } from '@/components/votacao/logout-button'
 import { SessionCard } from '@/components/votacao/session-card'
+import { PageTopBar } from '@/components/page-top-bar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionList } from '@/hooks/votacao/use-session-list'
@@ -12,26 +13,33 @@ export default function VotacaoPage() {
   const list = useSessionList()
 
   return (
-    <main className="container mx-auto max-w-4xl space-y-8 px-4 py-12">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
+      <PageTopBar backHref="/" backLabel="Paulo Victor" />
+
+      <header className="mt-10 mb-10 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Votação de Filmes</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-4xl font-bold tracking-tight">
+            Votação de Filmes
+          </h1>
+          <p className="text-muted-foreground mt-2">
             Sessões em aberto e histórico recente.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {user.isLoading ? (
-            <Skeleton className="h-10 w-32" />
+            <Skeleton className="h-9 w-40" />
           ) : user.data ? (
             <>
               <span className="text-muted-foreground text-sm">
-                {user.data.name} {user.data.is_admin && '(admin)'}
+                {user.data.name}{' '}
+                {user.data.is_admin && (
+                  <span className="text-foreground">(admin)</span>
+                )}
               </span>
               {user.data.is_admin && (
                 <Link
                   href="/votacao/admin"
-                  className="text-sm underline underline-offset-2"
+                  className="hover:text-primary text-sm underline underline-offset-4 transition-colors"
                 >
                   Painel admin
                 </Link>
@@ -67,6 +75,6 @@ export default function VotacaoPage() {
           ))}
         </div>
       </section>
-    </main>
+    </div>
   )
 }

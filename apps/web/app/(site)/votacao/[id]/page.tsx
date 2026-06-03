@@ -2,6 +2,7 @@
 import { use } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { PageTopBar } from '@/components/page-top-bar'
 import { SessionStatusBadge } from '@/components/votacao/session-status-badge'
 import { VoteSection } from '@/components/votacao/vote-section'
 import { ResultsList } from '@/components/votacao/results-list'
@@ -25,26 +26,29 @@ export default function SessionDetailPage({
   const detail = useSessionDetail(id)
   const close = useCloseSession()
 
+  const shell = (children: React.ReactNode) => (
+    <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
+      <PageTopBar backHref="/votacao" backLabel="Sessões" />
+      <div className="mt-10">{children}</div>
+    </div>
+  )
+
   if (!Number.isFinite(id) || id <= 0) {
-    return (
-      <main className="container mx-auto max-w-3xl px-4 py-12">
-        <p className="text-destructive">ID inválido.</p>
-      </main>
-    )
+    return shell(<p className="text-destructive">ID inválido.</p>)
   }
 
   if (detail.isLoading) {
-    return (
-      <main className="container mx-auto max-w-4xl space-y-6 px-4 py-12">
+    return shell(
+      <div className="space-y-6">
         <Skeleton className="h-10 w-1/2" />
         <Skeleton className="h-64 w-full" />
-      </main>
+      </div>,
     )
   }
 
   if (!detail.data) {
-    return (
-      <main className="container mx-auto max-w-3xl px-4 py-12">
+    return shell(
+      <>
         <p className="text-destructive">
           {detail.error ? errorMessage(detail.error) : 'Sessão não encontrada.'}
         </p>
@@ -53,19 +57,19 @@ export default function SessionDetailPage({
             <LoginButton />
           </div>
         )}
-      </main>
+      </>,
     )
   }
 
   const { session, movies, voted_movie_ids } = detail.data
   const closed = session.Status === 'closed'
 
-  return (
-    <main className="container mx-auto max-w-4xl space-y-8 px-4 py-12">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+  return shell(
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">{session.Title}</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="text-4xl font-bold tracking-tight">{session.Title}</h1>
+          <p className="text-muted-foreground mt-1 font-mono text-xs">
             criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
           </p>
         </div>
@@ -73,15 +77,15 @@ export default function SessionDetailPage({
       </header>
 
       {!user.data && !user.isLoading && (
-        <div className="bg-muted/50 rounded-md border p-4">
-          <p className="mb-2 text-sm">Você precisa estar logado pra votar.</p>
+        <div className="bg-card border-border rounded-lg border p-4">
+          <p className="mb-3 text-sm">Você precisa estar logado pra votar.</p>
           <LoginButton />
         </div>
       )}
 
       {closed ? (
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Resultados</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Resultados</h2>
           <ResultsList
             sessionId={id}
             movies={movies}
@@ -100,7 +104,7 @@ export default function SessionDetailPage({
       )}
 
       {user.data?.is_admin && !closed && (
-        <div className="border-t pt-4">
+        <div className="border-border border-t pt-6">
           <Button
             variant="destructive"
             disabled={close.isPending}
@@ -122,10 +126,10 @@ export default function SessionDetailPage({
       )}
 
       {user.data?.is_admin && closed && (
-        <div className="border-t pt-4">
+        <div className="border-border border-t pt-6">
           <TiebreakRoulette sessionId={id} movies={movies} />
         </div>
       )}
-    </main>
+    </div>,
   )
 }
