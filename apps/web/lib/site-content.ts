@@ -36,6 +36,10 @@ export type SiteProfileContent = {
   /** Cor do nome da empresa (hex), ex. #4a65fc */
   companyLinkColor: string
   bio: string
+  availabilityOpen: boolean
+  availabilityLabel: string
+  location: string
+  disciplines: string[]
 }
 
 export type VisitCardLinkType = 'manual' | 'latestDevArticle' | 'emailContact'
@@ -90,6 +94,11 @@ export async function getSiteProfile(): Promise<SiteProfileContent | null> {
     companyLink: entry.companyLink,
     companyLinkColor: normalizeHexColor(entry.companyLinkColor, '#4a65fc'),
     bio: entry.bio,
+    availabilityOpen: entry.availabilityOpen ?? true,
+    availabilityLabel:
+      (entry.availabilityLabel ?? '').trim() || 'Disponível para oportunidades',
+    location: (entry.location ?? '').trim(),
+    disciplines: [...(entry.disciplines ?? [])].filter((d) => d.trim()),
   }
 }
 
@@ -178,6 +187,8 @@ export async function getCarreiras(): Promise<Carreira[]> {
       location: entry.location,
       date: entry.date,
       atribuitions: [...entry.atribuitions],
+      current: entry.current ?? false,
+      tags: [...(entry.tags ?? [])].filter((t) => t.trim()),
       order: entry.order ?? 0,
     }
   })
@@ -193,6 +204,8 @@ export async function getCarreiras(): Promise<Carreira[]> {
       location: row.location,
       date: row.date,
       atribuitions: row.atribuitions,
+      current: row.current,
+      tags: row.tags,
     }),
   )
 }
@@ -206,6 +219,7 @@ export async function getProjects(): Promise<Project[]> {
     return {
       id: slug,
       projectName: entry.projectName,
+      subtitle: (entry.subtitle ?? '').trim(),
       projectLogo: entry.projectLogo,
       description: entry.description,
       tags: [...entry.tags],
@@ -220,6 +234,7 @@ export async function getProjects(): Promise<Project[]> {
     (row): Project => ({
       id: row.id,
       projectName: row.projectName,
+      subtitle: row.subtitle,
       projectLogo: row.projectLogo,
       description: row.description,
       tags: row.tags,

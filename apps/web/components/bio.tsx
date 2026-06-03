@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { faBriefcase, faLocationDot } from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { SiteProfileContent, VisitCardContent } from '@/lib/site-content'
 import type { Social } from '@/mocks/social'
 import { ModeToggle } from './mode-toggle'
@@ -20,24 +22,35 @@ export function Bio({
   visitCard,
 }: BioProps) {
   const companyHref = profile.companyLink.trim()
+  const hasMeta = Boolean(profile.location) || profile.disciplines.length > 0
 
   return (
-    <>
-      <ProfileVisitCard
-        profile={profile}
-        visitCard={visitCard}
-        latestDevArticleUrl={latestDevArticleUrl}
-      />
-      <section>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-4">
+        <ProfileVisitCard
+          profile={profile}
+          visitCard={visitCard}
+          latestDevArticleUrl={latestDevArticleUrl}
+        />
         <ModeToggle />
-      </section>
-      <h1 className="text-4xl font-semibold tracking-tight">
+      </div>
+
+      {profile.availabilityOpen ? (
+        <p className="text-muted-foreground flex items-center gap-2 font-mono text-xs">
+          <span className="bg-ok size-2 rounded-full" aria-hidden />
+          {profile.availabilityLabel}
+        </p>
+      ) : null}
+
+      <h1 className="text-4xl font-bold tracking-tight xl:text-5xl">
         {profile.displayName}
       </h1>
 
-      <section className="flex flex-col gap-2">
+      <div className="flex flex-col gap-4">
         <p>
-          <strong className="text-lime-500">{profile.roleHighlight}</strong>
+          <strong className="text-primary font-semibold">
+            {profile.roleHighlight}
+          </strong>
           {profile.companyName.trim() ? (
             <>
               {' na '}
@@ -66,7 +79,31 @@ export function Bio({
         </p>
         <p className="text-muted-foreground text-pretty">{profile.bio}</p>
         <ProfileSocialStrip socials={socials} />
-      </section>
-    </>
+        {hasMeta ? (
+          <div className="text-muted-foreground flex flex-col gap-2 pt-2 font-mono text-sm">
+            {profile.location ? (
+              <span className="flex items-center gap-2">
+                <FontAwesomeIcon
+                  icon={faLocationDot}
+                  className="size-3.5"
+                  aria-hidden
+                />
+                {profile.location}
+              </span>
+            ) : null}
+            {profile.disciplines.length > 0 ? (
+              <span className="flex items-center gap-2">
+                <FontAwesomeIcon
+                  icon={faBriefcase}
+                  className="size-3.5"
+                  aria-hidden
+                />
+                {profile.disciplines.join(' · ')}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
   )
 }

@@ -74,6 +74,22 @@ export default config({
             { label: 'Cinza claro', value: '#94a3b8' },
           ],
         }),
+        availabilityOpen: fields.checkbox({
+          label: 'Disponível para oportunidades',
+          defaultValue: true,
+        }),
+        availabilityLabel: fields.text({
+          label: 'Texto de disponibilidade',
+          defaultValue: 'Disponível para oportunidades',
+        }),
+        location: fields.text({
+          label: 'Localização (meta)',
+          description: 'Ex.: Brasil · Remoto',
+          defaultValue: 'Brasil · Remoto',
+        }),
+        disciplines: fields.array(fields.text({ label: 'Disciplina' }), {
+          label: 'Disciplinas',
+        }),
         bio: fields.text({
           label: 'Biografia',
           multiline: true,
@@ -216,6 +232,10 @@ export default config({
         atribuitions: fields.array(fields.text({ label: 'Atribuição' }), {
           label: 'Atribuições',
         }),
+        current: fields.checkbox({ label: 'Cargo atual', defaultValue: false }),
+        tags: fields.array(fields.text({ label: 'Tag' }), {
+          label: 'Tags (ex.: Remoto)',
+        }),
       },
     }),
     projects: collection({
@@ -227,6 +247,11 @@ export default config({
         projectSlug: fields.slug({ name: { label: 'Slug do projeto' } }),
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),
         projectName: fields.text({ label: 'Nome' }),
+        subtitle: fields.text({
+          label: 'Subtítulo',
+          description: 'Ex.: agregador de pull requests',
+          defaultValue: '',
+        }),
         projectLogo: fields.text({
           label: 'Logo (path ou URL)',
         }),
