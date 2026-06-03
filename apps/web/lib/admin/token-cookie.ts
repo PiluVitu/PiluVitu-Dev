@@ -20,6 +20,9 @@ const ALGO = 'aes-256-gcm'
 function key(): Buffer {
   const secret = process.env.ADMIN_TOKEN_SECRET
   if (!secret) throw new Error('ADMIN_TOKEN_SECRET is not set')
+  if (secret.length < 32) {
+    throw new Error('ADMIN_TOKEN_SECRET must be at least 32 characters')
+  }
   // Derive a fixed 32-byte key from the secret of any length.
   return createHash('sha256').update(secret).digest()
 }
@@ -48,7 +51,13 @@ export function openToken(sealed: string): AdminGithubToken | null {
       decipher.update(ciphertext),
       decipher.final(),
     ])
-    return JSON.parse(plaintext.toString('utf8')) as AdminGithubToken
+    const parsed = JSON.parse(
+      plaintext.toString('utf8'),
+    ) as Partial<AdminGithubToken>
+    if (typeof parsed.token !== 'string' || typeof parsed.login !== 'string') {
+      return null
+    }
+    return parsed as AdminGithubToken
   } catch {
     return null
   }

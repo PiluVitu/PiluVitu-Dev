@@ -44,4 +44,27 @@ describe('token-cookie', () => {
   it('exposes the cookie name', () => {
     expect(ADMIN_GH_COOKIE).toBe('piluvitu_admin_gh')
   })
+
+  it('throws when the secret is too short', () => {
+    const prev = process.env.ADMIN_TOKEN_SECRET
+    process.env.ADMIN_TOKEN_SECRET = 'too-short'
+    expect(() => sealToken(PAYLOAD)).toThrow(/at least 32 characters/)
+    process.env.ADMIN_TOKEN_SECRET = prev
+  })
+
+  it('returns null when opening with the secret missing', () => {
+    const sealed = sealToken(PAYLOAD)
+    const prev = process.env.ADMIN_TOKEN_SECRET
+    delete process.env.ADMIN_TOKEN_SECRET
+    expect(openToken(sealed)).toBeNull()
+    process.env.ADMIN_TOKEN_SECRET = prev
+  })
+
+  it('returns null when the decrypted payload is missing required fields', () => {
+    // Seal a structurally-invalid payload by casting, then confirm openToken rejects it.
+    const sealed = sealToken({ login: 'x' } as unknown as Parameters<
+      typeof sealToken
+    >[0])
+    expect(openToken(sealed)).toBeNull()
+  })
 })
