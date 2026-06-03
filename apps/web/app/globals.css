@@ -34,6 +34,8 @@
   --color-success: hsl(var(--success));
   --color-success-foreground: hsl(var(--success-foreground));
 
+  /* Semantic status tokens (votação): ok=sucesso/seu voto, warn=empate/atenção,
+     win=vencedor. --success é mantido como alias de --ok (compat). */
   --color-ok: hsl(var(--ok));
   --color-ok-foreground: hsl(var(--ok-foreground));
   --color-warn: hsl(var(--warn));
@@ -41,11 +43,14 @@
   --color-win: hsl(var(--win));
   --color-win-foreground: hsl(var(--win-foreground));
 
+  /* Brand translucent overlays — estáticos de propósito (sky-400, não derivam de --primary) */
   --color-accent-soft: rgb(56 189 248 / 0.13);
   --color-accent-line: rgb(56 189 248 / 0.32);
 
-  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  /* Fallback aninhado no var(): se a var do next/font não existir (ex.: Storybook
+     sem RootLayout), a stack ui-sans-serif vale — sem cair pra serif do browser. */
+  --font-sans: var(--font-plus-jakarta, ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-jetbrains, ui-monospace, monospace);
 
   --radius-pill: 999px;
   --shadow-ds: 0 18px 40px rgb(0 0 0 / 0.45);
@@ -147,7 +152,7 @@
     --success-foreground: 0 0% 100%;
     --ok: 158 64% 40%;
     --ok-foreground: 0 0% 100%;
-    --warn: 38 92% 45%;
+    --warn: 38 92% 38%;
     --warn-foreground: 0 0% 100%;
     --win: 255 60% 60%;
     --win-foreground: 0 0% 100%;
