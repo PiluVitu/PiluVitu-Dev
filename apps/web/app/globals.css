@@ -34,6 +34,22 @@
   --color-success: hsl(var(--success));
   --color-success-foreground: hsl(var(--success-foreground));
 
+  --color-ok: hsl(var(--ok));
+  --color-ok-foreground: hsl(var(--ok-foreground));
+  --color-warn: hsl(var(--warn));
+  --color-warn-foreground: hsl(var(--warn-foreground));
+  --color-win: hsl(var(--win));
+  --color-win-foreground: hsl(var(--win-foreground));
+
+  --color-accent-soft: rgb(56 189 248 / 0.13);
+  --color-accent-line: rgb(56 189 248 / 0.32);
+
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  --radius-pill: 999px;
+  --shadow-ds: 0 18px 40px rgb(0 0 0 / 0.45);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -108,52 +124,64 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 220 50% 98%;
+    --foreground: 222 36% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 222 36% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 346.8 77.2% 49.8%;
-    --success: 142 76% 36%;
-    --success-foreground: 356 100% 97%;
-    --radius: 0.75rem;
+    --popover-foreground: 222 36% 9%;
+    --primary: 198 93% 60%;
+    --primary-foreground: 200 75% 6%;
+    --secondary: 216 42% 95%;
+    --secondary-foreground: 222 36% 9%;
+    --muted: 216 42% 95%;
+    --muted-foreground: 215 18% 35%;
+    --accent: 216 43% 93%;
+    --accent-foreground: 222 36% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 216 30% 88%;
+    --input: 216 30% 88%;
+    --ring: 198 93% 60%;
+    --success: 158 64% 40%;
+    --success-foreground: 0 0% 100%;
+    --ok: 158 64% 40%;
+    --ok-foreground: 0 0% 100%;
+    --warn: 38 92% 45%;
+    --warn-foreground: 0 0% 100%;
+    --win: 255 60% 60%;
+    --win-foreground: 0 0% 100%;
+    --radius: 1.125rem;
   }
 
   .dark {
-    --background: 20 14.3% 4.1%;
-    --foreground: 0 0% 95%;
-    --card: 24 9.8% 10%;
-    --card-foreground: 0 0% 95%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 95%;
-    --primary: 346.8 77.2% 49.8%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 12 6.5% 15.1%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 85.7% 97.3%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 346.8 77.2% 49.8%;
-    --success: 142 71% 48%;
-    --success-foreground: 144 61% 12%;
+    --background: 220 33% 5%;
+    --foreground: 215 33% 93%;
+    --card: 222 36% 9%;
+    --card-foreground: 215 33% 93%;
+    --popover: 222 36% 9%;
+    --popover-foreground: 215 33% 93%;
+    --primary: 198 93% 60%;
+    --primary-foreground: 200 75% 6%;
+    --secondary: 221 35% 12%;
+    --secondary-foreground: 215 33% 93%;
+    --muted: 221 35% 12%;
+    --muted-foreground: 216 17% 64%;
+    --accent: 217 32% 14%;
+    --accent-foreground: 215 33% 93%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 200 75% 6%;
+    --border: 205 40% 18%;
+    --input: 205 40% 18%;
+    --ring: 198 93% 60%;
+    --success: 158 64% 52%;
+    --success-foreground: 200 75% 6%;
+    --ok: 158 64% 52%;
+    --ok-foreground: 200 75% 6%;
+    --warn: 43 96% 56%;
+    --warn-foreground: 200 75% 6%;
+    --win: 255 92% 76%;
+    --win-foreground: 200 75% 6%;
   }
 }
 
@@ -163,7 +191,7 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
