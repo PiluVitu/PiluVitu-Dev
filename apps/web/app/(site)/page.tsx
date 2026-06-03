@@ -58,7 +58,11 @@ export default async function Home() {
   const initialBlogPosts = blogPosts.map(blogPostToView)
 
   return (
-    <div className="min-h-screen pt-2 pr-4 pb-2 pl-6 sm:pr-4 sm:pl-8 xl:grid xl:h-screen xl:max-h-screen xl:min-h-0 xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 xl:overflow-hidden xl:pt-10 xl:pr-8 xl:pb-4 xl:pl-14 2xl:mx-auto 2xl:max-w-[1920px]">
+    <div className="min-h-screen pt-2 pr-4 pb-2 pl-6 sm:pr-4 sm:pl-8 xl:grid xl:h-screen xl:max-h-screen xl:min-h-0 xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 xl:overflow-hidden xl:pt-10 xl:pr-8 xl:pb-4 xl:pl-14 2xl:mx-auto 2xl:max-w-[1180px]">
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[600px] bg-[radial-gradient(60%_60%_at_50%_0%,var(--color-accent-soft),transparent)]"
+      />
       <div className="mx-auto flex w-full max-w-md flex-col gap-16 pb-4 xl:contents xl:max-w-none">
         <main
           id="profile"

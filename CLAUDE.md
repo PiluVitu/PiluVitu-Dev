@@ -122,6 +122,10 @@ O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os
 - **Verificação visual:** story `components/design-tokens.stories.tsx` (paleta/tipografia/forma).
 - **Spec/plano:** `docs/superpowers/specs/2026-06-02-design-system-v2-foundation-design.md` + `docs/superpowers/plans/2026-06-02-design-system-v2-foundation.md`. Escopo entregue = **fundação** (tokens + fontes); reskin página a página fica pra depois.
 
+### Home V2 (DS V2 reskin)
+
+A home (`/`) foi completamente reskinada para o DS V2. Layout split-scroll: perfil fixo à esquerda (`col-span-4`) + bento rolável à direita (`col-span-8`). Novos componentes: `SectionHeader` (título + ação + divider), `HomeFooter` (rodapé inline com mailto), cards V2 (`JobCard` com modal de "Atribuições", `ProjectCard` com subtitle, `ArticleCard` com métricas). Social strip com email icon → mailto. O container raiz usa `2xl:max-w-[1180px]` + glow decorativo ciano fixo no topo (`--color-accent-soft` radial-gradient). Novos campos Keystatic: perfil (`availabilityOpen`/`availabilityLabel`/`location`/`disciplines`), carreira (`current`/`tags`), projeto (`subtitle`). Smoke test E2E em `app/(site)/home.e2e.ts`. Spec: `docs/superpowers/specs/2026-06-02-home-v2-reskin-design.md`.
+
 ### Blog (TinaCMS)
 
 - **Content repo**: `PiluVitu/piluvitu-blog` (private) — MDX files at `content/posts/*.mdx`
