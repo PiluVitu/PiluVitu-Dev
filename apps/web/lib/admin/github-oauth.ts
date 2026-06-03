@@ -40,10 +40,14 @@ async function postToken(
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (!res.ok) throw new Error(`GitHub token endpoint failed: ${res.status}`)
   return (await res.json()) as GithubTokenResponse
 }
 
-/** Exchanges an authorization code for a user access token. */
+/**
+ * Exchanges an authorization code for a user access token.
+ * Always check `response.error` — GitHub returns HTTP 200 even for logical errors.
+ */
 export function exchangeCode(
   code: string,
   redirectUri: string,
@@ -56,7 +60,10 @@ export function exchangeCode(
   })
 }
 
-/** Refreshes an expiring user token (only when the App issues refresh tokens). */
+/**
+ * Refreshes an expiring user token (only when the App issues refresh tokens).
+ * Always check `response.error` — GitHub returns HTTP 200 even for logical errors.
+ */
 export function refreshToken(refresh: string): Promise<GithubTokenResponse> {
   return postToken({
     client_id: clientId(),
