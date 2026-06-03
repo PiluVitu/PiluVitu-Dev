@@ -1,5 +1,4 @@
 import { ArticleSection } from '@/components/article-section'
-import { HomeFooter } from '@/components/home-footer'
 import { JobCard } from '@/components/job-card'
 import { ProjectCard } from '@/components/project-card'
 import { SectionHeader } from '@/components/section-header'
@@ -11,14 +10,12 @@ type HomeBentoLayoutProps = {
   carreiraList: Carreira[]
   projectList: Project[]
   initialBlogPosts: ArticleCardView[]
-  profileName: string
 }
 
 export function HomeBentoLayout({
   carreiraList,
   projectList,
   initialBlogPosts,
-  profileName,
 }: HomeBentoLayoutProps) {
   return (
     <div className="flex min-h-0 flex-col gap-10 xl:gap-12">
@@ -70,8 +67,6 @@ export function HomeBentoLayout({
           <ArticleSection initialBlogPosts={initialBlogPosts} />
         </div>
       </section>
-
-      <HomeFooter name={profileName} />
     </div>
   )
 }

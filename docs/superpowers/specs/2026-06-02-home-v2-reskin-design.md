@@ -38,11 +38,13 @@ Reestilizar a home (`app/(site)/page.tsx` + componentes) pro layout V2: duas col
 
 ## 3. Layout & estrutura
 
-`app/(site)/page.tsx` mantém o container split-scroll existente (grid 12-col no `xl`, `xl:h-screen`, cada coluna com `overflow-y-auto`). Ajustes:
+`app/(site)/page.tsx` usa **scroll da página inteira** (não overflow independente por coluna — esse modelo fazia o footer ficar pinado e estreito). Ajustes:
 
 - Container central **max 1180px** (`--maxw` do V2), padding lateral 40px (22px mobile).
-- **Esquerda** (`xl:col-span-4`, fixa/sticky, rola só se transbordar): `<Bio>` reestilizado.
-- **Direita** (`xl:col-span-8`, rolável): `<HomeBentoLayout>` **reestilizado** (a home segue "bento") com as 3 seções + footer.
+- Grid `xl:grid-cols-12` com **`xl:items-start`** (necessário pro sticky funcionar).
+- **Esquerda** (`xl:col-span-4`, **`xl:sticky xl:top-10 xl:self-start`**): `<Bio>`. Como é mais baixa que a viewport, fica fixa por todo o scroll.
+- **Direita** (`xl:col-span-8`, fluxo normal): `<HomeBentoLayout>` **reestilizado** (a home segue "bento") com as 3 seções. É o que "rola" (via scroll da página).
+- **Footer full-width:** `<HomeFooter>` fica **fora** do grid, abaixo dele, cobrindo as duas colunas; aparece no fim do scroll (não é pinado nem fica dentro da coluna direita).
 - **Glow ciano** no topo: um elemento de fundo absoluto com `radial-gradient`/`linear-gradient` usando `--color-accent-soft` (sutil, ~1200px de altura, atrás do conteúdo). Sem imagem.
 - **Mobile/tablet** (`< xl`): colunas empilham (perfil em cima, conteúdo embaixo), 1 coluna nos grids. Mantém o comportamento responsivo atual.
 

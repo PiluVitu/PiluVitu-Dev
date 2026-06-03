@@ -1,5 +1,6 @@
 import { Bio } from '@/components/bio'
 import { HomeBentoLayout } from '@/components/home-bento-layout'
+import { HomeFooter } from '@/components/home-footer'
 import { getLatestDevToArticleUrl } from '@/lib/dev-to'
 import {
   getCarreiras,
@@ -58,38 +59,46 @@ export default async function Home() {
   const initialBlogPosts = blogPosts.map(blogPostToView)
 
   return (
-    <div className="min-h-screen pt-2 pr-4 pb-2 pl-6 sm:pr-4 sm:pl-8 xl:grid xl:h-screen xl:max-h-screen xl:min-h-0 xl:grid-cols-12 xl:grid-rows-1 xl:items-stretch xl:gap-10 xl:overflow-hidden xl:pt-10 xl:pr-8 xl:pb-4 xl:pl-14 2xl:mx-auto 2xl:max-w-[1180px]">
+    <div className="min-h-screen px-6 pt-2 pb-4 sm:px-8 xl:px-14 xl:pt-10 xl:pb-4 2xl:mx-auto 2xl:max-w-[1180px]">
       <div
         aria-hidden
         className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[600px] bg-[radial-gradient(60%_60%_at_50%_0%,var(--color-accent-soft),transparent)]"
       />
-      <div className="mx-auto flex w-full max-w-md flex-col gap-16 pb-4 xl:contents xl:max-w-none">
+
+      {/*
+        Scroll da página inteira. A coluna esquerda é `sticky` (mais baixa que a
+        viewport → fica fixa por todo o scroll). A direita flui normalmente e é o
+        que "rola". O footer (abaixo do grid) é full-width e só aparece no fim.
+      */}
+      <div className="mx-auto flex w-full max-w-md flex-col gap-16 xl:mx-0 xl:grid xl:max-w-none xl:grid-cols-12 xl:items-start xl:gap-10">
         <main
           id="profile"
-          className="col-span-12 flex min-h-0 flex-col items-start xl:col-span-4 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-2"
+          className="flex flex-col items-start xl:sticky xl:top-10 xl:col-span-4 xl:self-start"
           suppressHydrationWarning
         >
-          <header className="flex flex-col gap-6">
-            <Bio
-              profile={siteProfile}
-              socials={socialList}
-              latestDevArticleUrl={latestDevArticleUrl}
-              visitCard={visitCard}
-            />
-          </header>
+          <Bio
+            profile={siteProfile}
+            socials={socialList}
+            latestDevArticleUrl={latestDevArticleUrl}
+            visitCard={visitCard}
+          />
         </main>
         <aside
-          id="left-side"
-          className="flex min-h-0 flex-col pb-4 xl:col-span-8 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1 xl:pb-4"
+          id="content"
+          className="flex flex-col xl:col-span-8 xl:pb-6"
           suppressHydrationWarning
         >
           <HomeBentoLayout
             carreiraList={carreiraList}
             projectList={projectList}
             initialBlogPosts={initialBlogPosts}
-            profileName={siteProfile.displayName}
           />
         </aside>
+      </div>
+
+      {/* Footer full-width (cobre as duas colunas), no fim do scroll */}
+      <div className="mx-auto w-full max-w-md xl:max-w-none">
+        <HomeFooter name={siteProfile.displayName} />
       </div>
     </div>
   )
