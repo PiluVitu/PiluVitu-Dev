@@ -22,14 +22,17 @@ Reestilizar a home (`app/(site)/page.tsx` + componentes) pro layout V2: duas col
 
 ## 2. Decisões travadas (brainstorming)
 
-| Decisão                | Escolha                                                         |
-| ---------------------- | --------------------------------------------------------------- |
-| Abordagem              | **Fiel ao V2, reusando dados + componentes**                    |
-| Layout scroll          | **Esquerda fixa, direita rola** (mantém o split-scroll atual)   |
-| Preservar              | **Modal de carreira** + **visit-card 3D** (triple-click avatar) |
-| Email na home          | Ícone vira **mailto** (dialog de email sai da home)             |
-| Campos novos do perfil | **Adicionar ao Keystatic** (editáveis)                          |
-| Subtítulo de projeto   | Campo **opcional** novo no Keystatic                            |
+| Decisão                | Escolha                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| Abordagem              | **Fiel ao V2, reusando dados + componentes**                                         |
+| Layout                 | Mantém a estrutura **bento** (`home-bento-layout.tsx` reestilizado, não substituído) |
+| Layout scroll          | **Esquerda fixa, direita rola** (mantém o split-scroll atual)                        |
+| Preservar              | **Modal de carreira** + **visit-card 3D** (triple-click avatar)                      |
+| Email na home          | Ícone vira **mailto** (dialog de email sai da home)                                  |
+| Cor da empresa         | Mantém o **`companyLinkColor`** configurável (role highlight vira ciano)             |
+| Tags da carreira       | **Campos próprios no Keystatic** (`current` + `tags[]`), não derivadas de string     |
+| Campos novos do perfil | **Adicionar ao Keystatic** (editáveis)                                               |
+| Subtítulo de projeto   | Campo **opcional** novo no Keystatic                                                 |
 
 ---
 
@@ -39,7 +42,7 @@ Reestilizar a home (`app/(site)/page.tsx` + componentes) pro layout V2: duas col
 
 - Container central **max 1180px** (`--maxw` do V2), padding lateral 40px (22px mobile).
 - **Esquerda** (`xl:col-span-4`, fixa/sticky, rola só se transbordar): `<Bio>` reestilizado.
-- **Direita** (`xl:col-span-8`, rolável): `<HomeLayout>` (novo, substitui `<HomeBentoLayout>`) com as 3 seções + footer.
+- **Direita** (`xl:col-span-8`, rolável): `<HomeBentoLayout>` **reestilizado** (a home segue "bento") com as 3 seções + footer.
 - **Glow ciano** no topo: um elemento de fundo absoluto com `radial-gradient`/`linear-gradient` usando `--color-accent-soft` (sutil, ~1200px de altura, atrás do conteúdo). Sem imagem.
 - **Mobile/tablet** (`< xl`): colunas empilham (perfil em cima, conteúdo embaixo), 1 coluna nos grids. Mantém o comportamento responsivo atual.
 
@@ -57,23 +60,26 @@ Todos herdam os tokens DS V2 da fundação: `bg-background/bg-card`, `border-bor
 - Visual (Figma `div.sechead`, 17px de altura): `<h2>` com a `label` em **mono UPPERCASE**, `text-muted-foreground`, `tracking` largo, `text-xs/sm`; ao lado um `span.count` (`text-muted-foreground`, mono) com o número zero-padded (`05`, `01`, `06`); e uma **régua** 1px (`bg-border`, `flex-1`) preenchendo o resto, verticalmente centralizada. Gap ~12px.
 - `id` pro `aria-labelledby` da seção.
 
-**`components/home-layout.tsx`** — substitui `home-bento-layout.tsx`.
-
-- Props iguais às do `HomeBentoLayout` (`carreiraList`, `projectList`, `initialBlogPosts`) + footer.
-- Renderiza 3 `<section>` (Carreira/Projetos/Artigos), cada uma com `<SectionHeader>` + grid, e o `<HomeFooter>` no fim.
-- Grids: Carreira/Artigos = 2-col (`xl:grid-cols-2`, gap ~14px), Projetos = 1-col largo. Mobile = 1-col.
-- Contadores: `carreiraList.length`, `projectList.length`, nº de artigos (zero-padded com util simples, ex. `String(n).padStart(2, '0')`).
+> A home **continua "bento"**: o `home-bento-layout.tsx` **é mantido** e reestilizado no lugar (ver §4.2) — não criamos um componente substituto nem o apagamos.
 
 **`components/home-footer.tsx`** — `© {ano} {nome}` à esquerda; à direita `piluvitu.com.br · /tools · /votação · admin` (links reais pra `/tools`, `/votacao`, `/votacao/admin`). Mono, `text-muted-foreground`, borda-topo sutil. Componente separado (com story).
 
 ### 4.2 Reestilizar (mantêm dados + comportamento)
+
+**`components/home-bento-layout.tsx`** — mantido (a home segue "bento"); reestilizado no lugar.
+
+- Cada uma das 3 `<section>` (Carreira/Projetos/Artigos) passa a usar `<SectionHeader label count>` no lugar do `<h2>` atual.
+- Renderiza `<HomeFooter>` ao final.
+- Grids seguem: Carreira/Artigos = 2-col (`xl:grid-cols-2`, gap ~14px), Projetos = 1-col largo; mobile = 1-col.
+- Contadores: `carreiraList.length`, `projectList.length`, nº de artigos (zero-padded, ex. `String(n).padStart(2, '0')`).
+- Mantém as props atuais (`carreiraList`, `projectList`, `initialBlogPosts`); o nome/arquivo do componente **não muda**.
 
 **`components/bio.tsx`** — coluna de perfil (Figma `PERFIL`).
 
 - Topo: avatar (imagem do perfil; `ProfileVisitCard` **mantido** — triple-click abre o card 3D) + `<ModeToggle>` ("Tema") à direita.
 - `● Disponível para oportunidades` (dot `bg-ok` + texto mono) — vem do novo campo `availability` (§5).
 - `<h1>` nome **grande** (`text-4xl/5xl`, `font-sans` bold, `tracking-tight`) — 2 linhas como no Figma.
-- Cargo: `roleHighlight` em **ciano** (`text-primary`) + " na " + link da empresa (`companyName`/`companyLink`). (Remove a cor lima hardcoded `text-lime-500` e o `companyLinkColor` inline — passa a usar `text-primary`.)
+- Cargo: `roleHighlight` em **ciano** (`text-primary`, troca a cor lima hardcoded `text-lime-500` que destoa do tema) + " na " + link da empresa. O nome da empresa **mantém o `companyLinkColor`** configurável do Keystatic (cor custom por empresa, inline) — não é forçado pro ciano.
 - Bio (`text-muted-foreground`).
 - `<ProfileSocialStrip>` (abaixo).
 - Meta (novo, §5): linha `📍 {location}` e `💼 {disciplines.join(' · ')}` em mono, ícones FA.
@@ -82,7 +88,7 @@ Todos herdam os tokens DS V2 da fundação: `bg-background/bg-card`, `border-bor
 
 **`components/job-card.tsx`** — card + modal de carreira.
 
-- **Card** (`article.card`, 353×141, padding ~19px, `bg-card border-border rounded-lg`): topo = logo quadrado 40×40 (`rounded-md`, `bg-accent-soft text-primary`, abreviatura `altImage`) + empresa (`orgName`, semibold) e data (`date`, mono `text-muted-foreground`); cargo (`title`); rodapé = tags (`Atual` com dot quando vigente / `Remoto` derivado de `location`) como `rounded-pill border` + "detalhes →" (`text-primary`, abre o modal). O "Atual" sai do `date` conter "Atual"/"Atual".
+- **Card** (`article.card`, 353×141, padding ~19px, `bg-card border-border rounded-lg`): topo = logo quadrado 40×40 (`rounded-md`, `bg-accent-soft text-primary`, abreviatura `altImage`) + empresa (`orgName`, semibold) e data (`date`, mono `text-muted-foreground`); cargo (`title`); rodapé = tags **vindas de campos próprios do Keystatic** (§5.3): `current` (checkbox) → pill "Atual" com dot; `tags[]` → demais pills (ex. "Remoto"), todas `rounded-pill border` — + "detalhes →" (`text-primary`, abre o modal).
 - **Modal** (referência Image #1, `Dialog` do shadcn já usado): head = logo + título `orgName` + "{title} · {date}" mono + botão fechar; tagline ciano (`orgDescription`, `text-primary`); label **ATRIBUIÇÕES** (mono uppercase, `text-muted-foreground`); lista `atribuitions` com **marcadores quadrados ciano** (`bg-primary`); footer = botão primário full-width "Saiba mais sobre {orgName}" (quando `orgLink`).
 
 **`components/project-card.tsx`** — card de projeto V2 (Figma `Projetos`, padding 25px).
@@ -120,9 +126,18 @@ Adicionar campos:
 
 Adicionar `subtitle: fields.text({ label: 'Subtítulo', description: 'Ex.: agregador de pull requests' })` (opcional). `Project` type ganha `subtitle?: string`; reader (`getProjects`) inclui; card omite quando vazio.
 
-### 5.3 Conteúdo inicial
+### 5.3 `carreiras` collection — tags próprias
 
-Preencher o YAML do `content/site/profile/` com os novos campos e (opcional) `subtitle` nos `content/projects/*`. Como Keystatic grava commitando, na prática edito os arquivos YAML no repo com os valores atuais (status disponível, "Brasil · Remoto", disciplinas SRE/DevOps/Cloud).
+Adicionar campos (substituem a derivação por string):
+
+- `current: fields.checkbox({ label: 'Cargo atual', defaultValue: false })` — dirige a pill "Atual" (com dot).
+- `tags: fields.array(fields.text({ label: 'Tag' }), { label: 'Tags', itemLabel: (p) => p.value })` — ex.: "Remoto", "Híbrido".
+
+`Carreira` type (`mocks/carreira.ts`) ganha `current: boolean` e `tags: string[]`; `getCarreiras` lê os novos campos (defaults seguros: `current=false`, `tags=[]`). O card renderiza "Atual" se `current`, seguido de cada `tag`.
+
+### 5.4 Conteúdo inicial
+
+Preencher o YAML do `content/site/profile/` (status, local, disciplinas), `content/carreiras/*` (`current`/`tags`) e (opcional) `subtitle` em `content/projects/*` com os valores atuais. Como o Keystatic grava commitando, na prática edito os arquivos YAML no repo (status disponível, "Brasil · Remoto", disciplinas SRE/DevOps/Cloud, `current=true` nos cargos vigentes, tag "Remoto" onde couber).
 
 ---
 
@@ -140,22 +155,22 @@ Preencher o YAML do `content/site/profile/` com os novos campos e (opcional) `su
 
 ## 7. Arquivos afetados
 
-| Arquivo                                            | Ação                                                                                                          |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `app/(site)/page.tsx`                              | Ajustar container (maxw 1180, glow), trocar `HomeBentoLayout`→`HomeLayout`, novos campos no `fallbackProfile` |
-| `components/home-layout.tsx`                       | **Criar** (substitui bento)                                                                                   |
-| `components/section-header.tsx` (+ `.stories.tsx`) | **Criar**                                                                                                     |
-| `components/home-footer.tsx` (+ `.stories.tsx`)    | **Criar**                                                                                                     |
-| `components/home-bento-layout.tsx`                 | **Remover** (substituído)                                                                                     |
-| `components/bio.tsx`                               | Reestilizar (status, nome, cargo ciano, meta rows)                                                            |
-| `components/profile-social-strip.tsx`              | Reestilizar (botões-ícone, email mailto)                                                                      |
-| `components/job-card.tsx` (+ `.stories.tsx`)       | Reestilizar card + modal                                                                                      |
-| `components/project-card.tsx` (+ `.stories.tsx`)   | Reestilizar                                                                                                   |
-| `components/article-card.tsx` (já tem story)       | Reestilizar                                                                                                   |
-| `keystatic.config.ts`                              | Campos novos (siteProfile + projects.subtitle)                                                                |
-| `lib/site-content.ts`                              | `SiteProfileContent` + `getSiteProfile` (novos campos)                                                        |
-| `mocks/projects.ts` + reader                       | `subtitle?`                                                                                                   |
-| `content/site/profile/*`, `content/projects/*`     | Valores iniciais dos campos novos                                                                             |
+| Arquivo                                                               | Ação                                                                                                      |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `app/(site)/page.tsx`                                                 | Ajustar container (maxw 1180, glow), novos campos no `fallbackProfile` (mantém `HomeBentoLayout`)         |
+| `components/section-header.tsx` (+ `.stories.tsx`)                    | **Criar**                                                                                                 |
+| `components/home-footer.tsx` (+ `.stories.tsx`)                       | **Criar**                                                                                                 |
+| `components/home-bento-layout.tsx`                                    | **Reestilizar** (section-headers + footer; mantido — não remover)                                         |
+| `components/bio.tsx`                                                  | Reestilizar (status, nome, cargo ciano, empresa mantém `companyLinkColor`, meta rows)                     |
+| `components/profile-social-strip.tsx`                                 | Reestilizar (botões-ícone, email mailto)                                                                  |
+| `components/job-card.tsx` (+ `.stories.tsx`)                          | Reestilizar card + modal; tags de `current`/`tags[]`                                                      |
+| `components/project-card.tsx` (+ `.stories.tsx`)                      | Reestilizar                                                                                               |
+| `components/article-card.tsx` (já tem story)                          | Reestilizar                                                                                               |
+| `keystatic.config.ts`                                                 | Campos novos: siteProfile (status/local/disciplinas), carreiras (`current`/`tags`), projects (`subtitle`) |
+| `lib/site-content.ts`                                                 | `SiteProfileContent` + `getSiteProfile`; `getCarreiras` (novos campos)                                    |
+| `mocks/projects.ts`                                                   | `subtitle?`                                                                                               |
+| `mocks/carreira.ts`                                                   | `current: boolean`, `tags: string[]`                                                                      |
+| `content/site/profile/*`, `content/carreiras/*`, `content/projects/*` | Valores iniciais dos campos novos                                                                         |
 
 **Não tocar:** rotas votação/tools/tasks/blog; infra de tema; `ProfileVisitCard` (lógica do 3D).
 
@@ -163,14 +178,13 @@ Preencher o YAML do `content/site/profile/` com os novos campos e (opcional) `su
 
 ## 8. Riscos & mitigações
 
-| Risco                                                               | Mitigação                                                                  |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Tag "Atual"/"Remoto" derivada de strings (`date`/`location`) frágil | Derivar com heurística simples e documentar; futuramente vira campo no CMS |
-| Avatar no Figma mostra estado de upload do CMS                      | Na home real usa `avatarSrc` (imagem); estado de upload é só do Keystatic  |
-| Remoção de `home-bento-layout.tsx` quebrar import                   | Atualizar `page.tsx`; grep por usos antes de remover                       |
-| Campos novos do Keystatic ausentes em conteúdo antigo               | Defaults seguros no reader + `fallbackProfile`                             |
-| Split-scroll + glow causar overflow/scroll duplo                    | Testar nos breakpoints; glow é `pointer-events-none` atrás do conteúdo     |
-| Stories quebrarem por novos campos obrigatórios                     | Atualizar mocks das stories afetadas                                       |
+| Risco                                                 | Mitigação                                                                                                       |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Avatar no Figma mostra estado de upload do CMS        | Na home real usa `avatarSrc` (imagem); estado de upload é só do Keystatic                                       |
+| Campos novos do Keystatic ausentes em conteúdo antigo | Defaults seguros no reader (`current=false`, `tags=[]`, status/local/disciplinas opcionais) + `fallbackProfile` |
+| Split-scroll + glow causar overflow/scroll duplo      | Testar nos breakpoints; glow é `pointer-events-none` atrás do conteúdo                                          |
+| Stories quebrarem por novos campos obrigatórios       | Campos novos são opcionais/têm default; atualizar mocks das stories afetadas                                    |
+| Reestilização do bento mudar a estrutura de scroll    | Manter as 3 `<section>` e props do `home-bento-layout.tsx`; só trocar `<h2>`→`<SectionHeader>` e cards          |
 
 ---
 
