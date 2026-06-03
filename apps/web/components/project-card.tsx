@@ -1,10 +1,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { Project } from '@/mocks/projects'
-import Image from 'next/image'
+import {
+  faArrowUpRightFromSquare,
+  faCode,
+} from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Link from 'next/link'
 
 type ProjectCardProps = Project & {
@@ -17,85 +20,74 @@ export function ProjectCard(props: ProjectCardProps) {
   return (
     <Card
       className={cn(
-        'flex h-fit flex-col justify-between gap-4 rounded-3xl p-5 xl:min-h-[454px] xl:w-80 xl:flex-col',
+        'bg-card border-border flex flex-col gap-5 rounded-lg p-6',
         className,
       )}
     >
-      <section className="flex flex-col justify-center gap-4">
-        <Avatar className="mb-2 flex h-11 w-11 shrink-0 rounded-xl">
+      <div className="flex items-center gap-4">
+        <Avatar className="bg-accent-soft size-12 shrink-0 rounded-lg">
           {project.image && (
             <AvatarImage
               src={project.projectLogo}
               alt={project.projectName + ' Logo'}
             />
           )}
-          <AvatarFallback className="rounded-xl">
+          <AvatarFallback className="bg-accent-soft text-primary rounded-lg font-bold">
             {project.altImage}
           </AvatarFallback>
         </Avatar>
-        <h3 className="text-lg font-bold">{project.projectName}</h3>
-        <p
-          className="text-muted-foreground line-clamp-6 max-h-48"
-          title={project.description}
-        >
-          {project.description}
-        </p>
-
-        <section className="flex flex-wrap items-center gap-4">
-          {project.tags.map((tag: string) => (
-            <Badge key={tag}>{tag}</Badge>
-          ))}
-        </section>
-        <section className="flex items-center gap-4">
-          {project.deployLink ? (
-            <Button asChild variant="default">
-              <Link
-                href={project.deployLink}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                Demo
-              </Link>
-            </Button>
-          ) : (
-            <Button
-              disabled
-              variant="destructive"
-              className="cursor-not-allowed"
-            >
-              Demo
-            </Button>
-          )}
-          {project.repoLink ? (
-            <Button asChild variant="secondary">
-              <Link
-                href={project.repoLink}
-                rel="noopener noreferrer nofollow"
-                target="_blank"
-              >
-                Code
-              </Link>
-            </Button>
-          ) : (
-            <Button variant="secondary" disabled>
-              Code
-            </Button>
-          )}
-        </section>
-      </section>
-      {project.image ? (
-        <div className="relative mx-auto flex h-fit w-72 max-w-full shrink-0 overflow-hidden rounded-lg border transition-all hover:-translate-y-2">
-          <Image
-            alt=""
-            loading="lazy"
-            width={288}
-            height={144}
-            src={project.image}
-            className="w-full object-cover object-center"
-            style={{ width: '100%', height: 'auto' }}
-          />
+        <div className="flex flex-col">
+          <h3 className="text-xl font-bold">{project.projectName}</h3>
+          {project.subtitle ? (
+            <p className="text-muted-foreground text-sm">{project.subtitle}</p>
+          ) : null}
         </div>
-      ) : null}
+      </div>
+
+      <p className="text-muted-foreground" title={project.description}>
+        {project.description}
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {project.tags.map((tag) => (
+          <span
+            key={tag}
+            className="border-border rounded-full border px-2.5 py-0.5 font-mono text-xs"
+          >
+            {tag}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {project.deployLink ? (
+          <Button asChild>
+            <Link
+              href={project.deployLink}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              <FontAwesomeIcon
+                icon={faArrowUpRightFromSquare}
+                className="size-3.5"
+              />
+              Demo
+            </Link>
+          </Button>
+        ) : null}
+        {project.repoLink ? (
+          <Button asChild variant="outline">
+            <Link
+              href={project.repoLink}
+              rel="noopener noreferrer nofollow"
+              target="_blank"
+            >
+              <FontAwesomeIcon icon={faCode} className="size-3.5" />
+              Código
+            </Link>
+          </Button>
+        ) : null}
+      </div>
     </Card>
   )
 }
