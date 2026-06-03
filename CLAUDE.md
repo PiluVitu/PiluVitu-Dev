@@ -113,7 +113,14 @@ Permitted image hosts are configured in `next.config.mjs` (`images.remotePattern
 
 ### Theme
 
-Custom `--success` / `--success-foreground` CSS variables in `app/globals.css` expose `text-success` via Tailwind. Used for positive metric indicators (e.g., article reactions > 0).
+O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os valores vivem em `app/globals.css` (`:root` = variante light derivada, `.dark` = "Cloud" dark) mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
+
+- **Fontes:** Plus Jakarta Sans (corpo/títulos, `--font-sans`) + JetBrains Mono (labels/datas/tags, `--font-mono`), via `next/font` no `app/layout.tsx`. O fallback fica aninhado no `var()` (`var(--font-plus-jakarta, ui-sans-serif, …)`) pra sobreviver onde o RootLayout não roda (ex.: Storybook).
+- **Tokens semânticos (votação):** `--ok` (sucesso/seu voto), `--warn` (empate/atenção), `--win` (vencedor) expostos como `text-ok`/`bg-warn`/`text-win` etc. `--success`/`--success-foreground` são mantidos como espelho de `--ok` (compat com usos existentes de `text-success`).
+- **Marca translúcida:** `--color-accent-soft` / `--color-accent-line` (estáticos sky-400, não derivam de `--primary`) → `bg-accent-soft` / `border-accent-line`.
+- **Forma:** `--radius` 18px (cards macios), `--radius-pill` 999px (`rounded-pill`), `--shadow-ds` (`shadow-ds`).
+- **Verificação visual:** story `components/design-tokens.stories.tsx` (paleta/tipografia/forma).
+- **Spec/plano:** `docs/superpowers/specs/2026-06-02-design-system-v2-foundation-design.md` + `docs/superpowers/plans/2026-06-02-design-system-v2-foundation.md`. Escopo entregue = **fundação** (tokens + fontes); reskin página a página fica pra depois.
 
 ### Blog (TinaCMS)
 
