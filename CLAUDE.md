@@ -132,7 +132,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **Editor**: access at `/admin` after `pnpm tina:build` generates `public/admin/` static files
 - **Setup**: create project at https://app.tina.io pointing at `PiluVitu/piluvitu-blog`, copy `NEXT_PUBLIC_TINA_CLIENT_ID` + `TINA_TOKEN` to `.env.local`
 - **Reading posts server-side**: `lib/blog-posts.ts` — Octokit reads files from `piluvitu-blog`, parses MDX frontmatter, returns typed `BlogPost[]`
-- **Individual post route**: `app/(site)/posts/[slug]/page.tsx` — MDX rendered with `next-mdx-remote/rsc`, code syntax via `rehype-pretty-code`, mermaid via client-side `components/mdx/mermaid-block.tsx`
+- **Individual post route**: `app/(site)/posts/[slug]/page.tsx` — MDX rendered with `next-mdx-remote/rsc`, code syntax via `rehype-pretty-code`, mermaid via client-side `components/mdx/mermaid-block.tsx`. **Visual (DS V2):** `PageTopBar` ("← Artigos"), hero com `~/blog/{slug}` (mono ciano) + título/excerpt/meta/tags + divider, footer com card do autor + "Voltar aos artigos". O conteúdo MDX usa a classe `.post-prose` (regras em `globals.css`): marcador quadrado ciano antes de `h2`, code-chip inline ciano, blockquote com borda ciano, e label da linguagem no topo-direito dos code blocks.
 - **Mermaid in posts**: write fenced code block with lang `mermaid` — renders as interactive SVG diagram client-side
 - **Drafts**: set `draft: true` in frontmatter — hidden in production, visible in Next.js draft mode
 - **ISR**: posts revalidated every 30 min (tag `blog-posts`). After publishing, wait up to 30 min or trigger on-demand revalidation.
@@ -221,6 +221,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 
 #### UI Votação (`apps/web/app/(site)/votacao`)
 
+- **Visual (DS V2):** lista e detalhe usam `PageTopBar` (← voltar + "Tema"). `SessionStatusBadge` = pílula "● Aberta" ciano (`bg-primary`) / "Encerrada" outline. `SessionCard` é um card V2 (título + "criada em…" mono + badge). `ResultsList` renderiza cada filme como uma **barra preenchida pelo percentual** (div absoluto com `width:%`), tonalizada por estado via tokens semânticos: `--win` (roxo, vencedor/🎲 desempate), `--ok` (verde, "seu voto"), `--warn` (âmbar, "Empate"), com badges combinando. Callout de empate usa `--warn`. Verificado por E2E (`votacao.e2e.ts`, contexto isolado com mocks).
 - **Rotas:** `/votacao` (lista + login state), `/votacao/[id]` (detalhe + votar + resultados quando fechada + botão admin pra encerrar), `/votacao/admin` (painel admin — só admin enxerga).
 - **Painel admin (`/votacao/admin`):** dashboard com 4 seções — **Nova sessão** (`CreateSessionForm`), **Sessões** (`components/votacao/sessions-manager.tsx`: lista, encerrar inline, e expandir "Ver votos" pra ver quem votou em quê — lazy via `useAdminSessionVotes`), **Usuários** (`components/votacao/admin/users-table.tsx`) e **Backups** (`components/votacao/admin/backups-panel.tsx`: disparar manual + histórico). Componentes de exibição em `components/votacao/admin/` são puros (recebem dados por prop, têm stories); o wiring (hooks `use-admin-*`) fica na page/SessionsManager. As queries admin são gated por `is_admin` (`enabled`) pra não dispararem pra não-admin.
 - **API client:** `apps/web/lib/votacao/api-client.ts` faz fetch com `credentials: 'include'` contra `NEXT_PUBLIC_API_URL` (default `http://localhost:8080`). Para login, o componente `<LoginButton>` faz navegação top-level pro endpoint `/auth/google/login` da API.
@@ -235,6 +236,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 
 ### Tools dashboard (`/tools`)
 
+- **Visual (DS V2):** landing e páginas de ferramenta usam o DS V2 — `PageTopBar` (← voltar + toggle "Tema"), hero com linha de terminal `$ ~/tools`, `SectionHeader` (label mono + contador + régua) por grupo, e `ToolCard`/`ToolPageShell` com ícone `bg-accent-soft text-primary`. O `PageTopBar` (`components/page-top-bar.tsx`) é compartilhado pelas sub-páginas (tools/posts/votação). O `ModeToggle` é uma pílula "Tema".
 - **Rota:** `app/(site)/tools/page.tsx` (landing) + `app/(site)/tools/[slug]/page.tsx` por ferramenta
 - **Registro central:** `lib/tools-registry.ts` — array `TOOLS` com `{ slug, title, description, icon, group }`. Adicionar ferramenta = 1 entrada no registry + 1 página + 1 componente.
 - **Separação lógica/UI:** `lib/tools/*` contém **TypeScript puro, sem React/Next/DOM**. Funções puras testáveis em Jest e portáveis para CLI futura. `components/tools/*` contém os componentes React que usam as libs.

@@ -16,15 +16,16 @@ interface Props {
   className?: string
 }
 
+// Paleta DS V2 (ciano / verde / roxo / âmbar / rosa / teal / laranja / azul).
 const PALETTE = [
-  '#ef4444',
-  '#f59e0b',
-  '#10b981',
-  '#3b82f6',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
+  '#38bdf8',
+  '#34d399',
+  '#a78bfa',
+  '#fbbf24',
+  '#f472b6',
+  '#2dd4bf',
+  '#fb923c',
+  '#60a5fa',
 ]
 const SPIN_MS = 4000
 const EXTRA_TURNS = 6
@@ -95,27 +96,57 @@ export function RouletteWheel({
         className,
       )}
     >
+      {/* ponteiro */}
       <div
         aria-hidden="true"
-        className="border-t-foreground absolute -top-2 left-1/2 z-10 h-0 w-0 -translate-x-1/2 border-x-8 border-t-[16px] border-x-transparent"
+        className="absolute -top-1 left-1/2 z-20 h-0 w-0 -translate-x-1/2 border-x-[10px] border-t-[18px] border-x-transparent border-t-white drop-shadow-md"
       />
+
+      {/* bezel escuro */}
+      <div className="shadow-ds absolute inset-0 rounded-full bg-[#0e1526] p-2.5">
+        {/* roda giratória */}
+        <div
+          role="img"
+          aria-label={
+            winnerId != null
+              ? `Roleta — vencedor: ${options.find((o) => o.id === winnerId)?.label ?? ''}`
+              : 'Roleta de sorteio'
+          }
+          className="relative h-full w-full overflow-hidden rounded-full"
+          style={{
+            background: n > 1 ? `conic-gradient(${gradient})` : PALETTE[0],
+            transform: `rotate(${angle}deg)`,
+            transition: spinning
+              ? `transform ${SPIN_MS}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
+              : 'none',
+          }}
+        >
+          {options.map((o, i) => {
+            const mid = i * slice + slice / 2
+            // metade inferior: flip 180° pro texto não ficar de cabeça pra baixo
+            const flip = mid > 90 && mid < 270
+            return (
+              <span
+                key={o.id}
+                className="pointer-events-none absolute top-1/2 left-1/2 max-w-[38%] truncate text-sm font-bold text-[#0b1220]"
+                style={{
+                  transform: `translate(-50%, -50%) rotate(${mid}deg) translateY(-86px) rotate(${flip ? 180 : 0}deg)`,
+                }}
+              >
+                {o.label}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* hub central */}
       <div
-        role="img"
-        aria-label={
-          winnerId != null
-            ? `Roleta — vencedor: ${options.find((o) => o.id === winnerId)?.label ?? ''}`
-            : 'Roleta de sorteio'
-        }
-        className="border-foreground/20 h-full w-full rounded-full border-4 shadow-inner"
-        style={{
-          background: n > 1 ? `conic-gradient(${gradient})` : PALETTE[0],
-          transform: `rotate(${angle}deg)`,
-          transition: spinning
-            ? `transform ${SPIN_MS}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-            : 'none',
-        }}
-      />
-      <div className="bg-background border-foreground/30 absolute top-1/2 left-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2" />
+        aria-hidden="true"
+        className="border-primary absolute top-1/2 left-1/2 z-10 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 bg-[#0b1220]"
+      >
+        <span className="bg-primary h-2.5 w-2.5 rounded-full" />
+      </div>
     </div>
   )
 }
