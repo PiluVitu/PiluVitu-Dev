@@ -235,6 +235,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 
 ### Tools dashboard (`/tools`)
 
+- **Visual (DS V2):** landing e páginas de ferramenta usam o DS V2 — `PageTopBar` (← voltar + toggle "Tema"), hero com linha de terminal `$ ~/tools`, `SectionHeader` (label mono + contador + régua) por grupo, e `ToolCard`/`ToolPageShell` com ícone `bg-accent-soft text-primary`. O `PageTopBar` (`components/page-top-bar.tsx`) é compartilhado pelas sub-páginas (tools/posts/votação). O `ModeToggle` é uma pílula "Tema".
 - **Rota:** `app/(site)/tools/page.tsx` (landing) + `app/(site)/tools/[slug]/page.tsx` por ferramenta
 - **Registro central:** `lib/tools-registry.ts` — array `TOOLS` com `{ slug, title, description, icon, group }`. Adicionar ferramenta = 1 entrada no registry + 1 página + 1 componente.
 - **Separação lógica/UI:** `lib/tools/*` contém **TypeScript puro, sem React/Next/DOM**. Funções puras testáveis em Jest e portáveis para CLI futura. `components/tools/*` contém os componentes React que usam as libs.
