@@ -18,3 +18,6 @@ atribuitions:
   - >-
     Sistema de monitoramento com Grafana para visibilidade 24/7 da saúde da
     aplicação, reduzindo o tempo de resolução de incidentes
+current: true
+tags:
+  - Remoto

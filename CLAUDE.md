@@ -122,6 +122,10 @@ O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os
 - **Verificação visual:** story `components/design-tokens.stories.tsx` (paleta/tipografia/forma).
 - **Spec/plano:** `docs/superpowers/specs/2026-06-02-design-system-v2-foundation-design.md` + `docs/superpowers/plans/2026-06-02-design-system-v2-foundation.md`. Escopo entregue = **fundação** (tokens + fontes); reskin página a página fica pra depois.
 
+### Home V2 (DS V2 reskin)
+
+A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** scroll da página inteira (sem overflow independente de coluna) — a coluna esquerda do perfil (`col-span-4`) é `xl:sticky xl:top-10 xl:self-start` e fica fixa por todo o scroll (é mais baixa que a viewport), enquanto a direita (`col-span-8`) flui normalmente e é o que "rola". O grid usa `xl:items-start` (necessário pro sticky). O `HomeFooter` fica **fora** do grid, full-width, no fim do scroll (cobre as duas colunas) — não dentro da coluna direita. No mobile (`< xl`) tudo empilha em `flex flex-col`. Novos componentes: `SectionHeader` (título + ação + divider), `HomeFooter` (rodapé inline com mailto), cards V2 (`JobCard` com modal de "Atribuições", `ProjectCard` com subtitle, `ArticleCard` com métricas). Social strip com email icon → mailto. O container raiz usa `2xl:max-w-[1180px]` + glow decorativo ciano fixo no topo (`--color-accent-soft` radial-gradient). Novos campos Keystatic: perfil (`availabilityOpen`/`availabilityLabel`/`location`/`disciplines`), carreira (`current`/`tags`), projeto (`subtitle`). Smoke test E2E em `app/(site)/home.e2e.ts`. Spec: `docs/superpowers/specs/2026-06-02-home-v2-reskin-design.md`.
+
 ### Blog (TinaCMS)
 
 - **Content repo**: `PiluVitu/piluvitu-blog` (private) — MDX files at `content/posts/*.mdx`

@@ -1,6 +1,7 @@
 projectSlug: live-prs
 order: 0
 projectName: Live PRs
+subtitle: agregador de pull requests
 projectLogo: /pr-live-dark.svg
 description: >-
   Live PRs é um agregador de pull request onde foi solicitada a sua

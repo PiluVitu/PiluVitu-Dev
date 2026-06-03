@@ -8,8 +8,8 @@ type ArticleSectionProps = {
 export function ArticleSection({ initialBlogPosts = [] }: ArticleSectionProps) {
   return (
     <>
-      {initialBlogPosts.map((article) => (
-        <ArticleCard key={article.id} article={article} />
+      {initialBlogPosts.map((article, i) => (
+        <ArticleCard key={article.id} article={article} index={i} />
       ))}
     </>
   )

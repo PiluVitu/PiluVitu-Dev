@@ -9,4 +9,6 @@ export type Carreira = {
   location: string
   date: string
   atribuitions: string[]
+  current: boolean
+  tags: string[]
 }
