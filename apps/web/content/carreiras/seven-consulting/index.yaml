@@ -10,3 +10,6 @@ date: Dez, 2025
 atribuitions:
   - Estratégia de proteção na AWS para continuidade mesmo em falhas regionais críticas
   - Replicação automática de dados e servidores para recuperação rápida e suporte a alta demanda sem interrupções perceptíveis aos clientes
+current: false
+tags:
+  - Remoto
