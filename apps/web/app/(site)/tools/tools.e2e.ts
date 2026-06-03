@@ -149,6 +149,22 @@ test.describe('QR Reader — permissão negada', () => {
       permissions: [],
     })
     const page = await context.newPage()
+    // Simula bloqueio de câmera de forma determinística (independe do host /
+    // headless): sobrescreve getUserMedia pra rejeitar com NotAllowedError. Sem
+    // isso, o headless lança NotSupportedError e o fallback não dispara.
+    await page.addInitScript(() => {
+      try {
+        Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+          configurable: true,
+          value: () =>
+            Promise.reject(
+              new DOMException('Permission denied', 'NotAllowedError'),
+            ),
+        })
+      } catch {
+        /* mediaDevices ausente — o fallback do componente cobre */
+      }
+    })
     await page.goto('/tools/qr-reader')
     await page.click('[data-testid="qr-start"]')
     await expect(

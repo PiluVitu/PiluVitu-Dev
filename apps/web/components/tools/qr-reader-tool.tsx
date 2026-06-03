@@ -42,12 +42,15 @@ export function QrReaderTool() {
       )
       controlsRef.current = controls
     } catch (e) {
+      // Detecta negação de permissão pelo `name` do DOMException (estável entre
+      // navegadores) com fallback pra mensagem. Outros erros → 'error'.
+      const name = e instanceof Error ? e.name : ''
       const msg = e instanceof Error ? e.message : ''
-      if (msg.includes('Permission') || msg.includes('NotAllowed')) {
-        setState('denied')
-      } else {
-        setState('error')
-      }
+      const denied =
+        name === 'NotAllowedError' ||
+        name === 'SecurityError' ||
+        /permission|notallowed/i.test(msg)
+      setState(denied ? 'denied' : 'error')
     }
   }
 
