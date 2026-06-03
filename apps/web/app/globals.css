@@ -213,3 +213,64 @@ code[data-theme*=' '] span {
 .dark code[data-theme*=' '] span {
   color: var(--shiki-dark);
 }
+
+/*
+  DS V2 article styling (.post-prose) — layered on top of @tailwindcss/typography.
+  Cyan square marker before section headings, cyan inline-code chips, accent
+  blockquote, and a language label on code blocks.
+*/
+.post-prose :where(h2, h3) > a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.post-prose :where(h2)::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.6rem;
+  border-radius: 2px;
+  background-color: hsl(var(--primary));
+  vertical-align: middle;
+}
+
+.post-prose :where(a:not(h2 a, h3 a)) {
+  color: hsl(var(--primary));
+}
+
+.post-prose :where(blockquote) {
+  border-left-color: hsl(var(--primary));
+  color: hsl(var(--muted-foreground));
+}
+
+/* inline code (não dentro de <pre>) → chip ciano */
+.post-prose :where(:not(pre) > code) {
+  color: hsl(var(--primary));
+  background-color: var(--color-accent-soft);
+  padding: 0.15em 0.4em;
+  border-radius: 0.35rem;
+  font-weight: 500;
+}
+.post-prose :where(:not(pre) > code)::before,
+.post-prose :where(:not(pre) > code)::after {
+  content: none;
+}
+
+/* code blocks (rehype-pretty-code) → label da linguagem no topo-direito */
+.post-prose :where(pre) {
+  position: relative;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+}
+.post-prose :where(pre[data-language])::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
