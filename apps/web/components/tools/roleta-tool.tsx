@@ -11,6 +11,8 @@ import {
 import type { EntropyResult } from '@/hooks/use-camera-entropy'
 import { mixEntropyHex } from '@piluvitu/tools/entropy'
 import { log } from '@/lib/log'
+import { faCircleInfo } from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 
 export function RoletaTool() {
   const [raw, setRaw] = useState('Pizza\nSushi\nHambúrguer\nTapioca')
@@ -32,6 +34,8 @@ export function RoletaTool() {
     setWinnerId(idx)
     setSpinning(true)
   }
+
+  const disabled = spinning || options.length === 0
 
   return (
     <div className="space-y-6">
@@ -58,29 +62,50 @@ export function RoletaTool() {
         onSpinEnd={() => setSpinning(false)}
       />
 
-      {winnerId != null && !spinning && (
+      {winnerId != null && !spinning ? (
         <p
           className="text-center text-lg font-semibold"
           data-testid="roleta-winner"
         >
           🎉 {options.find((o) => o.id === winnerId)?.label}
         </p>
+      ) : (
+        <p className="text-muted-foreground text-center font-mono text-sm">
+          gire a roda para sortear
+        </p>
       )}
 
-      <CameraEntropyCapture
-        label="Girar com entropia da câmera"
-        disabled={spinning || options.length === 0}
-        onEntropy={(r: EntropyResult) => spinWith(r.digestHex)}
-      />
-
-      <Button
-        variant="secondary"
-        disabled={spinning || options.length === 0}
-        onClick={async () => spinWith(await mixEntropyHex())}
-        data-testid="roleta-spin-crypto"
-      >
-        Girar só com aleatório do navegador
-      </Button>
+      <div className="bg-card border-border space-y-4 rounded-lg border p-5">
+        <p className="text-muted-foreground flex gap-2 text-sm">
+          <FontAwesomeIcon
+            icon={faCircleInfo}
+            className="text-primary mt-0.5 size-4 shrink-0"
+            aria-hidden
+          />
+          <span>
+            A foto é processada localmente no seu navegador e{' '}
+            <strong className="text-foreground">descartada na hora</strong> — só
+            um hash de entropia é usado para semear o sorteio. Sem câmera ou
+            permissão, caímos no gerador aleatório seguro do navegador.
+          </span>
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <CameraEntropyCapture
+            consent={false}
+            label="Girar com entropia da câmera"
+            disabled={disabled}
+            onEntropy={(r: EntropyResult) => spinWith(r.digestHex)}
+          />
+          <Button
+            variant="outline"
+            disabled={disabled}
+            onClick={async () => spinWith(await mixEntropyHex())}
+            data-testid="roleta-spin-crypto"
+          >
+            Girar só com aleatório do navegador
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
