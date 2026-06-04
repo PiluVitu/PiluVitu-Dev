@@ -38,7 +38,7 @@ export default function VotacaoPage() {
               </span>
               {user.data.is_admin && (
                 <Link
-                  href="/votacao/admin"
+                  href="/admin/sessoes"
                   className="hover:text-primary text-sm underline underline-offset-4 transition-colors"
                 >
                   Painel admin
