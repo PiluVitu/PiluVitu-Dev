@@ -7,7 +7,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Next.js 16** (App Router), **React 19**, **TypeScript** strict mode
 - **Tailwind CSS 4** + **shadcn/ui** (New York style, CSS variables, slate base)
 - **Keystatic 0.5** — GitHub-based CMS; content stored as YAML in `content/` (site config, socials, careers, projects)
-- **TinaCMS 3** (devDep) — blog editor only; generates admin UI at `public/cms/` (servido em `/cms`); content stored in private repo `PiluVitu/piluvitu-blog`
 - **TanStack Query 5** — data fetching (dev.to API)
 - **Font Awesome 7** (`free-brands-svg-icons`, `free-solid-svg-icons`)
 - **Storybook 10** — component documentation and manual UI verification
@@ -126,32 +125,29 @@ O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os
 
 A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** scroll da página inteira (sem overflow independente de coluna) — a coluna esquerda do perfil (`col-span-4`) é `xl:sticky xl:top-10 xl:self-start` e fica fixa por todo o scroll (é mais baixa que a viewport), enquanto a direita (`col-span-8`) flui normalmente e é o que "rola". O grid usa `xl:items-start` (necessário pro sticky). O `HomeFooter` fica **fora** do grid, full-width, no fim do scroll (cobre as duas colunas) — não dentro da coluna direita. No mobile (`< xl`) tudo empilha em `flex flex-col`. Novos componentes: `SectionHeader` (título + ação + divider), `HomeFooter` (rodapé inline com mailto), cards V2 (`JobCard` com modal de "Atribuições", `ProjectCard` com subtitle, `ArticleCard` com métricas). Social strip com email icon → mailto. O container raiz usa `2xl:max-w-[1180px]` + glow decorativo ciano fixo no topo (`--color-accent-soft` radial-gradient). Novos campos Keystatic: perfil (`availabilityOpen`/`availabilityLabel`/`location`/`disciplines`), carreira (`current`/`tags`), projeto (`subtitle`). Smoke test E2E em `app/(site)/home.e2e.ts`. Spec: `docs/superpowers/specs/2026-06-02-home-v2-reskin-design.md`.
 
-### Blog (TinaCMS)
+### Blog (posts)
 
 - **Content repo**: `PiluVitu/piluvitu-blog` (private) — MDX files at `content/posts/*.mdx`
-- **Editor**: access at `/cms` after `pnpm tina:build` generates `public/cms/` static files (movido de `/admin` para não colidir com o admin unificado DS V2)
-- **Setup**: create project at https://app.tina.io pointing at `PiluVitu/piluvitu-blog`, copy `NEXT_PUBLIC_TINA_CLIENT_ID` + `TINA_TOKEN` to `.env.local`
+- **Editor**: `/admin/posts` (DS V2 — CodeMirror MDX + faithful preview; slice ③). TinaCMS retired.
 - **Reading posts server-side**: `lib/blog-posts.ts` — Octokit reads files from `piluvitu-blog`, parses MDX frontmatter, returns typed `BlogPost[]`
 - **Individual post route**: `app/(site)/posts/[slug]/page.tsx` — MDX rendered with `next-mdx-remote/rsc`, code syntax via `rehype-pretty-code`, mermaid via client-side `components/mdx/mermaid-block.tsx`. **Visual (DS V2):** `PageTopBar` ("← Artigos"), hero com `~/blog/{slug}` (mono ciano) + título/excerpt/meta/tags + divider, footer com card do autor + "Voltar aos artigos". O conteúdo MDX usa a classe `.post-prose` (regras em `globals.css`): marcador quadrado ciano antes de `h2`, code-chip inline ciano, blockquote com borda ciano, e label da linguagem no topo-direito dos code blocks.
 - **Mermaid in posts**: write fenced code block with lang `mermaid` — renders as interactive SVG diagram client-side
 - **Drafts**: set `draft: true` in frontmatter — hidden in production, visible in Next.js draft mode
 - **ISR**: posts revalidated every 30 min (tag `blog-posts`). After publishing, wait up to 30 min or trigger on-demand revalidation.
-- **Vercel build command**: change to `pnpm tina:build` (runs `tinacms build && next build`)
 
 ### Key directories (updated)
 
-| Path                        | Purpose                                                 |
-| --------------------------- | ------------------------------------------------------- |
-| `components/mdx/`           | MDX custom components (MermaidBlock, etc.)              |
-| `app/(site)/posts/[slug]/`  | Individual blog post route                              |
-| `lib/blog-posts.ts`         | Server reader for posts from piluvitu-blog repo         |
-| `lib/article-feed.ts`       | Unified ArticleCardView type + devto/blog adapters      |
-| `tina/config.tsx`           | TinaCMS schema (posts collection) + slug preview button |
-| `components/kanban/`        | Kanban board: Board, Column, Card, modais, headers      |
-| `app/(site)/tasks/`         | Rota `/tasks` — Mini Kanban PWA                         |
-| `hooks/use-kanban-store.ts` | Reducer Kanban + persistência localStorage              |
-| `lib/kanban-schema.ts`      | Tipos TypeScript + schema Zod + TAG_COLORS              |
-| `lib/kanban-export.ts`      | Export (download JSON) + parseImport (validação Zod)    |
+| Path                        | Purpose                                              |
+| --------------------------- | ---------------------------------------------------- |
+| `components/mdx/`           | MDX custom components (MermaidBlock, etc.)           |
+| `app/(site)/posts/[slug]/`  | Individual blog post route                           |
+| `lib/blog-posts.ts`         | Server reader for posts from piluvitu-blog repo      |
+| `lib/article-feed.ts`       | Unified ArticleCardView type + devto/blog adapters   |
+| `components/kanban/`        | Kanban board: Board, Column, Card, modais, headers   |
+| `app/(site)/tasks/`         | Rota `/tasks` — Mini Kanban PWA                      |
+| `hooks/use-kanban-store.ts` | Reducer Kanban + persistência localStorage           |
+| `lib/kanban-schema.ts`      | Tipos TypeScript + schema Zod + TAG_COLORS           |
+| `lib/kanban-export.ts`      | Export (download JSON) + parseImport (validação Zod) |
 
 ### Mini Kanban PWA (`/tasks`)
 
@@ -265,7 +261,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **Escrita no git:** `lib/admin/git-write.ts` `commitFile({ repo: 'site' | 'blog', path, content, message })` — Octokit (import dinâmico, pacote ESM-only) com o token linkado; `getContent` p/ sha → `createOrUpdateFileContents`; retry único com refresh em 401 (devolve `refreshed` p/ re-selar o cookie). Commit direto na `main`. Engine pronta na Fundação; os formulários dos próximos slices a consomem.
 - **Stats:** `GET /api/admin/stats` (`export const dynamic = 'force-dynamic'`) devolve contagens agregadas (públicas) + `recentPosts`; **títulos/slugs de rascunho só aparecem com o cookie `piluvitu_admin_gh` válido**. Alimenta os stat cards; a contagem de sessões vem da API Go client-side (`hooks/admin/use-sessions-count.ts`).
 - **Slice ② (CRUD de coleções):** `/admin/projetos` (cards), `/admin/carreira` (tabela), `/admin/socials` (lista + picker FA), `/admin/perfil` (form singleton) — criar/editar (modal)/apagar/drag-reorder. Lê **live do GitHub** (`lib/admin/content-read.ts`: Octokit + `yaml` + Zod, token linkado), escreve via engine (`commitFile`/`deleteFile`/`commitFiles` atômico p/ reorder). Registry `lib/admin/content-registry.ts`; schemas Zod `lib/admin/content-schemas.ts`; serializer `lib/admin/content-yaml.ts` (block-literal `|` p/ multiline); rotas `app/api/admin/content/*` (auth-first, 404-narrowed conflict, slug imutável no edit); hooks otimistas `hooks/admin/content/*`. Campos de imagem são input de texto (upload no slice ④). Site público segue lendo via `getKeystaticReader()` (intocado). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-03-admin-unificado-colecoes-slice2*`.
-- **Interino:** o editor Tina foi movido de `/admin` para **`/cms`** (`tina/config.tsx` `outputFolder: 'cms'` → estático em `public/cms/`) para o shell novo assumir `/admin` sem colisão; o placeholder no-op `app/admin/[[...slug]]/page.tsx` foi removido. Rode `pnpm tina:build` para regenerar em `public/cms/`. Tina é aposentado de vez no slice ⑤.
+- **Slice ③ (Posts + editor MDX):** `/admin/posts` (tabela) + editor full-page `/admin/posts/{novo,[slug]}` — CodeMirror (fonte MDX) + preview fiel (`POST /api/admin/posts/preview` roda `serialize` reusando o pipeline MDX compartilhado; client `MDXRemote` + mermaid). IO single-file MDX no `piluvitu-blog` via token linkado: `lib/admin/post-io.ts` (`gray-matter`; preserva keys de frontmatter desconhecidas; rastreia filename p/ não orfanar no edit), schema `lib/admin/post-schema.ts`, rotas `app/api/admin/posts/*` (escrita via engine `repo:'blog'` + `revalidateTag('blog-posts','max')`). Pipeline MDX compartilhado extraído pra `lib/mdx/{mdx-plugins.ts,mdx-components.tsx}` (página pública + preview renderizam idêntico). Requer a GitHub App do Keystatic instalada no `piluvitu-blog`. **TinaCMS aposentado** (`tina/` + `public/cms/` + devDeps removidos; build = `next build`).
 
 ## Colocation rules (lei do projeto)
 
@@ -313,7 +309,6 @@ See `.env.example`. Key variables:
 - `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — Keystatic GitHub OAuth
 - `KEYSTATIC_GITHUB_REPO` — target repo (`owner/name`; defaults in `keystatic.config.ts`)
 - `NEXT_PUBLIC_VISIT_CARD_HANDLE` — optional override for visit card dev.to handle
-- `NEXT_PUBLIC_TINA_CLIENT_ID`, `TINA_TOKEN` — TinaCMS Cloud credentials (from app.tina.io)
 - `BLOG_REPO_TOKEN` — GitHub fine-grained PAT with `Contents: read` on `piluvitu-blog`
 - `BLOG_REPO_OWNER` — GitHub org/user owning the blog repo (default: `PiluVitu`)
 - `BLOG_REPO_NAME` — blog content repo name (default: `piluvitu-blog`)
@@ -406,8 +401,8 @@ Depois de `make tunnel-up`, a API responde em `https://api.SEUDOMINIO.com`. Esse
 
 - **Root Directory:** `apps/web`
 - **Install Command:** `pnpm install --frozen-lockfile` (Vercel detecta `pnpm-workspace.yaml` na raiz automaticamente)
-- **Build Command:** `pnpm tina:build` (ou `pnpm build` se não estiver usando TinaCMS)
+- **Build Command:** `pnpm build` (runs `next build`)
 - **Output Directory:** `.next` (default)
 - **Node version:** 22.x
-- **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `TINA_TOKEN`, `BLOG_REPO_*`, `KEYSTATIC_*`)
+- **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `BLOG_REPO_*`, `KEYSTATIC_*`, `ADMIN_TOKEN_SECRET`)
 - **NEXT_PUBLIC_API_URL:** apontar pra URL do Cloud Run depois do primeiro deploy
