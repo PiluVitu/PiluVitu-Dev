@@ -80,6 +80,27 @@ async function mockCommon(page: Page, opts: { linked: boolean }) {
   )
 }
 
+test('not authenticated shows the Google login screen', async ({ page }) => {
+  await page.route('**/auth/me', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        data: null,
+        notifications: [
+          { type: 'error', code: 'not_authenticated', message: 'Logue.' },
+        ],
+      }),
+    }),
+  )
+  await mockCommon(page, { linked: false })
+  await page.goto('/admin')
+  await expect(
+    page.getByRole('link', { name: /entrar com google/i }),
+  ).toBeVisible()
+})
+
 test('non-admin sees access denied', async ({ page }) => {
   await page.route('**/auth/me', (route) =>
     route.fulfill({

@@ -28,10 +28,7 @@ export function HomeFooter({
           /votação
         </Link>
         <span aria-hidden>·</span>
-        <Link
-          href="/admin/sessoes"
-          className="hover:text-foreground transition-colors"
-        >
+        <Link href="/admin" className="hover:text-foreground transition-colors">
           admin
         </Link>
       </span>

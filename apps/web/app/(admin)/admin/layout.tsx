@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { AdminTopBar } from '@/components/admin/admin-top-bar'
+import { AdminLoginScreen } from '@/components/admin/admin-login-screen'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useAdminStats } from '@/hooks/admin/use-admin-stats'
@@ -37,18 +38,13 @@ export default function AdminShellLayout({
     )
   }
 
-  if (user.isError) {
-    return (
-      <main className="mx-auto max-w-md p-12">
-        <h1 className="text-2xl font-bold">Erro ao verificar acesso</h1>
-        <p className="text-muted-foreground mt-2">
-          Não foi possível autenticar. Tente recarregar a página.
-        </p>
-      </main>
-    )
+  // Não autenticado (sessão Google ausente → /auth/me 401) ou falha de auth →
+  // oferece o login com Google em vez de um beco sem saída.
+  if (!user.data) {
+    return <AdminLoginScreen />
   }
 
-  if (!user.data?.is_admin) {
+  if (!user.data.is_admin) {
     return (
       <main className="mx-auto max-w-md p-12">
         <h1 className="text-2xl font-bold">Acesso negado</h1>
