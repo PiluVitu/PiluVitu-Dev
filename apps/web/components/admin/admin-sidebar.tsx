@@ -99,6 +99,9 @@ export function AdminSidebar({
               {group.title}
             </p>
             {group.items.map((item) => {
+              // Exact match is correct while /admin is the only built page; when
+              // sub-routes (e.g. /admin/posts/[slug]) land, switch to a startsWith
+              // check (special-casing '/admin' so it isn't active everywhere).
               const active = pathname === item.href
               const count = item.countKey ? counts[item.countKey] : undefined
               return (
@@ -131,7 +134,7 @@ export function AdminSidebar({
       <div className="border-border text-muted-foreground flex flex-col gap-2 border-t pt-4 text-sm">
         {/* TODO: point to a deployed Storybook/design-system when available */}
         <Link
-          href="/"
+          href="#"
           className="hover:text-foreground flex items-center gap-3 px-2 transition-colors"
         >
           <FontAwesomeIcon icon={faCubes} className="size-4" /> Design System
