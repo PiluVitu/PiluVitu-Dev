@@ -1,5 +1,4 @@
 import { collection, config, fields, singleton } from '@keystatic/core'
-import { fontawesomeIconSelectField } from './lib/keystatic-fontawesome-icon-select-field'
 import { VISIT_CARD_FA_SELECT_OPTIONS } from './lib/visit-card-fontawesome'
 
 /** Repositório GitHub `owner/name` (ex.: PiluVitu/PiluVitu-Dev). Override: KEYSTATIC_GITHUB_REPO */
@@ -143,10 +142,9 @@ export default config({
                 { label: 'Imagem (ficheiro em /public)', value: 'image' },
               ],
             }),
-            fontawesomeIcon: fontawesomeIconSelectField({
+            fontawesomeIcon: fields.select({
               label: 'Ícone Font Awesome',
-              description:
-                'Pré-visualização ao vivo: abre /keystatic/icon-preview no mesmo site. Documentação: https://docs.fontawesome.com/web/use-with/react/',
+              description: 'Edição agora no /admin/socials.',
               defaultValue: 'brands__github',
               options: VISIT_CARD_FA_SELECT_OPTIONS,
             }),
@@ -188,10 +186,9 @@ export default config({
             { label: 'Imagem (path em /public)', value: 'image' },
           ],
         }),
-        fontawesomeIcon: fontawesomeIconSelectField({
+        fontawesomeIcon: fields.select({
           label: 'Ícone Font Awesome',
-          description:
-            'Se o tipo for Font Awesome. Pré-visualização: /keystatic/icon-preview',
+          description: 'Se o tipo for Font Awesome. Edição no /admin/socials.',
           defaultValue: 'brands__github',
           options: VISIT_CARD_FA_SELECT_OPTIONS,
         }),
