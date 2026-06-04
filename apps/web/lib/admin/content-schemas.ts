@@ -25,19 +25,33 @@ export const COMPANY_LINK_COLORS: { label: string; value: string }[] = [
 const COLOR_VALUES = new Set(COMPANY_LINK_COLORS.map((c) => c.value))
 const FA_VALUES = new Set(VISIT_CARD_FA_SELECT_OPTIONS.map((o) => o.value))
 
+// O Keystatic OMITE campos opcionais vazios ao gravar o YAML (ex.: um `image`
+// em branco some do arquivo). Por isso os campos opcionais aqui usam `.default()`
+// — um campo ausente vira o vazio do seu tipo em vez de estourar ZodError (que
+// viraria 502 na leitura do admin). Só os campos de identidade (slug) e nomes
+// (`reqStr`) permanecem obrigatórios.
 const slug = z
   .string()
   .regex(SLUG_RE, 'Slug inválido (use minúsculas, números e hífens)')
-const order = z.number().int().min(0)
-const str = z.string()
+const order = z.number().int().min(0).default(0)
+const str = z.string().default('')
 const reqStr = z.string().min(1, 'Obrigatório')
-const strArray = z.array(z.string())
+const strArray = z.array(z.string()).default([])
+const bool = z.boolean().default(false)
+const faIcon = z
+  .string()
+  .default('')
+  .refine((v) => v === '' || FA_VALUES.has(v), 'Ícone Font Awesome inválido')
+const linkColor = z
+  .string()
+  .default('#4a65fc')
+  .refine((v) => COLOR_VALUES.has(v), 'Cor inválida')
 
 export const projectSchema = z.object({
   projectSlug: slug,
   order,
   projectName: reqStr,
-  subtitle: str.default(''),
+  subtitle: str,
   projectLogo: str,
   description: str,
   tags: strArray,
@@ -58,7 +72,7 @@ export const carreiraSchema = z.object({
   location: str,
   date: str,
   atribuitions: strArray,
-  current: z.boolean(),
+  current: bool,
   tags: strArray,
 })
 export const socialSchema = z.object({
@@ -66,10 +80,8 @@ export const socialSchema = z.object({
   order,
   socialDescription: str,
   socialLink: str,
-  iconMode: z.enum(['fontawesome', 'image']),
-  fontawesomeIcon: z
-    .string()
-    .refine((v) => FA_VALUES.has(v), 'Ícone Font Awesome inválido'),
+  iconMode: z.enum(['fontawesome', 'image']).default('fontawesome'),
+  fontawesomeIcon: faIcon,
   image: str,
   altImage: str,
 })
@@ -80,11 +92,9 @@ export const profileSchema = z.object({
   roleHighlight: str,
   companyName: str,
   companyLink: str,
-  companyLinkColor: z
-    .string()
-    .refine((v) => COLOR_VALUES.has(v), 'Cor inválida'),
+  companyLinkColor: linkColor,
   bio: str,
-  availabilityOpen: z.boolean(),
+  availabilityOpen: bool,
   availabilityLabel: str,
   location: str,
   disciplines: strArray,

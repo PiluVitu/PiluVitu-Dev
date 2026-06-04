@@ -95,3 +95,52 @@ describe('content-schemas', () => {
     expect(SLUG_RE.test('Bad')).toBe(false)
   })
 })
+
+// Regressão: o Keystatic omite campos opcionais vazios no YAML, então a leitura
+// do admin precisa tolerar a ausência (default) em vez de estourar ZodError →
+// 502 (caso real: "seven-consulting" sem `image`).
+describe('content-schemas toleram campos opcionais ausentes', () => {
+  it('carreira sem `image` parseia com image=""', () => {
+    const parsed = carreiraSchema.parse({
+      orgSlug: 'seven-consulting',
+      order: 2,
+      orgName: 'Seven',
+      // image (e demais opcionais) OMITIDOS
+    })
+    expect(parsed.image).toBe('')
+    expect(parsed.current).toBe(false)
+    expect(parsed.tags).toEqual([])
+  })
+
+  it('social em modo imagem sem `fontawesomeIcon` parseia com ""', () => {
+    const parsed = socialSchema.parse({
+      key: 'logo',
+      order: 0,
+      iconMode: 'image',
+      image: '/x.png',
+      // fontawesomeIcon OMITIDO
+    })
+    expect(parsed.fontawesomeIcon).toBe('')
+  })
+
+  it('profile sem os opcionais do Home V2 parseia com defaults', () => {
+    const parsed = profileSchema.parse({
+      displayName: 'Paulo',
+      companyLinkColor: '#14b8a6',
+      // availabilityOpen / disciplines / location OMITIDOS
+    })
+    expect(parsed.availabilityOpen).toBe(false)
+    expect(parsed.disciplines).toEqual([])
+    expect(parsed.avatarSrc).toBe('')
+  })
+
+  it('project só com slug + nome parseia (resto default)', () => {
+    const parsed = projectSchema.parse({
+      projectSlug: 'p',
+      projectName: 'P',
+    })
+    expect(parsed.order).toBe(0)
+    expect(parsed.image).toBe('')
+    expect(parsed.tags).toEqual([])
+  })
+})
