@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Next.js 16** (App Router), **React 19**, **TypeScript** strict mode
 - **Tailwind CSS 4** + **shadcn/ui** (New York style, CSS variables, slate base)
 - **Keystatic 0.5** — GitHub-based CMS; content stored as YAML in `content/` (site config, socials, careers, projects)
-- **TinaCMS 3** (devDep) — blog editor only; generates admin UI at `public/admin/`; content stored in private repo `PiluVitu/piluvitu-blog`
+- **TinaCMS 3** (devDep) — blog editor only; generates admin UI at `public/cms/` (servido em `/cms`); content stored in private repo `PiluVitu/piluvitu-blog`
 - **TanStack Query 5** — data fetching (dev.to API)
 - **Font Awesome 7** (`free-brands-svg-icons`, `free-solid-svg-icons`)
 - **Storybook 10** — component documentation and manual UI verification
@@ -129,7 +129,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 ### Blog (TinaCMS)
 
 - **Content repo**: `PiluVitu/piluvitu-blog` (private) — MDX files at `content/posts/*.mdx`
-- **Editor**: access at `/admin` after `pnpm tina:build` generates `public/admin/` static files
+- **Editor**: access at `/cms` after `pnpm tina:build` generates `public/cms/` static files (movido de `/admin` para não colidir com o admin unificado DS V2)
 - **Setup**: create project at https://app.tina.io pointing at `PiluVitu/piluvitu-blog`, copy `NEXT_PUBLIC_TINA_CLIENT_ID` + `TINA_TOKEN` to `.env.local`
 - **Reading posts server-side**: `lib/blog-posts.ts` — Octokit reads files from `piluvitu-blog`, parses MDX frontmatter, returns typed `BlogPost[]`
 - **Individual post route**: `app/(site)/posts/[slug]/page.tsx` — MDX rendered with `next-mdx-remote/rsc`, code syntax via `rehype-pretty-code`, mermaid via client-side `components/mdx/mermaid-block.tsx`. **Visual (DS V2):** `PageTopBar` ("← Artigos"), hero com `~/blog/{slug}` (mono ciano) + título/excerpt/meta/tags + divider, footer com card do autor + "Voltar aos artigos". O conteúdo MDX usa a classe `.post-prose` (regras em `globals.css`): marcador quadrado ciano antes de `h2`, code-chip inline ciano, blockquote com borda ciano, e label da linguagem no topo-direito dos code blocks.
@@ -264,7 +264,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **Conectar GitHub:** reusa a GitHub App do Keystatic. `GET /api/admin/github/login` → authorize (com `state` CSRF) → `GET /callback` troca o code e **sela o token** (`lib/admin/token-cookie.ts`, AES-256-GCM via `crypto` nativo) no cookie httpOnly `piluvitu_admin_gh`. `GET /status` e `POST /unlink` completam o fluxo. Origem dos redirects é validada por allowlist (`lib/admin/github-oauth.ts` `adminOAuthOrigin`) contra Host-header injection. Requer `ADMIN_TOKEN_SECRET` e o Callback URL `…/api/admin/github/callback` registrado na App.
 - **Escrita no git:** `lib/admin/git-write.ts` `commitFile({ repo: 'site' | 'blog', path, content, message })` — Octokit (import dinâmico, pacote ESM-only) com o token linkado; `getContent` p/ sha → `createOrUpdateFileContents`; retry único com refresh em 401 (devolve `refreshed` p/ re-selar o cookie). Commit direto na `main`. Engine pronta na Fundação; os formulários dos próximos slices a consomem.
 - **Stats:** `GET /api/admin/stats` (`export const dynamic = 'force-dynamic'`) devolve contagens agregadas (públicas) + `recentPosts`; **títulos/slugs de rascunho só aparecem com o cookie `piluvitu_admin_gh` válido**. Alimenta os stat cards; a contagem de sessões vem da API Go client-side (`hooks/admin/use-sessions-count.ts`).
-- **Interino:** o editor Tina antigo segue acessível em `/admin/index.html` (estático em `public/admin/`); o placeholder no-op `app/admin/[[...slug]]/page.tsx` foi removido para o shell novo assumir `/admin`. Tina é aposentado de vez no slice ⑤.
+- **Interino:** o editor Tina foi movido de `/admin` para **`/cms`** (`tina/config.tsx` `outputFolder: 'cms'` → estático em `public/cms/`) para o shell novo assumir `/admin` sem colisão; o placeholder no-op `app/admin/[[...slug]]/page.tsx` foi removido. Rode `pnpm tina:build` para regenerar em `public/cms/`. Tina é aposentado de vez no slice ⑤.
 
 ## Colocation rules (lei do projeto)
 

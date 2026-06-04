@@ -75,7 +75,8 @@ export default defineConfig({
   token: process.env.TINA_TOKEN ?? '',
 
   build: {
-    outputFolder: 'admin',
+    // Served at /cms (não /admin) — o admin unificado DS V2 vive em /admin.
+    outputFolder: 'cms',
     publicFolder: 'public',
   },
 
