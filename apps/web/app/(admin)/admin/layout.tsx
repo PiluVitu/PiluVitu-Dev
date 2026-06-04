@@ -11,7 +11,9 @@ import { votacaoApi } from '@/lib/votacao/api-client'
 // Rotas não mapeadas caem no fallback ['Admin'] no JSX abaixo; adicione a entrada
 // ao criar novas sub-páginas do admin.
 const CRUMB: Record<string, string[]> = {
-  '/admin': ['Coleções', 'Posts'],
+  '/admin': ['Admin', 'Dashboard'],
+  '/admin/posts': ['Coleções', 'Posts'],
+  '/admin/posts/novo': ['Coleções', 'Posts', 'Novo'],
   '/admin/projetos': ['Coleções', 'Projetos'],
   '/admin/carreira': ['Coleções', 'Carreira'],
   '/admin/socials': ['Coleções', 'Redes sociais'],
