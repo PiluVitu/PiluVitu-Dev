@@ -25,9 +25,12 @@ export function ProjectForm(props: {
   initial?: ProjectEntry
   onSubmit: (data: ProjectEntry) => void
   pending?: boolean
+  nextOrder?: number
 }) {
   const isEdit = !!props.initial
-  const [d, setD] = useState<ProjectEntry>(props.initial ?? EMPTY)
+  const [d, setD] = useState<ProjectEntry>(
+    props.initial ?? { ...EMPTY, order: props.nextOrder ?? 0 },
+  )
   const [errors, setErrors] = useState<Record<string, string>>({})
   const set = <K extends keyof ProjectEntry>(k: K, v: ProjectEntry[K]) =>
     setD((p) => ({ ...p, [k]: v }))

@@ -73,6 +73,7 @@ export default function ProjetosPage() {
           </DialogHeader>
           <ProjectForm
             initial={editing?.data}
+            nextOrder={entries.length}
             pending={create.isPending || update.isPending}
             onSubmit={(data) => {
               const onDone = {
