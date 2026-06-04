@@ -65,3 +65,63 @@ test('lists media and shows the upload control', async ({ page }) => {
     page.getByRole('button', { name: '+ Enviar arquivo' }),
   ).toBeVisible()
 })
+
+test('uploads a file via the picker control', async ({ page }) => {
+  await baseMocks(page)
+  // Single handler: POST → 201 upload response; everything else → list
+  await page.route('**/api/admin/media', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ path: '/media/novo.png', filename: 'novo.png' }),
+      })
+    }
+    return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items }),
+    })
+  })
+  await page.goto('/admin/midia')
+  // Wait for the grid to load (existing items visible)
+  await expect(page.getByText('capa.png')).toBeVisible()
+  // Set the hidden file input — onChange fires fileToUpload → upload mutation → POST
+  await page.setInputFiles('input[type=file]', {
+    name: 'novo.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgo=', 'base64'),
+  })
+  // Assert success toast
+  await expect(page.getByText('Imagem enviada')).toBeVisible()
+})
+
+test('deletes a media item after confirmation', async ({ page }) => {
+  await baseMocks(page)
+  // List handler (bare path, no trailing segment)
+  await page.route('**/api/admin/media', (route) => {
+    return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ items }),
+    })
+  })
+  // DELETE handler (path has a segment: /api/admin/media/<filename>)
+  await page.route('**/api/admin/media/*', (route) => {
+    if (route.request().method() === 'DELETE') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ name: 'capa.png', deleted: true }),
+      })
+    }
+    return route.continue()
+  })
+  await page.goto('/admin/midia')
+  // Wait for items to render
+  await expect(page.getByText('capa.png')).toBeVisible()
+  // Click the "Apagar" button on the first card (capa.png is first in items)
+  await page.getByRole('button', { name: 'Apagar' }).first().click()
+  // DeleteConfirmDialog opens — click the destructive "Remover" button
+  await page.getByRole('button', { name: 'Remover' }).click()
+  // Assert success toast
+  await expect(page.getByText('Removida')).toBeVisible()
+})

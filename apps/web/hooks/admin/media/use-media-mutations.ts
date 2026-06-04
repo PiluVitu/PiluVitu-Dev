@@ -32,9 +32,9 @@ export function useMediaMutations() {
 
   const remove = useMutation({
     mutationFn: (filename: string) =>
-      fetch(`/api/admin/media/${filename}`, { method: 'DELETE' }).then(
-        jsonOrThrow,
-      ),
+      fetch(`/api/admin/media/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+      }).then(jsonOrThrow),
     onSuccess: invalidate,
   })
 

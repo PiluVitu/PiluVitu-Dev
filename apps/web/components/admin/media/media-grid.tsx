@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { MediaItem } from '@/lib/admin/media-io'
 import { MediaCard } from './media-card'
 
-const FILTERS = ['Todos', 'PNG', 'JPG', 'WEBP', 'SVG'] as const
+const FILTERS = ['Todos', 'PNG', 'JPG', 'WEBP', 'SVG', 'GIF'] as const
 function matches(filter: string, name: string) {
   if (filter === 'Todos') return true
   if (filter === 'JPG') return /\.jpe?g$/i.test(name)
