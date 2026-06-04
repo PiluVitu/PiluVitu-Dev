@@ -41,7 +41,12 @@ const GROUPS: NavGroup[] = [
   {
     title: 'Coleções',
     items: [
-      { label: 'Posts', href: '/admin', icon: faNewspaper, countKey: 'posts' },
+      {
+        label: 'Posts',
+        href: '/admin/posts',
+        icon: faNewspaper,
+        countKey: 'posts',
+      },
       {
         label: 'Projetos',
         href: '/admin/projetos',
