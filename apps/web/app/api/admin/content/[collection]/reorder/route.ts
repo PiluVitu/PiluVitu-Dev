@@ -44,6 +44,13 @@ export async function POST(
       })
       .filter((f): f is { path: string; content: string } => f !== null)
 
+    // The client sends the full ordered slug list, so `files` normally covers every
+    // entry. If it's empty (all slugs unknown — e.g. a concurrent delete), skip the
+    // commit to avoid a no-op commit that would still trigger a Vercel deploy.
+    if (files.length === 0) {
+      return NextResponse.json({ slugs })
+    }
+
     const result = await commitFiles(auth, {
       repo: 'site',
       message: `admin: reordena ${def.label}`,
