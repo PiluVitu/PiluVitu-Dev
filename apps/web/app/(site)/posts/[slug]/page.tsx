@@ -1,12 +1,9 @@
 import { getBlogPost, getBlogPostSlugs } from '@/lib/blog-posts'
-import { MermaidBlock } from '@/components/mdx/mermaid-block'
+import { mdxComponents } from '@/lib/mdx/mdx-components'
+import { MDX_REMARK_PLUGINS, MDX_REHYPE_PLUGINS } from '@/lib/mdx/mdx-plugins'
 import { PageTopBar } from '@/components/page-top-bar'
 import { Button } from '@/components/ui/button'
 import { MDXRemote } from 'next-mdx-remote/rsc'
-import remarkGfm from 'remark-gfm'
-import rehypeSlug from 'rehype-slug'
-import rehypeAutolinkHeadings from 'rehype-autolink-headings'
-import rehypePrettyCode from 'rehype-pretty-code'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -49,28 +46,6 @@ export async function generateMetadata({
       ...(ogImage ? { images: [ogImage] } : {}),
     },
   }
-}
-
-/** MDX custom components — maps code blocks with lang="mermaid" to <MermaidBlock>. */
-const mdxComponents = {
-  // Intercept <code> blocks so mermaid fences render as diagrams.
-  pre: ({
-    children,
-    ...props
-  }: React.ComponentProps<'pre'> & { 'data-language'?: string }) => {
-    const lang = props['data-language']
-    if (lang === 'mermaid') {
-      const code =
-        typeof children === 'object' && children !== null && 'props' in children
-          ? String(
-              (children as React.ReactElement<{ children?: string }>).props
-                .children ?? '',
-            )
-          : String(children ?? '')
-      return <MermaidBlock chart={code} />
-    }
-    return <pre {...props}>{children}</pre>
-  },
 }
 
 export default async function PostPage({ params }: PostPageProps) {
@@ -138,18 +113,8 @@ export default async function PostPage({ params }: PostPageProps) {
             components={mdxComponents}
             options={{
               mdxOptions: {
-                remarkPlugins: [remarkGfm],
-                rehypePlugins: [
-                  rehypeSlug,
-                  [rehypeAutolinkHeadings, { behavior: 'wrap' }],
-                  [
-                    rehypePrettyCode,
-                    {
-                      theme: { dark: 'github-dark', light: 'github-light' },
-                      keepBackground: false,
-                    },
-                  ],
-                ],
+                remarkPlugins: MDX_REMARK_PLUGINS,
+                rehypePlugins: MDX_REHYPE_PLUGINS,
               },
             }}
           />
