@@ -19,10 +19,18 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const ghParam = params.get('gh')
+    const reason = params.get('reason')
     if (ghParam === 'linked') toast.success('GitHub conectado')
-    if (ghParam === 'error') toast.error('Falha ao conectar o GitHub')
+    if (ghParam === 'error') {
+      toast.error(
+        reason
+          ? `Falha ao conectar o GitHub (${reason})`
+          : 'Falha ao conectar o GitHub',
+      )
+    }
     if (ghParam) {
       params.delete('gh')
+      params.delete('reason')
       const qs = params.toString()
       window.history.replaceState({}, '', `/admin${qs ? `?${qs}` : ''}`)
       gh.refetch()

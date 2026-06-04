@@ -19,17 +19,35 @@ export async function GET(req: Request) {
   // Always burn the one-time state cookie, whatever the outcome.
   jar.delete(ADMIN_OAUTH_STATE_COOKIE)
 
+  // Surface WHY a connect failed: log server-side (Vercel) + carry a coarse
+  // `reason` (state|exchange|fetch|seal) on the redirect for quick diagnosis.
+  const fail = (reason: string, detail?: unknown) => {
+    console.error(`[admin/github/callback] failed: ${reason}`, detail ?? '')
+    return NextResponse.redirect(`${origin}/admin?gh=error&reason=${reason}`)
+  }
+
   if (!code || !state || !expected || state !== expected) {
-    return NextResponse.redirect(`${origin}/admin?gh=error`)
+    return fail('state', {
+      hasCode: !!code,
+      hasState: !!state,
+      hasExpected: !!expected,
+      match: state === expected,
+    })
   }
 
   const redirectUri = `${origin}/api/admin/github/callback`
+  let stage = 'exchange'
   try {
     const tok = await exchangeCode(code, redirectUri)
     if (!tok.access_token) {
-      return NextResponse.redirect(`${origin}/admin?gh=error`)
+      return fail('exchange', {
+        error: tok.error,
+        description: tok.error_description,
+      })
     }
+    stage = 'fetch'
     const login = await fetchGithubLogin(tok.access_token)
+    stage = 'seal'
     const sealed = sealToken({
       token: tok.access_token,
       login,
@@ -46,7 +64,7 @@ export async function GET(req: Request) {
       maxAge: 60 * 60 * 24 * 180, // 180 days
     })
     return NextResponse.redirect(`${origin}/admin?gh=linked`)
-  } catch {
-    return NextResponse.redirect(`${origin}/admin?gh=error`)
+  } catch (err) {
+    return fail(stage, err instanceof Error ? err.message : String(err))
   }
 }
