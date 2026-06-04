@@ -51,6 +51,29 @@ describe('post-io', () => {
     expect(post?.frontmatter.title).toBe('A')
   })
 
+  it('getPost matches by parsed slug even when the filename differs, and returns the real filename', async () => {
+    const oct = {
+      repos: {
+        async getContent(p: { path: string }) {
+          if (p.path === 'content/posts') {
+            return { data: [{ name: 'x.mdx', type: 'file' }] }
+          }
+          // file named x.mdx but its frontmatter slug is 'y'
+          const content = `---\ntitle: X\nslug: y\npublishedAt: '2025-01-01'\ndraft: false\ntags: []\n---\n\nbody`
+          return {
+            data: { content: b64(content), encoding: 'base64', type: 'file' },
+          }
+        },
+      },
+    }
+    const d: ReadDeps = { makeOctokit: () => oct as never }
+    const found = await getPost('y', 'token', d)
+    expect(found?.filename).toBe('x.mdx')
+    expect(found?.slug).toBe('y')
+    const missing = await getPost('x', 'token', d)
+    expect(missing).toBeNull()
+  })
+
   it('serializePost round-trips and preserves unknown keys', () => {
     const raw = {
       title: 'T',
