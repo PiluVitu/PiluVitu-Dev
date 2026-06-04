@@ -98,6 +98,7 @@ export function ToggleField(props: {
         type="button"
         role="switch"
         aria-checked={props.checked}
+        aria-label={props.label}
         onClick={() => props.onChange(!props.checked)}
         className={cn(
           'relative h-6 w-11 rounded-full transition-colors',
