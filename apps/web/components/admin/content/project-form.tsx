@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { projectSchema, type ProjectEntry } from '@/lib/admin/content-schemas'
 import { slugify } from '@/lib/admin/slugify'
 import { TextField, TextareaField } from './fields'
+import { ImageField } from '@/components/admin/content/image-field'
 import { TagArrayInput } from './tag-array-input'
 
 const EMPTY: ProjectEntry = {
@@ -71,7 +72,7 @@ export function ProjectForm(props: {
         value={d.subtitle}
         onChange={(v) => set('subtitle', v)}
       />
-      <TextField
+      <ImageField
         label="Logo (path)"
         value={d.projectLogo}
         onChange={(v) => set('projectLogo', v)}
@@ -96,7 +97,7 @@ export function ProjectForm(props: {
         value={d.repoLink}
         onChange={(v) => set('repoLink', v)}
       />
-      <TextField
+      <ImageField
         label="Imagem de capa (path)"
         value={d.image}
         onChange={(v) => set('image', v)}

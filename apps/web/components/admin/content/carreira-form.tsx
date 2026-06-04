@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { carreiraSchema, type CarreiraEntry } from '@/lib/admin/content-schemas'
 import { slugify } from '@/lib/admin/slugify'
 import { TextField, TextareaField, ToggleField } from './fields'
+import { ImageField } from '@/components/admin/content/image-field'
 import { TagArrayInput } from './tag-array-input'
 
 const EMPTY: CarreiraEntry = {
@@ -93,7 +94,7 @@ export function CarreiraForm(props: {
         value={d.orgLink}
         onChange={(v) => set('orgLink', v)}
       />
-      <TextField
+      <ImageField
         label="Logo (URL)"
         value={d.image}
         onChange={(v) => set('image', v)}
