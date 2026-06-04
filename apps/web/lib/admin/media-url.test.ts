@@ -4,7 +4,7 @@ import { mediaRawUrl } from './media-url'
 describe('mediaRawUrl', () => {
   it('maps a /media/ path to the raw GitHub URL', () => {
     expect(mediaRawUrl('/media/capa.png')).toBe(
-      'https://raw.githubusercontent.com/PiluVitu/PiluVitu-Dev/main/public/media/capa.png',
+      'https://raw.githubusercontent.com/PiluVitu/PiluVitu-Dev/main/apps/web/public/media/capa.png',
     )
   })
   it('returns external URLs unchanged', () => {

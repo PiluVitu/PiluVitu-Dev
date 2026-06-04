@@ -16,7 +16,7 @@ describe('listEntries', () => {
     const fakeOctokit = {
       repos: {
         async getContent(p: { path: string }) {
-          if (p.path === 'content/projects') {
+          if (p.path === 'apps/web/content/projects') {
             return {
               data: [
                 { name: 'b', type: 'dir' },
@@ -41,7 +41,7 @@ describe('listEntries', () => {
     const fakeOctokit = {
       repos: {
         async getContent(p: { path: string }) {
-          expect(p.path).toBe('content/projects/live-prs/index.yaml')
+          expect(p.path).toBe('apps/web/content/projects/live-prs/index.yaml')
           const yaml = `projectSlug: live-prs\norder: 0\nprojectName: Live PRs\nsubtitle: ''\nprojectLogo: ''\ndescription: ''\ntags: []\ndeployLink: ''\nrepoLink: ''\nimage: ''\naltImage: ''`
           return { data: { content: b64(yaml), encoding: 'base64' } }
         },
@@ -68,7 +68,7 @@ describe('listEntries', () => {
     const data = await readProfile('token', {
       makeOctokit: () => fakeOctokit as never,
     })
-    expect(path).toBe('content/site/profile/index.yaml')
+    expect(path).toBe('apps/web/content/site/profile/index.yaml')
     expect(data.displayName).toBe('Paulo')
   })
 })

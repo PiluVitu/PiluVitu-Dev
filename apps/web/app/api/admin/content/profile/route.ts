@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { readProfile } from '@/lib/admin/content-read'
 import { profileSchema } from '@/lib/admin/content-schemas'
 import { commitFile } from '@/lib/admin/git-write'
+import { sitePath } from '@/lib/admin/site-paths'
 import {
   getLinkedToken,
   jsonError,
@@ -61,7 +62,7 @@ export async function PUT(req: Request) {
   try {
     const result = await commitFile(auth, {
       repo: 'site',
-      path: 'content/site/profile/index.yaml',
+      path: sitePath('content/site/profile/index.yaml'),
       content: serializeProfile(parsed.data as Record<string, unknown>),
       message: 'admin: edita perfil',
     })

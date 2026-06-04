@@ -1,7 +1,8 @@
 import type { Octokit } from '@octokit/rest'
 import { slugify } from './slugify'
+import { sitePath } from './site-paths'
 
-export const MEDIA_DIR = 'public/media'
+export const MEDIA_DIR = sitePath('public/media')
 const IMAGE_EXT = /\.(png|jpe?g|webp|svg|gif)$/i
 
 export interface MediaItem {

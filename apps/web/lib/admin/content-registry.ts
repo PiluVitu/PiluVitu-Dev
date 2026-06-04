@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod'
+import { sitePath } from './site-paths'
 import {
   projectSchema,
   carreiraSchema,
@@ -24,7 +25,7 @@ export const COLLECTIONS = {
   projects: {
     key: 'projects',
     label: 'Projetos',
-    dir: 'content/projects',
+    dir: sitePath('content/projects'),
     slugField: 'projectSlug',
     schema: projectSchema,
     keyOrder: [
@@ -45,7 +46,7 @@ export const COLLECTIONS = {
   carreiras: {
     key: 'carreiras',
     label: 'Carreira',
-    dir: 'content/carreiras',
+    dir: sitePath('content/carreiras'),
     slugField: 'orgSlug',
     schema: carreiraSchema,
     keyOrder: [
@@ -68,7 +69,7 @@ export const COLLECTIONS = {
   socials: {
     key: 'socials',
     label: 'Redes sociais',
-    dir: 'content/socials',
+    dir: sitePath('content/socials'),
     slugField: 'key',
     schema: socialSchema,
     keyOrder: [

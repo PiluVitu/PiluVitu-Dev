@@ -22,10 +22,12 @@ describe('uniqueFilename', () => {
   })
 })
 describe('listMedia', () => {
-  it('lists image files in public/media as { filename, path, size, sha }', async () => {
+  it('lists image files in apps/web/public/media as { filename, path, size, sha }', async () => {
+    let calledPath = ''
     const octokit = {
       repos: {
-        async getContent() {
+        async getContent(p: { path: string }) {
+          calledPath = p.path
           return {
             data: [
               { name: 'capa.png', type: 'file', size: 100, sha: 's1' },
@@ -39,6 +41,8 @@ describe('listMedia', () => {
     expect(await listMedia('token', deps)).toEqual([
       { filename: 'capa.png', path: '/media/capa.png', size: 100, sha: 's1' },
     ])
+    // monorepo: o GitHub path leva o prefixo apps/web; o valor salvo fica /media/...
+    expect(calledPath).toBe('apps/web/public/media')
   })
   it('returns [] when the folder does not exist', async () => {
     const octokit = {

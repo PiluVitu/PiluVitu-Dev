@@ -1,4 +1,5 @@
 import { parse as yamlParse } from 'yaml'
+import { sitePath } from './site-paths'
 import { profileSchema, type ProfileEntry } from './content-schemas'
 import type { CollectionDef } from './content-registry'
 
@@ -103,7 +104,7 @@ export async function readProfile(
   const fileRes = await octokit.repos.getContent({
     owner,
     repo,
-    path: 'content/site/profile/index.yaml',
+    path: sitePath('content/site/profile/index.yaml'),
     ref: 'main',
   })
   return profileSchema.parse(yamlParse(decode(fileRes.data)))
