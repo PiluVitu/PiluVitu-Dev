@@ -129,8 +129,9 @@ export function AdminSidebar({
       </nav>
 
       <div className="border-border text-muted-foreground flex flex-col gap-2 border-t pt-4 text-sm">
+        {/* TODO: point to a deployed Storybook/design-system when available */}
         <Link
-          href="/design-system"
+          href="/"
           className="hover:text-foreground flex items-center gap-3 px-2 transition-colors"
         >
           <FontAwesomeIcon icon={faCubes} className="size-4" /> Design System
