@@ -22,12 +22,25 @@ export function PostEditor(props: {
   const [fm, setFm] = useState<PostFrontmatter>(props.initialFrontmatter)
   const [body, setBody] = useState(props.initialBody)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [slugTouched, setSlugTouched] = useState(props.mode === 'edit')
   const isCreate = props.mode === 'create'
 
+  // On create, the slug auto-derives from the title until the user edits it manually.
+  const displaySlug = isCreate && !slugTouched ? slugify(fm.title) : fm.slug
+
+  const handleChange = (next: PostFrontmatter) => {
+    if (isCreate && !slugTouched && next.slug !== displaySlug) {
+      // user edited the slug field → stop auto-deriving
+      setSlugTouched(true)
+      setFm(next)
+      return
+    }
+    setFm({ ...next, slug: !isCreate || slugTouched ? next.slug : '' })
+  }
+
   const save = () => {
-    const candidate =
-      isCreate && !fm.slug ? { ...fm, slug: slugify(fm.title) } : fm
-    const parsed = postFrontmatterSchema.safeParse(candidate)
+    const finalSlug = isCreate && !slugTouched ? slugify(fm.title) : fm.slug
+    const parsed = postFrontmatterSchema.safeParse({ ...fm, slug: finalSlug })
     if (!parsed.success) {
       setErrors(
         Object.fromEntries(
@@ -51,10 +64,8 @@ export function PostEditor(props: {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[300px_1fr_1fr]">
         <div className="overflow-y-auto pr-1">
           <PostFrontmatterForm
-            value={
-              isCreate ? { ...fm, slug: fm.slug || slugify(fm.title) } : fm
-            }
-            onChange={setFm}
+            value={{ ...fm, slug: displaySlug }}
+            onChange={handleChange}
             slugEditable={isCreate}
             errors={errors}
           />
