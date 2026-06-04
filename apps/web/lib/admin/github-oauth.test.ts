@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { authorizeUrl } from './github-oauth'
+import { authorizeUrl, adminOAuthOrigin } from './github-oauth'
 
 describe('authorizeUrl', () => {
   beforeAll(() => {
@@ -30,5 +30,35 @@ describe('authorizeUrl', () => {
       /KEYSTATIC_GITHUB_CLIENT_ID/,
     )
     process.env.KEYSTATIC_GITHUB_CLIENT_ID = prev
+  })
+})
+
+describe('adminOAuthOrigin', () => {
+  beforeAll(() => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://piluvitu.com.br'
+  })
+
+  it('uses the request origin when it is localhost dev', () => {
+    expect(
+      adminOAuthOrigin(
+        new Request('http://localhost:3333/api/admin/github/login'),
+      ),
+    ).toBe('http://localhost:3333')
+  })
+
+  it('uses the request origin when it matches the canonical site', () => {
+    expect(
+      adminOAuthOrigin(
+        new Request('https://piluvitu.com.br/api/admin/github/callback'),
+      ),
+    ).toBe('https://piluvitu.com.br')
+  })
+
+  it('falls back to the canonical site for a forged host', () => {
+    expect(
+      adminOAuthOrigin(
+        new Request('https://evil.com/api/admin/github/callback'),
+      ),
+    ).toBe('https://piluvitu.com.br')
   })
 })

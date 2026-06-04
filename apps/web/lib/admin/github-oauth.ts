@@ -1,5 +1,26 @@
+import { getCanonicalSiteUrl } from '@/lib/site-url'
+
 const GH_AUTHORIZE = 'https://github.com/login/oauth/authorize'
 const GH_TOKEN = 'https://github.com/login/oauth/access_token'
+
+export const ADMIN_OAUTH_STATE_COOKIE = 'piluvitu_admin_oauth_state'
+
+/**
+ * Trusted origin for the OAuth redirect_uri and post-flow redirects. Uses the
+ * request origin ONLY when it matches an allowlist (canonical site URL + localhost
+ * dev); otherwise falls back to the canonical site URL. Prevents Host-header
+ * injection from poisoning the redirect_uri or causing an open redirect.
+ */
+export function adminOAuthOrigin(req: Request): string {
+  const canonical = getCanonicalSiteUrl().replace(/\/$/, '')
+  const reqOrigin = new URL(req.url).origin
+  const allowed = new Set([
+    canonical,
+    'http://localhost:3333',
+    'http://localhost:3000',
+  ])
+  return allowed.has(reqOrigin) ? reqOrigin : canonical
+}
 
 export interface GithubTokenResponse {
   access_token?: string
