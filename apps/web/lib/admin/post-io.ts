@@ -103,7 +103,14 @@ export async function listPosts(
         ref: BRANCH,
       })
       const p = parseFile(f.name, decode(res.data))
-      const { frontmatter: _f, body: _b, ...item } = p
+      const item: AdminPostListItem = {
+        filename: p.filename,
+        slug: p.slug,
+        title: p.title,
+        draft: p.draft,
+        publishedAt: p.publishedAt,
+        readingTimeMinutes: p.readingTimeMinutes,
+      }
       return item
     }),
   )

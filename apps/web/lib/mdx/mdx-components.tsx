@@ -1,3 +1,5 @@
+// Client-safe: imports only the client MermaidBlock — NO server-only (remark/rehype)
+// imports here, so this module can be imported from client components (the admin preview).
 import type { ComponentProps, ReactElement } from 'react'
 import { MermaidBlock } from '@/components/mdx/mermaid-block'
 
