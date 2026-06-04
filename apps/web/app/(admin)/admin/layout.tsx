@@ -22,16 +22,6 @@ const CRUMB: Record<string, string[]> = {
   '/admin/sessoes': ['Votação', 'Sessões'],
 }
 
-function initials(name?: string) {
-  if (!name) return 'PV'
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join('')
-}
-
 export default function AdminShellLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -84,11 +74,7 @@ export default function AdminShellLayout({
     <div className="flex min-h-screen">
       <AdminSidebar counts={counts} onLogout={onLogout} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopBar
-          breadcrumb={CRUMB[pathname] ?? ['Admin']}
-          userName={user.data.name}
-          userInitials={initials(user.data.name)}
-        />
+        <AdminTopBar breadcrumb={CRUMB[pathname] ?? ['Admin']} />
         <main className="flex-1 px-8 py-8">{children}</main>
       </div>
     </div>

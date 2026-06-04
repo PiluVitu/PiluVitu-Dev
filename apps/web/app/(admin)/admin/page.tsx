@@ -43,18 +43,11 @@ export default function AdminDashboardPage() {
         </p>
       </header>
 
-      <GithubLinkBanner
-        linked={!!gh.data?.linked}
-        login={gh.data?.login ?? undefined}
-        onUnlink={async () => {
-          const r = await fetch('/api/admin/github/unlink', { method: 'POST' })
-          if (!r.ok) {
-            toast.error('Falha ao desvincular GitHub')
-            return
-          }
-          gh.refetch()
-        }}
-      />
+      {/* Banner só aparece quando NÃO conectado (CTA de setup); o status/desconectar
+          vivem no menu de conta do top bar. */}
+      {gh.isSuccess && !gh.data.linked ? (
+        <GithubLinkBanner linked={false} />
+      ) : null}
 
       {stats.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

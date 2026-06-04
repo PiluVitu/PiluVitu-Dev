@@ -118,7 +118,7 @@ test('admin sees the dashboard with stat cards and recent posts', async ({
   ).toBeVisible()
 })
 
-test('linked GitHub shows the connected banner', async ({ page }) => {
+test('account menu shows the connected GitHub status', async ({ page }) => {
   await page.route('**/auth/me', (route) =>
     route.fulfill({
       contentType: 'application/json',
@@ -127,6 +127,29 @@ test('linked GitHub shows the connected banner', async ({ page }) => {
   )
   await mockCommon(page, { linked: true })
   await page.goto('/admin')
+  // Conectado → o banner do dashboard NÃO aparece; o status vive no menu de conta.
+  await expect(page.getByRole('link', { name: 'Conectar GitHub' })).toHaveCount(
+    0,
+  )
+  await page.getByRole('button', { name: 'Menu da conta' }).click()
+  await expect(page.getByText('Conectado como')).toBeVisible()
   await expect(page.getByText('@piluvitu', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Desconectar' })).toBeVisible()
+})
+
+test('account menu shows identity, disconnected status and logout', async ({
+  page,
+}) => {
+  await page.route('**/auth/me', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: envelope(adminUser),
+    }),
+  )
+  await mockCommon(page, { linked: false })
+  await page.goto('/admin')
+  await page.getByRole('button', { name: 'Menu da conta' }).click()
+  await expect(page.getByText('a@x.com', { exact: true })).toBeVisible()
+  await expect(page.getByText('Não conectado')).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Sair' })).toBeVisible()
 })
