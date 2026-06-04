@@ -14,6 +14,7 @@ const CRUMB: Record<string, string[]> = {
   '/admin': ['Coleções', 'Posts'],
   '/admin/projetos': ['Coleções', 'Projetos'],
   '/admin/carreira': ['Coleções', 'Carreira'],
+  '/admin/socials': ['Coleções', 'Redes sociais'],
   '/admin/perfil': ['Site', 'Perfil & bio'],
   '/admin/midia': ['Site', 'Mídia'],
   '/admin/sessoes': ['Votação', 'Sessões'],
