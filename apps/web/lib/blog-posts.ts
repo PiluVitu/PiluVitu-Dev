@@ -123,7 +123,8 @@ export async function getBlogPostSlugs(): Promise<string[]> {
   return posts.filter((p) => !p.draft).map((p) => p.slug)
 }
 
-/** All posts INCLUDING drafts — for admin counts/listing (never expose publicly). */
+/** All posts INCLUDING drafts — for admin counts/listing. Callers exposing this over
+ * HTTP must gate draft titles/slugs behind admin auth (see /api/admin/stats). */
 export async function getAllBlogPosts(): Promise<BlogPost[]> {
   return _cachedFetchAll()
 }
