@@ -24,14 +24,14 @@ Encerrar o roadmap do admin unificado, deixando **um único lugar de gestão** (
 
 ## 2. Decisões travadas (brainstorming)
 
-| Decisão                         | Escolha                                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Escopo do fold                  | **Só o painel admin** (`/votacao/admin` → `/admin/sessoes`); votação pública e controles de admin na detail ficam.    |
-| Boundary do delete keystatic    | **Só o editor** (routes + campos só-editor + `@keystatic/next`/`@keystar/ui`); **mantém** reader + `@keystatic/core`. |
-| Tamanho                         | **Slice ⑤ inteiro** num spec/plano/PR (as duas partes são independentes e pequenas).                                  |
-| Componentes do `/admin/sessoes` | **Reuso** dos componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`).       |
-| `/votacao/admin` antigo         | **Redirect** pra `/admin/sessoes` (bookmarks/links não dão 404).                                                      |
-| Campo FA icon no config         | `fontawesomeIconSelectField()` → **`fields.text()`** (mesmo shape de leitura — string; some o `@keystar/ui`).         |
+| Decisão                         | Escolha                                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Escopo do fold                  | **Só o painel admin** (`/votacao/admin` → `/admin/sessoes`); votação pública e controles de admin na detail ficam.                                     |
+| Boundary do delete keystatic    | **Só o editor** (routes + campos só-editor + `@keystatic/next`/`@keystar/ui`); **mantém** reader + `@keystatic/core`.                                  |
+| Tamanho                         | **Slice ⑤ inteiro** num spec/plano/PR (as duas partes são independentes e pequenas).                                                                   |
+| Componentes do `/admin/sessoes` | **Reuso** dos componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`).                                        |
+| `/votacao/admin` antigo         | **Redirect** pra `/admin/sessoes` (bookmarks/links não dão 404).                                                                                       |
+| Campo FA icon no config         | `fontawesomeIconSelectField()` → **`fields.select(VISIT_CARD_FA_SELECT_OPTIONS)`** (built-in; mesmo shape/validação de leitura; some o `@keystar/ui`). |
 
 ---
 
@@ -74,7 +74,7 @@ Direção de dependência: a página em `app/(admin)/` importa de `components/vo
 **Simplificar `keystatic.config.ts`:**
 
 - Remover `import { fontawesomeIconSelectField } from './lib/keystatic-fontawesome-icon-select-field'`.
-- Trocar os 2 usos de `fontawesomeIconSelectField({ ... })` (linhas ~146 e ~191, campo `fontawesomeIcon` dos socials) por `fields.text({ label: 'Ícone Font Awesome', description: '...' })`. O reader devolve a **mesma string** (ex.: `faGithub`); `site-content` resolve via `VISIT_CARD_FA_ICON_MAP`. A edição do ícone agora é no `/admin/socials` (slice ②, com seu próprio `fa-icon-select`).
+- Trocar os 2 usos de `fontawesomeIconSelectField({ ... })` (linhas ~146 e ~191, campo `fontawesomeIcon`) por `fields.select({ label, description, defaultValue: 'brands__github', options: VISIT_CARD_FA_SELECT_OPTIONS })`. O reader devolve a **mesma string** (ex.: `brands__github`) e valida contra as opções, igual ao campo custom; `site-content` resolve via `VISIT_CARD_FA_ICON_MAP`. A edição do ícone agora é no `/admin/socials` (slice ②, com seu próprio `fa-icon-select`). _(Refina o `fields.text()` cogitado no design: `fields.select` built-in preserva a validação que o reader já fazia, sem puxar `@keystar/ui`.)_
 - Limpar o comentário/description que aponta pra `/keystatic/icon-preview` (a página some).
 - **Manter** `storage`, todas as collections/singletons e `getGithubRepoSlash`.
 
