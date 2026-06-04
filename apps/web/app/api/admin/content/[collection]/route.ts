@@ -16,10 +16,10 @@ export async function GET(
   ctx: { params: Promise<{ collection: string }> },
 ) {
   const { collection } = await ctx.params
-  const def = resolveCollection(collection)
-  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
   const auth = await getLinkedToken()
   if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
+  const def = resolveCollection(collection)
+  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
   try {
     const entries = await listEntries(def, auth.token)
     return NextResponse.json({ entries })
@@ -35,10 +35,10 @@ export async function POST(
   ctx: { params: Promise<{ collection: string }> },
 ) {
   const { collection } = await ctx.params
-  const def = resolveCollection(collection)
-  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
   const auth = await getLinkedToken()
   if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
+  const def = resolveCollection(collection)
+  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
 
   const body = await req.json().catch(() => null)
   const parsed = def.schema.safeParse(body)
@@ -58,8 +58,18 @@ export async function POST(
       'slug_exists',
       `Já existe um item com o slug "${slug}".`,
     )
-  } catch {
-    // not found → ok to create
+  } catch (err) {
+    // Only a 404 means "free to create". Any other error (5xx/network/parse) must surface,
+    // not be mistaken for "doesn't exist" (which could overwrite an existing file).
+    if ((err as { status?: number } | null)?.status !== 404) {
+      return jsonError(
+        502,
+        'github_error',
+        'Falha ao verificar o slug no GitHub.',
+        { detail: String(err) },
+      )
+    }
+    // 404 → ok to create
   }
 
   try {

@@ -7,6 +7,7 @@ import {
   jsonError,
   resealIfRefreshed,
 } from '@/lib/admin/content-api'
+import { SLUG_RE } from '@/lib/admin/content-schemas'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,10 +15,10 @@ type Ctx = { params: Promise<{ collection: string; slug: string }> }
 
 export async function PUT(req: Request, ctx: Ctx) {
   const { collection, slug } = await ctx.params
-  const def = resolveCollection(collection)
-  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
   const auth = await getLinkedToken()
   if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
+  const def = resolveCollection(collection)
+  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
 
   const body = await req.json().catch(() => null)
   const parsed = def.schema.safeParse(body)
@@ -53,10 +54,13 @@ export async function PUT(req: Request, ctx: Ctx) {
 
 export async function DELETE(_req: Request, ctx: Ctx) {
   const { collection, slug } = await ctx.params
-  const def = resolveCollection(collection)
-  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
   const auth = await getLinkedToken()
   if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
+  const def = resolveCollection(collection)
+  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
+  if (!SLUG_RE.test(slug)) {
+    return jsonError(400, 'validation', 'Slug inválido.')
+  }
   try {
     const result = await deleteFile(auth, {
       repo: 'site',
