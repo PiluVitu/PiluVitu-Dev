@@ -190,7 +190,40 @@ describe('deleteFile', () => {
       owner: 'PiluVitu',
       repo: 'PiluVitu-Dev',
       sha: 'sha1',
+      path: 'content/projects/x/index.yaml',
     })
+  })
+
+  it('refreshes once on 401 and retries', async () => {
+    const { deleteFile } = await import('./git-write')
+    let first = true
+    const octokit: OctokitLike = {
+      repos: {
+        async getContent() {
+          return { data: { sha: 's' } }
+        },
+        async createOrUpdateFileContents() {
+          return { data: { commit: { sha: 'x' } } }
+        },
+        async deleteFile() {
+          if (first) {
+            first = false
+            throw Object.assign(new Error('bad creds'), { status: 401 })
+          }
+          return { data: { commit: { sha: 'after-refresh' } } }
+        },
+      },
+    }
+    const res = await deleteFile(
+      { token: 'old', login: 'me', refreshToken: 'r' },
+      { repo: 'site', path: 'content/x/index.yaml', message: 'm' },
+      {
+        makeOctokit: () => octokit,
+        refresh: async () => ({ access_token: 'new' }),
+      },
+    )
+    expect(res.commitSha).toBe('after-refresh')
+    expect(res.refreshed?.token).toBe('new')
   })
 })
 
@@ -243,6 +276,65 @@ describe('commitFiles', () => {
     )
     expect(res.commitSha).toBe('new-commit')
     expect((seen.createTree as { tree: unknown[] }).tree).toHaveLength(2)
+    expect((seen.createTree as { base_tree: string }).base_tree).toBe(
+      'base-tree',
+    )
+    expect((seen.createCommit as { parents: string[] }).parents).toEqual([
+      'base-commit',
+    ])
     expect((seen.updateRef as { sha: string }).sha).toBe('new-commit')
+  })
+
+  it('throws AdminAuthError when not linked', async () => {
+    const { commitFiles } = await import('./git-write')
+    await expect(
+      commitFiles(null, { repo: 'site', message: 'm', files: [] }),
+    ).rejects.toBeInstanceOf(AdminAuthError)
+  })
+
+  it('refreshes once on 401 and retries', async () => {
+    const { commitFiles } = await import('./git-write')
+    let first = true
+    const octokit = {
+      repos: {
+        async getContent() {
+          return { data: {} }
+        },
+        async createOrUpdateFileContents() {
+          return { data: { commit: { sha: 'x' } } }
+        },
+      },
+      git: {
+        async getRef() {
+          return { data: { object: { sha: 'base-commit' } } }
+        },
+        async getCommit() {
+          return { data: { tree: { sha: 'base-tree' } } }
+        },
+        async createTree() {
+          return { data: { sha: 'new-tree' } }
+        },
+        async createCommit() {
+          if (first) {
+            first = false
+            throw Object.assign(new Error('bad creds'), { status: 401 })
+          }
+          return { data: { sha: 'after-refresh' } }
+        },
+        async updateRef() {
+          return { data: {} }
+        },
+      },
+    }
+    const res = await commitFiles(
+      { token: 'old', login: 'me', refreshToken: 'r' },
+      { repo: 'site', message: 'm', files: [{ path: 'a', content: 'x' }] },
+      {
+        makeOctokit: () => octokit as unknown as OctokitLike,
+        refresh: async () => ({ access_token: 'new' }),
+      },
+    )
+    expect(res.commitSha).toBe('after-refresh')
+    expect(res.refreshed?.token).toBe('new')
   })
 })
