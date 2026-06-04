@@ -8,6 +8,8 @@ import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useAdminStats } from '@/hooks/admin/use-admin-stats'
 import { votacaoApi } from '@/lib/votacao/api-client'
 
+// Rotas não mapeadas caem no fallback ['Admin'] no JSX abaixo; adicione a entrada
+// ao criar novas sub-páginas do admin.
 const CRUMB: Record<string, string[]> = {
   '/admin': ['Coleções', 'Posts'],
   '/admin/projetos': ['Coleções', 'Projetos'],
@@ -39,6 +41,17 @@ export default function AdminShellLayout({
       <div className="mx-auto max-w-md p-12">
         <Skeleton className="h-10 w-1/2" />
       </div>
+    )
+  }
+
+  if (user.isError) {
+    return (
+      <main className="mx-auto max-w-md p-12">
+        <h1 className="text-2xl font-bold">Erro ao verificar acesso</h1>
+        <p className="text-muted-foreground mt-2">
+          Não foi possível autenticar. Tente recarregar a página.
+        </p>
+      </main>
     )
   }
 

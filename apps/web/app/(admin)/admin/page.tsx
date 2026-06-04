@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { StatCard } from '@/components/admin/stat-card'
 import { GithubLinkBanner } from '@/components/admin/github-link-banner'
@@ -9,23 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useAdminStats } from '@/hooks/admin/use-admin-stats'
 import { useGithubLink } from '@/hooks/admin/use-github-link'
-import { votacaoApi } from '@/lib/votacao/api-client'
-
-function useSessionsCount() {
-  return useQuery({
-    queryKey: ['admin', 'sessions-count'],
-    queryFn: async () => {
-      const r = await votacaoApi.listSessions()
-      const sessions = r.sessions ?? []
-      return {
-        total: sessions.length,
-        open: sessions.filter((s) => s.Status === 'open').length,
-        closed: sessions.filter((s) => s.Status === 'closed').length,
-      }
-    },
-    staleTime: 30_000,
-  })
-}
+import { useSessionsCount } from '@/hooks/admin/use-sessions-count'
 
 export default function AdminDashboardPage() {
   const user = useCurrentUser()
@@ -64,7 +47,11 @@ export default function AdminDashboardPage() {
         linked={!!gh.data?.linked}
         login={gh.data?.login ?? undefined}
         onUnlink={async () => {
-          await fetch('/api/admin/github/unlink', { method: 'POST' })
+          const r = await fetch('/api/admin/github/unlink', { method: 'POST' })
+          if (!r.ok) {
+            toast.error('Falha ao desvincular GitHub')
+            return
+          }
           gh.refetch()
         }}
       />
@@ -108,7 +95,7 @@ export default function AdminDashboardPage() {
           />
           <StatCard
             label="Sessões de votação"
-            value={sessions.data?.total ?? 0}
+            value={sessions.isLoading ? '—' : (sessions.data?.total ?? 0)}
             hint={
               <>
                 <strong className="text-foreground">
