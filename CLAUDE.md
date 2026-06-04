@@ -257,6 +257,15 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **UI (`apps/web`):** `hooks/use-camera-entropy.ts` captura alguns frames da webcam, hasheia localmente com `crypto.getRandomValues` num digest de 32 bytes e **descarta a imagem** — só o hash sai do hook; sem câmera/permissão cai no fallback crypto-only (ainda seguro). `components/entropy/roulette-wheel.tsx` (roda conic-gradient que pousa no vencedor passado pelo caller) e `components/entropy/camera-entropy-capture.tsx` (UI de consentimento + botão `data-testid="capture-entropy"`). `lib/log.ts` é um logger client leve (nunca recebe imagem crua, só hash/metadata).
 - **Tool `/tools/roleta`:** `components/tools/roleta-tool.tsx` (textarea de opções → gira com entropia da câmera ou só com aleatório do browser) + entrada `roleta` em `lib/tools-registry.ts` (ícone `faDharmachakra`). E2E em `tools.e2e.ts` usa o caminho crypto-only (sem câmera no CI).
 
+### Admin unificado (`/admin`)
+
+- **Rota:** `app/(admin)/admin/` — shell DS V2 (sidebar + top bar + dashboard) num route group próprio (`app/(admin)/layout.tsx` provê ThemeProvider dark + ReactQueryProvider + Toaster, sem o layout do site). Slice ① (Fundação) entregue; formulários de conteúdo, editor MDX, mídia e a dobra da votação vêm nos slices ②–⑤. Spec: `docs/superpowers/specs/2026-06-03-admin-unificado-fundacao-design.md`; plano: `docs/superpowers/plans/2026-06-03-admin-unificado-fundacao.md`.
+- **Auth (2 camadas):** gate de UI **client-side** via `useCurrentUser()` (`is_admin`, mesma sessão Google da votação — a API Go **não** é tocada). A fronteira real de escrita é o **token GitHub linkado**: o GitHub só deixa commitar quem é colaborador do repo.
+- **Conectar GitHub:** reusa a GitHub App do Keystatic. `GET /api/admin/github/login` → authorize (com `state` CSRF) → `GET /callback` troca o code e **sela o token** (`lib/admin/token-cookie.ts`, AES-256-GCM via `crypto` nativo) no cookie httpOnly `piluvitu_admin_gh`. `GET /status` e `POST /unlink` completam o fluxo. Origem dos redirects é validada por allowlist (`lib/admin/github-oauth.ts` `adminOAuthOrigin`) contra Host-header injection. Requer `ADMIN_TOKEN_SECRET` e o Callback URL `…/api/admin/github/callback` registrado na App.
+- **Escrita no git:** `lib/admin/git-write.ts` `commitFile({ repo: 'site' | 'blog', path, content, message })` — Octokit (import dinâmico, pacote ESM-only) com o token linkado; `getContent` p/ sha → `createOrUpdateFileContents`; retry único com refresh em 401 (devolve `refreshed` p/ re-selar o cookie). Commit direto na `main`. Engine pronta na Fundação; os formulários dos próximos slices a consomem.
+- **Stats:** `GET /api/admin/stats` (`export const dynamic = 'force-dynamic'`) devolve contagens agregadas (públicas) + `recentPosts`; **títulos/slugs de rascunho só aparecem com o cookie `piluvitu_admin_gh` válido**. Alimenta os stat cards; a contagem de sessões vem da API Go client-side (`hooks/admin/use-sessions-count.ts`).
+- **Interino:** o editor Tina antigo segue acessível em `/admin/index.html` (estático em `public/admin/`); o placeholder no-op `app/admin/[[...slug]]/page.tsx` foi removido para o shell novo assumir `/admin`. Tina é aposentado de vez no slice ⑤.
+
 ## Colocation rules (lei do projeto)
 
 Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories/` ou `e2e/` separados.
@@ -312,6 +321,8 @@ See `.env.example`. Key variables:
 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL` — OAuth Client ID type "Web application" do Google Cloud Console. Redirect URL precisa estar registrada no console e bater 1:1 com a env.
 - `WEB_REDIRECT_URL` — pra onde o browser vai depois do callback bem-sucedido (default `http://localhost:3333/votacao`).
 - `ADMIN_EMAILS` — CSV de e-mails admin. Comparação case-insensitive contra o e-mail do ID token.
+- `ADMIN_TOKEN_SECRET` — chave (≥32 chars) que cifra o cookie do token GitHub linkado do admin unificado (`/admin`). Gere com `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+
 - `SESSION_COOKIE_SECURE` — `true` em produção (HTTPS), `false` em dev local (HTTP).
 - `GOOGLE_APPLICATION_CREDENTIALS` — caminho do JSON da Service Account dentro do container (default `/secrets/google-sa.json`).
 - `GSHEETS_MOVIES_SPREADSHEET_ID` — ID da planilha (extraído da URL do Sheets). Sem isso o gsheets fica desligado.
