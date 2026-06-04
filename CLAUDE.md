@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Next.js 16** (App Router), **React 19**, **TypeScript** strict mode
 - **Tailwind CSS 4** + **shadcn/ui** (New York style, CSS variables, slate base)
-- **Keystatic 0.5** — GitHub-based CMS; content stored as YAML in `content/` (site config, socials, careers, projects)
+- **Keystatic 0.5 (reader-only)** — lê o conteúdo YAML em `content/` no build/ISR via `@keystatic/core/reader` (`lib/keystatic-reader.ts` → `lib/site-content.ts`). O **editor** `/keystatic` foi removido no slice ⑤; a edição agora é no `/admin` unificado.
 - **TanStack Query 5** — data fetching (dev.to API)
 - **Font Awesome 7** (`free-brands-svg-icons`, `free-solid-svg-icons`)
 - **Storybook 10** — component documentation and manual UI verification
@@ -64,8 +64,6 @@ Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e C
 ### App Router structure
 
 - `app/(site)/` — main site layout and page sections
-- `app/api/keystatic/` — Keystatic CMS API routes
-- `app/keystatic/` — Keystatic editor UI + `/icon-preview` page (shows all selectable FA icons)
 - `app/layout.tsx` — root layout with metadata
 - `app/[opengraph|twitter]-image.tsx` — dynamic OG images
 
@@ -102,9 +100,9 @@ Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e C
 4. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; merged with server-fetched blog posts in `ArticleSection`.
 5. The visit card (`components/profile-visit-card.tsx`) opens on triple-click of the avatar, showing a 3D animated card with cells configured in Keystatic.
 
-### Font Awesome in the CMS
+### Font Awesome no conteúdo
 
-The icon picker in Keystatic is a custom field. Available icons are defined in `lib/visit-card-fontawesome.ts` (`VISIT_CARD_FA_ICON_MAP`, `VISIT_CARD_FA_SELECT_OPTIONS`). To add a new icon: import it in that map, add it to `keystatic.config.ts`, and add an entry to the select options. The factory `fontawesomeIconSelectField()` in `lib/keystatic-fontawesome-icon-select-field.tsx` **must not** be in a `'use client'` file — it runs server-side.
+Os ícones disponíveis vivem em `lib/visit-card-fontawesome.ts` (`VISIT_CARD_FA_ICON_MAP`, `VISIT_CARD_FA_SELECT_OPTIONS`). O `keystatic.config.ts` usa `fields.select({ options: VISIT_CARD_FA_SELECT_OPTIONS })` no campo `fontawesomeIcon` (o reader valida contra as opções). A **edição** do ícone é no `/admin/socials` (DS V2, com seu próprio picker `fa-icon-select`). Para adicionar um ícone novo: importe-o no map e adicione uma entrada nas select options. (O antigo campo custom `fontawesomeIconSelectField()` + a página `/keystatic/icon-preview` foram removidos no slice ⑤.)
 
 ### Remote images
 
@@ -263,6 +261,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **Slice ② (CRUD de coleções):** `/admin/projetos` (cards), `/admin/carreira` (tabela), `/admin/socials` (lista + picker FA), `/admin/perfil` (form singleton) — criar/editar (modal)/apagar/drag-reorder. Lê **live do GitHub** (`lib/admin/content-read.ts`: Octokit + `yaml` + Zod, token linkado), escreve via engine (`commitFile`/`deleteFile`/`commitFiles` atômico p/ reorder). Registry `lib/admin/content-registry.ts`; schemas Zod `lib/admin/content-schemas.ts`; serializer `lib/admin/content-yaml.ts` (block-literal `|` p/ multiline); rotas `app/api/admin/content/*` (auth-first, 404-narrowed conflict, slug imutável no edit); hooks otimistas `hooks/admin/content/*`. Campos de imagem são input de texto (upload no slice ④). Site público segue lendo via `getKeystaticReader()` (intocado). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-03-admin-unificado-colecoes-slice2*`.
 - **Slice ③ (Posts + editor MDX):** `/admin/posts` (tabela) + editor full-page `/admin/posts/{novo,[slug]}` — CodeMirror (fonte MDX) + preview fiel (`POST /api/admin/posts/preview` roda `serialize` reusando o pipeline MDX compartilhado; client `MDXRemote` + mermaid). IO single-file MDX no `piluvitu-blog` via token linkado: `lib/admin/post-io.ts` (`gray-matter`; preserva keys de frontmatter desconhecidas; rastreia filename p/ não orfanar no edit), schema `lib/admin/post-schema.ts`, rotas `app/api/admin/posts/*` (escrita via engine `repo:'blog'` + `revalidateTag('blog-posts','max')`). Pipeline MDX compartilhado extraído pra `lib/mdx/{mdx-plugins.ts,mdx-components.tsx}` (página pública + preview renderizam idêntico). Requer a GitHub App do Keystatic instalada no `piluvitu-blog`. **TinaCMS aposentado** (`tina/` + `public/cms/` + devDeps removidos; build = `next build`).
 - **Slice ④ (Mídia):** `/admin/midia` — biblioteca de imagens (grid + upload + apagar) que grava binário em `public/media/` do repo do site via a engine `commitBinary` (`lib/admin/git-write.ts`, **base64 passthrough — NÃO re-encoda** como o `commitFile`, que corromperia bytes). IO `lib/admin/media-io.ts` (`listMedia` via Octokit getContent filtrando `png/jpe?g/webp/svg/gif`; `sanitizeFilename` slugify+ext; `uniqueFilename` auto-sufixo `-1/-2`); `lib/admin/media-url.ts` `mediaRawUrl()` (client-safe, sem imports de server) mapeia `/media/*` → raw GitHub URL pro **preview imediato** (antes do redeploy; o valor salvo no campo é `/media/<file>`, servido pela Vercel só após o deploy). Rotas `app/api/admin/media/*` (GET list, POST upload, DELETE `[name]` com guard anti path-traversal) — valida ext **e** contentType contra allowlist, ≤4 MB (limite de body serverless). Hooks `hooks/admin/media/*` (`useMediaList` + `useMediaMutations` + `fileToUpload(file)` → `{filename,base64,contentType}`). Componentes `components/admin/media/*` (`MediaCard`, `MediaGrid` com filtros PNG·JPG·WEBP·SVG + dimensões decodadas client-side, `MediaPickerDialog`). `<ImageField>` (`components/admin/content/image-field.tsx`, preview + path/URL manual + botão "Biblioteca" abrindo o picker) substitui o `TextField` nos campos de imagem de projeto (`projectLogo`/`image`), carreira (`image`), social (`image`), perfil (`avatarSrc`) e post (`coverImage`). Sem processamento de imagem (sobe como está; o `next/image` faz o sizing na entrega pública). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-midia-slice4*`.
+- **Slice ⑤ (Votação na shell + delete do editor Keystatic):** o painel admin da votação migrou pro shell em **`/admin/sessoes`** (`app/(admin)/admin/sessoes/page.tsx`) reusando os componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`) — sem gate próprio (o `(admin)/layout.tsx` já barra não-admin). `/votacao/admin` virou **redirect** pra `/admin/sessoes`; a votação **pública** (`/votacao`, `/votacao/[id]`) e os controles de admin na detail (encerrar + roleta de desempate) ficam intocados. O **editor Keystatic foi removido** (`app/keystatic`, `app/api/keystatic`, `lib/keystatic-fa-icon-picker-input.tsx`, `lib/keystatic-fontawesome-icon-select-field.tsx`, deps diretas `@keystatic/next` + `@keystar/ui`, e os 4 envs OAuth `KEYSTATIC_*`); o **reader permanece** (`@keystatic/core` + `lib/keystatic-reader.ts` + `lib/site-content.ts`) alimentando o site público, e o `keystatic.config.ts` foi simplificado (campo FA custom → `fields.select`). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-votacao-slice5*`.
 
 ## Colocation rules (lei do projeto)
 
@@ -307,7 +306,7 @@ See `.env.example`. Key variables:
 
 - `NEXT_PUBLIC_DEVTO_USERNAME` — dev.to username for article fetching
 - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` — reCAPTCHA v3 for email form
-- `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — Keystatic GitHub OAuth
+- (removidas no slice ⑤) `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — eram do editor Keystatic, que saiu. **Remover também da Vercel.**
 - `KEYSTATIC_GITHUB_REPO` — target repo (`owner/name`; defaults in `keystatic.config.ts`)
 - `NEXT_PUBLIC_VISIT_CARD_HANDLE` — optional override for visit card dev.to handle
 - `BLOG_REPO_TOKEN` — GitHub fine-grained PAT with `Contents: read` on `piluvitu-blog`
@@ -330,9 +329,9 @@ See `.env.example`. Key variables:
 - `BACKUP_CRON` — cron spec 5-fields (default `0 3 * * *` — 03:00 local).
 - `NEXT_PUBLIC_API_URL` — base URL da Go API consumida pelo front (default `http://localhost:8080`).
 
-## Keystatic & Vercel deployment
+## Edição de conteúdo & deploy (Vercel)
 
-Each **Save** in Keystatic commits directly to the active branch. If editing on `main`, it triggers a Vercel production deploy. To iterate without publishing: create a separate branch in Keystatic, preview via Vercel preview URL, then open a PR to `main`.
+A edição de conteúdo agora é no **`/admin` unificado** (slices ①–⑤): cada save commita direto na `main` via o token GitHub linkado, disparando um deploy de produção na Vercel (publish = redeploy). O **editor Keystatic foi removido**; o `@keystatic/core` permanece só como **reader** (lê o YAML de `content/` no build/ISR). Pra iterar sem publicar, use uma branch + Preview da Vercel, depois PR pra `main`.
 
 ## Import alias
 
@@ -405,5 +404,5 @@ Depois de `make tunnel-up`, a API responde em `https://api.SEUDOMINIO.com`. Esse
 - **Build Command:** `pnpm build` (runs `next build`)
 - **Output Directory:** `.next` (default)
 - **Node version:** 22.x
-- **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `BLOG_REPO_*`, `KEYSTATIC_*`, `ADMIN_TOKEN_SECRET`)
+- **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `BLOG_REPO_*`, `KEYSTATIC_GITHUB_REPO`, `ADMIN_TOKEN_SECRET`; os 4 envs OAuth `KEYSTATIC_*` foram removidos no slice ⑤)
 - **NEXT_PUBLIC_API_URL:** apontar pra URL do Cloud Run depois do primeiro deploy
