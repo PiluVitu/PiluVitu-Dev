@@ -235,7 +235,7 @@ test.describe('/votacao listing', () => {
     await page.goto('/votacao')
     await expect(
       page.getByRole('link', { name: /painel admin/i }),
-    ).toBeVisible()
+    ).toHaveAttribute('href', '/admin/sessoes')
   })
 })
 
@@ -351,37 +351,5 @@ test.describe('/votacao/[id] detail', () => {
     await expect(page.getByText(/vencedor do desempate/i)).toBeVisible({
       timeout: 10_000,
     })
-  })
-})
-
-test.describe('/votacao/admin dashboard', () => {
-  test('lists registered users and backups', async ({ page }) => {
-    await mockAPI(page)
-    await page.goto('/votacao/admin')
-    await expect(page.getByText('Usuários cadastrados')).toBeVisible()
-    await expect(page.getByText('maria@example.com')).toBeVisible()
-    await expect(page.getByText(/fazer backup agora/i)).toBeVisible()
-  })
-
-  test('expands a session to reveal who voted for what', async ({ page }) => {
-    await mockAPI(page)
-    await page.goto('/votacao/admin')
-    await expect(page.getByRole('heading', { name: 'Sessões' })).toBeVisible()
-    await page.getByRole('button', { name: /ver votos/i }).click()
-    // mockSessionVotes: Admin -> A Coisa
-    await expect(page.getByText('A Coisa')).toBeVisible()
-    await expect(page.getByText(/1 voto/i)).toBeVisible()
-  })
-
-  test('blocks non-admins', async ({ page }) => {
-    await page.route(`**/auth/me`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: envelope({ ...mockUser, is_admin: false }),
-      }),
-    )
-    await page.goto('/votacao/admin')
-    await expect(page.getByText(/acesso negado/i)).toBeVisible()
   })
 })
