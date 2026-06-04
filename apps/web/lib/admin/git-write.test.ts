@@ -123,4 +123,32 @@ describe('commitFile', () => {
     expect(res.refreshed?.token).toBe('new')
     expect(res.refreshed?.login).toBe('me')
   })
+
+  it('refreshes when getContent returns 401, then retries', async () => {
+    let firstGet = true
+    const octokit: OctokitLike = {
+      repos: {
+        async getContent() {
+          if (firstGet) {
+            firstGet = false
+            throw Object.assign(new Error('Bad credentials'), { status: 401 })
+          }
+          return { data: { sha: 's' } }
+        },
+        async createOrUpdateFileContents() {
+          return { data: { commit: { sha: 'committed' } } }
+        },
+      },
+    }
+    const res = await commitFile(
+      { token: 'old', login: 'me', refreshToken: 'r' },
+      { repo: 'site', path: 'x.yaml', content: 'y', message: 'm' },
+      {
+        makeOctokit: () => octokit,
+        refresh: async () => ({ access_token: 'new' }),
+      },
+    )
+    expect(res.commitSha).toBe('committed')
+    expect(res.refreshed?.token).toBe('new')
+  })
 })

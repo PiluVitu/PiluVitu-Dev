@@ -58,8 +58,13 @@ function repoSlug(repo: Repo): { owner: string; repo: string } {
   if (repo === 'site') {
     const raw =
       process.env.KEYSTATIC_GITHUB_REPO?.trim() || 'PiluVitu/PiluVitu-Dev'
-    const [owner, name] = raw.split('/').map((s) => s.trim())
-    return { owner, repo: name }
+    const parts = raw.split('/').map((s) => s.trim())
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error(
+        `KEYSTATIC_GITHUB_REPO must be "owner/repo", got: "${raw}"`,
+      )
+    }
+    return { owner: parts[0], repo: parts[1] }
   }
   return {
     owner: process.env.BLOG_REPO_OWNER ?? 'PiluVitu',
@@ -119,7 +124,9 @@ export async function commitFile(
       content: Buffer.from(opts.content, 'utf8').toString('base64'),
       sha,
     })
-    return res.data.commit.sha ?? ''
+    const commitSha = res.data.commit.sha
+    if (!commitSha) throw new Error('GitHub API returned no commit sha')
+    return commitSha
   }
 
   try {
