@@ -15,6 +15,13 @@ import {
 export const dynamic = 'force-dynamic'
 
 const ALLOWED = /\.(png|jpe?g|webp|svg|gif)$/i
+const ALLOWED_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/svg+xml',
+  'image/gif',
+])
 const MAX_BYTES = 4 * 1024 * 1024
 
 export async function GET() {
@@ -35,6 +42,7 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
     filename?: string
     base64?: string
+    contentType?: string
   } | null
   if (
     !body ||
@@ -49,6 +57,9 @@ export async function POST(req: Request) {
       'invalid_type',
       'Tipo de arquivo não permitido (png/jpg/webp/svg/gif).',
     )
+  }
+  if (body.contentType && !ALLOWED_TYPES.has(body.contentType)) {
+    return jsonError(400, 'invalid_type', 'Tipo de conteúdo não permitido.')
   }
   const bytes = Buffer.from(body.base64, 'base64').length
   if (bytes > MAX_BYTES) {
