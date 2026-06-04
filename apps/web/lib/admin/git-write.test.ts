@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { commitFile, AdminAuthError, type OctokitLike } from './git-write'
 import { deleteFile, commitFiles } from './git-write'
+import { commitBinary } from './git-write'
 
 beforeAll(() => {
   process.env.KEYSTATIC_GITHUB_REPO = 'PiluVitu/PiluVitu-Dev'
@@ -336,5 +337,47 @@ describe('commitFiles', () => {
     )
     expect(res.commitSha).toBe('after-refresh')
     expect(res.refreshed?.token).toBe('new')
+  })
+})
+
+describe('commitBinary', () => {
+  it('passes the base64 straight through (no utf8 re-encode)', async () => {
+    const PNG_B64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    let sent = ''
+    const octokit: OctokitLike = {
+      repos: {
+        async getContent() {
+          throw Object.assign(new Error('Not Found'), { status: 404 })
+        },
+        async createOrUpdateFileContents(p) {
+          sent = p.content
+          return { data: { commit: { sha: 'c1' } } }
+        },
+      },
+    }
+    const res = await commitBinary(
+      { token: 't', login: 'me' },
+      {
+        repo: 'site',
+        path: 'public/media/x.png',
+        base64: PNG_B64,
+        message: 'up',
+      },
+      { makeOctokit: () => octokit },
+    )
+    expect(res.commitSha).toBe('c1')
+    expect(sent).toBe(PNG_B64) // exact passthrough — NOT Buffer.from(b64,'utf8')
+  })
+
+  it('throws AdminAuthError when not linked', async () => {
+    await expect(
+      commitBinary(null, {
+        repo: 'site',
+        path: 'public/media/x.png',
+        base64: 'AAAA',
+        message: 'm',
+      }),
+    ).rejects.toBeInstanceOf(AdminAuthError)
   })
 })

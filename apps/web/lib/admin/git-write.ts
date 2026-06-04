@@ -190,6 +190,83 @@ export async function commitFile(
   }
 }
 
+export async function commitBinary(
+  auth: AdminGithubToken | null,
+  opts: {
+    repo: Repo
+    path: string
+    base64: string
+    message: string
+    branch?: string
+  },
+  deps: CommitDeps = {},
+): Promise<CommitResult> {
+  if (!auth) throw new AdminAuthError()
+  const makeOctokit = deps.makeOctokit ?? defaultMakeOctokit
+  const refresh = deps.refresh ?? ghRefresh
+  const { owner, repo } = repoSlug(opts.repo)
+  const branch = opts.branch ?? 'main'
+
+  const run = async (token: string): Promise<string> => {
+    const octokit = await Promise.resolve(makeOctokit(token))
+    let sha: string | undefined
+    try {
+      const existing = await octokit.repos.getContent({
+        owner,
+        repo,
+        path: opts.path,
+        ref: branch,
+      })
+      const data = existing.data as { sha?: string } | unknown[]
+      if (
+        !Array.isArray(data) &&
+        data &&
+        typeof data === 'object' &&
+        'sha' in data
+      ) {
+        sha = (data as { sha: string }).sha
+      }
+    } catch (err) {
+      if (statusOf(err) !== 404) throw err
+    }
+    const res = await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: opts.path,
+      branch,
+      message: opts.message,
+      content: opts.base64, // already base64 — DO NOT re-encode
+      sha,
+    })
+    const commitSha = res.data.commit.sha
+    if (!commitSha) throw new Error('GitHub API returned no commit sha')
+    return commitSha
+  }
+
+  try {
+    return { commitSha: await run(auth.token) }
+  } catch (err) {
+    if (statusOf(err) === 401 && auth.refreshToken) {
+      const r = await refresh(auth.refreshToken)
+      if (r.access_token) {
+        const commitSha = await run(r.access_token)
+        return {
+          commitSha,
+          refreshed: {
+            token: r.access_token,
+            login: auth.login,
+            refreshToken: r.refresh_token ?? auth.refreshToken,
+            expiresAt: r.expires_in
+              ? Date.now() + r.expires_in * 1000
+              : undefined,
+          },
+        }
+      }
+    }
+    throw err
+  }
+}
+
 export async function deleteFile(
   auth: AdminGithubToken | null,
   opts: { repo: Repo; path: string; message: string; branch?: string },
