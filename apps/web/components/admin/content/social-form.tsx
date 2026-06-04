@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { socialSchema, type SocialEntry } from '@/lib/admin/content-schemas'
 import { slugify } from '@/lib/admin/slugify'
 import { TextField, SelectField } from './fields'
+import { ImageField } from '@/components/admin/content/image-field'
 import { FaIconSelect } from './fa-icon-select'
 
 const EMPTY: SocialEntry = {
@@ -83,7 +84,7 @@ export function SocialForm(props: {
           onChange={(v) => set('fontawesomeIcon', v)}
         />
       ) : (
-        <TextField
+        <ImageField
           label="Imagem (path)"
           value={d.image}
           onChange={(v) => set('image', v)}

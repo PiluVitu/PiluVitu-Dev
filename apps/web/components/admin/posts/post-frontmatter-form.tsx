@@ -5,6 +5,7 @@ import {
   TextareaField,
   ToggleField,
 } from '@/components/admin/content/fields'
+import { ImageField } from '@/components/admin/content/image-field'
 import { TagArrayInput } from '@/components/admin/content/tag-array-input'
 import type { PostFrontmatter } from '@/lib/admin/post-schema'
 
@@ -38,7 +39,7 @@ export function PostFrontmatterForm(props: {
         onChange={(v) => set('excerpt', v)}
         rows={3}
       />
-      <TextField
+      <ImageField
         label="Imagem de capa (path)"
         value={d.coverImage}
         onChange={(v) => set('coverImage', v)}

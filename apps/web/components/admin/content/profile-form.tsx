@@ -8,6 +8,7 @@ import {
   type ProfileEntry,
 } from '@/lib/admin/content-schemas'
 import { TextField, TextareaField, SelectField, ToggleField } from './fields'
+import { ImageField } from '@/components/admin/content/image-field'
 import { TagArrayInput } from './tag-array-input'
 
 export function ProfileForm(props: {
@@ -68,7 +69,7 @@ export function ProfileForm(props: {
         value={d.location}
         onChange={(v) => set('location', v)}
       />
-      <TextField
+      <ImageField
         label="Avatar (path)"
         value={d.avatarSrc}
         onChange={(v) => set('avatarSrc', v)}
