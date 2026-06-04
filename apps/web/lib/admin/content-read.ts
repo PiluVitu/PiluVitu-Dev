@@ -3,6 +3,21 @@ import { sitePath } from './site-paths'
 import { profileSchema, type ProfileEntry } from './content-schemas'
 import type { CollectionDef } from './content-registry'
 
+/** Teto de tempo por leitura no GitHub: converte um fetch pendurado (que viraria
+ * 502 opaco do gateway) num erro capturável e rápido, com label pra diagnóstico. */
+const READ_TIMEOUT_MS = 15_000
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(new Error(`timeout reading ${label} (${READ_TIMEOUT_MS}ms)`)),
+      READ_TIMEOUT_MS,
+    )
+  })
+  return Promise.race([p.finally(() => clearTimeout(timer)), timeout])
+}
+
 export interface ReadDeps {
   makeOctokit?: (token: string) => {
     repos: {
@@ -52,23 +67,20 @@ export async function listEntries<T extends Record<string, unknown>>(
   const make = deps.makeOctokit ?? defaultMakeOctokit
   const octokit = await Promise.resolve(make(token))
   const { owner, repo } = siteRepo()
-  const dirRes = await octokit.repos.getContent({
-    owner,
-    repo,
-    path: def.dir,
-    ref: 'main',
-  })
+  const dirRes = await withTimeout(
+    octokit.repos.getContent({ owner, repo, path: def.dir, ref: 'main' }),
+    def.dir,
+  )
   const dirs = (dirRes.data as { name: string; type: string }[]).filter(
     (d) => d.type === 'dir',
   )
   const entries = await Promise.all(
     dirs.map(async (d) => {
-      const fileRes = await octokit.repos.getContent({
-        owner,
-        repo,
-        path: `${def.dir}/${d.name}/index.yaml`,
-        ref: 'main',
-      })
+      const path = `${def.dir}/${d.name}/index.yaml`
+      const fileRes = await withTimeout(
+        octokit.repos.getContent({ owner, repo, path, ref: 'main' }),
+        path,
+      )
       const data = def.schema.parse(yamlParse(decode(fileRes.data)))
       return { slug: d.name, data }
     }),
@@ -85,12 +97,11 @@ export async function getEntry<T extends Record<string, unknown>>(
   const make = deps.makeOctokit ?? defaultMakeOctokit
   const octokit = await Promise.resolve(make(token))
   const { owner, repo } = siteRepo()
-  const fileRes = await octokit.repos.getContent({
-    owner,
-    repo,
-    path: `${def.dir}/${slug}/index.yaml`,
-    ref: 'main',
-  })
+  const path = `${def.dir}/${slug}/index.yaml`
+  const fileRes = await withTimeout(
+    octokit.repos.getContent({ owner, repo, path, ref: 'main' }),
+    path,
+  )
   return { slug, data: def.schema.parse(yamlParse(decode(fileRes.data))) }
 }
 
@@ -101,11 +112,10 @@ export async function readProfile(
   const make = deps.makeOctokit ?? defaultMakeOctokit
   const octokit = await Promise.resolve(make(token))
   const { owner, repo } = siteRepo()
-  const fileRes = await octokit.repos.getContent({
-    owner,
-    repo,
-    path: sitePath('content/site/profile/index.yaml'),
-    ref: 'main',
-  })
+  const path = sitePath('content/site/profile/index.yaml')
+  const fileRes = await withTimeout(
+    octokit.repos.getContent({ owner, repo, path, ref: 'main' }),
+    path,
+  )
   return profileSchema.parse(yamlParse(decode(fileRes.data)))
 }

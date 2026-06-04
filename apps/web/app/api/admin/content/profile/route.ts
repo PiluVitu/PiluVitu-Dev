@@ -11,6 +11,7 @@ import {
 import { Document } from 'yaml'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 const KEY_ORDER = [
   'displayName',
@@ -38,11 +39,12 @@ function serializeProfile(data: Record<string, unknown>): string {
 }
 
 export async function GET() {
-  const auth = await getLinkedToken()
-  if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
   try {
+    const auth = await getLinkedToken()
+    if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
     return NextResponse.json({ data: await readProfile(auth.token) })
   } catch (err) {
+    console.error('[admin/content/profile GET] falhou', err)
     return jsonError(502, 'github_error', 'Falha ao ler o perfil.', {
       detail: String(err),
     })

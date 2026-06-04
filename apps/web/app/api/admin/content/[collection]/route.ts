@@ -10,20 +10,25 @@ import {
 } from '@/lib/admin/content-api'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 export async function GET(
   _req: Request,
   ctx: { params: Promise<{ collection: string }> },
 ) {
-  const { collection } = await ctx.params
-  const auth = await getLinkedToken()
-  if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
-  const def = resolveCollection(collection)
-  if (!def) return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
+  // try/catch cobre TODO o handler (incl. getLinkedToken) + loga no servidor,
+  // pra um erro nunca virar um 502 opaco do gateway sem rastro.
   try {
+    const { collection } = await ctx.params
+    const auth = await getLinkedToken()
+    if (!auth) return jsonError(401, 'not_linked', 'Conecte sua conta GitHub.')
+    const def = resolveCollection(collection)
+    if (!def)
+      return jsonError(404, 'unknown_collection', 'Coleção desconhecida.')
     const entries = await listEntries(def, auth.token)
     return NextResponse.json({ entries })
   } catch (err) {
+    console.error('[admin/content GET] falhou', err)
     return jsonError(502, 'github_error', 'Falha ao ler do GitHub.', {
       detail: String(err),
     })
