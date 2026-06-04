@@ -30,7 +30,7 @@
 - `apps/web/app/keystatic/**`, `apps/web/app/api/keystatic/**` — **apagar**.
 - `apps/web/lib/keystatic-fa-icon-picker-input.tsx`, `apps/web/lib/keystatic-fontawesome-icon-select-field.tsx` — **apagar**.
 - `apps/web/package.json` — **modificar**: remover `@keystatic/next` + `@keystar/ui`.
-- `.env.example`, `apps/web/.env.example` — **modificar**: remover 4 envs OAuth.
+- `.env.example`, `apps/web/.env.example` — **modificar**: remover 2 envs só-editor (`KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`); `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` **permanecem** (admin connect os reutiliza).
 - `CLAUDE.md` — **modificar**: Tech Stack / Architecture / Font Awesome / Admin unificado / env vars / Keystatic deployment.
 
 **Nota de testes:** não há lógica pura nova (é re-hospedagem + deleção), então a verificação é E2E (Tasks 3) + o **build (`build:ci`)** como gate de integração (Task 7), além de `tsc`/`lint`/`jest` existentes. Não inventar unit tests sem unidade testável (YAGNI).
@@ -555,20 +555,20 @@ git commit -m "chore(keystatic): apaga o editor (routes + campos) + remove @keys
 
 - Modify: `.env.example` (raiz), `apps/web/.env.example`
 
-- [ ] **Step 1: Remover os 4 envs OAuth do editor**
+- [ ] **Step 1: Remover apenas os 2 envs só-editor** (`KEYSTATIC_SECRET` e `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`)
 
-Em **`.env.example`** (raiz) e **`apps/web/.env.example`**, apague as linhas destes 4 (e comentários associados):
+**Correção pós-spec:** `KEYSTATIC_GITHUB_CLIENT_ID` e `KEYSTATIC_GITHUB_CLIENT_SECRET` **NÃO são removidas** — o `/admin` "Conectar GitHub" (`lib/admin/github-oauth.ts`) reutiliza a GitHub App e depende delas (throwifunset em runtime). Apenas os 2 abaixo são exclusivos do editor e podem sair.
+
+Em **`.env.example`** (raiz) e **`apps/web/.env.example`**, apague **somente** (e comentários associados):
 
 ```
-KEYSTATIC_GITHUB_CLIENT_ID=
-KEYSTATIC_GITHUB_CLIENT_SECRET=
 KEYSTATIC_SECRET=
 NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG=
 ```
 
-**Mantenha** `KEYSTATIC_GITHUB_REPO=` (reader + admin backend usam).
+**Mantenha** `KEYSTATIC_GITHUB_REPO=` (reader + admin backend), `KEYSTATIC_GITHUB_CLIENT_ID=` e `KEYSTATIC_GITHUB_CLIENT_SECRET=` (admin connect OAuth).
 
-> Se algum dos arquivos não tiver todas as 4 chaves, remova as que existirem. Confirme antes: `grep -n "KEYSTATIC" .env.example apps/web/.env.example`.
+> Confirme antes: `grep -n "KEYSTATIC" .env.example apps/web/.env.example`.
 
 - [ ] **Step 2: Verificar que não sobrou referência aos arquivos/deps apagados**
 
@@ -591,7 +591,7 @@ Expected: só o comentário reader-related ("Keystatic lê YAML em runtime…") 
 ```bash
 cd /Users/piluvitu/WWW/PiluVitu-Dev
 git add .env.example apps/web/.env.example
-git commit -m "chore(env): remove os 4 envs OAuth do editor Keystatic (mantém KEYSTATIC_GITHUB_REPO)"
+git commit -m "chore(env): remove 2 envs só-editor Keystatic (mantém CLIENT_ID/SECRET + REPO — admin connect)"
 ```
 
 ---
@@ -636,24 +636,19 @@ Os ícones disponíveis vivem em `lib/visit-card-fontawesome.ts` (`VISIT_CARD_FA
 Após o bullet do **Slice ④**, adicione:
 
 ```markdown
-- **Slice ⑤ (Votação na shell + delete do editor Keystatic):** o painel admin da votação migrou pro shell em **`/admin/sessoes`** (`app/(admin)/admin/sessoes/page.tsx`) reusando os componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`) — sem gate próprio (o `(admin)/layout.tsx` já barra não-admin). `/votacao/admin` virou **redirect** pra `/admin/sessoes`; a votação **pública** (`/votacao`, `/votacao/[id]`) e os controles de admin na detail (encerrar + roleta de desempate) ficam intocados. O **editor Keystatic foi removido** (`app/keystatic`, `app/api/keystatic`, `lib/keystatic-fa-icon-picker-input.tsx`, `lib/keystatic-fontawesome-icon-select-field.tsx`, deps `@keystatic/next` + `@keystar/ui`, e os 4 envs OAuth `KEYSTATIC_*`); o **reader permanece** (`@keystatic/core` + `lib/keystatic-reader.ts` + `lib/site-content.ts`) alimentando o site público, e o `keystatic.config.ts` foi simplificado (campo FA custom → `fields.select`). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-votacao-slice5*`.
+- **Slice ⑤ (Votação na shell + delete do editor Keystatic):** o painel admin da votação migrou pro shell em **`/admin/sessoes`** (`app/(admin)/admin/sessoes/page.tsx`) reusando os componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`) — sem gate próprio (o `(admin)/layout.tsx` já barra não-admin). `/votacao/admin` virou **redirect** pra `/admin/sessoes`; a votação **pública** (`/votacao`, `/votacao/[id]`) e os controles de admin na detail (encerrar + roleta de desempate) ficam intocados. O **editor Keystatic foi removido** (`app/keystatic`, `app/api/keystatic`, `lib/keystatic-fa-icon-picker-input.tsx`, `lib/keystatic-fontawesome-icon-select-field.tsx`, deps `@keystatic/next` + `@keystar/ui`, e 2 envs só-editor (`KEYSTATIC_SECRET` + `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`); `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` continuam (admin connect)); o **reader permanece** (`@keystatic/core` + `lib/keystatic-reader.ts` + `lib/site-content.ts`) alimentando o site público, e o `keystatic.config.ts` foi simplificado (campo FA custom → `fields.select`). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-votacao-slice5*`.
 ```
 
 - [ ] **Step 5: Atualizar a seção de Environment variables**
 
-Na lista de "Key variables", remova/ajuste as 4 chaves OAuth do editor. Troque a linha:
+Na lista de "Key variables", adicione/ajuste apenas os 2 envs só-editor. A entrada atualizada no CLAUDE.md deve ficar:
 
 ```markdown
-- `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — Keystatic GitHub OAuth
+- `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET` — OAuth da GitHub App (reusada) que o **/admin** usa pra "Conectar GitHub" e commitar conteúdo (`lib/admin/github-oauth.ts`). **Continuam necessárias** (não remover da Vercel). O editor Keystatic que também as usava saiu no slice ⑤, mas o admin permanece.
+- (removidas no slice ⑤) `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — eram exclusivas do editor Keystatic (sessão + app slug do editor); sem uso após a remoção. **Remover da Vercel.**
 ```
 
-por:
-
-```markdown
-- (removidas no slice ⑤) `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET`, `KEYSTATIC_SECRET`, `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` — eram do editor Keystatic, que saiu. **Remover também da Vercel.**
-```
-
-Mantenha `KEYSTATIC_GITHUB_REPO` (reader). Na seção do Vercel ("Env vars: copiar de..."), confirme que não lista mais as 4 chaves OAuth do editor.
+**Correção pós-spec:** `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` **NÃO saem** — o admin connect os reutiliza. Mantenha `KEYSTATIC_GITHUB_REPO` (reader). Na seção do Vercel ("Env vars: copiar de..."), inclua `KEYSTATIC_GITHUB_CLIENT_ID` e `KEYSTATIC_GITHUB_CLIENT_SECRET` na lista (não remover).
 
 - [ ] **Step 6: Atualizar a seção "Keystatic & Vercel deployment"**
 

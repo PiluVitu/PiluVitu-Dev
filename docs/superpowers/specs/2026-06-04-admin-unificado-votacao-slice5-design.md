@@ -120,7 +120,7 @@ Nenhum componente novo de votação; a entrega de UI é a **página `/admin/sess
 - **Reader preservado:** o maior risco seria deletar o config e quebrar o reader — explicitamente evitado (config simplificado, não removido).
 - **`fields.text()` é mais permissivo** que o select custom: aceitável porque o reader só precisa devolver a string e a edição validada migrou pro `/admin/socials`. Verificado no build.
 - **Deps removidas exigem `pnpm install`** (lockfile) — informado, não rodado pelo agente (regra do projeto).
-- **Action items do usuário:** remover os 4 env `KEYSTATIC_*` (OAuth) da Vercel; (herdados) instalar a GitHub App do Keystatic no `piluvitu-blog`, mudar o Build Command da Vercel pra `pnpm build`, considerar bump do Next ≥16.2.5.
+- **Action items do usuário:** remover **apenas** `KEYSTATIC_SECRET` e `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` da Vercel (`KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` continuam — o `/admin` "Conectar GitHub" os reutiliza; ver correção pós-slice ⑤); (herdados) instalar a GitHub App do Keystatic no `piluvitu-blog`, mudar o Build Command da Vercel pra `pnpm build`, considerar bump do Next ≥16.2.5.
 - **Sem mudança na Go API** nem no fluxo OAuth Google da votação.
 
 ---
@@ -130,7 +130,7 @@ Nenhum componente novo de votação; a entrega de UI é a **página `/admin/sess
 1. `/admin/sessoes` mostra as 4 seções (nova sessão, sessões com encerrar+ver-votos, usuários, backups) reusando os componentes existentes; gate `is_admin` do shell barra não-admin.
 2. `/votacao/admin` redireciona pra `/admin/sessoes`; o link admin no `/votacao` aponta pra `/admin/sessoes`.
 3. Votação pública (`/votacao`, `/votacao/[id]`) e os controles de admin na detail (encerrar + roleta) seguem funcionando, intocados.
-4. `/keystatic` e `/api/keystatic` deixam de existir (404/sem rota); `@keystatic/next` e `@keystar/ui` saem do `package.json`; os 4 env `KEYSTATIC_*` OAuth saem do `.env.example`/docs.
+4. `/keystatic` e `/api/keystatic` deixam de existir (404/sem rota); `@keystatic/next` e `@keystar/ui` saem do `package.json`; `KEYSTATIC_SECRET` e `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` saem do `.env.example`/docs (os 2 só-editor); `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` **permanecem** (admin connect reutiliza a GitHub App).
 5. O **site público continua buildando e lendo** conteúdo YAML via reader (socials/visit-card icons inclusive) com o `keystatic.config.ts` simplificado.
 6. `pnpm lint`, `pnpm exec tsc --noEmit`, Jest, E2E afetados passam; `pnpm build:ci` compila com `/admin/sessoes` no route table e sem as rotas do editor.
 7. CLAUDE.md atualizado: seção "Admin unificado" com o slice ⑤; Tech Stack/Architecture refletindo que o **editor** Keystatic saiu (reader permanece).
