@@ -14,7 +14,7 @@ type Action = (doc: string, from: number, to: number) => EditResult
 const BUTTONS: { label: string; title: string; fn: Action }[] = [
   {
     label: 'H2',
-    title: 'Título',
+    title: 'Título H2',
     fn: (d, f, t) => prefixLines(d, f, t, '## '),
   },
   {
