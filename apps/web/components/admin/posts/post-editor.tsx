@@ -1,16 +1,23 @@
 'use client'
 
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { useRef, useState } from 'react'
+import type { EditorView } from '@codemirror/view'
 import { PageTopBar } from '@/components/page-top-bar'
+import { TagArrayInput } from '@/components/admin/content/tag-array-input'
 import {
   postFrontmatterSchema,
   type PostFrontmatter,
 } from '@/lib/admin/post-schema'
 import { slugify } from '@/lib/admin/slugify'
-import { PostFrontmatterForm } from './post-frontmatter-form'
+import { estimateReadingTime } from '@/lib/admin/reading-time'
 import { MdxEditor } from './mdx-editor'
 import { MdxPreview } from './mdx-preview'
+import { MdxToolbar } from './mdx-toolbar'
+import { EditorTabs, type EditorTab } from './editor-tabs'
+import { SidebarCard } from './sidebar-card'
+import { PostPublishCard } from './post-publish-card'
+import { PostMetaCard } from './post-meta-card'
+import { CoverImageCard } from './cover-image-card'
 
 export function PostEditor(props: {
   mode: 'create' | 'edit'
@@ -23,14 +30,15 @@ export function PostEditor(props: {
   const [body, setBody] = useState(props.initialBody)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [slugTouched, setSlugTouched] = useState(props.mode === 'edit')
+  const [tab, setTab] = useState<EditorTab>('edit')
+  const editorRef = useRef<EditorView | null>(null)
   const isCreate = props.mode === 'create'
 
-  // On create, the slug auto-derives from the title until the user edits it manually.
+  // On create, o slug auto-deriva do título até o usuário editá-lo manualmente.
   const displaySlug = isCreate && !slugTouched ? slugify(fm.title) : fm.slug
 
-  const handleChange = (next: PostFrontmatter) => {
+  const handleFm = (next: PostFrontmatter) => {
     if (isCreate && !slugTouched && next.slug !== displaySlug) {
-      // user edited the slug field → stop auto-deriving
       setSlugTouched(true)
       setFm(next)
       return
@@ -40,7 +48,12 @@ export function PostEditor(props: {
 
   const save = () => {
     const finalSlug = isCreate && !slugTouched ? slugify(fm.title) : fm.slug
-    const parsed = postFrontmatterSchema.safeParse({ ...fm, slug: finalSlug })
+    const reading = fm.readingTimeMinutes || estimateReadingTime(body)
+    const parsed = postFrontmatterSchema.safeParse({
+      ...fm,
+      slug: finalSlug,
+      readingTimeMinutes: reading,
+    })
     if (!parsed.success) {
       setErrors(
         Object.fromEntries(
@@ -54,24 +67,79 @@ export function PostEditor(props: {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <PageTopBar backHref="/admin/posts" backLabel="Posts" />
-        <Button onClick={save} disabled={props.pending}>
-          {props.pending ? 'Salvando…' : 'Salvar'}
-        </Button>
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[300px_1fr_1fr]">
-        <div className="overflow-y-auto pr-1">
-          <PostFrontmatterForm
+    <div className="flex flex-col gap-5">
+      <PageTopBar backHref="/admin/posts" backLabel="Posts" />
+
+      <input
+        aria-label="Título"
+        className="border-border bg-card text-foreground focus:border-primary w-full rounded-[var(--radius)] border px-5 py-4 text-3xl font-bold outline-none"
+        placeholder="Título do post"
+        value={fm.title}
+        onChange={(e) => handleFm({ ...fm, title: e.target.value })}
+      />
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px] xl:items-start">
+        {/* Conteúdo */}
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground font-mono text-xs tracking-[0.2em] uppercase">
+              Conteúdo
+            </span>
+            <EditorTabs value={tab} onChange={setTab} />
+          </div>
+
+          {tab === 'preview' ? (
+            <div className="border-border h-[60vh] overflow-hidden rounded-[var(--radius)] border">
+              <MdxPreview mdx={body} />
+            </div>
+          ) : (
+            <div className="border-border overflow-hidden rounded-[var(--radius)] border">
+              <MdxToolbar editorRef={editorRef} />
+              <div
+                className={
+                  tab === 'split'
+                    ? 'border-border grid h-[60vh] grid-cols-2 divide-x'
+                    : 'h-[60vh]'
+                }
+              >
+                <MdxEditor
+                  value={body}
+                  onChange={setBody}
+                  onReady={(v) => (editorRef.current = v)}
+                />
+                {tab === 'split' ? <MdxPreview mdx={body} /> : null}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="flex flex-col gap-4">
+          <PostPublishCard
+            value={fm}
+            onChange={setFm}
+            onSave={save}
+            pending={props.pending}
+            errors={errors}
+          />
+          <PostMetaCard
             value={{ ...fm, slug: displaySlug }}
-            onChange={handleChange}
+            onChange={handleFm}
             slugEditable={isCreate}
             errors={errors}
           />
+          <SidebarCard title="Tags">
+            <TagArrayInput
+              label=""
+              values={fm.tags}
+              onChange={(v) => setFm({ ...fm, tags: v })}
+            />
+          </SidebarCard>
+          <CoverImageCard
+            value={fm.coverImage}
+            onChange={(v) => setFm({ ...fm, coverImage: v })}
+          />
         </div>
-        <MdxEditor value={body} onChange={setBody} />
-        <MdxPreview mdx={body} />
       </div>
     </div>
   )
