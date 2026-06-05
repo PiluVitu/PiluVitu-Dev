@@ -91,7 +91,7 @@ describe('post-io', () => {
       tags: ['x'],
       publishedAt: '2025-01-01',
       draft: true,
-      readingTimeMinutes: 0,
+      readingTimeMinutes: 7,
     }
     const out = serializePost(known, '# body', raw)
     expect(out).toContain('title: T2')
