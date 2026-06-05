@@ -2,13 +2,15 @@
 
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown } from '@codemirror/lang-markdown'
+import type { EditorView } from '@codemirror/view'
 
 export function MdxEditor(props: {
   value: string
   onChange: (v: string) => void
+  onReady?: (view: EditorView) => void
 }) {
   return (
-    <div className="border-border h-full overflow-hidden rounded-lg border">
+    <div className="h-full overflow-hidden">
       <CodeMirror
         value={props.value}
         onChange={props.onChange}
@@ -16,8 +18,9 @@ export function MdxEditor(props: {
         theme="dark"
         height="100%"
         style={{ height: '100%' }}
+        onCreateEditor={(view) => props.onReady?.(view)}
         basicSetup={{
-          lineNumbers: true,
+          lineNumbers: false,
           foldGutter: false,
           highlightActiveLine: false,
         }}
