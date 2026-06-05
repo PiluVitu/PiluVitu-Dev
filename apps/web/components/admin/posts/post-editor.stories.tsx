@@ -20,6 +20,7 @@ const fm = {
   tags: ['git'],
   publishedAt: '2025-04-28',
   draft: false,
+  readingTimeMinutes: 0,
 }
 
 // The preview pane calls the server serialize route, which Storybook can't run —
@@ -43,6 +44,7 @@ export const Create: Story = {
       tags: [],
       publishedAt: '',
       draft: true,
+      readingTimeMinutes: 0,
     },
     initialBody: '# Novo\n\n',
     pending: false,

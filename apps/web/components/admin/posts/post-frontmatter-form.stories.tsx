@@ -20,6 +20,7 @@ const fm = {
   tags: ['git', 'husky'],
   publishedAt: '2025-04-28',
   draft: false,
+  readingTimeMinutes: 0,
 }
 
 export const Editing: Story = { args: { value: fm, slugEditable: false } }

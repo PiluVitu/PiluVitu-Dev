@@ -11,6 +11,7 @@ export const postFrontmatterSchema = z.object({
   tags: z.array(z.string()).default([]),
   publishedAt: z.string().default(''),
   draft: z.boolean().default(false),
+  readingTimeMinutes: z.number().int().min(0).default(0),
 })
 
 export type PostFrontmatter = z.infer<typeof postFrontmatterSchema>
@@ -23,6 +24,7 @@ const KNOWN_KEYS: (keyof PostFrontmatter)[] = [
   'tags',
   'publishedAt',
   'draft',
+  'readingTimeMinutes',
 ]
 
 /** Pulls the known fields out of a raw frontmatter object (drops extras). */

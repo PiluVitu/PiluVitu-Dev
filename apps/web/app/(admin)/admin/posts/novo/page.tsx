@@ -14,6 +14,7 @@ const EMPTY_FM: PostFrontmatter = {
   tags: [],
   publishedAt: '',
   draft: true,
+  readingTimeMinutes: 0,
 }
 
 export default function NovoPostPage() {
