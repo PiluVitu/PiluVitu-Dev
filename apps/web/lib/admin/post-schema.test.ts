@@ -9,6 +9,7 @@ const fm = {
   tags: ['git', 'husky'],
   publishedAt: '2025-04-28T00:00:00.000Z',
   draft: false,
+  readingTimeMinutes: 0,
 }
 
 describe('post-schema', () => {
@@ -27,7 +28,10 @@ describe('post-schema', () => {
   })
   it('extracts only the known fields from a raw frontmatter with extras', () => {
     const raw = { ...fm, readingTimeMinutes: 5, customKey: 'x' }
-    expect(extractKnownFrontmatter(raw)).toEqual(fm)
+    expect(extractKnownFrontmatter(raw)).toEqual({
+      ...fm,
+      readingTimeMinutes: 5,
+    })
   })
   it('fills defaults for missing optional fields', () => {
     const parsed = postFrontmatterSchema.parse({ title: 'T', slug: 't' })

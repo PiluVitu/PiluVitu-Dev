@@ -25,6 +25,7 @@ const post = {
     tags: [],
     publishedAt: '2025-02-05',
     draft: true,
+    readingTimeMinutes: 0,
   },
   body: '# WSL\n\nconteúdo',
 }
@@ -96,10 +97,37 @@ test('loads the editor and saves an edited title (asserts PUT body)', async ({
   const titulo = page.getByLabel('Título').first()
   await expect(titulo).toHaveValue('WSL Pt.1')
   await titulo.fill('WSL Pt.1 — Editado')
-  await page.getByRole('button', { name: 'Salvar' }).click()
+  await page.getByRole('button', { name: /salvar altera/i }).click()
   await expect
     .poll(
       () => (put as { frontmatter?: { title?: string } })?.frontmatter?.title,
     )
     .toBe('WSL Pt.1 — Editado')
+})
+
+test('alterna abas e mostra os cards da sidebar', async ({ page }) => {
+  await baseMocks(page)
+  await page.route('**/api/admin/posts/wsl-pt1', (r) =>
+    r.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ post }),
+    }),
+  )
+  await page.goto('/admin/posts/wsl-pt1')
+
+  await expect(page.getByLabel('Título').first()).toHaveValue('WSL Pt.1')
+
+  // abas
+  await expect(page.getByRole('button', { name: 'Editar' })).toBeVisible()
+  await page.getByRole('button', { name: 'Pré-visualizar' }).click()
+  await page.getByRole('button', { name: 'Dividir' }).click()
+  await page.getByRole('button', { name: 'Editar' }).click()
+
+  // cards da sidebar
+  await expect(page.getByText('Publicação')).toBeVisible()
+  await expect(page.getByText('Metadados')).toBeVisible()
+  await expect(page.getByText('Imagem de capa')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: /salvar altera/i }),
+  ).toBeVisible()
 })
