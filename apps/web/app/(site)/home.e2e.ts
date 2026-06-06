@@ -42,17 +42,21 @@ test.describe('Footer — links gateados por auth', () => {
     await page.goto('/')
     await expect(page.getByRole('link', { name: '/tools' })).toBeVisible()
     await expect(page.getByRole('link', { name: '/votação' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: '/tasks' })).toHaveCount(0)
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toHaveCount(0)
   })
 
-  test('logado não-admin: mostra /votação, esconde admin', async ({ page }) => {
+  test('logado não-admin: mostra /votação e /tasks, esconde admin', async ({
+    page,
+  }) => {
     await page.route('**/auth/me', (r) =>
       r.fulfill(meEnvelope({ ...admin, is_admin: false })),
     )
     await page.goto('/')
     await expect(page.getByRole('link', { name: '/votação' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '/tasks' })).toBeVisible()
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toHaveCount(0)

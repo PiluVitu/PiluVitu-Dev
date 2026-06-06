@@ -29,12 +29,16 @@ export function HomeFooter({
         <Link href="/tools" className={linkCls}>
           /tools
         </Link>
-        {/* /votação só aparece pra quem está logado (sessão de votação). */}
+        {/* /votação e /tasks (Kanban) só aparecem pra quem está logado. */}
         {isLoggedIn ? (
           <>
             <span aria-hidden>·</span>
             <Link href="/votacao" className={linkCls}>
               /votação
+            </Link>
+            <span aria-hidden>·</span>
+            <Link href="/tasks" className={linkCls}>
+              /tasks
             </Link>
           </>
         ) : null}
