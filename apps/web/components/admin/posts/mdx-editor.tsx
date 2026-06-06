@@ -18,7 +18,7 @@ export function MdxEditor(props: {
         theme="dark"
         height="100%"
         style={{ height: '100%' }}
-        onCreateEditor={(view) => props.onReady?.(view)}
+        onCreateEditor={(view: EditorView) => props.onReady?.(view)}
         basicSetup={{
           lineNumbers: false,
           foldGutter: false,
