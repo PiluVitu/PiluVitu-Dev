@@ -35,14 +35,16 @@ test.describe('Footer — links gateados por auth', () => {
     is_admin: true,
   }
 
-  test('anônimo: esconde /votação e admin (só /tools)', async ({ page }) => {
+  test('anônimo/back-off: mostra /tools e /tasks (offline), esconde /votação e admin', async ({
+    page,
+  }) => {
     await page.route('**/auth/me', (r) =>
       r.fulfill(meEnvelope(null, false, 401)),
     )
     await page.goto('/')
     await expect(page.getByRole('link', { name: '/tools' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '/tasks' })).toBeVisible()
     await expect(page.getByRole('link', { name: '/votação' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: '/tasks' })).toHaveCount(0)
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toHaveCount(0)

@@ -47,6 +47,8 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
 **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
 
+**⚠️ Gotcha — Vercel é mais estrita que o build local com `implicit-any` em callbacks de libs de terceiro.** O `tsc`/`next build` LOCAL pode passar, mas o **install fresco da Vercel** (`--frozen-lockfile`) resolve o tipo do param como `any` quando ele vem de um `.d.ts` de terceiro — e aí `next build` quebra com `Parameter 'x' implicitly has an 'any' type` (já mordeu 2×: `onCreateEditor` do `@uiw/react-codemirror`/`@codemirror/*`, e a camera story). **Regra:** sempre **anote explicitamente** o param desses callbacks (ex.: `onCreateEditor={(view: EditorView) => …}`), não confie na inferência. Build local verde NÃO garante o da Vercel nesse caso.
+
 ### Go hot reload (air)
 
 `make dev-api` roda a Go API via [air](https://github.com/air-verse/air) (config em `apps/api/.air.toml`), que recompila a cada `.go` salvo e — diferente do `go run` — é dono do ciclo de vida do binário: manda SIGINT + kill no processo a cada rebuild e na saída, liberando a `:8081` limpinha no Ctrl+C. air roda via `go run github.com/air-verse/air@latest` (sem instalar nada global, fora do `go.mod` da API). O binário compilado e o SQLite de dev ficam em `apps/api/tmp/` (gitignored); por isso `clean_on_exit = false` (não apagar o `votacao.db`). Editar o `.env` ainda exige restart (ele é carregado no launch). Hot reload é só dev nativo no host — em Docker a API roda o binário do `Dockerfile`. Se uma porta ficar presa após um crash, `make stop` mata o que estiver escutando em 8081/3333 (macOS/BSD-safe).

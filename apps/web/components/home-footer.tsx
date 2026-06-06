@@ -29,16 +29,18 @@ export function HomeFooter({
         <Link href="/tools" className={linkCls}>
           /tools
         </Link>
-        {/* /votação e /tasks (Kanban) só aparecem pra quem está logado. */}
+        <span aria-hidden>·</span>
+        {/* /tasks (Kanban) é PWA offline (localStorage) → sempre visível, não
+            depende do back nem de login. */}
+        <Link href="/tasks" className={linkCls}>
+          /tasks
+        </Link>
+        {/* /votação precisa do back (sessão/dados) → só pra logado. */}
         {isLoggedIn ? (
           <>
             <span aria-hidden>·</span>
             <Link href="/votacao" className={linkCls}>
               /votação
-            </Link>
-            <span aria-hidden>·</span>
-            <Link href="/tasks" className={linkCls}>
-              /tasks
             </Link>
           </>
         ) : null}
