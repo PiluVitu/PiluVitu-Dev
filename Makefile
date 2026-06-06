@@ -1,8 +1,12 @@
-.PHONY: dev dev-web dev-api build-api build-cli test test-go test-web test-e2e lint clean stop \
+.PHONY: dev dev-web dev-api storybook build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
+
+# Storybook (componentes) em http://localhost:6017
+storybook:
+	pnpm --filter @piluvitu/web storybook
 
 # Hot reload via air (config in apps/api/.air.toml). air is run through
 # `go run` so it needs no global install and stays out of the API's go.mod.
@@ -12,13 +16,14 @@ dev-api:
 	mkdir -p apps/api/tmp
 	cd apps/api && set -a && [ -f .env ] && . ./.env; set +a && go run github.com/air-verse/air@latest
 
+# Sobe web + Go API + Storybook em paralelo
 dev:
-	make -j2 dev-web dev-api
+	make -j3 dev-web dev-api storybook
 
 # Escape hatch: free the dev ports if a process got stuck (rare with air,
 # handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
 stop:
-	@for p in 8081 3333; do \
+	@for p in 8081 3333 6017; do \
 		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done

@@ -26,21 +26,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
-| Comando                                 | Propósito                                |
-| --------------------------------------- | ---------------------------------------- |
-| `make dev`                              | Dev server web + Go API em paralelo      |
-| `make dev-web`                          | Só o Next.js em http://localhost:3333    |
-| `make dev-api`                          | Go API com **hot reload** (air)          |
-| `make stop`                             | Libera as portas 8081/3333 se travarem   |
-| `make build-api`                        | Compila binário Go API em bin/api        |
-| `make build-cli`                        | Compila CLI Go em bin/piluvitu           |
-| `make test`                             | Todos os testes (pnpm -r test + go test) |
-| `make lint`                             | ESLint + go vet                          |
-| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                       |
-| `pnpm --filter @piluvitu/web build`     | Build Next.js                            |
-| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                        |
-| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                           |
-| `pnpm -r test`                          | Testes de todos os workspaces            |
+| Comando                                 | Propósito                                               |
+| --------------------------------------- | ------------------------------------------------------- |
+| `make dev`                              | Dev server web + Go API + Storybook em paralelo (`-j3`) |
+| `make dev-web`                          | Só o Next.js em http://localhost:3333                   |
+| `make dev-api`                          | Go API com **hot reload** (air)                         |
+| `make storybook`                        | Só o Storybook em http://localhost:6017                 |
+| `make stop`                             | Libera as portas 8081/3333/6017 se travarem             |
+| `make build-api`                        | Compila binário Go API em bin/api                       |
+| `make build-cli`                        | Compila CLI Go em bin/piluvitu                          |
+| `make test`                             | Todos os testes (pnpm -r test + go test)                |
+| `make lint`                             | ESLint + go vet                                         |
+| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                                      |
+| `pnpm --filter @piluvitu/web build`     | Build Next.js                                           |
+| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                                       |
+| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                                          |
+| `pnpm -r test`                          | Testes de todos os workspaces                           |
 
 **Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
