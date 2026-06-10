@@ -14,7 +14,9 @@ import (
 	"github.com/PiluVitu/api/internal/gdrive"
 	"github.com/PiluVitu/api/internal/gsheets"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
+	handlersllm "github.com/PiluVitu/api/internal/handlers/llm"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/llm"
 	"github.com/PiluVitu/api/internal/router"
 	"github.com/PiluVitu/api/internal/tmdb"
 	"github.com/PiluVitu/api/internal/votacao"
@@ -72,6 +74,19 @@ func main() {
 		postersClient = tmdb.NewClient(key)
 	}
 
+	var llmClient *llm.Client
+	if base := os.Getenv("OLLAMA_BASE_URL"); base != "" {
+		mp := envOr("OLLAMA_MODEL_PROOFREAD", "qwen2.5:7b-instruct")
+		mh := envOr("OLLAMA_MODEL_HOOKS", "qwen2.5:14b-instruct")
+		llmClient = llm.NewClient(base, mp, mh)
+		if err := llmClient.Health(context.Background()); err != nil {
+			slog.Warn("ollama health check failed (LLM endpoints will 503)", "err", err)
+		} else {
+			slog.Info("ollama connected", "base", base, "proofread", mp, "hooks", mh)
+		}
+	}
+	llmH := handlersllm.NewHandlers(handlersllm.Deps{LLM: llmClient}) // typed-nil normalized inside
+
 	var runner *backup.Runner
 	if folder := os.Getenv("GDRIVE_BACKUP_FOLDER_ID"); folder != "" {
 		drv, gerr := gdrive.NewClient(context.Background())
@@ -121,7 +136,7 @@ func main() {
 	handler := router.New(router.Deps{
 		DB: store.DB(), Sessions: sm,
 		AuthHandlers: authHandlers, VotacaoHandlers: votH,
-		AdminHandlers: adminH, Store: store,
+		AdminHandlers: adminH, LLMHandlers: llmH, Store: store,
 	})
 
 	addr := ":" + port
@@ -130,6 +145,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// envOr returns the value of the environment variable key, or def if unset/empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // initLogger configures the process-wide slog default: JSON in production,
