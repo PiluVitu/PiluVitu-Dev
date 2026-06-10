@@ -51,8 +51,29 @@ func TestMarkPosted(t *testing.T) {
 	if err := s.MarkPosted(ctx, "p", "devto", "https://dev.to/a"); err != nil {
 		t.Fatalf("MarkPosted: %v", err)
 	}
-	got, _ := s.Get(ctx, "p", "devto")
+	got, err := s.Get(ctx, "p", "devto")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
 	if got.Status != "posted" || got.RemoteURL != "https://dev.to/a" {
 		t.Fatalf("got = %+v", got)
+	}
+}
+
+func TestUpsertPreservesPostedStatus(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	_ = s.Upsert(ctx, Target{Slug: "q", Platform: "bluesky", Kind: KindSocial, Content: "v1", Status: "pending"})
+	if err := s.MarkPosted(ctx, "q", "bluesky", "https://bsky.app/x"); err != nil {
+		t.Fatalf("MarkPosted: %v", err)
+	}
+	// re-propose: must NOT demote back to pending, but content may update
+	_ = s.Upsert(ctx, Target{Slug: "q", Platform: "bluesky", Kind: KindSocial, Content: "v2", Status: "pending"})
+	got, err := s.Get(ctx, "q", "bluesky")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != "posted" {
+		t.Fatalf("status = %q, want posted (re-upsert must not demote)", got.Status)
 	}
 }
