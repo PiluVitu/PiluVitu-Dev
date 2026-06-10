@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 
 	"github.com/PiluVitu/api/internal/httpx"
 	pkgllm "github.com/PiluVitu/api/internal/llm"
@@ -23,8 +24,17 @@ type Deps struct{ LLM LLM }
 // Handlers é o receptor dos endpoints LLM.
 type Handlers struct{ llm LLM }
 
-// NewHandlers constrói os Handlers a partir de Deps.
-func NewHandlers(d Deps) *Handlers { return &Handlers{llm: d.LLM} }
+// NewHandlers constrói os Handlers a partir de Deps. A typed-nil LLM
+// (e.g. a (*llm.Client)(nil)) is normalized to nil so the unavailable()
+// guard reliably returns 503 regardless of how the dependency is wired.
+func NewHandlers(d Deps) *Handlers {
+	if d.LLM != nil {
+		if v := reflect.ValueOf(d.LLM); v.Kind() == reflect.Ptr && v.IsNil() {
+			d.LLM = nil
+		}
+	}
+	return &Handlers{llm: d.LLM}
+}
 
 // unavailable escreve 503 se o cliente LLM não estiver disponível e retorna true.
 func (h *Handlers) unavailable(w http.ResponseWriter) bool {
