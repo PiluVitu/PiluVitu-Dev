@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -49,7 +50,8 @@ func (m *Mastodon) Publish(ctx context.Context, p Payload) (string, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return "", fmt.Errorf("mastodon: status %d", res.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return "", fmt.Errorf("mastodon: status %d: %s", res.StatusCode, bytes.TrimSpace(body))
 	}
 	var out struct {
 		URL string `json:"url"`

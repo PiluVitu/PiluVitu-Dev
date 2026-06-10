@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -56,7 +57,8 @@ func (d *DevTo) Publish(ctx context.Context, p Payload) (string, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("devto: status %d", res.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return "", fmt.Errorf("devto: status %d: %s", res.StatusCode, bytes.TrimSpace(body))
 	}
 	var out struct {
 		URL string `json:"url"`

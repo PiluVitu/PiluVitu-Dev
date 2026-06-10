@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -57,6 +58,10 @@ func (h *Hashnode) Publish(ctx context.Context, p Payload) (string, error) {
 		return "", err
 	}
 	defer res.Body.Close()
+	if res.StatusCode >= 500 || res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return "", fmt.Errorf("hashnode: status %d: %s", res.StatusCode, bytes.TrimSpace(body))
+	}
 	var out struct {
 		Data struct {
 			PublishPost struct {

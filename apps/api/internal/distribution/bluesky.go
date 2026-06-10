@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -60,7 +61,11 @@ func (b *Bluesky) Publish(ctx context.Context, p Payload) (string, error) {
 		map[string]any{"repo": sess.Did, "collection": "app.bsky.feed.post", "record": record}, &rec); err != nil {
 		return "", err
 	}
-	rkey := rec.URI[strings.LastIndex(rec.URI, "/")+1:]
+	idx := strings.LastIndex(rec.URI, "/")
+	if idx < 0 || idx == len(rec.URI)-1 {
+		return "", fmt.Errorf("bluesky: unexpected uri format: %q", rec.URI)
+	}
+	rkey := rec.URI[idx+1:]
 	return fmt.Sprintf("https://bsky.app/profile/%s/post/%s", b.handle, rkey), nil
 }
 
@@ -80,7 +85,8 @@ func (b *Bluesky) post(ctx context.Context, path, bearer string, body any, out a
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("bluesky: %s status %d", path, res.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("bluesky: %s status %d: %s", path, res.StatusCode, bytes.TrimSpace(body))
 	}
 	return json.NewDecoder(res.Body).Decode(out)
 }
