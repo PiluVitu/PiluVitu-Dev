@@ -90,7 +90,8 @@ func (s *Service) Publish(ctx context.Context, slug string, selected []Selected)
 		if err == nil && existing.Status == "posted" {
 			continue // idempotência
 		}
-		// atualiza o conteúdo final antes de postar
+		// Re-upsert resets a previously 'failed' target to pending for retry;
+		// 'posted' is preserved by the store's ON CONFLICT clause.
 		kind := pub.Kind()
 		_ = s.store.Upsert(ctx, Target{Slug: slug, Platform: sel.Platform, Kind: kind, Content: sel.Content, Status: "pending"})
 

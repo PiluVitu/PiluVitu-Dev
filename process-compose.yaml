@@ -25,6 +25,8 @@ processes:
   api:
     command: 'make dev-api'
     working_dir: '.'
+    environment:
+      - 'PORT=8081'
     depends_on:
       ollama-pull:
         condition: process_completed_successfully

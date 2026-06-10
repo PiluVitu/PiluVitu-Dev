@@ -89,6 +89,38 @@ func TestPublishMarksPostedAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPublishRetriesFailedTarget(t *testing.T) {
+	s := newTestStore(t)
+	calls := 0
+	pub := fakePub{platform: "bluesky", kind: KindSocial, calls: &calls, url: "https://bsky.app/retry"}
+	svc := NewService(s, fakeHooks{}, []Publisher{pub})
+
+	// seed a pending target, then mark it failed to simulate a previous attempt
+	ctx := context.Background()
+	_ = s.Upsert(ctx, Target{Slug: "p", Platform: "bluesky", Kind: KindSocial, Content: "draft", Status: "pending"})
+	_ = s.MarkFailed(ctx, "p", "bluesky", "boom")
+
+	// confirm it's failed before we retry
+	before, _ := s.Get(ctx, "p", "bluesky")
+	if before.Status != "failed" {
+		t.Fatalf("pre-condition: status = %q, want failed", before.Status)
+	}
+
+	// calling Publish should retry the failed target
+	sel := []Selected{{Platform: "bluesky", Content: "edited"}}
+	out, err := svc.Publish(ctx, "p", sel)
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (failed target must be retried)", calls)
+	}
+	got := find(out, "bluesky")
+	if got.Status != "posted" || got.RemoteURL != "https://bsky.app/retry" {
+		t.Fatalf("target after retry = %+v", got)
+	}
+}
+
 func find(ts []Target, plat string) Target {
 	for _, t := range ts {
 		if t.Platform == plat {
