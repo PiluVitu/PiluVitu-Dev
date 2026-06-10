@@ -54,7 +54,9 @@ func TestProofreadHandlerOK(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
 	var env struct {
-		Data struct{ Corrected string `json:"corrected"` } `json:"data"`
+		Data struct {
+			Corrected string `json:"corrected"`
+		} `json:"data"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &env)
 	if env.Data.Corrected != "ok corrigido" {
@@ -126,7 +128,9 @@ func TestRefineHandlerOK(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
 	var env struct {
-		Data struct{ Refined string `json:"refined"` } `json:"data"`
+		Data struct {
+			Refined string `json:"refined"`
+		} `json:"data"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &env)
 	if env.Data.Refined != "tweet refinado" {

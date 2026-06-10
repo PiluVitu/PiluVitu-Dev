@@ -26,11 +26,11 @@ import (
 
 // Deps holds external dependencies injected into the router.
 type Deps struct {
-	DB              *sql.DB
-	Sessions        *scs.SessionManager
-	AuthHandlers    *auth.Handlers
-	VotacaoHandlers *handlersvotacao.Handlers
-	AdminHandlers   *handlersadmin.Handlers
+	DB                   *sql.DB
+	Sessions             *scs.SessionManager
+	AuthHandlers         *auth.Handlers
+	VotacaoHandlers      *handlersvotacao.Handlers
+	AdminHandlers        *handlersadmin.Handlers
 	LLMHandlers          *handlersllm.Handlers
 	DistributionHandlers *handlersdistribution.Handlers
 	Store                *votacao.Store

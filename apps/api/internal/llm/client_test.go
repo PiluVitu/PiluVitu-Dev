@@ -171,7 +171,9 @@ func TestGenerateHooksPerPlatform(t *testing.T) {
 func TestRefineUsesInstruction(t *testing.T) {
 	var gotUser string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Messages []chatMessage `json:"messages"` }
+		var body struct {
+			Messages []chatMessage `json:"messages"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode request body: %v", err)
 		}

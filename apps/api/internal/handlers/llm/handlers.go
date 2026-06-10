@@ -52,7 +52,9 @@ func (h *Handlers) Proofread(w http.ResponseWriter, r *http.Request) {
 	if h.unavailable(w) {
 		return
 	}
-	var in struct{ Text string `json:"text"` }
+	var in struct {
+		Text string `json:"text"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Text == "" {
 		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo inválido: 'text' é obrigatório.")
 		return
