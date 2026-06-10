@@ -8,7 +8,9 @@
 
 **Architecture:** Client fino `lib/admin/atelier/api.ts` reusando o envelope/`ApiError` do `lib/votacao/api-client.ts`, falando com a Go API via `NEXT_PUBLIC_API_URL` + `credentials:'include'` (mesma sessão Google do `/admin`). Lógica de diff é TS puro testável (`lib/admin/atelier/word-diff.ts`). Componentes em `components/admin/posts/`, hooks TanStack Query em `hooks/admin/atelier/`. Tudo degrada com aviso quando a API/túnel está off (erro → toast).
 
-**Tech Stack:** Next.js 16 / React 19 / TS strict, TanStack Query 5, shadcn/ui, sonner (toast), Jest + Testing Library, Storybook, Playwright. Colocation obrigatória.
+**Tech Stack:** Next.js 16 / React 19 / TS strict, TanStack Query 5, shadcn/ui, sonner (toast), Jest (jsdom), Storybook, Playwright. Colocation obrigatória.
+
+> **⚠️ Convenção de testes (override deste plano, confirmado no repo):** o `apps/web` **NÃO** tem `@testing-library/react` instalado e não há nenhum `*.test.tsx` de componente — a verificação de **componente** no projeto é via **Storybook (`.stories.tsx`) + Playwright E2E**, e o **Jest** cobre só **lógica pura/serviços** (`.test.ts`). Portanto: `word-diff.ts` e `api.ts` ganham `*.test.ts` (Jest, sem RTL — o teste de `api` mocka `global.fetch`); os componentes (`ProofreadButton`, `DistributionPanel`) ganham **só `.stories.tsx`** (sem `.test.tsx`/RTL) e têm o comportamento coberto pelo **E2E** (Task 8). **Não instalar `@testing-library/*`.** As Tasks 5 e 6 abaixo mostram blocos de teste RTL — **ignore-os**; implemente componente + story e deixe o comportamento pro E2E.
 
 ---
 
