@@ -17,6 +17,7 @@ import (
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/handlers"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
+	handlersdistribution "github.com/PiluVitu/api/internal/handlers/distribution"
 	handlersllm "github.com/PiluVitu/api/internal/handlers/llm"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
 	"github.com/PiluVitu/api/internal/logging"
@@ -30,8 +31,9 @@ type Deps struct {
 	AuthHandlers    *auth.Handlers
 	VotacaoHandlers *handlersvotacao.Handlers
 	AdminHandlers   *handlersadmin.Handlers
-	LLMHandlers     *handlersllm.Handlers
-	Store           *votacao.Store
+	LLMHandlers          *handlersllm.Handlers
+	DistributionHandlers *handlersdistribution.Handlers
+	Store                *votacao.Store
 }
 
 var defaultAllowedOrigins = []string{
@@ -84,6 +86,11 @@ func New(deps Deps) http.Handler {
 			if deps.LLMHandlers != nil {
 				r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/llm/proofread", deps.LLMHandlers.Proofread)
 				r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/llm/refine", deps.LLMHandlers.Refine)
+			}
+			if deps.DistributionHandlers != nil {
+				r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/distribution/proposals", deps.DistributionHandlers.Proposals)
+				r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Get("/distribution/{slug}", deps.DistributionHandlers.Get)
+				r.With(auth.RequireAdmin(deps.Sessions, deps.Store)).Post("/distribution/{slug}/publish", deps.DistributionHandlers.Publish)
 			}
 		})
 	}
