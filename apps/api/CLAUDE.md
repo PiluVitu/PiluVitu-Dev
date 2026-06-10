@@ -129,7 +129,7 @@ See `apps/api/.env.example`. Key variables:
 
 ### LLM local + Distribuição (`internal/llm`, `internal/distribution`)
 
-**Objetvo:** corrigir/refinar texto via Ollama local e republicar artigos em plataformas externas, com estado persistido em SQLite.
+**Objetivo:** corrigir/refinar texto via Ollama local e republicar artigos em plataformas externas, com estado persistido em SQLite.
 
 #### Endpoints (todos `RequireAdmin`)
 
