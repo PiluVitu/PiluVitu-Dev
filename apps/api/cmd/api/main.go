@@ -11,9 +11,11 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/backup"
+	"github.com/PiluVitu/api/internal/distribution"
 	"github.com/PiluVitu/api/internal/gdrive"
 	"github.com/PiluVitu/api/internal/gsheets"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
+	handlersdistribution "github.com/PiluVitu/api/internal/handlers/distribution"
 	handlersllm "github.com/PiluVitu/api/internal/handlers/llm"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
 	"github.com/PiluVitu/api/internal/llm"
@@ -87,6 +89,36 @@ func main() {
 	}
 	llmH := handlersllm.NewHandlers(handlersllm.Deps{LLM: llmClient}) // typed-nil normalized inside
 
+	var pubs []distribution.Publisher
+	if k := os.Getenv("DEVTO_API_KEY"); k != "" {
+		pubs = append(pubs, distribution.NewDevTo(k))
+	}
+	if t := os.Getenv("HASHNODE_API_TOKEN"); t != "" {
+		pubs = append(pubs, distribution.NewHashnode(t, os.Getenv("HASHNODE_PUBLICATION_ID")))
+	}
+	if h := os.Getenv("BLUESKY_HANDLE"); h != "" {
+		pubs = append(pubs, distribution.NewBluesky(h, os.Getenv("BLUESKY_APP_PASSWORD")))
+	}
+	if inst := os.Getenv("MASTODON_INSTANCE_URL"); inst != "" {
+		pubs = append(pubs, distribution.NewMastodon(inst, os.Getenv("MASTODON_ACCESS_TOKEN")))
+	}
+
+	var distH *handlersdistribution.Handlers
+	if len(pubs) > 0 {
+		distStore, derr := distribution.NewStore(store.DB())
+		if derr != nil {
+			slog.Error("distribution store init failed", "err", derr)
+		} else {
+			var hookGen distribution.HookGenerator
+			if llmClient != nil {
+				hookGen = llmClient
+			}
+			distSvc := distribution.NewService(distStore, hookGen, pubs)
+			distH = handlersdistribution.NewHandlers(handlersdistribution.Deps{Service: distSvc})
+			slog.Info("distribution enabled", "platforms", len(pubs))
+		}
+	}
+
 	var runner *backup.Runner
 	if folder := os.Getenv("GDRIVE_BACKUP_FOLDER_ID"); folder != "" {
 		drv, gerr := gdrive.NewClient(context.Background())
@@ -136,7 +168,8 @@ func main() {
 	handler := router.New(router.Deps{
 		DB: store.DB(), Sessions: sm,
 		AuthHandlers: authHandlers, VotacaoHandlers: votH,
-		AdminHandlers: adminH, LLMHandlers: llmH, Store: store,
+		AdminHandlers: adminH, LLMHandlers: llmH,
+		DistributionHandlers: distH, Store: store,
 	})
 
 	addr := ":" + port
