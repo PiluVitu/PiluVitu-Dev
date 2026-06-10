@@ -28,7 +28,9 @@ func newChatServer(t *testing.T, reply string) *httptest.Server {
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
 		if body.Stream {
 			t.Error("stream must be false")
 		}
@@ -48,6 +50,19 @@ func TestHealthOK(t *testing.T) {
 	}
 }
 
+func TestHealthError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"not ready"}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	err := c.Health(context.Background())
+	if err == nil {
+		t.Fatal("Health() = nil, want non-nil error for 503")
+	}
+}
+
 func TestChatTrimsReply(t *testing.T) {
 	srv := newChatServer(t, "  resposta limpa\n")
 	defer srv.Close()
@@ -56,8 +71,37 @@ func TestChatTrimsReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chat() error: %v", err)
 	}
-	if strings.TrimSpace(got) != "resposta limpa" {
+	if got != "resposta limpa" {
 		t.Fatalf("chat() = %q", got)
+	}
+}
+
+func TestChatNon200ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	_, err := c.Proofread(context.Background(), "texto")
+	if err == nil {
+		t.Fatal("Proofread() = nil, want error for 500")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Fatalf("error message does not contain '500': %v", err)
+	}
+}
+
+func TestChatBadJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{broken`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	_, err := c.Proofread(context.Background(), "texto")
+	if err == nil {
+		t.Fatal("Proofread() = nil, want decode error for malformed JSON")
 	}
 }
 
@@ -68,7 +112,9 @@ func TestProofreadSendsTextAndModel(t *testing.T) {
 			Model    string        `json:"model"`
 			Messages []chatMessage `json:"messages"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
 		gotModel = body.Model
 		gotUser = body.Messages[len(body.Messages)-1].Content
 		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "texto corrigido"}})
@@ -96,7 +142,9 @@ func TestGenerateHooksPerPlatform(t *testing.T) {
 		var body struct {
 			Messages []chatMessage `json:"messages"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
 		// devolve a plataforma citada no system prompt p/ provar que variou
 		reply := "chamada"
 		if strings.Contains(body.Messages[0].Content, "bluesky") {
@@ -124,7 +172,9 @@ func TestRefineUsesInstruction(t *testing.T) {
 	var gotUser string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Messages []chatMessage `json:"messages"` }
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
 		gotUser = body.Messages[len(body.Messages)-1].Content
 		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "refinado"}})
 	}))

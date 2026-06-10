@@ -6,6 +6,7 @@ NÃO reescreva no seu estilo, NÃO mude o tom, NÃO traduza, NÃO adicione conte
 Preserve EXATAMENTE a formatação Markdown/MDX: títulos, listas, links, blocos de código (não toque no conteúdo entre crases) e componentes JSX.
 Responda SOMENTE com o texto corrigido, sem comentários nem cercas de código extras.`
 
+// hooksSystemTmpl takes (platform string, limit int) via fmt.Sprintf.
 const hooksSystemTmpl = `Você escreve chamadas curtas e envolventes para redes sociais, em português do Brasil, divulgando um artigo de blog.
 Plataforma: %s. Limite rígido: %d caracteres (inclua o link na contagem).
 Inclua o link do artigo no fim. Use no máximo 2 hashtags relevantes. Sem aspas em volta. Sem emojis em excesso.

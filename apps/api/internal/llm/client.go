@@ -6,10 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ollamaTimeout allows for slow local LLM inference (cold model, long text).
+const ollamaTimeout = 120 * time.Second
 
 // Client fala com o Ollama local. Espelha o padrão dos clients externos (TMDb).
 type Client struct {
@@ -24,7 +28,7 @@ type Client struct {
 func NewClient(base, modelProofread, modelHooks string) *Client {
 	return &Client{
 		base:           strings.TrimRight(base, "/"),
-		http:           &http.Client{Timeout: 120 * time.Second},
+		http:           &http.Client{Timeout: ollamaTimeout},
 		modelProofread: modelProofread,
 		modelHooks:     modelHooks,
 	}
@@ -47,7 +51,8 @@ func (c *Client) Health(ctx context.Context) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("llm: ollama health status %d", res.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("llm: ollama health status %d: %s", res.StatusCode, bytes.TrimSpace(body))
 	}
 	return nil
 }
@@ -75,7 +80,8 @@ func (c *Client) chat(ctx context.Context, model, system, user string) (string, 
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llm: chat status %d", res.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return "", fmt.Errorf("llm: chat status %d: %s", res.StatusCode, bytes.TrimSpace(body))
 	}
 	var out struct {
 		Message chatMessage `json:"message"`
@@ -105,17 +111,23 @@ type Hook struct {
 	Text     string
 }
 
-// platformLimit é o limite de caracteres por plataforma social.
-var platformLimit = map[string]int{"bluesky": 300, "mastodon": 500}
+// platformLimit returns the character limit for the given social platform.
+func platformLimit(p string) int {
+	switch p {
+	case "bluesky":
+		return 300
+	case "mastodon":
+		return 500
+	default:
+		return 280
+	}
+}
 
 // GenerateHooks gera uma chamada por plataforma (uma chamada de chat cada).
 func (c *Client) GenerateHooks(ctx context.Context, a Article, platforms []string) ([]Hook, error) {
 	hooks := make([]Hook, 0, len(platforms))
 	for _, p := range platforms {
-		limit := platformLimit[p]
-		if limit == 0 {
-			limit = 280
-		}
+		limit := platformLimit(p)
 		system := fmt.Sprintf(hooksSystemTmpl, p, limit)
 		user := fmt.Sprintf("Título: %s\nResumo: %s\nLink: %s\nTags: %s",
 			a.Title, a.Excerpt, a.URL, strings.Join(a.Tags, ", "))
@@ -133,10 +145,7 @@ func (c *Client) Refine(ctx context.Context, platform, text, instruction string)
 	if instruction == "" {
 		instruction = "Melhore o engajamento mantendo o sentido."
 	}
-	limit := platformLimit[platform]
-	if limit == 0 {
-		limit = 280
-	}
+	limit := platformLimit(platform)
 	user := fmt.Sprintf("Plataforma: %s (limite %d chars)\nInstrução: %s\n\nTexto atual:\n%s",
 		platform, limit, instruction, text)
 	return c.chat(ctx, c.modelHooks, refineSystem, user)
