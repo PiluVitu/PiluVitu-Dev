@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -68,7 +69,7 @@ func (h *Handlers) Proposals(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo inválido: 'slug' é obrigatório.")
 		return
 	}
-	art := pkgllm.Article{Title: in.Title, Excerpt: in.Excerpt, URL: in.URL, Tags: in.Tags}
+	art := pkgllm.Article{Title: in.Title, Excerpt: in.Excerpt, URL: in.URL, Tags: in.Tags, VoiceSample: firstRunes(in.Body, 800)}
 	targets, err := h.svc.BuildProposals(r.Context(), in.Slug, art, in.Body)
 	if err != nil {
 		httpx.Error(w, http.StatusBadGateway, "proposals_failed", "Falha ao gerar propostas.")
@@ -115,4 +116,14 @@ func (h *Handlers) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.Data(w, http.StatusOK, map[string]any{"targets": targets})
+}
+
+// firstRunes returns up to n runes from s, slicing on a rune boundary.
+func firstRunes(s string, n int) string {
+	i := 0
+	for count := 0; count < n && i < len(s); count++ {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+	}
+	return s[:i]
 }

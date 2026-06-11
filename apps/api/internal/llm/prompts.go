@@ -14,10 +14,10 @@ REGRAS RÍGIDAS:
 - Responda SOMENTE com o texto corrigido, sem comentários, sem aspas e sem cercas de código extras.`
 
 // hooksSystemTmpl takes (platform string, limit int) via fmt.Sprintf.
-const hooksSystemTmpl = `Você escreve chamadas curtas e envolventes para redes sociais, em português do Brasil, divulgando um artigo de blog.
-Plataforma: %s. Limite rígido: %d caracteres (inclua o link na contagem).
-Inclua o link do artigo no fim. Use no máximo 2 hashtags relevantes. Sem aspas em volta. Sem emojis em excesso.
+const hooksSystemTmpl = `Você é o AUTOR do artigo e está divulgando seu próprio post numa rede social, em português do Brasil.
+Plataforma: %s. Limite rígido: %d caracteres.
+Escreva em PRIMEIRA PESSOA ("eu"), no MEU tom e estilo — use o trecho do meu artigo abaixo como referência da minha voz. Soe natural e pessoal, nunca corporativo nem em terceira pessoa.
+NÃO inclua link nem URL (o link é postado separadamente). No máximo 2 hashtags, e só se fizerem sentido. Sem aspas em volta, sem emojis em excesso.
 Responda SOMENTE com o texto da chamada.`
 
-const refineSystem = `Você refina uma chamada de rede social em português do Brasil mantendo o link e a intenção.
-Aplique a instrução do usuário. Responda SOMENTE com o texto refinado, sem comentários.`
+const refineSystem = `Você refina uma chamada de rede social em português do Brasil, em PRIMEIRA PESSOA e no tom do autor. Aplique a instrução do usuário mantendo a intenção. NÃO inclua link nem URL. Responda SOMENTE com o texto refinado, sem comentários.`

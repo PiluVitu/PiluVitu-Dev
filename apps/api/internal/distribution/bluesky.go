@@ -33,8 +33,10 @@ func NewBluesky(handle, appPassword string) *Bluesky {
 func (b *Bluesky) Platform() string { return "bluesky" }
 func (b *Bluesky) Kind() Kind       { return KindSocial }
 
-// Publish posta um toot no Bluesky. Rejeita textos > 300 runes.
-// Retorna https://bsky.app/profile/<handle>/post/<rkey>.
+// Publish posta um hook no Bluesky. Rejeita textos > 300 runes.
+// Se p.CanonicalURL não for vazio, posta um segundo record em reply ao principal
+// com o link clicável via richtext facet.
+// Retorna https://bsky.app/profile/<handle>/post/<rkey> do post principal.
 func (b *Bluesky) Publish(ctx context.Context, p Payload) (string, error) {
 	if utf8.RuneCountInString(p.Text) > 300 {
 		return "", fmt.Errorf("bluesky: texto excede 300 caracteres")
@@ -48,9 +50,10 @@ func (b *Bluesky) Publish(ctx context.Context, p Payload) (string, error) {
 		map[string]string{"identifier": b.handle, "password": b.password}, &sess); err != nil {
 		return "", err
 	}
-	// 2) Criar record: recebe uri at://...
+	// 2) Criar record principal (só o hook, sem link)
 	var rec struct {
 		URI string `json:"uri"`
+		CID string `json:"cid"`
 	}
 	record := map[string]any{
 		"$type":     "app.bsky.feed.post",
@@ -61,11 +64,41 @@ func (b *Bluesky) Publish(ctx context.Context, p Payload) (string, error) {
 		map[string]any{"repo": sess.Did, "collection": "app.bsky.feed.post", "record": record}, &rec); err != nil {
 		return "", err
 	}
-	idx := strings.LastIndex(rec.URI, "/")
-	if idx < 0 || idx == len(rec.URI)-1 {
-		return "", fmt.Errorf("bluesky: unexpected uri format: %q", rec.URI)
+	mainURI := rec.URI
+	mainCID := rec.CID
+
+	idx := strings.LastIndex(mainURI, "/")
+	if idx < 0 || idx == len(mainURI)-1 {
+		return "", fmt.Errorf("bluesky: unexpected uri format: %q", mainURI)
 	}
-	rkey := rec.URI[idx+1:]
+	rkey := mainURI[idx+1:]
+
+	// 3) Se houver URL canônica, postar reply com link clicável (facet)
+	if p.CanonicalURL != "" {
+		urlBytes := len([]byte(p.CanonicalURL))
+		replyRecord := map[string]any{
+			"$type":     "app.bsky.feed.post",
+			"text":      p.CanonicalURL,
+			"createdAt": time.Now().UTC().Format(time.RFC3339),
+			"facets": []any{map[string]any{
+				"index":    map[string]any{"byteStart": 0, "byteEnd": urlBytes},
+				"features": []any{map[string]any{"$type": "app.bsky.richtext.facet#link", "uri": p.CanonicalURL}},
+			}},
+			"reply": map[string]any{
+				"root":   map[string]any{"uri": mainURI, "cid": mainCID},
+				"parent": map[string]any{"uri": mainURI, "cid": mainCID},
+			},
+		}
+		var replyRec struct {
+			URI string `json:"uri"`
+			CID string `json:"cid"`
+		}
+		if err := b.post(ctx, "/xrpc/com.atproto.repo.createRecord", sess.AccessJwt,
+			map[string]any{"repo": sess.Did, "collection": "app.bsky.feed.post", "record": replyRecord}, &replyRec); err != nil {
+			return "", err
+		}
+	}
+
 	return fmt.Sprintf("https://bsky.app/profile/%s/post/%s", b.handle, rkey), nil
 }
 

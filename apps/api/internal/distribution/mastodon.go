@@ -31,13 +31,18 @@ func NewMastodon(instanceURL, token string) *Mastodon {
 func (m *Mastodon) Platform() string { return "mastodon" }
 func (m *Mastodon) Kind() Kind       { return KindSocial }
 
-// Publish posta um status no Mastodon. Rejeita textos > 500 runes.
+// Publish posta um status no Mastodon. Rejeita textos > 500 runes (após
+// anexar o CanonicalURL, quando presente).
 // Retorna a URL pública do toot.
 func (m *Mastodon) Publish(ctx context.Context, p Payload) (string, error) {
-	if utf8.RuneCountInString(p.Text) > 500 {
+	status := p.Text
+	if p.CanonicalURL != "" {
+		status += "\n\n" + p.CanonicalURL
+	}
+	if utf8.RuneCountInString(status) > 500 {
 		return "", fmt.Errorf("mastodon: texto excede 500 caracteres")
 	}
-	buf, _ := json.Marshal(map[string]string{"status": p.Text})
+	buf, _ := json.Marshal(map[string]string{"status": status})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.instance+"/api/v1/statuses", bytes.NewReader(buf))
 	if err != nil {
 		return "", err

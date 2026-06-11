@@ -122,10 +122,11 @@ func (c *Client) Proofread(ctx context.Context, text string, careful bool) (stri
 
 // Article é o resumo do post usado para gerar chamadas.
 type Article struct {
-	Title   string
-	Excerpt string
-	URL     string
-	Tags    []string
+	Title       string
+	Excerpt     string
+	URL         string
+	Tags        []string
+	VoiceSample string // trecho do artigo para calibrar o tom do autor
 }
 
 // Hook é uma chamada gerada para uma plataforma.
@@ -152,8 +153,8 @@ func (c *Client) GenerateHooks(ctx context.Context, a Article, platforms []strin
 	for _, p := range platforms {
 		limit := platformLimit(p)
 		system := fmt.Sprintf(hooksSystemTmpl, p, limit)
-		user := fmt.Sprintf("Título: %s\nResumo: %s\nLink: %s\nTags: %s",
-			a.Title, a.Excerpt, a.URL, strings.Join(a.Tags, ", "))
+		user := fmt.Sprintf("Título: %s\nResumo: %s\nTags: %s\n\nTrecho do meu artigo (referência de voz):\n%s",
+			a.Title, a.Excerpt, strings.Join(a.Tags, ", "), a.VoiceSample)
 		text, err := c.chat(ctx, c.modelHooks, system, user, 0.7)
 		if err != nil {
 			return nil, fmt.Errorf("llm: hook %s: %w", p, err)
