@@ -143,6 +143,8 @@ See `apps/api/.env.example`. Key variables:
 
 **Fail-soft:** ausência de env desliga a feature (503 no endpoint, sem abortar o boot). `distH` fica `nil` quando nenhum adapter está configurado; o router não registra as rotas nesse caso.
 
+**Proofread por blocos:** `Proofread` divide o markdown (`internal/llm/chunk.go` `splitBlocks` — remontagem byte-a-byte) e envia ao Ollama **só a prosa** (parágrafos/títulos/listas), corrigindo bloco a bloco; código cercado (```), tabelas, HTML/JSX, citações (`>`) e imagens passam **verbatim**. Evita o timeout de 120s em artigos longos e impede a LLM de alterar o que não é texto. `keep_alive=5m` no request mantém o modelo carregado entre os blocos.
+
 #### Envs — LLM (Ollama)
 
 - `OLLAMA_BASE_URL` — URL do Ollama (ex.: `http://localhost:11434`). Vazio ⇒ endpoints `/admin/llm/*` respondem 503.
