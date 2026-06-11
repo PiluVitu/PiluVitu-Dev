@@ -91,7 +91,7 @@ export function DistributionPanel({ post }: { post: PostInput }) {
               description: post.excerpt,
               tags: post.tags,
             }
-          : { platform: t.platform, content: t.content },
+          : { platform: t.platform, content: t.content, canonical_url: url },
       )
     try {
       const res = await publish.mutateAsync(payload)
