@@ -146,18 +146,20 @@ test.describe('Atelier — ProofreadButton', () => {
     await expect(dialog.getByText(/correç(ão|ões)/i)).toBeVisible()
     // "corrigido" appears as an after-word (green) in the corrections list.
     await expect(dialog.locator('span', { hasText: 'corrigido' })).toBeVisible()
+    // Each correction has an accept/reject checkbox (granular control).
+    await expect(dialog.getByRole('checkbox').first()).toBeVisible()
     // Expanding reveals the full inline diff pane.
     await dialog.getByRole('button', { name: /ver texto completo/i }).click()
     await expect(
       dialog.getByRole('button', { name: /ocultar texto completo/i }),
     ).toBeVisible()
 
-    // Click "Aplicar" to accept the correction
+    // Click "Aplicar (N)" to apply the accepted corrections
     await page.getByRole('button', { name: /aplicar/i }).click()
 
     // Dialog closes and a success toast appears
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5_000 })
-    await expect(page.getByText(/texto corrigido aplicado/i)).toBeVisible({
+    await expect(page.getByText(/correções aplicadas/i)).toBeVisible({
       timeout: 5_000,
     })
   })
@@ -177,11 +179,11 @@ test.describe('Atelier — ProofreadButton', () => {
     await page.getByRole('button', { name: /corrigir texto/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 })
 
-    // Click "Rejeitar" — dialog closes without success toast
-    await page.getByRole('button', { name: /rejeitar/i }).click()
+    // Click "Cancelar" — dialog closes without applying
+    await page.getByRole('button', { name: /cancelar/i }).click()
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 5_000 })
     // No success toast
-    await expect(page.getByText(/texto corrigido aplicado/i)).not.toBeVisible()
+    await expect(page.getByText(/correções aplicadas/i)).not.toBeVisible()
   })
 })
 

@@ -58,31 +58,65 @@ export function wordDiff(original: string, corrected: string): DiffSegment[] {
   return out
 }
 
-/** Uma correção pontual: o que a LLM trocou (`before` → `after`). */
-export type Correction = { before: string; after: string }
+/**
+ * DiffPart é um trecho ordenado que cobre o texto inteiro: `equal` (inalterado)
+ * ou `change` (a LLM trocou `before` por `after`). Permite aceitar/rejeitar cada
+ * mudança individualmente e reconstruir o texto exato (ver applyParts).
+ */
+export type DiffPart =
+  | { kind: 'equal'; text: string }
+  | { kind: 'change'; before: string; after: string }
 
 /**
- * extractCorrections resume o diff numa lista de correções "antes → depois".
- * Agrupa runs consecutivos de remove/add (delimitados pelos `equal`) numa
- * correção. before vazio = adição pura; after vazio = remoção pura. Correções
- * que sobram só com espaço em branco (após trim) são descartadas (ruído).
+ * diffParts converte os segmentos do wordDiff em DiffParts. Runs consecutivos de
+ * remove/add (delimitados pelos `equal`) viram uma única `change`. A concatenação
+ * de `equal.text` + (`before` ou `after` de cada `change`) reproduz o texto.
  */
-export function extractCorrections(segments: DiffSegment[]): Correction[] {
-  const out: Correction[] = []
+export function diffParts(segments: DiffSegment[]): DiffPart[] {
+  const out: DiffPart[] = []
   let before = ''
   let after = ''
   const flush = () => {
-    const b = before.trim()
-    const a = after.trim()
-    if (b !== '' || a !== '') out.push({ before: b, after: a })
-    before = ''
-    after = ''
+    if (before !== '' || after !== '') {
+      out.push({ kind: 'change', before, after })
+      before = ''
+      after = ''
+    }
   }
   for (const s of segments) {
-    if (s.type === 'equal') flush()
-    else if (s.type === 'remove') before += s.value
-    else after += s.value
+    if (s.type === 'equal') {
+      flush()
+      const last = out[out.length - 1]
+      if (last && last.kind === 'equal') last.text += s.value
+      else out.push({ kind: 'equal', text: s.value })
+    } else if (s.type === 'remove') {
+      before += s.value
+    } else {
+      after += s.value
+    }
   }
   flush()
+  return out
+}
+
+/**
+ * applyParts reconstrói o texto: `equal` intacto; cada `change` usa `after` se
+ * aceito ou `before` se rejeitado. `accepted` recebe o índice 0-based da mudança
+ * (contando só as `change`). all-accept ⇒ texto corrigido; all-reject ⇒ original.
+ */
+export function applyParts(
+  parts: DiffPart[],
+  accepted: (changeIndex: number) => boolean,
+): string {
+  let ci = 0
+  let out = ''
+  for (const p of parts) {
+    if (p.kind === 'equal') {
+      out += p.text
+    } else {
+      out += accepted(ci) ? p.after : p.before
+      ci++
+    }
+  }
   return out
 }

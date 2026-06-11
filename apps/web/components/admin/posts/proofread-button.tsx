@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { useProofread } from '@/hooks/admin/atelier/use-proofread'
 import { errorMessage } from '@/lib/votacao/api-client'
-import { wordDiff, extractCorrections } from '@/lib/admin/atelier/word-diff'
+import { wordDiff, diffParts, applyParts } from '@/lib/admin/atelier/word-diff'
 
 interface ProofreadButtonProps {
   body: string
@@ -24,12 +24,15 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
   const [corrected, setCorrected] = useState('')
   const [showFull, setShowFull] = useState(false)
   const [careful, setCareful] = useState(false)
+  // Quais mudanças estão aceitas (por índice). Ausente ⇒ aceita por padrão.
+  const [accepted, setAccepted] = useState<Record<number, boolean>>({})
   const proofread = useProofread()
 
   async function run() {
     try {
       const res = await proofread.mutateAsync({ text: body, careful })
       setCorrected(res.corrected)
+      setAccepted({})
       setShowFull(false)
       setOpen(true)
     } catch (err) {
@@ -38,7 +41,24 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
   }
 
   const segments = open ? wordDiff(body, corrected) : []
-  const corrections = open ? extractCorrections(segments) : []
+  const parts = open ? diffParts(segments) : []
+  const isAcc = (i: number) => accepted[i] ?? true
+  const finalText = applyParts(parts, isAcc)
+
+  // Linhas de correção exibíveis, com o índice da mudança (p/ o toggle).
+  const rows: { idx: number; before: string; after: string }[] = []
+  let ci = 0
+  for (const p of parts) {
+    if (p.kind === 'change') {
+      if (p.before.trim() || p.after.trim()) {
+        rows.push({ idx: ci, before: p.before.trim(), after: p.after.trim() })
+      }
+      ci++
+    }
+  }
+  const acceptedCount = rows.filter((r) => isAcc(r.idx)).length
+  const setAll = (val: boolean) =>
+    setAccepted(Object.fromEntries(rows.map((r) => [r.idx, val])))
 
   return (
     <>
@@ -70,41 +90,75 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
             <DialogTitle>Revisão da IA</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {corrections.length === 0 ? (
+            {rows.length === 0 ? (
               <p className="text-muted-foreground text-sm">
                 Nenhuma alteração — o texto já está correto.
               </p>
             ) : (
               <>
-                <p className="text-muted-foreground font-mono text-xs">
-                  {corrections.length}{' '}
-                  {corrections.length === 1 ? 'correção' : 'correções'}
-                </p>
-                <ul className="max-h-[40vh] space-y-1 overflow-auto">
-                  {corrections.map((c, i) => (
-                    <li
-                      key={i}
-                      className="flex flex-wrap items-center gap-2 font-mono text-sm"
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-muted-foreground font-mono text-xs">
+                    {rows.length} {rows.length === 1 ? 'correção' : 'correções'}{' '}
+                    · {acceptedCount} aceita{acceptedCount === 1 ? '' : 's'}
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground text-xs underline"
+                      onClick={() => setAll(true)}
                     >
-                      {c.before ? (
-                        <span className="text-destructive line-through">
-                          {c.before}
+                      aceitar todas
+                    </button>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground text-xs underline"
+                      onClick={() => setAll(false)}
+                    >
+                      rejeitar todas
+                    </button>
+                  </div>
+                </div>
+                <ul className="max-h-[40vh] space-y-1 overflow-auto">
+                  {rows.map((r) => {
+                    const on = isAcc(r.idx)
+                    return (
+                      <li
+                        key={r.idx}
+                        className="flex flex-wrap items-center gap-2 font-mono text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          aria-label={`aceitar correção: ${r.before || 'adição'} para ${r.after || 'remoção'}`}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setAccepted((a) => ({
+                              ...a,
+                              [r.idx]: e.target.checked,
+                            }))
+                          }
+                        />
+                        <span
+                          className={
+                            on
+                              ? 'text-destructive line-through'
+                              : 'text-muted-foreground'
+                          }
+                        >
+                          {r.before || '(adição)'}
                         </span>
-                      ) : (
-                        <span className="text-muted-foreground italic">
-                          (adicionado)
+                        <span className="text-muted-foreground">→</span>
+                        <span
+                          className={
+                            on
+                              ? 'text-ok'
+                              : 'text-muted-foreground line-through'
+                          }
+                        >
+                          {r.after || '(remoção)'}
                         </span>
-                      )}
-                      <span className="text-muted-foreground">→</span>
-                      {c.after ? (
-                        <span className="text-ok">{c.after}</span>
-                      ) : (
-                        <span className="text-muted-foreground italic">
-                          (removido)
-                        </span>
-                      )}
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
               </>
             )}
@@ -145,17 +199,17 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
               variant="ghost"
               onClick={() => setOpen(false)}
             >
-              Rejeitar
+              Cancelar
             </Button>
             <Button
               type="button"
               onClick={() => {
-                onApply(corrected)
+                onApply(finalText)
                 setOpen(false)
-                toast.success('Texto corrigido aplicado.')
+                toast.success('Correções aplicadas.')
               }}
             >
-              Aplicar
+              Aplicar ({acceptedCount})
             </Button>
           </DialogFooter>
         </DialogContent>

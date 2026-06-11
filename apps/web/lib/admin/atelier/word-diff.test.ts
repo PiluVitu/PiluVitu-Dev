@@ -1,4 +1,4 @@
-import { wordDiff, extractCorrections } from './word-diff'
+import { wordDiff, diffParts, applyParts } from './word-diff'
 
 describe('wordDiff', () => {
   it('marca palavras iguais como equal', () => {
@@ -30,43 +30,43 @@ describe('wordDiff', () => {
   })
 })
 
-describe('extractCorrections', () => {
-  const corr = (a: string, b: string) => extractCorrections(wordDiff(a, b))
+describe('diffParts + applyParts', () => {
+  const parts = (a: string, b: string) => diffParts(wordDiff(a, b))
 
-  it('texto idêntico não tem correções', () => {
-    expect(corr('oi mundo', 'oi mundo')).toEqual([])
+  it('all-accept reconstrói o texto corrigido', () => {
+    expect(applyParts(parts('um dios tres', 'um dois tres'), () => true)).toBe(
+      'um dois tres',
+    )
   })
 
-  it('uma substituição vira uma correção antes → depois', () => {
-    expect(corr('txto', 'texto')).toEqual([{ before: 'txto', after: 'texto' }])
+  it('all-reject reconstrói o original', () => {
+    expect(applyParts(parts('um dios tres', 'um dois tres'), () => false)).toBe(
+      'um dios tres',
+    )
   })
 
-  it('só a palavra alterada entra, no meio de iguais', () => {
-    expect(corr('um dios tres', 'um dois tres')).toEqual([
-      { before: 'dios', after: 'dois' },
-    ])
+  it('rejeitar uma mudança específica mantém só ela no original', () => {
+    // duas mudanças: idx 0 (txto→texto), idx 1 (compreio→comprei)
+    const p = parts('txto compreio', 'texto comprei')
+    expect(applyParts(p, (i) => i !== 1)).toBe('texto compreio')
+    expect(applyParts(p, (i) => i !== 0)).toBe('txto comprei')
   })
 
-  it('palavras alteradas adjacentes viram correções separadas', () => {
-    expect(corr('txto compreio', 'texto comprei')).toEqual([
-      { before: 'txto', after: 'texto' },
-      { before: 'compreio', after: 'comprei' },
-    ])
+  it('texto idêntico: só equal, reconstrução == original', () => {
+    const p = parts('oi mundo', 'oi mundo')
+    expect(p.every((x) => x.kind === 'equal')).toBe(true)
+    expect(applyParts(p, () => true)).toBe('oi mundo')
   })
 
-  it('adição pura tem before vazio', () => {
-    expect(corr('ola mundo', 'ola lindo mundo')).toEqual([
-      { before: '', after: 'lindo' },
-    ])
+  it('preserva espaços ao reconstruir (aceito ou rejeitado)', () => {
+    const p = parts('a  b', 'a b') // mudança só de espaço
+    expect(applyParts(p, () => true)).toBe('a b')
+    expect(applyParts(p, () => false)).toBe('a  b')
   })
 
-  it('remoção pura tem after vazio', () => {
-    expect(corr('ola lindo mundo', 'ola mundo')).toEqual([
-      { before: 'lindo', after: '' },
-    ])
-  })
-
-  it('mudança só de espaço em branco é ignorada', () => {
-    expect(corr('texto  fim', 'texto fim')).toEqual([])
+  it('adição pura: aceita insere, rejeita omite', () => {
+    const p = parts('ola mundo', 'ola lindo mundo')
+    expect(applyParts(p, () => true)).toBe('ola lindo mundo')
+    expect(applyParts(p, () => false)).toBe('ola mundo')
   })
 })
