@@ -5,6 +5,7 @@ import { atelierApi } from '@/lib/admin/atelier/api'
 
 export function useProofread() {
   return useMutation({
-    mutationFn: (text: string) => atelierApi.proofread(text),
+    mutationFn: (v: { text: string; careful: boolean }) =>
+      atelierApi.proofread(v.text, v.careful),
   })
 }

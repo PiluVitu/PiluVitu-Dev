@@ -21,10 +21,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const atelierApi = {
-  proofread: (text: string) =>
+  proofread: (text: string, careful = false) =>
     call<{ corrected: string }>('/admin/llm/proofread', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, careful }),
     }),
   refine: (platform: string, text: string, instruction: string) =>
     call<{ refined: string }>('/admin/llm/refine', {

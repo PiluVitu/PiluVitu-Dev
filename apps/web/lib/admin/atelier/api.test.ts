@@ -22,7 +22,7 @@ describe('atelierApi', () => {
 
     const [, init] = (global.fetch as jest.Mock).mock.calls[0]
     expect(init.credentials).toBe('include')
-    expect(JSON.parse(init.body)).toEqual({ text: 'txto' })
+    expect(JSON.parse(init.body)).toEqual({ text: 'txto', careful: false })
   })
 
   it('lança ApiError em status !ok', async () => {
