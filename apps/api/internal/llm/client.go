@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ollamaTimeout allows for slow local LLM inference (cold model, long text).
@@ -159,7 +160,7 @@ func (c *Client) GenerateHooks(ctx context.Context, a Article, platforms []strin
 		if err != nil {
 			return nil, fmt.Errorf("llm: hook %s: %w", p, err)
 		}
-		hooks = append(hooks, Hook{Platform: p, Text: text})
+		hooks = append(hooks, Hook{Platform: p, Text: c.fitToLimit(ctx, text, limit)})
 	}
 	return hooks, nil
 }
@@ -172,5 +173,43 @@ func (c *Client) Refine(ctx context.Context, platform, text, instruction string)
 	limit := platformLimit(platform)
 	user := fmt.Sprintf("Plataforma: %s (limite %d chars)\nInstrução: %s\n\nTexto atual:\n%s",
 		platform, limit, instruction, text)
-	return c.chat(ctx, c.modelHooks, refineSystem, user, 0.7)
+	out, err := c.chat(ctx, c.modelHooks, refineSystem, user, 0.7)
+	if err != nil {
+		return "", err
+	}
+	return c.fitToLimit(ctx, out, limit), nil
+}
+
+// fitToLimit garante que text cabe em limit runas: tenta encurtar via LLM e, se
+// ainda exceder (ou o encurtar falhar), corta na borda de palavra. O LLM não
+// conta caracteres de forma confiável, então o limite é garantido aqui.
+func (c *Client) fitToLimit(ctx context.Context, text string, limit int) string {
+	if utf8.RuneCountInString(text) <= limit {
+		return text
+	}
+	if shorter, err := c.chat(ctx, c.modelHooks, shortenSystem,
+		fmt.Sprintf("Encurte para no máximo %d caracteres, mantendo o tom e o sentido, sem link/URL. Responda só com o texto:\n\n%s", limit, text), 0.3); err == nil {
+		s := strings.TrimSpace(shorter)
+		if s != "" && utf8.RuneCountInString(s) <= limit {
+			return s
+		}
+		if s != "" {
+			text = s
+		}
+	}
+	return truncateRunes(text, limit)
+}
+
+// truncateRunes corta s em no máximo limit runas, recuando até a última palavra
+// inteira quando possível (evita cortar no meio de uma palavra).
+func truncateRunes(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	cut := string(r[:limit])
+	if i := strings.LastIndexAny(cut, " \n\t"); i > limit/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut)
 }

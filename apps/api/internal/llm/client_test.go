@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 )
 
 func newChatServer(t *testing.T, reply string) *httptest.Server {
@@ -225,5 +227,44 @@ func TestProofreadCarefulUsesCarefulModel(t *testing.T) {
 	}
 	if lastModel != "m-careful" {
 		t.Fatalf("careful=true: model = %q, want m-careful", lastModel)
+	}
+}
+
+func TestGenerateHooksEnforcesCharLimit(t *testing.T) {
+	long := strings.Repeat("palavra ", 60) // ~480 chars, acima do limite do bluesky (300)
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := long
+		if calls.Add(1) >= 2 {
+			reply = "versão curtinha" // passe de encurtar devolve algo dentro do limite
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": reply}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	hooks, err := c.GenerateHooks(context.Background(), Article{Title: "T"}, []string{"bluesky"})
+	if err != nil {
+		t.Fatalf("GenerateHooks: %v", err)
+	}
+	if n := utf8.RuneCountInString(hooks[0].Text); n > 300 {
+		t.Fatalf("hook = %d chars, want ≤300: %q", n, hooks[0].Text)
+	}
+}
+
+func TestGenerateHooksTruncatesWhenShortenStillLong(t *testing.T) {
+	long := strings.Repeat("x", 500) // o encurtar também devolve longo
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": long}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	hooks, err := c.GenerateHooks(context.Background(), Article{Title: "T"}, []string{"bluesky"})
+	if err != nil {
+		t.Fatalf("GenerateHooks: %v", err)
+	}
+	if n := utf8.RuneCountInString(hooks[0].Text); n > 300 {
+		t.Fatalf("hook não foi truncado p/ o limite: %d chars", n)
 	}
 }
