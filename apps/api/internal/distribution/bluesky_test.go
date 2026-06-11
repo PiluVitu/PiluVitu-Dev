@@ -105,6 +105,23 @@ func TestBlueskyPublishWithLinkReply(t *testing.T) {
 		t.Fatalf("second record missing facets: %v", secondRecordBody["facets"])
 	}
 
+	// Facet must be a #link covering the whole URL (byte offsets), so the
+	// reply renders as a clickable link.
+	f0, _ := facets[0].(map[string]any)
+	idx, _ := f0["index"].(map[string]any)
+	if idx == nil || idx["byteStart"].(float64) != 0 ||
+		int(idx["byteEnd"].(float64)) != len([]byte(canonicalURL)) {
+		t.Fatalf("facet index = %v, want byteStart=0 byteEnd=%d", f0["index"], len([]byte(canonicalURL)))
+	}
+	feats, _ := f0["features"].([]any)
+	if len(feats) == 0 {
+		t.Fatalf("facet missing features: %v", f0["features"])
+	}
+	feat0, _ := feats[0].(map[string]any)
+	if feat0["$type"] != "app.bsky.richtext.facet#link" || feat0["uri"] != canonicalURL {
+		t.Fatalf("facet feature = %v, want #link com uri %q", feat0, canonicalURL)
+	}
+
 	// Second record must have a reply ref with correct uri/cid
 	reply, ok := secondRecordBody["reply"].(map[string]any)
 	if !ok {
