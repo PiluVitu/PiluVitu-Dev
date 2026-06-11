@@ -60,10 +60,11 @@ func (c *Client) Health(ctx context.Context) error {
 // chat faz um turno não-streaming e devolve o texto da resposta (trimado).
 func (c *Client) chat(ctx context.Context, model, system, user string) (string, error) {
 	payload := map[string]any{
-		"model":    model,
-		"stream":   false,
-		"messages": []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
-		"options":  map[string]any{"temperature": 0.3},
+		"model":      model,
+		"stream":     false,
+		"messages":   []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
+		"options":    map[string]any{"temperature": 0.3},
+		"keep_alive": "5m", // mantém o modelo quente entre chamadas (proofread por bloco)
 	}
 	buf, err := json.Marshal(payload)
 	if err != nil {
@@ -92,9 +93,24 @@ func (c *Client) chat(ctx context.Context, model, system, user string) (string, 
 	return strings.TrimSpace(out.Message.Content), nil
 }
 
-// Proofread conserta typos/gramática preservando Markdown/MDX. Texto sem frontmatter.
+// Proofread conserta typos/gramática preservando Markdown/MDX. Divide o texto em
+// blocos e envia ao LLM SÓ a prosa (pula código, tabelas, HTML/JSX, citações e
+// imagens), corrigindo bloco a bloco — bem mais rápido em artigos longos e sem
+// risco de a LLM estragar o que não é texto. Texto sem frontmatter.
 func (c *Client) Proofread(ctx context.Context, text string) (string, error) {
-	return c.chat(ctx, c.modelProofread, proofreadSystem, text)
+	var sb strings.Builder
+	for _, b := range splitBlocks(text) {
+		if b.kind == passthrough || strings.TrimSpace(b.text) == "" {
+			sb.WriteString(b.text)
+			continue
+		}
+		corrected, err := c.chat(ctx, c.modelProofread, proofreadSystem, b.text)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(restoreEdges(b.text, corrected))
+	}
+	return sb.String(), nil
 }
 
 // Article é o resumo do post usado para gerar chamadas.
