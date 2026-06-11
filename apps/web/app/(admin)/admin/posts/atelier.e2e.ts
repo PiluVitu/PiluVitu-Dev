@@ -210,6 +210,14 @@ test.describe('Atelier — DistributionPanel', () => {
       }),
     )
 
+    // Preload GET /admin/distribution/<slug> — vazio até gerar propostas
+    await page.route('**/admin/distribution/meu-post', (r) =>
+      r.fulfill({
+        contentType: 'application/json',
+        body: envelope({ targets: [] }),
+      }),
+    )
+
     await page.goto('/admin/posts/novo')
 
     // Fill the slug field to trigger DistributionPanel mount

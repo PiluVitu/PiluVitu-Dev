@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import {
   useBuildProposals,
+  useDistribution,
   usePublishDistribution,
   useRefineHook,
 } from '@/hooks/admin/atelier/use-distribution'
@@ -28,13 +29,25 @@ interface PostInput {
 const PUBLIC_BASE = 'https://piluvitu.com.br/posts'
 
 export function DistributionPanel({ post }: { post: PostInput }) {
-  const [targets, setTargets] = useState<DistributionTarget[]>([])
+  const [localTargets, setLocalTargets] = useState<DistributionTarget[] | null>(
+    null,
+  )
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [instructions, setInstructions] = useState<Record<string, string>>({})
 
   const build = useBuildProposals()
   const refine = useRefineHook()
   const publish = usePublishDistribution(post.slug)
+
+  // Pré-carrega o estado salvo ao reabrir o post: os alvos exibidos DERIVAM de
+  // (edições locais desta sessão) ?? (dados salvos no servidor) ?? []. Sem copiar
+  // pra state via effect/ref — só derivação (compatível com o React Compiler).
+  const existing = useDistribution(post.slug, !!post.slug)
+  const targets = localTargets ?? existing.data?.targets ?? []
+  // Seleção default por alvo: já publicado vem desmarcado (idempotente),
+  // pendente/falho vem marcado p/ (re)publicar; o toggle do usuário sobrescreve.
+  const isSel = (t: DistributionTarget) =>
+    selected[t.platform] ?? t.status !== 'posted'
 
   const url = `${PUBLIC_BASE}/${post.slug}`
 
@@ -48,18 +61,18 @@ export function DistributionPanel({ post }: { post: PostInput }) {
         body: post.body,
         tags: post.tags,
       })
-      setTargets(res.targets)
-      setSelected(
-        Object.fromEntries(res.targets.map((t) => [t.platform, true])),
-      )
+      setLocalTargets(res.targets)
+      setSelected({}) // reset overrides → defaults (todos pendentes = marcados)
     } catch (err) {
       toast.error(errorMessage(err))
     }
   }
 
   function setContent(platform: string, content: string) {
-    setTargets((ts) =>
-      ts.map((t) => (t.platform === platform ? { ...t, content } : t)),
+    setLocalTargets((prev) =>
+      (prev ?? existing.data?.targets ?? []).map((t) =>
+        t.platform === platform ? { ...t, content } : t,
+      ),
     )
   }
 
@@ -79,23 +92,21 @@ export function DistributionPanel({ post }: { post: PostInput }) {
   }
 
   async function publishSelected() {
-    const payload: SelectedTarget[] = targets
-      .filter((t) => selected[t.platform])
-      .map((t) =>
-        t.kind === 'article_crosspost'
-          ? {
-              platform: t.platform,
-              content: t.content,
-              title: post.title,
-              canonical_url: url,
-              description: post.excerpt,
-              tags: post.tags,
-            }
-          : { platform: t.platform, content: t.content, canonical_url: url },
-      )
+    const payload: SelectedTarget[] = targets.filter(isSel).map((t) =>
+      t.kind === 'article_crosspost'
+        ? {
+            platform: t.platform,
+            content: t.content,
+            title: post.title,
+            canonical_url: url,
+            description: post.excerpt,
+            tags: post.tags,
+          }
+        : { platform: t.platform, content: t.content, canonical_url: url },
+    )
     try {
       const res = await publish.mutateAsync(payload)
-      setTargets(res.targets)
+      setLocalTargets(res.targets)
       toast.success('Publicação concluída.')
     } catch (err) {
       toast.error(errorMessage(err))
@@ -123,7 +134,7 @@ export function DistributionPanel({ post }: { post: PostInput }) {
           <TargetRow
             key={t.platform}
             target={t}
-            selected={!!selected[t.platform]}
+            selected={isSel(t)}
             onToggle={(v) => setSelected((s) => ({ ...s, [t.platform]: v }))}
           />
         ))}
@@ -139,7 +150,7 @@ export function DistributionPanel({ post }: { post: PostInput }) {
             <div key={t.platform} className="space-y-2 rounded-md border p-3">
               <TargetRow
                 target={t}
-                selected={!!selected[t.platform]}
+                selected={isSel(t)}
                 onToggle={(v) =>
                   setSelected((s) => ({ ...s, [t.platform]: v }))
                 }
