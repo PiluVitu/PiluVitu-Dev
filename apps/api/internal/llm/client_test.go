@@ -44,7 +44,7 @@ func newChatServer(t *testing.T, reply string) *httptest.Server {
 func TestHealthOK(t *testing.T) {
 	srv := newChatServer(t, "ok")
 	defer srv.Close()
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
 	if err := c.Health(context.Background()); err != nil {
 		t.Fatalf("Health() = %v, want nil", err)
 	}
@@ -56,7 +56,7 @@ func TestHealthError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"not ready"}`))
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
 	err := c.Health(context.Background())
 	if err == nil {
 		t.Fatal("Health() = nil, want non-nil error for 503")
@@ -66,8 +66,8 @@ func TestHealthError(t *testing.T) {
 func TestChatTrimsReply(t *testing.T) {
 	srv := newChatServer(t, "  resposta limpa\n")
 	defer srv.Close()
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
-	got, err := c.chat(context.Background(), "m-proof", "sys", "user")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	got, err := c.chat(context.Background(), "m-proof", "sys", "user", 0.1)
 	if err != nil {
 		t.Fatalf("chat() error: %v", err)
 	}
@@ -82,8 +82,8 @@ func TestChatNon200ReturnsError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"boom"}`))
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
-	_, err := c.Proofread(context.Background(), "texto")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	_, err := c.Proofread(context.Background(), "texto", false)
 	if err == nil {
 		t.Fatal("Proofread() = nil, want error for 500")
 	}
@@ -98,8 +98,8 @@ func TestChatBadJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{broken`))
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
-	_, err := c.Proofread(context.Background(), "texto")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	_, err := c.Proofread(context.Background(), "texto", false)
 	if err == nil {
 		t.Fatal("Proofread() = nil, want decode error for malformed JSON")
 	}
@@ -121,8 +121,8 @@ func TestProofreadSendsTextAndModel(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
-	got, err := c.Proofread(context.Background(), "txto com erro")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+	got, err := c.Proofread(context.Background(), "txto com erro", false)
 	if err != nil {
 		t.Fatalf("Proofread() error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestGenerateHooksPerPlatform(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
 	art := Article{Title: "Meu Post", Excerpt: "resumo", URL: "https://blog/x", Tags: []string{"go"}}
 	hooks, err := c.GenerateHooks(context.Background(), art, []string{"bluesky", "mastodon"})
 	if err != nil {
@@ -182,7 +182,7 @@ func TestRefineUsesInstruction(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "m-proof", "m-hooks")
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
 	got, err := c.Refine(context.Background(), "bluesky", "texto base", "deixa informal")
 	if err != nil {
 		t.Fatalf("Refine() error: %v", err)
@@ -192,5 +192,38 @@ func TestRefineUsesInstruction(t *testing.T) {
 	}
 	if !strings.Contains(gotUser, "texto base") || !strings.Contains(gotUser, "deixa informal") {
 		t.Fatalf("user message faltando texto/instrução: %q", gotUser)
+	}
+}
+
+func TestProofreadCarefulUsesCarefulModel(t *testing.T) {
+	var lastModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		lastModel = body.Model
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "corrigido"}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "m-proof", "m-careful", "m-hooks")
+
+	// careful=false deve usar o modelo padrão
+	if _, err := c.Proofread(context.Background(), "txto", false); err != nil {
+		t.Fatalf("Proofread(careful=false) error: %v", err)
+	}
+	if lastModel != "m-proof" {
+		t.Fatalf("careful=false: model = %q, want m-proof", lastModel)
+	}
+
+	// careful=true deve usar o modelo cuidadoso
+	if _, err := c.Proofread(context.Background(), "txto", true); err != nil {
+		t.Fatalf("Proofread(careful=true) error: %v", err)
+	}
+	if lastModel != "m-careful" {
+		t.Fatalf("careful=true: model = %q, want m-careful", lastModel)
 	}
 }

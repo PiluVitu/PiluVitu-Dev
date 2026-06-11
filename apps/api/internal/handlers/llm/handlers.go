@@ -13,7 +13,7 @@ import (
 
 // LLM é a sub-interface consumida pelos handlers (desacopla do *llm.Client).
 type LLM interface {
-	Proofread(ctx context.Context, text string) (string, error)
+	Proofread(ctx context.Context, text string, careful bool) (string, error)
 	GenerateHooks(ctx context.Context, a pkgllm.Article, platforms []string) ([]pkgllm.Hook, error)
 	Refine(ctx context.Context, platform, text, instruction string) (string, error)
 }
@@ -46,20 +46,21 @@ func (h *Handlers) unavailable(w http.ResponseWriter) bool {
 }
 
 // Proofread corrige ortografia/gramática do texto preservando Markdown/MDX.
-// POST /admin/llm/proofread  body: {"text":"..."}
+// POST /admin/llm/proofread  body: {"text":"...", "careful": bool (optional, default false)}
 // 200 {"data":{"corrected":"..."}} | 400 invalid_json | 503 llm_unavailable | 502 llm_failed
 func (h *Handlers) Proofread(w http.ResponseWriter, r *http.Request) {
 	if h.unavailable(w) {
 		return
 	}
 	var in struct {
-		Text string `json:"text"`
+		Text    string `json:"text"`
+		Careful bool   `json:"careful"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Text == "" {
 		httpx.Error(w, http.StatusBadRequest, "invalid_json", "Corpo inválido: 'text' é obrigatório.")
 		return
 	}
-	out, err := h.llm.Proofread(r.Context(), in.Text)
+	out, err := h.llm.Proofread(r.Context(), in.Text, in.Careful)
 	if err != nil {
 		httpx.Error(w, http.StatusBadGateway, "llm_failed", "Falha ao corrigir o texto.")
 		return

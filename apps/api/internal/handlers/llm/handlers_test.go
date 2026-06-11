@@ -13,16 +13,22 @@ import (
 )
 
 type stubLLM struct {
-	corrected string
-	refined   string
-	err       error
+	corrected   string
+	refined     string
+	err         error
+	lastCareful bool
 }
 
-func (s stubLLM) Proofread(_ context.Context, _ string) (string, error) { return s.corrected, s.err }
-func (s stubLLM) GenerateHooks(_ context.Context, _ pkgllm.Article, _ []string) ([]pkgllm.Hook, error) {
+func (s *stubLLM) Proofread(_ context.Context, _ string, careful bool) (string, error) {
+	s.lastCareful = careful
+	return s.corrected, s.err
+}
+func (s *stubLLM) GenerateHooks(_ context.Context, _ pkgllm.Article, _ []string) ([]pkgllm.Hook, error) {
 	return nil, s.err
 }
-func (s stubLLM) Refine(_ context.Context, _, _, _ string) (string, error) { return s.refined, s.err }
+func (s *stubLLM) Refine(_ context.Context, _, _, _ string) (string, error) {
+	return s.refined, s.err
+}
 
 // unwrapEnv decodes the standard {ok,data,notifications} envelope. If code is
 // non-empty, it asserts notifications[0].code matches.
@@ -46,7 +52,7 @@ func decodeEnv(t *testing.T, rec *httptest.ResponseRecorder) envelope {
 // ─── Proofread ──────────────────────────────────────────────────────────────
 
 func TestProofreadHandlerOK(t *testing.T) {
-	h := NewHandlers(Deps{LLM: stubLLM{corrected: "ok corrigido"}})
+	h := NewHandlers(Deps{LLM: &stubLLM{corrected: "ok corrigido"}})
 	req := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`{"text":"oi"}`))
 	rec := httptest.NewRecorder()
 	h.Proofread(rec, req)
@@ -75,7 +81,7 @@ func TestProofreadHandler503WhenNil(t *testing.T) {
 }
 
 func TestProofreadHandlerBadJSON(t *testing.T) {
-	h := NewHandlers(Deps{LLM: stubLLM{corrected: "x"}})
+	h := NewHandlers(Deps{LLM: &stubLLM{corrected: "x"}})
 	req := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`not json`))
 	rec := httptest.NewRecorder()
 	h.Proofread(rec, req)
@@ -89,7 +95,7 @@ func TestProofreadHandlerBadJSON(t *testing.T) {
 }
 
 func TestProofreadHandlerEmptyText(t *testing.T) {
-	h := NewHandlers(Deps{LLM: stubLLM{corrected: "x"}})
+	h := NewHandlers(Deps{LLM: &stubLLM{corrected: "x"}})
 	req := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`{"text":""}`))
 	rec := httptest.NewRecorder()
 	h.Proofread(rec, req)
@@ -103,7 +109,7 @@ func TestProofreadHandlerEmptyText(t *testing.T) {
 }
 
 func TestProofreadHandlerLLMError(t *testing.T) {
-	h := NewHandlers(Deps{LLM: stubLLM{err: errors.New("ollama timeout")}})
+	h := NewHandlers(Deps{LLM: &stubLLM{err: errors.New("ollama timeout")}})
 	req := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`{"text":"test"}`))
 	rec := httptest.NewRecorder()
 	h.Proofread(rec, req)
@@ -116,10 +122,37 @@ func TestProofreadHandlerLLMError(t *testing.T) {
 	}
 }
 
+func TestProofreadHandlerCarefulParsed(t *testing.T) {
+	stub := &stubLLM{corrected: "corrigido"}
+	h := NewHandlers(Deps{LLM: stub})
+
+	// careful omitido → false
+	req := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`{"text":"oi"}`))
+	rec := httptest.NewRecorder()
+	h.Proofread(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if stub.lastCareful {
+		t.Fatal("careful omitido: lastCareful = true, want false")
+	}
+
+	// careful=true → propagado ao stub
+	req2 := httptest.NewRequest(http.MethodPost, "/admin/llm/proofread", bytes.NewBufferString(`{"text":"oi","careful":true}`))
+	rec2 := httptest.NewRecorder()
+	h.Proofread(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec2.Code)
+	}
+	if !stub.lastCareful {
+		t.Fatal("careful=true: lastCareful = false, want true")
+	}
+}
+
 // ─── Refine ─────────────────────────────────────────────────────────────────
 
 func TestRefineHandlerOK(t *testing.T) {
-	h := NewHandlers(Deps{LLM: stubLLM{refined: "tweet refinado"}})
+	h := NewHandlers(Deps{LLM: &stubLLM{refined: "tweet refinado"}})
 	body := `{"platform":"bluesky","text":"rascunho","instruction":"mais curto"}`
 	req := httptest.NewRequest(http.MethodPost, "/admin/llm/refine", bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()

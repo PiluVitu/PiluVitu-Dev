@@ -67,10 +67,10 @@ func TestProofreadSkipsPassthrough(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "CORRIGIDO"}})
 	}))
 	defer srv.Close()
-	c := NewClient(srv.URL, "m", "m")
+	c := NewClient(srv.URL, "m", "m", "m")
 
 	doc := "Parágrafo um.\n\n```go\ncode aqui\n```\n\nParágrafo dois.\n"
-	out, err := c.Proofread(context.Background(), doc)
+	out, err := c.Proofread(context.Background(), doc, false)
 	if err != nil {
 		t.Fatal(err)
 	}

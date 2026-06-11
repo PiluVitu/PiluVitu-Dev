@@ -17,20 +17,22 @@ const ollamaTimeout = 120 * time.Second
 
 // Client fala com o Ollama local. Espelha o padrão dos clients externos (TMDb).
 type Client struct {
-	base           string
-	http           *http.Client
-	modelProofread string
-	modelHooks     string
+	base                  string
+	http                  *http.Client
+	modelProofread        string
+	modelProofreadCareful string
+	modelHooks            string
 }
 
 // NewClient aponta pro Ollama em base (ex.: http://localhost:11434).
 // Em testes, base é a URL de um httptest.Server.
-func NewClient(base, modelProofread, modelHooks string) *Client {
+func NewClient(base, modelProofread, modelProofreadCareful, modelHooks string) *Client {
 	return &Client{
-		base:           strings.TrimRight(base, "/"),
-		http:           &http.Client{Timeout: ollamaTimeout},
-		modelProofread: modelProofread,
-		modelHooks:     modelHooks,
+		base:                  strings.TrimRight(base, "/"),
+		http:                  &http.Client{Timeout: ollamaTimeout},
+		modelProofread:        modelProofread,
+		modelProofreadCareful: modelProofreadCareful,
+		modelHooks:            modelHooks,
 	}
 }
 
@@ -58,12 +60,12 @@ func (c *Client) Health(ctx context.Context) error {
 }
 
 // chat faz um turno não-streaming e devolve o texto da resposta (trimado).
-func (c *Client) chat(ctx context.Context, model, system, user string) (string, error) {
+func (c *Client) chat(ctx context.Context, model, system, user string, temperature float64) (string, error) {
 	payload := map[string]any{
 		"model":      model,
 		"stream":     false,
 		"messages":   []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
-		"options":    map[string]any{"temperature": 0.3},
+		"options":    map[string]any{"temperature": temperature},
 		"keep_alive": "5m", // mantém o modelo quente entre chamadas (proofread por bloco)
 	}
 	buf, err := json.Marshal(payload)
@@ -97,14 +99,19 @@ func (c *Client) chat(ctx context.Context, model, system, user string) (string, 
 // blocos e envia ao LLM SÓ a prosa (pula código, tabelas, HTML/JSX, citações e
 // imagens), corrigindo bloco a bloco — bem mais rápido em artigos longos e sem
 // risco de a LLM estragar o que não é texto. Texto sem frontmatter.
-func (c *Client) Proofread(ctx context.Context, text string) (string, error) {
+// careful=true usa o modelo maior (modelProofreadCareful) para maior precisão.
+func (c *Client) Proofread(ctx context.Context, text string, careful bool) (string, error) {
+	model := c.modelProofread
+	if careful {
+		model = c.modelProofreadCareful
+	}
 	var sb strings.Builder
 	for _, b := range splitBlocks(text) {
 		if b.kind == passthrough || strings.TrimSpace(b.text) == "" {
 			sb.WriteString(b.text)
 			continue
 		}
-		corrected, err := c.chat(ctx, c.modelProofread, proofreadSystem, b.text)
+		corrected, err := c.chat(ctx, model, proofreadSystem, b.text, 0.1)
 		if err != nil {
 			return "", err
 		}
@@ -147,7 +154,7 @@ func (c *Client) GenerateHooks(ctx context.Context, a Article, platforms []strin
 		system := fmt.Sprintf(hooksSystemTmpl, p, limit)
 		user := fmt.Sprintf("Título: %s\nResumo: %s\nLink: %s\nTags: %s",
 			a.Title, a.Excerpt, a.URL, strings.Join(a.Tags, ", "))
-		text, err := c.chat(ctx, c.modelHooks, system, user)
+		text, err := c.chat(ctx, c.modelHooks, system, user, 0.7)
 		if err != nil {
 			return nil, fmt.Errorf("llm: hook %s: %w", p, err)
 		}
@@ -164,5 +171,5 @@ func (c *Client) Refine(ctx context.Context, platform, text, instruction string)
 	limit := platformLimit(platform)
 	user := fmt.Sprintf("Plataforma: %s (limite %d chars)\nInstrução: %s\n\nTexto atual:\n%s",
 		platform, limit, instruction, text)
-	return c.chat(ctx, c.modelHooks, refineSystem, user)
+	return c.chat(ctx, c.modelHooks, refineSystem, user, 0.7)
 }

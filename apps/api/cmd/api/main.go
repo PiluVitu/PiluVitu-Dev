@@ -79,12 +79,13 @@ func main() {
 	var llmClient *llm.Client
 	if base := os.Getenv("OLLAMA_BASE_URL"); base != "" {
 		mp := envOr("OLLAMA_MODEL_PROOFREAD", "qwen2.5:7b-instruct")
+		mc := envOr("OLLAMA_MODEL_PROOFREAD_CAREFUL", "qwen2.5:7b-instruct")
 		mh := envOr("OLLAMA_MODEL_HOOKS", "qwen2.5:14b-instruct")
-		llmClient = llm.NewClient(base, mp, mh)
+		llmClient = llm.NewClient(base, mp, mc, mh)
 		if err := llmClient.Health(context.Background()); err != nil {
 			slog.Warn("ollama health check failed (LLM endpoints will 503)", "err", err)
 		} else {
-			slog.Info("ollama connected", "base", base, "proofread", mp, "hooks", mh)
+			slog.Info("ollama connected", "base", base, "proofread", mp, "proofread_careful", mc, "hooks", mh)
 		}
 	}
 	llmH := handlersllm.NewHandlers(handlersllm.Deps{LLM: llmClient}) // typed-nil normalized inside
