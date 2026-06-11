@@ -173,6 +173,8 @@ Schema embutido em `internal/distribution/schema.sql` via `//go:embed`, aplicado
 | Bluesky  | `social_hook`       | AT Protocol (`createSession` → `createRecord`) |
 | Mastodon | `social_hook`       | REST `POST /api/v1/statuses` (Bearer)          |
 
+**Hooks (chamadas sociais):** gerados em **1ª pessoa**, no tom do autor — `GenerateHooks` recebe `Article.VoiceSample` (primeiros ~800 chars do corpo, setado pelo handler de proposals) como referência de voz; o prompt proíbe link no texto. **Engajamento — link fora do texto:** o hook vai sem URL; no publish o **Bluesky** posta o hook e cria uma **reply** no mesmo thread com o link clicável (richtext facet `app.bsky.richtext.facet#link`, offsets em bytes UTF-8, `reply.root=reply.parent`=post principal); o **Mastodon** (timeline cronológica, sem penalidade) **anexa** o link no fim. A `canonical_url` chega aos alvos sociais via `SelectedTarget` (o web a envia também pros sociais).
+
 Adapters futuros (X/Threads/LinkedIn/Instagram) implementam a interface `Publisher` (`Platform() string`, `Kind() Kind`, `Publish(ctx, Payload) (remoteURL, error)`) — nenhuma mudança no `Service` ou `main.go`.
 
 ## Hosting da API (Cloudflare Tunnel)
