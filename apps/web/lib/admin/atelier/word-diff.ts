@@ -57,3 +57,32 @@ export function wordDiff(original: string, corrected: string): DiffSegment[] {
   while (j < n) push('add', b[j++])
   return out
 }
+
+/** Uma correção pontual: o que a LLM trocou (`before` → `after`). */
+export type Correction = { before: string; after: string }
+
+/**
+ * extractCorrections resume o diff numa lista de correções "antes → depois".
+ * Agrupa runs consecutivos de remove/add (delimitados pelos `equal`) numa
+ * correção. before vazio = adição pura; after vazio = remoção pura. Correções
+ * que sobram só com espaço em branco (após trim) são descartadas (ruído).
+ */
+export function extractCorrections(segments: DiffSegment[]): Correction[] {
+  const out: Correction[] = []
+  let before = ''
+  let after = ''
+  const flush = () => {
+    const b = before.trim()
+    const a = after.trim()
+    if (b !== '' || a !== '') out.push({ before: b, after: a })
+    before = ''
+    after = ''
+  }
+  for (const s of segments) {
+    if (s.type === 'equal') flush()
+    else if (s.type === 'remove') before += s.value
+    else after += s.value
+  }
+  flush()
+  return out
+}

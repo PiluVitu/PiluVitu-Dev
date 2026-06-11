@@ -1,4 +1,4 @@
-import { wordDiff } from './word-diff'
+import { wordDiff, extractCorrections } from './word-diff'
 
 describe('wordDiff', () => {
   it('marca palavras iguais como equal', () => {
@@ -27,5 +27,46 @@ describe('wordDiff', () => {
       .join('')
     expect(original).toBe('um dios tres')
     expect(corrected).toBe('um dois tres')
+  })
+})
+
+describe('extractCorrections', () => {
+  const corr = (a: string, b: string) => extractCorrections(wordDiff(a, b))
+
+  it('texto idêntico não tem correções', () => {
+    expect(corr('oi mundo', 'oi mundo')).toEqual([])
+  })
+
+  it('uma substituição vira uma correção antes → depois', () => {
+    expect(corr('txto', 'texto')).toEqual([{ before: 'txto', after: 'texto' }])
+  })
+
+  it('só a palavra alterada entra, no meio de iguais', () => {
+    expect(corr('um dios tres', 'um dois tres')).toEqual([
+      { before: 'dios', after: 'dois' },
+    ])
+  })
+
+  it('palavras alteradas adjacentes viram correções separadas', () => {
+    expect(corr('txto compreio', 'texto comprei')).toEqual([
+      { before: 'txto', after: 'texto' },
+      { before: 'compreio', after: 'comprei' },
+    ])
+  })
+
+  it('adição pura tem before vazio', () => {
+    expect(corr('ola mundo', 'ola lindo mundo')).toEqual([
+      { before: '', after: 'lindo' },
+    ])
+  })
+
+  it('remoção pura tem after vazio', () => {
+    expect(corr('ola lindo mundo', 'ola mundo')).toEqual([
+      { before: 'lindo', after: '' },
+    ])
+  })
+
+  it('mudança só de espaço em branco é ignorada', () => {
+    expect(corr('texto  fim', 'texto fim')).toEqual([])
   })
 })

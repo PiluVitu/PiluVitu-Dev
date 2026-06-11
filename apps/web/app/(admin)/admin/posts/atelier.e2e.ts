@@ -136,11 +136,18 @@ test.describe('Atelier — ProofreadButton', () => {
       page.getByRole('heading', { name: /revisão da ia/i }),
     ).toBeVisible()
 
-    // The corrected text ("add" diff segment) should appear in the diff pane.
-    // The text is rendered as one merged <span> because all tokens are 'add'.
-    // We search inside the dialog to avoid matching elsewhere on the page.
+    // New layout: a corrections list ("N correções") summarises what the LLM
+    // changed (antes → depois), with the full inline diff collapsed behind
+    // "ver texto completo".
     const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText(/correç(ão|ões)/i)).toBeVisible()
+    // "corrigido" appears as an after-word (green) in the corrections list.
     await expect(dialog.locator('span', { hasText: 'corrigido' })).toBeVisible()
+    // Expanding reveals the full inline diff pane.
+    await dialog.getByRole('button', { name: /ver texto completo/i }).click()
+    await expect(
+      dialog.getByRole('button', { name: /ocultar texto completo/i }),
+    ).toBeVisible()
 
     // Click "Aplicar" to accept the correction
     await page.getByRole('button', { name: /aplicar/i }).click()
