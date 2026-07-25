@@ -67,4 +67,34 @@ describe('errJson', () => {
     )
     expect(errJson(404, 'not_found', 'rota não encontrada').status).toBe(404)
   })
+
+  test('com field: a notification carrega o campo ofensor', async () => {
+    const res = errJson(
+      422,
+      'invalid_field',
+      'closing_day é obrigatório pra conta credit_card',
+      'closing_day',
+    )
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications).toEqual([
+      {
+        type: 'error',
+        code: 'invalid_field',
+        message: 'closing_day é obrigatório pra conta credit_card',
+        field: 'closing_day',
+      },
+    ])
+  })
+
+  test('sem field: a chave some do JSON, nunca vira null', async () => {
+    const texto = await errJson(422, 'invalid_json', 'corpo inválido').text()
+    expect(texto).not.toContain('"field"')
+
+    const body = (await errJson(
+      422,
+      'invalid_json',
+      'corpo inválido',
+    ).json()) as Envelope<null>
+    expect(body.notifications[0].field).toBeUndefined()
+  })
 })

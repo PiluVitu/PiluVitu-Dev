@@ -67,7 +67,12 @@ pnpm --filter @piluvitu/financas db:migrate:remote
 
 ## Envelope de resposta
 
-Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null, "notifications": [{type,code,message}] }` — **o mesmo shape da Go API** (`apps/api/internal/httpx/respond.go`), para o front ler mensagens sempre do mesmo lugar. Helpers em `src/lib/envelope.ts`: `okJson(data, status = 200)` e `errJson(status, code, message)`. `notifications` nunca serializa como `null`. Duas diferenças deliberadas em relação ao Go: aqui não existe o tipo `'success'` nem o campo `field`.
+Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null, "notifications": [{type,code,message,field?}] }`. Helpers em `src/lib/envelope.ts`: `okJson(data, status = 200)` e `errJson(status, code, message, field?)`. `notifications` nunca serializa como `null` — é `[]` quando vazio; `field` nunca serializa como `null` — a chave simplesmente some do JSON quando ausente.
+
+**Este shape não busca mais paridade com o Go** (`apps/api/internal/httpx/respond.go`). Decisão do dono do repo: a API em Go vai ser reescrita em TS rodando em Worker, então "casar com o Go" deixou de ser critério de design — o envelope se justifica pelos méritos daqui. Duas decisões concretas, cada uma com motivo próprio:
+
+- **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
+- **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
 Códigos em uso: `not_authenticated`, `invalid_token`, `invalid_audience`, `token_expired`, `jwks_unavailable`, `email_not_allowed`, `not_found`.
 
