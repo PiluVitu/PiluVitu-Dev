@@ -432,3 +432,31 @@ BEGIN
             (SELECT SUM(amount_cents) FROM debt_payment_allocations
               WHERE payment_id = NEW.payment_id), 0);
 END;
+
+-- ---------------------------------------------------------------------
+-- VIEWS — MEDIDO: CREATE VIEW e SELECT sobre view funcionam no D1 remoto.
+-- ---------------------------------------------------------------------
+
+-- "O Steam Deck ja esta quitado?" em uma linha.
+CREATE VIEW IF NOT EXISTS v_debt_item_balance AS
+SELECT i.id            AS item_id,
+       i.debt_id,
+       i.description,
+       i.amount_cents,
+       COALESCE(SUM(a.amount_cents), 0)                  AS allocated_cents,
+       i.amount_cents - COALESCE(SUM(a.amount_cents), 0) AS remaining_cents,
+       CASE WHEN i.amount_cents - COALESCE(SUM(a.amount_cents), 0) <= 0
+            THEN 1 ELSE 0 END                            AS is_settled
+FROM debt_items i
+LEFT JOIN debt_payment_allocations a ON a.item_id = i.id
+GROUP BY i.id;
+
+-- Fluxo de caixa REALIZADO. As duas exclusoes sao o anti-dupla-contagem:
+--   transfer_id IS NULL -> nao conta as duas pernas de uma transferencia
+--   parent_id   IS NULL -> conta o pai (valor cheio), nunca pai + filhas
+CREATE VIEW IF NOT EXISTS v_cashflow AS
+SELECT t.*, substr(t.settled_at, 1, 7) AS competence_month
+FROM transactions t
+WHERE t.settled_at IS NOT NULL
+  AND t.transfer_id IS NULL
+  AND t.parent_id  IS NULL;

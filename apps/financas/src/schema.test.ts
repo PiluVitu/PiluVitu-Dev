@@ -308,3 +308,102 @@ describe('migration 0001 — triggers de teto de alocação', () => {
     expect(row?.total).toBe(100000)
   })
 })
+
+describe('migration 0001 — views', () => {
+  it('v_debt_item_balance responde "o Steam Deck já está quitado?"', async () => {
+    await novoPayee('p8')
+    await novaDivida('d8', 'p8')
+    await novoItem('i8-mac', 'd8', 450000, 'MacBook Air') // R$ 4.500
+    await novoItem('i8-steam', 'd8', 280000, 'Steam Deck') // R$ 2.800
+    await novoPagamento('pg8a', 'd8', 450000)
+    await novoPagamento('pg8b', 'd8', 144000)
+
+    await DB.batch([
+      stmtAlloc('a8-1', 'pg8a', 'i8-mac', 450000), // quita o MacBook
+      stmtAlloc('a8-2', 'pg8b', 'i8-steam', 144000), // R$ 1.440 no Steam Deck
+    ])
+
+    const { results } = await DB.prepare(
+      `SELECT item_id, description, amount_cents, allocated_cents,
+              remaining_cents, is_settled
+         FROM v_debt_item_balance
+        WHERE debt_id = ?
+        ORDER BY description`,
+    )
+      .bind('d8')
+      .all()
+
+    expect(results).toEqual([
+      {
+        item_id: 'i8-mac',
+        description: 'MacBook Air',
+        amount_cents: 450000,
+        allocated_cents: 450000,
+        remaining_cents: 0,
+        is_settled: 1,
+      },
+      {
+        item_id: 'i8-steam',
+        description: 'Steam Deck',
+        amount_cents: 280000,
+        allocated_cents: 144000,
+        remaining_cents: 136000, // os R$ 1.360 que ainda faltam
+        is_settled: 0,
+      },
+    ])
+  })
+
+  it('v_debt_item_balance mostra item sem nenhum pagamento como 0 alocado', async () => {
+    await novoPayee('p8b')
+    await novaDivida('d8b', 'p8b')
+    await novoItem('i8b', 'd8b', 200000, 'Item intocado')
+
+    const row = await DB.prepare(
+      `SELECT allocated_cents, remaining_cents, is_settled
+         FROM v_debt_item_balance WHERE item_id = ?`,
+    )
+      .bind('i8b')
+      .first()
+
+    // LEFT JOIN + COALESCE: sem alocação nenhuma a linha ainda aparece.
+    expect(row).toEqual({
+      allocated_cents: 0,
+      remaining_cents: 200000,
+      is_settled: 0,
+    })
+  })
+
+  it('v_cashflow conta só o realizado, sem transferência e sem filha de rateio', async () => {
+    await novaConta('c8')
+
+    await DB.batch([
+      // pai de rateio, liquidado: ENTRA
+      stmtTx('t8-pai', 'c8', -20000, '2026-07-10', '2026-07-10', null, null),
+      // previsto (settled_at NULL): FORA
+      stmtTx('t8-prev', 'c8', -50000, '2026-07-12', null, null, null),
+      // perna de transferência entre contas próprias: FORA
+      stmtTx('t8-trf', 'c8', -30000, '2026-07-13', '2026-07-13', 'trf-1', null),
+      // filha de rateio (o pai já foi contado cheio): FORA
+      stmtTx(
+        't8-filha',
+        'c8',
+        -8000,
+        '2026-07-10',
+        '2026-07-10',
+        null,
+        't8-pai',
+      ),
+    ])
+
+    const { results } = await DB.prepare(
+      `SELECT id, amount_cents, competence_month
+         FROM v_cashflow WHERE account_id = ? ORDER BY id`,
+    )
+      .bind('c8')
+      .all()
+
+    expect(results).toEqual([
+      { id: 't8-pai', amount_cents: -20000, competence_month: '2026-07' },
+    ])
+  })
+})
