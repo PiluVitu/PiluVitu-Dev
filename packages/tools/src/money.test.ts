@@ -54,7 +54,7 @@ describe('formatBRL', () => {
   })
 
   test('não usa espaço não-quebrável (U+00A0) como o Intl usa', () => {
-    expect(formatBRL(136000)).not.toContain(' ')
+    expect(formatBRL(136000)).not.toContain('\u00a0')
   })
 
   test('round-trip parse -> format -> parse', () => {
