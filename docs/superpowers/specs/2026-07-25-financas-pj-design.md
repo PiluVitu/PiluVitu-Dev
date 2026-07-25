@@ -173,6 +173,8 @@ Nenhum limite de **capacidade** chega perto de doer: 36.000 linhas (10 anos a ~3
 
 ## 5. Modelo de dados
 
+> **Fonte da verdade do schema:** `apps/financas/migrations/0001_financas_init.sql`. O DDL abaixo foi corrigido em 2026-07-25 para casar com ele: dois grupos de `CHECK` de tabela (em `transactions` e `debt_payments`) estavam **no meio** da definição, o que a gramática do SQLite rejeita (`column-def*` precede `table-constraint*`). Foi um defeito deste documento, pego na implementação da Task 3 e verificado em `sqlite3` 3.51.0 e em D1 local. Nenhuma constraint mudou de conteúdo — só de posição.
+
 ### 5.1 Os cinco invariantes
 
 | #   | Invariante                                                                   | Mecanismo                                                                                                                                      | Se violado                                                               |
@@ -339,9 +341,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   -- SQLite é float64 — 5,4321 nunca volta exatamente 5,4321.
   amount_original_cents INTEGER,
   fx_rate_ppm           INTEGER CHECK (fx_rate_ppm IS NULL OR fx_rate_ppm > 0),
-  CHECK (currency = 'BRL'
-         OR (amount_original_cents IS NOT NULL AND fx_rate_ppm IS NOT NULL)),
-
   -- TRÊS DATAS, TRÊS PERGUNTAS DIFERENTES. Coração do schema:
   --  purchase_date   : quando o FATO aconteceu (competência do gasto).
   purchase_date         TEXT NOT NULL,
@@ -375,8 +374,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   -- pais; relatório por categoria usa as folhas. CASCADE porque apagar o
   -- pai sem as filhas deixaria o caixa inconsistente.
   parent_id             TEXT REFERENCES transactions(id) ON DELETE CASCADE,
-  CHECK (parent_id IS NULL OR parent_id <> id),
-
   -- IDEMPOTÊNCIA DE IMPORT: FITID do OFX, ou hash estável da linha do CSV.
   -- Coluna + índice único parcial criados JÁ na fatia ① porque índice no D1
   -- não pode ser alterado depois — só dropado (irreversível) e recriado.
@@ -385,7 +382,15 @@ CREATE TABLE IF NOT EXISTS transactions (
                           import_source IN ('manual','ofx','csv','pdf','pluggy','share-target')),
 
   created_at            TEXT NOT NULL,
-  updated_at            TEXT NOT NULL
+  updated_at            TEXT NOT NULL,
+
+  -- CHECKs de TABELA vao no FIM. A gramatica do SQLite e column-def* seguido
+  -- de table-constraint*: um CHECK solto no meio, com coluna depois dele,
+  -- NAO parseia ("near <coluna>: syntax error"). Medido em sqlite3 3.51.0 e
+  -- em D1 local durante a implementacao da Task 3 do plano.
+  CHECK (currency = 'BRL'
+         OR (amount_original_cents IS NOT NULL AND fx_rate_ppm IS NOT NULL)),
+  CHECK (parent_id IS NULL OR parent_id <> id)
 ) STRICT;
 
 -- ÍNDICES — desenhados contra a COTA, não só contra latência. Cada índice
@@ -549,11 +554,12 @@ CREATE TABLE IF NOT EXISTS debt_payments (
   -- O ELO com o livro-caixa. 1:1 forçado pelo índice único abaixo — impede
   -- que um mesmo lançamento seja reaproveitado por dois pagamentos.
   transaction_id TEXT REFERENCES transactions(id) ON DELETE RESTRICT,
-  CHECK (kind <> 'cash' OR transaction_id IS NOT NULL),
-  CHECK (kind =  'cash' OR transaction_id IS NULL),
-
   notes          TEXT,
-  created_at     TEXT NOT NULL
+  created_at     TEXT NOT NULL,
+
+  -- CHECKs de tabela no fim, mesma razao gramatical de transactions.
+  CHECK (kind <> 'cash' OR transaction_id IS NOT NULL),
+  CHECK (kind =  'cash' OR transaction_id IS NULL)
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_debt_payments_debt ON debt_payments(debt_id, paid_on);
