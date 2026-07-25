@@ -1,6 +1,7 @@
 packages:
-  - "apps/web"
-  - "packages/tools"
+  - 'apps/web'
+  - 'apps/financas'
+  - 'packages/tools'
 
 # Only the packages listed below may run lifecycle scripts during installation.
 # All other install scripts are blocked by default (pnpm 11 default).
@@ -12,6 +13,14 @@ allowBuilds:
   protobufjs: false
   sharp: true
   unrs-resolver: true
+  # workerd (runtime do Miniflare, dep de @cloudflare/vitest-pool-workers) traz
+  # um postinstall que só hardlinka o binário nativo por cima do shim JS e
+  # valida a versão. Medido: com o script BLOQUEADO, `vitest run` sobe o
+  # workerd normalmente — lib/main.js resolve o pacote de plataforma
+  # (@cloudflare/workerd-darwin-arm64) em runtime. Fica declarado como `false`
+  # porque, sem entrada nenhuma, o pnpm 11 aborta o install com
+  # ERR_PNPM_IGNORED_BUILDS (exit 1), o que quebraria o CI.
+  workerd: false
 
 # Ignore package versions published less than 24h ago (1440 min).
 # Defense against supply-chain attacks where malicious versions are published and quickly pulled.

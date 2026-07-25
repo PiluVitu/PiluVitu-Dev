@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "piluvitu-financas",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": { "enabled": true },
+
+  // Static Assets é GRÁTIS, ilimitado e FORA da cota de 100.000 requests/dia.
+  // 'run_worker_first' é o que garante, de forma documentada, que /api/* chega
+  // no Worker em vez de ser engolido pelo fallback de SPA. Sem ele, a ordem de
+  // avaliação entre asset e Worker fica implícita, e o erro só apareceria em
+  // produção.
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "piluvitu-financas",
+      "database_id": "00bfeb46-eb19-4954-8e7e-159bd48a998c",
+      "migrations_dir": "migrations",
+    },
+  ],
+}
