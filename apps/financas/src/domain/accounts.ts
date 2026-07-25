@@ -133,14 +133,21 @@ export async function accountBalances(
 export async function archiveAccount(
   db: D1Database,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   // Soft delete: conta encerrada nao apaga historico (ON DELETE RESTRICT
   // em transactions.account_id impediria de qualquer forma).
+  //
+  // Devolve se a transicao ACONTECEU (meta.changes > 0), nao apenas se o
+  // statement rodou sem erro: id inexistente e conta ja arquivada casam
+  // com "WHERE ... AND archived_at IS NULL" zero vezes, e sem checar
+  // meta.changes os dois ficam indistinguiveis de um arquivamento novo e
+  // bem-sucedido. O chamador (rota) usa isto para decidir 200 vs 404.
   const now = nowIsoUtc()
-  await db
+  const res = await db
     .prepare(
       'UPDATE accounts SET archived_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL',
     )
     .bind(now, now, id)
     .run()
+  return res.meta.changes > 0
 }

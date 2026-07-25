@@ -116,4 +116,34 @@ describe('rotas de contas', () => {
     const body = (await res.json()) as { data: Array<{ id: string }> }
     expect(body.data.map((a) => a.id)).not.toContain(data.id)
   })
+
+  it('POST /api/accounts/:id/archive com id inexistente devolve 404 not_found', async () => {
+    const res = await post('/api/accounts/id-que-nao-existe/archive', {})
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: Array<{ code: string }>
+    }
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('not_found')
+  })
+
+  it('POST /api/accounts/:id/archive de conta ja arquivada devolve 404', async () => {
+    const criada = await post('/api/accounts', {
+      name: 'Conta arquivada duas vezes',
+      scope: 'PF',
+      kind: 'savings',
+    })
+    const { data } = (await criada.json()) as { data: { id: string } }
+
+    const primeira = await post(`/api/accounts/${data.id}/archive`, {})
+    expect(primeira.status).toBe(200)
+
+    const segunda = await post(`/api/accounts/${data.id}/archive`, {})
+    expect(segunda.status).toBe(404)
+    const body = (await segunda.json()) as {
+      notifications: Array<{ code: string }>
+    }
+    expect(body.notifications[0].code).toBe('not_found')
+  })
 })

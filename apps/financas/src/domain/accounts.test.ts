@@ -97,13 +97,29 @@ describe('accounts', () => {
       scope: 'PF',
       kind: 'savings',
     })
-    await archiveAccount(env.DB, acc.id)
+    const arquivou = await archiveAccount(env.DB, acc.id)
+    expect(arquivou).toBe(true)
 
     const ativas = await listAccounts(env.DB)
     expect(ativas.map((a) => a.id)).not.toContain(acc.id)
 
     const todas = await listAccounts(env.DB, { includeArchived: true })
     expect(todas.find((a) => a.id === acc.id)?.archived_at).not.toBeNull()
+  })
+
+  it('archiveAccount devolve false para id inexistente', async () => {
+    const arquivou = await archiveAccount(env.DB, 'id-que-nao-existe')
+    expect(arquivou).toBe(false)
+  })
+
+  it('archiveAccount devolve false ao tentar arquivar conta ja arquivada', async () => {
+    const acc = await createAccount(env.DB, {
+      name: 'Conta duas vezes arquivada',
+      scope: 'PF',
+      kind: 'savings',
+    })
+    expect(await archiveAccount(env.DB, acc.id)).toBe(true)
+    expect(await archiveAccount(env.DB, acc.id)).toBe(false)
   })
 
   it('saldo = opening_balance + soma dos lancamentos', async () => {

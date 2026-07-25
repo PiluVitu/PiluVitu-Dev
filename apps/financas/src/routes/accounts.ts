@@ -60,6 +60,13 @@ accountsRoutes.post('/accounts', async (c) => {
 
 accountsRoutes.post('/accounts/:id/archive', async (c) => {
   const id = c.req.param('id')
-  await archiveAccount(c.env.DB, id)
+  const archived = await archiveAccount(c.env.DB, id)
+  if (!archived) {
+    return errJson(
+      404,
+      'not_found',
+      `conta ${id} nao encontrada ou ja arquivada`,
+    )
+  }
   return okJson({ id, archived: true })
 })
