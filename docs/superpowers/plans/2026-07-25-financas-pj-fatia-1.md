@@ -420,7 +420,7 @@ Ref: docs/superpowers/specs/2026-07-25-financas-pj-design.md (§5.1, §5.2, §7)
 - Create: `apps/financas/wrangler.jsonc`
 - Create: `apps/financas/tsconfig.json`
 - Create: `apps/financas/vitest.config.ts`
-- Create: `apps/financas/web/dist/index.html`
+- Create: `apps/financas/web/.gitignore` (ignora `dist/` desde já — `web/dist` é **gerado**, nunca versionado)
 - Create: `apps/financas/src/index.ts`
 - Create (gerado por comando): `apps/financas/worker-configuration.d.ts`
 - Test: `apps/financas/src/index.test.ts`
@@ -581,11 +581,28 @@ Trocar `COLE-AQUI-O-DATABASE-ID-DO-STEP-5` pelo UUID impresso no Step 5.
 }
 ```
 
-- [ ] **Step 7: Criar o `index.html` placeholder de `./web/dist`**
+- [ ] **Step 7: Garantir `./web/dist` por script, sem versionar nada**
 
-O `assets.directory` precisa existir e ter um `index.html`, senão o Miniflare não sobe o binding `ASSETS`. A Task 11 substitui este arquivo pela saída do `vite build`.
+O `assets.directory` precisa existir e ter um `index.html`, senão o Miniflare não sobe o binding `ASSETS`. Mas `web/dist` é **saída de build** e não pode entrar no git: se for commitado agora, o `.gitignore` da SPA não o destrava depois (git continua rastreando arquivo já versionado) e todo `vite build` deixa a árvore suja para sempre.
 
-Arquivo `apps/financas/web/dist/index.html`:
+Solução: o diretório é **gerado on demand** por um `pretest`, e ignorado desde já.
+
+Criar `apps/financas/web/.gitignore`:
+
+```
+dist/
+node_modules/
+```
+
+Acrescentar aos `scripts` de `apps/financas/package.json` — o `pretest` roda automaticamente antes de `test`:
+
+```json
+    "pretest": "node -e \"const f=require('fs');f.mkdirSync('web/dist',{recursive:true});f.existsSync('web/dist/index.html')||f.writeFileSync('web/dist/index.html','<!doctype html><html lang=\\'pt-BR\\'><head><meta charset=\\'utf-8\\'><title>Financas</title></head><body><div id=\\'root\\'></div></body></html>')\""
+```
+
+> Na Task 11, este `pretest` é **substituído** por `pnpm --filter @piluvitu/financas-web build`, que passa a gerar o `dist` de verdade. Até lá, o placeholder mínimo abaixo é o que o Miniflare enxerga — e ele nunca é commitado.
+
+Conteúdo que o script gera (equivalente, para referência):
 
 ```html
 <!doctype html>
@@ -784,7 +801,7 @@ Esperado: os três workspaces passam na mesma execução, cada um com o runner d
 Run:
 
 ```bash
-pnpm exec prettier --write apps/financas/src/index.ts apps/financas/src/index.test.ts apps/financas/vitest.config.ts apps/financas/package.json apps/financas/tsconfig.json apps/financas/wrangler.jsonc apps/financas/web/dist/index.html pnpm-workspace.yaml
+pnpm exec prettier --write apps/financas/src/index.ts apps/financas/src/index.test.ts apps/financas/vitest.config.ts apps/financas/package.json apps/financas/tsconfig.json apps/financas/wrangler.jsonc pnpm-workspace.yaml
 ```
 
 Run:
@@ -801,7 +818,8 @@ são tocados.
 - Static Assets serve a SPA de ./web/dist (grátis e fora da cota de 100k
   req/dia). run_worker_first: ['/api/*'] garante, de forma documentada, que a
   API chega no Worker em vez de ser engolida pelo fallback de SPA.
-  ./web/dist/index.html é placeholder até o vite build da SPA.
+  ./web/dist é GERADO por um pretest e nunca versionado; a Task 11 troca
+  esse pretest pelo build real do Vite.
 - D1 'piluvitu-financas' criado de verdade e ligado no binding DB.
 - Vitest com @cloudflare/vitest-pool-workers: roda 100% local em Miniflare,
   sem wrangler login e sem secret. A 0.18.x (linha do Vitest 4) removeu o
@@ -8484,7 +8502,6 @@ git commit -m "feat(financas): relatorio de comprometido por competencia sobre o
 - Modify: `pnpm-workspace.yaml`
 - Modify: `apps/financas/wrangler.jsonc`
 - Modify: `apps/financas/package.json`
-- Modify: `apps/financas/src/routes/accounts.ts`
 - Test: `apps/financas/src/domain/accounts.test.ts` (adiciona 1 caso)
 
 **Interfaces:**
@@ -8559,12 +8576,11 @@ Create `apps/financas/web/package.json`:
 }
 ```
 
-Create `apps/financas/web/.gitignore`:
-
-```
-dist/
-node_modules/
-```
+> `apps/financas/web/.gitignore` **já foi criado na Task 2** — não recrie. Em vez disso, troque o `pretest` de `apps/financas/package.json` (que na Task 2 gerava um placeholder) pelo build real:
+>
+> ```json
+>     "pretest": "pnpm --filter @piluvitu/financas-web build"
+> ```
 
 Create `apps/financas/web/tsconfig.json`:
 
@@ -8886,79 +8902,7 @@ Run: `pnpm --filter @piluvitu/financas-web run test api`
 
 Esperado: PASS — 4 testes verdes.
 
-- [ ] **Step 7: Fazer `GET /api/accounts` devolver o saldo junto (teste primeiro)**
-
-`accountBalances` existe no contrato justamente para esta tela, e não há rota própria para ela — logo o saldo vem embutido em `GET /api/accounts`. Adicionar ao final de `apps/financas/src/domain/accounts.test.ts` (dentro do `describe` existente):
-
-```ts
-it('accountBalances soma opening_balance com os lancamentos da conta', async () => {
-  const conta = await createAccount(db, {
-    name: 'Inter',
-    scope: 'PF',
-    kind: 'checking',
-    opening_balance_cents: 89000,
-    opening_date: '2026-01-01',
-  })
-  const vazia = await createAccount(db, {
-    name: 'Sem movimento',
-    scope: 'PF',
-    kind: 'cash',
-  })
-
-  await createTransaction(db, {
-    account_id: conta.id,
-    amount_cents: -12000,
-    purchase_date: '2026-07-10',
-    settled_at: '2026-07-10',
-    description: 'mercado',
-  })
-
-  const balances = await accountBalances(db)
-  const porConta = Object.fromEntries(
-    balances.map((b) => [b.account_id, b.balance_cents]),
-  )
-
-  expect(porConta[conta.id]).toBe(77000)
-  expect(porConta[vazia.id]).toBe(0)
-})
-```
-
-Se `createTransaction` e `accountBalances` ainda não estiverem importados nesse arquivo, adicionar:
-
-```ts
-import { createTransaction } from './transactions'
-```
-
-Run: `pnpm --filter @piluvitu/financas run test accounts`
-
-Esperado: PASS se a Task 6 já implementou `accountBalances` corretamente; FAIL apontando o saldo se não. Neste segundo caso, corrigir `accountBalances` antes de seguir.
-
-- [ ] **Step 8: Mesclar saldo no payload da rota**
-
-Modify `apps/financas/src/routes/accounts.ts` — o handler do `GET /` passa a ser:
-
-```ts
-accounts.get('/', async (c) => {
-  const scopeParam = c.req.query('scope')
-  const scope =
-    scopeParam === 'PJ' || scopeParam === 'PF' ? scopeParam : undefined
-  const includeArchived = c.req.query('archived') === '1'
-
-  const [list, balances] = await Promise.all([
-    listAccounts(c.env.DB, { scope, includeArchived }),
-    accountBalances(c.env.DB),
-  ])
-
-  const byId = new Map(balances.map((b) => [b.account_id, b.balance_cents]))
-  return okJson(list.map((a) => ({ ...a, balance_cents: byId.get(a.id) ?? 0 })))
-})
-```
-
-Garantir que o import do domínio inclua `accountBalances`:
-
-```ts
-import { accountBalances, listAccounts } from '../domain/accounts'
-```
+> **Steps 7 e 8 removidos por decisão do dono do repo (conflito de plano).** Eles mandavam alterar `src/routes/accounts.ts` para mesclar `balance_cents` no payload — mas a **Task 6 já entrega exatamente isso**, com teste de rota provando (`expect(body.data[0].balance_cents).toBe(412000)`). Aplicar o trecho como estava renomearia o handler e faria `GET /api/accounts` deixar de existir, virando `GET /api`. A Task 11 consome a rota que já existe; não a modifica.
 
 - [ ] **Step 9: Escrever o teste da tela de Contas**
 
