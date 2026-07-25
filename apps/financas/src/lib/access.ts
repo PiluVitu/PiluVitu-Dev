@@ -86,7 +86,7 @@ async function chavePorKid(
   return chave
 }
 
-function bytesDeB64url(parte: string): Uint8Array {
+function bytesDeB64url(parte: string): Uint8Array<ArrayBuffer> {
   const b64 = parte.replace(/-/g, '+').replace(/_/g, '/')
   const bin = atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '='))
   const out = new Uint8Array(bin.length)

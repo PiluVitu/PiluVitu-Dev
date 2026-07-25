@@ -66,7 +66,10 @@ async function mockFetchDispatcher(
   return new Response(corpo, { status: proxima.status })
 }
 
-type Par = { priv: CryptoKey; jwk: JsonWebKey }
+// TS `JsonWebKey` segue o dict simplificado da WebCrypto API, que NÃO inclui
+// `kid` — só o JWK "de verdade" (RFC 7517), que é o que o JWKS do Access
+// devolve, tem esse campo. Alarga o tipo aqui em vez de usar `as` no literal.
+type Par = { priv: CryptoKey; jwk: JsonWebKey & { kid: string } }
 
 let parA: Par
 let parB: Par
