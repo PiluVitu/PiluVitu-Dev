@@ -404,3 +404,31 @@ CREATE TABLE IF NOT EXISTS debt_payment_allocations (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_alloc_item ON debt_payment_allocations(item_id);
+
+-- INVARIANTES DE SOMA NO BANCO (I1 e I2). Possivel porque foi MEDIDO que
+-- TRIGGER funciona no D1 remoto e que batch() faz rollback real: um
+-- RAISE(ABORT) aqui aborta a sequencia inteira, sem deixar rastro.
+-- Isto SUBSTITUI o padrao de "INSERT guardado + inspecao de meta.changes +
+-- batch compensatorio" que a versao anterior deste spec exigia.
+
+-- (I2) a soma alocada a um item nunca passa do valor do item.
+CREATE TRIGGER IF NOT EXISTS trg_alloc_item_teto
+BEFORE INSERT ON debt_payment_allocations
+BEGIN
+  SELECT RAISE(ABORT, 'alocacao excede o valor do item')
+  WHERE (SELECT amount_cents FROM debt_items WHERE id = NEW.item_id)
+        < NEW.amount_cents + COALESCE(
+            (SELECT SUM(amount_cents) FROM debt_payment_allocations
+              WHERE item_id = NEW.item_id), 0);
+END;
+
+-- (I1) a soma alocada por um pagamento nunca passa do valor do pagamento.
+CREATE TRIGGER IF NOT EXISTS trg_alloc_pagamento_teto
+BEFORE INSERT ON debt_payment_allocations
+BEGIN
+  SELECT RAISE(ABORT, 'alocacao excede o valor do pagamento')
+  WHERE (SELECT amount_cents FROM debt_payments WHERE id = NEW.payment_id)
+        < NEW.amount_cents + COALESCE(
+            (SELECT SUM(amount_cents) FROM debt_payment_allocations
+              WHERE payment_id = NEW.payment_id), 0);
+END;

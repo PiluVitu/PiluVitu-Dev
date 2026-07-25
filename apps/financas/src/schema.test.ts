@@ -228,3 +228,83 @@ describe('migration 0001 — CHECKs de entrada', () => {
     expect(row?.fx_rate_ppm).toBe(5432100)
   })
 })
+
+describe('migration 0001 — triggers de teto de alocação', () => {
+  it('trg_alloc_item_teto aborta quando a soma passa do valor do item', async () => {
+    await novoPayee('p4')
+    await novaDivida('d4', 'p4')
+    await novoItem('i4', 'd4', 100000) // item de R$ 1.000
+    await novoPagamento('pg4a', 'd4', 500000)
+    await novoPagamento('pg4b', 'd4', 500000)
+
+    await stmtAlloc('a4-1', 'pg4a', 'i4', 30000).run() // R$ 300, ok
+
+    // R$ 900 sobre um item que já tem R$ 300 => 1.200 > 1.000 => aborta.
+    // Os pagamentos são folgados de propósito: quem tem de disparar é o
+    // teto do ITEM, não o do pagamento.
+    await expect(stmtAlloc('a4-2', 'pg4b', 'i4', 90000).run()).rejects.toThrow(
+      /alocacao excede o valor do item/,
+    )
+  })
+
+  it('trg_alloc_pagamento_teto aborta quando a soma passa do valor do pagamento', async () => {
+    await novoPayee('p5')
+    await novaDivida('d5', 'p5')
+    await novoItem('i5a', 'd5', 1000000) // teto do item bem longe
+    await novoItem('i5b', 'd5', 1000000)
+    await novoPagamento('pg5', 'd5', 50000) // pagamento de R$ 500
+
+    await stmtAlloc('a5-1', 'pg5', 'i5a', 30000).run() // R$ 300, ok
+
+    // + R$ 300 => R$ 600 alocados de um pagamento de R$ 500.
+    // Item diferente de propósito: sem colidir com UNIQUE(payment_id,item_id).
+    await expect(stmtAlloc('a5-2', 'pg5', 'i5b', 30000).run()).rejects.toThrow(
+      /alocacao excede o valor do pagamento/,
+    )
+  })
+
+  it('batch() reverte a sequência inteira quando o trigger aborta', async () => {
+    await novoPayee('p6')
+    await novaDivida('d6', 'p6')
+    await novoItem('i6', 'd6', 100000)
+    await novoPagamento('pg6a', 'd6', 500000)
+    await novoPagamento('pg6b', 'd6', 500000)
+
+    await expect(
+      DB.batch([
+        stmtAlloc('a6-1', 'pg6a', 'i6', 30000), // sozinha, seria válida
+        stmtAlloc('a6-2', 'pg6b', 'i6', 90000), // estoura o teto do item
+      ]),
+    ).rejects.toThrow(/alocacao excede o valor do item/)
+
+    const { results } = await DB.prepare(
+      `SELECT id FROM debt_payment_allocations WHERE item_id = ?`,
+    )
+      .bind('i6')
+      .all<{ id: string }>()
+
+    // Nem a alocação de R$ 300 sobreviveu: o rollback é da sequência inteira.
+    expect(results).toEqual([])
+  })
+
+  it('alocar exatamente até o teto passa — sem falso positivo', async () => {
+    await novoPayee('p7')
+    await novaDivida('d7', 'p7')
+    await novoItem('i7', 'd7', 100000)
+    await novoPagamento('pg7a', 'd7', 30000)
+    await novoPagamento('pg7b', 'd7', 70000)
+
+    await DB.batch([
+      stmtAlloc('a7-1', 'pg7a', 'i7', 30000),
+      stmtAlloc('a7-2', 'pg7b', 'i7', 70000), // fecha em 100000, no teto exato
+    ])
+
+    const row = await DB.prepare(
+      `SELECT SUM(amount_cents) AS total FROM debt_payment_allocations WHERE item_id = ?`,
+    )
+      .bind('i7')
+      .first<{ total: number }>()
+
+    expect(row?.total).toBe(100000)
+  })
+})
