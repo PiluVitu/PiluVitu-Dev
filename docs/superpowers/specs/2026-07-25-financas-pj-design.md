@@ -1,10 +1,34 @@
 # Finanças PJ — Fatia ① Dívidas, parcelas e comprometimento futuro
 
 **Data:** 2026-07-25
-**Status:** Aprovado (design) — aguardando revisão da spec
+**Status:** Aprovado (design) — **spikes S1/S2/S3 executados contra D1 real em 2026-07-25**, spec revisado com os números medidos. S4 pendente (só dashboard).
 **Escopo:** Módulo pessoal de controle financeiro PJ/PF do dono do repo. **Fatia ①** entrega o modelo de dados completo, dívidas com pessoas físicas (com sub-itens e alocação de pagamento por item), parcelamento de cartão e a tela de comprometimento futuro. Sem import, sem LLM, sem PWA.
 **Nova frente:** `apps/financas` — Cloudflare Worker (Hono + Static Assets) sobre D1, em subdomínio próprio, atrás do Cloudflare Access. **`apps/web` e `apps/api` não são tocados nesta fatia.**
 **Fonte de design:** brainstorming 2026-07-25; discovery de repo + Open Finance BR (7 agentes); viabilidade Cloudflare free tier com verificação adversarial (19 agentes, 14 afirmações refutadas ou confirmadas contra `developers.cloudflare.com`).
+
+---
+
+## 0. Resultados dos spikes (medidos, não inferidos)
+
+Executados em 2026-07-25 contra um D1 real e descartável, a partir de um Worker real (`wrangler dev --remote`, wrangler 4.114.0, `compatibility_date` 2026-07-01). O banco foi apagado no fim. **Quatro premissas da versão anterior deste spec caíram.**
+
+| Item                          | O spec assumia                                     | Medido                                                                                 | Efeito                                                                        |
+| ----------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `sqlite_version()`            | versão desconhecida (relato de 3.41.0)             | **função bloqueada** — `D1_ERROR: not authorized to use function: sqlite_version`      | Segue desconhecida; ver linha seguinte                                        |
+| **STRICT tables**             | não usar — "exige >= 3.37, versão não documentada" | **funciona, e o tipo é aplicado** (INSERT de texto em coluna INTEGER falha)            | 🔴 **todas as tabelas passam a ser STRICT**; prova indireta de SQLite >= 3.37 |
+| **VIEW**                      | "validar antes; pode divergir local/remoto"        | `CREATE VIEW` + `SELECT` sobre view funcionam                                          | ✅ ressalva removida                                                          |
+| **TRIGGER**                   | "não funciona (workers-sdk#4998)"                  | **`CREATE TRIGGER` funciona e o trigger DISPARA** (`SQLITE_CONSTRAINT_TRIGGER`)        | 🔴 **§5.3 reescrito** — invariantes migram para o banco                       |
+| **Foreign keys**              | não testado                                        | `PRAGMA foreign_keys = 1` por padrão, e INSERT órfão **falha**                         | ✅ todo `REFERENCES` do §5.2 tem efeito real                                  |
+| **50 queries por invocação**  | "60 parcelas em 121 statements → **FALHA**"        | **batch de 200 statements: ok (210 ms). 200 queries sequenciais: ok (26,7 s)**         | 🔴 multi-row vira otimização, não requisito                                   |
+| **`batch()` faz rollback?**   | "a doc se contradiz — testar"                      | **ROLLBACK REAL.** UNIQUE violado no 3º statement reverteu os 2 anteriores             | 🔴 resolvido a favor                                                          |
+| **0 linhas afetadas**         | "não é erro; exige batch compensatório"            | **confirmado** — `success: true`, `changes: 0`, batch segue                            | ✅ mantido (mas não é mais o mecanismo da alocação)                           |
+| **Trigger + rollback juntos** | _não previsto_                                     | `RAISE(ABORT)` aborta e **reverte o batch inteiro**; caminho feliz no teto exato passa | 🔴 elimina o batch compensatório                                              |
+
+**Latência medida** (a favor do desenho, por outro motivo): 60 parcelas em 3 `INSERT` multi-row = **151 ms**; as mesmas 60 em statements individuais ≈ **8.000 ms**. Fator **53×**. O limite de **100 bound params por statement** é real e continua governando as 7 linhas (transactions, 14 colunas) e 20 linhas (installments, 5 colunas) por INSERT.
+
+⚠️ **Ressalva de validade.** S1, S3 e o teste de trigger medem comportamento do **D1**, e valem sem ressalva. O S2 mede um limite de **invocação de Worker**, e foi observado via `wrangler dev --remote` — que roda no edge, mas pode não aplicar todos os limites de um Worker publicado. Registre o resultado como _"o limite de 50 queries não foi reproduzido em `dev --remote`"_, **não** como _"o limite não existe"_. O desenho não depende dessa distinção: o multi-row é seguro nos dois cenários.
+
+**S4 (50 seats do Cloudflare Access) não é medível por API com o token atual** (escopos: `account read`, `user read`, `workers*`, `d1 write`, `queues`, `ai`). Verificar no dashboard: **Zero Trust → Settings → Plans**. É o único spike ainda em aberto, e o único que pode derrubar a estimativa de 7 dias (sem Access, a autenticação vira 3–4 dias de trabalho).
 
 ---
 
@@ -128,15 +152,16 @@ Nenhum limite de **capacidade** chega perto de doer: 36.000 linhas (10 anos a ~3
 | Limite                         | Free                                           | Paid (USD 5)     | Consequência                                                                                                                                     |
 | ------------------------------ | ---------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **CPU por invocação**          | **10 ms**                                      | 30 s             | Parse de PDF **nunca** roda no Worker. Vai para o cliente ou para o Mac. `limits.cpu_ms` só existe no Paid; Cron/Queue/DO herdam os mesmos 10 ms |
-| **Queries por invocação (D1)** | **50**                                         | 1.000            | Plano de 60 parcelas com 1 statement por parcela = **121 → falha**. Multi-row = 13                                                               |
-| Bound params por statement     | 100                                            | 100              | 14 colunas → 7 linhas por `INSERT` multi-row                                                                                                     |
+| ~~Queries por invocação (D1)~~ | documentado 50                                 | 1.000            | ⚠️ **MEDIDO: não reproduzido** (§0). Batch de 200 e 200 sequenciais passaram. Multi-row segue como escolha, por latência (53×), não por correção |
+| **Bound params por statement** | **100**                                        | 100              | Este é o limite real e ativo: 14 colunas → 7 linhas por `INSERT` multi-row                                                                       |
 | **Bundle do Worker (gzip)**    | **3 MB**                                       | 10 MB            | Mata Next.js/OpenNext. Motiva a SPA                                                                                                              |
 | Workers requests               | 100.000/dia                                    | ilimitado        | Uso pessoal: centenas/dia. Irrelevante                                                                                                           |
 | Static Assets                  | **grátis, ilimitado**                          | idem             | **Fora** da cota de requests                                                                                                                     |
 | D1 storage                     | 500 MB/db · 5 GB/conta · 10 dbs                | 10 GB/db         | ~5% de uso                                                                                                                                       |
 | D1 rows read                   | 5.000.000/dia                                  | 25 bi/mês        | Com índices ≈ 2.500/render → ~2.000 renders/dia. **Sem** índice: 36k/query → ~13 renders/dia                                                     |
 | **D1 rows written**            | **100.000/dia**                                | 50 M/mês         | Uso corrente ~50/dia. **Carga inicial de histórico estoura** (ver §8.5)                                                                          |
-| Transação D1                   | só `batch()`                                   | só `batch()`     | `BEGIN`/`SAVEPOINT` rejeitados **nos dois planos**                                                                                               |
+| Transação D1                   | só `batch()`                                   | só `batch()`     | `BEGIN`/`SAVEPOINT` rejeitados. **MEDIDO: `batch()` faz rollback real** — atomicidade suficiente (§0)                                            |
+| Trigger / FK / STRICT / VIEW   | **todos funcionam**                            | idem             | **MEDIDO (§0)** — invariantes de soma vivem no banco via `RAISE(ABORT)`                                                                          |
 | D1 Time Travel                 | 7 dias                                         | 30 dias          | Substitui o backup atual, com perda de janela                                                                                                    |
 | Cron Triggers                  | **5/conta**                                    | 250              | Agrupar num Worker com `switch (event.cron)`                                                                                                     |
 | Queues                         | 10k ops/dia, **retenção fixa 24 h**            | 1 M/mês, 14 dias | Ver §8.14 — não usar na fatia ②                                                                                                                  |
@@ -164,14 +189,19 @@ Nenhum limite de **capacidade** chega perto de doer: 36.000 linhas (10 anos a ~3
 -- =====================================================================
 -- migrations/0001_financas_init.sql   —  alvo: Cloudflare D1 (SQLite)
 --
--- REGRAS DE COMPATIBILIDADE D1 APLICADAS AO ARQUIVO INTEIRO:
+-- REGRAS DE COMPATIBILIDADE D1 — TODAS MEDIDAS EM 2026-07-25 (ver §0):
 --  * Sem PRAGMA de conexão (journal_mode/busy_timeout não existem no D1;
 --    a allowlist do D1 tem 17 PRAGMAs e os de conexão não estão nela).
---  * Sem BEGIN/COMMIT/SAVEPOINT: o D1 REJEITA. Toda atomicidade é via
---    batch() do binding (all-or-nothing por sequência).
---  * Sem TRIGGER: divergência conhecida local vs remoto (workers-sdk#4998).
---    Invariantes que exigiriam trigger vivem na aplicação, com o padrão de
---    INSERT guardado documentado em debt_payment_allocations.
+--  * Sem BEGIN/COMMIT/SAVEPOINT: o D1 REJEITA. Atomicidade é via batch(),
+--    que MEDIDO faz rollback real da sequência inteira (S3).
+--  * TRIGGER FUNCIONA e dispara (S1/S5) — ao contrário do que a versão
+--    anterior deste spec assumia com base em workers-sdk#4998. Por isso os
+--    invariantes de soma vivem no BANCO, via RAISE(ABORT), e não na aplicação.
+--  * FOREIGN KEY é aplicada de verdade: PRAGMA foreign_keys = 1 por padrão e
+--    INSERT órfão falha (S1). Todo REFERENCES abaixo tem efeito real.
+--  * STRICT funciona e o tipo é aplicado (S1) => todas as tabelas são STRICT.
+--  * sqlite_version() é BLOQUEADA pelo D1 ("not authorized to use function").
+--    A versão exata segue desconhecida; STRICT funcionar prova >= 3.37.
 --  * Migrations são forward-only: não existe down migration.
 --
 -- CONVENÇÕES:
@@ -180,8 +210,9 @@ Nenhum limite de **capacidade** chega perto de doer: 36.000 linhas (10 anos a ~3
 --    2^53-1 centavos = R$ 90.071.992.547.409,91.
 --  * Datas: TEXT ISO-8601 'YYYY-MM-DD' (ordenação lexicográfica ==
 --    cronológica). Competência: TEXT 'YYYY-MM'. Timestamps: UTC 'Z'.
---  * NÃO uso STRICT tables: exige SQLite >= 3.37 e a Cloudflare não
---    documenta a versão do D1. Ver spike S1.
+--  * STRICT em todas as tabelas: num livro-caixa, matar a afinidade de tipo
+--    do SQLite vale o custo. Consequência: só INT/INTEGER/REAL/TEXT/BLOB/ANY
+--    são tipos válidos, e toda coluna precisa de tipo declarado.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -224,7 +255,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   -- Cartão sem dia de fechamento não calcula fatura nenhuma: barra na
   -- entrada em vez de gerar competência errada depois.
   CHECK (kind <> 'credit_card' OR (closing_day IS NOT NULL AND due_day IS NOT NULL))
-);
+) STRICT;
 
 -- Índice PARCIAL: 90% das telas listam só contas ativas. No D1, índice
 -- parcial não é só economia de espaço — é economia de cota de escrita,
@@ -255,7 +286,7 @@ CREATE TABLE IF NOT EXISTS categories (
   archived_at   TEXT,
   created_at    TEXT NOT NULL,
   CHECK (parent_id IS NULL OR parent_id <> id)   -- hierarquia de 2 níveis; ciclo raso barrado
-);
+) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_slug
   ON categories(slug) WHERE slug IS NOT NULL;
@@ -282,7 +313,7 @@ CREATE TABLE IF NOT EXISTS payees (
   document            TEXT,   -- CPF/CNPJ sem máscara
   default_category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
   created_at          TEXT NOT NULL
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_payees_norm ON payees(norm_name);
 
@@ -355,7 +386,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
   created_at            TEXT NOT NULL,
   updated_at            TEXT NOT NULL
-);
+) STRICT;
 
 -- ÍNDICES — desenhados contra a COTA, não só contra latência. Cada índice
 -- APLICÁVEL soma 1 "row written". Um lançamento comum (sem transfer, sem
@@ -406,7 +437,7 @@ CREATE TABLE IF NOT EXISTS installment_plans (
   canceled_at        TEXT,            -- antecipação/quitação encerra o plano sem apagar histórico
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS installments (
   id             TEXT PRIMARY KEY,
@@ -429,17 +460,24 @@ CREATE TABLE IF NOT EXISTS installments (
 
   created_at     TEXT NOT NULL,
   UNIQUE (plan_id, seq)
-);
+) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_installments_tx ON installments(transaction_id);
 
--- ORÇAMENTO DE BATCH (limite duro do free: 50 queries por invocação; 100
--- bound params por statement). Plano de 60 parcelas:
+-- ORÇAMENTO DE BATCH — REVISADO APÓS MEDIÇÃO (S2, ver §0).
+-- Plano de 60 parcelas:
 --    1  INSERT installment_plans
 --    9  INSERT transactions  multi-row (14 colunas => 7 linhas/statement)
 --    3  INSERT installments  multi-row ( 5 colunas => 20 linhas/statement)
---  = 13 statements. Cabe. Com 1 statement por parcela seriam 121 => FALHA.
--- Teto prático deste desenho: ~330 parcelas por batch.
+--  = 13 statements.
+--
+-- A versão anterior deste spec dizia que 1 statement por parcela (121 no
+-- total) FALHARIA por causa do limite de 50 queries/invocação. MEDIDO: não
+-- falha — batch de 200 statements passou (210 ms), e 200 queries sequenciais
+-- também (26,7 s). O multi-row continua sendo o desenho certo, mas por
+-- LATÊNCIA, não por correção: 60 parcelas em 3 statements levam 151 ms
+-- contra ~8.000 ms sequencial (53x). O limite de 100 bound params por
+-- statement esse sim é real e continua governando as 7/20 linhas por INSERT.
 
 -- ---------------------------------------------------------------------
 -- debts / debt_items / debt_payments / debt_payment_allocations
@@ -468,7 +506,7 @@ CREATE TABLE IF NOT EXISTS debts (
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   CHECK (status <> 'settled' OR settled_at IS NOT NULL)
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_debts_open
   ON debts(payee_id, direction) WHERE status = 'open';
@@ -490,7 +528,7 @@ CREATE TABLE IF NOT EXISTS debt_items (
 
   category_id    TEXT REFERENCES categories(id) ON DELETE SET NULL,
   created_at     TEXT NOT NULL
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_debt_items_debt ON debt_items(debt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_debt_items_tx
@@ -516,7 +554,7 @@ CREATE TABLE IF NOT EXISTS debt_payments (
 
   notes          TEXT,
   created_at     TEXT NOT NULL
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_debt_payments_debt ON debt_payments(debt_id, paid_on);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_debt_payments_tx
@@ -533,17 +571,43 @@ CREATE TABLE IF NOT EXISTS debt_payment_allocations (
   amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
   created_at   TEXT NOT NULL,
 
-  -- Impede alocar o MESMO pagamento duas vezes ao MESMO item. Violação de
-  -- UNIQUE é a ÚNICA coisa que aborta um batch() do D1.
+  -- Impede alocar o MESMO pagamento duas vezes ao MESMO item.
   UNIQUE (payment_id, item_id)
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_alloc_item ON debt_payment_allocations(item_id);
 
+-- INVARIANTES DE SOMA NO BANCO (I1 e I2). Possível porque o S1/S5 mediram
+-- que TRIGGER funciona no D1 remoto e o S3 mediu que batch() faz rollback
+-- real: um RAISE(ABORT) aqui aborta a sequência inteira, sem deixar rastro.
+-- Isto SUBSTITUI o padrão de "INSERT guardado + inspeção de meta.changes +
+-- batch compensatório" que a versão anterior deste spec exigia.
+
+-- (I2) a soma alocada a um item nunca passa do valor do item.
+CREATE TRIGGER IF NOT EXISTS trg_alloc_item_teto
+BEFORE INSERT ON debt_payment_allocations
+BEGIN
+  SELECT RAISE(ABORT, 'alocacao excede o valor do item')
+  WHERE (SELECT amount_cents FROM debt_items WHERE id = NEW.item_id)
+        < NEW.amount_cents + COALESCE(
+            (SELECT SUM(amount_cents) FROM debt_payment_allocations
+              WHERE item_id = NEW.item_id), 0);
+END;
+
+-- (I1) a soma alocada por um pagamento nunca passa do valor do pagamento.
+CREATE TRIGGER IF NOT EXISTS trg_alloc_pagamento_teto
+BEFORE INSERT ON debt_payment_allocations
+BEGIN
+  SELECT RAISE(ABORT, 'alocacao excede o valor do pagamento')
+  WHERE (SELECT amount_cents FROM debt_payments WHERE id = NEW.payment_id)
+        < NEW.amount_cents + COALESCE(
+            (SELECT SUM(amount_cents) FROM debt_payment_allocations
+              WHERE payment_id = NEW.payment_id), 0);
+END;
+
 -- ---------------------------------------------------------------------
--- VIEWS. Suportadas no D1, mas dado o histórico de divergência local/remoto
--- com objetos derivados, validar contra o banco remoto (spike S1); se der
--- problema, inline os SELECTs.
+-- VIEWS — MEDIDO (S1): CREATE VIEW e SELECT sobre view funcionam no D1
+-- remoto. A ressalva de "validar antes" da versão anterior está resolvida.
 -- ---------------------------------------------------------------------
 
 -- "O Steam Deck já está quitado?" em uma linha.
@@ -571,27 +635,35 @@ WHERE t.settled_at IS NOT NULL
   AND t.parent_id  IS NULL;
 ```
 
-### 5.3 Invariantes que o D1 não garante em DDL
+### 5.3 Invariantes de soma — vivem no banco
 
-Sem trigger e sem transação interativa, dois invariantes vivem na aplicação:
+Dois invariantes governam a alocação de pagamento a item:
 
 - **(I1)** `SUM(alocações do pagamento) <= debt_payments.amount_cents`
 - **(I2)** `SUM(alocações do item) <= debt_items.amount_cents`
 
-Padrão de **INSERT guardado**, executado dentro do mesmo `batch()`:
+**Ambos são `TRIGGER ... BEFORE INSERT ... RAISE(ABORT)` no D1** (DDL em §5.2). Isso só é possível porque três coisas foram **medidas** em 2026-07-25 (§0):
 
-```sql
-INSERT INTO debt_payment_allocations (id, payment_id, item_id, amount_cents, created_at)
-SELECT ?1, ?2, ?3, ?4, ?5
-WHERE ?4 <= (
-  SELECT i.amount_cents
-         - COALESCE((SELECT SUM(a.amount_cents) FROM debt_payment_allocations a
-                     WHERE a.item_id = i.id), 0)
-  FROM debt_items i WHERE i.id = ?3
-);
+1. `CREATE TRIGGER` funciona no D1 remoto — a versão anterior deste spec assumia que não, com base em workers-sdk#4998;
+2. o trigger **dispara** de verdade (`SQLITE_CONSTRAINT_TRIGGER`), não é DDL decorativo;
+3. `batch()` faz **rollback real** da sequência inteira quando um statement aborta.
+
+Consequência: uma tentativa de superalocação derruba o `batch()` completo e **não deixa rastro** — nem o pagamento, nem o lançamento no caixa, nem alocação parcial. A aplicação só precisa tratar o erro e mostrar mensagem; **não há batch compensatório, não há inspeção de `meta.changes`, não há janela de inconsistência.**
+
+Medição de referência, contra D1 real (item com teto de 1000):
+
+```
+batch([ alloc 300 , alloc 900 ])
+  → D1_ERROR: superalocacao … SQLITE_CONSTRAINT_TRIGGER
+  → linhas restantes: []            ← reverteu inclusive o INSERT de 300
+
+batch([ alloc 300 , alloc 700 ])    ← exatamente no teto
+  → ok, soma = 1000                 ← sem falso positivo
 ```
 
-⚠️ **Se a guarda reprovar, o `INSERT` afeta 0 linhas — e 0 linhas não é erro, então o `batch()` commita assim mesmo.** A aplicação **deve** inspecionar `results[i].meta.changes` e, se for 0, disparar um batch compensatório (DELETE do payment + DELETE da transaction). Com um único usuário a janela de corrida é irrelevante. Se um dia precisar de atomicidade real, o caminho é mover o agregado de dívida para um **Durable Object com `ctx.storage.transactionSync()`** — disponível no Workers Free.
+**O que continua valendo:** `INSERT ... SELECT ... WHERE <falso>` afeta 0 linhas, e **0 linhas não é erro** (`success: true`, `changes: 0`) — o batch segue. Isso importa para qualquer outro lugar onde se use INSERT condicional; só não é mais o mecanismo da alocação.
+
+**Válvula de escape não usada:** Durable Object com `ctx.storage.transactionSync()` (disponível no Workers Free). Deixa de ser necessário para este caso.
 
 ### 5.4 Como o pagamento de dívida aparece nos dois lugares
 
@@ -605,11 +677,13 @@ Um pagamento de R$ 500 alocado em dois itens = **um `batch()` de 5 statements**,
      category_id=<categoria kind='debt_settlement'>, description='Pgto dívida — Pai')
 2. INSERT debt_payments (id=p1, debt_id=d1, amount_cents=50000,
      kind='cash', transaction_id=tx1)                    -- elo 1:1 com o caixa
-3. INSERT debt_payment_allocations ... SELECT ... WHERE <guarda I2>   -- R$ 300 -> Steam Deck
-4. INSERT debt_payment_allocations ... SELECT ... WHERE <guarda I2>   -- R$ 200 -> MacBook
+3. INSERT debt_payment_allocations (R$ 300 -> Steam Deck)  -- triggers I1/I2 vigiam
+4. INSERT debt_payment_allocations (R$ 200 -> MacBook)     -- triggers I1/I2 vigiam
 5. UPDATE debts SET status='settled', settled_at=? WHERE id=d1
      AND NOT EXISTS (SELECT 1 FROM v_debt_item_balance WHERE debt_id=d1 AND is_settled=0)
 ```
+
+Se qualquer alocação estourar o teto do item ou do pagamento, o trigger aborta e **o batch inteiro reverte** — o lançamento de −R$ 500 no caixa não fica órfão. Basta capturar o erro e informar o usuário.
 
 | Visão                 | Query                                                                | Aparece                                |
 | --------------------- | -------------------------------------------------------------------- | -------------------------------------- |
@@ -680,7 +754,7 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 
 | Etapa                                                                                         |    Dias |
 | --------------------------------------------------------------------------------------------- | ------: |
-| `wrangler` + D1 + Access + Custom Domain + spikes S1–S4                                       |     0,5 |
+| `wrangler` + D1 + Access + Custom Domain (spikes S1–S3/S5 já feitos; falta S4)                |     0,5 |
 | `money.ts` + schema + migration 0001                                                          |     0,5 |
 | Hono + envelope + validação do JWT do Access (com cache de JWKS)                              |     1,0 |
 | CRUD de contas/lançamentos + dívidas/itens/pagamentos/alocação + gerador de parcelas em batch |     2,0 |
@@ -692,7 +766,7 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 
 1. Plano de 60× gera 60 parcelas e `SUM(parcelas) == total_cents` **até o último centavo** (R$ 100 em 3× = 3334+3333+3333)
 2. Pagamento de R$ 500 alocado em 2 itens: sai **1×** do caixa, sobe **1×** na dívida, aparece **0×** no relatório de despesa
-3. Guarda de superalocação reprova → `meta.changes == 0` → batch compensatório roda → nada fica órfão
+3. Superalocação (alocar R$ 900 num item de R$ 1.000 que já tem R$ 300 alocados) → trigger aborta → **nada persiste**, nem o pagamento nem o lançamento no caixa. E o caso de borda: alocar exatamente até o teto **passa**
 4. Transferência entre contas próprias não aparece em nenhum relatório de resultado
 5. Compra 28/07 em cartão que fecha dia 25 → `bill_competence = '2026-08'`
 6. **Fuso:** gasto às 22h do dia 31 em Teresina (UTC−3, sem horário de verão) não vira dia 1 do mês seguinte. `datetime('now')` no SQLite grava UTC — datas são gravadas como `TEXT` `YYYY-MM-DD` **local**
@@ -704,9 +778,9 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 **Da plataforma**
 
 1. **CPU 10 ms por invocação, sem escape no free.** JWT RS256 ≈ 1 ms, serializar 300 linhas ≈ 2–4 ms — cabe. Parse de PDF, hash de arquivo, render de relatório em JS — não cabe. Parse roda no cliente ou no Mac, **nunca** no Worker.
-2. **50 queries por invocação.** Ver orçamento de batch em §5.2. ⚠️ **Não verificado documentalmente** se cada statement dentro de um `batch()` conta individualmente — inferido da nota "limits for individual queries apply to each individual statement contained within a batch". **Spike S2.**
-3. **Sem transação interativa.** Ver §5.3. `meta.changes = 0` não é erro e não faz rollback.
-4. **A documentação do `batch()` se contradiz** — diz "auto-commit" _e_ "rolls back the entire sequence". **Spike S3** antes de apostar o parcelamento nisso.
+2. ~~**50 queries por invocação.**~~ **RESOLVIDO (S2)** — não reproduzido: batch de 200 statements e 200 queries sequenciais passaram. O multi-row de §5.2 permanece por latência (53×), não por correção. O limite real e ativo é **100 bound params por statement**.
+3. ~~**Sem transação interativa.**~~ **RESOLVIDO (S3/S5)** — `batch()` faz rollback real, e triggers com `RAISE(ABORT)` abortam a sequência inteira. Os invariantes de soma vivem no banco (§5.3). `BEGIN`/`SAVEPOINT` seguem rejeitados, mas deixaram de ser necessários.
+4. ~~**A documentação do `batch()` se contradiz.**~~ **RESOLVIDO (S3)** — na prática **faz rollback**. UNIQUE violado no 3º de 4 statements reverteu os 2 anteriores.
 5. **Carga inicial de histórico estoura a cota de escrita.** 36.000 linhas × (1 tabela + ~4 índices aplicáveis) ≈ **180.000 rows written** contra **100.000/dia**. O D1 **corta**, não faz throttle — o import morre no meio. Mitigação: criar as tabelas **sem índices**, importar, rodar os `CREATE INDEX` depois; ou dividir em 2 dias. Relevante na fatia ②.
 6. **`rows read` conta scan, não result set.** Sem índice, agregação = 36k rows read/query → ~13 renders/dia. Com os índices de §5.2 → ~2.000 renders/dia. **A diferença entre viável e morto é literalmente o índice — e índice no D1 não pode ser alterado.**
 7. **`INTEGER` volta como `Number` do JS, nunca `BigInt`.** Centavos são seguros (teto R$ 90 trilhões); qualquer id numérico grande não é. Daí PKs em TEXT. `wrangler d1 export` tem a mesma limitação de 52 bits.
@@ -719,8 +793,8 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 14. **Queues no free: retenção fixa de 24 h**, não configurável. Consumer parado 1 dia = mensagem descartada em silêncio. Para ~10 lançamentos/dia, **não usar Queues na fatia ②** — ir direto de Cron + tabela de outbox no D1.
 15. **Cron: 5 triggers por conta no free.** Fechamento, alerta de vencimento, export de backup e sync do Pluggy já são 4. Agrupar num Worker só com `switch (event.cron)` **desde o início**.
 16. **Migrations forward-only, sem down.** `PRAGMA` no D1 só vale para a transação corrente; rebuild de tabela usa `PRAGMA defer_foreign_keys = true` dentro do batch.
-17. **Sem triggers no schema** (workers-sdk#4998) — invariantes de soma são responsabilidade permanente da aplicação.
-18. **Versão do SQLite do D1 não é documentada** (único dado: relato de comunidade, 3.41.0, ago/2024). `STRICT` tables e CTE recursivo ficam como "quase certo". **Spike S1.**
+17. ~~**Sem triggers no schema** (workers-sdk#4998).~~ **RESOLVIDO (S1/S5)** — trigger cria e dispara. Os invariantes de soma são do banco, não da aplicação.
+18. **Versão do SQLite do D1 continua desconhecida** — `sqlite_version()` é **bloqueada** pelo D1 (`not authorized to use function`), então não dá para consultar por SQL. Mitigado empiricamente: `STRICT`, CTE recursivo e window functions **todos funcionam** (S1), o que implica >= 3.37. Risco residual: um recurso de SQLite mais novo pode faltar sem aviso.
 19. **A rede de proteção some.** ~3.807 LOC de teste Go não migram.
 20. **Ollama exige GPU/Metal.** Nenhum instance type de Containers tem GPU, e Containers exige o Paid. **O híbrido é permanente.**
 
@@ -734,18 +808,25 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 
 ---
 
-## 9. Spikes obrigatórios antes da primeira linha de produção
+## 9. Spikes
 
-Meia hora no total. Cada um pode invalidar uma decisão acima.
+**S1, S2, S3 e S5 foram executados em 2026-07-25** contra D1 real. Resultados completos em §0; o spec foi reescrito com base neles.
 
-| #      | Spike                                                                       | Invalida se falhar                                  |
-| ------ | --------------------------------------------------------------------------- | --------------------------------------------------- |
-| **S1** | `SELECT sqlite_version()` contra um D1 real                                 | Uso de `STRICT` tables e das views de §5.2          |
-| **S2** | `batch()` com 60 parcelas (13 statements multi-row)                         | O orçamento de batch do parcelamento                |
-| **S3** | `batch()` com um INSERT válido + um violando UNIQUE — o primeiro persistiu? | A premissa de atomicidade de todo o §5.4            |
-| **S4** | Confirmar 50 seats do Access no dashboard                                   | A escolha de auth, e com ela a estimativa de 7 dias |
+| #      | Spike                                                     | Status              | Resultado                                                                    |
+| ------ | --------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| **S1** | Versão do SQLite + STRICT/VIEW/TRIGGER/FK no D1 remoto    | ✅ feito            | `sqlite_version()` bloqueada; STRICT, VIEW, TRIGGER e FK **todos funcionam** |
+| **S2** | Limite de queries por invocação                           | ✅ feito (ressalva) | Não reproduzido em `dev --remote`: batch de 200 e 200 sequenciais passaram   |
+| **S3** | `batch()` faz rollback? 0 linhas é erro?                  | ✅ feito            | **Rollback real**; 0 linhas não é erro (`success: true`, `changes: 0`)       |
+| **S5** | Trigger `RAISE(ABORT)` + rollback juntos _(não previsto)_ | ✅ feito            | Aborta e reverte o batch inteiro; caminho feliz no teto exato passa          |
+| **S4** | 50 seats do Cloudflare Access                             | ⬜ **pendente**     | Não medível por API com o token atual → **Zero Trust → Settings → Plans**    |
+
+**S4 é o único ainda aberto, e é o que mais custa se falhar:** sem Access, a autenticação sai de 0,5 dia para 3–4 dias, e a fatia ① deixa de caber em uma semana.
 
 Spike adicional, antes da **fatia ④**: conectar 1 banco ao `meu.pluggy.ai`, esperar o trial de 14–15 dias vencer, tentar `GET /bills`.
+
+### Harness
+
+O harness usado vive fora do repo (scratchpad da sessão), como Worker + `wrangler dev --remote` contra um D1 descartável apagado ao fim. Para reproduzir: um Worker com binding D1 e uma rota por medição — **uma medição por invocação**, senão o próprio teste consome a cota que ele mede.
 
 ---
 
