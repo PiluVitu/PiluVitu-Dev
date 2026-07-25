@@ -74,7 +74,7 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 - **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
 - **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
-Códigos em uso: `not_authenticated`, `invalid_token`, `invalid_audience`, `token_expired`, `jwks_unavailable`, `email_not_allowed`, `not_found`.
+Códigos em uso: `not_authenticated`, `invalid_token`, `invalid_audience`, `token_expired`, `jwks_unavailable`, `email_not_allowed`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`.
 
 ## Autenticação — Cloudflare Access
 
@@ -98,3 +98,18 @@ Zero linha de login própria: o Access fica na frente do Worker (Google OAuth + 
 - **Competência é o mês em que a fatura FECHA.** `billCompetence('2026-07-28', 25) === '2026-08'`. Dia de fechamento/vencimento maior que o tamanho do mês é aparado (fecha 31 ⇒ fecha 28 em fevereiro, 30 em abril). A aritmética de competência (`addMonthsToCompetence`) é feita em inteiros, sem `Date`, para não haver fuso no meio.
 - **Relógio injetado, não mockado:** `todayInTeresina(now?)` e `nowIsoUtc(now?)` recebem um `Date` opcional. Os testes passam o instante; mock de `Date` global dentro do workerd é frágil e vaza entre testes do mesmo arquivo.
 - **`newId()` é `crypto.randomUUID()`**: toda PK é TEXT porque o binding do D1 devolve INTEGER como `Number` (52 bits) e não há `last_insert_rowid()` confiável entre statements de um `batch()`.
+
+## Domínio
+
+Cada arquivo de `src/domain/` recebe o `D1Database` por parâmetro (nunca lê `env` global) — é o que deixa os testes rodarem contra o D1 do Miniflare sem subir o Worker.
+
+- **`accounts.ts`** — `createAccount` / `listAccounts` / `accountBalances` / `archiveAccount`.
+  - `createAccount` valida em TS que `kind='credit_card'` traz `closing_day` e `due_day` e lança `RangeError`. O `CHECK` do schema barra igual, mas a mensagem do D1 ("CHECK constraint failed") não é acionável; a rota transforma o `RangeError` em `422 invalid_account`.
+  - `accountBalances` é **uma** query com `GROUP BY`: `opening_balance_cents + SUM(amount_cents)`, com `LEFT JOIN` (conta sem lançamento devolve o saldo de abertura) e `t.parent_id IS NULL` (rateio guarda o valor cheio no pai e repete nas filhas — somar os dois dobraria o saldo).
+  - `archiveAccount` é soft delete (`archived_at`); `listAccounts` esconde arquivadas por padrão e as devolve com `includeArchived: true`.
+
+## Rotas
+
+`src/routes/*.ts` exporta routers Hono montados com `app.route('/api', ...)` em `src/index.ts`. Todas as respostas passam por `okJson`/`errJson` (`src/lib/envelope.ts`). Rotas de contas: `GET /api/accounts` (aceita `?scope=PJ|PF` e `?archived=1`, e devolve cada conta com `balance_cents` anexado), `POST /api/accounts`, `POST /api/accounts/:id/archive`.
+
+Os testes de rota montam um `new Hono()` só com o router, **sem** o middleware do Access, e passam o binding via terceiro argumento de `app.request(path, init, { DB: env.DB })`.

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { requireAccess } from './lib/access'
 import { errJson, okJson } from './lib/envelope'
+import { accountsRoutes } from './routes/accounts'
 
 export type Bindings = {
   DB: D1Database
@@ -28,6 +29,8 @@ app.use('/api/*', async (c, next) => {
 })
 
 app.get('/api/health', () => okJson({ status: 'up' }))
+
+app.route('/api', accountsRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.
