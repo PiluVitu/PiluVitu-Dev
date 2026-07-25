@@ -25,4 +25,19 @@
       "migrations_dir": "migrations",
     },
   ],
+
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "piluvitu.cloudflareaccess.com",
+    "ACCESS_AUD": "trocar-pelo-aud-tag-da-application-do-access",
+
+    // ⚠️ ESTE PLACEHOLDER SOBREVIVE ATÉ A TASK 15. Nada entre aqui e lá
+    // falha se ele ficar como está — o middleware só compara `aud` em
+    // runtime, e os testes usam um aud sintético. Antes de qualquer
+    // `wrangler deploy`, confira: o valor tem que ser o Application Audience
+    // (AUD) Tag da Application do Access, 64 hex. Se ainda estiver com o
+    // texto do placeholder, TODA requisição de produção vai cair em 401
+    // invalid_audience (ver o mapeamento de status em requireAccess, em
+    // src/lib/access.ts) — e o sintoma parece problema de login, não de config.
+    "ACCESS_ALLOWED_EMAILS": "paulo.tspi@gmail.com",
+  },
 }

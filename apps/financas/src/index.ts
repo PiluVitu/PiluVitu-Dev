@@ -1,12 +1,38 @@
 import { Hono } from 'hono'
+import { requireAccess } from './lib/access'
+import { errJson, okJson } from './lib/envelope'
 
-const app = new Hono<{ Bindings: Env }>()
+export type Bindings = {
+  DB: D1Database
+  ACCESS_TEAM_DOMAIN: string
+  ACCESS_AUD: string
+  ACCESS_ALLOWED_EMAILS: string
+}
 
-// Envelope no mesmo shape de apps/api/internal/httpx/respond.go:
-// { ok, data, notifications } — notifications NUNCA null, [] quando vazio.
-// A Task 4 substitui este c.json manual pelo helper okJson() de lib/envelope.ts.
-app.get('/api/health', (c) =>
-  c.json({ ok: true, data: { status: 'ok' }, notifications: [] }),
-)
+const app = new Hono<{ Bindings: Bindings }>()
+
+/**
+ * O Access protege /api/* inteiro, MENOS /api/health — o health é sondado por
+ * monitor externo, que não passa pela policy e portanto não tem JWT. A exceção
+ * é explícita aqui (e não implícita na ordem de registro das rotas do Hono)
+ * para não virar armadilha quando as Tasks 6-10 acrescentarem rotas.
+ */
+app.use('/api/*', async (c, next) => {
+  if (c.req.path === '/api/health') return next()
+
+  return requireAccess({
+    teamDomain: c.env.ACCESS_TEAM_DOMAIN,
+    aud: c.env.ACCESS_AUD,
+    allowedEmails: (c.env.ACCESS_ALLOWED_EMAILS ?? '').split(','),
+  })(c, next)
+})
+
+app.get('/api/health', () => okJson({ status: 'up' }))
+
+// Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
+// o Static Assets (SPA), que roda antes do Worker.
+// SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
+// app.route('/api', ...) registrado DEPOIS desta linha fica inalcançável.
+app.all('/api/*', () => errJson(404, 'not_found', 'rota não encontrada'))
 
 export default app

@@ -64,3 +64,24 @@ Depois, aplicar de fato:
 pnpm --filter @piluvitu/financas db:migrate:local
 pnpm --filter @piluvitu/financas db:migrate:remote
 ```
+
+## Envelope de resposta
+
+Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null, "notifications": [{type,code,message}] }` — **o mesmo shape da Go API** (`apps/api/internal/httpx/respond.go`), para o front ler mensagens sempre do mesmo lugar. Helpers em `src/lib/envelope.ts`: `okJson(data, status = 200)` e `errJson(status, code, message)`. `notifications` nunca serializa como `null`. Duas diferenças deliberadas em relação ao Go: aqui não existe o tipo `'success'` nem o campo `field`.
+
+Códigos em uso: `not_authenticated`, `invalid_token`, `invalid_audience`, `token_expired`, `jwks_unavailable`, `email_not_allowed`, `not_found`.
+
+## Autenticação — Cloudflare Access
+
+Zero linha de login própria: o Access fica na frente do Worker (Google OAuth + allowlist) e injeta o header `Cf-Access-Jwt-Assertion`. `src/lib/access.ts` **não confia na existência do header** — valida assinatura RS256, `aud`, `iss` (`https://<teamDomain>`) e `exp` contra o JWKS de `https://<teamDomain>/cdn-cgi/access/certs`, e depois confere o e-mail contra a allowlist (case-insensitive, e **fail closed**: allowlist vazia barra todo mundo).
+
+- **O cache de JWKS não é opcional.** Esse fetch consome **1 dos 50 subrequests** da invocação e custa **50–150 ms**. O cache vive no escopo do módulo, indexado por `teamDomain`, com TTL de 1 h. Quando o `kid` do token não está no cache quente, o JWKS é refetchado **uma vez** antes de rejeitar — senão uma rotação de chave da Cloudflare derrubaria o acesso por até um TTL inteiro.
+- **Montagem:** `src/index.ts` aplica o middleware em `/api/*` com uma exceção explícita para `/api/health` (sondado por monitor externo, que não tem JWT). Um catch-all `app.all('/api/*')` garante que 404 também saia no envelope — **e precisa continuar sendo o ÚLTIMO `app.*` registrado**: no Hono a ordem de registro decide, e qualquer `app.route('/api', ...)` das Tasks 6-10 registrado depois dele fica inalcançável.
+- **Vars:** `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` (Application Audience Tag da app no Zero Trust) e `ACCESS_ALLOWED_EMAILS` (CSV). Não são segredos — ficam em `vars` no `wrangler.jsonc`. `ACCESS_AUD` fica com um placeholder até a Task 15; antes de qualquer `wrangler deploy`, trocar pelo AUD Tag real (Zero Trust → Access → Applications → app do `financas.piluvitu.com.br` → Overview) — com o placeholder, toda requisição de produção cai em 401 `invalid_audience`.
+- **Testes:** o JWT é assinado de verdade dentro do teste (par RSA via `crypto.subtle`) e a resposta do JWKS é servida sobrescrevendo `globalThis.fetch` (ver nota de desvio abaixo). Cada caso usa um `teamDomain` diferente de propósito — é assim que os testes ficam isolados apesar do cache de módulo.
+
+⚠️ **`cloudflare:test` NÃO exporta `fetchMock` na versão instalada** (`@cloudflare/vitest-pool-workers@0.18.8`, também a mais recente publicada no npm nesta data) — MEDIDO grepando `fetchmock` (case-insensitive) em todo o pacote (`types/` e `dist/`): zero ocorrências. `import { fetchMock } from 'cloudflare:test'` importa `undefined` sem erro de módulo (o binding sintético não é ESM estrito o bastante pra recusar em tempo de link) e só quebra no primeiro uso (`fetchMock.activate is not a function`). Substituto usado em `src/lib/access.test.ts`: sobrescrever `globalThis.fetch` diretamente com um dispatcher que atende uma fila de respostas por domínio (FIFO, uma resposta por chamada — replica a semântica de um interceptor do undici consumido uma vez). Funciona porque o teste importa `./access` diretamente (não via `SELF`/service binding), então roda no MESMO isolate — a sobrescrita do global é visível pro módulo sob teste. A verificação de assinatura RS256 continua rodando de verdade via WebCrypto; só a resposta HTTP do JWKS é substituída. Se uma Task futura precisar mockar `fetch` de novo (ex.: chamada a uma API externa), usar o mesmo padrão em vez de tentar `fetchMock` de novo.
+
+⚠️ **TS `JsonWebKey` built-in não tem `kid`** — o dict da WebCrypto API é mais enxuto que o JWK de verdade (RFC 7517), que é o que o JWKS do Access devolve. Em `access.test.ts`, o tipo usado para as chaves de teste é `JsonWebKey & { kid: string }`, não o `JsonWebKey` puro.
+
+⚠️ **TS 5.7+ tornou `Uint8Array` genérico** (`Uint8Array<TArrayBuffer>`, default `ArrayBufferLike`) — uma função anotada só como `: Uint8Array` (sem o parâmetro) devolve o tipo mais largo `ArrayBufferLike`, que NÃO satisfaz `BufferSource` exigido por `crypto.subtle.verify`/`sign`. `bytesDeB64url` em `access.ts` é anotada como `Uint8Array<ArrayBuffer>` por causa disso.
