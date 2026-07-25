@@ -15,7 +15,8 @@
     "./qr-decode": "./src/qr-decode.ts",
     "./prng": "./src/prng.ts",
     "./entropy": "./src/entropy.ts",
-    "./roleta": "./src/roleta.ts"
+    "./roleta": "./src/roleta.ts",
+    "./money": "./src/money.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
