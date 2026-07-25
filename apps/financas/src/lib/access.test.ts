@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { AccessError, requireAccess, verifyAccessJwt } from './access'
 
 /**
@@ -150,10 +150,23 @@ function servirJwks(teamDomain: string, chaves: JsonWebKey[]): void {
   enfileirarRespostaJwks(teamDomain, 200, { keys: chaves })
 }
 
+// Restaurado em afterAll: sem isso, o override vaza pro PRÓXIMO arquivo de
+// teste que rodar no mesmo worker/isolate — a 0.18.x removeu o isolamento
+// automático por teste (ver src/test-setup.ts), então nada garante que um
+// global sobrescrito volte sozinho. Qualquer `fetch()` de verdade que rode
+// depois, num arquivo diferente, cairia no branch de "fetch não mockado" do
+// mockFetchDispatcher e falharia com um erro sem nenhuma ligação óbvia com
+// este arquivo.
+const originalFetch = globalThis.fetch
+
 beforeAll(async () => {
   globalThis.fetch = mockFetchDispatcher as typeof fetch
   parA = await gerarPar('kid-a')
   parB = await gerarPar('kid-b')
+})
+
+afterAll(() => {
+  globalThis.fetch = originalFetch
 })
 
 describe('verifyAccessJwt', () => {
