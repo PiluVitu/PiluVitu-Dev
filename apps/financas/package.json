@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply piluvitu-financas --local",
+    "db:migrate:remote": "wrangler d1 migrations apply piluvitu-financas --remote",
+    "db:migrate:list": "wrangler d1 migrations list piluvitu-financas --local"
   },
   "dependencies": {
     "hono": "^4.12.32"
