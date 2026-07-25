@@ -407,3 +407,54 @@ describe('migration 0001 — views', () => {
     ])
   })
 })
+
+describe('migration 0001 — seed de categorias', () => {
+  it('semeia os slugs que medem o gap de ~R$ 1.000/mês da PJ', async () => {
+    const { results } = await DB.prepare(
+      `SELECT slug, kind, default_scope
+         FROM categories
+        WHERE slug IN ('das','contador','inss','pro-labore')
+        ORDER BY slug`,
+    ).all()
+
+    expect(results).toEqual([
+      { slug: 'contador', kind: 'expense', default_scope: 'PJ' },
+      { slug: 'das', kind: 'expense', default_scope: 'PJ' },
+      { slug: 'inss', kind: 'expense', default_scope: 'PJ' },
+      // Pró-labore é PJ -> PF: é transferência, não despesa. Classificar
+      // como 'expense' contaria o mesmo dinheiro duas vezes (despesa na PJ
+      // e receita na PF) e inflaria o custo medido da PJ.
+      { slug: 'pro-labore', kind: 'transfer', default_scope: 'PJ' },
+    ])
+  })
+
+  it('semeia as categorias de transfer e debt_settlement', async () => {
+    const { results } = await DB.prepare(
+      `SELECT slug FROM categories
+        WHERE kind IN ('transfer','debt_settlement')
+        ORDER BY slug`,
+    ).all()
+
+    expect(results).toEqual([
+      { slug: 'pro-labore' },
+      { slug: 'quitacao-divida' },
+      { slug: 'transferencia' },
+    ])
+  })
+
+  it('DAS, contador e INSS penduram no pai "custos-pj"', async () => {
+    const { results } = await DB.prepare(
+      `SELECT c.slug
+         FROM categories c
+         JOIN categories p ON p.id = c.parent_id
+        WHERE p.slug = 'custos-pj'
+        ORDER BY c.slug`,
+    ).all()
+
+    expect(results).toEqual([
+      { slug: 'contador' },
+      { slug: 'das' },
+      { slug: 'inss' },
+    ])
+  })
+})

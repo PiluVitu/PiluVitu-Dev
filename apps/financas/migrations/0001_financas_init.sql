@@ -460,3 +460,53 @@ FROM transactions t
 WHERE t.settled_at IS NOT NULL
   AND t.transfer_id IS NULL
   AND t.parent_id  IS NULL;
+
+-- ---------------------------------------------------------------------
+-- SEED — categorias com slug estavel.
+--
+-- Por que nascem na migration e nao na aplicacao: o gap declarado de
+-- ~R$ 1.000/mes entre bruto e liquido (DAS + contador + INSS) so e
+-- MEDIVEL se as tres saidas tiverem identidade estavel, independente do
+-- texto que for digitado na tela. O slug e essa identidade, e ele e unico
+-- (uq_categories_slug).
+--
+-- 'transfer' e 'debt_settlement' tambem sao semeados porque sao as duas
+-- classes que TODO relatorio de resultado exclui — sem elas, o pagamento
+-- de divida e o pro-labore viram despesa/receita e a dupla contagem volta.
+--
+-- INSERT OR IGNORE: mantem a migration reexecutavel sem quebrar no
+-- indice unico de slug.
+-- ---------------------------------------------------------------------
+INSERT OR IGNORE INTO categories
+  (id, parent_id, name, kind, slug, default_scope, created_at)
+VALUES
+  ('00000000-0000-4000-8000-000000000001', NULL,
+   'Custos da PJ', 'expense', 'custos-pj', 'PJ', '2026-07-25T00:00:00Z');
+
+INSERT OR IGNORE INTO categories
+  (id, parent_id, name, kind, slug, default_scope, created_at)
+VALUES
+  ('00000000-0000-4000-8000-000000000002',
+   '00000000-0000-4000-8000-000000000001',
+   'DAS — Simples Nacional', 'expense', 'das', 'PJ', '2026-07-25T00:00:00Z'),
+  ('00000000-0000-4000-8000-000000000003',
+   '00000000-0000-4000-8000-000000000001',
+   'Contador', 'expense', 'contador', 'PJ', '2026-07-25T00:00:00Z'),
+  ('00000000-0000-4000-8000-000000000004',
+   '00000000-0000-4000-8000-000000000001',
+   'INSS', 'expense', 'inss', 'PJ', '2026-07-25T00:00:00Z');
+
+-- Pro-labore e dinheiro saindo da PJ e entrando na PF: e TRANSFERENCIA.
+-- Como 'expense' ele viraria despesa na PJ e receita na PF — o mesmo
+-- dinheiro contado duas vezes, distorcendo o custo real da PJ.
+INSERT OR IGNORE INTO categories
+  (id, parent_id, name, kind, slug, default_scope, created_at)
+VALUES
+  ('00000000-0000-4000-8000-000000000005', NULL,
+   'Pro-labore', 'transfer', 'pro-labore', 'PJ', '2026-07-25T00:00:00Z'),
+  ('00000000-0000-4000-8000-000000000006', NULL,
+   'Transferencia entre contas', 'transfer', 'transferencia', NULL,
+   '2026-07-25T00:00:00Z'),
+  ('00000000-0000-4000-8000-000000000007', NULL,
+   'Quitacao de divida', 'debt_settlement', 'quitacao-divida', NULL,
+   '2026-07-25T00:00:00Z');
