@@ -90,3 +90,11 @@ Zero linha de login própria: o Access fica na frente do Worker (Google OAuth + 
 ⚠️ **TS `JsonWebKey` built-in não tem `kid`** — o dict da WebCrypto API é mais enxuto que o JWK de verdade (RFC 7517), que é o que o JWKS do Access devolve. Em `access.test.ts`, o tipo usado para as chaves de teste é `JsonWebKey & { kid: string }`, não o `JsonWebKey` puro.
 
 ⚠️ **TS 5.7+ tornou `Uint8Array` genérico** (`Uint8Array<TArrayBuffer>`, default `ArrayBufferLike`) — uma função anotada só como `: Uint8Array` (sem o parâmetro) devolve o tipo mais largo `ArrayBufferLike`, que NÃO satisfaz `BufferSource` exigido por `crypto.subtle.verify`/`sign`. `bytesDeB64url` em `access.ts` é anotada como `Uint8Array<ArrayBuffer>` por causa disso.
+
+## Datas, fuso e ids (`src/lib/dates.ts`, `src/lib/ids.ts`)
+
+- **Teresina é UTC−3 fixo** (Piauí não adota horário de verão desde 2019). `todayInTeresina()` subtrai 3 h antes de cortar o `YYYY-MM-DD` — sem isso, um lançamento feito às 22h do dia 31 sairia com a data do dia 1 do mês seguinte, porque `toISOString()` é UTC. Offset constante, não `Intl.DateTimeFormat`: resolver fuso custa CPU e o teto do free tier é **10 ms por invocação**.
+- **Três formatos, um por pergunta:** data local `YYYY-MM-DD` (`purchase_date`, `due_date`), competência `YYYY-MM` (`bill_competence`) e timestamp UTC `YYYY-MM-DDTHH:MM:SSZ` (`created_at`, `updated_at`, via `nowIsoUtc()`). Todos ordenam lexicograficamente == cronologicamente, que é o que faz os índices do §5.2 funcionarem.
+- **Competência é o mês em que a fatura FECHA.** `billCompetence('2026-07-28', 25) === '2026-08'`. Dia de fechamento/vencimento maior que o tamanho do mês é aparado (fecha 31 ⇒ fecha 28 em fevereiro, 30 em abril). A aritmética de competência (`addMonthsToCompetence`) é feita em inteiros, sem `Date`, para não haver fuso no meio.
+- **Relógio injetado, não mockado:** `todayInTeresina(now?)` e `nowIsoUtc(now?)` recebem um `Date` opcional. Os testes passam o instante; mock de `Date` global dentro do workerd é frágil e vaza entre testes do mesmo arquivo.
+- **`newId()` é `crypto.randomUUID()`**: toda PK é TEXT porque o binding do D1 devolve INTEGER como `Number` (52 bits) e não há `last_insert_rowid()` confiável entre statements de um `batch()`.
