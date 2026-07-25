@@ -1,7 +1,7 @@
 # Finanças PJ — Fatia ① Dívidas, parcelas e comprometimento futuro
 
 **Data:** 2026-07-25
-**Status:** Aprovado (design) — **spikes S1/S2/S3 executados contra D1 real em 2026-07-25**, spec revisado com os números medidos. S4 pendente (só dashboard).
+**Status:** Aprovado (design) — **spikes executados contra D1 real em 2026-07-25**, spec revisado com os números medidos. Nenhum spike pendente. Pronto para plano de implementação.
 **Escopo:** Módulo pessoal de controle financeiro PJ/PF do dono do repo. **Fatia ①** entrega o modelo de dados completo, dívidas com pessoas físicas (com sub-itens e alocação de pagamento por item), parcelamento de cartão e a tela de comprometimento futuro. Sem import, sem LLM, sem PWA.
 **Nova frente:** `apps/financas` — Cloudflare Worker (Hono + Static Assets) sobre D1, em subdomínio próprio, atrás do Cloudflare Access. **`apps/web` e `apps/api` não são tocados nesta fatia.**
 **Fonte de design:** brainstorming 2026-07-25; discovery de repo + Open Finance BR (7 agentes); viabilidade Cloudflare free tier com verificação adversarial (19 agentes, 14 afirmações refutadas ou confirmadas contra `developers.cloudflare.com`).
@@ -28,7 +28,7 @@ Executados em 2026-07-25 contra um D1 real e descartável, a partir de um Worker
 
 ⚠️ **Ressalva de validade.** S1, S3 e o teste de trigger medem comportamento do **D1**, e valem sem ressalva. O S2 mede um limite de **invocação de Worker**, e foi observado via `wrangler dev --remote` — que roda no edge, mas pode não aplicar todos os limites de um Worker publicado. Registre o resultado como _"o limite de 50 queries não foi reproduzido em `dev --remote`"_, **não** como _"o limite não existe"_. O desenho não depende dessa distinção: o multi-row é seguro nos dois cenários.
 
-**S4 (50 seats do Cloudflare Access) não é medível por API com o token atual** (escopos: `account read`, `user read`, `workers*`, `d1 write`, `queues`, `ai`). Verificar no dashboard: **Zero Trust → Settings → Plans**. É o único spike ainda em aberto, e o único que pode derrubar a estimativa de 7 dias (sem Access, a autenticação vira 3–4 dias de trabalho).
+**S4 (seats do Cloudflare Access) — encerrado sem medição, por escopo.** O módulo tem **um único usuário**. Qualquer patamar do Zero Trust Free (produto documentado da Cloudflare, que inclui Access) cobre 1 seat com folga; o número de 50 vinha de blog e era a única parte incerta, e ela deixou de importar. Não há spike pendente.
 
 ---
 
@@ -84,7 +84,7 @@ Dar ao dono uma resposta confiável para três perguntas que hoje ele responde d
 ```
                     ┌─────────────────────────────────────────┐
    Android / Mac ──▶│ financas.piluvitu.com.br                │
-                    │ Cloudflare Access · Google · allowlist  │  50 seats grátis
+                    │ Cloudflare Access · Google · allowlist  │  free, single-user
                     └──────────────────┬──────────────────────┘
                                        │ JWT do Access (Cf-Access-Jwt-Assertion)
                     ┌──────────────────▼──────────────────────┐
@@ -167,7 +167,7 @@ Nenhum limite de **capacidade** chega perto de doer: 36.000 linhas (10 anos a ~3
 | Queues                         | 10k ops/dia, **retenção fixa 24 h**            | 1 M/mês, 14 dias | Ver §8.14 — não usar na fatia ②                                                                                                                  |
 | Workers AI                     | 10.000 neurons/dia                             | + USD 0,011/1k   | Fallback de categorização, fatia ②                                                                                                               |
 | Durable Objects (SQLite)       | 100k req/dia, 5 GB, **`transactionSync` real** | —                | Válvula de escape para atomicidade                                                                                                               |
-| Zero Trust / Access            | **50 seats** ⚠️                                | —                | Número só aparece em blog, **não** em `developers.cloudflare.com`                                                                                |
+| Zero Trust / Access            | Free inclui Access                             | —                | Número só aparece em blog, **não** em `developers.cloudflare.com`                                                                                |
 
 ---
 
@@ -754,7 +754,7 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 
 | Etapa                                                                                         |    Dias |
 | --------------------------------------------------------------------------------------------- | ------: |
-| `wrangler` + D1 + Access + Custom Domain (spikes S1–S3/S5 já feitos; falta S4)                |     0,5 |
+| `wrangler` + D1 + Access + Custom Domain (spikes já feitos)                                   |     0,5 |
 | `money.ts` + schema + migration 0001                                                          |     0,5 |
 | Hono + envelope + validação do JWT do Access (com cache de JWKS)                              |     1,0 |
 | CRUD de contas/lançamentos + dívidas/itens/pagamentos/alocação + gerador de parcelas em batch |     2,0 |
@@ -787,7 +787,7 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 8. **Bundle 3 MB gzip mata Next.js/OpenNext** — motiva a SPA (§3.2).
 9. **`VACUUM INTO` não existe no D1.** `apps/api/internal/backup` **não porta**. Substitutos: Time Travel 7 dias + GitHub Action agendada com `wrangler d1 export --remote` (gera **SQL, não `.sqlite`**, não roda de dentro do Worker, e **bloqueia outras queries enquanto executa**).
 10. **Cookie:** Custom Domain obrigatório (§3.3).
-11. **Access:** os 50 seats **não estão em `developers.cloudflare.com`** — **spike S4**. E o fetch do JWKS conta como 1 dos 50 subrequests.
+11. **Access:** o fetch do JWKS conta como **1 dos 50 subrequests** e custa 50–150 ms — cachear as chaves no escopo do módulo. (A dúvida sobre seats foi encerrada: 1 usuário.)
 12. **O PWA do Kanban atrapalha** — verificado no repo (§3.1). Subdomínio resolve.
 13. **RP ID do WebAuthn/passkey tem que ser decidido AGORA**, antes do subdomínio: registrar em `financas.piluvitu.com.br` não vale em `piluvitu.com.br`, e **mudar o RP ID depois invalida todas as passkeys existentes**.
 14. **Queues no free: retenção fixa de 24 h**, não configurável. Consumer parado 1 dia = mensagem descartada em silêncio. Para ~10 lançamentos/dia, **não usar Queues na fatia ②** — ir direto de Cron + tabela de outbox no D1.
@@ -818,9 +818,9 @@ Composição dos ~7 dias da fatia ① (o dia de teste está **dentro**, não som
 | **S2** | Limite de queries por invocação                           | ✅ feito (ressalva) | Não reproduzido em `dev --remote`: batch de 200 e 200 sequenciais passaram   |
 | **S3** | `batch()` faz rollback? 0 linhas é erro?                  | ✅ feito            | **Rollback real**; 0 linhas não é erro (`success: true`, `changes: 0`)       |
 | **S5** | Trigger `RAISE(ABORT)` + rollback juntos _(não previsto)_ | ✅ feito            | Aborta e reverte o batch inteiro; caminho feliz no teto exato passa          |
-| **S4** | 50 seats do Cloudflare Access                             | ⬜ **pendente**     | Não medível por API com o token atual → **Zero Trust → Settings → Plans**    |
+| **S4** | Seats do Cloudflare Access                                | ➖ dispensado       | Módulo é single-user; qualquer patamar do Zero Trust Free cobre 1 seat       |
 
-**S4 é o único ainda aberto, e é o que mais custa se falhar:** sem Access, a autenticação sai de 0,5 dia para 3–4 dias, e a fatia ① deixa de caber em uma semana.
+**Nenhum spike pendente.** O S4 foi dispensado por escopo (single-user), não por medição — se um dia o módulo ganhar um segundo usuário, revisitar.
 
 Spike adicional, antes da **fatia ④**: conectar 1 banco ao `meu.pluggy.ai`, esperar o trial de 14–15 dias vencer, tentar `GET /bills`.
 
