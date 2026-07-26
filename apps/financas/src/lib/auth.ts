@@ -171,6 +171,25 @@ export function createAuth(env: AuthBindings) {
       // achando que afrouxam ou apertam o login.
       window: 60,
       max: 20,
+      // M1 (fix final): /get-session sozinho divide o balde de 20/60s acima
+      // com toda rota que NÃO é /sign-in* — a SPA chama get-session 1x por
+      // mount + 1x por foco de aba (refetchOnWindowFocus, throttlado a 5s
+      // pela própria lib), então um checklist de deploy ~20 itens cheio de
+      // reload/troca de aba num device só pode raspar os 20 antes de acabar
+      // a lista. MEDIDO contra o pacote instalado
+      // (rate-limiter/index.mjs:274-322): customRules não tem filtro de
+      // método, chave é (ip, path), e — igual ao caso de /sign-in* acima —
+      // é aplicado DEPOIS das special rules embutidas, então vence a config
+      // de baixo. Num load frio, um 429 aqui não é "harmless": o átomo de
+      // sessão do nanostores grava `data: null` + `error`, e Gate.tsx (que
+      // já trata error como "não consegui checar") mostra a tela de login
+      // pro DONO logado. window igual ao bloco geral (60s), max 6x maior
+      // (120) — suficiente pro pior caso do checklist sem abrir a porta pra
+      // um scraper de sessão descontrolado (ainda sujeito ao mesmo limite
+      // por-isolate documentado abaixo, storage: 'memory').
+      customRules: {
+        '/get-session': { window: 60, max: 120 },
+      },
       // 'database' pediria uma tabela `rateLimit` própria — migration 0003
       // nova, e migration aqui é forward-only, então essa decisão fica de
       // fora de um fix round. 'memory' é o único storage disponível sem

@@ -1,3 +1,5 @@
+import { authClient } from './auth-client'
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -49,11 +51,24 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (!envelope.ok) {
     const notes = envelope.notifications ?? []
     const note = notes.find((n) => n.type === 'error') ?? notes[0]
-    throw new ApiError(
-      res.status,
-      note?.code ?? 'unknown',
-      note?.message ?? 'erro desconhecido',
-    )
+    const code = note?.code ?? 'unknown'
+
+    // I2 (fix final): um 401 not_authenticated numa rota de DOMÍNIO (não
+    // /api/auth/*) não é visto pelo átomo de sessão do Better Auth sozinho
+    // — ele só refaz fetch no primeiro mount, em $sessionSignal, em
+    // visibilitychange e em reconexão; nenhum desses dispara aqui. Sem
+    // isto, a sessão expira, toda tela passa a mostrar o erro cru em vez
+    // de voltar pro login, e o header continua de pé com e-mail/"Sair"
+    // (Gate nunca re-renderiza porque o átomo mantém seu `data` antigo).
+    // $store.notify('$sessionSignal') é o MESMO mecanismo que signOut() já
+    // usa pra re-gatear na mesma aba (ver Gate.tsx/auth-client.ts) —
+    // dispara um refetch de /get-session, que devolve null, e o átomo
+    // atualiza `data` pra null, fazendo o Gate voltar pra tela de login.
+    if (res.status === 401 && code === 'not_authenticated') {
+      authClient.$store.notify('$sessionSignal')
+    }
+
+    throw new ApiError(res.status, code, note?.message ?? 'erro desconhecido')
   }
 
   return envelope.data as T

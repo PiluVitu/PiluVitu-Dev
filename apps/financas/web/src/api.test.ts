@@ -1,4 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// I2 (fix final): api.ts importa authClient de ./auth-client pra disparar
+// $sessionSignal num 401 not_authenticated. Mock leve (não o client real do
+// Better Auth) — o que está sob teste aqui é só SE api.ts chama
+// $store.notify, não o transporte HTTP da lib (isso já é coberto por
+// Gate.test.tsx). vi.hoisted porque vi.mock é hoisted para o topo do
+// arquivo, antes de qualquer const normal existir.
+const { notifyFake } = vi.hoisted(() => ({ notifyFake: vi.fn() }))
+vi.mock('./auth-client', () => ({
+  authClient: { $store: { notify: notifyFake } },
+}))
+
 import { api, ApiError } from './api'
 
 type FetchMock = ReturnType<typeof vi.fn>
@@ -12,6 +24,10 @@ function mockFetch(response: unknown) {
 function envelopeResponse(status: number, body: unknown) {
   return { status, json: async () => body }
 }
+
+beforeEach(() => {
+  notifyFake.mockClear()
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -79,6 +95,51 @@ describe('api', () => {
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('invalid_envelope')
     expect(err.status).toBe(302)
+  })
+
+  it('I2: dispara $sessionSignal via authClient.$store.notify quando 401 not_authenticated', async () => {
+    mockFetch(
+      envelopeResponse(401, {
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'not_authenticated',
+            message: 'requisição sem sessão válida',
+          },
+        ],
+      }),
+    )
+
+    await expect(api('/api/accounts')).rejects.toMatchObject({
+      status: 401,
+      code: 'not_authenticated',
+    })
+    expect(notifyFake).toHaveBeenCalledTimes(1)
+    expect(notifyFake).toHaveBeenCalledWith('$sessionSignal')
+  })
+
+  it('I2: NÃO dispara $sessionSignal para outros erros (403 email_not_allowed)', async () => {
+    mockFetch(
+      envelopeResponse(403, {
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'email_not_allowed',
+            message: 'este e-mail não tem acesso ao aplicativo',
+          },
+        ],
+      }),
+    )
+
+    await expect(api('/api/accounts')).rejects.toMatchObject({
+      status: 403,
+      code: 'email_not_allowed',
+    })
+    expect(notifyFake).not.toHaveBeenCalled()
   })
 
   it('repassa method e body', async () => {

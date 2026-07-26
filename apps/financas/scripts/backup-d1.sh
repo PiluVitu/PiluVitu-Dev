@@ -71,6 +71,24 @@ if ! gzip -t "$TRABALHO/dump.sql.gz"; then
   exit 1
 fi
 
+# M4: as três checagens acima (não-vazio, tem CREATE TABLE, gzip íntegro)
+# aceitam um dump truncado DEPOIS do DDL e ANTES ou NO MEIO dos INSERTs — tem
+# conteúdo, tem 'CREATE TABLE', comprime sem erro. Comparar o tamanho
+# descomprimido contra o backup mais recente já existente é a única checagem
+# que flagra ISSO especificamente: uma queda grande demais pra ser só "mês
+# com menos lançamento" é sinal de dado faltando, não de dado normal. Sem
+# backup anterior (primeira execução da vida) não há com o que comparar —
+# esse caminho continua aceitando, igual antes.
+ANTERIOR="$(ls -1 "$DEST"/financas-*.sql.gz 2>/dev/null | sort | tail -n 1 || true)"
+if [ -n "$ANTERIOR" ]; then
+  TAMANHO_ANTERIOR="$(gzip -dc "$ANTERIOR" | wc -c | tr -d ' ')"
+  TAMANHO_NOVO="$(wc -c < "$CRU" | tr -d ' ')"
+  if [ "$TAMANHO_ANTERIOR" -gt 0 ] && [ "$TAMANHO_NOVO" -lt $(( TAMANHO_ANTERIOR / 2 )) ]; then
+    echo "erro: export novo ($TAMANHO_NOVO bytes descomprimidos) é menos da metade do backup mais recente ($TAMANHO_ANTERIOR bytes, $(basename "$ANTERIOR")) — recusado, nada rotacionado. Pode ser um dump truncado entre o DDL e os INSERTs." >&2
+    exit 1
+  fi
+fi
+
 # mv dentro do mesmo filesystem é atômico; o arquivo aparece em $DEST inteiro
 # ou não aparece. Por isso o mktemp -d acima não serve — ele pode cair em outro
 # volume — então copia-e-renomeia dentro do próprio $DEST.

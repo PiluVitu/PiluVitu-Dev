@@ -36,10 +36,11 @@ for arg in "\$@"; do
   case "\$arg" in --output=*) saida="\${arg#--output=}" ;; esac
 done
 case "$1" in
-  ok)        printf 'CREATE TABLE accounts (id TEXT);\nINSERT INTO accounts VALUES ('a');\n' > "\$saida" ;;
-  vazio)     : > "\$saida" ;;
-  truncado)  printf 'PRAGMA foreign_keys=OFF;\n-- cortado no meio\n' > "\$saida" ;;
-  falha)     echo 'boom' >&2; exit 1 ;;
+  ok)          printf 'CREATE TABLE accounts (id TEXT);\nINSERT INTO accounts VALUES ('a');\n' > "\$saida" ;;
+  vazio)       : > "\$saida" ;;
+  truncado)    printf 'PRAGMA foreign_keys=OFF;\n-- cortado no meio\n' > "\$saida" ;;
+  falha)       echo 'boom' >&2; exit 1 ;;
+  ddl_apenas)  printf 'CREATE TABLE accounts (id TEXT);\n' > "\$saida" ;;
 esac
 STUB
   chmod +x "$SANDBOX/bin/wrangler-falso"
@@ -140,6 +141,33 @@ rm -rf "$SANDBOX/dest"
 rodar_backup 30
 checar "cria a pasta de destino se ela não existir" 0 "$?"
 checar "grava o backup na pasta recém-criada" 1 "$(contar_backups)"
+limpar_sandbox
+
+# --- 8. dump truncado ENTRE o DDL e os INSERTs não passa como backup (M4) --
+# As três checagens de sempre (não-vazio, tem CREATE TABLE, gzip íntegro)
+# aceitariam esse dump — só tem CREATE TABLE, perdeu os INSERTs. Só a
+# comparação de tamanho contra o backup mais recente pega isso.
+montar_sandbox ddl_apenas
+{
+  echo 'CREATE TABLE accounts (id TEXT);'
+  for i in $(seq 1 500); do echo "INSERT INTO accounts VALUES ('linha-$i');"; done
+} | gzip -c > "$SANDBOX/dest/financas-20260101T000000Z.sql.gz"
+rodar_backup 30
+checar "dump DDL-only (bem menor que o anterior) é recusado com código diferente de 0" 1 "$?"
+checar "dump DDL-only não vira backup novo (só o antigo continua lá)" 1 "$(contar_backups)"
+if gzip -dc "$SANDBOX/dest/financas-20260101T000000Z.sql.gz" | grep -q 'linha-500'; then
+  ok "o backup anterior (com os INSERTs) continua intacto, sem rotação"
+else
+  nok "o backup anterior foi corrompido ou substituído"
+fi
+limpar_sandbox
+
+# --- 9. primeira execução da vida (sem backup anterior) não tem com o que
+#        comparar — continua aceitando um dump pequeno normalmente ----------
+montar_sandbox ddl_apenas
+rodar_backup 30
+checar "sem backup anterior, dump pequeno (aqui, só DDL) ainda é aceito" 0 "$?"
+checar "grava o único backup possível de comparar" 1 "$(contar_backups)"
 limpar_sandbox
 
 echo

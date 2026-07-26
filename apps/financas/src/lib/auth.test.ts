@@ -270,3 +270,28 @@ describe('databaseHooks.user.create.before — bloqueio real de ponta a ponta', 
     expect(a?.n).toBe(0)
   })
 })
+
+// M1 (fix final): sem customRules['/get-session'], o balde geral (window:
+// 60, max: 20) governa get-session igual a qualquer outra rota fora de
+// /sign-in* — um checklist de deploy cheio de reload/troca de aba raspa os
+// 20 e o dono LOGADO cai na tela de login por um 429. IP dedicado
+// (203.0.113.42, nunca usado por outro teste deste arquivo) porque o Map de
+// 'memory' é singleton de MÓDULO (rate-limiter/index.mjs:6) — reset() do
+// cloudflare:test não zera ele, e testes que reusam IP acumulariam
+// contagem entre si (mesma armadilha documentada em CLAUDE.md pro bloco de
+// /sign-in*).
+describe('rateLimit.customRules — /get-session não herda o teto de 20/60s', () => {
+  test('25 chamadas seguidas de /get-session (> 20, o max geral) não recebem 429', async () => {
+    const auth = createAuth(testEnv)
+    const ip = '203.0.113.42'
+
+    for (let i = 0; i < 25; i++) {
+      const res = await auth.handler(
+        new Request(`${testEnv.BETTER_AUTH_URL}/api/auth/get-session`, {
+          headers: { 'cf-connecting-ip': ip },
+        }),
+      )
+      expect(res.status, `chamada ${i + 1}/25`).not.toBe(429)
+    }
+  })
+})

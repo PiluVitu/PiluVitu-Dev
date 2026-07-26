@@ -15,7 +15,8 @@
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply piluvitu-financas --local",
     "db:migrate:remote": "wrangler d1 migrations apply piluvitu-financas --remote",
-    "db:migrate:list": "wrangler d1 migrations list piluvitu-financas --local",
+    "db:migrate:list:local": "wrangler d1 migrations list piluvitu-financas --local",
+    "db:migrate:list:remote": "wrangler d1 migrations list piluvitu-financas --remote",
     "backup": "./scripts/backup-d1.sh",
     "backup:test": "./scripts/backup-d1.test.sh"
   },

@@ -277,4 +277,30 @@ describe('Gate — callbackURL preserva a rota (hash) atual', () => {
       expect.objectContaining({ callbackURL: '/' }),
     )
   })
+
+  // T4.1: a garantia de mesma-origem de callbackURL vale por CONSTRUÇÃO —
+  // `` `/${window.location.hash}` `` — não por reasoning solto. `hash` é
+  // sempre '' ou começa com '#' (contrato do próprio DOM), então o '/'
+  // fixo na frente do template NUNCA pode desaparecer sem alguém trocar a
+  // expressão. Este teste trava exatamente esse '/': um hash adversarial
+  // como '#//evil.com' (dois primeiros chars viram '//' depois do host)
+  // continua vindo prefixado, então NUNCA vira um redirect protocol-relative
+  // ('//evil.com/...'). Um refactor futuro pra
+  // `window.location.hash.slice(1)` (tirando o '#' em vez de manter o
+  // template) removeria esse '/' em silêncio e abriria exatamente esse
+  // open redirect — é esse refactor que este teste pretende pegar.
+  test('hash adversarial ("#//evil.com") continua prefixado por "/" — nunca vira protocol-relative', async () => {
+    window.location.hash = '#//evil.com'
+    const social = vi.fn()
+    const { Gate } = await montarGateSemSessao(social)
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    fireEvent.click(screen.getByText('Entrar com Google'))
+    expect(social).toHaveBeenCalledWith(
+      expect.objectContaining({ callbackURL: '/#//evil.com' }),
+    )
+  })
 })
