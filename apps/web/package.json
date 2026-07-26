@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "next build && node ../../scripts/check-tailwind-source.mjs .next",
-    "build:ci": "next build",
+    "build:ci": "next build && node ../../scripts/check-tailwind-source.mjs .next",
     "build-storybook": "storybook build",
     "dev": "next dev --webpack -p 3333",
     "dev:turbo": "next dev -p 3333",
