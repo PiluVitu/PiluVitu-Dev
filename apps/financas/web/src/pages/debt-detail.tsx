@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
 import type { AccountView } from './accounts'
+import { NovoItemForm } from './NovoItemForm'
 
 export type DebtItemBalanceView = {
   item_id: string
@@ -243,6 +244,8 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
           ))}
         </tbody>
       </table>
+
+      <NovoItemForm debtId={debtId} onCreated={carregar} />
 
       <h2>Pagamentos</h2>
       <ul>

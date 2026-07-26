@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AccountsPage } from './pages/accounts'
 import { CommitmentsPage } from './pages/commitments'
 import { DebtDetailPage } from './pages/debt-detail'
+import { DividasPage } from './pages/DividasPage'
 import { NewEntryPage } from './pages/new-entry'
 
 export function useHash(): string {
@@ -30,11 +31,14 @@ export function App() {
     <>
       <nav>
         <a href="#/contas">Contas</a>
+        <a href="#/dividas">Dívidas</a>
         <a href="#/lancar">Lançar</a>
         <a href="#/comprometido">Comprometido</a>
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />
+      ) : hash === '#/dividas' || hash === '#/dividas/' ? (
+        <DividasPage />
       ) : hash.startsWith('#/comprometido') ? (
         <CommitmentsPage from={competenciaAtual()} />
       ) : hash.startsWith('#/lancar') ? (

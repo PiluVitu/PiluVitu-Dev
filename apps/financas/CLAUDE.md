@@ -169,6 +169,8 @@ Os tetos I1/I2 são dos **triggers** `trg_alloc_pagamento_teto` / `trg_alloc_ite
 
 Teto de 100 bound params por statement: com 19 colunas, um `INSERT` multi-row de `transactions` cabe **5 linhas por statement**; `installments` (5 colunas) cabe 20. `payDebt` sempre insere 1 linha por statement (nunca multi-row) porque cada pagamento gera no máximo 1 `transaction`.
 
+**`GET /api/debts` inclui `payee_name`** (Task 14, `JOIN payees p ON p.id = d.payee_id` em `listDebts`) — antes só devolvia `payee_id`, o que deixava a listagem sem como mostrar "Pai" sem um segundo round-trip. `JOIN`, não `LEFT JOIN`: `debts.payee_id` é `NOT NULL REFERENCES payees(id)`, então toda dívida tem payee de verdade.
+
 | Rota                           | Sucesso | Erros                                                                                                         |
 | ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------- |
 | `GET /api/debts`               | 200     | 400 `invalid_query`                                                                                           |
@@ -182,6 +184,16 @@ Teto de 100 bound params por statement: com 19 colunas, um `INSERT` multi-row de
 **Convenção de módulo:** `debtsRoutes`, como `installmentPlansRoutes`, usa `type Env = { Bindings: { DB: D1Database } }` local — não importa `Bindings` de `../index`.
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/debts.test.ts` cobre o cenário real (Steam Deck 280000 + MacBook 450000, pagos 100000 + 100000 + 394000 ⇒ MacBook quitado e Steam Deck com 136000 em aberto) e as três queries do §5.4 do spec (1× no caixa via `v_cashflow`, 1× na dívida via `v_debt_item_balance`, 0× em `transactions` com categoria `expense`).
+
+## Payees e categorias (`src/domain/payees.ts` + `src/routes/payees.ts` + `src/routes/categories.ts`)
+
+- **`normalizeName()`** gera `payees.norm_name`: caixa alta, sem acento (`\p{M}` sobre a forma `NFD` — cobre qualquer diacrítico combinante, não só o range fixo `U+0300..U+036F`, e sem caractere combinante literal na fonte do arquivo), sem sufixo de maquininha (`PAGSEGURO`, `CIELO`, `STONE`, etc.) e sem `CIDADE UF` no fim. É a chave de matching de estabelecimento que o import da fatia ② vai usar — nasce já nesta fatia porque `idx_payees_norm` (migration `0001`) é um índice do D1, e **índice do D1 não é alterável**, só dropado (irreversível) e recriado. Limitação conhecida e documentada no código: cidade de nome composto deixa resíduo (`'SAO'` sobrando em `'MERCADO X SAO LUIS MA'`), porque só o último token de cidade é cortado.
+- **`createPayee`/`listPayees`** (`src/domain/payees.ts`) são o CRUD mínimo sobre a tabela `payees` do `0001` — sem deduplicação por `norm_name` (o índice é normal, não `UNIQUE`; dedupe fica para a fatia de import).
+- **`GET|POST /api/payees`** e **`GET /api/categories`**, montados em `src/index.ts` **acima** da linha `// SEMPRE POR ÚLTIMO`, mesma regra de todas as rotas anteriores. `payeesRoutes`/`categoriesRoutes` usam o `type Env = { Bindings: { DB: D1Database } }` local — convenção das cinco rotas irmãs (`accounts`, `transactions`, `installments`, `debts`, `reports`), evita ciclo de import com `../index`.
+- **`GET /api/categories`** é o que torna medível o gap de ~R$ 1.000/mês da PJ: os slugs `das`, `contador`, `inss` e `pro-labore`, semeados pela migration `0001`, não podiam ser lidos por API nenhuma antes desta task. Aceita `?kind=income|expense|transfer|debt_settlement`; a categoria `quitacao-divida` (`kind='debt_settlement'`, já consumida por `payDebt()`) sai junto.
+- Nenhum código de erro novo: `invalid_json`/`invalid_query`/`constraint_violation` já estavam no catálogo abaixo. `POST /api/payees` usa `422 constraint_violation` tanto para `name` vazio quanto para `kind` fora do enum (não `400 invalid_json` como `debtsRoutes` faz para campo obrigatório ausente) — decisão desta rota, coberta por teste.
+
+Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/payees.test.ts src/routes/payees.test.ts src/routes/categories.test.ts`.
 
 ## Relatório de comprometido (`src/domain/reports.ts` + `src/routes/reports.ts`)
 

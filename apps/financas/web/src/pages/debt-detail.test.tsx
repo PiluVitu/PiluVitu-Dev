@@ -207,10 +207,15 @@ describe('DebtDetailPage', () => {
       expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
     )
 
-    fireEvent.change(screen.getByLabelText('Valor'), {
+    // Escopado em form-pagamento: a partir da Task 14, NovoItemForm (embaixo
+    // da tabela de itens) também tem campos rotulados 'Valor'/'Data' — sem
+    // o within() aqui, getByLabelText encontraria os dois e lançaria erro de
+    // múltiplos elementos.
+    const formPagamento = within(screen.getByTestId('form-pagamento'))
+    fireEvent.change(formPagamento.getByLabelText('Valor'), {
       target: { value: '500,00' },
     })
-    fireEvent.change(screen.getByLabelText('Steam Deck'), {
+    fireEvent.change(formPagamento.getByLabelText('Steam Deck'), {
       target: { value: '900,00' },
     })
     fireEvent.submit(screen.getByTestId('form-pagamento'))
@@ -233,13 +238,14 @@ describe('DebtDetailPage', () => {
       expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
     )
 
-    fireEvent.change(screen.getByLabelText('Valor'), {
+    const formPagamento = within(screen.getByTestId('form-pagamento'))
+    fireEvent.change(formPagamento.getByLabelText('Valor'), {
       target: { value: '1.360,00' },
     })
-    fireEvent.change(screen.getByLabelText('Data'), {
+    fireEvent.change(formPagamento.getByLabelText('Data'), {
       target: { value: '2026-08-05' },
     })
-    fireEvent.change(screen.getByLabelText('Steam Deck'), {
+    fireEvent.change(formPagamento.getByLabelText('Steam Deck'), {
       target: { value: '1.360,00' },
     })
     fireEvent.submit(screen.getByTestId('form-pagamento'))
@@ -270,10 +276,11 @@ describe('DebtDetailPage', () => {
       expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
     )
 
-    fireEvent.change(screen.getByLabelText('Valor'), {
+    const formPagamento = within(screen.getByTestId('form-pagamento'))
+    fireEvent.change(formPagamento.getByLabelText('Valor'), {
       target: { value: '1.360,00' },
     })
-    fireEvent.change(screen.getByLabelText('Steam Deck'), {
+    fireEvent.change(formPagamento.getByLabelText('Steam Deck'), {
       target: { value: '1.360,00' },
     })
     fireEvent.submit(screen.getByTestId('form-pagamento'))
