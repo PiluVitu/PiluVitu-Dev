@@ -22,8 +22,10 @@
 --   3. Fecha o gap batendo o schema com o que o proprio Better Auth
 --      consulta, sem inventar coluna nem mudar tipo de nenhuma.
 --
--- Nome do indice segue a convencao ja usada no 0002 (preservada do
--- gerador): <tabela>_<col1>_<col2>_idx.
+-- Nome do indice EXTENDE a convencao do 0002 (preservada do gerador) pra
+-- 2 colunas: <tabela>_<col1>_idx vira <tabela>_<col1>_<col2>_idx. Nao e
+-- precedente existente — todo indice do 0002 e de 1 coluna so; este e o
+-- primeiro composto do modulo.
 --
 -- Sem BEGIN/COMMIT (o D1 rejeita). Forward-only: nao ha down migration —
 -- reverter significa DROP INDEX manual, irreversivel igual a criacao.
