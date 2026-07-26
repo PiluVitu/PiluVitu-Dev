@@ -74,6 +74,21 @@ no `0002`) — mensagem real `cannot store TEXT value in INTEGER column`. Vale
 para qualquer coluna `TEXT` nova (`0002` ou futura): não escrever teste que
 espera `STRICT` barrar número em coluna `TEXT`, porque o SQLite não barra.
 
+### `0003_account_provider_idx.sql` — índice em `account(providerId, accountId)`
+
+Achado adiado da Task 1: `npx auth@latest generate` cria `account` sem índice
+nesse par, mesmo sendo o que o Better Auth consulta no sign-in social
+(lookup de conta já vinculada). **Decisão consciente, tomada na Task 5, antes
+de qualquer tráfego de produção:** módulo é single-user — `account` tem no
+máximo 1 linha em regime normal, então o ganho de performance é ~zero (varrer
+1 linha custa o mesmo que buscar por índice). Criado ainda assim porque
+**índice no D1 é irreversível** (só `DROP` + `CREATE`, nunca `ALTER`), e o
+momento mais barato pra decidir é antes de existir dado real — não depois.
+Custo de escrita extra por `INSERT` em `account` é desprezível (a tabela
+recebe no máximo uma linha nova por vínculo OAuth). Migration aplicada e
+testada **localmente** (`--local`, `src/schema.test.ts` 18/18 com o índice
+no grafo); aplicar em produção é uma das ações manuais da seção _Deploy_.
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
@@ -107,6 +122,8 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 
 Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`.
 
+⚠️ **ACHADO REGISTRADO, NÃO CORRIGIDO (deferido da Task 3): `GET /api` (sem mais nada depois) responde diferente em teste e em produção.** Sob o Hono puro (`app.request()`, como os testes fazem), `/api` cai no catch-all `/api/*` e devolve `401` com envelope, igual qualquer rota protegida. Em produção, `run_worker_first: ["/api/*"]` (`wrangler.jsonc`) é um glob que **não casa com o path exato `/api`** (só com `/api/algo`) — a requisição cai no fallback de Static Assets e devolve `index.html` da SPA, fora do envelope. Decisão: **não corrigir** — nenhuma rota real usa `/api` sozinho (todas são `/api/<recurso>`), então é inofensivo na prática; documentado aqui para quem for depurar um `curl` manual em `/api` e estranhar o HTML de volta.
+
 ## Autenticação — Better Auth (Task 3, `requireAccess`/Cloudflare Access removidos)
 
 O Cloudflare Access saiu por completo (`src/lib/access.ts`/`access.test.ts` deletados na Task 3) — Zero Trust exigia cartão de crédito pra verificação e o dono não tem como. No lugar: **Better Auth** com login social Google (`src/lib/auth.ts`, Task 2) + um segundo guard sobre a sessão (`src/lib/session.ts`, Task 3). Duas camadas de allowlist, propósitos diferentes:
@@ -131,6 +148,10 @@ O Cloudflare Access saiu por completo (`src/lib/access.ts`/`access.test.ts` dele
   - D1 indisponível durante `getSession` → 503 `auth_unavailable`, não 500 sem envelope (fix round 1; precisa de um cookie com assinatura VÁLIDA — um cookie malformado é rejeitado por HMAC local antes de tocar o D1, então nunca exercitaria um `DB` quebrado).
 
   `src/index.test.ts` cobre a montagem: `/api/health` público, `/api/accounts` sem cookie → 401, cookie com token/assinatura que não bate com nenhuma linha real → 401 (não lança — `getSession()` devolve `null` para um cookie bem-formado mas inexistente), `/api/auth/*` não passa pela nossa guarda — MEDIDO: `GET /api/auth/get-session` sem cookie devolve `200` com corpo `null` cru (nem `{session:null}`, nem o nosso envelope); `expect(status).not.toBe(401)` (versão original) também passaria com um `500`/`503` de verdade, então a asserção foi trocada por `200` + corpo `null` (fix round 1).
+
+⚠️ **`/api/auth/*` não passa pelo envelope `{ok,data,notifications}`, de propósito** — as respostas são as do próprio Better Auth (`getAuth(env).handler(...)` devolvido cru). `api<T>()` da SPA (que espera o envelope) nunca deve ser usado contra essas rotas; `auth-client.ts` fala com elas por fora, via `createAuthClient()`.
+
+⚠️ **Sem header `Origin`, o Better Auth responde `403 MISSING_OR_NULL_ORIGIN` fora do envelope.** Todo `POST`/teste manual (`curl`, etc.) contra `/api/auth/*` precisa do header — um navegador real sempre manda, mas um script ou teste HTTP cru some sem ele.
 
 ## Better Auth — factory (`src/lib/auth.ts`) — Task 2, CONECTADA na Task 3
 
@@ -353,11 +374,19 @@ Não há job de deploy no CI: a fatia ① publica manualmente (`wrangler deploy`
 
 Não há job de deploy automatizado — publicar é ato manual (`wrangler deploy`), e a migration em produção idem: **forward-only, sem down migration, então quem decide quando rodar é uma pessoa, não um workflow.**
 
-### 1. Cloudflare Access — REMOVIDO na Task 3
+### 1. Google OAuth Client (uma vez — reaproveita o client da área de admin)
 
-Os passos que existiam aqui (criar a Application no Zero Trust, copiar o AUD Tag, preencher `vars.ACCESS_AUD` em `wrangler.jsonc`) não se aplicam mais — `src/lib/access.ts` foi deletado e `wrangler.jsonc` não tem `ACCESS_AUD`/`ACCESS_TEAM_DOMAIN`/`ACCESS_ALLOWED_EMAILS` desde a Task 3. No lugar: `vars.BETTER_AUTH_URL`/`vars.ALLOWED_EMAIL` (já preenchidos com valores reais, não placeholder) + os três segredos do Better Auth. Provisionar o **OAuth Client no Google Cloud Console** (tipo Web application, redirect URI `https://financas.piluvitu.com.br/api/auth/callback/google`) e publicar `BETTER_AUTH_SECRET`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` em produção via `wrangler secret put <NOME>` é escopo da **Task 5** — não feito ainda. Sem esses três segredos configurados no Cloudflare, `wrangler deploy` publica normalmente e a quebra só aparece em runtime: faltando `BETTER_AUTH_SECRET`, o **guard explícito de `createAuth`** (`auth.ts`) lança um `Error` comum — mensagem `BETTER_AUTH_SECRET ausente — configure via ...`, **não** `BetterAuthError` — no primeiro request que tocar `/api/auth/*`; faltando client id/secret do Google, o login social fica indisponível. O guard existe porque o Better Auth **não** falha sozinho nesse caso: ele cai num secret default publicado no código-fonte da própria lib e só lançaria se `isProduction` fosse `true`, o que nunca acontece num Worker.
+No **Google Cloud Console → APIs & Services → Credentials**, no OAuth client **Web application** já usado pela área de admin de outro app, em **Authorized redirect URIs → ADD URI** (adicionar, nunca substituir — remover uma URI existente quebra a área de admin que também usa esse client):
 
-⚠️ **Esse `Error` sai como `500 Internal Server Error` em texto puro, sem o envelope** — `/api/auth/*` é a única rota isenta do `try/catch` de `requireSession` (as demais chamam `getAuth` dentro dele e virariam `503 auth_unavailable` com envelope). A mensagem só vai para o log do servidor, não para o cliente: ao investigar, procurar por `BETTER_AUTH_SECRET ausente` no `wrangler tail`, não por `BetterAuthError`.
+```
+https://financas.piluvitu.com.br/api/auth/callback/google
+http://localhost:5273/api/auth/callback/google
+http://localhost:8787/api/auth/callback/google
+```
+
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (seção 3 abaixo) são os valores desse mesmo client — não criar um client novo.
+
+**Remover a Application `financas` do Cloudflare Zero Trust, se existir.** Enquanto ela existir, o Access barra a requisição antes do Worker rodar, e `/api/auth/*` (sem `Cf-Access-Jwt-Assertion`) nunca chega no Better Auth — o checklist da seção 6 falha inteiro (a SPA nunca aparece, o Access intercepta antes de qualquer coisa).
 
 ### 2. Migration em produção (rodar manualmente — nunca automatizar)
 
@@ -366,9 +395,23 @@ pnpm --filter @piluvitu/financas exec wrangler d1 migrations list piluvitu-finan
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote
 ```
 
-Esperado: `0001_financas_init.sql` aplicada. Sem down migration — se o schema sair errado, a correção é uma migration nova (`0002_*.sql`), nunca editar a `0001` depois de rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado.
+Esperado no `list`: `0001_financas_init.sql` já aplicada; `0002_better_auth.sql` e `0003_account_provider_idx.sql` pendentes. Depois do `apply`, as três aparecem aplicadas. Sem down migration — se o schema sair errado, a correção é uma migration nova (`0004_*.sql`), nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` já é essa decisão tomada conscientemente (ver seção _Migrations_ acima).
 
-### 3. Publicar o Worker
+### 3. Secrets em produção (`wrangler secret put`, rodar manualmente)
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler secret put BETTER_AUTH_SECRET
+pnpm --filter @piluvitu/financas exec wrangler secret put GOOGLE_CLIENT_ID
+pnpm --filter @piluvitu/financas exec wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+`BETTER_AUTH_SECRET`: gerar com `openssl rand -base64 32` (≥32 chars) — nunca reusar o valor de `.dev.vars`, que é só de desenvolvimento. `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` vêm do OAuth Client da seção 1. Nenhum dos três é `vars` em `wrangler.jsonc` (só `BETTER_AUTH_URL`/`ALLOWED_EMAIL` são, já com valores reais) — `GOOGLE_CLIENT_ID` é secret e não var pela regra "tudo do Google é secret", mesmo aparecendo em claro na URL de autorização.
+
+⚠️ **O Better Auth NÃO falha sozinho se `BETTER_AUTH_SECRET` faltar** — cai num secret default publicado no próprio código-fonte da lib, e só lançaria se `isProduction` fosse `true` (nunca é, num Worker). O **guard explícito de `createAuth`** (`auth.ts`) é o que torna a falta real: lança um `Error` comum — mensagem `BETTER_AUTH_SECRET ausente — configure via ...`, **não** `BetterAuthError` — no primeiro request que tocar `/api/auth/*`. Faltando `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, o login social fica indisponível (sem guard equivalente — o Better Auth só reclama quando o fluxo OAuth de fato tenta usar o client).
+
+⚠️ **Esse `Error` sai como `500 Internal Server Error` em texto puro, sem o envelope** — `/api/auth/*` é a única rota isenta do `try/catch` de `requireSession` (as demais rotas chamam `getAuth` dentro dele e virariam `503 auth_unavailable` com envelope). A mensagem só vai para o log do servidor, não para o cliente: ao investigar, procurar por `BETTER_AUTH_SECRET ausente` no `wrangler tail`, **não** por `BetterAuthError`.
+
+### 4. Publicar o Worker
 
 ```bash
 pnpm --filter @piluvitu/financas run deploy
@@ -376,24 +419,25 @@ pnpm --filter @piluvitu/financas run deploy
 
 O script builda o SPA antes (`build:web`) e roda `wrangler deploy` em seguida — o `web/dist` publicado é sempre o do commit atual, nunca um build velho. Saída esperada: o binding `DB` e os assets de `web/dist` listados pelo wrangler.
 
-### 4. Custom Domain (dashboard, uma vez)
+### 5. Custom Domain (dashboard — já configurado, só confirmar)
 
-**Workers & Pages → `financas` → Settings → Domains & Routes → Add → Custom Domain:** `financas.piluvitu.com.br`.
+`wrangler.jsonc` já declara `routes: [{ pattern: "financas.piluvitu.com.br", custom_domain: true }]`, e o build anterior (Cloudflare Access) já publicava nesse domínio — não é um passo novo desta troca. Só confirmar em **Workers & Pages → `financas` → Settings → Domains & Routes** que `financas.piluvitu.com.br` continua listado como Custom Domain após o deploy da seção 4. Se por algum motivo não estiver: **Add → Custom Domain** → `financas.piluvitu.com.br`.
 
-**Obrigatório, não preferência.** Em `*.workers.dev` o domínio registrável passa a ser diferente do da zona `piluvitu.com.br` — o contexto do cookie de sessão do Better Auth vira cross-site, `SameSite=Lax` deixa de ser enviado, e **a quebra só aparece em produção** (local e preview usam `BETTER_AUTH_URL=http://localhost:...`, mesmo site, e nunca reproduzem). `SameSite=None` não é solução: Safari (ITP) e Firefox (ETP) bloqueiam cookie de terceiro por padrão e o Chrome não — testar só no Chrome passa e engana. Mesmo raciocínio de antes (era sobre o cookie do Access), continua valendo — cookie de sessão same-site é requisito independente de qual mecanismo de auth está por trás.
+**Obrigatório, não preferência — mesmo que já pareça configurado.** Em `*.workers.dev` o domínio registrável passa a ser diferente do da zona `piluvitu.com.br` — o contexto do cookie de sessão do Better Auth vira cross-site, `SameSite=Lax` deixa de ser enviado, e **a quebra só aparece em produção** (local e preview usam `BETTER_AUTH_URL=http://localhost:...`, mesmo site, e nunca reproduzem). `SameSite=None` não é solução: Safari (ITP) e Firefox (ETP) bloqueiam cookie de terceiro por padrão e o Chrome não — testar só no Chrome passa e engana.
 
-### 5. Checklist de verificação manual pós-deploy
+### 6. Checklist de verificação manual pós-deploy
 
-⚠️ **Os três primeiros itens já refletem o fluxo do Better Auth implementado na Task 4 (`Gate.tsx`/`auth-client.ts`), mas só ficam executáveis de verdade depois da Task 5** publicar `BETTER_AUTH_SECRET`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` em produção (`wrangler secret put`) e cadastrar o OAuth Client no Google Cloud Console com o redirect URI de produção — sem isso o login social fica indisponível mesmo com o código certo publicado.
+⚠️ **Só fica executável de verdade depois das seções 1-5 acima terem sido executadas em produção** (redirect URIs + Zero Trust removido, migration aplicada, os três secrets publicados, Worker publicado, Custom Domain confirmado) — sem isso o login social fica indisponível mesmo com o código certo publicado.
 
 Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de cookie/JS que importam aqui):
 
-- [ ] `https://financas.piluvitu.com.br` abre a SPA **sem** pedir login antes de baixar o JS (o host inteiro é público desde a Task 3 — o Access saiu) — mas a tela mostrada é a de login (`<h1>Finanças</h1>` + botão "Entrar com Google"), **nunca** nenhuma tela protegida, nem por um frame, antes de `Gate` confirmar sessão.
+- [ ] `https://financas.piluvitu.com.br` carrega a SPA, que mostra a **própria** tela "Entrar com Google" (`<h1>Finanças</h1>` + botão) — **não** redireciona sozinha para nenhum domínio do Google/Access, e **nenhuma** tela protegida aparece antes disso, nem por um frame.
 - [ ] Login com `paulo.tspi@gmail.com` entra e mostra a tela **Contas**, com o e-mail no cabeçalho e um botão **Sair**.
 - [ ] **Sessão expira/desloga em `#/dividas` (ou qualquer tela que não seja Contas)** → cai na tela de login → "Entrar com Google" → depois do round trip do Google, volta pra `#/dividas`, **não** pra Contas (fix round 1 — `callbackURL` preserva o hash; sem isso o dono era jogado de volta pra Contas silenciosamente).
 - [ ] Clicar em **Sair** limpa a sessão e mostra a tela de login de novo NA MESMA aba, sem precisar de F5 (fix round 1 — `signOut()` dispara um refetch de sessão via `$sessionSignal` da própria lib).
-- [ ] Login com outra conta Google é **negado**: redireciona pra `/login?error=nao_autorizado` (bloqueio no cadastro via `assertEmailPermitido`, camada 1) e `Gate.tsx` mostra "Esta conta do Google não tem acesso a este aplicativo." em `role="alert"`. Se a allowlist for trocada depois de uma sessão já existir pra um e-mail não permitido, a camada 2 (`decidirAcesso`, Task 3) barra a cada request com `403 email_not_allowed` — não é redirecionado pro login, as chamadas `/api/*` simplesmente falham.
-- [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://financas.piluvitu.com.br/api/health` devolve **200** (rota pública, sem guarda — ver `isRotaDeAuth`/exceção em `src/index.ts`; devolver 401 aqui seria bug, não o oposto de antes).
+- [ ] Login com **outra conta Google** volta em `/login?error=nao_autorizado` com a mensagem "Esta conta do Google não tem acesso a este aplicativo." (bloqueio no cadastro via `assertEmailPermitido`, camada 1) — e no D1 de produção, `SELECT count(*) FROM user` continua **1** (nenhuma linha órfã do login recusado). Se a allowlist for trocada depois de uma sessão já existir pra um e-mail não permitido, a camada 2 (`decidirAcesso`) barra a cada request com `403 email_not_allowed` em vez de redirecionar pro login.
+- [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://financas.piluvitu.com.br/api/health` devolve **200** (o Access não está mais na frente — devolver 302/403 aqui seria sinal de Application do Access esquecida ativa; ver seção 1).
+- [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://financas.piluvitu.com.br/api/accounts` sem cookie devolve **401**.
 - [ ] `index.html` e os assets carregam sem erro de CSP/404 no console (Static Assets servindo `web/dist`).
 - [ ] Recarregar em `#/comprometido` com F5 volta pra mesma tela (prova o `not_found_handling: single-page-application`).
 - [ ] Criar a conta **Nubank cartão** (`credit_card`, fecha 25, vence 05) e ver `fecha 25 · vence 05` no card.
