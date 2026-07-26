@@ -4,6 +4,7 @@ import {
   InstallmentPlanError,
 } from '../domain/installments'
 import { errJson, okJson } from '../lib/envelope'
+import { friendlyConstraintMessage, logConstraintError } from '../lib/errors'
 
 type Env = { Bindings: { DB: D1Database } }
 
@@ -73,7 +74,11 @@ installmentPlansRoutes.post('/', async (c) => {
       payee_id: typeof body.payee_id === 'string' ? body.payee_id : null,
       category_id:
         typeof body.category_id === 'string' ? body.category_id : null,
-      is_business: body.is_business === true,
+      // Aceita true OU 1: `1 === true` é `false` em JS, e a SPA manda 1
+      // (mesmo wire type que /api/transactions usa pra is_business). Sem
+      // este OR, todo plano de parcelas gravava is_business = 0 mesmo com
+      // "PJ" marcado — a coluna que sustenta toda a separação PJ/PF.
+      is_business: body.is_business === true || body.is_business === 1 ? 1 : 0,
     })
     return okJson(result, 201)
   } catch (err) {
@@ -94,7 +99,12 @@ installmentPlansRoutes.post('/', async (c) => {
       err instanceof Error &&
       /SQLITE_CONSTRAINT|constraint failed/i.test(err.message)
     ) {
-      return errJson(422, 'constraint_violation', err.message)
+      logConstraintError('POST /installment-plans', err.message)
+      return errJson(
+        422,
+        'constraint_violation',
+        friendlyConstraintMessage(err.message),
+      )
     }
     throw err
   }

@@ -15,7 +15,11 @@ export type NewInstallmentPlan = {
   purchase_date: string
   payee_id?: string | null
   category_id?: string | null
-  is_business?: boolean
+  // 0|1, nao boolean: mesmo tipo-fio de NewTransaction.is_business
+  // (domain/transactions.ts) — as duas rotas (transactions, installments)
+  // concordam num unico formato pro mesmo dado. A rota normaliza
+  // true/1 -> 1 antes de chegar aqui (ver routes/installments.ts).
+  is_business?: 0 | 1
 }
 
 export type InstallmentPlan = {
@@ -218,7 +222,7 @@ export async function createInstallmentPlan(
     input.purchase_date,
     account.closing_day,
   )
-  const isBusiness = input.is_business === true ? 1 : 0
+  const isBusiness = input.is_business === 1 ? 1 : 0
   const payeeId = input.payee_id ?? null
   const categoryId = input.category_id ?? null
   const amounts = splitInstallments(input.total_cents, count)

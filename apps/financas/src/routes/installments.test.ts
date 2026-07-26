@@ -68,6 +68,32 @@ describe('POST /api/installment-plans', () => {
     expect(body.data?.plan.first_competence).toBe('2026-07')
   })
 
+  it('is_business: 1 (numero, o wire type que a SPA manda) grava as parcelas com is_business = 1', async () => {
+    // Regressao: routes/installments.ts comparava `body.is_business === true`
+    // — como a SPA manda NUMERO (1|0, mesmo wire type de /api/transactions),
+    // `1 === true` e `false` em JS e todo plano de parcelas gravava
+    // is_business = 0 mesmo com "PJ" marcado. 201/sem aviso: silencioso.
+    const accountId = await seedAccount('acc-cc', 'credit_card')
+
+    const res = await post({
+      account_id: accountId,
+      description: 'Contador PJ',
+      total_cents: 30000,
+      installments_count: 3,
+      purchase_date: '2026-07-10',
+      is_business: 1,
+    })
+    expect(res.status).toBe(201)
+
+    const rows = await env.DB.prepare(
+      'SELECT is_business FROM transactions WHERE account_id = ? ORDER BY created_at',
+    )
+      .bind(accountId)
+      .all<{ is_business: number }>()
+    expect(rows.results).toHaveLength(3)
+    expect(rows.results.every((r) => r.is_business === 1)).toBe(true)
+  })
+
   it('recusa conta que não é credit_card com 422 invalid_account', async () => {
     const accountId = await seedAccount('acc-ck', 'checking')
 
