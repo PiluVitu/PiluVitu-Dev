@@ -22,6 +22,12 @@ describe('isAllowedEmail — pura, fail closed', () => {
     [undefined, PERMITIDO, false],
     [42, PERMITIDO, false],
     [PERMITIDO, '', false], // ALLOWED_EMAIL vazio barra até o e-mail certo
+    // `permitido` é tipado `string`, mas uma binding não setada é `undefined`
+    // EM RUNTIME (o tipo é uma promessa de compile-time, não uma garantia
+    // do Worker) — é o `?? ''` dentro de isAllowedEmail que cobre isto; sem
+    // ele, `undefined.trim()` estouraria em vez de barrar educadamente.
+    [PERMITIDO, undefined as unknown as string, false],
+    [PERMITIDO, `${PERMITIDO},outro@exemplo.com`, false], // CSV não é suportado (ACCESS_ALLOWED_EMAILS era; ALLOWED_EMAIL NÃO é) — fail-closed, mas barra até o dono
   ])('isAllowedEmail(%o, %o) === %s', (email, permitido, esperado) => {
     expect(isAllowedEmail(email, permitido)).toBe(esperado)
   })
@@ -138,7 +144,18 @@ async function tentarLoginGoogle(
   try {
     const callbackUrl = `${baseURL}/api/auth/callback/google?code=codigo-fake&state=${encodeURIComponent(state ?? '')}`
     return await auth.handler(
-      new Request(callbackUrl, { headers: { cookie: cookiesDeState } }),
+      new Request(callbackUrl, {
+        headers: {
+          cookie: cookiesDeState,
+          // Miniflare não simula a borda da Cloudflare — sem este header o
+          // Better Auth não resolve IP nenhum e cai no shared bucket
+          // (WARN "falling back to a single shared per-path bucket"), o que
+          // mascararia um `advanced.ipAddress.ipAddressHeaders` errado em
+          // createAuth. 203.0.113.0/24 é TEST-NET-3 (RFC 5737), reservado
+          // pra documentação/teste — nunca roteável de verdade.
+          'cf-connecting-ip': '203.0.113.7',
+        },
+      }),
     )
   } finally {
     globalThis.fetch = fetchOriginal
@@ -188,5 +205,43 @@ describe('databaseHooks.user.create.before — bloqueio real de ponta a ponta', 
     }>()
     expect(u?.n).toBe(1)
     expect(a?.n).toBe(1)
+  })
+
+  // Todo teste acima usa testEnv.ALLOWED_EMAIL === PERMITIDO — a MESMA
+  // constante que a asserção compara. Isso prova que o hook barra/libera
+  // CORRETAMENTE para aquele valor, mas não prova que ele está LENDO
+  // env.ALLOWED_EMAIL — um hook hardcoded com a string 'dono@exemplo.com'
+  // (nunca tocando `env`) passaria em todos eles igualzinho. Este teste
+  // muda o valor da allowlist para outro e-mail e reafirma o MESMO
+  // PERMITIDO de antes: só passa se createAuth de fato ler
+  // env.ALLOWED_EMAIL — não uma constante interna.
+  test('a allowlist realmente vem de env.ALLOWED_EMAIL, não de uma constante interna: trocando o env, o mesmo PERMITIDO passa a ser barrado', async () => {
+    const envComOutraAllowlist: AuthBindings = {
+      ...testEnv,
+      ALLOWED_EMAIL: 'outro@exemplo.com',
+    }
+    const auth = createAuth(envComOutraAllowlist)
+
+    const res = await tentarLoginGoogle(
+      auth,
+      envComOutraAllowlist.BETTER_AUTH_URL,
+      {
+        sub: 'sub-dono',
+        email: PERMITIDO,
+        name: 'Dono',
+      },
+    )
+
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toContain(`error=${CODIGO_BARRADO}`)
+
+    const u = await env.DB.prepare('SELECT count(*) AS n FROM user').first<{
+      n: number
+    }>()
+    const a = await env.DB.prepare('SELECT count(*) AS n FROM account').first<{
+      n: number
+    }>()
+    expect(u?.n).toBe(0)
+    expect(a?.n).toBe(0)
   })
 })
