@@ -150,6 +150,16 @@ Pelo mesmo motivo, o script **recusa em vez de aceitar** o que não dá para val
 
 ⚠️ **M4 (fix final): as três checagens acima não pegam um dump truncado DEPOIS do `CREATE TABLE` e ANTES ou NO MEIO dos `INSERT`s** — não-vazio, tem `CREATE TABLE`, gzip íntegro: os três passam mesmo faltando toda a linha de dados. Hoje é inofensivo (produção tem só as 7 linhas do seed), mas vira risco assim que existir histórico de lançamento de verdade — o script é a ÚNICA cópia fora da Cloudflare (ver tabela do topo desta seção). Guarda adicionada: depois do `gzip -t`, se já existe um backup anterior em `$DEST`, compara o tamanho DESCOMPRIMIDO do dump novo contra o do backup mais recente — encolheu mais de ~50%, recusa sem gravar e **sem rotacionar** (mesmo código de saída 1, mesmo "recusa em vez de aceita" das outras três checagens). Sem backup anterior (primeira execução da vida) não há com o que comparar, e o caminho continua aceitando normalmente — não é um teto de tamanho mínimo absoluto, só uma checagem RELATIVA ao histórico. Coberto por dois casos novos em `backup-d1.test.sh` (stub `ddl_apenas`, dump só com `CREATE TABLE`): um dump 500x menor que o anterior é recusado sem tocar no backup existente; o mesmo dump pequeno, sem nenhum backup anterior pra comparar, continua sendo aceito.
 
+⚠️ **Como sair do laço quando a recusa é LEGÍTIMA.** Se um dia você apagar de propósito mais da metade do histórico, o backup seguinte vai encolher de verdade e ser recusado — e aí a recusa se auto-perpetua: como uma execução recusada não grava nada, a referência de comparação continua sendo o mesmo backup grande de antes, então **todo dia seguinte também é recusado**, contra a mesma baseline velha. O sintoma é um backup que "roda todo dia" e nunca grava. Para sair, tire a referência velha do caminho (não apague — arquive):
+
+```bash
+mkdir -p ~/Backups/financas/arquivo
+mv ~/Backups/financas/financas-<CARIMBO-DO-GRANDE>.sql.gz ~/Backups/financas/arquivo/
+make backup-financas   # agora compara contra o próximo mais recente, ou aceita se não sobrar nenhum
+```
+
+A troca é deliberada: um laço de recusa é ruidoso e recuperável em um comando; aceitar um dump truncado em silêncio destrói o histórico ao longo das rotações seguintes, e você só descobre no dia em que precisa restaurar.
+
 **R2 está fora de propósito.** Seria o destino natural (10 GB no free tier, mesmo provedor), mas cadastrar R2 exige verificação de cartão de crédito — exatamente o que tirou o Cloudflare Access deste módulo. O destino é o disco local; sincronizar a pasta com iCloud/Drive fica a critério de quem roda.
 
 **Restaurar** é reimportar o dump num banco vazio — não existe "restore" automático:
