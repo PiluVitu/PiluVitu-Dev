@@ -9,6 +9,15 @@
   "name": "piluvitu-financas",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
+  // Medido (spike S3): NÃO é obrigatório para este stack subir ou rodar
+  // nesta compatibility_date — node:crypto e node:async_hooks já são
+  // módulos nativos do runtime aqui. O flag só silencia 2 warnings de
+  // build do wrangler ("wasn't found on the file system but is built
+  // into node") e protege contra o comportamento não ser garantido em
+  // compatibility_date/versões de workerd futuras. Não pesa no bundle
+  // (resolução de módulo nativo, não polyfill JS — medido: mesmo
+  // gzip com e sem o flag).
+  "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
   // Static Assets é GRÁTIS, ilimitado e FORA da cota de 100.000 requests/dia.
