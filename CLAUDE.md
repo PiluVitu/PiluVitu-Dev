@@ -4,20 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **Monorepo.** Este arquivo cobre só o que é **transversal** (orquestração, segurança de deps, colocation, CI/CD). Cada workspace tem seu próprio `CLAUDE.md` com os detalhes — quando mexer num app, o Claude Code carrega este + o do app. Não duplicar: cada fato mora num único arquivo.
 >
-> | Workspace        | `CLAUDE.md`                | Cobre                                                                                                                 |
-> | ---------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-> | `apps/web`       | `apps/web/CLAUDE.md`       | Next.js/React frontend, conteúdo (Keystatic), tema, blog, `/tasks`, `/tools`, `/admin`, votação **UI**, deploy Vercel |
-> | `apps/api`       | `apps/api/CLAUDE.md`       | Go API (chi), votação **backend**, auth Google, Sheets/TMDb/Drive, envelope, logging, hosting (Cloudflare Tunnel)     |
-> | `packages/tools` | `packages/tools/CLAUDE.md` | `@piluvitu/tools` — lógica pura (TS, sem React/DOM) compartilhada pelo `/tools`                                       |
+> | Workspace        | `CLAUDE.md`                | Cobre                                                                                                                                |
+> | ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+> | `apps/web`       | `apps/web/CLAUDE.md`       | Next.js/React frontend, conteúdo (Keystatic), tema, blog, `/tasks`, `/tools`, `/admin`, votação **UI**, deploy Vercel                |
+> | `apps/api`       | `apps/api/CLAUDE.md`       | Go API (chi), votação **backend**, auth Google, Sheets/TMDb/Drive, envelope, logging, hosting (Cloudflare Tunnel)                    |
+> | `apps/financas`  | `apps/financas/CLAUDE.md`  | Worker Cloudflare (Hono + D1 + Static Assets), SPA Vite/React, dívidas, parcelas, comprometido, Cloudflare Access, deploy `wrangler` |
+> | `packages/tools` | `packages/tools/CLAUDE.md` | `@piluvitu/tools` — lógica pura (TS, sem React/DOM) compartilhada pelo `/tools`                                                      |
 
 > **Regra de manutenção (global):** sempre que implementar uma nova tecnologia ou mudar um fluxo, atualize o `CLAUDE.md` **do workspace onde mexeu** (ou este, se for transversal) pra mantê-lo sempre atualizado.
 
 ## Tech Stack (visão geral)
 
-Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com três frentes:
+Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com quatro frentes:
 
 - **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**, **Storybook 10**. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
 - **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). → detalhes em `apps/api/CLAUDE.md`.
+- **`apps/financas`** — **Cloudflare Worker** (Hono + D1 SQLite) servindo uma **SPA Vite + React 19** por Static Assets, em `financas.piluvitu.com.br` atrás do **Cloudflare Access**. Testes com `@cloudflare/vitest-pool-workers` (Worker) e Vitest/jsdom (SPA). → detalhes em `apps/financas/CLAUDE.md`.
 - **`packages/tools`** — **`@piluvitu/tools`**, biblioteca de lógica pura em TS consumida pelo web. → detalhes em `packages/tools/CLAUDE.md`.
 - **GitHub Actions** — CI (`ci.yml`) bloqueia PR; `deploy-api.yml` aguarda credenciais GCP; `trivy.yml` para scan de segurança.
 
@@ -89,11 +91,11 @@ Fontes separadas por frente — a lista completa de cada uma vive no `CLAUDE.md`
 
 ### Workflows GitHub Actions
 
-| Workflow         | Trigger                                          | Faz o quê                                                                                                                 |
-| ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`         | PR + push em `main`                              | Em paralelo: web (`lint` + `tsc --noEmit` + `jest` + `next build`) e api (`go vet` + `go test -race` + `go build`).       |
-| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU). |
-| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                          |
+| Workflow         | Trigger                                          | Faz o quê                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`         | PR + push em `main`                              | Em paralelo: web (`lint` + `tsc --noEmit` + `jest` + `next build`), api (`go vet` + `go test -race` + `go build`) e financas (`tsc --noEmit` do Worker e do SPA + build do SPA + `vitest` dos dois). |
+| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU).                                                                            |
+| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                                                                                                     |
 
 ### Secrets/Vars necessários no GitHub (Settings → Secrets and variables → Actions)
 

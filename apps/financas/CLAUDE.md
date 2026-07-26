@@ -152,7 +152,13 @@ Plano de 60x = 1 + 12 + 3 = **16 statements** num batch só (coberto por teste d
 
 **Convenção de módulo:** `installmentPlansRoutes` usa o mesmo `type Env = { Bindings: { DB: D1Database } }` local de `accounts.ts`/`transactions.ts` (não importa `Bindings` de `../index`) — evita import circular valor↔tipo entre a rota e `src/index.ts` mantendo o mesmo shape.
 
-⚠️ **`RangeError` de `lib/dates.ts` precisa de tratamento explícito na rota, mesmo quando o domínio já tem seu próprio tipo de erro.** `createInstallmentPlan` lança `InstallmentPlanError` para as próprias validações (conta, `installments_count`, `total_cents`), mas `billCompetence`/`addMonthsToCompetence`/`competenceDueDate` (Task 5) lançam `RangeError` **puro** quando a data é calendarialmente inválida — e o `DATE_RE` da rota (`/^\d{4}-\d{2}-\d{2}$/`) só valida FORMATO, não calendário. Rastro concreto: `purchase_date: '2026-13-01'` passa no regex; `billCompetence` não valida o mês e devolve `'2026-13'` direto (dia 1 ≤ fechamento, sem roll-forward); a primeira iteração do loop de parcelas chama `addMonthsToCompetence('2026-13', 0)`, que rejeita com `RangeError` — **antes de qualquer `db.batch()`**, então não há escrita parcial. Sem um branch pro catch da rota, esse `RangeError` não casa com `InstallmentPlanError` nem com o regex de constraint do D1, e escapa cru pro handler default do Hono: **500 sem envelope**, quebrando o contrato 400/422. Corrigido replicando a convenção de `accounts.ts`/`transactions.ts` (que já tratam `RangeError` do próprio domínio) para `installments.ts`: `if (err instanceof RangeError) return errJson(422, 'constraint_violation', err.message)`. **Toda rota que chama função de `lib/dates.ts` a partir de um valor só validado por regex de formato (Tasks 9, 10, 14) precisa do mesmo branch** — validar formato não é o mesmo que validar calendário, e todo `RangeError` de domínio (seja de tipo próprio ou dos helpers compartilhados) tem que virar `422` com envelope, nunca vazar como `500` pelado. `debtsRoutes` (Task 9) não chama nenhuma função de `lib/dates.ts` além de `nowIsoUtc()` (que não valida nem lança) — datas como `paid_on`/`opened_at`/`incurred_on` são gravadas cruas, sem `billCompetence`/`addMonthsToCompetence`/`competenceDueDate` no caminho — então esse branch não se aplica aqui.
+⚠️ **`RangeError` de `lib/dates.ts` precisa de tratamento explícito na rota, mesmo quando o domínio já tem seu próprio tipo de erro.** `createInstallmentPlan` lança `InstallmentPlanError` para as próprias validações (conta, `installments_count`, `total_cents`), mas `billCompetence`/`addMonthsToCompetence`/`competenceDueDate` (Task 5) lançam `RangeError` **puro** quando a data é calendarialmente inválida — e o `DATE_RE` da rota (`/^\d{4}-\d{2}-\d{2}$/`) só valida FORMATO, não calendário. Rastro concreto: `purchase_date: '2026-13-01'` passa no regex; `billCompetence` não valida o mês e devolve `'2026-13'` direto (dia 1 ≤ fechamento, sem roll-forward); a primeira iteração do loop de parcelas chama `addMonthsToCompetence('2026-13', 0)`, que rejeita com `RangeError` — **antes de qualquer `db.batch()`**, então não há escrita parcial. Sem um branch pro catch da rota, esse `RangeError` não casa com `InstallmentPlanError` nem com o regex de constraint do D1, e escapa cru pro handler default do Hono: **500 sem envelope**, quebrando o contrato 400/422. Corrigido replicando a convenção de `accounts.ts`/`transactions.ts` (que já tratam `RangeError` do próprio domínio) para `installments.ts`: `if (err instanceof RangeError) return errJson(422, 'constraint_violation', err.message)`.
+
+**Toda rota que chama função de `lib/dates.ts` a partir de um valor só validado por regex de formato precisa do mesmo branch — mas o status HTTP depende de ONDE o valor mora, não da task:**
+
+- **Body (Tasks 6-8 — `accounts.ts`, `transactions.ts`, `installments.ts`):** `422` (`constraint_violation`/`invalid_entry`). O valor calendarialmente inválido veio de um campo do corpo da requisição.
+- **Query string (Task 10 — `reports.ts`):** `400 invalid_query`, **não** `422`. `commitments()` valida `from`/`months` a partir de `c.req.query(...)`, e o catálogo trata query malformada como `400` em toda a API (mesmo padrão de `status`/`direction` inválidos em `GET /api/debts`) — ver ⚠️ na seção _Relatório de comprometido_ mais abaixo, que é a fonte de verdade sobre esse caso.
+- **Task 9 (`debtsRoutes`) e Task 14 (`payeesRoutes`/`categoriesRoutes`) não chamam nenhuma função de `lib/dates.ts` que lance `RangeError`** — só `nowIsoUtc()` (que não valida nem lança); datas como `paid_on`/`opened_at`/`incurred_on` são gravadas cruas, sem `billCompetence`/`addMonthsToCompetence`/`competenceDueDate` no caminho. O branch não se aplica a nenhuma das duas rotas.
 
 ## Dívidas (`src/domain/debts.ts` + `src/routes/debts.ts`)
 
@@ -211,3 +217,95 @@ Conta sem nenhuma célula na janela **não aparece** na lista de `rows` (nem com
 ⚠️ **Esta é a única rota que traduz `RangeError` em `400`, não `422`.** O padrão de `installments.ts`/`accounts.ts` (ver ⚠️ acima) é `422 constraint_violation`, porque lá o `RangeError` vem de um CAMPO DE CORPO calendarialmente inválido (ex.: `purchase_date: '2026-13-01'`). Aqui as duas validações de `commitments()` (`from` fora do formato `YYYY-MM`, `months` fora de 1..24) são sobre **query string**, não corpo — por isso `400 invalid_query`, coerente com o resto do catálogo (`status`/`direction` inválidos em `GET /api/debts` também são `400 invalid_query`). O branch `if (err instanceof RangeError)` continua obrigatório do mesmo jeito: sem ele, `addMonthsToCompetence` chamado dentro de `commitments()` vazaria como `500` sem envelope.
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/reports.test.ts` cobre liquidação (`settled_at` preenchido não conta), virada de ano (`from: '2026-11'` cruzando pra `2027-01`), separação de transferência/rateio, e o cálculo do `%` batendo contra `360000` (nunca contra o líquido com freela). `src/routes/reports.test.ts` monta só `reportsRoutes` (sem Access, padrão das Tasks 6-9) e cobre o contrato HTTP: 200 com envelope, `fixed_net_cents` customizável via query, e os três casos de `400 invalid_query` (`from` ausente, `from` malformado, `months=0`/não numérico).
+
+## SPA (`apps/financas/web`)
+
+Segundo pacote pnpm da frente (`@piluvitu/financas-web`), **Vite + React 19 + TS**, buildado em `web/dist` (gerado, `.gitignore`) e servido pelo Worker via Static Assets — não é hospedado à parte, não tem `NEXT_PUBLIC_API_URL`/base URL configurável: UI e API vivem no mesmo host (`financas.piluvitu.com.br`), então `src/api.ts` chama `fetch(path)` direto com `path` já incluindo `/api`.
+
+- **Roteamento é `location.hash`, sem lib de router.** `useHash()` em `src/App.tsx` escuta `hashchange` e decide a tela por prefixo de string (`#/contas`, `#/dividas`, `#/dividas/:id`, `#/lancar`, `#/comprometido`; `#/contas` é o default). Isso é o que permite `not_found_handling: single-page-application` no `wrangler.jsonc` funcionar sem nenhuma rota de servidor: um F5 em `#/comprometido` bate no fallback `index.html` do Assets porque o hash nunca vai pro servidor — um router de path real (`/comprometido`) exigiria que o Worker soubesse servir `index.html` para qualquer path desconhecido, que é exatamente o que `single-page-application` já faz, mas testar isso é o item do checklist de deploy que prova a integração.
+- **`src/api.ts`** — um único helper genérico `api<T>(path, init)`. Lê o envelope (`{ ok, data, notifications }`, mesmo shape do backend), e quando `ok: false` lança `ApiError(status, code, message)` pegando a primeira notification `type: 'error'` (com fallback pra primeira notification, seja qual for o tipo). Resposta sem JSON ou sem `ok: boolean` vira `ApiError` com `code: 'invalid_envelope'` em vez de estourar cru — a UI nunca vê um `SyntaxError` de `.json()`.
+- **Cinco telas em `src/pages/`:** `accounts.tsx` (Contas — tela inicial), `DividasPage.tsx` (lista de dívidas) + `debt-detail.tsx` (detalhe de uma dívida: itens, pagamento com alocação por item, usa `NovoItemForm.tsx`), `new-entry.tsx` (Lançar — lançamento simples e parcelado), `commitments.tsx` (Comprometido — a matriz de `GET /api/reports/commitments`).
+- **Testes:** Vitest + `jsdom` + Testing Library (`@testing-library/react` + `user-event`), colocation (`accounts.test.tsx` ao lado de `accounts.tsx`, etc.). `src/test/setup.ts` importa `@testing-library/jest-dom/vitest` e roda `cleanup()` num `afterEach` global — **obrigatório porque `vite.config.ts` não liga `globals: true`**; sem esse setup, o DOM de um teste vaza pro próximo. `vite.config.ts` roda `test.environment: 'jsdom'` no mesmo arquivo de config do build (`defineConfig` de `vitest/config`, não de `vite` puro) — um `vite.config.ts` só para as duas coisas.
+- **`optimizeDeps: { exclude: ['@piluvitu/tools'] }`** no `vite.config.ts`: `@piluvitu/tools` é fonte TS linkada pelo workspace pnpm, não um pacote publicado com `dist/` — sem o `exclude`, o pré-bundle do Vite tenta tratar como dependência normal e falha tentando resolver `.ts` fora de um projeto TS.
+- **Dev:** `pnpm --filter @piluvitu/financas-web dev` sobe o Vite em `:5273` com `server.proxy['/api'] → http://127.0.0.1:8787` (onde `wrangler dev` escuta) — evita CORS em desenvolvimento sem precisar de header nenhum. Em produção não existe proxy: o Worker serve os dois.
+- **35 testes** (7 arquivos) cobrindo as 5 telas + `api.ts` + `App.tsx` (roteamento por hash).
+
+## CI
+
+`.github/workflows/ci.yml` tem um terceiro job, `financas`, paralelo a `web` e `api` (não altera os outros dois). Sequência dentro do job — **a ordem importa**:
+
+1. Instala deps (`pnpm install --frozen-lockfile`).
+2. Typecheck do Worker e do SPA (`pnpm --filter @piluvitu/financas run lint` / `--filter @piluvitu/financas-web run lint` — os dois são só `tsc --noEmit`, não há ESLint nesta frente ainda).
+3. **Build do SPA ANTES dos testes do Worker.** O binding `ASSETS` do `wrangler.jsonc` (`directory: './web/dist'`) precisa que `web/dist` exista com um `index.html` — Miniflare lê esse binding ao subir o Worker sob teste, e `web/dist` é gerado e está no `.gitignore`. Em clone limpo (CI é sempre clone limpo), rodar os testes do Worker antes do build do SPA quebra com o diretório ausente. Na prática o `package.json` de `@piluvitu/financas` já tem um `pretest` que builda o SPA (`pnpm --filter @piluvitu/financas-web build`) antes de `vitest run` — o que faz esse passo funcionar mesmo isolado — mas o step explícito no CI documenta a dependência e builda o SPA também para o próprio `Typecheck (spa)`/`Test (spa)` rodarem sobre um `dist/` fresco, sem depender do efeito colateral do `pretest` de outro pacote.
+4. Testes do Worker (`pnpm --filter @piluvitu/financas run test` — Miniflare + D1 local via `@cloudflare/vitest-pool-workers`, sem secret, sem `wrangler login`) e do SPA (`pnpm --filter @piluvitu/financas-web run test`).
+
+Não há job de deploy no CI: a fatia ① publica manualmente (`wrangler deploy`) e a migration em produção é ato deliberado — ver _Deploy_ abaixo.
+
+`pnpm -r lint` e `pnpm -r test`, rodados da raiz, já cobrem as duas frentes novas automaticamente — `apps/financas/package.json` e `apps/financas/web/package.json` declaram `lint`/`test` desde as Tasks 2/11. **Lembrete que já rendeu bug noutra ocasião: `pnpm -r <script>` pula em silêncio um workspace que não declara o script** (`@piluvitu/tools` não declara `lint`, por exemplo — `pnpm -r lint` roda em "4 of 5 workspace projects" de propósito). Ao adicionar comando novo num workflow, confirme que o `package.json` do pacote-alvo realmente tem esse script antes de assumir que o CI vai executá-lo.
+
+## Deploy
+
+Não há job de deploy automatizado — publicar é ato manual (`wrangler deploy`), e a migration em produção idem: **forward-only, sem down migration, então quem decide quando rodar é uma pessoa, não um workflow.**
+
+### 1. Aplicação no Cloudflare Access (uma vez, antes do primeiro deploy)
+
+No dashboard **Zero Trust → Access → Applications → Add an application → Self-hosted**:
+
+1. **Application name:** `financas`.
+2. **Session Duration:** `24 hours`.
+3. **Public hostname:** `financas.piluvitu.com.br` (zona `piluvitu.com.br` — precisa já existir na conta Cloudflare).
+4. **Identity providers:** Google.
+5. **Policy** `dono` — Action **Allow**, regra **Include → Emails → `paulo.tspi@gmail.com`**. Allowlist de **exatamente um** e-mail — nunca "Everyone in domain": o módulo é single-user por design.
+6. Na aba **Overview** da Application recém-criada, copiar o **Application Audience (AUD) Tag** (64 caracteres hex) e confirmar o **team domain** (`<team>.cloudflareaccess.com`).
+
+### 2. Preencher `wrangler.jsonc`
+
+`vars.ACCESS_AUD` nasceu com o placeholder `"trocar-pelo-aud-tag-da-application-do-access"` (Task 4) — **precisa virar o AUD Tag real do passo anterior antes de qualquer deploy**. `vars` não é bloco de secret (o segredo é a _policy_ do Access, não estes identificadores), então o valor fica versionado normalmente.
+
+⚠️ **Se `ACCESS_AUD` continuar com o placeholder em produção, `verifyAccessJwt` (`src/lib/access.ts`) rejeita TODO JWT do Access com `401 invalid_audience`** (não 403 — só `email_not_allowed`, quando o e-mail autenticado não está na allowlist, é `403`). O sintoma na prática é indistinguível de "o Google login não está funcionando": o usuário loga normal no Google, o Access emite o JWT, e o Worker devolve 401 mesmo assim. Conferir este valor é o primeiro passo de qualquer troubleshooting de acesso negado.
+
+### 3. Migration em produção (rodar manualmente — nunca automatizar)
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations list piluvitu-financas --remote
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote
+```
+
+Esperado: `0001_financas_init.sql` aplicada. Sem down migration — se o schema sair errado, a correção é uma migration nova (`0002_*.sql`), nunca editar a `0001` depois de rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado.
+
+### 4. Publicar o Worker
+
+```bash
+pnpm --filter @piluvitu/financas run deploy
+```
+
+O script builda o SPA antes (`build:web`) e roda `wrangler deploy` em seguida — o `web/dist` publicado é sempre o do commit atual, nunca um build velho. Saída esperada: o binding `DB` e os assets de `web/dist` listados pelo wrangler.
+
+### 5. Custom Domain (dashboard, uma vez)
+
+**Workers & Pages → `financas` → Settings → Domains & Routes → Add → Custom Domain:** `financas.piluvitu.com.br`.
+
+**Obrigatório, não preferência.** Em `*.workers.dev` o domínio registrável passa a ser diferente do da zona `piluvitu.com.br` — o contexto do cookie de sessão do Access vira cross-site, `SameSite=Lax` deixa de ser enviado, e **a quebra só aparece em produção** (local e preview nunca reproduzem, porque não passam pelo Access). `SameSite=None` não é solução: Safari (ITP) e Firefox (ETP) bloqueiam cookie de terceiro por padrão e o Chrome não — testar só no Chrome passa e engana.
+
+### 6. Checklist de verificação manual pós-deploy
+
+Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de cookie/JS que importam aqui):
+
+- [ ] `https://financas.piluvitu.com.br` redireciona para o login do Google do Access (não abre direto).
+- [ ] Login com `paulo.tspi@gmail.com` entra e mostra a tela **Contas**.
+- [ ] Login com outra conta Google é **negado** pelo Access.
+- [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://financas.piluvitu.com.br/api/health` devolve **302** ou **403** (sem JWT o Access barra antes do Worker responder — devolver **200** significa que a policy não está protegendo `/api/*`).
+- [ ] `index.html` e os assets carregam sem erro de CSP/404 no console (Static Assets servindo `web/dist`).
+- [ ] Recarregar em `#/comprometido` com F5 volta pra mesma tela (prova o `not_found_handling: single-page-application`).
+- [ ] Criar a conta **Nubank cartão** (`credit_card`, fecha 25, vence 05) e ver `fecha 25 · vence 05` no card.
+- [ ] Lançar uma compra em **10×** de R$ 1.000 nesse cartão em 28/07 e conferir que a 1ª parcela caiu em **`2026-08`** (compra depois do fechamento).
+- [ ] Somar as 10 parcelas na tela e bater **exatamente** R$ 1.000,00 (resto nas primeiras).
+- [ ] Cadastrar a dívida do **Pai** (R$ 1.360 em aberto) com os itens **MacBook Air** e **Steam Deck**.
+- [ ] Registrar um pagamento dividido entre os dois itens e ver a alocação listada por item.
+- [ ] Tentar alocar **mais** do que o item comporta e confirmar: mensagem de erro **e nada gravado** — nem pagamento, nem lançamento no caixa (recarregar a página para conferir).
+- [ ] Alocar **exatamente** até o teto do item e confirmar que passa (o trigger não dá falso positivo).
+- [ ] Tela **Comprometido**: a matriz mostra 6 competências, o TOTAL bate com a soma das colunas, e o `%` usa **R$ 3.600** como denominador (não R$ 5.480).
+- [ ] Competência acima de 50% aparece em **vermelho**.
+- [ ] Fazer uma transferência entre duas contas próprias e confirmar que ela **não** aparece no Comprometido.
+- [ ] Lançar às 22h do dia 31 (horário de Teresina, UTC−3) e confirmar que a data gravada é **dia 31**, não dia 1 do mês seguinte.
+- [ ] No dashboard do D1, conferir `rows written` do dia dentro do esperado (~dezenas), não milhares.

@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
           cache: pnpm
 
       - name: Install dependencies
@@ -51,10 +51,10 @@ jobs:
         env:
           # Valores dummy: o Keystatic precisa que essas env vars existam
           # durante o build da rota /api/keystatic, mesmo sem OAuth real.
-          KEYSTATIC_GITHUB_CLIENT_ID: "ci-dummy"
-          KEYSTATIC_GITHUB_CLIENT_SECRET: "ci-dummy"
-          KEYSTATIC_SECRET: "ci-dummy-secret-32-chars-padding-x"
-          NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG: "ci-dummy"
+          KEYSTATIC_GITHUB_CLIENT_ID: 'ci-dummy'
+          KEYSTATIC_GITHUB_CLIENT_SECRET: 'ci-dummy'
+          KEYSTATIC_SECRET: 'ci-dummy-secret-32-chars-padding-x'
+          NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG: 'ci-dummy'
 
   api:
     name: API (vet + test + build)
@@ -68,7 +68,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: '1.25'
           cache-dependency-path: apps/api/go.sum
 
       - name: Download modules
@@ -85,3 +85,39 @@ jobs:
 
       - name: Build cli
         run: go build -o /tmp/piluvitu ./cmd/cli
+
+  financas:
+    name: Finanças (typecheck + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (worker)
+        run: pnpm --filter @piluvitu/financas run lint
+
+      - name: Typecheck (spa)
+        run: pnpm --filter @piluvitu/financas-web run lint
+
+      # O binding ASSETS do Miniflare exige que web/dist exista com um index.html,
+      # e web/dist é gerado (está no .gitignore). Por isso o build da SPA vem
+      # ANTES dos testes do Worker: em clone limpo, a ordem inversa quebra o job.
+      - name: Build (spa)
+        run: pnpm --filter @piluvitu/financas-web run build
+
+      # vitest-pool-workers roda em Miniflare local: sem secret, sem wrangler login.
+      - name: Test (worker + D1)
+        run: pnpm --filter @piluvitu/financas run test
+
+      - name: Test (spa)
+        run: pnpm --filter @piluvitu/financas-web run test
