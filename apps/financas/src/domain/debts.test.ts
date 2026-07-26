@@ -578,6 +578,9 @@ describe('debts — listagem com totais', () => {
     expect(doPai?.total_cents).toBe(730000)
     expect(doPai?.paid_cents).toBe(594000)
     expect(doPai?.remaining_cents).toBe(136000)
+    // payee_name é o que permite a tela #/dividas (Task 14) mostrar "Pai" em
+    // vez do UUID cru do payee_id.
+    expect(doPai?.payee_name).toBe('Pai')
 
     const amigo = todas.find((d) => d.title === 'Amigo')
     expect(amigo?.total_cents).toBe(0)

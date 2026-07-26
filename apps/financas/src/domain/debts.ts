@@ -407,6 +407,10 @@ export type ListDebtsOptions = {
 }
 
 export type DebtSummary = Debt & {
+  // payee_name é o que permite a tela #/dividas (Task 14) mostrar "Pai" em
+  // vez do payee_id cru. JOIN, não LEFT JOIN: debts.payee_id é NOT NULL
+  // REFERENCES payees(id), então toda dívida tem payee de verdade.
+  payee_name: string
   total_cents: number
   paid_cents: number
   remaining_cents: number
@@ -421,10 +425,12 @@ export async function listDebts(
   const res = await db
     .prepare(
       `SELECT d.*,
+              p.name                                                 AS payee_name,
               COALESCE(i.total_cents, 0)                             AS total_cents,
               COALESCE(a.paid_cents, 0)                              AS paid_cents,
               COALESCE(i.total_cents, 0) - COALESCE(a.paid_cents, 0) AS remaining_cents
          FROM debts d
+         JOIN payees p ON p.id = d.payee_id
          LEFT JOIN (
            SELECT debt_id, SUM(amount_cents) AS total_cents
              FROM debt_items GROUP BY debt_id

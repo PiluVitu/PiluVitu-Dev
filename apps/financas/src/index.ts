@@ -2,8 +2,10 @@ import { Hono } from 'hono'
 import { requireAccess } from './lib/access'
 import { errJson, okJson } from './lib/envelope'
 import { accountsRoutes } from './routes/accounts'
+import { categoriesRoutes } from './routes/categories'
 import { debtsRoutes } from './routes/debts'
 import { installmentPlansRoutes } from './routes/installments'
+import { payeesRoutes } from './routes/payees'
 import { reportsRoutes } from './routes/reports'
 import { transactionsRoutes } from './routes/transactions'
 
@@ -39,6 +41,8 @@ app.route('/api', transactionsRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
 app.route('/api/reports', reportsRoutes)
+app.route('/api/payees', payeesRoutes)
+app.route('/api/categories', categoriesRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.

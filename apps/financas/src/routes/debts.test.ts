@@ -132,6 +132,7 @@ describe('rotas de dividas — caminho feliz', () => {
     expect(lista.status).toBe(200)
     expect(lista.body.data).toHaveLength(1)
     expect(lista.body.data[0].remaining_cents).toBe(136000)
+    expect(lista.body.data[0].payee_name).toBe('Pai')
   })
 
   it('divida inexistente devolve 404 not_found', async () => {
