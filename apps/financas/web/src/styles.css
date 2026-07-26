@@ -46,3 +46,13 @@ form > label {
   display: block;
   margin: 0.25rem 0;
 }
+
+.alerta {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+tfoot th,
+tfoot td {
+  border-top: 2px solid rgba(128, 128, 128, 0.6);
+}

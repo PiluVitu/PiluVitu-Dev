@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { AccountsPage } from './pages/accounts'
+import { CommitmentsPage } from './pages/commitments'
 import { DebtDetailPage } from './pages/debt-detail'
+import { NewEntryPage } from './pages/new-entry'
 
 export function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || '#/contas')
@@ -10,6 +12,12 @@ export function useHash(): string {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   return hash
+}
+
+/** Competência do mês corrente em Teresina (UTC−3, sem horário de verão). */
+export function competenciaAtual(now: Date = new Date()): string {
+  const teresina = new Date(now.getTime() - 3 * 60 * 60 * 1000)
+  return teresina.toISOString().slice(0, 7)
 }
 
 export function App() {
@@ -22,13 +30,17 @@ export function App() {
     <>
       <nav>
         <a href="#/contas">Contas</a>
+        <a href="#/lancar">Lançar</a>
+        <a href="#/comprometido">Comprometido</a>
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />
-      ) : hash.startsWith('#/contas') ? (
-        <AccountsPage />
+      ) : hash.startsWith('#/comprometido') ? (
+        <CommitmentsPage from={competenciaAtual()} />
+      ) : hash.startsWith('#/lancar') ? (
+        <NewEntryPage />
       ) : (
-        <p>Rota desconhecida: {hash}</p>
+        <AccountsPage />
       )}
     </>
   )
