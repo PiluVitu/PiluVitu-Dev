@@ -1,4 +1,10 @@
 {
+  "account_id": "c52a9959db02d735ef489d9728ccf4de",
+
+  // Custom Domain e OBRIGATORIO, nao preferencia: o Cloudflare Access so
+  // protege hostname de uma zona da conta, e *.workers.dev nao e uma. Sem
+  // isso nao ha como pos a policy na frente do Worker.
+  "routes": [{ "pattern": "financas.piluvitu.com.br", "custom_domain": true }],
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "piluvitu-financas",
   "main": "src/index.ts",
@@ -21,7 +27,7 @@
     {
       "binding": "DB",
       "database_name": "piluvitu-financas",
-      "database_id": "00bfeb46-eb19-4954-8e7e-159bd48a998c",
+      "database_id": "6d16f807-53d2-43e5-900e-5b1c095a7045",
       "migrations_dir": "migrations",
     },
   ],
