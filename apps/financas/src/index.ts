@@ -4,6 +4,7 @@ import { errJson, okJson } from './lib/envelope'
 import { accountsRoutes } from './routes/accounts'
 import { debtsRoutes } from './routes/debts'
 import { installmentPlansRoutes } from './routes/installments'
+import { reportsRoutes } from './routes/reports'
 import { transactionsRoutes } from './routes/transactions'
 
 export type Bindings = {
@@ -37,6 +38,7 @@ app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
+app.route('/api/reports', reportsRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.
