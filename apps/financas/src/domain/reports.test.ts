@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { createAccount } from './accounts'
 import { createTransaction } from './transactions'
-import { addDebtItem, createDebt } from './debts'
+import { addDebtItem, createDebt, payDebt } from './debts'
 import { commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
 
 const db = env.DB
@@ -256,6 +256,96 @@ describe('commitments', () => {
 
     expect(report.rows).toEqual([])
     expect(report.totals).toEqual([0, 0])
+  })
+
+  it('INVARIANTE: pagar uma divida reduz o comprometido exatamente pelo valor alocado, gera exatamente 1 linha no caixa, e nunca vira despesa', async () => {
+    // debt_items e debt_payments so tabelas separadas justamente pra isto:
+    // estoque (o que devo) e fluxo (o dinheiro que efetivamente saiu) nunca
+    // se somam. Nenhum teste ate agora ligava payDebt() a commitments() —
+    // reports.test.ts so usava createDebt+addDebtItem, e debts.test.ts
+    // conferia v_cashflow/v_debt_item_balance mas nunca commitments(). O
+    // invariante valia por leitura de codigo, nao por teste.
+    const payeeId = crypto.randomUUID()
+    await db
+      .prepare(
+        `INSERT INTO payees (id, name, norm_name, kind, created_at)
+         VALUES (?, 'Pai', 'PAI', 'person', ?)`,
+      )
+      .bind(payeeId, '2026-01-01T00:00:00Z')
+      .run()
+
+    const conta = await createAccount(db, {
+      name: 'Nubank conta corrente',
+      scope: 'PF',
+      kind: 'checking',
+    })
+
+    const divida = await createDebt(db, {
+      payee_id: payeeId,
+      direction: 'i_owe',
+      title: 'Pai',
+      opened_at: '2026-03-01',
+    })
+    const steam = await addDebtItem(db, {
+      debt_id: divida.id,
+      description: 'Steam Deck',
+      amount_cents: 280000,
+      incurred_on: '2026-03-01',
+    })
+    await addDebtItem(db, {
+      debt_id: divida.id,
+      description: 'MacBook Air',
+      amount_cents: 450000,
+      incurred_on: '2026-03-01',
+    })
+
+    const antes = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    const linhaAntes = antes.rows.find((r) => r.account_name === 'Divida — Pai')
+    expect(linhaAntes?.cells).toEqual([730000]) // 280000 + 450000
+
+    const ALOCADO = 100000
+    const { payment, transaction } = await payDebt(db, {
+      debt_id: divida.id,
+      paid_on: '2026-07-10',
+      amount_cents: ALOCADO,
+      account_id: conta.id,
+      allocations: [{ item_id: steam.id, amount_cents: ALOCADO }],
+    })
+    expect(payment.amount_cents).toBe(ALOCADO)
+
+    const depois = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    const linhaDepois = depois.rows.find(
+      (r) => r.account_name === 'Divida — Pai',
+    )
+    // exatamente o valor alocado, nem mais nem menos.
+    expect(linhaDepois?.cells).toEqual([730000 - ALOCADO])
+    expect(depois.totals).toEqual([730000 - ALOCADO])
+
+    // 1x no caixa via v_cashflow (o pagamento liquidou de verdade).
+    const cashflow = await db
+      .prepare('SELECT COUNT(*) AS n FROM v_cashflow WHERE id = ?')
+      .bind(transaction!.id)
+      .first<{ n: number }>()
+    expect(cashflow?.n).toBe(1)
+
+    // 0x como despesa — a categoria e sempre 'quitacao-divida'
+    // (kind='debt_settlement'), nunca 'expense'.
+    const comoDespesa = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM transactions t
+           JOIN categories c ON c.id = t.category_id
+          WHERE c.kind = 'expense'`,
+      )
+      .first<{ n: number }>()
+    expect(comoDespesa?.n).toBe(0)
   })
 
   it('rejeita competencia e janela invalidas', async () => {
