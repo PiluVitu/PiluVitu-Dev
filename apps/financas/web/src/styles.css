@@ -32,3 +32,17 @@ th:first-child,
 td:first-child {
   text-align: left;
 }
+
+tr.quitado {
+  opacity: 0.55;
+}
+
+tr.quitado td:first-child {
+  text-decoration: line-through;
+}
+
+fieldset label,
+form > label {
+  display: block;
+  margin: 0.25rem 0;
+}

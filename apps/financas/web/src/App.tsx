@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AccountsPage } from './pages/accounts'
+import { DebtDetailPage } from './pages/debt-detail'
 
 export function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || '#/contas')
@@ -13,13 +14,18 @@ export function useHash(): string {
 
 export function App() {
   const hash = useHash()
+  const debtId = hash.startsWith('#/dividas/')
+    ? hash.slice('#/dividas/'.length)
+    : null
 
   return (
     <>
       <nav>
         <a href="#/contas">Contas</a>
       </nav>
-      {hash.startsWith('#/contas') ? (
+      {debtId ? (
+        <DebtDetailPage debtId={debtId} />
+      ) : hash.startsWith('#/contas') ? (
         <AccountsPage />
       ) : (
         <p>Rota desconhecida: {hash}</p>
