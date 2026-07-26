@@ -1,0 +1,4 @@
+BETTER_AUTH_URL=http://localhost:5273
+BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
+GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
+GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud

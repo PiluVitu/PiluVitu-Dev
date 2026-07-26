@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import app, { type Bindings } from './index'
 import type { Envelope } from './lib/envelope'
 
-describe('worker financas (Task 2 — bindings)', () => {
+describe('worker financas — bindings', () => {
   test('expõe o binding D1 "DB" e ele responde a uma query', async () => {
     expect(env.DB).toBeDefined()
     const row = await env.DB.prepare('SELECT 1 AS um').first<{ um: number }>()
@@ -28,12 +28,7 @@ describe('worker financas (Task 2 — bindings)', () => {
     })
   })
 
-  // Antes da Task 4 esta rota devolvia 404 direto (não existia gate nenhum em
-  // /api/*). Com o Access montado, uma rota desconhecida SEM o header some
-  // no 401 not_authenticated antes de chegar no catch-all — o 404 só aparece
-  // depois de passar pelo Access (ver 'rota /api inexistente...' abaixo, que
-  // usa /api/health, isenta do gate, pra provar o catch-all isoladamente).
-  test('rota desconhecida sob /api sem header do Access responde 401 (Access na frente do catch-all)', async () => {
+  test('rota desconhecida sob /api sem cookie de sessão responde 401 (guarda do Better Auth na frente do catch-all)', async () => {
     const res = await SELF.fetch(
       'https://financas.piluvitu.com.br/api/nao-existe',
     )
@@ -41,11 +36,14 @@ describe('worker financas (Task 2 — bindings)', () => {
   })
 })
 
-// Sem DB e sem rede: estes três casos não chegam a tocar D1 nem o JWKS.
-const accessTestEnv = {
-  ACCESS_TEAM_DOMAIN: 'indextest.cloudflareaccess.com',
-  ACCESS_AUD: 'aud-de-teste-1234',
-  ACCESS_ALLOWED_EMAILS: 'dono@exemplo.com',
+// Sem DB e sem rede: estes casos não precisam de sessão real.
+const authTestEnv = {
+  DB: env.DB,
+  BETTER_AUTH_URL: 'http://localhost:8787',
+  BETTER_AUTH_SECRET: 'a'.repeat(32),
+  GOOGLE_CLIENT_ID: 'client-id-de-teste',
+  GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
+  ALLOWED_EMAIL: 'dono@exemplo.com',
 } as unknown as Bindings
 
 type CorpoErro = {
@@ -55,8 +53,8 @@ type CorpoErro = {
 }
 
 describe('worker de finanças', () => {
-  test('GET /api/health é público (não exige JWT do Access)', async () => {
-    const res = await app.request('/api/health', {}, accessTestEnv)
+  test('GET /api/health é público (não exige sessão)', async () => {
+    const res = await app.request('/api/health', {}, authTestEnv)
     expect(res.status).toBe(200)
 
     const body = (await res.json()) as Envelope<{ status: string }>
@@ -65,33 +63,48 @@ describe('worker de finanças', () => {
     expect(body.notifications).toEqual([])
   })
 
-  test('GET /api/accounts sem o header do Access responde 401', async () => {
-    const res = await app.request('/api/accounts', {}, accessTestEnv)
+  test('GET /api/accounts sem cookie de sessão responde 401 not_authenticated', async () => {
+    const res = await app.request('/api/accounts', {}, authTestEnv)
     expect(res.status).toBe(401)
     expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
       'not_authenticated',
     )
   })
 
-  test('GET /api/accounts com header inválido responde 401 invalid_token', async () => {
+  test('GET /api/accounts com cookie de sessão inexistente responde 401 not_authenticated', async () => {
+    // Formato real (medido, spike S6a): '<token>.<assinatura>'. Um par que
+    // nunca foi emitido por getAuth() não bate com nenhuma linha de
+    // session — getSession() devolve null (não lança), decidirAcesso trata
+    // igual a "sem sessão".
     const res = await app.request(
       '/api/accounts',
-      { headers: { 'Cf-Access-Jwt-Assertion': 'nao-e-um-jwt' } },
-      accessTestEnv,
+      {
+        headers: {
+          cookie:
+            'better-auth.session_token=token-que-nao-existe.assinatura-que-nao-bate',
+        },
+      },
+      authTestEnv,
     )
     expect(res.status).toBe(401)
     expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-      'invalid_token',
+      'not_authenticated',
     )
   })
 
+  test('/api/auth/* não é barrado pela guarda de sessão', async () => {
+    const res = await app.request('/api/auth/get-session', {}, authTestEnv)
+    // Não é a nossa guarda que responde: se fosse, seria 401 not_authenticated
+    // no nosso envelope. O Better Auth responde por conta própria, fora do
+    // envelope { ok, data, notifications }.
+    expect(res.status).not.toBe(401)
+  })
+
   test('rota /api inexistente devolve envelope JSON, não texto puro', async () => {
-    // POST /api/health não casa com nenhum handler e cai no catch-all — é o que
-    // garante que api<T>() (Task 11) sempre encontra um envelope para desembrulhar.
     const res = await app.request(
       '/api/health',
       { method: 'POST' },
-      accessTestEnv,
+      authTestEnv,
     )
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toBe(

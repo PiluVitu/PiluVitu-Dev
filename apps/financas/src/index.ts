@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
-import { requireAccess } from './lib/access'
+import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
+import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
 import { categoriesRoutes } from './routes/categories'
 import { debtsRoutes } from './routes/debts'
@@ -9,32 +10,27 @@ import { payeesRoutes } from './routes/payees'
 import { reportsRoutes } from './routes/reports'
 import { transactionsRoutes } from './routes/transactions'
 
-export type Bindings = {
-  DB: D1Database
-  ACCESS_TEAM_DOMAIN: string
-  ACCESS_AUD: string
-  ACCESS_ALLOWED_EMAILS: string
-}
+export type Bindings = AuthBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
 /**
- * O Access protege /api/* inteiro, MENOS /api/health — o health é sondado por
- * monitor externo, que não passa pela policy e portanto não tem JWT. A exceção
- * é explícita aqui (e não implícita na ordem de registro das rotas do Hono)
- * para não virar armadilha quando as Tasks 6-10 acrescentarem rotas.
+ * DUAS exceções à guarda, ambas EXPLÍCITAS:
+ *  - /api/health: sondado por monitor externo, que não tem cookie.
+ *  - /api/auth/*: é o próprio fluxo de login. Barrar aqui é deadlock —
+ *    ninguém consegue autenticar porque não está autenticado.
  */
 app.use('/api/*', async (c, next) => {
   if (c.req.path === '/api/health') return next()
-
-  return requireAccess({
-    teamDomain: c.env.ACCESS_TEAM_DOMAIN,
-    aud: c.env.ACCESS_AUD,
-    allowedEmails: (c.env.ACCESS_ALLOWED_EMAILS ?? '').split(','),
-  })(c, next)
+  if (isRotaDeAuth(c.req.path)) return next()
+  return requireSession()(c, next)
 })
 
 app.get('/api/health', () => okJson({ status: 'up' }))
+
+// Só GET e POST: são os únicos métodos que o Better Auth usa. Precisa vir
+// ACIMA do catch-all — a regra do marcador vale igual aqui.
+app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 
 app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
