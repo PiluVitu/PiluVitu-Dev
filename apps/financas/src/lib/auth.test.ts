@@ -71,6 +71,31 @@ describe('getAuth — memoização por identidade de env', () => {
   })
 })
 
+// Fix round 1: sem este guard explícito, um BETTER_AUTH_SECRET vazio NÃO
+// lança — o Better Auth cai pro default hardcoded do próprio pacote e só
+// lançaria em produção de verdade (isProduction, que nunca é true num
+// Worker). Ver o comentário MEDIDO em createAuth.
+describe('createAuth — guard explícito de BETTER_AUTH_SECRET', () => {
+  test('secret vazio lança (a lib, sozinha, não lançaria aqui)', () => {
+    expect(() => createAuth({ ...testEnv, BETTER_AUTH_SECRET: '' })).toThrow(
+      /BETTER_AUTH_SECRET ausente/,
+    )
+  })
+
+  test('secret ausente em runtime (binding não setada) também lança', () => {
+    expect(() =>
+      createAuth({
+        ...testEnv,
+        BETTER_AUTH_SECRET: undefined as unknown as string,
+      }),
+    ).toThrow(/BETTER_AUTH_SECRET ausente/)
+  })
+
+  test('secret presente não lança', () => {
+    expect(() => createAuth(testEnv)).not.toThrow()
+  })
+})
+
 // --------------------------------------------------------------------
 // Prova de bloqueio via fluxo OAuth real (auth.handler), não via chamada
 // interna adivinhada: signInSocial gera o cookie de state/PKCE,

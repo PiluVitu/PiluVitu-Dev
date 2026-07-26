@@ -105,15 +105,37 @@ export function getAuth(env: AuthBindings): Auth {
 // Anotar `: Auth` aqui criaria uma referência circular (`Auth` é definido a
 // partir do retorno INFERIDO desta função).
 export function createAuth(env: AuthBindings) {
+  // MEDIDO contra o pacote instalado (better-auth@1.6.25,
+  // dist/context/create-context.mjs:70-80): SEM secret, o Better Auth NÃO
+  // lança — ele cai pro default hardcoded no PRÓPRIO PACOTE
+  // ('better-auth-secret-12345678901234567890', linha 78) e só lançaria
+  // depois (validateSecret, linhas 38-44) se `isProduction` fosse `true`,
+  // o que NUNCA acontece num Worker (não há `NODE_ENV`, mesmo fato que já
+  // justifica `rateLimit.enabled: true` explícito, abaixo). A antiga versão
+  // deste comentário afirmava "a falta lança BetterAuthError no boot" — não
+  // reproduz: MEDIDO que nem `secret` nem `baseURL` ausentes lançam sozinhos
+  // (baseURL ausente só gera `logger.warn`, linha 64). Sem este guard
+  // explícito, esquecer `wrangler secret put BETTER_AUTH_SECRET` publicaria
+  // em produção assinando toda sessão e todo cookie de state/PKCE do OAuth
+  // com essa constante pública no código-fonte da lib — deploy e login
+  // pareceriam saudáveis, sem erro nem log, e qualquer um capaz de ler o
+  // pacote no npm poderia forjar uma assinatura válida.
+  if (!env.BETTER_AUTH_SECRET) {
+    throw new Error(
+      'BETTER_AUTH_SECRET ausente — configure via `wrangler secret put BETTER_AUTH_SECRET` (produção) ou `.dev.vars` (local). O Better Auth não falha sozinho nesse caso.',
+    )
+  }
+
   return betterAuth({
     // Binding cru: o adapter Kysely detecta D1 por duck-typing
     // ('batch' in db && 'exec' in db && 'prepare' in db) e monta o
     // D1SqliteDialect interno. Não existe adapter para instalar.
     database: env.DB,
 
-    // OBRIGATÓRIOS e EXPLÍCITOS. @better-auth/core procura o segredo em
-    // process.env/Deno.env/globalThis.__env__ — nenhum existe no Worker,
-    // e a falta lança BetterAuthError no boot. Não há fallback.
+    // baseURL: SEM guard explícito de propósito — a falta só gera
+    // `logger.warn` (create-context.mjs:64), não é fatal pra própria lib
+    // (embora quebre o cookie same-site em produção, ver CLAUDE.md/Deploy).
+    // secret: com o `throw` acima, chega aqui sempre não-vazio.
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
 

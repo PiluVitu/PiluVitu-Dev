@@ -1,9 +1,12 @@
 {
   "account_id": "c52a9959db02d735ef489d9728ccf4de",
 
-  // Custom Domain e OBRIGATORIO, nao preferencia: o Cloudflare Access so
-  // protege hostname de uma zona da conta, e *.workers.dev nao e uma. Sem
-  // isso nao ha como pos a policy na frente do Worker.
+  // Custom Domain e OBRIGATORIO, nao preferencia — motivo mudou na Task 3
+  // (nao e mais sobre o Cloudflare Access, removido). Em *.workers.dev o
+  // dominio registravel e diferente do de piluvitu.com.br: o cookie de
+  // sessao do Better Auth vira cross-site, SameSite=Lax deixa de ser
+  // enviado, e a quebra so aparece em producao (local/preview usam
+  // BETTER_AUTH_URL=http://localhost, mesmo site). Ver CLAUDE.md/Deploy.
   "routes": [{ "pattern": "financas.piluvitu.com.br", "custom_domain": true }],
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "piluvitu-financas",

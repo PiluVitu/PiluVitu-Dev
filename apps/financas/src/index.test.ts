@@ -94,10 +94,15 @@ describe('worker de finanças', () => {
 
   test('/api/auth/* não é barrado pela guarda de sessão', async () => {
     const res = await app.request('/api/auth/get-session', {}, authTestEnv)
-    // Não é a nossa guarda que responde: se fosse, seria 401 not_authenticated
-    // no nosso envelope. O Better Auth responde por conta própria, fora do
-    // envelope { ok, data, notifications }.
-    expect(res.status).not.toBe(401)
+    // Fix round 1: `expect(status).not.toBe(401)` também passa com 500 ou
+    // com o nosso próprio 503 auth_unavailable — não distingue "não foi a
+    // nossa guarda que respondeu" de "algo quebrou". MEDIDO: sem cookie,
+    // GET /api/auth/get-session responde 200 com corpo `null` cru (nem
+    // {session:null}, nem o nosso envelope {ok,data,notifications}) — é o
+    // próprio Better Auth respondendo, não a nossa guarda (que teria
+    // devolvido 401 not_authenticated dentro do envelope).
+    expect(res.status).toBe(200)
+    expect(await res.json()).toBeNull()
   })
 
   test('rota /api inexistente devolve envelope JSON, não texto puro', async () => {
