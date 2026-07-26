@@ -3,6 +3,7 @@ packages:
   - 'apps/financas'
   - 'apps/financas/web'
   - 'packages/tools'
+  - 'packages/ui'
 
 # Only the packages listed below may run lifecycle scripts during installation.
 # All other install scripts are blocked by default (pnpm 11 default).
