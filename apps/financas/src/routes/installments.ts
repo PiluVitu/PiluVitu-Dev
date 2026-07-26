@@ -80,6 +80,16 @@ installmentPlansRoutes.post('/', async (c) => {
     if (err instanceof InstallmentPlanError) {
       return errJson(422, err.code, err.message)
     }
+    // RangeError cru: não vem só de validação explícita do domínio, também
+    // sobe de lib/dates.ts (billCompetence/addMonthsToCompetence/
+    // competenceDueDate) quando purchase_date passa no regex de FORMATO do
+    // body (acima) mas é calendarialmente inválida (ex.: mês 13) — o regex
+    // não valida calendário, só shape. Mesma convenção de accounts.ts e
+    // transactions.ts: RangeError do domínio vira 422, nunca escapa cru para
+    // o handler default do Hono (que devolveria 500 sem envelope).
+    if (err instanceof RangeError) {
+      return errJson(422, 'constraint_violation', err.message)
+    }
     if (
       err instanceof Error &&
       /SQLITE_CONSTRAINT|constraint failed/i.test(err.message)

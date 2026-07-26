@@ -112,4 +112,46 @@ describe('POST /api/installment-plans', () => {
     expect(res.status).toBe(400)
     expect(body.notifications[0].code).toBe('invalid_json')
   })
+
+  it('recusa purchase_date com mês inválido (passa no formato, falha no calendário) com envelope 422, nunca 500 pelado', async () => {
+    const accountId = await seedAccount('acc-cc', 'credit_card')
+
+    // '2026-13-01' casa com o regex de FORMATO (\d{4}-\d{2}-\d{2}) mas mês 13
+    // não existe. billCompetence não valida isso e devolve '2026-13' direto
+    // (dia 1 <= fechamento, sem roll-forward); addMonthsToCompetence('2026-13', 0)
+    // na primeira iteração é quem rejeita, com RangeError puro (lib/dates.ts),
+    // não InstallmentPlanError — a rota precisa tratar isso sem vazar um 500
+    // sem envelope (que é o que o handler default do Hono devolveria).
+    const res = await post({
+      account_id: accountId,
+      description: 'Fone',
+      total_cents: 10000,
+      installments_count: 3,
+      purchase_date: '2026-13-01',
+    })
+
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(res.status).toBeLessThan(500)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: { code?: string }[]
+    }
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBeTruthy()
+
+    const [plans, txs, installments] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS n FROM installment_plans').first<{
+        n: number
+      }>(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM transactions').first<{
+        n: number
+      }>(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM installments').first<{
+        n: number
+      }>(),
+    ])
+    expect(plans?.n).toBe(0)
+    expect(txs?.n).toBe(0)
+    expect(installments?.n).toBe(0)
+  })
 })
