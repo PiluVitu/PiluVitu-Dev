@@ -124,3 +124,30 @@ Cada arquivo de `src/domain/` recebe o `D1Database` por parâmetro (nunca lê `e
 Os testes de rota montam um `new Hono()` só com o router, **sem** o middleware do Access, e passam o binding via terceiro argumento de `app.request(path, init, { DB: env.DB })`.
 
 Rotas de lançamentos: `GET /api/transactions` (`?account_id=`, `?from=`, `?to=`, `?limit=`), `POST /api/transactions`, `POST /api/transfers`. Erros de `CHECK`/`FOREIGN KEY` do D1 são reconhecidos por `/SQLITE_CONSTRAINT|constraint failed/i` e viram `422`; `RangeError` do domínio vira `422` com código próprio.
+
+## Parcelamento de cartão
+
+`POST /api/installment-plans` → `src/routes/installments.ts` (`installmentPlansRoutes`, montado acima do catch-all) → `createInstallmentPlan` em `src/domain/installments.ts`.
+
+**Cada parcela materializa uma `transaction`** com `settled_at NULL` e `bill_competence` preenchida — parcela é _prevista_ até a fatura ser paga. `installments` guarda só o cronograma (`seq`, `due_date`, `transaction_id`).
+
+- `first_competence` = `billCompetence(purchase_date, account.closing_day)`
+- competência da parcela _i_ = `addMonthsToCompetence(first_competence, i)`
+- `due_date` da parcela _i_ = `competenceDueDate(<competência>, account.due_day)`
+- valores = `splitInstallments(total_cents, count)` do `@piluvitu/tools/money` (resto nas **primeiras**: R$ 100 em 3x = 3334+3333+3333); gravados com **sinal negativo** em `transactions.amount_cents`
+
+**Um único `db.batch()`** (rollback real), dimensionado pelo teto de **100 bound params por statement** (o teto documentado de 50 queries/invocação não se reproduziu quando medido):
+
+| Tabela              | Colunas bound | Linhas/statement    |
+| ------------------- | ------------- | ------------------- |
+| `installment_plans` | 13            | 1 (statement único) |
+| `transactions`      | 19            | **5** (95 params)   |
+| `installments`      | 5             | **20** (100 params) |
+
+`installments.created_at` **não é bound**: sai de `strftime('%Y-%m-%dT%H:%M:%fZ','now')` no próprio SQL — é o que mantém a linha em 5 colunas em vez de 6. Consequência: o payload de criação devolve `Installment` sem `created_at`.
+
+Plano de 60x = 1 + 12 + 3 = **16 statements** num batch só (coberto por teste de regressão que espia `db.batch`).
+
+**Recusas** (`InstallmentPlanError` → 422): conta inexistente/arquivada, conta com `kind <> 'credit_card'`, cartão sem `closing_day`/`due_day` → `invalid_account`; `installments_count` fora de 1..360, `total_cents <= 0`, conta não-BRL → `constraint_violation`. Corpo malformado ou campo faltando → **400** `invalid_json`.
+
+**Convenção de módulo:** `installmentPlansRoutes` usa o mesmo `type Env = { Bindings: { DB: D1Database } }` local de `accounts.ts`/`transactions.ts` (não importa `Bindings` de `../index`) — evita import circular valor↔tipo entre a rota e `src/index.ts` mantendo o mesmo shape.

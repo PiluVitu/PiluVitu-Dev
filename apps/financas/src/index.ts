@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { requireAccess } from './lib/access'
 import { errJson, okJson } from './lib/envelope'
 import { accountsRoutes } from './routes/accounts'
+import { installmentPlansRoutes } from './routes/installments'
 import { transactionsRoutes } from './routes/transactions'
 
 export type Bindings = {
@@ -33,6 +34,7 @@ app.get('/api/health', () => okJson({ status: 'up' }))
 
 app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
+app.route('/api/installment-plans', installmentPlansRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.

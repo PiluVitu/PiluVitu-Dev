@@ -16,6 +16,7 @@
     "db:migrate:list": "wrangler d1 migrations list piluvitu-financas --local"
   },
   "dependencies": {
+    "@piluvitu/tools": "workspace:*",
     "hono": "^4.12.32"
   },
   "devDependencies": {
