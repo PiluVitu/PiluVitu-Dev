@@ -62,6 +62,38 @@ describe('DividasPage', () => {
     expect(screen.getByText(formatBRL(136000))).toBeInTheDocument()
   })
 
+  it('sem "Aberta em" preenchida, usa o dia de Teresina (nao UTC) como default', async () => {
+    // 01:00 UTC de 01/08 e 22h de 31/07 em Teresina (UTC-3). Fake so o Date
+    // (nao os timers): waitFor/userEvent usam setTimeout de verdade por
+    // baixo, e travariam se o relogio inteiro estivesse congelado.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-01T01:00:00Z'))
+    try {
+      const user = userEvent.setup()
+      render(<DividasPage />)
+      await screen.findByRole('link', { name: 'Pai' })
+
+      await user.type(screen.getByLabelText('Título'), 'Tio')
+      await user.selectOptions(screen.getByLabelText('Pessoa'), '__novo__')
+      await user.type(screen.getByLabelText('Nome da pessoa'), 'Tio')
+      await user.click(screen.getByRole('button', { name: 'Criar dívida' }))
+
+      await waitFor(() => {
+        const corpoDivida = fetchMock.mock.calls.find(
+          (c) =>
+            String(c[0]) === '/api/debts' &&
+            (c[1] as RequestInit).method === 'POST',
+        )
+        expect(corpoDivida).toBeDefined()
+        expect(
+          JSON.parse(String((corpoDivida![1] as RequestInit).body)).opened_at,
+        ).toBe('2026-07-31')
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('cria payee inline e usa o id retornado no POST /api/debts', async () => {
     const user = userEvent.setup()
     render(<DividasPage />)

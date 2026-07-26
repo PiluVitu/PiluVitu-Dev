@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, splitInstallments } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
+import { todayInTeresina } from '../lib/dates'
 import type { AccountView } from './accounts'
 
 export function NewEntryPage() {
@@ -70,7 +71,7 @@ export function NewEntryPage() {
       return
     }
 
-    const purchase_date = data || new Date().toISOString().slice(0, 10)
+    const purchase_date = data || todayInTeresina()
     const is_business = isBusiness ? 1 : 0
 
     setEnviando(true)

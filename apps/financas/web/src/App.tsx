@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { todayInTeresina } from './lib/dates'
 import { AccountsPage } from './pages/accounts'
 import { CommitmentsPage } from './pages/commitments'
 import { DebtDetailPage } from './pages/debt-detail'
@@ -17,8 +18,7 @@ export function useHash(): string {
 
 /** Competência do mês corrente em Teresina (UTC−3, sem horário de verão). */
 export function competenciaAtual(now: Date = new Date()): string {
-  const teresina = new Date(now.getTime() - 3 * 60 * 60 * 1000)
-  return teresina.toISOString().slice(0, 7)
+  return todayInTeresina(now).slice(0, 7)
 }
 
 export function App() {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
+import { todayInTeresina } from '../lib/dates'
 
 export type DebtListRow = {
   id: string
@@ -78,7 +79,7 @@ export function DividasPage() {
           payee_id: id,
           direction: 'i_owe',
           title: titulo,
-          opened_at: abertura || new Date().toISOString().slice(0, 10),
+          opened_at: abertura || todayInTeresina(),
         }),
       })
       setTitulo('')

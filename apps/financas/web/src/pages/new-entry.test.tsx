@@ -234,6 +234,37 @@ describe('NewEntryPage', () => {
     ).toBe(false)
   })
 
+  it('sem Data preenchida, usa o dia de Teresina (nao UTC) como default', async () => {
+    // 01:00 UTC de 01/08 e 22h de 31/07 em Teresina (UTC-3). new Date().
+    // toISOString().slice(0,10) gravaria '2026-08-01' — um dia adiantado.
+    // Fake só o Date (nao os timers): waitFor usa setTimeout de verdade por
+    // baixo, e travaria se o relogio inteiro estivesse congelado.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-01T01:00:00Z'))
+    try {
+      const fetchMock = mockRoutes()
+
+      render(<NewEntryPage />)
+      await waitFor(() =>
+        expect(screen.getByLabelText('Conta')).toBeInTheDocument(),
+      )
+
+      fireEvent.change(screen.getByLabelText('Descrição'), {
+        target: { value: 'Tarde da noite' },
+      })
+      fireEvent.change(screen.getByLabelText('Valor'), {
+        target: { value: '50,00' },
+      })
+      fireEvent.submit(screen.getByTestId('form-lancamento'))
+
+      await waitFor(() =>
+        expect(postBody(fetchMock).body.purchase_date).toBe('2026-07-31'),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('mostra o erro da API no submit', async () => {
     mockRoutes({
       status: 422,

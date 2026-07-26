@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { parseBRL } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
+import { todayInTeresina } from '../lib/dates'
 
 export function NovoItemForm({
   debtId,
@@ -38,7 +39,7 @@ export function NovoItemForm({
         body: JSON.stringify({
           description: descricao,
           amount_cents: centavos,
-          incurred_on: data || new Date().toISOString().slice(0, 10),
+          incurred_on: data || todayInTeresina(),
         }),
       })
       setDescricao('')
