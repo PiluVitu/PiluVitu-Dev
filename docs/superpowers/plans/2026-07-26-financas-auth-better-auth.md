@@ -1154,7 +1154,34 @@ Esperado: **todos** os arquivos verdes, incluindo os 7 arquivos de teste de rota
 Run: `pnpm --filter @piluvitu/financas lint`
 Esperado: sem erros.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 12: Medir o bundle e os avisos de `node:` — movido da Task 2**
+
+Esta verificação estava na Task 2 e **não media nada lá**: nenhum arquivo de
+`src/` importava `lib/auth`, então o `better-auth` era removido inteiro por
+tree-shaking e nunca entrava no grafo publicado. Um teto de tamanho sobre um
+bundle que exclui o código medido não prova nada, e a ausência dos avisos de
+`node:crypto`/`node:async_hooks` também não provava que o `nodejs_compat`
+os silenciava — eles não podiam aparecer de qualquer forma.
+
+Aqui é diferente: a Step 4 fez `index.ts` importar `getAuth`, então o
+`better-auth` **está** no bundle e os dois checks passam a ter sujeito.
+
+Run: `pnpm --filter @piluvitu/financas exec wrangler deploy --dry-run --outdir=/tmp/financas-bundle`
+
+Esperado:
+
+1. `Total Upload` na casa de **~330 KiB gzip** (medido no spike com o
+   `better-auth` incluído), bem abaixo do teto de 3 MB do Worker. Se vier
+   perto de 27 KiB, o `better-auth` continua fora do grafo — a Step 4 não
+   funcionou, e o resto desta task é fachada.
+2. **É aqui que o `nodejs_compat` finalmente é testável.** O `better-auth` é
+   a única origem de imports `node:` (`node:async_hooks`, `node:crypto`,
+   `node:http`); nenhum arquivo de `src/` importa `node:` nada. Registre no
+   relatório o que o comando de fato imprimiu — com a flag ligada, os avisos
+   devem sumir. Se aparecerem mesmo assim, ou se o build falhar, isso é um
+   achado sobre a plataforma: **relate, não contorne**.
+
+- [ ] **Step 13: Commit**
 
 ```bash
 git add apps/financas/src/lib/session.ts apps/financas/src/lib/session.test.ts apps/financas/src/index.ts apps/financas/src/index.test.ts apps/financas/wrangler.jsonc apps/financas/.dev.vars.example apps/financas/worker-configuration.d.ts
