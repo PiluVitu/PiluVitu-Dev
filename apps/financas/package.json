@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@piluvitu/tools": "workspace:*",
+    "better-auth": "1.6.25",
     "hono": "^4.12.32"
   },
   "devDependencies": {
