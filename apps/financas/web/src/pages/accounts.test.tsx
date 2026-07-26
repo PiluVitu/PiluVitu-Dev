@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AccountsPage } from './accounts'
 
@@ -37,6 +43,36 @@ function mockFetch(body: unknown, status = 200) {
     'fetch',
     vi.fn().mockResolvedValue({ status, json: async () => body }),
   )
+}
+
+/**
+ * GET /api/accounts devolve `initial` na primeira chamada e `depois` (ou
+ * `initial` de novo) nas seguintes — é o que permite testar "criei a conta e
+ * ela aparece depois do recarregar" sem reimplementar o backend.
+ */
+function mockRoutes(opts: {
+  initial: unknown[]
+  depois?: unknown[]
+  post?: { status: number; body: unknown }
+}) {
+  let getCount = 0
+  const fn = vi.fn(async (_path: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const post = opts.post ?? {
+        status: 201,
+        body: { ok: true, data: { id: 'nova' }, notifications: [] },
+      }
+      return { status: post.status, json: async () => post.body }
+    }
+    getCount++
+    const data = getCount === 1 ? opts.initial : (opts.depois ?? opts.initial)
+    return {
+      status: 200,
+      json: async () => ({ ok: true, data, notifications: [] }),
+    }
+  })
+  vi.stubGlobal('fetch', fn)
+  return fn
 }
 
 afterEach(() => {
@@ -94,5 +130,73 @@ describe('AccountsPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('acesso negado'),
     )
+  })
+
+  it('cria uma conta nova, posta o corpo certo e ela aparece na listagem apos recarregar', async () => {
+    const novaConta = {
+      id: 'nova',
+      name: 'Caixinha',
+      scope: 'PF',
+      kind: 'savings',
+      closing_day: null,
+      due_day: null,
+      balance_cents: 0,
+    }
+    const fetchMock = mockRoutes({ initial: [], depois: [novaConta] })
+
+    render(<AccountsPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Nome'), {
+      target: { value: 'Caixinha' },
+    })
+    fireEvent.change(screen.getByLabelText('Tipo'), {
+      target: { value: 'savings' },
+    })
+    fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+    await waitFor(() =>
+      expect(screen.getByText('Caixinha')).toBeInTheDocument(),
+    )
+
+    const post = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === 'POST',
+    )
+    expect(post![0]).toBe('/api/accounts')
+    expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+      name: 'Caixinha',
+      scope: 'PF',
+      kind: 'savings',
+    })
+  })
+
+  it('cartao sem dia de fechamento mostra erro legivel e nao chama a API', async () => {
+    const fetchMock = mockRoutes({ initial: [] })
+
+    render(<AccountsPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Nome'), {
+      target: { value: 'Nubank cartao' },
+    })
+    fireEvent.change(screen.getByLabelText('Tipo'), {
+      target: { value: 'credit_card' },
+    })
+    // so aparece quando kind === 'credit_card'
+    expect(screen.getByLabelText('Dia de fechamento')).toBeInTheDocument()
+    fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('fechamento'),
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit)?.method === 'POST',
+      ),
+    ).toBe(false)
   })
 })
