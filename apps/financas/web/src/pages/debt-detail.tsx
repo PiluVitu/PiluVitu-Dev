@@ -82,20 +82,32 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   const [formError, setFormError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
-  async function carregar() {
+  // `vivo` opcional para o chamador poder barrar o setState se uma resposta
+  // obsoleta chegar depois de trocar de divida — mesma guarda de
+  // pages/accounts.tsx:16-30. Reusado sem guarda no recarregar pós-envio,
+  // onde a chamada é síncrona ao clique do usuário, não a um efeito.
+  async function carregar(vivo: () => boolean = () => true) {
     const [d, contas] = await Promise.all([
       api<DebtDetailView>(`/api/debts/${debtId}`),
       api<AccountView[]>('/api/accounts'),
     ])
+    if (!vivo()) return
     setDetail(d)
     setAccounts(contas)
     setAccountId((atual) => atual || contas[0]?.id || '')
   }
 
   useEffect(() => {
-    carregar().catch((e: unknown) =>
-      setLoadError(e instanceof ApiError ? e.message : String(e)),
-    )
+    // Sem isso, uma resposta lenta da divida anterior pode sobrescrever a
+    // tela depois que o usuario ja trocou de divida (ou desmontou a pagina)
+    // — App.tsx troca só a prop debtId, não desmonta o componente.
+    let vivo = true
+    carregar(() => vivo).catch((e: unknown) => {
+      if (vivo) setLoadError(e instanceof ApiError ? e.message : String(e))
+    })
+    return () => {
+      vivo = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debtId])
 

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -282,5 +283,59 @@ describe('DebtDetailPage', () => {
         'O banco recusou: alocacao excede o valor do item. Nada foi gravado — recarregue a divida.',
       ),
     )
+  })
+
+  it('descarta resposta obsoleta quando debtId muda antes dela chegar', async () => {
+    // A troca de divida no App (App.tsx) so troca a prop debtId — nao
+    // desmonta o componente. Uma resposta lenta da divida antiga chegando
+    // DEPOIS da nova nao pode sobrescrever a tela que o usuario ja navegou.
+    const detailD2 = {
+      debt: { ...detail.debt, id: 'd2', title: 'Banco' },
+      items: [
+        {
+          item_id: 'j1',
+          debt_id: 'd2',
+          description: 'Cadeira',
+          amount_cents: 100000,
+          allocated_cents: 0,
+          remaining_cents: 100000,
+          is_settled: 0,
+        },
+      ],
+      payments: [],
+    }
+
+    let resolveD1: (value: unknown) => void = () => {}
+    const d1Pending = new Promise((resolve) => {
+      resolveD1 = resolve
+    })
+
+    const fn = vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'POST')
+        return ok({ payment: {}, transaction: null }, 201)
+      if (path.startsWith('/api/accounts')) return ok(contas)
+      if (path === '/api/debts/d1') return d1Pending
+      if (path === '/api/debts/d2') return ok(detailD2)
+      throw new Error(`rota nao mockada: ${path}`)
+    })
+    vi.stubGlobal('fetch', fn)
+
+    const { rerender } = render(<DebtDetailPage debtId="d1" />)
+
+    rerender(<DebtDetailPage debtId="d2" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('item-j1')).toBeInTheDocument(),
+    )
+
+    // A resposta atrasada de d1 chega só agora — depois que a tela já
+    // mostra d2. Sem a guarda de unmount/stale, isso reescreveria o estado.
+    await act(async () => {
+      resolveD1(ok(detail))
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(screen.queryByTestId('item-i1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('item-j1')).toBeInTheDocument()
   })
 })
