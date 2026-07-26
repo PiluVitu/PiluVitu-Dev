@@ -1,5 +1,6 @@
 .PHONY: dev dev-web dev-api storybook build-api build-cli test test-go test-web test-e2e lint clean stop \
-        compose-up compose-down tunnel-up tunnel-down tunnel-logs
+        compose-up compose-down tunnel-up tunnel-down tunnel-logs \
+        backup-financas backup-financas-test
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -51,6 +52,16 @@ lint:
 
 clean:
 	rm -rf bin/ apps/api/api apps/api/piluvitu
+
+# --- Backup do D1 (finanças) ---
+# Export lógico de produção, comprimido, com rotação. Só LÊ o D1.
+# Destino default ~/Backups/financas, 30 arquivos; ajuste por env:
+#   FINANCAS_BACKUP_DIR=/outro/lugar FINANCAS_BACKUP_KEEP=7 make backup-financas
+backup-financas:
+	cd apps/financas && ./scripts/backup-d1.sh
+
+backup-financas-test:
+	cd apps/financas && ./scripts/backup-d1.test.sh
 
 # --- Docker Compose ---
 compose-up:
