@@ -137,7 +137,16 @@ export function createAuth(env: AuthBindings) {
       // window em SEGUNDOS (não ms — unidade do próprio Better Auth).
       // 60s/20 requisições é folgado pro uso real (usuário único, SPA
       // chamando get-session em navegação normal) e aperta um script sem
-      // sessão que fica batendo em sign-in/social ou get-session.
+      // sessão nenhuma.
+      //
+      // ⚠️ Este par NÃO é o que governa `/sign-in/*`. O Better Auth tem uma
+      // regra especial embutida por prefixo de rota que tem precedência
+      // sobre esta config: `/sign-in` roda com window 10 / max 3
+      // (rate-limiter/index.mjs:370-383, aplicada em :288-291). Ou seja, o
+      // sign-in social é protegido MAIS apertado do que os números acima, e
+      // não por eles — o que este bloco de fato cobre é o resto
+      // (`get-session`, `callback`, etc.). Não reescrever esses valores
+      // achando que afrouxam ou apertam o login.
       window: 60,
       max: 20,
       // 'database' pediria uma tabela `rateLimit` própria — migration 0003

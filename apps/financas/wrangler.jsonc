@@ -11,12 +11,17 @@
   "compatibility_date": "2026-07-01",
   // Medido (spike S3): NÃO é obrigatório para este stack subir ou rodar
   // nesta compatibility_date — node:crypto e node:async_hooks já são
-  // módulos nativos do runtime aqui. O flag só silencia 2 warnings de
-  // build do wrangler ("wasn't found on the file system but is built
-  // into node") e protege contra o comportamento não ser garantido em
-  // compatibility_date/versões de workerd futuras. Não pesa no bundle
-  // (resolução de módulo nativo, não polyfill JS — medido: mesmo
-  // gzip com e sem o flag).
+  // módulos nativos do runtime aqui. O flag silencia 2 warnings de build
+  // do wrangler ("wasn't found on the file system but is built into
+  // node") e protege contra o comportamento não ser garantido em
+  // compatibility_date/versões de workerd futuras.
+  //
+  // ⚠️ O efeito desta flag NÃO foi reconfirmado dentro deste pacote. Até a
+  // Task 3, nada em src/ importa src/lib/auth.ts, então o better-auth
+  // (única fonte de imports `node:` aqui) sai inteiro no tree-shaking e os
+  // 2 warnings não apareceriam NEM COM NEM SEM a flag — um dry-run limpo
+  // não prova nada sobre ela. A medição de verdade (tamanho do bundle e
+  // presença dos warnings) é a Step 12 da Task 3, com o import ligado.
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
