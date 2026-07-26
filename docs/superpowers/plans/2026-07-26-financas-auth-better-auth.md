@@ -76,15 +76,20 @@ Depois, no final do arquivo, adicionar:
 
 ```ts
 describe('migration 0002 — STRICT, FK cascade, UNIQUE', () => {
-  it('STRICT recusa INTEGER em coluna TEXT (user.createdAt)', async () => {
+  // CORRIGIDO NA EXECUÇÃO (medido contra Miniflare, 2026-07-26): coluna TEXT
+  // em tabela STRICT NÃO rejeita INTEGER — converte (12345 vira '12345.0'),
+  // conforme https://sqlite.org/stricttables.html. A direção que realmente
+  // rejeita é TEXT não-numérico em coluna INTEGER, que é a que a suíte do
+  // 0001 já usa. Provar STRICT pela direção errada seria um teste vazio.
+  it('STRICT recusa TEXT não-numérico em coluna INTEGER (user.emailVerified)', async () => {
     await expect(
       DB.prepare(
         `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
-         VALUES ('u-strict', 'Teste', 'teste@exemplo.com', 1, ?, ?)`,
+         VALUES ('u-strict', 'Teste', 'teste@exemplo.com', ?, ?, ?)`,
       )
-        .bind(12345, NOW)
+        .bind('nao-e-numero', NOW, NOW)
         .run(),
-    ).rejects.toThrow(/cannot store INTEGER value in TEXT column/)
+    ).rejects.toThrow(/cannot store TEXT value in INTEGER column/)
   })
 
   it('apagar o user cascateia para session e account', async () => {
