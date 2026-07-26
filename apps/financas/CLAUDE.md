@@ -307,7 +307,32 @@ Segundo pacote pnpm da frente (`@piluvitu/financas-web`), **Vite + React 19 + TS
 - **Testes:** Vitest + `jsdom` + Testing Library (`@testing-library/react` + `user-event`), colocation (`accounts.test.tsx` ao lado de `accounts.tsx`, etc.). `src/test/setup.ts` importa `@testing-library/jest-dom/vitest` e roda `cleanup()` num `afterEach` global — **obrigatório porque `vite.config.ts` não liga `globals: true`**; sem esse setup, o DOM de um teste vaza pro próximo. `vite.config.ts` roda `test.environment: 'jsdom'` no mesmo arquivo de config do build (`defineConfig` de `vitest/config`, não de `vite` puro) — um `vite.config.ts` só para as duas coisas.
 - **`optimizeDeps: { exclude: ['@piluvitu/tools'] }`** no `vite.config.ts`: `@piluvitu/tools` é fonte TS linkada pelo workspace pnpm, não um pacote publicado com `dist/` — sem o `exclude`, o pré-bundle do Vite tenta tratar como dependência normal e falha tentando resolver `.ts` fora de um projeto TS.
 - **Dev:** `pnpm --filter @piluvitu/financas-web dev` sobe o Vite em `:5273` com `server.proxy['/api'] → http://127.0.0.1:8787` (onde `wrangler dev` escuta) — evita CORS em desenvolvimento sem precisar de header nenhum. Em produção não existe proxy: o Worker serve os dois.
-- **45 testes** (8 arquivos) cobrindo as 5 telas + `api.ts` + `App.tsx` (roteamento por hash) + `lib/dates.ts`.
+- **56 testes** (10 arquivos) cobrindo as 5 telas + `api.ts` + `App.tsx` (roteamento por hash + Gate autenticado) + `lib/dates.ts` + `Gate.tsx`.
+
+### Login — cliente Better Auth + `Gate.tsx` (Task 4)
+
+Sem o Cloudflare Access (saiu na Task 3), o host inteiro é público — quem baixa
+o JS da SPA já está "dentro" antes de qualquer verificação de sessão. `Gate.tsx`
+é o que impede conteúdo protegido de renderizar, mesmo por um frame, antes da
+sessão ser confirmada.
+
+- **`src/auth-client.ts`** — `createAuthClient()` **sem** `baseURL`: sem
+  argumento, resolve pra `window.location.origin + '/api/auth'`, o mesmo host
+  onde o Worker monta o handler do Better Auth (Task 3) — mesma lógica de
+  `api.ts` não ter base URL configurável. O client seta `credentials: 'include'`
+  sozinho. Exporta `authClient` e o desestruturado `{ useSession, signIn,
+signOut }`, únicos pontos de entrada pro resto da SPA.
+- **`src/Gate.tsx`** — `Gate({ children })` decide entre 3 estados, **nessa
+  ordem, que é a própria guarda**:
+  1. `isPending` (checando sessão) → `<p aria-busy="true">carregando…</p>`, nada mais. **`isPending` é testado ANTES de `!sessao`** de propósito: o primeiro render de `useSession()` é sempre `isPending: true` — testar a ausência de sessão primeiro piscaria a tela de login pra quem já está logado, mesmo que por um frame.
+  2. `!sessao` (sem sessão confirmada) → tela de login: `<h1>Finanças</h1>` + (se houver `?error=` na URL) `<p role="alert">` com `mensagemDeErro(codigo)` + botão "Entrar com Google" chamando `signIn.social({ provider: 'google', callbackURL: '/', errorCallbackURL: '/login' })`.
+  3. sessão presente → `<>{children}</>`.
+  - **Gate nunca desce por `error` do átomo, só por `!sessao`.** O átomo de sessão do Better Auth (nanostores) preserva o `data` anterior quando um fetch falha com erro que não é 401 (`session-atom.mjs`) — gatear por `error` deslogaria o dono à toa num blip de rede passageiro. Contrapartida aceita (documentada em `Gate.tsx` e no self-review da Task 4): não existe um terceiro estado visual de "falha ao verificar, tente de novo" — na primeira carga da vida com erro de rede (não 401), `data` começa `null` e continua `null`, e o usuário vê a MESMA tela de login normal (pode simplesmente clicar de novo).
+  - **`errorCallbackURL: '/login'` é PATH, não hash (`'/#/login'`).** O redirect de bloqueio do Worker (`assertEmailPermitido`, Task 2) monta `${errorCallbackURL}?error=nao_autorizado` — com hash, a query cairia dentro do fragmento e `window.location.search` (o que `Gate.tsx` lê pra montar a mensagem de erro) ficaria vazio.
+  - **`mensagemDeErro(codigo: string | null): string | null`** — `null` se não há `?error=`; frase amigável fixa pra `'nao_autorizado'` (o `CODIGO_BARRADO` do Worker, Task 2 — replicado como **literal**, a SPA não importa através da fronteira de bundle, mesma convenção de `lib/dates.ts`); genérica com o código bruto pra qualquer outro valor (cobre o slug que o Better Auth gera a partir da mensagem lançada, `result.error.split(' ').join('_')`).
+- **`App.tsx`** — `App()` virou só `<Gate><AppShell/></Gate>`; o corpo antigo (roteamento por hash + as 5 telas) é `AppShell`, que agora lê `useSession()` pra mostrar o e-mail + botão "Sair" (`signOut()`) num `<header>` acima do `<nav>`.
+- ⚠️ **Armadilha de teste, MEDIDA: um client real do Better Auth (`createAuthClient` com `customFetchImpl`) criado UMA vez por arquivo via `vi.mock` (hoisted) "vaza" sessão entre testes.** O átomo de sessão do nanostores (`node_modules/better-auth/dist/client/session-atom.mjs`) só refaz fetch no PRIMEIRO `listen()`/mount de uma instância "inativa"; no unmount ela fica "ativa" por mais `STORE_UNMOUNT_DELAY = 1000ms` (constante interna do `nanostores`, `lifecycle/index.js`) antes de resetar. Testes que desmontam/remontam mais rápido que 1s (o normal em Vitest) reusam o `data` do fetch anterior em vez de rebuscar — sintoma: um teste que configura `fetchFake.mockResolvedValue(<sessão válida>)` continua vendo a tela de login, porque o átomo já tinha `data: null` fixado por um teste anterior e nunca dispara um fetch novo. `Gate.test.tsx` resolve criando um client (um átomo) **novo por teste**: `vi.doMock` (chamável de novo, ao contrário do `vi.mock` hoisted que roda a factory uma vez só) + `vi.resetModules()` antes de reimportar `./Gate` dinamicamente dentro de cada `test()`. Qualquer teste futuro que monte `Gate`/outro consumidor de `useSession()` mais de uma vez no mesmo arquivo deve seguir o mesmo padrão, não `vi.mock` hoisted simples.
+- ⚠️ **`DividasPage` não tem gate de "Carregando…" antes do `<h1>` (ao contrário de `AccountsPage`/`CommitmentsPage`) — `getByText('Dívidas')` em teste é ambíguo** porque o `<nav>` sempre mostra `<a href="#/dividas">Dívidas</a>` ao lado do `<h1>Dívidas</h1>`. `App.test.tsx` usa `getByRole('heading', { name: ... })` pras 3 telas com link de nav homônimo — também torna o teste real (sem gate de loading, `getByText` puro podia "passar" batendo só no link do nav antes do fetch assíncrono resolver, sem provar que a página certa montou).
 
 ## CI
 
@@ -357,13 +382,13 @@ O script builda o SPA antes (`build:web`) e roda `wrangler deploy` em seguida �
 
 ### 5. Checklist de verificação manual pós-deploy
 
-⚠️ **Os três primeiros itens abaixo descrevem o fluxo do Cloudflare Access (removido na Task 3) e ainda não foram reescritos para o Better Auth** — a UI de login própria é escopo da Task 4 (SPA: login e guarda), ainda não implementada nesta task. Não usar como estão até a Task 4/5 atualizar este checklist.
+⚠️ **Os três primeiros itens já refletem o fluxo do Better Auth implementado na Task 4 (`Gate.tsx`/`auth-client.ts`), mas só ficam executáveis de verdade depois da Task 5** publicar `BETTER_AUTH_SECRET`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` em produção (`wrangler secret put`) e cadastrar o OAuth Client no Google Cloud Console com o redirect URI de produção — sem isso o login social fica indisponível mesmo com o código certo publicado.
 
 Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de cookie/JS que importam aqui):
 
-- [ ] ~~`https://financas.piluvitu.com.br` redireciona para o login do Google do Access (não abre direto).~~ — obsoleto, ver ⚠️ acima.
-- [ ] ~~Login com `paulo.tspi@gmail.com` entra e mostra a tela **Contas**.~~ — reescrever para o fluxo de login do Better Auth (Task 4).
-- [ ] ~~Login com outra conta Google é **negado** pelo Access.~~ — reescrever: agora é `email_not_allowed` (403) via `decidirAcesso`, ou bloqueio no próprio cadastro via `assertEmailPermitido` (302 `?error=nao_autorizado`).
+- [ ] `https://financas.piluvitu.com.br` abre a SPA **sem** pedir login antes de baixar o JS (o host inteiro é público desde a Task 3 — o Access saiu) — mas a tela mostrada é a de login (`<h1>Finanças</h1>` + botão "Entrar com Google"), **nunca** nenhuma tela protegida, nem por um frame, antes de `Gate` confirmar sessão.
+- [ ] Login com `paulo.tspi@gmail.com` entra e mostra a tela **Contas**, com o e-mail no cabeçalho e um botão **Sair**.
+- [ ] Login com outra conta Google é **negado**: redireciona pra `/login?error=nao_autorizado` (bloqueio no cadastro via `assertEmailPermitido`, camada 1) e `Gate.tsx` mostra "Esta conta do Google não tem acesso a este aplicativo." em `role="alert"`. Se a allowlist for trocada depois de uma sessão já existir pra um e-mail não permitido, a camada 2 (`decidirAcesso`, Task 3) barra a cada request com `403 email_not_allowed` — não é redirecionado pro login, as chamadas `/api/*` simplesmente falham.
 - [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://financas.piluvitu.com.br/api/health` devolve **200** (rota pública, sem guarda — ver `isRotaDeAuth`/exceção em `src/index.ts`; devolver 401 aqui seria bug, não o oposto de antes).
 - [ ] `index.html` e os assets carregam sem erro de CSP/404 no console (Static Assets servindo `web/dist`).
 - [ ] Recarregar em `#/comprometido` com F5 volta pra mesma tela (prova o `not_found_handling: single-page-application`).

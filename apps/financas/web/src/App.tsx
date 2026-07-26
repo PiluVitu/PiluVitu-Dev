@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { signOut, useSession } from './auth-client'
+import { Gate } from './Gate'
 import { todayInTeresina } from './lib/dates'
 import { AccountsPage } from './pages/accounts'
 import { CommitmentsPage } from './pages/commitments'
@@ -21,7 +23,8 @@ export function competenciaAtual(now: Date = new Date()): string {
   return todayInTeresina(now).slice(0, 7)
 }
 
-export function App() {
+function AppShell() {
+  const { data: sessao } = useSession()
   const hash = useHash()
   const debtId = hash.startsWith('#/dividas/')
     ? hash.slice('#/dividas/'.length)
@@ -29,6 +32,10 @@ export function App() {
 
   return (
     <>
+      <header>
+        <span>{sessao?.user.email}</span>
+        <button onClick={() => signOut()}>Sair</button>
+      </header>
       <nav>
         <a href="#/contas">Contas</a>
         <a href="#/dividas">Dívidas</a>
@@ -47,5 +54,13 @@ export function App() {
         <AccountsPage />
       )}
     </>
+  )
+}
+
+export function App() {
+  return (
+    <Gate>
+      <AppShell />
+    </Gate>
   )
 }
