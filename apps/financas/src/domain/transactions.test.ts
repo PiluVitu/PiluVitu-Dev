@@ -248,6 +248,33 @@ describe('createTransfer', () => {
       }),
     ).rejects.toThrow('valor da transferencia deve ser positivo')
   })
+
+  it('to_account_id inexistente rejeita o batch inteiro e nao deixa perna orfa', async () => {
+    // Este teste ataca o MESMO call site do createTransfer (FK em accounts,
+    // nao trigger de outra tabela) — diferente da cobertura de rollback de
+    // schema.test.ts, que mede o motor do D1 via debt_payment_allocations.
+    // Se um dia db.batch([...]) virar dois .run() sequenciais por engano,
+    // este teste (e so este) pega: a perna da conta que existe ficaria
+    // gravada sozinha.
+    const de = await contaCorrente('Origem perna orfa', 500000)
+
+    await expect(
+      createTransfer(env.DB, {
+        from_account_id: de.id,
+        to_account_id: 'conta-que-nao-existe',
+        amount_cents: 1000,
+        date: '2026-07-20',
+        description: 'destino invalido',
+      }),
+    ).rejects.toThrow()
+
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE account_id = ?',
+    )
+      .bind(de.id)
+      .all()
+    expect(results).toHaveLength(0)
+  })
 })
 
 describe('listTransactions', () => {
