@@ -105,6 +105,36 @@ describe('rotas de lancamentos', () => {
     expect(body.data.inbound.transfer_id).toBe(body.data.transfer_id)
   })
 
+  it('POST /api/transfers para conta inexistente devolve 422 com mensagem legivel, sem texto cru do D1', async () => {
+    // createTransfer nao pre-valida existencia das contas — a FK do schema
+    // e quem barra, e o D1 devolve algo como "D1_ERROR: FOREIGN KEY
+    // constraint failed: SQLITE_CONSTRAINT_FOREIGNKEY". Isso nunca pode
+    // chegar cru pro usuario (nem o "D1_ERROR:", nem o nome da constraint).
+    const de = await createAccount(env.DB, {
+      name: 'Origem transfer fantasma',
+      scope: 'PF',
+      kind: 'checking',
+      opening_balance_cents: 500000,
+    })
+    const res = await post('/api/transfers', {
+      from_account_id: de.id,
+      to_account_id: 'conta-que-nao-existe',
+      amount_cents: 1000,
+      date: '2026-07-20',
+      description: 'PIX pra ninguem',
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: Array<{ code: string; message: string }>
+    }
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    const msg = body.notifications[0].message
+    expect(msg).not.toMatch(/D1_ERROR|SQLITE_CONSTRAINT|FOREIGN KEY/i)
+    expect(msg.length).toBeGreaterThan(0)
+  })
+
   it('GET /api/transactions filtra por account_id e periodo', async () => {
     const acc = await createAccount(env.DB, {
       name: 'Conta rota extrato',

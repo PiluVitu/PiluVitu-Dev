@@ -1,4 +1,5 @@
 import { nowIsoUtc } from '../lib/dates'
+import { friendlyConstraintMessage, logConstraintError } from '../lib/errors'
 import { newId } from '../lib/ids'
 import type { Transaction } from './transactions'
 
@@ -489,10 +490,14 @@ export async function listDebts(
 }
 
 // trg_alloc_item_teto / trg_alloc_pagamento_teto abortam com
-// SQLITE_CONSTRAINT_TRIGGER e o batch() inteiro reverte.
+// SQLITE_CONSTRAINT_TRIGGER e o batch() inteiro reverte. A mensagem crua do
+// D1 (ex.: "D1_ERROR: alocacao excede o valor do item: SQLITE_CONSTRAINT_
+// TRIGGER") fica só no log — o usuário recebe a versão curada.
 function translateD1Error(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err)
-  if (message.includes('SQLITE_CONSTRAINT_TRIGGER'))
-    return new OverAllocationError(message)
+  if (message.includes('SQLITE_CONSTRAINT_TRIGGER')) {
+    logConstraintError('payDebt', message)
+    return new OverAllocationError(friendlyConstraintMessage(message))
+  }
   return err instanceof Error ? err : new Error(message)
 }

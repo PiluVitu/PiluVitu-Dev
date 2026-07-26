@@ -197,6 +197,11 @@ describe('rotas de dividas — erros de negocio', () => {
     expect(res.status).toBe(422)
     expect(res.body.ok).toBe(false)
     expect(res.body.notifications[0].code).toBe('over_allocation')
+    // A mensagem do gatilho SQLITE_CONSTRAINT_TRIGGER e curada — nunca o
+    // texto cru do D1 (que incluiria "D1_ERROR:"/"SQLITE_CONSTRAINT").
+    const msg = res.body.notifications[0].message as string
+    expect(msg).not.toMatch(/D1_ERROR|SQLITE_CONSTRAINT/i)
+    expect(msg.length).toBeGreaterThan(0)
 
     const pagamentos = await env.DB.prepare(
       'SELECT COUNT(*) AS n FROM debt_payments',

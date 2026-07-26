@@ -62,6 +62,31 @@ describe('rotas de contas', () => {
     expect(body.notifications[0].message).toContain('closing_day')
   })
 
+  it('POST /api/accounts com closing_day fora de 1..31 devolve 422 com mensagem legivel, sem texto cru do D1', async () => {
+    // createAccount so pre-valida presenca de closing_day/due_day pra
+    // credit_card, nao o RANGE — o CHECK do schema (closing_day BETWEEN 1
+    // AND 31) e quem barra isso, e o D1 devolveria algo como "D1_ERROR:
+    // CHECK constraint failed: closing_day BETWEEN 1 AND 31: SQLITE_
+    // CONSTRAINT_CHECK". Nome de coluna nunca pode vazar pro usuario.
+    const res = await post('/api/accounts', {
+      name: 'Cartao com fechamento invalido',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 50,
+      due_day: 5,
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: Array<{ code: string; message: string }>
+    }
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    const msg = body.notifications[0].message
+    expect(msg).not.toMatch(/D1_ERROR|SQLITE_CONSTRAINT|CHECK constraint/i)
+    expect(msg).not.toContain('closing_day BETWEEN')
+  })
+
   it('GET /api/accounts?scope=PJ filtra e devolve balance_cents', async () => {
     await post('/api/accounts', {
       name: 'Inter PJ rota',

@@ -8,6 +8,7 @@ import {
   type Scope,
 } from '../domain/accounts'
 import { errJson, okJson } from '../lib/envelope'
+import { friendlyConstraintMessage, logConstraintError } from '../lib/errors'
 
 type Env = { Bindings: { DB: D1Database } }
 
@@ -52,7 +53,12 @@ accountsRoutes.post('/accounts', async (c) => {
       e instanceof Error &&
       /SQLITE_CONSTRAINT|constraint failed/i.test(e.message)
     ) {
-      return errJson(422, 'constraint_violation', e.message)
+      logConstraintError('POST /accounts', e.message)
+      return errJson(
+        422,
+        'constraint_violation',
+        friendlyConstraintMessage(e.message),
+      )
     }
     throw e
   }

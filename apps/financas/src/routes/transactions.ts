@@ -6,6 +6,7 @@ import {
   type NewTransaction,
 } from '../domain/transactions'
 import { errJson, okJson } from '../lib/envelope'
+import { friendlyConstraintMessage, logConstraintError } from '../lib/errors'
 
 type Env = { Bindings: { DB: D1Database } }
 
@@ -53,7 +54,14 @@ transactionsRoutes.post('/transactions', async (c) => {
     return okJson(await createTransaction(c.env.DB, body), 201)
   } catch (e) {
     if (e instanceof RangeError) return errJson(422, 'invalid_entry', e.message)
-    if (isConstraint(e)) return errJson(422, 'constraint_violation', e.message)
+    if (isConstraint(e)) {
+      logConstraintError('POST /transactions', e.message)
+      return errJson(
+        422,
+        'constraint_violation',
+        friendlyConstraintMessage(e.message),
+      )
+    }
     throw e
   }
 })
@@ -70,7 +78,14 @@ transactionsRoutes.post('/transfers', async (c) => {
   } catch (e) {
     if (e instanceof RangeError)
       return errJson(422, 'invalid_transfer', e.message)
-    if (isConstraint(e)) return errJson(422, 'constraint_violation', e.message)
+    if (isConstraint(e)) {
+      logConstraintError('POST /transfers', e.message)
+      return errJson(
+        422,
+        'constraint_violation',
+        friendlyConstraintMessage(e.message),
+      )
+    }
     throw e
   }
 })

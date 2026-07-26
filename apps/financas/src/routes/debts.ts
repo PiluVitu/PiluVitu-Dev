@@ -15,6 +15,7 @@ import type {
   DebtStatus,
 } from '../domain/debts'
 import { errJson, okJson } from '../lib/envelope'
+import { friendlyConstraintMessage, logConstraintError } from '../lib/errors'
 
 type Env = { Bindings: { DB: D1Database } }
 
@@ -40,8 +41,14 @@ function mapError(err: unknown): Response {
   if (err instanceof InvalidPaymentError)
     return errJson(err.code === 'not_found' ? 404 : 422, err.code, err.message)
   const message = err instanceof Error ? err.message : String(err)
-  if (message.includes('SQLITE_CONSTRAINT'))
-    return errJson(422, 'constraint_violation', message)
+  if (message.includes('SQLITE_CONSTRAINT')) {
+    logConstraintError('debts', message)
+    return errJson(
+      422,
+      'constraint_violation',
+      friendlyConstraintMessage(message),
+    )
+  }
   throw err
 }
 
