@@ -111,6 +111,77 @@ pnpm --filter @piluvitu/financas db:migrate:local
 pnpm --filter @piluvitu/financas db:migrate:remote
 ```
 
+## Backup do D1 (`scripts/backup-d1.sh`)
+
+Duas proteções diferentes, que cobrem falhas diferentes — nenhuma substitui a outra:
+
+| Mecanismo                  | Cobre                                           | Não cobre                                                               |
+| -------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| **Time Travel** (nativo)   | "apaguei/estraguei sem querer" dentro da janela | perder a conta Cloudflare; restaurar só uma tabela; levar o dado embora |
+| **`scripts/backup-d1.sh`** | tirar uma cópia de dentro da Cloudflare         | restaurar sozinho (o `.sql` é um dump, quem reimporta é uma pessoa)     |
+
+**Time Travel** é embutido e não precisa de configuração. Duas ressalvas que decidem quando ele serve: restaura o **banco inteiro** para um instante, nunca uma tabela ou linha, e é **destrutivo para tudo escrito depois** daquele ponto. A janela de retenção varia por plano — consultar em vez de supor:
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 time-travel info piluvitu-financas
+pnpm --filter @piluvitu/financas exec wrangler d1 time-travel restore piluvitu-financas --timestamp=2026-07-26T20:00:00Z
+```
+
+**O script** faz `wrangler d1 export --remote`, comprime e rotaciona. Só lê o D1.
+
+```bash
+make backup-financas        # exporta produção, comprime, rotaciona
+make backup-financas-test   # 22 testes, wrangler stubado, sem tocar a rede
+```
+
+| Variável               | Default              | Para quê                |
+| ---------------------- | -------------------- | ----------------------- |
+| `FINANCAS_BACKUP_DIR`  | `~/Backups/financas` | pasta de destino        |
+| `FINANCAS_BACKUP_KEEP` | `30`                 | quantos arquivos manter |
+| `FINANCAS_D1_NAME`     | `piluvitu-financas`  | nome do banco           |
+| `WRANGLER_BIN`         | `pnpm exec wrangler` | como invocar o wrangler |
+
+⚠️ **A rotação roda DEPOIS de existir um backup novo e válido — essa ordem é a regra inteira.** Rotacionando antes do export, toda execução que falha come o backup mais antigo: uma semana de rede ruim esvazia a pasta sem nunca ter gravado nada, e o modo de falha é silencioso (o script "roda todo dia", a pasta encolhe sozinha). Coberto por teste dedicado — três backups antigos + export que falha ⇒ os três continuam lá.
+
+Pelo mesmo motivo, o script **recusa em vez de aceitar** o que não dá para validar: export vazio, export sem `CREATE TABLE` (truncado) ou `.gz` que não passa no `gzip -t` saem com código diferente de zero, sem gravar nada e **sem rotacionar**. `FINANCAS_BACKUP_KEEP=0` sai com código 2 em vez de obedecer — apagaria o backup recém-criado junto com os antigos, e quem escreve `0` quase sempre queria "não rotacionar". O arquivo entra no destino por `mv` atômico, então nunca aparece pela metade.
+
+**R2 está fora de propósito.** Seria o destino natural (10 GB no free tier, mesmo provedor), mas cadastrar R2 exige verificação de cartão de crédito — exatamente o que tirou o Cloudflare Access deste módulo. O destino é o disco local; sincronizar a pasta com iCloud/Drive fica a critério de quem roda.
+
+**Restaurar** é reimportar o dump num banco vazio — não existe "restore" automático:
+
+```bash
+gzip -dc ~/Backups/financas/financas-20260726T213421Z.sql.gz > /tmp/restore.sql
+pnpm --filter @piluvitu/financas exec wrangler d1 execute piluvitu-financas --remote --file=/tmp/restore.sql
+```
+
+⚠️ **MEDIDO no dump real:** as tabelas do schema saem como `CREATE TABLE accounts (…)`, **sem** `IF NOT EXISTS` — só `d1_migrations` tem a cláusula. Reimportar por cima de um banco que já tem as tabelas falha na primeira delas. Restauração real é em banco vazio (ou depois de dropar), e é ato deliberado de uma pessoa — igual à migration. O lado bom de `d1_migrations` vir junto: restaurar num banco vazio recupera também o controle de quais migrations já rodaram, então o `migrations apply` seguinte não tenta reaplicar tudo.
+
+**Agendar diariamente** (macOS, `launchd` — `cron` também serve). Salvar como `~/Library/LaunchAgents/com.piluvitu.financas-backup.plist`, trocando `<CAMINHO-DO-REPO>`, e carregar com `launchctl load ~/Library/LaunchAgents/com.piluvitu.financas-backup.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key><string>com.piluvitu.financas-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-lc</string>
+      <string>cd <CAMINHO-DO-REPO>/apps/financas &amp;&amp; ./scripts/backup-d1.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+    <key>StandardOutPath</key><string>/tmp/financas-backup.log</string>
+    <key>StandardErrorPath</key><string>/tmp/financas-backup.err</string>
+  </dict>
+</plist>
+```
+
+`-lc` (login shell) não é detalhe: o `launchd` roda com um `PATH` mínimo, e sem isso o `pnpm` não é encontrado. Conferir o `/tmp/financas-backup.err` depois da primeira execução agendada — um backup que nunca rodou é indistinguível de um backup que rodou bem, até o dia em que faz falta.
+
+⚠️ **O `--remote` do export conta cota:** ele lê todas as linhas do banco. Irrelevante hoje — MEDIDO: o dump de produção inteiro dá 2,6 KB comprimido, com 7 linhas (o seed de categorias) —, mas vira consideração quando o histórico de lançamentos crescer, contra o teto diário de rows read do free tier (número documentado pela Cloudflare, não medido aqui; conferir no dashboard antes de agendar de hora em hora).
+
 ## Envelope de resposta
 
 Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null, "notifications": [{type,code,message,field?}] }`. Helpers em `src/lib/envelope.ts`: `okJson(data, status = 200)` e `errJson(status, code, message, field?)`. `notifications` nunca serializa como `null` — é `[]` quando vazio; `field` nunca serializa como `null` — a chave simplesmente some do JSON quando ausente.
