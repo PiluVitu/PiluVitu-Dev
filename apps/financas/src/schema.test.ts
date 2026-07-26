@@ -120,8 +120,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migration 0001 — tabelas', () => {
-  it('cria exatamente as 10 tabelas do modelo', async () => {
+describe('migrations 0001+0002 — tabelas', () => {
+  it('cria exatamente as 14 tabelas do modelo (10 do 0001 + 4 do better auth)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -132,6 +132,7 @@ describe('migration 0001 — tabelas', () => {
     ).all<{ name: string }>()
 
     expect(results.map((r) => r.name)).toEqual([
+      'account',
       'accounts',
       'categories',
       'debt_items',
@@ -141,7 +142,10 @@ describe('migration 0001 — tabelas', () => {
       'installment_plans',
       'installments',
       'payees',
+      'session',
       'transactions',
+      'user',
+      'verification',
     ])
   })
 })
@@ -456,5 +460,79 @@ describe('migration 0001 — seed de categorias', () => {
       { slug: 'das' },
       { slug: 'inss' },
     ])
+  })
+})
+
+describe('migration 0002 — STRICT, FK cascade, UNIQUE', () => {
+  // DESVIO DO BRIEF, MEDIDO: o brief original previa que uma coluna TEXT em
+  // tabela STRICT rejeitaria um INTEGER ('user.createdAt' recebendo 12345).
+  // MEDIDO contra o Miniflare local: o INSERT teve sucesso, e a coluna
+  // guardou '12345.0' (typeof 'text'). Isso bate com a regra documentada do
+  // SQLite para STRICT (https://sqlite.org/stricttables.html): coluna TEXT
+  // CONVERTE INTEGER/REAL para texto (equivalente a CAST(x AS TEXT)), não
+  // rejeita — só BLOB e a ausência de conversão numérica válida rejeitam.
+  // A direção que REALMENTE rejeita (e que a suíte do 0001 já usa, em
+  // 'STRICT recusa texto em coluna INTEGER') é TEXT não-numérico dentro de
+  // coluna INTEGER — trocado abaixo para provar STRICT de verdade nas
+  // tabelas novas, em vez de reafirmar uma premissa que o SQLite não segue.
+  it('STRICT recusa TEXT não-numérico em coluna INTEGER (user.emailVerified)', async () => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+         VALUES ('u-strict', 'Teste', 'teste@exemplo.com', ?, ?, ?)`,
+      )
+        .bind('nao-e-numero', NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/cannot store TEXT value in INTEGER column/)
+  })
+
+  it('apagar o user cascateia para session e account', async () => {
+    await DB.prepare(
+      `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+       VALUES ('u-cascade', 'Dono', 'dono@exemplo.com', 1, ?, ?)`,
+    )
+      .bind(NOW, NOW)
+      .run()
+    await DB.prepare(
+      `INSERT INTO session (id, expiresAt, token, createdAt, updatedAt, userId)
+       VALUES ('s-cascade', ?, 'token-cascade', ?, ?, 'u-cascade')`,
+    )
+      .bind(NOW, NOW, NOW)
+      .run()
+    await DB.prepare(
+      `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+       VALUES ('a-cascade', 'google-sub-1', 'google', 'u-cascade', ?, ?)`,
+    )
+      .bind(NOW, NOW)
+      .run()
+
+    await DB.prepare(`DELETE FROM user WHERE id = 'u-cascade'`).run()
+
+    const s = await DB.prepare(
+      `SELECT count(*) AS n FROM session WHERE userId = 'u-cascade'`,
+    ).first<{ n: number }>()
+    const a = await DB.prepare(
+      `SELECT count(*) AS n FROM account WHERE userId = 'u-cascade'`,
+    ).first<{ n: number }>()
+    expect(s?.n).toBe(0)
+    expect(a?.n).toBe(0)
+  })
+
+  it('email é UNIQUE em user', async () => {
+    await DB.prepare(
+      `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+       VALUES ('u-uniq-1', 'Um', 'duplicado@exemplo.com', 1, ?, ?)`,
+    )
+      .bind(NOW, NOW)
+      .run()
+
+    await expect(
+      DB.prepare(
+        `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+         VALUES ('u-uniq-2', 'Dois', 'duplicado@exemplo.com', 1, ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/UNIQUE constraint failed/)
   })
 })

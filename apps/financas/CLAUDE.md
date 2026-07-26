@@ -43,6 +43,37 @@ local: um `CHECK` solto seguido de mais uma coluna dá exatamente
 disso — mesma lógica, mesmas colunas, mesma ordem entre colunas, só a POSIÇÃO
 das linhas de CHECK mudou pro único lugar em que a gramática aceita.
 
+### `0002_better_auth.sql` — tabelas do Better Auth
+
+Migration independente do `better-auth` estar instalado/configurado (é só SQL):
+cria `user`, `session`, `account`, `verification` — as 4 tabelas core do Better
+Auth 1.6.25 (sem plugin), singular e **camelCase** (`emailVerified`, `userId`,
+`createdAt`), de propósito diferentes das 10 tabelas plural/snake_case do
+`0001` — o nome das colunas é contrato da biblioteca, não escolha do módulo.
+`session.userId`/`account.userId` têm `REFERENCES user(id) ON DELETE CASCADE`
+— apagar o `user` (single-user: só existe uma linha em regime normal) derruba
+sessões e vínculos OAuth junto.
+
+⚠️ **O tipo `date` do gerador (`npx auth@latest generate`) não existe em
+`STRICT`** — vira `unknown datatype`. Adaptado à mão para `TEXT` (ISO-8601 UTC)
+e `emailVerified` para `INTEGER` (`0|1`): seguro porque o adapter D1 do Better
+Auth roda com `supportsDates:false`/`supportsBooleans:false`, então o core já
+converte `Date→toISOString()` e `boolean→1|0` antes de escrever, e reverte na
+leitura.
+
+⚠️ **ACHADO, MEDIDO contra o Miniflare local: coluna `TEXT` em tabela `STRICT`
+NÃO rejeita `INTEGER` — ela CONVERTE.** `INSERT INTO user (..., createdAt, ...)
+VALUES (..., 12345, ...)` teve sucesso e gravou `'12345.0'` (`typeof` `text`).
+Bate com a regra documentada do SQLite (sqlite.org/stricttables.html): coluna
+`TEXT` aplica o equivalente a `CAST(x AS TEXT)` em `INTEGER`/`REAL` recebido,
+só rejeita `BLOB` ou o que não converte. A direção que REALMENTE rejeita (e
+que a suíte usa, tanto no `0001` quanto no `0002`) é `TEXT` não-numérico
+dentro de coluna `INTEGER` (`'STRICT recusa texto em coluna INTEGER'` no
+`0001`, `'STRICT recusa TEXT não-numérico em coluna INTEGER (user.emailVerified)'`
+no `0002`) — mensagem real `cannot store TEXT value in INTEGER column`. Vale
+para qualquer coluna `TEXT` nova (`0002` ou futura): não escrever teste que
+espera `STRICT` barrar número em coluna `TEXT`, porque o SQLite não barra.
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
