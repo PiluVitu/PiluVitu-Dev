@@ -1,6 +1,19 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* ⚠️ CÓPIA TEMPORÁRIA — estes tokens (o @custom-variant abaixo, o bloco @theme
+   e as variáveis de :root/.dark que ele referencia) foram movidos para
+   `packages/ui/src/styles.css` na Task 1 do plano
+   `docs/superpowers/plans/2026-07-26-financas-ui-design-system.md`, mas NÃO
+   puderam ser removidos daqui ainda: sem o `@import '@piluvitu/ui/styles.css'`
+   que a Task 2 vai ligar, o build do apps/web quebra com
+   `Cannot apply unknown utility class 'border-border'` — e o apps/web está em
+   produção na Vercel.
+
+   Enquanto esta nota existir, os tokens vivem em DOIS lugares. Token novo
+   adicionado só aqui vira divergência silenciosa com quem consome
+   @piluvitu/ui. Editou aqui, edite lá também — ou, melhor, termine a Task 2:
+   ela liga o @import e apaga este bloco. */
 @custom-variant dark (&:is(.dark *));
 
 @theme {
