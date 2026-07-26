@@ -80,6 +80,73 @@ describe('debts — cadastro e saldo por item', () => {
     expect(byId.get(mac.id)?.is_settled).toBe(0)
   })
 
+  it('addDebtItem reabre uma divida settled — sem isto o item novo ficava preso: nunca em commitments(), nunca mais quitavel', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Pai',
+      opened_at: '2026-07-01',
+    })
+    const item1 = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item 1',
+      amount_cents: 50000,
+      incurred_on: '2026-07-01',
+    })
+
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-05',
+      amount_cents: 50000,
+      account_id,
+      allocations: [{ item_id: item1.id, amount_cents: 50000 }],
+    })
+
+    const quitada = await env.DB.prepare(
+      'SELECT status, settled_at FROM debts WHERE id = ?',
+    )
+      .bind(debt.id)
+      .first<{ status: string; settled_at: string | null }>()
+    expect(quitada?.status).toBe('settled')
+    expect(quitada?.settled_at).not.toBeNull()
+
+    // Um item novo chega DEPOIS da divida ter sido dada como quitada — cai
+    // por fora do CENARIO comum, mas e exatamente o que a task 5 acusa:
+    // addDebtItem ignorava debt.status por completo.
+    const item2 = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item 2 (chegou depois da quitacao)',
+      amount_cents: 20000,
+      incurred_on: '2026-07-10',
+    })
+
+    const reaberta = await env.DB.prepare(
+      'SELECT status, settled_at FROM debts WHERE id = ?',
+    )
+      .bind(debt.id)
+      .first<{ status: string; settled_at: string | null }>()
+    expect(reaberta?.status).toBe('open')
+    expect(reaberta?.settled_at).toBeNull()
+
+    // E o item novo pode ser quitado de verdade: o UPDATE de quitacao do
+    // payDebt exige "AND status = 'open'", que so volta a valer por causa
+    // do reabrir acima — sem ele, este segundo payDebt gravaria o pagamento
+    // mas a divida ficaria presa em 'settled' para sempre.
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-15',
+      amount_cents: 20000,
+      account_id,
+      allocations: [{ item_id: item2.id, amount_cents: 20000 }],
+    })
+
+    const final = await env.DB.prepare('SELECT status FROM debts WHERE id = ?')
+      .bind(debt.id)
+      .first<{ status: string }>()
+    expect(final?.status).toBe('settled')
+  })
+
   it('nao cria item em divida inexistente', async () => {
     await expect(
       addDebtItem(env.DB, {
@@ -377,6 +444,67 @@ describe('debts — kind do pagamento e direcao da divida', () => {
       .bind(item.id)
       .first<DebtItemBalance>()
     expect(balance?.allocated_cents).toBe(50000)
+  })
+
+  it('recusa pagamento numa conta credit_card e nao persiste nada (nao suportado nesta fatia)', async () => {
+    // payDebt hardcoda settled_at = paid_on e bill_competence = null — regra
+    // que so vale para dinheiro/conta corrente. Num cartao isso apagaria a
+    // obrigacao futura de dentro de commitments() sem o dinheiro ter saido
+    // de fato (a compra ainda estaria na fatura em aberto).
+    const { payee_id } = await seedPai()
+    const cartao_id = newId()
+    const now = nowIsoUtc()
+    await env.DB.prepare(
+      `INSERT INTO accounts
+         (id, name, scope, kind, currency, closing_day, due_day, opening_balance_cents, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    )
+      .bind(
+        cartao_id,
+        'Nubank cartao',
+        'PF',
+        'credit_card',
+        'BRL',
+        25,
+        5,
+        0,
+        now,
+        now,
+      )
+      .run()
+
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Pai',
+      opened_at: '2026-07-01',
+    })
+    const item = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item de mil',
+      amount_cents: 100000,
+      incurred_on: '2026-07-01',
+    })
+
+    await expect(
+      payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        account_id: cartao_id,
+        allocations: [{ item_id: item.id, amount_cents: 30000 }],
+      }),
+    ).rejects.toMatchObject({
+      name: 'InvalidPaymentError',
+      code: 'invalid_account',
+    })
+
+    const counted = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM debt_payments',
+    ).first<{
+      n: number
+    }>()
+    expect(counted?.n).toBe(0)
   })
 
   it("kind='cash' sem account_id e recusado", async () => {

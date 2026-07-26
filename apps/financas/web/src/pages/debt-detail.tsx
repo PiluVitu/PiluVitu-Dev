@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
+import { todayInTeresina } from '../lib/dates'
 import type { AccountView } from './accounts'
 import { NovoItemForm } from './NovoItemForm'
 
@@ -94,8 +95,13 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
     ])
     if (!vivo()) return
     setDetail(d)
-    setAccounts(contas)
-    setAccountId((atual) => atual || contas[0]?.id || '')
+    // payDebt (domain/debts.ts) recusa pagamento em conta credit_card —
+    // pagar dívida no cartão é caso real, mas fora desta fatia (a compra
+    // entraria na fatura, não sairia do caixa agora). Filtrar aqui evita
+    // que o usuário escolha uma opção que o servidor vai sempre rejeitar.
+    const semCartao = contas.filter((a) => a.kind !== 'credit_card')
+    setAccounts(semCartao)
+    setAccountId((atual) => atual || semCartao[0]?.id || '')
   }
 
   useEffect(() => {
@@ -176,7 +182,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
       await api(`/api/debts/${debtId}/payments`, {
         method: 'POST',
         body: JSON.stringify({
-          paid_on: paidOn || new Date().toISOString().slice(0, 10),
+          paid_on: paidOn || todayInTeresina(),
           amount_cents: totalCents,
           kind: 'cash',
           account_id: accountId,

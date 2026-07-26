@@ -125,6 +125,7 @@ export async function addDebtItem(
     category_id?: string | null
   },
 ): Promise<DebtItem> {
+  const now = nowIsoUtc()
   const item: DebtItem = {
     id: newId(),
     debt_id: input.debt_id,
@@ -133,25 +134,44 @@ export async function addDebtItem(
     incurred_on: input.incurred_on,
     transaction_id: input.transaction_id ?? null,
     category_id: input.category_id ?? null,
-    created_at: nowIsoUtc(),
+    created_at: now,
   }
-  await db
-    .prepare(
-      `INSERT INTO debt_items
-         (id, debt_id, description, amount_cents, incurred_on, transaction_id, category_id, created_at)
-       VALUES (?,?,?,?,?,?,?,?)`,
-    )
-    .bind(
-      item.id,
-      item.debt_id,
-      item.description,
-      item.amount_cents,
-      item.incurred_on,
-      item.transaction_id,
-      item.category_id,
-      item.created_at,
-    )
-    .run()
+
+  // Um item novo é dinheiro real ainda não pago — se a dívida já estava
+  // 'settled', deixá-la assim escondia esse valor de commitments() (que só
+  // olha status = 'open') e travava payDebt() pra sempre (o UPDATE de
+  // quitação exige `AND status = 'open'`). Reabrir é o que o usuário quer
+  // ao adicionar um item numa dívida que ele achava fechada — alternativa
+  // descartada: recusar com 422 e esconder o formulário, mas isso empurra
+  // pro usuário um passo manual ("reabra a dívida primeiro") pra um estado
+  // que a própria ação de adicionar item já deixa óbvio. UM batch: o mesmo
+  // INSERT que grava o item já reabre a dívida, sem round-trip extra.
+  // WHERE status = 'settled' faz da segunda linha um no-op quando a dívida
+  // já está aberta (ou written_off, que fica fora do escopo desta fatia).
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO debt_items
+           (id, debt_id, description, amount_cents, incurred_on, transaction_id, category_id, created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        item.id,
+        item.debt_id,
+        item.description,
+        item.amount_cents,
+        item.incurred_on,
+        item.transaction_id,
+        item.category_id,
+        item.created_at,
+      ),
+    db
+      .prepare(
+        `UPDATE debts SET status = 'open', settled_at = NULL, updated_at = ?
+            WHERE id = ? AND status = 'settled'`,
+      )
+      .bind(now, input.debt_id),
+  ])
   return item
 }
 
@@ -266,6 +286,24 @@ export async function payDebt(
   let transaction: Transaction | null = null
 
   if (kind === 'cash') {
+    // Pagar uma divida com cartao de credito e um caso real (a compra entra
+    // na fatura, nao sai do caixa agora), mas esta fatia grava settled_at =
+    // paid_on e bill_competence = null incondicionalmente — regra que so
+    // vale para dinheiro/conta corrente. Num cartao isso apagaria a
+    // obrigacao futura de dentro de commitments() (que so olha fatura em
+    // aberto) sem ela ter sido paga de verdade. Ver nota em CLAUDE.md.
+    const account = await db
+      .prepare('SELECT kind FROM accounts WHERE id = ?')
+      .bind(input.account_id)
+      .first<{ kind: string }>()
+    if (!account)
+      throw new InvalidPaymentError('invalid_account', 'conta nao encontrada')
+    if (account.kind === 'credit_card')
+      throw new InvalidPaymentError(
+        'invalid_account',
+        'pagamento de divida em cartao de credito nao e suportado nesta fatia — escolha uma conta corrente, poupanca ou dinheiro',
+      )
+
     const category = await db
       .prepare("SELECT id FROM categories WHERE slug = 'quitacao-divida'")
       .first<{ id: string }>()

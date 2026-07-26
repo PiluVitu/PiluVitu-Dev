@@ -158,6 +158,40 @@ describe('validateAllocations', () => {
 })
 
 describe('DebtDetailPage', () => {
+  it('nao lista conta credit_card no select de pagamento (o servidor sempre recusa)', async () => {
+    const contasComCartao = [
+      ...contas,
+      {
+        id: 'a2',
+        name: 'Nubank cartao',
+        scope: 'PF',
+        kind: 'credit_card',
+        closing_day: 25,
+        due_day: 5,
+        balance_cents: -184790,
+      },
+    ]
+    const fn = vi.fn(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'POST')
+        return ok({ payment: {}, transaction: null }, 201)
+      if (path.startsWith('/api/accounts')) return ok(contasComCartao)
+      if (path.startsWith('/api/debts/')) return ok(detail)
+      throw new Error(`rota nao mockada: ${path}`)
+    })
+    vi.stubGlobal('fetch', fn)
+
+    render(<DebtDetailPage debtId="d1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+    )
+
+    const formPagamento = within(screen.getByTestId('form-pagamento'))
+    const select = formPagamento.getByLabelText('Conta') as HTMLSelectElement
+    const opcoes = Array.from(select.options).map((o) => o.value)
+    expect(opcoes).toEqual(['a1'])
+    expect(opcoes).not.toContain('a2')
+  })
+
   it('mostra itens com total/pago/falta e marca o quitado', async () => {
     mockRoutes()
 
@@ -265,6 +299,43 @@ describe('DebtDetailPage', () => {
         allocations: [{ item_id: 'i2', amount_cents: 136000 }],
       })
     })
+  })
+
+  it('sem Data preenchida no pagamento, usa o dia de Teresina (nao UTC) como default', async () => {
+    // 01:00 UTC de 01/08 e 22h de 31/07 em Teresina (UTC-3). Fake so o Date
+    // (nao os timers): waitFor usa setTimeout de verdade por baixo, e
+    // travaria se o relogio inteiro estivesse congelado.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-01T01:00:00Z'))
+    try {
+      const fetchMock = mockRoutes()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      const formPagamento = within(screen.getByTestId('form-pagamento'))
+      fireEvent.change(formPagamento.getByLabelText('Valor'), {
+        target: { value: '1.360,00' },
+      })
+      fireEvent.change(formPagamento.getByLabelText('Steam Deck'), {
+        target: { value: '1.360,00' },
+      })
+      fireEvent.submit(screen.getByTestId('form-pagamento'))
+
+      await waitFor(() => {
+        const post = fetchMock.mock.calls.find(
+          ([, init]) => (init as RequestInit)?.method === 'POST',
+        )
+        expect(post).toBeDefined()
+        expect(
+          JSON.parse((post![1] as RequestInit).body as string).paid_on,
+        ).toBe('2026-07-31')
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('mostra o OverAllocationError vindo da API mesmo com o guard do cliente ok', async () => {
