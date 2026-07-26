@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build && node ../../scripts/check-tailwind-source.mjs .next",
     "build:ci": "next build",
     "build-storybook": "storybook build",
     "dev": "next dev --webpack -p 3333",
@@ -41,6 +41,7 @@
     "@markdoc/markdoc": "^0.5.6",
     "@octokit/rest": "^22.0.1",
     "@piluvitu/tools": "workspace:*",
+    "@piluvitu/ui": "workspace:*",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.15",

@@ -154,6 +154,9 @@ importers:
       '@piluvitu/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      '@piluvitu/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@radix-ui/react-aspect-ratio':
         specifier: ^1.1.8
         version: 1.1.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

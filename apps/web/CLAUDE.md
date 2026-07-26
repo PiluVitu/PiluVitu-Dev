@@ -72,7 +72,20 @@ Permitted image hosts are configured in `next.config.mjs` (`images.remotePattern
 
 ### Theme
 
-O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os valores vivem em `app/globals.css` (`:root` = variante light derivada, `.dark` = "Cloud" dark) mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
+O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. **Os tokens (cores, radius, fontes, keyframes) vivem em `packages/ui/src/styles.css`** (`@piluvitu/ui`, compartilhado com `apps/financas/web`), não mais em `app/globals.css`. `app/globals.css` importa esse pacote no topo:
+
+```css
+@import 'tailwindcss';
+@import '@piluvitu/ui/styles.css';
+@source '../../../packages/ui/src';
+@plugin '@tailwindcss/typography';
+```
+
+O `@source` é obrigatório — sem ele o Tailwind v4 compila normalmente (não quebra o build) mas **descarta silenciosamente** toda classe exclusiva de `packages/ui`. `scripts/check-tailwind-source.mjs` (raiz do monorepo) é o gate contra essa regressão: roda depois do `next build` no script `build` do `apps/web/package.json` e falha se a classe sentinela (`.ui-sentinela-nao-remover`, definida em `packages/ui/src/styles.css`) sumir do CSS emitido em `.next`. **Não** está amarrado no `build:ci` (o que o `ci.yml` roda) — hoje só o build de produção da Vercel pega essa regressão, não o CI de PR.
+
+Depois do `@import`/`@source`, `app/globals.css` guarda só o que é **específico deste app**: `@utility container`, a camada de compat de `border-color` do Tailwind v4, a aplicação de `border-border`/`bg-background`/`font-sans` em `@layer base`, o dual-theme do shiki (`code[data-theme...]`) e as regras `.post-prose` do blog. `:root`/`.dark` (as custom properties que os tokens referenciam) ficam só em `packages/ui/src/styles.css` — mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
+
+`cn()` também pode vir de `@piluvitu/ui/cn` (medido: funciona no build do Next/Turbopack sem precisar de `transpilePackages: ['@piluvitu/ui']` em `next.config.mjs`) — a migração de fato dos componentes shadcn pra consumir o pacote é escopo de outra task; hoje `apps/web` só consome o CSS.
 
 - **Fontes:** Plus Jakarta Sans (corpo/títulos, `--font-sans`) + JetBrains Mono (labels/datas/tags, `--font-mono`), via `next/font` no `app/layout.tsx`. O fallback fica aninhado no `var()` (`var(--font-plus-jakarta, ui-sans-serif, …)`) pra sobreviver onde o RootLayout não roda (ex.: Storybook).
 - **Tokens semânticos (votação):** `--ok` (sucesso/seu voto), `--warn` (empate/atenção), `--win` (vencedor) expostos como `text-ok`/`bg-warn`/`text-win` etc. `--success`/`--success-foreground` são mantidos como espelho de `--ok` (compat com usos existentes de `text-success`).

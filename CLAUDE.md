@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com quatro frentes:
 
-- **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**, **Storybook 10**. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
+- **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**, **Storybook 10**. Consome os tokens de design compartilhados de **`packages/ui`** (`@piluvitu/ui`) via `@import`/`@source` em `app/globals.css`. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
 - **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). → detalhes em `apps/api/CLAUDE.md`.
 - **`apps/financas`** — **Cloudflare Worker** (Hono + D1 SQLite) servindo uma **SPA Vite + React 19** por Static Assets, em `financas.piluvitu.com.br` atrás do **Cloudflare Access**. Testes com `@cloudflare/vitest-pool-workers` (Worker) e Vitest/jsdom (SPA). → detalhes em `apps/financas/CLAUDE.md`.
 - **`packages/tools`** — **`@piluvitu/tools`**, biblioteca de lógica pura em TS consumida pelo web. → detalhes em `packages/tools/CLAUDE.md`.
@@ -56,6 +56,20 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
 
 > Gotchas/comandos específicos de cada frente: **web** (incl. a pegadinha do `implicit-any` da Vercel) em `apps/web/CLAUDE.md`; **Go hot reload (air)** em `apps/api/CLAUDE.md`.
+
+### Gate do design system: `scripts/check-tailwind-source.mjs`
+
+Script transversal (raiz, não pertence a nenhum app) que confirma, no CSS **emitido** de um build, que a classe sentinela definida em `packages/ui/src/styles.css` (`.ui-sentinela-nao-remover`) sobreviveu. Ela só sobrevive se o app consumidor tiver `@source '<caminho para packages/ui/src>'` no seu CSS de entrada — sem isso o Tailwind v4 **não quebra o build**, só descarta silenciosamente toda classe exclusiva de `packages/ui` (não só a sentinela).
+
+```
+node scripts/check-tailwind-source.mjs <diretório-ou-glob-de-css-emitido>
+```
+
+Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um glob de um nível (ex.: `"apps/financas/web/dist/assets/*.css"`) — pensado pra funcionar tanto com o output do Next (`.next/`) quanto do Vite (`dist/assets/`).
+
+- **Amarrado em:** `apps/web/package.json` → script `build` (`next build && node ../../scripts/check-tailwind-source.mjs .next`) — roda em todo build de produção, incl. o deploy da Vercel.
+- **Não amarrado em:** `build:ci` (o que `ci.yml` roda) — hoje uma regressão de `@source` só é pega no build de produção, não no CI de PR.
+- **Reuso:** o plano `docs/superpowers/plans/2026-07-26-financas-ui-design-system.md` reusa este gate pra `apps/financas/web` (Task 4).
 
 ### Pre-commit hook (lint-staged)
 
