@@ -13,6 +13,6 @@
     "jsx": "react-jsx",
     "target": "ES2017"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "jest.setup.ts"],
   "exclude": ["node_modules"]
 }

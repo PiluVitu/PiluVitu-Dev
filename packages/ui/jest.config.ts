@@ -5,7 +5,8 @@ const config: Config = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { moduleResolution: 'node' } }],
   },
-  testMatch: ['**/*.test.ts'],
+  testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 }
 
 export default config
