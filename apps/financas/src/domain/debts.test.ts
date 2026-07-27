@@ -965,10 +965,60 @@ describe('debts — exclusao e baixa', () => {
       title: 'Ja baixada',
       opened_at: '2026-07-01',
     })
-    await writeOffDebt(env.DB, debt.id) // abre -> written_off
+    const primeira = await writeOffDebt(env.DB, debt.id) // abre -> written_off
+    expect(primeira).toBe(true)
 
     const segunda = await writeOffDebt(env.DB, debt.id) // written_off -> no-op
     expect(segunda).toBe(false)
+  })
+
+  it('writeOffDebt numa divida ja settled tambem nao faz nada — guarda e WHERE status=open, nao status<>written_off', async () => {
+    // A guarda de writeOffDebt e WHERE status = 'open' — 'settled' tem que
+    // ser recusado pelo MESMO motivo que 'written_off' (nao faz sentido dar
+    // baixa no que ja foi pago), mas por um caminho DIFERENTE do teste
+    // acima: aqui a divida chega em 'settled' via payDebt (quitacao real,
+    // com settled_at preenchido pelo CHECK da migration 0001), nao por um
+    // writeOffDebt anterior. Prova que o guard nao deixa escapar o lado
+    // 'settled' do enum, so testado indiretamente ate aqui.
+    const { payee_id, account_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Quitada de verdade',
+      opened_at: '2026-07-01',
+    })
+    const item = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 50000,
+      incurred_on: '2026-07-01',
+    })
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-05',
+      amount_cents: 50000,
+      account_id,
+      allocations: [{ item_id: item.id, amount_cents: 50000 }],
+    })
+
+    const antes = await env.DB.prepare(
+      'SELECT status, settled_at FROM debts WHERE id = ?',
+    )
+      .bind(debt.id)
+      .first<{ status: string; settled_at: string | null }>()
+    expect(antes?.status).toBe('settled')
+    expect(antes?.settled_at).not.toBeNull()
+
+    const ok = await writeOffDebt(env.DB, debt.id)
+    expect(ok).toBe(false)
+
+    // Nao mudou NADA — nem status, nem settled_at.
+    const depois = await env.DB.prepare(
+      'SELECT status, settled_at FROM debts WHERE id = ?',
+    )
+      .bind(debt.id)
+      .first<{ status: string; settled_at: string | null }>()
+    expect(depois).toEqual(antes)
   })
 
   it('6) divida baixada SAI do comprometido — commitments() antes e depois provam o efeito, nao so a coluna status', async () => {
@@ -1423,6 +1473,111 @@ describe('debts — exclusao e baixa', () => {
         .first<{ remaining_cents: number; is_settled: number }>()
       expect(balance?.remaining_cents).toBe(50000)
       expect(balance?.is_settled).toBe(0)
+    })
+
+    it('divida com DOIS itens quitados por DOIS pagamentos: apagar um so desassenta o proprio item, reabre a divida, e NAO mexe no outro item/pagamento', async () => {
+      // A guarda EXISTS is_settled=0 e provadamente correta por inspecao —
+      // este teste e cobertura contra uma futura regressao (ex.: inverter
+      // pra NOT EXISTS is_settled=1, ou esquecer o AND debt_id), nao uma
+      // duvida sobre o comportamento atual.
+      const { payee_id, account_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Dois itens, dois pagamentos',
+        opened_at: '2026-07-01',
+      })
+      const itemA = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 30000,
+        incurred_on: '2026-07-01',
+      })
+      const itemB = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item B',
+        amount_cents: 70000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment: paymentA } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        kind: 'offset',
+        allocations: [{ item_id: itemA.id, amount_cents: 30000 }],
+      })
+      const { payment: paymentB } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-06',
+        amount_cents: 70000,
+        kind: 'offset',
+        allocations: [{ item_id: itemB.id, amount_cents: 70000 }],
+      })
+
+      // Os dois itens quitados => o segundo payDebt fechou a divida.
+      const antes = await env.DB.prepare(
+        'SELECT status FROM debts WHERE id = ?',
+      )
+        .bind(debt.id)
+        .first<{ status: string }>()
+      expect(antes?.status).toBe('settled')
+
+      const before = await countsAll()
+      expect(before).toEqual({
+        debts: 1,
+        debt_items: 2,
+        debt_payments: 2,
+        debt_payment_allocations: 2,
+        transactions: 0,
+      })
+
+      // Apaga SO o pagamento do item A.
+      const ok = await deleteDebtPayment(env.DB, debt.id, paymentA.id)
+      expect(ok).toBe(true)
+
+      // A divida reabre (item A ficou sem alocacao).
+      const depois = await env.DB.prepare(
+        'SELECT status, settled_at FROM debts WHERE id = ?',
+      )
+        .bind(debt.id)
+        .first<{ status: string; settled_at: string | null }>()
+      expect(depois?.status).toBe('open')
+      expect(depois?.settled_at).toBeNull()
+
+      // Item A: desquitado.
+      const balanceA = await env.DB.prepare(
+        'SELECT remaining_cents, is_settled FROM v_debt_item_balance WHERE item_id = ?',
+      )
+        .bind(itemA.id)
+        .first<{ remaining_cents: number; is_settled: number }>()
+      expect(balanceA?.remaining_cents).toBe(30000)
+      expect(balanceA?.is_settled).toBe(0)
+
+      // Item B: continua QUITADO — o pagamento/alocacao dele nunca foi tocado.
+      const balanceB = await env.DB.prepare(
+        'SELECT remaining_cents, is_settled FROM v_debt_item_balance WHERE item_id = ?',
+      )
+        .bind(itemB.id)
+        .first<{ remaining_cents: number; is_settled: number }>()
+      expect(balanceB?.remaining_cents).toBe(0)
+      expect(balanceB?.is_settled).toBe(1)
+
+      // Cinco tabelas: so o pagamento/alocacao de A sumiram; item A continua
+      // existindo (so a alocacao foi embora), payment/alocacao de B intactos.
+      const after = await countsAll()
+      expect(after).toEqual({
+        debts: 1,
+        debt_items: 2,
+        debt_payments: 1,
+        debt_payment_allocations: 1,
+        transactions: 0,
+      })
+
+      // O pagamento que sobrou e mesmo o da B, nao um resto acidental de A.
+      const restante = await env.DB.prepare(
+        'SELECT id FROM debt_payments',
+      ).first<{ id: string }>()
+      expect(restante?.id).toBe(paymentB.id)
     })
   })
 })
