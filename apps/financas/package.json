@@ -18,12 +18,15 @@
     "db:migrate:list:local": "wrangler d1 migrations list piluvitu-financas --local",
     "db:migrate:list:remote": "wrangler d1 migrations list piluvitu-financas --remote",
     "backup": "./scripts/backup-d1.sh",
-    "backup:test": "./scripts/backup-d1.test.sh"
+    "backup:test": "./scripts/backup-d1.test.sh",
+    "pdf-import": "node scripts/pdf-import.mjs",
+    "test:pdf-import": "vitest run --config vitest.scripts.config.ts"
   },
   "dependencies": {
     "@piluvitu/tools": "workspace:*",
     "better-auth": "1.6.25",
-    "hono": "^4.12.32"
+    "hono": "^4.12.32",
+    "pdfjs-dist": "6.1.200"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.8",

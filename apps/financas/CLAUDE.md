@@ -417,6 +417,105 @@ Um arquivo só cobrindo as duas tasks porque são o MESMO fluxo contínuo: ler o
 5. **`bill_competence` derivado por linha pra cartão** — sem isso, linhas importadas existem no livro-caixa mas somem de `commitments()` (que só soma parcela com competência preenchida) sem erro nenhum — uma falha que parece sucesso → seção _Import de fatura e extrato_, bullet próprio.
 6. **Limites conhecidos, ditos sem rodeio:** a conferência só inspeciona os 500 lançamentos mais recentes da conta (servidor ainda recusa a duplicata de verdade no `INSERT`, então o pior caso é um pulo silencioso, nunca uma linha duplicada) → bullet "Duplicata é detectada no CLIENTE" acima; detecção de delimitador de CSV cobre só `,`/`;`, empate cai pro padrão `,` → `packages/tools/CLAUDE.md` § _Módulo `import`_ (`csv.ts`).
 
+## Fatura em PDF via Ollama local (fatia ③ — `scripts/pdf-import.mjs`)
+
+Spec completa: `docs/superpowers/specs/2026-07-27-financas-pdf-ollama-design.md`. Outra ENTRADA para o mesmo pipeline da fatia ② (import CSV/OFX), não um pipeline novo: banco que só entrega fatura em PDF ficava de fora do import porque a extração de texto de PDF precisa de um modelo de linguagem, e não existe `pdftotext`/`qpdf`/`mutool` na máquina do dono (fato medido no spec) — a extração é feita em JS (`pdfjs-dist`) e o texto é mandado pro Ollama local, que roda no Mac.
+
+### Por que é um CLI, e por que ele nunca grava no banco
+
+**Onde o modelo roda, e por quê:** Ollama exige GPU/Metal, e nenhum instance type de Cloudflare Containers oferece GPU — o LLM só pode rodar no Mac do dono, nunca no Worker. Das três formas de conectar a SPA a um Ollama que só existe no Mac, o CLI foi a escolhida (§2 do spec):
+
+- **Navegador → `localhost:11434` direto** — descartado por ser uma incógnita NÃO MEDIDA (a SPA é servida por HTTPS; a regra de conteúdo misto contra `localhost` precisaria ser verificada num navegador de verdade antes de virar arquitetura).
+- **Worker → Cloudflare Tunnel → Ollama** — descartado porque acopla o app a "o Mac estar ligado". Uma tela que só funciona com outro computador acordado é uma tela que falha sem explicação, e o fluxo de importar fatura é oportunista por natureza (o dono roda isto quando tem uma fatura em mãos, não o tempo todo).
+- **CLI no Mac (escolhido)** — zero incógnita, zero infra nova, funciona offline. O dono roda `node scripts/pdf-import.mjs fatura.pdf` quando tem uma fatura pra importar.
+
+⚠️ **O caminho do túnel fica registrado como evolução POSSÍVEL, nunca como promessa.** Nada nesta fatia depende dele acontecer; se um dia a app precisar de import remoto (fora do Mac do dono), o túnel é a opção descartada por acoplamento, não por inviabilidade técnica — reavaliar exigiria aceitar essa dependência de propósito, não redescobrir o motivo de tê-la evitado aqui.
+
+⚠️ **O CLI NUNCA toca o banco — só escreve um `.csv`.** Isto não é uma limitação técnica temporária, é a decisão certa: um modelo de 3B–7B extraindo linha de fatura VAI errar valor, data ou descrição de vez em quando, e a tela de conferência da fatia ② (`#/importar`) já existe pra pegar exatamente isso — mostra duplicata, deixa trocar o payee/categoria sugerido, exige confirmação explícita linha a linha. Mandar a saída de um LLM direto pro banco jogaria fora a única etapa do pipeline desenhada pra esse tipo de erro. Consequência prática: **zero backend novo nesta fatia** — o CSV gerado usa o MESMO caminho já testado ponta a ponta da fatia ② (`packages/tools/src/import/csv.ts#parseCsv`, sem mudar uma linha dele).
+
+### Rodar
+
+```bash
+node apps/financas/scripts/pdf-import.mjs fatura.pdf
+# ou, de dentro de apps/financas:
+pnpm run pdf-import fatura.pdf
+```
+
+Requisitos: Ollama rodando localmente (`ollama serve`) e o modelo instalado (`ollama pull qwen2.5:7b-instruct`, o default — `qwen2.5:3b-instruct` fica como opção mais leve via `--modelo`). Opções:
+
+| Flag                         | Efeito                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `--modelo`, `--model <nome>` | Troca o modelo do Ollama (default `qwen2.5:7b-instruct`)                                   |
+| `--saida`, `--output <path>` | Caminho do CSV de saída (default: `<fatura>.csv` ao lado do PDF)                           |
+| `--url <url>`                | URL do Ollama (default `http://localhost:11434/api/generate`, também lido de `OLLAMA_URL`) |
+| `--help`, `-h`               | Mostra o uso                                                                               |
+
+O CSV sai no MESMO formato que a tela de import já lê (`data;descricao;valor`, com cabeçalho, delimitador `;` — vírgula é o separador decimal do BRL, mesmo motivo documentado em `packages/tools/CLAUDE.md` § _Módulo `import`_) — o dono importa por `#/importar`, mapeia as três colunas uma vez (a tela não autodetecta layout, decisão da fatia ②) e confere linha a linha antes de confirmar.
+
+### Biblioteca de extração de PDF: `pdfjs-dist`, não um shell-out
+
+Sem `pdftotext`/`qpdf`/`mutool` instalados (medido, ver spec §0), a extração de texto precisa ser JS. Escolhido `pdfjs-dist` (o motor do leitor de PDF do Firefox, mantido pela Mozilla) em vez de `pdf-parse` (camada fina não mantida sobre uma versão travada e antiga do próprio pdfjs) ou de shell-out pra um binário que não está instalado (proibido pelo brief da task — não workaroundar a ausência medida). Usa o build `legacy` (`pdfjs-dist/legacy/build/pdf.mjs`), feito pra rodar em Node puro sem DOM/canvas. **Sem NENHUM lifecycle script** no `package.json` do pacote (MEDIDO via `npm view`) — instala limpo, sem precisar entrar em `allowBuilds` do `pnpm-workspace.yaml`.
+
+- **`standardFontDataUrl` é um caminho de FILESYSTEM, não uma URL `file://`.** MEDIDO: o `fetch` nativo do Node não entende o esquema `file://`, e sem essa opção o pdfjs tenta buscar as métricas de fonte padrão via fetch, gerando warning (`Unable to load font data`) em todo PDF com fonte não-embutida (a maioria das faturas reais). Passando um caminho de filesystem puro (`fileURLToPath`, não a própria URL), a detecção de Node do pdfjs lê o arquivo direto via `fs`, sem warning.
+- **Quebra de linha reconstruída via `item.hasEOL`, que o próprio pdfjs já calcula** (detecção de linha por posição, incluindo sintetizar itens de espaço entre colunas com vão horizontal — MEDIDO contra um PDF com colunas posicionadas via `Td` sem nenhum caractere de espaço entre elas: pdfjs insere o espaço sozinho). Sem isso, uma fatura tabular (data | descrição | valor) vira uma sopa de texto numa linha só, e o modelo tem que adivinhar onde termina um lançamento e começa o próximo — pior extração, mais linha rejeitada na validação.
+- **`loadingTask.destroy()`, nunca `doc.destroy()`** — MEDIDO: o `PDFDocumentProxy` resolvido por `getDocument(...).promise` não tem método `destroy` (só `cleanup`); quem libera os recursos é a `loadingTask` retornada sincronamente por `getDocument(...)`, antes do `await`.
+
+### A saída do LLM não é confiável, e o código assume isso
+
+Disciplina de validação (§3 do spec, "JSON de LLM não é JSON até ser validado") — cada ponto tem teste dedicado em `scripts/pdf-import.test.mjs`:
+
+- **`extractJsonBlock` tolera cercas de markdown e prosa antes/depois**, mesmo o prompt pedindo explicitamente "só JSON, sem markdown" — modelos de 3B-7B ignoram essa instrução com alguma frequência. Varredura por profundidade de colchete/chave respeitando string entre aspas (senão um `}` dentro de uma descrição quebraria a contagem).
+- **`normalizeLinesPayload` aceita tanto um array no topo quanto `{"linhas": [...]}` / `{"lines": [...]}`** — o prompt pede array, mas um modelo às vezes embrulha mesmo assim.
+- **Toda linha rejeitada é REPORTADA (índice + motivo), nunca descartada em silêncio** — `validateLine` nunca lança, devolve `{ok:false, index, reason, raw}`; `run()` imprime `aviso: linha N rejeitada — <motivo>: <linha crua>` pra cada uma, e a execução continua com as linhas que passaram.
+- **Data vira `YYYY-MM-DD` por validação de CALENDÁRIO real (round-trip via `Date.UTC`), não só formato** — rejeita `31/02/2026` (formato válido, dia inexistente), aceita `29/02` só em ano bissexto. Aceita ISO, `DD/MM/AAAA` e `DD-MM-AAAA`; qualquer outro formato é REJEITADO, nunca chutado.
+- **Valor sempre passa por `parseBRL`** (`@piluvitu/tools/money`) — dinheiro é `INTEGER` centavos, nunca toca float.
+- ⚠️ **Convenção de sinal desta ferramenta:** uma linha de fatura SEM sinal é uma COMPRA (despesa, grava `amount_cents` negativo — mesma convenção de `transactions.amount_cents` no domínio); uma linha com sinal negativo ou entre parênteses no PDF é um ESTORNO/crédito (grava positivo). `amountFromStatementText` normaliza a posição do sinal antes de delegar pra `parseBRL`.
+  - ⚠️ **ACHADO NO RUN REAL contra `qwen2.5:7b-instruct`:** o modelo devolveu o sinal DEPOIS do `R$` (`"R$ -35,00"`), não antes (`"-R$ 35,00"`) — a regex de `parseBRL` só aceita sinal ANTES do `R$` e rejeitava essa forma na primeira versão desta função. Corrigido normalizando a posição do `-` (removido de onde estiver, recolocado na frente) ANTES de chamar `parseBRL`, em vez de ensinar essa peculiaridade de LLM pro `parseBRL` genérico. Coberto por teste dedicado com o texto exato encontrado no run real.
+- **Zero linha válida ⇒ `run()` devolve código de saída != 0, com a saída bruta do modelo no log** (via `logError`) — nunca escreve um CSV vazio, que pareceria sucesso e seria o pior resultado possível. Confirmado com um PDF de conteúdo não-financeiro (receita de bolo) no run real: o modelo devolveu `[]`, o CLI recusou com `erro: nenhuma linha válida foi extraída` e o `[]` bruto no log.
+- **Temperatura zero, sempre** (`options: { temperature: 0 }` em toda chamada) — extração não é criação, variação entre execuções é defeito.
+
+### Erros que um humano vai bater de verdade — mensagens medidas contra o Ollama real
+
+- **Ollama desligado** → `err.cause.code === 'ECONNREFUSED'` (MEDIDO contra uma porta fechada de propósito) vira `"não consegui conectar ao Ollama em <url> — ele parece estar desligado. Inicie com \"ollama serve\"..."`, nunca um `ECONNREFUSED`/stack trace cru.
+- **Modelo não instalado** → Ollama responde `404` com corpo `{"error":"model '<nome>' not found"}` (MEDIDO contra o Ollama real) — vira `"modelo \"<nome>\" não está instalado no Ollama local. Instale com: ollama pull <nome>"`, citando o comando exato.
+- **PDF sem camada de texto (fatura escaneada)** → texto extraído vazio/só espaço PARA a execução ANTES de chamar o Ollama (não desperdiça uma chamada de rede pra um PDF que não tem o que extrair) e imprime "este PDF não tem camada de texto — parece ser uma fatura escaneada (imagem). OCR está fora do escopo desta ferramenta; não dá pra continuar com este arquivo." — mensagem clara, nunca stack trace. OCR continua fora de escopo (§7 do spec) — não meio-implementado.
+- **PDF corrompido/inválido** → `getDocument(...).promise` rejeita (`InvalidPDFException`, MEDIDO); `run()` traduz em `"não consegui abrir o PDF (...). Confira se é mesmo um PDF válido."`.
+
+### Testes
+
+`scripts/pdf-import.test.mjs`, colocado ao lado do CLI (lei do projeto). **Não roda sob `vitest.config.ts`** (que só inclui `src/**/*.test.ts` e sobe o pool do Miniflare/cloudflareTest) — o CLI é Node puro, fora do Worker de propósito. Tem config própria, `vitest.scripts.config.ts` (`environment: 'node'`, `include: ['scripts/**/*.test.mjs']`).
+
+⚠️ **Por que Vitest, e não o runner nativo `node --test`:** `node --test` puro NÃO consegue importar `@piluvitu/tools/import/csv` — MEDIDO, `ERR_MODULE_NOT_FOUND` em `../money` (o import relativo sem extensão que os `.ts` de `packages/tools` usam; funciona sob Vitest/Vite porque a resolução de módulo é bundler-style, a MESMA que já resolve `@piluvitu/tools` pra `web/`, mas o loader ESM nativo do Node exige extensão explícita). Rodar sob Vitest evita reescrever a resolução de módulo só pra este CLI.
+
+```bash
+pnpm --filter @piluvitu/financas run test:pdf-import
+```
+
+**77 testes** — tudo que dá pra testar deterministicamente sem chamar o modelo (a chamada ao Ollama é sempre stubada via injeção de dependência em `run()`: `fetchImpl`/`extractText`/`readFile`/`writeFile`):
+
+- `extractJsonBlock`/`normalizeLinesPayload` — cercas de markdown, prosa em volta, chave/colchete dentro de string, bloco que nunca fecha (resposta cortada).
+- `parseStatementDate`/`amountFromStatementText` — os três formatos de data aceitos, calendário real (29/02 bissexto vs. não-bissexto, 31/02, mês 13), `parseBRL` reusado (nunca float — caso `19,99 * 100 !== 1999` em IEEE754, documentado no próprio teste), a convenção de sinal e o achado do run real (`"R$ -35,00"`).
+- `validateLine`/`validateLines` — toda rejeição nomeada com índice+motivo, aliases de chave em inglês, partição válida/rejeitada preservando índice original.
+- **`linesToCsv` tem um teste de ROUND-TRIP pelo `parseCsv` REAL de `packages/tools`** (não um parser reimplementado pro teste) — a prova mecânica de que `#/importar` lê o CSV gerado sem ajuste nenhum, incluindo `idEstavel` (`@piluvitu/tools/import/id`) rodando sobre as linhas parseadas sem lançar.
+- `extractPdfText` — PDF real (construído à mão dentro do próprio teste, sem fixture binária versionada) com quebra de linha preservada; PDF de conteúdo vazio (simula fatura escaneada) devolve texto vazio; PDF corrompido lança.
+- `callOllama` — os quatro casos de erro (conexão recusada, 404 modelo não encontrado, outro HTTP erro, resposta sem campo `response`) e o caminho feliz confirmando `temperature: 0`/`stream: false` no corpo da requisição.
+- `run()` — orquestração ponta a ponta: caminho feliz, linha rejeitada nomeada com outras válidas presentes, zero linhas válidas (código != 0, nada escrito, saída bruta no log), PDF sem camada de texto para ANTES de chamar o Ollama, Ollama desligado, `--help`, sem argumento, e o mesmo round-trip via `parseCsv` real por cima do que `run()` de fato escreve.
+
+### Rodado de verdade contra o Ollama local (não só stubs)
+
+Gerado um PDF de fatura sintética (8 lançamentos incl. um estorno com sinal, mais ruído de cabeçalho/rodapé — "fatura anterior", "limite disponível", "total desta fatura" — que o prompt pede pra excluir) e rodado contra os dois modelos instalados:
+
+```
+$ node scripts/pdf-import.mjs fatura-exemplo.pdf
+==> extraindo texto de fatura-exemplo.pdf
+==> consultando o Ollama (modelo qwen2.5:7b-instruct, http://localhost:11434/api/generate) — pode levar alguns segundos
+
+==> 8 linha(s) válida(s), 0 rejeitada(s)
+==> CSV gravado em fatura-exemplo.csv — importe por #/importar e confira linha a linha
+```
+
+As 8 linhas bateram exatamente com o PDF de origem (datas, descrições, valores — incluindo o estorno gravado como crédito positivo) e as 3 linhas de ruído (fatura anterior/limite/total) foram corretamente excluídas pelo modelo. Repetido com `--modelo qwen2.5:3b-instruct`: mesmo resultado, 8/8. Os quatro caminhos de erro (`Ollama desligado` via `--url` apontando pra porta fechada, `modelo não instalado`, `PDF sem camada de texto`, `zero linha válida` contra um PDF de conteúdo não-financeiro) também foram exercitados contra o Ollama/pdfjs reais, não só via stub — resultado documentado na seção anterior.
+
 ## Parcelamento de cartão
 
 `POST /api/installment-plans` → `src/routes/installments.ts` (`installmentPlansRoutes`, montado acima do catch-all) → `createInstallmentPlan` em `src/domain/installments.ts`.

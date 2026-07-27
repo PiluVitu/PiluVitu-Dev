@@ -13,6 +13,11 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts", "vitest.config.ts"],
+  "include": [
+    "src/**/*.ts",
+    "worker-configuration.d.ts",
+    "vitest.config.ts",
+    "vitest.scripts.config.ts"
+  ],
   "exclude": ["node_modules", "web"]
 }
