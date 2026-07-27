@@ -16,7 +16,9 @@
     "./prng": "./src/prng.ts",
     "./entropy": "./src/entropy.ts",
     "./roleta": "./src/roleta.ts",
-    "./money": "./src/money.ts"
+    "./money": "./src/money.ts",
+    "./import": "./src/import/index.ts",
+    "./import/ofx": "./src/import/ofx.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
