@@ -59,8 +59,12 @@ export async function monthlyFixedCost(
 
 // Designação vive em `settings` (chave-valor genérica desde a 0005) sob
 // esta chave — preferência, não fato estrutural, então nenhuma migration
-// nova (spec §4).
-const EMERGENCY_ACCOUNTS_KEY = 'emergency_accounts'
+// nova (spec §4). Exportada (Task 2, fatia ⑦): `routes/reserve.ts` precisa
+// dela para gravar a designação via `setSetting` genérico — a escrita em si
+// mora na ROTA (não um novo escritor aqui em domain/reserve.ts), então só a
+// CHAVE precisa ser compartilhada, evitando um literal duplicado nos dois
+// arquivos.
+export const EMERGENCY_ACCOUNTS_KEY = 'emergency_accounts'
 
 // Defesa contra um valor corrompido/gigante em `settings.value` (ex.:
 // escrito à mão via `wrangler d1 execute`): limita quantos ids entram no

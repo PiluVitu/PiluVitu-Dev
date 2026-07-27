@@ -10,6 +10,7 @@ import { installmentPlansRoutes } from './routes/installments'
 import { payeesRoutes } from './routes/payees'
 import { recurringRoutes } from './routes/recurring'
 import { reportsRoutes } from './routes/reports'
+import { reserveRoutes } from './routes/reserve'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 
@@ -45,6 +46,7 @@ app.route('/api/reports', reportsRoutes)
 app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
+app.route('/api', reserveRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.
