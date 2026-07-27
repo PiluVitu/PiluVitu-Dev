@@ -715,7 +715,25 @@ pnpm --filter @piluvitu/financas exec wrangler d1 migrations list piluvitu-finan
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote
 ```
 
-Esperado no `list` (no momento em que este parágrafo foi escrito): `0001_financas_init.sql` já aplicada; `0002_better_auth.sql`, `0003_account_provider_idx.sql`, `0004_tx_purchase_date_expense_idx.sql` e `0005_settings.sql` pendentes — `0004` é o índice parcial que sustenta `GET /api/reports/by-category` (fix round 1 da Task 5, ver seção _Migrations_ → `0004_tx_purchase_date_expense_idx.sql` e _Relatório por categoria_ mais abaixo) e `0005` é a tabela `settings` que torna `fixed_net_cents` editável sem deploy (Task 10, ver seção _Configurações_ acima) — as duas aplicadas só localmente até este ponto. Depois do `apply`, todas aparecem aplicadas. Sem down migration — se o schema sair errado, a correção é uma migration nova (`0006_*.sql`), nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
+⚠️ **Correção de fato (Task 11): as versões anteriores desta seção afirmavam `0002`/`0003` pendentes ao lado de `0004` — errado.** `0001_financas_init.sql`, `0002_better_auth.sql` e `0003_account_provider_idx.sql` **já estão aplicadas em produção** (confirmado com `wrangler d1 migrations list --remote` na revisão da Task 5 — ver nota "Correção" no ledger da SDD, Task 5 — e nunca corrigido no texto até agora, apesar do achado). Só `0004`/`0005` estão pendentes.
+
+Esperado no `list`: `0001_financas_init.sql`, `0002_better_auth.sql` e `0003_account_provider_idx.sql` já aplicadas; `0004_tx_purchase_date_expense_idx.sql` e `0005_settings.sql` pendentes — `0004` é o índice parcial que sustenta `GET /api/reports/by-category` (fix round 1 da Task 5, ver seção _Migrations_ → `0004_tx_purchase_date_expense_idx.sql` e _Relatório por categoria_ mais abaixo) e `0005` é a tabela `settings` que torna `fixed_net_cents` editável sem deploy (Task 10, ver seção _Configurações_ acima) — as duas aplicadas só localmente até este ponto:
+
+```
+Migrations to be applied:
+	0004_tx_purchase_date_expense_idx.sql
+	0005_settings.sql
+```
+
+**Um único `apply` cobre as duas** (o comando não recebe nome de migration — aplica todas as pendentes, na ordem numérica, numa tacada só):
+
+```
+🚣 2 commands executed successfully.
+0004_tx_purchase_date_expense_idx.sql  ✅
+0005_settings.sql                      ✅
+```
+
+Depois do `apply`, um `list --remote` novo devolve **✅ No migrations to apply!** (mesmo texto que o `--local` já devolve hoje, verificado nesta task). Sem down migration — se o schema sair errado, a correção é uma migration nova (`0006_*.sql`), nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
 
 ### 3. Secrets em produção (`wrangler secret put`, rodar manualmente)
 
