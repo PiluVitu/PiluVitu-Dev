@@ -7,11 +7,8 @@ import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
-import { SELECT_CLASSNAME } from '../lib/form-classes'
+import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import type { AccountView } from './accounts'
-
-const CHECKBOX_CLASSNAME =
-  'border-input accent-primary h-4 w-4 rounded focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-hidden'
 
 export function NewEntryPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])

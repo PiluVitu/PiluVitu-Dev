@@ -12,3 +12,13 @@
  */
 export const SELECT_CLASSNAME =
   'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
+
+/**
+ * Idem, pra `<input type="checkbox">` — `@piluvitu/ui` não tem `Checkbox`.
+ * Morava só como `const` local em `new-entry.tsx` (Task 6/`pages`); extraído
+ * pra cá na Task 5 da fatia ⑥ (`recorrentes.tsx` também precisa de
+ * checkbox pro toggle "varia?"/"Ativa") — mesma lição de `SELECT_CLASSNAME`
+ * acima: um `const` só, não uma cópia por tela.
+ */
+export const CHECKBOX_CLASSNAME =
+  'border-input accent-primary h-4 w-4 rounded focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-hidden'

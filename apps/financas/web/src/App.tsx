@@ -10,6 +10,7 @@ import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
 import { HomePage } from './pages/home'
 import { NewEntryPage } from './pages/new-entry'
+import { RecorrentesPage } from './pages/recorrentes'
 
 export function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -59,6 +60,9 @@ function AppShell() {
         <a href="#/lancar" className={navLinkClassName}>
           Lançar
         </a>
+        <a href="#/recorrentes" className={navLinkClassName}>
+          Recorrentes
+        </a>
         <a href="#/comprometido" className={navLinkClassName}>
           Comprometido
         </a>
@@ -74,6 +78,8 @@ function AppShell() {
         <CommitmentsPage from={competenciaAtual()} />
       ) : hash.startsWith('#/lancar') ? (
         <NewEntryPage />
+      ) : hash === '#/recorrentes' || hash === '#/recorrentes/' ? (
+        <RecorrentesPage />
       ) : hash === '#/contas' || hash === '#/contas/' ? (
         <AccountsPage />
       ) : hash === '#/configuracoes' || hash === '#/configuracoes/' ? (

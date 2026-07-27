@@ -42,7 +42,9 @@ function mockFetchVazio() {
     vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
 
-      // CommitmentsPage/BlocoComprometido — objeto, não lista.
+      // CommitmentsPage/BlocoComprometido — objeto, não lista. totals/
+      // pct_of_fixed_net são FAIXA {min,max} desde a Task 6 (fatia ⑥); [] é
+      // válido pros dois formatos (nenhuma competência), sem mudança aqui.
       if (url.includes('/api/reports/commitments')) {
         return respond({
           competences: [],
@@ -65,6 +67,9 @@ function mockFetchVazio() {
       if (url.includes('/api/payees')) return respond([])
       // ConfigPage (Task 10) — objeto, não lista.
       if (url.includes('/api/settings')) return respond({ fixed_net_cents: 0 })
+      // RecorrentesPage (Task 5, fatia ⑥) — três listas.
+      if (url.includes('/api/recurring')) return respond([])
+      if (url.includes('/api/categories')) return respond([])
 
       return Promise.reject(new Error(`rota inesperada em teste: ${url}`))
     }),
@@ -119,6 +124,19 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Dívidas' })).toBeDefined(),
+    )
+  })
+
+  // Task 5 (fatia ⑥): nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/recorrentes mostra a tela Recorrentes', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/recorrentes'
+    render(<App />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Recorrentes' }),
+      ).toBeDefined(),
     )
   })
 
