@@ -15,3 +15,14 @@ const TERESINA_OFFSET_MS = 3 * 60 * 60 * 1000
 export function todayInTeresina(now: Date = new Date()): string {
   return new Date(now.getTime() - TERESINA_OFFSET_MS).toISOString().slice(0, 10)
 }
+
+/**
+ * Competência (`YYYY-MM`) do mês corrente em Teresina. Movida de
+ * `App.tsx#competenciaAtual` (Task 6) pra cá — `BlocoComprometido` também
+ * precisa dela e importar de `App.tsx` criaria ciclo (`App` → `pages/home`
+ * → `blocos/BlocoComprometido` → `App`). Mesmo raciocínio de
+ * `todayInTeresina`: lugar único, sem duplicar a subtração de fuso.
+ */
+export function competenciaAtual(now: Date = new Date()): string {
+  return todayInTeresina(now).slice(0, 7)
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { todayInTeresina } from './dates'
+import { competenciaAtual, todayInTeresina } from './dates'
 
 describe('todayInTeresina', () => {
   test('01:00 UTC (22h do dia anterior em Teresina) ainda devolve o dia anterior', () => {
@@ -17,5 +17,21 @@ describe('todayInTeresina', () => {
 
   test('sem argumento devolve YYYY-MM-DD', () => {
     expect(todayInTeresina()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe('competenciaAtual', () => {
+  test('01:00 UTC (22h do dia anterior em Teresina) cai na competência do mês anterior', () => {
+    // 01:00 UTC de 01/08 é 31/07 em Teresina — a competência é jul/26, não
+    // ago/26. Mesmo caso-armadilha de todayInTeresina, um nível acima.
+    expect(competenciaAtual(new Date('2026-08-01T01:00:00Z'))).toBe('2026-07')
+  })
+
+  test('corta YYYY-MM-DD em YYYY-MM', () => {
+    expect(competenciaAtual(new Date('2026-08-01T03:00:00Z'))).toBe('2026-08')
+  })
+
+  test('sem argumento devolve YYYY-MM', () => {
+    expect(competenciaAtual()).toMatch(/^\d{4}-\d{2}$/)
   })
 })

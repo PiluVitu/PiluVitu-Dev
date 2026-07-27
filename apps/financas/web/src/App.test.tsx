@@ -61,9 +61,21 @@ describe('App — roteamento por hash com Gate autenticado', () => {
   // loading antes do <h1>, ao contrário de Contas/Comprometido). Query por
   // role também torna o teste real: por texto puro, Contas/Comprometido
   // "passavam" batendo só no link do nav antes do fetch assíncrono resolver,
-  // sem nunca provar que a página certa realmente montou.
-  test('hash default (#/contas) mostra a tela Contas', async () => {
+  // sem nunca provar que a página certa realmente montou. Mesma regra vale
+  // pro <h1>Início</h1> da home (Task 6) — o nav ganhou um link "Início".
+  test('hash default (#/) mostra a tela Início (home)', async () => {
     mockFetchVazio()
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+  })
+
+  // Task 6: #/contas deixou de ser o default, mas continua acessível
+  // explicitamente — é o que este teste prova.
+  test('#/contas continua acessível mesmo não sendo mais o default', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/contas'
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Contas' })).toBeDefined(),

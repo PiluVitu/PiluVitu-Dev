@@ -1,26 +1,22 @@
 import { useEffect, useState } from 'react'
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
-import { todayInTeresina } from './lib/dates'
+import { competenciaAtual } from './lib/dates'
 import { AccountsPage } from './pages/accounts'
 import { CommitmentsPage } from './pages/commitments'
 import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
+import { HomePage } from './pages/home'
 import { NewEntryPage } from './pages/new-entry'
 
 export function useHash(): string {
-  const [hash, setHash] = useState(() => window.location.hash || '#/contas')
+  const [hash, setHash] = useState(() => window.location.hash || '#/')
   useEffect(() => {
-    const onHash = () => setHash(window.location.hash || '#/contas')
+    const onHash = () => setHash(window.location.hash || '#/')
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   return hash
-}
-
-/** Competência do mês corrente em Teresina (UTC−3, sem horário de verão). */
-export function competenciaAtual(now: Date = new Date()): string {
-  return todayInTeresina(now).slice(0, 7)
 }
 
 function AppShell() {
@@ -37,6 +33,7 @@ function AppShell() {
         <button onClick={() => signOut()}>Sair</button>
       </header>
       <nav>
+        <a href="#/">Início</a>
         <a href="#/contas">Contas</a>
         <a href="#/dividas">Dívidas</a>
         <a href="#/lancar">Lançar</a>
@@ -50,8 +47,10 @@ function AppShell() {
         <CommitmentsPage from={competenciaAtual()} />
       ) : hash.startsWith('#/lancar') ? (
         <NewEntryPage />
-      ) : (
+      ) : hash === '#/contas' || hash === '#/contas/' ? (
         <AccountsPage />
+      ) : (
+        <HomePage />
       )}
     </>
   )
