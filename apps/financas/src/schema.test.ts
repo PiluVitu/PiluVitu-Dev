@@ -120,8 +120,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002 — tabelas', () => {
-  it('cria exatamente as 14 tabelas do modelo (10 do 0001 + 4 do better auth)', async () => {
+describe('migrations 0001+0002+0005 — tabelas', () => {
+  it('cria exatamente as 15 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -143,10 +143,42 @@ describe('migrations 0001+0002 — tabelas', () => {
       'installments',
       'payees',
       'session',
+      'settings',
       'transactions',
       'user',
       'verification',
     ])
+  })
+})
+
+describe('migration 0005 — settings (STRICT, PK, upsert)', () => {
+  it('key é PRIMARY KEY: duas linhas com a mesma key são recusadas por INSERT direto (sem ON CONFLICT)', async () => {
+    await DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('k', 'v1', ?)`,
+    )
+      .bind(NOW)
+      .run()
+
+    await expect(
+      DB.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('k', 'v2', ?)`,
+      )
+        .bind(NOW)
+        .run(),
+    ).rejects.toThrow(/UNIQUE constraint failed/)
+  })
+
+  it('STRICT: value/updated_at aceitam TEXT normal (sem CHECK travando formato)', async () => {
+    await DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('outra-chave', 'qualquer texto', ?)`,
+    )
+      .bind(NOW)
+      .run()
+
+    const row = await DB.prepare(
+      `SELECT value FROM settings WHERE key = 'outra-chave'`,
+    ).first<{ value: string }>()
+    expect(row?.value).toBe('qualquer texto')
   })
 })
 

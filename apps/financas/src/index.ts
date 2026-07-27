@@ -8,6 +8,7 @@ import { debtsRoutes } from './routes/debts'
 import { installmentPlansRoutes } from './routes/installments'
 import { payeesRoutes } from './routes/payees'
 import { reportsRoutes } from './routes/reports'
+import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 
 export type Bindings = AuthBindings
@@ -34,6 +35,7 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 
 app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
+app.route('/api', settingsRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
 app.route('/api/reports', reportsRoutes)

@@ -113,6 +113,29 @@ describe('CommitmentsPage', () => {
     )
   })
 
+  // Task 10: fixed_net_cents deixou de ser sempre 360000 — agora pode vir de
+  // um valor SALVO em settings (o backend resolve isso em GET
+  // /api/reports/commitments; esta página não muda como chama a rota). Este
+  // teste prova que a tela cheia (não só o bloco da home) reflete o que a
+  // API devolveu, não um "R$ 3.600,00" fixo no componente.
+  it('Task 10: denominador e % refletem o fixed_net_cents que a API devolveu, não um valor fixo', async () => {
+    const reportComOutraRenda = {
+      ...report,
+      fixed_net_cents: 200000,
+      pct_of_fixed_net: [108, 108, 101, 65, 44, 44],
+    }
+    mockFetch({ ok: true, data: reportComOutraRenda, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('denominador')).toHaveTextContent(
+        'R$ 2.000,00',
+      ),
+    )
+    expect(screen.getByTestId('pct-0')).toHaveTextContent('108%')
+  })
+
   it('mostra o erro da API', async () => {
     mockFetch(
       {

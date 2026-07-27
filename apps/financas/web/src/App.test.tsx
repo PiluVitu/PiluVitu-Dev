@@ -63,6 +63,8 @@ function mockFetchVazio() {
       if (url.includes('/api/debts')) return respond([])
       // DividasPage (`carregar`, Promise.all com /api/debts acima) — lista.
       if (url.includes('/api/payees')) return respond([])
+      // ConfigPage (Task 10) — objeto, não lista.
+      if (url.includes('/api/settings')) return respond({ fixed_net_cents: 0 })
 
       return Promise.reject(new Error(`rota inesperada em teste: ${url}`))
     }),
@@ -127,6 +129,19 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
+      ).toBeDefined(),
+    )
+  })
+
+  // Task 10: nova rota, mesmo padrão das demais (link no <nav> + entrada na
+  // cadeia do AppShell).
+  test('#/configuracoes mostra a tela Configurações', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/configuracoes'
+    render(<App />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Configurações' }),
       ).toBeDefined(),
     )
   })

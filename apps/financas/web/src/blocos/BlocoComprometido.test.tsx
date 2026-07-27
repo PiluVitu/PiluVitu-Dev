@@ -129,6 +129,40 @@ describe('BlocoComprometido', () => {
     expect(screen.queryByTestId('grafico-comprometido')).not.toBeInTheDocument()
   })
 
+  // Task 10: fixed_net_cents deixou de ser sempre o hardcode 360000 — passou
+  // a poder ser o valor SALVO em settings (PUT /api/settings), lido pelo
+  // backend em GET /api/reports/commitments (BlocoComprometido não muda o
+  // jeito de chamar a rota; o default veio de lá). Este teste prova que o
+  // componente REFLETE o que a API devolveu, não um número fixo — mockando
+  // um fixed_net_cents DIFERENTE do default (548000 = R$ 5.480, o líquido
+  // COM freela citado no brief) e conferindo que a linha de referência do
+  // gráfico usa exatamente esse valor, não 360000.
+  // MEDIDO: a ReferenceLine (GraficoComprometido.tsx) só aparece no SVG
+  // quando `fixed_net_cents` cai DENTRO do domínio do eixo Y (que o
+  // recharts calcula a partir do maior `total` das barras) — acima disso,
+  // `ifOverflow` (default 'discard') simplesmente NÃO renderiza a linha
+  // nem o label, em qualquer ambiente (não é peculiaridade do jsdom). Por
+  // isso este teste usa 180000 (R$ 1.800, abaixo do maior total do mock,
+  // 200000), não o "líquido com freela" (R$ 5.480) citado no brief — um
+  // valor acima do domínio não provaria nada, porque a linha não apareceria
+  // de qualquer forma.
+  it('Task 10: usa o fixed_net_cents que a API devolveu, não um valor fixo — prova que a renda salva chega até o gráfico', async () => {
+    vi.mocked(api).mockResolvedValue({ ...report, fixed_net_cents: 180000 })
+
+    const { container } = render(<BlocoComprometido />)
+    await waitFor(() =>
+      expect(screen.getByTestId('grafico-comprometido')).toBeInTheDocument(),
+    )
+
+    // Label da ReferenceLine monta o texto a partir de
+    // `report.fixed_net_cents` — se o componente hardcodasse 360000 em
+    // algum lugar, este texto continuaria "R$ 3.600,00" mesmo com o mock
+    // devolvendo 180000. `container.textContent` (não `getByText`) porque o
+    // SVG do recharts quebra o texto do label em mais de um nó (`<text>` +
+    // `<tspan>`) — o que importa aqui é o VALOR, não a estrutura interna.
+    expect(container.textContent).toContain('Líquido fixo: R$ 1.800,00')
+  })
+
   it('estado erro: mostra a mensagem dentro do próprio card, com role="alert"', async () => {
     vi.mocked(api).mockRejectedValue(
       new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),

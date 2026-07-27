@@ -2,6 +2,7 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createAccount } from '../domain/accounts'
+import { setFixedNetCents } from '../domain/settings'
 import { createTransaction } from '../domain/transactions'
 import { reportsRoutes } from './reports'
 
@@ -89,6 +90,33 @@ describe('GET /api/reports/commitments', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
     expect(body.data.fixed_net_cents).toBe(100000)
+  })
+
+  // Task 10: fixed_net_cents deixou de ser só constante+override de query —
+  // agora é editável via PUT /api/settings (settings.ts), sem deploy. Sem
+  // `?fixed_net_cents=` explícito na query, o default passa a ser o valor
+  // SALVO (quando existir), não mais direto DEFAULT_FIXED_NET_CENTS.
+  it('sem override na query, usa o valor SALVO em settings como default', async () => {
+    await setFixedNetCents(env.DB, 548000)
+
+    const res = await get('/api/reports/commitments?from=2026-08&months=1')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
+    expect(body.data.fixed_net_cents).toBe(548000)
+  })
+
+  // Precedência: ?fixed_net_cents= explícito na query SEMPRE vence o valor
+  // salvo — é o atalho de depuração/preview documentado no CLAUDE.md, nunca
+  // grava nada (só o PUT persiste).
+  it('fixed_net_cents na query vence o valor salvo em settings', async () => {
+    await setFixedNetCents(env.DB, 548000)
+
+    const res = await get(
+      '/api/reports/commitments?from=2026-08&months=1&fixed_net_cents=250000',
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
+    expect(body.data.fixed_net_cents).toBe(250000)
   })
 
   it('sem query nenhuma (from vazio) devolve 400 invalid_query', async () => {

@@ -5,6 +5,7 @@ import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
 import { AccountsPage } from './pages/accounts'
 import { CommitmentsPage } from './pages/commitments'
+import { ConfigPage } from './pages/config'
 import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
 import { HomePage } from './pages/home'
@@ -61,6 +62,9 @@ function AppShell() {
         <a href="#/comprometido" className={navLinkClassName}>
           Comprometido
         </a>
+        <a href="#/configuracoes" className={navLinkClassName}>
+          Configurações
+        </a>
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />
@@ -72,6 +76,8 @@ function AppShell() {
         <NewEntryPage />
       ) : hash === '#/contas' || hash === '#/contas/' ? (
         <AccountsPage />
+      ) : hash === '#/configuracoes' || hash === '#/configuracoes/' ? (
+        <ConfigPage />
       ) : (
         <HomePage />
       )}
