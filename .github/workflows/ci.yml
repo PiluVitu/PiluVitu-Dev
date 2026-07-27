@@ -46,6 +46,13 @@ jobs:
       - name: Test (tools package)
         run: pnpm --filter @piluvitu/tools test
 
+      # Filtro explícito, não `pnpm -r test`: o recursivo PULA EM SILÊNCIO
+      # workspace que não declara o script, então um pacote novo sem `test`
+      # some do CI sem ninguém notar. Mesma armadilha que já deixou os 14
+      # componentes migrados sem lint por um commit inteiro.
+      - name: Test (ui package)
+        run: pnpm --filter @piluvitu/ui test
+
       - name: Test (web)
         run: pnpm --filter @piluvitu/web test
 
