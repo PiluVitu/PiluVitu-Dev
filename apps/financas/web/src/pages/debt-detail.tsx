@@ -4,6 +4,15 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@piluvitu/ui/dialog'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -48,6 +57,26 @@ const STATUS_LABEL: Record<DebtDetailView['debt']['status'], string> = {
   open: 'Aberta',
   settled: 'Quitada',
   written_off: 'Baixada',
+}
+
+/**
+ * Confirmação das quatro ações destrutivas — `Dialog` do design system
+ * (`@piluvitu/ui/dialog`), não `window.confirm()` nativo. Trocado em
+ * revisão: o `window.confirm()` nativo tem um modo de falha real e sério
+ * no Android — depois de disparar repetidas vezes, o Chrome oferece
+ * "Impedir que esta página crie caixas de diálogo adicionais"; se o dono
+ * marcar isso sem querer, TODO `window.confirm()` seguinte devolve
+ * `false` IMEDIATAMENTE, sem erro, sem log, sem qualquer feedback — os
+ * quatro botões de excluir/dar baixa ficam inertes até um F5. O fluxo
+ * mais provável de disparar isso é exatamente o que esta fatia entrega
+ * (limpar vários itens/pagamentos errados em sequência). Um `Dialog`
+ * controlado por estado React não pode entrar nesse estado.
+ */
+type ConfirmacaoPendente = {
+  titulo: string
+  mensagem: string
+  variante?: 'default' | 'destructive'
+  onConfirm: () => void | Promise<void>
 }
 
 /**
@@ -98,13 +127,16 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   const [enviando, setEnviando] = useState(false)
 
   // Ações destrutivas (Task 5): excluir dívida, dar baixa, excluir item,
-  // excluir pagamento — todas pedem `window.confirm` antes de chamar a API
-  // (não existe lixeira nem desfazer, ver spec §2/§6). `processando` guarda
-  // um id de ação (`'divida'`, `'baixa'`, `item:<id>`, `pagamento:<id>`)
-  // pra desabilitar só o botão em voo, sem travar a tela inteira — várias
+  // excluir pagamento — todas pedem confirmação antes de chamar a API (não
+  // existe lixeira nem desfazer, ver spec §2/§6). `processando` guarda um
+  // id de ação (`'divida'`, `'baixa'`, `item:<id>`, `pagamento:<id>`) pra
+  // desabilitar só o botão em voo, sem travar a tela inteira — várias
   // linhas podem, em teoria, ser apagadas em sequência rápida.
   const [acaoErro, setAcaoErro] = useState<string | null>(null)
   const [processando, setProcessando] = useState<string | null>(null)
+  const [confirmacao, setConfirmacao] = useState<ConfirmacaoPendente | null>(
+    null,
+  )
 
   // `vivo` opcional para o chamador poder barrar o setState se uma resposta
   // obsoleta chegar depois de trocar de divida — mesma guarda de
@@ -230,94 +262,105 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
     }
   }
 
-  // As quatro ações abaixo pedem `window.confirm` (irreversível, sem
-  // lixeira — spec §2/§6) e mostram a mensagem do SERVIDOR sem reescrever
-  // (crítico pra `debt_has_ledger`: é a mensagem que ensina "Dar baixa" em
-  // vez de excluir, ver apps/financas/CLAUDE.md § Dívidas). Nativo
-  // (`window.confirm`), não um modal do design system: funciona idêntico em
-  // Android/desktop sem depender de foco/hover, é acessível de fábrica, e
-  // não adiciona `@radix-ui/react-dialog` ao bundle principal só pra isto —
-  // `@radix-ui/react-popover` (Ajuda) já é a primeira dependência nova que
-  // esta tela introduz.
+  function pedirConfirmacao(pedido: ConfirmacaoPendente) {
+    setConfirmacao(pedido)
+  }
 
-  async function excluirDivida() {
-    if (
-      !window.confirm(
-        `Excluir a dívida "${detail!.debt.title}"? Isso remove a dívida e os itens. Não há como desfazer.`,
-      )
-    )
-      return
+  /**
+   * Executa uma mutação e SÓ DEPOIS recarrega — em dois `try` separados,
+   * não um só (fix de revisão). Antes, `carregar()` morava dentro do MESMO
+   * `try` da mutação: se a mutação tivesse sucesso mas o `GET` seguinte
+   * falhasse (rede instável logo depois), o `catch` escrevia o erro do GET
+   * em `acaoErro` e a tela continuava mostrando o estado ANTIGO — ex.:
+   * "Dar baixa" (POST 200) seguido de falha no recarregar deixava o botão
+   * "Dar baixa" ainda visível, e tentar de novo batia num 404 "já baixada"
+   * — a ação tinha funcionado, a tela dizia que não. Mutação e
+   * recarregamento são sucessos/falhas INDEPENDENTES aos olhos do dono.
+   */
+  async function mutarERecarregar(id: string, mutar: () => Promise<void>) {
     setAcaoErro(null)
-    setProcessando('divida')
+    setProcessando(id)
     try {
-      await api(`/api/debts/${debtId}`, { method: 'DELETE' })
-      window.location.hash = '#/dividas'
+      await mutar()
     } catch (err: unknown) {
       setAcaoErro(err instanceof ApiError ? err.message : String(err))
+      setProcessando(null)
+      return
+    }
+    try {
+      await carregar()
+    } catch {
+      setAcaoErro(
+        'A ação foi concluída, mas não consegui recarregar a tela — atualize a página pra ver o resultado.',
+      )
     } finally {
       setProcessando(null)
     }
   }
 
-  async function darBaixa() {
-    if (
-      !window.confirm(
-        `Dar baixa em "${detail!.debt.title}"? Ela sai do comprometido; itens, pagamentos e lançamentos continuam no histórico.`,
-      )
-    )
-      return
-    setAcaoErro(null)
-    setProcessando('baixa')
-    try {
-      await api(`/api/debts/${debtId}/write-off`, { method: 'POST' })
-      await carregar()
-    } catch (err: unknown) {
-      setAcaoErro(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setProcessando(null)
-    }
+  // Mensagem do SERVIDOR mostrada sem reescrever (crítico pra
+  // `debt_has_ledger`: é a mensagem que ensina "Dar baixa" em vez de
+  // excluir, ver apps/financas/CLAUDE.md § Dívidas) — nenhuma das quatro
+  // ações abaixo tem branch especial pro código de erro, `err.message`
+  // vai direto pro `acaoErro`.
+
+  function excluirDivida() {
+    pedirConfirmacao({
+      titulo: 'Excluir dívida',
+      mensagem: `Excluir a dívida "${detail!.debt.title}"? Isso remove a dívida e os itens. Não há como desfazer.`,
+      variante: 'destructive',
+      onConfirm: async () => {
+        setAcaoErro(null)
+        setProcessando('divida')
+        try {
+          await api(`/api/debts/${debtId}`, { method: 'DELETE' })
+          window.location.hash = '#/dividas'
+        } catch (err: unknown) {
+          setAcaoErro(err instanceof ApiError ? err.message : String(err))
+        } finally {
+          setProcessando(null)
+        }
+      },
+    })
   }
 
-  async function excluirItem(item: DebtItemBalanceView) {
-    if (
-      !window.confirm(
-        `Excluir o item "${item.description}"? Não há como desfazer.`,
-      )
-    )
-      return
-    setAcaoErro(null)
-    setProcessando(`item:${item.item_id}`)
-    try {
-      await api(`/api/debts/${debtId}/items/${item.item_id}`, {
-        method: 'DELETE',
-      })
-      await carregar()
-    } catch (err: unknown) {
-      setAcaoErro(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setProcessando(null)
-    }
+  function darBaixa() {
+    pedirConfirmacao({
+      titulo: 'Dar baixa',
+      mensagem: `Dar baixa em "${detail!.debt.title}"? Ela sai do comprometido; itens, pagamentos e lançamentos continuam no histórico.`,
+      onConfirm: () =>
+        mutarERecarregar('baixa', async () => {
+          await api(`/api/debts/${debtId}/write-off`, { method: 'POST' })
+        }),
+    })
   }
 
-  async function excluirPagamento(pagamento: DebtPaymentView) {
-    if (
-      !window.confirm(
-        `Excluir o pagamento de ${formatBRL(pagamento.amount_cents)} em ${dataBR(pagamento.paid_on)}? O lançamento no caixa some junto. Não há como desfazer.`,
-      )
-    )
-      return
-    setAcaoErro(null)
-    setProcessando(`pagamento:${pagamento.id}`)
-    try {
-      await api(`/api/debts/${debtId}/payments/${pagamento.id}`, {
-        method: 'DELETE',
-      })
-      await carregar()
-    } catch (err: unknown) {
-      setAcaoErro(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setProcessando(null)
-    }
+  function excluirItem(item: DebtItemBalanceView) {
+    pedirConfirmacao({
+      titulo: 'Excluir item',
+      mensagem: `Excluir o item "${item.description}"? Não há como desfazer.`,
+      variante: 'destructive',
+      onConfirm: () =>
+        mutarERecarregar(`item:${item.item_id}`, async () => {
+          await api(`/api/debts/${debtId}/items/${item.item_id}`, {
+            method: 'DELETE',
+          })
+        }),
+    })
+  }
+
+  function excluirPagamento(pagamento: DebtPaymentView) {
+    pedirConfirmacao({
+      titulo: 'Excluir pagamento',
+      mensagem: `Excluir o pagamento de ${formatBRL(pagamento.amount_cents)} em ${dataBR(pagamento.paid_on)}? O lançamento no caixa some junto. Não há como desfazer.`,
+      variante: 'destructive',
+      onConfirm: () =>
+        mutarERecarregar(`pagamento:${pagamento.id}`, async () => {
+          await api(`/api/debts/${debtId}/payments/${pagamento.id}`, {
+            method: 'DELETE',
+          })
+        }),
+    })
   }
 
   return (
@@ -351,7 +394,14 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {detail.debt.status === 'open' ? (
-            <>
+            // Botão + Ajuda num wrapper PRÓPRIO (fix de revisão): soltos
+            // no mesmo `gap-2` do "Excluir dívida", o "?" ficava a 8px dos
+            // DOIS botões (MEDIDO a 390px), sem pista visual de qual ele
+            // explica — um toque em "?" esperando ajuda do botão vermelho
+            // podia render o texto de "Dar baixa" (o oposto de excluir)
+            // colado mentalmente na ação irreversível. `gap-1` (menor que
+            // o `gap-2` entre grupos) marca a dupla como uma unidade.
+            <div className="flex items-center gap-1">
               <Button
                 type="button"
                 variant="outline"
@@ -365,7 +415,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                 Encerra sem apagar: preserva itens, pagamentos e lançamentos, e
                 tira do comprometido.
               </Ajuda>
-            </>
+            </div>
           ) : null}
           <Button
             type="button"
@@ -490,47 +540,58 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
           <CardTitle className="text-base">Pagamentos</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-3">
-            {detail.payments.map((p) => (
-              <li
-                key={p.id}
-                data-testid={`pagamento-${p.id}`}
-                className="text-sm"
-              >
-                <div className="flex items-baseline justify-between">
-                  <span className="text-muted-foreground">
-                    {dataBR(p.paid_on)}
-                  </span>{' '}
-                  <strong data-testid={`pagamento-${p.id}-total`}>
-                    {formatBRL(p.amount_cents)}
-                  </strong>
-                </div>
-                <ul className="text-muted-foreground mt-1 space-y-0.5 pl-4">
-                  {p.allocations.map((a) => (
-                    <li
-                      key={a.item_id}
-                      data-testid={`alloc-${p.id}-${a.item_id}`}
+          {detail.payments.length === 0 ? (
+            // Fix de revisão: mesma tela do próprio screenshot do dono —
+            // §3.3 do spec cobriu os dois vazios de Itens, mas deixou este
+            // card sempre em branco quando não há pagamento nenhum ainda
+            // (o caso comum de uma dívida recém-criada). Aponta pro
+            // formulário logo abaixo, em vez de só um espaço vazio.
+            <p className="text-muted-foreground text-sm">
+              Nenhum pagamento ainda — registre o primeiro no formulário abaixo.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {detail.payments.map((p) => (
+                <li
+                  key={p.id}
+                  data-testid={`pagamento-${p.id}`}
+                  className="text-sm"
+                >
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-muted-foreground">
+                      {dataBR(p.paid_on)}
+                    </span>{' '}
+                    <strong data-testid={`pagamento-${p.id}-total`}>
+                      {formatBRL(p.amount_cents)}
+                    </strong>
+                  </div>
+                  <ul className="text-muted-foreground mt-1 space-y-0.5 pl-4">
+                    {p.allocations.map((a) => (
+                      <li
+                        key={a.item_id}
+                        data-testid={`alloc-${p.id}-${a.item_id}`}
+                      >
+                        {descricaoItem(a.item_id)} · {formatBRL(a.amount_cents)}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
+                      data-testid={`excluir-pagamento-${p.id}`}
+                      disabled={processando === `pagamento:${p.id}`}
+                      onClick={() => excluirPagamento(p)}
                     >
-                      {descricaoItem(a.item_id)} · {formatBRL(a.amount_cents)}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
-                    data-testid={`excluir-pagamento-${p.id}`}
-                    disabled={processando === `pagamento:${p.id}`}
-                    onClick={() => excluirPagamento(p)}
-                  >
-                    {processando === `pagamento:${p.id}` ? '…' : 'Excluir'}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                      {processando === `pagamento:${p.id}` ? '…' : 'Excluir'}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
@@ -624,6 +685,38 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
           </form>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={confirmacao !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmacao(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{confirmacao?.titulo}</DialogTitle>
+            <DialogDescription>{confirmacao?.mensagem}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant={confirmacao?.variante ?? 'default'}
+              onClick={() => {
+                const pedido = confirmacao
+                setConfirmacao(null)
+                void pedido?.onConfirm()
+              }}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

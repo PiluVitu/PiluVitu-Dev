@@ -579,15 +579,23 @@ describe('DebtDetailPage', () => {
   })
 
   // ---------------------------------------------------------------------
-  // Task 5: as quatro ações destrutivas — confirmação obrigatória, e o
+  // Task 5: as quatro ações destrutivas — confirmação obrigatória via
+  // `Dialog` do design system (trocado de `window.confirm` em revisão —
+  // ver comentário de `ConfirmacaoPendente` em debt-detail.tsx), e o
   // caminho feliz de cada uma.
+  //
+  // Padrão de "cancelar": clicar no botão da ação, CONFIRMAR que o diálogo
+  // abriu (`getByRole('heading', ...)` — um botão inerte falharia bem
+  // AQUI, antes de qualquer coisa relacionada à API), só então clicar
+  // "Cancelar" e afirmar que `api` nunca foi chamada. Essa ordem é o que
+  // prova que a confirmação é o que impede a chamada, não uma coincidência
+  // de mock.
   // ---------------------------------------------------------------------
 
   describe('excluir dívida', () => {
     it('cancelar a confirmação NÃO chama a API', async () => {
       mockApi()
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -597,14 +605,22 @@ describe('DebtDetailPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
 
-      expect(window.confirm).toHaveBeenCalledTimes(1)
+      const dialogo = await screen.findByRole('heading', {
+        name: 'Excluir dívida',
+      })
+      expect(dialogo).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(
+        screen.queryByRole('heading', { name: 'Excluir dívida' }),
+      ).not.toBeInTheDocument()
       expect(api).not.toHaveBeenCalled()
     })
 
     it('confirmar chama DELETE e navega pra #/dividas', async () => {
       mockApi()
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -612,6 +628,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
+      await screen.findByRole('heading', { name: 'Excluir dívida' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(api).toHaveBeenCalledWith('/api/debts/d1', {
@@ -630,7 +648,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -638,6 +655,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
+      await screen.findByRole('heading', { name: 'Excluir dívida' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(MENSAGEM_SERVIDOR),
@@ -653,7 +672,6 @@ describe('DebtDetailPage', () => {
     it('cancelar a confirmação NÃO chama a API', async () => {
       mockApi()
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -663,7 +681,15 @@ describe('DebtDetailPage', () => {
 
       await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
 
-      expect(window.confirm).toHaveBeenCalledTimes(1)
+      expect(
+        await screen.findByRole('heading', { name: 'Dar baixa' }),
+      ).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(
+        screen.queryByRole('heading', { name: 'Dar baixa' }),
+      ).not.toBeInTheDocument()
       expect(api).not.toHaveBeenCalled()
     })
 
@@ -677,7 +703,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -685,6 +710,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+      await screen.findByRole('heading', { name: 'Dar baixa' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.getByText('Situação: Baixada')).toBeInTheDocument(),
@@ -708,7 +735,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -716,6 +742,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+      await screen.findByRole('heading', { name: 'Dar baixa' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(
@@ -723,13 +751,56 @@ describe('DebtDetailPage', () => {
         ),
       )
     })
+
+    // Fix de revisão: a mutação e o recarregamento pós-mutação são
+    // sucessos/falhas INDEPENDENTES — um GET que falha depois de um POST
+    // bem-sucedido não pode fazer a tela dizer "deu errado" quando na
+    // verdade a baixa aconteceu. Prova: `writeOff` sempre tem sucesso;
+    // `detail` (usado tanto no mount quanto no `carregar()` pós-baixa)
+    // funciona na 1ª chamada e falha a partir da 2ª (a do reload).
+    it('sucesso na baixa mas falha ao RECARREGAR não diz que a ação falhou', async () => {
+      let chamadasDetail = 0
+      mockApi({
+        detail: () => {
+          chamadasDetail += 1
+          if (chamadasDetail === 1) return detail
+          throw new ApiError(
+            503,
+            'auth_unavailable',
+            'sem conexão com o servidor',
+          )
+        },
+        writeOff: () => ({ id: 'd1', written_off: true }),
+      })
+      const user = userEvent.setup()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+      await screen.findByRole('heading', { name: 'Dar baixa' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      expect(api).toHaveBeenCalledWith('/api/debts/d1/write-off', {
+        method: 'POST',
+      })
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A ação foi concluída, mas não consegui recarregar',
+        ),
+      )
+      // NÃO é a mensagem do GET (503) reaproveitada como se fosse erro da
+      // baixa — as duas são coisas diferentes, e só uma delas é verdade.
+      expect(screen.getByRole('alert')).not.toHaveTextContent('sem conexão')
+    })
   })
 
   describe('excluir item (por linha)', () => {
     it('cancelar a confirmação NÃO chama a API', async () => {
       mockApi()
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -739,9 +810,19 @@ describe('DebtDetailPage', () => {
 
       await user.click(screen.getByTestId('excluir-item-i2'))
 
-      expect(window.confirm).toHaveBeenCalledWith(
-        expect.stringContaining('Steam Deck'),
-      )
+      const dialogo = await screen.findByRole('dialog')
+      expect(
+        within(dialogo).getByRole('heading', { name: 'Excluir item' }),
+      ).toBeInTheDocument()
+      // "Steam Deck" também aparece na tabela por baixo — escopado no
+      // diálogo pra não colidir com getByText ambíguo.
+      expect(within(dialogo).getByText(/Steam Deck/)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(
+        screen.queryByRole('heading', { name: 'Excluir item' }),
+      ).not.toBeInTheDocument()
       expect(api).not.toHaveBeenCalled()
     })
 
@@ -755,7 +836,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -763,6 +843,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByTestId('excluir-item-i2'))
+      await screen.findByRole('heading', { name: 'Excluir item' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.queryByTestId('item-i2')).not.toBeInTheDocument(),
@@ -784,7 +866,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -792,6 +873,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByTestId('excluir-item-i2'))
+      await screen.findByRole('heading', { name: 'Excluir item' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(
@@ -808,7 +891,6 @@ describe('DebtDetailPage', () => {
     it('cancelar a confirmação NÃO chama a API', async () => {
       mockApi()
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -818,9 +900,19 @@ describe('DebtDetailPage', () => {
 
       await user.click(screen.getByTestId('excluir-pagamento-pg1'))
 
-      expect(window.confirm).toHaveBeenCalledWith(
-        expect.stringContaining('R$ 2.940,00'),
-      )
+      const dialogo = await screen.findByRole('dialog')
+      expect(
+        within(dialogo).getByRole('heading', { name: 'Excluir pagamento' }),
+      ).toBeInTheDocument()
+      // O valor também aparece na lista de pagamentos por baixo —
+      // escopado no diálogo pra não colidir com getByText ambíguo.
+      expect(within(dialogo).getByText(/R\$ 2\.940,00/)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(
+        screen.queryByRole('heading', { name: 'Excluir pagamento' }),
+      ).not.toBeInTheDocument()
       expect(api).not.toHaveBeenCalled()
     })
 
@@ -834,7 +926,6 @@ describe('DebtDetailPage', () => {
         },
       })
       const user = userEvent.setup()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -842,6 +933,8 @@ describe('DebtDetailPage', () => {
       )
 
       await user.click(screen.getByTestId('excluir-pagamento-pg1'))
+      await screen.findByRole('heading', { name: 'Excluir pagamento' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
       await waitFor(() =>
         expect(screen.queryByTestId('pagamento-pg1')).not.toBeInTheDocument(),
@@ -850,5 +943,22 @@ describe('DebtDetailPage', () => {
         method: 'DELETE',
       })
     })
+  })
+
+  // ---------------------------------------------------------------------
+  // Task 5: estado vazio do card Pagamentos (fix de revisão — §3.3 do
+  // spec cobriu Itens/Dividir entre itens, mas deixou este card em
+  // branco quando não há pagamento nenhum ainda).
+  // ---------------------------------------------------------------------
+
+  it('card Pagamentos sem nenhum pagamento explica em vez de ficar em branco', async () => {
+    mockApi({ detail: () => ({ ...detail, payments: [] }) })
+
+    render(<DebtDetailPage debtId="d1" />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/Nenhum pagamento ainda/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('pagamento-pg1')).not.toBeInTheDocument()
   })
 })
