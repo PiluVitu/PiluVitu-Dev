@@ -332,6 +332,7 @@ Cada arquivo de `src/domain/` recebe o `D1Database` por parâmetro (nunca lê `e
   - `createTransfer` é o mecanismo anti-dupla-contagem nº 1: **duas** linhas (saída negativa na origem, entrada positiva no destino) com o **mesmo `transfer_id`**, num único `db.batch()` — se a segunda perna falhar, o D1 reverte a primeira e não sobra meia transferência. As duas nascem com `settled_at` preenchido e `bill_competence` NULL. `v_cashflow` filtra `transfer_id IS NULL`, então o consolidado ignora a transferência enquanto o saldo de cada conta reflete os dois lados.
   - `listTransactions` sempre aplica `LIMIT` (default 200, teto 500): no D1 "rows read" conta linha **escaneada**, e listagem sem teto queima cota.
   - Valor 0 e moeda ≠ BRL sem `amount_original_cents`/`fx_rate_ppm` são barrados pelos `CHECK` do schema, de propósito — a rota traduz o `D1_ERROR` em `422`, nunca `500`.
+- **`recurring.ts`** — `createRecurring` / `listRecurring` / `updateRecurring` / `deleteRecurring` / `projectRecurring` (Task 2 da fatia ⑥, despesas recorrentes com faixa — detalhe completo na seção _Despesas recorrentes_ mais abaixo).
 
 ⚠️ **Convenção de módulo: toda rota de transição de estado devolve `404 not_found` quando `meta.changes === 0`.** `archiveAccount(db, id)` devolve `Promise<boolean>` — `true` só quando o `UPDATE` de fato tocou uma linha (`res.meta.changes > 0`), lido do `D1Result` devolvido por `.run()`. Um id inexistente e um id já arquivado casam com `WHERE id = ? AND archived_at IS NULL` zero vezes: sem checar `meta.changes`, os dois ficam indistinguíveis de um arquivamento novo e bem-sucedido, e a rota responderia `200` para os três casos. A rota (`src/routes/accounts.ts`) traduz `false` em `errJson(404, 'not_found', ...)` e só devolve `200` quando a transição realmente aconteceu.
 
@@ -522,6 +523,43 @@ Torna `fixed_net_cents` editável **sem deploy**, mantendo o `DEFAULT_FIXED_NET_
   5. **Conectar contas** — ⚠️ **frase honesta, SEM botão.** Open Finance é fatia ④, não construída — bloqueada por restrições reais: participação direta exige R$ 1.000.000 de capital, e a rota de agregador arrisca a mesma verificação de cartão que tirou o Cloudflare Access deste módulo (ver `apps/financas/CLAUDE.md`/"Autenticação"). Decisão registrada: **import de fatura (fatia ②) vem primeiro.** Um botão que não faz nada seria pior que a ausência dele — a tela só diz o que falta e o que vem antes.
 - **125 testes na SPA** (21 arquivos — Task 10 soma `pages/config.test.tsx`, 10 casos novos, mais 3 casos de regressão em `App.test.tsx`/`BlocoComprometido.test.tsx`/`pages/commitments.test.tsx` provando que o valor salvo chega tanto no bloco da home quanto na tela cheia). **254 testes no Worker** (Task 10 soma `domain/settings.test.ts` + `routes/settings.test.ts` + 2 casos novos em `routes/reports.test.ts` + 2 casos novos em `schema.test.ts`; fix round 1 somou mais 8: 3 em `routes/reports.test.ts` — Minor 1 — e 5 em `domain/settings.test.ts` — Minor 2).
   - ⚠️ **MEDIDO: a `ReferenceLine` de `GraficoComprometido.tsx` só aparece no SVG quando `fixed_net_cents` cai DENTRO do domínio do eixo Y** (que o recharts calcula a partir do maior `total` das barras) — acima disso, `ifOverflow` (default `'discard'`) não renderiza a linha nem o label, em QUALQUER ambiente (não é peculiaridade do jsdom, é o comportamento real do recharts sem `ifOverflow="extendDomain"` explícito, que este componente não seta). O teste de regressão em `BlocoComprometido.test.tsx` usa um `fixed_net_cents` DENTRO do domínio do mock (180000, abaixo do maior total 200000) — um valor tipo "R$ 5.480" (o líquido COM freela citado no brief) não provaria nada, porque a linha não apareceria de qualquer forma.
+
+## Despesas recorrentes (`src/domain/recurring.ts`, Task 2 da fatia ⑥)
+
+Schema na migration `0006` (ver seção acima). Este arquivo é a camada de domínio: CRUD sobre `recurring_expenses` mais `projectRecurring`, a peça que faz a fatia inteira funcionar — Starlink R$ 189, DAS R$ 12–600, contador e INSS não somavam no Comprometido porque não existia onde cadastrá-los nem como projetá-los sem dupla contagem.
+
+**CRUD** (`createRecurring`/`listRecurring`/`updateRecurring`/`deleteRecurring`) segue as convenções já estabelecidas no módulo: TS valida ANTES do banco (`day_of_month` 1..31, `amount_max_cents >= amount_min_cents > 0` — mesmo padrão de `createAccount`/`setFixedNetCents`, mensagem legível em vez do `CHECK constraint failed` cru do D1); `updateRecurring` é um patch parcial por whitelist de colunas (`PATCHABLE_FIELDS`) e devolve `null` pra id inexistente (mesma convenção de `archiveAccount`/`deleteDebt` — id-não-encontrado numa transição de estado é resultado esperado, não exceção); `deleteRecurring` é **DELETE de verdade**, não soft-delete — a tabela não tem `archived_at`, só o flag `active` (dado de negócio: uma recorrente pausada, não uma exclusão).
+
+⚠️ **`deleteRecurring` nunca apaga um `transaction` real — a FK `transactions.recurring_expense_id` é `ON DELETE SET NULL` (migration 0006), nunca CASCADE.** Provado em `recurring.test.ts` CONTANDO `transactions` antes/depois do `DELETE` (não só pela ausência de erro) — mesma disciplina de `deleteDebt`/`deleteDebtPayment` (ver seção _Dívidas_).
+
+### `projectRecurring(db, { from, months }): Promise<Map<competência, { min, max }>>`
+
+**Projeção, nunca materialização (§3 do spec).** O parcelamento materializa N `transactions` de uma vez porque N é finito e conhecido na criação; uma recorrente não tem fim, e materializar exigiria um horizonte arbitrário mais um processo que o estende com o tempo — cron que este projeto não tem. `projectRecurring` calcula tudo NA LEITURA, dentro da janela `[from, from+months)`, e **nunca escreve em `transactions`**. Uma recorrente é uma EXPECTATIVA, nunca um fato: quando o dinheiro sai de verdade, existe um `transaction` real, lançado à mão ou importado (fatia ②), opcionalmente vinculado via `recurring_expense_id` — vincular em si (tela Lançar, "este é o Starlink de agosto") é trabalho de fatia futura (Tasks 4–7); esta task só lê o vínculo, não escreve.
+
+O `Map` é esparso — só ganha entrada pra competências onde alguma recorrente de fato projeta algo (mesmo raciocínio de `commitments()`/`rows`: ausência é ausência, não `{min:0,max:0}`). Quando duas recorrentes caem na mesma competência, os valores **somam** (min com min, max com max) — é essa soma que `commitments()` (Task 3, ainda **não wireada**) vai consumir pra virar a faixa "R$ 2.400 a R$ 2.988" do Comprometido.
+
+**Regra 1 — `day_of_month` é APARADO, nunca reimplementado.** A data de vencimento de cada competência sai de `competenceDueDate(competence, day_of_month)` (`src/lib/dates.ts`, a MESMA função que já resolve vencimento de cartão) — dia 31 vira 28 em fevereiro, 30 em abril. `starts_on`/`ends_on` cortam no nível do DIA, comparando essa data já aparada contra as duas colunas (`dueDate < starts_on` ⇒ ainda não começou nesta competência; `ends_on !== null && dueDate > ends_on` ⇒ já encerrada) — não no nível da competência crua, porque um `starts_on` no meio do mês pode empurrar a primeira ocorrência pra competência seguinte.
+
+**Regra 2 — supressão é EXATA e POR COMPETÊNCIA, nunca heurística (§3.1 do spec).** Casar por categoria + valor aproximado erra em silêncio — a classe de defeito que este projeto passou a sessão inteira caçando. A projeção de uma competência some quando existe `transactions.recurring_expense_id` apontando pra aquela recorrente **com `purchase_date` dentro daquela competência especificamente** — nunca "qualquer vínculo em qualquer competência suprime tudo". SQL exato:
+
+```sql
+SELECT recurring_expense_id, purchase_date
+  FROM transactions
+ WHERE recurring_expense_id IN (<ids ativos>)
+   AND purchase_date >= ?   -- 1º dia da 1ª competência da janela
+   AND purchase_date <  ?   -- 1º dia do mês SEGUINTE à última competência
+ LIMIT ?
+```
+
+UMA única query pra janela inteira (não `months × recorrentes` queries separadas) — sargable contra `idx_tx_recurring` (migration 0006, igualdade em `recurring_expense_id` antes do range em `purchase_date`). A competência de cada vínculo vem do próprio `purchase_date` (`slice(0, 7)`), nunca da competência "esperada" da recorrente — é isso que faz "vincular agosto não suprime setembro" funcionar: os vínculos viram `Map<recurring_expense_id, Set<competência>>`, e o loop de projeção só suprime quando a competência ATUAL está naquele `Set`.
+
+⚠️ **Self-review verificado por mutação, não só argumentado.** Uma implementação que suprimisse a recorrente inteira assim que QUALQUER vínculo existisse passaria no teste 6 (uma recorrente, uma competência) mas tem que falhar no teste 7 — confirmado mutando localmente `suppressedCompetences.get(r.id)?.has(competence)` para `suppressedCompetences.has(r.id)` e rodando a suíte: `7. supressao e POR COMPETENCIA` falha (`expected undefined to deeply equal {min: 18900, max: 18900}` pra setembro), os outros 21 continuam verdes — prova que o teste pega exatamente a classe de bug que o spec teme. Mesmo teste, mutação revertida antes do commit. Da mesma forma, um `projectRecurring` que sempre devolvesse `new Map()` vazio foi testado e falha 9 dos 22 casos (todos os que esperam entrada não vazia) — nenhum teste passaria "de graça" contra uma implementação vazia.
+
+`active = 0` nunca entra em jogo — filtro `WHERE active = 1` na própria query de recorrentes, não checagem em JS.
+
+Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/recurring.test.ts` (22 casos: CRUD feliz/erro + os 9 do brief — Starlink fixo, DAS em faixa, `ends_on` no meio da janela, `active=0`, `starts_on` futuro, supressão simples, supressão por competência + variante com duas recorrentes na mesma competência, dia 31 em fevereiro, `deleteRecurring` não apaga lançamento — mais soma de duas recorrentes na mesma competência e validação de `from`/`months`).
+
+⚠️ **Ainda não wireado em `commitments()`** — isso é Task 3 da fatia ⑥. Até lá, Starlink/DAS/contador/INSS já são cadastráveis e projetáveis via `recurring.ts`, mas não aparecem na tela Comprometido.
 
 ## SPA (`apps/financas/web`)
 
