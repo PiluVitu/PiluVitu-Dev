@@ -123,3 +123,80 @@ describe('GET /api/reports/commitments', () => {
     expect(body.notifications[0].code).toBe('invalid_query')
   })
 })
+
+describe('GET /api/reports/by-category', () => {
+  it('devolve 200 com envelope ok, competencia e linhas por categoria', async () => {
+    const conta = await createAccount(env.DB, {
+      name: 'Conta corrente rota by-category',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    await createTransaction(env.DB, {
+      account_id: conta.id,
+      amount_cents: -8000,
+      purchase_date: '2026-07-12',
+      description: 'Mercado rota',
+      settled_at: '2026-07-12',
+    })
+
+    const res = await get('/api/reports/by-category?competence=2026-07')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      competence: string
+      rows: Array<{
+        category_id: string | null
+        category_name: string
+        category_slug: string | null
+        total_cents: number
+      }>
+      total_cents: number
+    }>
+    expect(body.ok).toBe(true)
+    expect(body.notifications).toEqual([])
+    expect(body.data.competence).toBe('2026-07')
+    expect(body.data.rows).toEqual([
+      {
+        category_id: null,
+        category_name: 'Sem categoria',
+        category_slug: null,
+        total_cents: -8000,
+      },
+    ])
+    expect(body.data.total_cents).toBe(-8000)
+  })
+
+  it('mes sem lancamento nenhum devolve rows vazio e total zero', async () => {
+    const res = await get('/api/reports/by-category?competence=2100-02')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      rows: unknown[]
+      total_cents: number
+    }>
+    expect(body.data.rows).toEqual([])
+    expect(body.data.total_cents).toBe(0)
+  })
+
+  it('sem competence devolve 400 invalid_query', async () => {
+    const res = await get('/api/reports/by-category')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  it("competence='2026-7' (formato invalido) devolve 400 invalid_query", async () => {
+    const res = await get('/api/reports/by-category?competence=2026-7')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  it("competence='2026-13' (mes inexistente) devolve 400 invalid_query", async () => {
+    const res = await get('/api/reports/by-category?competence=2026-13')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+})

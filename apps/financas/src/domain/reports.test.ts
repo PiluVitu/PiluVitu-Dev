@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { createAccount } from './accounts'
-import { createTransaction } from './transactions'
+import { createTransaction, createTransfer } from './transactions'
 import { addDebtItem, createDebt, payDebt } from './debts'
-import { commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
+import { byCategory, commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
 
 const db = env.DB
 
@@ -355,5 +355,251 @@ describe('commitments', () => {
     await expect(
       commitments(db, { from: '2026-08', months: 0, fixed_net_cents: 360000 }),
     ).rejects.toThrow(RangeError)
+  })
+})
+
+async function categoria(name: string, kind: string, slug: string) {
+  const id = crypto.randomUUID()
+  await db
+    .prepare(
+      `INSERT INTO categories (id, name, kind, slug, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .bind(id, name, kind, slug, '2026-01-01T00:00:00Z')
+    .run()
+  return id
+}
+
+describe('byCategory', () => {
+  it('soma por categoria no mes, separado por categoria', async () => {
+    const conta = await createAccount(db, {
+      name: 'Conta corrente byCategory 1',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const mercado = await categoria('Mercado', 'expense', 'mercado-soma')
+    const lazer = await categoria('Lazer', 'expense', 'lazer-soma')
+
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -10000,
+      purchase_date: '2026-07-05',
+      description: 'Supermercado',
+      category_id: mercado,
+      settled_at: '2026-07-05',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -5000,
+      purchase_date: '2026-07-10',
+      description: 'Feira',
+      category_id: mercado,
+      settled_at: '2026-07-10',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -8000,
+      purchase_date: '2026-07-15',
+      description: 'Cinema',
+      category_id: lazer,
+      settled_at: '2026-07-15',
+    })
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    expect(report.competence).toBe('2026-07')
+    const porNome = Object.fromEntries(
+      report.rows.map((r) => [r.category_name, r.total_cents]),
+    )
+    expect(porNome['Mercado']).toBe(-15000)
+    expect(porNome['Lazer']).toBe(-8000)
+    expect(report.total_cents).toBe(-23000)
+  })
+
+  it('lancamento sem categoria cai no bucket Sem categoria', async () => {
+    const conta = await createAccount(db, {
+      name: 'Conta corrente byCategory 2',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -3000,
+      purchase_date: '2026-07-20',
+      description: 'Sem categoria nenhuma',
+      settled_at: '2026-07-20',
+    })
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    expect(report.rows).toEqual([
+      {
+        category_id: null,
+        category_name: 'Sem categoria',
+        category_slug: null,
+        total_cents: -3000,
+      },
+    ])
+    expect(report.total_cents).toBe(-3000)
+  })
+
+  it('mes vazio devolve rows vazio e total zero', async () => {
+    const report = await byCategory(db, { competence: '2100-01' })
+    expect(report.rows).toEqual([])
+    expect(report.total_cents).toBe(0)
+  })
+
+  it('exclui perna de transferencia (mesmo anti-dupla-contagem de v_cashflow)', async () => {
+    const origem = await createAccount(db, {
+      name: 'Conta A byCategory',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const destino = await createAccount(db, {
+      name: 'Conta B byCategory',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const mercado = await categoria('Mercado', 'expense', 'mercado-transf')
+
+    await createTransaction(db, {
+      account_id: origem.id,
+      amount_cents: -10000,
+      purchase_date: '2026-07-05',
+      description: 'Compra real',
+      category_id: mercado,
+      settled_at: '2026-07-05',
+    })
+    await createTransfer(db, {
+      from_account_id: origem.id,
+      to_account_id: destino.id,
+      amount_cents: 50000,
+      date: '2026-07-06',
+      description: 'Transferencia interna',
+    })
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    // Uma query que NAO excluisse transfer_id somaria as duas pernas
+    // (-50000 + 50000 = 0 liquido, mas apareceriam como linhas 'Sem
+    // categoria' com -50000/+50000) e/ou distorceria o total. So a compra
+    // real deve sobrar.
+    expect(report.rows).toEqual([
+      {
+        category_id: mercado,
+        category_name: 'Mercado',
+        category_slug: 'mercado-transf',
+        total_cents: -10000,
+      },
+    ])
+    expect(report.total_cents).toBe(-10000)
+  })
+
+  it('exclui filha de rateio, conta so o valor cheio do pai', async () => {
+    const conta = await createAccount(db, {
+      name: 'Conta corrente byCategory 3',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const mercado = await categoria('Mercado', 'expense', 'mercado-rateio')
+
+    const pai = await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -30000,
+      purchase_date: '2026-07-05',
+      description: 'Compra rateada (pai)',
+      category_id: mercado,
+      settled_at: '2026-07-05',
+    })
+    // Filha de rateio: mesmo valor do pai, INSERT cru (createTransaction nao
+    // aceita parent_id — rateio e mecanismo de leitura/gravacao direta, igual
+    // ao teste analogo em commitments acima).
+    await db
+      .prepare(
+        `INSERT INTO transactions
+           (id, account_id, amount_cents, currency, purchase_date, description,
+            category_id, is_business, parent_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'BRL', ?, ?, ?, 0, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        conta.id,
+        -30000,
+        '2026-07-05',
+        'Compra rateada (filha)',
+        mercado,
+        pai.id,
+        '2026-07-05T12:00:00Z',
+        '2026-07-05T12:00:00Z',
+      )
+      .run()
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    // Se a filha nao fosse excluida, total_cents seria -60000 (dobrado).
+    expect(report.rows).toEqual([
+      {
+        category_id: mercado,
+        category_name: 'Mercado',
+        category_slug: 'mercado-rateio',
+        total_cents: -30000,
+      },
+    ])
+    expect(report.total_cents).toBe(-30000)
+  })
+
+  it('agrupa por purchase_date, NAO por bill_competence — compra de fim de mes num cartao que fecha antes cai no mes da COMPRA, nao no mes da fatura', async () => {
+    const cartao = await createAccount(db, {
+      name: 'Cartao fecha 25 byCategory',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 25,
+      due_day: 5,
+    })
+    const assinaturas = await categoria(
+      'Assinaturas',
+      'expense',
+      'assinaturas-mes',
+    )
+
+    // Compra em 28/07 num cartao que fecha dia 25: purchase_date='2026-07-28',
+    // bill_competence deriva para '2026-08' (createTransaction faz isso
+    // sozinho pra conta credit_card). O TESTE que importa: essa compra tem
+    // que aparecer em JULHO (mes do fato), nao em AGOSTO (mes da fatura) —
+    // uma implementacao que agrupasse por bill_competence inverteria os dois
+    // resultados abaixo.
+    const tx = await createTransaction(db, {
+      account_id: cartao.id,
+      amount_cents: -12000,
+      purchase_date: '2026-07-28',
+      description: 'Assinatura fim de mes',
+      category_id: assinaturas,
+    })
+    expect(tx.bill_competence).toBe('2026-08') // confirma a premissa do cenario
+
+    const julho = await byCategory(db, { competence: '2026-07' })
+    const agosto = await byCategory(db, { competence: '2026-08' })
+
+    expect(julho.rows).toEqual([
+      {
+        category_id: assinaturas,
+        category_name: 'Assinaturas',
+        category_slug: 'assinaturas-mes',
+        total_cents: -12000,
+      },
+    ])
+    expect(julho.total_cents).toBe(-12000)
+    expect(agosto.rows).toEqual([])
+    expect(agosto.total_cents).toBe(0)
+  })
+
+  it('competencia ausente ou malformada rejeita com RangeError', async () => {
+    await expect(byCategory(db, { competence: '' })).rejects.toThrow(RangeError)
+    await expect(byCategory(db, { competence: '2026-13' })).rejects.toThrow(
+      RangeError,
+    )
+    await expect(byCategory(db, { competence: '2026-7' })).rejects.toThrow(
+      RangeError,
+    )
   })
 })

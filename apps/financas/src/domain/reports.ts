@@ -122,3 +122,70 @@ export async function commitments(
 
   return { competences, rows, totals, fixed_net_cents, pct_of_fixed_net }
 }
+
+export type CategoryRow = {
+  category_id: string | null
+  category_name: string
+  category_slug: string | null
+  total_cents: number
+}
+
+export type ByCategoryReport = {
+  competence: string
+  rows: CategoryRow[]
+  total_cents: number
+}
+
+// Categorias sao um conjunto pequeno e controlado (7 seedadas na migration
+// + o que o dono cadastrar via POST /api/categories), mas TODA query no D1
+// sem LIMIT queima cota ("rows read" conta linha ESCANEADA) — mesmo teto
+// usado por listTransactions() em domain/transactions.ts.
+const BY_CATEGORY_LIMIT = 500
+
+/**
+ * "Para onde foi o dinheiro NESTE MES" — soma por categoria, mes por
+ * PURCHASE_DATE (quando o FATO aconteceu), NUNCA por bill_competence (em
+ * qual fatura a compra cai). Uma compra de cartao em 28/07 com fechamento
+ * dia 25 tem purchase_date em julho e bill_competence em agosto —
+ * responder com bill_competence seria responder a pergunta errada
+ * ("o que cai na fatura que fecha em agosto"), nao a que a tela faz.
+ */
+export async function byCategory(
+  db: D1Database,
+  opts: { competence: string },
+): Promise<ByCategoryReport> {
+  // addMonthsToCompetence(x, 0) valida o formato 'YYYY-MM' (lanca RangeError
+  // se ausente/malformado) e devolve a mesma competencia — reusa a mesma
+  // validacao central de lib/dates.ts em vez de duplicar regex aqui. A rota
+  // (routes/reports.ts) traduz esse RangeError em 400 invalid_query, mesmo
+  // padrao de commitments() (ver ⚠️ da secao "Relatorio de comprometido" no
+  // CLAUDE.md: query string malformada e 400, nunca 422).
+  const competence = addMonthsToCompetence(opts.competence, 0)
+
+  // transfer_id/parent_id IS NULL: mesmo anti-dupla-contagem de v_cashflow —
+  // perna de transferencia e filha de rateio repetem o valor da outra
+  // perna/do pai. GROUP BY t.category_id agrupa sozinho todo NULL na mesma
+  // linha (regra padrao do SQL), o que da o bucket "Sem categoria" de graca.
+  const res = await db
+    .prepare(
+      `SELECT c.id                             AS category_id,
+              COALESCE(c.name, 'Sem categoria') AS category_name,
+              c.slug                            AS category_slug,
+              SUM(t.amount_cents)               AS total_cents
+         FROM transactions t
+         LEFT JOIN categories c ON c.id = t.category_id
+        WHERE substr(t.purchase_date, 1, 7) = ?
+          AND t.transfer_id IS NULL
+          AND t.parent_id   IS NULL
+        GROUP BY t.category_id
+        ORDER BY total_cents ASC
+        LIMIT ?`,
+    )
+    .bind(competence, BY_CATEGORY_LIMIT)
+    .all<CategoryRow>()
+
+  const rows = res.results
+  const total_cents = rows.reduce((sum, r) => sum + r.total_cents, 0)
+
+  return { competence, rows, total_cents }
+}
