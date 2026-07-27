@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, splitInstallments } from '@piluvitu/tools/money'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
@@ -152,7 +153,13 @@ export function NewEntryPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="lancamento-data">Data</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="lancamento-data">Data</Label>
+                <Ajuda rotulo="Competência">
+                  O mês em que a fatura fecha, não o da compra. Compra em 28/07
+                  num cartão que fecha dia 25 cai na competência de agosto.
+                </Ajuda>
+              </div>
               <Input
                 id="lancamento-data"
                 type="date"
@@ -188,15 +195,21 @@ export function NewEntryPage() {
                 Entrada
               </label>
 
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className={CHECKBOX_CLASSNAME}
-                  checked={isBusiness}
-                  onChange={(e) => setIsBusiness(e.target.checked)}
-                />
-                PJ
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className={CHECKBOX_CLASSNAME}
+                    checked={isBusiness}
+                    onChange={(e) => setIsBusiness(e.target.checked)}
+                  />
+                  PJ
+                </label>
+                <Ajuda rotulo="PJ / PF">
+                  scope é o padrão da conta; is_business é a verdade do
+                  lançamento — dá para pagar algo PF pelo cartão PJ.
+                </Ajuda>
+              </div>
 
               <label className="flex items-center gap-2 text-sm">
                 <input

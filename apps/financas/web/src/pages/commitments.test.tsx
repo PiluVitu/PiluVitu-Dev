@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommitmentsPage } from './commitments'
 
@@ -134,6 +135,40 @@ describe('CommitmentsPage', () => {
       ),
     )
     expect(screen.getByTestId('pct-0')).toHaveTextContent('108%')
+  })
+
+  // Task 5 (ajuda contextual, §3.2 do spec): "Comprometido (e bloco da
+  // home)" — este é a tela dedicada (`#/comprometido`); "Comprometido /
+  // Configurações" — "Renda de referência" também mora aqui. Os dois
+  // pontos vivem na mesma tela; um teste por termo.
+  it('ajuda: "Comprometido" abre no clique com o texto do que conta como comprometido', async () => {
+    mockFetch({ ok: true, data: report, notifications: [] })
+    const user = userEvent.setup()
+
+    render(<CommitmentsPage from="2026-08" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('linha-a1')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Comprometido' }),
+    )
+    expect(await screen.findByText(/parcelas previstas/)).toBeInTheDocument()
+  })
+
+  it('ajuda: "Renda de referência" abre no clique com o texto do porquê do denominador', async () => {
+    mockFetch({ ok: true, data: report, notifications: [] })
+    const user = userEvent.setup()
+
+    render(<CommitmentsPage from="2026-08" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('linha-a1')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Renda de referência' }),
+    )
+    expect(await screen.findByText(/R\$ 5.300/)).toBeInTheDocument()
   })
 
   it('mostra o erro da API', async () => {

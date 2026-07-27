@@ -206,6 +206,25 @@ describe('ConfigPage', () => {
     expect(localStorage.getItem('financas-tema')).toBe('claro')
   })
 
+  // Task 5 (ajuda contextual, §3.2 do spec): "Comprometido / Configurações"
+  // — este é o "Configurações". Clique, não hover — ver
+  // BlocoComprometido.test.tsx pro mesmo ponto do lado da home.
+  it('ajuda: "Renda de referência" abre no clique com o texto do porquê do denominador', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
+
+    render(<ConfigPage />)
+
+    const gatilho = screen.getByRole('button', {
+      name: 'Ajuda sobre Renda de referência',
+    })
+    expect(screen.queryByText(/R\$ 5.300/)).not.toBeInTheDocument()
+
+    await user.click(gatilho)
+
+    expect(await screen.findByText(/R\$ 5.300/)).toBeInTheDocument()
+  })
+
   it('conta: mostra o e-mail da sessão e Sair chama signOut', async () => {
     const { signOut } = await import('../auth-client')
     const user = userEvent.setup()

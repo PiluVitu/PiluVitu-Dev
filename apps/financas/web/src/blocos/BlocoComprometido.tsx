@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
 import type { CommitmentReportView } from '../lib/commitments'
@@ -42,6 +43,12 @@ export function BlocoComprometido() {
   return (
     <Bloco
       titulo="Comprometido"
+      ajuda={
+        <Ajuda rotulo="Comprometido">
+          O que já está prometido dos próximos meses: parcelas previstas +
+          dívidas em aberto.
+        </Ajuda>
+      }
       carregando={carregando}
       erro={erro}
       vazio={vazio}

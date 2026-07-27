@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
@@ -188,7 +189,13 @@ export function AccountsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="conta-escopo">Escopo</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="conta-escopo">Escopo</Label>
+                <Ajuda rotulo="PJ / PF">
+                  scope é o padrão da conta; is_business é a verdade do
+                  lançamento — dá para pagar algo PF pelo cartão PJ.
+                </Ajuda>
+              </div>
               <select
                 id="conta-escopo"
                 className={SELECT_CLASSNAME}

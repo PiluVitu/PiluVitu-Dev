@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NewEntryPage } from './new-entry'
 
@@ -302,5 +303,43 @@ describe('NewEntryPage', () => {
         'cartao sem dia de fechamento',
       ),
     )
+  })
+
+  // Task 5 (ajuda contextual, §3.2 do spec): "Lançar" tem dois pontos —
+  // Competência (ao lado de Data) e PJ/PF (ao lado do toggle PJ, também em
+  // "Lançar / Contas"). Clique, não hover — mesmo motivo do resto da task.
+  it('ajuda: "Competência" (ao lado de Data) abre no clique com o texto do fechamento da fatura', async () => {
+    mockRoutes()
+    const user = userEvent.setup()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Conta')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Competência' }),
+    )
+    expect(await screen.findByText(/fatura fecha/)).toBeInTheDocument()
+  })
+
+  it('ajuda: "PJ / PF" (ao lado do toggle PJ) abre no clique', async () => {
+    mockRoutes()
+    const user = userEvent.setup()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Conta')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre PJ / PF' }),
+    )
+    expect(
+      await screen.findByText(/dá para pagar algo PF pelo cartão PJ/),
+    ).toBeInTheDocument()
+    // O checkbox continua endereçável por label depois do ajuste de markup
+    // (Ajuda foi movido pra FORA do <label>, nunca dentro).
+    expect(screen.getByLabelText('PJ')).toBeInTheDocument()
   })
 })

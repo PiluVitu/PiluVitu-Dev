@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatBRL, parseBRL } from '@piluvitu/tools/money'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
@@ -105,7 +106,13 @@ export function ConfigPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Renda fixa de referência</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            Renda fixa de referência
+            <Ajuda rotulo="Renda de referência">
+              Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é
+              volátil, e medir contra o mês bom esconde o risco.
+            </Ajuda>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">

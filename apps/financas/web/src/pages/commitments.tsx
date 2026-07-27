@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
@@ -57,13 +58,23 @@ export function CommitmentsPage({
 
   return (
     <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Comprometido</h1>
-      <p className="text-muted-foreground text-sm">
+      <div className="flex items-center gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Comprometido</h1>
+        <Ajuda rotulo="Comprometido">
+          O que já está prometido dos próximos meses: parcelas previstas +
+          dívidas em aberto.
+        </Ajuda>
+      </div>
+      <p className="text-muted-foreground flex items-center gap-1 text-sm">
         Denominador: líquido fixo (mês sem freela) de{' '}
         <strong data-testid="denominador" className="text-foreground">
           {formatBRL(report.fixed_net_cents)}
         </strong>
         .
+        <Ajuda rotulo="Renda de referência">
+          Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é volátil,
+          e medir contra o mês bom esconde o risco.
+        </Ajuda>
       </p>
 
       {report.rows.length === 0 ? (

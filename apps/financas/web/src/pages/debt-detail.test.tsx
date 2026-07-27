@@ -6,8 +6,18 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { api, ApiError } from '../api'
 import { DebtDetailPage, validateAllocations } from './debt-detail'
+
+// Mockar `api` (não a rede) — mesmo padrão de config.test.tsx /
+// BlocoComprometido.test.tsx: `api` já traduz envelope/erro; testar aqui
+// prova o COMPONENTE, não o transporte HTTP (isso é `api.test.ts`).
+vi.mock('../api', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../api')>()
+  return { ...real, api: vi.fn() }
+})
 
 const items = [
   {
@@ -75,36 +85,66 @@ const contas = [
   },
 ]
 
-function ok(data: unknown, status = 200) {
-  return { status, json: async () => ({ ok: true, data, notifications: [] }) }
-}
-
-function fail(status: number, code: string, message: string) {
-  return {
-    status,
-    json: async () => ({
-      ok: false,
-      data: null,
-      notifications: [{ type: 'error', code, message }],
-    }),
-  }
-}
-
-/** Responde por rota, na ordem em que a tela chama. */
-function mockRoutes(post?: unknown) {
-  const fn = vi.fn(async (path: string, init?: RequestInit) => {
-    if (init?.method === 'POST')
-      return post ?? ok({ payment: {}, transaction: null }, 201)
-    if (path.startsWith('/api/accounts')) return ok(contas)
-    if (path.startsWith('/api/debts/')) return ok(detail)
-    throw new Error(`rota nao mockada: ${path}`)
-  })
-  vi.stubGlobal('fetch', fn)
-  return fn
+/**
+ * Roteia `api()` mockado pelo par (método, path) — mesma ideia de
+ * `mockRoutes`/`mockFetch` das outras telas, só que no nível de `api`, não
+ * de `fetch` (pedido explícito da task: `api` já traduz envelope/erro, um
+ * mock aqui prova o componente sem reimplementar o transporte HTTP). Os
+ * campos aceitam uma função (chamada de novo a cada request) pra permitir
+ * mutar o estado "servidor" entre a ação e o `carregar()` que a segue —
+ * ex.: dar baixa muda `status`, e o teste quer ver o GET seguinte refletir
+ * isso, não um snapshot congelado.
+ */
+function mockApi(
+  opts: {
+    detail?: () => unknown
+    contas?: () => unknown
+    post?: () => unknown
+    writeOff?: () => unknown
+    deleteDebt?: () => unknown
+    deleteItem?: (itemId: string) => unknown
+    deletePayment?: (paymentId: string) => unknown
+  } = {},
+) {
+  vi.mocked(api).mockImplementation(
+    async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'GET' && path === '/api/accounts') {
+        return opts.contas ? opts.contas() : contas
+      }
+      if (method === 'GET' && path === '/api/debts/d1') {
+        return opts.detail ? opts.detail() : detail
+      }
+      if (method === 'POST' && path === '/api/debts/d1/payments') {
+        return opts.post ? opts.post() : { payment: {}, transaction: null }
+      }
+      if (method === 'POST' && path === '/api/debts/d1/write-off') {
+        return opts.writeOff ? opts.writeOff() : { id: 'd1', written_off: true }
+      }
+      if (method === 'DELETE' && path === '/api/debts/d1') {
+        return opts.deleteDebt ? opts.deleteDebt() : { id: 'd1', deleted: true }
+      }
+      const itemMatch = /^\/api\/debts\/d1\/items\/(.+)$/.exec(path)
+      if (method === 'DELETE' && itemMatch) {
+        return opts.deleteItem
+          ? opts.deleteItem(itemMatch[1])
+          : { id: itemMatch[1], deleted: true }
+      }
+      const paymentMatch = /^\/api\/debts\/d1\/payments\/(.+)$/.exec(path)
+      if (method === 'DELETE' && paymentMatch) {
+        return opts.deletePayment
+          ? opts.deletePayment(paymentMatch[1])
+          : { id: paymentMatch[1], deleted: true }
+      }
+      throw new Error(`rota nao mockada: ${method} ${path}`)
+    },
+  )
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals()
+  vi.clearAllMocks()
+  vi.restoreAllMocks()
+  window.location.hash = ''
 })
 
 describe('validateAllocations', () => {
@@ -171,14 +211,7 @@ describe('DebtDetailPage', () => {
         balance_cents: -184790,
       },
     ]
-    const fn = vi.fn(async (path: string, init?: RequestInit) => {
-      if (init?.method === 'POST')
-        return ok({ payment: {}, transaction: null }, 201)
-      if (path.startsWith('/api/accounts')) return ok(contasComCartao)
-      if (path.startsWith('/api/debts/')) return ok(detail)
-      throw new Error(`rota nao mockada: ${path}`)
-    })
-    vi.stubGlobal('fetch', fn)
+    mockApi({ contas: () => contasComCartao })
 
     render(<DebtDetailPage debtId="d1" />)
     await waitFor(() =>
@@ -193,7 +226,7 @@ describe('DebtDetailPage', () => {
   })
 
   it('mostra itens com total/pago/falta e marca o quitado', async () => {
-    mockRoutes()
+    mockApi()
 
     render(<DebtDetailPage debtId="d1" />)
 
@@ -215,7 +248,7 @@ describe('DebtDetailPage', () => {
   })
 
   it('lista pagamentos com a alocacao de cada um por item', async () => {
-    mockRoutes()
+    mockApi()
 
     render(<DebtDetailPage debtId="d1" />)
 
@@ -234,17 +267,18 @@ describe('DebtDetailPage', () => {
   })
 
   it('barra a superalocacao no cliente e NAO chama a API', async () => {
-    const fetchMock = mockRoutes()
+    mockApi()
 
     render(<DebtDetailPage debtId="d1" />)
     await waitFor(() =>
       expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
     )
+    vi.mocked(api).mockClear()
 
-    // Escopado em form-pagamento: a partir da Task 14, NovoItemForm (embaixo
-    // da tabela de itens) também tem campos rotulados 'Valor'/'Data' — sem
-    // o within() aqui, getByLabelText encontraria os dois e lançaria erro de
-    // múltiplos elementos.
+    // Escopado em form-pagamento: NovoItemForm (embaixo da tabela de itens)
+    // também tem campos rotulados 'Valor'/'Data' — sem o within() aqui,
+    // getByLabelText encontraria os dois e lançaria erro de múltiplos
+    // elementos.
     const formPagamento = within(screen.getByTestId('form-pagamento'))
     fireEvent.change(formPagamento.getByLabelText('Valor'), {
       target: { value: '500,00' },
@@ -257,15 +291,11 @@ describe('DebtDetailPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/valor do pagamento/),
     )
-    expect(
-      fetchMock.mock.calls.some(
-        ([, init]) => (init as RequestInit)?.method === 'POST',
-      ),
-    ).toBe(false)
+    expect(api).not.toHaveBeenCalled()
   })
 
   it('envia o pagamento dividido entre itens quando o guard passa', async () => {
-    const fetchMock = mockRoutes()
+    mockApi()
 
     render(<DebtDetailPage debtId="d1" />)
     await waitFor(() =>
@@ -285,18 +315,16 @@ describe('DebtDetailPage', () => {
     fireEvent.submit(screen.getByTestId('form-pagamento'))
 
     await waitFor(() => {
-      const post = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit)?.method === 'POST',
-      )
-      expect(post).toBeDefined()
-      expect(post![0]).toBe('/api/debts/d1/payments')
-      expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
-        paid_on: '2026-08-05',
-        amount_cents: 136000,
-        kind: 'cash',
-        account_id: 'a1',
-        description: 'Pgto divida — Pai',
-        allocations: [{ item_id: 'i2', amount_cents: 136000 }],
+      expect(api).toHaveBeenCalledWith('/api/debts/d1/payments', {
+        method: 'POST',
+        body: JSON.stringify({
+          paid_on: '2026-08-05',
+          amount_cents: 136000,
+          kind: 'cash',
+          account_id: 'a1',
+          description: 'Pgto divida — Pai',
+          allocations: [{ item_id: 'i2', amount_cents: 136000 }],
+        }),
       })
     })
   })
@@ -308,7 +336,7 @@ describe('DebtDetailPage', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-08-01T01:00:00Z'))
     try {
-      const fetchMock = mockRoutes()
+      mockApi()
 
       render(<DebtDetailPage debtId="d1" />)
       await waitFor(() =>
@@ -325,13 +353,11 @@ describe('DebtDetailPage', () => {
       fireEvent.submit(screen.getByTestId('form-pagamento'))
 
       await waitFor(() => {
-        const post = fetchMock.mock.calls.find(
-          ([, init]) => (init as RequestInit)?.method === 'POST',
-        )
-        expect(post).toBeDefined()
-        expect(
-          JSON.parse((post![1] as RequestInit).body as string).paid_on,
-        ).toBe('2026-07-31')
+        const call = vi
+          .mocked(api)
+          .mock.calls.find(([p]) => p === '/api/debts/d1/payments')
+        expect(call).toBeDefined()
+        expect(JSON.parse(call![1]!.body as string).paid_on).toBe('2026-07-31')
       })
     } finally {
       vi.useRealTimers()
@@ -340,7 +366,15 @@ describe('DebtDetailPage', () => {
 
   it('mostra o OverAllocationError vindo da API mesmo com o guard do cliente ok', async () => {
     // O trigger do D1 é a verdade: o cliente pode estar com dado velho.
-    mockRoutes(fail(409, 'over_allocation', 'alocacao excede o valor do item'))
+    mockApi({
+      post: () => {
+        throw new ApiError(
+          409,
+          'over_allocation',
+          'alocacao excede o valor do item',
+        )
+      },
+    })
 
     render(<DebtDetailPage debtId="d1" />)
     await waitFor(() =>
@@ -388,15 +422,15 @@ describe('DebtDetailPage', () => {
       resolveD1 = resolve
     })
 
-    const fn = vi.fn(async (path: string, init?: RequestInit) => {
-      if (init?.method === 'POST')
-        return ok({ payment: {}, transaction: null }, 201)
-      if (path.startsWith('/api/accounts')) return ok(contas)
-      if (path === '/api/debts/d1') return d1Pending
-      if (path === '/api/debts/d2') return ok(detailD2)
-      throw new Error(`rota nao mockada: ${path}`)
-    })
-    vi.stubGlobal('fetch', fn)
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (init?.method === 'POST') return { payment: {}, transaction: null }
+        if (path === '/api/accounts') return contas
+        if (path === '/api/debts/d1') return d1Pending
+        if (path === '/api/debts/d2') return detailD2
+        throw new Error(`rota nao mockada: ${path}`)
+      },
+    )
 
     const { rerender } = render(<DebtDetailPage debtId="d1" />)
 
@@ -409,11 +443,412 @@ describe('DebtDetailPage', () => {
     // A resposta atrasada de d1 chega só agora — depois que a tela já
     // mostra d2. Sem a guarda de unmount/stale, isso reescreveria o estado.
     await act(async () => {
-      resolveD1(ok(detail))
+      resolveD1(detail)
       await new Promise((r) => setTimeout(r, 0))
     })
 
     expect(screen.queryByTestId('item-i1')).not.toBeInTheDocument()
     expect(screen.getByTestId('item-j1')).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------
+  // Task 5: ajuda contextual (§3.2 do spec) — os 3 pontos que vivem na
+  // tela de detalhe de dívida: Itens, Dividir entre itens, Dar baixa.
+  // ---------------------------------------------------------------------
+
+  describe('ajuda contextual', () => {
+    it('"Itens" abre no clique com o texto de que item é estoque, não lançamento', async () => {
+      mockApi()
+      const user = userEvent.setup()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(
+        screen.getByRole('button', { name: 'Ajuda sobre Itens' }),
+      )
+      expect(
+        await screen.findByText(/Não geram lançamento no caixa/),
+      ).toBeInTheDocument()
+    })
+
+    it('"Dividir entre itens" abre no clique', async () => {
+      mockApi()
+      const user = userEvent.setup()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(
+        screen.getByRole('button', { name: 'Ajuda sobre Dividir entre itens' }),
+      )
+      expect(await screen.findByText(/cobrir vários itens/)).toBeInTheDocument()
+    })
+
+    it('"Dar baixa" abre no clique — e some junto com o botão quando a dívida não está mais aberta', async () => {
+      mockApi({
+        detail: () => ({
+          ...detail,
+          debt: { ...detail.debt, status: 'settled' },
+        }),
+      })
+      const user = userEvent.setup()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      // status !== 'open': nem o botão nem a ajuda de "Dar baixa" aparecem
+      // — a rota sempre devolveria 404 pra uma dívida já settled/baixada.
+      expect(
+        screen.queryByRole('button', { name: 'Dar baixa' }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Ajuda sobre Dar baixa' }),
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('Situação: Quitada')).toBeInTheDocument()
+    })
+
+    it('"Dar baixa" (aberta): a ajuda abre no clique com o texto de que preserva histórico', async () => {
+      mockApi()
+      const user = userEvent.setup()
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(
+        screen.getByRole('button', { name: 'Ajuda sobre Dar baixa' }),
+      )
+      expect(
+        await screen.findByText(/tira do comprometido/),
+      ).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Task 5: estados vazios que explicam (§3.3 do spec) — dívida sem item.
+  // ---------------------------------------------------------------------
+
+  describe('estados vazios (dívida sem item)', () => {
+    const detailVazio = { ...detail, items: [] }
+
+    it('resumo do topo não mostra mais "R$ 0,00 de R$ 0,00"', async () => {
+      mockApi({ detail: () => detailVazio })
+
+      render(<DebtDetailPage debtId="d1" />)
+
+      await waitFor(() =>
+        expect(screen.getByText(/Sem itens ainda/)).toBeInTheDocument(),
+      )
+      expect(screen.queryByText(/devo/)).not.toBeInTheDocument()
+    })
+
+    it('card Itens explica que o total sai da soma dos itens, em vez de tabela vazia', async () => {
+      mockApi({ detail: () => detailVazio })
+
+      render(<DebtDetailPage debtId="d1" />)
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(/O total da dívida sai da soma dos itens/),
+        ).toBeInTheDocument(),
+      )
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    })
+
+    it('"Dividir entre itens" explica em vez de renderizar bloco vazio', async () => {
+      mockApi({ detail: () => detailVazio })
+
+      render(<DebtDetailPage debtId="d1" />)
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(
+            /A divisão aparece depois que existir pelo menos um item/,
+          ),
+        ).toBeInTheDocument(),
+      )
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Task 5: as quatro ações destrutivas — confirmação obrigatória, e o
+  // caminho feliz de cada uma.
+  // ---------------------------------------------------------------------
+
+  describe('excluir dívida', () => {
+    it('cancelar a confirmação NÃO chama a API', async () => {
+      mockApi()
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+      vi.mocked(api).mockClear()
+
+      await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
+
+      expect(window.confirm).toHaveBeenCalledTimes(1)
+      expect(api).not.toHaveBeenCalled()
+    })
+
+    it('confirmar chama DELETE e navega pra #/dividas', async () => {
+      mockApi()
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
+
+      await waitFor(() =>
+        expect(api).toHaveBeenCalledWith('/api/debts/d1', {
+          method: 'DELETE',
+        }),
+      )
+      expect(window.location.hash).toBe('#/dividas')
+    })
+
+    it('recusada por debt_has_ledger: mostra a mensagem do SERVIDOR (cita "Dar baixa"), sem reescrever', async () => {
+      const MENSAGEM_SERVIDOR =
+        "Esta dívida já tem pagamento em dinheiro registrado no caixa. Excluir apagaria a dívida e deixaria o lançamento sem explicação. Use 'Dar baixa' para encerrá-la preservando o histórico, ou exclua os pagamentos primeiro."
+      mockApi({
+        deleteDebt: () => {
+          throw new ApiError(422, 'debt_has_ledger', MENSAGEM_SERVIDOR)
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Excluir dívida' }))
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(MENSAGEM_SERVIDOR),
+      )
+      // A prova específica que o brief pede: a frase que ensina a saída
+      // ("Dar baixa") sobrevive intacta — não um 422 genérico reescrito.
+      expect(screen.getByRole('alert')).toHaveTextContent('Dar baixa')
+      expect(window.location.hash).toBe('')
+    })
+  })
+
+  describe('dar baixa', () => {
+    it('cancelar a confirmação NÃO chama a API', async () => {
+      mockApi()
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+      vi.mocked(api).mockClear()
+
+      await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+
+      expect(window.confirm).toHaveBeenCalledTimes(1)
+      expect(api).not.toHaveBeenCalled()
+    })
+
+    it('confirmar chama POST /write-off e recarrega — situação passa a Baixada, botão some', async () => {
+      let status: 'open' | 'written_off' = 'open'
+      mockApi({
+        detail: () => ({ ...detail, debt: { ...detail.debt, status } }),
+        writeOff: () => {
+          status = 'written_off'
+          return { id: 'd1', written_off: true }
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+
+      await waitFor(() =>
+        expect(screen.getByText('Situação: Baixada')).toBeInTheDocument(),
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Dar baixa' }),
+      ).not.toBeInTheDocument()
+      expect(api).toHaveBeenCalledWith('/api/debts/d1/write-off', {
+        method: 'POST',
+      })
+    })
+
+    it('erro do servidor aparece em role="alert"', async () => {
+      mockApi({
+        writeOff: () => {
+          throw new ApiError(
+            404,
+            'not_found',
+            'não encontrada, já quitada ou já baixada',
+          )
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Dar baixa' }))
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'não encontrada, já quitada ou já baixada',
+        ),
+      )
+    })
+  })
+
+  describe('excluir item (por linha)', () => {
+    it('cancelar a confirmação NÃO chama a API', async () => {
+      mockApi()
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+      vi.mocked(api).mockClear()
+
+      await user.click(screen.getByTestId('excluir-item-i2'))
+
+      expect(window.confirm).toHaveBeenCalledWith(
+        expect.stringContaining('Steam Deck'),
+      )
+      expect(api).not.toHaveBeenCalled()
+    })
+
+    it('confirmar chama DELETE do item e recarrega sem ele', async () => {
+      let itemsAtuais = items
+      mockApi({
+        detail: () => ({ ...detail, items: itemsAtuais }),
+        deleteItem: (itemId) => {
+          itemsAtuais = itemsAtuais.filter((i) => i.item_id !== itemId)
+          return { id: itemId, deleted: true }
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('excluir-item-i2'))
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('item-i2')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('item-i1')).toBeInTheDocument()
+      expect(api).toHaveBeenCalledWith('/api/debts/d1/items/i2', {
+        method: 'DELETE',
+      })
+    })
+
+    it('recusado (item alocado) mostra a mensagem cozida da API, sem SQLITE cru', async () => {
+      mockApi({
+        deleteItem: () => {
+          throw new ApiError(
+            422,
+            'constraint_violation',
+            'Referência inválida: este item tem pagamento alocado — remova o pagamento primeiro.',
+          )
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('excluir-item-i2'))
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'remova o pagamento primeiro',
+        ),
+      )
+      expect(screen.getByRole('alert')).not.toHaveTextContent(/SQLITE/)
+      // O item continua na tela — a exclusão não teve efeito nenhum.
+      expect(screen.getByTestId('item-i2')).toBeInTheDocument()
+    })
+  })
+
+  describe('excluir pagamento (por linha)', () => {
+    it('cancelar a confirmação NÃO chama a API', async () => {
+      mockApi()
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('pagamento-pg1')).toBeInTheDocument(),
+      )
+      vi.mocked(api).mockClear()
+
+      await user.click(screen.getByTestId('excluir-pagamento-pg1'))
+
+      expect(window.confirm).toHaveBeenCalledWith(
+        expect.stringContaining('R$ 2.940,00'),
+      )
+      expect(api).not.toHaveBeenCalled()
+    })
+
+    it('confirmar chama DELETE do pagamento e recarrega sem ele', async () => {
+      let paymentsAtuais = detail.payments
+      mockApi({
+        detail: () => ({ ...detail, payments: paymentsAtuais }),
+        deletePayment: (paymentId) => {
+          paymentsAtuais = paymentsAtuais.filter((p) => p.id !== paymentId)
+          return { id: paymentId, deleted: true }
+        },
+      })
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<DebtDetailPage debtId="d1" />)
+      await waitFor(() =>
+        expect(screen.getByTestId('pagamento-pg1')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('excluir-pagamento-pg1'))
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('pagamento-pg1')).not.toBeInTheDocument(),
+      )
+      expect(api).toHaveBeenCalledWith('/api/debts/d1/payments/pg1', {
+        method: 'DELETE',
+      })
+    })
   })
 })

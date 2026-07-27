@@ -4,6 +4,14 @@ import { Skeleton } from '@piluvitu/ui/skeleton'
 
 export type BlocoProps = {
   titulo: string
+  /**
+   * Ícone de ajuda (`@piluvitu/ui/ajuda`) ao lado do título — só quando um
+   * dos 7 pontos do §3.2 do spec de ajuda contextual pede (Task 5,
+   * `docs/superpowers/specs/2026-07-27-financas-excluir-e-ajuda-design.md`).
+   * Hoje só `BlocoComprometido` passa isto; os outros blocos (Saldos,
+   * Dívidas, Categorias) continuam sem — `undefined` não renderiza nada.
+   */
+  ajuda?: ReactNode
   /** `true` enquanto o bloco busca seus próprios dados. */
   carregando?: boolean
   /**
@@ -28,6 +36,7 @@ export type BlocoProps = {
  */
 export function Bloco({
   titulo,
+  ajuda,
   carregando = false,
   erro = null,
   vazio = false,
@@ -37,7 +46,10 @@ export function Bloco({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{titulo}</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          {titulo}
+          {ajuda}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {erro ? (

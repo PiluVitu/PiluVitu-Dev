@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../api'
 import { BlocoComprometido } from './BlocoComprometido'
@@ -161,6 +162,26 @@ describe('BlocoComprometido', () => {
     // SVG do recharts quebra o texto do label em mais de um nó (`<text>` +
     // `<tspan>`) — o que importa aqui é o VALOR, não a estrutura interna.
     expect(container.textContent).toContain('Líquido fixo: R$ 1.800,00')
+  })
+
+  // Task 5 (ajuda contextual, §3.2 do spec): "Comprometido (e bloco da
+  // home)" — este é o "bloco da home". Popover no toque, não tooltip de
+  // hover (ver packages/ui/CLAUDE.md) — clique, não mouseOver, é o que
+  // distingue de um Tooltip que abriria com hover sozinho.
+  it('ajuda: o gatilho "Ajuda sobre Comprometido" abre o texto explicativo ao clicar', async () => {
+    vi.mocked(api).mockResolvedValue(report)
+    const user = userEvent.setup()
+
+    render(<BlocoComprometido />)
+
+    const gatilho = screen.getByRole('button', {
+      name: 'Ajuda sobre Comprometido',
+    })
+    expect(screen.queryByText(/parcelas previstas/)).not.toBeInTheDocument()
+
+    await user.click(gatilho)
+
+    expect(await screen.findByText(/parcelas previstas/)).toBeInTheDocument()
   })
 
   it('estado erro: mostra a mensagem dentro do próprio card, com role="alert"', async () => {

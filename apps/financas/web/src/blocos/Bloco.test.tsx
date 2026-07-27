@@ -59,4 +59,31 @@ describe('Bloco', () => {
     )
     expect(screen.getByRole('alert')).toHaveTextContent('prioridade do erro')
   })
+
+  // Task 5 (ajuda contextual): `ajuda` é opcional — sem ele (todos os
+  // testes acima), nada novo aparece ao lado do título. Passado, some junto
+  // do título mesmo nos estados carregando/erro/vazio (a pergunta que a
+  // ajuda responde não depende do bloco ter dado certo).
+  it('ajuda: sem a prop, nada extra aparece ao lado do título', () => {
+    render(
+      <Bloco titulo="Comprometido">
+        <p>conteúdo real</p>
+      </Bloco>,
+    )
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('ajuda: com a prop, o gatilho aparece ao lado do título', () => {
+    render(
+      <Bloco
+        titulo="Comprometido"
+        ajuda={<button aria-label="Ajuda sobre Comprometido">?</button>}
+      >
+        <p>conteúdo real</p>
+      </Bloco>,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Ajuda sobre Comprometido' }),
+    ).toBeInTheDocument()
+  })
 })

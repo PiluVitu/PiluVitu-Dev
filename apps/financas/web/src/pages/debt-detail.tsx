@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
+import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
@@ -41,6 +42,12 @@ export type DebtDetailView = {
   }
   items: DebtItemBalanceView[]
   payments: DebtPaymentView[]
+}
+
+const STATUS_LABEL: Record<DebtDetailView['debt']['status'], string> = {
+  open: 'Aberta',
+  settled: 'Quitada',
+  written_off: 'Baixada',
 }
 
 /**
@@ -89,6 +96,15 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   const [allocRaw, setAllocRaw] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
+
+  // Ações destrutivas (Task 5): excluir dívida, dar baixa, excluir item,
+  // excluir pagamento — todas pedem `window.confirm` antes de chamar a API
+  // (não existe lixeira nem desfazer, ver spec §2/§6). `processando` guarda
+  // um id de ação (`'divida'`, `'baixa'`, `item:<id>`, `pagamento:<id>`)
+  // pra desabilitar só o botão em voo, sem travar a tela inteira — várias
+  // linhas podem, em teoria, ser apagadas em sequência rápida.
+  const [acaoErro, setAcaoErro] = useState<string | null>(null)
+  const [processando, setProcessando] = useState<string | null>(null)
 
   // `vivo` opcional para o chamador poder barrar o setState se uma resposta
   // obsoleta chegar depois de trocar de divida — mesma guarda de
@@ -214,83 +230,254 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
     }
   }
 
+  // As quatro ações abaixo pedem `window.confirm` (irreversível, sem
+  // lixeira — spec §2/§6) e mostram a mensagem do SERVIDOR sem reescrever
+  // (crítico pra `debt_has_ledger`: é a mensagem que ensina "Dar baixa" em
+  // vez de excluir, ver apps/financas/CLAUDE.md § Dívidas). Nativo
+  // (`window.confirm`), não um modal do design system: funciona idêntico em
+  // Android/desktop sem depender de foco/hover, é acessível de fábrica, e
+  // não adiciona `@radix-ui/react-dialog` ao bundle principal só pra isto —
+  // `@radix-ui/react-popover` (Ajuda) já é a primeira dependência nova que
+  // esta tela introduz.
+
+  async function excluirDivida() {
+    if (
+      !window.confirm(
+        `Excluir a dívida "${detail!.debt.title}"? Isso remove a dívida e os itens. Não há como desfazer.`,
+      )
+    )
+      return
+    setAcaoErro(null)
+    setProcessando('divida')
+    try {
+      await api(`/api/debts/${debtId}`, { method: 'DELETE' })
+      window.location.hash = '#/dividas'
+    } catch (err: unknown) {
+      setAcaoErro(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  async function darBaixa() {
+    if (
+      !window.confirm(
+        `Dar baixa em "${detail!.debt.title}"? Ela sai do comprometido; itens, pagamentos e lançamentos continuam no histórico.`,
+      )
+    )
+      return
+    setAcaoErro(null)
+    setProcessando('baixa')
+    try {
+      await api(`/api/debts/${debtId}/write-off`, { method: 'POST' })
+      await carregar()
+    } catch (err: unknown) {
+      setAcaoErro(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  async function excluirItem(item: DebtItemBalanceView) {
+    if (
+      !window.confirm(
+        `Excluir o item "${item.description}"? Não há como desfazer.`,
+      )
+    )
+      return
+    setAcaoErro(null)
+    setProcessando(`item:${item.item_id}`)
+    try {
+      await api(`/api/debts/${debtId}/items/${item.item_id}`, {
+        method: 'DELETE',
+      })
+      await carregar()
+    } catch (err: unknown) {
+      setAcaoErro(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  async function excluirPagamento(pagamento: DebtPaymentView) {
+    if (
+      !window.confirm(
+        `Excluir o pagamento de ${formatBRL(pagamento.amount_cents)} em ${dataBR(pagamento.paid_on)}? O lançamento no caixa some junto. Não há como desfazer.`,
+      )
+    )
+      return
+    setAcaoErro(null)
+    setProcessando(`pagamento:${pagamento.id}`)
+    try {
+      await api(`/api/debts/${debtId}/payments/${pagamento.id}`, {
+        method: 'DELETE',
+      })
+      await carregar()
+    } catch (err: unknown) {
+      setAcaoErro(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setProcessando(null)
+    }
+  }
+
   return (
     <section className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
           Dívida · {detail.debt.title}
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {detail.debt.direction === 'i_owe' ? 'devo' : 'me devem'}{' '}
-          <strong className="text-foreground">{formatBRL(emAberto)}</strong> de{' '}
-          {formatBRL(totalDivida)}
-        </p>
+        {detail.items.length === 0 ? (
+          <p className="text-muted-foreground mt-1 text-sm">
+            Sem itens ainda — nada em aberto pra cobrar.
+          </p>
+        ) : (
+          <p className="text-muted-foreground mt-1 text-sm">
+            {detail.debt.direction === 'i_owe' ? 'devo' : 'me devem'}{' '}
+            <strong className="text-foreground">{formatBRL(emAberto)}</strong>{' '}
+            de {formatBRL(totalDivida)}
+          </p>
+        )}
+        {detail.debt.status !== 'open' ? (
+          <p className="text-muted-foreground mt-1 text-sm">
+            Situação: {STATUS_LABEL[detail.debt.status]}
+          </p>
+        ) : null}
+
+        {acaoErro ? (
+          <p role="alert" className="text-destructive mt-2 text-sm">
+            {acaoErro}
+          </p>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {detail.debt.status === 'open' ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={processando === 'baixa'}
+                onClick={darBaixa}
+              >
+                {processando === 'baixa' ? 'Baixando…' : 'Dar baixa'}
+              </Button>
+              <Ajuda rotulo="Dar baixa">
+                Encerra sem apagar: preserva itens, pagamentos e lançamentos, e
+                tira do comprometido.
+              </Ajuda>
+            </>
+          ) : null}
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={processando === 'divida'}
+            onClick={excluirDivida}
+          >
+            {processando === 'divida' ? 'Excluindo…' : 'Excluir dívida'}
+          </Button>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Itens</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            Itens
+            <Ajuda rotulo="Itens">
+              Itens são o que compõe a dívida (estoque). Não geram lançamento no
+              caixa — só pagamentos geram.
+            </Ajuda>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="border-b py-1.5 pr-2 text-left font-medium">
-                    Item
-                  </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
-                    total
-                  </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
-                    pago
-                  </th>
-                  <th className="border-b py-1.5 pl-2 text-right font-medium">
-                    falta
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.items.map((i) => (
-                  <tr
-                    key={i.item_id}
-                    data-testid={`item-${i.item_id}`}
-                    className={cn(i.is_settled && 'quitado opacity-[0.55]')}
-                  >
-                    <td
-                      className={cn(
-                        'border-b py-1.5 pr-2 text-left',
-                        i.is_settled && 'line-through',
-                      )}
-                    >
-                      {i.description}
-                      {i.is_settled ? (
-                        <span aria-label="quitado"> ✓</span>
-                      ) : null}
-                    </td>
-                    <td
-                      data-testid={`item-${i.item_id}-total`}
-                      className="border-b px-2 py-1.5 text-right"
-                    >
-                      {formatBRL(i.amount_cents)}
-                    </td>
-                    <td
-                      data-testid={`item-${i.item_id}-pago`}
-                      className="border-b px-2 py-1.5 text-right"
-                    >
-                      {formatBRL(i.allocated_cents)}
-                    </td>
-                    <td
-                      data-testid={`item-${i.item_id}-falta`}
-                      className="border-b py-1.5 pl-2 text-right font-medium"
-                    >
-                      {formatBRL(Math.max(0, i.remaining_cents))}
-                    </td>
+          {detail.items.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              O total da dívida sai da soma dos itens. Adicione o primeiro
+              abaixo.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    <th className="border-b py-1.5 pr-2 text-left font-medium">
+                      Item
+                    </th>
+                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                      total
+                    </th>
+                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                      pago
+                    </th>
+                    <th className="border-b py-1.5 pl-2 text-right font-medium">
+                      falta
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {detail.items.map((i) => (
+                    <tr
+                      key={i.item_id}
+                      data-testid={`item-${i.item_id}`}
+                      className={cn(i.is_settled && 'quitado opacity-[0.55]')}
+                    >
+                      <td className="border-b py-1.5 pr-2 text-left">
+                        {/* Excluir mora DENTRO da célula do Item, não numa
+                            5ª coluna: MEDIDO a 390px (o alvo desta task) —
+                            uma coluna "Ações" extra ficava cortada dentro
+                            do overflow-x-auto da tabela (chegava a
+                            renderizar só a letra "E"). A célula do Item já
+                            é a mais larga/flexível (o texto já quebra em
+                            várias linhas pra descrições longas), então um
+                            link pequeno abaixo do nome cabe sem alargar a
+                            tabela. `line-through` fica só no `<span>` do
+                            texto, não na célula inteira — senão o link
+                            "excluir" também saía riscado. */}
+                        <span className={cn(i.is_settled && 'line-through')}>
+                          {i.description}
+                          {i.is_settled ? (
+                            <span aria-label="quitado"> ✓</span>
+                          ) : null}
+                        </span>
+                        <div>
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            className="text-destructive h-auto p-0 text-xs no-underline"
+                            aria-label={`Excluir item ${i.description}`}
+                            data-testid={`excluir-item-${i.item_id}`}
+                            disabled={processando === `item:${i.item_id}`}
+                            onClick={() => excluirItem(i)}
+                          >
+                            excluir
+                          </Button>
+                        </div>
+                      </td>
+                      <td
+                        data-testid={`item-${i.item_id}-total`}
+                        className="border-b px-2 py-1.5 text-right"
+                      >
+                        {formatBRL(i.amount_cents)}
+                      </td>
+                      <td
+                        data-testid={`item-${i.item_id}-pago`}
+                        className="border-b px-2 py-1.5 text-right"
+                      >
+                        {formatBRL(i.allocated_cents)}
+                      </td>
+                      <td
+                        data-testid={`item-${i.item_id}-falta`}
+                        className="border-b py-1.5 pl-2 text-right font-medium"
+                      >
+                        {formatBRL(Math.max(0, i.remaining_cents))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="mt-6 border-t pt-6">
             <NovoItemForm debtId={debtId} onCreated={carregar} />
@@ -328,6 +515,19 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                     </li>
                   ))}
                 </ul>
+                <div className="mt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
+                    data-testid={`excluir-pagamento-${p.id}`}
+                    disabled={processando === `pagamento:${p.id}`}
+                    onClick={() => excluirPagamento(p)}
+                  >
+                    {processando === `pagamento:${p.id}` ? '…' : 'Excluir'}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -379,28 +579,38 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
             </div>
 
             <fieldset className="space-y-2 border-t pt-4">
-              <legend className="text-sm font-medium">
+              <legend className="flex items-center gap-2 text-sm font-medium">
                 Dividir entre itens
+                <Ajuda rotulo="Dividir entre itens">
+                  Um pagamento pode cobrir vários itens. É isso que responde
+                  &quot;o Steam Deck já está quitado?&quot;.
+                </Ajuda>
               </legend>
-              {detail.items.map((i) => (
-                <div key={i.item_id} className="space-y-1.5">
-                  <Label htmlFor={`alocacao-${i.item_id}`}>
-                    {i.description}
-                  </Label>
-                  <Input
-                    id={`alocacao-${i.item_id}`}
-                    value={allocRaw[i.item_id] ?? ''}
-                    disabled={i.is_settled === 1}
-                    onChange={(e) =>
-                      setAllocRaw((prev) => ({
-                        ...prev,
-                        [i.item_id]: e.target.value,
-                      }))
-                    }
-                    placeholder={formatBRL(Math.max(0, i.remaining_cents))}
-                  />
-                </div>
-              ))}
+              {detail.items.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  A divisão aparece depois que existir pelo menos um item.
+                </p>
+              ) : (
+                detail.items.map((i) => (
+                  <div key={i.item_id} className="space-y-1.5">
+                    <Label htmlFor={`alocacao-${i.item_id}`}>
+                      {i.description}
+                    </Label>
+                    <Input
+                      id={`alocacao-${i.item_id}`}
+                      value={allocRaw[i.item_id] ?? ''}
+                      disabled={i.is_settled === 1}
+                      onChange={(e) =>
+                        setAllocRaw((prev) => ({
+                          ...prev,
+                          [i.item_id]: e.target.value,
+                        }))
+                      }
+                      placeholder={formatBRL(Math.max(0, i.remaining_cents))}
+                    />
+                  </div>
+                ))
+              )}
             </fieldset>
 
             {formError ? (

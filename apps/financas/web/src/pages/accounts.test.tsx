@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AccountsPage } from './accounts'
 
@@ -198,5 +199,25 @@ describe('AccountsPage', () => {
         ([, init]) => (init as RequestInit)?.method === 'POST',
       ),
     ).toBe(false)
+  })
+
+  // Task 5 (ajuda contextual, §3.2 do spec): "Lançar / Contas" — este é o
+  // "Contas", ao lado de Escopo (PF/PJ).
+  it('ajuda: "PJ / PF" (ao lado de Escopo) abre no clique', async () => {
+    mockRoutes({ initial: contas })
+    const user = userEvent.setup()
+
+    render(<AccountsPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre PJ / PF' }),
+    )
+    expect(
+      await screen.findByText(/dá para pagar algo PF pelo cartão PJ/),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Escopo')).toBeInTheDocument()
   })
 })

@@ -679,6 +679,67 @@ Quarto e último bloco da home — a pergunta que o dono deu quando perguntado q
 
 Última tela grande do plano de design system — só documentação (Task 11) segue depois. Backend (migration `0005`, `domain/settings.ts`, `routes/settings.ts`) + frontend (`pages/config.tsx`, rota `#/configuracoes`) descritos inteiros na seção _Configurações_, mais acima neste arquivo (não duplicado aqui — cada fato mora num único lugar). Resumo do que muda na SPA: sexta tela em `src/pages/`, primeiro consumidor de UI do motor de tema da Task 4, e o primeiro lugar em que `fixed_net_cents` deixa de ser só o que `GET /api/reports/commitments` devolve pra virar algo que o dono pode editar puxando um formulário.
 
+### Task 5: excluir, dar baixa e ajuda nas telas — UI
+
+Plano completo em `docs/superpowers/specs/2026-07-27-financas-excluir-e-ajuda-design.md`. Motivado por dois relatos reais do dono usando o app em produção: não tinha como apagar uma dívida digitada errado ("Macbook M4 24gb 512gb"), e nada explicava o vocabulário (competência, PJ/PF, comprometido). As Tasks 1–3 (`domain/debts.ts` + `routes/debts.ts`, ver seção _Dívidas_ acima — rotas e o catálogo de `debt_has_ledger` já documentados lá, não duplicado aqui) e a Task 4 (`Ajuda`, `packages/ui` — o porquê de popover e não tooltip está em `packages/ui/CLAUDE.md`) já entregaram o backend e o componente; esta task só liga os dois nas 6 telas que precisavam.
+
+**As quatro ações destrutivas moram todas em `debt-detail.tsx`** (a tela de detalhe da dívida) — não em `DividasPage.tsx` (a lista), que continua sem nenhum botão de exclusão. Decisão por leitura direta do brief ("Ações na tela de dívida", singular): abrir a dívida (o link que já existia no título, na lista) é o único caminho até qualquer exclusão.
+
+- **Confirmação: `window.confirm()` nativo, não um `Dialog` do design system.** `packages/ui` já tem `dialog.tsx` (`@radix-ui/react-dialog`), mas isso puxaria uma segunda família de dependências Radix pro bundle principal (dismissable-layer/focus-scope/focus-guards/popper etc. — o mesmo perfil de peso que `@radix-ui/react-popover`, a primeira dependência nova que esta task já introduz via `Ajuda`) só pra confirmar uma ação. `window.confirm()` funciona idêntico em Android/desktop (dialog nativo do sistema, não depende de hover nem de foco/tabindex), é acessível de fábrica, e é trivialmente testável (`vi.spyOn(window, 'confirm')`). Não existe lixeira nem desfazer (dívidas não têm soft delete — só contas têm `archived_at`, decisão da fatia ①): a única rede de segurança é essa confirmação. As quatro ações checam o retorno de `window.confirm()` e retornam sem chamar `api()` se for `false` — provado em teste (`expect(api).not.toHaveBeenCalled()` depois de mockar `confirm` pra `false`, um caso por ação).
+- **`debt_has_ledger` mostra a mensagem do SERVIDOR, sem reescrever.** `excluirDivida()` faz `catch (err) { setAcaoErro(err instanceof ApiError ? err.message : String(err)) }` — nenhuma branch especial pro código `debt_has_ledger`, porque a mensagem que a rota devolve já é a frase acionável completa, citando "Dar baixa" (ver `DebtHasLedgerError`, seção _Dívidas_). Teste dedicado prova as duas metades: o texto sobrevive **inteiro** (`toHaveTextContent(<mensagem completa>)`) e contém `'Dar baixa'` — uma implementação que reescrevesse a mensagem por um texto genérico passaria no `code` mas falharia nas duas asserções.
+- **`processando: string | null`, não um booleano só.** Guarda um id da ação em voo (`'divida'`, `'baixa'`, `` `item:${id}` ``, `` `pagamento:${id}` ``) — desabilita só o botão daquela ação específica, não a tela inteira.
+- ⚠️ **Excluir item/pagamento por linha: link "excluir" DENTRO da célula do Item, não uma 5ª coluna "Ações" — MEDIDO a ~390px, corrigido antes do commit.** A primeira versão desta task usava uma coluna extra (texto "Excluir", depois um ícone "×"); as duas ficavam cortadas dentro do `overflow-x-auto` da tabela — a versão em texto chegou a renderizar só a letra "E" do botão (Playwright headless, viewport 390×844, `vite preview` real, screenshot). Corrigido: a célula do Item já é a mais larga/flexível (o texto de descrição já quebra em várias linhas pra nomes compridos), então um link pequeno abaixo do nome (`variant="link"` de `@piluvitu/ui/button`, `text-destructive text-xs`, padding zerado) cabe sem alargar a tabela. `line-through` (item quitado) fica só no `<span>` do texto da descrição, não na célula inteira — senão o link "excluir" também saía riscado.
+- **`Excluir dívida` navega pra `#/dividas` via `window.location.hash` direto** (mesmo padrão de roteamento por hash do resto do app, `App.tsx#useHash`) — não desmonta nada sozinho, é o `hashchange` que troca a tela em `AppShell`. `Dar baixa`/exclusão de item/pagamento chamam `carregar()` de novo em vez de navegar — a tela continua na mesma dívida, só com o estado atualizado.
+- **`Dar baixa` só aparece quando `status === 'open'`.** `writeOffDebt` (domínio) só transiciona de `'open'` — mostrar o botão pra uma dívida já `settled`/`written_off` ofereceria uma ação que a rota sempre devolveria 404. Uma linha "Situação: {label}" aparece no lugar quando `status !== 'open'` (`STATUS_LABEL`: `settled` → "Quitada", `written_off` → "Baixada") — sem isso, dar baixa com sucesso não tinha nenhum feedback visível além do botão sumir.
+
+#### Ajuda contextual — os 7 pontos do §3.2 do spec, e por que viram 10 lugares no código
+
+A tabela do spec tem 7 linhas (7 perguntas reais), mas 3 delas citam mais de uma tela — cada UMA dessas telas precisa do próprio `<Ajuda>` (é um componente React, não uma injeção de CSS global), então a contagem de _lugares no código_ é maior que a de _perguntas respondidas_:
+
+| Termo (`rotulo` do `<Ajuda>`) | Linha do spec                    | Onde entrou                                                                                                                                                    |
+| ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Comprometido**              | "Comprometido (e bloco da home)" | `pages/commitments.tsx` (ao lado do `<h1>`) **e** `blocos/BlocoComprometido.tsx` (novo prop `ajuda` em `blocos/Bloco.tsx`, renderizado ao lado do `CardTitle`) |
+| **Renda de referência**       | "Comprometido / Configurações"   | `pages/commitments.tsx` (ao lado de "Denominador: líquido fixo…") **e** `pages/config.tsx` (ao lado do `CardTitle` "Renda fixa de referência")                 |
+| **Competência**               | "Lançar"                         | `pages/new-entry.tsx`, ao lado do `Label` "Data"                                                                                                               |
+| **PJ / PF**                   | "Lançar / Contas"                | `pages/new-entry.tsx` (ao lado do toggle "PJ") **e** `pages/accounts.tsx` (ao lado do `Label` "Escopo")                                                        |
+| **Itens**                     | "Dívida (detalhe)"               | `pages/debt-detail.tsx`, `CardTitle` "Itens"                                                                                                                   |
+| **Dividir entre itens**       | "Dívida (detalhe)"               | `pages/debt-detail.tsx`, `<legend>` do fieldset de alocação                                                                                                    |
+| **Dar baixa**                 | "Dívida (detalhe)"               | `pages/debt-detail.tsx`, ao lado do botão "Dar baixa" (some junto quando `status !== 'open'`)                                                                  |
+
+**`DividasPage.tsx` não ganhou nenhum ponto de ajuda nem ação destrutiva** — nem o spec nem o brief citam a lista de dívidas como lugar de nenhum dos dois; listado no brief provavelmente por precaução (arquivo vizinho de `debt-detail.tsx`), confirmado sem necessidade de mudança depois de mapear as 7 linhas contra os arquivos.
+
+**`Bloco.tsx` ganhou um prop novo, `ajuda?: ReactNode`** (renderizado ao lado do `CardTitle`, `undefined` por padrão, não muda nada nos outros consumidores) — só `BlocoComprometido` passa algo; os outros três blocos da home (Saldos, Dívidas, Categorias) continuam sem, porque nenhum dos 7 pontos do spec cita eles.
+
+**Todos os 10 lugares usam `rotulo` igual ao texto exato da coluna "Termo"** do spec (`"Comprometido"`, `"Renda de referência"`, `"Competência"`, `"PJ / PF"`, `"Itens"`, `"Dividir entre itens"`, `"Dar baixa"`) — o `aria-label` do gatilho (`Ajuda sobre ${rotulo}`) é o mesmo em toda tela onde o termo repete.
+
+**Testado com clique (`userEvent.click`) em todo lugar, nunca `mouseOver`** — mesma regra herdada de `packages/ui/CLAUDE.md` (um `mouseOver` passaria igual contra um Tooltip e não provaria que é Popover). Um teste extra, fora do Vitest, confirma em navegador real: `page.tap()` com `hasTouch: true, isMobile: true` (viewport 390×844, `vite preview` real) abre a Ajuda de "Itens" em `debt-detail.tsx`, e `Escape` fecha — ad-hoc, não commitado, mesmo padrão das Tasks 6–9 (ver seção _Home_ acima).
+
+#### Estados vazios que explicam (§3.3 do spec)
+
+Dívida sem item (`detail.items.length === 0`):
+
+- O resumo do topo deixa de mostrar "devo R$ 0,00 de R$ 0,00" — vira "Sem itens ainda — nada em aberto pra cobrar."
+- O card Itens não renderiza uma tabela vazia — mostra "O total da dívida sai da soma dos itens. Adicione o primeiro abaixo." (`NovoItemForm` continua logo abaixo).
+- O fieldset "Dividir entre itens" não renderiza um bloco vazio (só a legenda + Ajuda, sem nenhum campo) — mostra "A divisão aparece depois que existir pelo menos um item."
+
+#### Bundle, medido (`vite build`, antes = fix round 1 da Task 9 / depois = Task 5)
+
+|                                    | antes                      | depois                                |
+| ---------------------------------- | -------------------------- | ------------------------------------- |
+| JS principal                       | 286,68 kB / 89,53 kB gzip  | 355,84 kB / 112,79 kB gzip            |
+| Chunk `GraficoComprometido` (lazy) | 355,53 kB / 104,62 kB gzip | 355,62 kB / 104,63 kB gzip (intocado) |
+| CSS                                | 26,63 kB / 5,70 kB gzip    | 27,12 kB / 5,79 kB gzip               |
+
+Crescimento do JS principal (+23,26 kB gzip) é o esperado: `@piluvitu/ui/ajuda` (`@radix-ui/react-popover` + as dependências transitivas que ele traz — dismissable-layer, focus-scope, focus-guards, popper, remove-scroll, aria-hidden) é consumida de verdade pela primeira vez nesta task, em 6 arquivos — a Task 4 só tinha medido zero impacto porque ninguém importava `Ajuda` ainda. `GraficoComprometido` continua isolado no chunk lazy, intocado. Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos (exit 0) depois desta task.
+
+#### Testes
+
+**163 testes** (22 arquivos — antes 136/21, ver _Fix final — revisão pré-deploy_ acima). Os 27 novos: 18 em `debt-detail.test.tsx` (arquivo foi de 14 pra 32 — confirmação obrigatória (cancelar não chama a API) pras quatro ações, `debt_has_ledger` citando "Dar baixa", os 3 pontos de Ajuda desta tela, os 3 estados vazios), 2 em `Bloco.test.tsx`, 1 em `BlocoComprometido.test.tsx`, 2 em `commitments.test.tsx`, 1 em `config.test.tsx`, 2 em `new-entry.test.tsx`, 1 em `accounts.test.tsx`.
+
+⚠️ **`debt-detail.test.tsx` migrou de mockar `fetch` global pra mockar `api`** (`vi.mock('../api', ...)`, mesmo padrão de `config.test.tsx`/`BlocoComprometido.test.tsx`) — pedido explícito desta task (`api` já traduz envelope/erro; testar nesse nível prova o componente, não o transporte HTTP). Os 14 testes pré-existentes continuam com as MESMAS asserções, só a camada mockada mudou — nenhum teve o valor esperado alterado. `DividasPage.test.tsx`/`accounts.test.tsx`/`commitments.test.tsx`/`new-entry.test.tsx` continuam mockando `fetch` (não convertidos nesta task — os testes novos de Ajuda nessas telas não chamam API nenhuma, a camada mockada é irrelevante pra eles; converter os quatro arquivos inteiros ficaria fora do escopo desta task).
+
+**Layout a ~390px verificado de fato, não assumido** (mesmo procedimento ad-hoc das Tasks 6–9: build real via `vite build` + `vite preview`, Playwright headless 390×844, rotas de API/sessão mockadas via `page.route`, screenshot). `document.documentElement.scrollWidth === clientWidth` nas 5 rotas, incluindo `#/dividas/d1` com os botões novos — foi essa mesma checagem que pegou a coluna "Ações" cortada em "E" (achado corrigido, ver bullet acima) antes do commit.
+
 ### Login — cliente Better Auth + `Gate.tsx` (Task 4)
 
 Sem o Cloudflare Access (saiu na Task 3), o host inteiro é público — quem baixa
