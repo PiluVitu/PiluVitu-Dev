@@ -119,6 +119,10 @@ function mockRede(opts: {
     imported: number
     skipped: number
   }
+  // Mapa de colunas já salvo pra conta 'a1' — simula uma importação
+  // anterior daquele banco (GET /api/settings/:key devolve isso em vez de
+  // `value: null`). `undefined` = nada salvo ainda (comportamento default).
+  mapaImportSalvo?: string
 }) {
   vi.stubGlobal(
     'fetch',
@@ -142,6 +146,19 @@ function mockRede(opts: {
             : { total: rows.length, imported: rows.length, skipped: 0 }
           return respondJson(resultado, 201)
         }
+        // Mapa de colunas — GET|PUT /api/settings/:key (backend genérico,
+        // não localStorage). PUT ecoa o value enviado; GET devolve o mapa
+        // pré-semeado pra este teste (ou null, se nenhum foi passado).
+        if (url.includes('/api/settings/')) {
+          const key = decodeURIComponent(url.split('/api/settings/')[1])
+          if (method === 'PUT') {
+            const parsed = body
+              ? (JSON.parse(body) as { value: string })
+              : { value: '' }
+            return respondJson({ key, value: parsed.value })
+          }
+          return respondJson({ key, value: opts.mapaImportSalvo ?? null })
+        }
         if (url.includes('/api/transactions')) {
           return respondJson(opts.transacoesExistentes ?? [])
         }
@@ -152,7 +169,6 @@ function mockRede(opts: {
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  localStorage.clear()
 })
 
 async function irParaConferencia(chamadas: Chamada[]) {
@@ -255,23 +271,35 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     expect(screen.getByText('Padaria X PagSeguro')).toBeInTheDocument()
     expect(screen.getByText('-R$ 45,90')).toBeInTheDocument()
 
-    const salvo = localStorage.getItem('financas-import-mapa:a1')
-    expect(salvo).not.toBeNull()
-    expect(JSON.parse(salvo as string)).toEqual({
-      data: 0,
-      valor: 1,
-      descricao: 2,
-      temCabecalho: false,
+    // Salvo via PUT /api/settings/:key (backend genérico), não localStorage
+    // — dois dispositivos (Android pra lançar, MacBook pra revisar)
+    // precisam ver o MESMO mapa.
+    const chamadaPut = chamadas.find(
+      (c) => c.method === 'PUT' && c.url.includes('/api/settings/'),
+    )
+    expect(chamadaPut).toBeDefined()
+    expect(chamadaPut!.url).toBe('/api/settings/import_map%3Aa1')
+    expect(JSON.parse(chamadaPut!.body as string)).toEqual({
+      value: JSON.stringify({
+        data: 0,
+        valor: 1,
+        descricao: 2,
+        temCabecalho: false,
+      }),
     })
   })
 
-  test('mapa já salvo pra conta pula a etapa de mapeamento na próxima importação', async () => {
-    localStorage.setItem(
-      'financas-import-mapa:a1',
-      JSON.stringify({ data: 0, valor: 1, descricao: 2, temCabecalho: false }),
-    )
+  test('mapa já salvo pra conta (backend) pula a etapa de mapeamento na próxima importação', async () => {
     const chamadas: Chamada[] = []
-    mockRede({ chamadas })
+    mockRede({
+      chamadas,
+      mapaImportSalvo: JSON.stringify({
+        data: 0,
+        valor: 1,
+        descricao: 2,
+        temCabecalho: false,
+      }),
+    })
     render(<ImportarPage />)
     await waitFor(() =>
       expect(
@@ -603,5 +631,234 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
       c.url.includes('/transactions/import'),
     )
     expect(chamadasImport).toHaveLength(3)
+  })
+
+  // Duas linhas com o MESMO FITID no MESMO arquivo — a limitação do hash
+  // (spec §5), reproduzida por duas transações com id-base idêntico (não
+  // precisa ser CSV/hash pra isso acontecer: FITID duplicado no próprio
+  // extrato do banco é o mesmo defeito). Antes da disambiguação por
+  // posição (`ocorrencia`), as duas chegariam ao servidor com o MESMO
+  // imported_id e a segunda seria descartada em silêncio pelo dedupe
+  // intra-requisição do backend — mesmo com as duas marcadas, mesmo sem
+  // nenhuma delas aparecer como "duplicada" na tela (nada no `existentes`
+  // do servidor bateria, porque nenhuma das duas tinha sido importada
+  // antes). Este teste prova que as duas nascem como ids DISTINTOS desde a
+  // montagem da conferência.
+  test('duas linhas com o mesmo id-base no mesmo arquivo recebem ids distintos e as duas importam', async () => {
+    const OFX_MESMO_FITID = `<OFX>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20260710120000[-3:BRT]
+<TRNAMT>-8.00
+<FITID>FITID-DUP
+<MEMO>Cafe 1
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20260710120000[-3:BRT]
+<TRNAMT>-8.00
+<FITID>FITID-DUP
+<MEMO>Cafe 2
+</STMTTRN>
+</BANKTRANLIST>
+</OFX>`
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+    await usuario.upload(
+      screen.getByLabelText(/Arquivo/i),
+      arquivoOfx(OFX_MESMO_FITID),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    // Nenhuma das duas aparece como duplicata — nem uma da outra.
+    expect(screen.queryByTestId('duplicada-0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('duplicada-1')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    ).toBeChecked()
+    expect(
+      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+    ).toBeChecked()
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    const chamadaImport = chamadas.find((c) =>
+      c.url.includes('/transactions/import'),
+    )
+    const enviado = JSON.parse(chamadaImport!.body as string) as {
+      rows: Array<{ imported_id: string }>
+    }
+    expect(enviado.rows).toHaveLength(2)
+    const ids = enviado.rows.map((r) => r.imported_id)
+    expect(new Set(ids).size).toBe(2) // os dois ids são DISTINTOS
+    expect(ids).toContain('FITID-DUP')
+  })
+
+  // O teste que o review pediu explicitamente: forçar uma duplicata, depois
+  // reimportar o MESMO arquivo e forçar a MESMA linha de novo (o dono
+  // esquecendo que já tinha forçado, ou reimportando o extrato sem
+  // querer) NÃO pode criar uma terceira linha. Prova tanto o efeito
+  // (contagem de linhas no "servidor" simulado não cresce na 2ª rodada)
+  // quanto a causa (o imported_id enviado é BYTE A BYTE o mesmo nas duas
+  // rodadas — a determinismo que sustenta o dedupe do backend reconhecer a
+  // segunda força como já vista).
+  test('forçar a mesma duplicata em duas importações do mesmo arquivo não faz o total de linhas crescer', async () => {
+    // Servidor simulado com estado real (não só respostas fixas): começa
+    // com FITID-1 já importado (de uma sessão anterior, fora deste teste).
+    const idsNoServidor = new Set<string>(['FITID-1'])
+    const chamadas: Chamada[] = []
+
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input)
+          const method = init?.method ?? 'GET'
+          const body = init?.body as string | undefined
+          chamadas.push({ url, method, body })
+
+          if (url.includes('/api/accounts')) return respondJson(accounts)
+          if (url.includes('/api/payees')) return respondJson(payees)
+          if (url.includes('/api/categories')) return respondJson(categories)
+          if (method === 'POST' && url.includes('/api/transactions/import')) {
+            const rows = (
+              JSON.parse(body as string) as {
+                rows: Array<{ imported_id: string }>
+              }
+            ).rows
+            let imported = 0
+            let skipped = 0
+            for (const row of rows) {
+              if (idsNoServidor.has(row.imported_id)) {
+                skipped++
+                continue
+              }
+              idsNoServidor.add(row.imported_id)
+              imported++
+            }
+            return respondJson({ total: rows.length, imported, skipped }, 201)
+          }
+          if (url.includes('/api/transactions')) {
+            return respondJson(
+              [...idsNoServidor].map((id) => ({ imported_id: id })),
+            )
+          }
+          throw new Error(`rota inesperada em teste: ${method} ${url}`)
+        }),
+    )
+
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+
+    // Rodada 1: FITID-1 já existe (duplicata) — força; FITID-2 é novo.
+    await usuario.upload(
+      screen.getByLabelText(/Arquivo/i),
+      arquivoOfx(OFX_DUAS_LINHAS),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    // FITID-1 (já existia) + FITID-2 (importada) + FITID-1:forcado (forçada).
+    expect(idsNoServidor.size).toBe(3)
+
+    // Reinicia e reimporta o MESMO arquivo — cenário do review: reimportar
+    // por engano, ou esquecer que a duplicata já tinha sido forçada.
+    await usuario.click(
+      screen.getByRole('button', { name: /Nova importação/i }),
+    )
+    await usuario.upload(
+      screen.getByLabelText(/Arquivo/i),
+      arquivoOfx(OFX_DUAS_LINHAS),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    // As DUAS linhas agora batem contra algo já existente no servidor
+    // (FITID-1 da rodada 1, FITID-2 REALMENTE importada na rodada 1) — as
+    // duas vêm desmarcadas por padrão.
+    expect(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    ).not.toBeChecked()
+    expect(
+      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+    ).not.toBeChecked()
+
+    // Força a linha 0 DE NOVO — sem tocar na linha 1.
+    await usuario.click(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    // Nada novo entrou — o total de ids no "servidor" não cresceu.
+    expect(idsNoServidor.size).toBe(3)
+    expect(screen.getByTestId('resultado-resumo')).toHaveTextContent(
+      '0 importadas',
+    )
+    expect(screen.getByTestId('resultado-resumo')).toHaveTextContent(
+      '1 já existiam',
+    )
+
+    // E a CAUSA da não-duplicação: o imported_id enviado pro campo forçado
+    // é byte a byte o MESMO nas duas rodadas.
+    const chamadasImport = chamadas.filter(
+      (c) => c.method === 'POST' && c.url.includes('/transactions/import'),
+    )
+    expect(chamadasImport).toHaveLength(2)
+    const idForcado = (rodada: number) =>
+      (
+        JSON.parse(chamadasImport[rodada].body as string) as {
+          rows: Array<{ imported_id: string }>
+        }
+      ).rows.find((r) => r.imported_id.startsWith('FITID-1'))!.imported_id
+    expect(idForcado(1)).toBe(idForcado(0))
   })
 })

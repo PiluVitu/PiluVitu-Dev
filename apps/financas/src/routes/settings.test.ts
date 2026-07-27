@@ -33,6 +33,22 @@ function put(body: unknown) {
   )
 }
 
+function getKey(key: string) {
+  return router().request(`/api/settings/${key}`, {}, { DB: env.DB })
+}
+
+function putKey(key: string, body: unknown) {
+  return router().request(
+    `/api/settings/${key}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { DB: env.DB },
+  )
+}
+
 type Envelope<T> = {
   ok: boolean
   data: T
@@ -149,5 +165,97 @@ describe('PUT /api/settings', () => {
     const res = await get()
     const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
     expect(body.data.fixed_net_cents).toBe(250000)
+  })
+})
+
+// GET/PUT /api/settings/:key — chave-valor genérico (fatia ②, Tasks 4-5: o
+// mapa de colunas de import por conta, `import_map:<account_id>`). Rota
+// NOVA, `/api/settings` (sem parâmetro) acima continua intocada.
+describe('GET/PUT /api/settings/:key — genérico', () => {
+  it('chave nunca salva devolve { key, value: null }', async () => {
+    const res = await getKey('import_map:conta-1')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      key: string
+      value: string | null
+    }>
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual({ key: 'import_map:conta-1', value: null })
+  })
+
+  it('salva e relê pela mesma chave', async () => {
+    const put1 = await putKey('import_map:conta-1', { value: '{"data":0}' })
+    expect(put1.status).toBe(200)
+
+    const res = await getKey('import_map:conta-1')
+    const body = (await res.json()) as Envelope<{
+      key: string
+      value: string | null
+    }>
+    expect(body.data.value).toBe('{"data":0}')
+  })
+
+  it('chaves diferentes não colidem', async () => {
+    await putKey('import_map:conta-1', { value: 'A' })
+    await putKey('import_map:conta-2', { value: 'B' })
+
+    const r1 = (await (await getKey('import_map:conta-1')).json()) as Envelope<{
+      value: string | null
+    }>
+    const r2 = (await (await getKey('import_map:conta-2')).json()) as Envelope<{
+      value: string | null
+    }>
+    expect(r1.data.value).toBe('A')
+    expect(r2.data.value).toBe('B')
+  })
+
+  it('PUT value ausente/não-string devolve 422 invalid_setting', async () => {
+    const res = await putKey('import_map:conta-1', { value: 123 })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0].code).toBe('invalid_setting')
+    expect(body.notifications[0].field).toBe('value')
+  })
+
+  it('corpo malformado (não é JSON) devolve 400 invalid_json', async () => {
+    const res = await router().request(
+      '/api/settings/import_map:conta-1',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: '{nao-e-json',
+      },
+      { DB: env.DB },
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0].code).toBe('invalid_json')
+  })
+
+  // A validação NUMÉRICA de fixed_net_cents (setFixedNetCents) não pode ser
+  // contornada escrevendo por este caminho genérico — senão qualquer string
+  // viraria um valor "salvo" pra essa chave, sem passar pelo RangeError que
+  // `PUT /api/settings` garante.
+  it('chave reservada (fixed_net_cents) recusa os dois verbos, 422 reserved_setting_key', async () => {
+    const resGet = await getKey('fixed_net_cents')
+    expect(resGet.status).toBe(422)
+    const bodyGet = (await resGet.json()) as Envelope<null>
+    expect(bodyGet.notifications[0].code).toBe('reserved_setting_key')
+
+    const resPut = await putKey('fixed_net_cents', { value: 'lixo' })
+    expect(resPut.status).toBe(422)
+    const bodyPut = (await resPut.json()) as Envelope<null>
+    expect(bodyPut.notifications[0].code).toBe('reserved_setting_key')
+
+    // E o valor numérico salvo por PUT /api/settings continua intocado.
+    await put({ fixed_net_cents: 250000 })
+    const resGetDepois = await getKey('fixed_net_cents')
+    expect(resGetDepois.status).toBe(422)
+    const semValorCorrompido = await get()
+    const bodySemValorCorrompido =
+      (await semValorCorrompido.json()) as Envelope<{
+        fixed_net_cents: number
+      }>
+    expect(bodySemValorCorrompido.data.fixed_net_cents).toBe(250000)
   })
 })

@@ -3,8 +3,10 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { DEFAULT_FIXED_NET_CENTS } from './reports'
 import {
   getFixedNetCents,
+  getSetting,
   MAX_FIXED_NET_CENTS,
   setFixedNetCents,
+  setSetting,
 } from './settings'
 
 beforeAll(async () => {
@@ -120,5 +122,59 @@ describe('getFixedNetCents — defesa contra a tabela settings ausente (fix fina
     await expect(getFixedNetCents(env.DB)).resolves.toBe(
       DEFAULT_FIXED_NET_CENTS,
     )
+  })
+})
+
+// `settings` é chave-valor GENÉRICA desde a migration 0005 (comentário do
+// próprio schema: "uma configuração futura reusa esta MESMA tabela sem
+// migration nova") — `getSetting`/`setSetting` são o primeiro consumidor
+// além de `fixed_net_cents`, usados pelo mapa de colunas de import por
+// conta (fatia ②, Tasks 4-5, `import_map:<account_id>`). Diferente de
+// `getFixedNetCents`/`setFixedNetCents`: nenhuma validação de FORMATO do
+// valor aqui — `value` é uma string opaca (o chamador decide o que
+// significa, ex. JSON.stringify de um mapa de colunas), a mesma
+// responsabilidade que `createAccount`/`setFixedNetCents` têm sobre O
+// PRÓPRIO domínio, não sobre um genérico.
+describe('getSetting/setSetting — chave-valor genérico', () => {
+  it('chave nunca salva devolve null', async () => {
+    expect(await getSetting(env.DB, 'import_map:conta-1')).toBeNull()
+  })
+
+  it('salva e relê pela mesma chave', async () => {
+    await setSetting(env.DB, 'import_map:conta-1', '{"data":0,"valor":1}')
+    expect(await getSetting(env.DB, 'import_map:conta-1')).toBe(
+      '{"data":0,"valor":1}',
+    )
+  })
+
+  it('chaves diferentes não colidem', async () => {
+    await setSetting(env.DB, 'import_map:conta-1', 'A')
+    await setSetting(env.DB, 'import_map:conta-2', 'B')
+    expect(await getSetting(env.DB, 'import_map:conta-1')).toBe('A')
+    expect(await getSetting(env.DB, 'import_map:conta-2')).toBe('B')
+  })
+
+  it('salvar de novo SUBSTITUI o valor anterior (upsert) — não duplica linha', async () => {
+    await setSetting(env.DB, 'import_map:conta-1', 'v1')
+    await setSetting(env.DB, 'import_map:conta-1', 'v2')
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM settings WHERE key = 'import_map:conta-1'`,
+    ).all()
+    expect(results.length).toBe(1)
+    expect(await getSetting(env.DB, 'import_map:conta-1')).toBe('v2')
+  })
+
+  it('nunca colide com fixed_net_cents — chaves distintas na mesma tabela', async () => {
+    await setFixedNetCents(env.DB, 420000)
+    await setSetting(env.DB, 'import_map:conta-1', 'valor-generico')
+    expect(await getFixedNetCents(env.DB)).toBe(420000)
+    expect(await getSetting(env.DB, 'import_map:conta-1')).toBe(
+      'valor-generico',
+    )
+  })
+
+  it('tabela settings ausente: getSetting devolve null em vez de propagar o erro do D1', async () => {
+    await env.DB.prepare('DROP TABLE settings').run()
+    await expect(getSetting(env.DB, 'import_map:conta-1')).resolves.toBeNull()
   })
 })

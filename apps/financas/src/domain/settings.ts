@@ -93,3 +93,50 @@ export async function setFixedNetCents(
 
   return value
 }
+
+/**
+ * Chave-valor GENÉRICO de verdade — o comentário do topo deste arquivo já
+ * dizia "uma configuração futura reusa esta MESMA tabela sem migration
+ * nova"; `getSetting`/`setSetting` são esse consumidor (fatia ②, Tasks 4-5:
+ * mapa de colunas de import por conta, chave `import_map:<account_id>`).
+ * Ao contrário de `getFixedNetCents`/`setFixedNetCents`, nenhuma validação
+ * de FORMATO — `value` é uma string opaca, o chamador decide o que ela
+ * significa (aqui, um `JSON.stringify` de `MapaColunas`). A proteção contra
+ * a chave `fixed_net_cents` ser escrita por este caminho genérico (e assim
+ * escapar da validação numérica de `setFixedNetCents`) mora na ROTA
+ * (`routes/settings.ts`), não aqui — mesma separação de responsabilidade
+ * de sempre neste módulo: domínio faz a operação, rota decide QUAL chave
+ * pode passar por QUAL caminho.
+ */
+export async function getSetting(
+  db: D1Database,
+  key: string,
+): Promise<string | null> {
+  try {
+    const row = await db
+      .prepare(`SELECT value FROM settings WHERE key = ?`)
+      .bind(key)
+      .first<{ value: string }>()
+    return row?.value ?? null
+  } catch (err) {
+    // Mesma defesa de `getFixedNetCents` (fix final, achado C2): tabela
+    // ausente (deploy fora de ordem) degrada pra "nada salvo" em vez de
+    // propagar um 500 sem envelope.
+    logConstraintError('getSetting', String(err))
+    return null
+  }
+}
+
+export async function setSetting(
+  db: D1Database,
+  key: string,
+  value: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind(key, value, nowIsoUtc())
+    .run()
+}

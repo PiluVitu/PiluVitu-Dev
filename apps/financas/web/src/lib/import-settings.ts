@@ -1,4 +1,5 @@
 import type { MapaColunas } from '@piluvitu/tools/import/csv'
+import { api } from '../api'
 
 /**
  * Mapa de colunas do CSV, salvo por conta (spec §6 — "o dono mapeia as
@@ -6,15 +7,20 @@ import type { MapaColunas } from '@piluvitu/tools/import/csv'
  * na prática, um banco/cartão específico neste app — chavear por
  * `account_id` evita pedir ao dono um identificador de banco à parte.
  *
- * `localStorage`, não a tabela `settings` do Worker (que hoje só conhece a
- * chave `fixed_net_cents` — ver `domain/settings.ts`/`routes/settings.ts`):
- * estender o backend para chave-valor genérica está fora do escopo dos
- * arquivos desta task (só `web/src/pages/importar.tsx` + `App.tsx`).
- * `localStorage` já é o precedente estabelecido para "configuração salva no
- * navegador" neste app (`lib/theme.ts`), e mantém a garantia de que o
- * arquivo/mapeamento nunca precisa trafegar para ser lembrado.
+ * Persistido em `GET|PUT /api/settings/:key` (tabela `settings`, chave
+ * `import_map:<account_id>`) — NÃO em `localStorage`. `settings` já é
+ * chave-valor genérico desde a migration 0005 (comentário do próprio
+ * schema: "uma configuração futura reusa esta MESMA tabela sem migration
+ * nova"); a versão anterior desta task tinha ficado em `localStorage`
+ * alegando que generalizar o backend estava fora de escopo — errado, a
+ * tabela já era genérica, só faltava o endpoint (`routes/settings.ts`,
+ * `GET|PUT /settings/:key`, adicionado nesta mesma fatia). `localStorage`
+ * quebrava o caso real de dois dispositivos (o dono lança do Android,
+ * revisa no MacBook): o mapa mapeado no laptop nunca aparecia no celular.
  */
-const PREFIXO_CHAVE = 'financas-import-mapa:'
+function chaveImportMap(accountId: string): string {
+  return `import_map:${accountId}`
+}
 
 function isMapaColunas(value: unknown): value is MapaColunas {
   if (typeof value !== 'object' || value === null) return false
@@ -27,26 +33,40 @@ function isMapaColunas(value: unknown): value is MapaColunas {
   )
 }
 
-export function mapaSalvo(accountId: string): MapaColunas | null {
+export async function mapaSalvo(
+  accountId: string,
+): Promise<MapaColunas | null> {
   try {
-    const bruto = localStorage.getItem(PREFIXO_CHAVE + accountId)
-    if (bruto === null) return null
-    const parsed: unknown = JSON.parse(bruto)
+    const { value } = await api<{ key: string; value: string | null }>(
+      `/api/settings/${encodeURIComponent(chaveImportMap(accountId))}`,
+    )
+    if (value === null) return null
+    const parsed: unknown = JSON.parse(value)
     return isMapaColunas(parsed) ? parsed : null
   } catch {
-    // JSON corrompido ou localStorage indisponível (modo privado/cota) —
-    // degrada para "sem mapa salvo", que reabre a etapa de mapeamento em
-    // vez de quebrar a importação.
+    // JSON corrompido ou rede fora (`ApiError`) — degrada pra "sem mapa
+    // salvo", que reabre a etapa de mapeamento em vez de travar a
+    // importação atual. Todo caso aqui degrada da mesma forma, não
+    // precisa distinguir a causa.
     return null
   }
 }
 
-export function salvarMapa(accountId: string, mapa: MapaColunas): void {
+export async function salvarMapa(
+  accountId: string,
+  mapa: MapaColunas,
+): Promise<void> {
   try {
-    localStorage.setItem(PREFIXO_CHAVE + accountId, JSON.stringify(mapa))
+    await api(
+      `/api/settings/${encodeURIComponent(chaveImportMap(accountId))}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ value: JSON.stringify(mapa) }),
+      },
+    )
   } catch {
-    // localStorage pode LANÇAR (não só faltar) em storage particionado/modo
-    // privado (mesmo achado M5 do fix final, lib/theme.ts) — perder a
-    // persistência do mapa não pode impedir a importação atual de terminar.
+    // Falha ao salvar (rede fora, 5xx) não pode impedir a importação ATUAL
+    // de terminar — só a PRÓXIMA importação daquela conta reabre a etapa
+    // de mapeamento, em vez de travar a que está em andamento.
   }
 }

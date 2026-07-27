@@ -114,13 +114,22 @@ function chunk<T>(items: T[], size: number): T[][] {
 // Escape hatch pra forçar uma duplicata (spec §5): reenviar o MESMO
 // imported_id faria o próprio dedupe do backend (por account_id+
 // imported_id, ver domain/import.ts) pular de novo — a "força" seria um
-// no-op silencioso. Disambigua com um sufixo, só na linha marcada de
-// propósito depois de já ter sido sinalizada como duplicata.
-let contadorForcado = 0
+// no-op silencioso.
+//
+// ⚠️ O sufixo é LITERAL (':forcado', SEM timestamp/contador em memória) —
+// precisa ser DETERMINÍSTICO. Reimportar o MESMO arquivo e forçar a MESMA
+// linha de novo (ex.: reimportação acidental do mesmo extrato) tem que
+// produzir o MESMO id forçado, pro dedupe do backend reconhecer "isto já
+// foi forçado antes" e pular — exatamente como pula qualquer outra
+// duplicata. Um sufixo baseado em `Date.now()`/contador de sessão geraria
+// um id NOVO a cada força, criando uma terceira, quarta... linha a cada
+// reimportação forçada — o oposto do que idempotência significa. Como
+// `linha.imported_id` já é o "id natural" desta linha (posição dela dentro
+// do arquivo já resolvida em `prepararConferencia`, abaixo), o único dado
+// que falta pra tornar o envio único é o próprio fato "isto foi forçado" —
+// literal, sem componente variável.
 function idParaEnvio(linha: LinhaRevisao): string {
-  if (!linha.duplicada) return linha.imported_id
-  contadorForcado++
-  return `${linha.imported_id}:forcado:${Date.now()}:${contadorForcado}`
+  return linha.duplicada ? `${linha.imported_id}:forcado` : linha.imported_id
 }
 
 async function linhasCsvComId(
@@ -206,11 +215,31 @@ export function ImportarPage() {
       return
     }
 
+    // Disambiguação DETERMINÍSTICA de colisão DENTRO do mesmo arquivo — duas
+    // linhas com o mesmo hash no mesmo arquivo (ex.: dois cafés de R$ 8 na
+    // mesma padaria no mesmo dia, a limitação documentada do hash — spec
+    // §5) recebem `imported_id`s distintos desde a montagem da conferência,
+    // nunca só na hora de enviar. `ocorrencia` é a posição (0-based) da
+    // linha entre as que compartilham o mesmo id-base NESTE arquivo — pura
+    // função da ORDEM DE PARSE, então reimportar o MESMO arquivo produz a
+    // MESMA sequência de ids sempre. A 1ª ocorrência mantém o id-base
+    // (compatível com o caminho comum, sem sufixo); a 2ª em diante ganha
+    // `:occ:<n>` — isso faz as duas linhas nascerem como duas transações
+    // DISTINTAS desde já (nenhuma marcada "duplicada" uma da outra), em vez
+    // de a 2ª ser silenciosamente descartada pelo dedupe intra-requisição
+    // do backend (`seenInThisRequest`, domain/import.ts) só porque as duas
+    // chegariam com o mesmo id cru.
+    const ocorrenciaPorIdBase = new Map<string, number>()
     const revisao: LinhaRevisao[] = linhasBrutas.map((l) => {
-      const duplicada = existentes.has(l.imported_id)
+      const ocorrencia = ocorrenciaPorIdBase.get(l.imported_id) ?? 0
+      ocorrenciaPorIdBase.set(l.imported_id, ocorrencia + 1)
+      const idNatural =
+        ocorrencia === 0 ? l.imported_id : `${l.imported_id}:occ:${ocorrencia}`
+
+      const duplicada = existentes.has(idNatural)
       const sugestao = sugerirPayee(l.description, payees)
       return {
-        imported_id: l.imported_id,
+        imported_id: idNatural,
         purchase_date: l.purchase_date,
         amount_cents: l.amount_cents,
         description: l.description,
@@ -254,7 +283,7 @@ export function ImportarPage() {
       return
     }
 
-    const mapaExistente = mapaSalvo(accountId)
+    const mapaExistente = await mapaSalvo(accountId)
     if (mapaExistente) {
       try {
         await prepararConferencia(
@@ -282,7 +311,7 @@ export function ImportarPage() {
     }
     try {
       const comId = await linhasCsvComId(textoCsv, mapa)
-      salvarMapa(accountId, mapa)
+      await salvarMapa(accountId, mapa)
       await prepararConferencia(comId, 'csv')
     } catch (err) {
       setArquivoErro(err instanceof Error ? err.message : String(err))
