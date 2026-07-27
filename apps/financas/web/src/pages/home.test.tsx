@@ -28,27 +28,97 @@ afterEach(() => {
 })
 
 describe('HomePage', () => {
-  it('mostra o título Início e monta o bloco Comprometido', async () => {
-    vi.mocked(api).mockResolvedValue(reportVazio)
+  it('mostra o título Início e monta os três blocos', async () => {
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path.startsWith('/api/reports/commitments'))
+        return Promise.resolve(reportVazio)
+      if (path.startsWith('/api/accounts')) return Promise.resolve([])
+      if (path.startsWith('/api/debts')) return Promise.resolve([])
+      return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
+    })
 
     render(<HomePage />)
 
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
-    await waitFor(() =>
+    await waitFor(() => {
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
-      ).toBeInTheDocument(),
-    )
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Saldos' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Dívidas' }),
+      ).toBeInTheDocument()
+    })
   })
 
-  it('um bloco em erro não derruba a home — o resto da tela continua de pé', async () => {
+  it('todos os blocos em erro: a home continua de pé (título + os 3 cards contidos)', async () => {
     vi.mocked(api).mockRejectedValue(new Error('falhou'))
 
     render(<HomePage />)
 
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
-    // o título continua no ar — o erro ficou contido no card do bloco
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3))
+    // o título continua no ar — o erro ficou contido nos cards dos blocos
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+  })
+
+  it('um bloco em erro NÃO derruba os outros — prova real: os outros dois mostram DADO de verdade, não só o card vazio', async () => {
+    // Só o bloco Comprometido falha; Saldos e Dívidas recebem dado real.
+    // Se o erro do Comprometido escapasse do próprio componente (ex.: um
+    // throw síncrono no render em vez de ficar contido no `catch` do
+    // `useEffect`), o React desmontaria a árvore inteira e NENHUMA das
+    // asserções abaixo passaria — nem sequer o <h1>Início</h1>. Verificado
+    // por mutação: ver task-7-report.md.
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path.startsWith('/api/reports/commitments'))
+        return Promise.reject(new Error('comprometido indisponível'))
+      if (path.startsWith('/api/accounts')) {
+        return Promise.resolve([
+          { id: 'pj1', name: 'Nubank PJ', scope: 'PJ', balance_cents: 500000 },
+          { id: 'pf1', name: 'Nubank PF', scope: 'PF', balance_cents: 100000 },
+        ])
+      }
+      if (path.startsWith('/api/debts')) {
+        return Promise.resolve([
+          {
+            id: 'd1',
+            title: 'Empréstimo do pai',
+            payee_name: 'Pai',
+            total_cents: 730000,
+            paid_cents: 594000,
+            remaining_cents: 136000,
+          },
+        ])
+      }
+      return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
+    })
+
+    render(<HomePage />)
+
+    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+
+    // Comprometido: erro contido dentro do próprio card
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'comprometido indisponível',
+      ),
+    )
+
+    // Saldos: dado REAL renderizado (não apenas "o card existe")
+    expect(screen.getByTestId('total-PJ')).toHaveTextContent('R$ 5.000,00')
+    expect(screen.getByTestId('total-PF')).toHaveTextContent('R$ 1.000,00')
+
+    // Dívidas: dado REAL renderizado, com a barra de progresso funcionando
+    expect(screen.getByTestId('divida-d1-falta')).toHaveTextContent(
+      'R$ 1.360,00',
+    )
+    expect(
+      screen.getByRole('progressbar', { name: /empréstimo do pai/i }),
+    ).toHaveAttribute('aria-valuenow', '81')
+
+    // exatamente 1 alert na tela inteira — o erro não vazou para os outros
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
   })
 })
