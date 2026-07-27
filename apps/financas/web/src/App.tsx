@@ -12,6 +12,7 @@ import { HomePage } from './pages/home'
 import { ImportarPage } from './pages/importar'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
+import { ReservaPage } from './pages/reserva'
 
 export function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -64,6 +65,9 @@ function AppShell() {
         <a href="#/recorrentes" className={navLinkClassName}>
           Recorrentes
         </a>
+        <a href="#/reserva" className={navLinkClassName}>
+          Reserva
+        </a>
         <a href="#/importar" className={navLinkClassName}>
           Importar
         </a>
@@ -84,6 +88,8 @@ function AppShell() {
         <NewEntryPage />
       ) : hash === '#/recorrentes' || hash === '#/recorrentes/' ? (
         <RecorrentesPage />
+      ) : hash === '#/reserva' || hash === '#/reserva/' ? (
+        <ReservaPage />
       ) : hash === '#/importar' || hash === '#/importar/' ? (
         <ImportarPage />
       ) : hash === '#/contas' || hash === '#/contas/' ? (

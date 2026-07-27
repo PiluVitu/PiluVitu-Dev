@@ -70,6 +70,17 @@ function mockFetchVazio() {
       // RecorrentesPage (Task 5, fatia ⑥) — três listas.
       if (url.includes('/api/recurring')) return respond([])
       if (url.includes('/api/categories')) return respond([])
+      // ReservaPage (Task 2/3, fatia ⑦) — objeto, não lista. `meses: null` é
+      // o estado real de producao hoje (sem recorrente cadastrada).
+      if (url.includes('/api/reserve')) {
+        return respond({
+          saldo_cents: 0,
+          meta_cents: { min: 0, max: 0 },
+          meses: null,
+          contas: [],
+          goal_months: 3,
+        })
+      }
       // ImportarPage (Tasks 4-5, fatia ②) — GET /api/payees já coberto
       // acima (DividasPage). /api/transactions só é chamado depois de um
       // arquivo ser lido (checagem de duplicata) — este teste de rota nunca
@@ -142,6 +153,19 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { name: 'Recorrentes' }),
+      ).toBeDefined(),
+    )
+  })
+
+  // Task 2/3 (fatia ⑦): nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/reserva mostra a tela Reserva de emergência', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/reserva'
+    render(<App />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Reserva de emergência' }),
       ).toBeDefined(),
     )
   })
