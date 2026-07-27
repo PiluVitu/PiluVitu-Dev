@@ -63,6 +63,28 @@ const post = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
+const del = (): RequestInit => ({ method: 'DELETE' })
+
+async function criarDivida(payee_id: string, opened_at = '2026-07-01') {
+  const res = await call(
+    '/',
+    post({ payee_id, direction: 'i_owe', title: 'Pai', opened_at }),
+  )
+  return res.body.data.id as string
+}
+
+async function adicionarItem(
+  debtId: string,
+  amount_cents = 100000,
+  description = 'Item de teste',
+) {
+  const res = await call(
+    `/${debtId}/items`,
+    post({ description, amount_cents, incurred_on: '2026-07-01' }),
+  )
+  return res.body.data.id as string
+}
+
 describe('rotas de dividas — caminho feliz', () => {
   it('cria divida, itens e pagamento e devolve o detalhe com os saldos', async () => {
     const { payee_id, account_id } = await seedPai()
@@ -246,5 +268,181 @@ describe('rotas de dividas — erros de negocio', () => {
     )
     expect(res.status).toBe(422)
     expect(res.body.notifications[0].code).toBe('constraint_violation')
+  })
+})
+
+describe('rotas de exclusao e baixa (Task 3)', () => {
+  it('DELETE /:id sem pagamento cash apaga a divida e devolve 200', async () => {
+    const { payee_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+    await adicionarItem(debtId)
+
+    const res = await call(`/${debtId}`, del())
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.data).toEqual({ id: debtId, deleted: true })
+
+    const row = await env.DB.prepare('SELECT 1 FROM debts WHERE id = ?')
+      .bind(debtId)
+      .first()
+    expect(row).toBeNull()
+  })
+
+  it('DELETE /:id de divida inexistente devolve 404 not_found', async () => {
+    const res = await call('/nao-existe', del())
+    expect(res.status).toBe(404)
+    expect(res.body.ok).toBe(false)
+    expect(res.body.notifications[0].code).toBe('not_found')
+  })
+
+  it("DELETE /:id com pagamento cash devolve 422 debt_has_ledger citando 'Dar baixa'", async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+    const itemId = await adicionarItem(debtId, 100000)
+    await call(
+      `/${debtId}/payments`,
+      post({
+        paid_on: '2026-07-05',
+        amount_cents: 100000,
+        account_id,
+        allocations: [{ item_id: itemId, amount_cents: 100000 }],
+      }),
+    )
+
+    const res = await call(`/${debtId}`, del())
+    expect(res.status).toBe(422)
+    expect(res.body.ok).toBe(false)
+    expect(res.body.notifications[0].code).toBe('debt_has_ledger')
+    // A mensagem e a feature: sem citar a alternativa, o dono fica travado
+    // com uma divida que nao pode excluir e nenhuma pista do que fazer.
+    expect(res.body.notifications[0].message).toContain('Dar baixa')
+
+    // Recusa nao apaga nada.
+    const row = await env.DB.prepare('SELECT 1 FROM debts WHERE id = ?')
+      .bind(debtId)
+      .first()
+    expect(row).not.toBeNull()
+  })
+
+  it('POST /:id/write-off muda status para written_off e devolve 200', async () => {
+    const { payee_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+
+    const res = await call(`/${debtId}/write-off`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.data).toEqual({ id: debtId, written_off: true })
+
+    const row = await env.DB.prepare('SELECT status FROM debts WHERE id = ?')
+      .bind(debtId)
+      .first<{ status: string }>()
+    expect(row?.status).toBe('written_off')
+  })
+
+  it('POST /:id/write-off de divida inexistente devolve 404 not_found', async () => {
+    const res = await call('/nao-existe/write-off', { method: 'POST' })
+    expect(res.status).toBe(404)
+    expect(res.body.notifications[0].code).toBe('not_found')
+  })
+
+  it('DELETE /:id/items/:itemId sem alocacao apaga o item e devolve 200', async () => {
+    const { payee_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+    const itemId = await adicionarItem(debtId)
+
+    const res = await call(`/${debtId}/items/${itemId}`, del())
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual({ id: itemId, deleted: true })
+
+    const row = await env.DB.prepare('SELECT 1 FROM debt_items WHERE id = ?')
+      .bind(itemId)
+      .first()
+    expect(row).toBeNull()
+  })
+
+  it('DELETE /:id/items/:itemId de item inexistente devolve 404 not_found', async () => {
+    const { payee_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+
+    const res = await call(`/${debtId}/items/nao-existe`, del())
+    expect(res.status).toBe(404)
+    expect(res.body.notifications[0].code).toBe('not_found')
+  })
+
+  it('DELETE /:id/items/:itemId com alocacao devolve 422 constraint_violation cozido — sem SQLITE_CONSTRAINT nem nome de tabela', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+    const itemId = await adicionarItem(debtId, 100000)
+    await call(
+      `/${debtId}/payments`,
+      post({
+        paid_on: '2026-07-05',
+        amount_cents: 50000,
+        account_id,
+        allocations: [{ item_id: itemId, amount_cents: 50000 }],
+      }),
+    )
+
+    const res = await call(`/${debtId}/items/${itemId}`, del())
+    expect(res.status).toBe(422)
+    expect(res.body.notifications[0].code).toBe('constraint_violation')
+    const msg = res.body.notifications[0].message as string
+    // O texto cru do D1 ("D1_ERROR: FOREIGN KEY constraint failed:
+    // SQLITE_CONSTRAINT_FOREIGNKEY") nunca pode chegar ao usuario — nem o
+    // codigo da constraint, nem o nome de tabela/coluna do schema.
+    expect(msg).not.toMatch(/D1_ERROR|SQLITE_CONSTRAINT/i)
+    expect(msg).not.toMatch(
+      /debt_items|debt_payment_allocations|debt_payments/i,
+    )
+    expect(msg.length).toBeGreaterThan(0)
+
+    // Item continua la — RESTRICT bloqueou o proprio DELETE, nada mudou.
+    const row = await env.DB.prepare('SELECT 1 FROM debt_items WHERE id = ?')
+      .bind(itemId)
+      .first()
+    expect(row).not.toBeNull()
+  })
+
+  it('DELETE /:id/payments/:paymentId apaga pagamento cash + transaction e devolve 200', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+    const itemId = await adicionarItem(debtId, 100000)
+    const pago = await call(
+      `/${debtId}/payments`,
+      post({
+        paid_on: '2026-07-05',
+        amount_cents: 100000,
+        account_id,
+        allocations: [{ item_id: itemId, amount_cents: 100000 }],
+      }),
+    )
+    const paymentId = pago.body.data.payment.id as string
+    const transactionId = pago.body.data.transaction.id as string
+
+    const res = await call(`/${debtId}/payments/${paymentId}`, del())
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual({ id: paymentId, deleted: true })
+
+    const payRow = await env.DB.prepare(
+      'SELECT 1 FROM debt_payments WHERE id = ?',
+    )
+      .bind(paymentId)
+      .first()
+    expect(payRow).toBeNull()
+    const txRow = await env.DB.prepare(
+      'SELECT 1 FROM transactions WHERE id = ?',
+    )
+      .bind(transactionId)
+      .first()
+    expect(txRow).toBeNull()
+  })
+
+  it('DELETE /:id/payments/:paymentId de pagamento inexistente devolve 404 not_found', async () => {
+    const { payee_id } = await seedPai()
+    const debtId = await criarDivida(payee_id)
+
+    const res = await call(`/${debtId}/payments/nao-existe`, del())
+    expect(res.status).toBe(404)
+    expect(res.body.notifications[0].code).toBe('not_found')
   })
 })

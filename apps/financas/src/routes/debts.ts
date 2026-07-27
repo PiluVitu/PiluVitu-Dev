@@ -3,10 +3,15 @@ import {
   addDebtItem,
   createDebt,
   debtDetail,
+  DebtHasLedgerError,
+  deleteDebt,
+  deleteDebtItem,
+  deleteDebtPayment,
   InvalidPaymentError,
   listDebts,
   OverAllocationError,
   payDebt,
+  writeOffDebt,
 } from '../domain/debts'
 import type {
   Allocation,
@@ -35,7 +40,18 @@ async function parseBody(
   }
 }
 
+// Mensagem fixada aqui (não em err.message de DebtHasLedgerError) porque é
+// esta rota que a expõe pro dono pela primeira vez — o texto tem que nomear
+// a alternativa ('Dar baixa'), senão a recusa só diz "não" e ele fica preso
+// sem saber o que fazer. Um teste dedicado (routes/debts.test.ts) assegura
+// que 'Dar baixa' continua no texto — uma edição futura que a remova quebra
+// esse teste antes de quebrar a experiência real.
+const DEBT_HAS_LEDGER_MESSAGE =
+  "Esta dívida já tem pagamento em dinheiro registrado no caixa. Excluir apagaria a dívida e deixaria o lançamento sem explicação. Use 'Dar baixa' para encerrá-la preservando o histórico, ou exclua os pagamentos primeiro."
+
 function mapError(err: unknown): Response {
+  if (err instanceof DebtHasLedgerError)
+    return errJson(422, err.code, DEBT_HAS_LEDGER_MESSAGE)
   if (err instanceof OverAllocationError)
     return errJson(422, 'over_allocation', err.message)
   if (err instanceof InvalidPaymentError)
@@ -192,4 +208,53 @@ debtsRoutes.post('/:id/payments', async (c) => {
   } catch (err) {
     return mapError(err)
   }
+})
+
+// Convencao de modulo: funcao de dominio devolve boolean (meta.changes > 0),
+// a rota traduz false em 404 not_found — mesmo padrao de accounts.ts#archive.
+// DebtHasLedgerError e a UNICA excecao de negocio aqui, tratada por mapError.
+debtsRoutes.delete('/:id', async (c) => {
+  const id = c.req.param('id')
+  try {
+    const deleted = await deleteDebt(c.env.DB, id)
+    if (!deleted) return errJson(404, 'not_found', 'divida nao encontrada')
+    return okJson({ id, deleted: true })
+  } catch (err) {
+    return mapError(err)
+  }
+})
+
+debtsRoutes.post('/:id/write-off', async (c) => {
+  const id = c.req.param('id')
+  const done = await writeOffDebt(c.env.DB, id)
+  if (!done)
+    return errJson(
+      404,
+      'not_found',
+      'divida nao encontrada, ja quitada ou ja baixada',
+    )
+  return okJson({ id, written_off: true })
+})
+
+// Item com alocacao: deleteDebtItem deixa o RESTRICT do D1 propagar cru
+// (mesmo padrao de addDebtItem contra debt_id inexistente) — mapError e
+// quem cura o SQLITE_CONSTRAINT antes de qualquer resposta sair daqui.
+debtsRoutes.delete('/:id/items/:itemId', async (c) => {
+  const id = c.req.param('id')
+  const itemId = c.req.param('itemId')
+  try {
+    const deleted = await deleteDebtItem(c.env.DB, id, itemId)
+    if (!deleted) return errJson(404, 'not_found', 'item nao encontrado')
+    return okJson({ id: itemId, deleted: true })
+  } catch (err) {
+    return mapError(err)
+  }
+})
+
+debtsRoutes.delete('/:id/payments/:paymentId', async (c) => {
+  const id = c.req.param('id')
+  const paymentId = c.req.param('paymentId')
+  const deleted = await deleteDebtPayment(c.env.DB, id, paymentId)
+  if (!deleted) return errJson(404, 'not_found', 'pagamento nao encontrado')
+  return okJson({ id: paymentId, deleted: true })
 })
