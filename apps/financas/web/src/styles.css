@@ -24,3 +24,39 @@
     border-color: hsl(var(--border));
   }
 }
+
+/*
+  CRITICAL (fix final, achado C1): faltava a regra que pinta o CANVAS da
+  página — `body { @apply bg-background text-foreground }` — e
+  `color-scheme`. Sem isso, `.dark` em `<html>` troca os TOKENS (as custom
+  properties viram os valores escuros), mas nada aplica `--background`/
+  `--foreground` no `body`: MEDIDO no build real, nas 7 rotas, com
+  `.dark` aplicado, `getComputedStyle(body).backgroundColor` saía
+  `rgba(0, 0, 0, 0)` (transparente — o branco da página HTML por trás
+  aparecia) e `color` saía `rgb(0, 0, 0)` (preto, o default do browser),
+  com `colorScheme: 'normal'` — cards `bg-card` (quase preto no tema
+  escuro) renderizavam sobre um fundo branco. `apps/web/app/globals.css`
+  já tinha exatamente esta regra (`@layer base { body { @apply
+  bg-background text-foreground font-sans } }`); esta SPA era a única
+  consumidora de `@piluvitu/ui` sem ela. `font-sans` NÃO é necessário
+  aqui — o Preflight já resolve o `html` pra `--font-sans` (`ui-sans-serif`
+  via o fallback aninhado do token, ver `packages/ui/src/styles.css`),
+  confirmado no CSS buildado.
+
+  `color-scheme` troca os controles nativos do browser (scrollbar,
+  inputs de data/select) pro tema certo — sem isso eles ficam claros
+  mesmo com o resto da página escuro.
+*/
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

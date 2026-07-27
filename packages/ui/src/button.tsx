@@ -10,8 +10,11 @@ const buttonVariants = cva(
   // nunca ganhou — MEDIDO (fix round 1, Task 9 da SPA financas): sem isto,
   // todo `<button>` (incl. `asChild`) usa o cursor default do navegador,
   // que em muitos casos é uma seta comum em vez da mãozinha de clique.
-  // `disabled:cursor-not-allowed` já cobre o estado desabilitado
-  // (`disabled:pointer-events-none` acima também bloqueia clique).
+  // `disabled:pointer-events-none` (na variant string abaixo) já bloqueia
+  // o clique no estado desabilitado — M2 (fix final): esta string NÃO
+  // tem `disabled:cursor-not-allowed` (comportamento visual do cursor
+  // desabilitado é o default do browser); um comentário anterior alegava
+  // o contrário, sem a classe existir de verdade.
   'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {

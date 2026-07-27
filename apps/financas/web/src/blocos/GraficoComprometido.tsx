@@ -1,5 +1,5 @@
 import { formatBRL } from '@piluvitu/tools/money'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -26,43 +26,61 @@ const COR_SEM_CATEGORIA = 'hsl(var(--muted-foreground))'
 
 const ALTURA = 220
 const LARGURA_MAXIMA = 640
-const LARGURA_MINIMA = 280
-// `CardContent` (@piluvitu/ui/card) tem `p-6` (24px) de cada lado + folga da
-// página — 64px é conservador de propósito: melhor um pouco de espaço
-// sobrando do que estourar a largura real do card e forçar scroll.
-const MARGEM_HORIZONTAL = 64
-
-function larguraDoGrafico(): number {
-  return Math.max(
-    LARGURA_MINIMA,
-    Math.min(LARGURA_MAXIMA, window.innerWidth - MARGEM_HORIZONTAL),
-  )
-}
 
 /**
- * Largura do gráfico acompanhando o viewport — SEM `ResponsiveContainer`.
+ * Largura do gráfico acompanhando o CONTAINER, não a janela — SEM
+ * `ResponsiveContainer` (que dependeria do mesmo `ResizeObserver` que este
+ * hook usa, só que sem dar acesso ao `<div>` real pra medir).
  *
- * ⚠️ **Fix round 1 (Task 6): a largura fixa (640px) original escondia
- * metade da janela de 6 meses no Android** (~390px de viewport, o
- * dispositivo PRIMÁRIO do dono pra registrar gasto — e `#/` virou o
- * default nesta mesma task, então é a PRIMEIRA coisa que ele vê). Trocado
- * por `window.innerWidth` + listener de `resize`: `ResponsiveContainer`
- * dependeria de `ResizeObserver` (ausente no jsdom dos testes, e não
- * renderiza filho nenhum sem medição real de container) — `innerWidth` e o
- * evento `resize`, ao contrário, são suportados nativamente pelo jsdom
- * (MEDIDO), então dá pra ficar responsivo E testável sem mockar nada
- * global em `src/test/setup.ts`. `overflow-x-auto` no container fica como
- * rede de segurança abaixo de `LARGURA_MINIMA`, não como estratégia
- * principal.
+ * ⚠️ **Important 1 (fix final): medir `window.innerWidth` (Task 6, fix
+ * round 1) resolvia o problema ERRADO.** Isso ficava certo enquanto a home
+ * tinha 1 coluna só — a partir da Task 7 (grid `md:grid-cols-2`), o card
+ * que contém o gráfico é MENOR que a janela, e uma largura calculada
+ * contra `window.innerWidth - margem` ignora completamente o grid.
+ * MEDIDO em 1280×900 com dado semeado: `clientWidth` do container = 262px,
+ * SVG do gráfico = 640px — 2,4× mais largo que o espaço real, escondendo
+ * 4 dos 6 meses da janela atrás de um scroll horizontal sem indicação
+ * nenhuma, na tela cuja finalidade é justamente ver a janela inteira "de
+ * relance". Em 390px (Android): 308 vs 326 — diferença menor, mesmo
+ * defeito.
+ *
+ * Trocado por um `ref` no PRÓPRIO wrapper (`overflow-x-auto`) +
+ * `ResizeObserver` — stubado em `src/test/setup.ts` (a ausência dele no
+ * jsdom era exatamente o motivo documentado pra evitar esta abordagem na
+ * Task 6; o stub resolve isso). Mede o wrapper, não o `BarChart`: um
+ * elemento de bloco sem largura própria preenche o espaço disponível do
+ * pai (`CardContent`) independente do filho, então não há circularidade
+ * em medir o mesmo elemento que recebe a largura calculada.
+ *
+ * **Sem piso mínimo artificial** (o antigo `LARGURA_MINIMA = 280` sumiu):
+ * um piso que empurrasse a largura pra CIMA da medida real do container
+ * reintroduziria o mesmo estouro que este fix existe pra eliminar — se o
+ * container é mesmo mais estreito que isso, `overflow-x-auto` continua
+ * como rede de segurança, não como estratégia principal (documentado
+ * desde a Task 6).
  */
-function useLarguraGrafico(): number {
-  const [largura, setLargura] = useState(larguraDoGrafico)
+function useLarguraContainer<T extends HTMLElement>(): {
+  ref: React.RefObject<T | null>
+  largura: number
+} {
+  const ref = useRef<T>(null)
+  const [largura, setLargura] = useState(LARGURA_MAXIMA)
+
   useEffect(() => {
-    const onResize = () => setLargura(larguraDoGrafico())
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    const elemento = ref.current
+    if (!elemento || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver((entries) => {
+      const larguraMedida = entries[0]?.contentRect.width
+      if (larguraMedida !== undefined && larguraMedida > 0) {
+        setLargura(Math.min(LARGURA_MAXIMA, larguraMedida))
+      }
+    })
+    observer.observe(elemento)
+    return () => observer.disconnect()
   }, [])
-  return largura
+
+  return { ref, largura }
 }
 
 /**
@@ -94,7 +112,7 @@ export default function GraficoComprometido({
 }: {
   report: CommitmentReportView
 }) {
-  const largura = useLarguraGrafico()
+  const { ref, largura } = useLarguraContainer<HTMLDivElement>()
   const dados = report.competences.map((competence, i) => ({
     competence,
     rotulo: rotuloCompetencia(competence),
@@ -103,7 +121,11 @@ export default function GraficoComprometido({
   }))
 
   return (
-    <div className="overflow-x-auto" data-testid="grafico-comprometido">
+    <div
+      ref={ref}
+      className="overflow-x-auto"
+      data-testid="grafico-comprometido"
+    >
       <BarChart width={largura} height={ALTURA} data={dados}>
         <XAxis dataKey="rotulo" fontSize={12} />
         <YAxis
@@ -181,7 +203,7 @@ export function GraficoCategorias({
 }: {
   report: ByCategoryReportView
 }) {
-  const largura = useLarguraGrafico()
+  const { ref, largura } = useLarguraContainer<HTMLDivElement>()
   const dados = report.rows.map((r) => ({
     id: r.category_id ?? 'sem-categoria',
     nome: r.category_name,
@@ -194,7 +216,7 @@ export function GraficoCategorias({
   )
 
   return (
-    <div className="overflow-x-auto" data-testid="grafico-categorias">
+    <div ref={ref} className="overflow-x-auto" data-testid="grafico-categorias">
       <BarChart
         width={largura}
         height={altura}

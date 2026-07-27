@@ -2,7 +2,7 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createAccount } from '../domain/accounts'
-import { setFixedNetCents } from '../domain/settings'
+import { MAX_FIXED_NET_CENTS, setFixedNetCents } from '../domain/settings'
 import { createTransaction } from '../domain/transactions'
 import { reportsRoutes } from './reports'
 
@@ -129,6 +129,15 @@ describe('GET /api/reports/commitments', () => {
     ['vazio', ''],
     ['não numérico', 'abc'],
     ['negativo', '-5'],
+    // M7 (fix final): antes deste fix, `resolveFixedNetCents` aceitava
+    // qualquer `Number.isFinite(n) && n > 0` — uma fração de centavo
+    // passava direto (denominador `360000.5` num app cuja moeda é
+    // INTEGER centavos ponta a ponta), e um valor acima do teto de
+    // sanidade também não era barrado aqui (só em `setFixedNetCents`, o
+    // caminho que PERSISTE). Agora exige `Number.isInteger` e
+    // `<= MAX_FIXED_NET_CENTS`, igual ao caminho que salva.
+    ['fração de centavo (não inteiro)', '360000.5'],
+    ['acima do teto de sanidade', String(MAX_FIXED_NET_CENTS + 1)],
   ])(
     'fixed_net_cents=%s (presente mas inválido) usa o valor SALVO, não o default',
     async (_label, valorInvalido) => {
@@ -142,6 +151,25 @@ describe('GET /api/reports/commitments', () => {
       expect(body.data.fixed_net_cents).toBe(548000)
     },
   )
+
+  // CRITICAL C2 (fix final): `resolveFixedNetCents` é chamado FORA do
+  // try/catch da rota (linha acima da chamada de `commitments()`), e
+  // `src/index.ts` não registra `onError` — antes deste fix, um `SELECT`
+  // contra uma tabela `settings` ausente (deploy rodado antes da
+  // migration 0005, ver CLAUDE.md/"Deploy") propagava cru até um 500 sem
+  // envelope. `getFixedNetCents` (`domain/settings.ts`) agora captura
+  // esse erro e degrada pro default — este teste prova que a ROTA (não
+  // só o domínio) continua respondendo 200 com o piso de sempre mesmo
+  // com a tabela inteira faltando.
+  it('tabela settings ausente: commitments continua 200 com o default, nunca 500', async () => {
+    await env.DB.prepare('DROP TABLE settings').run()
+
+    const res = await get('/api/reports/commitments?from=2026-08&months=1')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
+    expect(body.ok).toBe(true)
+    expect(body.data.fixed_net_cents).toBe(360000)
+  })
 
   it('sem query nenhuma (from vazio) devolve 400 invalid_query', async () => {
     const res = await get('/api/reports/commitments')

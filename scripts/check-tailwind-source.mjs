@@ -104,8 +104,9 @@ function resolveCssFiles(pathArg) {
     return absPathArg.endsWith('.css') ? [absPathArg] : []
   }
 
-  // Diretório: busca recursiva por *.css, ignorando node_modules/cache
-  // (não são output real — apenas ruído de dependências/cache de build).
+  // Diretório: busca recursiva por *.css, ignorando node_modules/cache/dev
+  // (não são output real — ruído de dependências/cache de build/chunks de
+  // `next dev`, ver M4 abaixo).
   let entries
   try {
     entries = readdirSync(absPathArg, { withFileTypes: true, recursive: true })
@@ -119,7 +120,25 @@ function resolveCssFiles(pathArg) {
     .map((e) => join(e.parentPath ?? e.path ?? absPathArg, e.name))
     .filter((p) => !p.split(sep).includes('node_modules'))
     .filter((p) => !p.split(sep).includes('cache'))
+    .filter((p) => !p.split(sep).includes('dev')) // M4, ver nota abaixo
 }
+
+// M4 (fix final): a varredura recursiva ignorava `node_modules`/`cache`
+// mas NÃO `dev` — `.next/dev/static/css/app/...` é onde o Next guarda o
+// CSS de uma sessão de `next dev` ANTERIOR (persiste entre execuções,
+// não é limpo por `next build`). PROVADO: um `.next/dev/.../layout.css`
+// remanescente, contendo a sentinela (de um `next dev` rodado com
+// `@source` correto), somado a um `.next/static/.../layout.css` real
+// SEM a sentinela (simulando `@source` quebrado no build atual) dava
+// exit 0 — porque `cssFiles.some(...)` bastava UM arquivo bater, e o
+// arquivo velho de `dev/` sempre batia. CI e Vercel não são afetados
+// (checkout limpo, sem `.next/dev` de sessão anterior nenhuma) — o alvo
+// era o run LOCAL, exatamente o que um dev roda logo depois de mexer em
+// `@source`, achando que está confirmando o build atual quando na
+// verdade está lendo lixo de uma sessão de dev antiga. Filtro por
+// SEGMENTO de path (`dev`, não substring) — mais genérico que apontar
+// só pra `.next/static`, cobre qualquer chamada futura do gate contra um
+// diretório `.next` inteiro.
 
 function sentinelMissingMessage(pathArg, cssFiles) {
   const checkedList =

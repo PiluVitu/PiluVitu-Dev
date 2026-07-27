@@ -17,7 +17,7 @@ import { BlocoSaldos } from '../blocos/BlocoSaldos'
 export function HomePage() {
   return (
     <section>
-      <h1>Início</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Início</h1>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <BlocoComprometido />
         <BlocoSaldos />

@@ -9,13 +9,27 @@
       // errado enquanto o bundle React (deferido, type="module") carrega.
       // Duplica a leitura mínima de `src/lib/theme.ts` (chave de storage +
       // fallback pro SO); manter as duas em sincronia se a chave mudar.
+      //
+      // M5 (fix final): `localStorage` pode LANÇAR em vez de simplesmente
+      // faltar (Safari com storage particionado/privado, política de
+      // cookies bloqueando, quota de site desativada) — e este script
+      // roda ANTES de `main.tsx`/`createRoot(...).render(...)`. Sem o
+      // try/catch, uma exceção aqui é síncrona e interrompe o parse do
+      // <head> antes até do <div id="root"> existir: não é só "perde o
+      // tema", é a página inteira em branco, sem nenhum React montado.
       ;(function () {
-        var tema = localStorage.getItem('financas-tema')
-        var escuro =
-          tema === 'escuro' ||
-          (tema !== 'claro' &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches)
-        if (escuro) document.documentElement.classList.add('dark')
+        try {
+          var tema = localStorage.getItem('financas-tema')
+          var escuro =
+            tema === 'escuro' ||
+            (tema !== 'claro' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (escuro) document.documentElement.classList.add('dark')
+        } catch (e) {
+          // localStorage indisponível (storage particionado/privado) —
+          // segue sem `.dark`: pior caso é flash de tema claro, não app
+          // em branco.
+        }
       })()
     </script>
   </head>

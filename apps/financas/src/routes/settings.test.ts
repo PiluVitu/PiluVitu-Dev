@@ -76,6 +76,21 @@ describe('GET /api/settings', () => {
     const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
     expect(body.data.fixed_net_cents).toBe(548000)
   })
+
+  // CRITICAL C2 (fix final): esta é a tela `#/configuracoes` — uma das TRÊS
+  // que dependiam do mesmo `getFixedNetCents` sem proteção contra a tabela
+  // `settings` faltando (as outras duas são o bloco Comprometido da home e
+  // `#/comprometido`, cobertas em `routes/reports.test.ts`). Prova que a
+  // degradação é da ROTA, não só do domínio.
+  it('tabela settings ausente: continua 200 com o default, nunca 500', async () => {
+    await env.DB.prepare('DROP TABLE settings').run()
+
+    const res = await get()
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
+    expect(body.ok).toBe(true)
+    expect(body.data.fixed_net_cents).toBe(360000)
+  })
 })
 
 describe('PUT /api/settings', () => {

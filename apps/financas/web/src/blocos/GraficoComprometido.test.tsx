@@ -1,7 +1,8 @@
 import { act, render } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
+import { triggerResize } from '../test/setup'
 import GraficoComprometido, { GraficoCategorias } from './GraficoComprometido'
 
 const report: CommitmentReportView = {
@@ -25,66 +26,105 @@ const report: CommitmentReportView = {
   pct_of_fixed_net: [55, 51, 50, 49, 25, 10],
 }
 
-const LARGURA_PADRAO_JSDOM = 1024
+const LARGURA_MAXIMA = 640
 
-function setViewportWidth(width: number) {
-  Object.defineProperty(window, 'innerWidth', {
-    writable: true,
-    configurable: true,
-    value: width,
-  })
-}
-
-function larguraDoWrapper(container: HTMLElement): string {
+function larguraDoWrapper(container: HTMLElement): number {
   const wrapper = container.querySelector('.recharts-wrapper') as HTMLElement
-  return wrapper.style.width
+  return Number(wrapper.style.width.replace('px', ''))
 }
 
-afterEach(() => {
-  setViewportWidth(LARGURA_PADRAO_JSDOM)
-})
+/**
+ * Simula o container medindo `largura` — o `ResizeObserver` real (stubado
+ * em `src/test/setup.ts`) entrega essa medição assim que `observe()` é
+ * chamado, mas jsdom não computa layout: `clientWidth` de QUALQUER
+ * elemento é 0 até o teste sobrescrever explicitamente, mesmo padrão que
+ * `setViewportWidth` fazia com `window.innerWidth` antes deste fix
+ * (Important 1). `triggerResize` (do stub) redispara o observer inscrito
+ * no elemento, simulando tanto a medição inicial quanto um reflow em
+ * runtime.
+ */
+function medirContainer(elemento: HTMLElement, largura: number): void {
+  Object.defineProperty(elemento, 'clientWidth', {
+    configurable: true,
+    value: largura,
+  })
+  act(() => {
+    triggerResize(elemento)
+  })
+}
 
-describe('GraficoComprometido — largura responsiva (Task 6, fix round 1)', () => {
-  // Fix round 1: a largura fixa (640px) original escondia metade da janela
-  // de 6 meses no Android (~390px), o dispositivo PRIMÁRIO do dono pra
-  // registrar gasto — e `#/` é a tela que ele vê primeiro. Este teste prova
-  // que a largura acompanha o viewport, não fica travada em 640.
-  it('em viewport estreito (Android, ~390px) a largura acompanha o innerWidth, não fica travada em 640', () => {
-    setViewportWidth(390)
-
+describe('GraficoComprometido — largura acompanha o CONTAINER (Important 1, fix final)', () => {
+  // ⚠️ Important 2 (fix final): este describe NÃO fixa a largura numa
+  // constante (`toBe('640px')`) — essa era exatamente a falha que deixou
+  // o Important 1 passar batido na revisão anterior: com o container
+  // real 2,4× mais estreito que o gráfico (262px vs 640px, MEDIDO em
+  // 1280×900 com o grid `md:grid-cols-2` da Task 7), o teste antigo
+  // continuava verde porque comparava a fórmula contra si mesma
+  // (`window.innerWidth`), nunca contra um container de verdade — jsdom
+  // não tem layout, então nada detectava o estouro. Os testes abaixo
+  // afirmam a RELAÇÃO (largura do gráfico ≤ largura do container) contra
+  // um container medido explicitamente, que é o que de fato importa pra
+  // não esconder meses da janela atrás de scroll sem aviso.
+  it('em container estreito (MEDIDO: 1280×900 dentro do grid md:grid-cols-2 → 262px), a largura NUNCA ultrapassa o container', () => {
     const { container } = render(<GraficoComprometido report={report} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
 
-    // innerWidth (390) - margem (64) = 326, dentro do piso/teto
-    expect(larguraDoWrapper(container)).toBe('326px')
+    medirContainer(wrapper, 262)
+
+    const largura = larguraDoWrapper(container)
+    expect(largura).toBeLessThanOrEqual(262)
+    expect(largura).toBe(262)
   })
 
-  it('em viewport largo (MacBook) respeita o teto de 640px em vez de esticar sem limite', () => {
-    setViewportWidth(1440)
-
+  it('em container de largura de Android (MEDIDO: 390px de viewport → 308px de container), a largura acompanha o container', () => {
     const { container } = render(<GraficoComprometido report={report} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
 
-    expect(larguraDoWrapper(container)).toBe('640px')
+    medirContainer(wrapper, 308)
+
+    const largura = larguraDoWrapper(container)
+    expect(largura).toBeLessThanOrEqual(308)
+    expect(largura).toBe(308)
   })
 
-  it('em viewport muito estreito respeita um piso mínimo em vez de espremer até ilegível', () => {
-    setViewportWidth(240)
-
+  it('em container largo (MacBook sem grid, ex. 900px) respeita o teto de 640px em vez de esticar sem limite', () => {
     const { container } = render(<GraficoComprometido report={report} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
 
-    expect(larguraDoWrapper(container)).toBe('280px')
+    medirContainer(wrapper, 900)
+
+    const largura = larguraDoWrapper(container)
+    expect(largura).toBeLessThanOrEqual(wrapper.clientWidth)
+    expect(largura).toBe(LARGURA_MAXIMA)
   })
 
-  it('acompanha resize em runtime (rotação de tela / redimensionar janela)', () => {
-    setViewportWidth(390)
+  it('acompanha reflow em runtime (resize de janela, grid recalculando) — não só a medição inicial', () => {
     const { container } = render(<GraficoComprometido report={report} />)
-    expect(larguraDoWrapper(container)).toBe('326px')
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
 
-    setViewportWidth(800)
-    act(() => {
-      window.dispatchEvent(new Event('resize'))
-    })
+    medirContainer(wrapper, 262)
+    expect(larguraDoWrapper(container)).toBe(262)
 
-    expect(larguraDoWrapper(container)).toBe('640px')
+    medirContainer(wrapper, 500)
+    expect(larguraDoWrapper(container)).toBeLessThanOrEqual(500)
+    expect(larguraDoWrapper(container)).toBe(500)
+  })
+
+  it('sem nenhuma medição real (clientWidth 0, elemento nunca chegou a ter layout), mantém o fallback em vez de zerar o gráfico', () => {
+    const { container } = render(<GraficoComprometido report={report} />)
+
+    // Nenhum `medirContainer` chamado — `clientWidth` do wrapper continua
+    // 0 (default do jsdom), e o hook ignora medições de 0 (guarda
+    // `largura > 0`) em vez de propagar um gráfico de largura zero.
+    expect(larguraDoWrapper(container)).toBe(LARGURA_MAXIMA)
   })
 })
 
@@ -122,10 +162,6 @@ const categoryReport: ByCategoryReportView = {
 }
 
 describe('GraficoCategorias — barras horizontais, uma por categoria', () => {
-  afterEach(() => {
-    setViewportWidth(LARGURA_PADRAO_JSDOM)
-  })
-
   it('desenha uma barra por linha do relatório', () => {
     const { container } = render(<GraficoCategorias report={categoryReport} />)
 
@@ -172,11 +208,16 @@ describe('GraficoCategorias — barras horizontais, uma por categoria', () => {
     }
   })
 
-  it('em viewport estreito (Android, ~390px) a largura acompanha o innerWidth — mesmo hook de GraficoComprometido', () => {
-    setViewportWidth(390)
-
+  it('em container estreito (Android, ~308px) a largura acompanha o container — mesmo hook de GraficoComprometido (Important 1)', () => {
     const { container } = render(<GraficoCategorias report={categoryReport} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-categorias"]',
+    ) as HTMLElement
 
-    expect(larguraDoWrapper(container)).toBe('326px')
+    medirContainer(wrapper, 308)
+
+    const largura = larguraDoWrapper(container)
+    expect(largura).toBeLessThanOrEqual(308)
+    expect(largura).toBe(308)
   })
 })

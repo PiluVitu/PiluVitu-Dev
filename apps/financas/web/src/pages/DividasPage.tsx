@@ -22,6 +22,51 @@ export type PayeeOption = { id: string; name: string; kind: string }
 
 const NOVO = '__novo__'
 
+// Mesmo valor do breakpoint `sm` padrão do Tailwind v4 (nenhum breakpoint
+// customizado em packages/ui/src/styles.css) — abaixo disso a tabela de 5
+// colunas (Dívida/Pessoa/Total/Pago/Falta) não cabe sem cortar texto.
+const BREAKPOINT_SM = 640
+
+function larguraAbaixoDeSm(): boolean {
+  return window.innerWidth < BREAKPOINT_SM
+}
+
+/**
+ * ⚠️ **Important 3 (fix final): em ~390px (Android, o dispositivo
+ * PRIMÁRIO do dono pra registrar gasto), a tabela de 5 colunas cortava
+ * `Pago` E `Falta` — as DUAS colunas de dinheiro — atrás de um drag
+ * horizontal sem indicação nenhuma, e um título comprido quebrava em até
+ * 4 linhas.** O ledger original só citava `Falta`; medindo com dívidas
+ * reais, o corte cai no meio de `Pa|go`, então as duas somem juntas.
+ *
+ * Abaixo de `sm`: um card por dívida (título, pessoa, `Falta` em
+ * destaque — a pergunta que essa tela responde primeiro, "quanto ainda
+ * falta"). De `sm` pra cima: a tabela de sempre, intocada.
+ *
+ * `window.innerWidth` (não `ResizeObserver`/medição de container, ao
+ * contrário do fix do Important 1 em `GraficoComprometido.tsx`) porque o
+ * problema aqui É de viewport: `DividasPage` não vive dentro de um grid
+ * multi-coluna que aperta o card (`AppShell` é `max-w-2xl`, coluna
+ * única) — é uma decisão de layout de PÁGINA (tabela vs. cards), o
+ * mesmo tipo de breakpoint que o `sm:` do Tailwind já resolve em CSS.
+ * jsdom suporta `innerWidth`/evento `resize` nativamente (mesma
+ * constatação da Task 6, ver CLAUDE.md), então dá pra testar sem stub
+ * nenhum. Só UM dos dois markups (card OU tabela) é renderizado por vez
+ * — nunca os dois ao mesmo tempo — porque jsdom não computa CSS
+ * (`hidden`/`sm:block` não teriam efeito nos testes), então duplicar o
+ * DOM duplicaria todo texto que os testes existentes buscam por
+ * `getByText`/`getByRole`, quebrando-os.
+ */
+function useMenorQueSm(): boolean {
+  const [menor, setMenor] = useState(larguraAbaixoDeSm)
+  useEffect(() => {
+    const onResize = () => setMenor(larguraAbaixoDeSm())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return menor
+}
+
 export function DividasPage() {
   const [dividas, setDividas] = useState<DebtListRow[]>([])
   const [payees, setPayees] = useState<PayeeOption[]>([])
@@ -97,6 +142,8 @@ export function DividasPage() {
     }
   }
 
+  const menorQueSm = useMenorQueSm()
+
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Dívidas</h1>
@@ -108,55 +155,83 @@ export function DividasPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="border-b py-1.5 pr-2 text-left font-medium">
-                    Dívida
-                  </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
-                    Pessoa
-                  </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
-                    Total
-                  </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
-                    Pago
-                  </th>
-                  <th className="border-b py-1.5 pl-2 text-right font-medium">
-                    Falta
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {dividas.map((d) => (
-                  <tr key={d.id}>
-                    <td className="border-b py-1.5 pr-2 text-left">
-                      <a
-                        href={`#/dividas/${d.id}`}
-                        className="text-primary underline underline-offset-4"
-                      >
-                        {d.title}
-                      </a>
-                    </td>
-                    <td className="border-b px-2 py-1.5 text-right">
-                      {d.payee_name}
-                    </td>
-                    <td className="border-b px-2 py-1.5 text-right">
-                      {formatBRL(d.total_cents)}
-                    </td>
-                    <td className="border-b px-2 py-1.5 text-right">
-                      {formatBRL(d.paid_cents)}
-                    </td>
-                    <td className="border-b py-1.5 pl-2 text-right font-medium">
+          {menorQueSm ? (
+            <ul className="space-y-3" data-testid="dividas-cards">
+              {dividas.map((d) => (
+                <li key={d.id} className="rounded-md border p-3">
+                  <a
+                    href={`#/dividas/${d.id}`}
+                    className="text-primary font-medium underline underline-offset-4"
+                  >
+                    {d.title}
+                  </a>
+                  <p className="text-muted-foreground text-sm">
+                    {d.payee_name}
+                  </p>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-muted-foreground text-xs">Falta</span>
+                    <span className="text-lg font-semibold">
                       {formatBRL(d.remaining_cents)}
-                    </td>
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs">
+                    <span>Total {formatBRL(d.total_cents)}</span>
+                    <span>Pago {formatBRL(d.paid_cents)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    <th className="border-b py-1.5 pr-2 text-left font-medium">
+                      Dívida
+                    </th>
+                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                      Pessoa
+                    </th>
+                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                      Total
+                    </th>
+                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                      Pago
+                    </th>
+                    <th className="border-b py-1.5 pl-2 text-right font-medium">
+                      Falta
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {dividas.map((d) => (
+                    <tr key={d.id}>
+                      <td className="border-b py-1.5 pr-2 text-left">
+                        <a
+                          href={`#/dividas/${d.id}`}
+                          className="text-primary underline underline-offset-4"
+                        >
+                          {d.title}
+                        </a>
+                      </td>
+                      <td className="border-b px-2 py-1.5 text-right">
+                        {d.payee_name}
+                      </td>
+                      <td className="border-b px-2 py-1.5 text-right">
+                        {formatBRL(d.total_cents)}
+                      </td>
+                      <td className="border-b px-2 py-1.5 text-right">
+                        {formatBRL(d.paid_cents)}
+                      </td>
+                      <td className="border-b py-1.5 pl-2 text-right font-medium">
+                        {formatBRL(d.remaining_cents)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

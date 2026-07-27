@@ -101,3 +101,24 @@ describe('getFixedNetCents — defesa contra linha corrompida (INSERT direto, fo
     },
   )
 })
+
+// CRITICAL C2 (fix final): a tabela `settings` só existe a partir da
+// migration 0005 — se `wrangler deploy` rodar antes de
+// `wrangler d1 migrations apply --remote`, o SELECT desta função batia
+// contra uma tabela inexistente e propagava cru (sem try/catch aqui, e
+// `routes/reports.ts#resolveFixedNetCents` chamava isso FORA do try/catch
+// da rota) até um 500 sem envelope — `src/index.ts` não registra `onError`.
+// Três telas dependiam do mesmo caminho: o bloco Comprometido da home,
+// `#/comprometido` e `#/configuracoes` (`GET /api/settings`, mesma função).
+// Este teste prova o fallback no nível mais baixo (o domínio); os testes
+// de rota equivalentes ficam em `routes/reports.test.ts` e
+// `routes/settings.test.ts`.
+describe('getFixedNetCents — defesa contra a tabela settings ausente (fix final, achado C2)', () => {
+  it('tabela dropada: devolve o default em vez de propagar o erro do D1', async () => {
+    await env.DB.prepare('DROP TABLE settings').run()
+
+    await expect(getFixedNetCents(env.DB)).resolves.toBe(
+      DEFAULT_FIXED_NET_CENTS,
+    )
+  })
+})

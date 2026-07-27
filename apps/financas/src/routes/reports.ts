@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { byCategory, commitments } from '../domain/reports'
-import { getFixedNetCents } from '../domain/settings'
+import { getFixedNetCents, MAX_FIXED_NET_CENTS } from '../domain/settings'
 import { errJson, okJson } from '../lib/envelope'
 
 type Env = { Bindings: { DB: D1Database } }
@@ -30,6 +30,19 @@ export const reportsRoutes = new Hono<Env>()
  * "consistência" com o resto do catálogo. Coberto por
  * `routes/reports.test.ts` ("fixed_net_cents malformado com valor salvo
  * existente usa o valor salvo, não o default").
+ *
+ * ⚠️ **M7 (fix final): validação alinhada com `setFixedNetCents`
+ * (`domain/settings.ts`) — inteiro, `> 0`, `<= MAX_FIXED_NET_CENTS`.**
+ * Antes, este atalho aceitava qualquer `Number.isFinite(n) && n > 0` —
+ * `?fixed_net_cents=3600.5` passava direto, produzindo um denominador
+ * FRACIONÁRIO de centavo (`3600.5`) num app cujo invariante, ponta a
+ * ponta, é centavos INTEIROS (ver `packages/tools`/`formatBRL`/
+ * `parseBRL`). O caminho que PERSISTE (`setFixedNetCents`) já exigia
+ * `Number.isInteger` e um teto de sanidade; o atalho de leitura/preview
+ * (nunca grava, ver parágrafo acima) não tinha por que ser mais
+ * permissivo que o caminho que salva — os dois só diferem em UMA coisa,
+ * que continua deliberada: valor ausente/inválido aqui cai pro nível
+ * seguinte da precedência (tolerante), nunca em `400`/`422`.
  */
 async function resolveFixedNetCents(
   db: D1Database,
@@ -37,7 +50,7 @@ async function resolveFixedNetCents(
 ): Promise<number> {
   if (queryValue !== undefined) {
     const n = Number(queryValue)
-    if (Number.isFinite(n) && n > 0) return n
+    if (Number.isInteger(n) && n > 0 && n <= MAX_FIXED_NET_CENTS) return n
   }
   return getFixedNetCents(db)
 }

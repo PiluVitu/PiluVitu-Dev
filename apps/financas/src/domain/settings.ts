@@ -1,4 +1,5 @@
 import { nowIsoUtc } from '../lib/dates'
+import { logConstraintError } from '../lib/errors'
 import { DEFAULT_FIXED_NET_CENTS } from './reports'
 
 /**
@@ -22,10 +23,36 @@ export const MAX_FIXED_NET_CENTS = 100_000_000
  * execute` manual).
  */
 export async function getFixedNetCents(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare(`SELECT value FROM settings WHERE key = ?`)
-    .bind(FIXED_NET_CENTS_KEY)
-    .first<{ value: string }>()
+  let row: { value: string } | null
+  try {
+    row = await db
+      .prepare(`SELECT value FROM settings WHERE key = ?`)
+      .bind(FIXED_NET_CENTS_KEY)
+      .first<{ value: string }>()
+  } catch (err) {
+    // CRITICAL C2 (fix final): a tabela `settings` só existe a partir da
+    // migration 0005 — se `wrangler deploy` rodar ANTES de
+    // `wrangler d1 migrations apply --remote` (ordem documentada em
+    // CLAUDE.md/"Deploy", mas não garantida por nada além de disciplina),
+    // este SELECT falha com `no such table: settings`. Antes deste fix o
+    // erro subia cru (sem try/catch aqui, e `routes/reports.ts` chama
+    // `resolveFixedNetCents`/`getFixedNetCents` FORA do try/catch da rota)
+    // até um `throw` não tratado — `src/index.ts` não registra `onError`,
+    // então virava um 500 sem envelope, e a SPA (`api()`) traduzia isso
+    // pra `ApiError(code: 'invalid_envelope')`. Três telas dependem deste
+    // caminho: o bloco Comprometido da home, `#/comprometido` (mesma
+    // chamada) e `#/configuracoes` (`GET /api/settings`, que também chama
+    // `getFixedNetCents`) — uma tabela faltando derrubava as três de uma
+    // vez. Degrada pro mesmo default de "nada foi salvo" em vez de 500:
+    // defesa em profundidade — a ORDEM migration-antes-de-deploy continua
+    // sendo a regra (ver CLAUDE.md/"Deploy" § 2), isto só evita que um
+    // deploy fora de ordem tire três telas do ar em vez de mostrar o piso
+    // R$ 3.600 até a migration rodar. Logado (não silencioso) via o mesmo
+    // helper de `lib/errors.ts` usado pelos outros domínios — dá pra ver
+    // em `wrangler tail` sem expor detalhe de schema pro cliente.
+    logConstraintError('getFixedNetCents', String(err))
+    return DEFAULT_FIXED_NET_CENTS
+  }
   if (!row) return DEFAULT_FIXED_NET_CENTS
 
   const n = Number(row.value)
