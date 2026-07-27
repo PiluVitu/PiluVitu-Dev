@@ -119,6 +119,30 @@ describe('GET /api/reports/commitments', () => {
     expect(body.data.fixed_net_cents).toBe(250000)
   })
 
+  // Fix round 1 (Minor 1 do review): fixed_net_cents PRESENTE mas INVÁLIDO
+  // (vazio, não numérico, ≤ 0) precisa cair pro valor SALVO, não pular
+  // direto pro DEFAULT_FIXED_NET_CENTS — senão um bookmark velho ou uma URL
+  // de debug digitada errada faz o dono "perder" um valor que ele salvou de
+  // verdade, em silêncio (sem 400, sem aviso nenhum). it.each cobre as três
+  // formas de "presente mas inválido" citadas no achado do review.
+  it.each([
+    ['vazio', ''],
+    ['não numérico', 'abc'],
+    ['negativo', '-5'],
+  ])(
+    'fixed_net_cents=%s (presente mas inválido) usa o valor SALVO, não o default',
+    async (_label, valorInvalido) => {
+      await setFixedNetCents(env.DB, 548000)
+
+      const res = await get(
+        `/api/reports/commitments?from=2026-08&months=1&fixed_net_cents=${valorInvalido}`,
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Envelope<{ fixed_net_cents: number }>
+      expect(body.data.fixed_net_cents).toBe(548000)
+    },
+  )
+
   it('sem query nenhuma (from vazio) devolve 400 invalid_query', async () => {
     const res = await get('/api/reports/commitments')
     expect(res.status).toBe(400)

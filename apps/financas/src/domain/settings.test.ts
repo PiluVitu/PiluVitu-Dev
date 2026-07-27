@@ -69,3 +69,35 @@ describe('setFixedNetCents — validação (zero, negativo, não inteiro, absurd
     expect(await getFixedNetCents(env.DB)).toBe(250000)
   })
 })
+
+// Fix round 1 (Minor 2 do review): a defesa de `getFixedNetCents` contra uma
+// linha corrompida (JSDoc do próprio arquivo já a descrevia, mas nenhum
+// teste inseria uma linha ruim de verdade pra provar) — inalcançável pelo
+// caminho normal, já que `setFixedNetCents` valida ANTES de gravar; existe
+// pro dia em que a chave for escrita por fora (`wrangler d1 execute`
+// manual). Sem este teste, um refatoro futuro que simplificasse
+// `getFixedNetCents` pra um `Number(row.value)` cru derrubaria a defesa sem
+// nada pra pegar isso — a suíte continuaria verde inteira.
+describe('getFixedNetCents — defesa contra linha corrompida (INSERT direto, fora de setFixedNetCents)', () => {
+  async function gravarBruto(valor: string): Promise<void> {
+    await env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('fixed_net_cents', ?, '2026-01-01T00:00:00Z')`,
+    )
+      .bind(valor)
+      .run()
+  }
+
+  it.each([
+    ['não numérico', 'lixo'],
+    ['zero', '0'],
+    ['negativo', '-100000'],
+    ['fração de centavo (não inteiro)', '360000.5'],
+    ['acima do teto de sanidade', String(MAX_FIXED_NET_CENTS + 1)],
+  ])(
+    'linha salva com valor %s cai pro default, não propaga o lixo nem quebra',
+    async (_label, valorBruto) => {
+      await gravarBruto(valorBruto)
+      expect(await getFixedNetCents(env.DB)).toBe(DEFAULT_FIXED_NET_CENTS)
+    },
+  )
+})
