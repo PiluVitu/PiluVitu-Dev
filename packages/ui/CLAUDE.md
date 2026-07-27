@@ -1,6 +1,6 @@
 # CLAUDE.md — `packages/ui` (`@piluvitu/ui`)
 
-Guidance for the **shared design system package**. O Claude Code carrega este arquivo **junto** com o `CLAUDE.md` da raiz. Hoje o único consumidor é `apps/web` (Task 3 do plano `docs/superpowers/plans/2026-07-26-financas-ui-design-system.md`); `apps/financas/web` entra na Task 4.
+Guidance for the **shared design system package**. O Claude Code carrega este arquivo **junto** com o `CLAUDE.md` da raiz. Consumido por `apps/web` (Task 3 do plano `docs/superpowers/plans/2026-07-26-financas-ui-design-system.md`) e, desde a Task 4, por `apps/financas/web` (SPA Vite) — ver `apps/financas/CLAUDE.md` § _SPA_ para os detalhes do lado Vite.
 
 ## Propósito
 
@@ -39,7 +39,7 @@ Só `cn.test.ts` hoje (`jest` + `jest-environment-jsdom`, config em `jest.config
 ## Consumo pelos apps
 
 - **`apps/web`** — `app/globals.css` importa `@piluvitu/ui/styles.css` + declara `@source '../../../packages/ui/src'` (obrigatório pro Tailwind v4 enxergar as classes exclusivas do pacote — ver "Gate do design system" no `CLAUDE.md` da raiz). Imports de componente: `@piluvitu/ui/<nome>` (ex.: `import { Button } from '@piluvitu/ui/button'`). **Medido:** Next/Turbopack consome os `.tsx` crus do pacote (incl. `'use client'` e JSX) sem precisar de `transpilePackages: ['@piluvitu/ui']` em `next.config.mjs` — testado com build real (Task 3).
-- **`apps/financas/web`** (Task 4, ainda não implementada) — mesmo padrão de import por subpath; precisa repetir a checagem do `@source`/gate pro pipeline Vite (`scripts/check-tailwind-source.mjs "apps/financas/web/dist/assets/*.css"`).
+- **`apps/financas/web`** (Task 4) — mesmo padrão de import por subpath, mas via **plugin Vite** (`@tailwindcss/vite`), não PostCSS (é uma SPA Vite, não Next). `src/styles.css` importa `@piluvitu/ui/styles.css` + `@source '../../../../packages/ui/src'` (4 `../`, um a mais que o `apps/web` — o arquivo de entrada mora um nível mais fundo). Gate amarrado no `build` (`vite build && node .../scripts/check-tailwind-source.mjs "dist/assets/*.css"`) — roda tanto no `build:web` direto quanto via `pretest`/`deploy` de `@piluvitu/financas`. **Medido, não presumido:** o par falha (build com `@source` comentado passa em silêncio, gate falha)/passa (`@source` restaurado, os dois passam) foi provado real antes do commit; `optimizeDeps.exclude` do `vite.config.ts` **não** precisou incluir `@piluvitu/ui` (testado com um componente de verdade, `@piluvitu/ui/button`, contra o dev server — resolve via `/@fs/...` como fonte, deps transitivas pré-bundleiam normalmente). Nenhum dos 14 componentes é consumido ainda (Task 9); só os tokens/CSS entraram nesta task.
 
 ## Dependency policy
 

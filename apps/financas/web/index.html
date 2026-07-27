@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Finanças</title>
+    <script>
+      // Aplica o tema salvo ANTES do primeiro paint — evita flash de tema
+      // errado enquanto o bundle React (deferido, type="module") carrega.
+      // Duplica a leitura mínima de `src/lib/theme.ts` (chave de storage +
+      // fallback pro SO); manter as duas em sincronia se a chave mudar.
+      ;(function () {
+        var tema = localStorage.getItem('financas-tema')
+        var escuro =
+          tema === 'escuro' ||
+          (tema !== 'claro' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (escuro) document.documentElement.classList.add('dark')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
