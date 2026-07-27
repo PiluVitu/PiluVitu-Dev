@@ -6,6 +6,7 @@ import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
+import { SELECT_CLASSNAME } from '../lib/form-classes'
 
 export type DebtListRow = {
   id: string
@@ -20,11 +21,6 @@ export type DebtListRow = {
 export type PayeeOption = { id: string; name: string; kind: string }
 
 const NOVO = '__novo__'
-
-// Sem componente `Select` em @piluvitu/ui — classes copiadas à mão das de
-// `Input` (mesmo padrão de accounts.tsx/new-entry.tsx/debt-detail.tsx).
-const SELECT_CLASSNAME =
-  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
 
 export function DividasPage() {
   const [dividas, setDividas] = useState<DebtListRow[]>([])
@@ -139,7 +135,7 @@ export function DividasPage() {
                     <td className="border-b py-1.5 pr-2 text-left">
                       <a
                         href={`#/dividas/${d.id}`}
-                        className="text-primary underline-offset-4 hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         {d.title}
                       </a>

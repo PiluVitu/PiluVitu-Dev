@@ -9,12 +9,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { rotuloCompetencia } from '../lib/commitments'
+import { LIMIAR_ALERTA_PCT, rotuloCompetencia } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
-
-/** Acima disso, metade da renda fixa já está comprometida — mesmo limiar de `commitments.tsx`. */
-const LIMIAR_ALERTA_PCT = 50
 
 // Tokens do design system (@piluvitu/ui/styles.css), nunca hex solto — é o
 // que faz o dark mode funcionar sem tocar neste arquivo (Task 6, requisito

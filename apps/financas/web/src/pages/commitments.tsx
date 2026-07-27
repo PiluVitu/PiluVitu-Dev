@@ -3,7 +3,7 @@ import { formatBRL } from '@piluvitu/tools/money'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
-import { rotuloCompetencia } from '../lib/commitments'
+import { LIMIAR_ALERTA_PCT, rotuloCompetencia } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
 
 // Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx` carrega sob
@@ -25,9 +25,6 @@ import type { CommitmentReportView } from '../lib/commitments'
 // em si (a peça pesada/reusável) — compartilhado aqui a partir do MESMO
 // `report` que esta página já buscou, sem round-trip extra.
 const GraficoComprometido = lazy(() => import('../blocos/GraficoComprometido'))
-
-/** Acima disso, metade da renda fixa já está comprometida antes de qualquer compra nova. */
-const LIMIAR_ALERTA_PCT = 50
 
 export function CommitmentsPage({
   from,
@@ -121,23 +118,33 @@ export function CommitmentsPage({
                   </tr>
                 ))}
               </tbody>
+              {/*
+                Fidelidade com o `tfoot th, tfoot td { border-top: 2px }`
+                apagado (fix round 1, Task 9): a regra original valia pras
+                DUAS linhas do tfoot (o seletor não distinguia TOTAL de %),
+                e `th, td { border-bottom }` (regra geral) também alcançava
+                as duas — nunca foi sobrescrita, só somada. Sem repetir
+                isso aqui, o divisor entre TOTAL e % (e a borda inferior da
+                tabela) sumiam silenciosamente em vez de terem sido uma
+                escolha.
+              */}
               <tfoot>
                 <tr>
-                  <th className="border-t-2 py-1.5 pr-2 text-left font-medium">
+                  <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
                     TOTAL
                   </th>
                   {report.totals.map((cents, i) => (
                     <td
                       key={i}
                       data-testid={`total-${i}`}
-                      className="border-t-2 px-2 py-1.5 text-right font-medium"
+                      className="border-t-2 border-b px-2 py-1.5 text-right font-medium"
                     >
                       {formatBRL(cents)}
                     </td>
                   ))}
                 </tr>
                 <tr>
-                  <th className="py-1.5 pr-2 text-left font-medium">
+                  <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
                     % do líquido fixo
                   </th>
                   {report.pct_of_fixed_net.map((pct, i) => (
@@ -145,7 +152,7 @@ export function CommitmentsPage({
                       key={i}
                       data-testid={`pct-${i}`}
                       className={cn(
-                        'px-2 py-1.5 text-right',
+                        'border-t-2 border-b px-2 py-1.5 text-right',
                         pct > LIMIAR_ALERTA_PCT &&
                           'alerta text-destructive font-bold',
                       )}

@@ -27,8 +27,13 @@ function AppShell() {
     ? hash.slice('#/dividas/'.length)
     : null
 
-  const navLinkClassName =
-    'text-primary text-sm underline-offset-4 hover:underline'
+  // `underline`, não `hover:underline`: Tailwind v4 emite `hover:*` dentro de
+  // `@media (hover: hover)` — MEDIDO com `hasTouch: true, isMobile: true`
+  // (Android real, onde o dono usa o app): `hover:underline` nunca aplica,
+  // e o link fica distinguível do texto só por cor (~2:1 de contraste,
+  // abaixo do mínimo). A regra apagada de `base-interina.css` era
+  // incondicional — isto restaura exatamente esse comportamento.
+  const navLinkClassName = 'text-primary text-sm underline underline-offset-4'
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">

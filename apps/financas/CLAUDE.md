@@ -569,6 +569,41 @@ Quarto e último bloco da home — a pergunta que o dono deu quando perguntado q
 
 - **112 testes** (19 arquivos — `base-interina.test.ts` apagado junto com o arquivo que ele guardava). Nenhuma das 63 asserções das 5 telas migradas mudou de valor esperado.
 
+#### Fix round 1 (Task 9) — dois achados IMPORTANT + quatro Minor do review
+
+- ⚠️ **IMPORTANT 1 — `src/styles.css` não compensava o default de `border-color: currentColor` do Tailwind v4, e toda borda saía quase preta.** MEDIDO (headless 390×844): `getComputedStyle(td).borderBottomColor` devolvia `rgb(15, 20, 31)` (== `--foreground`) em vez de `rgb(215, 223, 234)` (== `--border`) — Preflight zera `border-color` pra `currentColor`, e as três linhas originais de `styles.css` (`@import`/`@import`/`@source`) nunca compensavam isso. `Input`/`Textarea` não sofriam (já usam `border-input` explícito, ver `packages/ui/src/input.tsx`); todo `border-b`/`border-t`/`border` cru — tabelas das 5 telas, `border-t-2` acima do TOTAL, os `border-t` de `debt-detail.tsx`, o sublinhado do `<nav>`, a borda do `Card` — herdava a cor do TEXTO. `apps/web/app/globals.css:26-40` já tinha exatamente esta compensação (mesmo texto-fonte do changelog do Tailwind v4); a SPA de finanças era a única consumidora de `@piluvitu/ui` sem ela. Corrigido acrescentando ao fim de `src/styles.css`:
+  ```css
+  @layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+      border-color: hsl(var(--border));
+    }
+  }
+  ```
+  **MEDIDO depois do fix:** `borderBottomColor`/borda do `Card` viram `rgb(215, 223, 234)` nas 5 rotas; CSS 26,47 → 26,63 kB (5,68 → 5,70 kB gzip). `hsl(var(--border))` (token), não o `var(--color-gray-200, currentColor)` fixo que `apps/web` usa — o financas já tem os tokens do design system disponíveis, então usa a variável de verdade em vez de um cinza hardcoded (funciona no dark mode sem duplicar nada).
+- ⚠️ **IMPORTANT 2 — `hover:underline` nunca aplica no Android real; o link do dono virava distinguível só por cor.** Tailwind v4 emite `hover:*` dentro de `@media (hover: hover)` (confirmado no CSS emitido) — em touch/mobile essa media query nunca casa. MEDIDO com `hasTouch: true, isMobile: true` (mesma emulação de um Android real): `textDecorationLine === 'none'` nos 5 links do `<nav>` (`App.tsx`) e no título da dívida (`DividasPage.tsx`, **o único jeito de abrir uma dívida**) nas 5 rotas. Cor sozinha (`rgb(58,191,248)` sobre `rgb(247,249,252)` = **1,99:1** de contraste, contra 17,46:1 do texto do corpo) não é suficiente affordance — a regra apagada de `base-interina.css` (`a { text-decoration: underline }`) era incondicional, sem depender de hover. Corrigido trocando `hover:underline` → `underline` nos dois lugares (`App.tsx#navLinkClassName`, `DividasPage.tsx`'s debt link). **MEDIDO depois do fix:** `textDecorationLine === 'underline'` nas 5 rotas, sem depender de `:hover`. **`--primary`'s contraste em si (1,99:1) não foi tocado** — é herança da Task 4 (o token em si, não desta migração), fora de escopo deste fix; registrado aqui, não corrigido.
+- ⚠️ **Minor — `LIMIAR_ALERTA_PCT` estava duplicado** (`pages/commitments.tsx` E `blocos/GraficoComprometido.tsx`, mesmo valor `50` em dois `const` locais) — risco real: os dois ficaram no MESMO card nesta mesma task (`commitments.tsx` passou a renderizar o gráfico), então ajustar um sem o outro faria uma competência de 47% (por exemplo) virar barra AZUL (padrão) + porcentagem VERMELHA/negrito (`.alerta`) no mesmo card — o app contradizendo o próprio sinal de risco mais consequente. Exportado de `lib/commitments.ts` (`export const LIMIAR_ALERTA_PCT = 50`), importado nos dois lugares — um dono só agora.
+- ⚠️ **Minor — `accounts.tsx` era a única das 4 tabelas migradas sem `overflow-x-auto`.** Nome de conta é texto livre (sem teto de tamanho no schema); um nome comprido empurrava a PÁGINA pra scroll horizontal (não um scroll contido dentro do card, como as outras três) — mesmo padrão de wrapper `<div className="overflow-x-auto">` das outras 3 tabelas (`DividasPage.tsx`, `debt-detail.tsx` ×2, `commitments.tsx`) aplicado aqui também.
+- ⚠️ **Minor — `cursor: pointer` em botão tinha sumido.** `base-interina.css` tinha `button { cursor: pointer }`; o `buttonVariants` (`packages/ui/src/button.tsx`) nunca teve equivalente — sem afetar só o financas (o componente é compartilhado), então o cursor default do navegador aparecia em TODO `<button>` do design system, incl. `apps/web`. Corrigido acrescentando `cursor-pointer` na string base do `cva` de `buttonVariants` — `apps/web` ganha o fix de graça (mesmo componente). `packages/ui` (jest + eslint) e `apps/web` (jest + tsc) reexecutados depois da mudança, os dois verdes — ver `packages/ui/CLAUDE.md`.
+- ⚠️ **Minor — `SELECT_CLASSNAME` estava copiado verbatim (280 caracteres) em 4 arquivos** (`accounts.tsx`, `DividasPage.tsx`, `debt-detail.tsx`, `new-entry.tsx`) — quatro lugares pra esquecer no dia em que `@piluvitu/ui` ganhar um `Select` de verdade. Extraído pra `src/lib/form-classes.ts` (`export const SELECT_CLASSNAME`), importado pelos 4.
+- **Dois achados Minor, registrados e DECIDIDOS, não deixados em aberto:**
+  - **`tfoot` perdendo o `border-top: 2px`/`border-bottom` do CSS apagado — decisão: RESTAURAR, não manter como estava.** A regra original (`tfoot th, tfoot td { border-top: 2px }` + a regra geral `th, td { border-bottom }`, nunca sobrescrita) valia pras DUAS linhas do rodapé (TOTAL e %), não só a primeira — o markup pós-Task-9 só tinha `border-t-2` na linha TOTAL, sem divisor entre TOTAL e % nem borda inferior da tabela. Diferença barata (duas classes a mais por célula) e mantém fidelidade com o desenho original em vez de uma mudança visual não-escolhida — `commitments.tsx`'s `tfoot` agora tem `border-t-2 border-b` nas DUAS linhas.
+  - **`DividasPage.tsx` a ~390px: a coluna clipada por padrão em `overflow-x-auto` é `Falta` — o saldo restante, o número que a tela existe pra responder.** NÃO é regressão (a tabela não cabia antes da Task 9 também, sem responsividade nenhuma) — decisão: deixar como follow-up nomeado, não redesenhar a tabela nesta rodada (risco de mudar comportamento/teste fora do escopo de um fix de review). Se uma task futura mexer em `DividasPage.tsx`, considerar: ocultar/abreviar a coluna `Pago` abaixo de um breakpoint, ou reordenar `Falta` pra antes de `Pago`/`Total` num layout compacto — qualquer opção que garanta que o número mais importante da tela seja o que sobra visível sem swipe.
+- **Bundle, medido (`vite build`, antes = Task 9 / depois = fix round 1):**
+
+  |                                    | antes                      | depois                     |
+  | ---------------------------------- | -------------------------- | -------------------------- |
+  | JS principal                       | 287,27 kB / 89,53 kB gzip  | 286,68 kB / 89,53 kB gzip  |
+  | Chunk `GraficoComprometido` (lazy) | 355,53 kB / 104,61 kB gzip | 355,53 kB / 104,62 kB gzip |
+  | CSS                                | 26,47 kB / 5,68 kB gzip    | 26,63 kB / 5,70 kB gzip    |
+
+  JS principal ficou praticamente estável (dedup de `LIMIAR_ALERTA_PCT` e de `SELECT_CLASSNAME` compensa as classes novas de borda/overflow) — gzip idêntico. CSS cresceu pelo `@layer base` novo + as classes `underline`/`overflow-x-auto`/`border-t-2 border-b`/`cursor-pointer` adicionais. Os dois gates continuam silenciosos (exit 0) depois do fix round 1.
+
+- **112 testes continuam 112 — nenhuma asserção pré-existente mudou nesta rodada também.** `git diff --name-status --diff-filter=M -- '*.test.*'` vazio (só `.tsx`/`.ts` de produção + `CLAUDE.md` mudaram) é o jeito mecânico de confirmar isso, não só a leitura do diff.
+
 ### Login — cliente Better Auth + `Gate.tsx` (Task 4)
 
 Sem o Cloudflare Access (saiu na Task 3), o host inteiro é público — quem baixa

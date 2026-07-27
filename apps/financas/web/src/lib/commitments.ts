@@ -21,6 +21,19 @@ export type CommitmentReportView = {
   pct_of_fixed_net: number[]
 }
 
+/**
+ * Acima disso, metade da renda fixa já está comprometida antes de qualquer
+ * compra nova — limiar do aviso `.alerta` (`pages/commitments.tsx`) E da cor
+ * vermelha das barras (`blocos/GraficoComprometido.tsx`).
+ *
+ * ⚠️ Fix round 1 (Task 9): morava DUPLICADO, um `const` local em cada
+ * arquivo, mesmo valor (50) nos dois. Um `const` só — os dois consumidores
+ * importam daqui — é o que impede alguém de ajustar um sem o outro e fazer
+ * a mesma célula virar barra azul + porcentagem vermelha no mesmo card,
+ * contradizendo o sinal de risco mais consequente do app.
+ */
+export const LIMIAR_ALERTA_PCT = 50
+
 const MESES = [
   'jan',
   'fev',

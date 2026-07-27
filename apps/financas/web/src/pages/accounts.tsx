@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { SELECT_CLASSNAME } from '../lib/form-classes'
 
 export type AccountView = {
   id: string
@@ -35,13 +36,6 @@ const KIND_LABELS: Record<(typeof KINDS)[number], string> = {
   investment: 'Investimento',
   benefit: 'Benefício',
 }
-
-// Sem componente `Select` em @piluvitu/ui (14 componentes hoje, nenhum é
-// select) — classes copiadas à mão das de `Input` (mesmo padrão já usado em
-// `blocos/BlocoCategorias.tsx` pro `<input type="month">`), sem as variantes
-// `file:*` (irrelevantes pra `<select>`).
-const SELECT_CLASSNAME =
-  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
 
 function dd(n: number): string {
   return String(n).padStart(2, '0')
@@ -139,33 +133,35 @@ export function AccountsPage() {
                 <CardTitle className="text-base">{scope}</CardTitle>
               </CardHeader>
               <CardContent>
-                <table className="w-full border-collapse text-sm">
-                  <tbody>
-                    {list.map((a) => (
-                      <tr key={a.id}>
-                        <td className="border-b py-1.5 pr-2 text-left">
-                          {a.name}
-                          {a.kind === 'credit_card' &&
-                          a.closing_day !== null &&
-                          a.due_day !== null ? (
-                            <small
-                              data-testid={`fatura-${a.id}`}
-                              className="text-muted-foreground block text-xs"
-                            >
-                              {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
-                            </small>
-                          ) : null}
-                        </td>
-                        <td
-                          data-testid={`saldo-${a.id}`}
-                          className="border-b py-1.5 text-right font-medium"
-                        >
-                          {formatBRL(a.balance_cents)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <tbody>
+                      {list.map((a) => (
+                        <tr key={a.id}>
+                          <td className="border-b py-1.5 pr-2 text-left">
+                            {a.name}
+                            {a.kind === 'credit_card' &&
+                            a.closing_day !== null &&
+                            a.due_day !== null ? (
+                              <small
+                                data-testid={`fatura-${a.id}`}
+                                className="text-muted-foreground block text-xs"
+                              >
+                                {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
+                              </small>
+                            ) : null}
+                          </td>
+                          <td
+                            data-testid={`saldo-${a.id}`}
+                            className="border-b py-1.5 text-right font-medium"
+                          >
+                            {formatBRL(a.balance_cents)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </CardContent>
             </Card>
           )

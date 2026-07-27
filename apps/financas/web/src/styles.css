@@ -1,3 +1,26 @@
 @import 'tailwindcss';
 @import '@piluvitu/ui/styles.css';
 @source '../../../../packages/ui/src';
+
+/*
+  Tailwind v4 muda o default de border-color pra currentColor (era um
+  cinza fixo no v3). Sem compensar, todo `border-b`/`border-t`/`border`
+  sem cor explícita herda a cor do TEXTO do elemento em vez do token
+  `--border` — MEDIDO: `getComputedStyle(td).borderBottomColor` saía
+  `rgb(15, 20, 31)` (== --foreground) em vez de `rgb(215, 223, 234)`
+  (== --border). `apps/web/app/globals.css` já tem exatamente esta
+  compensação (mesmo texto-fonte, adaptado do changelog oficial do
+  Tailwind v4); a SPA de finanças é a única consumidora de
+  `@piluvitu/ui` que ainda não tinha isso. `Input`/`Textarea` não sofrem
+  porque já usam `border-input` explícito — só os elementos com `border-*`
+  cru (tabelas, `<nav>`, `Card`) dependiam do default.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: hsl(var(--border));
+  }
+}
