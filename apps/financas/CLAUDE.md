@@ -559,7 +559,29 @@ UMA única query pra janela inteira (não `months × recorrentes` queries separa
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/recurring.test.ts` (22 casos: CRUD feliz/erro + os 9 do brief — Starlink fixo, DAS em faixa, `ends_on` no meio da janela, `active=0`, `starts_on` futuro, supressão simples, supressão por competência + variante com duas recorrentes na mesma competência, dia 31 em fevereiro, `deleteRecurring` não apaga lançamento — mais soma de duas recorrentes na mesma competência e validação de `from`/`months`).
 
-⚠️ **Ainda não wireado em `commitments()`** — isso é Task 3 da fatia ⑥. Até lá, Starlink/DAS/contador/INSS já são cadastráveis e projetáveis via `recurring.ts`, mas não aparecem na tela Comprometido.
+✅ **Wireado em `commitments()` (Task 3 da fatia ⑥, commit `9b3d9a5`)** — `totals`/`pct_of_fixed_net` viraram `{min,max}`; sem recorrente cadastrada, `min === max` e bate exatamente com o valor pré-Task 3 (teste de não regressão). A SPA (3 consumidores: `commitments.tsx`, `BlocoComprometido`, `GraficoComprometido`) só é atualizada nas Tasks 5–6.
+
+### `routes/recurring.ts` — CRUD HTTP (Task 4 da fatia ⑥)
+
+Monta em `app.route('/api/recurring', recurringRoutes)` (`src/index.ts`), **acima** do catch-all `app.all('/api/*', ...)` — testado por execução real (`routes/recurring.test.ts`, suíte `registro acima do catch-all`: monta `recurringRoutes` + catch-all na MESMA ordem de `index.ts` e prova que `GET` bate no handler, não no 404 genérico), não só por leitura do arquivo.
+
+| Rota                        | Sucesso | Erros                                          |
+| --------------------------- | ------- | ---------------------------------------------- |
+| `GET /api/recurring`        | 200     | —                                              |
+| `POST /api/recurring`       | 201     | 400 `invalid_json`, 422 `constraint_violation` |
+| `PUT /api/recurring/:id`    | 200     | 404 `not_found`, 422 `constraint_violation`    |
+| `DELETE /api/recurring/:id` | 200     | 404 `not_found`                                |
+
+Convenções específicas desta rota (mais estreitas que o resto do módulo, de propósito — só dois códigos de erro no corpo):
+
+- **`400 invalid_json` é só para JSON sintaticamente inválido** (`c.req.json()` lança). Qualquer outro problema de corpo — campo ausente, tipo errado, `scope` fora de `'PJ'|'PF'`, `amount_max_cents < amount_min_cents`, FK pra conta/categoria inexistente — sai como **`422 constraint_violation`**, nunca `400`. Mais simples que `accounts.ts`/`debts.ts` (que usam vários códigos tipo `invalid_account`/`over_allocation`) porque o brief da Task 4 fixou só estes dois.
+- **`GET` devolve TODAS as recorrentes, ativas E pausadas** (`listRecurring(db, { includeInactive: true })`) — desvio deliberado do default do domínio (só ativas). Esta rota é a listagem de **CRUD/gestão** (consumida pela tela da Task 5), não a projeção — `commitments()`/`projectRecurring` já filtram `active = 1` por conta própria. Se o `GET` escondesse pausadas, a única forma de reativar uma recorrente seria adivinhar o id (ela sumiria da listagem assim que alguém desativasse).
+- **`PUT` é PATCH parcial, não substituição total** — decisão que já vem do domínio (`updateRecurring`/`RecurringPatch = Partial<...>`, Task 2): só os campos PRESENTES no corpo entram no `UPDATE`; campos ausentes ficam intactos. A rota só filtra por `'campo' in body` e encaminha, sem reinventar a whitelist (`PATCHABLE_FIELDS` já vive em `domain/recurring.ts`).
+- **`404 not_found` cobre os dois `null` de `updateRecurring`**: id inexistente com patch não-vazio (`meta.changes === 0` no `UPDATE`) e id inexistente com patch vazio (`SELECT` que não acha linha) — os dois casos são 404, nunca um 200 fantasma com corpo vazio.
+- **`toValidationError` cobre dois caminhos pro MESMO código 422 `constraint_violation`**: `RangeError` do domínio (validação em TS, ex. `amount_max_cents < amount_min_cents` — nunca toca o banco) e `SQLITE_CONSTRAINT*` cru do D1 (via `friendlyConstraintMessage`/`logConstraintError`, mesmo padrão de `accounts.ts`). ⚠️ **Prova de que o segundo caminho funciona de ponta a ponta (não só o `RangeError`)**: `ends_on < starts_on` viola o `CHECK` da migration `0006` mas **não** é pré-validado em TS (só `day_of_month` e a faixa min/max são) — `routes/recurring.test.ts` manda esse corpo por HTTP e confirma que a mensagem que volta não tem `SQLITE_CONSTRAINT`/`D1_ERROR`/`CHECK constraint` nem nome de coluna/tabela.
+- Toda rota de sucesso e todo 404 do teste são verificados contra a linha real do D1 (`SELECT`/`COUNT`), e todo 404 usa um id real gerado por `newId()` (diferente do criado), não um placeholder tipo `'id-que-nao-existe'` — a suíte pegaria um handler que sempre devolve 200.
+
+Testes: `pnpm --filter @piluvitu/financas exec vitest run src/routes/recurring.test.ts` (15 casos).
 
 ## SPA (`apps/financas/web`)
 
