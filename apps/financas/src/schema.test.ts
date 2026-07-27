@@ -90,6 +90,54 @@ function stmtAlloc(
   ).bind(id, paymentId, itemId, cents, NOW)
 }
 
+// Defaults descrevem o Starlink (fixo: min = max = R$ 189) — override pontual
+// pro caso de faixa (DAS) ou pra provocar cada CHECK isoladamente.
+async function novaRecorrente(
+  id: string,
+  overrides: Partial<{
+    description: string
+    scope: string
+    dayOfMonth: number
+    amountMin: number
+    amountMax: number
+    startsOn: string
+    endsOn: string | null
+    active: number
+  }> = {},
+): Promise<void> {
+  const {
+    description = `Recorrente ${id}`,
+    scope = 'PJ',
+    dayOfMonth = 10,
+    amountMin = 18900,
+    amountMax = 18900,
+    startsOn = '2026-01-01',
+    endsOn = null,
+    active = 1,
+  } = overrides
+
+  await DB.prepare(
+    `INSERT INTO recurring_expenses
+       (id, description, scope, day_of_month, amount_min_cents,
+        amount_max_cents, starts_on, ends_on, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      description,
+      scope,
+      dayOfMonth,
+      amountMin,
+      amountMax,
+      startsOn,
+      endsOn,
+      active,
+      NOW,
+      NOW,
+    )
+    .run()
+}
+
 function stmtTx(
   id: string,
   accountId: string,
@@ -120,8 +168,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005 — tabelas', () => {
-  it('cria exatamente as 15 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005)', async () => {
+describe('migrations 0001+0002+0005+0006 — tabelas', () => {
+  it('cria exatamente as 16 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -142,6 +190,7 @@ describe('migrations 0001+0002+0005 — tabelas', () => {
       'installment_plans',
       'installments',
       'payees',
+      'recurring_expenses',
       'session',
       'settings',
       'transactions',
@@ -566,5 +615,178 @@ describe('migration 0002 — STRICT, FK cascade, UNIQUE', () => {
         .bind(NOW, NOW)
         .run(),
     ).rejects.toThrow(/UNIQUE constraint failed/)
+  })
+})
+
+describe('migration 0006 — recurring_expenses (STRICT, CHECKs, vínculo com transactions)', () => {
+  it('STRICT recusa TEXT não-numérico em coluna INTEGER (day_of_month)', async () => {
+    // Direção que REALMENTE rejeita em tabela STRICT: TEXT não-numérico
+    // dentro de coluna INTEGER. A direção oposta (INTEGER numa coluna TEXT)
+    // apenas CONVERTE — não provaria nada (ver nota do 0002 no CLAUDE.md).
+    await expect(
+      DB.prepare(
+        `INSERT INTO recurring_expenses
+           (id, description, scope, day_of_month, amount_min_cents,
+            amount_max_cents, starts_on, active, created_at, updated_at)
+         VALUES ('r-strict', 'Starlink', 'PJ', ?, 18900, 18900,
+                 '2026-01-01', 1, ?, ?)`,
+      )
+        .bind('nao-e-numero', NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/cannot store TEXT value in INTEGER column/)
+  })
+
+  it('CHECK day_of_month aceita 1..31 e recusa fora da faixa', async () => {
+    await expect(novaRecorrente('r-dia-0', { dayOfMonth: 0 })).rejects.toThrow(
+      /CHECK constraint failed/,
+    )
+    await expect(
+      novaRecorrente('r-dia-32', { dayOfMonth: 32 }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+
+    // controle positivo: dia 31 é aceito na ENTRADA — o aparamento (dia 31
+    // -> 28 em fevereiro) é aritmética de LEITURA (src/lib/dates.ts),
+    // não uma restrição de escrita.
+    await novaRecorrente('r-dia-31', { dayOfMonth: 31 })
+    const row = await DB.prepare(
+      `SELECT day_of_month FROM recurring_expenses WHERE id = 'r-dia-31'`,
+    ).first<{ day_of_month: number }>()
+    expect(row?.day_of_month).toBe(31)
+  })
+
+  it('CHECK amount_max_cents >= amount_min_cents — a faixa do DAS (12..600) entra, invertida não', async () => {
+    await expect(
+      novaRecorrente('r-faixa-ruim', { amountMin: 60000, amountMax: 1200 }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+
+    await novaRecorrente('r-das', { amountMin: 1200, amountMax: 60000 })
+    const row = await DB.prepare(
+      `SELECT amount_min_cents, amount_max_cents
+         FROM recurring_expenses WHERE id = 'r-das'`,
+    ).first<{ amount_min_cents: number; amount_max_cents: number }>()
+    expect(row).toEqual({ amount_min_cents: 1200, amount_max_cents: 60000 })
+  })
+
+  it('valor fixo (Starlink R$ 189) é só o caso min = max — mesmo CHECK, sem tipo "fixo" separado', async () => {
+    await novaRecorrente('r-fixo', { amountMin: 18900, amountMax: 18900 })
+    const row = await DB.prepare(
+      `SELECT amount_min_cents, amount_max_cents
+         FROM recurring_expenses WHERE id = 'r-fixo'`,
+    ).first<{ amount_min_cents: number; amount_max_cents: number }>()
+    expect(row).toEqual({ amount_min_cents: 18900, amount_max_cents: 18900 })
+  })
+
+  it('CHECK amount_min_cents > 0', async () => {
+    await expect(
+      novaRecorrente('r-min-zero', { amountMin: 0, amountMax: 100 }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('CHECK ends_on >= starts_on — aceita igual e aceita sem fim (NULL)', async () => {
+    await expect(
+      novaRecorrente('r-ends-ruim', {
+        startsOn: '2026-06-01',
+        endsOn: '2026-01-01',
+      }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+
+    // controles positivos: ends_on == starts_on, e recorrente sem fim.
+    await novaRecorrente('r-ends-igual', {
+      startsOn: '2026-06-01',
+      endsOn: '2026-06-01',
+    })
+    await novaRecorrente('r-sem-fim', {
+      startsOn: '2026-06-01',
+      endsOn: null,
+    })
+    const row = await DB.prepare(
+      `SELECT ends_on FROM recurring_expenses WHERE id = 'r-sem-fim'`,
+    ).first<{ ends_on: string | null }>()
+    expect(row?.ends_on).toBeNull()
+  })
+
+  it('CHECK active IN (0,1)', async () => {
+    await expect(
+      novaRecorrente('r-active-ruim', { active: 2 }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it("CHECK scope IN ('PJ','PF')", async () => {
+    await expect(
+      novaRecorrente('r-scope-ruim', { scope: 'XX' }),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('recurring_expense_id órfão em transactions é barrado pelo foreign_keys', async () => {
+    await novaConta('c-rec-orfa')
+    await expect(
+      DB.prepare(
+        `INSERT INTO transactions
+           (id, account_id, amount_cents, currency, purchase_date,
+            description, is_business, recurring_expense_id, created_at,
+            updated_at)
+         VALUES ('t-rec-orfa', 'c-rec-orfa', -1000, 'BRL', '2026-08-10',
+                 'Órfã', 0, 'recorrente-que-nao-existe', ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+  })
+
+  it('apagar uma recorrente deixa o lançamento vivo, com recurring_expense_id NULO — ON DELETE SET NULL, nunca CASCADE', async () => {
+    await novaConta('c-rec')
+    await novaRecorrente('r-starlink', { description: 'Starlink' })
+
+    await DB.prepare(
+      `INSERT INTO transactions
+         (id, account_id, amount_cents, currency, purchase_date, description,
+          is_business, recurring_expense_id, created_at, updated_at)
+       VALUES ('t-starlink-ago', 'c-rec', -18900, 'BRL', '2026-08-10',
+               'Starlink agosto', 1, 'r-starlink', ?, ?)`,
+    )
+      .bind(NOW, NOW)
+      .run()
+
+    const antes = await DB.prepare(
+      `SELECT count(*) AS n FROM transactions WHERE id = 't-starlink-ago'`,
+    ).first<{ n: number }>()
+    expect(antes?.n).toBe(1)
+
+    await DB.prepare(
+      `DELETE FROM recurring_expenses WHERE id = 'r-starlink'`,
+    ).run()
+
+    // A CONTAGEM prova que a linha continua existindo — CASCADE a teria
+    // apagado (n=0). SET NULL só desvincula.
+    const depois = await DB.prepare(
+      `SELECT count(*) AS n FROM transactions WHERE id = 't-starlink-ago'`,
+    ).first<{ n: number }>()
+    expect(depois?.n).toBe(1)
+
+    const row = await DB.prepare(
+      `SELECT recurring_expense_id, amount_cents, description
+         FROM transactions WHERE id = 't-starlink-ago'`,
+    ).first<{
+      recurring_expense_id: string | null
+      amount_cents: number
+      description: string
+    }>()
+    expect(row).toEqual({
+      recurring_expense_id: null,
+      amount_cents: -18900,
+      description: 'Starlink agosto',
+    })
+  })
+
+  it('idx_tx_recurring existe e é parcial em recurring_expense_id — o índice que a supressão de projeção usa', async () => {
+    const idx = await DB.prepare(
+      `SELECT sql FROM sqlite_master
+        WHERE type = 'index' AND name = 'idx_tx_recurring'`,
+    ).first<{ sql: string }>()
+
+    expect(idx?.sql).toContain(
+      'transactions(recurring_expense_id, purchase_date)',
+    )
+    expect(idx?.sql).toContain('WHERE recurring_expense_id IS NOT NULL')
   })
 })

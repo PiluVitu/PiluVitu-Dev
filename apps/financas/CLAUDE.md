@@ -114,6 +114,26 @@ Key-value **genérico**, não uma coluna `fixed_net_cents` dedicada: uma configu
 
 Upsert por `ON CONFLICT(key) DO UPDATE` (não `DELETE`+`INSERT`): mantém a PK estável numa única roundtrip.
 
+### `0006_recurring_expenses.sql` — despesas recorrentes com faixa (Task 1 da fatia ⑥)
+
+Schema pra `docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md`: o Comprometido soma parcelas e dívidas em aberto, mas não Starlink R$ 189, DAS, contador nem INSS — porque não existia onde cadastrá-los. Duas decisões de schema:
+
+**Projeção, nunca materializada.** O parcelamento materializa N `transactions` porque N é finito e conhecido na criação (`installments_count` 1..360). Uma recorrente não tem fim — materializar exigiria um horizonte arbitrário mais um processo que o estende com o tempo, e este projeto não tem cron. `recurring_expenses` guarda só a DEFINIÇÃO; nada nesta migration escreve em `transactions`. A leitura (competência a competência, dentro da janela pedida) é Task 2.
+
+**Faixa, não valor.** O Simples varia R$ 12–600 conforme o faturamento; `amount_min_cents`/`amount_max_cents` — valor fixo (Starlink) é só o caso `min = max`, sem um tipo "fixo" separado. `CHECK (amount_max_cents >= amount_min_cents)`.
+
+**Vínculo com o livro-caixa, para dupla contagem exata (não heurística).** `transactions` ganha `recurring_expense_id` (nullable, via `ALTER TABLE ADD COLUMN ... REFERENCES recurring_expenses(id)`) — casar projeção com lançamento real por categoria + valor aproximado erra em silêncio, a classe de defeito que este projeto já caçou a sessão inteira. A supressão (Task 2) é: a projeção de uma competência some quando já existe um `transaction` com aquele `recurring_expense_id` dentro da janela de `purchase_date`.
+
+⚠️ **A FK é `ON DELETE SET NULL`, nunca CASCADE** — apagar a definição de uma recorrente não pode apagar um lançamento real (dinheiro que de fato saiu). MEDIDO com `pragma_foreign_key_list('transactions')` contra o D1 local depois do `apply`: `on_delete: "SET NULL"`. Provado também por teste que CONTA linhas antes/depois do `DELETE FROM recurring_expenses` (não só ausência de erro) — `n` continua 1, e o `recurring_expense_id` da linha some.
+
+⚠️ **`ALTER TABLE ... ADD COLUMN ... REFERENCES ... ON DELETE SET NULL` funciona** — MEDIDO com `sqlite3` 3.51.0 (mesma versão que o `0001` já mediu contra o D1) antes de escrever a migration, e reconfirmado depois contra o Miniflare local via `pragma_foreign_key_list`. Não é preciso recriar a tabela `transactions` inteira pra acrescentar uma FK nullable.
+
+`day_of_month` aceita até 31 na ENTRADA (`CHECK (day_of_month BETWEEN 1 AND 31)`) — o aparamento (dia 31 vira 28 em fevereiro) é aritmética de LEITURA, feita com `competenceDueDate` de `src/lib/dates.ts` (mesma função que já resolve o vencimento de cartão), não reimplementada nesta migration.
+
+**Índice:** só `idx_tx_recurring ON transactions(recurring_expense_id, purchase_date) WHERE recurring_expense_id IS NOT NULL` — o que a supressão de projeção da Task 2 usa (igualdade antes do range, parcial porque a maioria dos lançamentos nunca terá o vínculo preenchido). Decisão consciente de **não** criar índice em `recurring_expenses`: a tabela tem no máximo uma dezena de linhas em regime normal (Starlink, DAS, contador, INSS...), mesmo raciocínio do `0003_account_provider_idx.sql` — varrer uma tabela desse tamanho custa o mesmo que buscar por índice, e índice no D1 é irreversível (só `DROP` + `CREATE`), então o custo de errar pra mais é permanente.
+
+Aplicada só **localmente** nesta task (`--local`, `src/schema.test.ts` com as tabelas/índice/FK confirmados via `sqlite_master` e `pragma_foreign_key_list`); produção é ação manual do dono — ver seção _Deploy_ § 2 (o comando `wrangler d1 migrations apply piluvitu-financas --remote` cobre `0006` junto com qualquer migration anterior ainda pendente).
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
@@ -869,7 +889,9 @@ Migrations to be applied:
 0005_settings.sql                      ✅
 ```
 
-Depois do `apply`, um `list --remote` novo devolve **✅ No migrations to apply!** (mesmo texto que o `--local` já devolve hoje, verificado nesta task). Sem down migration — se o schema sair errado, a correção é uma migration nova (`0006_*.sql`), nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
+Depois do `apply`, um `list --remote` novo devolve **✅ No migrations to apply!** (mesmo texto que o `--local` já devolve hoje, verificado nesta task). Sem down migration — se o schema sair errado, a correção é uma migration nova, nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
+
+⚠️ **`0006_recurring_expenses.sql` (Task 1 da fatia ⑥) se junta à lista de pendentes em produção** — aplicada só `--local` nesta task (ver seção _Migrations_ → `0006_recurring_expenses.sql` acima); o mesmo `wrangler d1 migrations apply piluvitu-financas --remote` do topo desta seção aplica ela junto com qualquer outra migration anterior que ainda esteja pendente, na ordem numérica, numa tacada só. Não rodado por mim — ação manual do dono.
 
 ### 3. Secrets em produção (`wrangler secret put`, rodar manualmente)
 
