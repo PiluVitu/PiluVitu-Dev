@@ -2,18 +2,21 @@ import type { LinhaImportada } from '@piluvitu/tools/import'
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ImportError, importTransactions } from './import'
+import { commitments } from './reports'
 
 async function seedAccount(
   id: string,
   kind: 'credit_card' | 'checking' = 'checking',
+  closingDay: number | null = null,
+  dueDay: number | null = null,
 ) {
   await env.DB.prepare(
     `INSERT INTO accounts (id, name, scope, kind, institution, currency, closing_day, due_day,
        credit_limit_cents, opening_balance_cents, opening_date, archived_at, created_at, updated_at)
-     VALUES (?, ?, 'PF', ?, 'Nubank', 'BRL', NULL, NULL, NULL, 0, NULL, NULL,
+     VALUES (?, ?, 'PF', ?, 'Nubank', 'BRL', ?, ?, NULL, 0, NULL, NULL,
        '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z')`,
   )
-    .bind(id, `conta ${id}`, kind)
+    .bind(id, `conta ${id}`, kind, closingDay, dueDay)
     .run()
   return id
 }
@@ -195,5 +198,103 @@ describe('importTransactions', () => {
 
   it('lança ImportError quando um dos ImportError customizados carrega .code (usado pela rota p/ 422)', async () => {
     expect(new ImportError('x', 'y')).toBeInstanceOf(Error)
+  })
+
+  describe('bill_competence', () => {
+    it('conta credit_card: toda linha ganha bill_competence, e compra após o fechamento cai no mês SEGUINTE', async () => {
+      // Mesmo caso canônico já usado em domain/installments.test.ts: cartão
+      // fecha dia 25, compra em 28/07 (depois do fechamento) cai em '2026-08'.
+      const accountId = await seedAccount('acc-cc', 'credit_card', 25, 5)
+      const rows = [
+        linha({ imported_id: 'fitid-depois', purchase_date: '2026-07-28' }),
+        linha({ imported_id: 'fitid-antes', purchase_date: '2026-07-10' }),
+      ]
+
+      const result = await importTransactions(env.DB, {
+        account_id: accountId,
+        import_source: 'ofx',
+        rows,
+      })
+      expect(result).toEqual({ total: 2, imported: 2, skipped: 0 })
+
+      const gravadas = await env.DB.prepare(
+        'SELECT imported_id, bill_competence FROM transactions WHERE account_id = ? ORDER BY imported_id',
+      )
+        .bind(accountId)
+        .all<{ imported_id: string; bill_competence: string | null }>()
+
+      const porId = new Map(
+        gravadas.results.map((r) => [r.imported_id, r.bill_competence]),
+      )
+      // Nenhuma linha ficou sem competência (é o que faz o extrato de cartão
+      // entrar em commitments() — ver teste de integração abaixo).
+      expect(porId.get('fitid-depois')).toBe('2026-08')
+      expect(porId.get('fitid-antes')).toBe('2026-07')
+    })
+
+    it('conta checking: bill_competence permanece NULL', async () => {
+      const accountId = await seedAccount('acc-ck', 'checking')
+      const rows = [
+        linha({ imported_id: 'fitid-1', purchase_date: '2026-07-28' }),
+      ]
+
+      await importTransactions(env.DB, {
+        account_id: accountId,
+        import_source: 'ofx',
+        rows,
+      })
+
+      const row = await env.DB.prepare(
+        'SELECT bill_competence FROM transactions WHERE account_id = ? AND imported_id = ?',
+      )
+        .bind(accountId, 'fitid-1')
+        .first<{ bill_competence: string | null }>()
+      expect(row?.bill_competence).toBeNull()
+    })
+  })
+
+  describe('integração com commitments()', () => {
+    it('linhas importadas num cartão aparecem em commitments() na competência derivada', async () => {
+      const accountId = await seedAccount('acc-cc-commit', 'credit_card', 25, 5)
+      const rows = [
+        // Ambas depois do fechamento (dia 25) => competência '2026-08'.
+        linha({
+          imported_id: 'fitid-a',
+          purchase_date: '2026-07-28',
+          amount_cents: -100000, // R$ 1.000,00
+        }),
+        linha({
+          imported_id: 'fitid-b',
+          purchase_date: '2026-07-29',
+          amount_cents: -50000, // R$ 500,00
+        }),
+      ]
+
+      const result = await importTransactions(env.DB, {
+        account_id: accountId,
+        import_source: 'ofx',
+        rows,
+      })
+      // As linhas importadas nascem com settled_at NULL (fatura ainda em
+      // aberto) — é exatamente o que commitments() soma como "previsto".
+      expect(result).toEqual({ total: 2, imported: 2, skipped: 0 })
+      const settled = await env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM transactions WHERE account_id = ? AND settled_at IS NOT NULL',
+      )
+        .bind(accountId)
+        .first<{ n: number }>()
+      expect(settled?.n).toBe(0)
+
+      const report = await commitments(env.DB, {
+        from: '2026-08',
+        months: 1,
+        fixed_net_cents: 360000,
+      })
+
+      const linhaConta = report.rows.find((r) => r.account_id === accountId)
+      expect(linhaConta).toBeDefined()
+      // -SUM(amount_cents) das duas linhas: 100000 + 50000 = 150000.
+      expect(linhaConta?.cells).toEqual([150000])
+    })
   })
 })

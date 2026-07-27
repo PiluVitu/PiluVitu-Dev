@@ -1,5 +1,5 @@
 import type { LinhaImportada } from '@piluvitu/tools/import'
-import { nowIsoUtc } from '../lib/dates'
+import { billCompetence, nowIsoUtc } from '../lib/dates'
 import { newId } from '../lib/ids'
 
 /**
@@ -77,10 +77,9 @@ function isRealCalendarDate(value: string): boolean {
 // domain/installments.ts): 100 params por statement no D1. 19 colunas bound
 // (recurring_expense_id fica de fora — import não vincula a recorrente
 // nesta fatia, cai no DEFAULT NULL da coluna) => floor(100/19) = 5 linhas
-// por statement. bill_competence sai sempre NULL: a fatia ② não deriva
-// fatura na importação (fica pra uma iteração futura, sem teste que cubra
-// hoje); settled_at também NULL, mesmo default de um lançamento manual sem
-// o campo informado.
+// por statement. settled_at sai sempre NULL — mesmo default de um
+// lançamento manual sem o campo informado (extrato importado é fatura
+// ainda em aberto, não dinheiro já liquidado).
 const TX_COLUMNS = [
   'id',
   'account_id',
@@ -141,6 +140,14 @@ function insertStatements(
  * INSERT multi-row que viola UNIQUE falha o statement inteiro, e
  * `db.batch()` reverte a sequência inteira num erro (rollback real): uma
  * única duplicata no meio de 5 linhas novas apagaria as outras 4.
+ *
+ * `bill_competence` é DERIVADO por linha quando a conta é `credit_card`
+ * (`billCompetence(purchase_date, account.closing_day)`, a MESMA função de
+ * `createTransaction` — nunca uma segunda regra) — sem isto, um extrato de
+ * fatura importado ficaria fora de `commitments()` (que só soma parcela
+ * prevista com `bill_competence IS NOT NULL`), o compromisso mais valioso
+ * que esta fatia existe pra capturar. Conta que não é cartão grava NULL —
+ * só cartão tem fatura.
  */
 export async function importTransactions(
   db: D1Database,
@@ -157,10 +164,14 @@ export async function importTransactions(
     )
   }
 
+  // kind/closing_day (não só id): commitments() só soma parcela prevista com
+  // bill_competence IS NOT NULL — sem derivar aqui, um extrato de cartão
+  // importado hoje entraria no livro-caixa mas NUNCA apareceria no
+  // Comprometido, a tela que este módulo existe pra alimentar.
   const account = await db
-    .prepare('SELECT id FROM accounts WHERE id = ?')
+    .prepare('SELECT id, kind, closing_day FROM accounts WHERE id = ?')
     .bind(input.account_id)
-    .first<{ id: string }>()
+    .first<{ id: string; kind: string; closing_day: number | null }>()
   if (!account) {
     throw new ImportError('invalid_account', 'conta não encontrada')
   }
@@ -228,6 +239,14 @@ export async function importTransactions(
       continue
     }
     seenInThisRequest.add(row.imported_id)
+    // Mesma derivação de createTransaction (domain/transactions.ts): só
+    // cartão tem fatura, e só quando a conta tem closing_day configurado.
+    // Reusa billCompetence(purchase_date, closing_day) em vez de uma
+    // segunda regra que pudesse divergir da já testada.
+    const billCompetenceValue =
+      account.kind === 'credit_card' && account.closing_day !== null
+        ? billCompetence(row.purchase_date, account.closing_day)
+        : null
     txRows.push([
       newId(),
       input.account_id,
@@ -236,7 +255,7 @@ export async function importTransactions(
       null, // amount_original_cents
       null, // fx_rate_ppm
       row.purchase_date,
-      null, // bill_competence
+      billCompetenceValue,
       null, // settled_at
       row.description,
       row.payee_id ?? null,
