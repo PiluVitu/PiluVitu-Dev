@@ -23,6 +23,18 @@ Guidance for the **shared design system package**. O Claude Code carrega este ar
 Só `cn.test.ts` hoje (`jest` + `jest-environment-jsdom`, config em `jest.config.ts`). Os 14 componentes **nunca tiveram** `.test.tsx`/`.stories.tsx` próprios em `apps/web/components/ui/` — a migração não criou nenhum (lei de colocation não foi violada: não havia o que colocar). Se algum componente ganhar teste/story no futuro, colocation vale aqui também (`button.tsx` → `button.test.tsx`/`button.stories.tsx` dentro de `src/`).
 
 - **Rodar:** `pnpm --filter @piluvitu/ui test` ou `pnpm -r test` / `make test` na raiz.
+- **Não roda no `ci.yml`** hoje (só `apps/web` e `packages/tools` têm step de teste dedicado) — gap conhecido, não fechado nesta task; ver "Concerns" do report da Task 3.
+
+## Lint
+
+`eslint.config.mjs` **próprio** do pacote — não estende o de `apps/web` (que é Next-specific: `@next/eslint-plugin-next`, `@tanstack/eslint-plugin-query`, `eslint-plugin-storybook`, nenhum dos quais faz sentido aqui). Cobre `eslint-plugin-react` + `eslint-plugin-react-hooks` (`rules-of-hooks`, `exhaustive-deps`) + `@typescript-eslint/no-unused-vars` + um subconjunto de `eslint-plugin-jsx-a11y`.
+
+**Por que um subconjunto de a11y, não o `recommended` inteiro do plugin:** o `recommended` completo inclui `jsx-a11y/heading-has-content`, que dá falso positivo em componentes `forwardRef` cujo `children` só chega via props/spread (`CardTitle`, `<h3 {...props} />`) — nunca aparece como filho JSX literal. O subconjunto usado (`alt-text`, `aria-props`, `aria-proptypes`, `aria-unsupported-elements`, `role-has-required-aria-props`, `role-supports-aria-props`) e o override `react/no-unknown-property: off` (o atributo customizado `cmdk-input-wrapper` de `command.tsx`) são **exatamente** os que `eslint-config-next/index.js` já aplicava a estes arquivos antes do move — o objetivo é restaurar a cobertura que existia, não inventar regra nova que os arquivos já existentes nunca passaram por.
+
+**Antes desta correção, `pnpm -r lint` pulava `packages/ui` silenciosamente** (workspace sem script `lint` → `pnpm -r` simplesmente não roda nada nele, sem erro, sem aviso — a mesma armadilha que o `CLAUDE.md` da raiz já documenta pra outros contextos). Os 14 componentes ficaram sem `react-hooks/rules-of-hooks`, `exhaustive-deps`, `no-unused-vars` ou a11y verificados por um tempo depois da Task 3 até este fix. Prova de que a regra pega de verdade (não é um script que "passa" porque não linta nada): um import não usado (`@typescript-eslint/no-unused-vars`) e um hook chamado condicionalmente (`react-hooks/rules-of-hooks`) foram introduzidos de propósito num componente, confirmados como `error`/exit 1, e revertidos.
+
+- **Rodar:** `pnpm --filter @piluvitu/ui lint` ou `pnpm -r lint` / `make lint` na raiz.
+- **Amarrado em `ci.yml`:** step "Lint (ui package)" no job `web`.
 
 ## Consumo pelos apps
 

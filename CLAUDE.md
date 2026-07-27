@@ -53,6 +53,8 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                                          |
 | `pnpm -r test`                          | Testes de todos os workspaces                           |
 
+> ⚠️ **`pnpm -r <script>` (test/lint/etc.) pula silenciosamente qualquer workspace cujo `package.json` não declare esse script** — sem erro, sem aviso, só ausente do output (`Scope: N of 6 workspace projects` mostra menos que o total). Ao criar um workspace novo (ou copiar um `package.json` de outro), conferir se `lint`/`test` estão de fato declarados — não assumir que "não apareceu erro" significa "passou". Esse foi exatamente o defeito achado e corrigido no fix round 1 da Task 3 do design system (`packages/ui` migrou 14 componentes React sem nenhum `lint` script por um tempo, e `pnpm -r lint` seguia saindo verde).
+
 **Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
 **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
