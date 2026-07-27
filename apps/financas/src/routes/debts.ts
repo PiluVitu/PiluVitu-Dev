@@ -40,18 +40,13 @@ async function parseBody(
   }
 }
 
-// Mensagem fixada aqui (não em err.message de DebtHasLedgerError) porque é
-// esta rota que a expõe pro dono pela primeira vez — o texto tem que nomear
-// a alternativa ('Dar baixa'), senão a recusa só diz "não" e ele fica preso
-// sem saber o que fazer. Um teste dedicado (routes/debts.test.ts) assegura
-// que 'Dar baixa' continua no texto — uma edição futura que a remova quebra
-// esse teste antes de quebrar a experiência real.
-const DEBT_HAS_LEDGER_MESSAGE =
-  "Esta dívida já tem pagamento em dinheiro registrado no caixa. Excluir apagaria a dívida e deixaria o lançamento sem explicação. Use 'Dar baixa' para encerrá-la preservando o histórico, ou exclua os pagamentos primeiro."
-
 function mapError(err: unknown): Response {
+  // err.message é a fonte única (domain/debts.ts) — mesmo padrão de
+  // OverAllocationError/InvalidPaymentError logo abaixo, sem cópia paralela
+  // aqui. Um teste dedicado (routes/debts.test.ts) assegura que a mensagem
+  // que sai por HTTP ainda cita 'Dar baixa'.
   if (err instanceof DebtHasLedgerError)
-    return errJson(422, err.code, DEBT_HAS_LEDGER_MESSAGE)
+    return errJson(422, err.code, err.message)
   if (err instanceof OverAllocationError)
     return errJson(422, 'over_allocation', err.message)
   if (err instanceof InvalidPaymentError)

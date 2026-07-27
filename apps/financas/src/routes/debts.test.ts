@@ -369,6 +369,29 @@ describe('rotas de exclusao e baixa (Task 3)', () => {
     expect(res.body.notifications[0].code).toBe('not_found')
   })
 
+  it('DELETE /:id/items/:itemId de item de OUTRA divida devolve 404 not_found, sem apagar por id solto', async () => {
+    const { payee_id } = await seedPai()
+    const debtA = await criarDivida(payee_id)
+    const debtB = await criarDivida(payee_id)
+    const itemDeA = await adicionarItem(debtA)
+
+    // Mesma classe de furo que uma revisao anterior achou numa alocacao
+    // apontando pra item de outra divida: sem o AND debt_id = ? no dominio,
+    // um id de item correto mas de OUTRA divida seria apagado por engano.
+    // Prova no limite HTTP (nao so no dominio, ja coberto em debts.test.ts)
+    // porque e a rota que expoe o par (id, itemId) da URL a uma requisicao
+    // real — uma futura troca de ordem dos argumentos em deleteDebtItem
+    // dentro da rota so quebraria aqui.
+    const res = await call(`/${debtB}/items/${itemDeA}`, del())
+    expect(res.status).toBe(404)
+    expect(res.body.notifications[0].code).toBe('not_found')
+
+    const row = await env.DB.prepare('SELECT 1 FROM debt_items WHERE id = ?')
+      .bind(itemDeA)
+      .first()
+    expect(row).not.toBeNull()
+  })
+
   it('DELETE /:id/items/:itemId com alocacao devolve 422 constraint_violation cozido — sem SQLITE_CONSTRAINT nem nome de tabela', async () => {
     const { payee_id, account_id } = await seedPai()
     const debtId = await criarDivida(payee_id)
@@ -444,5 +467,43 @@ describe('rotas de exclusao e baixa (Task 3)', () => {
     const res = await call(`/${debtId}/payments/nao-existe`, del())
     expect(res.status).toBe(404)
     expect(res.body.notifications[0].code).toBe('not_found')
+  })
+
+  it('DELETE /:id/payments/:paymentId de pagamento de OUTRA divida devolve 404 not_found, sem apagar por id solto', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debtA = await criarDivida(payee_id)
+    const debtB = await criarDivida(payee_id)
+    const itemDeA = await adicionarItem(debtA, 50000)
+    const pago = await call(
+      `/${debtA}/payments`,
+      post({
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        account_id,
+        allocations: [{ item_id: itemDeA, amount_cents: 30000 }],
+      }),
+    )
+    const paymentDeA = pago.body.data.payment.id as string
+    const transactionDeA = pago.body.data.transaction.id as string
+
+    // Mesma prova de deteccao (troca de ordem dos argumentos na rota) do
+    // teste analogo de items acima — pagamento e lancamento cash tem que
+    // sobreviver intactos quando o id da URL aponta pra divida errada.
+    const res = await call(`/${debtB}/payments/${paymentDeA}`, del())
+    expect(res.status).toBe(404)
+    expect(res.body.notifications[0].code).toBe('not_found')
+
+    const payRow = await env.DB.prepare(
+      'SELECT 1 FROM debt_payments WHERE id = ?',
+    )
+      .bind(paymentDeA)
+      .first()
+    expect(payRow).not.toBeNull()
+    const txRow = await env.DB.prepare(
+      'SELECT 1 FROM transactions WHERE id = ?',
+    )
+      .bind(transactionDeA)
+      .first()
+    expect(txRow).not.toBeNull()
   })
 })

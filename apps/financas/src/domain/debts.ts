@@ -505,10 +505,16 @@ export async function listDebts(
 // CASCADE reescrever a historia. 'offset'/'forgiven' nunca tem
 // transaction_id (CHECK kind = 'cash' OR transaction_id IS NULL em
 // debt_payments), entao apagar esses e seguro.
+// Mensagem é a fonte única: mapError (routes/debts.ts) repassa err.message
+// direto, mesmo padrão de OverAllocationError/InvalidPaymentError — nenhuma
+// cópia paralela na rota. É a rota que expõe esta frase pela primeira vez a
+// uma requisição real, então ela TEM que nomear a alternativa ('Dar baixa'):
+// uma recusa que só diz "não" deixa o dono travado com uma dívida que não
+// pode excluir, sem pista do que fazer. Texto exato do spec da fatia.
 export class DebtHasLedgerError extends Error {
   code = 'debt_has_ledger'
   constructor(
-    message = 'a dívida tem pagamento em dinheiro (kind=cash) associado a um lançamento — apagar apagaria essa explicação do livro-caixa; dê baixa (written_off) em vez de excluir',
+    message = "Esta dívida já tem pagamento em dinheiro registrado no caixa. Excluir apagaria a dívida e deixaria o lançamento sem explicação. Use 'Dar baixa' para encerrá-la preservando o histórico, ou exclua os pagamentos primeiro.",
   ) {
     super(message)
     this.name = 'DebtHasLedgerError'

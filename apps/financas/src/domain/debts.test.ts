@@ -849,6 +849,10 @@ describe('debts — exclusao e baixa', () => {
     await expect(deleteDebt(env.DB, debt.id)).rejects.toBeInstanceOf(
       DebtHasLedgerError,
     )
+    // A mensagem e a fonte unica que a rota (routes/debts.ts#mapError) repassa
+    // sem reescrever — guarda aqui, onde o texto de fato mora, contra uma
+    // edicao futura que remova a citacao da alternativa ('Dar baixa').
+    await expect(deleteDebt(env.DB, debt.id)).rejects.toThrow(/Dar baixa/)
 
     // Nao "quase igual" — IDENTICAS, valor a valor.
     const after = await countsAll()
