@@ -13,9 +13,16 @@ export type AccountBalanceView = {
 const SCOPES = ['PJ', 'PF'] as const
 
 /**
- * Saldo por conta, com PJ e PF SEPARADOS — a separação é o motivo de
- * `is_business`/`scope` existir; misturar os dois faz a tela mentir sobre
- * qual dinheiro é realmente do dono (renda fixa PJ vs. o resto). Autônomo,
+ * Saldo por conta, com PJ e PF SEPARADOS — misturar os dois faz a tela
+ * mentir sobre qual dinheiro é realmente do dono (renda fixa PJ vs. o resto).
+ *
+ * ⚠️ A separação AQUI é por `accounts.scope`, NÃO por
+ * `transactions.is_business`. São coisas distintas de propósito: o schema
+ * (0001, comentário das colunas) trata `accounts.scope` como *default* da
+ * conta e `transactions.is_business` como a verdade final do lançamento —
+ * dá para pagar algo PF pelo cartão PJ. Para um bloco de SALDO por conta, o
+ * recorte certo é o da conta; quem quiser somar por natureza do gasto tem
+ * que ir em `transactions.is_business`, que é outra pergunta. Autônomo,
  * mesmo padrão de BlocoComprometido: busca `GET /api/accounts` sozinho no
  * mount — a rota já esconde conta arquivada por padrão (`?archived=1` só
  * entraria se quiséssemos VER arquivada, o que este bloco não quer).
