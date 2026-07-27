@@ -9,6 +9,7 @@ import { ConfigPage } from './pages/config'
 import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
 import { HomePage } from './pages/home'
+import { ImportarPage } from './pages/importar'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
 
@@ -63,6 +64,9 @@ function AppShell() {
         <a href="#/recorrentes" className={navLinkClassName}>
           Recorrentes
         </a>
+        <a href="#/importar" className={navLinkClassName}>
+          Importar
+        </a>
         <a href="#/comprometido" className={navLinkClassName}>
           Comprometido
         </a>
@@ -80,6 +84,8 @@ function AppShell() {
         <NewEntryPage />
       ) : hash === '#/recorrentes' || hash === '#/recorrentes/' ? (
         <RecorrentesPage />
+      ) : hash === '#/importar' || hash === '#/importar/' ? (
+        <ImportarPage />
       ) : hash === '#/contas' || hash === '#/contas/' ? (
         <AccountsPage />
       ) : hash === '#/configuracoes' || hash === '#/configuracoes/' ? (

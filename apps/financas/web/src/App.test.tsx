@@ -70,6 +70,12 @@ function mockFetchVazio() {
       // RecorrentesPage (Task 5, fatia ⑥) — três listas.
       if (url.includes('/api/recurring')) return respond([])
       if (url.includes('/api/categories')) return respond([])
+      // ImportarPage (Tasks 4-5, fatia ②) — GET /api/payees já coberto
+      // acima (DividasPage). /api/transactions só é chamado depois de um
+      // arquivo ser lido (checagem de duplicata) — este teste de rota nunca
+      // chega lá, mas listado por precaução, mesma disciplina do resto
+      // deste allowlist.
+      if (url.includes('/api/transactions')) return respond([])
 
       return Promise.reject(new Error(`rota inesperada em teste: ${url}`))
     }),
@@ -148,6 +154,17 @@ describe('App — roteamento por hash com Gate autenticado', () => {
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
       ).toBeDefined(),
+    )
+  })
+
+  // Tasks 4-5 (fatia ②): nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/importar mostra a tela Importar', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/importar'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Importar' })).toBeDefined(),
     )
   })
 
