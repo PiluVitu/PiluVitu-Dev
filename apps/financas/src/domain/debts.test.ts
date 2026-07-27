@@ -1045,7 +1045,7 @@ describe('debts — exclusao e baixa', () => {
       months: 1,
       fixed_net_cents: 360000,
     })
-    expect(antes.totals[0]).toBe(100000)
+    expect(antes.totals[0]).toEqual({ min: 100000, max: 100000 })
 
     const ok = await writeOffDebt(env.DB, debt.id)
     expect(ok).toBe(true)
@@ -1055,7 +1055,7 @@ describe('debts — exclusao e baixa', () => {
       months: 1,
       fixed_net_cents: 360000,
     })
-    expect(depois.totals[0]).toBe(0)
+    expect(depois.totals[0]).toEqual({ min: 0, max: 0 })
     expect(depois.rows).toEqual([])
   })
 

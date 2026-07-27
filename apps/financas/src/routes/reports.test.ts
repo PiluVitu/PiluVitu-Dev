@@ -54,9 +54,9 @@ describe('GET /api/reports/commitments', () => {
     const body = (await res.json()) as Envelope<{
       competences: string[]
       rows: Array<{ account_name: string; cells: number[] }>
-      totals: number[]
+      totals: Array<{ min: number; max: number }>
       fixed_net_cents: number
-      pct_of_fixed_net: number[]
+      pct_of_fixed_net: Array<{ min: number; max: number }>
     }>
     expect(body.ok).toBe(true)
     expect(body.notifications).toEqual([])
@@ -68,7 +68,13 @@ describe('GET /api/reports/commitments', () => {
         cells: [124000, 0, 0],
       },
     ])
-    expect(body.data.totals).toEqual([124000, 0, 0])
+    // Sem recorrente cadastrada nesta rota: min === max, mesmo valor de
+    // antes desta task (Task 3, faixa em domain/reports.ts).
+    expect(body.data.totals).toEqual([
+      { min: 124000, max: 124000 },
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+    ])
     expect(body.data.fixed_net_cents).toBe(360000)
   })
 
@@ -77,10 +83,13 @@ describe('GET /api/reports/commitments', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as Envelope<{
       rows: unknown[]
-      totals: number[]
+      totals: Array<{ min: number; max: number }>
     }>
     expect(body.data.rows).toEqual([])
-    expect(body.data.totals).toEqual([0, 0])
+    expect(body.data.totals).toEqual([
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+    ])
   })
 
   it('aceita fixed_net_cents customizado via query', async () => {

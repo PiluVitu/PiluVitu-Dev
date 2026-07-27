@@ -1,4 +1,5 @@
 import { addMonthsToCompetence } from '../lib/dates'
+import { projectRecurring } from './recurring'
 
 export type CommitmentCell = {
   competence: string
@@ -7,12 +8,19 @@ export type CommitmentCell = {
   committed_cents: number
 }
 
+/**
+ * Faixa min/max (Task 3, fatia ⑥ — §2/§5 do spec de recorrentes). O Simples
+ * varia de R$ 12 a R$ 600 conforme o faturamento: uma media (R$ 306) seria o
+ * numero que NUNCA acontece. Piso e o minimo garantido, teto e o pior mes.
+ */
+export type CommitmentRange = { min: number; max: number }
+
 export type CommitmentReport = {
   competences: string[]
   rows: Array<{ account_id: string; account_name: string; cells: number[] }>
-  totals: number[]
+  totals: CommitmentRange[]
   fixed_net_cents: number
-  pct_of_fixed_net: number[]
+  pct_of_fixed_net: CommitmentRange[]
 }
 
 /**
@@ -113,12 +121,25 @@ export async function commitments(
   const rows = [...byId.values()].sort((a, b) =>
     a.account_name.localeCompare(b.account_name, 'pt-BR'),
   )
-  const totals = competences.map((_, i) =>
-    rows.reduce((sum, r) => sum + r.cells[i], 0),
-  )
-  const pct_of_fixed_net = totals.map((t) =>
-    fixed_net_cents > 0 ? Math.round((t * 100) / fixed_net_cents) : 0,
-  )
+
+  // Recorrentes (Task 2, domain/recurring.ts): projecao pura, nunca escreve
+  // em transactions, ja suprimida por competencia onde existe lancamento
+  // vinculado. Soma-se ao total CERTO (parcelas + dividas, ambos exatos, sem
+  // faixa) — a incerteza da faixa vem so daqui, nunca de um lancamento ou
+  // divida ja conhecidos. Mapa esparso: competencia sem nenhuma recorrente
+  // cai no default {min:0, max:0}, o que faz este total voltar a bater
+  // EXATAMENTE com o valor da versao anterior quando nao ha recorrente
+  // nenhuma cadastrada (teste de nao-regressao em reports.test.ts).
+  const recurring = await projectRecurring(db, { from, months })
+  const totals: CommitmentRange[] = competences.map((c, i) => {
+    const certain = rows.reduce((sum, r) => sum + r.cells[i], 0)
+    const proj = recurring.get(c) ?? { min: 0, max: 0 }
+    return { min: certain + proj.min, max: certain + proj.max }
+  })
+  const pct_of_fixed_net: CommitmentRange[] = totals.map((t) => ({
+    min: fixed_net_cents > 0 ? Math.round((t.min * 100) / fixed_net_cents) : 0,
+    max: fixed_net_cents > 0 ? Math.round((t.max * 100) / fixed_net_cents) : 0,
+  }))
 
   return { competences, rows, totals, fixed_net_cents, pct_of_fixed_net }
 }

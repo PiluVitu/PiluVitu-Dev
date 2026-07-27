@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createAccount } from './accounts'
 import { createTransaction, createTransfer } from './transactions'
 import { addDebtItem, createDebt, payDebt } from './debts'
+import { createRecurring } from './recurring'
 import { byCategory, commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
 
 const db = env.DB
@@ -76,7 +77,10 @@ describe('commitments', () => {
     )
     expect(porNome['Nubank cartao']).toEqual([124000, 0])
     expect(porNome['Inter cartao']).toEqual([42000, 42000])
-    expect(report.totals).toEqual([166000, 42000])
+    expect(report.totals).toEqual([
+      { min: 166000, max: 166000 },
+      { min: 42000, max: 42000 },
+    ])
   })
 
   it('conta sem parcela nenhuma na janela nao aparece', async () => {
@@ -117,7 +121,10 @@ describe('commitments', () => {
     })
 
     expect(report.rows[0].cells).toEqual([0, 124000])
-    expect(report.totals).toEqual([0, 124000])
+    expect(report.totals).toEqual([
+      { min: 0, max: 0 },
+      { min: 124000, max: 124000 },
+    ])
   })
 
   it('nao conta perna de transferencia nem filha de rateio', async () => {
@@ -157,7 +164,7 @@ describe('commitments', () => {
       fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
     })
 
-    expect(report.totals).toEqual([130000])
+    expect(report.totals).toEqual([{ min: 130000, max: 130000 }])
   })
 
   it('percentual bate contra o liquido fixo, nunca contra o liquido com freela', async () => {
@@ -172,7 +179,10 @@ describe('commitments', () => {
     })
 
     expect(report.fixed_net_cents).toBe(360000)
-    expect(report.pct_of_fixed_net).toEqual([60, 25])
+    expect(report.pct_of_fixed_net).toEqual([
+      { min: 60, max: 60 },
+      { min: 25, max: 25 },
+    ])
   })
 
   it('vira o ano corretamente', async () => {
@@ -222,7 +232,11 @@ describe('commitments', () => {
     const linha = report.rows.find((r) => r.account_name === 'Divida — Pai')
     expect(linha).toBeDefined()
     expect(linha!.cells).toEqual([280000, 0, 0])
-    expect(report.totals).toEqual([280000, 0, 0])
+    expect(report.totals).toEqual([
+      { min: 280000, max: 280000 },
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+    ])
   })
 
   it('divida owed_to_me nao é compromisso meu', async () => {
@@ -255,7 +269,10 @@ describe('commitments', () => {
     })
 
     expect(report.rows).toEqual([])
-    expect(report.totals).toEqual([0, 0])
+    expect(report.totals).toEqual([
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+    ])
   })
 
   it('INVARIANTE: pagar uma divida reduz o comprometido exatamente pelo valor alocado, gera exatamente 1 linha no caixa, e nunca vira despesa', async () => {
@@ -327,7 +344,9 @@ describe('commitments', () => {
     )
     // exatamente o valor alocado, nem mais nem menos.
     expect(linhaDepois?.cells).toEqual([730000 - ALOCADO])
-    expect(depois.totals).toEqual([730000 - ALOCADO])
+    expect(depois.totals).toEqual([
+      { min: 730000 - ALOCADO, max: 730000 - ALOCADO },
+    ])
 
     // 1x no caixa via v_cashflow (o pagamento liquidou de verdade).
     const cashflow = await db
@@ -355,6 +374,165 @@ describe('commitments', () => {
     await expect(
       commitments(db, { from: '2026-08', months: 0, fixed_net_cents: 360000 }),
     ).rejects.toThrow(RangeError)
+  })
+})
+
+// Task 3 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+// §2 e §5): totals/pct_of_fixed_net viram FAIXA — projectRecurring() (Task 2,
+// domain/recurring.ts) some ao total certo (parcelas + dividas) em cada
+// competencia. Piso e o minimo garantido, teto e o pior mes; a media nunca
+// aparece porque a media e o numero que nao acontece (DAS varia 12..600).
+describe('commitments — faixa com recorrentes (Task 3)', () => {
+  it('1. sem recorrente registrada, min === max e bate EXATAMENTE com o valor da versao anterior — prova de nao-regressao', async () => {
+    // Fixture identica ao teste "percentual bate contra o liquido fixo,
+    // nunca contra o liquido com freela" (acima, sem nenhuma recorrente
+    // cadastrada): os valores 216000/90000 (totals) e 60/25 (pct) sao os
+    // MESMOS numeros reais que a versao anterior de commitments() devolvia
+    // como number[] simples, antes desta task existir — nao um valor
+    // inventado so pra fechar min===max.
+    const nubank = await cartao('Nubank cartao')
+    await parcela(nubank.id, '2026-08', 216000)
+    await parcela(nubank.id, '2026-09', 90000)
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 2,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.totals).toEqual([
+      { min: 216000, max: 216000 },
+      { min: 90000, max: 90000 },
+    ])
+    expect(report.pct_of_fixed_net).toEqual([
+      { min: 60, max: 60 },
+      { min: 25, max: 25 },
+    ])
+  })
+
+  it('2. com Starlink fixo (min = max = 18900), min e max do total sobem igual', async () => {
+    await createRecurring(db, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.totals).toEqual([{ min: 18900, max: 18900 }])
+    // round(18900*100/360000) = round(5.25) = 5, igual dos dois lados.
+    expect(report.pct_of_fixed_net).toEqual([{ min: 5, max: 5 }])
+  })
+
+  it('3. com DAS 12..600, min e max do total divergem exatamente por 588 (R$ 588 = 58800 centavos)', async () => {
+    await createRecurring(db, {
+      description: 'DAS',
+      scope: 'PJ',
+      day_of_month: 20,
+      amount_min_cents: 1200,
+      amount_max_cents: 60000,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.totals).toEqual([{ min: 1200, max: 60000 }])
+    expect(report.totals[0].max - report.totals[0].min).toBe(58800)
+  })
+
+  it('4. pct_of_fixed_net vira faixa contra os R$ 3.600, min e max calculados independentemente', async () => {
+    await createRecurring(db, {
+      description: 'DAS',
+      scope: 'PJ',
+      day_of_month: 20,
+      amount_min_cents: 1200,
+      amount_max_cents: 60000,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    // round(1200*100/360000) = round(0.33) = 0; round(60000*100/360000) = round(16.67) = 17.
+    expect(report.pct_of_fixed_net).toEqual([{ min: 0, max: 17 }])
+  })
+
+  it('5. parcela e divida continuam somando como antes (nas rows), junto das recorrentes (no total)', async () => {
+    const nubank = await cartao('Nubank cartao')
+    await parcela(nubank.id, '2026-08', 100000)
+
+    const payeeId = crypto.randomUUID()
+    await db
+      .prepare(
+        `INSERT INTO payees (id, name, norm_name, kind, created_at)
+         VALUES (?, 'Pai', 'PAI', 'person', ?)`,
+      )
+      .bind(payeeId, '2026-01-01T00:00:00Z')
+      .run()
+    const divida = await createDebt(db, {
+      payee_id: payeeId,
+      direction: 'i_owe',
+      title: 'Pai',
+      opened_at: '2026-03-01',
+    })
+    await addDebtItem(db, {
+      debt_id: divida.id,
+      description: 'Emprestimo',
+      amount_cents: 50000,
+      incurred_on: '2026-03-01',
+    })
+
+    await createRecurring(db, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+    await createRecurring(db, {
+      description: 'DAS',
+      scope: 'PJ',
+      day_of_month: 20,
+      amount_min_cents: 1200,
+      amount_max_cents: 60000,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    // As rows (parcela + divida) continuam exatas, sem faixa — a incerteza
+    // e so das recorrentes, nunca de um lancamento/divida ja conhecidos.
+    const linhaParcela = report.rows.find(
+      (r) => r.account_name === 'Nubank cartao',
+    )
+    const linhaDivida = report.rows.find(
+      (r) => r.account_name === 'Divida — Pai',
+    )
+    expect(linhaParcela?.cells).toEqual([100000])
+    expect(linhaDivida?.cells).toEqual([50000])
+
+    // Total = certo (100000 parcela + 50000 divida = 150000) + recorrentes
+    // (min 18900+1200=20100 / max 18900+60000=78900).
+    expect(report.totals).toEqual([{ min: 170100, max: 228900 }])
   })
 })
 
