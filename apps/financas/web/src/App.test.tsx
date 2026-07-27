@@ -14,9 +14,12 @@ vi.mock('./auth-client', () => ({
   signOut: vi.fn(),
 }))
 
-// CommitmentsPage espera um objeto de relatório, não uma lista — usar `[]`
-// pra toda rota (como um mock genérico faria) quebra `formatBRL(undefined)`
-// em `report.fixed_net_cents` assim que a tela de Comprometido monta. As
+// CommitmentsPage e BlocoCategorias (Task 8) esperam um objeto de relatório,
+// não uma lista — usar `[]` pra toda rota (como um mock genérico faria)
+// quebra `formatBRL(undefined)` em `report.fixed_net_cents`/`report.rows`
+// assim que a tela/bloco monta (o segundo, de propósito, é o MESMO bug que
+// o comentário original documentava só pra `/reports/commitments`: um
+// `[].rows` daria `TypeError` antes até de chegar no `formatBRL`). As
 // outras telas usadas aqui (Contas, Dívidas) esperam lista mesmo, `[]` serve.
 function mockFetchVazio() {
   vi.stubGlobal(
@@ -31,7 +34,9 @@ function mockFetchVazio() {
             fixed_net_cents: 0,
             pct_of_fixed_net: [],
           }
-        : []
+        : url.includes('/api/reports/by-category')
+          ? { competence: '', rows: [], total_cents: 0 }
+          : []
       return Promise.resolve({
         status: 200,
         json: async () => ({ ok: true, data, notifications: [] }),

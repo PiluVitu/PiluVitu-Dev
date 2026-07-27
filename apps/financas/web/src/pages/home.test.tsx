@@ -28,12 +28,18 @@ afterEach(() => {
 })
 
 describe('HomePage', () => {
-  it('mostra o título Início e monta os três blocos', async () => {
+  it('mostra o título Início e monta os quatro blocos', async () => {
     vi.mocked(api).mockImplementation((path: string) => {
       if (path.startsWith('/api/reports/commitments'))
         return Promise.resolve(reportVazio)
       if (path.startsWith('/api/accounts')) return Promise.resolve([])
       if (path.startsWith('/api/debts')) return Promise.resolve([])
+      if (path.startsWith('/api/reports/by-category'))
+        return Promise.resolve({
+          competence: '2026-07',
+          rows: [],
+          total_cents: 0,
+        })
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -50,16 +56,19 @@ describe('HomePage', () => {
       expect(
         screen.getByRole('heading', { name: 'Dívidas' }),
       ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Para onde foi o dinheiro' }),
+      ).toBeInTheDocument()
     })
   })
 
-  it('todos os blocos em erro: a home continua de pé (título + os 3 cards contidos)', async () => {
+  it('todos os blocos em erro: a home continua de pé (título + os 4 cards contidos)', async () => {
     vi.mocked(api).mockRejectedValue(new Error('falhou'))
 
     render(<HomePage />)
 
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3))
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(4))
     // o título continua no ar — o erro ficou contido nos cards dos blocos
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
   })
@@ -92,6 +101,20 @@ describe('HomePage', () => {
           },
         ])
       }
+      if (path.startsWith('/api/reports/by-category')) {
+        return Promise.resolve({
+          competence: '2026-07',
+          rows: [
+            {
+              category_id: 'c-das',
+              category_name: 'DAS — Simples Nacional',
+              category_slug: 'das',
+              total_cents: -70000,
+            },
+          ],
+          total_cents: -70000,
+        })
+      }
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -117,6 +140,17 @@ describe('HomePage', () => {
     expect(
       screen.getByRole('progressbar', { name: /empréstimo do pai/i }),
     ).toHaveAttribute('aria-valuenow', '81')
+
+    // Categorias: dado REAL renderizado, com o gráfico (lazy) montado
+    await waitFor(() =>
+      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 700,00'),
+    )
+    // O `<Suspense>` do gráfico resolve numa promise separada da `api()` —
+    // `total-gasto` (fora do boundary) já pode estar no DOM antes do
+    // `import()` dinâmico terminar, então isto precisa do próprio `waitFor`.
+    await waitFor(() =>
+      expect(screen.getByTestId('grafico-categorias')).toBeInTheDocument(),
+    )
 
     // exatamente 1 alert na tela inteira — o erro não vazou para os outros
     expect(screen.getAllByRole('alert')).toHaveLength(1)

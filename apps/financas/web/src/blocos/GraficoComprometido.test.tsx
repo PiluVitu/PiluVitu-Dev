@@ -1,7 +1,8 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CommitmentReportView } from '../lib/commitments'
-import GraficoComprometido from './GraficoComprometido'
+import type { ByCategoryReportView } from '../lib/categories'
+import GraficoComprometido, { GraficoCategorias } from './GraficoComprometido'
 
 const report: CommitmentReportView = {
   competences: [
@@ -84,5 +85,98 @@ describe('GraficoComprometido — largura responsiva (Task 6, fix round 1)', () 
     })
 
     expect(larguraDoWrapper(container)).toBe('640px')
+  })
+})
+
+// `GraficoCategorias` (Task 8, "para onde foi o dinheiro") mora NESTE
+// arquivo — não em `GraficoCategorias.tsx` separado — de propósito: os dois
+// componentes são a ÚNICA fronteira `lazy()` que carrega `recharts` nesta
+// SPA, e um segundo arquivo importando `recharts` de novo criaria um
+// SEGUNDO chunk de ~104 KB gzip pro mesmo pacote (ver
+// BlocoCategorias.tsx e scripts/check-financas-lazy-chart.mjs). Testado
+// no MESMO arquivo de teste do componente que já existia, mesma convenção
+// de colocation (um arquivo fonte, um arquivo de teste).
+const categoryReport: ByCategoryReportView = {
+  competence: '2026-07',
+  rows: [
+    {
+      category_id: 'c-das',
+      category_name: 'DAS — Simples Nacional',
+      category_slug: 'das',
+      total_cents: -50000,
+    },
+    {
+      category_id: 'c-contador',
+      category_name: 'Contador',
+      category_slug: 'contador',
+      total_cents: -30000,
+    },
+    {
+      category_id: null,
+      category_name: 'Sem categoria',
+      category_slug: null,
+      total_cents: -10000,
+    },
+  ],
+  total_cents: -90000,
+}
+
+describe('GraficoCategorias — barras horizontais, uma por categoria', () => {
+  afterEach(() => {
+    setViewportWidth(LARGURA_PADRAO_JSDOM)
+  })
+
+  it('desenha uma barra por linha do relatório', () => {
+    const { container } = render(<GraficoCategorias report={categoryReport} />)
+
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(3)
+  })
+
+  it('pinta "Sem categoria" (category_id null) numa cor DIFERENTE das categorias reais — nunca por nome/slug', () => {
+    // Armadilha explícita do brief: `categories.slug` é nullable, então uma
+    // categoria REAL do usuário também pode ter slug nulo (o segundo caso
+    // abaixo). Só `category_id === null` pode decidir a cor "sem categoria".
+    const report: ByCategoryReportView = {
+      competence: '2026-07',
+      rows: [
+        {
+          category_id: null,
+          category_name: 'Sem categoria',
+          category_slug: null,
+          total_cents: -10000,
+        },
+        {
+          category_id: 'c-real-sem-slug',
+          category_name: 'Categoria real sem slug',
+          category_slug: null,
+          total_cents: -20000,
+        },
+      ],
+      total_cents: -30000,
+    }
+
+    const { container } = render(<GraficoCategorias report={report} />)
+
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(2)
+    const fills = Array.from(barras).map((b) => b.getAttribute('fill'))
+
+    // ordem = ordem de `rows` (a API já ordena, o componente não reordena)
+    expect(fills[0]).toBe('hsl(var(--muted-foreground))') // Sem categoria (category_id null)
+    expect(fills[1]).toBe('hsl(var(--primary))') // categoria REAL, slug nulo — não é "sem categoria"
+
+    for (const fill of fills) {
+      expect(fill).not.toMatch(/^#/)
+      expect(fill).toMatch(/^hsl\(var\(--/)
+    }
+  })
+
+  it('em viewport estreito (Android, ~390px) a largura acompanha o innerWidth — mesmo hook de GraficoComprometido', () => {
+    setViewportWidth(390)
+
+    const { container } = render(<GraficoCategorias report={categoryReport} />)
+
+    expect(larguraDoWrapper(container)).toBe('326px')
   })
 })
