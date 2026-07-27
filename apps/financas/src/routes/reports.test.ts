@@ -213,6 +213,117 @@ describe('GET /api/reports/commitments', () => {
   })
 })
 
+describe('GET /api/reports/cashflow', () => {
+  it('devolve 200 com envelope ok, meses e linhas (entrou/saiu/saldo/acumulado)', async () => {
+    const conta = await createAccount(env.DB, {
+      name: 'Conta corrente fluxo',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    await createTransaction(env.DB, {
+      account_id: conta.id,
+      amount_cents: 500000,
+      purchase_date: '2026-07-05',
+      settled_at: '2026-07-05',
+      description: 'entrada fluxo rota',
+    })
+    await createTransaction(env.DB, {
+      account_id: conta.id,
+      amount_cents: -120000,
+      purchase_date: '2026-07-10',
+      settled_at: '2026-07-10',
+      description: 'saida fluxo rota',
+    })
+
+    const res = await get('/api/reports/cashflow?from=2026-07&months=1')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      meses: string[]
+      linhas: Array<{
+        competence: string
+        entrou_cents: number
+        saiu_cents: number
+        saldo_cents: number
+        acumulado_cents: number
+      }>
+    }>
+    expect(body.ok).toBe(true)
+    expect(body.notifications).toEqual([])
+    expect(body.data.meses).toEqual(['2026-07'])
+    expect(body.data.linhas).toEqual([
+      {
+        competence: '2026-07',
+        entrou_cents: 500000,
+        saiu_cents: 120000,
+        saldo_cents: 380000,
+        acumulado_cents: 380000,
+      },
+    ])
+  })
+
+  it('sem months explicito usa o default de 12 meses', async () => {
+    const res = await get('/api/reports/cashflow?from=2026-07')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ meses: string[] }>
+    expect(body.data.meses).toHaveLength(12)
+    expect(body.data.meses[0]).toBe('2026-07')
+  })
+
+  it('sem from devolve 400 invalid_query', async () => {
+    const res = await get('/api/reports/cashflow')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  // O branch de RangeError e' obrigatorio aqui: sem ele, um `from` malformado
+  // vazaria como 500 sem envelope (ja aconteceu nesse modulo antes — ver
+  // CLAUDE.md, secao "Relatorio de comprometido"/"Relatorio por categoria").
+  it("from='2026-8' (formato invalido) devolve 400 invalid_query, nao 500", async () => {
+    const res = await get('/api/reports/cashflow?from=2026-8&months=6')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  it("from='2026-13' (mes inexistente) devolve 400 invalid_query", async () => {
+    const res = await get('/api/reports/cashflow?from=2026-13&months=6')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  it('months=0 devolve 400 invalid_query', async () => {
+    const res = await get('/api/reports/cashflow?from=2026-07&months=0')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  it('months nao numerico devolve 400 invalid_query', async () => {
+    const res = await get('/api/reports/cashflow?from=2026-07&months=abc')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+
+  // cashflow() (domain/cashflow.ts, Task 1) valida months em 1..24 — o
+  // mesmo teto de commitments(). months=25 tem que ser rejeitado, nao
+  // silenciosamente aceito nem vazar como 500.
+  it('months=25 (acima do teto de cashflow()) devolve 400 invalid_query', async () => {
+    const res = await get('/api/reports/cashflow?from=2026-07&months=25')
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+  })
+})
+
 describe('GET /api/reports/by-category', () => {
   it('devolve 200 com envelope ok, competencia e linhas por categoria', async () => {
     const conta = await createAccount(env.DB, {

@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cashflow } from '../domain/cashflow'
 import { byCategory, commitments } from '../domain/reports'
 import { getFixedNetCents, MAX_FIXED_NET_CENTS } from '../domain/settings'
 import { errJson, okJson } from '../lib/envelope'
@@ -75,6 +76,38 @@ reportsRoutes.get('/commitments', async (c) => {
     // (formato de `from`, janela de `months`) — as duas sao query malformada,
     // por isso 400 (nao o 422 usado quando o RangeError vem de um CAMPO de
     // corpo calendarialmente invalido, como em installments.ts/accounts.ts).
+    if (err instanceof RangeError) {
+      return errJson(400, 'invalid_query', err.message)
+    }
+    throw err
+  }
+})
+
+/**
+ * Mapa de fluxo de caixa (Task 2, fatia ⑧) — `cashflow()` já existe desde a
+ * Task 1 (`domain/cashflow.ts`), esta rota é o primeiro consumidor HTTP.
+ * Default de `months` é 12 (spec §5: "padrão 12 meses até o mês corrente"),
+ * não 6 como `/commitments` — o mapa de fluxo é retrospectivo (histórico),
+ * então uma janela maior por padrão faz mais sentido pra ver a reserva
+ * sendo construída/consumida ao longo do tempo.
+ *
+ * ⚠️ `cashflow()` valida `months` em 1..24 (mesmo teto de `commitments()`),
+ * não 1..36 — qualquer `months` fora dessa faixa já cai no branch de
+ * `RangeError` abaixo e sai como 400, sem validação duplicada aqui.
+ */
+reportsRoutes.get('/cashflow', async (c) => {
+  const from = c.req.query('from') ?? ''
+  const months = Number(c.req.query('months') ?? '12')
+
+  try {
+    const report = await cashflow(c.env.DB, { from, months })
+    return okJson(report)
+  } catch (err) {
+    // RangeError só pode vir das duas validações de cashflow() (formato de
+    // `from`, janela de `months`) — query malformada, por isso 400 (mesmo
+    // padrão de /commitments e /by-category acima). Sem este branch, um
+    // `from`/`months` inválido vazaria como 500 sem envelope — já
+    // aconteceu nesse módulo antes.
     if (err instanceof RangeError) {
       return errJson(400, 'invalid_query', err.message)
     }
