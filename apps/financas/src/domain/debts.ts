@@ -489,6 +489,81 @@ export async function listDebts(
   return res.results
 }
 
+// MEDIDO contra o D1 local (ver task brief): DELETE FROM debts numa divida
+// completa (item + pagamento cash + alocacao) tem SUCESSO SEM ERRO. O motivo
+// e a ORDEM em que o SQLite resolve as FKs em cascata a partir de debts:
+// debt_items.debt_id e debt_payments.debt_id sao CASCADE, e o CASCADE em
+// debt_payments apaga a linha de debt_payments ANTES do RESTRICT de
+// debt_payments.transaction_id ter uma linha pra checar — o RESTRICT nunca
+// chega a disparar porque a linha que ele protegeria ja nao existe mais.
+// Resultado: debts/debt_items/debt_payments/debt_payment_allocations vao
+// todos a zero, e a transaction (com o dinheiro de verdade) fica pra tras,
+// orfa — o caixa continua batendo, mas a explicacao de "por que saiu esse
+// dinheiro" desaparece. E perda de dado SILENCIOSA, nao um erro que alguem
+// notaria. deleteDebt fecha essa porta checando ANTES se existe pagamento
+// kind='cash' — se existir, recusa com DebtHasLedgerError em vez de deixar o
+// CASCADE reescrever a historia. 'offset'/'forgiven' nunca tem
+// transaction_id (CHECK kind = 'cash' OR transaction_id IS NULL em
+// debt_payments), entao apagar esses e seguro.
+export class DebtHasLedgerError extends Error {
+  code = 'debt_has_ledger'
+  constructor(
+    message = 'a dívida tem pagamento em dinheiro (kind=cash) associado a um lançamento — apagar apagaria essa explicação do livro-caixa; dê baixa (written_off) em vez de excluir',
+  ) {
+    super(message)
+    this.name = 'DebtHasLedgerError'
+  }
+}
+
+export async function deleteDebt(db: D1Database, id: string): Promise<boolean> {
+  const cashPayment = await db
+    .prepare(
+      `SELECT 1 FROM debt_payments WHERE debt_id = ? AND kind = 'cash' LIMIT 1`,
+    )
+    .bind(id)
+    .first()
+  if (cashPayment) {
+    throw new DebtHasLedgerError()
+  }
+
+  // Sem pagamento cash: nada em debt_payments referencia transaction_id
+  // NOT NULL, entao o CASCADE em debt_items/debt_payments/
+  // debt_payment_allocations e seguro — nao ha RESTRICT nenhum pra escapar.
+  const res = await db.prepare('DELETE FROM debts WHERE id = ?').bind(id).run()
+
+  // meta.changes > 0, nao so "rodou sem erro": id inexistente casa 0 vezes
+  // com o DELETE, e sem checar isto ficaria indistinguivel de uma exclusao
+  // bem-sucedida. Mesma convencao de archiveAccount (domain/accounts.ts) —
+  // id-nao-encontrado numa transicao de estado e resultado esperado, nao
+  // excecao de programacao; quem chama (rota) traduz false em 404.
+  return res.meta.changes > 0
+}
+
+// written_off e a saida para uma divida com HISTORICO REAL (pagamento cash)
+// que deleteDebt recusa apagar — 'Perdoei essa divida'/'nunca vou receber
+// isso' sem fingir que ela nunca existiu. So parte de 'open': 'settled' ja
+// terminou bem (nao faz sentido baixar o que ja foi pago), 'written_off' ja
+// e estado final (idempotente vira no-op, nao erro).
+export async function writeOffDebt(
+  db: D1Database,
+  id: string,
+): Promise<boolean> {
+  const now = nowIsoUtc()
+  // settled_at NAO e preenchido aqui: o CHECK (status <> 'settled' OR
+  // settled_at IS NOT NULL) da migration 0001 e SO sobre 'settled' —
+  // written_off nao tem CHECK nenhum exigindo settled_at, e preenche-lo
+  // misturaria "foi pago" com "foi dado como perdido", duas historias
+  // diferentes que a coluna settled_at conta hoje só para 'settled'.
+  const res = await db
+    .prepare(
+      `UPDATE debts SET status = 'written_off', updated_at = ?
+          WHERE id = ? AND status = 'open'`,
+    )
+    .bind(now, id)
+    .run()
+  return res.meta.changes > 0
+}
+
 // trg_alloc_item_teto / trg_alloc_pagamento_teto abortam com
 // SQLITE_CONSTRAINT_TRIGGER e o batch() inteiro reverte. A mensagem crua do
 // D1 (ex.: "D1_ERROR: alocacao excede o valor do item: SQLITE_CONSTRAINT_

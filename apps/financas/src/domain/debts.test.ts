@@ -2,15 +2,19 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { nowIsoUtc } from '../lib/dates'
 import { newId } from '../lib/ids'
+import { commitments } from './reports'
 import type { DebtItemBalance } from './debts'
 import {
   addDebtItem,
   createDebt,
   debtDetail,
+  DebtHasLedgerError,
+  deleteDebt,
   InvalidPaymentError,
   listDebts,
   OverAllocationError,
   payDebt,
+  writeOffDebt,
 } from './debts'
 
 beforeAll(async () => {
@@ -719,5 +723,283 @@ describe('debts — listagem com totais', () => {
 
     const abertas = await listDebts(env.DB, { status: 'open' })
     expect(abertas).toHaveLength(2)
+  })
+})
+
+describe('debts — exclusao e baixa', () => {
+  // As CINCO tabelas, sempre — contar so a tabela-alvo e exatamente o que
+  // esconde o defeito de transaction orfa (ver DebtHasLedgerError acima):
+  // um DELETE FROM debts com CASCADE mal contido pode zerar debts/itens/
+  // pagamentos/alocacoes e ainda assim deixar transactions=1 pra tras.
+  async function countsAll() {
+    const [debts, items, payments, allocations, transactions] =
+      await env.DB.batch([
+        env.DB.prepare('SELECT COUNT(*) AS n FROM debts'),
+        env.DB.prepare('SELECT COUNT(*) AS n FROM debt_items'),
+        env.DB.prepare('SELECT COUNT(*) AS n FROM debt_payments'),
+        env.DB.prepare('SELECT COUNT(*) AS n FROM debt_payment_allocations'),
+        env.DB.prepare('SELECT COUNT(*) AS n FROM transactions'),
+      ])
+    const one = (r: { results: unknown }) =>
+      (r.results as Array<{ n: number }>)[0].n
+    return {
+      debts: one(debts),
+      debt_items: one(items),
+      debt_payments: one(payments),
+      debt_payment_allocations: one(allocations),
+      transactions: one(transactions),
+    }
+  }
+
+  it('1) divida sem pagamento nenhum: deleteDebt apaga divida + itens, transactions fica INALTERADA', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Sem pagamento',
+      opened_at: '2026-07-01',
+    })
+    await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 50000,
+      incurred_on: '2026-07-01',
+    })
+
+    // Transaction NAO relacionada a esta divida — prova que o DELETE FROM
+    // debts nao mexe em transactions em geral, nao so que 0 continua 0.
+    const now = nowIsoUtc()
+    await env.DB.prepare(
+      `INSERT INTO transactions
+         (id, account_id, amount_cents, currency, purchase_date, description, is_business, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    )
+      .bind(
+        newId(),
+        account_id,
+        -1000,
+        'BRL',
+        '2026-07-01',
+        'Cafe',
+        0,
+        now,
+        now,
+      )
+      .run()
+
+    const before = await countsAll()
+    expect(before).toEqual({
+      debts: 1,
+      debt_items: 1,
+      debt_payments: 0,
+      debt_payment_allocations: 0,
+      transactions: 1,
+    })
+
+    const ok = await deleteDebt(env.DB, debt.id)
+    expect(ok).toBe(true)
+
+    const after = await countsAll()
+    expect(after).toEqual({
+      debts: 0,
+      debt_items: 0,
+      debt_payments: 0,
+      debt_payment_allocations: 0,
+      transactions: 1, // inalterada
+    })
+  })
+
+  it('2) divida com pagamento cash: deleteDebt LANCA DebtHasLedgerError e as CINCO tabelas ficam identicas', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Com pagamento cash',
+      opened_at: '2026-07-01',
+    })
+    const item = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 100000,
+      incurred_on: '2026-07-01',
+    })
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-05',
+      amount_cents: 30000,
+      account_id,
+      allocations: [{ item_id: item.id, amount_cents: 30000 }],
+    })
+
+    const before = await countsAll()
+    expect(before).toEqual({
+      debts: 1,
+      debt_items: 1,
+      debt_payments: 1,
+      debt_payment_allocations: 1,
+      transactions: 1,
+    })
+
+    await expect(deleteDebt(env.DB, debt.id)).rejects.toMatchObject({
+      name: 'DebtHasLedgerError',
+      code: 'debt_has_ledger',
+    })
+    await expect(deleteDebt(env.DB, debt.id)).rejects.toBeInstanceOf(
+      DebtHasLedgerError,
+    )
+
+    // Nao "quase igual" — IDENTICAS, valor a valor.
+    const after = await countsAll()
+    expect(after).toEqual(before)
+  })
+
+  it('3) divida com pagamento offset (sem lancamento): deleteDebt apaga normalmente', async () => {
+    const { payee_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Com pagamento offset',
+      opened_at: '2026-07-01',
+    })
+    const item = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 100000,
+      incurred_on: '2026-07-01',
+    })
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-05',
+      amount_cents: 30000,
+      kind: 'offset',
+      allocations: [{ item_id: item.id, amount_cents: 30000 }],
+    })
+
+    const before = await countsAll()
+    expect(before).toEqual({
+      debts: 1,
+      debt_items: 1,
+      debt_payments: 1,
+      debt_payment_allocations: 1,
+      transactions: 0,
+    })
+
+    const ok = await deleteDebt(env.DB, debt.id)
+    expect(ok).toBe(true)
+
+    const after = await countsAll()
+    expect(after).toEqual({
+      debts: 0,
+      debt_items: 0,
+      debt_payments: 0,
+      debt_payment_allocations: 0,
+      transactions: 0,
+    })
+  })
+
+  it('4) id inexistente: deleteDebt devolve false, sem excecao', async () => {
+    await expect(deleteDebt(env.DB, 'nao-existe')).resolves.toBe(false)
+  })
+
+  it('5) writeOffDebt marca status=written_off e preserva itens/pagamentos/lancamentos', async () => {
+    const { payee_id, account_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Baixada',
+      opened_at: '2026-07-01',
+    })
+    const item = await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 100000,
+      incurred_on: '2026-07-01',
+    })
+    // Pagamento PARCIAL: divida fica 'open' (nao 'settled'), pra provar que
+    // writeOffDebt e quem faz a transicao, nao um efeito colateral do
+    // ultimo payDebt.
+    await payDebt(env.DB, {
+      debt_id: debt.id,
+      paid_on: '2026-07-05',
+      amount_cents: 30000,
+      account_id,
+      allocations: [{ item_id: item.id, amount_cents: 30000 }],
+    })
+
+    const antes = await env.DB.prepare('SELECT status FROM debts WHERE id = ?')
+      .bind(debt.id)
+      .first<{ status: string }>()
+    expect(antes?.status).toBe('open')
+
+    const before = await countsAll()
+
+    const ok = await writeOffDebt(env.DB, debt.id)
+    expect(ok).toBe(true)
+
+    const depois = await env.DB.prepare(
+      'SELECT status, settled_at FROM debts WHERE id = ?',
+    )
+      .bind(debt.id)
+      .first<{ status: string; settled_at: string | null }>()
+    expect(depois?.status).toBe('written_off')
+
+    // Nenhuma linha some — baixa preserva o historico inteiro, so muda o status.
+    const after = await countsAll()
+    expect(after).toEqual(before)
+    expect(after).toEqual({
+      debts: 1,
+      debt_items: 1,
+      debt_payments: 1,
+      debt_payment_allocations: 1,
+      transactions: 1,
+    })
+  })
+
+  it('writeOffDebt em divida ja settled/written_off nao faz nada — devolve false', async () => {
+    const { payee_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Ja baixada',
+      opened_at: '2026-07-01',
+    })
+    await writeOffDebt(env.DB, debt.id) // abre -> written_off
+
+    const segunda = await writeOffDebt(env.DB, debt.id) // written_off -> no-op
+    expect(segunda).toBe(false)
+  })
+
+  it('6) divida baixada SAI do comprometido — commitments() antes e depois provam o efeito, nao so a coluna status', async () => {
+    const { payee_id } = await seedPai()
+    const debt = await createDebt(env.DB, {
+      payee_id,
+      direction: 'i_owe',
+      title: 'Vai ser baixada',
+      opened_at: '2026-07-01',
+    })
+    await addDebtItem(env.DB, {
+      debt_id: debt.id,
+      description: 'Item A',
+      amount_cents: 100000,
+      incurred_on: '2026-07-01',
+    })
+
+    const antes = await commitments(env.DB, {
+      from: '2026-07',
+      months: 1,
+      fixed_net_cents: 360000,
+    })
+    expect(antes.totals[0]).toBe(100000)
+
+    const ok = await writeOffDebt(env.DB, debt.id)
+    expect(ok).toBe(true)
+
+    const depois = await commitments(env.DB, {
+      from: '2026-07',
+      months: 1,
+      fixed_net_cents: 360000,
+    })
+    expect(depois.totals[0]).toBe(0)
+    expect(depois.rows).toEqual([])
   })
 })
