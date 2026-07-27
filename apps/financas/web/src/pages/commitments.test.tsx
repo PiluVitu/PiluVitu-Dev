@@ -29,9 +29,27 @@ const report = {
       cells: [124000, 124000, 124000, 89000, 89000, 89000],
     },
   ],
-  totals: [216000, 216000, 202000, 131000, 89000, 89000],
+  // Task 6 (fatia ⑥): totals/pct_of_fixed_net viraram FAIXA {min,max}. Este
+  // fixture é todo DEGENERADO (min === max) de propósito — é o caso comum
+  // (nenhuma recorrente em faixa cadastrada nestas competências) e mantém
+  // os valores/asserções idênticos aos de antes da Task 3.
+  totals: [
+    { min: 216000, max: 216000 },
+    { min: 216000, max: 216000 },
+    { min: 202000, max: 202000 },
+    { min: 131000, max: 131000 },
+    { min: 89000, max: 89000 },
+    { min: 89000, max: 89000 },
+  ],
   fixed_net_cents: 360000,
-  pct_of_fixed_net: [60, 60, 56, 36, 25, 25],
+  pct_of_fixed_net: [
+    { min: 60, max: 60 },
+    { min: 60, max: 60 },
+    { min: 56, max: 56 },
+    { min: 36, max: 36 },
+    { min: 25, max: 25 },
+    { min: 25, max: 25 },
+  ],
 }
 
 function mockFetch(body: unknown, status = 200) {
@@ -99,8 +117,8 @@ describe('CommitmentsPage', () => {
       data: {
         ...report,
         rows: [],
-        totals: [0, 0, 0, 0, 0, 0],
-        pct_of_fixed_net: [0, 0, 0, 0, 0, 0],
+        totals: report.competences.map(() => ({ min: 0, max: 0 })),
+        pct_of_fixed_net: report.competences.map(() => ({ min: 0, max: 0 })),
       },
       notifications: [],
     })
@@ -123,7 +141,10 @@ describe('CommitmentsPage', () => {
     const reportComOutraRenda = {
       ...report,
       fixed_net_cents: 200000,
-      pct_of_fixed_net: [108, 108, 101, 65, 44, 44],
+      pct_of_fixed_net: [108, 108, 101, 65, 44, 44].map((v) => ({
+        min: v,
+        max: v,
+      })),
     }
     mockFetch({ ok: true, data: reportComOutraRenda, notifications: [] })
 
@@ -135,6 +156,106 @@ describe('CommitmentsPage', () => {
       ),
     )
     expect(screen.getByTestId('pct-0')).toHaveTextContent('108%')
+  })
+
+  // Task 6 (fatia ⑥, §2/§5 do spec): totals/pct_of_fixed_net viraram FAIXA —
+  // a tela precisa mostrar um INTERVALO ("R$ 2.400,00 a R$ 2.988,00"), não
+  // um número só, quando min !== max (ex.: DAS variando com o faturamento).
+  it('faixa de verdade (min !== max) aparece como intervalo, não como um número só', async () => {
+    const reportComFaixa = {
+      ...report,
+      totals: [{ min: 240000, max: 298800 }, ...report.totals.slice(1)],
+      pct_of_fixed_net: [
+        { min: 66, max: 83 },
+        ...report.pct_of_fixed_net.slice(1),
+      ],
+    }
+    mockFetch({ ok: true, data: reportComFaixa, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-0')).toHaveTextContent(
+        'R$ 2.400,00 a R$ 2.988,00',
+      ),
+    )
+    expect(screen.getByTestId('pct-0')).toHaveTextContent('66% a 83%')
+  })
+
+  // §5 do spec: "o alerta de 50% dispara pelo TETO, não pelo piso" — a tela
+  // existe pra mostrar risco, e o pior mês é o risco. Piso ABAIXO do
+  // limiar + teto ACIMA precisa disparar o alerta; o teste anterior
+  // ("destaca em vermelho só o que passa de 50%") já prova o caso
+  // degenerado (min === max) nos dois lados do limiar — este prova a FAIXA
+  // cruzando o limiar especificamente.
+  it('alerta de 50%: dispara pelo TETO — piso abaixo do limiar, teto acima', async () => {
+    const reportCruzandoLimiar = {
+      ...report,
+      // 40% (piso, abaixo de 50) a 60% (teto, acima de 50).
+      pct_of_fixed_net: [
+        { min: 40, max: 60 },
+        ...report.pct_of_fixed_net.slice(1),
+      ],
+    }
+    mockFetch({ ok: true, data: reportCruzandoLimiar, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('pct-0')).toHaveTextContent('40% a 60%'),
+    )
+    // Piso (40%) está ABAIXO do limiar — se o alerta disparasse pelo piso,
+    // esta célula NÃO teria a classe. Ela precisa ter, porque o teto (60%)
+    // está acima.
+    expect(screen.getByTestId('pct-0')).toHaveClass('alerta')
+  })
+
+  it('alerta de 50%: NÃO dispara quando até o teto fica no limiar ou abaixo', async () => {
+    const reportSemRisco = {
+      ...report,
+      pct_of_fixed_net: [
+        { min: 10, max: 50 },
+        ...report.pct_of_fixed_net.slice(1),
+      ],
+    }
+    mockFetch({ ok: true, data: reportSemRisco, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('pct-0')).toHaveTextContent('10% a 50%'),
+    )
+    expect(screen.getByTestId('pct-0')).not.toHaveClass('alerta')
+  })
+
+  // Regra do brief: intervalo DEGENERADO (min === max) não pode virar
+  // ruído visual repetindo o mesmo número duas vezes.
+  it('faixa degenerada (min === max) mostra um número só, nunca repetido', async () => {
+    mockFetch({ ok: true, data: report, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-0')).toHaveTextContent('R$ 2.160,00'),
+    )
+    expect(screen.getByTestId('total-0')).not.toHaveTextContent(
+      'R$ 2.160,00 a R$ 2.160,00',
+    )
+    expect(screen.getByTestId('pct-0')).toHaveTextContent('60%')
+    expect(screen.getByTestId('pct-0')).not.toHaveTextContent('60% a 60%')
+  })
+
+  // Regressão específica desta task: nenhum valor de faixa pode vazar como
+  // `[object Object]` — o defeito medido que motivou a task inteira.
+  it('nenhum valor de faixa renderiza como [object Object]', async () => {
+    mockFetch({ ok: true, data: report, notifications: [] })
+
+    const { container } = render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-0')).toBeInTheDocument(),
+    )
+    expect(container.textContent).not.toContain('[object Object]')
   })
 
   // Task 5 (ajuda contextual, §3.2 do spec): "Comprometido (e bloco da

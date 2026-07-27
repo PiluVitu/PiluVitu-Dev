@@ -4,7 +4,12 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
-import { LIMIAR_ALERTA_PCT, rotuloCompetencia } from '../lib/commitments'
+import {
+  formatPctRange,
+  formatRange,
+  LIMIAR_ALERTA_PCT,
+  rotuloCompetencia,
+} from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
 
 // Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx` carrega sob
@@ -144,13 +149,13 @@ export function CommitmentsPage({
                   <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
                     TOTAL
                   </th>
-                  {report.totals.map((cents, i) => (
+                  {report.totals.map((range, i) => (
                     <td
                       key={i}
                       data-testid={`total-${i}`}
                       className="border-t-2 border-b px-2 py-1.5 text-right font-medium"
                     >
-                      {formatBRL(cents)}
+                      {formatRange(range)}
                     </td>
                   ))}
                 </tr>
@@ -158,17 +163,22 @@ export function CommitmentsPage({
                   <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
                     % do líquido fixo
                   </th>
-                  {report.pct_of_fixed_net.map((pct, i) => (
+                  {report.pct_of_fixed_net.map((range, i) => (
+                    // O alerta dispara pelo TETO (range.max), não pelo piso —
+                    // §5 do spec: a tela existe pra mostrar risco, e o pior
+                    // mês é o risco. Mesmo limiar/mesmo `>` (não `>=`) de
+                    // sempre, só o operando mudou de "pct" (número) pra
+                    // "range.max".
                     <td
                       key={i}
                       data-testid={`pct-${i}`}
                       className={cn(
                         'border-t-2 border-b px-2 py-1.5 text-right',
-                        pct > LIMIAR_ALERTA_PCT &&
+                        range.max > LIMIAR_ALERTA_PCT &&
                           'alerta text-destructive font-bold',
                       )}
                     >
-                      {pct}%
+                      {formatPctRange(range)}
                     </td>
                   ))}
                 </tr>

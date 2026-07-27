@@ -21,9 +21,15 @@ const report: CommitmentReportView = {
       cells: [200000, 180000, 150000, 120000, 90000, 60000],
     },
   ],
-  totals: [200000, 180000, 150000, 120000, 90000, 60000],
+  // Degenerado (min === max) de propósito neste describe — o foco aqui é
+  // largura/container, não faixa; a faixa em si é coberta no describe mais
+  // abaixo ("GraficoComprometido — faixa min/max").
+  totals: [200000, 180000, 150000, 120000, 90000, 60000].map((v) => ({
+    min: v,
+    max: v,
+  })),
   fixed_net_cents: 360000,
-  pct_of_fixed_net: [55, 51, 50, 49, 25, 10],
+  pct_of_fixed_net: [55, 51, 50, 49, 25, 10].map((v) => ({ min: v, max: v })),
 }
 
 const LARGURA_MAXIMA = 640
@@ -125,6 +131,99 @@ describe('GraficoComprometido — largura acompanha o CONTAINER (Important 1, fi
     // 0 (default do jsdom), e o hook ignora medições de 0 (guarda
     // `largura > 0`) em vez de propagar um gráfico de largura zero.
     expect(larguraDoWrapper(container)).toBe(LARGURA_MAXIMA)
+  })
+})
+
+// Task 6 (fatia ⑥, §5 do spec): a barra precisa representar uma FAIXA
+// min/max, não um valor único. Implementado como duas `<Bar>` empilhadas
+// (`stackId` compartilhado) — ver comentário de `COR_FAIXA_OPACIDADE` em
+// GraficoComprometido.tsx pro raciocínio completo.
+describe('GraficoComprometido — faixa min/max', () => {
+  it('faixa DEGENERADA (min === max, o caso comum) desenha uma barra só por competência — nunca duas', () => {
+    // Mesmo achado MEDIDO já documentado no arquivo de produção: uma barra
+    // de valor EXATAMENTE 0 não renderiza <path class="recharts-rectangle">
+    // — o segmento "faixaAdicional" (max - min = 0) simplesmente não
+    // aparece no DOM, sobrando só o segmento "min". 6 competências, todas
+    // degeneradas ⇒ 6 retângulos, nunca 12.
+    const { container } = render(<GraficoComprometido report={report} />)
+
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(6)
+  })
+
+  it('faixa DE VERDADE (min !== max, ex. DAS variando) desenha DOIS segmentos empilhados pra aquela competência', () => {
+    const reportComFaixa: CommitmentReportView = {
+      ...report,
+      totals: [
+        { min: 240000, max: 298800 }, // DAS: piso R$ 2.400, teto R$ 2.988
+        ...report.totals.slice(1),
+      ],
+    }
+
+    const { container } = render(
+      <GraficoComprometido report={reportComFaixa} />,
+    )
+
+    // 5 competências degeneradas (1 retângulo cada) + 1 com faixa de
+    // verdade (2 retângulos: "min" + "faixaAdicional") = 7.
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(7)
+  })
+
+  it('cor decidida pelo TETO (pct.max), não pelo piso — piso abaixo do limiar, teto acima, ainda pinta de alerta', () => {
+    // As outras 5 competências ficam num pct BAIXO e degenerado (10%, bem
+    // abaixo do limiar) — só a 1ª testa a faixa cruzando o limiar; as
+    // demais só existem pra provar que elas SEGUEM na cor padrão, sem
+    // "contaminar" a leitura da 1ª.
+    const reportCruzandoLimiar: CommitmentReportView = {
+      ...report,
+      totals: [{ min: 240000, max: 298800 }, ...report.totals.slice(1)],
+      pct_of_fixed_net: [
+        { min: 40, max: 66 }, // piso 40% (abaixo de 50), teto 66% (acima)
+        ...Array.from({ length: 5 }, () => ({ min: 10, max: 10 })),
+      ],
+    }
+
+    const { container } = render(
+      <GraficoComprometido report={reportCruzandoLimiar} />,
+    )
+
+    // Ordem de inserção no SVG: recharts desenha série a série — as 6
+    // Cell da <Bar dataKey="min"> primeiro (índices 0-5, uma por
+    // competência), só depois a única Cell não-zero da <Bar
+    // dataKey="faixaAdicional"> (índice 6, a da 1ª competência — as outras
+    // 5 são degeneradas e não renderizam nada).
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(7)
+    const fills = Array.from(barras).map((b) => b.getAttribute('fill'))
+
+    // 1ª competência: piso 40% (abaixo do limiar) — SE a cor fosse
+    // decidida pelo piso, este segmento sairia na cor padrão. Ela sai de
+    // alerta porque o TETO (66%) está acima.
+    expect(fills[0]).toBe('hsl(var(--destructive))')
+    // As 5 competências seguintes (10%, bem abaixo) continuam na cor padrão.
+    expect(fills.slice(1, 6)).toEqual(Array(5).fill('hsl(var(--primary))'))
+    // O segmento faixaAdicional da 1ª competência acompanha a mesma cor de
+    // alerta do segmento min — nunca uma cor diferente/nova.
+    expect(fills[6]).toBe('hsl(var(--destructive))')
+  })
+
+  it('o segmento "faixaAdicional" usa opacidade reduzida (marca visual de incerteza), nunca uma cor nova', () => {
+    const reportComFaixa: CommitmentReportView = {
+      ...report,
+      totals: [{ min: 240000, max: 298800 }, ...report.totals.slice(1)],
+    }
+
+    const { container } = render(
+      <GraficoComprometido report={reportComFaixa} />,
+    )
+
+    const barras = Array.from(container.querySelectorAll('.recharts-rectangle'))
+    const opacidades = barras.map((b) => b.getAttribute('fill-opacity'))
+    // Uma das 7 barras (o segmento faixaAdicional da 1ª competência) tem
+    // opacidade reduzida; as outras 6 (segmentos "min") não têm o atributo
+    // (opacidade default 1).
+    expect(opacidades.filter((o) => o === '0.45')).toHaveLength(1)
   })
 })
 

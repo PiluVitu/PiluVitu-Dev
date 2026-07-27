@@ -1,3 +1,5 @@
+import { formatBRL } from '@piluvitu/tools/money'
+
 /**
  * Shape de `GET /api/reports/commitments` + o rótulo de competência
  * ('2026-08' -> 'ago/26') que tanto a tela antiga (`pages/commitments.tsx`,
@@ -13,12 +15,24 @@
  * pra `lib/dates.ts` nesta mesma task: lugar único, sem depender de um
  * arquivo que tem prazo de validade.
  */
+
+/**
+ * Faixa mínimo/máximo (Task 6, fatia ⑥ — §2/§5 do spec de recorrentes).
+ * Espelha `CommitmentRange` de `src/domain/reports.ts` (Worker) — a SPA não
+ * importa código do Worker (dois runtimes/bundles diferentes, mesma razão
+ * de `lib/dates.ts` duplicar `todayInTeresina`), então o tipo é redeclarado
+ * aqui. `totals`/`pct_of_fixed_net` deixaram de ser número por competência
+ * (Task 3, commit 9b3d9a5): o Simples varia de R$ 12 a R$ 600 conforme o
+ * faturamento, e uma média (R$ 306) seria o número que NUNCA acontece.
+ */
+export type CommitmentRange = { min: number; max: number }
+
 export type CommitmentReportView = {
   competences: string[]
   rows: Array<{ account_id: string; account_name: string; cells: number[] }>
-  totals: number[]
+  totals: CommitmentRange[]
   fixed_net_cents: number
-  pct_of_fixed_net: number[]
+  pct_of_fixed_net: CommitmentRange[]
 }
 
 /**
@@ -53,4 +67,26 @@ const MESES = [
 export function rotuloCompetencia(competence: string): string {
   const [ano, mes] = competence.split('-')
   return `${MESES[Number(mes) - 1]}/${ano.slice(2)}`
+}
+
+/**
+ * Formata uma faixa em reais. Degenerada (`min === max` — ex.: Starlink
+ * fixo, ou qualquer competência sem recorrente em faixa cadastrada) mostra
+ * UM número só ("R$ 189,00"); faixa de verdade (ex.: DAS R$ 12–600) mostra
+ * "R$ 12,00 a R$ 600,00". Sem esta distinção, todo total viraria
+ * "R$ 189,00 a R$ 189,00" — a mesma informação repetida, ruído visual puro
+ * pro caso mais comum (a maioria das competências não tem nenhuma
+ * recorrente em faixa, então `min === max` é a regra, não a exceção).
+ */
+export function formatRange(range: CommitmentRange): string {
+  return range.min === range.max
+    ? formatBRL(range.min)
+    : `${formatBRL(range.min)} a ${formatBRL(range.max)}`
+}
+
+/** Mesma regra de `formatRange`, pra porcentagem: "60%" ou "36% a 44%". */
+export function formatPctRange(range: CommitmentRange): string {
+  return range.min === range.max
+    ? `${range.min}%`
+    : `${range.min}% a ${range.max}%`
 }

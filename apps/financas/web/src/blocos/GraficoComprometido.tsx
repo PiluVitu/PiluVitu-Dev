@@ -107,6 +107,33 @@ function useLarguraContainer<T extends HTMLElement>(): {
  * componentes cujo `import()` aponta pro mesmo arquivo produzem um chunk
  * só (medido no build desta task, ver task-8-report.md).
  */
+/**
+ * Task 6 (fatia ⑥, §5 do spec): `total`/`pct` viraram FAIXA {min,max} — a
+ * barra precisa representar um INTERVALO, não um valor único. Duas `<Bar>`
+ * EMPILHADAS (mesmo `stackId`) fazem isso sem depender de nenhuma feature
+ * de "range bar" que o recharts não tem: a primeira (`min`) vai de 0 até o
+ * piso garantido; a segunda (`faixaAdicional` = max − min) empilha por
+ * cima, indo do piso até o teto — visualmente uma barra "flutuando" entre
+ * min e max.
+ *
+ * ⚠️ Isto também resolve o caso degenerado (min === max, a maioria das
+ * competências — nenhuma recorrente em faixa cadastrada nelas) sem nenhum
+ * `if` especial: `faixaAdicional` fica 0, e uma barra de valor EXATAMENTE 0
+ * não renderiza `<path class="recharts-rectangle">` nenhum (MEDIDO,
+ * recharts 3.10.1 — mesmo achado já documentado mais abaixo neste arquivo,
+ * pro `GraficoCategorias`). Resultado: só a barra `min` aparece, sólida —
+ * exatamente "um número, não um intervalo repetido", a mesma regra que
+ * `lib/commitments.ts#formatRange` aplica no texto.
+ *
+ * Cor decidida pelo TETO (`pct.max`), nunca pelo piso — mesma regra do
+ * alerta de 50% em `pages/commitments.tsx`: a tela existe pra mostrar
+ * risco, e o pior mês é o risco. O segmento `faixaAdicional` usa a MESMA
+ * cor do segmento `min` (nunca um hex novo), só com `fillOpacity` reduzida
+ * — marca visualmente "isto é o adicional incerto", sem inventar um token
+ * novo que o design system não tem.
+ */
+const COR_FAIXA_OPACIDADE = 0.45
+
 export default function GraficoComprometido({
   report,
 }: {
@@ -116,8 +143,10 @@ export default function GraficoComprometido({
   const dados = report.competences.map((competence, i) => ({
     competence,
     rotulo: rotuloCompetencia(competence),
-    total: report.totals[i],
-    pct: report.pct_of_fixed_net[i],
+    min: report.totals[i].min,
+    faixaAdicional: report.totals[i].max - report.totals[i].min,
+    max: report.totals[i].max,
+    pctMax: report.pct_of_fixed_net[i].max,
   }))
 
   return (
@@ -133,7 +162,14 @@ export default function GraficoComprometido({
           fontSize={12}
           tickFormatter={(v: number) => formatBRL(v)}
         />
-        <Tooltip formatter={(v) => formatBRL(Number(v))} />
+        <Tooltip
+          formatter={(_value, name, item) => {
+            const payload = item.payload as { min: number; max: number }
+            return name === 'Piso'
+              ? [formatBRL(payload.min), 'Piso']
+              : [formatBRL(payload.max), 'Até o teto']
+          }}
+        />
         <ReferenceLine
           y={report.fixed_net_cents}
           stroke={COR_REFERENCIA}
@@ -145,11 +181,30 @@ export default function GraficoComprometido({
             fill: COR_REFERENCIA,
           }}
         />
-        <Bar dataKey="total" isAnimationActive={false}>
+        <Bar
+          dataKey="min"
+          name="Piso"
+          stackId="total"
+          isAnimationActive={false}
+        >
           {dados.map((d) => (
             <Cell
-              key={d.competence}
-              fill={d.pct > LIMIAR_ALERTA_PCT ? COR_ALERTA : COR_PADRAO}
+              key={`${d.competence}-min`}
+              fill={d.pctMax > LIMIAR_ALERTA_PCT ? COR_ALERTA : COR_PADRAO}
+            />
+          ))}
+        </Bar>
+        <Bar
+          dataKey="faixaAdicional"
+          name="Até o teto"
+          stackId="total"
+          isAnimationActive={false}
+        >
+          {dados.map((d) => (
+            <Cell
+              key={`${d.competence}-faixa`}
+              fill={d.pctMax > LIMIAR_ALERTA_PCT ? COR_ALERTA : COR_PADRAO}
+              fillOpacity={COR_FAIXA_OPACIDADE}
             />
           ))}
         </Bar>

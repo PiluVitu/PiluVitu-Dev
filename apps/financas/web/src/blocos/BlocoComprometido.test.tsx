@@ -31,21 +31,27 @@ const report = {
   ],
   // Todos NÃO-ZERO de propósito: recharts (MEDIDO, v3.10.1) não desenha
   // `<path class="recharts-rectangle">` pra barra de valor 0 — testar a cor
-  // de uma barra que não existe no DOM não prova nada.
-  totals: [200000, 180000, 150000, 120000, 90000, 60000],
+  // de uma barra que não existe no DOM não prova nada. Degenerado
+  // (min === max) de propósito: este teste é sobre COR/limiar, a faixa em
+  // si tem describe dedicado em GraficoComprometido.test.tsx.
+  totals: [200000, 180000, 150000, 120000, 90000, 60000].map((v) => ({
+    min: v,
+    max: v,
+  })),
   fixed_net_cents: 360000,
   // 55%, 51%, EXATAMENTE 50%, 49%, 25%, 10% — o limiar é "> 50", não ">=",
   // então a barra de 50% precisa continuar com a cor padrão (mesma
-  // convenção de `commitments.tsx#LIMIAR_ALERTA_PCT`).
-  pct_of_fixed_net: [55, 51, 50, 49, 25, 10],
+  // convenção de `commitments.tsx#LIMIAR_ALERTA_PCT`). Degenerado: o teto
+  // (o que decide a cor, Task 6) bate com o piso.
+  pct_of_fixed_net: [55, 51, 50, 49, 25, 10].map((v) => ({ min: v, max: v })),
 }
 
 const reportVazio = {
   competences: report.competences,
   rows: [],
-  totals: [0, 0, 0, 0, 0, 0],
+  totals: report.competences.map(() => ({ min: 0, max: 0 })),
   fixed_net_cents: 360000,
-  pct_of_fixed_net: [0, 0, 0, 0, 0, 0],
+  pct_of_fixed_net: report.competences.map(() => ({ min: 0, max: 0 })),
 }
 
 afterEach(() => {

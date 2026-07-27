@@ -18,9 +18,10 @@ const reportVazio = {
     '2027-01',
   ],
   rows: [],
-  totals: [0, 0, 0, 0, 0, 0],
+  // Task 6 (fatia ⑥): totals/pct_of_fixed_net viraram FAIXA {min,max}.
+  totals: Array.from({ length: 6 }, () => ({ min: 0, max: 0 })),
   fixed_net_cents: 360000,
-  pct_of_fixed_net: [0, 0, 0, 0, 0, 0],
+  pct_of_fixed_net: Array.from({ length: 6 }, () => ({ min: 0, max: 0 })),
 }
 
 afterEach(() => {
