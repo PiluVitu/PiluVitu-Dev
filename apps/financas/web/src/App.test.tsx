@@ -14,33 +14,57 @@ vi.mock('./auth-client', () => ({
   signOut: vi.fn(),
 }))
 
-// CommitmentsPage e BlocoCategorias (Task 8) esperam um objeto de relatório,
-// não uma lista — usar `[]` pra toda rota (como um mock genérico faria)
-// quebra `formatBRL(undefined)` em `report.fixed_net_cents`/`report.rows`
-// assim que a tela/bloco monta (o segundo, de propósito, é o MESMO bug que
-// o comentário original documentava só pra `/reports/commitments`: um
-// `[].rows` daria `TypeError` antes até de chegar no `formatBRL`). As
-// outras telas usadas aqui (Contas, Dívidas) esperam lista mesmo, `[]` serve.
+// Fix round 1 (Task 8, IMPORTANT do review): o fallback genérico `: []` pra
+// QUALQUER rota não reconhecida já quebrou duas vezes em silêncio — primeiro
+// pra `/reports/commitments` (CommitmentsPage espera objeto, `[].fixed_net_cents`
+// vira `formatBRL(undefined)`), depois pra `/reports/by-category`
+// (BlocoCategorias também espera objeto, `[].rows.length` era `TypeError`
+// antes até de chegar no `formatBRL`). As duas vezes, o sintoma não foi o
+// teste falhando — foi um "N errors" solto no relatório do Vitest, fácil de
+// não notar num `PASS` superficial. Terceira rota nova = terceira vez que
+// alguém teria que redescobrir isso. Em vez de esperar a quarta: toda rota
+// precisa estar EXPLICITAMENTE listada abaixo; a que não estiver rejeita com
+// uma mensagem dizendo qual — mesma filosofia de `home.test.tsx`/
+// `BlocoCategorias.test.tsx` ("rota inesperada em teste: ..."). Uma rota
+// esquecida agora vira um `role="alert"` visível (o bloco/tela mostra o erro
+// contido, do jeito normal) em vez de um crash silencioso de shape errado —
+// alto o bastante pra não passar despercebido, sem re-quebrar a suíte
+// inteira se um teste específico não olhar pra aquele bloco.
 function mockFetchVazio() {
+  const respond = (data: unknown) =>
+    Promise.resolve({
+      status: 200,
+      json: async () => ({ ok: true, data, notifications: [] }),
+    })
+
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
-      const data = url.includes('/api/reports/commitments')
-        ? {
-            competences: [],
-            rows: [],
-            totals: [],
-            fixed_net_cents: 0,
-            pct_of_fixed_net: [],
-          }
-        : url.includes('/api/reports/by-category')
-          ? { competence: '', rows: [], total_cents: 0 }
-          : []
-      return Promise.resolve({
-        status: 200,
-        json: async () => ({ ok: true, data, notifications: [] }),
-      })
+
+      // CommitmentsPage/BlocoComprometido — objeto, não lista.
+      if (url.includes('/api/reports/commitments')) {
+        return respond({
+          competences: [],
+          rows: [],
+          totals: [],
+          fixed_net_cents: 0,
+          pct_of_fixed_net: [],
+        })
+      }
+      // BlocoCategorias (Task 8) — objeto, não lista.
+      if (url.includes('/api/reports/by-category')) {
+        return respond({ competence: '', rows: [], total_cents: 0 })
+      }
+      // AccountsPage/BlocoSaldos — lista.
+      if (url.includes('/api/accounts')) return respond([])
+      // DividasPage/BlocoDividas — lista (`?status=open` e
+      // `?status=open&direction=i_owe` caem na mesma verificação).
+      if (url.includes('/api/debts')) return respond([])
+      // DividasPage (`carregar`, Promise.all com /api/debts acima) — lista.
+      if (url.includes('/api/payees')) return respond([])
+
+      return Promise.reject(new Error(`rota inesperada em teste: ${url}`))
     }),
   )
 }
@@ -104,6 +128,21 @@ describe('App — roteamento por hash com Gate autenticado', () => {
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
       ).toBeDefined(),
+    )
+  })
+
+  // Evidência direta (fix round 1, Task 8) de que o fallback de
+  // `mockFetchVazio` falha ALTO numa rota não wireada, em vez de devolver
+  // `[]` em silêncio — a exigência central do review. Não passa por
+  // nenhuma tela: chama o `fetch` stubado diretamente com uma rota
+  // inventada e prova que a promise REJEITA com a mensagem que nomeia a
+  // rota, exatamente o comportamento que faltava antes deste fix (a versão
+  // anterior teria devolvido `Promise.resolve({ status: 200, ... data: [] })`
+  // pra esta mesma chamada, sem avisar nada).
+  test('mockFetchVazio: rota não wireada rejeita alto, não devolve `[]` em silêncio', async () => {
+    mockFetchVazio()
+    await expect(fetch('/api/rota-inventada-para-este-teste')).rejects.toThrow(
+      'rota inesperada em teste: /api/rota-inventada-para-este-teste',
     )
   })
 })

@@ -36,6 +36,25 @@ const GraficoCategorias = lazy(() =>
  * antiga que resolva DEPOIS de o usuário já ter trocado de mês de novo —
  * sem isso, uma resposta lenta do mês anterior poderia sobrescrever o mês
  * mais recente que o usuário já está vendo.
+ *
+ * ⚠️ **Fix round 1 (Task 8, IMPORTANT do review): erro de REFETCH (mês
+ * trocado depois de já ter carregado uma vez) não pode passar pelo `erro`
+ * de `Bloco`.** `Bloco` trata `erro`/`carregando`/`vazio`/`children` como
+ * mutuamente exclusivos — se o `erro` de uma troca de mês fosse repassado
+ * do mesmo jeito que o erro do carregamento INICIAL, `children` inteiro
+ * (seletor incluído) sumia atrás do card de alerta. Como o `<input
+ * type="month">` só existe DENTRO de `children`, o dono ficava sem
+ * `setMes` alcançável — a única saída seria navegar pra outra tela e
+ * voltar. Cenário real: dono no Android com conexão instável, mês de
+ * agosto carregado, troca pra julho, essa busca dá 503 — sem este fix, o
+ * card vira só uma linha de erro, sem seletor, sem jeito de voltar pra
+ * agosto de dentro do card. Resolvido igual à decisão de `vazio` acima
+ * (mesmo raciocínio de `BlocoSaldos`, Task 7): `erroRefetch` é derivado do
+ * MESMO estado `erro`, mas só entra em jogo quando `report !== null`
+ * (então NÃO é passado pro `Bloco`) — mostrado inline, `role="alert"`,
+ * ao lado do total, sem esconder nem o seletor nem o `report`/gráfico
+ * antigos. `erroInicial` (report ainda `null`) continua indo pro `Bloco`
+ * normalmente — mesmo comportamento dos outros três blocos, sem mudança.
  */
 export function BlocoCategorias() {
   const [mes, setMes] = useState(() => competenciaAtual())
@@ -63,12 +82,16 @@ export function BlocoCategorias() {
   // acima sobre por que trocar de mês não zera `report`.
   const carregando = report === null && erro === null
   const vazio = report !== null && report.rows.length === 0
+  // Ver o ⚠️ acima: mesmo `erro`, duas rotas de exibição diferentes
+  // dependendo se já existe (ou nunca existiu) um `report` de sucesso.
+  const erroInicial = report === null ? erro : null
+  const erroRefetch = report !== null ? erro : null
 
   return (
     <Bloco
       titulo="Para onde foi o dinheiro"
       carregando={carregando}
-      erro={erro}
+      erro={erroInicial}
     >
       {report ? (
         <div className="space-y-3">
@@ -101,6 +124,11 @@ export function BlocoCategorias() {
               {formatBRL(Math.abs(report.total_cents))}
             </span>
           </div>
+          {erroRefetch ? (
+            <p role="alert" className="text-destructive text-sm">
+              {erroRefetch}
+            </p>
+          ) : null}
           {vazio ? (
             <p className="text-muted-foreground text-sm">
               Nenhum gasto em {rotuloCompetencia(mes)}.

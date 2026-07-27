@@ -148,6 +148,85 @@ describe('BlocoCategorias', () => {
     )
   })
 
+  it('refetch falho DEPOIS de um carregamento inicial bem-sucedido não esconde o report antigo nem o seletor — erro aparece inline, o dono consegue tentar de novo', async () => {
+    // Fix round 1 (Task 8, IMPORTANT do review): antes deste fix, este
+    // cenário passava o `erro` de uma troca de mês pro `erro` de `Bloco`
+    // do mesmo jeito que o erro do carregamento INICIAL — e `Bloco` troca
+    // `children` inteiro (seletor incluído) pelo card de alerta. Resultado:
+    // dono no Android com conexão instável troca de mês, a busca cai, e
+    // fica sem `<input type="month">` NENHUM na tela pra tentar outro mês —
+    // só navegando pra fora de `#/` e voltando. Este teste finca o
+    // comportamento correto: erro de refetch aparece inline (role="alert"),
+    // o total/seletor/gráfico do mês anterior continuam de pé, e uma nova
+    // troca de mês (a "tentativa de novo") se recupera normalmente.
+    const reportSetembro = {
+      competence: '2026-09',
+      rows: [
+        {
+          category_id: 'c-inss',
+          category_name: 'INSS',
+          category_slug: 'inss',
+          total_cents: -15000,
+        },
+      ],
+      total_cents: -15000,
+    }
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path.includes('competence=2026-08')) {
+        return Promise.reject(
+          new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),
+        )
+      }
+      if (path.includes('competence=2026-09')) {
+        return Promise.resolve(reportSetembro)
+      }
+      return Promise.resolve(reportComDados)
+    })
+
+    render(<BlocoCategorias />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00'),
+    )
+
+    // troca pra um mês cuja busca vai falhar (refetch, não carregamento inicial)
+    fireEvent.change(screen.getByLabelText('Mês'), {
+      target: { value: '2026-08' },
+    })
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'sem conexão com o servidor',
+      ),
+    )
+
+    // NADA do que já estava na tela sumiu por causa do erro de refetch:
+    // total antigo, seletor (com o valor novo, mesmo a busca tendo falhado
+    // — é um `<input>` controlado, reflete o que o dono digitou) e gráfico
+    // continuam de pé, ao lado do alerta — não em vez dele.
+    expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00')
+    expect(screen.getByLabelText('Mês')).toBeInTheDocument()
+    expect(screen.getByLabelText('Mês')).toHaveValue('2026-08')
+    expect(screen.getByTestId('grafico-categorias')).toBeInTheDocument()
+    // o `Bloco` NÃO assumiu o card inteiro — o heading do bloco continua
+    // no ar junto com o alerta (contraste direto com o teste de erro
+    // INICIAL acima, onde só o alerta aparece).
+    expect(
+      screen.getByRole('heading', { name: 'Para onde foi o dinheiro' }),
+    ).toBeInTheDocument()
+
+    // recuperação: o seletor continua alcançável, então o dono TENTA DE
+    // NOVO — troca pra um mês que dá certo, o alerta some, o total atualiza.
+    fireEvent.change(screen.getByLabelText('Mês'), {
+      target: { value: '2026-09' },
+    })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 150,00'),
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('o mês default vem de todayInTeresina() — não de new Date().toISOString() cru (UTC)', async () => {
     // 01:00 UTC de 01/08 é 22h de 31/07 em Teresina (UTC−3): a competência
     // é jul/26, não ago/26. Mesma armadilha de lib/dates.test.ts, um nível
