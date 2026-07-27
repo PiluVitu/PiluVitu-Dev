@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { toast } from 'sonner'
 import { MovieCard } from './movie-card'
 import { useVoteMutation } from '@/hooks/votacao/use-vote-mutation'

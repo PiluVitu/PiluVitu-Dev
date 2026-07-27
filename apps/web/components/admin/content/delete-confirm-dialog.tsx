@@ -7,8 +7,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+} from '@piluvitu/ui/dialog'
+import { Button } from '@piluvitu/ui/button'
 
 export function DeleteConfirmDialog(props: {
   open: boolean

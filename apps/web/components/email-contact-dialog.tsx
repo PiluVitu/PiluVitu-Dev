@@ -1,12 +1,12 @@
 'use client'
 
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogTrigger,
-} from '@/components/ui/dialog'
+} from '@piluvitu/ui/dialog'
 import {
   FormControl,
   FormDescription,
@@ -14,9 +14,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+} from '@piluvitu/ui/form'
+import { Input } from '@piluvitu/ui/input'
+import { Textarea } from '@piluvitu/ui/textarea'
 import { zodResolver } from '@hookform/resolvers/zod'
 import axios from 'axios'
 import { useState } from 'react'

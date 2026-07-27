@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { carreiraSchema, type CarreiraEntry } from '@/lib/admin/content-schemas'
 import { slugify } from '@/lib/admin/slugify'
 import { TextField, TextareaField, ToggleField } from './fields'

@@ -31,15 +31,15 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 
 ### Key directories
 
-| Path             | Purpose                                                          |
-| ---------------- | ---------------------------------------------------------------- |
-| `components/ui/` | shadcn/ui primitives (15 components)                             |
-| `components/`    | Page-level components (bio, cards, email form, visit card)       |
-| `lib/`           | Server utilities: Keystatic readers, dev.to client, icon mapping |
-| `hooks/`         | Client hooks — `useArticleData.ts` (TanStack Query for dev.to)   |
-| `mocks/`         | Type definitions and fallback data                               |
-| `stories/`       | Storybook stories                                                |
-| `content/`       | Keystatic CMS content (YAML)                                     |
+| Path             | Purpose                                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/ui/` | Só `sonner.tsx` fica aqui (acoplado a `next-themes`) — os outros 14 primitives shadcn/ui vivem em `packages/ui` (`@piluvitu/ui`), importados via `@piluvitu/ui/<nome>` |
+| `components/`    | Page-level components (bio, cards, email form, visit card)                                                                                                             |
+| `lib/`           | Server utilities: Keystatic readers, dev.to client, icon mapping                                                                                                       |
+| `hooks/`         | Client hooks — `useArticleData.ts` (TanStack Query for dev.to)                                                                                                         |
+| `mocks/`         | Type definitions and fallback data                                                                                                                                     |
+| `stories/`       | Storybook stories                                                                                                                                                      |
+| `content/`       | Keystatic CMS content (YAML)                                                                                                                                           |
 
 ### Content structure (Keystatic YAML)
 
@@ -87,7 +87,7 @@ O `@source` é obrigatório — sem ele o Tailwind v4 compila normalmente (não 
 
 Depois do `@import`/`@source`, `app/globals.css` guarda só o que é **específico deste app**: `@utility container`, a camada de compat de `border-color` do Tailwind v4, a aplicação de `border-border`/`bg-background`/`font-sans` em `@layer base`, o dual-theme do shiki (`code[data-theme...]`) e as regras `.post-prose` do blog. `:root`/`.dark` (as custom properties que os tokens referenciam) ficam só em `packages/ui/src/styles.css` — mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
 
-`cn()` também pode vir de `@piluvitu/ui/cn` (medido: funciona no build do Next/Turbopack sem precisar de `transpilePackages: ['@piluvitu/ui']` em `next.config.mjs`) — a migração de fato dos componentes shadcn pra consumir o pacote é escopo de outra task; hoje `apps/web` só consome o CSS.
+`cn()` também pode vir de `@piluvitu/ui/cn`. Os 14 componentes shadcn (`aspect-ratio`, `avatar`, `badge`, `button`, `card`, `command`, `dialog`, `dropdown-menu`, `form`, `input`, `label`, `separator`, `skeleton`, `textarea`) foram migrados pra `packages/ui/src` e são importados como `@piluvitu/ui/<nome>` (ex.: `import { Button } from '@piluvitu/ui/button'`) — **sem barrel**, um export por componente em `packages/ui/package.json`. Só `components/ui/sonner.tsx` continua em `apps/web` (acoplado a `next-themes`, que o pacote compartilhado não pode carregar). **Medido:** nem o CSS (`@import`/`@source`) nem o import direto de `.tsx` (incl. `'use client'`) do pacote workspace precisam de `transpilePackages: ['@piluvitu/ui']` em `next.config.mjs` — build real do Next/Turbopack consome os componentes sem essa flag. Ver `packages/ui/CLAUDE.md` para a estrutura completa do pacote.
 
 - **Fontes:** Plus Jakarta Sans (corpo/títulos, `--font-sans`) + JetBrains Mono (labels/datas/tags, `--font-mono`), via `next/font` no `app/layout.tsx`. O fallback fica aninhado no `var()` (`var(--font-plus-jakarta, ui-sans-serif, …)`) pra sobreviver onde o RootLayout não roda (ex.: Storybook).
 - **Tokens semânticos (votação):** `--ok` (sucesso/seu voto), `--warn` (empate/atenção), `--win` (vencedor) expostos como `text-ok`/`bg-warn`/`text-win` etc. `--success`/`--success-foreground` são mantidos como espelho de `--ok` (compat com usos existentes de `text-success`).

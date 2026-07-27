@@ -1,5 +1,5 @@
 'use client'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { useQueryClient } from '@tanstack/react-query'
 import { votacaoApi } from '@/lib/votacao/api-client'
 

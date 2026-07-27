@@ -1,6 +1,6 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Avatar, AvatarFallback, AvatarImage } from '@piluvitu/ui/avatar'
+import { Button } from '@piluvitu/ui/button'
+import { Card } from '@piluvitu/ui/card'
 import { cn } from '@/lib/utils'
 import { Project } from '@/mocks/projects'
 import {

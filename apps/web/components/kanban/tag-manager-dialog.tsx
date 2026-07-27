@@ -6,11 +6,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
+} from '@piluvitu/ui/dialog'
+import { Button } from '@piluvitu/ui/button'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
+import { Separator } from '@piluvitu/ui/separator'
 import { TagBadge } from './tag-badge'
 import { Tag, TAG_COLORS } from '@/lib/kanban-schema'
 import { TrashIcon } from '@radix-ui/react-icons'

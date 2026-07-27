@@ -1,5 +1,5 @@
 'use client'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import type { SessionVote } from '@/lib/votacao/types'
 
 interface Props {

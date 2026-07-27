@@ -22,8 +22,8 @@ import { Card } from '@/lib/kanban-schema'
 import { BoardHeader } from './board-header'
 import { KanbanColumn } from './kanban-column'
 import { KanbanCard } from './kanban-card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Button } from '@piluvitu/ui/button'
+import { Input } from '@piluvitu/ui/input'
 import { PlusIcon } from '@radix-ui/react-icons'
 
 export function KanbanBoard() {

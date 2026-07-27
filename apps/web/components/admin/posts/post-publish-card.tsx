@@ -1,7 +1,7 @@
 'use client'
 
 import { TextField, ToggleField } from '@/components/admin/content/fields'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import type { PostFrontmatter } from '@/lib/admin/post-schema'
 import { SidebarCard } from './sidebar-card'
 

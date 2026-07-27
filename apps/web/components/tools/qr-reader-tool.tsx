@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { CopyButton } from './copy-button'
 
 type State = 'idle' | 'loading' | 'reading' | 'denied' | 'error'

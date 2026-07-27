@@ -3,7 +3,7 @@
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import { PostEditor } from '@/components/admin/posts/post-editor'
 import { usePost } from '@/hooks/admin/posts/use-post'
 import { usePostMutations } from '@/hooks/admin/posts/use-post-mutations'

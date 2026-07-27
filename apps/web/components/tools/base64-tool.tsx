@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Textarea } from '@/components/ui/textarea'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+import { Textarea } from '@piluvitu/ui/textarea'
+import { Button } from '@piluvitu/ui/button'
+import { Label } from '@piluvitu/ui/label'
 import { encodeBase64, decodeBase64 } from '@piluvitu/tools/base64'
 
 export function Base64Tool() {

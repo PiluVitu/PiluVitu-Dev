@@ -2,8 +2,8 @@
 
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@piluvitu/ui/button'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import { SectionHeader } from '@/components/section-header'
 import { MediaGrid } from '@/components/admin/media/media-grid'
 import { DeleteConfirmDialog } from '@/components/admin/content/delete-confirm-dialog'
