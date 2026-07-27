@@ -49,6 +49,20 @@ function parseOfxAmountCents(raw: string): number {
   return sign === '-' ? -cents : cents
 }
 
+// Bancos reais nem sempre preenchem <MEMO>: alguns usam <NAME> em vez dele,
+// outros deixam <MEMO> vazio em lançamentos de tarifa. Exigir <MEMO> (como
+// este parser fazia antes) derrubava o arquivo inteiro por causa de UMA
+// transação sem a tag — o oposto do objetivo, que é funcionar com o
+// extrato real do dono. Prioridade: MEMO → NAME → placeholder marcado;
+// nunca lança por causa de descrição ausente.
+function resolveDescription(bloco: string): string {
+  const memo = extractField(bloco, 'MEMO')
+  if (memo !== null && memo !== '') return memo
+  const name = extractField(bloco, 'NAME')
+  if (name !== null && name !== '') return name
+  return '(sem descrição)'
+}
+
 // DTPOSTED é 'YYYYMMDDHHMMSS[fuso]' (o fuso é opcional e, quando presente,
 // vem como '[-3:BRT]' ou similar). A data é tomada como escrita — os
 // primeiros 8 dígitos — nunca reconstruída via `Date`/UTC. Um `Date`
@@ -81,13 +95,12 @@ export function parseOfx(texto: string): LinhaImportada[] {
     const fitid = requireField(bloco, 'FITID')
     const dtposted = requireField(bloco, 'DTPOSTED')
     const trnamt = requireField(bloco, 'TRNAMT')
-    const memo = requireField(bloco, 'MEMO')
 
     return {
       imported_id: fitid,
       purchase_date: parseOfxDate(dtposted),
       amount_cents: parseOfxAmountCents(trnamt),
-      description: memo,
+      description: resolveDescription(bloco),
     }
   })
 }

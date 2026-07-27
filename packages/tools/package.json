@@ -18,7 +18,9 @@
     "./roleta": "./src/roleta.ts",
     "./money": "./src/money.ts",
     "./import": "./src/import/index.ts",
-    "./import/ofx": "./src/import/ofx.ts"
+    "./import/ofx": "./src/import/ofx.ts",
+    "./import/csv": "./src/import/csv.ts",
+    "./import/id": "./src/import/id.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

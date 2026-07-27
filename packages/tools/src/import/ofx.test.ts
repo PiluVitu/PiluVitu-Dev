@@ -287,4 +287,45 @@ describe('parseOfx', () => {
     // prova que os testes acima realmente exercitam a extração.
     expect(parseOfx(OFX_FATURA_CARTAO).length).toBeGreaterThan(0)
   })
+
+  // Correção herdada da task 1: bancos reais às vezes usam <NAME> em vez de
+  // <MEMO>, ou deixam <MEMO> vazio em lançamentos de tarifa. Exigir <MEMO>
+  // (como o parser fazia antes) derruba o arquivo real inteiro por causa de
+  // UMA transação — o oposto do objetivo (funcionar com o extrato real do
+  // dono). A prioridade é MEMO → NAME → um marcador de placeholder,
+  // nunca uma exceção.
+  describe('fallback de descrição: MEMO → NAME → placeholder', () => {
+    test('usa MEMO quando presente (caminho normal, sem mudança)', () => {
+      const linhas = parseOfx(OFX_UMA_TRANSACAO)
+      expect(linhas[0].description).toBe('PARC 01/05 LOJA ELETRO CENTER')
+    })
+
+    test('usa NAME quando MEMO está ausente', () => {
+      const semMemo = OFX_UMA_TRANSACAO.replace(
+        '<MEMO>PARC 01/05 LOJA ELETRO CENTER\n',
+        '<NAME>LOJA ELETRO CENTER\n',
+      )
+      const linhas = parseOfx(semMemo)
+      expect(linhas[0].description).toBe('LOJA ELETRO CENTER')
+    })
+
+    test('usa NAME quando MEMO está presente mas vazio (ex.: linha de tarifa)', () => {
+      const memoVazio = OFX_UMA_TRANSACAO.replace(
+        '<MEMO>PARC 01/05 LOJA ELETRO CENTER\n',
+        '<MEMO>\n<NAME>LOJA ELETRO CENTER\n',
+      )
+      const linhas = parseOfx(memoVazio)
+      expect(linhas[0].description).toBe('LOJA ELETRO CENTER')
+    })
+
+    test('usa um placeholder claramente marcado quando MEMO e NAME estão ausentes/vazios — não lança exceção', () => {
+      const semDescricao = OFX_UMA_TRANSACAO.replace(
+        '<MEMO>PARC 01/05 LOJA ELETRO CENTER\n',
+        '<MEMO>\n',
+      )
+      expect(() => parseOfx(semDescricao)).not.toThrow()
+      const linhas = parseOfx(semDescricao)
+      expect(linhas[0].description).toBe('(sem descrição)')
+    })
+  })
 })
