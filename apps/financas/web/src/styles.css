@@ -1,3 +1,8 @@
 @import 'tailwindcss';
 @import '@piluvitu/ui/styles.css';
 @source '../../../../packages/ui/src';
+
+/* Para-quedas até a Task 9 migrar as 5 telas pra @piluvitu/ui — ver o
+   header do próprio arquivo. A Task 9 remove este import junto com o
+   arquivo. */
+@import './base-interina.css';
