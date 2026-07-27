@@ -624,7 +624,10 @@ export function ImportarPage() {
               </p>
             ) : null}
 
-            <Button onClick={enviarConfirmadas} disabled={passo === 'enviando'}>
+            <Button
+              onClick={enviarConfirmadas}
+              disabled={passo === 'enviando' || linhas.every((l) => !l.marcada)}
+            >
               {passo === 'enviando'
                 ? 'Enviando…'
                 : `Confirmar importação (${linhas.filter((l) => l.marcada).length})`}
