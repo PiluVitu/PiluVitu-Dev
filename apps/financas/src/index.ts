@@ -5,6 +5,7 @@ import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
 import { categoriesRoutes } from './routes/categories'
 import { debtsRoutes } from './routes/debts'
+import { importRoutes } from './routes/import'
 import { installmentPlansRoutes } from './routes/installments'
 import { payeesRoutes } from './routes/payees'
 import { recurringRoutes } from './routes/recurring'
@@ -36,6 +37,7 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 
 app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
+app.route('/api', importRoutes)
 app.route('/api', settingsRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
