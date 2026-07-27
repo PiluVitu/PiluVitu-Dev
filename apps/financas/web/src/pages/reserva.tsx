@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { formatBRL } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL } from '@piluvitu/tools/money'
+import {
+  simulateCashPurchase,
+  simulateFinancedPurchase,
+  type CashPurchaseSimulation,
+  type FinancedPurchaseSimulation,
+  type FixedCostRange,
+} from '@piluvitu/tools/simulacao'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { formatRange } from '../lib/commitments'
 import { CHECKBOX_CLASSNAME } from '../lib/form-classes'
@@ -13,6 +22,74 @@ import {
   type EmergencyStatusView,
 } from '../lib/reserve'
 import type { AccountView } from './accounts'
+
+/** Espelha `GET /api/settings` (`domain/settings.ts`, Worker) — mesmo tipo
+ * local que `pages/config.tsx` já declara; só o campo que este simulador
+ * usa como denominador do % financiado. */
+type SettingsView = { fixed_net_cents: number }
+
+/**
+ * Resultado de uma tentativa de simular, guardando o erro de validação
+ * (valor digitado errado) separado de "nada digitado ainda" (`null`) —
+ * o campo vazio não é erro, só ausência de entrada.
+ */
+type Tentativa<T> = { ok: true; resultado: T } | { ok: false; erro: string }
+
+function mensagemDeErro(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
+/**
+ * `null` = nada digitado ainda (não é erro, é ausência de entrada — o
+ * campo vazio não deve mostrar `role="alert"`). Não é hook (nenhum
+ * `useMemo`): a conta é aritmética barata, recomputar a cada tecla não
+ * pesa, e chamar isto DEPOIS do `if (!status...) return` mais abaixo no
+ * componente violaria a regra de hooks se fosse um — função simples não
+ * tem essa restrição.
+ */
+function simularAVista(
+  valor: string,
+  saldoCents: number,
+  fixedCost: FixedCostRange,
+): Tentativa<CashPurchaseSimulation | null> | null {
+  if (valor.trim() === '') return null
+  try {
+    const amountCents = parseBRL(valor)
+    return {
+      ok: true,
+      resultado: simulateCashPurchase(amountCents, saldoCents, fixedCost),
+    }
+  } catch (e) {
+    return { ok: false, erro: mensagemDeErro(e) }
+  }
+}
+
+function simularFinanciado(
+  valor: string,
+  parcelas: string,
+  fixedNetCents: number,
+): Tentativa<FinancedPurchaseSimulation> | null {
+  if (valor.trim() === '' || parcelas.trim() === '') return null
+  try {
+    const totalCents = parseBRL(valor)
+    const monthsCount = Number(parcelas)
+    if (!Number.isInteger(monthsCount)) {
+      throw new RangeError(
+        `número de parcelas precisa ser um número inteiro: ${parcelas}`,
+      )
+    }
+    return {
+      ok: true,
+      resultado: simulateFinancedPurchase(
+        totalCents,
+        monthsCount,
+        fixedNetCents,
+      ),
+    }
+  } catch (e) {
+    return { ok: false, erro: mensagemDeErro(e) }
+  }
+}
 
 /**
  * Fatia ⑦ (Task 3, docs/superpowers/specs/2026-07-27-financas-reserva-design.md):
@@ -30,20 +107,32 @@ import type { AccountView } from './accounts'
 export function ReservaPage() {
   const [status, setStatus] = useState<EmergencyStatusView | null>(null)
   const [contas, setContas] = useState<AccountView[] | null>(null)
+  const [settings, setSettings] = useState<SettingsView | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set())
   const [salvando, setSalvando] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Simulador (Task 4, §6 do spec): à vista e financiado, lado a lado.
+  const [valorAVista, setValorAVista] = useState('')
+  const [valorFinanciado, setValorFinanciado] = useState('')
+  const [parcelasFinanciado, setParcelasFinanciado] = useState('')
+
   const carregar = useCallback(async (vivo: () => boolean = () => true) => {
-    const [statusData, contasData] = await Promise.all([
+    const [statusData, contasData, settingsData] = await Promise.all([
       api<EmergencyStatusView>('/api/reserve'),
       api<AccountView[]>('/api/accounts'),
+      // Denominador do % financiado — a MESMA renda fixa configurável que
+      // Comprometido/Configurações usam (`GET /api/settings`), nunca um
+      // literal fixo aqui: senão trocar a renda em Configurações deixaria
+      // este simulador mentindo em silêncio.
+      api<SettingsView>('/api/settings'),
     ])
     if (!vivo()) return
     setStatus(statusData)
     setContas(contasData)
+    setSettings(settingsData)
     setSelecionadas(new Set(statusData.contas))
   }, [])
 
@@ -83,12 +172,48 @@ export function ReservaPage() {
   }
 
   if (loadError) return <p role="alert">{loadError}</p>
-  if (!status || !contas) return <p>Carregando…</p>
+  if (!status || !contas || !settings) return <p>Carregando…</p>
 
   // ⚠️ O alerta olha o PISO (`meses.min`), NUNCA o teto — inversão central
   // desta fatia. No Comprometido o TETO é o perigo (gasto máximo); aqui o
   // PISO é o perigo (sobrevivência mínima). Ver `lib/reserve.ts#abaixoDaMeta`.
   const alerta = abaixoDaMeta(status.meses, status.goal_months)
+
+  // Custo fixo mensal, recuperado de `meta_cents / goal_months` — a mesma
+  // faixa que `emergencyStatus` (Worker) já calculou, sem duplicar a soma
+  // de recorrentes aqui. `status.meses === null` ⟺ `fixedCost.max === 0`
+  // (o mesmo `custo.max === 0` que faz `meses` ser `null` no domínio — ver
+  // apps/financas/CLAUDE.md § "Reserva de emergência"), então
+  // `simulateCashPurchase` já devolve `null` sozinho nesse caso, sem
+  // precisar de um segundo `if` aqui.
+  const fixedCost: FixedCostRange = {
+    min: status.meta_cents.min / status.goal_months,
+    max: status.meta_cents.max / status.goal_months,
+  }
+
+  const simulacaoAVista = simularAVista(
+    valorAVista,
+    status.saldo_cents,
+    fixedCost,
+  )
+  const simulacaoFinanciada = simularFinanciado(
+    valorFinanciado,
+    parcelasFinanciado,
+    settings.fixed_net_cents,
+  )
+
+  // ⚠️ O piso continua sendo o perigo aqui também (mesma inversão do card
+  // "Situação atual" acima) — gastar reserva à vista FAZ O PISO CAIR, e é
+  // esse número que o confronto precisa foregrounded, não só mais um dado
+  // neutro na faixa. Reusa o MESMO `abaixoDaMeta` (nunca `.max`) contra a
+  // sobrevivência resultante da compra, em vez de duplicar a comparação.
+  const resultariaAbaixoDaMeta =
+    simulacaoAVista?.ok === true && simulacaoAVista.resultado !== null
+      ? abaixoDaMeta(
+          simulacaoAVista.resultado.survivalAfter,
+          status.goal_months,
+        )
+      : false
 
   return (
     <section className="space-y-6">
@@ -217,6 +342,152 @@ export function ReservaPage() {
               </Button>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Simulador: à vista × financiado
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            O custo de cada opção em meses de sobrevivência — a unidade que você
+            escolheu ao chamar a reserva de prioridade absoluta.
+          </p>
+
+          {/* ~390px: lado a lado só a partir de md — empilhado no celular,
+              onde o layout mais difícil deste módulo precisa caber. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div data-testid="simulador-a-vista" className="space-y-2">
+              <h3 className="text-sm font-semibold">À vista</h3>
+              <div className="space-y-1.5">
+                <Label htmlFor="simulador-a-vista-input">Valor à vista</Label>
+                <Input
+                  id="simulador-a-vista-input"
+                  placeholder="13.000,00"
+                  value={valorAVista}
+                  onChange={(e) => setValorAVista(e.target.value)}
+                />
+              </div>
+
+              {simulacaoAVista?.ok === false ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {simulacaoAVista.erro}
+                </p>
+              ) : null}
+
+              {simulacaoAVista?.ok === true ? (
+                simulacaoAVista.resultado === null ? (
+                  <p
+                    data-testid="simulador-a-vista-sem-custo-fixo"
+                    className="text-muted-foreground text-sm"
+                  >
+                    Ainda não dá para calcular — falta custo fixo cadastrado
+                    (ver "Situação atual" acima).
+                  </p>
+                ) : (
+                  <div className="space-y-1 text-sm">
+                    <p>
+                      Consome{' '}
+                      <strong
+                        data-testid="simulador-a-vista-meses-consumidos"
+                        className="text-foreground"
+                      >
+                        {formatMeses(simulacaoAVista.resultado.monthsConsumed)}
+                      </strong>{' '}
+                      de reserva.
+                    </p>
+                    <p>
+                      Sobrevivência depois:{' '}
+                      <strong
+                        data-testid="simulador-a-vista-sobrevivencia"
+                        className={cn(
+                          resultariaAbaixoDaMeta
+                            ? 'text-destructive font-bold'
+                            : 'text-foreground',
+                        )}
+                      >
+                        {formatMeses(simulacaoAVista.resultado.survivalAfter)}
+                      </strong>
+                    </p>
+                    {resultariaAbaixoDaMeta ? (
+                      <p
+                        role="alert"
+                        data-testid="simulador-a-vista-alerta-piso"
+                        className="text-destructive text-sm font-medium"
+                      >
+                        No pior cenário, esta compra deixa a reserva abaixo da
+                        meta de {status.goal_months} meses de sobrevivência.
+                      </p>
+                    ) : null}
+                  </div>
+                )
+              ) : null}
+            </div>
+
+            <div data-testid="simulador-financiado" className="space-y-2">
+              <h3 className="text-sm font-semibold">Financiado</h3>
+              <div className="space-y-1.5">
+                <Label htmlFor="simulador-financiado-input">
+                  Valor financiado
+                </Label>
+                <Input
+                  id="simulador-financiado-input"
+                  placeholder="96.000,00"
+                  value={valorFinanciado}
+                  onChange={(e) => setValorFinanciado(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="simulador-financiado-parcelas">Parcelas</Label>
+                <Input
+                  id="simulador-financiado-parcelas"
+                  inputMode="numeric"
+                  placeholder="72"
+                  value={parcelasFinanciado}
+                  onChange={(e) => setParcelasFinanciado(e.target.value)}
+                />
+              </div>
+
+              {simulacaoFinanciada?.ok === false ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {simulacaoFinanciada.erro}
+                </p>
+              ) : null}
+
+              {simulacaoFinanciada?.ok === true ? (
+                <div className="space-y-1 text-sm">
+                  <p>
+                    Parcela:{' '}
+                    <strong
+                      data-testid="simulador-financiado-parcela"
+                      className="text-foreground"
+                    >
+                      {formatBRL(
+                        simulacaoFinanciada.resultado.installmentCents,
+                      )}
+                    </strong>{' '}
+                    por mês, por {simulacaoFinanciada.resultado.monthsCount}{' '}
+                    meses — é o que entra no Comprometido a partir da primeira
+                    parcela.
+                  </p>
+                  <p>
+                    <strong
+                      data-testid="simulador-financiado-pct"
+                      className="text-foreground"
+                    >
+                      {simulacaoFinanciada.resultado.pctOfFixedNet}%
+                    </strong>{' '}
+                    da renda fixa de referência (
+                    {formatBRL(settings.fixed_net_cents)}
+                    ).
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
     </section>
