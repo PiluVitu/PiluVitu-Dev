@@ -21,13 +21,30 @@ export type MapaColunas = {
 // `{ ...linha, imported_id: await idEstavel(linha) }` por linha.
 export type LinhaCsv = Omit<LinhaImportada, 'imported_id'>
 
-// Split CSV consciente de aspas (RFC4180): um campo entre aspas pode conter
-// o delimitador (vírgula) e aspas duplicadas (`""` → `"` literal). Um
-// `linha.split(',')` ingênuo corrompe qualquer linha com vírgula dentro de
-// aspas — a descrição vira dois campos e todas as colunas seguintes (lidas
-// por índice, ex. valor) passam a apontar pro pedaço errado. O dono veria
-// um valor errado, não um erro.
-function dividirLinhaCsv(linha: string): string[] {
+// Bancos brasileiros frequentemente usam `;` como delimitador, de propósito
+// — a vírgula já é o separador decimal do BRL, então um valor como
+// '1.234,56' fica ambíguo se o delimitador também for vírgula (exigiria
+// aspas em toda coluna de valor). Em vez de perguntar ao dono, detecta por
+// arquivo: conta ocorrências de `;` e de `,` na primeira linha (o
+// cabeçalho, ou a 1ª linha de dados se `temCabecalho` for falso — em
+// qualquer um dos dois casos é uma amostra razoável de como aquele arquivo
+// separa colunas) e usa o que aparece mais. Critério burro de propósito
+// (contagem simples, sem heurística de desempate elaborada): empate ou
+// nenhum dos dois presente cai pro padrão vírgula.
+function detectarDelimitador(primeiraLinha: string): ',' | ';' {
+  const pontoEVirgula = (primeiraLinha.match(/;/g) ?? []).length
+  const virgula = (primeiraLinha.match(/,/g) ?? []).length
+  return pontoEVirgula > virgula ? ';' : ','
+}
+
+// Split CSV consciente de aspas (RFC4180), parametrizado pelo delimitador
+// detectado (vírgula ou ponto-e-vírgula). Um campo entre aspas pode conter
+// o delimitador e aspas duplicadas (`""` → `"` literal). Um
+// `linha.split(delimitador)` ingênuo corrompe qualquer linha com o
+// delimitador dentro de aspas — a descrição vira dois campos e todas as
+// colunas seguintes (lidas por índice, ex. valor) passam a apontar pro
+// pedaço errado. O dono veria um valor errado, não um erro.
+function dividirLinhaCsv(linha: string, delimitador: string): string[] {
   const campos: string[] = []
   let atual = ''
   let dentroDeAspas = false
@@ -49,7 +66,7 @@ function dividirLinhaCsv(linha: string): string[] {
     }
     if (c === '"') {
       dentroDeAspas = true
-    } else if (c === ',') {
+    } else if (c === delimitador) {
       campos.push(atual)
       atual = ''
     } else {
@@ -102,12 +119,15 @@ export function parseCsv(texto: string, mapa: MapaColunas): LinhaCsv[] {
   const todasAsLinhas = texto
     .split(/\r\n|\r|\n/)
     .filter((linha) => linha.trim() !== '')
+  if (todasAsLinhas.length === 0) return []
+
+  const delimitador = detectarDelimitador(todasAsLinhas[0])
   const linhasDeDados = mapa.temCabecalho
     ? todasAsLinhas.slice(1)
     : todasAsLinhas
 
   return linhasDeDados.map((linha) => {
-    const campos = dividirLinhaCsv(linha)
+    const campos = dividirLinhaCsv(linha, delimitador)
     const dataBruta = campos[mapa.data]
     const valorBruto = campos[mapa.valor]
     const descricaoBruta = campos[mapa.descricao]

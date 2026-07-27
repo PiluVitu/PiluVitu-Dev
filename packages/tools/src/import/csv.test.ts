@@ -27,6 +27,27 @@ const MAPA: MapaColunas = {
   temCabecalho: true,
 }
 
+// Mesmas linhas lógicas de CSV_FATURA, mas ponto-e-vírgula delimitado — o
+// formato que muitos bancos brasileiros usam de propósito, justamente
+// porque a vírgula já é o separador decimal do BRL. Com `;` como
+// delimitador, o valor NÃO precisa de aspas (não há colisão de caractere).
+const CSV_FATURA_PONTO_VIRGULA = `Data;Descricao;Valor
+28/07/2026;MERCADO BOM PRECO;-189,90
+15/07/2026;PADARIA STO ANTONIO;-19,90
+2026-07-10;PAGAMENTO RECEBIDO;300,00
+31/07/2026;COMPRA PARCELADA;-1.234,56
+10/07/2026;TARIFA MANUTENCAO;(15,00)
+`
+
+// Prova que a consciência de aspas também vale pro delimitador `;`: a
+// descrição tem um `;` NO MEIO da linha (coluna 1 de 3), quotada. Um split
+// ingênuo por `;` geraria 4 campos e jogaria a coluna de valor (índice 2)
+// pro lugar errado — o mesmo defeito que a fixture de vírgula prova lá em
+// cima, só que pro outro delimitador.
+const CSV_PONTO_VIRGULA_COM_ASPAS = `Data;Descricao;Valor
+15/07/2026;"PADARIA STO ANTONIO; LTDA";-19,90
+`
+
 describe('parseCsv', () => {
   test('CSV com cabeçalho, mapeado por índice de coluna', () => {
     const linhas = parseCsv(CSV_FATURA, MAPA)
@@ -120,5 +141,63 @@ describe('parseCsv', () => {
 
     const [id1, id2] = await Promise.all(linhas.map(idEstavel))
     expect(id1).toBe(id2)
+  })
+
+  describe('delimitador ; (comum em export brasileiro, detectado por arquivo)', () => {
+    test('valor BRL SEM aspas funciona quando o delimitador é ; (caso comum real)', () => {
+      const linhas = parseCsv(CSV_FATURA_PONTO_VIRGULA, MAPA)
+      expect(linhas).toHaveLength(5)
+
+      const parcelada = linhas.find((l) => l.description === 'COMPRA PARCELADA')
+      expect(parcelada).toEqual({
+        purchase_date: '2026-07-31',
+        amount_cents: -123456,
+        description: 'COMPRA PARCELADA',
+      })
+
+      const comParenteses = linhas.find(
+        (l) => l.description === 'TARIFA MANUTENCAO',
+      )
+      expect(comParenteses?.amount_cents).toBe(-1500)
+    })
+
+    test('campo com ; dentro de aspas não corrompe as colunas seguintes', () => {
+      const linhas = parseCsv(CSV_PONTO_VIRGULA_COM_ASPAS, MAPA)
+      expect(linhas).toEqual([
+        {
+          purchase_date: '2026-07-15',
+          amount_cents: -1990,
+          description: 'PADARIA STO ANTONIO; LTDA',
+        },
+      ])
+    })
+
+    // O teste que protege a idempotência: se o dono reexportar o MESMO
+    // extrato do banco num formato diferente (ex.: trocou de vírgula pra
+    // ; num export posterior, ou o banco mudou o layout), o id sintético
+    // não pode mudar — senão a reimportação duplicaria tudo, exatamente o
+    // requisito que esta fatia inteira existe pra garantir (spec §5, §10).
+    // O id depende só dos DADOS (data|valor|descrição), nunca da pontuação
+    // do arquivo.
+    test('idEstavel é o mesmo pra linhas logicamente iguais, seja o arquivo , ou ; delimitado', async () => {
+      const comVirgula = parseCsv(CSV_FATURA, MAPA)
+      const comPontoVirgula = parseCsv(CSV_FATURA_PONTO_VIRGULA, MAPA)
+
+      const mercadoVirgula = comVirgula.find(
+        (l) => l.description === 'MERCADO BOM PRECO',
+      )
+      const mercadoPontoVirgula = comPontoVirgula.find(
+        (l) => l.description === 'MERCADO BOM PRECO',
+      )
+      expect(mercadoVirgula).toBeDefined()
+      expect(mercadoPontoVirgula).toBeDefined()
+      // Mesma linha lógica, vinda de dois arquivos com delimitador diferente
+      // — os campos já batem antes mesmo do hash.
+      expect(mercadoVirgula).toEqual(mercadoPontoVirgula)
+
+      const idVirgula = await idEstavel(mercadoVirgula!)
+      const idPontoVirgula = await idEstavel(mercadoPontoVirgula!)
+      expect(idVirgula).toBe(idPontoVirgula)
+    })
   })
 })
