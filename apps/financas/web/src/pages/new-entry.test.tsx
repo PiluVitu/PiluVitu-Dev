@@ -24,7 +24,58 @@ const contas = [
   },
 ]
 
-function mockRoutes(post?: unknown) {
+const recorrentes = [
+  {
+    id: 'r1',
+    description: 'Starlink',
+    category_id: null,
+    account_id: null,
+    scope: 'PJ',
+    day_of_month: 10,
+    amount_min_cents: 18900,
+    amount_max_cents: 18900,
+    starts_on: '2026-01-01',
+    ends_on: null,
+    active: 1,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'r2',
+    description: 'DAS',
+    category_id: null,
+    account_id: null,
+    scope: 'PJ',
+    day_of_month: 20,
+    amount_min_cents: 1200,
+    amount_max_cents: 60000,
+    starts_on: '2026-01-01',
+    ends_on: null,
+    active: 1,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'r3',
+    description: 'Ferramenta pausada',
+    category_id: null,
+    account_id: null,
+    scope: 'PJ',
+    day_of_month: 1,
+    amount_min_cents: 5000,
+    amount_max_cents: 5000,
+    starts_on: '2026-01-01',
+    ends_on: null,
+    active: 0,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+]
+
+function mockRoutes(post?: unknown, recs: unknown = recorrentes) {
   const fn = vi.fn(async (path: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       return (
@@ -42,6 +93,12 @@ function mockRoutes(post?: unknown) {
       return {
         status: 200,
         json: async () => ({ ok: true, data: contas, notifications: [] }),
+      }
+    }
+    if (path.startsWith('/api/recurring')) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, data: recs, notifications: [] }),
       }
     }
     throw new Error(`rota nao mockada: ${path}`)
@@ -146,6 +203,93 @@ describe('NewEntryPage', () => {
     await waitFor(() =>
       expect(postBody(fetchMock).body.amount_cents).toBe(200000),
     )
+  })
+
+  // Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+  // §3.1): a tela Lancar oferece "este lancamento e o Starlink de agosto".
+  it('o select Recorrente lista so as ativas — a pausada nao aparece', async () => {
+    mockRoutes()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Recorrente')).toBeInTheDocument(),
+    )
+
+    const select = screen.getByLabelText('Recorrente') as HTMLSelectElement
+    const rotulos = Array.from(select.options).map((o) => o.textContent)
+    expect(rotulos).toContain('— nenhuma —')
+    expect(rotulos.some((r) => r?.startsWith('Starlink'))).toBe(true)
+    expect(rotulos.some((r) => r?.startsWith('DAS'))).toBe(true)
+    expect(rotulos.some((r) => r?.includes('Ferramenta pausada'))).toBe(false)
+  })
+
+  it('escolher uma recorrente manda recurring_expense_id no POST /api/transactions', async () => {
+    const fetchMock = mockRoutes()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Recorrente')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Descrição'), {
+      target: { value: 'Starlink de agosto' },
+    })
+    fireEvent.change(screen.getByLabelText('Valor'), {
+      target: { value: '189,00' },
+    })
+    fireEvent.change(screen.getByLabelText('Data'), {
+      target: { value: '2026-08-10' },
+    })
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a1' },
+    })
+    fireEvent.change(screen.getByLabelText('Recorrente'), {
+      target: { value: 'r1' },
+    })
+    fireEvent.submit(screen.getByTestId('form-lancamento'))
+
+    await waitFor(() => {
+      const { path, body } = postBody(fetchMock)
+      expect(path).toBe('/api/transactions')
+      expect(body.recurring_expense_id).toBe('r1')
+    })
+  })
+
+  it('sem escolher recorrente, a chave recurring_expense_id nao vai no corpo', async () => {
+    const fetchMock = mockRoutes()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Recorrente')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Descrição'), {
+      target: { value: 'Mercado' },
+    })
+    fireEvent.change(screen.getByLabelText('Valor'), {
+      target: { value: '50,00' },
+    })
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a1' },
+    })
+    fireEvent.submit(screen.getByTestId('form-lancamento'))
+
+    await waitFor(() => {
+      const { body } = postBody(fetchMock)
+      expect('recurring_expense_id' in body).toBe(false)
+    })
+  })
+
+  it('modo parcelado esconde o select Recorrente', async () => {
+    mockRoutes()
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Recorrente')).toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByLabelText('Parcelado'))
+    expect(screen.queryByLabelText('Recorrente')).not.toBeInTheDocument()
   })
 
   it('modo parcelado chama POST /api/installment-plans com o total positivo', async () => {

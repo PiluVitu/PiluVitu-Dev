@@ -337,20 +337,27 @@ export async function payDebt(
       parent_id: null,
       imported_id: null,
       import_source: 'manual',
+      // Pagamento de divida nunca vincula a uma recorrente — sao dois
+      // conceitos diferentes (divida e um saldo aberto com prazo, recorrente
+      // e uma expectativa mensal sem fim, migration 0006/Task 7 da fatia ⑥).
+      // NULL sempre.
+      recurring_expense_id: null,
       created_at: now,
       updated_at: now,
     }
 
-    // 19 colunas. Com o teto de 100 bound params, um INSERT multi-row de
-    // transactions cabe 5 linhas (5*19=95); aqui e sempre 1 linha.
+    // 20 colunas (recurring_expense_id, Task 7 da fatia ⑥, somou uma). Com o
+    // teto de 100 bound params, um INSERT multi-row de transactions cabe 5
+    // linhas (5*20=100); aqui e sempre 1 linha.
     statements.push(
       db
         .prepare(
           `INSERT INTO transactions
              (id, account_id, amount_cents, currency, amount_original_cents, fx_rate_ppm,
               purchase_date, bill_competence, settled_at, description, payee_id, category_id,
-              is_business, transfer_id, parent_id, imported_id, import_source, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              is_business, transfer_id, parent_id, imported_id, import_source,
+              recurring_expense_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .bind(
           transaction.id,
@@ -370,6 +377,7 @@ export async function payDebt(
           transaction.parent_id,
           transaction.imported_id,
           transaction.import_source,
+          transaction.recurring_expense_id,
           transaction.created_at,
           transaction.updated_at,
         ),

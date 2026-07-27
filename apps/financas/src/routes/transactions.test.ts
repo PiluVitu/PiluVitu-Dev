@@ -2,6 +2,7 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createAccount } from '../domain/accounts'
+import { createRecurring } from '../domain/recurring'
 import { transactionsRoutes } from './transactions'
 
 beforeAll(async () => {
@@ -164,6 +165,76 @@ describe('rotas de lancamentos', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { data: Array<{ description: string }> }
     expect(body.data.map((t) => t.description)).toEqual(['julho'])
+  })
+
+  // Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+  // §3.1): o vinculo explicito que a tela Lancar oferece ("este lancamento
+  // e o Starlink de agosto").
+  it('POST /api/transactions com recurring_expense_id valido devolve 201 com o vinculo gravado', async () => {
+    const acc = await createAccount(env.DB, {
+      name: 'Conta rota recorrente',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    const recorrente = await createRecurring(env.DB, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    const res = await post('/api/transactions', {
+      account_id: acc.id,
+      amount_cents: -18900,
+      purchase_date: '2026-08-10',
+      description: 'Starlink de agosto',
+      settled_at: '2026-08-10',
+      recurring_expense_id: recorrente.id,
+    })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as {
+      data: { recurring_expense_id: string | null }
+    }
+    expect(body.data.recurring_expense_id).toBe(recorrente.id)
+  })
+
+  it('POST /api/transactions com recurring_expense_id inexistente devolve 422 com mensagem legivel, sem texto cru do D1', async () => {
+    // Mesmo caminho de erro do teste equivalente de to_account_id em
+    // /api/transfers, acima: a FK do schema (migration 0006) e quem barra,
+    // e o D1_ERROR cru (com "FOREIGN KEY"/"SQLITE_CONSTRAINT") nunca pode
+    // vazar pro cliente — cozido por friendlyConstraintMessage, com o
+    // original so no console via logConstraintError.
+    const acc = await createAccount(env.DB, {
+      name: 'Conta rota recorrente fantasma',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    const res = await post('/api/transactions', {
+      account_id: acc.id,
+      amount_cents: -1000,
+      purchase_date: '2026-08-10',
+      description: 'vinculo invalido',
+      recurring_expense_id: 'recorrente-que-nao-existe',
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: Array<{ code: string; message: string }>
+    }
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    const msg = body.notifications[0].message
+    expect(msg).not.toMatch(/D1_ERROR|SQLITE_CONSTRAINT|FOREIGN KEY/i)
+    expect(msg.length).toBeGreaterThan(0)
+
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE account_id = ?',
+    )
+      .bind(acc.id)
+      .all()
+    expect(results).toHaveLength(0)
   })
 
   it('GET /api/transactions com limit invalido devolve 422', async () => {

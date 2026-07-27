@@ -1,6 +1,7 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { accountBalances, createAccount } from './accounts'
+import { createRecurring } from './recurring'
 import {
   createTransaction,
   createTransfer,
@@ -136,6 +137,71 @@ describe('createTransaction', () => {
     expect(ok.currency).toBe('USD')
     expect(ok.amount_original_cents).toBe(-2399)
     expect(ok.fx_rate_ppm).toBe(5415000)
+  })
+
+  // Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+  // §3.1): o vinculo que fecha o ciclo — "este lancamento e o Starlink de
+  // agosto". Antes desta task, so o schema (migration 0006) e um INSERT cru
+  // de teste (domain/recurring.test.ts#seedTxVinculada) sabiam gravar a
+  // coluna; createTransaction agora aceita de verdade.
+  it('grava recurring_expense_id quando informado, e o devolve na linha criada', async () => {
+    const acc = await contaCorrente('Conta vinculada')
+    const recorrente = await createRecurring(env.DB, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    const tx = await createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -18900,
+      purchase_date: '2026-08-10',
+      description: 'Starlink de agosto',
+      settled_at: '2026-08-10',
+      recurring_expense_id: recorrente.id,
+    })
+    expect(tx.recurring_expense_id).toBe(recorrente.id)
+  })
+
+  it('sem recurring_expense_id, a coluna grava NULL (default)', async () => {
+    const acc = await contaCorrente('Conta sem vinculo')
+    const tx = await createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -1000,
+      purchase_date: '2026-08-10',
+      description: 'Mercado',
+      settled_at: '2026-08-10',
+    })
+    expect(tx.recurring_expense_id).toBeNull()
+  })
+
+  it('recurring_expense_id inexistente e barrado pela FK (ON DELETE SET NULL, mas id inexistente e erro na criacao)', async () => {
+    // A FK (`REFERENCES recurring_expenses(id) ON DELETE SET NULL`,
+    // migration 0006) so governa o que acontece quando a recorrente
+    // REFERENCIADA e apagada depois — um id que NUNCA existiu continua
+    // rejeitado na hora do INSERT, igual a qualquer outra FK do schema (ver
+    // teste equivalente de to_account_id em createTransfer, mais abaixo
+    // neste arquivo).
+    const acc = await contaCorrente('Conta recorrente fantasma')
+    await expect(
+      createTransaction(env.DB, {
+        account_id: acc.id,
+        amount_cents: -1000,
+        purchase_date: '2026-08-10',
+        description: 'vinculo invalido',
+        recurring_expense_id: 'recorrente-que-nao-existe',
+      }),
+    ).rejects.toThrow()
+
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE account_id = ?',
+    )
+      .bind(acc.id)
+      .all()
+    expect(results).toHaveLength(0)
   })
 })
 

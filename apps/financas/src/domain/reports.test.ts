@@ -18,6 +18,14 @@ async function cartao(name: string) {
   })
 }
 
+async function contaCorrente(name: string) {
+  return createAccount(db, {
+    name,
+    scope: 'PJ',
+    kind: 'checking',
+  })
+}
+
 async function parcela(
   account_id: string,
   competence: string,
@@ -533,6 +541,101 @@ describe('commitments — faixa com recorrentes (Task 3)', () => {
     // Total = certo (100000 parcela + 50000 divida = 150000) + recorrentes
     // (min 18900+1200=20100 / max 18900+60000=78900).
     expect(report.totals).toEqual([{ min: 170100, max: 228900 }])
+  })
+})
+
+// Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+// §3.1): O TESTE QUE FECHA O CICLO DA FATIA INTEIRA. Ate a Task 6, o
+// vinculo (`transactions.recurring_expense_id`) so existia gravavel via
+// INSERT cru de teste (domain/recurring.test.ts#seedTxVinculada) — nada
+// escrevia por um caminho de producao real. Sem a Task 7 (createTransaction
+// aceitando recurring_expense_id de verdade, POST /api/transactions
+// expondo isso, a tela Lancar oferecendo o vinculo), a supressao que
+// projectRecurring/commitments ja implementa desde a Task 2/3 e codigo
+// morto: nada no sistema cria a condicao que ela suprime, e a dupla
+// contagem descrita no §3.1 do spec e real assim que o dono registra o
+// primeiro pagamento do Starlink.
+//
+// Prova pelo NUMERO, nao so pela ausencia de erro: `commitments()` ANTES do
+// vinculo inclui a projecao inteira; DEPOIS, cai EXATAMENTE pelo valor
+// projetado — se a supressao fosse um no-op, o total ficaria igual (a
+// projecao continuaria contando) OU dobraria (se o lancamento real tambem
+// fosse somado). Conta corrente (sem bill_competence) e proposito: isola a
+// prova da supressao de qualquer interacao com a soma de `previstas`
+// (que so olha bill_competence, nunca purchase_date) — o unico jeito do
+// total cair e a supressao de fato remover a recorrente da janela.
+describe('commitments — vinculo real suprime a projecao (Task 7)', () => {
+  it('lancar o Starlink de agosto vinculado derruba o Comprometido de agosto pelo valor projetado', async () => {
+    const conta = await contaCorrente('Conta corrente PJ')
+    const recorrente = await createRecurring(db, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    const antes = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    expect(antes.totals).toEqual([{ min: 18900, max: 18900 }])
+
+    // "Este lancamento e o Starlink de agosto" — o vinculo explicito que a
+    // tela Lancar grava via recurring_expense_id (Task 7).
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -18900,
+      purchase_date: '2026-08-10',
+      description: 'Starlink de agosto',
+      settled_at: '2026-08-10',
+      recurring_expense_id: recorrente.id,
+    })
+
+    const depois = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    expect(depois.totals).toEqual([{ min: 0, max: 0 }])
+    expect(antes.totals[0].min - depois.totals[0].min).toBe(18900)
+    expect(antes.totals[0].max - depois.totals[0].max).toBe(18900)
+  })
+
+  it('vincular a competencia ERRADA (setembro) nao mexe no Comprometido de agosto', async () => {
+    // Mesma garantia POR COMPETENCIA que projectRecurring ja prova (teste 7
+    // de recurring.test.ts), agora pelo caminho de producao real —
+    // vincular um mes nao pode suprimir outro.
+    const conta = await contaCorrente('Conta corrente PJ setembro')
+    const recorrente = await createRecurring(db, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -18900,
+      purchase_date: '2026-09-10',
+      description: 'Starlink de setembro',
+      settled_at: '2026-09-10',
+      recurring_expense_id: recorrente.id,
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 2,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    expect(report.totals).toEqual([
+      { min: 18900, max: 18900 }, // agosto: projecao continua, sem prova de pagamento
+      { min: 0, max: 0 }, // setembro: suprimida pelo vinculo real
+    ])
   })
 })
 

@@ -19,6 +19,15 @@ export type Transaction = {
   parent_id: string | null
   imported_id: string | null
   import_source: string | null
+  // Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
+  // §3.1): vinculo explicito com `recurring_expenses`, pra supressao EXATA
+  // de dupla contagem no Comprometido — nunca heuristica (categoria+valor
+  // aproximado erra em silencio). Preenchido so quando o dono diz "este
+  // lancamento e o Starlink de agosto" (tela Lancar); import da fatia ②
+  // pode vincular depois. NULL e o default — sem vinculo, a projecao
+  // continua aparecendo (comportamento correto: sem prova, continua
+  // previsto).
+  recurring_expense_id: string | null
   created_at: string
   updated_at: string
 }
@@ -38,16 +47,28 @@ export type NewTransaction = {
   fx_rate_ppm?: number | null
   imported_id?: string | null
   import_source?: string | null
+  // Optional/nullable como payee_id/category_id: a FK
+  // `REFERENCES recurring_expenses(id) ON DELETE SET NULL` (migration 0006)
+  // e quem barra um id inexistente — SQLITE_CONSTRAINT_FOREIGNKEY cru, que
+  // a rota (routes/transactions.ts) traduz em 422 via
+  // friendlyConstraintMessage/logConstraintError, nunca chega cru ao
+  // cliente. Sem pre-validacao TS aqui, mesmo padrao de payee_id/category_id
+  // acima — so account_id ganha SELECT proprio porque createTransaction
+  // PRECISA do `kind`/`closing_day` da conta de qualquer forma (derivacao
+  // de bill_competence).
+  recurring_expense_id?: string | null
 }
 
 const TX_COLUMNS = `id, account_id, amount_cents, currency, amount_original_cents, fx_rate_ppm,
   purchase_date, bill_competence, settled_at, description, payee_id, category_id,
-  is_business, transfer_id, parent_id, imported_id, import_source, created_at, updated_at`
+  is_business, transfer_id, parent_id, imported_id, import_source, recurring_expense_id,
+  created_at, updated_at`
 
-// 19 colunas => 19 bound params por linha. O teto real e ativo do D1 e de
-// 100 params POR STATEMENT (medido), entao 1 linha por statement aqui e
-// folgado; o multi-row so aparece no plano de parcelas (Task 8).
-const TX_VALUES = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+// 20 colunas => 20 bound params por linha (recurring_expense_id, Task 7 da
+// fatia ⑥, somou uma). O teto real e ativo do D1 e de 100 params POR
+// STATEMENT (medido), entao 1 linha por statement aqui e folgado; o
+// multi-row so aparece no plano de parcelas (Task 8).
+const TX_VALUES = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 
 const INSERT_TX = `INSERT INTO transactions (${TX_COLUMNS}) VALUES ${TX_VALUES}`
 
@@ -75,6 +96,7 @@ function txBinds(
     null, // parent_id: rateio e da fatia ②
     input.imported_id ?? null,
     input.import_source ?? null,
+    input.recurring_expense_id ?? null,
     now,
     now,
   ]

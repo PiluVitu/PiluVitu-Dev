@@ -6,12 +6,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import type { AccountView } from './accounts'
+import type { RecurringExpenseView } from './recorrentes'
+
+// Valor de "nenhuma recorrente" no <select> — mesmo truque de NENHUMA em
+// pages/recorrentes.tsx: string vazia em vez de sentinel, porque o backend
+// ja trata '' como "nao informado" (enviar() abaixo converte pra
+// `undefined`, que JSON.stringify omite do corpo).
+const NENHUMA_RECORRENTE = ''
 
 export function NewEntryPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])
+  const [recorrentes, setRecorrentes] = useState<RecurringExpenseView[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [descricao, setDescricao] = useState('')
@@ -22,6 +31,7 @@ export function NewEntryPage() {
   const [isBusiness, setIsBusiness] = useState(false)
   const [parcelado, setParcelado] = useState(false)
   const [parcelas, setParcelas] = useState(2)
+  const [recorrenteId, setRecorrenteId] = useState(NENHUMA_RECORRENTE)
 
   const [formError, setFormError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
@@ -29,11 +39,20 @@ export function NewEntryPage() {
 
   useEffect(() => {
     let vivo = true
-    api<AccountView[]>('/api/accounts')
-      .then((data) => {
+    // GET /api/recurring devolve TODAS as recorrentes, ativas E pausadas
+    // (routes/recurring.ts) — filtra `active === 1` aqui na tela Lancar
+    // porque uma recorrente pausada nao pode ser vinculada (§3.1 do spec:
+    // o vinculo e a prova de que o gasto aconteceu; pausada nao tem
+    // projecao ativa pra suprimir).
+    Promise.all([
+      api<AccountView[]>('/api/accounts'),
+      api<RecurringExpenseView[]>('/api/recurring'),
+    ])
+      .then(([contas, recs]) => {
         if (!vivo) return
-        setAccounts(data)
-        setAccountId((atual) => atual || data[0]?.id || '')
+        setAccounts(contas)
+        setAccountId((atual) => atual || contas[0]?.id || '')
+        setRecorrentes(recs.filter((r) => r.active === 1))
       })
       .catch((e: unknown) => {
         if (vivo) setLoadError(e instanceof ApiError ? e.message : String(e))
@@ -104,12 +123,19 @@ export function NewEntryPage() {
             purchase_date,
             description: descricao,
             is_business,
+            // '' (NENHUMA_RECORRENTE) vira undefined, que JSON.stringify
+            // OMITE do corpo — nenhum lancamento sem vinculo manda a chave
+            // (§3.1 do spec: sem vinculo explicito, a projecao continua
+            // aparecendo, e isso e decidido no backend pela AUSENCIA da
+            // coluna, nao por um valor vazio).
+            recurring_expense_id: recorrenteId || undefined,
           }),
         })
         setOkMsg('Lançamento gravado.')
       }
       setDescricao('')
       setValor('')
+      setRecorrenteId(NENHUMA_RECORRENTE)
     } catch (err: unknown) {
       setFormError(err instanceof ApiError ? err.message : String(err))
     } finally {
@@ -180,6 +206,38 @@ export function NewEntryPage() {
                 ))}
               </select>
             </div>
+
+            {!parcelado ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="lancamento-recorrente">Recorrente</Label>
+                  <Ajuda rotulo="Recorrente">
+                    Marque quando este lançamento FOR uma despesa recorrente já
+                    cadastrada — ex.: "este é o Starlink de agosto". Isso evita
+                    que o Comprometido conte o mesmo gasto duas vezes (a
+                    projeção e o lançamento real). Só recorrentes ativas
+                    aparecem aqui; uma pausada não pode ser vinculada.
+                  </Ajuda>
+                </div>
+                <select
+                  id="lancamento-recorrente"
+                  className={SELECT_CLASSNAME}
+                  value={recorrenteId}
+                  onChange={(e) => setRecorrenteId(e.target.value)}
+                >
+                  <option value={NENHUMA_RECORRENTE}>— nenhuma —</option>
+                  {recorrentes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.description} —{' '}
+                      {formatRange({
+                        min: r.amount_min_cents,
+                        max: r.amount_max_cents,
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm">
