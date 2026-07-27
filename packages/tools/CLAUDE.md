@@ -24,6 +24,17 @@ Exportados via subpaths (`@piluvitu/tools/prng|entropy|roleta`). Testados em Jes
 
 `money.ts` — `parseBRL` (string BRL → centavos inteiros, aceita `'1.360,00'`/`'R$ 1.360,00'`/sinal negativo, nunca passa por float), `formatBRL` (formatação manual, byte-a-byte estável entre runtimes — não usa `Intl.NumberFormat`), `splitInstallments` (parcelamento com resto nas primeiras parcelas) e `sumCents`. Exposto via `@piluvitu/tools/money`.
 
+## Módulo `simulacao` (confronto reserva × ativo que deprecia, fatia ⑦ Task 4)
+
+`simulacao.ts` — o pedido literal do dono (fundo de emergência como prioridade matemática absoluta, antes de qualquer ativo que deprecia), na forma de duas funções puras que `apps/financas/web/src/pages/reserva.tsx` consome lado a lado. Aritmética, não conselho: nenhuma das duas funções (nem a tela que as chama) escreve "não compre" — o julgamento fica com quem lê o número.
+
+- **`simulateCashPurchase(amountCents, saldoCents, fixedCost): CashPurchaseSimulation | null`** — quantos meses de reserva um valor à vista consome (`monthsConsumed`) e a faixa de sobrevivência resultante depois de gastar (`survivalAfter`, sobre `saldoCents - amountCents`, sem clamp em zero — sobrevivência negativa é informação real, não caso de borda a esconder). `null` quando `fixedCost.max === 0` (nenhum custo fixo pra comparar) — as mesmas duas mentiras que `emergencyStatus` (`apps/financas/src/domain/reserve.ts`) já evita: nunca `Infinity`, nunca `0`.
+- **`simulateFinancedPurchase(totalCents, monthsCount, fixedNetCents): FinancedPurchaseSimulation`** — parcela via `splitInstallments` desta mesma pasta (resto nas primeiras, nenhum centavo perdido ou inventado), quantos meses, e `pctOfFixedNet` arredondado com a mesma regra de `domain/reports.ts#commitments` do Worker (`Math.round((cents*100)/fixedNet)`). `fixedNetCents` é sempre parâmetro — a função não hardcoda R$3.600 nem tem opinião sobre qual renda usar; é o chamador (a tela) quem decide, e `apps/financas/CLAUDE.md` documenta por que isso importa (nunca medir contra o líquido com freela).
+- **`FixedCostRange`/`MonthsRange`** espelham `FixedCostRange` de `domain/reserve.ts` (Worker) — duplicado aqui de propósito, mesmo motivo de `lib/dates.ts`/`lib/commitments.ts` (SPA) duplicarem tipo do domínio: este pacote não atravessa a fronteira Worker/bundle.
+- Testado com os números REAIS do caso que motivou a fatia inteira: R$13.000 à vista, R$96.000 em 72x (`simulacao.test.ts`). A inversão min/max (dividir pelo custo MÁXIMO dá o número MENOR) é testada com faixa assimétrica, deixando explícito no comentário que trocar os divisores quebraria a asserção.
+
+Exposto via `@piluvitu/tools/simulacao`.
+
 ## Módulo `import` (parsers de extrato/fatura, fatia ②)
 
 `src/import/` — parsers puros para o import de CSV/OFX (`docs/superpowers/specs/2026-07-27-financas-import-design.md`). O arquivo é sempre lido no navegador (nunca sobe pro Worker); estas funções só transformam texto já em memória.
