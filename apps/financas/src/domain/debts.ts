@@ -564,6 +564,96 @@ export async function writeOffDebt(
   return res.meta.changes > 0
 }
 
+// deleteDebtItem apaga o ITEM (estoque) — nao tem lancamento proprio nem
+// filhos em cascata, entao e sempre um DELETE simples, sem batch(). Quando
+// o item tem alocacao, debt_payment_allocations.item_id e RESTRICT
+// (migration 0001): o proprio DELETE falha com SQLITE_CONSTRAINT/FOREIGN
+// KEY antes de aplicar qualquer mudanca — nao ha nada pra desfazer porque e
+// UM statement de UMA linha so. Mesmo padrao de "erro cru propaga" que
+// addDebtItem ja usa contra debt_id inexistente: nenhum wrapper de erro
+// novo aqui, quem traduz pra 4xx e a rota (Task 3).
+//
+// Filtra por id E debt_id — igual deleteDebtPayment abaixo. Sem o AND
+// debt_id, um id de item solto apagaria o item de QUALQUER divida, mesma
+// classe de furo que uma revisao anterior achou numa alocacao apontando
+// pra item de outra divida.
+export async function deleteDebtItem(
+  db: D1Database,
+  debt_id: string,
+  item_id: string,
+): Promise<boolean> {
+  const res = await db
+    .prepare('DELETE FROM debt_items WHERE id = ? AND debt_id = ?')
+    .bind(item_id, debt_id)
+    .run()
+  return res.meta.changes > 0
+}
+
+// deleteDebtPayment apaga o PAGAMENTO (fluxo) e, se for kind='cash', o
+// lancamento 1:1 junto — no MESMO db.batch(), nessa ORDEM. Motivo da ordem:
+// debt_payments.transaction_id -> transactions e RESTRICT (migration 0001).
+// Apagar a transaction ANTES do payment falharia (a FK ainda existe);
+// apagar o payment primeiro faz a FK deixar de existir, e so entao a
+// transaction pode sair — MEDIDO contra o D1 local (ver task brief).
+// batch() faz rollback real: ou os dois somem, ou nenhum.
+//
+// debt_payment_allocations.payment_id e CASCADE — a alocacao some sozinha
+// quando o payment sai, sem statement proprio nesse batch. E o que LIBERA
+// o item pro RESTRICT de debt_payment_allocations.item_id parar de
+// bloquear deleteDebtItem logo acima (as duas funcoes compoem).
+//
+// Terceiro statement do batch REABRE a divida se a exclusao a deixou sem
+// nenhuma justificativa pra continuar 'settled' — mesmo raciocinio de
+// addDebtItem reabrir uma divida settled quando chega item novo (ver
+// acima): sem isto, apagar o (unico) pagamento que quitou a divida deixava
+// status='settled' PRESO enquanto v_debt_item_balance ja mostrava o item de
+// volta em aberto (a alocacao que o quitava sumiu por CASCADE) — a mesma
+// tela mostrando "quitado" e "devendo" ao mesmo tempo, contraditorio e
+// silencioso. So dispara quando EXISTS item com is_settled=0: uma divida ja
+// 'open' (caso comum — pagamento parcial nunca fechou nada) vira no-op, e
+// uma divida 'settled' por causa de OUTRO item/pagamento nao reabre a toa.
+export async function deleteDebtPayment(
+  db: D1Database,
+  debt_id: string,
+  payment_id: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      'SELECT transaction_id FROM debt_payments WHERE id = ? AND debt_id = ?',
+    )
+    .bind(payment_id, debt_id)
+    .first<{ transaction_id: string | null }>()
+  if (!row) return false
+
+  const now = nowIsoUtc()
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare('DELETE FROM debt_payments WHERE id = ? AND debt_id = ?')
+      .bind(payment_id, debt_id),
+  ]
+  if (row.transaction_id) {
+    statements.push(
+      db
+        .prepare('DELETE FROM transactions WHERE id = ?')
+        .bind(row.transaction_id),
+    )
+  }
+  statements.push(
+    db
+      .prepare(
+        `UPDATE debts SET status = 'open', settled_at = NULL, updated_at = ?
+            WHERE id = ? AND status = 'settled'
+              AND EXISTS (
+                SELECT 1 FROM v_debt_item_balance WHERE debt_id = ? AND is_settled = 0
+              )`,
+      )
+      .bind(now, debt_id, debt_id),
+  )
+
+  const results = await db.batch(statements)
+  return results[0].meta.changes > 0
+}
+
 // trg_alloc_item_teto / trg_alloc_pagamento_teto abortam com
 // SQLITE_CONSTRAINT_TRIGGER e o batch() inteiro reverte. A mensagem crua do
 // D1 (ex.: "D1_ERROR: alocacao excede o valor do item: SQLITE_CONSTRAINT_

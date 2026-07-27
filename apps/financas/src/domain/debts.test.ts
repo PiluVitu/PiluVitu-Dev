@@ -10,6 +10,8 @@ import {
   debtDetail,
   DebtHasLedgerError,
   deleteDebt,
+  deleteDebtItem,
+  deleteDebtPayment,
   InvalidPaymentError,
   listDebts,
   OverAllocationError,
@@ -1001,5 +1003,426 @@ describe('debts — exclusao e baixa', () => {
     })
     expect(depois.totals[0]).toBe(0)
     expect(depois.rows).toEqual([])
+  })
+
+  describe('deleteDebtItem', () => {
+    it('7) item sem alocacao: apaga e as OUTRAS quatro tabelas ficam intactas', async () => {
+      const { payee_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Item avulso',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 50000,
+        incurred_on: '2026-07-01',
+      })
+
+      const before = await countsAll()
+      expect(before).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 0,
+        debt_payment_allocations: 0,
+        transactions: 0,
+      })
+
+      const ok = await deleteDebtItem(env.DB, debt.id, item.id)
+      expect(ok).toBe(true)
+
+      const after = await countsAll()
+      expect(after).toEqual({
+        debts: 1,
+        debt_items: 0,
+        debt_payments: 0,
+        debt_payment_allocations: 0,
+        transactions: 0,
+      })
+    })
+
+    it('8) item com alocacao: RESTRICT dispara e NADA e apagado (nem o proprio item)', async () => {
+      const { payee_id, account_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Item alocado',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 100000,
+        incurred_on: '2026-07-01',
+      })
+      await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        account_id,
+        allocations: [{ item_id: item.id, amount_cents: 30000 }],
+      })
+
+      const before = await countsAll()
+      expect(before).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 1,
+        debt_payment_allocations: 1,
+        transactions: 1,
+      })
+
+      await expect(deleteDebtItem(env.DB, debt.id, item.id)).rejects.toThrow(
+        /FOREIGN KEY|SQLITE_CONSTRAINT/,
+      )
+
+      // Nao "quase igual" — IDENTICAS, valor a valor (mesma disciplina do
+      // teste 2 de deleteDebt acima).
+      const after = await countsAll()
+      expect(after).toEqual(before)
+    })
+
+    it('id de item inexistente: devolve false', async () => {
+      const { payee_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Sem item',
+        opened_at: '2026-07-01',
+      })
+      await expect(deleteDebtItem(env.DB, debt.id, 'nao-existe')).resolves.toBe(
+        false,
+      )
+    })
+
+    it('item que pertence a OUTRA divida: devolve false, sem apagar por id solto', async () => {
+      const { payee_id } = await seedPai()
+      const debtA = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Divida A',
+        opened_at: '2026-07-01',
+      })
+      const debtB = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Divida B',
+        opened_at: '2026-07-01',
+      })
+      const itemDeA = await addDebtItem(env.DB, {
+        debt_id: debtA.id,
+        description: 'Item da A',
+        amount_cents: 50000,
+        incurred_on: '2026-07-01',
+      })
+
+      const ok = await deleteDebtItem(env.DB, debtB.id, itemDeA.id)
+      expect(ok).toBe(false)
+
+      const after = await countsAll()
+      expect(after.debt_items).toBe(1) // continua la, intacto
+    })
+  })
+
+  describe('deleteDebtPayment', () => {
+    it('9) pagamento cash: some JUNTO com o lancamento — transactions perde EXATAMENTE 1 linha, a certa', async () => {
+      const { payee_id, account_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Pagamento cash',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 100000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        account_id,
+        allocations: [{ item_id: item.id, amount_cents: 30000 }],
+      })
+
+      // Transaction NAO relacionada a este pagamento — prova seletividade,
+      // nao so contagem (mesma disciplina do teste 1 de deleteDebt acima).
+      const now = nowIsoUtc()
+      const unrelatedId = newId()
+      await env.DB.prepare(
+        `INSERT INTO transactions
+           (id, account_id, amount_cents, currency, purchase_date, description, is_business, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+        .bind(
+          unrelatedId,
+          account_id,
+          -1000,
+          'BRL',
+          '2026-07-01',
+          'Cafe',
+          0,
+          now,
+          now,
+        )
+        .run()
+
+      const before = await countsAll()
+      expect(before).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 1,
+        debt_payment_allocations: 1,
+        transactions: 2,
+      })
+
+      const ok = await deleteDebtPayment(env.DB, debt.id, payment.id)
+      expect(ok).toBe(true)
+
+      const after = await countsAll()
+      expect(after).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 0,
+        debt_payment_allocations: 0,
+        transactions: 1, // so a NAO relacionada sobrou
+      })
+
+      const restante = await env.DB.prepare(
+        'SELECT id FROM transactions',
+      ).first<{ id: string }>()
+      expect(restante?.id).toBe(unrelatedId)
+
+      // Pagamento parcial (30000 de 100000): a divida nunca chegou a
+      // 'settled', entao o UPDATE de reabertura e um no-op — permanece 'open'.
+      const debtStatus = await env.DB.prepare(
+        'SELECT status FROM debts WHERE id = ?',
+      )
+        .bind(debt.id)
+        .first<{ status: string }>()
+      expect(debtStatus?.status).toBe('open')
+    })
+
+    it('10) pagamento offset: some SEM tocar transactions', async () => {
+      const { payee_id, account_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Pagamento offset',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 100000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        kind: 'offset',
+        allocations: [{ item_id: item.id, amount_cents: 30000 }],
+      })
+
+      // Transaction nao relacionada — prova que "sem tocar transactions" e
+      // literal, nao so "zero antes e zero depois" coincidente.
+      const now = nowIsoUtc()
+      await env.DB.prepare(
+        `INSERT INTO transactions
+           (id, account_id, amount_cents, currency, purchase_date, description, is_business, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+        .bind(
+          newId(),
+          account_id,
+          -1000,
+          'BRL',
+          '2026-07-01',
+          'Cafe',
+          0,
+          now,
+          now,
+        )
+        .run()
+
+      const before = await countsAll()
+      expect(before).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 1,
+        debt_payment_allocations: 1,
+        transactions: 1,
+      })
+
+      const ok = await deleteDebtPayment(env.DB, debt.id, payment.id)
+      expect(ok).toBe(true)
+
+      const after = await countsAll()
+      expect(after).toEqual({
+        debts: 1,
+        debt_items: 1,
+        debt_payments: 0,
+        debt_payment_allocations: 0,
+        transactions: 1, // inalterada
+      })
+    })
+
+    it('11) apagar o pagamento LIBERA o item: alocacao some por CASCADE, item volta a poder ser apagado', async () => {
+      const { payee_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Libera item',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 100000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 100000,
+        kind: 'offset',
+        allocations: [{ item_id: item.id, amount_cents: 100000 }],
+      })
+
+      // Enquanto a alocacao existe, o RESTRICT bloqueia o item.
+      await expect(deleteDebtItem(env.DB, debt.id, item.id)).rejects.toThrow(
+        /FOREIGN KEY|SQLITE_CONSTRAINT/,
+      )
+
+      const ok = await deleteDebtPayment(env.DB, debt.id, payment.id)
+      expect(ok).toBe(true)
+
+      const meio = await countsAll()
+      expect(meio.debt_payment_allocations).toBe(0) // cascade junto do pagamento
+
+      // Se as duas funcoes nao compoem, isto falha de novo com o mesmo RESTRICT.
+      const okItem = await deleteDebtItem(env.DB, debt.id, item.id)
+      expect(okItem).toBe(true)
+
+      const fim = await countsAll()
+      expect(fim).toEqual({
+        debts: 1,
+        debt_items: 0,
+        debt_payments: 0,
+        debt_payment_allocations: 0,
+        transactions: 0,
+      })
+    })
+
+    it('12) id de pagamento inexistente: devolve false', async () => {
+      const { payee_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Sem pagamento',
+        opened_at: '2026-07-01',
+      })
+      await expect(
+        deleteDebtPayment(env.DB, debt.id, 'nao-existe'),
+      ).resolves.toBe(false)
+    })
+
+    it('13) pagamento que pertence a OUTRA divida: devolve false, sem apagar por id solto', async () => {
+      const { payee_id, account_id } = await seedPai()
+      const debtA = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Divida A',
+        opened_at: '2026-07-01',
+      })
+      const debtB = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Divida B',
+        opened_at: '2026-07-01',
+      })
+      const itemDeA = await addDebtItem(env.DB, {
+        debt_id: debtA.id,
+        description: 'Item da A',
+        amount_cents: 50000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment } = await payDebt(env.DB, {
+        debt_id: debtA.id,
+        paid_on: '2026-07-05',
+        amount_cents: 30000,
+        account_id,
+        allocations: [{ item_id: itemDeA.id, amount_cents: 30000 }],
+      })
+
+      const before = await countsAll()
+
+      const ok = await deleteDebtPayment(env.DB, debtB.id, payment.id)
+      expect(ok).toBe(false)
+
+      // NADA mudou — nem no pagamento da A, nem em mais nada.
+      const after = await countsAll()
+      expect(after).toEqual(before)
+    })
+
+    it('apagar o (unico) pagamento que quitou a divida REABRE — settled volta a open', async () => {
+      // Sem isto, apagar o pagamento que quitou a divida deixava
+      // status='settled' PRESO enquanto v_debt_item_balance ja mostrava o
+      // item de volta em aberto (a alocacao que o quitava sumiu por
+      // CASCADE) — a tela mostraria "quitado" e "devendo" ao mesmo tempo.
+      // Mesmo raciocinio de addDebtItem reabrir uma divida settled quando
+      // chega item novo (ver domain/debts.ts).
+      const { payee_id, account_id } = await seedPai()
+      const debt = await createDebt(env.DB, {
+        payee_id,
+        direction: 'i_owe',
+        title: 'Fica presa se nao reabrir',
+        opened_at: '2026-07-01',
+      })
+      const item = await addDebtItem(env.DB, {
+        debt_id: debt.id,
+        description: 'Item A',
+        amount_cents: 50000,
+        incurred_on: '2026-07-01',
+      })
+      const { payment } = await payDebt(env.DB, {
+        debt_id: debt.id,
+        paid_on: '2026-07-05',
+        amount_cents: 50000,
+        account_id,
+        allocations: [{ item_id: item.id, amount_cents: 50000 }],
+      })
+
+      const antes = await env.DB.prepare(
+        'SELECT status, settled_at FROM debts WHERE id = ?',
+      )
+        .bind(debt.id)
+        .first<{ status: string; settled_at: string | null }>()
+      expect(antes?.status).toBe('settled')
+      expect(antes?.settled_at).not.toBeNull()
+
+      await deleteDebtPayment(env.DB, debt.id, payment.id)
+
+      const depois = await env.DB.prepare(
+        'SELECT status, settled_at FROM debts WHERE id = ?',
+      )
+        .bind(debt.id)
+        .first<{ status: string; settled_at: string | null }>()
+      expect(depois?.status).toBe('open')
+      expect(depois?.settled_at).toBeNull()
+
+      const balance = await env.DB.prepare(
+        'SELECT remaining_cents, is_settled FROM v_debt_item_balance WHERE item_id = ?',
+      )
+        .bind(item.id)
+        .first<{ remaining_cents: number; is_settled: number }>()
+      expect(balance?.remaining_cents).toBe(50000)
+      expect(balance?.is_settled).toBe(0)
+    })
   })
 })
