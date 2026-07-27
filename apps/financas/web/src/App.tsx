@@ -8,6 +8,7 @@ import { CommitmentsPage } from './pages/commitments'
 import { ConfigPage } from './pages/config'
 import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
+import { FluxoPage } from './pages/fluxo'
 import { HomePage } from './pages/home'
 import { ImportarPage } from './pages/importar'
 import { NewEntryPage } from './pages/new-entry'
@@ -74,6 +75,9 @@ function AppShell() {
         <a href="#/comprometido" className={navLinkClassName}>
           Comprometido
         </a>
+        <a href="#/fluxo" className={navLinkClassName}>
+          Fluxo de caixa
+        </a>
         <a href="#/configuracoes" className={navLinkClassName}>
           Configurações
         </a>
@@ -84,6 +88,8 @@ function AppShell() {
         <DividasPage />
       ) : hash.startsWith('#/comprometido') ? (
         <CommitmentsPage from={competenciaAtual()} />
+      ) : hash === '#/fluxo' || hash === '#/fluxo/' ? (
+        <FluxoPage />
       ) : hash.startsWith('#/lancar') ? (
         <NewEntryPage />
       ) : hash === '#/recorrentes' || hash === '#/recorrentes/' ? (

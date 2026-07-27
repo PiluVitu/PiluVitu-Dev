@@ -4,11 +4,14 @@ import {
   Bar,
   BarChart,
   Cell,
+  ComposedChart,
+  Line,
   ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import type { CashflowReportView } from '../lib/cashflow'
 import { LIMIAR_ALERTA_PCT, rotuloCompetencia } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
@@ -23,6 +26,13 @@ const COR_REFERENCIA = 'hsl(var(--muted-foreground))'
 // "informativo, não é o dado principal") — a barra "Sem categoria" do
 // GraficoCategorias, mais abaixo neste arquivo.
 const COR_SEM_CATEGORIA = 'hsl(var(--muted-foreground))'
+// GraficoFluxo (Task 3, fatia ⑧): entrou reusa o mesmo token "normal"
+// (--primary) de GraficoComprometido; saiu reusa o token de alerta
+// (--destructive) — não por risco de teto, mas porque vermelho já é o
+// significado que este app deu a "dinheiro saindo" em toda outra tela.
+// Nenhum token novo, mesma disciplina de cor do resto do arquivo.
+const COR_ENTROU = COR_PADRAO
+const COR_SAIU = COR_ALERTA
 
 const ALTURA = 220
 const LARGURA_MAXIMA = 640
@@ -300,6 +310,86 @@ export function GraficoCategorias({
           ))}
         </Bar>
       </BarChart>
+    </div>
+  )
+}
+
+/**
+ * Mapa de fluxo de caixa (Task 3, fatia ⑧) — barras de entrada/saída +
+ * linha de acumulado. Mora NESTE arquivo, não em `GraficoFluxo.tsx`
+ * separado — mesma razão de `GraficoCategorias` acima: um terceiro arquivo
+ * importando `recharts` criaria um TERCEIRO chunk de ~104 KB gzip pro
+ * mesmo pacote. `pages/fluxo.tsx` resolve
+ * `lazy(() => import('../blocos/GraficoComprometido').then(m => ({
+ * default: m.GraficoFluxo })))` — o MESMO chunk físico que
+ * `BlocoComprometido.tsx`/`BlocoCategorias.tsx` já carregam sob demanda,
+ * nunca um novo. `scripts/check-financas-lazy-chart.mjs` continua válido
+ * sem alteração — o gate verifica "o marcador de recharts está fora do
+ * chunk de entrada e dentro de ALGUM chunk lazy", não quantos gráficos
+ * moram nesse chunk.
+ *
+ * Eixo único (não dual como um mapa de fluxo "de livro-texto" poderia
+ * ter): entrou/saiu/acumulado convivem na mesma escala de centavos, e este
+ * app é de uso pessoal — a diferença de magnitude entre um mês e o
+ * acumulado não chega a justificar um segundo eixo (mais uma superfície
+ * pra testar/manter). `ComposedChart` (recharts) é só um `BarChart` que
+ * também aceita `<Line>` — mesmas `<XAxis>`/`<YAxis>`/`<Tooltip>` dos
+ * outros dois gráficos deste arquivo.
+ *
+ * ⚠️ Mesmo achado MEDIDO já documentado acima (GraficoComprometido/
+ * GraficoCategorias): uma barra de valor EXATAMENTE 0 não renderiza
+ * `<path class="recharts-rectangle">` nenhum — um mês sem movimento
+ * (`entrou_cents === 0 && saiu_cents === 0`, o caso "mês vazio aparece
+ * zerado" do spec) simplesmente não desenha barra de entrada/saída
+ * naquele mês, mas a linha de acumulado continua (o acumulado migra o
+ * saldo do mês anterior, nunca zera — ver `domain/cashflow.ts`). A prova
+ * textual de "mês vazio aparece zerado, não ausente" mora na TABELA de
+ * `pages/fluxo.tsx` (não sofre dessa peculiaridade do recharts), não
+ * neste componente.
+ */
+export function GraficoFluxo({ report }: { report: CashflowReportView }) {
+  const { ref, largura } = useLarguraContainer<HTMLDivElement>()
+  const dados = report.linhas.map((l) => ({
+    competence: l.competence,
+    rotulo: rotuloCompetencia(l.competence),
+    entrou: l.entrou_cents,
+    saiu: l.saiu_cents,
+    acumulado: l.acumulado_cents,
+  }))
+
+  return (
+    <div ref={ref} className="overflow-x-auto" data-testid="grafico-fluxo">
+      <ComposedChart width={largura} height={ALTURA} data={dados}>
+        <XAxis dataKey="rotulo" fontSize={12} />
+        <YAxis
+          width={72}
+          fontSize={12}
+          tickFormatter={(v: number) => formatBRL(v)}
+        />
+        <Tooltip
+          formatter={(value, name) => [formatBRL(Number(value)), name]}
+        />
+        <Bar
+          dataKey="entrou"
+          name="Entrou"
+          fill={COR_ENTROU}
+          isAnimationActive={false}
+        />
+        <Bar
+          dataKey="saiu"
+          name="Saiu"
+          fill={COR_SAIU}
+          isAnimationActive={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="acumulado"
+          name="Acumulado"
+          stroke={COR_REFERENCIA}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </ComposedChart>
     </div>
   )
 }

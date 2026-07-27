@@ -1,9 +1,13 @@
 import { act, render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import type { CashflowReportView } from '../lib/cashflow'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
 import { triggerResize } from '../test/setup'
-import GraficoComprometido, { GraficoCategorias } from './GraficoComprometido'
+import GraficoComprometido, {
+  GraficoCategorias,
+  GraficoFluxo,
+} from './GraficoComprometido'
 
 const report: CommitmentReportView = {
   competences: [
@@ -318,5 +322,109 @@ describe('GraficoCategorias — barras horizontais, uma por categoria', () => {
     const largura = larguraDoWrapper(container)
     expect(largura).toBeLessThanOrEqual(308)
     expect(largura).toBe(308)
+  })
+})
+
+// `GraficoFluxo` (Task 3, fatia ⑧ — mapa de fluxo de caixa) mora NESTE
+// arquivo, não em `GraficoFluxo.tsx` separado — mesma razão de
+// `GraficoCategorias` acima: um terceiro arquivo importando `recharts` de
+// novo criaria um TERCEIRO chunk de ~104 KB gzip pro mesmo pacote.
+// `pages/fluxo.tsx` resolve o `import()` pro MESMO módulo físico
+// (`import('../blocos/GraficoComprometido').then(m => ({ default:
+// m.GraficoFluxo }))`), então o custo de `recharts` continua pago uma vez
+// só. `scripts/check-financas-lazy-chart.mjs` continua válido sem
+// alteração — o gate verifica "o marcador de recharts está fora do chunk
+// de entrada e dentro de ALGUM chunk lazy", não quantos gráficos moram lá.
+const cashflowReport: CashflowReportView = {
+  meses: ['2026-06', '2026-07', '2026-08'],
+  linhas: [
+    {
+      competence: '2026-06',
+      entrou_cents: 500000,
+      saiu_cents: 200000,
+      saldo_cents: 300000,
+      acumulado_cents: 300000,
+    },
+    {
+      competence: '2026-07',
+      entrou_cents: 400000,
+      saiu_cents: 350000,
+      saldo_cents: 50000,
+      acumulado_cents: 350000,
+    },
+    // Mês sem movimento nenhum (entrou/saiu zerados) — o caso que o spec
+    // exige aparecer "zerado, nunca ausente" (coberto na tabela de
+    // `pages/fluxo.test.tsx`; aqui serve pra provar que o gráfico não
+    // quebra com uma barra de valor exatamente 0, mesmo achado MEDIDO já
+    // documentado pra GraficoComprometido/GraficoCategorias: uma barra
+    // EXATAMENTE 0 não renderiza <path class="recharts-rectangle">.
+    {
+      competence: '2026-08',
+      entrou_cents: 0,
+      saiu_cents: 0,
+      saldo_cents: 0,
+      acumulado_cents: 350000,
+    },
+  ],
+}
+
+describe('GraficoFluxo — barras de entrada/saída + linha de acumulado', () => {
+  it('desenha duas barras (entrou/saiu) por mês com movimento, mais uma linha de acumulado', () => {
+    const { container } = render(<GraficoFluxo report={cashflowReport} />)
+
+    // 2 meses com movimento (jun, jul) x 2 séries (entrou, saiu) = 4
+    // retângulos. Ago não contribui nenhum retângulo — as duas séries
+    // ficam em 0 naquele mês (ver comentário no fixture acima).
+    const barras = container.querySelectorAll('.recharts-rectangle')
+    expect(barras.length).toBe(4)
+
+    // a linha de acumulado sempre existe, independente de mês zerado —
+    // acumulado nunca é 0 nos 3 meses deste fixture.
+    expect(container.querySelector('.recharts-line-curve')).toBeInTheDocument()
+  })
+
+  it('cores por token do design system: entrou usa --primary, saiu usa --destructive — nunca hex solto', () => {
+    const { container } = render(<GraficoFluxo report={cashflowReport} />)
+
+    const barras = Array.from(container.querySelectorAll('.recharts-rectangle'))
+    const fills = barras.map((b) => b.getAttribute('fill'))
+
+    // Ordem de inserção no SVG = ordem de declaração das <Bar>: primeiro a
+    // série "entrou" (2 retângulos, jun e jul — ago não desenha nada),
+    // depois a série "saiu" (2 retângulos, mesma regra).
+    expect(fills.slice(0, 2)).toEqual([
+      'hsl(var(--primary))',
+      'hsl(var(--primary))',
+    ])
+    expect(fills.slice(2, 4)).toEqual([
+      'hsl(var(--destructive))',
+      'hsl(var(--destructive))',
+    ])
+
+    for (const fill of fills) {
+      expect(fill).not.toMatch(/^#/)
+      expect(fill).toMatch(/^hsl\(var\(--/)
+    }
+  })
+
+  it('renderiza dentro do wrapper com data-testid conhecido, medindo o CONTAINER — mesmo hook de GraficoComprometido/GraficoCategorias', () => {
+    const { container } = render(<GraficoFluxo report={cashflowReport} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-fluxo"]',
+    ) as HTMLElement
+    expect(wrapper).toBeInTheDocument()
+
+    Object.defineProperty(wrapper, 'clientWidth', {
+      configurable: true,
+      value: 308,
+    })
+    act(() => {
+      triggerResize(wrapper)
+    })
+
+    const svgWrapper = container.querySelector(
+      '.recharts-wrapper',
+    ) as HTMLElement
+    expect(Number(svgWrapper.style.width.replace('px', ''))).toBe(308)
   })
 })

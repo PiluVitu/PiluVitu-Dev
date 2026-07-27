@@ -54,6 +54,10 @@ function mockFetchVazio() {
           pct_of_fixed_net: [],
         })
       }
+      // FluxoPage (Task 3, fatia ⑧) — objeto, não lista.
+      if (url.includes('/api/reports/cashflow')) {
+        return respond({ meses: [], linhas: [] })
+      }
       // BlocoCategorias (Task 8) — objeto, não lista.
       if (url.includes('/api/reports/by-category')) {
         return respond({ competence: '', rows: [], total_cents: 0 })
@@ -177,6 +181,19 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
+      ).toBeDefined(),
+    )
+  })
+
+  // Task 3 (fatia ⑧): nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/fluxo mostra a tela Fluxo de caixa', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/fluxo'
+    render(<App />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Fluxo de caixa' }),
       ).toBeDefined(),
     )
   })

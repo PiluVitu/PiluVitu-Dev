@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { competenciaAtual, todayInTeresina } from './dates'
+import {
+  addMonthsToCompetence,
+  competenciaAtual,
+  todayInTeresina,
+} from './dates'
 
 describe('todayInTeresina', () => {
   test('01:00 UTC (22h do dia anterior em Teresina) ainda devolve o dia anterior', () => {
@@ -33,5 +37,27 @@ describe('competenciaAtual', () => {
 
   test('sem argumento devolve YYYY-MM', () => {
     expect(competenciaAtual()).toMatch(/^\d{4}-\d{2}$/)
+  })
+})
+
+describe('addMonthsToCompetence', () => {
+  test('soma dentro do mesmo ano', () => {
+    expect(addMonthsToCompetence('2026-07', 2)).toBe('2026-09')
+  })
+
+  test('soma virando o ano', () => {
+    expect(addMonthsToCompetence('2026-11', 3)).toBe('2027-02')
+  })
+
+  test('n negativo (janela pra tras, usado pelo seletor de #/fluxo)', () => {
+    expect(addMonthsToCompetence('2026-07', -11)).toBe('2025-08')
+  })
+
+  test('n negativo virando o ano', () => {
+    expect(addMonthsToCompetence('2026-01', -1)).toBe('2025-12')
+  })
+
+  test('n=0 devolve a mesma competencia', () => {
+    expect(addMonthsToCompetence('2026-07', 0)).toBe('2026-07')
   })
 })
