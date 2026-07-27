@@ -862,3 +862,207 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     expect(idForcado(1)).toBe(idForcado(0))
   })
 })
+
+// Task 6 (docs/superpowers/specs/2026-07-27-financas-import-design.md, §10):
+// a prova de ponta a ponta que sustenta a fatia inteira. Não é mais um
+// cenário isolado — é o fluxo COMPLETO: parseia um OFX real (formato SGML de
+// banco de verdade, TRNTYPE/DTPOSTED/TRNAMT/FITID/MEMO), confirma pela tela
+// de verdade, os lançamentos aparecem no "banco" — e reimportar O MESMO
+// ARQUIVO, byte a byte, não cria linha nova.
+//
+// O "banco" simulado (`tabelaTransactions`) não é um Set de ids: é um array
+// de linhas completas, com a MESMA regra de dedupe em CÓDIGO DE APLICAÇÃO
+// que `importTransactions` (`src/domain/import.ts`) usa de verdade —
+// filtra por `imported_id` já existente NAQUELA conta antes de inserir,
+// nunca dependendo de um índice único pra barrar (`db.batch()` reverteria a
+// sequência inteira se um INSERT multi-row violasse UNIQUE no meio). Só a
+// REDE é mockada (fetch) — `parseOfx`, `prepararConferencia`,
+// `enviarConfirmadas` e o dedupe do "servidor" rodam de verdade.
+describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
+  const OFX_E2E = `<OFX>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20260705120000[-3:BRT]
+<TRNAMT>-58.30
+<FITID>E2E-FITID-1
+<MEMO>Supermercado Extra
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20260706120000[-3:BRT]
+<TRNAMT>-120.00
+<FITID>E2E-FITID-2
+<MEMO>Posto Ipiranga
+</STMTTRN>
+</BANKTRANLIST>
+</OFX>`
+
+  type LinhaTabela = {
+    imported_id: string
+    purchase_date: string
+    amount_cents: number
+    description: string
+  }
+
+  function montarBancoSimulado(chamadas: Chamada[]) {
+    const tabelaTransactions: LinhaTabela[] = []
+
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input)
+          const method = init?.method ?? 'GET'
+          const body = init?.body as string | undefined
+          chamadas.push({ url, method, body })
+
+          if (url.includes('/api/accounts')) return respondJson(accounts)
+          if (url.includes('/api/payees')) return respondJson(payees)
+          if (url.includes('/api/categories')) return respondJson(categories)
+          if (method === 'POST' && url.includes('/api/transactions/import')) {
+            const parsed = JSON.parse(body as string) as {
+              rows: LinhaTabela[]
+            }
+            // MESMA regra de `importTransactions`: dedupe por imported_id
+            // já visto NAQUELA "conta" (aqui só existe uma), verificado
+            // ANTES de inserir — nunca um índice único fazendo esse
+            // trabalho por trás.
+            const jaVistos = new Set(
+              tabelaTransactions.map((t) => t.imported_id),
+            )
+            let imported = 0
+            let skipped = 0
+            for (const row of parsed.rows) {
+              if (jaVistos.has(row.imported_id)) {
+                skipped++
+                continue
+              }
+              tabelaTransactions.push({
+                imported_id: row.imported_id,
+                purchase_date: row.purchase_date,
+                amount_cents: row.amount_cents,
+                description: row.description,
+              })
+              jaVistos.add(row.imported_id)
+              imported++
+            }
+            return respondJson(
+              { total: parsed.rows.length, imported, skipped },
+              201,
+            )
+          }
+          if (url.includes('/api/transactions')) {
+            return respondJson(
+              tabelaTransactions.map((t) => ({ imported_id: t.imported_id })),
+            )
+          }
+          throw new Error(`rota inesperada em teste: ${method} ${url}`)
+        }),
+    )
+
+    return tabelaTransactions
+  }
+
+  test('parseia um OFX real, confirma, os lançamentos aparecem — e reimportar o MESMO arquivo não cria linha nova', async () => {
+    const chamadas: Chamada[] = []
+    const tabelaTransactions = montarBancoSimulado(chamadas)
+
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+
+    // RODADA 1 — banco vazio, arquivo novo.
+    expect(tabelaTransactions).toHaveLength(0)
+
+    await usuario.upload(screen.getByLabelText(/Arquivo/i), arquivoOfx(OFX_E2E))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    // Banco vazio ⇒ nenhuma linha é duplicata, as duas nascem marcadas.
+    expect(screen.queryByTestId('duplicada-0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('duplicada-1')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    ).toBeChecked()
+    expect(
+      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+    ).toBeChecked()
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('resultado-resumo')).toHaveTextContent(
+      '2 importadas, 0 já existiam',
+    )
+
+    // "Os lançamentos aparecem": dado ESTRUTURADO correto no "banco" — não
+    // só a contagem, os valores que o parser de verdade extraiu do OFX.
+    expect(tabelaTransactions).toHaveLength(2)
+    expect(tabelaTransactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          imported_id: 'E2E-FITID-1',
+          purchase_date: '2026-07-05',
+          amount_cents: -5830,
+          description: expect.stringContaining('Supermercado Extra'),
+        }),
+        expect.objectContaining({
+          imported_id: 'E2E-FITID-2',
+          purchase_date: '2026-07-06',
+          amount_cents: -12000,
+          description: expect.stringContaining('Posto Ipiranga'),
+        }),
+      ]),
+    )
+
+    const antesDaReimportacao = tabelaTransactions.length // 2
+
+    // RODADA 2 — reimporta O MESMO ARQUIVO, byte a byte (o cenário real: o
+    // dono baixa o extrato de novo e importa sem lembrar que já importou).
+    await usuario.click(
+      screen.getByRole('button', { name: /Nova importação/i }),
+    )
+    await usuario.upload(screen.getByLabelText(/Arquivo/i), arquivoOfx(OFX_E2E))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    // As DUAS linhas agora batem contra o que está no "banco" — duplicatas,
+    // desmarcadas por padrão.
+    expect(screen.getByTestId('duplicada-0')).toBeInTheDocument()
+    expect(screen.getByTestId('duplicada-1')).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+    ).not.toBeChecked()
+    expect(
+      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+    ).not.toBeChecked()
+
+    // Nada marcado ⇒ o botão fica desabilitado — a tela real nem deixa
+    // reenviar por acidente (não é só que o servidor pularia).
+    expect(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    ).toBeDisabled()
+
+    // A PROVA do slice inteiro (spec §10: "Importar o mesmo arquivo duas
+    // vezes não cria linha nova — provado contando transactions antes e
+    // depois"): a contagem antes da rodada 2 e depois dela é a MESMA.
+    expect(tabelaTransactions).toHaveLength(antesDaReimportacao) // 2 antes, 2 depois — nada mudou
+  })
+})
