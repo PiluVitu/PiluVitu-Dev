@@ -449,6 +449,99 @@ describe('byCategory', () => {
     expect(report.total_cents).toBe(0)
   })
 
+  it('receita nao entra no relatorio — nem sozinha, nem netada contra despesa real no bucket Sem categoria (fix round 1)', async () => {
+    // Cenario exato da revisao: hoje NAO existe categoria kind='income'
+    // semeada nem POST /api/categories, entao todo recebimento cai em "Sem
+    // categoria" — junto com despesa real sem categoria, se o filtro fosse
+    // so por transfer_id/parent_id, um pagamento de cliente de +200000
+    // netaria contra uma despesa de -30000 e o bucket sairia +170000,
+    // renderizado como GASTO por um bloco chamado "pra onde foi o dinheiro".
+    const conta = await createAccount(db, {
+      name: 'Conta corrente byCategory receita',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: 200000,
+      purchase_date: '2026-07-03',
+      description: 'Pagamento de cliente',
+      settled_at: '2026-07-03',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -30000,
+      purchase_date: '2026-07-04',
+      description: 'Despesa em dinheiro',
+      settled_at: '2026-07-04',
+    })
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    // So a despesa real sobra — a receita nao aparece nem somada, nem como
+    // linha propria. Se o filtro fosse por SINAL DO NET agregado (HAVING ou
+    // pos-agregacao) em vez de por linha, este caso ainda passaria (o net
+    // ja e negativo); o proximo teste (categoria de despesa que fecha
+    // positiva) e o que distingue os dois.
+    expect(report.rows).toEqual([
+      {
+        category_id: null,
+        category_name: 'Sem categoria',
+        category_slug: null,
+        total_cents: -30000,
+      },
+    ])
+    expect(report.total_cents).toBe(-30000)
+  })
+
+  it('receita COM categoria tambem fica de fora — o filtro e por LINHA (amount_cents), nao por kind da categoria nem por net agregado', async () => {
+    const conta = await createAccount(db, {
+      name: 'Conta corrente byCategory receita categorizada',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const salario = await categoria('Salario', 'income', 'salario-idx')
+    const mercado = await categoria('Mercado', 'expense', 'mercado-idx-receita')
+
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: 500000,
+      purchase_date: '2026-07-05',
+      description: 'Salario',
+      category_id: salario,
+      settled_at: '2026-07-05',
+    })
+    await createTransaction(db, {
+      account_id: conta.id,
+      amount_cents: -20000,
+      purchase_date: '2026-07-06',
+      description: 'Supermercado',
+      category_id: mercado,
+      settled_at: '2026-07-06',
+    })
+
+    const report = await byCategory(db, { competence: '2026-07' })
+
+    // A categoria 'Salario' nao aparece NEM COMO LINHA (nao e so um total
+    // zerado) — a linha de receita e filtrada ANTES do GROUP BY, entao o
+    // grupo 'Salario' nunca se forma. Uma implementacao que filtrasse por
+    // c.kind <> 'income' passaria este teste por acidente sem realmente
+    // olhar pro sinal de amount_cents; um teste futuro com receita numa
+    // categoria kind='expense' (dado sujo, mas possivel hoje sem CHECK que
+    // ligue as duas colunas) e que ficasse de fora provaria a diferenca —
+    // fora do escopo deste fix, mas documentado aqui pra quem for mexer.
+    expect(report.rows.map((r) => r.category_name)).toEqual(['Mercado'])
+    expect(report.rows).toEqual([
+      {
+        category_id: mercado,
+        category_name: 'Mercado',
+        category_slug: 'mercado-idx-receita',
+        total_cents: -20000,
+      },
+    ])
+    expect(report.total_cents).toBe(-20000)
+  })
+
   it('exclui perna de transferencia (mesmo anti-dupla-contagem de v_cashflow)', async () => {
     const origem = await createAccount(db, {
       name: 'Conta A byCategory',

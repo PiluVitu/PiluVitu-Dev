@@ -136,10 +136,12 @@ export type ByCategoryReport = {
   total_cents: number
 }
 
-// Categorias sao um conjunto pequeno e controlado (7 seedadas na migration
-// + o que o dono cadastrar via POST /api/categories), mas TODA query no D1
-// sem LIMIT queima cota ("rows read" conta linha ESCANEADA) — mesmo teto
-// usado por listTransactions() em domain/transactions.ts.
+// Categorias sao um conjunto pequeno e controlado (hoje so as 7 seedadas na
+// migration 0001 — nao existe POST /api/categories ainda, so GET /), mas
+// TODA query no D1 sem LIMIT queima cota ("rows read" conta linha
+// ESCANEADA) — mesmo teto usado por listTransactions() em
+// domain/transactions.ts. Fica pronto pro dia em que uma categoria puder
+// ser criada via API.
 const BY_CATEGORY_LIMIT = 500
 
 /**
@@ -149,6 +151,21 @@ const BY_CATEGORY_LIMIT = 500
  * dia 25 tem purchase_date em julho e bill_competence em agosto —
  * responder com bill_competence seria responder a pergunta errada
  * ("o que cai na fatura que fecha em agosto"), nao a que a tela faz.
+ *
+ * SO DESPESA (amount_cents < 0) — fix round 1. A tela existe pra responder
+ * "pra onde foi o dinheiro", nao "qual foi o saldo liquido por categoria".
+ * Isto NAO e um caso futuro: hoje nao existe categoria kind='income'
+ * semeada nem POST /api/categories, entao todo deposito de salario/freela
+ * lancado ate a Task 5 cai no bucket "Sem categoria" SEM esta linha — e
+ * netaria contra despesa real uncategorizada no mesmo mes (ex.: recebimento
+ * de cliente +200000 e despesas em dinheiro -30000, ambos sem categoria,
+ * viram um unico "Sem categoria: +170000", que a Task 8 desenharia como
+ * GASTO num bloco literalmente chamado "pra onde foi o dinheiro"). O filtro
+ * e por LINHA, antes do GROUP BY — nao um `HAVING SUM(...) < 0` nem um
+ * filtro no cliente por total agregado: um `HAVING`/filtro pos-agregacao
+ * decidiria por categoria-mes inteira pelo SINAL DO NET, e uma categoria de
+ * despesa que fecha positiva num mes (estorno maior que o gasto real)
+ * desapareceria inteira mesmo tendo gasto real dentro dela.
  */
 export async function byCategory(
   db: D1Database,
@@ -161,7 +178,27 @@ export async function byCategory(
   // padrao de commitments() (ver ⚠️ da secao "Relatorio de comprometido" no
   // CLAUDE.md: query string malformada e 400, nunca 422).
   const competence = addMonthsToCompetence(opts.competence, 0)
+  // addMonthsToCompetence(competence, 1) da o primeiro dia do mes SEGUINTE —
+  // o limite superior (exclusivo) do intervalo. purchase_date e 'YYYY-MM-DD'
+  // TEXT, e ordena lexicograficamente == cronologicamente (mesma garantia
+  // usada pelos indices do schema), entao a comparacao de string funciona
+  // como comparacao de data.
+  const nextCompetence = addMonthsToCompetence(competence, 1)
+  const from = `${competence}-01`
+  const to = `${nextCompetence}-01`
 
+  // Faixa semi-aberta (>= inicio DO mes, < inicio do mes SEGUINTE) em vez de
+  // `substr(purchase_date, 1, 7) = ?` (fix round 1) — a versao com `substr`
+  // aplica uma FUNCAO em cada linha antes de comparar, o que impede o D1 de
+  // usar qualquer indice em purchase_date: TODA linha de `transactions` e
+  // ESCANEADA (o que "rows read" cobra) em toda chamada, nao so as do mes
+  // pedido, e o custo cresce com o LEDGER inteiro, nao com o mes. A faixa
+  // semi-aberta e sargable e casa com idx_tx_purchase_date_expense
+  // (migration 0004) — index parcial desenhado com o MESMO predicado
+  // estatico desta query (amount_cents < 0 AND transfer_id/parent_id IS
+  // NULL), entao o scan fica restrito as linhas que a query quer de
+  // qualquer forma.
+  //
   // transfer_id/parent_id IS NULL: mesmo anti-dupla-contagem de v_cashflow —
   // perna de transferencia e filha de rateio repetem o valor da outra
   // perna/do pai. GROUP BY t.category_id agrupa sozinho todo NULL na mesma
@@ -174,14 +211,16 @@ export async function byCategory(
               SUM(t.amount_cents)               AS total_cents
          FROM transactions t
          LEFT JOIN categories c ON c.id = t.category_id
-        WHERE substr(t.purchase_date, 1, 7) = ?
-          AND t.transfer_id IS NULL
-          AND t.parent_id   IS NULL
+        WHERE t.purchase_date >= ?
+          AND t.purchase_date <  ?
+          AND t.amount_cents  <  0
+          AND t.transfer_id   IS NULL
+          AND t.parent_id     IS NULL
         GROUP BY t.category_id
         ORDER BY total_cents ASC
         LIMIT ?`,
     )
-    .bind(competence, BY_CATEGORY_LIMIT)
+    .bind(from, to, BY_CATEGORY_LIMIT)
     .all<CategoryRow>()
 
   const rows = res.results
