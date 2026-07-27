@@ -61,9 +61,22 @@ describe('BlocoComprometido', () => {
       screen.getByRole('heading', { name: 'Comprometido' }),
     ).toBeInTheDocument()
 
-    // Suspense: o gráfico não está no DOM logo após o primeiro render, só
-    // depois que o `import()` dinâmico (e a busca) resolvem — é a prova de
-    // que o gráfico é carregado via lazy/Suspense, não síncrono.
+    // Prova o COMPORTAMENTO de UI: o gráfico só aparece depois que `report`
+    // chega (o `<Suspense>` só é montado dentro de `{report ? ... : null}`
+    // em BlocoComprometido.tsx) — não antes, e não instantaneamente no
+    // primeiro render síncrono.
+    //
+    // ⚠️ Isto NÃO prova code-splitting/bundle isolado — essa garantia não é
+    // observável num teste de unidade: o mock de `api` sempre resolve numa
+    // promise (microtask), então esta asserção passaria IGUAL se
+    // `GraficoComprometido` fosse importado estaticamente no topo do
+    // arquivo, porque o gate real é o `{report ? ... : null}`, não o
+    // `import()` em si (achado da revisão da Task 6, fix round 1). A
+    // garantia de que `recharts` está de fato isolado num chunk lazy — e
+    // ausente do chunk de entrada — é responsabilidade de
+    // `scripts/check-financas-lazy-chart.mjs`, rodado no `build` (ver
+    // apps/financas/CLAUDE.md § Home). Aqui só interessa o comportamento
+    // visível: skeleton → conteúdo, sem flash de gráfico vazio.
     expect(screen.queryByTestId('grafico-comprometido')).not.toBeInTheDocument()
 
     await waitFor(() =>

@@ -1,35 +1,8 @@
 import { useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
-
-export type CommitmentReportView = {
-  competences: string[]
-  rows: Array<{ account_id: string; account_name: string; cells: number[] }>
-  totals: number[]
-  fixed_net_cents: number
-  pct_of_fixed_net: number[]
-}
-
-const MESES = [
-  'jan',
-  'fev',
-  'mar',
-  'abr',
-  'mai',
-  'jun',
-  'jul',
-  'ago',
-  'set',
-  'out',
-  'nov',
-  'dez',
-]
-
-/** '2026-08' -> 'ago/26' */
-export function rotuloCompetencia(competence: string): string {
-  const [ano, mes] = competence.split('-')
-  return `${MESES[Number(mes) - 1]}/${ano.slice(2)}`
-}
+import { rotuloCompetencia } from '../lib/commitments'
+import type { CommitmentReportView } from '../lib/commitments'
 
 /** Acima disso, metade da renda fixa já está comprometida antes de qualquer compra nova. */
 const LIMIAR_ALERTA_PCT = 50

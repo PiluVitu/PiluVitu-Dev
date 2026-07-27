@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node ../../../scripts/check-tailwind-source.mjs \"dist/assets/*.css\"",
+    "build": "vite build && node ../../../scripts/check-tailwind-source.mjs \"dist/assets/*.css\" && node ../../../scripts/check-financas-lazy-chart.mjs dist",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "prettier:fix": "prettier --write \"**/*.{js,ts,tsx,json,md,css}\"",

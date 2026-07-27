@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
-import type { CommitmentReportView } from '../pages/commitments'
+import type { CommitmentReportView } from '../lib/commitments'
 import { Bloco } from './Bloco'
 
 const GraficoComprometido = lazy(() => import('./GraficoComprometido'))
