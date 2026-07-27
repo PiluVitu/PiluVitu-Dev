@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Button } from '@piluvitu/ui/button'
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
@@ -26,18 +27,35 @@ function AppShell() {
     ? hash.slice('#/dividas/'.length)
     : null
 
+  const navLinkClassName =
+    'text-primary text-sm underline-offset-4 hover:underline'
+
   return (
-    <>
-      <header>
-        <span>{sessao?.user.email}</span>
-        <button onClick={() => signOut()}>Sair</button>
+    <div className="mx-auto max-w-2xl space-y-4 p-4">
+      <header className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground text-sm">
+          {sessao?.user.email}
+        </span>
+        <Button variant="outline" size="sm" onClick={() => signOut()}>
+          Sair
+        </Button>
       </header>
-      <nav>
-        <a href="#/">Início</a>
-        <a href="#/contas">Contas</a>
-        <a href="#/dividas">Dívidas</a>
-        <a href="#/lancar">Lançar</a>
-        <a href="#/comprometido">Comprometido</a>
+      <nav className="flex flex-wrap gap-x-4 gap-y-1 border-b pb-3">
+        <a href="#/" className={navLinkClassName}>
+          Início
+        </a>
+        <a href="#/contas" className={navLinkClassName}>
+          Contas
+        </a>
+        <a href="#/dividas" className={navLinkClassName}>
+          Dívidas
+        </a>
+        <a href="#/lancar" className={navLinkClassName}>
+          Lançar
+        </a>
+        <a href="#/comprometido" className={navLinkClassName}>
+          Comprometido
+        </a>
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />
@@ -52,7 +70,7 @@ function AppShell() {
       ) : (
         <HomePage />
       )}
-    </>
+    </div>
   )
 }
 

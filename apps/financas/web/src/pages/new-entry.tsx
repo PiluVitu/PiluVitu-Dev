@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, splitInstallments } from '@piluvitu/tools/money'
+import { Button } from '@piluvitu/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 import type { AccountView } from './accounts'
+
+// Sem componente `Select` em @piluvitu/ui — classes copiadas à mão das de
+// `Input` (mesmo padrão de accounts.tsx/DividasPage.tsx/debt-detail.tsx).
+const SELECT_CLASSNAME =
+  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
+
+const CHECKBOX_CLASSNAME =
+  'border-input accent-primary h-4 w-4 rounded focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-hidden'
 
 export function NewEntryPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])
@@ -112,104 +124,138 @@ export function NewEntryPage() {
   }
 
   return (
-    <section>
-      <h1>Lançar</h1>
-      <form onSubmit={enviar} data-testid="form-lancamento">
-        <label>
-          Descrição
-          <input
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-          />
-        </label>
-        <label>
-          Valor
-          <input
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            placeholder="1.360,00"
-          />
-        </label>
-        <label>
-          Data
-          <input
-            type="date"
-            value={data}
-            onChange={(e) => setData(e.target.value)}
-          />
-        </label>
-        <label>
-          Conta
-          <select
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
+    <section className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Lançar</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Novo lançamento</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={enviar}
+            data-testid="form-lancamento"
+            className="space-y-4"
           >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={entrada}
-            onChange={(e) => setEntrada(e.target.checked)}
-          />
-          Entrada
-        </label>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={isBusiness}
-            onChange={(e) => setIsBusiness(e.target.checked)}
-          />
-          PJ
-        </label>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={parcelado}
-            onChange={(e) => setParcelado(e.target.checked)}
-          />
-          Parcelado
-        </label>
-
-        {parcelado ? (
-          <>
-            <label>
-              Parcelas
-              <input
-                type="number"
-                min={1}
-                max={360}
-                value={parcelas}
-                onChange={(e) => setParcelas(Number(e.target.value))}
+            <div className="space-y-1.5">
+              <Label htmlFor="lancamento-descricao">Descrição</Label>
+              <Input
+                id="lancamento-descricao"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
               />
-            </label>
-            {previa ? (
-              <p data-testid="previa-parcelas">
-                {parcelas}× de{' '}
-                {previa
-                  .slice(0, 3)
-                  .map((c) => formatBRL(c))
-                  .join(' / ')}
-                {previa.length > 3 ? ' …' : ''}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="lancamento-valor">Valor</Label>
+              <Input
+                id="lancamento-valor"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                placeholder="1.360,00"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="lancamento-data">Data</Label>
+              <Input
+                id="lancamento-data"
+                type="date"
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="lancamento-conta">Conta</Label>
+              <select
+                id="lancamento-conta"
+                className={SELECT_CLASSNAME}
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className={CHECKBOX_CLASSNAME}
+                  checked={entrada}
+                  onChange={(e) => setEntrada(e.target.checked)}
+                />
+                Entrada
+              </label>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className={CHECKBOX_CLASSNAME}
+                  checked={isBusiness}
+                  onChange={(e) => setIsBusiness(e.target.checked)}
+                />
+                PJ
+              </label>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className={CHECKBOX_CLASSNAME}
+                  checked={parcelado}
+                  onChange={(e) => setParcelado(e.target.checked)}
+                />
+                Parcelado
+              </label>
+            </div>
+
+            {parcelado ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="lancamento-parcelas">Parcelas</Label>
+                <Input
+                  id="lancamento-parcelas"
+                  type="number"
+                  min={1}
+                  max={360}
+                  value={parcelas}
+                  onChange={(e) => setParcelas(Number(e.target.value))}
+                />
+                {previa ? (
+                  <p
+                    data-testid="previa-parcelas"
+                    className="text-muted-foreground text-sm"
+                  >
+                    {parcelas}× de{' '}
+                    {previa
+                      .slice(0, 3)
+                      .map((c) => formatBRL(c))
+                      .join(' / ')}
+                    {previa.length > 3 ? ' …' : ''}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {formError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {formError}
               </p>
             ) : null}
-          </>
-        ) : null}
-
-        {formError ? <p role="alert">{formError}</p> : null}
-        {okMsg ? <p role="status">{okMsg}</p> : null}
-        <button type="submit" disabled={enviando}>
-          {enviando ? 'Salvando…' : 'Gravar'}
-        </button>
-      </form>
+            {okMsg ? (
+              <p role="status" className="text-success text-sm">
+                {okMsg}
+              </p>
+            ) : null}
+            <Button type="submit" disabled={enviando}>
+              {enviando ? 'Salvando…' : 'Gravar'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }

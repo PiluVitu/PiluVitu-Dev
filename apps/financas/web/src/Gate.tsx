@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Button } from '@piluvitu/ui/button'
 import { signIn, useSession } from './auth-client'
 
 export function mensagemDeErro(codigo: string | null): string | null {
@@ -14,7 +15,12 @@ export function Gate({ children }: { children: ReactNode }) {
   // A ORDEM É A GUARDA. isPending PRIMEIRO: o primeiro render é sempre
   // pending. Testar !sessao antes pisca a tela de login pra quem já está
   // logado.
-  if (isPending) return <p aria-busy="true">carregando…</p>
+  if (isPending)
+    return (
+      <p aria-busy="true" className="p-4">
+        carregando…
+      </p>
+    )
 
   // Gate por !sessao, NUNCA por error: um blip de rede (erro que não é
   // 401) preserva o data anterior no átomo — derrubar por error
@@ -26,19 +32,23 @@ export function Gate({ children }: { children: ReactNode }) {
       new URLSearchParams(window.location.search).get('error'),
     )
     return (
-      <main>
-        <h1>Finanças</h1>
-        {erro !== null && <p role="alert">{erro}</p>}
+      <main className="mx-auto max-w-sm space-y-4 p-4">
+        <h1 className="text-2xl font-semibold tracking-tight">Finanças</h1>
+        {erro !== null && (
+          <p role="alert" className="text-destructive text-sm">
+            {erro}
+          </p>
+        )}
         {/* Aditivo, não substitui o gate: sem sessão + error presente é
             "não consegui checar" (503, rede fora) — visualmente idêntico
             a "você não está logado" sem isto, o que confunde o dono numa
             falha real de verificação com o estado normal de deslogado. */}
         {error !== null && (
-          <p role="alert">
+          <p role="alert" className="text-destructive text-sm">
             Não consegui verificar sua sessão. Tente novamente.
           </p>
         )}
-        <button
+        <Button
           onClick={() =>
             signIn.social({
               provider: 'google',
@@ -57,7 +67,7 @@ export function Gate({ children }: { children: ReactNode }) {
           }
         >
           Entrar com Google
-        </button>
+        </Button>
       </main>
     )
   }

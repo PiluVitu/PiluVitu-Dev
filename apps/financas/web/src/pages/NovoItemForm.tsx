@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { parseBRL } from '@piluvitu/tools/money'
+import { Button } from '@piluvitu/ui/button'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 
@@ -53,37 +56,47 @@ export function NovoItemForm({
   }
 
   return (
-    <form onSubmit={enviar}>
-      <h3>Novo item</h3>
-      {erro !== null && <p role="alert">{erro}</p>}
+    <form onSubmit={enviar} className="space-y-4">
+      <h3 className="text-sm font-semibold">Novo item</h3>
+      {erro !== null && (
+        <p role="alert" className="text-destructive text-sm">
+          {erro}
+        </p>
+      )}
 
-      <label htmlFor="item-descricao">Descrição</label>
-      <input
-        id="item-descricao"
-        value={descricao}
-        onChange={(e) => setDescricao(e.target.value)}
-      />
+      <div className="space-y-1.5">
+        <Label htmlFor="item-descricao">Descrição</Label>
+        <Input
+          id="item-descricao"
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      </div>
 
-      <label htmlFor="item-valor">Valor</label>
-      <input
-        id="item-valor"
-        inputMode="decimal"
-        value={valor}
-        onChange={(e) => setValor(e.target.value)}
-        placeholder="1.360,00"
-      />
+      <div className="space-y-1.5">
+        <Label htmlFor="item-valor">Valor</Label>
+        <Input
+          id="item-valor"
+          inputMode="decimal"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          placeholder="1.360,00"
+        />
+      </div>
 
-      <label htmlFor="item-data">Data</label>
-      <input
-        id="item-data"
-        type="date"
-        value={data}
-        onChange={(e) => setData(e.target.value)}
-      />
+      <div className="space-y-1.5">
+        <Label htmlFor="item-data">Data</Label>
+        <Input
+          id="item-data"
+          type="date"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
+      </div>
 
-      <button type="submit" disabled={salvando}>
+      <Button type="submit" disabled={salvando} size="sm">
         Adicionar item
-      </button>
+      </Button>
     </form>
   )
 }

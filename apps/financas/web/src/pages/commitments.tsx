@@ -1,8 +1,30 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { rotuloCompetencia } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
+
+// Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx` carrega sob
+// demanda — não uma segunda cópia do gráfico. `GraficoComprometido.tsx` é o
+// único arquivo que importa `recharts` (~104 KB gzip); resolver este
+// `import()` aponta pro mesmo chunk físico que o bloco da home já carrega,
+// então o custo é pago uma vez só (mesmo padrão de
+// `blocos/BlocoCategorias.tsx`, que faz o mesmo pra `GraficoCategorias`).
+//
+// ⚠️ Decisão desta migração: NÃO renderiza `<BlocoComprometido />` (o card
+// autônomo da home) aqui dentro — `BlocoComprometido` busca seus PRÓPRIOS
+// dados (sempre a competência ATUAL, sem props), então embutir o
+// componente inteiro faria esta tela disparar um SEGUNDO fetch
+// independente (com uma querystring que nem sempre bate com `from`/`months`
+// recebidos por prop) só pra mostrar o mesmo gráfico — e ainda aninharia um
+// segundo card "Comprometido" dentro desta página, que já tem seu próprio
+// título e seus próprios estados de carregando/erro. O que de fato evita
+// "duas implementações do mesmo gráfico" é o módulo `GraficoComprometido`
+// em si (a peça pesada/reusável) — compartilhado aqui a partir do MESMO
+// `report` que esta página já buscou, sem round-trip extra.
+const GraficoComprometido = lazy(() => import('../blocos/GraficoComprometido'))
 
 /** Acima disso, metade da renda fixa já está comprometida antes de qualquer compra nova. */
 const LIMIAR_ALERTA_PCT = 50
@@ -37,64 +59,106 @@ export function CommitmentsPage({
   if (!report) return <p>Carregando…</p>
 
   return (
-    <section>
-      <h1>Comprometido</h1>
-      <p>
+    <section className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Comprometido</h1>
+      <p className="text-muted-foreground text-sm">
         Denominador: líquido fixo (mês sem freela) de{' '}
-        <strong data-testid="denominador">
+        <strong data-testid="denominador" className="text-foreground">
           {formatBRL(report.fixed_net_cents)}
         </strong>
         .
       </p>
 
       {report.rows.length === 0 ? (
-        <p>Nenhuma parcela ou dívida em aberto na janela.</p>
-      ) : null}
+        <p className="text-muted-foreground text-sm">
+          Nenhuma parcela ou dívida em aberto na janela.
+        </p>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Suspense fallback={<div aria-busy="true" />}>
+              <GraficoComprometido report={report} />
+            </Suspense>
+          </CardContent>
+        </Card>
+      )}
 
-      <table>
-        <thead data-testid="cabecalho">
-          <tr>
-            <th />
-            {report.competences.map((c) => (
-              <th key={c}>{rotuloCompetencia(c)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {report.rows.map((r) => (
-            <tr key={r.account_id} data-testid={`linha-${r.account_id}`}>
-              <td>{r.account_name}</td>
-              {r.cells.map((cents, i) => (
-                <td key={i} data-testid={`celula-${r.account_id}-${i}`}>
-                  {cents === 0 ? '—' : formatBRL(cents)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th>TOTAL</th>
-            {report.totals.map((cents, i) => (
-              <td key={i} data-testid={`total-${i}`}>
-                {formatBRL(cents)}
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <th>% do líquido fixo</th>
-            {report.pct_of_fixed_net.map((pct, i) => (
-              <td
-                key={i}
-                data-testid={`pct-${i}`}
-                className={pct > LIMIAR_ALERTA_PCT ? 'alerta' : undefined}
-              >
-                {pct}%
-              </td>
-            ))}
-          </tr>
-        </tfoot>
-      </table>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Por conta</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead data-testid="cabecalho">
+                <tr>
+                  <th className="border-b py-1.5 pr-2 text-left font-medium" />
+                  {report.competences.map((c) => (
+                    <th
+                      key={c}
+                      className="border-b px-2 py-1.5 text-right font-medium"
+                    >
+                      {rotuloCompetencia(c)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {report.rows.map((r) => (
+                  <tr key={r.account_id} data-testid={`linha-${r.account_id}`}>
+                    <td className="border-b py-1.5 pr-2 text-left">
+                      {r.account_name}
+                    </td>
+                    {r.cells.map((cents, i) => (
+                      <td
+                        key={i}
+                        data-testid={`celula-${r.account_id}-${i}`}
+                        className="border-b px-2 py-1.5 text-right"
+                      >
+                        {cents === 0 ? '—' : formatBRL(cents)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th className="border-t-2 py-1.5 pr-2 text-left font-medium">
+                    TOTAL
+                  </th>
+                  {report.totals.map((cents, i) => (
+                    <td
+                      key={i}
+                      data-testid={`total-${i}`}
+                      className="border-t-2 px-2 py-1.5 text-right font-medium"
+                    >
+                      {formatBRL(cents)}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <th className="py-1.5 pr-2 text-left font-medium">
+                    % do líquido fixo
+                  </th>
+                  {report.pct_of_fixed_net.map((pct, i) => (
+                    <td
+                      key={i}
+                      data-testid={`pct-${i}`}
+                      className={cn(
+                        'px-2 py-1.5 text-right',
+                        pct > LIMIAR_ALERTA_PCT &&
+                          'alerta text-destructive font-bold',
+                      )}
+                    >
+                      {pct}%
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </section>
   )
 }

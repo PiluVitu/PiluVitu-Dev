@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { Button } from '@piluvitu/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 
@@ -16,6 +20,11 @@ export type DebtListRow = {
 export type PayeeOption = { id: string; name: string; kind: string }
 
 const NOVO = '__novo__'
+
+// Sem componente `Select` em @piluvitu/ui — classes copiadas à mão das de
+// `Input` (mesmo padrão de accounts.tsx/new-entry.tsx/debt-detail.tsx).
+const SELECT_CLASSNAME =
+  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
 
 export function DividasPage() {
   const [dividas, setDividas] = useState<DebtListRow[]>([])
@@ -93,82 +102,127 @@ export function DividasPage() {
   }
 
   return (
-    <section>
-      <h1>Dívidas</h1>
-      {erro !== null && <p role="alert">{erro}</p>}
+    <section className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Dívidas</h1>
+      {erro !== null && (
+        <p role="alert" className="text-destructive text-sm">
+          {erro}
+        </p>
+      )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Dívida</th>
-            <th>Pessoa</th>
-            <th>Total</th>
-            <th>Pago</th>
-            <th>Falta</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dividas.map((d) => (
-            <tr key={d.id}>
-              <td>
-                <a href={`#/dividas/${d.id}`}>{d.title}</a>
-              </td>
-              <td>{d.payee_name}</td>
-              <td>{formatBRL(d.total_cents)}</td>
-              <td>{formatBRL(d.paid_cents)}</td>
-              <td>{formatBRL(d.remaining_cents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Card>
+        <CardContent className="pt-6">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="border-b py-1.5 pr-2 text-left font-medium">
+                    Dívida
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    Pessoa
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    Total
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    Pago
+                  </th>
+                  <th className="border-b py-1.5 pl-2 text-right font-medium">
+                    Falta
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {dividas.map((d) => (
+                  <tr key={d.id}>
+                    <td className="border-b py-1.5 pr-2 text-left">
+                      <a
+                        href={`#/dividas/${d.id}`}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {d.title}
+                      </a>
+                    </td>
+                    <td className="border-b px-2 py-1.5 text-right">
+                      {d.payee_name}
+                    </td>
+                    <td className="border-b px-2 py-1.5 text-right">
+                      {formatBRL(d.total_cents)}
+                    </td>
+                    <td className="border-b px-2 py-1.5 text-right">
+                      {formatBRL(d.paid_cents)}
+                    </td>
+                    <td className="border-b py-1.5 pl-2 text-right font-medium">
+                      {formatBRL(d.remaining_cents)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
-      <form onSubmit={enviar}>
-        <h2>Nova dívida</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Nova dívida</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={enviar} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="titulo">Título</Label>
+              <Input
+                id="titulo"
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+              />
+            </div>
 
-        <label htmlFor="titulo">Título</label>
-        <input
-          id="titulo"
-          value={titulo}
-          onChange={(e) => setTitulo(e.target.value)}
-        />
+            <div className="space-y-1.5">
+              <Label htmlFor="pessoa">Pessoa</Label>
+              <select
+                id="pessoa"
+                className={SELECT_CLASSNAME}
+                value={payeeId}
+                onChange={(e) => setPayeeId(e.target.value)}
+              >
+                <option value={NOVO}>— nova pessoa —</option>
+                {payees.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <label htmlFor="pessoa">Pessoa</label>
-        <select
-          id="pessoa"
-          value={payeeId}
-          onChange={(e) => setPayeeId(e.target.value)}
-        >
-          <option value={NOVO}>— nova pessoa —</option>
-          {payees.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+            {payeeId === NOVO && (
+              <div className="space-y-1.5">
+                <Label htmlFor="nome-novo">Nome da pessoa</Label>
+                <Input
+                  id="nome-novo"
+                  value={nomeNovo}
+                  onChange={(e) => setNomeNovo(e.target.value)}
+                />
+              </div>
+            )}
 
-        {payeeId === NOVO && (
-          <>
-            <label htmlFor="nome-novo">Nome da pessoa</label>
-            <input
-              id="nome-novo"
-              value={nomeNovo}
-              onChange={(e) => setNomeNovo(e.target.value)}
-            />
-          </>
-        )}
+            <div className="space-y-1.5">
+              <Label htmlFor="abertura">Aberta em</Label>
+              <Input
+                id="abertura"
+                type="date"
+                value={abertura}
+                onChange={(e) => setAbertura(e.target.value)}
+              />
+            </div>
 
-        <label htmlFor="abertura">Aberta em</label>
-        <input
-          id="abertura"
-          type="date"
-          value={abertura}
-          onChange={(e) => setAbertura(e.target.value)}
-        />
-
-        <button type="submit" disabled={salvando}>
-          Criar dívida
-        </button>
-      </form>
+            <Button type="submit" disabled={salvando}>
+              Criar dívida
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }

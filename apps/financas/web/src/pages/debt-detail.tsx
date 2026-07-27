@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
+import { Button } from '@piluvitu/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 import type { AccountView } from './accounts'
@@ -36,6 +41,11 @@ export type DebtDetailView = {
   items: DebtItemBalanceView[]
   payments: DebtPaymentView[]
 }
+
+// Sem componente `Select` em @piluvitu/ui — classes copiadas à mão das de
+// `Input` (mesmo padrão de accounts.tsx/new-entry.tsx/DividasPage.tsx).
+const SELECT_CLASSNAME =
+  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
  * Espelho, no cliente, do que os triggers trg_alloc_item_teto e
@@ -209,126 +219,205 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   }
 
   return (
-    <section>
-      <h1>Dívida · {detail.debt.title}</h1>
-      <p>
-        {detail.debt.direction === 'i_owe' ? 'devo' : 'me devem'}{' '}
-        <strong>{formatBRL(emAberto)}</strong> de {formatBRL(totalDivida)}
-      </p>
+    <section className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Dívida · {detail.debt.title}
+        </h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {detail.debt.direction === 'i_owe' ? 'devo' : 'me devem'}{' '}
+          <strong className="text-foreground">{formatBRL(emAberto)}</strong> de{' '}
+          {formatBRL(totalDivida)}
+        </p>
+      </div>
 
-      <h2>Itens</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>total</th>
-            <th>pago</th>
-            <th>falta</th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.items.map((i) => (
-            <tr
-              key={i.item_id}
-              data-testid={`item-${i.item_id}`}
-              className={i.is_settled ? 'quitado' : undefined}
-            >
-              <td>
-                {i.description}
-                {i.is_settled ? <span aria-label="quitado"> ✓</span> : null}
-              </td>
-              <td data-testid={`item-${i.item_id}-total`}>
-                {formatBRL(i.amount_cents)}
-              </td>
-              <td data-testid={`item-${i.item_id}-pago`}>
-                {formatBRL(i.allocated_cents)}
-              </td>
-              <td data-testid={`item-${i.item_id}-falta`}>
-                {formatBRL(Math.max(0, i.remaining_cents))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Itens</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="border-b py-1.5 pr-2 text-left font-medium">
+                    Item
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    total
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    pago
+                  </th>
+                  <th className="border-b py-1.5 pl-2 text-right font-medium">
+                    falta
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.items.map((i) => (
+                  <tr
+                    key={i.item_id}
+                    data-testid={`item-${i.item_id}`}
+                    className={cn(i.is_settled && 'quitado opacity-[0.55]')}
+                  >
+                    <td
+                      className={cn(
+                        'border-b py-1.5 pr-2 text-left',
+                        i.is_settled && 'line-through',
+                      )}
+                    >
+                      {i.description}
+                      {i.is_settled ? (
+                        <span aria-label="quitado"> ✓</span>
+                      ) : null}
+                    </td>
+                    <td
+                      data-testid={`item-${i.item_id}-total`}
+                      className="border-b px-2 py-1.5 text-right"
+                    >
+                      {formatBRL(i.amount_cents)}
+                    </td>
+                    <td
+                      data-testid={`item-${i.item_id}-pago`}
+                      className="border-b px-2 py-1.5 text-right"
+                    >
+                      {formatBRL(i.allocated_cents)}
+                    </td>
+                    <td
+                      data-testid={`item-${i.item_id}-falta`}
+                      className="border-b py-1.5 pl-2 text-right font-medium"
+                    >
+                      {formatBRL(Math.max(0, i.remaining_cents))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <NovoItemForm debtId={debtId} onCreated={carregar} />
+          <div className="mt-6 border-t pt-6">
+            <NovoItemForm debtId={debtId} onCreated={carregar} />
+          </div>
+        </CardContent>
+      </Card>
 
-      <h2>Pagamentos</h2>
-      <ul>
-        {detail.payments.map((p) => (
-          <li key={p.id} data-testid={`pagamento-${p.id}`}>
-            <span>{dataBR(p.paid_on)}</span>{' '}
-            <strong data-testid={`pagamento-${p.id}-total`}>
-              {formatBRL(p.amount_cents)}
-            </strong>
-            <ul>
-              {p.allocations.map((a) => (
-                <li key={a.item_id} data-testid={`alloc-${p.id}-${a.item_id}`}>
-                  {descricaoItem(a.item_id)} · {formatBRL(a.amount_cents)}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-
-      <h2>Novo pagamento</h2>
-      <form onSubmit={enviar} data-testid="form-pagamento">
-        <label>
-          Valor
-          <input
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            placeholder="1.360,00"
-          />
-        </label>
-        <label>
-          Data
-          <input
-            type="date"
-            value={paidOn}
-            onChange={(e) => setPaidOn(e.target.value)}
-          />
-        </label>
-        <label>
-          Conta
-          <select
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Pagamentos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-3">
+            {detail.payments.map((p) => (
+              <li
+                key={p.id}
+                data-testid={`pagamento-${p.id}`}
+                className="text-sm"
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-muted-foreground">
+                    {dataBR(p.paid_on)}
+                  </span>{' '}
+                  <strong data-testid={`pagamento-${p.id}-total`}>
+                    {formatBRL(p.amount_cents)}
+                  </strong>
+                </div>
+                <ul className="text-muted-foreground mt-1 space-y-0.5 pl-4">
+                  {p.allocations.map((a) => (
+                    <li
+                      key={a.item_id}
+                      data-testid={`alloc-${p.id}-${a.item_id}`}
+                    >
+                      {descricaoItem(a.item_id)} · {formatBRL(a.amount_cents)}
+                    </li>
+                  ))}
+                </ul>
+              </li>
             ))}
-          </select>
-        </label>
+          </ul>
+        </CardContent>
+      </Card>
 
-        <fieldset>
-          <legend>Dividir entre itens</legend>
-          {detail.items.map((i) => (
-            <label key={i.item_id}>
-              {i.description}
-              <input
-                value={allocRaw[i.item_id] ?? ''}
-                disabled={i.is_settled === 1}
-                onChange={(e) =>
-                  setAllocRaw((prev) => ({
-                    ...prev,
-                    [i.item_id]: e.target.value,
-                  }))
-                }
-                placeholder={formatBRL(Math.max(0, i.remaining_cents))}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Novo pagamento</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={enviar}
+            data-testid="form-pagamento"
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="pagamento-valor">Valor</Label>
+              <Input
+                id="pagamento-valor"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                placeholder="1.360,00"
               />
-            </label>
-          ))}
-        </fieldset>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pagamento-data">Data</Label>
+              <Input
+                id="pagamento-data"
+                type="date"
+                value={paidOn}
+                onChange={(e) => setPaidOn(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pagamento-conta">Conta</Label>
+              <select
+                id="pagamento-conta"
+                className={SELECT_CLASSNAME}
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {formError ? <p role="alert">{formError}</p> : null}
-        <button type="submit" disabled={enviando}>
-          {enviando ? 'Salvando…' : 'Registrar pagamento'}
-        </button>
-      </form>
+            <fieldset className="space-y-2 border-t pt-4">
+              <legend className="text-sm font-medium">
+                Dividir entre itens
+              </legend>
+              {detail.items.map((i) => (
+                <div key={i.item_id} className="space-y-1.5">
+                  <Label htmlFor={`alocacao-${i.item_id}`}>
+                    {i.description}
+                  </Label>
+                  <Input
+                    id={`alocacao-${i.item_id}`}
+                    value={allocRaw[i.item_id] ?? ''}
+                    disabled={i.is_settled === 1}
+                    onChange={(e) =>
+                      setAllocRaw((prev) => ({
+                        ...prev,
+                        [i.item_id]: e.target.value,
+                      }))
+                    }
+                    placeholder={formatBRL(Math.max(0, i.remaining_cents))}
+                  />
+                </div>
+              ))}
+            </fieldset>
+
+            {formError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {formError}
+              </p>
+            ) : null}
+            <Button type="submit" disabled={enviando}>
+              {enviando ? 'Salvando…' : 'Registrar pagamento'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }

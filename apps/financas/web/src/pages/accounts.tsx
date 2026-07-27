@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { Button } from '@piluvitu/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { Input } from '@piluvitu/ui/input'
+import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 
 export type AccountView = {
@@ -31,6 +35,13 @@ const KIND_LABELS: Record<(typeof KINDS)[number], string> = {
   investment: 'Investimento',
   benefit: 'Benefício',
 }
+
+// Sem componente `Select` em @piluvitu/ui (14 componentes hoje, nenhum é
+// select) — classes copiadas à mão das de `Input` (mesmo padrão já usado em
+// `blocos/BlocoCategorias.tsx` pro `<input type="month">`), sem as variantes
+// `file:*` (irrelevantes pra `<select>`).
+const SELECT_CLASSNAME =
+  'border-input focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
 
 function dd(n: number): string {
   return String(n).padStart(2, '0')
@@ -115,104 +126,143 @@ export function AccountsPage() {
   if (!accounts) return <p>Carregando…</p>
 
   return (
-    <section>
-      <h1>Contas</h1>
-      {SCOPES.map((scope) => {
-        const list = accounts.filter((a) => a.scope === scope)
-        if (list.length === 0) return null
-        return (
-          <div key={scope} data-testid={`grupo-${scope}`}>
-            <h2>{scope}</h2>
-            <table>
-              <tbody>
-                {list.map((a) => (
-                  <tr key={a.id}>
-                    <td>
-                      {a.name}
-                      {a.kind === 'credit_card' &&
-                      a.closing_day !== null &&
-                      a.due_day !== null ? (
-                        <small data-testid={`fatura-${a.id}`}>
-                          {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
-                        </small>
-                      ) : null}
-                    </td>
-                    <td data-testid={`saldo-${a.id}`}>
-                      {formatBRL(a.balance_cents)}
-                    </td>
-                  </tr>
+    <section className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Contas</h1>
+
+      <div className="space-y-4">
+        {SCOPES.map((scope) => {
+          const list = accounts.filter((a) => a.scope === scope)
+          if (list.length === 0) return null
+          return (
+            <Card key={scope} data-testid={`grupo-${scope}`}>
+              <CardHeader>
+                <CardTitle className="text-base">{scope}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <table className="w-full border-collapse text-sm">
+                  <tbody>
+                    {list.map((a) => (
+                      <tr key={a.id}>
+                        <td className="border-b py-1.5 pr-2 text-left">
+                          {a.name}
+                          {a.kind === 'credit_card' &&
+                          a.closing_day !== null &&
+                          a.due_day !== null ? (
+                            <small
+                              data-testid={`fatura-${a.id}`}
+                              className="text-muted-foreground block text-xs"
+                            >
+                              {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
+                            </small>
+                          ) : null}
+                        </td>
+                        <td
+                          data-testid={`saldo-${a.id}`}
+                          className="border-b py-1.5 text-right font-medium"
+                        >
+                          {formatBRL(a.balance_cents)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Nova conta</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={enviar}
+            data-testid="form-nova-conta"
+            className="space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="conta-nome">Nome</Label>
+              <Input
+                id="conta-nome"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="conta-escopo">Escopo</Label>
+              <select
+                id="conta-escopo"
+                className={SELECT_CLASSNAME}
+                value={scope}
+                onChange={(e) => setScope(e.target.value as 'PF' | 'PJ')}
+              >
+                {SCOPES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      })}
+              </select>
+            </div>
 
-      <h2>Nova conta</h2>
-      <form onSubmit={enviar} data-testid="form-nova-conta">
-        <label>
-          Nome
-          <input value={nome} onChange={(e) => setNome(e.target.value)} />
-        </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="conta-tipo">Tipo</Label>
+              <select
+                id="conta-tipo"
+                className={SELECT_CLASSNAME}
+                value={kind}
+                onChange={(e) =>
+                  setKind(e.target.value as (typeof KINDS)[number])
+                }
+              >
+                {KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <label>
-          Escopo
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as 'PF' | 'PJ')}
-          >
-            {SCOPES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
+            {kind === 'credit_card' ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="conta-fechamento">Dia de fechamento</Label>
+                  <Input
+                    id="conta-fechamento"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={closingDay}
+                    onChange={(e) => setClosingDay(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="conta-vencimento">Dia de vencimento</Label>
+                  <Input
+                    id="conta-vencimento"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={dueDay}
+                    onChange={(e) => setDueDay(e.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
 
-        <label>
-          Tipo
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as (typeof KINDS)[number])}
-          >
-            {KINDS.map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABELS[k]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {kind === 'credit_card' ? (
-          <>
-            <label>
-              Dia de fechamento
-              <input
-                type="number"
-                min={1}
-                max={31}
-                value={closingDay}
-                onChange={(e) => setClosingDay(e.target.value)}
-              />
-            </label>
-            <label>
-              Dia de vencimento
-              <input
-                type="number"
-                min={1}
-                max={31}
-                value={dueDay}
-                onChange={(e) => setDueDay(e.target.value)}
-              />
-            </label>
-          </>
-        ) : null}
-
-        {formError ? <p role="alert">{formError}</p> : null}
-        <button type="submit" disabled={salvando}>
-          {salvando ? 'Salvando…' : 'Criar conta'}
-        </button>
-      </form>
+            {formError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {formError}
+              </p>
+            ) : null}
+            <Button type="submit" disabled={salvando}>
+              {salvando ? 'Salvando…' : 'Criar conta'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }
