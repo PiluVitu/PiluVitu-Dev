@@ -167,7 +167,16 @@
 /* SENTINELA DO GATE — não remover, não usar em app nenhum.
    `scripts/check-tailwind-source.mjs` procura esta classe no CSS emitido de
    cada app. Se ela sumir, o @source do app está errado e TODA classe que só
-   existe em packages/ui foi descartada silenciosamente. Ver §4 do spec. */
+   existe em packages/ui foi descartada silenciosamente. Ver §4 do spec.
+
+   ⚠️ O NOME DESTA CLASSE SÓ PODE APARECER POR EXTENSO DENTRO DE
+   `packages/ui/src/` E EM `scripts/check-tailwind-source.mjs`.
+   A detecção automática do Tailwind v4 varre todo arquivo não-ignorado da
+   árvore de cada app — inclusive `.md` — sem depender de `@source`. Escrever
+   o literal dentro de `apps/*` faz o Tailwind gerar a sentinela sozinho, e o
+   gate passa a aprovar builds com o `@source` quebrado: ele deixa de medir
+   qualquer coisa. Aconteceu de verdade no `apps/web/CLAUDE.md`, pego na
+   revisão da Task 2. Em documentação, cite `SENTINEL_SELECTOR`. */
 @utility ui-sentinela-nao-remover {
   content: 'ui-sentinela-nao-remover';
 }
