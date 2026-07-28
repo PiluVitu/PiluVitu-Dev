@@ -27,22 +27,41 @@ Correção: a tela explica o caminho — rodar o CLI no Mac gera um CSV que entr
 
 ⚠️ E precisa deixar claro que **nenhum servidor precisa estar ligado**: o Ollama roda só durante o comando, na máquina do dono. A dúvida do dono foi exatamente essa.
 
-## 3. Insight: onde roda, e o que é AI de verdade
+## 3. Insight: roda no Mac, resultado vive no D1
 
-A §0 mede que Workers AI está disponível. Então o insight roda **no Worker**, não no Mac.
+⚠️ **Correção de rumo (2026-07-28).** A §0 mediu que o Workers AI _funciona_ nesta conta, e eu tratei isso como se fosse gratuito. **Não é** — há cota livre pequena e depois é pago. O dono foi explícito: **zero custo de AI, usando a infra local**.
 
-Mas há uma separação que precisa ser explícita, senão a tela vira adivinhação com verniz:
+### O desenho
 
-- **A aritmética não é AI.** "Onde gastei mais", "quanto subiu contra o mês passado", "qual categoria cresceu" são consultas. Elas são calculadas, exatas, e funcionam **mesmo se a AI falhar ou a cota acabar**.
-- **A AI escreve a leitura.** Ela recebe os números já calculados e produz o texto que conecta os pontos. Ela **não** recebe lançamento cru para "descobrir" padrão, e **não** inventa número.
+O Mac **empurra**, o app **lê**. Não há chamada do app para o Mac.
 
-⚠️ **A tela funciona sem AI.** Se a chamada falhar, os números continuam lá e só o parágrafo some — com aviso. Uma tela de análise que fica em branco porque um modelo não respondeu é pior que uma tabela.
+1. Um comando roda no MacBook (Ollama, custo zero) — sob demanda ou agendado
+2. Ele lê os dados via API, calcula e gera o texto
+3. Faz `POST` do resultado para a API, que grava no D1
+4. A tela do app **lê do D1**, com a data de geração
 
-⚠️ **Nenhum número no texto pode vir do modelo.** Os valores são renderizados pelo código a partir dos dados; o modelo escreve o texto ao redor. LLM erra aritmética com confiança, e aqui erro de número é erro financeiro.
+**A consequência é o ponto:** o app nunca depende do Mac estar ligado. Do celular, com o laptop fechado, a tela abre e mostra o último insight dizendo quando foi feito. O túnel vira detalhe de como o Mac alcança a API — não dependência de runtime de nenhuma tela.
 
-### Cota
+Isso é melhor que puxar pelo túnel, que faria toda abertura da tela depender de outro computador acordado.
 
-Workers AI tem cota diária no plano gratuito. O insight é **sob demanda** (botão), nunca automático ao abrir a tela — carregar a home não pode consumir cota. E o último insight fica salvo em `settings` com data, para reabrir sem gastar de novo.
+### A separação que continua valendo
+
+- **A aritmética não é AI.** "Onde gastei mais", "quanto subiu contra o mês passado" são consultas exatas, calculadas no Worker, e a tela as mostra **sempre** — mesmo sem nunca ter rodado o comando no Mac.
+- **A AI escreve a leitura** por cima de números já calculados. Ela não recebe lançamento cru para "descobrir" padrão.
+
+⚠️ **Nenhum número exibido pode vir do modelo.** Os valores são renderizados a partir dos dados; o modelo escreve o texto ao redor. LLM erra aritmética com confiança, e aqui erro de número é erro financeiro.
+
+### Frescor, não silêncio
+
+A tela mostra **quando** o insight foi gerado. Insight de três semanas atrás apresentado como se fosse de hoje é pior que insight nenhum — o dono tomaria decisão sobre um retrato velho sem saber.
+
+### Autenticação do Mac
+
+O app usa sessão do Better Auth (cookie de navegador). Um comando de terminal não tem sessão.
+
+**Decisão:** um segredo dedicado (`INGEST_TOKEN`, via `wrangler secret put`) checado por middleware **só nas rotas de ingestão**. O caminho de sessão do navegador fica intocado — nada do que já existe passa a aceitar token.
+
+⚠️ Escopo mínimo: esse token **escreve insight**, não lê nem escreve lançamento. Se vazar, o estrago é texto errado numa tela, não acesso ao livro-caixa.
 
 ## 4. Gráficos
 
