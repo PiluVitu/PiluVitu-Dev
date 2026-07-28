@@ -105,6 +105,41 @@ O finanças já tem o padrão pronto e provado: allowlist no hook de criação d
 
 **A migração reusa esse padrão**, não inventa outro.
 
+## 7.1 A regra de corte — a parte que evita rediscussão
+
+O dono pediu explicitamente: documentar o que fica em cada API, para feature nova não virar debate.
+
+**A pergunta única:** _este trabalho precisa de GPU, modelo local ou acesso a arquivo no disco?_
+
+- **Sim ⇒ promeia.** Inferência, transcrição, OCR, leitura de PDF.
+- **Não ⇒ ramielle.** Tudo o mais: CRUD, integração com API externa, orquestração, agendamento, autenticação.
+
+⚠️ **"Tem a ver com AI" NÃO é o critério.** É a armadilha fácil, e a distribuição de artigos mostra por quê: gerar a revisão exige modelo local (promeia), mas **publicar no dev.to, Hashnode, Bluesky e Mastodon é chamada HTTP para API externa** — nenhuma GPU envolvida, e portanto ramielle. Um fluxo pode atravessar os dois; a fronteira é por operação, não por assunto.
+
+Aplicando aos casos reais de hoje:
+
+| Operação                                 | Onde         | Por quê                   |
+| ---------------------------------------- | ------------ | ------------------------- |
+| Revisar artigo (`/llm/proofread`)        | promeia      | Modelo local              |
+| Refinar/encurtar chamada (`/llm/refine`) | promeia      | Modelo local              |
+| Gerar hooks de rede social               | promeia      | Modelo local              |
+| Chunking de texto longo                  | promeia      | Serve só ao modelo        |
+| Publicar no dev.to / Hashnode            | **ramielle** | HTTP para API externa     |
+| Publicar no Bluesky / Mastodon           | **ramielle** | HTTP para API externa     |
+| Guardar estado da distribuição           | **ramielle** | É dado, e dado mora no D1 |
+| Insight financeiro                       | promeia      | Modelo local              |
+| Extrair PDF de fatura                    | promeia      | Arquivo + modelo          |
+| Transcrever áudio                        | promeia      | Whisper local             |
+| Votação, contas, dívidas, lançamentos    | **ramielle** | CRUD                      |
+
+## 7.2 O fluxo de artigo, redesenhado
+
+Existe hoje na branch `feat/distribuicao-artigos-llm-local`, **não mergeada**, com cinco rotas que o `main` desconhece: `POST /llm/proofread`, `POST /llm/refine`, `POST /distribution/proposals`, `GET /distribution/{slug}`, `POST /distribution/{slug}/publish`. Os prompts vivem em `internal/llm/prompts.go` (`proofreadSystem`, `hooksSystemTmpl`, `refineSystem`, `shortenSystem`).
+
+**Redesenho:** os prompts e a inferência vão para promeia; o estado e a publicação ficam em ramielle. O botão no admin chama ramielle, que chama promeia — nunca o navegador direto (§3).
+
+⚠️ **Nível de revisão (mais leve / mais pesado) NÃO existe no código atual** — o `proofreadSystem` corrige apenas erros objetivos, sem parâmetro de intensidade. É **feature nova a construir em promeia**, não porte. Registrar como tal evita que alguém procure por algo que nunca existiu.
+
 ## 8. Mapa de migração
 
 | Origem (Go)                     | Destino           | Nota                                                                                                                                                        |
