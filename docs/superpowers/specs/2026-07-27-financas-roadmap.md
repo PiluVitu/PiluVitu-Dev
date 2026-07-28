@@ -163,3 +163,29 @@ exatamente o acoplamento que o CLI de PDF evitou de propósito (ver
 **Consequência de produto a decidir no spec:** todo fluxo que dependa do Mac precisa
 de comportamento definido para "Mac desligado". Degradar com aviso, nunca tela em
 branco.
+
+---
+
+## Deploy automatizado (2026-07-28)
+
+`.github/workflows/deploy-financas.yml` — dispara depois do CI verde na `main`, ou manualmente.
+
+**A migration É aplicada pela CI.** Decisão do dono, com fundamento: existe revisão antes do merge, então o SQL chega vetado. Isso substitui a regra anterior de "migration é informada, nunca rodada" **no contexto da pipeline** — no terminal, a regra segue valendo.
+
+Duas salvaguardas, porque revisão não cobre tudo:
+
+**1. Dump antes de migrar, guardado como artifact por 30 dias.** No D1 não existe down migration e índice não é alterável — o único caminho de volta é reimportar um dump anterior. Sem isso, "aplicar automático" seria aplicar sem rede.
+
+**2. Migration destrutiva ainda pede humano.** `DROP TABLE/COLUMN/INDEX/VIEW`, `DELETE FROM` e `TRUNCATE` barram o deploy. Revisão pega SQL errado; ela não pega _"esta migration é destrutiva contra dado real que só existe em produção"_. As sete migrations do projeto até hoje são todas aditivas — o guard só age quando isso mudar.
+
+⚠️ O detector ignora comentário (`sed 's/--.*//'` antes do grep), então `-- DROP TABLE seria ruim` não gera falso positivo. Testado nos três casos.
+
+**Ordem: migration → deploy.** Código novo contra schema velho quebra, e a `0006` já seria esse caso: a tela de Comprometido lê a tabela de recorrentes.
+
+**Fica skipado** até `CLOUDFLARE_ACCOUNT_ID` entrar em Variables e `CLOUDFLARE_API_TOKEN` em Secrets — mesmo padrão do `deploy-api.yml`, que espera `GCP_PROJECT_ID`.
+
+⚠️ `workflow_run` **não herda o resultado** do workflow que o disparou. Sem checar `conclusion == 'success'` explicitamente, um CI vermelho ainda dispararia deploy.
+
+### Pendente: ambiente de dev para o Worker
+
+Hoje **produção é o primeiro lugar onde uma migration roda** — não existe onde testar contra dado realista antes. Enquanto isso não existir, o dump da salvaguarda 1 é a única rede.

@@ -1,0 +1,153 @@
+name: Deploy Finanças (Cloudflare Worker)
+
+# Só roda depois que o CI passa na main. Nunca em PR — deploy de PR
+# publicaria código não revisado no domínio de produção.
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-financas
+  cancel-in-progress: false # deploy não se cancela no meio
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Backup + migrations + deploy
+    runs-on: ubuntu-latest
+    # Fica skipado até CLOUDFLARE_ACCOUNT_ID ser cadastrado em Variables —
+    # mesmo padrão do deploy-api.yml, que espera GCP_PROJECT_ID.
+    # workflow_run NÃO herda o resultado: sem checar a conclusion, um CI
+    # vermelho ainda dispararia o deploy.
+    if: >-
+      ${{ vars.CLOUDFLARE_ACCOUNT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success') }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ---------------------------------------------------------------
+      # 1. O "undo" que o D1 não tem.
+      #
+      # Migration no D1 é forward-only: não existe down migration, e um
+      # índice só pode ser dropado (irreversível), nunca alterado. O único
+      # caminho de volta é reimportar um dump anterior.
+      #
+      # Então: exporta ANTES de migrar e guarda como artifact. Se uma
+      # migration sair errada, existe de onde voltar. Sem isso, "aplicar
+      # automático" seria aplicar sem rede.
+      # ---------------------------------------------------------------
+      - name: Backup antes de migrar
+        run: |
+          set -euo pipefail
+          arquivo="financas-pre-migration-${GITHUB_SHA::7}.sql"
+          pnpm --filter @piluvitu/financas exec \
+            wrangler d1 export piluvitu-financas --remote --output="$arquivo"
+          [ -s "$arquivo" ] || { echo "::error::Export saiu vazio."; exit 1; }
+          grep -q 'CREATE TABLE' "$arquivo" || {
+            echo "::error::Export não contém CREATE TABLE — provavelmente truncado."
+            exit 1
+          }
+          echo "backup=$arquivo" >> "$GITHUB_OUTPUT"
+          echo "Backup ok: $(wc -c < "$arquivo") bytes"
+        id: backup
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: d1-pre-migration-${{ github.sha }}
+          path: financas-pre-migration-*.sql
+          retention-days: 30
+
+      # ---------------------------------------------------------------
+      # 2. Migration destrutiva ainda pede humano.
+      #
+      # O dono autorizou aplicar na CI, porque há revisão antes do merge.
+      # Isso vale para migration ADITIVA — CREATE TABLE, ADD COLUMN,
+      # CREATE INDEX —, que é o que todas as 7 deste projeto são.
+      #
+      # Mas revisão pega SQL errado; ela não pega "esta migration é
+      # destrutiva contra dado real que só existe em produção". DROP e
+      # DELETE não têm volta no D1 a não ser pelo dump acima, e restaurar
+      # dump é decisão de gente, não de pipeline.
+      # ---------------------------------------------------------------
+      - name: Barrar migration destrutiva
+        run: |
+          set -euo pipefail
+          pendentes=$(pnpm --filter @piluvitu/financas exec \
+            wrangler d1 migrations list piluvitu-financas --remote 2>&1) || true
+          echo "$pendentes"
+
+          if echo "$pendentes" | grep -q "No migrations to apply"; then
+            echo "Nenhuma migration pendente."
+            exit 0
+          fi
+
+          # Só inspeciona os arquivos que a listagem apontou como pendentes.
+          suspeitas=""
+          for arq in $(echo "$pendentes" | grep -oE '[0-9]{4}_[a-z0-9_]+\.sql' | sort -u); do
+            caminho="apps/financas/migrations/$arq"
+            [ -f "$caminho" ] || continue
+            # Ignora comentário de linha antes de procurar o comando.
+            corpo=$(sed 's/--.*//' "$caminho")
+            if echo "$corpo" | grep -qiE '\b(DROP[[:space:]]+(TABLE|COLUMN|INDEX|VIEW)|DELETE[[:space:]]+FROM|TRUNCATE)\b'; then
+              suspeitas="$suspeitas $arq"
+            fi
+          done
+
+          if [ -n "$suspeitas" ]; then
+            echo "::error::Migration destrutiva pendente:$suspeitas"
+            echo ""
+            echo "O deploy automático aplica migration ADITIVA. Esta remove"
+            echo "estrutura ou dado, e no D1 isso não tem volta a não ser"
+            echo "reimportando o dump — que é decisão de gente."
+            echo ""
+            echo "Aplique do seu terminal, com o backup deste run em mãos:"
+            echo "  pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote"
+            exit 1
+          fi
+          echo "Pendentes são aditivas — seguindo."
+
+      - name: Aplicar migrations
+        run: |
+          pnpm --filter @piluvitu/financas exec \
+            wrangler d1 migrations apply piluvitu-financas --remote
+
+      # `deploy` do pacote builda a SPA antes (build:web), então o web/dist
+      # publicado é sempre o do commit atual, nunca um build velho. Os dois
+      # gates (@source do Tailwind e fronteira lazy do recharts) rodam
+      # dentro desse build e falham aqui se quebrarem.
+      #
+      # A ordem migration → deploy é deliberada: código novo contra schema
+      # velho quebra, e a 0006 (recorrentes) já seria esse caso — a tela de
+      # Comprometido lê aquela tabela.
+      - name: Deploy
+        run: pnpm --filter @piluvitu/financas run deploy
+
+      - name: Conferir que o Worker respondeu
+        run: |
+          set -euo pipefail
+          # /api/health é público de propósito (isento do requireSession).
+          # 401 aqui significaria que o guard vazou para a rota de saúde.
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            https://financas.piluvitu.com.br/api/health)
+          echo "GET /api/health => $codigo"
+          [ "$codigo" = "200" ] || {
+            echo "::error::O Worker subiu mas /api/health devolveu $codigo (esperado 200)."
+            exit 1
+          }
