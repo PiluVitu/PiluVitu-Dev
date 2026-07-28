@@ -11,6 +11,14 @@ BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
 GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
 GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
 
+# Fatia ⑨, Task 3: segredo do comando que roda no Mac do dono (lê os
+# números, gera texto via Ollama local, faz POST em /api/insights). Só
+# esta rota checa este valor (routes/insights.ts#requireIngestToken) — não
+# é `vars` em wrangler.jsonc porque é segredo, mesmo padrão de
+# BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET acima. Em produção, via
+# `wrangler secret put INGEST_TOKEN`. Gerar com `openssl rand -base64 32`.
+INGEST_TOKEN=troque-por-openssl-rand-base64-32
+
 # M5: também é `vars` em wrangler.jsonc (não é segredo), mas listar aqui
 # comentado deixa claro que a chave existe e o que faz, mesmo num clone
 # fresco que só olhou .dev.vars.example. Útil localmente só se quiser testar

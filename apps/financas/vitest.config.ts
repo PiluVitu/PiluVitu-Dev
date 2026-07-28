@@ -33,6 +33,12 @@ export default defineConfig({
           BETTER_AUTH_SECRET: 'a'.repeat(32),
           GOOGLE_CLIENT_ID: 'client-id-de-teste',
           GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
+          // Fatia ⑨, Task 3: mesmo raciocínio do bloco acima — sem `vars`
+          // em wrangler.jsonc (é secret), então em clone limpo (CI, ou
+          // qualquer máquina sem `.dev.vars`) viria undefined e
+          // requireIngestToken() nunca teria contra o que comparar. Valor
+          // de teste, nunca o real.
+          INGEST_TOKEN: 'ingest-token-de-teste',
         },
       },
     })),

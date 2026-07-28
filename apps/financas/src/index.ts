@@ -7,6 +7,7 @@ import { categoriesRoutes } from './routes/categories'
 import { debtsRoutes } from './routes/debts'
 import { importRoutes } from './routes/import'
 import { installmentPlansRoutes } from './routes/installments'
+import { insightsRoutes } from './routes/insights'
 import { payeesRoutes } from './routes/payees'
 import { recurringRoutes } from './routes/recurring'
 import { reportsRoutes } from './routes/reports'
@@ -14,20 +15,39 @@ import { reserveRoutes } from './routes/reserve'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 
-export type Bindings = AuthBindings
+// INGEST_TOKEN (fatia ⑨, Task 3): segredo dedicado pro comando que roda no
+// Mac do dono, checado SÓ por POST /api/insights (routes/insights.ts#
+// requireIngestToken) — nunca por sessão de navegador. Fica aqui (não em
+// AuthBindings, lib/auth.ts) porque não tem nada a ver com Better Auth;
+// é o próprio index.ts, dono do Bindings final do Worker, quem soma os
+// dois. Via `wrangler secret put INGEST_TOKEN` em produção, `.dev.vars`
+// localmente — mesmo padrão de BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET.
+export type Bindings = AuthBindings & { INGEST_TOKEN: string }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
 /**
- * DUAS exceções à guarda, ambas EXPLÍCITAS:
+ * TRÊS exceções à guarda de sessão, todas EXPLÍCITAS:
  *  - /api/health: sondado por monitor externo, que não tem cookie.
  *  - /api/auth/*: é o próprio fluxo de login. Barrar aqui é deadlock —
  *    ninguém consegue autenticar porque não está autenticado.
+ *  - POST /api/insights: autenticado por INGEST_TOKEN, não por sessão
+ *    (fatia ⑨, Task 3) — o comando que roda no Mac do dono não tem
+ *    cookie de navegador. A exceção aqui só pula o requireSession() PARA
+ *    ESTE MÉTODO+PATH; quem de fato barra ou libera é
+ *    requireIngestToken(), middleware preso à própria rota em
+ *    routes/insights.ts — sem essa guarda na rota, pular requireSession()
+ *    aqui abriria a escrita pra qualquer requisição sem exigir nada.
+ *    ⚠️ GET /api/insights/latest e GET /api/insights/numbers NÃO estão
+ *    nesta exceção — continuam exigindo sessão, igual toda outra leitura
+ *    do app (ver src/index.test.ts, "sessão não abre a ingestão" e
+ *    "token não abre /api/accounts" para as duas metades da prova).
  */
 app.use('/api/*', async (c, next) => {
   if (c.req.path === '/api/health') return next()
   if (isRotaDeAuth(c.req.path)) return next()
-  return requireSession()(c, next)
+  if (c.req.method === 'POST' && c.req.path === '/api/insights') return next()
+  return requireSession<Bindings>()(c, next)
 })
 
 app.get('/api/health', () => okJson({ status: 'up' }))
@@ -47,6 +67,7 @@ app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
 app.route('/api', reserveRoutes)
+app.route('/api', insightsRoutes)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.

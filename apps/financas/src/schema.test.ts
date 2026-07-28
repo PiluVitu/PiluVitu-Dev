@@ -168,8 +168,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006 — tabelas', () => {
-  it('cria exatamente as 16 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006)', async () => {
+describe('migrations 0001+0002+0005+0006+0007 — tabelas', () => {
+  it('cria exatamente as 17 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -187,6 +187,7 @@ describe('migrations 0001+0002+0005+0006 — tabelas', () => {
       'debt_payment_allocations',
       'debt_payments',
       'debts',
+      'insights',
       'installment_plans',
       'installments',
       'payees',
@@ -197,6 +198,59 @@ describe('migrations 0001+0002+0005+0006 — tabelas', () => {
       'user',
       'verification',
     ])
+  })
+})
+
+describe('migration 0007 — insights (STRICT, CHECKs de sanidade)', () => {
+  it('insere uma linha completa e relê', async () => {
+    await DB.prepare(
+      `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
+       VALUES ('i1', 'Você gastou mais em Mercado.', 'qwen2.5:7b-instruct', '2026-07', ?)`,
+    )
+      .bind(NOW)
+      .run()
+
+    const row = await DB.prepare(
+      `SELECT * FROM insights WHERE id = 'i1'`,
+    ).first<{
+      texto: string
+      modelo: string
+      periodo: string
+      generated_at: string
+    }>()
+    expect(row).toEqual({
+      id: 'i1',
+      texto: 'Você gastou mais em Mercado.',
+      modelo: 'qwen2.5:7b-instruct',
+      periodo: '2026-07',
+      generated_at: NOW,
+    })
+  })
+
+  it.each([
+    ['texto vazio', { texto: '', modelo: 'm', periodo: '2026-07' }],
+    ['modelo vazio', { texto: 't', modelo: '', periodo: '2026-07' }],
+    ['periodo vazio', { texto: 't', modelo: 'm', periodo: '' }],
+  ])('CHECK barra %s', async (_label, campos) => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
+         VALUES ('i-ruim', ?, ?, ?, ?)`,
+      )
+        .bind(campos.texto, campos.modelo, campos.periodo, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('STRICT: id não pode ser NULL (PRIMARY KEY)', async () => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
+         VALUES (NULL, 't', 'm', '2026-07', ?)`,
+      )
+        .bind(NOW)
+        .run(),
+    ).rejects.toThrow(/NOT NULL constraint failed/)
   })
 })
 

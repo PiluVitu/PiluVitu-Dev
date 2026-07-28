@@ -768,6 +768,78 @@ Motivado por dois relatos do dono usando o app em produção: _"queria tmb que m
   - Testado em `importar.test.tsx`, `describe('ImportarPage — PDF: ...')`: o comando aparece por extenso, a frase "nenhum servidor precisa estar ligado" aparece (regex, cobre "ficar"/"estar"), a razão GPU/Metal aparece, e o `accept` do input de arquivo não muda.
 - **282 testes na SPA** (276 → 282, +6: 4 em `App.test.tsx` — estado ativo do nav — e 2 em `importar.test.tsx` — descoberta do PDF). Worker/`apps/web`/`packages/ui`/`packages/tools` intocados (427/89/14/123). Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos — bundle cresceu +1,99 kB / +0,74 kB gzip no JS principal (nav com `NAV_ITEMS`/`cn()` + o card novo do PDF) e +0,49 kB / +0,05 kB gzip no CSS; o chunk lazy do gráfico ficou intocado (nada nesta task toca `recharts`).
 
+## Insight de IA — backend (fatia ⑨, Task 3 — `migrations/0007_insights.sql` + `src/domain/insights.ts` + `src/routes/insights.ts`)
+
+Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando (fora do escopo desta task) no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1.
+
+**A separação que sustenta o design inteiro: a aritmética não é IA.** "Onde gastei mais", "quanto subiu contra o período anterior" e "o que mais cresceu" são consultas exatas — `insightNumbers` (`src/domain/insights.ts`) — que **nunca leem a tabela `insights`** e portanto aparecem na tela mesmo que o comando do Mac nunca tenha rodado (provado por teste, `domain/insights.test.ts`: `'funciona mesmo sem nenhum insight jamais ter sido gravado'`). O texto gerado pelo modelo é a ÚNICA coisa que a tabela `insights` guarda — nenhum número.
+
+### `migrations/0007_insights.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS insights (
+  id           TEXT NOT NULL PRIMARY KEY,
+  texto        TEXT NOT NULL,
+  modelo       TEXT NOT NULL,
+  periodo      TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+
+  CHECK (length(texto)   > 0),
+  CHECK (length(modelo)  > 0),
+  CHECK (length(periodo) > 0)
+) STRICT;
+```
+
+CHECK de tabela depois de todas as column-defs, mesma regra de sempre (gramática `column-def* table-constraint*`, já quebrou a `0001`). Sem FK (não é dado transacional, é um log de texto gerado) e sem índice (a única leitura é "o mais recente", `ORDER BY generated_at DESC LIMIT 1`, contra uma tabela que cresce por comando MANUAL do dono — dezenas de linhas por ano). Os três CHECK são defesa de sanidade no banco, não a única validação — `domain/insights.ts#createInsight` valida em TS ANTES do INSERT (mesmo padrão de `setFixedNetCents`).
+
+⚠️ **`generated_at` é sempre o relógio do SERVIDOR (`nowIsoUtc()`), nunca aceito do corpo do POST.** "Frescor, não silêncio" (spec §3: insight de três semanas atrás apresentado como se fosse de hoje é pior que insight nenhum) depende de um relógio confiável — o relógio de quem faz o POST (o Mac do dono, atrás de um comando manual, com fuso/hora local possivelmente errados) não é essa fonte. `NewInsight` (o tipo de entrada de `createInsight`) nem tem campo pra isso; a rota só repassa `texto`/`modelo`/`periodo` do corpo pro domínio, descartando qualquer outro campo (incl. um `generated_at` que o chamador tente mandar). Coberto por teste que manda `generated_at: '2000-01-01T00:00:00Z'` no corpo e confirma que a resposta NÃO usa esse valor (`routes/insights.test.ts`).
+
+### `domain/insights.ts`
+
+- **`createInsight(db, { texto, modelo, periodo })`** — valida `texto`/`modelo` não-vazios (depois de `trim()`) e `periodo` no formato `'YYYY-MM'` via `addMonthsToCompetence(periodo, 0)` (mesma técnica de `byCategory`, reusa a validação central de `lib/dates.ts` em vez de uma regex nova) — os três lançam `RangeError` ANTES de tocar o banco. Gera `id`/`generated_at` no servidor, grava e devolve o `Insight` completo.
+- **`latestInsight(db)`** — `SELECT ... ORDER BY generated_at DESC LIMIT 1`, devolve `null` quando a tabela está vazia (caso NORMAL — comando do Mac nunca rodou —, não erro).
+- **`insightNumbers(db, { competence })`** — os fatos calculados, sem AI:
+  - **`top_categories`** — os `TOP_CATEGORIES_LIMIT` (5) primeiros de `byCategory(db, { competence }).rows`, SEM reordenar (já vem ordenado por `total_cents ASC`, ou seja, maior despesa primeiro — `byCategory`, `src/domain/reports.ts`). **Reuso direto, nunca uma segunda regra de agregação** — o teste `'top_categories bate EXATAMENTE com byCategory'` compara contra uma chamada direta a `byCategory()` pra provar isso, não só um valor fixo que poderia coincidir.
+  - **`variation_cents`/`variation_pct`** — comparam a MAGNITUDE de gasto (`Math.abs`) do período atual contra `addMonthsToCompetence(competence, -1)` (o período anterior), chamando `byCategory()` PARA OS DOIS períodos. `total_cents`/`previous_total_cents` no payload ficam com o sinal CRU de `byCategory` (negativo); `variation_cents` é derivado das magnitudes (positivo = gastou mais, negativo = gastou menos) — usar o total cru inverteria o sinal do resultado (gastar MAIS viraria uma "variação negativa"). `variation_pct` é `null` quando o período anterior não teve gasto nenhum (divisão por zero evitada, nunca `Infinity`).
+  - **`biggest_increase`** — "o que mais cresceu": maior aumento de MAGNITUDE de gasto por categoria (mesmo `category_id` nos dois períodos, `Math.abs(atual) - Math.abs(anterior)`, positivo = cresceu). Categoria ausente no período anterior conta como `previous_cents: 0` (cresceu do zero, nunca ignorada); categoria que só existia no período ANTERIOR (zerou agora) não entra no loop (não está "crescendo"). `null` quando o período atual não tem nenhuma linha (nada para reportar).
+  - Query e formato **exatos**, sem AI — a única fonte de dado é `byCategory`, chamada duas vezes (período atual e anterior), nunca uma query SQL nova escrita à mão que pudesse divergir da regra que o bloco Categorias da home já usa.
+  - `competence` inválida/ausente propaga o `RangeError` de `addMonthsToCompetence` — a rota traduz em `400 invalid_query` (query string, nunca `422`, mesma regra de `commitments()`/`byCategory` em `routes/reports.ts`).
+
+### `routes/insights.ts` e a fronteira do `INGEST_TOKEN`
+
+| Rota                        | Auth               | Sucesso | Erros                                                                 |
+| --------------------------- | ------------------ | ------- | --------------------------------------------------------------------- |
+| `GET /api/insights/latest`  | sessão             | 200     | —                                                                     |
+| `GET /api/insights/numbers` | sessão             | 200     | 400 `invalid_query`                                                   |
+| `POST /api/insights`        | **`INGEST_TOKEN`** | 201     | 400 `invalid_json`, 401 `invalid_ingest_token`, 422 `invalid_insight` |
+
+`GET /api/insights/latest` devolve `data: null` (nunca `404`) quando nada foi gravado ainda — "nada gerado ainda" é resultado normal, mesma convenção de `GET /api/settings/:key` (`value: null`, sempre `200`).
+
+**A guarda do token mora NA ROTA (`requireIngestToken`, `routes/insights.ts`), não em `index.ts`.** `src/index.ts` ganha uma TERCEIRA exceção explícita no middleware global de sessão (as outras duas já eram `/api/health` e `/api/auth/*`): `if (c.req.method === 'POST' && c.req.path === '/api/insights') return next()` — pula só `requireSession()` PARA ESTE MÉTODO+PATH; quem de fato autentica é `requireIngestToken()`, preso diretamente à rota (`insightsRoutes.post('/insights', requireIngestToken(), ...)`), testável em isolamento (mesmo padrão de toda outra rota do módulo — `routes/insights.test.ts` monta só o router, sem tocar `index.ts`). `Authorization: Bearer <token>`; sem o header, header malformado, ou token que não bate com `c.env.INGEST_TOKEN` → `401 invalid_ingest_token`. Fail-closed: `INGEST_TOKEN` ausente/vazio (secret nunca configurado) nunca autentica ninguém, mesmo princípio de `isAllowedEmail` (`lib/auth.ts`).
+
+⚠️ **Escopo mínimo, do jeito que o spec pede: o token escreve insight e nada mais.** Não existe em nenhum outro binding/rota do módulo — `AuthBindings` (`lib/auth.ts`) não ganhou o campo; `INGEST_TOKEN` foi somado só ao `Bindings` final de `src/index.ts` (`export type Bindings = AuthBindings & { INGEST_TOKEN: string }`), e só `routes/insights.ts` declara esse campo no seu `type Env` local. Provado por teste em `src/index.test.ts` (`describe('worker de finanças — fronteira do INGEST_TOKEN ...')`), contra o **app montado de verdade** (não um router isolado — é o único jeito de provar que a exceção do middleware global não vazou):
+
+- `GET /api/accounts` com `Authorization: Bearer <INGEST_TOKEN correto>`, sem cookie → `401 not_authenticated` (o token não abre a rota mais óbvia do livro-caixa).
+- `POST /api/payees` com o mesmo header → `401 not_authenticated` (não é só leitura; nenhuma rota de ESCRITA aceita o token também).
+- `GET /api/insights/latest`/`numbers` sem sessão → `401 not_authenticated` — a exceção do middleware global é só `POST /api/insights`; as duas leituras continuam exigindo sessão como qualquer outra rota do app.
+- `POST /api/insights` sem token → `401 invalid_ingest_token` (não `not_authenticated` — prova que a requisição CHEGOU na rota, passou pela exceção do middleware global, e foi a guarda do token quem decidiu, não a guarda de sessão).
+- `POST /api/insights` com um cookie de sessão bem-formado (mesmo formato de um genuíno) mas SEM o header do token → `401 invalid_ingest_token`, idêntico ao caso sem cookie nenhum — **decisão explícita: uma sessão de navegador válida NÃO substitui o token nesta rota.** A guarda olha só `Authorization`, nunca o cookie; não existe caminho onde estar logado no navegador basta pra ingerir.
+- `POST /api/insights` com o token correto → `201`, alcança o handler de verdade (prova de registro acima do catch-all, mesmo padrão de `routes/recurring.test.ts`).
+
+### Testes
+
+```bash
+pnpm --filter @piluvitu/financas exec vitest run src/domain/insights.test.ts src/routes/insights.test.ts src/index.test.ts src/schema.test.ts
+```
+
+18 casos em `domain/insights.test.ts` (`createInsight`/`latestInsight`/`insightNumbers`, incl. o reuso provado contra `byCategory`, as duas divisões por zero evitadas, e a defesa contra a tabela `insights` ausente — mesmo padrão C2 de `getFixedNetCents`), 14 em `routes/insights.test.ts` (contrato HTTP + envelope, incl. `generated_at` do corpo sendo ignorado), 6 novos em `index.test.ts` (fronteira do token, listados acima) e 6 novos em `schema.test.ts` (CHECK de sanidade + contagem de tabelas, 16 → 17). Worker: 427 → 470.
+
+⚠️ **`lib/session.ts#requireSession` virou genérico (`requireSession<TBindings extends AuthBindings>()`) por causa desta task.** `Bindings` (`src/index.ts`) cresceu de `AuthBindings` puro para `AuthBindings & { INGEST_TOKEN: string }` — e `Context<E>` do Hono é INVARIANTE no parâmetro de env (mesma classe de problema já documentada em `lib/auth.ts` sobre `Auth`/`ReturnType<typeof betterAuth>`), então `MiddlewareHandler<{ Bindings: AuthBindings }>` fixo deixou de aceitar o `Context` mais largo. MEDIDO via `tsc --noEmit`: sem o genérico, `TS2345`/"`Property 'INGEST_TOKEN' is missing`". `index.ts` chama `requireSession<Bindings>()(c, next)` com o tipo explícito — sem isso o TS não tem como inferir `TBindings` (a função é chamada sem argumentos antes de `c` existir).
+
+### O comando do Mac em si — fora de escopo desta task
+
+**Não implementado aqui.** O CLI que lê os números (`GET /api/insights/numbers`, que exige SESSÃO de navegador — o Mac não tem cookie) e chama o Ollama local fica para uma task futura; precisa decidir COMO o comando se autentica pra LER (o `INGEST_TOKEN` desta task só cobre a ESCRITA, de propósito — "esse token escreve insight, não lê nem escreve lançamento", spec §3). Uma saída possível é o comando calcular os números direto contra o D1 (via `wrangler d1 execute`, mesmo padrão de acesso local que `scripts/backup-d1.sh` já usa, sem depender de sessão HTTP nenhuma) em vez de chamar a API — mas essa decisão não foi tomada aqui, só registrada como o próximo passo óbvio.
+
 ## Configurações (`src/domain/settings.ts` + `src/routes/settings.ts` + `web/src/pages/config.tsx`, Task 10)
 
 Torna `fixed_net_cents` editável **sem deploy**, mantendo o `DEFAULT_FIXED_NET_CENTS = 360000` (R$ 3.600) como piso quando nada foi salvo.

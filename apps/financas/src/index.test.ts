@@ -37,6 +37,7 @@ describe('worker financas — bindings', () => {
 })
 
 // Sem DB e sem rede: estes casos não precisam de sessão real.
+const INGEST_TOKEN = 'ingest-token-e2e-de-teste'
 const authTestEnv = {
   DB: env.DB,
   BETTER_AUTH_URL: 'http://localhost:8787',
@@ -44,6 +45,7 @@ const authTestEnv = {
   GOOGLE_CLIENT_ID: 'client-id-de-teste',
   GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
   ALLOWED_EMAIL: 'dono@exemplo.com',
+  INGEST_TOKEN,
 } as unknown as Bindings
 
 type CorpoErro = {
@@ -117,6 +119,140 @@ describe('worker de finanças', () => {
     )
     expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
       'not_found',
+    )
+  })
+})
+
+// Fatia ⑨, Task 3 — a fronteira de segurança do INGEST_TOKEN, provada
+// contra o APP MONTADO DE VERDADE (mesma cadeia de middleware de
+// src/index.ts, não um router isolado como routes/insights.test.ts usa) —
+// é o único jeito de provar que a EXCEÇÃO do middleware global (linha 49
+// de index.ts, só POST /api/insights) não vazou pra nenhuma outra rota.
+describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3)', () => {
+  test('o token do Mac NÃO abre /api/accounts — nem com header correto, sem sessão', async () => {
+    const res = await app.request(
+      '/api/accounts',
+      { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
+      authTestEnv,
+    )
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_authenticated',
+    )
+  })
+
+  test('o token do Mac NÃO abre nenhuma outra rota de escrita — POST /api/payees também ignora o header', async () => {
+    const res = await app.request(
+      '/api/payees',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${INGEST_TOKEN}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'Teste', kind: 'other' }),
+      },
+      authTestEnv,
+    )
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_authenticated',
+    )
+  })
+
+  test('GET /api/insights/latest e /numbers continuam exigindo sessão — a exceção do middleware global é só POST /api/insights', async () => {
+    const latest = await app.request('/api/insights/latest', {}, authTestEnv)
+    expect(latest.status).toBe(401)
+    expect(((await latest.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_authenticated',
+    )
+
+    const numbers = await app.request(
+      '/api/insights/numbers?competence=2026-07',
+      {},
+      authTestEnv,
+    )
+    expect(numbers.status).toBe(401)
+    expect(((await numbers.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_authenticated',
+    )
+  })
+
+  test('POST /api/insights sem token: 401 invalid_ingest_token (chega na rota — a exceção do middleware global funcionou)', async () => {
+    const res = await app.request(
+      '/api/insights',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          texto: 't',
+          modelo: 'm',
+          periodo: '2026-07',
+        }),
+      },
+      authTestEnv,
+    )
+    // Se a exceção do middleware não existisse, isto sairia 401
+    // not_authenticated (a guarda de sessão barrando ANTES da rota).
+    // invalid_ingest_token só aparece quando a requisição chegou na rota
+    // e foi a GUARDA DO TOKEN quem barrou — prova que a exceção em
+    // index.ts está funcionando e que é a rota (não a sessão) quem decide.
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'invalid_ingest_token',
+    )
+  })
+
+  test('cookie de sessão (mesmo formato de um genuíno) NÃO substitui o token em POST /api/insights', async () => {
+    const res = await app.request(
+      '/api/insights',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          // Mesmo formato usado no teste de 401 not_authenticated acima
+          // ('GET /api/accounts com cookie de sessão inexistente') — o
+          // ponto aqui não é a validade do cookie, é provar que ele é
+          // IRRELEVANTE para esta rota: sem o header Authorization, a
+          // resposta é a mesma (invalid_ingest_token), cookie ou não.
+          cookie:
+            'better-auth.session_token=token-que-nao-existe.assinatura-que-nao-bate',
+        },
+        body: JSON.stringify({
+          texto: 't',
+          modelo: 'm',
+          periodo: '2026-07',
+        }),
+      },
+      authTestEnv,
+    )
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'invalid_ingest_token',
+    )
+  })
+
+  test('POST /api/insights com o token correto: 201, alcança o handler de verdade (registro acima do catch-all)', async () => {
+    const res = await app.request(
+      '/api/insights',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${INGEST_TOKEN}`,
+        },
+        body: JSON.stringify({
+          texto: 'Insight de ponta a ponta.',
+          modelo: 'qwen2.5:7b-instruct',
+          periodo: '2026-07',
+        }),
+      },
+      authTestEnv,
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect((body as { data: { texto: string } }).data.texto).toBe(
+      'Insight de ponta a ponta.',
     )
   })
 })

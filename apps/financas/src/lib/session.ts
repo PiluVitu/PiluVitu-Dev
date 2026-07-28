@@ -51,9 +51,21 @@ export function isRotaDeAuth(path: string): boolean {
  * Substitui requireAccess. Módulo single-user: nada downstream lê a
  * identidade, então ela NÃO vai para o contexto do Hono — o tipo continua
  * limpo nas rotas de domínio, que não mudam uma linha.
+ *
+ * Genérico em `TBindings extends AuthBindings` (fatia ⑨, Task 3): o
+ * `Bindings` de `src/index.ts` cresceu para `AuthBindings & { INGEST_TOKEN:
+ * string }` quando o segredo de ingestão entrou — e `Context<E>` do Hono é
+ * INVARIANTE no seu parâmetro de env (mesma classe de problema já
+ * documentada em `lib/auth.ts` sobre `Auth`/`ReturnType<typeof betterAuth>`),
+ * então `MiddlewareHandler<{ Bindings: AuthBindings }>` fixo deixa de
+ * aceitar um `Context<{ Bindings: AuthBindings & {...} }>` mesmo o segundo
+ * sendo estruturalmente "AuthBindings e mais alguma coisa". O chamador
+ * (`index.ts`) passa o `Bindings` final explícito: `requireSession<Bindings>()`.
  */
-export function requireSession(): MiddlewareHandler<{
-  Bindings: AuthBindings
+export function requireSession<
+  TBindings extends AuthBindings,
+>(): MiddlewareHandler<{
+  Bindings: TBindings
 }> {
   return async (c, next) => {
     let sessao: Awaited<ReturnType<Auth['api']['getSession']>>
