@@ -138,7 +138,9 @@ Existe hoje na branch `feat/distribuicao-artigos-llm-local`, **não mergeada**, 
 
 **Redesenho:** os prompts e a inferência vão para promeia; o estado e a publicação ficam em ramielle. O botão no admin chama ramielle, que chama promeia — nunca o navegador direto (§3).
 
-⚠️ **Nível de revisão (mais leve / mais pesado) NÃO existe no código atual** — o `proofreadSystem` corrige apenas erros objetivos, sem parâmetro de intensidade. É **feature nova a construir em promeia**, não porte. Registrar como tal evita que alguém procure por algo que nunca existiu.
+⚠️ **CORREÇÃO (2026-07-28): o nível de revisão JÁ EXISTE.** Eu havia afirmado o contrário depois de ler só `prompts.go` — o parâmetro não está no prompt, está na assinatura: `Proofread(ctx, text, careful bool)` em `internal/llm/client.go:104`, exposto no corpo da rota como `{"text": "...", "careful": bool}` (`internal/handlers/llm/handlers.go:49`). Com `careful=false` roda `qwen2.5:3b-instruct`; com `true`, `qwen2.5:7b-instruct` — confirmado no log de boot da API: `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`.
+
+**Consequência:** é **porte**, não feature nova. O promeia precisa manter os dois níveis e o mesmo contrato de corpo, para o admin não mudar.
 
 ## 8. Mapa de migração
 
