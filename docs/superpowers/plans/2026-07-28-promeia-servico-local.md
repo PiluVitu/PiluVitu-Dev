@@ -405,10 +405,8 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     diferença entre um middleware (protege por construção) e um decorator
     por rota (que se esquece). Critério de aceitação §11 do spec.
 
-    ⚠️ SEM carve-out de rota nenhuma — nem `/openapi.json`. Uma exceção aqui
-    esvazia a promessa do nome: a rota dispensada é justamente a que ninguém
-    verificaria de novo. Por isso `create_app` passa `openapi_url=None`
-    (Step 10), fazendo a rota deixar de EXISTIR em vez de ser dispensada.
+    ⚠️ SEM carve-out de rota nenhuma. Uma exceção aqui esvazia a promessa do
+    nome: a rota dispensada é justamente a que ninguém verificaria de novo.
     """
     rotas = [
         (r.path, sorted(r.methods - {"HEAD", "OPTIONS"}))
@@ -421,6 +419,22 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
         for method in methods:
             r = client.request(method, path)
             assert r.status_code == 401, f"{method} {path} respondeu {r.status_code}"
+
+
+def test_o_mapa_de_rotas_nao_e_publicado(client):
+    """`openapi_url=None` precisa ser falsificável, senão some num refactor.
+
+    ⚠️ NÃO é sobre autenticação. MEDIDO durante a execução: `/openapi.json`
+    SEMPRE respondeu 401, porque `TokenMiddleware` é instalado com
+    `add_middleware` e envolve o app ASGI inteiro, ANTES do roteamento —
+    nenhuma combinação de `docs_url`/`redoc_url`/`openapi_url` põe uma rota
+    do FastAPI fora do alcance dele. É sobre superfície: um serviço privado
+    de usuário único, atrás de um túnel, não tem por que publicar o próprio
+    mapa de rotas nem para quem tem o token. Sem esta asserção, remover o
+    `openapi_url=None` não quebra nada e o schema volta em silêncio.
+    """
+    caminhos = [r.path for r in client.app.routes if getattr(r, "methods", None)]
+    assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
 ```
 
 - [ ] **Step 8: Rodar e confirmar que falha**
@@ -521,9 +535,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # openapi_url=None junto com docs_url/redoc_url: com a documentação
     # desligada o schema cru não serve a ninguém, e um serviço privado de
     # usuário único atrás de um túnel não tem por que publicar o próprio mapa
-    # de rotas — nem atrás do token. Desligar aqui também é o que permite ao
-    # teste de "toda rota" não abrir exceção pra nenhuma: a rota deixa de
-    # existir em vez de ser dispensada da prova.
+    # de rotas — nem para quem tem o token.
+    #
+    # ⚠️ Isto NÃO é proteção. MEDIDO: /openapi.json já respondia 401 mesmo no
+    # default, porque TokenMiddleware é instalado com add_middleware e envolve
+    # o app ASGI inteiro, antes do roteamento — nenhuma rota do FastAPI escapa
+    # dele. É redução de superfície, e é falsificável por
+    # test_o_mapa_de_rotas_nao_e_publicado.
     app = FastAPI(
         title="promeia", docs_url=None, redoc_url=None, openapi_url=None
     )
@@ -550,7 +568,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 - [ ] **Step 11: Rodar e confirmar que passa**
 
 Run: `cd apps/promeia && uv run pytest`
-Expected: PASS (12 testes: 5 de config + 7 de app)
+Expected: PASS (13 testes: 5 de config + 8 de app)
 
 - [ ] **Step 12: Verificar por mutação — o guard tem que ser capaz de falhar**
 
@@ -670,7 +688,7 @@ Acrescentar ao fim do `.gitignore` da raiz:
 cd apps/promeia && uv run ruff format . && uv run ruff check . && uv run pytest
 ```
 
-Expected: format sem alteração pendente, lint silencioso, 12 testes passando.
+Expected: format sem alteração pendente, lint silencioso, 13 testes passando.
 
 - [ ] **Step 18: Confirmar que o serviço sobe de verdade (não só em TestClient)**
 
