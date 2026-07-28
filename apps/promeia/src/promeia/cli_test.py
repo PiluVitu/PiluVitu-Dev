@@ -92,6 +92,26 @@ def test_a_competencia_da_flag_chega_no_executar():
     assert visto["competence"] == "2026-05"
 
 
+def test_competencia_invalida_sai_dois_e_mostra_o_uso():
+    # Finding 4 (fix round 1): `except ValueError` em cli.py (competência
+    # malformada -> código de uso 2) não tinha teste dedicado — todo outro
+    # branch (InsightVazio/OllamaError/RamielleError/PublicacaoFalhou) já
+    # tinha. Sem isto, remover o `except` hoje não derrubaria nada.
+    saida, erros, log, log_erro = capture()
+    codigo = main(
+        [],
+        env=ENV,
+        log=log,
+        log_erro=log_erro,
+        executar=lambda **kw: (_ for _ in ()).throw(
+            ValueError("competência inválida (esperado YYYY-MM): lixo")
+        ),
+    )
+    assert codigo == 2
+    assert any("competência inválida" in linha for linha in erros)
+    assert any("Uso:" in linha for linha in saida)
+
+
 def test_ollama_desligado_sai_um_com_a_mensagem_util():
     saida, erros, log, log_erro = capture()
     codigo = main(

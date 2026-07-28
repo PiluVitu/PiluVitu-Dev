@@ -147,11 +147,9 @@ export function InsightPage() {
               className="text-muted-foreground text-sm"
             >
               Nenhuma leitura foi gerada ainda. Rode{' '}
-              <code className="text-foreground">
-                node apps/financas/scripts/insight.mjs
-              </code>{' '}
-              no Mac para gerar uma — os números acima já funcionam sem ela, só
-              o texto que falta.
+              <code className="text-foreground">make insight</code> no Mac para
+              gerar uma — os números acima já funcionam sem ela, só o texto que
+              falta.
             </p>
           ) : (
             <LeituraGerada insight={insight} />

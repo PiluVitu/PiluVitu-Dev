@@ -79,17 +79,29 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
 
 ## Toolchain
 
-- **`uv`** — gerenciador de pacotes/venv. `uv.lock` é **commitado**; CI e
-  qualquer instalação reprodutível usam `uv sync --frozen` (nunca resolve
-  versão nova sem editar o lock explicitamente).
+- **`uv`** — gerenciador de pacotes/venv deste workspace. Política de
+  dependência Python (lock commitado, instalação `--frozen`, e a ausência de
+  equivalente a `minimumReleaseAge`) **mora na raiz** — ver _Dependency
+  security policy_ em `CLAUDE.md` (raiz), não duplicada aqui: cada fato mora
+  num único arquivo, regra do próprio `CLAUDE.md` da raiz.
 - **pytest com `python_files = ["*_test.py"]`** (`pyproject.toml`) — o default
   do pytest é `test_*.py`, que **briga com a lei de colocation** deste
   monorepo (teste ao lado do fonte, nomeado a partir dele: `money.py` →
-  `money_test.py`, nunca `test_money.py` num diretório `tests/`).
+  `money_test.py`, nunca `test_money.py` num diretório `tests/`). Este fato É
+  específico do promeia (o default do pytest, não uma regra de dependência),
+  por isso mora aqui e não na raiz.
 - **`ruff`** para lint (`select = ["E", "F", "I", "UP", "B", "SIM"]`) e format.
   Único per-file-ignore: `src/promeia/insight.py` tem `E501` desligado porque
   o prompt que ele monta é contrato byte-a-byte com o que o dono já revisou —
   quebrar linha ali inseriria uma quebra real no texto mandado pro modelo.
+- **Suíte hoje: 90 testes** (`uv run pytest`) — linha de base desta task
+  (Task 6), mesma convenção de contagem de suíte que os outros `CLAUDE.md`
+  deste monorepo já registram. A remoção do CLI Node que esta task substituiu
+  (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou os 40 testes
+  correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
+test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
+  sob esse arquivo de config, `vitest.scripts.config.ts`) — esse segundo
+  número é a prova de que a remoção foi cirúrgica, não um efeito colateral.
 
 ## Comandos
 
