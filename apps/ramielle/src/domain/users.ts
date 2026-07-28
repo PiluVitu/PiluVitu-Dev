@@ -8,18 +8,16 @@
  * liga uma na outra; é este arquivo quem faz isso, a cada request autenticado
  * (`lib/session.ts#requireAuth`/`requireAdmin` chamam `upsertVotacaoUser`).
  *
- * ⚠️ `googleSub` aqui é o `id` do Better Auth (`sessao.user.id`), não o claim
- * `sub` bruto do ID token do Google. A votação é LIVRE e login é 100% Google
- * em produção (`emailAndPassword: { enabled: false }` em `lib/auth.ts`) — o
- * Better Auth cria exatamente UMA linha em `user` por conta Google (login
- * repetido da mesma conta reusa a mesma linha via `account.accountId`), então
- * `sessao.user.id` já É um identificador estável e único por pessoa, o
- * suficiente para o propósito da coluna (casar 1:1 com uma linha em `users`).
- * Usar o `sub` cru exigiria uma segunda consulta em `account` (por
- * `userId`+`providerId='google'`) só pra obter um valor que já é redundante
- * com `sessao.user.id` neste desenho — e quebraria o controle positivo dos
- * testes de `session.test.ts`, que geram sessão via `emailAndPassword` (sem
- * nenhuma linha em `account` com `providerId='google'`).
+ * ⚠️ `googleSub` aqui é o claim `sub` DE VERDADE do Google (o mesmo valor que
+ * `users.google_sub` já guarda no SQLite da API Go) — não um id interno de
+ * lib nenhum. Este módulo é AGNÓSTICO ao valor: ele só grava o que recebe;
+ * quem resolve esse valor (buscando `account.accountId` por
+ * `providerId='google'`, com fallback pro id do Better Auth quando não há
+ * conta Google vinculada — caminho que só existe em teste, via
+ * `emailAndPassword`) é `resolveSession`, em `lib/session.ts` (comentário lá
+ * é o dono do assunto — ver o porquê de precisar ser o `sub` real, que é a
+ * fatia ④ importar o histórico de votação da API Go casando por esta coluna:
+ * gravar outra coisa duplicaria usuário e orfanizaria voto antigo).
  */
 
 export type VotacaoUser = {
