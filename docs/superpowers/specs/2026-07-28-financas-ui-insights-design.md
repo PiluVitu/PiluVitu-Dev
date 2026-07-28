@@ -4,7 +4,8 @@
 
 ## 0. Fatos medidos (2026-07-28)
 
-- **Workers AI funciona nesta conta.** Testado com Worker descartável: `@cf/meta/llama-3.1-8b-instruct` devolve `5028: This model was deprecated on 2026-05-30`, e **`@cf/meta/llama-3.3-70b-instruct-fp8-fast` responde normalmente**. Ou seja, o binding `AI` está disponível e o insight pode rodar **no Worker** — de qualquer aparelho, sem depender do MacBook.
+- **Workers AI está disponível nesta conta, e foi DESCARTADO.** Medido com Worker descartável: `@cf/meta/llama-3.1-8b-instruct` devolve `5028: This model was deprecated on 2026-05-30`; `@cf/meta/llama-3.3-70b-instruct-fp8-fast` responde normalmente. **Mas "funciona" não é "é grátis"** — a cota livre é pequena e depois é pago, e o dono foi explícito: zero custo de AI, usando a infra local. A AI roda no Mac (Ollama, §3).
+- **Ollama 0.32.0** no MacBook, com `qwen2.5:7b-instruct` e `3b-instruct` — já usado pelo CLI de PDF da fatia ③.
 - **`packages/ui` não tem componente de gráfico.** Os 15 componentes atuais não incluem o `chart` do shadcn.
 - **O menu são links sublinhados crus** — `text-primary text-sm underline underline-offset-4` em `App.tsx`.
 - **A tela de import não menciona PDF** e não o aceita (`.ofx`, `.qfx`, `.csv`).
@@ -95,7 +96,9 @@ Onde entra area chart: **fluxo de caixa acumulado** — é a série que mais gan
 - Fluxo de caixa com area chart de acumulado
 - Navegação com estado ativo, funcionando a 390 px
 - Import explica o caminho do PDF e que **nada precisa estar ligado**
-- Insight sob demanda, com os números calculados e só o texto vindo do modelo
-- **A tela de insight funciona com a AI fora do ar** — provado por teste
+- A tela de insight mostra os números **sempre**, mesmo sem nunca ter rodado o comando no Mac — provado por teste
+- Insight gerado no Mac chega ao D1 por `POST` autenticado com `INGEST_TOKEN`, e o app o lê de lá
+- A tela mostra **quando** o insight foi gerado; texto velho nunca aparece como se fosse de hoje
 - Nenhum número exibido tem origem no modelo
+- O `INGEST_TOKEN` escreve insight e **nada mais** — não lê nem escreve lançamento
 - Suítes verdes; os dois gates silenciosos
