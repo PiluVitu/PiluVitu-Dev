@@ -321,6 +321,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from promeia.app import create_app
+from promeia.auth import token_valido
 from promeia.config import Settings
 
 TOKEN = "token-de-teste"
@@ -369,25 +370,23 @@ def test_esquema_errado_e_401(client):
     )
 
 
-def test_token_nao_ascii_da_401_e_nao_500():
-    # hmac.compare_digest com dois `str` LANÇA TypeError se algum tiver
-    # caractere fora de ASCII. Sem o .encode() no auth.py, este caso vira 500
-    # — e um 500 na rota de autenticação manda depurar o serviço quando o
-    # problema é o token. Testa nas DUAS direções: token esperado com acento,
-    # e header com acento contra um esperado ASCII.
-    app = create_app(make_settings(promeia_token="ção-com-acento"))
-    c = TestClient(app)
-    assert c.get("/health", headers={"authorization": "Bearer errado"}).status_code == (
-        401
-    )
-    assert c.get(
-        "/health", headers={"authorization": "Bearer ção-com-acento"}
-    ).status_code == 200
+def test_token_valido_aceita_nao_ascii_sem_lancar():
+    """hmac.compare_digest com dois `str` LANÇA TypeError quando algum tem
+    caractere fora de ASCII — e um token vindo do ambiente é texto livre.
+    Sem o .encode("utf-8") em auth.py, isso subiria como 500 na rota de
+    autenticação, e um 500 ali manda depurar o serviço quando o problema é
+    o token.
 
-    c2 = TestClient(create_app(make_settings()))
-    assert c2.get(
-        "/health", headers={"authorization": "Bearer ção-com-acento"}
-    ).status_code == 401
+    ⚠️ Testado no nível de UNIDADE, nunca via TestClient. MEDIDO (httpx
+    0.28.1): o httpx recusa header não-ASCII no CLIENTE, então a requisição
+    nunca chega no app ASGI — um teste HTTP passaria por acidente, provando
+    nada sobre a comparação. Um teste que não pode falhar por causa do que
+    ele afirma é o defeito mais recorrente deste projeto.
+    """
+    esperado = "ção-com-acento"
+    assert token_valido(f"Bearer {esperado}", esperado) is True
+    assert token_valido("Bearer errado", esperado) is False
+    assert token_valido(f"Bearer {esperado}", "ascii-puro") is False
 
 
 def test_rota_inexistente_tambem_exige_token(client):
@@ -615,10 +614,10 @@ promeia:
   steps:
     - uses: actions/checkout@v4
 
-    # Se esta major não resolver, use a mais recente publicada — a action
-    # não foi verificada contra o marketplace nesta sessão. `uv sync` baixa
-    # o Python de .python-version sozinho, então não há setup-python aqui.
-    - uses: astral-sh/setup-uv@v6
+    # v9 é a major mais recente (confirmada com `gh release list` durante a
+    # execução — o rascunho deste plano dizia v6). `uv sync` baixa o Python
+    # de .python-version sozinho, então não há setup-python aqui.
+    - uses: astral-sh/setup-uv@v9
       with:
         enable-cache: true
 
