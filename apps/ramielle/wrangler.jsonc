@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "piluvitu-ramielle",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  // nodejs_compat: o better-auth (Task 3) importa node:crypto/node:async_hooks.
+  // Mesma justificativa medida em apps/financas/wrangler.jsonc.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Custom Domain, não *.workers.dev: em workers.dev o domínio registrável
+  // passa a ser diferente do de piluvitu.com.br, o cookie de sessão vira
+  // cross-SITE, SameSite=Lax deixa de ser enviado, e a quebra SÓ aparece em
+  // produção (local usa localhost dos dois lados). Mesmo motivo já
+  // documentado no finanças.
+  "routes": [{ "pattern": "api.piluvitu.com.br", "custom_domain": true }],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "piluvitu-ramielle",
+      // `wrangler d1 create piluvitu-ramielle` rodou nesta task (conta já
+      // autenticada, mesmo account_id do finanças) e criou o banco real.
+      // Ainda sem nenhuma migration aplicada em produção — 0001 é Task 2.
+      "database_id": "19fac981-5b34-4c76-9885-c21cb7539dde",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

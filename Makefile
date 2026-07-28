@@ -1,7 +1,8 @@
 .PHONY: dev dev-web dev-api storybook stack build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
         backup-financas backup-financas-test \
-        dev-promeia test-promeia lint-promeia insight
+        dev-promeia test-promeia lint-promeia insight \
+        dev-ramielle test-ramielle
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -47,6 +48,16 @@ test-go:
 
 test-web:
 	pnpm --filter @piluvitu/web test
+
+# --- ramielle (Cloudflare Worker Hono + D1) ---
+# Porta 8788, não 8787: o wrangler dev do finanças já ocupa 8787 por default
+# (ver comentário de dev-promeia abaixo) — os dois precisam poder rodar ao
+# mesmo tempo sem colidir.
+dev-ramielle:
+	pnpm --filter @piluvitu/ramielle dev --port 8788
+
+test-ramielle:
+	pnpm --filter @piluvitu/ramielle test
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,

@@ -1,0 +1,7 @@
+# Nenhum secret ainda nesta task (Task 1 — esqueleto). O único binding hoje
+# é o D1 (DB), declarado em wrangler.jsonc, sem valor a copiar aqui.
+#
+# A Task 3 (Better Auth com Google) deve trazer as mesmas chaves de
+# apps/financas/.dev.vars.example (BETTER_AUTH_URL, BETTER_AUTH_SECRET,
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) — este arquivo é o lugar certo
+# para documentá-las quando existirem.
