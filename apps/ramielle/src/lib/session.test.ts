@@ -114,6 +114,88 @@ describe('requireAuth — controle positivo (sem isto, um next() trocado por err
   })
 })
 
+describe('requireAuth — google_sub vem de account.accountId (o sub real do Google), com fallback pro id do Better Auth (fix round 1, Finding 1)', () => {
+  test('com uma linha em account (providerId=google), o google_sub GRAVADO é o accountId — não o id do Better Auth', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'comgoogle@example.com',
+      'Com Google',
+    )
+
+    const usuarioBetterAuth = await env.DB.prepare(
+      'SELECT id FROM user WHERE email = ?',
+    )
+      .bind('comgoogle@example.com')
+      .first<{ id: string }>()
+    if (!usuarioBetterAuth) {
+      throw new Error('user não encontrado após signUpEmail')
+    }
+
+    // Simula o que um login social real deixaria pra trás: uma linha em
+    // `account` vinculando este `user` a uma conta Google, com um
+    // `accountId` (o `sub`) CONHECIDO — só as colunas NOT NULL do schema
+    // (migration 0002) precisam ser preenchidas.
+    const subConhecido = 'google-sub-conhecido-123456'
+    await env.DB.prepare(
+      `INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt)
+       VALUES (?, ?, 'google', ?, ?, ?)`,
+    )
+      .bind(
+        'account-de-teste-comgoogle',
+        subConhecido,
+        usuarioBetterAuth.id,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
+      .run()
+
+    const res = await appProtegido().request(
+      '/protegido',
+      { headers: { cookie } },
+      testEnv(''),
+    )
+    expect(res.status).toBe(200)
+
+    // Lê a COLUNA de volta do D1 — não confia no que a rota devolveu.
+    const linha = await env.DB.prepare(
+      'SELECT google_sub FROM users WHERE email = ?',
+    )
+      .bind('comgoogle@example.com')
+      .first<{ google_sub: string }>()
+    expect(linha?.google_sub).toBe(subConhecido)
+    expect(linha?.google_sub).not.toBe(usuarioBetterAuth.id)
+  })
+
+  test('sem linha em account (a técnica de teste via emailAndPassword), o fallback grava o id do Better Auth', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'semgoogle@example.com',
+      'Sem Google',
+    )
+
+    const usuarioBetterAuth = await env.DB.prepare(
+      'SELECT id FROM user WHERE email = ?',
+    )
+      .bind('semgoogle@example.com')
+      .first<{ id: string }>()
+    if (!usuarioBetterAuth) {
+      throw new Error('user não encontrado após signUpEmail')
+    }
+
+    const res = await appProtegido().request(
+      '/protegido',
+      { headers: { cookie } },
+      testEnv(''),
+    )
+    expect(res.status).toBe(200)
+
+    const linha = await env.DB.prepare(
+      'SELECT google_sub FROM users WHERE email = ?',
+    )
+      .bind('semgoogle@example.com')
+      .first<{ google_sub: string }>()
+    expect(linha?.google_sub).toBe(usuarioBetterAuth.id)
+  })
+})
+
 describe('requireAdmin — 403 para conta fora de ADMIN_EMAILS, 200 para conta dentro', () => {
   test('conta comum recebe 403 admin_only', async () => {
     const cookie = await cookieDeSessaoValido('comum@example.com', 'Comum')

@@ -47,7 +47,6 @@ type MeData = {
   email: string
   picture: string
   is_admin: boolean
-  created_at: string
 }
 
 describe('GET /auth/me', () => {
@@ -59,7 +58,7 @@ describe('GET /auth/me', () => {
     expect(body.notifications[0]?.code).toBe('not_authenticated')
   })
 
-  test('com sessão válida responde 200 — shape id/name/email/picture/is_admin/created_at, sem google_sub', async () => {
+  test('com sessão válida responde 200 — shape EXATO id/name/email/picture/is_admin (5 campos), sem google_sub nem created_at', async () => {
     const cookie = await cookieDeSessaoValido('me@example.com', 'Fulano de Tal')
 
     const res = await app.request(
@@ -77,17 +76,19 @@ describe('GET /auth/me', () => {
     const body = JSON.parse(texto) as Envelope<MeData>
 
     expect(body.ok).toBe(true)
+    // toEqual (não toMatchObject): garante que NENHUM campo extra (como
+    // created_at) sobra no shape — fix round 1, o contrato são 5 campos.
     expect(body.data).toEqual({
       id: expect.any(Number),
       name: 'Fulano de Tal',
       email: 'me@example.com',
       picture: '', // nunca null — mesma convenção do Go (sql.NullString.String)
       is_admin: true,
-      created_at: expect.any(String),
     })
 
     expect(texto).not.toContain('google_sub')
     expect(texto).not.toContain('googleSub')
+    expect(texto).not.toContain('created_at')
   })
 
   test('a mesma conta SEM estar em ADMIN_EMAILS responde is_admin:false', async () => {

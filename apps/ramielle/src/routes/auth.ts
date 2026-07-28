@@ -1,9 +1,6 @@
 /**
  * `GET /auth/me` e `POST /auth/logout` — paridade de shape com o Go
- * (`apps/api/internal/auth/handlers.go#Me`/`#Logout`, mais os campos extras
- * que `apps/api/internal/handlers/admin/users.go#ListUsers` e o tipo
- * `AdminUser` de `apps/web/lib/votacao/types.ts` expõem — ver o comentário em
- * `/me` abaixo pro porquê de `created_at` entrar aqui).
+ * (`apps/api/internal/auth/handlers.go#Me`/`#Logout`).
  *
  * Convenção do monorepo (mesma de `apps/financas/src/routes/*.ts`): `Env`
  * local, NUNCA importa `Bindings` de `../index` — evitaria import circular
@@ -22,22 +19,27 @@ type Env = {
 const authRoutes = new Hono<Env>()
 
 /**
- * ⚠️ Shape: `id`, `name`, `email`, `picture`, `is_admin`, `created_at` —
- * `google_sub` NUNCA sai (o Go já o omite de propósito do shape de `User`).
+ * ⚠️ Shape: exatamente `id`, `name`, `email`, `picture`, `is_admin` — 5
+ * campos, casando com o `Handlers.Me` real do Go (`internal/auth/
+ * handlers.go`, linhas 108-114) e com o tipo `User` de `apps/web/lib/
+ * votacao/types.ts` (que também não declara `created_at`). NÃO copiar os 6
+ * campos do `ListUsers`/`AdminUser` do admin — aquele é outro endpoint
+ * (`/admin/users`), outro shape.
  *
- * O `Handlers.Me` do Go (`internal/auth/handlers.go`) devolve só 5 campos
- * (sem `created_at`); é o `ListUsers` do admin (`internal/handlers/admin/
- * users.go`) — e o tipo `AdminUser` espelho em `apps/web/lib/votacao/
- * types.ts` — quem devolve os 6, `created_at` incluso. Esta rota usa os 6
- * campos (instrução explícita do brief desta task) — um campo A MAIS do que
- * o `Handlers.Me` do Go, nunca a menos, e inofensivo pro cliente atual: o
- * tipo `User` do `apps/web` (`call<User>('/auth/me')`) não declara
- * `created_at`, mas TypeScript não faz excess-property-check sobre um valor
- * vindo de `fetch`/`JSON.parse` — o campo extra é ignorado em silêncio, não
- * quebra nada. `picture` sai como STRING VAZIA quando `null` (nunca `null`
- * no JSON) — mesma convenção do Go (`sql.NullString.String`, que é `""`
- * quando a coluna é `NULL`) e do tipo `picture: string` (não `string | null`)
- * dos dois lados do `apps/web`.
+ * Fix round 1 desta task: a primeira versão desta rota incluía
+ * `created_at` (instrução do brief original, que citou os dois handlers Go
+ * como referência sem notar que eles têm shapes diferentes). Cortado porque
+ * a fatia ② constrói em cima deste endpoint — um campo que "só funciona
+ * porque TypeScript não valida resposta de `fetch`" é dívida silenciosa. Se
+ * uma tela algum dia precisar de `created_at`, ele entra como campo
+ * DECLARADO no tipo `User`, não como propriedade implícita que sobra da
+ * resposta.
+ *
+ * `google_sub` NUNCA sai (o Go já o omite de propósito do shape de `User`).
+ * `picture` sai como STRING VAZIA quando `null` (nunca `null` no JSON) —
+ * mesma convenção do Go (`sql.NullString.String`, que é `""` quando a
+ * coluna é `NULL`) e do tipo `picture: string` (não `string | null`) do
+ * `apps/web`.
  */
 authRoutes.get('/me', requireAuth<AuthBindings>(), (c) => {
   const user = c.get('votacaoUser')
@@ -47,7 +49,6 @@ authRoutes.get('/me', requireAuth<AuthBindings>(), (c) => {
     email: user.email,
     picture: user.picture ?? '',
     is_admin: user.isAdmin,
-    created_at: user.createdAt,
   })
 })
 

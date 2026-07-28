@@ -39,6 +39,34 @@ type SessionResolution =
   | { ok: false; response: Response }
 
 /**
+ * O `sub` de verdade do Google fica em `account.accountId` (`providerId =
+ * 'google'`, migration 0002) — `getSession()` NUNCA o expõe, só
+ * `sessao.user.id` (o id INTERNO do Better Auth, gerado por ele).
+ *
+ * ⚠️ Por que isto importa pra valer, não é purismo de nome de coluna: a
+ * fatia ④ (cutover) vai IMPORTAR o histórico real de votação da API Go, cujo
+ * `users.google_sub` está preenchido com o `sub` do Google. Se o ramielle
+ * gravasse `sessao.user.id` (valor que o Go NUNCA usou) em vez do `sub` real,
+ * casar a importação por `google_sub` criaria uma SEGUNDA linha pra cada
+ * pessoa que já votou — a mesma pessoa duplicada, e os votos antigos ficando
+ * órfãos de identidade. Com a tabela vazia (estado atual), isto é de graça;
+ * com linhas já gravadas seria preciso uma migration extra só pra recalcular
+ * a coluna, além da importação em si.
+ */
+async function buscarGoogleSub(
+  db: D1Database,
+  betterAuthUserId: string,
+): Promise<string | null> {
+  const conta = await db
+    .prepare(
+      `SELECT accountId FROM account WHERE userId = ? AND providerId = 'google' LIMIT 1`,
+    )
+    .bind(betterAuthUserId)
+    .first<{ accountId: string }>()
+  return conta?.accountId ?? null
+}
+
+/**
  * Isolado de `requireAuth`/`requireAdmin` de propósito: é o que evita
  * duplicar o `try/catch` de `getSession` e o upsert nos dois guards — cada
  * um só decide o que fazer com o resultado (deixar passar, ou também exigir
@@ -78,8 +106,19 @@ async function resolveSession<TBindings extends AuthBindings>(
     }
   }
 
+  // Fallback pra sessao.user.id NÃO É FOLGA — é o que preserva o controle
+  // positivo dos testes deste arquivo. O cookie de teste é gerado via
+  // `emailAndPassword`/`signUpEmail` (mesma técnica do finanças): esse
+  // caminho NUNCA cria uma linha em `account` com `providerId='google'` (só
+  // login social real cria). Sem o fallback, todo teste de sessão quebraria
+  // por um motivo que não tem nada a ver com o que eles provam — em
+  // produção o login é 100% Google, então o caminho real sempre acha a
+  // linha em `account`, e o fallback nunca dispara.
+  const googleSub =
+    (await buscarGoogleSub(c.env.DB, sessao.user.id)) ?? sessao.user.id
+
   const votacaoUser = await upsertVotacaoUser(c.env.DB, {
-    googleSub: sessao.user.id,
+    googleSub,
     email: sessao.user.email,
     name: sessao.user.name,
     picture: sessao.user.image ?? null,
