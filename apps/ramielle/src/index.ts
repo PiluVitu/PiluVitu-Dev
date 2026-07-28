@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
+import authRoutes from './routes/auth'
 
 export type Bindings = AuthBindings
 
@@ -27,6 +28,11 @@ app.get('/health', async (c) => {
 // próprio Better Auth (getAuth(env).handler(...) devolvido cru), mesma
 // convenção já documentada no finanças.
 app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
+
+// `/auth/me` e `/auth/logout` — paridade de path com o Go (`apps/api`),
+// distinto de `/api/auth/*` acima (Better Auth). Precisa vir ACIMA do
+// catch-all, mesma regra de sempre.
+app.route('/auth', authRoutes)
 
 // SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
 // app.route() registrado depois desta linha fica inalcançável.
