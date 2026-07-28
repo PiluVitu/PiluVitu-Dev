@@ -84,3 +84,9 @@ apps/financas/.wrangler/
 # Entra ANTES de o arquivo existir — .env/.env.local nao cobrem este nome.
 .dev.vars
 **/.dev.vars
+
+# python (apps/promeia)
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/

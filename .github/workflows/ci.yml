@@ -131,3 +131,33 @@ jobs:
 
       - name: Test (spa)
         run: pnpm --filter @piluvitu/financas-web run test
+
+  promeia:
+    name: Promeia (lint + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/promeia
+    steps:
+      - uses: actions/checkout@v4
+
+      # v9 (major mais recente publicada nesta sessão — o brief citava v6,
+      # desatualizada). `uv sync` baixa o Python de .python-version sozinho,
+      # então não há setup-python aqui.
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      # --frozen: o CI NUNCA resolve versão. Quem pina é o uv.lock commitado.
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Test
+        run: uv run pytest
