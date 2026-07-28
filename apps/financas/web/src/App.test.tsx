@@ -85,6 +85,22 @@ function mockFetchVazio() {
           goal_months: 3,
         })
       }
+      // InsightPage (Task 5, fatia ⑨) — dois objetos, não listas. `latest:
+      // null` é o estado real de produção hoje (comando do Mac nunca
+      // rodou) — a própria propriedade que esta tela existe pra sustentar.
+      if (url.includes('/api/insights/numbers')) {
+        return respond({
+          competence: '',
+          previous_competence: '',
+          top_categories: [],
+          total_cents: 0,
+          previous_total_cents: 0,
+          variation_cents: 0,
+          variation_pct: null,
+          biggest_increase: null,
+        })
+      }
+      if (url.includes('/api/insights/latest')) return respond(null)
       // ImportarPage (Tasks 4-5, fatia ②) — GET /api/payees já coberto
       // acima (DividasPage). /api/transactions só é chamado depois de um
       // arquivo ser lido (checagem de duplicata) — este teste de rota nunca
@@ -198,6 +214,17 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 
+  // Task 5 (fatia ⑨): nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/insight mostra a tela Insight', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/insight'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Insight' })).toBeDefined(),
+    )
+  })
+
   // Tasks 4-5 (fatia ②): nova rota, mesmo padrão das demais (link no <nav> +
   // entrada na cadeia do AppShell).
   test('#/importar mostra a tela Importar', async () => {
@@ -303,6 +330,21 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     )
     expect(screen.getByRole('link', { name: 'Início' })).not.toHaveAttribute(
       'aria-current',
+    )
+  })
+
+  // Task 5 (fatia ⑨): nova rota, mesmo padrão das demais — o nav marca
+  // "Insight" ativo, consistente com o estado ativo que a Task 2 introduziu.
+  test('#/insight marca "Insight" como ativo', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/insight'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Insight' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Insight' })).toHaveAttribute(
+      'aria-current',
+      'page',
     )
   })
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   addMonthsToCompetence,
   competenciaAtual,
+  formatDateTimeTeresina,
   todayInTeresina,
 } from './dates'
 
@@ -59,5 +60,22 @@ describe('addMonthsToCompetence', () => {
 
   test('n=0 devolve a mesma competencia', () => {
     expect(addMonthsToCompetence('2026-07', 0)).toBe('2026-07')
+  })
+})
+
+describe('formatDateTimeTeresina', () => {
+  test('subtrai o fuso antes de formatar (mesma armadilha de todayInTeresina)', () => {
+    // 01:00 UTC de 01/08 é 22:00 de 31/07 em Teresina — sem a subtração,
+    // sairia '01/08/2026 01:00', a mesma classe de bug que já motivou
+    // todayInTeresina existir.
+    expect(formatDateTimeTeresina('2026-08-01T01:00:00Z')).toBe(
+      '31/07/2026 22:00',
+    )
+  })
+
+  test('formato DD/MM/AAAA HH:MM, com zero à esquerda', () => {
+    expect(formatDateTimeTeresina('2026-01-05T06:07:00Z')).toBe(
+      '05/01/2026 03:07',
+    )
   })
 })

@@ -47,3 +47,20 @@ export function addMonthsToCompetence(competence: string, n: number): string {
 
   return `${String(Math.floor(total / 12)).padStart(4, '0')}-${String((total % 12) + 1).padStart(2, '0')}`
 }
+
+/**
+ * Data e hora LOCAIS (Teresina, UTC−3 fixo) formatadas em pt-BR
+ * ('20/07/2026 10:15') a partir de um timestamp UTC completo
+ * ('YYYY-MM-DDTHH:MM:SSZ', ex.: `generated_at` de `GET /api/insights/latest`,
+ * Task 5 da fatia ⑨ — ver `lib/insight.ts`). Mesma subtração de fuso de
+ * `todayInTeresina`, só sem cortar a hora — construída manualmente (sem
+ * `Intl`/`toLocaleString`) pra não depender do fuso da máquina que roda o
+ * teste, mesmo raciocínio que já levou `todayInTeresina`/
+ * `addMonthsToCompetence` a evitar `Date` onde dá.
+ */
+export function formatDateTimeTeresina(iso: string): string {
+  const local = new Date(new Date(iso).getTime() - TERESINA_OFFSET_MS)
+  const [datePart, timePart] = local.toISOString().split('T')
+  const [year, month, day] = datePart.split('-')
+  return `${day}/${month}/${year} ${timePart.slice(0, 5)}`
+}

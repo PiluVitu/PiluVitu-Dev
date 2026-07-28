@@ -12,6 +12,7 @@ import { DividasPage } from './pages/DividasPage'
 import { FluxoPage } from './pages/fluxo'
 import { HomePage } from './pages/home'
 import { ImportarPage } from './pages/importar'
+import { InsightPage } from './pages/insight'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
 import { ReservaPage } from './pages/reserva'
@@ -41,6 +42,7 @@ type RouteKey =
   | 'dividas'
   | 'comprometido'
   | 'fluxo'
+  | 'insight'
   | 'lancar'
   | 'recorrentes'
   | 'reserva'
@@ -53,6 +55,7 @@ export function resolveRoute(hash: string): RouteKey {
   if (hash.startsWith('#/dividas/') || hash === '#/dividas') return 'dividas'
   if (hash.startsWith('#/comprometido')) return 'comprometido'
   if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
+  if (hash === '#/insight' || hash === '#/insight/') return 'insight'
   if (hash.startsWith('#/lancar')) return 'lancar'
   if (hash === '#/recorrentes' || hash === '#/recorrentes/')
     return 'recorrentes'
@@ -74,6 +77,7 @@ const NAV_ITEMS: { href: string; label: string; route: RouteKey }[] = [
   { href: '#/importar', label: 'Importar', route: 'importar' },
   { href: '#/comprometido', label: 'Comprometido', route: 'comprometido' },
   { href: '#/fluxo', label: 'Fluxo de caixa', route: 'fluxo' },
+  { href: '#/insight', label: 'Insight', route: 'insight' },
   { href: '#/configuracoes', label: 'Configurações', route: 'configuracoes' },
 ]
 
@@ -126,6 +130,8 @@ function AppShell() {
         <CommitmentsPage from={competenciaAtual()} />
       ) : route === 'fluxo' ? (
         <FluxoPage />
+      ) : route === 'insight' ? (
+        <InsightPage />
       ) : route === 'lancar' ? (
         <NewEntryPage />
       ) : route === 'recorrentes' ? (

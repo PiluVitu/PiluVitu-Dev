@@ -770,7 +770,11 @@ Motivado por dois relatos do dono usando o app em produção: _"queria tmb que m
 
 ## Insight de IA — backend (fatia ⑨, Task 3 — `migrations/0007_insights.sql` + `src/domain/insights.ts` + `src/routes/insights.ts`)
 
-Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando (fora do escopo desta task) no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1.
+Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando (Task 4, `scripts/insight.mjs`) no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1.
+
+**A consequência é o ponto, não um detalhe de implementação:** o app nunca depende do Mac estar ligado. Do celular, com o laptop fechado, a tela (`#/insight`, Task 5, ver seção _A tela_ abaixo) abre e mostra o último insight publicado, com a data de quando foi feito — nunca uma chamada ao vivo pro Mac. A alternativa descartada (puxar pelo túnel Cloudflare que já existe pra outras integrações) faria TODA abertura da tela depender de outro computador acordado, o mesmo acoplamento que a fatia ③ (fatura em PDF) já tinha rejeitado por motivo idêntico — ver seção _Fatura em PDF via Ollama local_ acima, "Worker → Cloudflare Tunnel → Ollama — descartado porque acopla o app a 'o Mac estar ligado'".
+
+⚠️ **Por que não Workers AI — medido, funciona, descartado por custo (registrado aqui pra ninguém redescobrir).** `@cf/meta/llama-3.3-70b-instruct-fp8-fast` responde normalmente nesta conta; `@cf/meta/llama-3.1-8b-instruct` devolve `5028: This model was deprecated on 2026-05-30` (medido com um Worker descartável, 2026-07-28). "Funciona" não é "é grátis": a cota livre do Workers AI é pequena e depois é pago, e o dono foi explícito — zero custo de AI, usando a infra local (Ollama no Mac, já paga, já rodando pra fatia ③). Essa é a ÚNICA razão da escolha — não incapacidade técnica do Workers AI, custo.
 
 **A separação que sustenta o design inteiro: a aritmética não é IA.** "Onde gastei mais", "quanto subiu contra o período anterior" e "o que mais cresceu" são consultas exatas — `insightNumbers` (`src/domain/insights.ts`) — que **nunca leem a tabela `insights`** e portanto aparecem na tela mesmo que o comando do Mac nunca tenha rodado (provado por teste, `domain/insights.test.ts`: `'funciona mesmo sem nenhum insight jamais ter sido gravado'`). O texto gerado pelo modelo é a ÚNICA coisa que a tabela `insights` guarda — nenhum número.
 
@@ -840,6 +844,17 @@ pnpm --filter @piluvitu/financas exec vitest run src/domain/insights.test.ts src
 
 Fecha o ciclo que a Task 3 deixou registrado como "próximo passo": o CLI que lê os números, gera a leitura em texto via Ollama local e publica em `POST /api/insights`. Roda `node scripts/insight.mjs` (ou `pnpm --filter @piluvitu/financas run insight`) no MacBook do dono — mesma família de `scripts/pdf-import.mjs`, mesmo padrão de erro, mesma disciplina de dependency injection em `run()` pra testar sem tocar Ollama/rede de verdade.
 
+```bash
+ollama serve                        # se ainda não estiver rodando
+node apps/financas/scripts/insight.mjs --competencia 2026-07
+# ou, de dentro de apps/financas:
+pnpm run insight -- --competencia 2026-07
+```
+
+Opções: `--competencia YYYY-MM` (default: mês corrente em Teresina, via `competenciaAtual()`), `--modelo <nome>` (default `qwen2.5:7b-instruct`), `--url <url do Ollama>` (default `http://localhost:11434/api/generate`), `--api-url <url>` (default `https://financas.piluvitu.com.br`), `--help`.
+
+⚠️ **Nada precisa continuar rodando depois.** O `ollama serve` só precisa estar de pé DURANTE a execução do comando — assim que ele termina (publicou com sucesso, ou falhou com uma das mensagens abaixo), pode fechar o Ollama, fechar o terminal, fechar a tampa do MacBook. Não há processo em segundo plano, não há socket aberto esperando a próxima chamada: o comando é `fetch` → `fetch` → `fetch` (números, Ollama, publicar) e termina. A tela (`#/insight`, seção _A tela_ abaixo) nunca chama o Mac de volta — ela lê o que já foi publicado no D1, e continua funcionando exatamente igual no minuto seguinte, com o Mac fechado.
+
 **Decisão sobre COMO o comando lê (a pergunta que a Task 3 deixou em aberto): estender o `INGEST_TOKEN`, não trocar de mecanismo.** A alternativa registrada na Task 3 (`wrangler d1 execute` direto, sem HTTP) foi descartada — o comando já precisa do `INGEST_TOKEN` pra escrever, reusar o MESMO segredo pra ler evita duplicar credencial/mecanismo de acesso ao D1 no mesmo comando. `routes/insights.ts` ganhou:
 
 - `ingestTokenValido(header, esperado)` — a checagem pura (fail-closed, mesma regra de sempre), extraída pra ser reusada pelas duas guardas.
@@ -881,6 +896,44 @@ O gasto total em julho de 2026 foi de R$ 1.230,00, representando um aumento de R
 ```
 
 Todo número no texto bate exatamente com o que foi semeado (nenhum inventado) e a linha foi conferida gravada no D1 local (`SELECT ... FROM insights`). Os quatro caminhos de erro também foram exercitados contra o Ollama/API reais (não só stub): `INGEST_TOKEN` ausente, token errado (a API real respondeu 401 e a mensagem citou o segredo), Ollama apontando pra uma porta fechada (`ECONNREFUSED` real) e modelo inexistente (404 real do Ollama) — as quatro mensagens saíram exatamente como descrito na seção anterior.
+
+### A tela (Task 5 — `web/src/pages/insight.tsx`, rota `#/insight`)
+
+Fecha a fatia ⑨: as Tasks 1-4 entregaram os números calculados, o texto gerado no Mac e a autenticação de ingestão — até aqui, nada disso tinha UI. `InsightPage` consome `GET /api/insights/numbers?competence=<mês>` e `GET /api/insights/latest`, e monta dois cards ("Números de \<mês\>" e "Leitura").
+
+**A propriedade que esta tela existe pra sustentar: ela funciona sem AI.** Os números são calculados e aparecem SEMPRE — mesmo que o dono nunca tenha rodado `scripts/insight.mjs` no Mac nem uma vez. Isso não é só "o `null` de `latestInsight` não quebra a tela" (o caso feliz óbvio) — é robusto contra a busca do texto FALHAR de verdade (rede fora, D1 indisponível, `503`). As duas coisas são pedidas por dois `useEffect` **independentes**, nunca um `Promise.all` só: um `Promise.all` juntaria o destino dos dois lados, e uma falha (ou lentidão) do lado do texto atrasaria/derrubaria o lado dos números — exatamente a dependência que "o Mac empurra, o app lê" (seção acima) existe pra evitar. `numbers`/`numbersError` e `insight`/`insightError`/`insightLoaded` são estados totalmente separados; o card "Números" nunca olha pro estado do card "Leitura" e vice-versa. Coberto por `pages/insight.test.tsx`:
+
+- `'os números aparecem mesmo sem NENHUM insight jamais gravado (latest: null)'` — o caso normal de produção hoje.
+- `'os números aparecem mesmo que a BUSCA do insight falhe (não só "nunca gravado")'` — mocka `/insights/latest` lançando `ApiError(503, ...)`; os números continuam aparecendo, e o card "Leitura" mostra o erro contido (não propaga, não derruba o outro card — mesmo padrão de `Bloco.tsx`/`blocos/BlocoCategorias.tsx`).
+
+⚠️ **Nenhum número renderizado nesta tela tem origem em `insight.texto`.** Todo valor numérico exibido (`insight-total`, `insight-variacao`, cada `insight-categoria-N`, `insight-maior-crescimento`) é lido de `numbers` (a resposta de `GET /api/insights/numbers`, que nunca lê a tabela `insights` — ver seção _Insight de IA — backend_ acima). `insight.texto` é renderizado como PROSA, dentro de um único parágrafo (`data-testid="insight-texto"`) com `whitespace-pre-wrap`, e nunca é parseado/interpretado por nenhum outro elemento da tela. Provado em `pages/insight.test.tsx` (`'nenhum número renderizado vem do campo de texto'`): o texto mockado contém um número FALSO e bem distinto de qualquer valor real (`R$ 999.999,99`, `900%`) — o teste afirma que esse número aparece **só** dentro de `insight-texto`, e que todo elemento numérico da tela (`insight-total`, `insight-variacao`, `insight-categoria-0`, `insight-maior-crescimento`) mostra os valores CORRETOS vindos de `numbers`, não o número do texto.
+
+**Frescor, não silêncio (`web/src/lib/insight.ts`).** A tela sempre mostra QUANDO o insight foi gerado — nunca só o texto pendurado sem data, que o dono leria como se fosse de hoje:
+
+- `formatDateTimeTeresina` (nova em `web/src/lib/dates.ts`) formata `generated_at` (timestamp UTC completo, `nowIsoUtc()` do servidor — nunca aceito do corpo do POST, ver ⚠️ na seção _`domain/insights.ts`_ acima) em hora LOCAL de Teresina (`'20/07/2026 10:15'`) — mesma subtração de fuso de `todayInTeresina`, só sem cortar a hora. Construída à mão (sem `Intl`/`toLocaleString`) pra não depender do fuso da máquina que roda o teste, mesmo raciocínio que já levou `todayInTeresina`/`addMonthsToCompetence` a evitar `Date` onde dá.
+- `insightAgeDays`/`formatInsightAge` (`lib/insight.ts`) traduzem a idade em texto curto — "hoje" / "há 1 dia" / "há N dias" / "há N semanas" / "há N meses". `now` é sempre injetado (`= new Date()` como default, nunca `Date.now()` cru dentro da função) — mesmo padrão de `todayInTeresina(now?)`/`nowIsoUtc(now?)` do Worker: testes passam o instante via `vi.useFakeTimers({ toFake: ['Date'] })`, nunca mockam `Date` global sem escopo.
+- ⚠️ **`STALE_THRESHOLD_DAYS = 7`** — acima de uma semana, o texto passa a ler como DESATUALIZADO: `isStaleInsight` fica `true`, `insight-geracao` troca de `text-muted-foreground` pra `text-destructive font-semibold`, e um segundo parágrafo (`role="alert"`, `data-testid="insight-alerta-desatualizado"`) explica que os números podem ter mudado e cita o comando pra atualizar. O limiar é DELIBERADAMENTE mais apertado que os "três semanas" citados no spec como exemplo de leitura ruim (§3: "insight de três semanas atrás apresentado como se fosse de hoje é pior que insight nenhum") — o objetivo é o dono nunca chegar perto desse exemplo sem já ter visto o aviso, não marcar "desatualizado" bem em cima do caso citado como ruim.
+- **O texto NUNCA some por estar velho** — "frescor, não silêncio" quer dizer o oposto de esconder: um insight de três semanas continua visível, com o texto completo, só deixa de parecer atual. Verificado em `pages/insight.test.tsx` (`'insight antigo (3 semanas) aparece com a idade visível e um alerta de desatualizado'`, com `vi.useFakeTimers`/`vi.setSystemTime` fixando "agora" e `generated_at` 21 dias antes) e visualmente (ver bullet do 390px abaixo, screenshot `insight-390-antigo.png`): o card "Leitura" mostra `'Referente a jul/26 · gerado em 06/07/2026 23:29 (há 3 semanas)'` em vermelho, o alerta de desatualizado, e o texto completo do insight logo abaixo — nada escondido.
+
+**`<Ajuda rotulo="Insight">`** (popover, clique — nunca hover, mesma regra de `packages/ui/CLAUDE.md`) explica a mesma separação que sustenta a fatia inteira: números são calculados (sempre disponíveis), o texto é gerado localmente (Ollama no Mac) e nenhum número vem dele.
+
+**Seletor de mês** (`<input type="month">`, mesmo padrão Tailwind copiado à mão de `blocos/BlocoCategorias.tsx`) troca só a competência do card "Números" — `latestInsight` não tem parâmetro de competência (é sempre o insight mais recente, de QUALQUER período), então o card "Leitura" mostra o `periodo` do insight como texto (`'Referente a jul/26'`) em vez de ficar sincronizado ao seletor. Decisão deliberada de manter os dois desacoplados: forçar sincronia exigiria ou recarregar `latest` a cada troca de mês (sem sentido — não existe "o insight de determinado mês", existe "o insight mais recente") ou limitar o seletor de números ao período do último insight, contradizendo "os números funcionam mesmo sem nunca ter rodado o comando".
+
+**Rota `#/insight` + nav** — `RouteKey`/`resolveRoute`/`NAV_ITEMS` em `App.tsx` ganharam a entrada entre "Fluxo de caixa" e "Configurações" (agrupando as três telas de leitura/relatório antes da última, de configuração), consistente com o estado ativo que a Task 2 da fatia ⑨ introduziu (`aria-current="page"` no pill do nav). Testado em `App.test.tsx`: `'#/insight mostra a tela Insight'` (mesmo padrão `getByRole('heading', ...)` das demais rotas — nunca `getByText`, o nav duplica o texto de todo heading) e `'#/insight marca "Insight" como ativo'` (mesmo padrão do describe `"nav: estado ativo segue a rota corrente"`).
+
+**Layout a ~390px verificado de fato** (Playwright headless ad-hoc, não commitado, mesmo padrão das tasks anteriores do design system): `vite build` + `vite preview`, viewport 390×844 com `hasTouch`/`isMobile`, três estados (sem insight, insight recente "hoje", insight antigo "há 3 semanas") + claro/escuro — `document.documentElement.scrollWidth === clientWidth === 390` nos quatro cenários, sem overflow horizontal de página. O screenshot do estado "antigo" é a prova visual de frescor-não-silêncio: card "Leitura" em vermelho com a idade e o alerta, texto completo do insight ainda visível logo abaixo, card "Números" ao lado intacto.
+
+**Bundle, medido (`vite build`, antes = Task 4 do comando do Mac / depois = Task 5 desta tela):**
+
+|                                    | antes                      | depois                                |
+| ---------------------------------- | -------------------------- | ------------------------------------- |
+| JS principal                       | 404,48 kB / 126,00 kB gzip | 410,06 kB / 127,34 kB gzip            |
+| Chunk `GraficoComprometido` (lazy) | 388,47 kB / 113,09 kB gzip | 388,47 kB / 113,09 kB gzip (intocado) |
+| CSS                                | 32,77 kB / 6,68 kB gzip    | 32,81 kB / 6,69 kB gzip               |
+
+Crescimento pequeno e esperado (+1,34 kB gzip no principal): `InsightPage` reusa componentes já no bundle (`Card`, `Ajuda`, `cn`) e não desenha gráfico nenhum — os números são texto, não `recharts`. O chunk lazy do gráfico fica intocado (nada nesta task toca `GraficoComprometido.tsx`). Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos (exit 0), verificados **depois** desta própria edição de documentação.
+
+**282 → 295 testes na SPA** (13 novos: 2 em `lib/dates.test.ts` — `formatDateTimeTeresina` —, 9 em `pages/insight.test.tsx`, 2 em `App.test.tsx` — rota + estado ativo do nav). `typecheck` (`tsc --noEmit`) silencioso. Worker/`apps/web`/`packages/ui`/`packages/tools` intocados (474/89/14/123).
 
 ## Configurações (`src/domain/settings.ts` + `src/routes/settings.ts` + `web/src/pages/config.tsx`, Task 10)
 
