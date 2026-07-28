@@ -1,6 +1,6 @@
 import pytest
 
-from promeia.config import ConfigError, load_settings
+from promeia.config import ConfigError, Settings, load_settings
 
 
 def test_recusa_subir_sem_token():
@@ -39,6 +39,23 @@ def test_env_sobrescreve_os_defaults():
     assert s.ollama_model == "qwen2.5:3b-instruct"
     assert s.ramielle_url == "http://localhost:8787"
     assert s.ingest_token == "ingest"
+
+
+def test_repr_de_settings_nao_expoe_os_segredos():
+    # Ninguém loga `settings` hoje, mas o dataclass gera __repr__ com todos
+    # os campos por padrão — os dois únicos segredos do serviço (o token que
+    # protege toda rota e o token que autentica no ramielle) não podem
+    # aparecer se alguém logar o objeto inteiro por engano no futuro.
+    s = Settings(
+        promeia_token="segredo-promeia",
+        ollama_url="http://localhost:11434",
+        ollama_model="qwen2.5:7b-instruct",
+        ramielle_url="https://exemplo.invalid",
+        ingest_token="segredo-ingest",
+    )
+    texto = repr(s)
+    assert "segredo-promeia" not in texto
+    assert "segredo-ingest" not in texto
 
 
 def test_barra_final_do_ramielle_url_e_removida():

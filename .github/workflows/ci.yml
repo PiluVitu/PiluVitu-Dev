@@ -149,9 +149,13 @@ jobs:
         with:
           enable-cache: true
 
-      # --frozen: o CI NUNCA resolve versão. Quem pina é o uv.lock commitado.
+      # --locked, não --frozen: --frozen instala o lock como está, sem
+      # checar se ele ainda bate com pyproject.toml — um pyproject editado
+      # sem re-lock passaria batido. --locked ERRA se o lock estiver
+      # desatualizado; é o equivalente exato do `pnpm install
+      # --frozen-lockfile` que a Vercel usa (nome trocado, mesma semântica).
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Lint
         run: uv run ruff check .

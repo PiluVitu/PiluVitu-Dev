@@ -33,14 +33,28 @@ sucesso, ou falhou com uma mensagem clara), não precisa continuar nada rodando
 — pode fechar o Ollama, fechar o terminal, fechar a tampa do MacBook. Não há
 processo em segundo plano, não há socket esperando a próxima chamada.
 
-## `PROMEIA_TOKEN` — toda rota, por middleware, sem exceção
+## `PROMEIA_TOKEN` — toda rota HTTP, por middleware, sem exceção
 
 `TokenMiddleware` (`src/promeia/auth.py`) é instalado via `app.add_middleware`
-em `create_app` (`src/promeia/app.py`) — isso o coloca **em torno do app ASGI
-inteiro**, antes de qualquer roteamento do FastAPI. O serviço **recusa subir**
-sem `PROMEIA_TOKEN` (`load_settings` lança `ConfigError` — ver
-`src/promeia/config.py`), e toda requisição sem o token correto (`Authorization:
-Bearer <token>`) recebe 401 antes de qualquer rota ser alcançada.
+em `create_app` (`src/promeia/app.py`) — isso o coloca **em torno do app ASGI,
+antes de qualquer roteamento do FastAPI, para toda requisição HTTP**. O
+serviço **recusa subir** sem `PROMEIA_TOKEN` (`load_settings` lança
+`ConfigError` — ver `src/promeia/config.py`), e toda requisição HTTP sem o
+token correto (`Authorization: Bearer <token>`) recebe 401 antes de qualquer
+rota ser alcançada.
+
+⚠️ **"App ASGI inteiro" não inclui WebSocket — MEDIDO em
+`starlette/middleware/base.py`:** `BaseHTTPMiddleware.__call__` faz `if
+scope["type"] != "http": await self.app(scope, receive, send); return` **antes**
+de chamar `dispatch` (onde `TokenMiddleware` checa o token). Um scope
+`"websocket"` atravessa direto pro app, sem passar pelo guard — uma rota
+WebSocket futura nasceria sem cadeado. Hoje isso não morde por **acaso
+feliz, não por proteção**: o app não tem nenhuma rota WebSocket, e se uma
+nascesse, `_rotas_registradas` (`app_test.py`) **levantaria** ao tentar
+achatar um `WebSocketRoute` (sem `.methods` nem `.routes` compatíveis com o
+que a função sabe abrir) — quebrando o teste alto, e não silenciosamente,
+antes de a rota chegar a produção sem guarda. Mas o acaso é do teste
+denunciar o problema, não do middleware evitá-lo.
 
 **Motivo:** o túnel Cloudflare torna este serviço alcançável pela internet
 inteira. Sem o token, seria GPU do dono publicada de graça para qualquer um
@@ -80,10 +94,12 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
 ## Toolchain
 
 - **`uv`** — gerenciador de pacotes/venv deste workspace. Política de
-  dependência Python (lock commitado, instalação `--frozen`, e a ausência de
-  equivalente a `minimumReleaseAge`) **mora na raiz** — ver _Dependency
-  security policy_ em `CLAUDE.md` (raiz), não duplicada aqui: cada fato mora
-  num único arquivo, regra do próprio `CLAUDE.md` da raiz.
+  dependência Python (lock commitado, instalação `--locked`, e o gate de
+  `exclude-newer`) **mora na raiz** — ver _Dependency security policy_ em
+  `CLAUDE.md` (raiz), não duplicada aqui: cada fato mora num único arquivo,
+  regra do próprio `CLAUDE.md` da raiz. O `exclude-newer = "24 hours"` em si
+  fica em `pyproject.toml` (comentário ao lado de `[tool.uv]`), porque é
+  configuração deste workspace, não fato transversal.
 - **pytest com `python_files = ["*_test.py"]`** (`pyproject.toml`) — o default
   do pytest é `test_*.py`, que **briga com a lei de colocation** deste
   monorepo (teste ao lado do fonte, nomeado a partir dele: `money.py` →
@@ -94,9 +110,13 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   Único per-file-ignore: `src/promeia/insight.py` tem `E501` desligado porque
   o prompt que ele monta é contrato byte-a-byte com o que o dono já revisou —
   quebrar linha ali inseriria uma quebra real no texto mandado pro modelo.
-- **Suíte hoje: 91 testes** (`uv run pytest`) — linha de base desta task
-  (Task 6: 80 herdadas + 10 do CLI + 1 do fix round 1, cobrindo o branch de
-  competência inválida), mesma convenção de contagem de suíte que os outros
+- **Suíte hoje: 96 testes** (`uv run pytest`) — 91 herdadas (Task 6: 80 + 10
+  do CLI + 1 do fix round 1) **+ 5 da leva final de correções**: payload sem
+  `"data"` e payload sem uma chave esperada (`insight_test.py`), `/api/generate`
+  devolvendo uma lista em vez de objeto (`ollama_test.py`), o mesmo payload
+  malformado provado ponta a ponta até o CLI sem vazar traceback
+  (`cli_test.py`), e `repr(Settings)` não expor os dois segredos
+  (`config_test.py`) — mesma convenção de contagem de suíte que os outros
   `CLAUDE.md` deste monorepo já registram. A remoção do CLI Node que esta task substituiu
   (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou os 40 testes
   correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
@@ -115,6 +135,17 @@ test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
 
 De dentro de `apps/promeia`, sem o `make`: `uv run pytest` / `uv run ruff
 check .` / `uv run ruff format --check .` / `uv run promeia-insight`.
+
+⚠️ **`.env.example` é decorativo — `uv run` NÃO lê `.env` sozinho** (só com
+`--env-file <arquivo>`/`UV_ENV_FILE`, MEDIDO no uv 0.11.32 instalado aqui).
+Quem fizer `cp .env.example .env` e rodar `uv run promeia-insight` direto
+recebe só "PROMEIA_TOKEN não está definido", sem pista de que o `.env`
+existe e não foi lido. `make insight` já resolve isso — mesmo padrão do
+`dev-api` da raiz, source condicional (`set -a && [ -f .env ] && . ./.env;
+set +a`), só carrega se o arquivo existir, nunca quebra quem prefere
+exportar as vars na mão. Rodando `uv run promeia-insight` direto (sem
+`make`), a saída é sua: `set -a; source .env; set +a` antes, ou
+`uv run --env-file .env promeia-insight`.
 
 `make test`/`make lint` (raiz) **incluem o promeia** desde esta task — os dois
 alvos encadeiam `cd apps/promeia && uv run pytest` / `uv run ruff check . &&
@@ -159,6 +190,15 @@ local), não só stubadas em teste:
 - **API inalcançável** (rede/DNS/porta fechada): _"não consegui alcançar a
   API em `<url>` — confira a conexão e a URL (RAMIELLE_URL)"_, com o detalhe
   técnico anexado, nunca substituindo a frase.
+- **Payload da API fora do formato esperado** (envelope `ok:true` sem
+  `"data"`, ou `"data"` faltando uma chave que `build_prompt` espera): sem
+  guarda, isso é `TypeError`/`KeyError` cru saindo de `build_prompt` — MEDIDO
+  executando de verdade. `run_insight` (`insight.py`) embrulha os dois em
+  `RamielleRefused` com uma frase acionável, então a rota E o CLI já sabem
+  tratar (nenhum `except` novo em nenhum dos dois). Mesma lógica em
+  `ollama.py`: `/api/generate` devolvendo um JSON que não é objeto (ex.: uma
+  lista) virava `AttributeError` no `.get("response")` — um `isinstance(dict)`
+  antes resolve, espelhando o que `ramielle.py` já fazia.
 
 ⚠️ **A distinção "não alcancei" vs. "alcancei e recusou" é deliberada e
 estrutural**, não estilo de mensagem: `OllamaUnreachable`/`RamielleUnreachable`

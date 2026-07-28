@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ConfigError(Exception):
@@ -13,11 +13,15 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Settings:
-    promeia_token: str
+    # repr=False nos dois segredos: ninguém loga `settings` hoje, mas o
+    # dataclass gera __repr__ com todos os campos por padrão, e este objeto
+    # carrega os dois únicos segredos do serviço. Hardening que não custa
+    # nada — não depende de ninguém lembrar de nunca logar o objeto inteiro.
+    promeia_token: str = field(repr=False)
     ollama_url: str
     ollama_model: str
     ramielle_url: str
-    ingest_token: str
+    ingest_token: str = field(repr=False)
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:

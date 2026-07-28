@@ -1,5 +1,6 @@
 from promeia.cli import main
-from promeia.insight import InsightVazio, PublicacaoFalhou
+from promeia.config import Settings
+from promeia.insight import InsightVazio, PublicacaoFalhou, run_insight
 from promeia.ollama import OllamaUnreachable
 from promeia.ramielle import RamielleRefused
 
@@ -151,6 +152,38 @@ def test_falha_de_rede_na_leitura_sai_um():
     )
     assert codigo == 1
     assert any("recusou" in linha for linha in erros)
+
+
+def test_payload_malformado_da_api_nao_vaza_traceback_ate_o_cli():
+    """Antes da correção em insight.py, um envelope `ok:true` sem "data"
+    fazia build_prompt levantar TypeError — nenhuma das exceções que cli.py
+    sabe tratar (InsightVazio/OllamaError/RamielleError/PublicacaoFalhou/
+    ValueError), então subia cru: traceback no terminal do dono. Usa o
+    run_insight DE VERDADE (só ler/gerar/publicar são stubados) para provar
+    a correção ponta a ponta, não só que RamielleError já era tratado.
+    """
+    saida, erros, log, log_erro = capture()
+    fake_settings = Settings(
+        promeia_token="x",
+        ollama_url="http://localhost:11434",
+        ollama_model="m",
+        ramielle_url="https://exemplo.invalid",
+        ingest_token="ingest",
+    )
+
+    def executar(**kw):
+        return run_insight(
+            settings=fake_settings,
+            competence=kw.get("competence"),
+            ler=lambda c: None,  # envelope ok:true sem "data"
+            gerar=lambda p: "nunca chega aqui",
+            publicar=lambda *a: None,
+        )
+
+    codigo = main([], env=ENV, log=log, log_erro=log_erro, executar=executar)
+
+    assert codigo == 1
+    assert any("formato esperado" in linha for linha in erros)
 
 
 def test_falha_ao_publicar_imprime_o_texto_gerado():

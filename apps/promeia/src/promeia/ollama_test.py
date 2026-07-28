@@ -100,6 +100,19 @@ def test_erro_http_qualquer_reporta_status_e_corpo():
     assert "boom" in str(exc.value)
 
 
+def test_resposta_que_e_lista_nao_vira_attributeerror():
+    # /api/generate devolvendo um JSON válido que não é objeto (ex.: uma
+    # lista) — MEDIDO: sem a guarda isinstance, `payload_resposta.get(...)`
+    # levanta `AttributeError: 'list' object has no attribute 'get'` cru.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[1, 2, 3])
+
+    with cliente(handler) as c, pytest.raises(OllamaFailed) as exc:
+        generate(model="m", prompt="p", base_url=BASE, client=c)
+
+    assert "objeto JSON" in str(exc.value)
+
+
 def test_resposta_sem_campo_response_falha_alto():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"outra_coisa": 1})

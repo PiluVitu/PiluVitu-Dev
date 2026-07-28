@@ -198,6 +198,40 @@ def test_falha_ao_publicar_carrega_o_texto_gerado_na_excecao():
     assert "caiu" in str(exc.value)
 
 
+def test_envelope_sem_data_vira_ramielle_refused_nao_typeerror_cru():
+    """Envelope `ok:true` sem "data" faz `ramielle.fetch_numbers` devolver
+    None (é `corpo.get("data")`, e a chave pode faltar). Sem a guarda em
+    run_insight, build_prompt(None) levanta `TypeError: 'NoneType' object is
+    not subscriptable` cru — MEDIDO executando de verdade antes da correção.
+    """
+    with pytest.raises(RamielleRefused, match="formato esperado"):
+        run_insight(
+            settings=settings(),
+            competence="2026-07",
+            ler=lambda c: None,
+            gerar=lambda p: "nunca chega aqui",
+            publicar=lambda *a: None,
+        )
+
+
+def test_numeros_sem_chave_esperada_vira_ramielle_refused_nao_keyerror_cru():
+    """`data` sem uma chave que build_prompt espera (ex.: API mudou o
+    formato, ou um bug no Worker) levanta `KeyError: 'previous_competence'`
+    cru sem a guarda — MEDIDO. Precisa virar recusa de formato, não crash.
+    """
+    incompleto = numeros()
+    del incompleto["previous_competence"]
+
+    with pytest.raises(RamielleRefused, match="formato esperado"):
+        run_insight(
+            settings=settings(),
+            competence="2026-07",
+            ler=lambda c: incompleto,
+            gerar=lambda p: "nunca chega aqui",
+            publicar=lambda *a: None,
+        )
+
+
 def test_falha_ao_LER_nao_vira_PublicacaoFalhou():
     # A leitura acontece ANTES de qualquer texto existir — embrulhar o erro
     # dela em PublicacaoFalhou faria o CLI prometer imprimir um texto que

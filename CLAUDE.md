@@ -36,7 +36,9 @@ This section is about the **pnpm** side of the monorepo (`apps/web`, `apps/finan
 - **`minimumReleaseAge: 1440`** (set in `pnpm-workspace.yaml`): pnpm skips versions published less than 24 h ago, giving the community time to detect and report malicious releases.
 - Run `pnpm audit` periodically and before releases.
 
-**Python (`apps/promeia`):** `uv.lock` is committed, and CI/reproducible installs always use `uv sync --frozen` (never resolves a new version silently). ⚠️ **There is no Python equivalent of `minimumReleaseAge`** — `uv` has no built-in cooldown window for newly published versions. Adding a new Python dependency requires manually checking the release age/reputation before it goes in `pyproject.toml`; this is a human step, not an automated gate.
+**Python (`apps/promeia`):** `uv.lock` is committed, and CI/reproducible installs always use `uv sync --locked` (errors out if the lock is stale instead of silently resolving a new version — the exact equivalent of `pnpm install --frozen-lockfile`; `--frozen` is weaker, see gotcha below). **There IS a Python equivalent of `minimumReleaseAge`, and it's on:** `exclude-newer = "24 hours"` under `[tool.uv]` in `apps/promeia/pyproject.toml` — same friendly-duration cooldown window as pnpm's `minimumReleaseAge: 1440`, just spelled differently because `uv` takes a duration string instead of minutes. `uv lock`/`uv sync` refuse to resolve any version published in the last 24h; this was proven to bite for real once already (`fastapi` had to be pinned down from `0.140.7` to `0.140.0` because `0.140.7` fell inside the window — see the comment above `fastapi` in `apps/promeia/pyproject.toml`).
+
+⚠️ **`uv sync --frozen` vs `--locked`:** `--frozen` installs from the lock as-is, with no check that it still matches `pyproject.toml` — an edited dependency without a re-lock passes silently. `--locked` errors instead. Use `--locked` wherever the intent is "reproducible install, fail if the lock drifted" (CI, this policy); `--frozen` is only for the rare case of deliberately installing a lockfile you know is stale.
 
 ## Commands
 
@@ -49,7 +51,7 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `make dev-api`                          | Go API com **hot reload** (air)                                                      |
 | `make storybook`                        | Só o Storybook em http://localhost:6017                                              |
 | `make stack`                            | Sobe **Ollama + Go API + Cloudflare Tunnel** via `process-compose` (stack local LLM) |
-| `make stop`                             | Libera as portas 8081/3333/6017 se travarem                                          |
+| `make stop`                             | Libera as portas 8081/8082/3333/6017 se travarem                                     |
 | `make build-api`                        | Compila binário Go API em bin/api                                                    |
 | `make build-cli`                        | Compila CLI Go em bin/piluvitu                                                       |
 | `make dev-promeia`                      | Serviço Python (FastAPI) local com `--reload` em http://localhost:8082               |
@@ -88,10 +90,11 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 
 ### Pre-commit hook (lint-staged)
 
-`.husky/pre-commit` roda **`pnpm exec lint-staged`** — formata/linta só os arquivos staged (antes era `prettier --write "**/*"`, que varria o repo inteiro incluindo `.next/`). Configs em dois níveis (lint-staged usa a mais próxima de cada arquivo, com cwd no diretório dela):
+`.husky/pre-commit` roda **`pnpm exec lint-staged`** — formata/linta só os arquivos staged (antes era `prettier --write "**/*"`, que varria o repo inteiro incluindo `.next/`). Configs em três níveis (lint-staged usa a mais próxima de cada arquivo, com cwd no diretório dela — comportamento documentado do próprio pacote, não algo amarrado à mão: "the directory of each config file will be used as the working directory for those tasks"):
 
-- **Root `package.json`** → `*.{js,ts,tsx,json,md,css}: prettier --write` (arquivos da raiz / fora de apps/web). `prettier` + `prettier-plugin-tailwindcss` estão nas devDeps do root pra resolverem onde o hook roda.
+- **Root `package.json`** → `*.{js,ts,tsx,json,md,css}: prettier --write` (arquivos da raiz / fora de apps/web e apps/promeia). `prettier` + `prettier-plugin-tailwindcss` estão nas devDeps do root pra resolverem onde o hook roda.
 - **`apps/web/package.json`** → `*.{ts,tsx}: [eslint --fix, prettier --write]` e demais assets só prettier. Fica em apps/web (não no root) porque o ESLint 9 flat config (`eslint.config.mjs`) e o plugin tailwind precisam resolver com cwd em apps/web.
+- **`apps/promeia/.lintstagedrc.json`** → `*.py: [uv run ruff check --fix, uv run ruff format]`. Arquivo `.lintstagedrc.json` avulso, não uma entrada em `package.json` — `apps/promeia` não tem (nem precisa de) `package.json`. Fica ali, e não na raiz, pelo mesmo motivo do apps/web: `uv run` resolve o projeto Python a partir do cwd, então rodar com cwd na raiz não acharia o `pyproject.toml`/venv de `apps/promeia`. Provado rodando de verdade: um `.py` mal formatado, `git add` + `git commit`, teve o hook reformatando-o antes do commit fechar.
 
 Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e CI).
 
@@ -120,11 +123,11 @@ Fontes separadas por frente — a lista completa de cada uma vive no `CLAUDE.md`
 
 ### Workflows GitHub Actions
 
-| Workflow         | Trigger                                          | Faz o quê                                                                                                                                                                                                                                                                                                               |
-| ---------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`         | PR + push em `main`                              | Em paralelo: web (`lint` + `lint`/`test` de `packages/ui` + `tsc --noEmit` + `jest` + `next build:ci`, gate do `@source` incluso), api (`go vet` + `go test -race` + `go build`) e financas (`tsc --noEmit` do Worker e do SPA + build do SPA — os dois gates, `@source` e lazy-chart, inclusos — + `vitest` dos dois). |
-| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU).                                                                                                                                                                                               |
-| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                                                                                                                                                                                                                        |
+| Workflow         | Trigger                                          | Faz o quê                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ci.yml`         | PR + push em `main`                              | Em paralelo, **quatro** jobs: web (`lint` + `lint`/`test` de `packages/ui` + `tsc --noEmit` + `jest` + `next build:ci`, gate do `@source` incluso), api (`go vet` + `go test -race` + `go build`), financas (`tsc --noEmit` do Worker e do SPA + build do SPA — os dois gates, `@source` e lazy-chart, inclusos — + `vitest` dos dois) e promeia (`uv sync --locked` + `ruff check` + `ruff format --check` + `pytest`). |
+| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU).                                                                                                                                                                                                                                                                                                |
+| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                                                                                                                                                                                                                                                                                                                         |
 
 ### Secrets/Vars necessários no GitHub (Settings → Secrets and variables → Actions)
 

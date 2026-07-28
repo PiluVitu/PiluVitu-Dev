@@ -101,6 +101,16 @@ def generate(
                 f"resposta do Ollama em {url} não é JSON válido: {resposta.text[:500]}"
             ) from err
 
+        # /api/generate pode devolver um JSON válido que não é um objeto (ex.:
+        # uma lista) — sem esta checagem, o `.get` abaixo levanta AttributeError
+        # cru em vez da mensagem acionável que este módulo promete. O irmão
+        # ramielle.py já faz o mesmo isinstance antes de tratar o corpo como dict.
+        if not isinstance(payload_resposta, dict):
+            raise OllamaFailed(
+                f"resposta do Ollama em {url} não é um objeto JSON como "
+                f"esperado: {payload_resposta!r:.500}"
+            )
+
         texto = payload_resposta.get("response")
         if not isinstance(texto, str):
             raise OllamaFailed(

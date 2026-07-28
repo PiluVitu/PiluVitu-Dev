@@ -62,8 +62,12 @@ lint-promeia:
 
 # Gera e publica o insight financeiro. Exige Ollama de pé e PROMEIA_TOKEN +
 # INGEST_TOKEN no ambiente. Nada precisa continuar rodando depois.
+#
+# `uv run` NÃO lê .env sozinho (só com --env-file, que erra se o arquivo não
+# existir — quebraria quem exporta as vars na mão sem ter copiado o .env.example).
+# Mesmo padrão de dev-api: source condicional, só se o arquivo existir.
 insight:
-	cd apps/promeia && uv run promeia-insight
+	cd apps/promeia && set -a && [ -f .env ] && . ./.env; set +a && uv run promeia-insight
 
 test-e2e:
 	pnpm --filter @piluvitu/web test:e2e

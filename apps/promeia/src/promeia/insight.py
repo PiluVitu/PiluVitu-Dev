@@ -167,7 +167,19 @@ def run_insight(
     )
 
     numbers = _ler(comp)
-    texto = _gerar(build_prompt(numbers)).strip()
+    try:
+        prompt = build_prompt(numbers)
+    except (KeyError, TypeError) as err:
+        # `numbers` veio de fora (ramielle.fetch_numbers) — um envelope
+        # ok:true sem "data" (numbers vira None: TypeError) ou faltando uma
+        # chave esperada (KeyError) não pode virar traceback cru. É recusa
+        # do formato da API, não falha de transporte: RamielleRefused, para
+        # que a rota e o CLI já saibam tratar sem um `except` novo.
+        raise ramielle.RamielleRefused(
+            "a API devolveu um payload de números fora do formato esperado "
+            f"(GET /api/insights/numbers): {err}"
+        ) from err
+    texto = _gerar(prompt).strip()
 
     if texto == "":
         raise InsightVazio(
@@ -234,6 +246,14 @@ def gerar_insight(body: InsightBody, request: Request):
         return _erro(502, "ramielle_unreachable", str(err))
     except ramielle.RamielleRefused as err:
         return _erro(502, "ramielle_refused", str(err))
+    # Rede de segurança, DEPOIS de toda classe-folha: uma subclasse nova de
+    # OllamaError/RamielleError que ninguém lembrou de listar acima degrada
+    # para um 502 com mensagem própria em vez de virar 500 cru — a mesma
+    # assimetria que cli.py (que já captura as classes-base) não tinha.
+    except ollama.OllamaError as err:
+        return _erro(502, "ollama_error", str(err))
+    except ramielle.RamielleError as err:
+        return _erro(502, "ramielle_error", str(err))
 
     return {
         "ok": True,

@@ -3,8 +3,15 @@ name = "promeia"
 version = "0.1.0"
 description = "Serviço local do MacBook: processamento que exige GPU, modelo local ou arquivo em disco"
 requires-python = ">=3.13"
+# fastapi>=0.140.0, não 0.140.7: o piso original (0.140.7) era só o que
+# `uv add` resolveu na hora — não uma versão exigida por nenhum recurso. Ao
+# ligar `exclude-newer` (abaixo), 0.140.7 caiu dentro da janela de 24h e
+# `uv lock` passou a recusar resolver (o piso antigo tornava a resolução
+# impossível, não só mais lenta). Rebaixado para 0.140.0, a última versão
+# fora da janela — os três gates (pytest/ruff check/ruff format) foram
+# re-rodados depois do rebaixamento e continuam verdes.
 dependencies = [
-    "fastapi>=0.140.7",
+    "fastapi>=0.140.0",
     "httpx>=0.28.1",
     "uvicorn>=0.51.0",
 ]
@@ -27,6 +34,14 @@ exclude = ["*_test.py"]
 python_files = ["*_test.py"]
 testpaths = ["src"]
 addopts = "-q"
+
+# Espelho do `minimumReleaseAge: 1440` de pnpm-workspace.yaml: recusa
+# resolver/instalar qualquer versão publicada há menos de 24h, dando tempo
+# da comunidade reportar um release malicioso antes que ele entre no lock
+# deste projeto. Mesma defesa contra supply-chain, outro toolchain — friendly
+# duration ("24 hours"), não minutos, é o formato que `uv` aceita aqui.
+[tool.uv]
+exclude-newer = "24 hours"
 
 [tool.ruff]
 line-length = 88
