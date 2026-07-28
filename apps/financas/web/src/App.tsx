@@ -48,8 +48,9 @@ type RouteKey =
   | 'configuracoes'
 
 export function resolveRoute(hash: string): RouteKey {
-  if (hash.startsWith('#/dividas/')) return 'dividas'
-  if (hash === '#/dividas' || hash === '#/dividas/') return 'dividas'
+  // `startsWith('#/dividas/')` já cobre o caso `hash === '#/dividas/'`
+  // (toda string é prefixo de si mesma) — só falta o exato sem barra.
+  if (hash.startsWith('#/dividas/') || hash === '#/dividas') return 'dividas'
   if (hash.startsWith('#/comprometido')) return 'comprometido'
   if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
   if (hash.startsWith('#/lancar')) return 'lancar'
