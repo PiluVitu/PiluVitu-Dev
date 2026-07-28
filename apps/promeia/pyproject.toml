@@ -35,6 +35,15 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+# insight.py:build_prompt monta o prompt enviado ao modelo como um bloco de
+# texto em português corrido — o "PROMPT É CONTRATO" (task 5): o texto tem
+# que bater byte a byte com o que o dono já revisou, então as linhas longas
+# do parágrafo não podem ser quebradas só para caber em 88 colunas (isso
+# inseriria uma quebra de linha real no prompt que o modelo recebe). Único
+# arquivo com essa exceção — E501 continua valendo para o resto do projeto.
+[tool.ruff.lint.per-file-ignores]
+"src/promeia/insight.py" = ["E501"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

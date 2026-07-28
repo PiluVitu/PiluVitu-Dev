@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from promeia.auth import TokenMiddleware
 from promeia.config import Settings, load_settings
+from promeia.insight import router as insight_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -21,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="promeia", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TokenMiddleware, esperado=cfg.promeia_token)
     app.state.settings = cfg
+    app.include_router(insight_router)
 
     @app.get("/health")
     def health() -> dict:
