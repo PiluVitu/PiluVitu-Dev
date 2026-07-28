@@ -354,7 +354,7 @@ const chartConfigFluxo = {
  * componente delega a linha INTEIRA pra ele (perde o indicador/nome default
  * se o formatter não os desenhar de novo), daí reconstruir os dois aqui.
  */
-function formatarLinhaTooltipFluxo(
+export function formatarLinhaTooltipFluxo(
   value: unknown,
   name: unknown,
   item: { color?: string; payload?: { fill?: string } },

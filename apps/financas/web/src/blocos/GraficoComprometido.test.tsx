@@ -5,6 +5,7 @@ import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
 import { triggerResize } from '../test/setup'
 import GraficoComprometido, {
+  formatarLinhaTooltipFluxo,
   GraficoCategorias,
   GraficoFluxo,
 } from './GraficoComprometido'
@@ -467,5 +468,38 @@ describe('GraficoFluxo — barras de entrada/saída + área do acumulado (Task 1
     expect(wrapper).toBeInTheDocument()
     expect(wrapper).toHaveAttribute('data-slot', 'chart')
     expect(container.querySelector('.recharts-wrapper')).toBeInTheDocument()
+  })
+
+  it('formatarLinhaTooltipFluxo desenha o indicador + nome + valor em BRL (nunca centavos crus)', () => {
+    const { container } = render(
+      <>
+        {formatarLinhaTooltipFluxo(350000, 'Acumulado', {
+          color: 'hsl(var(--chart-1))',
+          payload: {},
+        })}
+      </>,
+    )
+
+    // Valor em BRL, não os centavos crus (350000) nem `toLocaleString()`
+    // (o default do shadcn, que mostraria "350.000" — errado pra centavos).
+    expect(container.textContent).toContain('R$ 3.500,00')
+    expect(container.textContent).toContain('Acumulado')
+
+    const indicador = container.querySelector('div[style]') as HTMLElement
+    expect(indicador.style.backgroundColor).toBe('hsl(var(--chart-1))')
+  })
+
+  it('formatarLinhaTooltipFluxo prioriza item.payload.fill sobre item.color, quando os dois existem', () => {
+    const { container } = render(
+      <>
+        {formatarLinhaTooltipFluxo(50000, 'Entrou', {
+          color: 'hsl(var(--chart-1))',
+          payload: { fill: 'hsl(var(--primary))' },
+        })}
+      </>,
+    )
+
+    const indicador = container.querySelector('div[style]') as HTMLElement
+    expect(indicador.style.backgroundColor).toBe('hsl(var(--primary))')
   })
 })
