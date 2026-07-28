@@ -14,7 +14,7 @@ v_cashflow.competence_month (que por isso está documentada como "não usar").
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 TERESINA_OFFSET = timedelta(hours=3)
 _COMPETENCE_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -27,14 +27,14 @@ def competencia_atual(now: datetime | None = None) -> str:
     todayInTeresina(now?)/nowIsoUtc(now?) no Worker: mock de relógio global
     vaza entre testes do mesmo arquivo.
     """
-    momento = datetime.now(timezone.utc) if now is None else now
+    momento = datetime.now(UTC) if now is None else now
     if momento.tzinfo is None:
         raise ValueError(
             "competencia_atual precisa de um datetime com fuso (tz-aware) — "
             "um datetime ingênuo é ambíguo, e assumir UTC em silêncio é "
             "exatamente como o bug de fuso nasce neste projeto"
         )
-    return (momento.astimezone(timezone.utc) - TERESINA_OFFSET).strftime("%Y-%m")
+    return (momento.astimezone(UTC) - TERESINA_OFFSET).strftime("%Y-%m")
 
 
 def competencia_valida(valor: str) -> bool:

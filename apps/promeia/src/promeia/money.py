@@ -18,9 +18,7 @@ def format_brl(cents: int) -> str:
     o número). Aqui a saída é a mesma em qualquer lugar.
     """
     if isinstance(cents, bool) or not isinstance(cents, int):
-        raise TypeError(
-            f"centavos precisam ser int (nunca float/bool/str): {cents!r}"
-        )
+        raise TypeError(f"centavos precisam ser int (nunca float/bool/str): {cents!r}")
 
     abs_cents = abs(cents)
     inteiro = f"{abs_cents // 100:,}".replace(",", ".")
