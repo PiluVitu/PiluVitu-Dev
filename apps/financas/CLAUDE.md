@@ -1377,3 +1377,20 @@ Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de co
 - [ ] Trocar de tema (Claro/Escuro/Sistema) em Configurações, recarregar a página (F5) e confirmar que o tema escolhido persiste (não volta pro default).
 - [ ] Confirmar que a seção **Conectar contas** mostra só a frase honesta (Open Finance ainda não existe) — **nenhum botão** nela.
 - [ ] No dashboard do D1, conferir `rows written` do dia dentro do esperado (~dezenas), não milhares.
+
+## Pendente — Open Finance / Pluggy (fatia ④)
+
+**Não implementado, e não deve ser prometido antes de um spike.** Fica registrado aqui porque a decisão tem restrições externas que não mudam com esforço de código.
+
+**Participação direta no Open Finance Brasil está descartada:** exige **R$ 1.000.000 de capital**. Levantado na pesquisa da fatia ①; não é obstáculo técnico, é regulatório.
+
+**A alternativa é agregador** (Meu Pluggy + Conector 200), gratuito para contas próprias. Duas incógnitas antes de virar promessa:
+
+1. **Contradição não resolvida sobre o trial** — a documentação e a página de preços discordam sobre o que o plano gratuito cobre para uso pessoal.
+2. **Risco de exigir cartão de crédito verificado no cadastro** — que é exatamente o bloqueio que tirou o Cloudflare Access deste módulo e obrigou a troca para Better Auth. Se o Pluggy pedir o mesmo, a fatia morre pelo mesmo motivo.
+
+**Antes de planejar: um spike de ~1 h** que responda as duas, com evidência, e não com o que a landing page diz.
+
+**Enquanto isso, o que resolve a dor original já existe:** o import de CSV/OFX (fatia ②) e o CLI de PDF com Ollama (fatia ③) cobrem "aglutinar vários cartões" sem depender de terceiro, sem cadastro e sem cartão. O Open Finance seria conveniência — trocar exportar-e-importar por sincronizar —, não capacidade nova.
+
+⚠️ O enum de `transactions.import_source` **já aceita `'pluggy'`** desde a migration `0001`. A coluna estar pronta não significa que a integração exista; não confundir preparação com entrega.
