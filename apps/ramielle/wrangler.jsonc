@@ -30,4 +30,18 @@
       "migrations_dir": "migrations",
     },
   ],
+
+  "vars": {
+    // Não é conveniência: no Worker isProduction é sempre falso (não há
+    // NODE_ENV), então é o https:// deste valor que liga o `secure` e o
+    // prefixo __Secure- do cookie de sessão (mesmo raciocínio do finanças).
+    "BETTER_AUTH_URL": "https://api.piluvitu.com.br",
+
+    // ⚠️ CSV de verdade (ao contrário do ALLOWED_EMAIL do finanças, que é
+    // um e-mail só) — src/lib/auth.ts#isAdminEmail trata como lista,
+    // espelhando o Go (apps/api). A votação é LIVRE: isto NÃO é allowlist
+    // de acesso (todo mundo entra), é só quem o guard da Task 4 trata como
+    // admin. Vazio não travaria login nenhum — só ninguém seria admin.
+    "ADMIN_EMAILS": "paulo.tspi@gmail.com",
+  },
 }

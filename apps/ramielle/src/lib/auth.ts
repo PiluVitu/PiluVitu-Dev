@@ -1,0 +1,205 @@
+/**
+ * Factory do Better Auth para o Worker ramielle. Login social Google, D1
+ * nativo (env.DB, sem adapter de terceiro — o adapter Kysely embutido
+ * detecta o binding por duck-typing e monta seu próprio D1SqliteDialect,
+ * mesmo mecanismo já medido em apps/financas/src/lib/auth.ts).
+ *
+ * ⚠️ A DIFERENÇA QUE DECIDE ESTE ARQUIVO, em relação ao espelho do finanças:
+ * a votação é LIVRE (spec §7). O finanças é fail-closed de usuário único
+ * (`databaseHooks.user.create.before` bloqueando todo e-mail fora de
+ * `ALLOWED_EMAIL`) — aqui NÃO existe esse hook. Copiar o hook do finanças
+ * bloquearia todo mundo menos o dono e mataria a feature: a votação existe
+ * para várias pessoas, qualquer conta Google entra e vota.
+ *
+ * Quem decide ADMIN é `isAdminEmail` (abaixo) — exportada, e
+ * DELIBERADAMENTE NÃO usada dentro de `createAuth`. O guard de admin roda a
+ * cada request (Task 4), não na criação do usuário: o Better Auth não tem
+ * noção de allowlist fora do hook de criação, então um privilégio gravado
+ * no cadastro não acompanharia uma troca de `ADMIN_EMAILS` feita depois.
+ */
+import { betterAuth } from 'better-auth'
+
+export type AuthBindings = {
+  DB: D1Database
+  BETTER_AUTH_URL: string
+  BETTER_AUTH_SECRET: string
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  /**
+   * ⚠️ CSV DE VERDADE aqui — ao contrário do `ALLOWED_EMAIL` do finanças
+   * (um e-mail só, comparação de string inteira, CSV não casa com nada). O
+   * Go (`apps/api`) sempre tratou `ADMIN_EMAILS` como lista; `isAdminEmail`
+   * abaixo espelha esse contrato. Não carregar o hábito do finanças pra cá.
+   */
+  ADMIN_EMAILS: string
+}
+
+/**
+ * DESVIO DELIBERADO do brief: `ReturnType<typeof betterAuth>` cru resolve
+ * para `Auth<BetterAuthOptions>` (o genérico na sua constraint mais larga),
+ * não para o tipo específico desta config — MEDIDO e documentado em
+ * apps/financas/src/lib/auth.ts (`tsc --noEmit` nas duas direções: os dois
+ * tipos são mutuamente não-atribuíveis, por invariância). Mesma correção
+ * aqui: `Auth` referencia `ReturnType<typeof createAuth>` (hoisting de tipo
+ * cobre a referência), e `createAuth` não anota retorno explícito (evita a
+ * referência circular).
+ */
+export type Auth = ReturnType<typeof createAuth>
+
+/**
+ * `ADMIN_EMAILS` é CSV: `"a@x.com,b@x.com"`. Comparação por e-mail
+ * individual (trim + lowercase), igual ao Go — nunca string inteira como o
+ * `ALLOWED_EMAIL` do finanças. Fail-closed: CSV vazio/ausente não admite
+ * ninguém (`undefined` é o valor real em runtime de uma binding não
+ * setada — o tipo `string` é só uma promessa de compile-time).
+ *
+ * Exportada e NUNCA chamada dentro de `createAuth` — ver o comentário no
+ * topo do arquivo. `isAdminEmail` é consumida pelo guard de request da
+ * Task 4, a cada chamada, contra o valor CORRENTE de `ADMIN_EMAILS`.
+ */
+export function isAdminEmail(
+  email: string | null | undefined,
+  csv: string | undefined,
+): boolean {
+  if (typeof email !== 'string') return false
+  const alvo = email.trim().toLowerCase()
+  if (alvo.length === 0) return false
+
+  const lista = (csv ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.length > 0)
+
+  return lista.includes(alvo)
+}
+
+/**
+ * Memoização por identidade do objeto `env` — mesmo raciocínio MEDIDO em
+ * apps/financas/src/lib/auth.ts: montar a instância (schemas zod + pipeline
+ * de plugins) custa CPU, e o teto do free tier é 10 ms/invocação.
+ * `WeakMap` (não variável solta) porque o `env` de teste é outro objeto do
+ * `env` de produção — chaveado pelo objeto, um não envenena o outro, e nada
+ * vaza quando o isolate morre. `env` tem identidade estável entre requests
+ * do mesmo isolate (medido no finanças, spike S6b, via `SELF.fetch`).
+ */
+const instancias = new WeakMap<AuthBindings, Auth>()
+
+export function getAuth(env: AuthBindings): Auth {
+  const quente = instancias.get(env)
+  if (quente) return quente
+  const nova = createAuth(env)
+  instancias.set(env, nova)
+  return nova
+}
+
+// Sem anotação de retorno de propósito: ver o comentário de `Auth` acima.
+export function createAuth(env: AuthBindings) {
+  // MEDIDO contra o pacote instalado (better-auth@1.6.25,
+  // dist/context/create-context.mjs:70-80, mesma medição já documentada no
+  // finanças): SEM secret, o Better Auth NÃO lança — cai pro default
+  // hardcoded no PRÓPRIO PACOTE ('better-auth-secret-12345678901234567890')
+  // e só lançaria depois (validateSecret) se `isProduction` fosse `true`,
+  // o que NUNCA acontece num Worker (não há `NODE_ENV`). Sem este guard
+  // explícito, esquecer `wrangler secret put BETTER_AUTH_SECRET`
+  // publicaria em produção assinando toda sessão e todo cookie de
+  // state/PKCE do OAuth com essa constante pública no código-fonte da lib
+  // — deploy e login pareceriam saudáveis, sem erro nem log.
+  if (!env.BETTER_AUTH_SECRET) {
+    throw new Error(
+      'BETTER_AUTH_SECRET ausente — configure via `wrangler secret put BETTER_AUTH_SECRET` (produção) ou `.dev.vars` (local). O Better Auth não falha sozinho nesse caso.',
+    )
+  }
+
+  return betterAuth({
+    // Binding cru: o adapter Kysely detecta D1 por duck-typing
+    // ('batch' in db && 'exec' in db && 'prepare' in db) e monta o
+    // D1SqliteDialect interno. Não existe adapter para instalar.
+    database: env.DB,
+
+    baseURL: env.BETTER_AUTH_URL,
+    secret: env.BETTER_AUTH_SECRET,
+
+    // ⚠️ Explícito, não default — MEDIDO no finanças: sem config,
+    // `trustedOrigins` é SÓ a origem de `BETTER_AUTH_URL`
+    // (better-auth/dist/context/helpers.mjs:72-75). O apps/web vive numa
+    // origem DIFERENTE da API (api.piluvitu.com.br vs. piluvitu.com.br) —
+    // sem esta linha, `POST /api/auth/sign-in/social` chamado a partir do
+    // apps/web responde 403 (origem não confiável) e o login nunca
+    // completa. `http://localhost:3333` cobre o dev local do apps/web
+    // (Next.js, porta padrão deste monorepo — ver CLAUDE.md raiz).
+    trustedOrigins: [
+      env.BETTER_AUTH_URL,
+      'https://piluvitu.com.br',
+      'http://localhost:3333',
+    ],
+
+    // MEDIDO no finanças (mesma versão da lib): o default do rate limit é
+    // `enabled: options.rateLimit?.enabled ?? isProduction`
+    // (create-context.mjs:171) — e `isProduction` é SEMPRE falso num
+    // Worker (não há `NODE_ENV`). Sem `enabled: true` explícito, o rate
+    // limit fica DESLIGADO em produção pra sempre.
+    //
+    // ⚠️ Aqui isso é MAIS crítico que no finanças: a votação é LIVRE —
+    // qualquer conta Google passa a poder criar linha em `user`/`account`
+    // neste D1, não só o dono. Sem throttle, um script sem sessão nenhuma
+    // esgota a cota diária de escrita do D1 free tier (100k/dia) e a de
+    // requests do Worker (100k/dia). O rateLimit deixa de ser higiene e
+    // vira a ÚNICA barreira contra isso — os valores abaixo são os mesmos
+    // herdados do finanças, não afrouxados.
+    rateLimit: {
+      enabled: true,
+      // window em SEGUNDOS (unidade do próprio Better Auth).
+      //
+      // ⚠️ Este par NÃO governa `/sign-in/*` — o Better Auth tem uma regra
+      // especial embutida por prefixo de rota, com precedência sobre esta
+      // config: `/sign-in` roda com window 10 / max 3
+      // (rate-limiter/index.mjs:370-383). O bloco abaixo cobre o resto
+      // (`get-session`, `callback`, etc.).
+      window: 60,
+      max: 20,
+      // `/get-session` sozinho divide o balde de 20/60s acima com toda
+      // rota que NÃO é `/sign-in*` (customRules não filtra por método,
+      // chave é (ip, path) — rate-limiter/index.mjs:274-322) — mesmo
+      // achado MEDIDO no finanças. Um front chamando `get-session` no
+      // mount + a cada foco de aba esgota os 20 rápido; aqui, com votação
+      // livre, isso vale ainda mais (mais usuários reais chamando a mesma
+      // rota).
+      customRules: {
+        '/get-session': { window: 60, max: 120 },
+      },
+      // 'memory': única opção sem schema novo (migration é forward-only).
+      //
+      // ⚠️ É POR ISOLATE, não um contador global — mitigação PARCIAL, não
+      // um teto rígido de tráfego (mesma ressalva do finanças).
+      storage: 'memory',
+    },
+
+    // MEDIDO no finanças: sem isto, o Better Auth cai pra um bucket
+    // ÚNICO e GLOBAL por rota (a lista default de headers pra resolver IP
+    // é só `['x-forwarded-for']`, que não inclui `cf-connecting-ip`) — o
+    // que tornaria o rateLimit acima inútil como defesa por-atacante:
+    // qualquer votante real e um script malicioso dividiriam o MESMO
+    // balde. `CF-Connecting-IP` é setado pela borda da Cloudflare e
+    // sobrescrito antes do Worker rodar — não forjável pelo requisitante.
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ['cf-connecting-ip'],
+      },
+    },
+
+    telemetry: { enabled: false },
+    emailAndPassword: { enabled: false },
+
+    socialProviders: {
+      google: {
+        clientId: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
+        prompt: 'select_account',
+      },
+    },
+
+    // NENHUM databaseHooks aqui — de propósito. Ver o comentário no topo
+    // do arquivo: a votação é livre, qualquer e-mail Google completa o
+    // cadastro. Não copiar o hook de allowlist do finanças.
+  })
+}

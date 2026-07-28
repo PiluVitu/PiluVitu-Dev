@@ -42,7 +42,13 @@ async function novaSessao(
 // --------------------------------------------------------------------------
 
 describe('migration 0001 — tabelas e índices', () => {
-  it('cria exatamente as 6 tabelas do schema de votação', async () => {
+  // ⚠️ 6 → 10 tabelas nesta task (T3): a 0002_better_auth.sql soma `user`,
+  // `session`, `account`, `verification` (Better Auth) às 6 do domínio da
+  // votação. Este teste conta TODAS as tabelas do banco (não filtra por
+  // migration), então ele quebraria em silêncio assim que 0002 fosse
+  // aplicada sem este ajuste — atualizado aqui de propósito, não uma
+  // regressão da Task 3.
+  it('cria exatamente as 10 tabelas (6 da votação + 4 do Better Auth)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -53,16 +59,23 @@ describe('migration 0001 — tabelas e índices', () => {
     ).all<{ name: string }>()
 
     expect(results.map((r) => r.name)).toEqual([
+      'account',
       'backups',
+      'session',
       'session_movies',
       'tiebreaks',
+      'user',
       'users',
+      'verification',
       'votes',
       'voting_sessions',
     ])
   })
 
-  it('cria os 5 índices do schema original', async () => {
+  // ⚠️ 5 → 8 índices nesta task (T3): a 0002_better_auth.sql soma
+  // account_userId_idx/session_userId_idx/verification_identifier_idx aos
+  // 5 do domínio da votação — mesmo motivo do teste de tabelas acima.
+  it('cria os 8 índices (5 da votação + 3 do Better Auth)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'index'
@@ -71,11 +84,14 @@ describe('migration 0001 — tabelas e índices', () => {
     ).all<{ name: string }>()
 
     expect(results.map((r) => r.name)).toEqual([
+      'account_userId_idx',
       'idx_backups_created',
       'idx_session_movies_session',
       'idx_tiebreaks_session',
       'idx_votes_session',
       'idx_voting_sessions_created',
+      'session_userId_idx',
+      'verification_identifier_idx',
     ])
   })
 })

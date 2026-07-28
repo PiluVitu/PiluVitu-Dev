@@ -1,7 +1,12 @@
-# Nenhum secret ainda nesta task (Task 1 — esqueleto). O único binding hoje
-# é o D1 (DB), declarado em wrangler.jsonc, sem valor a copiar aqui.
-#
-# A Task 3 (Better Auth com Google) deve trazer as mesmas chaves de
-# apps/financas/.dev.vars.example (BETTER_AUTH_URL, BETTER_AUTH_SECRET,
-# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) — este arquivo é o lugar certo
-# para documentá-las quando existirem.
+# Task 3 (Better Auth com Google): três segredos, nunca `vars` em
+# wrangler.jsonc — BETTER_AUTH_URL e ADMIN_EMAILS já estão lá (não são
+# segredo). Em produção, os três abaixo vão via `wrangler secret put`.
+BETTER_AUTH_URL=http://localhost:8787
+BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
+GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
+GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
+
+# Só localmente, se quiser testar como admin com um e-mail diferente do de
+# wrangler.jsonc. CSV de verdade (ver src/lib/auth.ts#isAdminEmail) — ao
+# contrário do ALLOWED_EMAIL do finanças, que é um e-mail só.
+# ADMIN_EMAILS=dono@exemplo.com,outro-admin@exemplo.com

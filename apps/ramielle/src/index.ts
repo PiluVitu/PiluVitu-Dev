@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
+import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
 
-export type Bindings = { DB: D1Database }
+export type Bindings = AuthBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -19,6 +20,13 @@ app.get('/health', async (c) => {
     return errJson(503, 'db_down', 'banco indisponível')
   }
 })
+
+// Só GET e POST — os únicos métodos que o Better Auth usa. Precisa vir
+// ACIMA do catch-all: no Hono a ordem de registro decide. `/api/auth/*` não
+// passa pelo envelope {ok,data,notifications} — as respostas são as do
+// próprio Better Auth (getAuth(env).handler(...) devolvido cru), mesma
+// convenção já documentada no finanças.
+app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 
 // SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
 // app.route() registrado depois desta linha fica inalcançável.
