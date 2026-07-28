@@ -17,26 +17,18 @@ def test_o_caso_que_ja_deu_bug_tres_vezes_neste_projeto():
 
 
 def test_meio_do_mes_nao_muda():
-    assert competencia_atual(datetime(2026, 7, 15, 12, 0, tzinfo=UTC)) == (
-        "2026-07"
-    )
+    assert competencia_atual(datetime(2026, 7, 15, 12, 0, tzinfo=UTC)) == ("2026-07")
 
 
 def test_a_borda_exata_do_offset():
     # 03:00Z do dia 1 é exatamente 00:00 em Teresina — já é o mês novo.
-    assert competencia_atual(datetime(2026, 3, 1, 3, 0, tzinfo=UTC)) == (
-        "2026-03"
-    )
+    assert competencia_atual(datetime(2026, 3, 1, 3, 0, tzinfo=UTC)) == ("2026-03")
     # 02:59Z ainda é 23:59 do último dia de fevereiro.
-    assert competencia_atual(datetime(2026, 3, 1, 2, 59, tzinfo=UTC)) == (
-        "2026-02"
-    )
+    assert competencia_atual(datetime(2026, 3, 1, 2, 59, tzinfo=UTC)) == ("2026-02")
 
 
 def test_virada_de_ano():
-    assert competencia_atual(datetime(2027, 1, 1, 2, 0, tzinfo=UTC)) == (
-        "2026-12"
-    )
+    assert competencia_atual(datetime(2027, 1, 1, 2, 0, tzinfo=UTC)) == ("2026-12")
 
 
 def test_aceita_datetime_de_outro_fuso_convertendo_para_utc_antes():
