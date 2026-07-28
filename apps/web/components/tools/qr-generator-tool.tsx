@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+import { Input } from '@piluvitu/ui/input'
+import { Button } from '@piluvitu/ui/button'
+import { Label } from '@piluvitu/ui/label'
 import { encodeQRPng, encodeQRSvg } from '@piluvitu/tools/qr-encode'
 
 export function QrGeneratorTool() {

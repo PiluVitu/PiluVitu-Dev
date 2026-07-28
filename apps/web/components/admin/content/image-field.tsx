@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { FieldShell } from './fields'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { mediaRawUrl } from '@/lib/admin/media-url'
 import { MediaPickerDialog } from '@/components/admin/media/media-picker-dialog'
 

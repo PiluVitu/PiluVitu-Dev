@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@piluvitu/ui/button'
+import { Textarea } from '@piluvitu/ui/textarea'
 import { normalizeOptions, drawWinnerIndex } from '@piluvitu/tools/roleta'
 import { CameraEntropyCapture } from '@/components/entropy/camera-entropy-capture'
 import {

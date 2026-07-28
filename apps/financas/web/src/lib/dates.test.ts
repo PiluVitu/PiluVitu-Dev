@@ -1,0 +1,81 @@
+import { describe, expect, test } from 'vitest'
+import {
+  addMonthsToCompetence,
+  competenciaAtual,
+  formatDateTimeTeresina,
+  todayInTeresina,
+} from './dates'
+
+describe('todayInTeresina', () => {
+  test('01:00 UTC (22h do dia anterior em Teresina) ainda devolve o dia anterior', () => {
+    // 01:00 UTC de 01/08 é 22:00 de 31/07 em Teresina (UTC-3). É exatamente
+    // aqui que new Date().toISOString().slice(0, 10) erraria, gravando
+    // '2026-08-01' em vez de '2026-07-31'.
+    const agora = new Date('2026-08-01T01:00:00Z')
+    expect(agora.toISOString().slice(0, 10)).toBe('2026-08-01') // o jeito ERRADO
+    expect(todayInTeresina(agora)).toBe('2026-07-31') // o jeito certo
+  })
+
+  test('03:00 UTC já é meia-noite em Teresina: vira o dia', () => {
+    expect(todayInTeresina(new Date('2026-08-01T03:00:00Z'))).toBe('2026-08-01')
+  })
+
+  test('sem argumento devolve YYYY-MM-DD', () => {
+    expect(todayInTeresina()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe('competenciaAtual', () => {
+  test('01:00 UTC (22h do dia anterior em Teresina) cai na competência do mês anterior', () => {
+    // 01:00 UTC de 01/08 é 31/07 em Teresina — a competência é jul/26, não
+    // ago/26. Mesmo caso-armadilha de todayInTeresina, um nível acima.
+    expect(competenciaAtual(new Date('2026-08-01T01:00:00Z'))).toBe('2026-07')
+  })
+
+  test('corta YYYY-MM-DD em YYYY-MM', () => {
+    expect(competenciaAtual(new Date('2026-08-01T03:00:00Z'))).toBe('2026-08')
+  })
+
+  test('sem argumento devolve YYYY-MM', () => {
+    expect(competenciaAtual()).toMatch(/^\d{4}-\d{2}$/)
+  })
+})
+
+describe('addMonthsToCompetence', () => {
+  test('soma dentro do mesmo ano', () => {
+    expect(addMonthsToCompetence('2026-07', 2)).toBe('2026-09')
+  })
+
+  test('soma virando o ano', () => {
+    expect(addMonthsToCompetence('2026-11', 3)).toBe('2027-02')
+  })
+
+  test('n negativo (janela pra tras, usado pelo seletor de #/fluxo)', () => {
+    expect(addMonthsToCompetence('2026-07', -11)).toBe('2025-08')
+  })
+
+  test('n negativo virando o ano', () => {
+    expect(addMonthsToCompetence('2026-01', -1)).toBe('2025-12')
+  })
+
+  test('n=0 devolve a mesma competencia', () => {
+    expect(addMonthsToCompetence('2026-07', 0)).toBe('2026-07')
+  })
+})
+
+describe('formatDateTimeTeresina', () => {
+  test('subtrai o fuso antes de formatar (mesma armadilha de todayInTeresina)', () => {
+    // 01:00 UTC de 01/08 é 22:00 de 31/07 em Teresina — sem a subtração,
+    // sairia '01/08/2026 01:00', a mesma classe de bug que já motivou
+    // todayInTeresina existir.
+    expect(formatDateTimeTeresina('2026-08-01T01:00:00Z')).toBe(
+      '31/07/2026 22:00',
+    )
+  })
+
+  test('formato DD/MM/AAAA HH:MM, com zero à esquerda', () => {
+    expect(formatDateTimeTeresina('2026-01-05T06:07:00Z')).toBe(
+      '05/01/2026 03:07',
+    )
+  })
+})

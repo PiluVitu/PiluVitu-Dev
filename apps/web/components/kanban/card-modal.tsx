@@ -7,11 +7,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
+} from '@piluvitu/ui/dialog'
+import { Button } from '@piluvitu/ui/button'
+import { Input } from '@piluvitu/ui/input'
+import { Textarea } from '@piluvitu/ui/textarea'
+import { Label } from '@piluvitu/ui/label'
 import { TagBadge } from './tag-badge'
 import { Card, CardLink, Tag } from '@/lib/kanban-schema'
 import { Cross2Icon, PlusIcon, TrashIcon } from '@radix-ui/react-icons'

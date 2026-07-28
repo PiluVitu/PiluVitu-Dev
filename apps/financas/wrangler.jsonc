@@ -1,0 +1,62 @@
+{
+  "account_id": "c52a9959db02d735ef489d9728ccf4de",
+
+  // Custom Domain e OBRIGATORIO, nao preferencia — motivo mudou na Task 3
+  // (nao e mais sobre o Cloudflare Access, removido). Em *.workers.dev o
+  // dominio registravel e diferente do de piluvitu.com.br: o cookie de
+  // sessao do Better Auth vira cross-site, SameSite=Lax deixa de ser
+  // enviado, e a quebra so aparece em producao (local/preview usam
+  // BETTER_AUTH_URL=http://localhost, mesmo site). Ver CLAUDE.md/Deploy.
+  "routes": [{ "pattern": "financas.piluvitu.com.br", "custom_domain": true }],
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "piluvitu-financas",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  // Medido (spike S3): NÃO é obrigatório para este stack subir ou rodar
+  // nesta compatibility_date — node:crypto e node:async_hooks já são
+  // módulos nativos do runtime aqui. O flag silencia 2 warnings de build
+  // do wrangler ("wasn't found on the file system but is built into
+  // node") e protege contra o comportamento não ser garantido em
+  // compatibility_date/versões de workerd futuras.
+  //
+  // ⚠️ O efeito desta flag NÃO foi reconfirmado dentro deste pacote. Até a
+  // Task 3, nada em src/ importa src/lib/auth.ts, então o better-auth
+  // (única fonte de imports `node:` aqui) sai inteiro no tree-shaking e os
+  // 2 warnings não apareceriam NEM COM NEM SEM a flag — um dry-run limpo
+  // não prova nada sobre ela. A medição de verdade (tamanho do bundle e
+  // presença dos warnings) é a Step 12 da Task 3, com o import ligado.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Static Assets é GRÁTIS, ilimitado e FORA da cota de 100.000 requests/dia.
+  // 'run_worker_first' é o que garante, de forma documentada, que /api/* chega
+  // no Worker em vez de ser engolido pelo fallback de SPA. Sem ele, a ordem de
+  // avaliação entre asset e Worker fica implícita, e o erro só apareceria em
+  // produção.
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "piluvitu-financas",
+      "database_id": "6d16f807-53d2-43e5-900e-5b1c095a7045",
+      "migrations_dir": "migrations",
+    },
+  ],
+
+  "vars": {
+    // Não é conveniência: no Worker isProduction é sempre falso (não há
+    // NODE_ENV), então é o https:// deste valor que liga o `secure` e o
+    // prefixo __Secure- do cookie de sessão.
+    "BETTER_AUTH_URL": "https://financas.piluvitu.com.br",
+
+    // Single-user. Vazio barra todo mundo (fail closed), igual ao
+    // ACCESS_ALLOWED_EMAILS que saiu.
+    "ALLOWED_EMAIL": "paulo.tspi@gmail.com",
+  },
+}

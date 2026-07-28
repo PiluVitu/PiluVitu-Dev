@@ -1,8 +1,8 @@
 'use client'
 
 import { EmailContactDialog } from '@/components/email-contact-dialog'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Avatar, AvatarFallback, AvatarImage } from '@piluvitu/ui/avatar'
+import { Dialog, DialogContent, DialogTitle } from '@piluvitu/ui/dialog'
 import { UseArticleData } from '@/hooks/useArticleData'
 import { getVisitCardFaIcon } from '@/lib/visit-card-fontawesome'
 import type {

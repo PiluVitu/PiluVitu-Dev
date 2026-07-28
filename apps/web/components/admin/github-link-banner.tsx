@@ -2,7 +2,7 @@
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faGithub } from '@fortawesome/free-brands-svg-icons'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 
 interface GithubLinkBannerProps {
   linked: boolean

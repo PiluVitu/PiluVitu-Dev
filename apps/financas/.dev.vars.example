@@ -1,0 +1,27 @@
+# M3: BETTER_AUTH_URL abaixo aponta pra porta do Vite (5273), de propósito.
+# `trustedOrigins` do Better Auth, sem config explícita, é SÓ a origin deste
+# valor (better-auth/dist/context/helpers.mjs:72-75) — então login social só
+# completa rodando `pnpm --filter @piluvitu/financas-web dev` (Vite em
+# :5273, proxy /api -> :8787). `pnpm --filter @piluvitu/financas dev` sobe o
+# Worker sozinho em :8787 e SERVE a SPA por lá também, mas o browser manda
+# Origin: http://localhost:8787 (!= :5273) -> 403 em
+# POST /api/auth/sign-in/social. Ver CLAUDE.md, seção SPA -> "Dev:".
+BETTER_AUTH_URL=http://localhost:5273
+BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
+GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
+GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
+
+# Fatia ⑨, Task 3: segredo do comando que roda no Mac do dono (lê os
+# números, gera texto via Ollama local, faz POST em /api/insights). Só
+# esta rota checa este valor (routes/insights.ts#requireIngestToken) — não
+# é `vars` em wrangler.jsonc porque é segredo, mesmo padrão de
+# BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET acima. Em produção, via
+# `wrangler secret put INGEST_TOKEN`. Gerar com `openssl rand -base64 32`.
+INGEST_TOKEN=troque-por-openssl-rand-base64-32
+
+# M5: também é `vars` em wrangler.jsonc (não é segredo), mas listar aqui
+# comentado deixa claro que a chave existe e o que faz, mesmo num clone
+# fresco que só olhou .dev.vars.example. Útil localmente só se quiser testar
+# o bloqueio da allowlist (camada 1/2) com um e-mail diferente do de
+# wrangler.jsonc.
+# ALLOWED_EMAIL=dono@exemplo.com

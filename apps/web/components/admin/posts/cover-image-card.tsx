@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { mediaRawUrl } from '@/lib/admin/media-url'
 import {
   useMediaMutations,

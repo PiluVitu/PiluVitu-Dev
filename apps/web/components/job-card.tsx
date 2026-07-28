@@ -1,5 +1,5 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@piluvitu/ui/avatar'
+import { Button } from '@piluvitu/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
+} from '@piluvitu/ui/dialog'
 import { Carreira } from '@/mocks/carreira'
 import Link from 'next/link'
 

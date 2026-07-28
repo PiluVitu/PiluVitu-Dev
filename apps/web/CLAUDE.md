@@ -31,15 +31,15 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 
 ### Key directories
 
-| Path             | Purpose                                                          |
-| ---------------- | ---------------------------------------------------------------- |
-| `components/ui/` | shadcn/ui primitives (15 components)                             |
-| `components/`    | Page-level components (bio, cards, email form, visit card)       |
-| `lib/`           | Server utilities: Keystatic readers, dev.to client, icon mapping |
-| `hooks/`         | Client hooks — `useArticleData.ts` (TanStack Query for dev.to)   |
-| `mocks/`         | Type definitions and fallback data                               |
-| `stories/`       | Storybook stories                                                |
-| `content/`       | Keystatic CMS content (YAML)                                     |
+| Path             | Purpose                                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/ui/` | Só `sonner.tsx` fica aqui (acoplado a `next-themes`) — os outros 14 primitives shadcn/ui vivem em `packages/ui` (`@piluvitu/ui`), importados via `@piluvitu/ui/<nome>` |
+| `components/`    | Page-level components (bio, cards, email form, visit card)                                                                                                             |
+| `lib/`           | Server utilities: Keystatic readers, dev.to client, icon mapping                                                                                                       |
+| `hooks/`         | Client hooks — `useArticleData.ts` (TanStack Query for dev.to)                                                                                                         |
+| `mocks/`         | Type definitions and fallback data                                                                                                                                     |
+| `stories/`       | Storybook stories                                                                                                                                                      |
+| `content/`       | Keystatic CMS content (YAML)                                                                                                                                           |
 
 ### Content structure (Keystatic YAML)
 
@@ -72,7 +72,26 @@ Permitted image hosts are configured in `next.config.mjs` (`images.remotePattern
 
 ### Theme
 
-O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. Os valores vivem em `app/globals.css` (`:root` = variante light derivada, `.dark` = "Cloud" dark) mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
+O tema é o **Design System V2 "Cloud (cyan)"** — dark-first, acento ciano. **Os tokens (cores, radius, fontes, keyframes) vivem em `packages/ui/src/styles.css`** (`@piluvitu/ui`, compartilhado com `apps/financas/web`), não mais em `app/globals.css`. `app/globals.css` importa esse pacote no topo:
+
+```css
+@import 'tailwindcss';
+@import '@piluvitu/ui/styles.css';
+@source '../../../packages/ui/src';
+@plugin '@tailwindcss/typography';
+```
+
+O `@source` é obrigatório — sem ele o Tailwind v4 compila normalmente (não quebra o build) mas **descarta silenciosamente** toda classe exclusiva de `packages/ui`. `scripts/check-tailwind-source.mjs` (raiz do monorepo) é o gate contra essa regressão: roda depois do `next build` nos scripts `build` **e** `build:ci` do `apps/web/package.json` (o `ci.yml` roda o `build:ci`, então PR e Vercel pegam a regressão) e falha se a classe sentinela definida em `packages/ui/src/styles.css` sumir do CSS emitido em `.next`. O nome exato dela está em `SENTINEL_SELECTOR`, no topo do script.
+
+⚠️ **NUNCA escreva o nome da classe sentinela por extenso em nenhum arquivo dentro de `apps/web/` — nem em documentação.** A detecção automática de conteúdo do Tailwind v4 varre **todo** arquivo não-ignorado da árvore do app, independente de `@source`, e `.md` entra nessa varredura. Um literal solto aqui faz o Tailwind gerar a sentinela sozinho, e aí o gate passa **mesmo com o `@source` quebrado** — desativando exatamente a proteção que ele existe para dar. Isso já aconteceu uma vez, nesta seção, e foi pego na revisão da Task 2 do plano do design system. Referencie o `SENTINEL_SELECTOR` do script, nunca o literal.
+
+⚠️ **`apps/web` avisa até em `dev` — diferente de `apps/financas/web`.** MEDIDO na Task 11: comentando o `@source` acima e subindo `pnpm --filter @piluvitu/web dev` (webpack, porta 3333), a sentinela já sai ausente do CSS servido em `/_next/static/css/app/layout.css` (sem precisar de build nenhum) — o webpack do Next não empresta ao dev server o "atalho" que o plugin Vite empresta ao seu (que escaneia o grafo de módulos e mostra as classes certas mesmo com `@source` quebrado, só falhando de verdade no `vite build`). Detalhe completo, incluindo a evidência dos dois lados, em `packages/ui/CLAUDE.md` § _Gate do design system: `@source`, o sentinela, e a assimetria dev/prod_.
+
+Depois do `@import`/`@source`, `app/globals.css` guarda só o que é **específico deste app**: `@utility container`, a camada de compat de `border-color` do Tailwind v4, a aplicação de `border-border`/`bg-background`/`font-sans` em `@layer base`, o dual-theme do shiki (`code[data-theme...]`) e as regras `.post-prose` do blog. `:root`/`.dark` (as custom properties que os tokens referenciam) ficam só em `packages/ui/src/styles.css` — mapeados sobre os tokens shadcn existentes: a cor de marca do V2 (ciano `#38bdf8`) entra como `--primary` (atenção: no shadcn `--accent` é o hover bg, não a marca). **Dark é o padrão** via `next-themes` (`defaultTheme="dark"` em `app/(site)/layout.tsx`); o `mode-toggle` alterna pro light.
+
+`cn()` também pode vir de `@piluvitu/ui/cn`. Os 14 componentes shadcn (`aspect-ratio`, `avatar`, `badge`, `button`, `card`, `command`, `dialog`, `dropdown-menu`, `form`, `input`, `label`, `separator`, `skeleton`, `textarea`) foram migrados pra `packages/ui/src` e são importados como `@piluvitu/ui/<nome>` (ex.: `import { Button } from '@piluvitu/ui/button'`) — **sem barrel**, um export por componente em `packages/ui/package.json`. Só `components/ui/sonner.tsx` continua em `apps/web` (acoplado a `next-themes`, que o pacote compartilhado não pode carregar). **Medido:** nem o CSS (`@import`/`@source`) nem o import direto de `.tsx` (incl. `'use client'`) do pacote workspace precisam de `transpilePackages: ['@piluvitu/ui']` em `next.config.mjs` — build real do Next/Turbopack consome os componentes sem essa flag. Ver `packages/ui/CLAUDE.md` para a estrutura completa do pacote.
+
+⚠️ **M3 (fix final, branch design system do financas — registrado, sem código aqui):** `packages/ui/src/button.tsx` ganhou `cursor-pointer` na string base do `buttonVariants` (fix round 1, achado da Task 9 da SPA de finanças — ver `packages/ui/CLAUDE.md`). Como `Button` é **compartilhado**, esse é o único rendered-CSS change que este app herda do branch de design system do financas além do que já era esperado — kept deliberadamente (era uma lacuna real, não uma escolha visual nova): antes, todo `<button>` daqui usava o cursor default do navegador em vez da mãozinha de clique, sem que nenhuma tela local dependesse de um `button` cru pra notar. `apps/web` (jest + tsc) reexecutado depois da mudança — verde, nenhum teste dependia do cursor.
 
 - **Fontes:** Plus Jakarta Sans (corpo/títulos, `--font-sans`) + JetBrains Mono (labels/datas/tags, `--font-mono`), via `next/font` no `app/layout.tsx`. O fallback fica aninhado no `var()` (`var(--font-plus-jakarta, ui-sans-serif, …)`) pra sobreviver onde o RootLayout não roda (ex.: Storybook).
 - **Tokens semânticos (votação):** `--ok` (sucesso/seu voto), `--warn` (empate/atenção), `--win` (vencedor) expostos como `text-ok`/`bg-warn`/`text-win` etc. `--success`/`--success-foreground` são mantidos como espelho de `--ok` (compat com usos existentes de `text-success`).

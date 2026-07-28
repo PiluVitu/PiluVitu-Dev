@@ -1,5 +1,5 @@
 'use client'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { loginHref } from '@/lib/votacao/api-client'
 
 export function LoginButton() {

@@ -1,5 +1,5 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@piluvitu/ui/avatar'
+import { Button } from '@piluvitu/ui/button'
 import { getVisitCardFaIcon } from '@/lib/visit-card-fontawesome'
 import { cn } from '@/lib/utils'
 import { Social } from '@/mocks/social'

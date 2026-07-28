@@ -1,0 +1,35 @@
+-- =====================================================================
+-- migrations/0003_account_provider_idx.sql   —  alvo: Cloudflare D1 (SQLite)
+--
+-- Indice composto em account(providerId, accountId) — o par que o Better
+-- Auth consulta no sign-in social (lookup de conta ja vinculada, dentro
+-- do internal adapter da lib). Achado adiado da Task 1 (migration 0002,
+-- ver CLAUDE.md/"Task 1: minor (deferred)"): o gerador `npx auth@latest
+-- generate` NAO cria esse indice sozinho, apesar de ser o par mais
+-- consultado da tabela `account`.
+--
+-- DECISAO CONSCIENTE (Task 5, antes de trafego de producao): o modulo e
+-- single-user — em regime normal `account` tem NO MAXIMO 1 linha (um
+-- vinculo Google por dono), entao o ganho de performance de um indice
+-- aqui e proximo de zero (varrer ~1 linha custa o mesmo que um seek).
+-- Criado mesmo assim porque:
+--   1. Indice no D1 e IRREVERSIVEL — nao ha ALTER INDEX, so DROP
+--      (destrutivo) + CREATE de novo. O momento mais barato pra criar e
+--      ANTES de existir trafego real, nao depois.
+--   2. O custo de escrita extra por INSERT em `account` e desprezivel:
+--      a tabela recebe no maximo uma linha nova por vinculo OAuth,
+--      nunca um hot path de escrita.
+--   3. Fecha o gap batendo o schema com o que o proprio Better Auth
+--      consulta, sem inventar coluna nem mudar tipo de nenhuma.
+--
+-- Nome do indice EXTENDE a convencao do 0002 (preservada do gerador) pra
+-- 2 colunas: <tabela>_<col1>_idx vira <tabela>_<col1>_<col2>_idx. Nao e
+-- precedente existente — todo indice do 0002 e de 1 coluna so; este e o
+-- primeiro composto do modulo.
+--
+-- Sem BEGIN/COMMIT (o D1 rejeita). Forward-only: nao ha down migration —
+-- reverter significa DROP INDEX manual, irreversivel igual a criacao.
+-- =====================================================================
+
+CREATE INDEX IF NOT EXISTS account_providerId_accountId_idx
+  ON account(providerId, accountId);

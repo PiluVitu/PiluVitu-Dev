@@ -2,14 +2,14 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Skeleton } from '@/components/ui/skeleton'
+} from '@piluvitu/ui/dialog'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import { SectionHeader } from '@/components/section-header'
 import { useContentList } from '@/hooks/admin/content/use-content-list'
 import { useContentMutations } from '@/hooks/admin/content/use-content-mutations'

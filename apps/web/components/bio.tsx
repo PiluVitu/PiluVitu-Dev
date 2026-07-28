@@ -6,7 +6,7 @@ import type { Social } from '@/mocks/social'
 import { ModeToggle } from './mode-toggle'
 import { ProfileVisitCard } from './profile-visit-card'
 import { ProfileSocialStrip } from './profile-social-strip'
-import { Button } from './ui/button'
+import { Button } from '@piluvitu/ui/button'
 
 type BioProps = {
   profile: SiteProfileContent

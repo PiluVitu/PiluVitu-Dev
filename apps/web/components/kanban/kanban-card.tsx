@@ -2,7 +2,7 @@
 
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@piluvitu/ui/card'
 import { TagBadge } from './tag-badge'
 import { Card as CardType, Tag } from '@/lib/kanban-schema'
 import { Link2Icon } from '@radix-ui/react-icons'

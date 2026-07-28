@@ -4,13 +4,13 @@ import { MoonIcon, SunIcon } from '@radix-ui/react-icons'
 import { useTheme } from 'next-themes'
 
 import { NoSSR } from '@/components/no-ssr'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@piluvitu/ui/dropdown-menu'
 
 const triggerClass = 'flex w-fit items-center gap-2 rounded-full px-4'
 

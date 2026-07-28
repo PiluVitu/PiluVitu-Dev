@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@piluvitu/ui/badge'
 import { Tag } from '@/lib/kanban-schema'
 import { cn } from '@/lib/utils'
 

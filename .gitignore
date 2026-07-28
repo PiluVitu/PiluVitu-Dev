@@ -77,3 +77,10 @@ apps/api/piluvitu
 
 # SQLite local (make dev-api fora do docker)
 apps/api/tmp/
+
+# wrangler/miniflare (estado local do D1, cache de build)
+apps/financas/.wrangler/
+# Cloudflare Worker: segredos locais (GOOGLE_CLIENT_SECRET, BETTER_AUTH_SECRET).
+# Entra ANTES de o arquivo existir — .env/.env.local nao cobrem este nome.
+.dev.vars
+**/.dev.vars

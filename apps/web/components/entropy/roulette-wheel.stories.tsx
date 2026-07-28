@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { RouletteWheel, type WheelOption } from './roulette-wheel'
 
 const OPTIONS: WheelOption[] = [

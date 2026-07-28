@@ -1,6 +1,6 @@
 'use client'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { buttonVariants } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@piluvitu/ui/avatar'
+import { buttonVariants } from '@piluvitu/ui/button'
 import { EmailContactDialog } from '@/components/email-contact-dialog'
 import { cn } from '@/lib/utils'
 

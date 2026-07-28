@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@piluvitu/ui/button'
 import { TagManagerDialog } from './tag-manager-dialog'
 import { KanbanState } from '@/lib/kanban-schema'
 import { exportState, parseImport } from '@/lib/kanban-export'

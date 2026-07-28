@@ -7,9 +7,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+} from '@piluvitu/ui/dialog'
+import { Button } from '@piluvitu/ui/button'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import { MediaGrid } from './media-grid'
 import { useMediaList } from '@/hooks/admin/media/use-media-list'
 import {

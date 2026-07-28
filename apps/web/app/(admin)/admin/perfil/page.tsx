@@ -1,7 +1,7 @@
 'use client'
 
 import { toast } from 'sonner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import { SectionHeader } from '@/components/section-header'
 import { useProfile, useUpdateProfile } from '@/hooks/admin/content/use-profile'
 import { ProfileForm } from '@/components/admin/content/profile-form'

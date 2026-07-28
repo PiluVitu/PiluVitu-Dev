@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu'
+} from '@piluvitu/ui/dropdown-menu'
 
 interface AccountMenuProps {
   name?: string

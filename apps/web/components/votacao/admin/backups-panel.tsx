@@ -1,6 +1,6 @@
 'use client'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@piluvitu/ui/button'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import type { Backup } from '@/lib/votacao/types'
 
 interface Props {

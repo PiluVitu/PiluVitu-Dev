@@ -1,6 +1,6 @@
 'use client'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Badge } from '@piluvitu/ui/badge'
+import { Skeleton } from '@piluvitu/ui/skeleton'
 import type { AdminUser } from '@/lib/votacao/types'
 
 interface Props {
