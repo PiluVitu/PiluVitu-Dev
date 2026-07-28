@@ -1276,7 +1276,7 @@ def competencia_valida(valor: str) -> bool:
 - [ ] **Step 8: Rodar e confirmar que passa**
 
 Run: `cd apps/promeia && uv run pytest src/promeia/dates_test.py`
-Expected: PASS (17 casos)
+Expected: PASS (16 casos: 7 simples + 9 parametrizados)
 
 - [ ] **Step 9: Verificar por mutação — a subtração do offset precisa ser load-bearing**
 
