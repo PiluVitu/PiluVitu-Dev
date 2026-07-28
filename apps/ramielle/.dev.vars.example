@@ -10,3 +10,9 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
 # wrangler.jsonc. CSV de verdade (ver src/lib/auth.ts#isAdminEmail) — ao
 # contrário do ALLOWED_EMAIL do finanças, que é um e-mail só.
 # ADMIN_EMAILS=dono@exemplo.com,outro-admin@exemplo.com
+
+# Task 5 (CORS): só precisa disto se quiser testar uma origem diferente do
+# default local (src/lib/cors.ts#DEFAULT_ALLOWED_ORIGINS já inclui
+# http://localhost:3333 e https://piluvitu.com.br — o `wrangler dev` comum
+# não precisa desta linha). CSV, mesmo contrato de ADMIN_EMAILS acima.
+# CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br

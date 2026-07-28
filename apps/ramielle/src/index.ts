@@ -1,11 +1,36 @@
 import { Hono } from 'hono'
 import { type AuthBindings, getAuth } from './lib/auth'
+import { corsMiddleware } from './lib/cors'
 import { errJson, okJson } from './lib/envelope'
 import authRoutes from './routes/auth'
 
-export type Bindings = AuthBindings
+export type Bindings = AuthBindings & {
+  /**
+   * CSV de origens permitidas (mesmo contrato do `CORS_ALLOWED_ORIGINS` do
+   * Go) — opcional: ausente/vazia cai no default de `lib/cors.ts`
+   * (`DEFAULT_ALLOWED_ORIGINS`, que já inclui `piluvitu.com.br` e
+   * `localhost:3333`). `wrangler.jsonc#vars` declara um valor explícito só
+   * de produção (`https://piluvitu.com.br`, sem `localhost`) — o `?`
+   * continua aqui porque em dev local (`wrangler dev` sem `.dev.vars`
+   * setando isto) a binding é `undefined` em runtime, e o guard de
+   * `allowedOrigins()` precisa aceitar esse caso.
+   */
+  CORS_ALLOWED_ORIGINS?: string
+}
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+// CORS é a PRIMEIRA coisa montada, de propósito — precisa vir ACIMA de
+// TUDO, inclusive do handler `/api/auth/*` do Better Auth (linha abaixo) e
+// do catch-all no fim do arquivo. `app.use('*', ...)` casa com QUALQUER
+// método (inclusive OPTIONS) e QUALQUER path; para um preflight `OPTIONS`,
+// o middleware de `hono/cors` responde 204 diretamente, SEM chamar
+// `next()` — se o catch-all (ou qualquer outra rota) estivesse registrado
+// ANTES deste `use`, ele entraria na cadeia primeiro e o preflight de
+// `/api/auth/*` cairia no 404 do catch-all em vez de ser respondido, e o
+// login quebraria sem mensagem útil nenhuma no browser (só "CORS error"
+// genérico, sem detalhe). Ver `lib/cors.ts` pro motivo do `credentials`.
+app.use('*', corsMiddleware<Bindings>())
 
 // Paridade com o /health do Go (router.go): ele pinga o banco e responde
 // {"ok":true,"db":"up"} | {"ok":false,"db":"down"}. Aqui o corpo entra no

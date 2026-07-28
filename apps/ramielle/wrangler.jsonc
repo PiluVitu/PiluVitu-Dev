@@ -43,5 +43,14 @@
     // de acesso (todo mundo entra), é só quem o guard da Task 4 trata como
     // admin. Vazio não travaria login nenhum — só ninguém seria admin.
     "ADMIN_EMAILS": "paulo.tspi@gmail.com",
+
+    // Task 5 (CORS): mesma paridade do infra/docker-compose.yml da Go —
+    // produção declara só a origem de produção do apps/web, sem
+    // http://localhost:3333. Não é obrigatório (src/lib/cors.ts#DEFAULT_
+    // ALLOWED_ORIGINS já inclui os dois e cobriria produção sozinho), mas
+    // deixa explícito aqui, sem depender do default do código pra saber o
+    // que está de fato permitido em produção. CSV — src/lib/cors.ts trata
+    // como lista, trim por item.
+    "CORS_ALLOWED_ORIGINS": "https://piluvitu.com.br",
   },
 }
