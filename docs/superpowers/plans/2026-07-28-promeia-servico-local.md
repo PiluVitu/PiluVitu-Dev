@@ -438,6 +438,27 @@ def _rotas_registradas(app) -> list[tuple[str, list[str]]]:
     return achatadas
 
 
+def test_enumeracao_levanta_no_que_nao_sabe_achatar():
+    """A guarda de `_rotas_registradas` precisa ser exercitada.
+
+    ⚠️ MEDIDO: nenhum app real chega nesse `raise` — o fallback de
+    `original_router.routes` resolve tudo que o FastAPI 0.140.7 produz. Mas a
+    guarda existe para o dia em que o FastAPI mudar de forma, e uma guarda que
+    nunca rodou pode estar quebrada sem ninguém saber. Este caso sintético é o
+    único jeito de provar que ela dispara, e com a mensagem certa. Uma guarda
+    não testada é o defeito de "teste que não pode falhar", virado do avesso.
+    """
+
+    class RotaOpaca:
+        pass
+
+    class AppFalso:
+        routes = [RotaOpaca()]
+
+    with pytest.raises(AssertionError, match="não sei enumerar"):
+        _rotas_registradas(AppFalso())
+
+
 def test_TODA_rota_registrada_recusa_sem_token(client):
     """A prova que não envelhece.
 
@@ -471,7 +492,7 @@ def test_o_mapa_de_rotas_nao_e_publicado(client):
     mapa de rotas nem para quem tem o token. Sem esta asserção, remover o
     `openapi_url=None` não quebra nada e o schema volta em silêncio.
     """
-    caminhos = [r.path for r in client.app.routes if getattr(r, "methods", None)]
+    caminhos = [p for p, _ in _rotas_registradas(client.app)]
     assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
 ```
 
@@ -606,7 +627,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 - [ ] **Step 11: Rodar e confirmar que passa**
 
 Run: `cd apps/promeia && uv run pytest`
-Expected: PASS (13 testes: 5 de config + 8 de app)
+Expected: PASS (14 testes: 5 de config + 9 de app)
 
 - [ ] **Step 12: Verificar por mutação — o guard tem que ser capaz de falhar**
 
@@ -726,7 +747,7 @@ Acrescentar ao fim do `.gitignore` da raiz:
 cd apps/promeia && uv run ruff format . && uv run ruff check . && uv run pytest
 ```
 
-Expected: format sem alteração pendente, lint silencioso, 13 testes passando.
+Expected: format sem alteração pendente, lint silencioso, 14 testes passando.
 
 - [ ] **Step 18: Confirmar que o serviço sobe de verdade (não só em TestClient)**
 
