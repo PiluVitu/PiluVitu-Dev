@@ -3,8 +3,15 @@
 # segredo). Em produção, os três abaixo vão via `wrangler secret put`.
 BETTER_AUTH_URL=http://localhost:8787
 BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
-GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
-GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: NÃO crie um OAuth Client novo pro
+# ramielle. São os valores do MESMO client que já serve a área de admin de
+# outro app e a API Go (ver apps/ramielle/CLAUDE.md § Pendências do dono) —
+# é por ser o mesmo client que a redirect URI de produção pode ser ADITIVA
+# (adicionar, nunca substituir as existentes). Pra dev local, qualquer client
+# de teste serve (o fluxo OAuth não completa contra o Google de verdade —
+# ver src/lib/auth.test.ts, que mocka o token endpoint).
+GOOGLE_CLIENT_ID=troque-pelo-client-id-de-teste-ou-do-client-existente
+GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 
 # Só localmente, se quiser testar como admin com um e-mail diferente do de
 # wrangler.jsonc. CSV de verdade (ver src/lib/auth.ts#isAdminEmail) — ao

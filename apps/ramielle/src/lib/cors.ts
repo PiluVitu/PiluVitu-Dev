@@ -1,11 +1,24 @@
 /**
  * CORS com credenciais — paridade com `apps/api/internal/router/router.go`
- * (`corsOptions`/`allowedOrigins`). O `apps/web` mora em `piluvitu.com.br`
- * (Vercel); o ramielle mora em `api.piluvitu.com.br` — origens DIFERENTES, e
- * é isso que obriga CORS explícito aqui: sem `Access-Control-Allow-Origin` +
- * `Access-Control-Allow-Credentials` corretos, o cookie de sessão do Better
- * Auth nunca atravessa um `fetch(..., { credentials: 'include' })` do
- * `apps/web`.
+ * (`corsOptions`/`allowedOrigins`) nas ORIGENS, nas CREDENCIAIS e na leitura
+ * de `CORS_ALLOWED_ORIGINS` (mesmo CSV, mesmo default). O `apps/web` mora em
+ * `piluvitu.com.br` (Vercel); o ramielle mora em `api.piluvitu.com.br` —
+ * origens DIFERENTES, e é isso que obriga CORS explícito aqui: sem
+ * `Access-Control-Allow-Origin` + `Access-Control-Allow-Credentials`
+ * corretos, o cookie de sessão do Better Auth nunca atravessa um
+ * `fetch(..., { credentials: 'include' })` do `apps/web`.
+ *
+ * ⚠️ A lista de headers NÃO tem paridade com a Go, de propósito — não
+ * confundir com descuido numa revisão futura. MEDIDO contra `corsOptions()`
+ * do Go: ela inclui `Accept` em `AllowedHeaders` e expõe `Link` em
+ * `ExposedHeaders`; aqui `allowHeaders` é só `Content-Type`/`Authorization`
+ * e não há `exposeHeaders` nenhum. Inofensivo hoje: `Accept` é um dos
+ * headers CORS-safelisted (não precisa estar na lista pra ser enviado —
+ * https://fetch.spec.whatwg.org/#cors-safelisted-request-header), e nenhuma
+ * rota do ramielle emite `Link`. Reavaliar se a fatia ② (rotas de votação)
+ * precisar expor algum header de resposta que o `apps/web` tenha que ler
+ * via JS (`fetch().headers.get(...)`) — sem `exposeHeaders`, o browser
+ * esconde qualquer header de resposta fora da lista mínima padrão.
  *
  * ⚠️ `Access-Control-Allow-Origin: '*'` é INCOMPATÍVEL com credenciais — o
  * navegador recusa a resposta INTEIRA quando os dois aparecem juntos (é o
@@ -53,9 +66,11 @@ export function allowedOrigins(csv: string | undefined): string[] {
 /**
  * `credentials: true` é o motivo desta task existir — sem ele o cookie de
  * sessão do Better Auth nunca atravessa origem cruzada. `allowMethods`/
- * `allowHeaders` cobrem só o que este Worker expõe hoje (GET/POST via Hono,
- * OPTIONS do próprio preflight; `Content-Type`/`Authorization` — mesma
- * lista enxuta do Go, `corsOptions()`).
+ * `allowHeaders` cobrem só o que este Worker precisa hoje (GET/POST via
+ * Hono, OPTIONS do próprio preflight; `Content-Type`/`Authorization`) — a
+ * lista de headers NÃO espelha a Go de propósito, ver o comentário no topo
+ * do arquivo pro porquê (`Accept`/`Link` da Go não têm equivalente
+ * necessário aqui hoje).
  *
  * Genérica em `TBindings` (mesmo padrão de `requireAuth`/`requireAdmin`,
  * `./session.ts`) — `Context` do Hono é INVARIANTE no parâmetro de `Env`,
