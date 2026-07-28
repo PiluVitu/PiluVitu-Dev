@@ -328,3 +328,76 @@ describe('trustedOrigins — inclui a origem do apps/web (produção e dev), sem
     expect(res.status).toBe(403)
   })
 })
+
+// I2 (revisão final): trustedOrigins passou a DERIVAR de allowedOrigins()
+// (mesma fonte do CORS, lib/cors.ts) em vez de manter uma lista hardcoded
+// separada — as duas já tinham divergido em produção (CORS apertado pra só
+// piluvitu.com.br, trustedOrigins continuando com localhost incluso).
+// Provado contra o handler real, mesmo padrão do describe acima: com
+// CORS_ALLOWED_ORIGINS de produção (sem localhost), a origem localhost NÃO
+// é mais confiável; sem a var (dev), continua sendo (default de cors.ts já
+// inclui localhost:3333).
+describe('trustedOrigins deriva de CORS_ALLOWED_ORIGINS (I2) — uma fonte de verdade só, não duas divergindo', () => {
+  test('CORS_ALLOWED_ORIGINS de produção (só piluvitu.com.br, sem localhost) barra Origin http://localhost:3333', async () => {
+    const envProducao: AuthBindings = {
+      ...testEnv,
+      CORS_ALLOWED_ORIGINS: 'https://piluvitu.com.br',
+    }
+    const auth = createAuth(envProducao)
+    const res = await auth.handler(
+      new Request(`${envProducao.BETTER_AUTH_URL}/api/auth/sign-in/social`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'http://localhost:3333',
+          cookie: 'marcador=presente',
+          'cf-connecting-ip': '203.0.113.30',
+        },
+        body: JSON.stringify({ provider: 'google', callbackURL: '/' }),
+      }),
+    )
+    expect(res.status).toBe(403)
+  })
+
+  test('sem CORS_ALLOWED_ORIGINS (dev — binding ausente), Origin http://localhost:3333 continua confiável', async () => {
+    const envDev: AuthBindings = {
+      ...testEnv,
+      CORS_ALLOWED_ORIGINS: undefined,
+    }
+    const auth = createAuth(envDev)
+    const res = await auth.handler(
+      new Request(`${envDev.BETTER_AUTH_URL}/api/auth/sign-in/social`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'http://localhost:3333',
+          cookie: 'marcador=presente',
+          'cf-connecting-ip': '203.0.113.31',
+        },
+        body: JSON.stringify({ provider: 'google', callbackURL: '/' }),
+      }),
+    )
+    expect(res.status).not.toBe(403)
+  })
+
+  test('CORS_ALLOWED_ORIGINS de produção ainda confia em https://piluvitu.com.br (a própria origem que ela declara)', async () => {
+    const envProducao: AuthBindings = {
+      ...testEnv,
+      CORS_ALLOWED_ORIGINS: 'https://piluvitu.com.br',
+    }
+    const auth = createAuth(envProducao)
+    const res = await auth.handler(
+      new Request(`${envProducao.BETTER_AUTH_URL}/api/auth/sign-in/social`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://piluvitu.com.br',
+          cookie: 'marcador=presente',
+          'cf-connecting-ip': '203.0.113.32',
+        },
+        body: JSON.stringify({ provider: 'google', callbackURL: '/' }),
+      }),
+    )
+    expect(res.status).not.toBe(403)
+  })
+})

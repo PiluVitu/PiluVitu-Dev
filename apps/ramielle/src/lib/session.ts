@@ -21,7 +21,7 @@
  * que `ADMIN_EMAILS` passa a incluir aquele e-mail (e vice-versa).
  */
 import type { Context, MiddlewareHandler } from 'hono'
-import { getAuth, isAdminEmail, type Auth, type AuthBindings } from './auth'
+import { getAuth, isAdminEmail, type AuthBindings } from './auth'
 import { errJson } from './envelope'
 import { upsertVotacaoUser, type VotacaoUser } from '../domain/users'
 
@@ -75,16 +75,80 @@ async function buscarGoogleSub(
 async function resolveSession<TBindings extends AuthBindings>(
   c: Context<SessionEnv<TBindings>>,
 ): Promise<SessionResolution> {
-  let sessao: Awaited<ReturnType<Auth['api']['getSession']>>
+  // I1 (revisão final da fatia): o try ANTES cobria só getSession. Fora
+  // dele, no mesmo caminho de todo request autenticado, ainda rodavam
+  // buscarGoogleSub (SELECT em account) e upsertVotacaoUser (INSERT...
+  // ON CONFLICT...RETURNING + um SELECT, que lança Error explícito em dois
+  // pontos de domain/users.ts) — nenhum dos três protegido. Cenário real: a
+  // migration 0002 aplicada em produção e a 0001 não (pendência do dono,
+  // `wrangler d1 migrations apply` pode parar no meio) — o login completa
+  // (só precisa de user/session/account), e todo GET /auth/me subsequente
+  // estoura `no such table: users` sem o catch cobrir. Estendido até o fim
+  // da função: as quatro operações de D1 do caminho (getSession,
+  // buscarGoogleSub, o upsert, o SELECT de volta) caem no mesmo 503
+  // auth_unavailable. Ver session.test.ts, describe "D1 indisponível a
+  // partir da segunda consulta" — prova isto com um proxy que deixa passar
+  // as duas queries de getSession e quebra a partir da terceira
+  // (buscarGoogleSub em diante); sem esta extensão do try, aquele teste
+  // falha.
   try {
-    sessao = await getAuth(c.env).api.getSession({
+    const sessao = await getAuth(c.env).api.getSession({
       headers: c.req.raw.headers,
     })
+
+    if (!sessao?.user) {
+      return {
+        ok: false,
+        response: errJson(
+          401,
+          'not_authenticated',
+          'requisição sem sessão válida',
+        ),
+      }
+    }
+
+    // Fallback pra sessao.user.id NÃO É FOLGA — é o que preserva o controle
+    // positivo dos testes deste arquivo. O cookie de teste é gerado via
+    // `emailAndPassword`/`signUpEmail` (mesma técnica do finanças): esse
+    // caminho NUNCA cria uma linha em `account` com `providerId='google'` (só
+    // login social real cria). Sem o fallback, todo teste de sessão quebraria
+    // por um motivo que não tem nada a ver com o que eles provam — em
+    // produção o login é 100% Google, então o caminho real sempre acha a
+    // linha em `account`, e o fallback nunca dispara.
+    const googleSubEncontrado = await buscarGoogleSub(c.env.DB, sessao.user.id)
+    if (googleSubEncontrado === null) {
+      // M2 (revisão final): sem isto, o fallback é SILENCIOSO. Se ele
+      // disparar em produção (sessão sem linha em account com
+      // providerId='google' — não deveria acontecer no login 100% Google,
+      // mas "não deveria" não é "não vai"), grava o id INTERNO do Better
+      // Auth em users.google_sub — precisamente o defeito que o fix da T4
+      // corrigiu, e que na fatia ④ (importação do histórico da API Go)
+      // duplica usuário e orfaniza voto antigo. Uma linha de warn torna
+      // isso detectável em `wrangler tail` em vez de invisível.
+      console.warn(
+        'buscarGoogleSub: sem linha em account (providerId=google) para este usuário — usando fallback sessao.user.id como google_sub',
+      )
+    }
+    const googleSub = googleSubEncontrado ?? sessao.user.id
+
+    const votacaoUser = await upsertVotacaoUser(c.env.DB, {
+      googleSub,
+      email: sessao.user.email,
+      name: sessao.user.name,
+      picture: sessao.user.image ?? null,
+      isAdmin: isAdminEmail(sessao.user.email, c.env.ADMIN_EMAILS),
+    })
+
+    return { ok: true, votacaoUser }
   } catch (err) {
-    // getSession vai ao D1. Sem este catch o erro vazaria como 500 sem
-    // envelope, e o cliente do apps/web levantaria 'invalid_envelope' — um
-    // sintoma sem relação nenhuma com a causa real.
-    console.error('getSession falhou', err)
+    // Cobre as quatro operações de D1 acima (getSession, buscarGoogleSub, o
+    // upsert e o SELECT de volta). Sem este catch o erro vazaria como 500
+    // sem envelope, e o cliente do apps/web levantaria 'invalid_envelope' —
+    // um sintoma sem relação nenhuma com a causa real.
+    console.error(
+      'resolveSession falhou (getSession/buscarGoogleSub/upsertVotacaoUser)',
+      err,
+    )
     return {
       ok: false,
       response: errJson(
@@ -94,38 +158,6 @@ async function resolveSession<TBindings extends AuthBindings>(
       ),
     }
   }
-
-  if (!sessao?.user) {
-    return {
-      ok: false,
-      response: errJson(
-        401,
-        'not_authenticated',
-        'requisição sem sessão válida',
-      ),
-    }
-  }
-
-  // Fallback pra sessao.user.id NÃO É FOLGA — é o que preserva o controle
-  // positivo dos testes deste arquivo. O cookie de teste é gerado via
-  // `emailAndPassword`/`signUpEmail` (mesma técnica do finanças): esse
-  // caminho NUNCA cria uma linha em `account` com `providerId='google'` (só
-  // login social real cria). Sem o fallback, todo teste de sessão quebraria
-  // por um motivo que não tem nada a ver com o que eles provam — em
-  // produção o login é 100% Google, então o caminho real sempre acha a
-  // linha em `account`, e o fallback nunca dispara.
-  const googleSub =
-    (await buscarGoogleSub(c.env.DB, sessao.user.id)) ?? sessao.user.id
-
-  const votacaoUser = await upsertVotacaoUser(c.env.DB, {
-    googleSub,
-    email: sessao.user.email,
-    name: sessao.user.name,
-    picture: sessao.user.image ?? null,
-    isAdmin: isAdminEmail(sessao.user.email, c.env.ADMIN_EMAILS),
-  })
-
-  return { ok: true, votacaoUser }
 }
 
 /**

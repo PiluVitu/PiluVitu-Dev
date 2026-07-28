@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { describe, expect, test } from 'vitest'
 import type { Bindings } from '../index'
@@ -202,5 +203,40 @@ describe('montagem em index.ts — CORS entra ANTES do handler /api/auth/* e do 
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
       'https://piluvitu.com.br',
     )
+  })
+})
+
+// I3 (revisão final): os 19 testes acima cobrem preflight OPTIONS (que o
+// hono/cors CURTO-CIRCUITA, respondendo direto) e um GET num app DE TESTE
+// cuja rota usa c.json(...). Nenhum prova que uma resposta NÃO-preflight de
+// uma rota REAL carrega o header — as rotas reais (/health, /auth/me,
+// /auth/logout, e as 10 da fatia ②) devolvem Response CRU via okJson/errJson
+// (lib/envelope.ts), não c.json(...). Que o header sobreviva depende de um
+// detalhe interno do Hono (o setter `set res()` copiar os headers do `#res`
+// anterior, onde o middleware de CORS já tinha escrito) — funciona hoje
+// (provado abaixo), mas é a classe de falha que este módulo declara temer
+// ("CORS só quebra em produção") num caminho que nenhum teste fixava.
+describe('I3 — GET não-preflight numa rota REAL que devolve Response cru (okJson), não c.json(...)', () => {
+  test('GET /health com origem permitida responde 200 E carrega Access-Control-Allow-Origin', async () => {
+    const bindingsDeTeste: Bindings = {
+      DB: env.DB,
+      BETTER_AUTH_URL: 'http://localhost:8787',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+      GOOGLE_CLIENT_ID: 'client-id-de-teste',
+      GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
+      ADMIN_EMAILS: '',
+    }
+
+    const res = await realApp.request(
+      '/health',
+      { headers: { origin: 'https://piluvitu.com.br' } },
+      bindingsDeTeste,
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://piluvitu.com.br',
+    )
+    expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true')
   })
 })

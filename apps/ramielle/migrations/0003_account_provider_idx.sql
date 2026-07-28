@@ -1,0 +1,43 @@
+-- =====================================================================
+-- migrations/0003_account_provider_idx.sql   —  alvo: Cloudflare D1 (SQLite)
+--
+-- Índice composto em account(providerId, accountId) — o par que o Better
+-- Auth consulta no sign-in social (lookup de conta já vinculada, dentro
+-- do internal adapter da lib). O `apps/financas` já criou este MESMO
+-- índice (`migrations/0003_account_provider_idx.sql` — leia aquele
+-- arquivo pro raciocínio original: gerador `npx auth@latest generate` não
+-- cria sozinho, apesar de ser o par mais consultado da tabela `account`).
+--
+-- ⚠️ M4 (revisão final desta fatia): AQUI O ARGUMENTO É MAIS FORTE, NÃO O
+-- MESMO do finanças. Lá a justificativa registrada é "ganho ~zero" —
+-- single-user, `account` nunca passa de ~1 linha (um vínculo Google do
+-- dono), varrer 1 linha custa o mesmo que um seek. Aqui a votação é LIVRE
+-- (`apps/ramielle/CLAUDE.md` § "Votação LIVRE × finanças fail-closed") —
+-- QUALQUER conta Google entra, e cada login novo grava uma linha em
+-- `account`. A tabela CRESCE com cada votante, não fica presa em ~1 linha
+-- — o motivo que tornava o índice cosmético no finanças não se aplica
+-- aqui: o ganho é real e cresce com a adoção, não hipotético.
+--
+-- Criado mesmo assim pelos mesmos 3 motivos do finanças, com o 1º ainda
+-- mais decisivo neste módulo:
+--   1. Índice no D1 é IRREVERSÍVEL — não há ALTER INDEX, só DROP
+--      (destrutivo) + CREATE de novo. O momento mais barato pra criar é
+--      ANTES de existir tráfego real (esta fatia ainda não está em
+--      produção — ver "Nada em produção mudou nesta fatia" no CLAUDE.md),
+--      não depois que `account` já tiver votantes reais.
+--   2. O custo de escrita extra por INSERT em `account` é desprezível:
+--      a tabela recebe no máximo uma linha nova por vínculo OAuth (um
+--      login social novo), nunca um hot path de escrita.
+--   3. Fecha o gap batendo o schema com o que o próprio Better Auth
+--      consulta, sem inventar coluna nem mudar tipo de nenhuma.
+--
+-- Aplicado só --local nesta leva (ver comando no CLAUDE.md deste
+-- workspace) — nunca --remote: a janela pra criar de graça fecha assim
+-- que o dono rodar a migration contra o D1 remoto com dado real.
+--
+-- Sem BEGIN/COMMIT (o D1 rejeita). Forward-only: não há down migration —
+-- reverter significa DROP INDEX manual, irreversível igual à criação.
+-- =====================================================================
+
+CREATE INDEX IF NOT EXISTS account_providerId_accountId_idx
+  ON account(providerId, accountId);

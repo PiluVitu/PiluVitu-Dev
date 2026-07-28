@@ -290,6 +290,56 @@ describe('requireAuth — D1 indisponível durante getSession responde 503 auth_
   })
 })
 
+describe('requireAuth — I1 (revisão final): resolveSession protege TODAS as chamadas ao D1, não só getSession', () => {
+  // getSession() sozinho já faz DUAS consultas ao D1 (MEDIDO via proxy
+  // instrumentado antes de escrever este teste: `select ... from "session"
+  // where "session"."token" = ?` seguido de `select ... from "user" where
+  // "user"."id" = ?`) — antes de qualquer chamada de buscarGoogleSub/
+  // upsertVotacaoUser. Um proxy que quebrasse já na SEGUNDA query estouraria
+  // dentro do próprio getSession, sob o catch ORIGINAL (que já existia) —
+  // não provaria nada sobre a extensão do I1. Por isso o contador deixa
+  // passar as duas queries de getSession e só quebra a PARTIR da terceira
+  // (buscarGoogleSub em diante) — exatamente o trecho que o catch original
+  // não cobria.
+  test('D1 que falha a partir da 3ª query (buscarGoogleSub/upsertVotacaoUser) responde 503 auth_unavailable, não 500 cru', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'i1-terceira-query@example.com',
+      'I1 Terceira Query',
+    )
+
+    const dbReal = env.DB
+    let contador = 0
+    const QUERIES_DE_GETSESSION = 2
+    const dbQuebradoAPartirDaTerceira = {
+      prepare: (sql: string) => {
+        contador += 1
+        if (contador > QUERIES_DE_GETSESSION) {
+          throw new Error('D1 indisponível a partir da 3ª query (simulado)')
+        }
+        return dbReal.prepare(sql)
+      },
+      batch: dbReal.batch.bind(dbReal),
+      exec: dbReal.exec.bind(dbReal),
+    } as unknown as AuthBindings['DB']
+
+    const testEnvQuebrado: AuthBindings = {
+      ...testEnv(''),
+      DB: dbQuebradoAPartirDaTerceira,
+    }
+
+    const res = await appProtegido().request(
+      '/protegido',
+      { headers: { cookie } },
+      testEnvQuebrado,
+    )
+
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as CorpoErro
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('auth_unavailable')
+  })
+})
+
 describe('requireAuth — upsertVotacaoUser é idempotente a cada request (conta as linhas, não confia no retorno)', () => {
   test('duas chamadas com o MESMO cookie mantêm 1 linha em users e o MESMO id', async () => {
     const cookie = await cookieDeSessaoValido(

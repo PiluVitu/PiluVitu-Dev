@@ -4,19 +4,12 @@ import { corsMiddleware } from './lib/cors'
 import { errJson, okJson } from './lib/envelope'
 import authRoutes from './routes/auth'
 
-export type Bindings = AuthBindings & {
-  /**
-   * CSV de origens permitidas (mesmo contrato do `CORS_ALLOWED_ORIGINS` do
-   * Go) — opcional: ausente/vazia cai no default de `lib/cors.ts`
-   * (`DEFAULT_ALLOWED_ORIGINS`, que já inclui `piluvitu.com.br` e
-   * `localhost:3333`). `wrangler.jsonc#vars` declara um valor explícito só
-   * de produção (`https://piluvitu.com.br`, sem `localhost`) — o `?`
-   * continua aqui porque em dev local (`wrangler dev` sem `.dev.vars`
-   * setando isto) a binding é `undefined` em runtime, e o guard de
-   * `allowedOrigins()` precisa aceitar esse caso.
-   */
-  CORS_ALLOWED_ORIGINS?: string
-}
+// `CORS_ALLOWED_ORIGINS` mora no tipo `AuthBindings` (`lib/auth.ts`), não
+// mais aqui — desde I2 (revisão final) `createAuth` também lê essa binding
+// pra montar `trustedOrigins`, então declará-la só uma vez em `AuthBindings`
+// evita duas cópias do mesmo campo divergindo. Contrato de formato/default
+// (CSV, `DEFAULT_ALLOWED_ORIGINS`) continua documentado só em `lib/cors.ts`.
+export type Bindings = AuthBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 

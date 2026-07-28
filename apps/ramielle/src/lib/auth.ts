@@ -18,6 +18,7 @@
  * no cadastro não acompanharia uma troca de `ADMIN_EMAILS` feita depois.
  */
 import { betterAuth } from 'better-auth'
+import { allowedOrigins } from './cors'
 
 export type AuthBindings = {
   DB: D1Database
@@ -32,6 +33,15 @@ export type AuthBindings = {
    * abaixo espelha esse contrato. Não carregar o hábito do finanças pra cá.
    */
   ADMIN_EMAILS: string
+  /**
+   * A MESMA binding que `index.ts#Bindings` já declara pro CORS
+   * (`lib/cors.ts#allowedOrigins`) — repetida no tipo aqui (não na
+   * documentação: o contrato de formato/default é só em `cors.ts`) porque
+   * `createAuth` agora lê este valor pra montar `trustedOrigins` (I2 da
+   * revisão final, ver o comentário na config abaixo). Opcional pelo mesmo
+   * motivo de lá: `undefined` em runtime quando a binding não está setada.
+   */
+  CORS_ALLOWED_ORIGINS?: string
 }
 
 /**
@@ -125,12 +135,27 @@ export function createAuth(env: AuthBindings) {
     // origem DIFERENTE da API (api.piluvitu.com.br vs. piluvitu.com.br) —
     // sem esta linha, `POST /api/auth/sign-in/social` chamado a partir do
     // apps/web responde 403 (origem não confiável) e o login nunca
-    // completa. `http://localhost:3333` cobre o dev local do apps/web
-    // (Next.js, porta padrão deste monorepo — ver CLAUDE.md raiz).
+    // completa.
+    //
+    // I2 (revisão final): a lista de origens ERA hardcoded aqui
+    // (`['https://piluvitu.com.br', 'http://localhost:3333']`), duplicando
+    // a mesma decisão que `lib/cors.ts#allowedOrigins`/`wrangler.jsonc#vars.
+    // CORS_ALLOWED_ORIGINS` já tomam pro CORS — duas fontes de verdade pra
+    // "quem pode falar com este Worker" que já tinham divergido em produção
+    // (o CORS foi apertado pra só `piluvitu.com.br`, esta lista continuou
+    // com `localhost` incluso). ⚠️ Isto NÃO era "paridade com o Go" — a Go
+    // em produção TAMBÉM não aceita localhost (`infra/docker-compose.yml`
+    // sobrescreve `CORS_ALLOWED_ORIGINS` só com a origem de produção); a
+    // suposta paridade nunca existiu, era só as duas listas deste Worker
+    // divergindo entre si. Corrigido derivando UMA lista da outra, em vez
+    // de mantê-las separadas: `allowedOrigins()` já resolve exatamente o
+    // que este Worker aceita (default com localhost em dev, só
+    // `piluvitu.com.br` quando `CORS_ALLOWED_ORIGINS` de produção está
+    // setada) — `trustedOrigins` passa a ser sempre um superconjunto do que
+    // o CORS já permite, nunca divergente dele.
     trustedOrigins: [
       env.BETTER_AUTH_URL,
-      'https://piluvitu.com.br',
-      'http://localhost:3333',
+      ...allowedOrigins(env.CORS_ALLOWED_ORIGINS),
     ],
 
     // MEDIDO no finanças (mesma versão da lib): o default do rate limit é
@@ -143,9 +168,29 @@ export function createAuth(env: AuthBindings) {
     // qualquer conta Google passa a poder criar linha em `user`/`account`
     // neste D1, não só o dono. Sem throttle, um script sem sessão nenhuma
     // esgota a cota diária de escrita do D1 free tier (100k/dia) e a de
-    // requests do Worker (100k/dia). O rateLimit deixa de ser higiene e
-    // vira a ÚNICA barreira contra isso — os valores abaixo são os mesmos
+    // requests do Worker (100k/dia). Os valores abaixo são os mesmos
     // herdados do finanças, não afrouxados.
+    //
+    // ⚠️ I4 (revisão final): CORRIGIDO — este rateLimit é a ÚNICA barreira
+    // só pra `/api/auth/*` (onde ele de fato roda, no `onRequest` do router
+    // do Better Auth). Ele NÃO cobre `/auth/me`/`/auth/logout` nem as rotas
+    // de votação da fatia ②: `lib/session.ts#resolveSession` chama
+    // `auth.api.getSession(...)` DIRETO (a chamada programática, não
+    // `auth.handler(...)`), que nunca passa pelo `onRequest` — mesmo achado
+    // já documentado no `apps/financas/CLAUDE.md`. Toda rota GUARDADA por
+    // `requireAuth`/`requireAdmin` roda sem throttle nenhum.
+    //
+    // Some-se a isto: TODO request autenticado é uma ESCRITA no D1, não só
+    // uma leitura — 4 operações (`getSession`, `buscarGoogleSub`, o upsert
+    // INCONDICIONAL de `upsertVotacaoUser`, e o SELECT de volta), sendo a
+    // do upsert uma escrita sempre (mesmo quando nada mudou — ver
+    // `domain/users.ts`). Com a votação livre, uma conta descartável
+    // batendo em `/auth/me` sem limite gera 1 row-written por request.
+    //
+    // ⚠️ NÃO tornar o upsert condicional pra "economizar" essa escrita:
+    // `ON CONFLICT DO UPDATE ... WHERE <nada mudou>` faz `RETURNING id` NÃO
+    // devolver linha, e `upsertVotacaoUser` lança nesse caso (ver
+    // `domain/users.ts`). Isto é decisão de fatia futura, não desta leva.
     rateLimit: {
       enabled: true,
       // window em SEGUNDOS (unidade do próprio Better Auth).

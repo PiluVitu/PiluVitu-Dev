@@ -72,10 +72,15 @@ describe('migration 0001 — tabelas e índices', () => {
     ])
   })
 
-  // ⚠️ 5 → 8 índices nesta task (T3): a 0002_better_auth.sql soma
+  // ⚠️ 5 → 8 → 9 índices: a 0002_better_auth.sql somou
   // account_userId_idx/session_userId_idx/verification_identifier_idx aos
-  // 5 do domínio da votação — mesmo motivo do teste de tabelas acima.
-  it('cria os 8 índices (5 da votação + 3 do Better Auth)', async () => {
+  // 5 do domínio da votação (mesmo motivo do teste de tabelas acima); a
+  // 0003_account_provider_idx.sql (M4, revisão final da fatia) soma
+  // account_providerId_accountId_idx — índice composto que o Better Auth
+  // consulta no sign-in social, mais decisivo aqui que no finanças porque
+  // a votação é LIVRE e `account` cresce com cada votante (ver o
+  // raciocínio completo na própria migration).
+  it('cria os 9 índices (5 da votação + 4 do Better Auth)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'index'
@@ -84,6 +89,7 @@ describe('migration 0001 — tabelas e índices', () => {
     ).all<{ name: string }>()
 
     expect(results.map((r) => r.name)).toEqual([
+      'account_providerId_accountId_idx',
       'account_userId_idx',
       'idx_backups_created',
       'idx_session_movies_session',
