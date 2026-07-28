@@ -123,3 +123,43 @@ Fatura que só vem em PDF. Ollama no MacBook, fora do Worker (Cloudflare Contain
 As fatias ⑥, ②, ⑦ e ⑧ são grandes o suficiente para cada uma ter spec, plano e execução própria — o mesmo rito que entregou as anteriores. "Tudo de uma vez" na prática significa **quatro ciclos encadeados sem parar entre eles**, não um plano único: um plano de 40 tasks encadeadas não sobrevive a revisão, e a fatia ⑥ muda o contrato do `commitments()` que a ⑦ vai consumir.
 
 A ③ e a ④ ficam depois porque dependem de decisões que só a ② toma, e a ④ pode simplesmente não ser viável.
+
+---
+
+## Adendo (2026-07-28) — direção arquitetural pedida pelo dono
+
+Depois da fatia ⑨ (UI/UX + insight), duas frentes, nesta ordem:
+
+### A. Migrar a API Go para TS/Worker
+
+Intenção já declarada pelo dono. Escopo real de `apps/api`: votação, auth Google
+com sessão, integrações Sheets/TMDb/Drive, backup diário `VACUUM INTO`→Drive, e o
+túnel Cloudflare.
+
+⚠️ **O Ollama é o único item que NÃO migra** — exige GPU/Metal, e nenhum instance
+type de Cloudflare Containers oferece GPU. Ele é justamente o que motiva a frente B.
+
+### B. Híbrido: base na nuvem, fluxos de AI locais pelo túnel
+
+O dono descreveu: base na web, fluxos de AI com API pública no Mac exportada por
+Cloudflare Tunnel.
+
+⚠️ **O corte precisa ser por necessidade, não por conveniência** — e a medição de
+2026-07-28 muda o desenho:
+
+**Workers AI está disponível nesta conta** (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+responde; `llama-3.1-8b` foi descontinuado em 2026-05-30). Então:
+
+| Fluxo                                                 | Onde              | Por quê                                                   |
+| ----------------------------------------------------- | ----------------- | --------------------------------------------------------- |
+| Insight, classificação, resumo                        | **Workers AI**    | Funciona de qualquer aparelho, sem depender do Mac ligado |
+| Ollama com modelos próprios, PDF com arquivo em disco | **Mac via túnel** | Exige GPU local ou acesso ao sistema de arquivos          |
+
+**A regra:** um fluxo só vai para o túnel quando o Workers AI genuinamente não dá
+conta. Mandar tudo para o Mac faz o app inteiro depender de um laptop acordado —
+exatamente o acoplamento que o CLI de PDF evitou de propósito (ver
+`2026-07-27-financas-pdf-ollama-design.md` §2).
+
+**Consequência de produto a decidir no spec:** todo fluxo que dependa do Mac precisa
+de comportamento definido para "Mac desligado". Degradar com aviso, nunca tela em
+branco.
