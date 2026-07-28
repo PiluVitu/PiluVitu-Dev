@@ -1632,7 +1632,7 @@ def post_insight(
 - [ ] **Step 4: Rodar e confirmar que passa**
 
 Run: `cd apps/promeia && uv run pytest src/promeia/ramielle_test.py`
-Expected: PASS (9 testes)
+Expected: PASS (8 testes)
 
 - [ ] **Step 5: Verificar por mutação — o `ok:false` precisa ser load-bearing**
 
