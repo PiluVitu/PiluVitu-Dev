@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from promeia.app import create_app
+from promeia.auth import token_valido
 from promeia.config import Settings
 
 TOKEN = "token-de-teste"
@@ -50,29 +51,21 @@ def test_esquema_errado_e_401(client):
     )
 
 
-def test_token_nao_ascii_da_401_e_nao_500():
-    # hmac.compare_digest com dois `str` LANÇA TypeError se algum tiver
-    # caractere fora de ASCII. Sem o .encode() no auth.py, este caso vira 500
-    # — e um 500 na rota de autenticação manda depurar o serviço quando o
-    # problema é o token. Testa nas DUAS direções: token esperado com acento,
-    # e header com acento contra um esperado ASCII.
-    app = create_app(make_settings(promeia_token="ção-com-acento"))
-    c = TestClient(app)
-    assert c.get("/health", headers={"authorization": "Bearer errado"}).status_code == (
-        401
-    )
-    assert (
-        c.get("/health", headers={"authorization": "Bearer ção-com-acento"}).status_code
-        == 200
-    )
+def test_token_valido_aceita_nao_ascii_sem_lancar():
+    """hmac.compare_digest com dois `str` LANÇA TypeError quando algum tem
+    caractere fora de ASCII — e um token vindo do ambiente é texto livre.
+    Sem o .encode("utf-8") em auth.py, isso subiria como 500 na rota de
+    autenticação, e um 500 ali manda depurar o serviço quando o problema é o
+    token.
 
-    c2 = TestClient(create_app(make_settings()))
-    assert (
-        c2.get(
-            "/health", headers={"authorization": "Bearer ção-com-acento"}
-        ).status_code
-        == 401
-    )
+    Testado no nível de unidade, NÃO via TestClient: o httpx recusa header
+    não-ASCII no cliente (nunca chega no app ASGI), então um teste HTTP não
+    consegue exercitar este caminho — passaria por acidente, provando nada.
+    """
+    esperado = "ção-com-acento"
+    assert token_valido(f"Bearer {esperado}", esperado) is True
+    assert token_valido("Bearer errado", esperado) is False
+    assert token_valido(f"Bearer {esperado}", "ascii-puro") is False
 
 
 def test_rota_inexistente_tambem_exige_token(client):
