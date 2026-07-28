@@ -12,7 +12,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Monta o app. `settings` injetado nos testes, lido do ambiente em prod."""
     cfg = settings if settings is not None else load_settings()
 
-    app = FastAPI(title="promeia", docs_url=None, redoc_url=None)
+    # openapi_url=None: NÃO é correção de autenticação — MEDIDO que
+    # TokenMiddleware (add_middleware, abaixo) já envolve o app ASGI inteiro
+    # antes do roteamento, então /openapi.json já respondia 401 mesmo sem
+    # isto. É YAGNI/superfície: um serviço privado de usuário único, atrás de
+    # um túnel, não tem por que publicar o próprio mapa de rotas, nem para
+    # quem tem o token.
+    app = FastAPI(title="promeia", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TokenMiddleware, esperado=cfg.promeia_token)
     app.state.settings = cfg
 

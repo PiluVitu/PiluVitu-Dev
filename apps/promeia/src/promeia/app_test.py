@@ -87,7 +87,7 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     rotas = [
         (r.path, sorted(r.methods - {"HEAD", "OPTIONS"}))
         for r in client.app.routes
-        if getattr(r, "methods", None) and not r.path.startswith("/openapi")
+        if getattr(r, "methods", None)
     ]
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
 
@@ -95,3 +95,19 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
         for method in methods:
             r = client.request(method, path)
             assert r.status_code == 401, f"{method} {path} respondeu {r.status_code}"
+
+
+def test_o_mapa_de_rotas_nao_e_publicado(client):
+    """`openapi_url=None` precisa ser falsificável, senão some num refactor.
+
+    Não é sobre autenticação: /openapi.json SEMPRE respondeu 401, porque
+    TokenMiddleware é instalado com add_middleware e envolve o app ASGI
+    inteiro, antes do roteamento — MEDIDO, nenhuma combinação de
+    docs_url/redoc_url/openapi_url põe uma rota do FastAPI fora do alcance
+    dele. É sobre superfície: um serviço privado de usuário único, atrás de
+    um túnel, não tem por que publicar o próprio mapa de rotas nem para
+    quem tem o token. Sem esta asserção, remover `openapi_url=None` não
+    quebra nada e o schema volta em silêncio.
+    """
+    caminhos = [r.path for r in client.app.routes if getattr(r, "methods", None)]
+    assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
