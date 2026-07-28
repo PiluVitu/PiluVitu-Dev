@@ -127,6 +127,56 @@ See `apps/api/.env.example`. Key variables:
 
 > O front consome a API via `NEXT_PUBLIC_API_URL` — env do **web** (ver `apps/web/CLAUDE.md`).
 
+### LLM local + Distribuição (`internal/llm`, `internal/distribution`)
+
+**Objetivo:** corrigir/refinar texto via Ollama local e republicar artigos em plataformas externas, com estado persistido em SQLite.
+
+#### Endpoints (todos `RequireAdmin`)
+
+| Método | Rota                                 | O que faz                                                                                    |
+| ------ | ------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `POST` | `/admin/llm/proofread`               | Corrige typos/gramática do texto (preserva Markdown/MDX)                                     |
+| `POST` | `/admin/llm/refine`                  | Refina uma chamada de rede social conforme instrução                                         |
+| `POST` | `/admin/distribution/proposals`      | Gera propostas de distribuição (corpo do artigo + hooks sociais via LLM), persiste em SQLite |
+| `GET`  | `/admin/distribution/{slug}`         | Lista o estado atual dos alvos de distribuição de um post                                    |
+| `POST` | `/admin/distribution/{slug}/publish` | Posta nos adapters selecionados (idempotente — pula alvos já `posted`)                       |
+
+**Fail-soft:** ausência de env desliga a feature (503 no endpoint, sem abortar o boot). `distH` fica `nil` quando nenhum adapter está configurado; o router não registra as rotas nesse caso.
+
+**Proofread por blocos:** `Proofread` divide o markdown (`internal/llm/chunk.go` `splitBlocks` — remontagem byte-a-byte) e envia ao Ollama **só a prosa** (parágrafos/títulos/listas), corrigindo bloco a bloco; código cercado (```), tabelas, HTML/JSX, citações (`>`) e imagens passam **verbatim**. Evita o timeout de 120s em artigos longos e impede a LLM de alterar o que não é texto. `keep_alive=5m` no request mantém o modelo carregado entre os blocos.
+
+#### Envs — LLM (Ollama)
+
+- `OLLAMA_BASE_URL` — URL do Ollama (ex.: `http://localhost:11434`). Vazio ⇒ endpoints `/admin/llm/*` respondem 503.
+- `OLLAMA_MODEL_PROOFREAD` — modelo de revisão (default `qwen2.5:7b-instruct`).
+- `OLLAMA_MODEL_HOOKS` — modelo de geração de chamadas (default `qwen2.5:14b-instruct`).
+
+> Ollama roda **nativo no Mac** (não Docker) para usar a GPU/Metal. Em Docker no macOS ele cai pra CPU.
+
+#### Envs — Distribuição (todos opcionais; ausência desliga o adapter)
+
+- `DEVTO_API_KEY` — dev.to API key (`article_crosspost` + canonical URL).
+- `HASHNODE_API_TOKEN` + `HASHNODE_PUBLICATION_ID` — Hashnode GraphQL (`publishPost`).
+- `BLUESKY_HANDLE` + `BLUESKY_APP_PASSWORD` — AT Protocol (`social_hook`, limite 300 chars).
+- `MASTODON_INSTANCE_URL` + `MASTODON_ACCESS_TOKEN` — POST `/api/v1/statuses` (`social_hook`, limite 500 chars).
+
+#### Tabela SQLite `distribution_targets`
+
+Schema embutido em `internal/distribution/schema.sql` via `//go:embed`, aplicado **idempotentemente no boot** por `distribution.NewStore` (`CREATE TABLE IF NOT EXISTS`). Não há comando de migration manual — roda sozinho. Colunas principais: `slug`, `platform`, `kind` (`article_crosspost` | `social_hook`), `content`, `status` (`pending` | `posted` | `failed` | `skipped`), `remote_url`, `error`, `posted_at`. Chave única `(slug, platform)`.
+
+#### Adapters MVP
+
+| Adapter  | Kind                | Protocolo                                      |
+| -------- | ------------------- | ---------------------------------------------- |
+| dev.to   | `article_crosspost` | REST `POST /api/articles` + header `api-key`   |
+| Hashnode | `article_crosspost` | GraphQL `publishPost` + header `Authorization` |
+| Bluesky  | `social_hook`       | AT Protocol (`createSession` → `createRecord`) |
+| Mastodon | `social_hook`       | REST `POST /api/v1/statuses` (Bearer)          |
+
+**Hooks (chamadas sociais):** gerados em **1ª pessoa**, no tom do autor — `GenerateHooks` recebe `Article.VoiceSample` (primeiros ~800 chars do corpo, setado pelo handler de proposals) como referência de voz; o prompt proíbe link no texto. **Engajamento — link fora do texto:** o hook vai sem URL; no publish o **Bluesky** posta o hook e cria uma **reply** no mesmo thread com o link clicável (richtext facet `app.bsky.richtext.facet#link`, offsets em bytes UTF-8, `reply.root=reply.parent`=post principal); o **Mastodon** (timeline cronológica, sem penalidade) **anexa** o link no fim. A `canonical_url` chega aos alvos sociais via `SelectedTarget` (o web a envia também pros sociais).
+
+Adapters futuros (X/Threads/LinkedIn/Instagram) implementam a interface `Publisher` (`Platform() string`, `Kind() Kind`, `Publish(ctx, Payload) (remoteURL, error)`) — nenhuma mudança no `Service` ou `main.go`.
+
 ## Hosting da API (Cloudflare Tunnel)
 
 Enquanto o GCP não estiver provisionado, a Go API é exposta publicamente via Cloudflare Tunnel rodando como container ao lado da API.

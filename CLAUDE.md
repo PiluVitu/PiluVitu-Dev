@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com cinco frentes:
 
 - **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**. Consome os tokens **e os componentes** do design system compartilhado de **`packages/ui`** (`@piluvitu/ui`) via `@import`/`@source` em `app/globals.css` + imports `@piluvitu/ui/<componente>`. **Storybook 10**. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
-- **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). → detalhes em `apps/api/CLAUDE.md`.
+- **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). Stack local LLM co-hospeda **Ollama** (nativo, GPU/Metal) + API + túnel via `process-compose` (`make stack`). → detalhes em `apps/api/CLAUDE.md`.
 - **`apps/financas`** — **Cloudflare Worker** (Hono + D1 SQLite) servindo uma **SPA Vite + React 19** por Static Assets, em `financas.piluvitu.com.br`, protegida por login Google (**Better Auth** — o Cloudflare Access saiu do módulo). SPA no **Tailwind CSS 4** + **`packages/ui`** (`@piluvitu/ui`, mesmo design system do `apps/web`), via plugin Vite. Testes com `@cloudflare/vitest-pool-workers` (Worker) e Vitest/jsdom (SPA). → detalhes em `apps/financas/CLAUDE.md`.
 - **`packages/tools`** — **`@piluvitu/tools`**, biblioteca de lógica pura em TS consumida pelo web. → detalhes em `packages/tools/CLAUDE.md`.
 - **`packages/ui`** — **`@piluvitu/ui`**, design system compartilhado (tokens + `cn()` + 14 componentes shadcn/ui, um export por subpath, sem barrel, sem build próprio), consumido por `apps/web` (webpack/Turbopack) **e** `apps/financas/web` (Vite). → detalhes em `packages/ui/CLAUDE.md`.
@@ -36,22 +36,23 @@ Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com cinco frentes:
 
 Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
-| Comando                                 | Propósito                                               |
-| --------------------------------------- | ------------------------------------------------------- |
-| `make dev`                              | Dev server web + Go API + Storybook em paralelo (`-j3`) |
-| `make dev-web`                          | Só o Next.js em http://localhost:3333                   |
-| `make dev-api`                          | Go API com **hot reload** (air)                         |
-| `make storybook`                        | Só o Storybook em http://localhost:6017                 |
-| `make stop`                             | Libera as portas 8081/3333/6017 se travarem             |
-| `make build-api`                        | Compila binário Go API em bin/api                       |
-| `make build-cli`                        | Compila CLI Go em bin/piluvitu                          |
-| `make test`                             | Todos os testes (pnpm -r test + go test)                |
-| `make lint`                             | ESLint + go vet                                         |
-| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                                      |
-| `pnpm --filter @piluvitu/web build`     | Build Next.js                                           |
-| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                                       |
-| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                                          |
-| `pnpm -r test`                          | Testes de todos os workspaces                           |
+| Comando                                 | Propósito                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `make dev`                              | Dev server web + Go API + Storybook em paralelo (`-j3`)                              |
+| `make dev-web`                          | Só o Next.js em http://localhost:3333                                                |
+| `make dev-api`                          | Go API com **hot reload** (air)                                                      |
+| `make storybook`                        | Só o Storybook em http://localhost:6017                                              |
+| `make stack`                            | Sobe **Ollama + Go API + Cloudflare Tunnel** via `process-compose` (stack local LLM) |
+| `make stop`                             | Libera as portas 8081/3333/6017 se travarem                                          |
+| `make build-api`                        | Compila binário Go API em bin/api                                                    |
+| `make build-cli`                        | Compila CLI Go em bin/piluvitu                                                       |
+| `make test`                             | Todos os testes (pnpm -r test + go test)                                             |
+| `make lint`                             | ESLint + go vet                                                                      |
+| `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                                                                   |
+| `pnpm --filter @piluvitu/web build`     | Build Next.js                                                                        |
+| `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                                                                    |
+| `pnpm --filter @piluvitu/web test:e2e`  | Playwright E2E                                                                       |
+| `pnpm -r test`                          | Testes de todos os workspaces                                                        |
 
 > ⚠️ **`pnpm -r <script>` (test/lint/etc.) pula silenciosamente qualquer workspace cujo `package.json` não declare esse script** — sem erro, sem aviso, só ausente do output (`Scope: N of 6 workspace projects` mostra menos que o total). Ao criar um workspace novo (ou copiar um `package.json` de outro), conferir se `lint`/`test` estão de fato declarados — não assumir que "não apareceu erro" significa "passou". Esse foi exatamente o defeito achado e corrigido no fix round 1 da Task 3 do design system (`packages/ui` migrou 14 componentes React sem nenhum `lint` script por um tempo, e `pnpm -r lint` seguia saindo verde).
 

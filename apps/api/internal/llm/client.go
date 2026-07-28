@@ -1,0 +1,215 @@
+// Package llm é um cliente fail-soft do Ollama local (proofread, hooks, refine).
+package llm
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+// ollamaTimeout allows for slow local LLM inference (cold model, long text).
+const ollamaTimeout = 120 * time.Second
+
+// Client fala com o Ollama local. Espelha o padrão dos clients externos (TMDb).
+type Client struct {
+	base                  string
+	http                  *http.Client
+	modelProofread        string
+	modelProofreadCareful string
+	modelHooks            string
+}
+
+// NewClient aponta pro Ollama em base (ex.: http://localhost:11434).
+// Em testes, base é a URL de um httptest.Server.
+func NewClient(base, modelProofread, modelProofreadCareful, modelHooks string) *Client {
+	return &Client{
+		base:                  strings.TrimRight(base, "/"),
+		http:                  &http.Client{Timeout: ollamaTimeout},
+		modelProofread:        modelProofread,
+		modelProofreadCareful: modelProofreadCareful,
+		modelHooks:            modelHooks,
+	}
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// Health confirma que o Ollama responde (GET /api/tags).
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/tags", nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("llm: ollama unreachable: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("llm: ollama health status %d: %s", res.StatusCode, bytes.TrimSpace(body))
+	}
+	return nil
+}
+
+// chat faz um turno não-streaming e devolve o texto da resposta (trimado).
+func (c *Client) chat(ctx context.Context, model, system, user string, temperature float64) (string, error) {
+	payload := map[string]any{
+		"model":      model,
+		"stream":     false,
+		"messages":   []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
+		"options":    map[string]any{"temperature": temperature},
+		"keep_alive": "5m", // mantém o modelo quente entre chamadas (proofread por bloco)
+	}
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/chat", bytes.NewReader(buf))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("llm: chat request: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return "", fmt.Errorf("llm: chat status %d: %s", res.StatusCode, bytes.TrimSpace(body))
+	}
+	var out struct {
+		Message chatMessage `json:"message"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("llm: decode chat: %w", err)
+	}
+	return strings.TrimSpace(out.Message.Content), nil
+}
+
+// Proofread conserta typos/gramática preservando Markdown/MDX. Divide o texto em
+// blocos e envia ao LLM SÓ a prosa (pula código, tabelas, HTML/JSX, citações e
+// imagens), corrigindo bloco a bloco — bem mais rápido em artigos longos e sem
+// risco de a LLM estragar o que não é texto. Texto sem frontmatter.
+// careful=true usa o modelo maior (modelProofreadCareful) para maior precisão.
+func (c *Client) Proofread(ctx context.Context, text string, careful bool) (string, error) {
+	model := c.modelProofread
+	if careful {
+		model = c.modelProofreadCareful
+	}
+	var sb strings.Builder
+	for _, b := range splitBlocks(text) {
+		if b.kind == passthrough || strings.TrimSpace(b.text) == "" {
+			sb.WriteString(b.text)
+			continue
+		}
+		corrected, err := c.chat(ctx, model, proofreadSystem, b.text, 0.1)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(restoreEdges(b.text, corrected))
+	}
+	return sb.String(), nil
+}
+
+// Article é o resumo do post usado para gerar chamadas.
+type Article struct {
+	Title       string
+	Excerpt     string
+	URL         string
+	Tags        []string
+	VoiceSample string // trecho do artigo para calibrar o tom do autor
+}
+
+// Hook é uma chamada gerada para uma plataforma.
+type Hook struct {
+	Platform string
+	Text     string
+}
+
+// platformLimit returns the character limit for the given social platform.
+func platformLimit(p string) int {
+	switch p {
+	case "bluesky":
+		return 300
+	case "mastodon":
+		return 500
+	default:
+		return 280
+	}
+}
+
+// GenerateHooks gera uma chamada por plataforma (uma chamada de chat cada).
+func (c *Client) GenerateHooks(ctx context.Context, a Article, platforms []string) ([]Hook, error) {
+	hooks := make([]Hook, 0, len(platforms))
+	for _, p := range platforms {
+		limit := platformLimit(p)
+		system := fmt.Sprintf(hooksSystemTmpl, p, limit)
+		user := fmt.Sprintf("Título: %s\nResumo: %s\nTags: %s\n\nTrecho do meu artigo (referência de voz):\n%s",
+			a.Title, a.Excerpt, strings.Join(a.Tags, ", "), a.VoiceSample)
+		text, err := c.chat(ctx, c.modelHooks, system, user, 0.7)
+		if err != nil {
+			return nil, fmt.Errorf("llm: hook %s: %w", p, err)
+		}
+		hooks = append(hooks, Hook{Platform: p, Text: c.fitToLimit(ctx, text, limit)})
+	}
+	return hooks, nil
+}
+
+// Refine reescreve uma chamada conforme instruction (opcional).
+func (c *Client) Refine(ctx context.Context, platform, text, instruction string) (string, error) {
+	if instruction == "" {
+		instruction = "Melhore o engajamento mantendo o sentido."
+	}
+	limit := platformLimit(platform)
+	user := fmt.Sprintf("Plataforma: %s (limite %d chars)\nInstrução: %s\n\nTexto atual:\n%s",
+		platform, limit, instruction, text)
+	out, err := c.chat(ctx, c.modelHooks, refineSystem, user, 0.7)
+	if err != nil {
+		return "", err
+	}
+	return c.fitToLimit(ctx, out, limit), nil
+}
+
+// fitToLimit garante que text cabe em limit runas: tenta encurtar via LLM e, se
+// ainda exceder (ou o encurtar falhar), corta na borda de palavra. O LLM não
+// conta caracteres de forma confiável, então o limite é garantido aqui.
+func (c *Client) fitToLimit(ctx context.Context, text string, limit int) string {
+	if utf8.RuneCountInString(text) <= limit {
+		return text
+	}
+	if shorter, err := c.chat(ctx, c.modelHooks, shortenSystem,
+		fmt.Sprintf("Encurte para no máximo %d caracteres, mantendo o tom e o sentido, sem link/URL. Responda só com o texto:\n\n%s", limit, text), 0.3); err == nil {
+		s := strings.TrimSpace(shorter)
+		if s != "" && utf8.RuneCountInString(s) <= limit {
+			return s
+		}
+		if s != "" {
+			text = s
+		}
+	}
+	return truncateRunes(text, limit)
+}
+
+// truncateRunes corta s em no máximo limit runas, recuando até a última palavra
+// inteira quando possível (evita cortar no meio de uma palavra).
+func truncateRunes(s string, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	cut := string(r[:limit])
+	if i := strings.LastIndexAny(cut, " \n\t"); i > limit/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut)
+}

@@ -18,6 +18,8 @@ import { SidebarCard } from './sidebar-card'
 import { PostPublishCard } from './post-publish-card'
 import { PostMetaCard } from './post-meta-card'
 import { CoverImageCard } from './cover-image-card'
+import { ProofreadButton } from './proofread-button'
+import { DistributionPanel } from './distribution-panel'
 
 export function PostEditor(props: {
   mode: 'create' | 'edit'
@@ -95,6 +97,9 @@ export function PostEditor(props: {
           ) : (
             <div className="border-border overflow-hidden rounded-[var(--radius)] border">
               <MdxToolbar editorRef={editorRef} />
+              <div className="border-border bg-muted/30 flex items-center border-b px-2 py-1.5">
+                <ProofreadButton body={body} onApply={setBody} />
+              </div>
               <div
                 className={
                   tab === 'split'
@@ -139,6 +144,19 @@ export function PostEditor(props: {
             value={fm.coverImage}
             onChange={(v) => setFm({ ...fm, coverImage: v })}
           />
+          {fm.slug ? (
+            <SidebarCard title="Distribuição">
+              <DistributionPanel
+                post={{
+                  slug: fm.slug,
+                  title: fm.title,
+                  excerpt: fm.excerpt ?? '',
+                  body,
+                  tags: fm.tags ?? [],
+                }}
+              />
+            </SidebarCard>
+          ) : null}
         </div>
       </div>
     </div>

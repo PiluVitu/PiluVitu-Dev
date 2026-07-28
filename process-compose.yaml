@@ -1,0 +1,50 @@
+version: '0.5'
+
+processes:
+  ollama:
+    command: 'ollama serve'
+    readiness_probe:
+      http_get:
+        host: '127.0.0.1'
+        port: 11434
+        path: '/api/tags'
+      initial_delay_seconds: 2
+      period_seconds: 3
+      failure_threshold: 20
+    availability:
+      restart: 'on_failure'
+
+  ollama-pull:
+    command: 'ollama pull ${OLLAMA_MODEL_PROOFREAD:-qwen2.5:7b-instruct} && ollama pull ${OLLAMA_MODEL_HOOKS:-qwen2.5:14b-instruct}'
+    depends_on:
+      ollama:
+        condition: process_healthy
+    availability:
+      restart: 'no'
+
+  api:
+    command: 'make dev-api'
+    working_dir: '.'
+    environment:
+      - 'PORT=8081'
+    depends_on:
+      ollama-pull:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: '127.0.0.1'
+        port: 8081
+        path: '/health'
+      initial_delay_seconds: 3
+      period_seconds: 3
+      failure_threshold: 20
+    availability:
+      restart: 'on_failure'
+
+  tunnel:
+    command: 'make tunnel-up'
+    depends_on:
+      api:
+        condition: process_healthy
+    availability:
+      restart: 'on_failure'

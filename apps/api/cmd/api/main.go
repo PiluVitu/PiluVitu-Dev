@@ -11,10 +11,14 @@ import (
 
 	"github.com/PiluVitu/api/internal/auth"
 	"github.com/PiluVitu/api/internal/backup"
+	"github.com/PiluVitu/api/internal/distribution"
 	"github.com/PiluVitu/api/internal/gdrive"
 	"github.com/PiluVitu/api/internal/gsheets"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
+	handlersdistribution "github.com/PiluVitu/api/internal/handlers/distribution"
+	handlersllm "github.com/PiluVitu/api/internal/handlers/llm"
 	handlersvotacao "github.com/PiluVitu/api/internal/handlers/votacao"
+	"github.com/PiluVitu/api/internal/llm"
 	"github.com/PiluVitu/api/internal/router"
 	"github.com/PiluVitu/api/internal/tmdb"
 	"github.com/PiluVitu/api/internal/votacao"
@@ -72,6 +76,50 @@ func main() {
 		postersClient = tmdb.NewClient(key)
 	}
 
+	var llmClient *llm.Client
+	if base := os.Getenv("OLLAMA_BASE_URL"); base != "" {
+		mp := envOr("OLLAMA_MODEL_PROOFREAD", "qwen2.5:7b-instruct")
+		mc := envOr("OLLAMA_MODEL_PROOFREAD_CAREFUL", "qwen2.5:7b-instruct")
+		mh := envOr("OLLAMA_MODEL_HOOKS", "qwen2.5:14b-instruct")
+		llmClient = llm.NewClient(base, mp, mc, mh)
+		if err := llmClient.Health(context.Background()); err != nil {
+			slog.Warn("ollama health check failed (LLM endpoints will 503)", "err", err)
+		} else {
+			slog.Info("ollama connected", "base", base, "proofread", mp, "proofread_careful", mc, "hooks", mh)
+		}
+	}
+	llmH := handlersllm.NewHandlers(handlersllm.Deps{LLM: llmClient}) // typed-nil normalized inside
+
+	var pubs []distribution.Publisher
+	if k := os.Getenv("DEVTO_API_KEY"); k != "" {
+		pubs = append(pubs, distribution.NewDevTo(k))
+	}
+	if t := os.Getenv("HASHNODE_API_TOKEN"); t != "" {
+		pubs = append(pubs, distribution.NewHashnode(t, os.Getenv("HASHNODE_PUBLICATION_ID")))
+	}
+	if h := os.Getenv("BLUESKY_HANDLE"); h != "" {
+		pubs = append(pubs, distribution.NewBluesky(h, os.Getenv("BLUESKY_APP_PASSWORD")))
+	}
+	if inst := os.Getenv("MASTODON_INSTANCE_URL"); inst != "" {
+		pubs = append(pubs, distribution.NewMastodon(inst, os.Getenv("MASTODON_ACCESS_TOKEN")))
+	}
+
+	var distH *handlersdistribution.Handlers
+	if len(pubs) > 0 {
+		distStore, derr := distribution.NewStore(store.DB())
+		if derr != nil {
+			slog.Error("distribution store init failed", "err", derr)
+		} else {
+			var hookGen distribution.HookGenerator
+			if llmClient != nil {
+				hookGen = llmClient
+			}
+			distSvc := distribution.NewService(distStore, hookGen, pubs)
+			distH = handlersdistribution.NewHandlers(handlersdistribution.Deps{Service: distSvc})
+			slog.Info("distribution enabled", "platforms", len(pubs))
+		}
+	}
+
 	var runner *backup.Runner
 	if folder := os.Getenv("GDRIVE_BACKUP_FOLDER_ID"); folder != "" {
 		drv, gerr := gdrive.NewClient(context.Background())
@@ -121,7 +169,8 @@ func main() {
 	handler := router.New(router.Deps{
 		DB: store.DB(), Sessions: sm,
 		AuthHandlers: authHandlers, VotacaoHandlers: votH,
-		AdminHandlers: adminH, Store: store,
+		AdminHandlers: adminH, LLMHandlers: llmH,
+		DistributionHandlers: distH, Store: store,
 	})
 
 	addr := ":" + port
@@ -130,6 +179,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// envOr returns the value of the environment variable key, or def if unset/empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // initLogger configures the process-wide slog default: JSON in production,

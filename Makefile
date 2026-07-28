@@ -1,4 +1,4 @@
-.PHONY: dev dev-web dev-api storybook build-api build-cli test test-go test-web test-e2e lint clean stop \
+.PHONY: dev dev-web dev-api storybook stack build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
         backup-financas backup-financas-test
 
@@ -28,6 +28,9 @@ stop:
 		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done
+
+stack: ## Sobe Ollama + Go API + Cloudflare Tunnel (process-compose)
+	process-compose up
 
 build-api:
 	cd apps/api && go build -o ../../bin/api ./cmd/api
