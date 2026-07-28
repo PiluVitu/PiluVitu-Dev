@@ -16,8 +16,14 @@ import { BlocoSaldos } from '../blocos/BlocoSaldos'
  */
 export function HomePage() {
   return (
-    <section>
-      <h1 className="text-2xl font-semibold tracking-tight">Início</h1>
+    <section className="space-y-6">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Início</h1>
+        <p className="text-muted-foreground text-sm">
+          Visão geral das suas finanças — Comprometido, saldos, dívidas em
+          aberto e pra onde foi o dinheiro este mês.
+        </p>
+      </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <BlocoComprometido />
         <BlocoSaldos />

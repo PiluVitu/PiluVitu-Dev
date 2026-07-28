@@ -22,3 +22,25 @@ export const SELECT_CLASSNAME =
  */
 export const CHECKBOX_CLASSNAME =
   'border-input accent-primary h-4 w-4 rounded focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-hidden'
+
+/**
+ * Idem, pra `<input type="file">` — `Input` (`@piluvitu/ui/input`) não
+ * cobre o caso: os modificadores `file:*` dele pressupõem um `<input>` de
+ * texto/número com um botão embutido, mas o problema aqui é outro.
+ *
+ * ⚠️ Achado do print do dono (Task 2, fatia ⑨): "Arquivo (.ofx, .qfx ou
+ * .csv)Choose File No file chosen" — rótulo colado no controle, sem
+ * respiro. Causa raiz: `<label>` é `display: inline` por padrão (Preflight
+ * não muda isso) e um `<input type="file">` SEM classe própria é
+ * `inline-block` — os dois ficam na mesma linha, e como o JSX não insere
+ * texto/espaço entre elementos-irmãos em linhas separadas, não sobra nem
+ * um caractere de espaço entre o texto do rótulo e "Choose File". O
+ * `space-y-1.5` do `<div>` pai não ajuda: margin-top não força quebra de
+ * linha em elemento inline. `block` (aqui) resolve a causa raiz — o input
+ * vira caixa de bloco, cai pra linha de baixo, e aí sim o `space-y-1.5`
+ * do pai tem o que fazer. Único `<input type="file">` do app hoje
+ * (`pages/importar.tsx`) — se um segundo aparecer, usar esta constante,
+ * não copiar `className="text-sm"` de novo.
+ */
+export const FILE_INPUT_CLASSNAME =
+  'text-foreground block w-full text-sm file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-secondary-foreground'

@@ -9,7 +9,11 @@ import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
-import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
+import {
+  CHECKBOX_CLASSNAME,
+  FILE_INPUT_CLASSNAME,
+  SELECT_CLASSNAME,
+} from '../lib/form-classes'
 import { mapaSalvo, salvarMapa } from '../lib/import-settings'
 import { sugerirPayee, type PayeeParaSugestao } from '../lib/payee-suggest'
 import type { AccountView } from './accounts'
@@ -417,7 +421,7 @@ export function ImportarPage() {
                 type="file"
                 accept=".ofx,.qfx,.csv"
                 onChange={selecionarArquivo}
-                className="text-sm"
+                className={FILE_INPUT_CLASSNAME}
               />
             </div>
             <p className="text-muted-foreground text-xs">
@@ -429,6 +433,34 @@ export function ImportarPage() {
                 {arquivoErro}
               </p>
             ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {passo === 'selecionar' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Fatura em PDF?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm">
+              Banco que só entrega fatura em PDF não tem botão aqui — o caminho
+              é rodar um comando no seu Mac, que gera um CSV. Esse CSV entra
+              pela mesma tela, do mesmo jeito que .ofx/.csv.
+            </p>
+            <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
+              <code>node apps/financas/scripts/pdf-import.mjs fatura.pdf</code>
+            </pre>
+            <p className="text-sm font-medium">
+              Nenhum servidor precisa estar ligado. O Ollama roda só durante
+              esse comando, no seu Mac — termina, gera o CSV, e você pode
+              desligar tudo antes de vir importar aqui.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Por que é um comando e não um botão: o Ollama precisa de GPU/Metal
+              pra rodar, e nenhum tipo de instância do Cloudflare Containers
+              oferece GPU — a extração não pode rodar no servidor.
+            </p>
           </CardContent>
         </Card>
       ) : null}

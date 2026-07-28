@@ -1066,3 +1066,55 @@ describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
     expect(tabelaTransactions).toHaveLength(antesDaReimportacao) // 2 antes, 2 depois — nada mudou
   })
 })
+
+// Task 2 (fatia ⑨ — UI/UX): o dono foi procurar import de PDF nesta tela e
+// não achou (o CLI existe, `scripts/pdf-import.mjs`, mas a tela nunca
+// mencionava). A dúvida concreta dele foi "preciso deixar um servidor
+// ligado no PC?" — a tela precisa responder isso, não só citar o comando.
+describe('ImportarPage — PDF: a tela explica o caminho (Task 2, fatia ⑨)', () => {
+  test('explica o comando do CLI, diz que nenhum servidor precisa ficar ligado, e não promete botão', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+
+    // O comando exato, citado por extenso — não só "existe um CLI".
+    expect(
+      screen.getByText(
+        /node apps\/financas\/scripts\/pdf-import\.mjs fatura\.pdf/,
+      ),
+    ).toBeInTheDocument()
+
+    // A dúvida literal do dono: precisa de servidor ligado? Resposta tem
+    // que estar na tela, não só num doc.
+    expect(
+      screen.getByText(/nenhum servidor precisa (estar|ficar) ligado/i),
+    ).toBeInTheDocument()
+
+    // Explica por que é comando e não botão (Ollama exige GPU/Metal, sem
+    // instance type de Containers com GPU) — não deixa a decisão muda.
+    expect(screen.getByText(/GPU|Metal/)).toBeInTheDocument()
+
+    // Diz que o CSV gerado entra pela mesma tela.
+    expect(screen.getAllByText(/csv/i).length).toBeGreaterThan(0)
+  })
+
+  test('não promete botão que não existe: o input de arquivo continua sem aceitar .pdf', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+
+    const input = screen.getByLabelText(/Arquivo/i)
+    expect(input).toHaveAttribute('accept', '.ofx,.qfx,.csv')
+    expect(input.getAttribute('accept')).not.toMatch(/pdf/i)
+  })
+})

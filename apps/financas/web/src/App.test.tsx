@@ -237,3 +237,112 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 })
+
+// Task 2 (fatia ⑨ — UI/UX): o nav virou navegação de verdade, com estado
+// ativo. `getByRole('link', { name: ... })`, nunca `getByText` — mesma
+// disciplina do resto deste arquivo, e ainda mais necessária aqui porque
+// estes testes leem `aria-current` do próprio link do nav (role `link`,
+// nunca colide com o `role heading` do <h1> homônimo da tela).
+describe('App — nav: estado ativo segue a rota corrente', () => {
+  test('hash default (#/) marca "Início" como ativo, mais nenhum outro', async () => {
+    mockFetchVazio()
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Início' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: 'Dívidas' })).not.toHaveAttribute(
+      'aria-current',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Comprometido' }),
+    ).not.toHaveAttribute('aria-current')
+  })
+
+  test('#/dividas marca "Dívidas" como ativo e desmarca "Início"', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/dividas'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Dívidas' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Dívidas' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: 'Início' })).not.toHaveAttribute(
+      'aria-current',
+    )
+  })
+
+  test('trocar de hash muda qual link está ativo (não fica preso no primeiro)', async () => {
+    mockFetchVazio()
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Início' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    window.location.hash = '#/comprometido'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Comprometido' }),
+      ).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Comprometido' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('link', { name: 'Início' })).not.toHaveAttribute(
+      'aria-current',
+    )
+  })
+
+  // #/dividas/:id (detalhe de uma dívida) não é um link próprio no nav —
+  // continua fazendo parte da "seção" Dívidas. Mock de fetch dedicado (não
+  // `mockFetchVazio`, que devolve `[]` genérico pra `/api/debts` — aqui
+  // `DebtDetailPage` precisa do shape de OBJETO de `/api/debts/:id`).
+  test('#/dividas/:id mantém "Dívidas" ativo no nav (detalhe é parte da seção)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input)
+        const respond = (data: unknown) =>
+          Promise.resolve({
+            status: 200,
+            json: async () => ({ ok: true, data, notifications: [] }),
+          })
+        if (url.includes('/api/debts/d1')) {
+          return respond({
+            debt: {
+              id: 'd1',
+              title: 'Empréstimo',
+              direction: 'i_owe',
+              status: 'open',
+            },
+            items: [],
+            payments: [],
+          })
+        }
+        if (url.includes('/api/accounts')) return respond([])
+        return Promise.reject(new Error(`rota inesperada em teste: ${url}`))
+      }),
+    )
+    window.location.hash = '#/dividas/d1'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Dívidas' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      ),
+    )
+  })
+})

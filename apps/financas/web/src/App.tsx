@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@piluvitu/ui/button'
+import { cn } from '@piluvitu/ui/cn'
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
@@ -25,20 +26,63 @@ export function useHash(): string {
   return hash
 }
 
+// Única fonte de verdade pra "qual tela o hash corrente resolve" — usada
+// TANTO pra decidir o que renderizar QUANTO pra marcar o link ativo no nav.
+// Duas cópias da mesma cadeia de precedência (uma pro render, outra pro
+// nav) é exatamente o tipo de duplicação que diverge silenciosamente numa
+// edição futura — um item novo na cadeia de render que esqueça o irmão no
+// nav deixaria a tela certa aparecer com NENHUM link marcado como ativo,
+// sem erro nenhum. `#/dividas/:id` (detalhe) resolve pro mesmo `RouteKey`
+// de `#/dividas` de propósito — é a mesma "seção" pro nav, mesmo sendo uma
+// tela diferente pro render (`debtId` decide isso à parte, abaixo).
+type RouteKey =
+  | 'home'
+  | 'contas'
+  | 'dividas'
+  | 'comprometido'
+  | 'fluxo'
+  | 'lancar'
+  | 'recorrentes'
+  | 'reserva'
+  | 'importar'
+  | 'configuracoes'
+
+export function resolveRoute(hash: string): RouteKey {
+  if (hash.startsWith('#/dividas/')) return 'dividas'
+  if (hash === '#/dividas' || hash === '#/dividas/') return 'dividas'
+  if (hash.startsWith('#/comprometido')) return 'comprometido'
+  if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
+  if (hash.startsWith('#/lancar')) return 'lancar'
+  if (hash === '#/recorrentes' || hash === '#/recorrentes/')
+    return 'recorrentes'
+  if (hash === '#/reserva' || hash === '#/reserva/') return 'reserva'
+  if (hash === '#/importar' || hash === '#/importar/') return 'importar'
+  if (hash === '#/contas' || hash === '#/contas/') return 'contas'
+  if (hash === '#/configuracoes' || hash === '#/configuracoes/')
+    return 'configuracoes'
+  return 'home'
+}
+
+const NAV_ITEMS: { href: string; label: string; route: RouteKey }[] = [
+  { href: '#/', label: 'Início', route: 'home' },
+  { href: '#/contas', label: 'Contas', route: 'contas' },
+  { href: '#/dividas', label: 'Dívidas', route: 'dividas' },
+  { href: '#/lancar', label: 'Lançar', route: 'lancar' },
+  { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
+  { href: '#/reserva', label: 'Reserva', route: 'reserva' },
+  { href: '#/importar', label: 'Importar', route: 'importar' },
+  { href: '#/comprometido', label: 'Comprometido', route: 'comprometido' },
+  { href: '#/fluxo', label: 'Fluxo de caixa', route: 'fluxo' },
+  { href: '#/configuracoes', label: 'Configurações', route: 'configuracoes' },
+]
+
 function AppShell() {
   const { data: sessao } = useSession()
   const hash = useHash()
   const debtId = hash.startsWith('#/dividas/')
     ? hash.slice('#/dividas/'.length)
     : null
-
-  // `underline`, não `hover:underline`: Tailwind v4 emite `hover:*` dentro de
-  // `@media (hover: hover)` — MEDIDO com `hasTouch: true, isMobile: true`
-  // (Android real, onde o dono usa o app): `hover:underline` nunca aplica,
-  // e o link fica distinguível do texto só por cor (~2:1 de contraste,
-  // abaixo do mínimo). A regra apagada de `base-interina.css` era
-  // incondicional — isto restaura exatamente esse comportamento.
-  const navLinkClassName = 'text-primary text-sm underline underline-offset-4'
+  const route = resolveRoute(hash)
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
@@ -50,57 +94,48 @@ function AppShell() {
           Sair
         </Button>
       </header>
-      <nav className="flex flex-wrap gap-x-4 gap-y-1 border-b pb-3">
-        <a href="#/" className={navLinkClassName}>
-          Início
-        </a>
-        <a href="#/contas" className={navLinkClassName}>
-          Contas
-        </a>
-        <a href="#/dividas" className={navLinkClassName}>
-          Dívidas
-        </a>
-        <a href="#/lancar" className={navLinkClassName}>
-          Lançar
-        </a>
-        <a href="#/recorrentes" className={navLinkClassName}>
-          Recorrentes
-        </a>
-        <a href="#/reserva" className={navLinkClassName}>
-          Reserva
-        </a>
-        <a href="#/importar" className={navLinkClassName}>
-          Importar
-        </a>
-        <a href="#/comprometido" className={navLinkClassName}>
-          Comprometido
-        </a>
-        <a href="#/fluxo" className={navLinkClassName}>
-          Fluxo de caixa
-        </a>
-        <a href="#/configuracoes" className={navLinkClassName}>
-          Configurações
-        </a>
+      <nav
+        aria-label="Navegação principal"
+        className="flex flex-wrap gap-1 border-b pb-3"
+      >
+        {NAV_ITEMS.map((item) => {
+          const active = item.route === route
+          return (
+            <a
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              {item.label}
+            </a>
+          )
+        })}
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />
-      ) : hash === '#/dividas' || hash === '#/dividas/' ? (
+      ) : route === 'dividas' ? (
         <DividasPage />
-      ) : hash.startsWith('#/comprometido') ? (
+      ) : route === 'comprometido' ? (
         <CommitmentsPage from={competenciaAtual()} />
-      ) : hash === '#/fluxo' || hash === '#/fluxo/' ? (
+      ) : route === 'fluxo' ? (
         <FluxoPage />
-      ) : hash.startsWith('#/lancar') ? (
+      ) : route === 'lancar' ? (
         <NewEntryPage />
-      ) : hash === '#/recorrentes' || hash === '#/recorrentes/' ? (
+      ) : route === 'recorrentes' ? (
         <RecorrentesPage />
-      ) : hash === '#/reserva' || hash === '#/reserva/' ? (
+      ) : route === 'reserva' ? (
         <ReservaPage />
-      ) : hash === '#/importar' || hash === '#/importar/' ? (
+      ) : route === 'importar' ? (
         <ImportarPage />
-      ) : hash === '#/contas' || hash === '#/contas/' ? (
+      ) : route === 'contas' ? (
         <AccountsPage />
-      ) : hash === '#/configuracoes' || hash === '#/configuracoes/' ? (
+      ) : route === 'configuracoes' ? (
         <ConfigPage />
       ) : (
         <HomePage />
