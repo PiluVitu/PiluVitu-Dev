@@ -404,11 +404,16 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     Uma rota nova adicionada no futuro entra nesta asserção sozinha — é a
     diferença entre um middleware (protege por construção) e um decorator
     por rota (que se esquece). Critério de aceitação §11 do spec.
+
+    ⚠️ SEM carve-out de rota nenhuma — nem `/openapi.json`. Uma exceção aqui
+    esvazia a promessa do nome: a rota dispensada é justamente a que ninguém
+    verificaria de novo. Por isso `create_app` passa `openapi_url=None`
+    (Step 10), fazendo a rota deixar de EXISTIR em vez de ser dispensada.
     """
     rotas = [
         (r.path, sorted(r.methods - {"HEAD", "OPTIONS"}))
         for r in client.app.routes
-        if getattr(r, "methods", None) and not r.path.startswith("/openapi")
+        if getattr(r, "methods", None)
     ]
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
 
@@ -513,7 +518,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Monta o app. `settings` injetado nos testes, lido do ambiente em prod."""
     cfg = settings if settings is not None else load_settings()
 
-    app = FastAPI(title="promeia", docs_url=None, redoc_url=None)
+    # openapi_url=None junto com docs_url/redoc_url: com a documentação
+    # desligada o schema cru não serve a ninguém, e um serviço privado de
+    # usuário único atrás de um túnel não tem por que publicar o próprio mapa
+    # de rotas — nem atrás do token. Desligar aqui também é o que permite ao
+    # teste de "toda rota" não abrir exceção pra nenhuma: a rota deixa de
+    # existir em vez de ser dispensada da prova.
+    app = FastAPI(
+        title="promeia", docs_url=None, redoc_url=None, openapi_url=None
+    )
     app.add_middleware(TokenMiddleware, esperado=cfg.promeia_token)
     app.state.settings = cfg
 
@@ -541,8 +554,10 @@ Expected: PASS (12 testes: 5 de config + 7 de app)
 
 - [ ] **Step 12: Verificar por mutação — o guard tem que ser capaz de falhar**
 
-Troque, em `auth.py`, `return hmac.compare_digest(partes[1], esperado)` por `return True` e rode `uv run pytest`.
+Faça `token_valido` devolver `True` **na primeira linha** (antes de qualquer checagem) e rode `uv run pytest`.
 Expected: **FALHAM** os testes `test_health_sem_token_e_401`, `test_token_errado_e_401`, `test_esquema_errado_e_401`, `test_rota_inexistente_tambem_exige_token` e `test_TODA_rota_registrada_recusa_sem_token`.
+
+⚠️ **Mutar só o `return hmac.compare_digest(...)` da última linha NÃO reproduz essa lista** — medido durante a execução: 4 dos 5 testes nem chegam lá (retornam `False` antes, por header ausente ou esquema ≠ `Bearer`), então a troca isolada derruba só 2. A mutação precisa ser o bypass da função inteira.
 Depois: **reverta** e confirme `git diff` limpo em `auth.py`. Registre no relatório da task que a mutação foi feita e revertida.
 
 - [ ] **Step 13: Escrever o `.env.example`**
