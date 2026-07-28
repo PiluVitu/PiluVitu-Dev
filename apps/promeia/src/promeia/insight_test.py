@@ -254,3 +254,17 @@ def test_rota_insight_traduz_ollama_desligado_em_503():
     assert r.status_code == 503
     assert r.json()["code"] == "ollama_unreachable"
     assert "suba o ollama" in r.json()["message"]
+
+
+def test_a_rota_insight_aparece_na_prova_de_toda_rota():
+    """Controle positivo do achatamento de rotas.
+
+    O teste genérico (app_test.py) só prova o que consegue ENUMERAR. Esta
+    asserção é o que garante que /insight — montado por include_router, o
+    caminho que o FastAPI 0.140.7 esconde atrás de um _IncludedRouter opaco —
+    está de fato dentro da lista que aquele teste percorre, e não fora dela.
+    """
+    from promeia.app_test import _rotas_registradas
+
+    caminhos = [p for p, _ in _rotas_registradas(create_app(settings()))]
+    assert "/insight" in caminhos, caminhos

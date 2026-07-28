@@ -76,6 +76,45 @@ def test_rota_inexistente_tambem_exige_token(client):
     assert client.get("/rota-que-nao-existe").status_code == 401
 
 
+def _rotas_registradas(app) -> list[tuple[str, list[str]]]:
+    """Achata TODA rota do app, inclusive as montadas por include_router.
+
+    ⚠️ MEDIDO (fastapi 0.140.7): include_router() NÃO coloca as rotas filhas
+    em `app.routes` — coloca UM objeto `_IncludedRouter` opaco, sem `.path` e
+    sem `.methods`. Um filtro ingênuo (`if getattr(r, "methods", None)`) pula
+    esse objeto inteiro, em silêncio: este teste passou verde cobrindo só
+    /health enquanto POST /insight, montado por router, nunca era exercitado.
+
+    Por isso esta função LEVANTA no que não souber achatar, em vez de
+    ignorar. Um `continue` aqui devolveria a prova falsa que ela existe pra
+    impedir.
+    """
+    achatadas: list[tuple[str, list[str]]] = []
+
+    def visitar(entrada, origem: str) -> None:
+        metodos = getattr(entrada, "methods", None)
+        if metodos:
+            achatadas.append((entrada.path, sorted(metodos - {"HEAD", "OPTIONS"})))
+            return
+        filhas = getattr(entrada, "routes", None)
+        if filhas is None:
+            interno = getattr(entrada, "original_router", None)
+            filhas = getattr(interno, "routes", None)
+        if filhas is None:
+            raise AssertionError(
+                f"não sei enumerar esta entrada de rota ({origem}): "
+                f"{type(entrada).__name__}. Se o FastAPI mudou como monta "
+                f"routers, ENSINE esta função — nunca ignore, senão a prova "
+                f"de 'toda rota exige token' estreita em silêncio."
+            )
+        for filha in filhas:
+            visitar(filha, f"{origem} -> {type(entrada).__name__}")
+
+    for entrada in app.routes:
+        visitar(entrada, "app.routes")
+    return achatadas
+
+
 def test_TODA_rota_registrada_recusa_sem_token(client):
     """A prova que não envelhece.
 
@@ -83,12 +122,17 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     Uma rota nova adicionada no futuro entra nesta asserção sozinha — é a
     diferença entre um middleware (protege por construção) e um decorator
     por rota (que se esquece). Critério de aceitação §11 do spec.
+
+    ⚠️ MEDIDO: a enumeração ingênua (`if getattr(r, "methods", None)` direto
+    em `app.routes`) passava verde cobrindo só `/health` — o fastapi 0.140.7
+    guarda as rotas de um `include_router()` atrás de um `_IncludedRouter`
+    opaco, sem `.methods` no próprio objeto, e o filtro simplesmente pulava
+    ele em silêncio. `POST /insight` nunca foi exercitado por este teste até
+    isso ser corrigido (achatamento em `_rotas_registradas`, que levanta em
+    vez de ignorar o que não sabe abrir). Ver `test_a_rota_insight_aparece_
+    na_prova_de_toda_rota` em `insight_test.py` para o controle positivo.
     """
-    rotas = [
-        (r.path, sorted(r.methods - {"HEAD", "OPTIONS"}))
-        for r in client.app.routes
-        if getattr(r, "methods", None)
-    ]
+    rotas = _rotas_registradas(client.app)
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
 
     for path, methods in rotas:
