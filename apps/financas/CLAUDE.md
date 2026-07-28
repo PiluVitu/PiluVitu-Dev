@@ -888,6 +888,8 @@ Crescimento pequeno e esperado (+1,34 kB gzip no principal): `InsightPage` reusa
 
 **282 → 295 testes na SPA** (13 novos: 2 em `lib/dates.test.ts` — `formatDateTimeTeresina` —, 9 em `pages/insight.test.tsx`, 2 em `App.test.tsx` — rota + estado ativo do nav). `typecheck` (`tsc --noEmit`) silencioso. Worker/`apps/web`/`packages/ui`/`packages/tools` intocados (474/89/14/123).
 
+⚠️ **295 → 296 (migração promeia, fix round 1 da Task 6 do plano `2026-07-28-promeia-servico-local`):** +1 em `pages/insight.test.tsx` — o teste de regressão que prova que o estado vazio desta tela manda rodar `make insight`, nunca mais o CLI Node apagado (`scripts/insight.mjs`), com asserção negativa de que a string `insight.mjs` não aparece em lugar nenhum do documento. Sem esse +1 registrado aqui, a próxima contagem lida neste arquivo (295) já estaria desatualizada em relação à suíte real.
+
 ## Configurações (`src/domain/settings.ts` + `src/routes/settings.ts` + `web/src/pages/config.tsx`, Task 10)
 
 Torna `fixed_net_cents` editável **sem deploy**, mantendo o `DEFAULT_FIXED_NET_CENTS = 360000` (R$ 3.600) como piso quando nada foi salvo.

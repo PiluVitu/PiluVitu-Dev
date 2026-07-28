@@ -94,9 +94,10 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   Único per-file-ignore: `src/promeia/insight.py` tem `E501` desligado porque
   o prompt que ele monta é contrato byte-a-byte com o que o dono já revisou —
   quebrar linha ali inseriria uma quebra real no texto mandado pro modelo.
-- **Suíte hoje: 90 testes** (`uv run pytest`) — linha de base desta task
-  (Task 6), mesma convenção de contagem de suíte que os outros `CLAUDE.md`
-  deste monorepo já registram. A remoção do CLI Node que esta task substituiu
+- **Suíte hoje: 91 testes** (`uv run pytest`) — linha de base desta task
+  (Task 6: 80 herdadas + 10 do CLI + 1 do fix round 1, cobrindo o branch de
+  competência inválida), mesma convenção de contagem de suíte que os outros
+  `CLAUDE.md` deste monorepo já registram. A remoção do CLI Node que esta task substituiu
   (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou os 40 testes
   correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
 test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
