@@ -397,6 +397,47 @@ def test_rota_inexistente_tambem_exige_token(client):
     assert client.get("/rota-que-nao-existe").status_code == 401
 
 
+def _rotas_registradas(app) -> list[tuple[str, list[str]]]:
+    """Achata TODA rota do app, inclusive as montadas por include_router.
+
+    ⚠️ MEDIDO (fastapi 0.140.7): `include_router()` NÃO coloca as rotas filhas
+    em `app.routes` — coloca UM objeto `_IncludedRouter` opaco, sem `.path` e
+    sem `.methods`. A enumeração ingênua (`if getattr(r, "methods", None)`)
+    pula esse objeto inteiro, EM SILÊNCIO: quando a Task 5 montou o router do
+    insight, este teste continuou verde cobrindo só `/health`, enquanto
+    `POST /insight` nunca era exercitado por ele.
+
+    Por isso esta função LEVANTA no que não souber achatar, em vez de ignorar.
+    Um `continue` aqui devolveria exatamente a prova falsa que ela existe pra
+    impedir — e a promessa do nome estreitaria de novo, sozinha, na próxima
+    rota montada por router.
+    """
+    achatadas: list[tuple[str, list[str]]] = []
+
+    def visitar(entrada, origem: str) -> None:
+        metodos = getattr(entrada, "methods", None)
+        if metodos:
+            achatadas.append((entrada.path, sorted(metodos - {"HEAD", "OPTIONS"})))
+            return
+        filhas = getattr(entrada, "routes", None)
+        if filhas is None:
+            interno = getattr(entrada, "original_router", None)
+            filhas = getattr(interno, "routes", None)
+        if filhas is None:
+            raise AssertionError(
+                f"não sei enumerar esta entrada de rota ({origem}): "
+                f"{type(entrada).__name__}. Se o FastAPI mudou como monta "
+                f"routers, ENSINE esta função — nunca ignore, senão a prova de "
+                f"'toda rota exige token' estreita em silêncio."
+            )
+        for filha in filhas:
+            visitar(filha, f"{origem} -> {type(entrada).__name__}")
+
+    for entrada in app.routes:
+        visitar(entrada, "app.routes")
+    return achatadas
+
+
 def test_TODA_rota_registrada_recusa_sem_token(client):
     """A prova que não envelhece.
 
@@ -407,12 +448,9 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
 
     ⚠️ SEM carve-out de rota nenhuma. Uma exceção aqui esvazia a promessa do
     nome: a rota dispensada é justamente a que ninguém verificaria de novo.
+    Ver `_rotas_registradas` — a enumeração ingênua NÃO serve.
     """
-    rotas = [
-        (r.path, sorted(r.methods - {"HEAD", "OPTIONS"}))
-        for r in client.app.routes
-        if getattr(r, "methods", None)
-    ]
+    rotas = _rotas_registradas(client.app)
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
 
     for path, methods in rotas:
@@ -2204,13 +2242,18 @@ e, dentro de `create_app`, depois de `app.state.settings = cfg`:
 - [ ] **Step 5: Rodar a suíte inteira e confirmar que passa**
 
 Run: `cd apps/promeia && uv run pytest`
-Expected: PASS. O `test_TODA_rota_registrada_recusa_sem_token` (Task 1) agora enumera **duas** rotas (`/health` e `/insight`) e exige 401 nas duas — sem nenhuma edição naquele teste. Se ele continuar vendo só uma rota, o router não foi montado.
+Expected: PASS. O `test_TODA_rota_registrada_recusa_sem_token` (Task 1) agora enumera **duas** rotas (`/health` e `/insight`) e exige 401 nas duas — sem nenhuma edição naquele teste.
+
+⚠️ **Isso só funciona porque `_rotas_registradas` achata o `_IncludedRouter`** (Task 1). Se ele continuar vendo **uma** rota, o problema não é o router não ter sido montado — é a enumeração estar ingênua de novo. MEDIDO nesta execução: `app.routes` devolve `[_IncludedRouter (sem path, sem methods), APIRoute /health]`, e um filtro por `getattr(r, "methods", None)` pula o primeiro em silêncio.
 
 - [ ] **Step 6: Verificar por mutação — o prompt precisa estar preso ao formatador**
 
 Troque, em `_linha_categoria`, `format_brl(abs(row['total_cents']))` por `row['total_cents']` e rode.
-Expected: **falham** `test_nenhum_centavo_cru_aparece_no_prompt` e `test_as_categorias_saem_na_ordem_recebida_e_numeradas`.
-Reverta e confirme `git diff` limpo.
+Expected: **falha** `test_as_categorias_saem_na_ordem_recebida_e_numeradas`.
+
+⚠️ MEDIDO: `test_nenhum_centavo_cru_aparece_no_prompt` **não** cai com esta mutação, ao contrário do que uma leitura rápida sugere — ele afirma sobre o total (`'123000' not in p`), e a mutação só solta o centavo cru das linhas de CATEGORIA (`76000`, `30000`). A cobertura é real, só está repartida entre os dois testes de forma diferente da que o nome faz supor.
+
+Reverta e confirme `git status --porcelain` vazio (commite ANTES de mutar — `git diff` sobre arquivo untracked não compara nada).
 
 - [ ] **Step 7: Formatar, lintar e commitar**
 
