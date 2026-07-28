@@ -1,4 +1,8 @@
 {
+  // Mesma conta do finanças (confirmado com `wrangler whoami` na Task 1) —
+  // conta única, sem ambiguidade hoje, mas é o padrão que apps/financas/wrangler.jsonc
+  // já segue e que esta task tinha que espelhar.
+  "account_id": "c52a9959db02d735ef489d9728ccf4de",
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "piluvitu-ramielle",
   "main": "src/index.ts",
