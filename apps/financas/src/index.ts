@@ -27,26 +27,36 @@ export type Bindings = AuthBindings & { INGEST_TOKEN: string }
 const app = new Hono<{ Bindings: Bindings }>()
 
 /**
- * TRÊS exceções à guarda de sessão, todas EXPLÍCITAS:
+ * QUATRO exceções à guarda de sessão, todas EXPLÍCITAS:
  *  - /api/health: sondado por monitor externo, que não tem cookie.
  *  - /api/auth/*: é o próprio fluxo de login. Barrar aqui é deadlock —
  *    ninguém consegue autenticar porque não está autenticado.
  *  - POST /api/insights: autenticado por INGEST_TOKEN, não por sessão
  *    (fatia ⑨, Task 3) — o comando que roda no Mac do dono não tem
- *    cookie de navegador. A exceção aqui só pula o requireSession() PARA
- *    ESTE MÉTODO+PATH; quem de fato barra ou libera é
- *    requireIngestToken(), middleware preso à própria rota em
- *    routes/insights.ts — sem essa guarda na rota, pular requireSession()
- *    aqui abriria a escrita pra qualquer requisição sem exigir nada.
- *    ⚠️ GET /api/insights/latest e GET /api/insights/numbers NÃO estão
- *    nesta exceção — continuam exigindo sessão, igual toda outra leitura
- *    do app (ver src/index.test.ts, "sessão não abre a ingestão" e
- *    "token não abre /api/accounts" para as duas metades da prova).
+ *    cookie de navegador.
+ *  - GET /api/insights/numbers: MESMO INGEST_TOKEN, extensão de escopo da
+ *    Task 4 — o comando do Mac também precisa LER os números antes de
+ *    escrever a leitura em cima deles, e não tem sessão pra isso.
+ *  Nos dois casos de /api/insights, a exceção aqui só pula o
+ *  requireSession() PARA AQUELE MÉTODO+PATH; quem de fato barra ou libera
+ *  é a guarda presa à própria rota em routes/insights.ts
+ *  (requireIngestToken para o POST; requireIngestTokenOrSession para o
+ *  GET, que cai de volta pro caminho de sessão quando não há header
+ *  Authorization nenhum) — sem essa guarda na rota, pular requireSession()
+ *  aqui abriria a rota pra qualquer requisição sem exigir nada.
+ *  ⚠️ GET /api/insights/latest NÃO está em nenhuma exceção — continua
+ *  exigindo só sessão, igual toda outra leitura do app (ver
+ *  src/index.test.ts, "fronteira do INGEST_TOKEN", pras provas de que o
+ *  token não abre /api/accounts, não abre POST /api/payees, e não abre
+ *  /api/insights/latest também).
  */
 app.use('/api/*', async (c, next) => {
   if (c.req.path === '/api/health') return next()
   if (isRotaDeAuth(c.req.path)) return next()
   if (c.req.method === 'POST' && c.req.path === '/api/insights') return next()
+  if (c.req.method === 'GET' && c.req.path === '/api/insights/numbers') {
+    return next()
+  }
   return requireSession<Bindings>()(c, next)
 })
 

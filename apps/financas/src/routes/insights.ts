@@ -5,14 +5,40 @@ import {
   latestInsight,
 } from '../domain/insights'
 import { errJson, okJson } from '../lib/envelope'
+import { type AuthBindings } from '../lib/auth'
+import { requireSession } from '../lib/session'
 
 // Convenção de módulo (accounts.ts/.../recurring.ts/reserve.ts): type Env
 // LOCAL, nunca import de Bindings de ../index — evita ciclo de import
-// valor↔tipo. INGEST_TOKEN só é lido por esta rota (requireIngestToken,
-// abaixo) — nenhuma outra rota do módulo conhece este binding.
-type Env = { Bindings: { DB: D1Database; INGEST_TOKEN: string } }
+// valor↔tipo. `Bindings` aqui replica o `Bindings` final de src/index.ts
+// (AuthBindings & INGEST_TOKEN) porque, desde a Task 4 do comando do Mac,
+// esta rota passou a precisar das DUAS coisas: o segredo de ingestão
+// (requireIngestToken/requireIngestTokenOrSession, abaixo) e — só pra
+// GET /insights/numbers — o caminho de sessão do Better Auth
+// (requireSession, importado de ../lib/session), pro navegador continuar
+// lendo essa rota exatamente como antes.
+type Bindings = AuthBindings & { INGEST_TOKEN: string }
+type Env = { Bindings: Bindings }
 
 export const insightsRoutes = new Hono<Env>()
+
+/**
+ * Confere só o header — pura, sem tocar em `next()`/resposta. Extraída
+ * pra ser reusada pelas DUAS guardas abaixo (POST /insights exige só
+ * token; GET /insights/numbers aceita token OU sessão) sem duplicar a
+ * regra de fail-closed.
+ */
+function ingestTokenValido(
+  header: string | undefined,
+  esperado: string,
+): boolean {
+  const [scheme, token] = (header ?? '').split(' ')
+  // Fail-closed: INGEST_TOKEN ausente/vazio (secret nunca configurado)
+  // nunca autentica ninguém — mesmo princípio de isAllowedEmail
+  // (lib/auth.ts), onde um segredo vazio barra todo mundo em vez de
+  // liberar geral.
+  return scheme === 'Bearer' && !!token && !!esperado && token === esperado
+}
 
 /**
  * Guarda SÓ desta rota (spec §3 / brief Task 3, Step 3): o caminho de
@@ -36,18 +62,43 @@ export const insightsRoutes = new Hono<Env>()
  */
 function requireIngestToken(): MiddlewareHandler<Env> {
   return async (c, next) => {
-    const header = c.req.header('authorization') ?? ''
-    const [scheme, token] = header.split(' ')
-    // Fail-closed: INGEST_TOKEN ausente/vazio (secret nunca configurado)
-    // nunca autentica ninguém — mesmo princípio de isAllowedEmail
-    // (lib/auth.ts), onde um segredo vazio barra todo mundo em vez de
-    // liberar geral.
-    if (
-      scheme !== 'Bearer' ||
-      !token ||
-      !c.env.INGEST_TOKEN ||
-      token !== c.env.INGEST_TOKEN
-    ) {
+    if (!ingestTokenValido(c.req.header('authorization'), c.env.INGEST_TOKEN)) {
+      return errJson(
+        401,
+        'invalid_ingest_token',
+        'token de ingestão ausente ou inválido',
+      )
+    }
+    await next()
+  }
+}
+
+/**
+ * Extensão de escopo (Task 4 do comando no Mac): o MESMO INGEST_TOKEN que
+ * já escrevia insight (requireIngestToken, acima) passa a também LER
+ * `GET /insights/numbers` — e SÓ essa rota. Decisão registrada no brief da
+ * Task 4: essa rota devolve agregado (totais por categoria/período, via
+ * `insightNumbers`/`byCategory`), nunca lançamento cru — o escopo do token
+ * continua honesto (lê totais, escreve prosa) mesmo depois desta
+ * extensão, e o livro-caixa (`/api/accounts`, `/api/transactions`, ...)
+ * continua inalcançável por ele (ver src/index.test.ts, describe
+ * "fronteira do INGEST_TOKEN").
+ *
+ * Um `Authorization: Bearer` PRESENTE decide sozinho o resultado — válido
+ * autentica, inválido barra com `invalid_ingest_token` — nunca cai pro
+ * fallback de sessão por trás (evita a ambiguidade de "o header errado
+ * silenciosamente virou uma tentativa de sessão"). SÓ a ausência total do
+ * header cai no caminho de sempre: `requireSession`, igual toda outra
+ * leitura do app — o navegador continua exatamente como antes desta task.
+ */
+function requireIngestTokenOrSession(): MiddlewareHandler<Env> {
+  const guardaSessao = requireSession<Bindings>()
+  return async (c, next) => {
+    const header = c.req.header('authorization')
+    if (header === undefined) {
+      return guardaSessao(c, next)
+    }
+    if (!ingestTokenValido(header, c.env.INGEST_TOKEN)) {
       return errJson(
         401,
         'invalid_ingest_token',
@@ -60,30 +111,35 @@ function requireIngestToken(): MiddlewareHandler<Env> {
 
 // Sem sessão nem token: números são calculados por consulta exata (spec
 // §3) e a tela precisa vê-los mesmo que o comando do Mac nunca tenha
-// rodado. Ambas as rotas GET usam sessão de navegador — a exceção do
-// middleware global fica só em POST /insights (ver index.ts).
+// rodado. GET /insights/latest usa só sessão de navegador — a exceção do
+// middleware global (index.ts) cobre POST /insights e, desde a Task 4,
+// GET /insights/numbers também; latest fica de fora das duas.
 insightsRoutes.get('/insights/latest', async (c) => {
   const insight = await latestInsight(c.env.DB)
   return okJson(insight)
 })
 
-insightsRoutes.get('/insights/numbers', async (c) => {
-  const competence = c.req.query('competence') ?? ''
+insightsRoutes.get(
+  '/insights/numbers',
+  requireIngestTokenOrSession(),
+  async (c) => {
+    const competence = c.req.query('competence') ?? ''
 
-  try {
-    const numbers = await insightNumbers(c.env.DB, { competence })
-    return okJson(numbers)
-  } catch (err) {
-    // RangeError só pode vir da validação de formato de `competence`
-    // (insightNumbers → addMonthsToCompetence) — query string malformada,
-    // por isso 400 (mesmo padrão de commitments()/byCategory em
-    // routes/reports.ts), nunca 422.
-    if (err instanceof RangeError) {
-      return errJson(400, 'invalid_query', err.message)
+    try {
+      const numbers = await insightNumbers(c.env.DB, { competence })
+      return okJson(numbers)
+    } catch (err) {
+      // RangeError só pode vir da validação de formato de `competence`
+      // (insightNumbers → addMonthsToCompetence) — query string malformada,
+      // por isso 400 (mesmo padrão de commitments()/byCategory em
+      // routes/reports.ts), nunca 422.
+      if (err instanceof RangeError) {
+        return errJson(400, 'invalid_query', err.message)
+      }
+      throw err
     }
-    throw err
-  }
-})
+  },
+)
 
 insightsRoutes.post('/insights', requireIngestToken(), async (c) => {
   let body: { texto?: unknown; modelo?: unknown; periodo?: unknown }

@@ -32,8 +32,20 @@ function appComCatchAll() {
   return hono
 }
 
-function get(path: string) {
-  return app().request(path, {}, testEnv)
+// `token` opcional: só as rotas guardadas por requireIngestToken(OrSession)
+// precisam dele. Sem `token`, nenhum header Authorization é enviado — o
+// caminho de sessão (fora do escopo deste arquivo, ver index.test.ts) é
+// quem decidiria, e este testEnv não tem os campos de AuthBindings pra
+// isso (de propósito: as duas rotas cobertas aqui, latest e a autenticação
+// por TOKEN de numbers, não precisam deles).
+function get(path: string, token?: string) {
+  return app().request(
+    path,
+    token !== undefined
+      ? { headers: { authorization: `Bearer ${token}` } }
+      : {},
+    testEnv,
+  )
 }
 
 function post(path: string, body: unknown, token?: string) {
@@ -108,9 +120,19 @@ describe('rotas de insights', () => {
     })
   })
 
+  // Task 4 (comando do Mac): esta rota passou a exigir requireIngestTokenOrSession
+  // — sem sessão de navegador disponível neste testEnv (de propósito, ver
+  // comentário do `get()` acima), todo teste abaixo passa o INGEST_TOKEN.
+  // A cobertura de "sem token E sem sessão" e "sessão sozinha também
+  // funciona" mora em src/index.test.ts (describe "fronteira do
+  // INGEST_TOKEN"), que monta o app inteiro com AuthBindings completo —
+  // é o único lugar que consegue provar as duas metades juntas.
   describe('GET /api/insights/numbers', () => {
     it('200 com envelope, mesmo sem nenhum lançamento no período', async () => {
-      const res = await get('/api/insights/numbers?competence=2100-01')
+      const res = await get(
+        '/api/insights/numbers?competence=2100-01',
+        INGEST_TOKEN,
+      )
       expect(res.status).toBe(200)
       const body = (await res.json()) as Envelope
       expect(body.ok).toBe(true)
@@ -120,17 +142,30 @@ describe('rotas de insights', () => {
     })
 
     it('400 invalid_query quando competence está ausente', async () => {
-      const res = await get('/api/insights/numbers')
+      const res = await get('/api/insights/numbers', INGEST_TOKEN)
       expect(res.status).toBe(400)
       const body = (await res.json()) as Envelope
       expect(body.notifications[0].code).toBe('invalid_query')
     })
 
     it('400 invalid_query quando competence é malformada', async () => {
-      const res = await get('/api/insights/numbers?competence=2026-13')
+      const res = await get(
+        '/api/insights/numbers?competence=2026-13',
+        INGEST_TOKEN,
+      )
       expect(res.status).toBe(400)
       const body = (await res.json()) as Envelope
       expect(body.notifications[0].code).toBe('invalid_query')
+    })
+
+    it('token errado: 401 invalid_ingest_token, nunca chega no domínio', async () => {
+      const res = await get(
+        '/api/insights/numbers?competence=2026-07',
+        'token-errado',
+      )
+      expect(res.status).toBe(401)
+      const body = (await res.json()) as Envelope
+      expect(body.notifications[0].code).toBe('invalid_ingest_token')
     })
   })
 

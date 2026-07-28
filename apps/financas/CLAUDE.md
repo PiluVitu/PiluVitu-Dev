@@ -836,9 +836,51 @@ pnpm --filter @piluvitu/financas exec vitest run src/domain/insights.test.ts src
 
 ⚠️ **`lib/session.ts#requireSession` virou genérico (`requireSession<TBindings extends AuthBindings>()`) por causa desta task.** `Bindings` (`src/index.ts`) cresceu de `AuthBindings` puro para `AuthBindings & { INGEST_TOKEN: string }` — e `Context<E>` do Hono é INVARIANTE no parâmetro de env (mesma classe de problema já documentada em `lib/auth.ts` sobre `Auth`/`ReturnType<typeof betterAuth>`), então `MiddlewareHandler<{ Bindings: AuthBindings }>` fixo deixou de aceitar o `Context` mais largo. MEDIDO via `tsc --noEmit`: sem o genérico, `TS2345`/"`Property 'INGEST_TOKEN' is missing`". `index.ts` chama `requireSession<Bindings>()(c, next)` com o tipo explícito — sem isso o TS não tem como inferir `TBindings` (a função é chamada sem argumentos antes de `c` existir).
 
-### O comando do Mac em si — fora de escopo desta task
+### O comando do Mac (Task 4 — `scripts/insight.mjs`)
 
-**Não implementado aqui.** O CLI que lê os números (`GET /api/insights/numbers`, que exige SESSÃO de navegador — o Mac não tem cookie) e chama o Ollama local fica para uma task futura; precisa decidir COMO o comando se autentica pra LER (o `INGEST_TOKEN` desta task só cobre a ESCRITA, de propósito — "esse token escreve insight, não lê nem escreve lançamento", spec §3). Uma saída possível é o comando calcular os números direto contra o D1 (via `wrangler d1 execute`, mesmo padrão de acesso local que `scripts/backup-d1.sh` já usa, sem depender de sessão HTTP nenhuma) em vez de chamar a API — mas essa decisão não foi tomada aqui, só registrada como o próximo passo óbvio.
+Fecha o ciclo que a Task 3 deixou registrado como "próximo passo": o CLI que lê os números, gera a leitura em texto via Ollama local e publica em `POST /api/insights`. Roda `node scripts/insight.mjs` (ou `pnpm --filter @piluvitu/financas run insight`) no MacBook do dono — mesma família de `scripts/pdf-import.mjs`, mesmo padrão de erro, mesma disciplina de dependency injection em `run()` pra testar sem tocar Ollama/rede de verdade.
+
+**Decisão sobre COMO o comando lê (a pergunta que a Task 3 deixou em aberto): estender o `INGEST_TOKEN`, não trocar de mecanismo.** A alternativa registrada na Task 3 (`wrangler d1 execute` direto, sem HTTP) foi descartada — o comando já precisa do `INGEST_TOKEN` pra escrever, reusar o MESMO segredo pra ler evita duplicar credencial/mecanismo de acesso ao D1 no mesmo comando. `routes/insights.ts` ganhou:
+
+- `ingestTokenValido(header, esperado)` — a checagem pura (fail-closed, mesma regra de sempre), extraída pra ser reusada pelas duas guardas.
+- `requireIngestTokenOrSession()` — guarda de `GET /insights/numbers`: um `Authorization: Bearer` PRESENTE decide sozinho (válido autentica, inválido barra com `invalid_ingest_token`, **nunca cai pro fallback de sessão** — evita a ambiguidade de um header errado virar silenciosamente uma tentativa de sessão); a AUSÊNCIA total do header cai no caminho de sempre, `requireSession<Bindings>()` — o navegador continua lendo essa rota exatamente como antes desta task.
+- `src/index.ts` ganhou uma QUARTA exceção ao middleware global de sessão: `GET /api/insights/numbers` (ao lado de `/api/health`, `/api/auth/*` e `POST /api/insights`) — a exceção só pula `requireSession()` PARA aquele método+path; quem decide de fato é a guarda presa à rota.
+
+⚠️ **Escopo continua honesto depois da extensão — decisão do brief da Task 4, provada por teste.** `GET /api/insights/numbers` devolve só AGREGADO (totais por categoria/período, via `insightNumbers`/`byCategory`), nunca lançamento cru — o token lê totais e escreve prosa, e continua sem alcançar `/api/accounts`, `/api/transactions` ou qualquer rota de escrita fora de `POST /api/insights`. `src/index.test.ts` (describe `"fronteira do INGEST_TOKEN (fatia ⑨, Task 3 + Task 4)"`) prova as duas metades against o app montado de verdade: o token NÃO abre `/api/accounts` nem `POST /api/payees` (testes da Task 3, intocados), NÃO abre `GET /api/insights/latest` (só `/numbers` foi estendida), e ABRE `GET /api/insights/numbers` sem cookie nenhum. Worker: 470 → 474 (+3 em `index.test.ts`, +1 em `routes/insights.test.ts`).
+
+**O prompt (`buildPrompt`, `scripts/insight.mjs`) só recebe o payload de `GET /api/insights/numbers`** — nunca um lançamento. Cada fato é formatado via `formatBRL` (`@piluvitu/tools/money`, nunca float/centavo cru no texto) e o prompt termina com regras explícitas: usar SOMENTE os números listados, nunca calcular/estimar/inventar, e dizer "sem dado suficiente" em vez de chutar quando falta base de comparação. Temperatura zero (`options: { temperature: 0 }`, mesma regra de `pdf-import.mjs`) — isto é resumo de fatos já calculados, não criação.
+
+**Erros, mesmo padrão de `pdf-import.mjs`/`backup-d1.sh` — a mensagem é o produto, nunca um erro cru:**
+
+- Ollama desligado (`ECONNREFUSED`) → "não consegui conectar ao Ollama em `<url>` — ele parece estar desligado. Inicie com `ollama serve`...".
+- Modelo não instalado (404 do Ollama) → cita o comando exato: `ollama pull <modelo>`.
+- `INGEST_TOKEN` ausente do ambiente → falha ANTES de qualquer chamada de rede, dizendo como definir (mesmo valor do `wrangler secret put INGEST_TOKEN`/`.dev.vars`).
+- API inalcançável (fetch lança — DNS/rede) vs. API recusou (resposta HTTP com `ok: false`) são mensagens DIFERENTES — a segunda distingue ainda `401` (cita o `INGEST_TOKEN`) de outro status (cita o código).
+- Modelo devolve texto vazio → falha alto (`código 1`), com a saída bruta do modelo no log, e **NADA é publicado** — mesma regra de "CSV vazio que parece sucesso é o pior resultado" do `pdf-import.mjs`, aplicada aqui a "insight vazio".
+- Falha ao PUBLICAR depois do texto já gerado (ex.: API caiu entre o `GET numbers` e o `POST insights`) → o texto gerado aparece no log (`--- texto gerado (NÃO publicado) ---`), nunca é perdido — o dono pode copiar/republicar manualmente sem rodar o Ollama de novo.
+
+### Testes e rodada real (`scripts/insight.test.mjs`, `scripts/insight.mjs`)
+
+```bash
+pnpm --filter @piluvitu/financas run test:pdf-import   # mesmo comando — inclui scripts/**/*.test.mjs inteiro
+```
+
+40 casos novos (117 no total do arquivo de config `vitest.scripts.config.ts`, que já incluía os 77 de `pdf-import.test.mjs`) — `competenciaAtual` (a mesma armadilha UTC de `cashflow.test.ts`), `buildPrompt` (nunca um centavo cru no texto, ordem das categorias preservada, as regras anti-invenção presentes, os três casos degenerados — sem categoria, sem base de comparação, sem maior crescimento — cada um com marcador explícito em vez de silêncio/`undefined`), `callOllama` (os quatro erros + o caminho feliz confirmando `temperature: 0`), `fetchNumbers`/`postInsight` (rede indisponível vs. API recusou, incl. 401 citando o token), `parseArgs` (aliases, flag sem valor, opção desconhecida) e `run()` ponta a ponta (caminho feliz, competência default, token ausente, competência malformada, `--help`, Ollama desligado, texto vazio, API recusa a leitura, API inalcançável, publicação falha preservando o texto gerado no log). Tudo stubado via injeção de dependência (`fetchImpl`/`env`/`now`) — nada chama Ollama/rede de verdade nesta suíte.
+
+**Rodado de verdade contra o Ollama local e a API local (não só stubs).** `wrangler dev` local com a migration `0007` aplicada, uma conta e 8 lançamentos reais semeados via `wrangler d1 execute` (DAS/Contador/INSS/Custos da PJ em julho e junho — o mesmo cenário de gap fixo já descrito na seção _Reserva de emergência_ acima), removidos depois da prova:
+
+```
+$ node scripts/insight.mjs --competencia 2026-07 --api-url http://localhost:8787
+==> buscando os números de 2026-07 em http://localhost:8787
+==> consultando o Ollama (modelo qwen2.5:7b-instruct, http://localhost:11434/api/generate) — pode levar alguns segundos
+==> publicando o insight de 2026-07 (modelo qwen2.5:7b-instruct)
+
+==> insight de 2026-07 publicado com sucesso
+
+O gasto total em julho de 2026 foi de R$ 1.230,00, representando um aumento de R$ 360,00 (41%) em comparação com junho do mesmo ano. O INSS foi a maior despesa neste mês, totalizando R$ 760,00, seguido pelo contador no valor de R$ 300,00 e pela DAS — Simples Nacional, que somou R$ 120,00. Os custos da PJ foram os menores, com R$ 50,00. O INSS teve o maior aumento entre todas as categorias, passando de R$ 400,00 em junho para R$ 760,00 em julho.
+```
+
+Todo número no texto bate exatamente com o que foi semeado (nenhum inventado) e a linha foi conferida gravada no D1 local (`SELECT ... FROM insights`). Os quatro caminhos de erro também foram exercitados contra o Ollama/API reais (não só stub): `INGEST_TOKEN` ausente, token errado (a API real respondeu 401 e a mensagem citou o segredo), Ollama apontando pra uma porta fechada (`ECONNREFUSED` real) e modelo inexistente (404 real do Ollama) — as quatro mensagens saíram exatamente como descrito na seção anterior.
 
 ## Configurações (`src/domain/settings.ts` + `src/routes/settings.ts` + `web/src/pages/config.tsx`, Task 10)
 

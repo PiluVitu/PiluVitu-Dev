@@ -123,12 +123,15 @@ describe('worker de finanças', () => {
   })
 })
 
-// Fatia ⑨, Task 3 — a fronteira de segurança do INGEST_TOKEN, provada
-// contra o APP MONTADO DE VERDADE (mesma cadeia de middleware de
-// src/index.ts, não um router isolado como routes/insights.test.ts usa) —
-// é o único jeito de provar que a EXCEÇÃO do middleware global (linha 49
-// de index.ts, só POST /api/insights) não vazou pra nenhuma outra rota.
-describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3)', () => {
+// Fatia ⑨, Task 3 (+ extensão de escopo na Task 4, comando do Mac) — a
+// fronteira de segurança do INGEST_TOKEN, provada contra o APP MONTADO DE
+// VERDADE (mesma cadeia de middleware de src/index.ts, não um router
+// isolado como routes/insights.test.ts usa) — é o único jeito de provar
+// que as exceções do middleware global (POST /api/insights desde a Task 3;
+// GET /api/insights/numbers desde a Task 4) não vazaram pra nenhuma outra
+// rota. O escopo do token continua o mesmo depois da extensão: lê
+// agregado (numbers), escreve prosa (insights) — nunca toca o livro-caixa.
+describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3 + Task 4)', () => {
   test('o token do Mac NÃO abre /api/accounts — nem com header correto, sem sessão', async () => {
     const res = await app.request(
       '/api/accounts',
@@ -160,22 +163,74 @@ describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3)'
     )
   })
 
-  test('GET /api/insights/latest e /numbers continuam exigindo sessão — a exceção do middleware global é só POST /api/insights', async () => {
-    const latest = await app.request('/api/insights/latest', {}, authTestEnv)
-    expect(latest.status).toBe(401)
-    expect(((await latest.json()) as CorpoErro).notifications[0].code).toBe(
+  test('GET /api/insights/latest continua exigindo sessão — o token do Mac NÃO abre esta rota (Task 4 estendeu só /numbers)', async () => {
+    const semNada = await app.request('/api/insights/latest', {}, authTestEnv)
+    expect(semNada.status).toBe(401)
+    expect(((await semNada.json()) as CorpoErro).notifications[0].code).toBe(
       'not_authenticated',
     )
 
-    const numbers = await app.request(
-      '/api/insights/numbers?competence=2026-07',
-      {},
+    // Mesmo com o Bearer CORRETO: /latest não tem a exceção do middleware
+    // global (só POST /insights e GET /insights/numbers têm, ver
+    // src/index.ts) — a requisição nunca sai do requireSession() global,
+    // então o resultado é idêntico ao caso sem header nenhum.
+    const comToken = await app.request(
+      '/api/insights/latest',
+      { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
       authTestEnv,
     )
-    expect(numbers.status).toBe(401)
-    expect(((await numbers.json()) as CorpoErro).notifications[0].code).toBe(
+    expect(comToken.status).toBe(401)
+    expect(((await comToken.json()) as CorpoErro).notifications[0].code).toBe(
       'not_authenticated',
     )
+  })
+
+  // Task 4 (comando do Mac): o MESMO INGEST_TOKEN que já autenticava a
+  // ESCRITA (POST /insights) passa a autenticar também esta LEITURA — e
+  // só esta, entre as duas leituras de insight. As três pernas abaixo
+  // provam a extensão completa: sem nada barra, token errado barra, token
+  // certo abre (sem cookie nenhum — o comando do Mac não tem sessão de
+  // navegador).
+  describe('GET /api/insights/numbers — extensão de escopo do INGEST_TOKEN (Task 4)', () => {
+    test('sem sessão e sem token: 401 not_authenticated (cai no requireSession(), igual antes da Task 4)', async () => {
+      const res = await app.request(
+        '/api/insights/numbers?competence=2026-07',
+        {},
+        authTestEnv,
+      )
+      expect(res.status).toBe(401)
+      expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+        'not_authenticated',
+      )
+    })
+
+    test('token de ingestão errado: 401 invalid_ingest_token — nunca cai pro fallback de sessão', async () => {
+      const res = await app.request(
+        '/api/insights/numbers?competence=2026-07',
+        { headers: { authorization: 'Bearer token-errado' } },
+        authTestEnv,
+      )
+      expect(res.status).toBe(401)
+      expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+        'invalid_ingest_token',
+      )
+    })
+
+    test('token de ingestão correto, SEM cookie nenhum: 200 com os números — o comando do Mac consegue ler', async () => {
+      const res = await app.request(
+        '/api/insights/numbers?competence=2026-07',
+        { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
+        authTestEnv,
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        ok: boolean
+        data: { competence: string; top_categories: unknown[] }
+      }
+      expect(body.ok).toBe(true)
+      expect(body.data.competence).toBe('2026-07')
+      expect(body.data.top_categories).toEqual([])
+    })
   })
 
   test('POST /api/insights sem token: 401 invalid_ingest_token (chega na rota — a exceção do middleware global funcionou)', async () => {
