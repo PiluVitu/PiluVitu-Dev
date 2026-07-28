@@ -1,7 +1,7 @@
 .PHONY: dev dev-web dev-api storybook stack build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
         backup-financas backup-financas-test \
-        dev-promeia test-promeia lint-promeia
+        dev-promeia test-promeia lint-promeia insight
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -59,6 +59,11 @@ test-promeia:
 
 lint-promeia:
 	cd apps/promeia && uv run ruff check . && uv run ruff format --check .
+
+# Gera e publica o insight financeiro. Exige Ollama de pé e PROMEIA_TOKEN +
+# INGEST_TOKEN no ambiente. Nada precisa continuar rodando depois.
+insight:
+	cd apps/promeia && uv run promeia-insight
 
 test-e2e:
 	pnpm --filter @piluvitu/web test:e2e

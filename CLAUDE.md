@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > | `apps/web`       | `apps/web/CLAUDE.md`       | Next.js/React frontend, conteúdo (Keystatic), tema, blog, `/tasks`, `/tools`, `/admin`, votação **UI**, deploy Vercel                                                        |
 > | `apps/api`       | `apps/api/CLAUDE.md`       | Go API (chi), votação **backend**, auth Google, Sheets/TMDb/Drive, envelope, logging, hosting (Cloudflare Tunnel)                                                            |
 > | `apps/financas`  | `apps/financas/CLAUDE.md`  | Worker Cloudflare (Hono + D1 + Static Assets), SPA Vite/React no design system compartilhado, dívidas, parcelas, comprometido, login Google (Better Auth), deploy `wrangler` |
+> | `apps/promeia`   | `apps/promeia/CLAUDE.md`   | Serviço Python local (FastAPI): o que exige GPU, modelo local ou arquivo em disco. Insight financeiro; PDF/transcrição depois                                                |
 > | `packages/tools` | `packages/tools/CLAUDE.md` | `@piluvitu/tools` — lógica pura (TS, sem React/DOM) compartilhada pelo `/tools`                                                                                              |
 > | `packages/ui`    | `packages/ui/CLAUDE.md`    | `@piluvitu/ui` — design system compartilhado: tokens, `cn()`, 14 componentes shadcn/ui (New York/Radix), consumidos por `apps/web` **e** `apps/financas/web`                 |
 
@@ -16,21 +17,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Tech Stack (visão geral)
 
-Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com cinco frentes:
+Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com seis frentes:
 
 - **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**. Consome os tokens **e os componentes** do design system compartilhado de **`packages/ui`** (`@piluvitu/ui`) via `@import`/`@source` em `app/globals.css` + imports `@piluvitu/ui/<componente>`. **Storybook 10**. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
 - **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). Stack local LLM co-hospeda **Ollama** (nativo, GPU/Metal) + API + túnel via `process-compose` (`make stack`). → detalhes em `apps/api/CLAUDE.md`.
 - **`apps/financas`** — **Cloudflare Worker** (Hono + D1 SQLite) servindo uma **SPA Vite + React 19** por Static Assets, em `financas.piluvitu.com.br`, protegida por login Google (**Better Auth** — o Cloudflare Access saiu do módulo). SPA no **Tailwind CSS 4** + **`packages/ui`** (`@piluvitu/ui`, mesmo design system do `apps/web`), via plugin Vite. Testes com `@cloudflare/vitest-pool-workers` (Worker) e Vitest/jsdom (SPA). → detalhes em `apps/financas/CLAUDE.md`.
+- **`apps/promeia`** — **Python 3.13** (FastAPI + uv), serviço local no MacBook do dono, atrás de túnel, para o que exige GPU/modelo local/disco — hoje o insight financeiro (lê agregados do ramielle, gera texto via **Ollama** local, publica de volta). **Segunda linguagem no monorepo** (a primeira além de TS/Go): custo aceito de propósito — segundo toolchain (`uv`), segundo runner de CI, segunda política de dependência (ver _Dependency security policy_ abaixo) — porque Whisper/pdfplumber/OCR são Python de referência, e Go foi descartado por ser a linguagem que está saindo do monorepo (ver `project-migrar-go-para-ts-worker` na memória). → detalhes em `apps/promeia/CLAUDE.md`.
 - **`packages/tools`** — **`@piluvitu/tools`**, biblioteca de lógica pura em TS consumida pelo web. → detalhes em `packages/tools/CLAUDE.md`.
 - **`packages/ui`** — **`@piluvitu/ui`**, design system compartilhado (tokens + `cn()` + 14 componentes shadcn/ui, um export por subpath, sem barrel, sem build próprio), consumido por `apps/web` (webpack/Turbopack) **e** `apps/financas/web` (Vite). → detalhes em `packages/ui/CLAUDE.md`.
 - **GitHub Actions** — CI (`ci.yml`) bloqueia PR; `deploy-api.yml` aguarda credenciais GCP; `trivy.yml` para scan de segurança.
 
 ## Dependency security policy
 
+This section is about the **pnpm** side of the monorepo (`apps/web`, `apps/financas`, `packages/*`). The Python side (`apps/promeia`) has its own rules, listed separately below — the two toolchains don't share a policy.
+
 - **pnpm ≥ 11 required.** pnpm 11 blocks lifecycle scripts by default (supply-chain defense).
 - **Adding a dependency that needs install scripts:** add it explicitly to `allowBuilds` in `pnpm-workspace.yaml`. Never set `dangerouslyAllowAllBuilds: true`.
 - **`minimumReleaseAge: 1440`** (set in `pnpm-workspace.yaml`): pnpm skips versions published less than 24 h ago, giving the community time to detect and report malicious releases.
 - Run `pnpm audit` periodically and before releases.
+
+**Python (`apps/promeia`):** `uv.lock` is committed, and CI/reproducible installs always use `uv sync --frozen` (never resolves a new version silently). ⚠️ **There is no Python equivalent of `minimumReleaseAge`** — `uv` has no built-in cooldown window for newly published versions. Adding a new Python dependency requires manually checking the release age/reputation before it goes in `pyproject.toml`; this is a human step, not an automated gate.
 
 ## Commands
 
@@ -46,8 +52,12 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `make stop`                             | Libera as portas 8081/3333/6017 se travarem                                          |
 | `make build-api`                        | Compila binário Go API em bin/api                                                    |
 | `make build-cli`                        | Compila CLI Go em bin/piluvitu                                                       |
-| `make test`                             | Todos os testes (pnpm -r test + go test)                                             |
-| `make lint`                             | ESLint + go vet                                                                      |
+| `make dev-promeia`                      | Serviço Python (FastAPI) local com `--reload` em http://localhost:8082               |
+| `make test-promeia`                     | `cd apps/promeia && uv run pytest`                                                   |
+| `make lint-promeia`                     | `uv run ruff check .` + `uv run ruff format --check .` (apps/promeia)                |
+| `make insight`                          | Gera e publica o insight financeiro (`promeia-insight`) — exige Ollama + tokens      |
+| `make test`                             | Todos os testes (pnpm -r test + go test + **uv run pytest** do promeia)              |
+| `make lint`                             | ESLint + go vet + **ruff** (check + format --check) do promeia                       |
 | `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                                                                   |
 | `pnpm --filter @piluvitu/web build`     | Build Next.js                                                                        |
 | `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                                                                    |

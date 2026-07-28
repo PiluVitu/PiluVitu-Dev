@@ -770,7 +770,7 @@ Motivado por dois relatos do dono usando o app em produção: _"queria tmb que m
 
 ## Insight de IA — backend (fatia ⑨, Task 3 — `migrations/0007_insights.sql` + `src/domain/insights.ts` + `src/routes/insights.ts`)
 
-Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando (Task 4, `scripts/insight.mjs`) no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1.
+Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1. ⚠️ Esse comando nasceu como `scripts/insight.mjs` (Task 4 desta fatia) e foi substituído por `make insight`/`promeia-insight` (`apps/promeia`) numa fatia posterior — ver seção _O comando do Mac_ mais abaixo.
 
 **A consequência é o ponto, não um detalhe de implementação:** o app nunca depende do Mac estar ligado. Do celular, com o laptop fechado, a tela (`#/insight`, Task 5, ver seção _A tela_ abaixo) abre e mostra o último insight publicado, com a data de quando foi feito — nunca uma chamada ao vivo pro Mac. A alternativa descartada (puxar pelo túnel Cloudflare que já existe pra outras integrações) faria TODA abertura da tela depender de outro computador acordado, o mesmo acoplamento que a fatia ③ (fatura em PDF) já tinha rejeitado por motivo idêntico — ver seção _Fatura em PDF via Ollama local_ acima, "Worker → Cloudflare Tunnel → Ollama — descartado porque acopla o app a 'o Mac estar ligado'".
 
@@ -840,68 +840,21 @@ pnpm --filter @piluvitu/financas exec vitest run src/domain/insights.test.ts src
 
 ⚠️ **`lib/session.ts#requireSession` virou genérico (`requireSession<TBindings extends AuthBindings>()`) por causa desta task.** `Bindings` (`src/index.ts`) cresceu de `AuthBindings` puro para `AuthBindings & { INGEST_TOKEN: string }` — e `Context<E>` do Hono é INVARIANTE no parâmetro de env (mesma classe de problema já documentada em `lib/auth.ts` sobre `Auth`/`ReturnType<typeof betterAuth>`), então `MiddlewareHandler<{ Bindings: AuthBindings }>` fixo deixou de aceitar o `Context` mais largo. MEDIDO via `tsc --noEmit`: sem o genérico, `TS2345`/"`Property 'INGEST_TOKEN' is missing`". `index.ts` chama `requireSession<Bindings>()(c, next)` com o tipo explícito — sem isso o TS não tem como inferir `TBindings` (a função é chamada sem argumentos antes de `c` existir).
 
-### O comando do Mac (Task 4 — `scripts/insight.mjs`)
+### O comando do Mac — agora `make insight` / `promeia-insight` (apps/promeia)
 
-Fecha o ciclo que a Task 3 deixou registrado como "próximo passo": o CLI que lê os números, gera a leitura em texto via Ollama local e publica em `POST /api/insights`. Roda `node scripts/insight.mjs` (ou `pnpm --filter @piluvitu/financas run insight`) no MacBook do dono — mesma família de `scripts/pdf-import.mjs`, mesmo padrão de erro, mesma disciplina de dependency injection em `run()` pra testar sem tocar Ollama/rede de verdade.
+**O CLI Node não existe mais** (`scripts/insight.mjs`/`scripts/insight.test.mjs`, apagados). O comando virou `make insight` (ou `promeia-insight` direto), e mora em `apps/promeia` — um serviço Python dedicado, não mais um script deste workspace. Ver `apps/promeia/CLAUDE.md` para o comando, as opções, as mensagens de erro medidas contra o Ollama/este Worker e a rodada real que autorizou a remoção.
 
-```bash
-ollama serve                        # se ainda não estiver rodando
-node apps/financas/scripts/insight.mjs --competencia 2026-07
-# ou, de dentro de apps/financas:
-pnpm run insight -- --competencia 2026-07
-```
+**O que continua sendo deste Worker, não do promeia** — nenhum destes três fatos mudou nesta fatia:
 
-Opções: `--competencia YYYY-MM` (default: mês corrente em Teresina, via `competenciaAtual()`), `--modelo <nome>` (default `qwen2.5:7b-instruct`), `--url <url do Ollama>` (default `http://localhost:11434/api/generate`), `--api-url <url>` (default `https://financas.piluvitu.com.br`), `--help`.
-
-⚠️ **Nada precisa continuar rodando depois.** O `ollama serve` só precisa estar de pé DURANTE a execução do comando — assim que ele termina (publicou com sucesso, ou falhou com uma das mensagens abaixo), pode fechar o Ollama, fechar o terminal, fechar a tampa do MacBook. Não há processo em segundo plano, não há socket aberto esperando a próxima chamada: o comando é `fetch` → `fetch` → `fetch` (números, Ollama, publicar) e termina. A tela (`#/insight`, seção _A tela_ abaixo) nunca chama o Mac de volta — ela lê o que já foi publicado no D1, e continua funcionando exatamente igual no minuto seguinte, com o Mac fechado.
-
-**Decisão sobre COMO o comando lê (a pergunta que a Task 3 deixou em aberto): estender o `INGEST_TOKEN`, não trocar de mecanismo.** A alternativa registrada na Task 3 (`wrangler d1 execute` direto, sem HTTP) foi descartada — o comando já precisa do `INGEST_TOKEN` pra escrever, reusar o MESMO segredo pra ler evita duplicar credencial/mecanismo de acesso ao D1 no mesmo comando. `routes/insights.ts` ganhou:
-
-- `ingestTokenValido(header, esperado)` — a checagem pura (fail-closed, mesma regra de sempre), extraída pra ser reusada pelas duas guardas.
-- `requireIngestTokenOrSession()` — guarda de `GET /insights/numbers`: um `Authorization: Bearer` PRESENTE decide sozinho (válido autentica, inválido barra com `invalid_ingest_token`, **nunca cai pro fallback de sessão** — evita a ambiguidade de um header errado virar silenciosamente uma tentativa de sessão); a AUSÊNCIA total do header cai no caminho de sempre, `requireSession<Bindings>()` — o navegador continua lendo essa rota exatamente como antes desta task.
-- `src/index.ts` ganhou uma QUARTA exceção ao middleware global de sessão: `GET /api/insights/numbers` (ao lado de `/api/health`, `/api/auth/*` e `POST /api/insights`) — a exceção só pula `requireSession()` PARA aquele método+path; quem decide de fato é a guarda presa à rota.
-
-⚠️ **Escopo continua honesto depois da extensão — decisão do brief da Task 4, provada por teste.** `GET /api/insights/numbers` devolve só AGREGADO (totais por categoria/período, via `insightNumbers`/`byCategory`), nunca lançamento cru — o token lê totais e escreve prosa, e continua sem alcançar `/api/accounts`, `/api/transactions` ou qualquer rota de escrita fora de `POST /api/insights`. `src/index.test.ts` (describe `"fronteira do INGEST_TOKEN (fatia ⑨, Task 3 + Task 4)"`) prova as duas metades against o app montado de verdade: o token NÃO abre `/api/accounts` nem `POST /api/payees` (testes da Task 3, intocados), NÃO abre `GET /api/insights/latest` (só `/numbers` foi estendida), e ABRE `GET /api/insights/numbers` sem cookie nenhum. Worker: 470 → 474 (+3 em `index.test.ts`, +1 em `routes/insights.test.ts`).
-
-**O prompt (`buildPrompt`, `scripts/insight.mjs`) só recebe o payload de `GET /api/insights/numbers`** — nunca um lançamento. Cada fato é formatado via `formatBRL` (`@piluvitu/tools/money`, nunca float/centavo cru no texto) e o prompt termina com regras explícitas: usar SOMENTE os números listados, nunca calcular/estimar/inventar, e dizer "sem dado suficiente" em vez de chutar quando falta base de comparação. Temperatura zero (`options: { temperature: 0 }`, mesma regra de `pdf-import.mjs`) — isto é resumo de fatos já calculados, não criação.
-
-**Erros, mesmo padrão de `pdf-import.mjs`/`backup-d1.sh` — a mensagem é o produto, nunca um erro cru:**
-
-- Ollama desligado (`ECONNREFUSED`) → "não consegui conectar ao Ollama em `<url>` — ele parece estar desligado. Inicie com `ollama serve`...".
-- Modelo não instalado (404 do Ollama) → cita o comando exato: `ollama pull <modelo>`.
-- `INGEST_TOKEN` ausente do ambiente → falha ANTES de qualquer chamada de rede, dizendo como definir (mesmo valor do `wrangler secret put INGEST_TOKEN`/`.dev.vars`).
-- API inalcançável (fetch lança — DNS/rede) vs. API recusou (resposta HTTP com `ok: false`) são mensagens DIFERENTES — a segunda distingue ainda `401` (cita o `INGEST_TOKEN`) de outro status (cita o código).
-- Modelo devolve texto vazio → falha alto (`código 1`), com a saída bruta do modelo no log, e **NADA é publicado** — mesma regra de "CSV vazio que parece sucesso é o pior resultado" do `pdf-import.mjs`, aplicada aqui a "insight vazio".
-- Falha ao PUBLICAR depois do texto já gerado (ex.: API caiu entre o `GET numbers` e o `POST insights`) → o texto gerado aparece no log (`--- texto gerado (NÃO publicado) ---`), nunca é perdido — o dono pode copiar/republicar manualmente sem rodar o Ollama de novo.
-
-### Testes e rodada real (`scripts/insight.test.mjs`, `scripts/insight.mjs`)
-
-```bash
-pnpm --filter @piluvitu/financas run test:pdf-import   # mesmo comando — inclui scripts/**/*.test.mjs inteiro
-```
-
-40 casos novos (117 no total do arquivo de config `vitest.scripts.config.ts`, que já incluía os 77 de `pdf-import.test.mjs`) — `competenciaAtual` (a mesma armadilha UTC de `cashflow.test.ts`), `buildPrompt` (nunca um centavo cru no texto, ordem das categorias preservada, as regras anti-invenção presentes, os três casos degenerados — sem categoria, sem base de comparação, sem maior crescimento — cada um com marcador explícito em vez de silêncio/`undefined`), `callOllama` (os quatro erros + o caminho feliz confirmando `temperature: 0`), `fetchNumbers`/`postInsight` (rede indisponível vs. API recusou, incl. 401 citando o token), `parseArgs` (aliases, flag sem valor, opção desconhecida) e `run()` ponta a ponta (caminho feliz, competência default, token ausente, competência malformada, `--help`, Ollama desligado, texto vazio, API recusa a leitura, API inalcançável, publicação falha preservando o texto gerado no log). Tudo stubado via injeção de dependência (`fetchImpl`/`env`/`now`) — nada chama Ollama/rede de verdade nesta suíte.
-
-**Rodado de verdade contra o Ollama local e a API local (não só stubs).** `wrangler dev` local com a migration `0007` aplicada, uma conta e 8 lançamentos reais semeados via `wrangler d1 execute` (DAS/Contador/INSS/Custos da PJ em julho e junho — o mesmo cenário de gap fixo já descrito na seção _Reserva de emergência_ acima), removidos depois da prova:
-
-```
-$ node scripts/insight.mjs --competencia 2026-07 --api-url http://localhost:8787
-==> buscando os números de 2026-07 em http://localhost:8787
-==> consultando o Ollama (modelo qwen2.5:7b-instruct, http://localhost:11434/api/generate) — pode levar alguns segundos
-==> publicando o insight de 2026-07 (modelo qwen2.5:7b-instruct)
-
-==> insight de 2026-07 publicado com sucesso
-
-O gasto total em julho de 2026 foi de R$ 1.230,00, representando um aumento de R$ 360,00 (41%) em comparação com junho do mesmo ano. O INSS foi a maior despesa neste mês, totalizando R$ 760,00, seguido pelo contador no valor de R$ 300,00 e pela DAS — Simples Nacional, que somou R$ 120,00. Os custos da PJ foram os menores, com R$ 50,00. O INSS teve o maior aumento entre todas as categorias, passando de R$ 400,00 em junho para R$ 760,00 em julho.
-```
-
-Todo número no texto bate exatamente com o que foi semeado (nenhum inventado) e a linha foi conferida gravada no D1 local (`SELECT ... FROM insights`). Os quatro caminhos de erro também foram exercitados contra o Ollama/API reais (não só stub): `INGEST_TOKEN` ausente, token errado (a API real respondeu 401 e a mensagem citou o segredo), Ollama apontando pra uma porta fechada (`ECONNREFUSED` real) e modelo inexistente (404 real do Ollama) — as quatro mensagens saíram exatamente como descrito na seção anterior.
+- **A fronteira do `INGEST_TOKEN`**: o que ele abre (`POST /api/insights`, `GET /api/insights/numbers`) e o que ele NUNCA abre (`/api/accounts`, `POST /api/payees`, `GET /api/insights/latest`) — provada por `src/index.test.ts` contra o app montado de verdade (ver seção _`routes/insights.ts` e a fronteira do `INGEST_TOKEN`_ acima, com a lista completa dos casos).
+- **As quatro exceções ao middleware global de sessão em `src/index.ts`**: `/api/health`, `/api/auth/*`, `POST /api/insights` e `GET /api/insights/numbers` — cada exceção só pula `requireSession()` PARA aquele método+path específico; quem autentica de fato é a guarda presa diretamente à rota, nunca o middleware global.
+- **`requireIngestTokenOrSession()`** (`routes/insights.ts`) é a guarda de `GET /api/insights/numbers`: um header `Authorization: Bearer` PRESENTE decide sozinho (válido autentica, inválido barra com `invalid_ingest_token`, **nunca cai pro fallback de sessão** — evita a ambiguidade de um header errado virar silenciosamente uma tentativa de sessão); a AUSÊNCIA total do header cai no caminho de sempre, `requireSession<Bindings>()` — o navegador continua lendo essa rota exatamente como sempre leu.
 
 ### A tela (Task 5 — `web/src/pages/insight.tsx`, rota `#/insight`)
 
 Fecha a fatia ⑨: as Tasks 1-4 entregaram os números calculados, o texto gerado no Mac e a autenticação de ingestão — até aqui, nada disso tinha UI. `InsightPage` consome `GET /api/insights/numbers?competence=<mês>` e `GET /api/insights/latest`, e monta dois cards ("Números de \<mês\>" e "Leitura").
 
-**A propriedade que esta tela existe pra sustentar: ela funciona sem AI.** Os números são calculados e aparecem SEMPRE — mesmo que o dono nunca tenha rodado `scripts/insight.mjs` no Mac nem uma vez. Isso não é só "o `null` de `latestInsight` não quebra a tela" (o caso feliz óbvio) — é robusto contra a busca do texto FALHAR de verdade (rede fora, D1 indisponível, `503`). As duas coisas são pedidas por dois `useEffect` **independentes**, nunca um `Promise.all` só: um `Promise.all` juntaria o destino dos dois lados, e uma falha (ou lentidão) do lado do texto atrasaria/derrubaria o lado dos números — exatamente a dependência que "o Mac empurra, o app lê" (seção acima) existe pra evitar. `numbers`/`numbersError` e `insight`/`insightError`/`insightLoaded` são estados totalmente separados; o card "Números" nunca olha pro estado do card "Leitura" e vice-versa. Coberto por `pages/insight.test.tsx`:
+**A propriedade que esta tela existe pra sustentar: ela funciona sem AI.** Os números são calculados e aparecem SEMPRE — mesmo que o dono nunca tenha rodado `make insight`/`promeia-insight` no Mac nem uma vez. Isso não é só "o `null` de `latestInsight` não quebra a tela" (o caso feliz óbvio) — é robusto contra a busca do texto FALHAR de verdade (rede fora, D1 indisponível, `503`). As duas coisas são pedidas por dois `useEffect` **independentes**, nunca um `Promise.all` só: um `Promise.all` juntaria o destino dos dois lados, e uma falha (ou lentidão) do lado do texto atrasaria/derrubaria o lado dos números — exatamente a dependência que "o Mac empurra, o app lê" (seção acima) existe pra evitar. `numbers`/`numbersError` e `insight`/`insightError`/`insightLoaded` são estados totalmente separados; o card "Números" nunca olha pro estado do card "Leitura" e vice-versa. Coberto por `pages/insight.test.tsx`:
 
 - `'os números aparecem mesmo sem NENHUM insight jamais gravado (latest: null)'` — o caso normal de produção hoje.
 - `'os números aparecem mesmo que a BUSCA do insight falhe (não só "nunca gravado")'` — mocka `/insights/latest` lançando `ApiError(503, ...)`; os números continuam aparecendo, e o card "Leitura" mostra o erro contido (não propaga, não derruba o outro card — mesmo padrão de `Bloco.tsx`/`blocos/BlocoCategorias.tsx`).

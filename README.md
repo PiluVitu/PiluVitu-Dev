@@ -122,8 +122,8 @@ Rodam no MacBook com o Ollama ligado. Nenhum precisa de servidor no ar depois.
 # fatura em PDF → CSV que a tela #/importar lê
 node apps/financas/scripts/pdf-import.mjs fatura.pdf
 
-# gera o insight financeiro e empurra para o D1
-INGEST_TOKEN=<valor> node apps/financas/scripts/insight.mjs
+# gera o insight financeiro e empurra para o D1 (serviço Python, apps/promeia)
+make insight
 ```
 
 ## Deploy automatizado
