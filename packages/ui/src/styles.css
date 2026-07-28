@@ -48,6 +48,20 @@
   --color-win: hsl(var(--win));
   --color-win-foreground: hsl(var(--win-foreground));
 
+  /* Paleta neutra pra `chart` (shadcn/recharts) — série sem significado de
+     risco/status próprio (ao contrário de --primary/--destructive, já
+     carregados de sentido em outras telas: azul = normal, vermelho =
+     alerta). Reusa os MESMOS matizes de --success/--warn/--win (nunca cor
+     nova) pra não crescer a paleta do design system só por causa de
+     gráfico — --chart-1 reflete --primary de propósito (é a série "neutra"
+     default de um gráfico com uma série só, ex. o acumulado do fluxo de
+     caixa). */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
   /* Brand translucent overlays — estáticos de propósito (sky-400, não derivam de --primary) */
   --color-accent-soft: rgb(56 189 248 / 0.13);
   --color-accent-line: rgb(56 189 248 / 0.32);
@@ -131,6 +145,11 @@
     --win: 255 60% 60%;
     --win-foreground: 0 0% 100%;
     --radius: 1.125rem;
+    --chart-1: 198 93% 60%;
+    --chart-2: 158 64% 40%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 255 60% 60%;
+    --chart-5: 340 75% 55%;
   }
 
   .dark {
@@ -161,6 +180,11 @@
     --warn-foreground: 200 75% 6%;
     --win: 255 92% 76%;
     --win-foreground: 200 75% 6%;
+    --chart-1: 198 93% 60%;
+    --chart-2: 158 64% 52%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 255 92% 76%;
+    --chart-5: 340 82% 65%;
   }
 }
 

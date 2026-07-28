@@ -1,11 +1,17 @@
 import { formatBRL } from '@piluvitu/tools/money'
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@piluvitu/ui/chart'
 import { useEffect, useRef, useState } from 'react'
 import {
+  Area,
   Bar,
   BarChart,
   Cell,
   ComposedChart,
-  Line,
   ReferenceLine,
   Tooltip,
   XAxis,
@@ -314,41 +320,114 @@ export function GraficoCategorias({
   )
 }
 
+// Id único do gradiente do preenchimento da área — precisa ser único na
+// página inteira (SVG `<defs>` compartilha namespace global de ids), não só
+// neste componente. `GraficoFluxo` é o único consumidor de `<defs>` neste
+// arquivo (os outros dois gráficos não usam `<Area>`), então um literal
+// fixo é seguro.
+const ID_GRADIENTE_ACUMULADO = 'fluxo-acumulado-gradiente'
+
+// `ChartConfig` do shadcn (`@piluvitu/ui/chart`) — a MESMA cor de sempre
+// pra entrou/saiu (tokens diretos, ver COR_ENTROU/COR_SAIU acima; o `<Bar
+// fill=...>` abaixo continua usando o valor js direto, não a var CSS, pra
+// não mexer na asserção de cor já testada). `acumulado` é quem de fato
+// CONSOME a var CSS que `ChartContainer`/`ChartStyle` injeta
+// (`var(--color-acumulado)`, tanto no `stroke` da área quanto no gradiente
+// do preenchimento) — é a série nova desta task, a primeira do arquivo a
+// usar o mecanismo de cor do componente `chart` do shadcn de verdade.
+// `--chart-1` (não `--primary`/`--destructive`): o acumulado não carrega
+// sentido de risco/status como as barras de entrada/saída — é só "a
+// reserva ao longo do tempo", a cor neutra que o design system reserva pra
+// gráfico (ver packages/ui/src/styles.css).
+const chartConfigFluxo = {
+  entrou: { label: 'Entrou', color: COR_ENTROU },
+  saiu: { label: 'Saiu', color: COR_SAIU },
+  acumulado: { label: 'Acumulado', color: 'hsl(var(--chart-1))' },
+} satisfies ChartConfig
+
 /**
- * Mapa de fluxo de caixa (Task 3, fatia ⑧) — barras de entrada/saída +
- * linha de acumulado. Mora NESTE arquivo, não em `GraficoFluxo.tsx`
- * separado — mesma razão de `GraficoCategorias` acima: um terceiro arquivo
- * importando `recharts` criaria um TERCEIRO chunk de ~104 KB gzip pro
- * mesmo pacote. `pages/fluxo.tsx` resolve
+ * Linha do tooltip com indicador + nome + valor em BRL — o MESMO layout que
+ * `ChartTooltipContent` desenha por padrão, só trocando `value.toLocaleString()`
+ * (o default do shadcn) por `formatBRL`, porque os valores aqui são
+ * centavos inteiros, não reais formatados sozinhos. Passado como
+ * `formatter` pra `ChartTooltipContent` — quando esse prop existe, o
+ * componente delega a linha INTEIRA pra ele (perde o indicador/nome default
+ * se o formatter não os desenhar de novo), daí reconstruir os dois aqui.
+ */
+function formatarLinhaTooltipFluxo(
+  value: unknown,
+  name: unknown,
+  item: { color?: string; payload?: { fill?: string } },
+) {
+  const cor = item.payload?.fill ?? item.color
+  return (
+    <>
+      <div
+        className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+        style={{ backgroundColor: cor }}
+      />
+      <div className="flex flex-1 items-center justify-between gap-4 leading-none">
+        <span className="text-muted-foreground">{String(name)}</span>
+        <span className="text-foreground font-mono font-medium tabular-nums">
+          {formatBRL(Number(value))}
+        </span>
+      </div>
+    </>
+  )
+}
+
+/**
+ * Mapa de fluxo de caixa (Task 3, fatia ⑧; area chart do acumulado — Task 1,
+ * fatia ⑨) — barras de entrada/saída + ÁREA do acumulado. Mora NESTE
+ * arquivo, não em `GraficoFluxo.tsx` separado — mesma razão de
+ * `GraficoCategorias` acima: um terceiro arquivo importando `recharts`
+ * criaria um TERCEIRO chunk de ~104 KB gzip pro mesmo pacote.
+ * `pages/fluxo.tsx` resolve
  * `lazy(() => import('../blocos/GraficoComprometido').then(m => ({
  * default: m.GraficoFluxo })))` — o MESMO chunk físico que
  * `BlocoComprometido.tsx`/`BlocoCategorias.tsx` já carregam sob demanda,
- * nunca um novo. `scripts/check-financas-lazy-chart.mjs` continua válido
- * sem alteração — o gate verifica "o marcador de recharts está fora do
- * chunk de entrada e dentro de ALGUM chunk lazy", não quantos gráficos
- * moram nesse chunk.
+ * nunca um novo. `@piluvitu/ui/chart` (novo nesta task) também importa
+ * `recharts` — mas só é importado DAQUI, dentro do mesmo módulo lazy, então
+ * o `import()` continua resolvendo pro MESMO chunk físico, nunca um
+ * segundo. `scripts/check-financas-lazy-chart.mjs` continua válido sem
+ * alteração — o gate verifica "o marcador de recharts está fora do chunk
+ * de entrada e dentro de ALGUM chunk lazy", não quantos gráficos moram
+ * nesse chunk (MEDIDO no build desta task, ver task-1-report.md).
  *
- * Eixo único (não dual como um mapa de fluxo "de livro-texto" poderia
- * ter): entrou/saiu/acumulado convivem na mesma escala de centavos, e este
- * app é de uso pessoal — a diferença de magnitude entre um mês e o
- * acumulado não chega a justificar um segundo eixo (mais uma superfície
- * pra testar/manter). `ComposedChart` (recharts) é só um `BarChart` que
- * também aceita `<Line>` — mesmas `<XAxis>`/`<YAxis>`/`<Tooltip>` dos
- * outros dois gráficos deste arquivo.
+ * ⚠️ **Área, não linha — é o pedido literal do dono** (ele apontou pro
+ * `https://ui.shadcn.com/charts/area`): a leitura de "a reserva subindo ou
+ * sendo consumida ao longo do tempo" é o que área comunica melhor que uma
+ * linha solta — o preenchimento sob a curva dá peso visual à ACUMULAÇÃO,
+ * não só à trajetória. Entrou/saiu continuam como `<Bar>` (não viraram
+ * área) — são fluxos discretos por mês, não uma grandeza que se acumula.
+ *
+ * ⚠️ **Container: `ChartContainer` (shadcn) + `ResponsiveContainer`
+ * (recharts) — não o hook `useLarguraContainer` que os outros dois gráficos
+ * deste arquivo usam.** Decisão desta task, não descuido: `ChartContainer`
+ * já embute `ResponsiveContainer` (não dá pra optar por fora sem deixar de
+ * ser o componente shadcn de verdade) — então este gráfico específico
+ * adota o padrão CANÔNICO do shadcn (o mesmo de
+ * `https://ui.shadcn.com/charts/area`), enquanto `GraficoComprometido`/
+ * `GraficoCategorias` (não tocados nesta task) continuam com o hook manual
+ * já testado. Os dois padrões coexistem no mesmo arquivo de propósito —
+ * convergir os três pra um só é trabalho de uma task futura, não desta.
+ *
+ * Eixo único (não dual): entrou/saiu/acumulado convivem na mesma escala de
+ * centavos, e este app é de uso pessoal — a diferença de magnitude entre
+ * um mês e o acumulado não chega a justificar um segundo eixo.
  *
  * ⚠️ Mesmo achado MEDIDO já documentado acima (GraficoComprometido/
  * GraficoCategorias): uma barra de valor EXATAMENTE 0 não renderiza
  * `<path class="recharts-rectangle">` nenhum — um mês sem movimento
  * (`entrou_cents === 0 && saiu_cents === 0`, o caso "mês vazio aparece
  * zerado" do spec) simplesmente não desenha barra de entrada/saída
- * naquele mês, mas a linha de acumulado continua (o acumulado migra o
+ * naquele mês, mas a ÁREA do acumulado continua (o acumulado migra o
  * saldo do mês anterior, nunca zera — ver `domain/cashflow.ts`). A prova
  * textual de "mês vazio aparece zerado, não ausente" mora na TABELA de
  * `pages/fluxo.tsx` (não sofre dessa peculiaridade do recharts), não
  * neste componente.
  */
 export function GraficoFluxo({ report }: { report: CashflowReportView }) {
-  const { ref, largura } = useLarguraContainer<HTMLDivElement>()
   const dados = report.linhas.map((l) => ({
     competence: l.competence,
     rotulo: rotuloCompetencia(l.competence),
@@ -358,16 +437,42 @@ export function GraficoFluxo({ report }: { report: CashflowReportView }) {
   }))
 
   return (
-    <div ref={ref} className="overflow-x-auto" data-testid="grafico-fluxo">
-      <ComposedChart width={largura} height={ALTURA} data={dados}>
+    <ChartContainer
+      config={chartConfigFluxo}
+      data-testid="grafico-fluxo"
+      className="aspect-auto h-[220px] w-full"
+    >
+      <ComposedChart data={dados}>
+        <defs>
+          <linearGradient
+            id={ID_GRADIENTE_ACUMULADO}
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+          >
+            <stop
+              offset="5%"
+              stopColor="var(--color-acumulado)"
+              stopOpacity={0.35}
+            />
+            <stop
+              offset="95%"
+              stopColor="var(--color-acumulado)"
+              stopOpacity={0.03}
+            />
+          </linearGradient>
+        </defs>
         <XAxis dataKey="rotulo" fontSize={12} />
         <YAxis
           width={72}
           fontSize={12}
           tickFormatter={(v: number) => formatBRL(v)}
         />
-        <Tooltip
-          formatter={(value, name) => [formatBRL(Number(value)), name]}
+        <ChartTooltip
+          content={
+            <ChartTooltipContent formatter={formatarLinhaTooltipFluxo} />
+          }
         />
         <Bar
           dataKey="entrou"
@@ -381,15 +486,16 @@ export function GraficoFluxo({ report }: { report: CashflowReportView }) {
           fill={COR_SAIU}
           isAnimationActive={false}
         />
-        <Line
+        <Area
           type="monotone"
           dataKey="acumulado"
           name="Acumulado"
-          stroke={COR_REFERENCIA}
-          dot={false}
+          stroke="var(--color-acumulado)"
+          strokeWidth={2}
+          fill={`url(#${ID_GRADIENTE_ACUMULADO})`}
           isAnimationActive={false}
         />
       </ComposedChart>
-    </div>
+    </ChartContainer>
   )
 }

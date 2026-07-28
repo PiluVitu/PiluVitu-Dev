@@ -1,5 +1,5 @@
 import { act, render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CashflowReportView } from '../lib/cashflow'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
@@ -368,8 +368,37 @@ const cashflowReport: CashflowReportView = {
   ],
 }
 
-describe('GraficoFluxo — barras de entrada/saída + linha de acumulado', () => {
-  it('desenha duas barras (entrou/saiu) por mês com movimento, mais uma linha de acumulado', () => {
+describe('GraficoFluxo — barras de entrada/saída + área do acumulado (Task 1, fatia ⑨)', () => {
+  // `GraficoFluxo` usa `ChartContainer` (`@piluvitu/ui/chart`, novo nesta
+  // task), que embute `ResponsiveContainer` do recharts — diferente dos
+  // outros dois gráficos deste arquivo (hook `useLarguraContainer` manual).
+  //
+  // ⚠️ MEDIDO: `ResponsiveContainer`, quando existe um `ResizeObserver`
+  // GLOBAL, ignora a medição inicial (`initialDimension`) e passa a
+  // depender do PRIMEIRO callback do observer pra decidir o tamanho — e o
+  // stub de `src/test/setup.ts` (ligado pros outros dois gráficos, que só
+  // olham `clientWidth`) só preenche `contentRect.width`, nunca
+  // `contentRect.height`. Isso faz `ResponsiveContainer` computar
+  // `containerHeight: NaN` e não renderizar NADA (guarda
+  // `isAcceptableSize`), mesmo com `getBoundingClientRect` mockado — a
+  // dispatch síncrona do `observe()` do stub sobrescreve a medição boa
+  // logo em seguida. Corrigido removendo o `ResizeObserver` global só
+  // durante este describe: sem ele, `ResponsiveContainer` mantém o
+  // `initialDimension` default do shadcn (320×200, ver `chart.tsx`) —
+  // mesmo mecanismo que os testes de `packages/ui/src/chart.test.tsx` já
+  // usam (lá nunca existiu `ResizeObserver` global pra começo de conversa).
+  const resizeObserverOriginal = globalThis.ResizeObserver
+
+  beforeAll(() => {
+    ;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+      undefined
+  })
+
+  afterAll(() => {
+    globalThis.ResizeObserver = resizeObserverOriginal
+  })
+
+  it('desenha duas barras (entrou/saiu) por mês com movimento, mais uma ÁREA de acumulado', () => {
     const { container } = render(<GraficoFluxo report={cashflowReport} />)
 
     // 2 meses com movimento (jun, jul) x 2 séries (entrou, saiu) = 4
@@ -378,9 +407,15 @@ describe('GraficoFluxo — barras de entrada/saída + linha de acumulado', () =>
     const barras = container.querySelectorAll('.recharts-rectangle')
     expect(barras.length).toBe(4)
 
-    // a linha de acumulado sempre existe, independente de mês zerado —
-    // acumulado nunca é 0 nos 3 meses deste fixture.
-    expect(container.querySelector('.recharts-line-curve')).toBeInTheDocument()
+    // a área do acumulado sempre existe, independente de mês zerado —
+    // acumulado nunca é 0 nos 3 meses deste fixture. `recharts-area-area`
+    // é o preenchimento sob a curva (o que faz ser ÁREA, não linha);
+    // `recharts-area-curve` é o traço por cima.
+    expect(container.querySelector('.recharts-area-area')).toBeInTheDocument()
+    expect(container.querySelector('.recharts-area-curve')).toBeInTheDocument()
+    // Nunca mais uma <Line> — a série virou área de propósito (pedido do
+    // dono, ver comentário em GraficoComprometido.tsx).
+    expect(container.querySelector('.recharts-line-curve')).toBeNull()
   })
 
   it('cores por token do design system: entrou usa --primary, saiu usa --destructive — nunca hex solto', () => {
@@ -407,24 +442,30 @@ describe('GraficoFluxo — barras de entrada/saída + linha de acumulado', () =>
     }
   })
 
-  it('renderiza dentro do wrapper com data-testid conhecido, medindo o CONTAINER — mesmo hook de GraficoComprometido/GraficoCategorias', () => {
+  it('a área do acumulado consome a var CSS injetada pelo ChartContainer (--color-acumulado), escopada ao token --chart-1 — nunca hex solto', () => {
+    const { container } = render(<GraficoFluxo report={cashflowReport} />)
+
+    const curva = container.querySelector('.recharts-area-curve')
+    expect(curva?.getAttribute('stroke')).toBe('var(--color-acumulado)')
+
+    // `ChartContainer`/`ChartStyle` (`@piluvitu/ui/chart`) injetam a var a
+    // partir do `ChartConfig` — a prova de que a série está de fato ligada
+    // ao mecanismo de cor do componente shadcn, não a um hex/token direto
+    // hardcoded na área.
+    const style = container.querySelector('style')
+    expect(style?.innerHTML).toContain(
+      '--color-acumulado: hsl(var(--chart-1));',
+    )
+  })
+
+  it('renderiza dentro do slot data-slot="chart" do ChartContainer, com o data-testid conhecido', () => {
     const { container } = render(<GraficoFluxo report={cashflowReport} />)
     const wrapper = container.querySelector(
       '[data-testid="grafico-fluxo"]',
     ) as HTMLElement
+
     expect(wrapper).toBeInTheDocument()
-
-    Object.defineProperty(wrapper, 'clientWidth', {
-      configurable: true,
-      value: 308,
-    })
-    act(() => {
-      triggerResize(wrapper)
-    })
-
-    const svgWrapper = container.querySelector(
-      '.recharts-wrapper',
-    ) as HTMLElement
-    expect(Number(svgWrapper.style.width.replace('px', ''))).toBe(308)
+    expect(wrapper).toHaveAttribute('data-slot', 'chart')
+    expect(container.querySelector('.recharts-wrapper')).toBeInTheDocument()
   })
 })
