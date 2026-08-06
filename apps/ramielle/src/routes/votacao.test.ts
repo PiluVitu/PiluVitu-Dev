@@ -1414,7 +1414,7 @@ describe('POST /votacao/sessions/:id/close', () => {
 // --------------------------------------------------------------------------
 // POST /votacao/sessions/:id/tiebreak (admin) — porte de `Tiebreak`
 // (apps/api/internal/handlers/votacao/votes.go:172-270). O sorteio é
-// PROVABLY-FAIR: ver domain/tiebreak.ts pro cálculo puro (já provado bit a
+// AUDITÁVEL/RECOMPUTÁVEL: ver domain/tiebreak.ts pro cálculo puro (já provado bit a
 // bit contra o Go em domain/tiebreak.test.ts) — aqui só a fiação HTTP:
 // ordem das checagens, e o teste que prova a auditoria de ponta a ponta
 // (entropia fixa + serverNonce mockado com o valor exato do segundo vetor
