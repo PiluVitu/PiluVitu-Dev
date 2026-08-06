@@ -2425,6 +2425,28 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
   }
 
   /**
+   * ⚠️ MEDIDO durante a mutação desta fix round: `JSON.stringify(sa)`
+   * ESCAPA as quebras de linha do PEM (`\n` real vira os DOIS caracteres
+   * `\` + `n` no texto serializado) — então `texto.includes(sa.private_key)`
+   * (o PEM MULTI-LINHA inteiro, com quebras reais) é `false` mesmo quando
+   * `JSON.stringify(sa)` está DENTRO do texto, um FALSO NEGATIVO que a
+   * primeira versão deste teste tinha (confirmado reproduzindo:
+   * `JSON.stringify({private_key: pem}).includes(pem)` → `false`, mas
+   * `.includes(primeiraLinhaBase64)` → `true`). Uma linha do corpo base64
+   * (sem quebra nenhuma) sobrevive ao escaping inalterada — é o trecho que
+   * as asserções abaixo usam de verdade, o PEM inteiro fica só como
+   * checagem adicional (não decisiva sozinha).
+   */
+  function trechoChaveSemQuebras(sa: { private_key: string }): string {
+    const linha = sa.private_key.split('\n')[1]
+    if (!linha)
+      throw new Error(
+        'PEM de teste sem linha de base64 — gerarServiceAccountSegura mudou de formato?',
+      )
+    return linha
+  }
+
+  /**
    * Mocka o token endpoint SEMPRE, e o endpoint de values do Sheets só
    * quando `sheetsResposta` é passado — permite simular "token falha antes
    * de chegar no Sheets" (sem `sheetsResposta`) e "token OK, Sheets falha
@@ -2509,12 +2531,15 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
       )
       expect(res.status).toBe(502)
 
+      const trechoChave = trechoChaveSemQuebras(sa)
       const textoResposta = await res.text()
       expect(textoResposta).not.toContain(sa.private_key)
+      expect(textoResposta).not.toContain(trechoChave)
       expect(textoResposta).not.toContain(marcadorCorpoToken)
 
       const textoConsole = textoDosLogs(spyConsole)
       expect(textoConsole).not.toContain(sa.private_key)
+      expect(textoConsole).not.toContain(trechoChave)
       expect(textoConsole).not.toContain(marcadorCorpoToken)
     } finally {
       spyConsole.mockRestore()
@@ -2563,13 +2588,16 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
       )
       expect(res.status).toBe(502)
 
+      const trechoChave = trechoChaveSemQuebras(sa)
       const textoResposta = await res.text()
       expect(textoResposta).not.toContain(sa.private_key)
+      expect(textoResposta).not.toContain(trechoChave)
       expect(textoResposta).not.toContain(marcadorAccessToken)
       expect(textoResposta).not.toContain(marcadorCorpoSheets)
 
       const textoConsole = textoDosLogs(spyConsole)
       expect(textoConsole).not.toContain(sa.private_key)
+      expect(textoConsole).not.toContain(trechoChave)
       expect(textoConsole).not.toContain(marcadorAccessToken)
       expect(textoConsole).not.toContain(marcadorCorpoSheets)
     } finally {
