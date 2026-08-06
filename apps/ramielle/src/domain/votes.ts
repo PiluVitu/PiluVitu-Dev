@@ -21,7 +21,17 @@
  *     vira 500 internal_error — não há dedupe lá). O brief desta task pede
  *     explicitamente pra NÃO herdar esse defeito: dedupar aqui é a
  *     divergência intencional, preservando ORDEM de primeira ocorrência.
+ *
+ * Task 4 (fatia2 T4) estende este arquivo com a APURAÇÃO: `listVoteMovieIds`
+ * + `countVoters` (leitura, usados por `GET /results`) e
+ * `closeVotingSession` + `setSessionWinner` (escrita em `voting_sessions`,
+ * usados por `POST /close`). Ficam aqui, não em `domain/sessions.ts` (que é
+ * SÓ leitura de propósito — ver o topo daquele arquivo), porque
+ * `closeVotingSession`/`setSessionWinner` são ESCRITAS, e porque o brief
+ * desta task (`task-4-brief.md`) nomeia explicitamente só `tally.ts` (novo,
+ * puro) e este arquivo pra estender — nenhum novo arquivo de domínio.
  */
+import type { TalliableVote } from './tally'
 
 /** Espelha `votacao.ErrMovieNotInSession` do Go. */
 export class MovieNotInSessionError extends Error {
@@ -120,4 +130,139 @@ export async function replaceUserVotes(
   ])
 
   return deduped
+}
+
+// ---------------------------------------------------------------------------
+// Apuração (Task 4, fatia2 T4) — leitura pra `GET /results`, escrita pra
+// `POST /close`. `tallyVotes`/`computeTopMovies` (a lógica pura) moram em
+// `domain/tally.ts`; aqui só o I/O contra o D1.
+// ---------------------------------------------------------------------------
+
+/**
+ * Ids de filme de todo voto da sessão, na forma que `tallyVotes`/
+ * `computeTopMovies` (`domain/tally.ts`) esperam — porte de
+ * `Store.ListVotesBySession` (`apps/api/internal/votacao/votes.go:61-85`),
+ * só que já projetado pra `{movieId}` em vez do `Vote` inteiro: nem
+ * `GetResults` nem `CloseSession` usam `ID`/`UserID`/`CreatedAt` do Go, só
+ * `MovieID` — carregar as demais colunas seria trabalho sem uso.
+ *
+ * O NÚMERO DE LINHAS devolvido por esta função É `total_votes` na resposta
+ * de `/results` (`results.length`, não `countVoters`) — `total_votes` conta
+ * LINHAS de `votes`, não eleitores; ver `countVoters` logo abaixo pro
+ * porquê os dois números divergem sob voto de aprovação.
+ *
+ * `ORDER BY created_at ASC` espelha a query do Go por completude, mas não
+ * afeta a apuração — `tallyVotes`/`computeTopMovies` não são sensíveis à
+ * ordem de entrada, só à contagem por `movieId`.
+ */
+export async function listVoteMovieIds(
+  db: D1Database,
+  sessionId: number,
+): Promise<TalliableVote[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT movie_id FROM votes WHERE session_id = ? ORDER BY created_at ASC`,
+    )
+    .bind(sessionId)
+    .all<{ movie_id: number }>()
+  return results.map((row) => ({ movieId: row.movie_id }))
+}
+
+/**
+ * Número de USUÁRIOS DISTINTOS que votaram na sessão — porte de
+ * `Store.CountVoters` (`votes.go:152-158`). ⚠️ Diferente de
+ * `listVoteMovieIds(...).length` (`total_votes`, número de LINHAS): o voto
+ * de aprovação deixa uma pessoa aprovar vários filmes, então 1 pessoa
+ * votando em 3 filmes é `total_votes: 3` mas `total_voters: 1` — os dois
+ * números medem coisas diferentes de propósito, não é um bug se divergirem.
+ */
+export async function countVoters(
+  db: D1Database,
+  sessionId: number,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(DISTINCT user_id) AS n FROM votes WHERE session_id = ?`,
+    )
+    .bind(sessionId)
+    .first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+/**
+ * Fecha a sessão — porte de `Store.CloseVotingSession`
+ * (`apps/api/internal/votacao/sessions.go:74-103`). `WHERE id = ? AND
+ * status = 'open'` é a MESMA guarda do Go: devolve `false` (nenhuma linha
+ * afetada) tanto pra id INEXISTENTE quanto pra sessão JÁ FECHADA — a rota
+ * (`POST /close`) não distingue os dois casos, os dois viram 404
+ * `session_not_open`. Ambiguidade INTENCIONAL herdada do Go, não
+ * "melhorada" aqui com uma query extra de existência antes do UPDATE.
+ *
+ * `winnerMovieId === null` faz o UPDATE OMITIR a coluna `winner_movie_id`
+ * inteira (fica com o valor que já tinha — NULL numa sessão aberta) — a
+ * mesma bifurcação de dois SQLs do Go (`if winnerMovieID != nil {...} else
+ * {...}`), não um `SET winner_movie_id = NULL` explícito (mesmo efeito,
+ * texto de SQL diferente do que o Go de fato roda).
+ *
+ * `closedAtIso` é o relógio INJETADO pela rota (`nowIsoUtc()` de
+ * `lib/dates.ts`) — nunca `new Date()` chamado aqui dentro, pra manter este
+ * domínio testável sem mockar relógio global. Grava já em ISO (o Go usa
+ * `CURRENT_TIMESTAMP`; a leitura de qualquer linha do D1 passa por
+ * `toIsoUtc` de qualquer forma, mas gravar normalizado evita depender
+ * dessa conversão neste valor específico).
+ */
+export async function closeVotingSession(
+  db: D1Database,
+  sessionId: number,
+  winnerMovieId: number | null,
+  closedAtIso: string,
+): Promise<boolean> {
+  const stmt =
+    winnerMovieId !== null
+      ? db
+          .prepare(
+            `UPDATE voting_sessions
+                SET status = 'closed', closed_at = ?, winner_movie_id = ?
+              WHERE id = ? AND status = 'open'`,
+          )
+          .bind(closedAtIso, winnerMovieId, sessionId)
+      : db
+          .prepare(
+            `UPDATE voting_sessions
+                SET status = 'closed', closed_at = ?
+              WHERE id = ? AND status = 'open'`,
+          )
+          .bind(closedAtIso, sessionId)
+
+  const result = await stmt.run()
+  return (result.meta.changes ?? 0) > 0
+}
+
+/**
+ * Grava o vencedor + o método de desempate — porte de
+ * `Store.SetSessionWinner` (`apps/api/internal/votacao/tiebreaks.go:47-57`).
+ * Chamada num PASSO SEPARADO de `closeVotingSession`, espelhando o Go
+ * (`CloseSession` primeiro fecha com `winner_movie_id` já embutido no mesmo
+ * UPDATE, DEPOIS chama `SetSessionWinner` de novo só pra gravar
+ * `winner_method` — redundante pro `winner_movie_id`, que já foi gravado,
+ * mas é o que o Go faz, e paridade OBSERVÁVEL é o critério desta fatia, não
+ * o SQL mais enxuto). `method` só chega `'votes'` nesta task — `'roulette'`
+ * é a T5 (`POST /tiebreak`).
+ *
+ * Não recebe `sessionId` como garantia de que a sessão está fechada — quem
+ * chama (`POST /close`) só invoca isto DEPOIS de `closeVotingSession`
+ * devolver `true`, mesma ordem do Go.
+ */
+export async function setSessionWinner(
+  db: D1Database,
+  sessionId: number,
+  winnerMovieId: number,
+  method: 'votes' | 'roulette',
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE voting_sessions SET winner_movie_id = ?, winner_method = ? WHERE id = ?`,
+    )
+    .bind(winnerMovieId, method, sessionId)
+    .run()
 }

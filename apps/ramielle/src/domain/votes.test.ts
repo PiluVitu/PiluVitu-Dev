@@ -1,6 +1,14 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { MovieNotInSessionError, replaceUserVotes } from './votes'
+import { nowIsoUtc } from '../lib/dates'
+import {
+  closeVotingSession,
+  countVoters,
+  listVoteMovieIds,
+  MovieNotInSessionError,
+  replaceUserVotes,
+  setSessionWinner,
+} from './votes'
 
 const DB = env.DB
 
@@ -181,5 +189,172 @@ describe('replaceUserVotes', () => {
     expect(await votosDoUsuario(sessionId, userId)).toEqual(
       [...movieIds].sort((a, b) => a - b),
     )
+  })
+})
+
+// --------------------------------------------------------------------------
+// Apuração (Task 4, fatia2 T4) — listVoteMovieIds/countVoters (leitura pra
+// GET /results) e closeVotingSession/setSessionWinner (escrita pra
+// POST /close).
+// --------------------------------------------------------------------------
+
+type SessaoRow = {
+  status: 'open' | 'closed'
+  closed_at: string | null
+  winner_movie_id: number | null
+  winner_method: string | null
+}
+
+async function sessaoRow(sessionId: number): Promise<SessaoRow> {
+  const row = await DB.prepare(
+    `SELECT status, closed_at, winner_movie_id, winner_method
+       FROM voting_sessions WHERE id = ?`,
+  )
+    .bind(sessionId)
+    .first<SessaoRow>()
+  if (row === null) throw new Error('sessão não encontrada')
+  return row
+}
+
+describe('listVoteMovieIds', () => {
+  it('sessão sem voto devolve array vazio', async () => {
+    const userId = await novoUsuario('sub-tally-vazio')
+    const sessionId = await novaSessao(userId)
+
+    await expect(listVoteMovieIds(DB, sessionId)).resolves.toEqual([])
+  })
+
+  it('devolve um item por LINHA de votes — não deduplicado por movieId', async () => {
+    const u1 = await novoUsuario('sub-tally-u1')
+    const u2 = await novoUsuario('sub-tally-u2')
+    const sessionId = await novaSessao(u1)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    const m2 = await novoFilme(sessionId, 'Drama')
+
+    await replaceUserVotes(DB, sessionId, u1, [m1, m2])
+    await replaceUserVotes(DB, sessionId, u2, [m1])
+
+    const votos = await listVoteMovieIds(DB, sessionId)
+    // 3 linhas: (u1,m1) (u1,m2) (u2,m1) — não 2 (não é um DISTINCT movie_id).
+    expect(votos).toHaveLength(3)
+    expect(votos.map((v) => v.movieId).sort((a, b) => a - b)).toEqual(
+      [m1, m1, m2].sort((a, b) => a - b),
+    )
+  })
+
+  it('votos de outras sessões não vazam', async () => {
+    const userId = await novoUsuario('sub-tally-isolado')
+    const sessionA = await novaSessao(userId)
+    const sessionB = await novaSessao(userId)
+    const mA = await novoFilme(sessionA, 'Ação')
+    const mB = await novoFilme(sessionB, 'Drama')
+
+    await replaceUserVotes(DB, sessionA, userId, [mA])
+    await replaceUserVotes(DB, sessionB, userId, [mB])
+
+    expect(await listVoteMovieIds(DB, sessionA)).toEqual([{ movieId: mA }])
+  })
+})
+
+describe('countVoters', () => {
+  it('sessão sem voto devolve 0', async () => {
+    const userId = await novoUsuario('sub-voters-vazio')
+    const sessionId = await novaSessao(userId)
+
+    await expect(countVoters(DB, sessionId)).resolves.toBe(0)
+  })
+
+  // ⚠️ O caso que PROVA que total_votes (linhas) e total_voters (usuários
+  // distintos) medem coisas diferentes — 1 pessoa aprovando 3 filmes é
+  // total_votes:3 mas total_voters:1. Um teste onde os dois números batem
+  // (ex.: 1 voto por usuário) não discriminaria countVoters de
+  // listVoteMovieIds(...).length.
+  it('1 usuário votando em 3 filmes: countVoters=1, listVoteMovieIds tem 3 linhas — os dois números DIVERGEM de propósito', async () => {
+    const userId = await novoUsuario('sub-voters-diverge')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    const m2 = await novoFilme(sessionId, 'Drama')
+    const m3 = await novoFilme(sessionId, 'Comédia')
+
+    await replaceUserVotes(DB, sessionId, userId, [m1, m2, m3])
+
+    await expect(countVoters(DB, sessionId)).resolves.toBe(1)
+    await expect(listVoteMovieIds(DB, sessionId)).resolves.toHaveLength(3)
+  })
+
+  it('conta usuários DISTINTOS — 2 usuários votando no mesmo filme é countVoters=2', async () => {
+    const u1 = await novoUsuario('sub-voters-u1')
+    const u2 = await novoUsuario('sub-voters-u2')
+    const sessionId = await novaSessao(u1)
+    const m1 = await novoFilme(sessionId, 'Ação')
+
+    await replaceUserVotes(DB, sessionId, u1, [m1])
+    await replaceUserVotes(DB, sessionId, u2, [m1])
+
+    await expect(countVoters(DB, sessionId)).resolves.toBe(2)
+  })
+})
+
+describe('closeVotingSession', () => {
+  it('happy path com vencedor — status=closed, closed_at e winner_movie_id gravados', async () => {
+    const userId = await novoUsuario('sub-close-vencedor')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    const agora = nowIsoUtc()
+
+    await expect(closeVotingSession(DB, sessionId, m1, agora)).resolves.toBe(
+      true,
+    )
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.closed_at).toBe(agora)
+    expect(row.winner_movie_id).toBe(m1)
+  })
+
+  it('empate (winnerMovieId=null) — fecha, closed_at gravado, winner_movie_id continua NULL', async () => {
+    const userId = await novoUsuario('sub-close-empate')
+    const sessionId = await novaSessao(userId)
+    const agora = nowIsoUtc()
+
+    await expect(closeVotingSession(DB, sessionId, null, agora)).resolves.toBe(
+      true,
+    )
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.closed_at).toBe(agora)
+    expect(row.winner_movie_id).toBeNull()
+  })
+
+  it("sessão JÁ FECHADA devolve false — WHERE status='open' não bate nenhuma linha", async () => {
+    const userId = await novoUsuario('sub-close-jafechada')
+    const sessionId = await novaSessao(userId)
+    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
+
+    await expect(
+      closeVotingSession(DB, sessionId, null, nowIsoUtc()),
+    ).resolves.toBe(false)
+  })
+
+  it('sessão INEXISTENTE devolve false — mesma resposta de "já fechada" (ambiguidade intencional, herdada do Go)', async () => {
+    await expect(
+      closeVotingSession(DB, 999999, null, nowIsoUtc()),
+    ).resolves.toBe(false)
+  })
+})
+
+describe('setSessionWinner', () => {
+  it('grava winner_movie_id e winner_method na sessão', async () => {
+    const userId = await novoUsuario('sub-winner-grava')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
+
+    await setSessionWinner(DB, sessionId, m1, 'votes')
+
+    const row = await sessaoRow(sessionId)
+    expect(row.winner_movie_id).toBe(m1)
+    expect(row.winner_method).toBe('votes')
   })
 })

@@ -833,3 +833,384 @@ describe('POST /votacao/sessions/:id/votes', () => {
     expect(body.data?.voted_movie_ids).toEqual([m1])
   })
 })
+
+// --------------------------------------------------------------------------
+// GET /votacao/sessions/:id/results e POST /votacao/sessions/:id/close
+// (Task 4, fatia2 T4) — apuração. Fonte de verdade:
+// apps/api/internal/handlers/votacao/votes.go (GetResults ~122, CloseSession
+// ~71) + apps/api/internal/votacao/results.go (TallyVotes/ComputeTopMovies).
+// --------------------------------------------------------------------------
+
+type ResultsData = {
+  results: { movie_id: number; count: number }[]
+  total_votes: number
+  total_voters: number
+}
+
+type CloseData = { winner_movie_id: number | null }
+
+type SessaoRow = {
+  status: 'open' | 'closed'
+  closed_at: string | null
+  winner_movie_id: number | null
+  winner_method: string | null
+}
+
+async function sessaoRow(sessionId: number): Promise<SessaoRow> {
+  const row = await DB.prepare(
+    `SELECT status, closed_at, winner_movie_id, winner_method
+       FROM voting_sessions WHERE id = ?`,
+  )
+    .bind(sessionId)
+    .first<SessaoRow>()
+  if (row === null) throw new Error('sessão não encontrada')
+  return row
+}
+
+describe('GET /votacao/sessions/:id/results', () => {
+  test('sem cookie responde 401 not_authenticated', async () => {
+    const res = await app.request('/votacao/sessions/1/results', {}, testEnv())
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  test('id não numérico responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'results-idinvalido@example.com',
+      'Id Inválido',
+    )
+    const res = await app.request(
+      '/votacao/sessions/abc/results',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // ⚠️ Diferente de GET /sessions/{id} (T2, que aceita id<=0 e cai em 404):
+  // GetResults usa parseID (compartilhado com CloseSession), que RECUSA
+  // id<=0 com 400 — mesma família de validação que POST /votes (T3).
+  test('id=0 responde 400 invalid_id (GetResults usa parseID, que recusa id<=0 — diferente de GET /sessions/{id})', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'results-idzero@example.com',
+      'Id Zero',
+    )
+    const res = await app.request(
+      '/votacao/sessions/0/results',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  test('id negativo responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'results-idneg@example.com',
+      'Id Neg',
+    )
+    const res = await app.request(
+      '/votacao/sessions/-5/results',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // ⚠️ O detalhe de paridade #3 do brief: GetResults NÃO checa se a sessão
+  // existe — um id positivo mas inexistente devolve 200 com zeros, NUNCA
+  // 404. Reproduzido de propósito.
+  test('sessão inexistente (mas id positivo) responde 200 com zeros — NUNCA 404 (GetResults não checa existência)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'results-inexistente@example.com',
+      'Inexistente',
+    )
+    const res = await app.request(
+      '/votacao/sessions/999999/results',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<ResultsData>
+    expect(body.data).toEqual({
+      results: [],
+      total_votes: 0,
+      total_voters: 0,
+    })
+  })
+
+  // ⚠️ O teste que só passa com as DUAS chaves de ordenação certas — count
+  // DESC, DEPOIS movie_id ASC. m3 tem a maior contagem (prova a chave
+  // primária); m1/m2 empatam (prova a secundária). Votado com o filme de
+  // MAIOR id primeiro (m2 antes de m1) — se a ordenação não aplicasse a
+  // chave secundária de verdade (ex.: só reordenasse por count e deixasse a
+  // ordem de leitura/inserção decidir o empate), o resultado sairia
+  // [m3, m2, m1] em vez de [m3, m1, m2].
+  test('ordena por count DESC, depois movie_id ASC — só passa com as duas chaves certas', async () => {
+    const criador = await novoUsuario('sub-results-ordem-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const m2 = await novoFilmeAuto(sessionId, 'Drama')
+    const m3 = await novoFilmeAuto(sessionId, 'Comédia')
+
+    const u1 = await novoUsuario('sub-results-ordem-u1')
+    const u2 = await novoUsuario('sub-results-ordem-u2')
+    const u3 = await novoUsuario('sub-results-ordem-u3')
+    const u4 = await novoUsuario('sub-results-ordem-u4')
+    const u5 = await novoUsuario('sub-results-ordem-u5')
+    const u6 = await novoUsuario('sub-results-ordem-u6')
+    const u7 = await novoUsuario('sub-results-ordem-u7')
+
+    // m3: 3 votos (topo, sem ambiguidade). m2 (maior id, votado PRIMEIRO) e
+    // m1 (menor id, votado DEPOIS) empatam com 2 votos cada — 7 usuários
+    // distintos, nenhum vota duas vezes no mesmo filme nem em dois filmes
+    // (evita qualquer contagem cruzada por engano).
+    await votar(sessionId, u1, m3)
+    await votar(sessionId, u2, m3)
+    await votar(sessionId, u3, m3)
+    await votar(sessionId, u4, m2)
+    await votar(sessionId, u5, m2)
+    await votar(sessionId, u6, m1)
+    await votar(sessionId, u7, m1)
+
+    const cookie = await cookieDeSessaoValido(
+      'results-ordem@example.com',
+      'Ordem',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/results`,
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<ResultsData>
+    expect(body.data?.results).toEqual([
+      { movie_id: m3, count: 3 },
+      { movie_id: m1, count: 2 },
+      { movie_id: m2, count: 2 },
+    ])
+  })
+
+  // ⚠️ O detalhe de paridade #2 do brief: total_votes conta LINHAS de
+  // `votes` (não eleitores); total_voters conta usuários DISTINTOS. 1
+  // pessoa aprovando 3 filmes é total_votes:3, total_voters:1 — um teste
+  // onde os dois batem não prova nada.
+  test('total_votes (linhas) e total_voters (usuários distintos) DIVERGEM quando 1 pessoa vota em vários filmes', async () => {
+    const criador = await novoUsuario('sub-results-diverge-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const m2 = await novoFilmeAuto(sessionId, 'Drama')
+    const m3 = await novoFilmeAuto(sessionId, 'Comédia')
+
+    const cookie = await cookieDeSessaoValido(
+      'results-diverge@example.com',
+      'Diverge',
+    )
+    const userId = await votacaoUserId(cookie)
+    await votar(sessionId, userId, m1)
+    await votar(sessionId, userId, m2)
+    await votar(sessionId, userId, m3)
+
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/results`,
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<ResultsData>
+    expect(body.data?.total_votes).toBe(3)
+    expect(body.data?.total_voters).toBe(1)
+  })
+})
+
+describe('POST /votacao/sessions/:id/close', () => {
+  // ⚠️ Prova a ordem do guard (middleware) sobre a validação interna do
+  // handler — mesma lição da T3: sem cookie NENHUM, mesmo com um id
+  // inválido no path, responde 401 (não 400) — o middleware roda ANTES do
+  // handler em qualquer request real.
+  test('sem cookie responde 401 not_authenticated MESMO com id inválido no path (requireAdmin roda ANTES do parseID interno)', async () => {
+    const res = await app.request(
+      '/votacao/sessions/abc/close',
+      { method: 'POST' },
+      testEnv(),
+    )
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  test('conta autenticada mas não-admin responde 403 admin_only', async () => {
+    const criador = await novoUsuario('sub-close-naoadmin-criador')
+    const sessionId = await novaSessao(criador)
+    const cookie = await cookieDeSessaoValido(
+      'close-naoadmin@example.com',
+      'Não Admin',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv(), // ADMIN_EMAILS vazio — ninguém é admin
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+  })
+
+  test('id não numérico (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'close-idinvalido@example.com',
+      'Id Inválido',
+    )
+    const res = await app.request(
+      '/votacao/sessions/abc/close',
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-idinvalido@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  test('id=0 (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'close-idzero@example.com',
+      'Id Zero',
+    )
+    const res = await app.request(
+      '/votacao/sessions/0/close',
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-idzero@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // ⚠️ O detalhe de paridade #4 do brief: a MESMA resposta 404
+  // session_not_open cobre id inexistente, sessão já fechada, e id válido
+  // sem sessão — a ambiguidade é intencional, herdada do Go
+  // (`UPDATE ... WHERE id=? AND status='open'`, 0 linhas afetadas).
+  test('sessão inexistente responde 404 session_not_open (mesmo código de "já fechada" — ambiguidade intencional)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'close-inexistente@example.com',
+      'Inexistente',
+    )
+    const res = await app.request(
+      '/votacao/sessions/999999/close',
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-inexistente@example.com'),
+    )
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('session_not_open')
+  })
+
+  test('sessão já fechada responde 404 session_not_open', async () => {
+    const criador = await novoUsuario('sub-close-jafechada-criador')
+    await novaSessaoComId({
+      id: 1,
+      title: 'Já fechada',
+      status: 'closed',
+      createdBy: criador,
+      createdAt: '2026-01-01 00:00:00',
+    })
+    const cookie = await cookieDeSessaoValido(
+      'close-jafechada@example.com',
+      'Já Fechada',
+    )
+    const res = await app.request(
+      '/votacao/sessions/1/close',
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-jafechada@example.com'),
+    )
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('session_not_open')
+  })
+
+  test('happy path — vencedor claro: 200 {winner_movie_id}, sessão fechada com winner_method=votes', async () => {
+    const criador = await novoUsuario('sub-close-vencedor-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const votante = await novoUsuario('sub-close-vencedor-votante')
+    await votar(sessionId, votante, m1)
+
+    const cookie = await cookieDeSessaoValido(
+      'close-vencedor@example.com',
+      'Vencedor',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-vencedor@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<CloseData>
+    expect(body.data?.winner_movie_id).toBe(m1)
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.closed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+    expect(row.winner_movie_id).toBe(m1)
+    expect(row.winner_method).toBe('votes')
+  })
+
+  // ⚠️ O detalhe de paridade #5 do brief: empate deixa winner_movie_id NULL
+  // — sem critério de desempate determinístico (a roleta é a T5). Este é o
+  // teste que a MUTAÇÃO obrigatória desta task (fazer close escolher o
+  // menor id no empate) precisa quebrar.
+  test('empate — 200 {winner_movie_id: null}, sessão fechada MESMO ASSIM, winner_method continua null', async () => {
+    const criador = await novoUsuario('sub-close-empate-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const m2 = await novoFilmeAuto(sessionId, 'Drama')
+    const v1 = await novoUsuario('sub-close-empate-v1')
+    const v2 = await novoUsuario('sub-close-empate-v2')
+    await votar(sessionId, v1, m1)
+    await votar(sessionId, v2, m2)
+
+    const cookie = await cookieDeSessaoValido(
+      'close-empate@example.com',
+      'Empate',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-empate@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<CloseData>
+    expect(body.data?.winner_movie_id).toBeNull()
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.winner_movie_id).toBeNull()
+    expect(row.winner_method).toBeNull()
+  })
+
+  test('sessão sem voto nenhum — fecha sem vencedor (nenhum topo pra computar)', async () => {
+    const criador = await novoUsuario('sub-close-semvoto-criador')
+    const sessionId = await novaSessao(criador)
+    const cookie = await cookieDeSessaoValido(
+      'close-semvoto@example.com',
+      'Sem Voto',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv('close-semvoto@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<CloseData>
+    expect(body.data?.winner_movie_id).toBeNull()
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+  })
+})

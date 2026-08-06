@@ -31,16 +31,29 @@
  */
 import { Hono } from 'hono'
 import type { AuthBindings } from '../lib/auth'
-import { requireAuth, type SessionVariables } from '../lib/session'
+import { nowIsoUtc } from '../lib/dates'
+import {
+  requireAdmin,
+  requireAuth,
+  type SessionVariables,
+} from '../lib/session'
 import { errJson, okJson } from '../lib/envelope'
 import { movieToWire, sessionToWire } from '../lib/wire'
+import { computeTopMovies, tallyVotes } from '../domain/tally'
 import {
   getSessionMovies,
   getUserVotedMovieIds,
   getVotingSession,
   listVotingSessions,
 } from '../domain/sessions'
-import { MovieNotInSessionError, replaceUserVotes } from '../domain/votes'
+import {
+  closeVotingSession,
+  countVoters,
+  listVoteMovieIds,
+  MovieNotInSessionError,
+  replaceUserVotes,
+  setSessionWinner,
+} from '../domain/votes'
 
 type Env = {
   Bindings: AuthBindings
@@ -257,6 +270,132 @@ votacaoRoutes.post(
     return okJson({ voted_movie_ids: votedMovieIds }, 200, [
       { type: 'success', code: 'vote_registered', message: 'voto registrado' },
     ])
+  },
+)
+
+/**
+ * Valida o `id` do path do MESMO jeito que `parseID` no Go
+ * (`handlers/votacao/votes.go:299-307`, compartilhado por `GetResults` e
+ * `CloseSession`): não-numérico OU `<= 0` ⇒ `null` (a rota devolve 400
+ * `invalid_id`). Diferente do `ParseInt` puro de `GET /sessions/{id}` (T2),
+ * que aceita `id <= 0` e cai em 404 — aqui é a MESMA validação já usada por
+ * `POST /sessions/{id}/votes` (T3), replicada em vez de extraída pra não
+ * acoplar rotas que o Go também mantém como handlers/checagens distintas.
+ */
+function parseParseIDStyle(idParam: string): number | null {
+  if (!/^[+-]?\d+$/.test(idParam)) return null
+  const id = Number.parseInt(idParam, 10)
+  if (id <= 0) return null
+  return id
+}
+
+/**
+ * `GET /votacao/sessions/{id}/results` — porte de `GetResults`
+ * (`handlers/votacao/votes.go:119-162`).
+ *
+ * ⚠️ **NÃO checa se a sessão existe.** O Go faz só `parseID` (formato do id)
+ * e vai direto pro SELECT de votos — um id inexistente (mas positivo)
+ * devolve **200** com `results: []`, `total_votes: 0`, `total_voters: 0`,
+ * nunca 404. Reproduzido de propósito (paridade OBSERVÁVEL), não uma
+ * "correção" da rota.
+ *
+ * `results` é `{movie_id, count}[]`, ordenado por **count DESC, depois
+ * movie_id ASC** — a MESMA chave dupla do bubble sort manual do Go
+ * (`votes.go:144-150`), aqui via `Array#sort` com o comparador equivalente.
+ * Um teste com contagens todas diferentes não discriminaria a segunda
+ * chave — ver `routes/votacao.test.ts` pro caso que só passa com as duas.
+ *
+ * `total_votes` é o NÚMERO DE LINHAS em `votes` (`listVoteMovieIds(...).
+ * length`); `total_voters` é `COUNT(DISTINCT user_id)` (`countVoters`) — os
+ * dois divergem sob voto de aprovação (1 pessoa, N filmes ⇒ total_votes:N,
+ * total_voters:1). Ver `domain/votes.ts#countVoters` pro porquê.
+ */
+votacaoRoutes.get(
+  '/sessions/:id/results',
+  requireAuth<AuthBindings>(),
+  async (c) => {
+    const id = parseParseIDStyle(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'identificador inválido')
+    }
+
+    const votes = await listVoteMovieIds(c.env.DB, id)
+    const tally = tallyVotes(votes)
+
+    const rows = [...tally.entries()]
+      .map(([movieId, count]) => ({ movie_id: movieId, count }))
+      .sort((a, b) =>
+        a.count !== b.count ? b.count - a.count : a.movie_id - b.movie_id,
+      )
+
+    const totalVoters = await countVoters(c.env.DB, id)
+
+    return okJson({
+      results: rows,
+      total_votes: votes.length,
+      total_voters: totalVoters,
+    })
+  },
+)
+
+/**
+ * `POST /votacao/sessions/{id}/close` (admin) — porte de `CloseSession`
+ * (`handlers/votacao/votes.go:71-117`).
+ *
+ * Ordem das checagens (mesma topologia da T3 — o guard é MIDDLEWARE, roda
+ * ANTES do handler em qualquer request real):
+ *
+ *   0. (middleware) sem sessão válida  -> 401 not_authenticated
+ *   0. (middleware) não-admin          -> 403 admin_only
+ *   1. `id` não numérico OU `<= 0`     -> 400 invalid_id
+ *   2. UPDATE não afeta nenhuma linha  -> 404 session_not_open
+ *
+ * ⚠️ **A checagem 2 NÃO distingue id inexistente de sessão já fechada** —
+ * o `UPDATE ... WHERE id=? AND status='open'` do Go (`CloseVotingSession`,
+ * `sessions.go:74-103`) devolve "0 linhas afetadas" pros dois casos (e pra
+ * um terceiro, "id válido mas sessão nunca existiu"), e a rota SEMPRE
+ * responde 404 `session_not_open` pra essa ambiguidade — herdada de
+ * propósito, não uma query de existência extra pra "melhorar" o diagnóstico.
+ *
+ * O vencedor só é gravado quando `computeTopMovies` devolve EXATAMENTE um
+ * id no topo do tally — empate deixa `winner_movie_id` NULL (a roleta, T5,
+ * decide depois; não inventar critério de desempate aqui). Quando há
+ * vencedor, um SEGUNDO UPDATE grava `winner_method='votes'`
+ * (`setSessionWinner`) — passo separado, espelhando o Go (`SetSessionWinner`
+ * chamado DEPOIS de `CloseVotingSession` ter sucesso, não fundido num único
+ * UPDATE).
+ *
+ * `closedAtIso` vem de `nowIsoUtc()` — relógio INJETADO na chamada ao
+ * domínio (`closeVotingSession`), nunca mockado globalmente.
+ *
+ * ⚠️ **NÃO dispara backup.** O Go roda `Backuper.Run(ctx, "session_close")`
+ * numa goroutine (`votes.go:105-111`) — o D1 tem outro mecanismo de backup
+ * (`scripts/backup-d1.sh`, export lógico), não um substituto ligado neste
+ * caminho. Ver `apps/ramielle/CLAUDE.md`.
+ */
+votacaoRoutes.post(
+  '/sessions/:id/close',
+  requireAdmin<AuthBindings>(),
+  async (c) => {
+    const id = parseParseIDStyle(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'identificador inválido')
+    }
+
+    const votes = await listVoteMovieIds(c.env.DB, id)
+    const top = computeTopMovies(votes)
+    const winner = top.ids.length === 1 ? top.ids[0] : null
+
+    const closed = await closeVotingSession(c.env.DB, id, winner, nowIsoUtc())
+    if (!closed) {
+      return errJson(404, 'session_not_open', 'sessão não está aberta')
+    }
+
+    if (winner !== null) {
+      await setSessionWinner(c.env.DB, id, winner, 'votes')
+    }
+
+    return okJson({ winner_movie_id: winner })
   },
 )
 
