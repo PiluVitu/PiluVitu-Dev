@@ -99,13 +99,32 @@ function responderCom(resposta: MockHttpResponse): Response {
  *   - `number` — status de erro, corpo cru `'erro simulado'` (sem JSON).
  *   - `{status, body}` — controle total do corpo (testes de vazamento de
  *     segredo, que precisam de um corpo com um marcador específico).
- *   - `undefined` — o endpoint de values NUNCA é interceptado (cai pro fetch
- *     original se alcançado) — usado pelos testes que forçam falha ANTES do
- *     Sheets ser sequer chamado (o token endpoint falha primeiro).
+ *   - `undefined` — o endpoint de values é interceptado com uma FALHA
+ *     explícita (⚠️ M1, fix round 1 — ver abaixo), nunca delegado pro fetch
+ *     original — usado pelos testes que forçam falha ANTES do Sheets ser
+ *     sequer chamado (o token endpoint falha primeiro, então este branch
+ *     nunca deveria disparar NAQUELES testes; se disparar, é sinal de que a
+ *     premissa do teste — "o código nunca chega a chamar o Sheets" — não é
+ *     mais verdade).
  *
  * `tokenResposta` (opcional, default sucesso) tem a mesma forma `{status,
  * body}` — controle total, usado pelos testes que simulam o TOKEN endpoint
  * falhando.
+ *
+ * ⚠️ **M1 (fix round 1, achado da revisão em `POST /votacao/sessions`,
+ * T4): mesma classe de risco que o mock combinado daquela task tinha —
+ * corrigida aqui também, embora "menos urgente" (o achado original já dizia
+ * isso).** ANTES, `sheetsResposta === undefined` fazia o endpoint de values
+ * cair pro `fetchOriginal` se alcançado — rede real, silenciosa, caso algum
+ * teste FUTURO chamasse esta função sem `sheetsResposta` esperando que o
+ * token TAMBÉM tivesse sucesso (premissa que os 2 usos atuais não têm — os
+ * dois fixam o token pra falhar antes). Trocado por uma falha SINTÉTICA
+ * explícita (500, corpo `'sheets values endpoint chamado sem sheetsResposta
+ * (instalarMockGoogleSheets)'`) — nunca delega pro fetch original. Os testes
+ * que já omitem `sheetsResposta` de propósito não mudam de comportamento
+ * (o token falha antes desse branch ser alcançado, no MESMO teste); um teste
+ * futuro que violasse essa premissa passaria a falhar de forma ÓBVIA (um
+ * 500 inesperado) em vez de vazar rede de verdade com a suíte verde.
  */
 export function instalarMockGoogleSheets(
   tokenUri: string,
@@ -131,7 +150,13 @@ export function instalarMockGoogleSheets(
     if (urlTexto === tokenUri) {
       return responderCom(tokenResposta)
     }
-    if (urlTexto === valuesUrl && sheetsNormalizada !== null) {
+    if (urlTexto === valuesUrl) {
+      if (sheetsNormalizada === null) {
+        return responderCom({
+          status: 500,
+          body: 'sheets values endpoint chamado sem sheetsResposta (instalarMockGoogleSheets) — nenhum teste pode chamar o Sheets de verdade',
+        })
+      }
       return responderCom(sheetsNormalizada)
     }
     return fetchOriginal(input as Parameters<typeof fetch>[0], init)

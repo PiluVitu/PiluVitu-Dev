@@ -72,6 +72,26 @@ describe('searchPoster — fail-soft (Step 1, o ponto inteiro deste arquivo)', (
     }
   })
 
+  // ⚠️ M4 (fix round 1, achado da revisão): `{"results":[null]}` é um
+  // shape real de resposta que o Go decodifica pra um `searchResult`
+  // zero-value e fail-softa igual a `results` vazio — `first === undefined`
+  // sozinho (a versão anterior) deixava `null` passar, e `first.poster_path`
+  // lançava `TypeError`. `!first` (a correção) cobre os dois.
+  test('"results":[null] (elemento nulo, não ausente) também devolve poster/tmdbId vazios — não lança TypeError', async () => {
+    const mock = instalarMockTmdb(() => jsonResponse(200, { results: [null] }))
+    try {
+      await expect(
+        searchPoster(
+          { apiKey: 'chave', baseUrl: BASE_URL_TESTE },
+          'Elemento Nulo',
+          'filme',
+        ),
+      ).resolves.toEqual({ posterUrl: '', tmdbId: 0 })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
   test('"results" ausente do corpo (não só vazio) também devolve poster/tmdbId vazios', async () => {
     const mock = instalarMockTmdb(() => jsonResponse(200, {}))
     try {

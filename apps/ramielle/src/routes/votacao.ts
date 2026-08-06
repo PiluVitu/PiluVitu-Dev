@@ -345,6 +345,26 @@ function criarSemaforo(max: number): { adquirir: () => Promise<() => void> } {
   return { adquirir }
 }
 
+/** Opções de `fetchPostersConcorrente` — ver o campo `timeoutMs` pro porquê existe. */
+export type FetchPostersConcorrenteOptions = {
+  /**
+   * ⚠️ **I1 (fix round 1, achado Important da revisão): promovido de
+   * constante interna pra opção injetável — SÓ pra teste.** Produção nunca
+   * passa isto (cai no default `TMDB_TIMEOUT_MS`, os 3s reais). Sem este
+   * seam, não havia como testar "o abort de fato dispara e cai no
+   * fail-soft" sem ou (a) esperar 3s de verdade por teste, ou (b) confiar
+   * cegamente na leitura do código — a revisão mostrou que a fiação inteira
+   * (`AbortController`/`setTimeout`/`clearTimeout`/`signal`) podia ser
+   * apagada, reduzindo a chamada a `searchPoster(cfg, movie.title,
+   * movie.type)` crua, com `tsc --noEmit` limpo (`TMDB_TIMEOUT_MS` vira
+   * variável não usada sem reclamação, `noUnusedLocals` desligado) E a
+   * suíte inteira passando — nenhuma rede de regressão. `timeoutMs: 20` no
+   * teste (`routes/votacao.test.ts`, describe `fetchPostersConcorrente —
+   * timeout de verdade`) prova a fiação sem pagar 3s reais.
+   */
+  timeoutMs?: number
+}
+
 /**
  * Busca pôsteres em PARALELO com teto de concorrência 5 e timeout de 3s
  * cada — porte de `fetchPosters` (`handlers/votacao/sessions.go:119-151`,
@@ -361,20 +381,32 @@ function criarSemaforo(max: number): { adquirir: () => Promise<() => void> } {
  * REALMENTE propagaria (`Promise.all` rejeitando) e derrubaria a sessão
  * inteira com 500.
  *
+ * ⚠️ **O `setTimeout` começa DEPOIS de `await semaforo.adquirir()`, nunca
+ * antes — detalhe de desenho que NÃO pode se perder numa correção futura**
+ * (I1, revisão): um filme parado na FILA do semáforo (mais de 5 buscas em
+ * voo) não queima os `timeoutMs` dele esperando vaga — o cronômetro só
+ * corre depois que a busca de fato começa. Espelha o Go de propósito: lá
+ * `context.WithTimeout` é criado DENTRO da goroutine que `g.Go` inicia,
+ * ou seja, depois que `SetLimit` já admitiu a goroutine — nunca antes.
+ * "Simplificar" movendo a criação do timeout pra fora do `adquirir()`
+ * pareceria inócuo e mudaria esse comportamento.
+ *
  * Devolve um array na MESMA ordem/índice de `movies` — cada posição
  * corresponde ao filme de mesmo índice.
  */
-async function fetchPostersConcorrente(
+export async function fetchPostersConcorrente(
   cfg: TmdbConfig,
   movies: SheetMovie[],
+  opts: FetchPostersConcorrenteOptions = {},
 ): Promise<TmdbSearchResult[]> {
+  const timeoutMs = opts.timeoutMs ?? TMDB_TIMEOUT_MS
   const semaforo = criarSemaforo(TMDB_MAX_CONCURRENCY)
 
   const tarefas = movies.map(async (movie): Promise<TmdbSearchResult> => {
     const liberar = await semaforo.adquirir()
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), TMDB_TIMEOUT_MS)
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       try {
         return await searchPoster(cfg, movie.title, movie.type, {
           signal: controller.signal,

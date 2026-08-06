@@ -11,12 +11,14 @@ import { describe, expect, test, vi } from 'vitest'
 import app, { type Bindings } from '../index'
 import { hexToBytes } from '../domain/tiebreak'
 import type { Envelope } from '../lib/envelope'
+import type { SheetMovie } from '../lib/gsheets'
 import { sessionToWire, type VotingSessionRow } from '../lib/wire'
 import {
   gerarServiceAccountDeTeste,
   instalarMockGoogleSheets,
 } from '../test-support/gsheets-mock'
 import goParity from './__fixtures__/go-parity.json'
+import { fetchPostersConcorrente } from './votacao'
 
 const DB = env.DB
 const BASE_URL_TESTE = 'http://localhost:8787'
@@ -2525,7 +2527,22 @@ function instalarMockCriarSessao(opts: {
         headers: { 'content-type': 'application/json' },
       })
     }
-    if (urlTexto.startsWith('https://api.themoviedb.org') && opts.tmdb) {
+    if (urlTexto.startsWith('https://api.themoviedb.org')) {
+      // ⚠️ M1 (fix round 1, achado da revisão): antes, `opts.tmdb` ausente
+      // fazia uma chamada de verdade escapar pro TMDb real (delegava pro
+      // `fetchOriginal` como qualquer URL não reconhecida) — bastava um
+      // teste com `TMDB_API_KEY` setada e sem `tmdb` no mock pra violar a
+      // restrição "nenhum teste pode chamar o TMDb de verdade" em SILÊNCIO
+      // (o fail-soft engoliria o que quer que a rede real devolvesse, e o
+      // teste passaria mesmo assim). Lançar aqui torna esse buraco
+      // IMPOSSÍVEL, não só improvável — qualquer teste futuro que esqueça
+      // de passar `tmdb` explode alto, em vez de bater rede de verdade com
+      // suíte verde.
+      if (!opts.tmdb) {
+        throw new Error(
+          'instalarMockCriarSessao: TMDb chamado sem opts.tmdb — nenhum teste pode chamar o TMDb de verdade.',
+        )
+      }
       return opts.tmdb(new URL(urlTexto))
     }
     return fetchOriginal(input as Parameters<typeof fetch>[0], init)
@@ -3157,9 +3174,84 @@ describe('POST /votacao/sessions', () => {
     }
   })
 
+  // ⚠️ I1 (fix round 1, achado Important da revisão): o timeout de 3s do
+  // TMDb não tinha NENHUMA rede de regressão — a revisão apagou a fiação
+  // inteira (AbortController/setTimeout/clearTimeout/signal) e a suíte
+  // inteira continuou verde (tsc --noEmit limpo, 361 testes passando).
+  // Este describe testa `fetchPostersConcorrente` DIRETO (não via HTTP),
+  // usando `timeoutMs` injetado (Step de fix, ver `FetchPostersConcorrente
+  // Options` em `routes/votacao.ts`) pra provar o abort sem pagar 3s reais.
+  describe('fetchPostersConcorrente — timeout de verdade (I1, fix round 1)', () => {
+    function filmeDeTeste(titulo: string): SheetMovie {
+      return {
+        number: 1,
+        title: titulo,
+        type: 'filme',
+        category: 'acao',
+        watched: false,
+      }
+    }
+
+    // ⚠️ Timeout de TESTE (2000ms) bem maior que o `timeoutMs` injetado
+    // (20ms) — é o que transforma "sem a fiação de abort, isto travaria pra
+    // SEMPRE" numa FALHA reportada em ~2s, em vez de travar a suíte inteira
+    // indefinidamente. Sem a fiação de abort, o mock abaixo nunca resolve
+    // nem rejeita sozinho — só o timeout do PRÓPRIO teste mata a promise
+    // pendurada, e vitest reporta isso como falha ("Test timed out").
+    test('busca que NUNCA responde é abortada pelo timeout injetado e cai no fail-soft — prova que o abort de fato disparou, não só que o resultado ficou vazio por acaso', async () => {
+      let sinalCapturado: AbortSignal | undefined
+      const fetchOriginal = globalThis.fetch
+      globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+        sinalCapturado = init?.signal ?? undefined
+        return new Promise<Response>((_resolve, reject) => {
+          // NUNCA resolve/rejeita sozinha — só o abort decide, simulando
+          // um TMDb que aceita a conexão e nunca responde. Se a fiação de
+          // abort tiver sido removida (a mutação desta task), `init.signal`
+          // nunca dispara `abort`, e esta promise (e o `await` que a
+          // consome) trava até o timeout do PRÓPRIO teste matar tudo.
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'))
+          })
+        })
+      }) as typeof fetch
+
+      try {
+        const resultado = await fetchPostersConcorrente(
+          { apiKey: 'chave-teste-timeout' },
+          [filmeDeTeste('Filme Que Trava')],
+          { timeoutMs: 20 },
+        )
+        // Fail-soft: o filme sai sem pôster, a função não lança.
+        expect(resultado).toEqual([{ posterUrl: '', tmdbId: 0 }])
+        // A PROVA REAL: o abort de fato disparou — não é só "o resultado
+        // coincidentemente ficou vazio". Sem isto, um mock que sempre
+        // devolvesse `{posterUrl:'', tmdbId:0}} por outro motivo qualquer
+        // passaria pela asserção acima sem provar nada sobre timeout.
+        expect(sinalCapturado?.aborted).toBe(true)
+      } finally {
+        globalThis.fetch = fetchOriginal
+      }
+    }, 2000)
+  })
+
   // Mesmo padrão de "segredo NUNCA vaza" já usado pro GOOGLE_SA_JSON — aqui
   // pra TMDB_API_KEY, que vai na query string da busca (lib/tmdb.ts) e é
   // fácil de vazar numa mensagem de erro que ecoa a URL.
+  //
+  // ⚠️ M3 (fix round 1, achado da revisão): a asserção sobre `textoResposta`
+  // abaixo é ESTRUTURALMENTE infalível NESTA rota — o fail-soft de
+  // `fetchPostersConcorrente` come todo erro do TMDb ANTES de qualquer
+  // `errJson` ser construído (o corpo de sucesso nunca referencia a chave em
+  // lugar nenhum), e o `app.onError` global (o único outro caminho de
+  // resposta) sempre emite a string fixa `'erro interno — tente novamente'`.
+  // Não há hoje NENHUM caminho de código nesta rota que colocaria a chave no
+  // CORPO da resposta — a asserção é uma rede de segurança contra uma
+  // regressão FUTURA (ex.: alguém decide ecoar `err.message` num `errJson`
+  // novo), não uma prova de que o comportamento atual pode falhar. Quem
+  // CARREGA o sinal real hoje é só a asserção de `console.error` logo
+  // abaixo — foi ela, e não esta, que pegou a mutação do revisor. Mantida
+  // mesmo assim (custo baixo, defesa em profundidade), só com o comentário
+  // corrigido para não sugerir que as duas provam a mesma coisa.
   test('TMDB_API_KEY NUNCA vaza — mesmo com o TMDb falhando (fail-soft), a chave não aparece na resposta nem no console.error', async () => {
     const sa = await gerarServiceAccountDeTeste(
       'criar-tmdbkeyvaza@projeto-de-teste.iam.gserviceaccount.com',

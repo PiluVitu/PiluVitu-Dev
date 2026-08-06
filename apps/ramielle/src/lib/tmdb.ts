@@ -117,7 +117,14 @@ export async function searchPoster(
 
   const results = body.results ?? []
   const first = results[0]
-  if (first === undefined) {
+  // ⚠️ M4 (fix round 1, achado da revisão): `!first` cobre `undefined`
+  // (results vazio) E `null` (`{"results":[null]}` — o Go decodifica pra um
+  // `searchResult` zero-value e fail-softa igual; `first === undefined`
+  // sozinho deixava `null` passar batido, e `first.poster_path` lançava
+  // `TypeError` — divergência de contrato unitário que o fail-soft da ROTA
+  // escondia (o erro virava fail-soft de qualquer jeito, só que pelo motivo
+  // errado), mas quebrava a garantia desta função isolada.
+  if (!first) {
     return { posterUrl: '', tmdbId: 0 }
   }
   if (first.poster_path === null || first.poster_path === '') {
