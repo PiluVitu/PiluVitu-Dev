@@ -7,8 +7,9 @@
  */
 import { env } from 'cloudflare:test'
 import { betterAuth } from 'better-auth'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import app, { type Bindings } from '../index'
+import { hexToBytes } from '../domain/tiebreak'
 import type { Envelope } from '../lib/envelope'
 import { sessionToWire, type VotingSessionRow } from '../lib/wire'
 import goParity from './__fixtures__/go-parity.json'
@@ -1212,5 +1213,411 @@ describe('POST /votacao/sessions/:id/close', () => {
 
     const row = await sessaoRow(sessionId)
     expect(row.status).toBe('closed')
+  })
+})
+
+// --------------------------------------------------------------------------
+// POST /votacao/sessions/:id/tiebreak (admin) — porte de `Tiebreak`
+// (apps/api/internal/handlers/votacao/votes.go:172-270). O sorteio é
+// PROVABLY-FAIR: ver domain/tiebreak.ts pro cálculo puro (já provado bit a
+// bit contra o Go em domain/tiebreak.test.ts) — aqui só a fiação HTTP:
+// ordem das checagens, e o teste que prova a auditoria de ponta a ponta
+// (entropia fixa + serverNonce mockado com o valor exato do segundo vetor
+// dourado, `go-parity.json#tiebreak.routeScenario` — gerado com um
+// serverNonce de 32 bytes, o tamanho real que a rota gera).
+// --------------------------------------------------------------------------
+
+type TiebreakData = {
+  winner_movie_id: number
+  tied_movie_ids: number[]
+  server_nonce: string
+}
+
+type TiebreakAuditRow = {
+  session_id: number
+  triggered_by: number
+  tied_ids_json: string
+  client_entropy: string
+  server_nonce: string
+  winner_movie_id: number
+}
+
+async function tiebreakAuditRow(
+  sessionId: number,
+): Promise<TiebreakAuditRow | null> {
+  return await DB.prepare(
+    `SELECT session_id, triggered_by, tied_ids_json, client_entropy, server_nonce, winner_movie_id
+       FROM tiebreaks WHERE session_id = ? ORDER BY id DESC LIMIT 1`,
+  )
+    .bind(sessionId)
+    .first<TiebreakAuditRow>()
+}
+
+async function postTiebreak(
+  path: string,
+  cookie: string | null,
+  body: unknown,
+  adminEmails = '',
+): Promise<Response> {
+  return await app.request(
+    path,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(cookie === null ? {} : { cookie }),
+      },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    },
+    testEnv(adminEmails),
+  )
+}
+
+describe('POST /votacao/sessions/:id/tiebreak', () => {
+  // 32 hex chars = 16 bytes — o mínimo aceito por `invalid_entropy`.
+  const ENTROPIA_VALIDA = '00112233445566778899aabbccddeeff'
+
+  test('sem cookie responde 401 not_authenticated MESMO com id inválido no path (requireAdmin roda ANTES do parseID interno)', async () => {
+    const res = await postTiebreak('/votacao/sessions/abc/tiebreak', null, {
+      entropy: ENTROPIA_VALIDA,
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  test('conta autenticada mas não-admin responde 403 admin_only', async () => {
+    const criador = await novoUsuario('sub-tiebreak-naoadmin-criador')
+    const sessionId = await novaSessao(criador)
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-naoadmin@example.com',
+      'Não Admin',
+    )
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/tiebreak`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      // sem adminEmails — ninguém é admin
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+  })
+
+  test('id não numérico (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-idinvalido@example.com',
+      'Id Inválido',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/abc/tiebreak',
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-idinvalido@example.com',
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  test('id=0 (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-idzero@example.com',
+      'Id Zero',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/0/tiebreak',
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-idzero@example.com',
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // Id arbitrário/inexistente de propósito nos três testes abaixo — a
+  // checagem de corpo/entropia (2-3) vem ANTES da existência da sessão (4),
+  // então nenhum deles precisa (nem deve) de uma sessão semeada de verdade.
+  test('corpo não-JSON responde 400 invalid_json (checado antes de a sessão existir)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-corpoinvalido@example.com',
+      'Corpo Inválido',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/999999/tiebreak',
+      cookie,
+      '{corpo nao e json valido',
+      'tiebreak-corpoinvalido@example.com',
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_json')
+  })
+
+  test('entropy com caractere fora do alfabeto hex responde 400 invalid_entropy', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-entropianaohex@example.com',
+      'Entropia Não-Hex',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/999999/tiebreak',
+      cookie,
+      { entropy: 'zz' },
+      'tiebreak-entropianaohex@example.com',
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_entropy')
+  })
+
+  test('entropy hex válido mas com menos de 16 bytes responde 400 invalid_entropy', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-entropiacurta@example.com',
+      'Entropia Curta',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/999999/tiebreak',
+      cookie,
+      { entropy: '00112233445566' }, // 7 bytes, < 16
+      'tiebreak-entropiacurta@example.com',
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_entropy')
+  })
+
+  test('sessão inexistente responde 404 session_not_found', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-inexistente@example.com',
+      'Inexistente',
+    )
+    const res = await postTiebreak(
+      '/votacao/sessions/999999/tiebreak',
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-inexistente@example.com',
+    )
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('session_not_found')
+  })
+
+  test('sessão ainda ABERTA responde 409 session_not_closed', async () => {
+    const criador = await novoUsuario('sub-tiebreak-aberta-criador')
+    const sessionId = await novaSessao(criador)
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-aberta@example.com',
+      'Aberta',
+    )
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/tiebreak`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-aberta@example.com',
+    )
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('session_not_closed')
+  })
+
+  test('sessão fechada mas com vencedor claro (sem empate) responde 422 no_tie', async () => {
+    const criador = await novoUsuario('sub-tiebreak-semempate-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const votante = await novoUsuario('sub-tiebreak-semempate-votante')
+    await votar(sessionId, votante, m1)
+
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-semempate@example.com',
+      'Sem Empate',
+    )
+    // Fecha via a rota já provada (T4) — 1 filme votado, vencedor claro.
+    await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv('tiebreak-semempate@example.com'),
+    )
+
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/tiebreak`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-semempate@example.com',
+    )
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('no_tie')
+  })
+
+  // ⚠️ A checagem 7 (winner_already_set) só é alcançável DEPOIS da checagem
+  // 6 (no_tie) — então este teste precisa de um empate de verdade nos
+  // votos ATUAIS, com winner_movie_id já gravado por fora (simulando um
+  // sorteio anterior). Prova que a rota não usa `winner_movie_id` como
+  // atalho pra pular o recomputo do empate — a MESMA topologia do Go
+  // (`votes.go:225-233`: tied é computado ANTES do check de winner).
+  test('sessão já tem vencedor responde 409 winner_already_set (mesmo com empate nos votos atuais)', async () => {
+    const criador = await novoUsuario('sub-tiebreak-jatemvencedor-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const m2 = await novoFilmeAuto(sessionId, 'Drama')
+    const v1 = await novoUsuario('sub-tiebreak-jatemvencedor-v1')
+    const v2 = await novoUsuario('sub-tiebreak-jatemvencedor-v2')
+    await votar(sessionId, v1, m1)
+    await votar(sessionId, v2, m2)
+
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-jatemvencedor@example.com',
+      'Já Tem Vencedor',
+    )
+    // Fecha (empate -> winner_movie_id fica null) e então grava um
+    // vencedor manualmente — reproduz "um sorteio já rodou antes" sem
+    // depender desta própria rota pra chegar lá.
+    await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      testEnv('tiebreak-jatemvencedor@example.com'),
+    )
+    await DB.prepare(
+      `UPDATE voting_sessions SET winner_movie_id = ?, winner_method = 'roulette' WHERE id = ?`,
+    )
+      .bind(m1, sessionId)
+      .run()
+
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/tiebreak`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'tiebreak-jatemvencedor@example.com',
+    )
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('winner_already_set')
+  })
+
+  // ⚠️ O teste que fecha o círculo de auditabilidade. `crypto.getRandomValues`
+  // é mockado pra devolver EXATAMENTE o serverNonce do segundo vetor dourado
+  // (`go-parity.json#tiebreak.routeScenario`, gerado rodando o Go de
+  // verdade com um nonce de 32 bytes — o tamanho real que a rota usa). Com
+  // entropy/sessionId/tiedIds também fixos no cenário, o `winner_movie_id`
+  // devolvido tem que bater EXATAMENTE com o que o Go calculou pra essa
+  // combinação — não "um sorteio plausível qualquer".
+  test('happy path — vetor dourado: winner bate com o Go, server_nonce é o mockado, auditoria gravada com o MESMO nonce da resposta', async () => {
+    const cenario = goParity.tiebreak.routeScenario
+
+    const criador = await novoUsuario('sub-tiebreak-happy-criador')
+    // sessionId FIXO em 7 pra bater com o cenário — entra no hash via
+    // tiebreakSeed(..., sessionId, ...).
+    await novaSessaoComId({
+      id: cenario.sessionId,
+      title: 'Sessão do vetor dourado',
+      status: 'closed',
+      createdBy: criador,
+      createdAt: '2026-05-19 12:00:00',
+    })
+    // tiedIds do cenário: [42, 7, 19] — 3 filmes com EXATAMENTE estes ids,
+    // cada um recebendo o MESMO número de votos, pra empatar no topo com
+    // este conjunto exato (a ordem de inserção não importa: tiebreakSeed e
+    // computeTopMovies ordenam ascendente internamente).
+    for (const movieId of cenario.tiedIds) {
+      await novoFilmeComId({
+        id: movieId,
+        sessionId: cenario.sessionId,
+        category: `categoria-${movieId}`,
+        title: `Filme ${movieId}`,
+        type: 'filme',
+      })
+    }
+    const votantes: number[] = []
+    for (let i = 0; i < cenario.tiedIds.length * 2; i++) {
+      votantes.push(await novoUsuario(`sub-tiebreak-happy-votante-${i}`))
+    }
+    // 2 votos por filme empatado — 6 eleitores distintos, sem cruzar votos.
+    for (let i = 0; i < cenario.tiedIds.length; i++) {
+      const movieId = cenario.tiedIds[i]
+      if (movieId === undefined) throw new Error('cenário mal formado')
+      await votar(cenario.sessionId, votantes[i * 2] as number, movieId)
+      await votar(cenario.sessionId, votantes[i * 2 + 1] as number, movieId)
+    }
+
+    // Login ANTES de instalar o mock — o próprio Better Auth chama
+    // `crypto.getRandomValues` internamente (hash de senha, geração de
+    // token de sessão), com tamanhos de buffer diferentes de 32. Instalar
+    // o mock só depois do login evita qualquer interferência ali, e o
+    // guard por TAMANHO abaixo (só intercepta arrays de exatamente 32
+    // bytes — o que a rota pede) é uma segunda camada de segurança pro
+    // resto do request (requireAdmin resolve a sessão de novo).
+    const cookie = await cookieDeSessaoValido(
+      'tiebreak-happy@example.com',
+      'Happy',
+    )
+    const adminUserId = await votacaoUserId(cookie)
+
+    const nonceEsperado = hexToBytes(cenario.serverNonceHex)
+    if (nonceEsperado === null) throw new Error('fixture com hex inválido')
+    const getRandomValuesOriginal = globalThis.crypto.getRandomValues.bind(
+      globalThis.crypto,
+    )
+    const spy = vi
+      .spyOn(globalThis.crypto, 'getRandomValues')
+      .mockImplementation((array) => {
+        if (
+          array instanceof Uint8Array &&
+          array.length === nonceEsperado.length
+        ) {
+          array.set(nonceEsperado)
+          return array
+        }
+        return getRandomValuesOriginal(array)
+      })
+
+    try {
+      const res = await postTiebreak(
+        `/votacao/sessions/${cenario.sessionId}/tiebreak`,
+        cookie,
+        { entropy: cenario.clientEntropyHex },
+        'tiebreak-happy@example.com',
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Envelope<TiebreakData>
+      expect(body.ok).toBe(true)
+      expect(body.data?.server_nonce).toBe(cenario.serverNonceHex)
+      expect(body.data?.winner_movie_id).toBe(cenario.winnerMovieId)
+      expect(body.data?.tied_movie_ids).toEqual(
+        [...cenario.tiedIds].sort((a, b) => a - b),
+      )
+      // Paridade de CONTRATO com httpx.DataMsg(..., httpx.Success(...)) do
+      // Go — mesmo padrão de POST /votes (T3).
+      expect(body.notifications).toEqual([
+        {
+          type: 'success',
+          code: 'tiebreak_done',
+          message: 'desempate concluído',
+        },
+      ])
+
+      // Sessão gravada com o vencedor + winner_method='roulette'.
+      const row = await sessaoRow(cenario.sessionId)
+      expect(row.winner_movie_id).toBe(cenario.winnerMovieId)
+      expect(row.winner_method).toBe('roulette')
+
+      // ⚠️ Auditoria gravada com o MESMO nonce que a resposta devolveu —
+      // senão a auditoria não fecha: quem tentasse recomputar o sorteio a
+      // partir do que a API devolveu chegaria num seed diferente do que
+      // gerou o vencedor de fato gravado.
+      const auditoria = await tiebreakAuditRow(cenario.sessionId)
+      if (auditoria === null) {
+        throw new Error('linha de auditoria não gravada em tiebreaks')
+      }
+      expect(auditoria.server_nonce).toBe(body.data?.server_nonce)
+      expect(auditoria.client_entropy).toBe(cenario.clientEntropyHex)
+      expect(auditoria.winner_movie_id).toBe(cenario.winnerMovieId)
+      expect(auditoria.triggered_by).toBe(adminUserId)
+      expect(JSON.parse(auditoria.tied_ids_json)).toEqual(
+        [...cenario.tiedIds].sort((a, b) => a - b),
+      )
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

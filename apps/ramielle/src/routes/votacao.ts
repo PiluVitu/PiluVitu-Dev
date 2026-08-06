@@ -41,6 +41,12 @@ import { errJson, okJson } from '../lib/envelope'
 import { movieToWire, sessionToWire } from '../lib/wire'
 import { computeTopMovies, tallyVotes } from '../domain/tally'
 import {
+  bytesToHex,
+  hexToBytes,
+  pickTiebreakIndex,
+  tiebreakSeed,
+} from '../domain/tiebreak'
+import {
   getSessionMovies,
   getUserVotedMovieIds,
   getVotingSession,
@@ -49,6 +55,7 @@ import {
 import {
   closeVotingSession,
   countVoters,
+  createTiebreak,
   listVoteMovieIds,
   MovieNotInSessionError,
   replaceUserVotes,
@@ -396,6 +403,160 @@ votacaoRoutes.post(
     }
 
     return okJson({ winner_movie_id: winner })
+  },
+)
+
+/**
+ * `{ entropy?: unknown }` — corpo cru de `POST /sessions/{id}/tiebreak`,
+ * antes de validado por `parseEntropy`.
+ */
+type TiebreakRequestBody = {
+  entropy?: unknown
+}
+
+/**
+ * Espelha a semântica de decodificar `tiebreakBody{Entropy string}` do Go:
+ * campo AUSENTE (ou `null`, ou corpo `null`) decodifica pra string vazia —
+ * não é `invalid_json`, é `invalid_entropy` mais adiante (0 bytes < 16). Só
+ * vira `invalid_json` quando `entropy` existe mas não é string (erro de
+ * TIPO, que o `json.Decode` do Go também rejeitaria) ou quando o corpo não
+ * é um objeto. Devolve `null` (nunca lança) pra rota decidir o 400.
+ */
+function parseEntropy(raw: unknown): string | null {
+  if (raw === null) return ''
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  const body = raw as TiebreakRequestBody
+  if (body.entropy === undefined || body.entropy === null) return ''
+  if (typeof body.entropy !== 'string') return null
+  return body.entropy
+}
+
+/**
+ * `POST /votacao/sessions/{id}/tiebreak` (admin) — porte de `Tiebreak`
+ * (`handlers/votacao/votes.go:172-270`). O sorteio é PROVABLY-FAIR: mistura
+ * a entropia do cliente (o corpo só carrega um hash/hex — a foto/gesto de
+ * origem nunca chega aqui) com um nonce de 32 bytes gerado no servidor,
+ * escolhe um dos filmes empatados sem viés (`pickTiebreakIndex`,
+ * `domain/tiebreak.ts`), grava o vencedor + uma linha de auditoria em
+ * `tiebreaks`, e devolve `server_nonce` em hex.
+ *
+ * ⚠️ **`server_nonce` é público POR DESIGN, não um vazamento a esconder** —
+ * é o que torna o sorteio AUDITÁVEL: sem ele, ninguém consegue recomputar
+ * `tiebreakSeed(clientEntropy, serverNonce, sessionId, tiedIds)` e conferir
+ * que o vencedor batido é mesmo o que o cálculo determinístico produz.
+ *
+ * Ordem das checagens — mesma topologia de `POST /close` (T4): o guard é
+ * MIDDLEWARE, roda ANTES de tudo em qualquer request real (401/403 sempre
+ * primeiro, nunca alcançam o corpo do handler abaixo). Dentro do handler, a
+ * ordem é a medida linha a linha em `votes.go:172-233`:
+ *
+ *   0. (middleware) sem sessão válida  -> 401 not_authenticated
+ *   0. (middleware) não-admin          -> 403 admin_only
+ *   1. `id` não numérico OU `<= 0`     -> 400 invalid_id
+ *   2. corpo não é JSON válido         -> 400 invalid_json
+ *   3. `entropy` não-hex OU < 16 bytes -> 400 invalid_entropy
+ *   4. sessão inexistente              -> 404 session_not_found
+ *   5. sessão NÃO fechada              -> 409 session_not_closed
+ *   6. menos de 2 empatados no topo    -> 422 no_tie
+ *   7. sessão já tem vencedor          -> 409 winner_already_set
+ *
+ * `tied` vem de `computeTopMovies(...).ids` — MESMA ordenação ascendente
+ * que `ComputeTopMovies` do Go (`results.go:14-36`) devolve. Isso importa
+ * pra valer, não é só estética: `winner = tied[idx]` só bate com o Go se a
+ * lista indexada for a MESMA lista, na MESMA ordem — `tiebreakSeed` reordena
+ * os ids só para o HASH, não muda a ordem de `tied` usada aqui pra indexar.
+ */
+votacaoRoutes.post(
+  '/sessions/:id/tiebreak',
+  requireAdmin<AuthBindings>(),
+  async (c) => {
+    const id = parseParseIDStyle(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'identificador inválido')
+    }
+
+    let rawBody: unknown
+    try {
+      rawBody = await c.req.json()
+    } catch {
+      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+    }
+    const entropyHex = parseEntropy(rawBody)
+    if (entropyHex === null) {
+      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+    }
+
+    const clientEntropy = hexToBytes(entropyHex)
+    if (clientEntropy === null || clientEntropy.length < 16) {
+      return errJson(400, 'invalid_entropy', 'entropia inválida')
+    }
+
+    const session = await getVotingSession(c.env.DB, id)
+    if (session === null) {
+      return errJson(404, 'session_not_found', 'sessão não encontrada')
+    }
+    if (session.status !== 'closed') {
+      return errJson(
+        409,
+        'session_not_closed',
+        'encerre a sessão antes do desempate',
+      )
+    }
+
+    const votes = await listVoteMovieIds(c.env.DB, id)
+    const tied = computeTopMovies(votes).ids
+    if (tied.length < 2) {
+      return errJson(422, 'no_tie', 'não há empate para desempatar')
+    }
+    if (session.winner_movie_id !== null) {
+      return errJson(409, 'winner_already_set', 'esta sessão já tem vencedor')
+    }
+
+    const serverNonce = new Uint8Array(32)
+    crypto.getRandomValues(serverNonce)
+
+    const seed = await tiebreakSeed(clientEntropy, serverNonce, id, tied)
+    const idx = await pickTiebreakIndex(seed, tied.length)
+    const winner = tied[idx]
+    // Inalcançável de verdade — pickTiebreakIndex sempre devolve um índice
+    // < n (aqui n = tied.length). Só existe pra satisfazer o tipo do TS
+    // (acesso por índice em array é number|undefined em modo estrito).
+    if (winner === undefined) {
+      throw new Error('tiebreak: índice fora do range dos empatados')
+    }
+
+    const serverNonceHex = bytesToHex(serverNonce)
+    const votacaoUser = c.get('votacaoUser')
+
+    await createTiebreak(c.env.DB, {
+      sessionId: id,
+      triggeredBy: votacaoUser.id,
+      tiedIdsJson: JSON.stringify(tied),
+      clientEntropy: entropyHex,
+      serverNonce: serverNonceHex,
+      winnerMovieId: winner,
+    })
+    await setSessionWinner(c.env.DB, id, winner, 'roulette')
+
+    // `httpx.DataMsg(..., httpx.Success("Desempate concluído."))` no Go —
+    // mesmo padrão de `POST /votes` (T3): paridade de CONTRATO, não de
+    // tela nova (`call<T>()` do apps/web descarta `notifications` no
+    // caminho feliz).
+    return okJson(
+      {
+        winner_movie_id: winner,
+        tied_movie_ids: tied,
+        server_nonce: serverNonceHex,
+      },
+      200,
+      [
+        {
+          type: 'success',
+          code: 'tiebreak_done',
+          message: 'desempate concluído',
+        },
+      ],
+    )
   },
 )
 

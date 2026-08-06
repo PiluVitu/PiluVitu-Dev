@@ -266,3 +266,59 @@ export async function setSessionWinner(
     .bind(winnerMovieId, method, sessionId)
     .run()
 }
+
+// ---------------------------------------------------------------------------
+// Desempate provably-fair (Task 5, fatia2 T5) — `createTiebreak` grava a
+// linha de AUDITORIA do sorteio (`tiebreaks`, porte de `Store.CreateTiebreak`,
+// `apps/api/internal/votacao/tiebreaks.go:21-34`). O cálculo puro
+// (`tiebreakSeed`/`pickTiebreakIndex`) fica isolado em `domain/tiebreak.ts`
+// (sem I/O), mesma separação que `tally.ts` (puro) × este arquivo (I/O) já
+// estabelece pra apuração. `setSessionWinner` acima é reusado com
+// `method='roulette'` — nenhuma escrita nova pro vencedor em si, só a linha
+// de auditoria é inédita desta task.
+// ---------------------------------------------------------------------------
+
+/** Uma linha de `tiebreaks` a gravar — espelha `votacao.TiebreakRecord` do Go. */
+export type TiebreakAuditRow = {
+  sessionId: number
+  triggeredBy: number
+  tiedIdsJson: string
+  /** Hex — o mesmo valor bruto que veio no corpo da requisição. */
+  clientEntropy: string
+  /** Hex — o nonce gerado pelo servidor, o MESMO que a resposta devolve. */
+  serverNonce: string
+  winnerMovieId: number
+}
+
+/**
+ * Persiste uma linha de auditoria do sorteio — porte de
+ * `Store.CreateTiebreak` (`tiebreaks.go:21-34`). `created_at` sai do
+ * `DEFAULT CURRENT_TIMESTAMP` da migration, nunca bound aqui (mesmo padrão
+ * de `votes` em `voteInsertStatements` acima).
+ *
+ * ⚠️ Grava `serverNonce` em HEX — o mesmo valor que a rota devolve no corpo
+ * da resposta. Se os dois divergissem (ex.: gerar o nonce duas vezes, ou
+ * grafar bytes crus em vez do hex), a auditoria pararia de fechar: quem
+ * tentasse recomputar o sorteio a partir do que a API devolveu chegaria
+ * num seed diferente do que gerou o vencedor de fato gravado.
+ */
+export async function createTiebreak(
+  db: D1Database,
+  row: TiebreakAuditRow,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO tiebreaks
+         (session_id, triggered_by, tied_ids_json, client_entropy, server_nonce, winner_movie_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      row.sessionId,
+      row.triggeredBy,
+      row.tiedIdsJson,
+      row.clientEntropy,
+      row.serverNonce,
+      row.winnerMovieId,
+    )
+    .run()
+}

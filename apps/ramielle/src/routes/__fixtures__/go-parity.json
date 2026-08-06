@@ -43,5 +43,29 @@
     "TMDbID": 603,
     "WasWatched": true,
     "SheetNumber": 12
+  },
+  "tiebreak": {
+    "_comentario": "hex(TiebreakSeed(...)) e PickTiebreakIndex(seed, n) de apps/api/internal/votacao/tiebreak.go, gerados via go run num apps/api/cmd/paritytmp/main.go descartável (apagado depois de capturar a saída — ver git status limpo no report da Task 5). tiedIds está FORA DE ORDEM de propósito: TiebreakSeed ordena internamente antes de escrever no hash.",
+    "clientEntropyHex": "00112233445566778899aabbccddeeff",
+    "serverNonceHex": "ffeeddccbbaa99887766554433221100",
+    "sessionId": 7,
+    "tiedIds": [42, 7, 19],
+    "seedHex": "a7e8e8027007954c478c3545e65b9a0c829da0764dd159f29b681c2eb9c627d3",
+    "pickIndexByN": {
+      "2": 0,
+      "3": 0,
+      "5": 3,
+      "8": 2
+    },
+    "routeScenario": {
+      "_comentario": "SEGUNDO vetor, mesma metodologia (go run descartável, apagado) — desta vez com serverNonce de 32 bytes (o tamanho REAL que o handler Go gera via crypto/rand; o vetor acima usa 16 só pras funções puras). Usado no teste de POST /sessions/{id}/tiebreak: o teste mocka crypto.getRandomValues do Worker pra devolver EXATAMENTE este serverNonceHex e confere que a rota devolve o mesmo winner_movie_id que o Go produziria pra esta combinação exata de entropy+nonce+sessionId+tiedIds.",
+      "clientEntropyHex": "00112233445566778899aabbccddeeff",
+      "serverNonceHex": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+      "sessionId": 7,
+      "tiedIds": [42, 7, 19],
+      "seedHex": "41e49c180a6fbfbbd3f8877fee9e45a790591e9c830d9ae27602008cddb77293",
+      "idx": 2,
+      "winnerMovieId": 42
+    }
   }
 }
