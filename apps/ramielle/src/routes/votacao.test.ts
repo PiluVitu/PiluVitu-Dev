@@ -2097,3 +2097,267 @@ describe('I2 — mensagens de erro EXATAS, iguais ao Go (não só o code)', () =
     )
   })
 })
+
+// --------------------------------------------------------------------------
+// GET /votacao/categorias (fatia ③, Task 2) — porte de GetCategorias
+// (handlers/votacao/categorias.go). NUNCA chama o Google de verdade: mocka
+// globalThis.fetch pro token endpoint (SA de teste gerada com uma chave RSA
+// real) + pro endpoint de values do Sheets, delegando o resto pro fetch
+// original, restaurado num `finally` — mesmo padrão de lib/auth.test.ts e
+// lib/google-auth.test.ts (o fetchMock do cloudflare:test não existe na
+// versão instalada).
+// --------------------------------------------------------------------------
+
+async function gerarServiceAccountDeTesteCategorias(
+  clientEmail: string,
+): Promise<{
+  client_email: string
+  private_key: string
+  token_uri: string
+}> {
+  const par = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  )
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', par.privateKey)
+  const bytes = new Uint8Array(pkcs8)
+  let binario = ''
+  for (let i = 0; i < bytes.length; i++)
+    binario += String.fromCharCode(bytes[i])
+  const base64 = btoa(binario)
+  const linhas = base64.match(/.{1,64}/g) ?? [base64]
+  const pem = `-----BEGIN PRIVATE KEY-----\n${linhas.join('\n')}\n-----END PRIVATE KEY-----\n`
+  return {
+    client_email: clientEmail,
+    private_key: pem,
+    token_uri: 'https://oauth2.googleapis.com/token',
+  }
+}
+
+function instalarMockGoogleSheetsCategorias(
+  tokenUri: string,
+  spreadsheetId: string,
+  range: string,
+  valuesOuStatus: unknown[][] | number,
+): { restaurar: () => void } {
+  const fetchOriginal = globalThis.fetch
+  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlTexto =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+    if (urlTexto === tokenUri) {
+      return new Response(
+        JSON.stringify({
+          access_token: 'token-de-teste-categorias-rota',
+          token_type: 'Bearer',
+          expires_in: 3599,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    if (urlTexto === valuesUrl) {
+      if (typeof valuesOuStatus === 'number') {
+        return new Response('erro simulado', { status: valuesOuStatus })
+      }
+      return new Response(JSON.stringify({ values: valuesOuStatus }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+  }) as typeof fetch
+  return {
+    restaurar: () => {
+      globalThis.fetch = fetchOriginal
+    },
+  }
+}
+
+describe('GET /votacao/categorias', () => {
+  test('sem cookie -> 401 not_authenticated (guard roda ANTES de checar config)', async () => {
+    const res = await app.request('/votacao/categorias', {}, testEnv())
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  test('GOOGLE_SA_JSON ausente -> 503 sheets_disabled, mensagem exata do Go', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'cat-sem-sa@example.com',
+      'Sem SA',
+    )
+    const res = await app.request(
+      '/votacao/categorias',
+      { headers: { cookie } },
+      { ...testEnv(), GSHEETS_MOVIES_SPREADSHEET_ID: 'planilha-1' },
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]).toEqual({
+      type: 'error',
+      code: 'sheets_disabled',
+      message: 'Integração com a planilha está desativada.',
+    })
+  })
+
+  test('GSHEETS_MOVIES_SPREADSHEET_ID ausente -> 503 sheets_disabled', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'cat-sem-id@example.com',
+      'Sem ID',
+    )
+    const res = await app.request(
+      '/votacao/categorias',
+      { headers: { cookie } },
+      {
+        ...testEnv(),
+        GOOGLE_SA_JSON: JSON.stringify({
+          client_email: 'a@b.c',
+          private_key: 'x',
+          token_uri: 'https://oauth2.googleapis.com/token',
+        }),
+      },
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('sheets_disabled')
+  })
+
+  // ⚠️ Achado além do brief (ver o comentário na rota, routes/votacao.ts):
+  // GOOGLE_SA_JSON presente mas malformado é o equivalente de
+  // gsheets.NewClient falhar no Go — 503, NÃO 502.
+  test('GOOGLE_SA_JSON malformado -> 503 sheets_disabled (paridade com NewClient falhando no Go, não 502)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'cat-sa-malformado@example.com',
+      'SA Ruim',
+    )
+    const res = await app.request(
+      '/votacao/categorias',
+      { headers: { cookie } },
+      {
+        ...testEnv(),
+        GOOGLE_SA_JSON: '{ isto nao e json valido',
+        GSHEETS_MOVIES_SPREADSHEET_ID: 'planilha-1',
+      },
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('sheets_disabled')
+  })
+
+  test('planilha falha (resposta não-ok do Sheets) -> 502 sheets_read_failed, mensagem exata do Go', async () => {
+    const sa = await gerarServiceAccountDeTesteCategorias(
+      'cat-falha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-falha'
+    const mock = instalarMockGoogleSheetsCategorias(
+      sa.token_uri,
+      spreadsheetId,
+      'A2:F',
+      500,
+    )
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'cat-falha-user@example.com',
+        'Falha',
+      )
+      const res = await app.request(
+        '/votacao/categorias',
+        { headers: { cookie } },
+        {
+          ...testEnv(),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(502)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]).toEqual({
+        type: 'error',
+        code: 'sheets_read_failed',
+        message: 'Falha ao ler a planilha de filmes.',
+      })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('happy path — 200 {categories: [...]}, dedupe + ordenado, usa GSHEETS_MOVIES_RANGE quando setado', async () => {
+    const sa = await gerarServiceAccountDeTesteCategorias(
+      'cat-ok@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-ok'
+    const range = 'A2:F'
+    const mock = instalarMockGoogleSheetsCategorias(
+      sa.token_uri,
+      spreadsheetId,
+      range,
+      [
+        ['1', 'Filme A', 'Filme', 'Terror', 'sim'],
+        ['2', 'Filme B', 'Filme', 'Romance', 'sim'],
+        ['3', 'Filme C', 'Filme', 'Terror', 'sim'], // duplicata proposital
+      ],
+    )
+    try {
+      const cookie = await cookieDeSessaoValido('cat-ok-user@example.com', 'OK')
+      const res = await app.request(
+        '/votacao/categorias',
+        { headers: { cookie } },
+        {
+          ...testEnv(),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          GSHEETS_MOVIES_RANGE: range,
+        },
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Envelope<{ categories: string[] }>
+      expect(body.data).toEqual({ categories: ['romance', 'terror'] })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('sem GSHEETS_MOVIES_RANGE -> usa o default A2:F (mesmo fallback do Go, cmd/api/main.go:63-65)', async () => {
+    const sa = await gerarServiceAccountDeTesteCategorias(
+      'cat-default-range@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-default-range'
+    const mock = instalarMockGoogleSheetsCategorias(
+      sa.token_uri,
+      spreadsheetId,
+      'A2:F',
+      [['1', 'Filme A', 'Filme', 'Drama', 'sim']],
+    )
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'cat-default-range-user@example.com',
+        'Default',
+      )
+      const res = await app.request(
+        '/votacao/categorias',
+        { headers: { cookie } },
+        {
+          ...testEnv(),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          // GSHEETS_MOVIES_RANGE ausente de propósito
+        },
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Envelope<{ categories: string[] }>
+      expect(body.data).toEqual({ categories: ['drama'] })
+    } finally {
+      mock.restaurar()
+    }
+  })
+})

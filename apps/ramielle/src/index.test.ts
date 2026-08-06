@@ -207,6 +207,7 @@ describe('app.onError global', () => {
 
 describe('rotas de votação — todas montadas ACIMA do catch-all', () => {
   test.each([
+    ['GET', '/votacao/categorias'],
     ['GET', '/votacao/sessions'],
     ['GET', '/votacao/sessions/1'],
     ['POST', '/votacao/sessions/1/votes'],

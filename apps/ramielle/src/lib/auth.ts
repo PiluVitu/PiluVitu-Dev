@@ -42,6 +42,26 @@ export type AuthBindings = {
    * motivo de lá: `undefined` em runtime quando a binding não está setada.
    */
   CORS_ALLOWED_ORIGINS?: string
+  /**
+   * Fatia ③, Task 2 — as três bindings do cliente do Sheets
+   * (`lib/gsheets.ts`, consumido por `GET /votacao/categorias` em
+   * `routes/votacao.ts`). Vivem aqui pelo MESMO motivo de
+   * `CORS_ALLOWED_ORIGINS` acima: `AuthBindings` é, na prática, o tipo
+   * `Bindings` inteiro do Worker (`index.ts` faz `export type Bindings =
+   * AuthBindings`), não só o que `createAuth` usa — não vale a pena um
+   * segundo tipo só pra três campos. Todas OPCIONAIS: `undefined` em
+   * runtime é o estado normal até o dono rodar `wrangler secret put` (ver
+   * `apps/ramielle/CLAUDE.md` § Pendências do dono). A rota trata a
+   * ausência de `GOOGLE_SA_JSON` OU `GSHEETS_MOVIES_SPREADSHEET_ID` como
+   * "sheets desligado" (503 `sheets_disabled`) — mesma paridade do Go
+   * (`cmd/api/main.go:61-72`: sem `GSHEETS_MOVIES_SPREADSHEET_ID`, o
+   * cliente nunca é construído; o handler responde 503 quando é `nil`).
+   */
+  /** O JSON INTEIRO da service account — nunca `vars` do wrangler.jsonc (texto claro commitado), sempre `wrangler secret put`. */
+  GOOGLE_SA_JSON?: string
+  GSHEETS_MOVIES_SPREADSHEET_ID?: string
+  /** Default `'A2:F'` aplicado em `routes/votacao.ts` quando ausente/vazia — mesmo fallback do Go (`cmd/api/main.go:63-65`). */
+  GSHEETS_MOVIES_RANGE?: string
 }
 
 /**

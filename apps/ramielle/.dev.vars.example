@@ -23,3 +23,15 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 # http://localhost:3333 e https://piluvitu.com.br — o `wrangler dev` comum
 # não precisa desta linha). CSV, mesmo contrato de ADMIN_EMAILS acima.
 # CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
+
+# Task 2 (fatia ③): cliente do Sheets (src/lib/gsheets.ts) — lê filmes e
+# categorias da planilha de votação. Os três SEMPRE via `wrangler secret
+# put` em produção — nunca `vars` do wrangler.jsonc (texto claro
+# commitado), nem GSHEETS_MOVIES_SPREADSHEET_ID/RANGE: não são secretos por
+# natureza, mas o valor real da planilha de produção não é commitado (mesmo
+# tratamento que apps/api/.env já dá a eles, também fora do git). Sem
+# GOOGLE_SA_JSON OU GSHEETS_MOVIES_SPREADSHEET_ID, GET /votacao/categorias
+# responde 503 sheets_disabled — feature desligada, não erro.
+# GOOGLE_SA_JSON={"type":"service_account","client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","token_uri":"https://oauth2.googleapis.com/token",...}
+# GSHEETS_MOVIES_SPREADSHEET_ID=troque-pelo-id-da-planilha-de-filmes
+# GSHEETS_MOVIES_RANGE=A2:F

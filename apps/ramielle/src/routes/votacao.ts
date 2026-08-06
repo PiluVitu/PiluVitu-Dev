@@ -38,6 +38,8 @@ import {
   type SessionVariables,
 } from '../lib/session'
 import { errJson, okJson } from '../lib/envelope'
+import { getCategories } from '../lib/gsheets'
+import { parseServiceAccount, type ServiceAccount } from '../lib/google-auth'
 import { movieToWire, sessionToWire } from '../lib/wire'
 import { computeTopMovies, tallyVotes } from '../domain/tally'
 import {
@@ -75,6 +77,90 @@ type Env = {
 }
 
 const votacaoRoutes = new Hono<Env>()
+
+/** Default do Go quando `GSHEETS_MOVIES_RANGE` está ausente/vazia (`cmd/api/main.go:63-65`). */
+const DEFAULT_SHEETS_RANGE = 'A2:F'
+
+/**
+ * `GET /votacao/categorias` — porte de `GetCategorias`
+ * (`handlers/votacao/categorias.go`). Devolve a lista de categorias
+ * presentes na planilha de filmes, deduplicada e ordenada
+ * (`lib/gsheets.ts#getCategories`).
+ *
+ * ⚠️ **Sheets DESLIGADO ⇒ 503 `sheets_disabled`** — no Go, o cliente só é
+ * construído se `GSHEETS_MOVIES_SPREADSHEET_ID` estiver setado
+ * (`cmd/api/main.go:61-72`), e o handler responde 503 quando ele é `nil`.
+ * Aqui: falta `GOOGLE_SA_JSON` OU `GSHEETS_MOVIES_SPREADSHEET_ID` ⇒ 503,
+ * mesma mensagem do Go.
+ *
+ * ⚠️ **Achado além do brief, MEDIDO contra `cmd/api/main.go:66-71`**: o Go
+ * trata QUALQUER falha de CONSTRUÇÃO do cliente (`gsheets.NewClient`
+ * devolvendo erro — o que acontece se a credencial ADC/service account for
+ * malformada) como "sheets desligado" — ele só LOGA e segue com
+ * `sheetsClient` permanecendo `nil` (`if gerr != nil { fmt.Fprintf(...);
+ * } else { sheetsClient = c }`), NUNCA propaga como falha de leitura. Só
+ * chamadas que falham DEPOIS do cliente já construído (a troca de token, o
+ * fetch do range) viram 502. Um `GOOGLE_SA_JSON` presente mas malformado
+ * (JSON inválido ou campo obrigatório faltando) é o equivalente exato de
+ * `NewClient` falhar — por isso cai em 503 `sheets_disabled` aqui também,
+ * não 502. O brief só cobria "faltar" a env var; isto cobre "estar
+ * presente e quebrada", comportamento real do Go que o brief não descrevia.
+ *
+ * ⚠️ **Falha do Sheets (depois da configuração validada) ⇒ 502
+ * `sheets_read_failed`**, não 500 (o Go usa `StatusBadGateway`) — cobre
+ * troca de token, `fetch` do range, resposta não-ok, JSON malformado
+ * (tudo dentro de `lib/gsheets.ts#getCategories`/`readMovies`).
+ *
+ * `GSHEETS_MOVIES_RANGE` ausente/vazia cai no default `'A2:F'` — mesmo
+ * fallback do Go.
+ */
+votacaoRoutes.get('/categorias', requireAuth<AuthBindings>(), async (c) => {
+  const {
+    GOOGLE_SA_JSON,
+    GSHEETS_MOVIES_SPREADSHEET_ID,
+    GSHEETS_MOVIES_RANGE,
+  } = c.env
+  if (!GOOGLE_SA_JSON || !GSHEETS_MOVIES_SPREADSHEET_ID) {
+    return errJson(
+      503,
+      'sheets_disabled',
+      'Integração com a planilha está desativada.',
+    )
+  }
+
+  let serviceAccount: ServiceAccount
+  try {
+    serviceAccount = parseServiceAccount(GOOGLE_SA_JSON)
+  } catch (err) {
+    console.error(
+      'GET /votacao/categorias — GOOGLE_SA_JSON malformado, tratando como sheets desligado (paridade com gsheets.NewClient falhando no Go)',
+      err,
+    )
+    return errJson(
+      503,
+      'sheets_disabled',
+      'Integração com a planilha está desativada.',
+    )
+  }
+
+  let categories: string[]
+  try {
+    categories = await getCategories({
+      serviceAccount,
+      spreadsheetId: GSHEETS_MOVIES_SPREADSHEET_ID,
+      range: GSHEETS_MOVIES_RANGE || DEFAULT_SHEETS_RANGE,
+    })
+  } catch (err) {
+    console.error('GET /votacao/categorias — falha ao ler a planilha', err)
+    return errJson(
+      502,
+      'sheets_read_failed',
+      'Falha ao ler a planilha de filmes.',
+    )
+  }
+
+  return okJson({ categories })
+})
 
 const INT64_MIN = -9223372036854775808n
 const INT64_MAX = 9223372036854775807n
