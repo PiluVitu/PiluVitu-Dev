@@ -194,18 +194,20 @@ describe('app.onError global', () => {
 })
 
 // --------------------------------------------------------------------------
-// Montagem das 7 rotas de votação (T2-T6) — PROVA POR EXECUÇÃO, não por
-// leitura do arquivo, que `app.route('/votacao', votacaoRoutes)` está
-// registrado ACIMA do catch-all em index.ts. Cada uma das 7 chamadas abaixo,
-// sem cookie, tem que responder com o 401 `not_authenticated` da PRÓPRIA
-// rota (vindo do guard requireAuth/requireAdmin) — nunca o 404 `not_found`
-// genérico do catch-all. Se qualquer uma destas 7 tivesse ficado registrada
-// abaixo do catch-all (ou não tivesse sido montada), cairia no 404 genérico
-// em vez do 401 da rota — a mesma técnica de prova que cors.test.ts já usa
-// pro preflight de /api/auth/*, agora para a fatia ② inteira de uma vez.
+// Montagem das 7 rotas de votação (T2-T6) + as 3 rotas de admin (fatia ③,
+// Task 5) — PROVA POR EXECUÇÃO, não por leitura do arquivo, que
+// `app.route('/votacao', votacaoRoutes)` e `app.route('/admin', adminRoutes)`
+// estão registrados ACIMA do catch-all em index.ts. Cada uma das chamadas
+// abaixo, sem cookie, tem que responder com o 401 `not_authenticated` da
+// PRÓPRIA rota (vindo do guard requireAuth/requireAdmin) — nunca o 404
+// `not_found` genérico do catch-all. Se qualquer uma destas tivesse ficado
+// registrada abaixo do catch-all (ou não tivesse sido montada), cairia no
+// 404 genérico em vez do 401 da rota — a mesma técnica de prova que
+// cors.test.ts já usa pro preflight de /api/auth/*, agora estendida pra
+// fatia ③.
 // --------------------------------------------------------------------------
 
-describe('rotas de votação — todas montadas ACIMA do catch-all', () => {
+describe('rotas de votação/admin — todas montadas ACIMA do catch-all', () => {
   test.each([
     ['GET', '/votacao/categorias'],
     ['GET', '/votacao/sessions'],
@@ -216,6 +218,9 @@ describe('rotas de votação — todas montadas ACIMA do catch-all', () => {
     ['POST', '/votacao/sessions/1/close'],
     ['POST', '/votacao/sessions/1/tiebreak'],
     ['GET', '/votacao/sessions/1/votes'],
+    ['GET', '/admin/users'],
+    ['GET', '/admin/backups'],
+    ['POST', '/admin/backup'],
   ])(
     '%s %s responde 401 not_authenticated (da rota) — nunca 404 not_found (do catch-all)',
     async (method, path) => {

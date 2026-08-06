@@ -8,8 +8,13 @@
  */
 import { describe, expect, it } from 'vitest'
 import goParity from '../routes/__fixtures__/go-parity.json'
-import { movieToWire, sessionToWire } from './wire'
-import type { SessionMovieRow, VotingSessionRow, WireSession } from './wire'
+import { backupToWire, movieToWire, sessionToWire } from './wire'
+import type {
+  BackupRow,
+  SessionMovieRow,
+  VotingSessionRow,
+  WireSession,
+} from './wire'
 
 // Linha de `voting_sessions` como sairia do D1: snake_case, timestamp no
 // formato do CURRENT_TIMESTAMP do SQLite (espaço, sem T, sem Z).
@@ -123,6 +128,41 @@ describe('movieToWire — paridade byte a byte com a Go (vetor dourado)', () => 
   it('WasWatched é boolean no fio, não o INTEGER 0|1 do banco', () => {
     expect(movieToWire(linhaFilmeSemTmdb).WasWatched).toBe(false)
     expect(movieToWire(linhaFilmeComTmdb).WasWatched).toBe(true)
+  })
+})
+
+// Linha de `backups` como sairia do D1: snake_case, timestamp no formato do
+// CURRENT_TIMESTAMP do SQLite (espaço, sem T, sem Z) — mesma convenção das
+// fixtures de sessão/filme acima.
+const linhaBackup: BackupRow = {
+  id: 5,
+  drive_file_id: '1AbCdEfGhIjKlMnOpQrStUvWxYz',
+  drive_file_name: 'votacao-2026-05-19.sqlite',
+  size_bytes: 123456,
+  trigger_type: 'manual',
+  created_at: '2026-05-19 12:00:00',
+}
+
+describe('backupToWire — paridade byte a byte com a Go (vetor dourado)', () => {
+  it('bate exatamente com o json.Marshal(votacao.Backup{...}) da Go', () => {
+    expect(backupToWire(linhaBackup)).toEqual(goParity.backup)
+  })
+
+  it('as chaves são PascalCase, EXATAMENTE como a Go emite — literal, não por amostragem', () => {
+    // ⚠️ O ponto desta task: emitir `drive_file_name` em vez de
+    // `DriveFileName` quebra `apps/web` em produção (tabela renderiza
+    // `undefined`), sem erro nenhum — nada denuncia em compile-time dos
+    // dois lados (o Go não usa struct tag `json:`, o `res.json()` do
+    // apps/web é `any`). Esta asserção é a rede de segurança.
+    const chaves = Object.keys(backupToWire(linhaBackup))
+    expect(chaves).toEqual([
+      'ID',
+      'DriveFileID',
+      'DriveFileName',
+      'SizeBytes',
+      'TriggerType',
+      'CreatedAt',
+    ])
   })
 })
 

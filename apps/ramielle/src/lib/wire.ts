@@ -28,6 +28,20 @@ export type VotingSessionRow = {
   sort_options_json: string
 }
 
+/**
+ * Linha de `backups` como o binding D1 devolve (snake_case). Fatia ③, Task
+ * 5 — `admin.ts` (rotas) usa `backupToWire` abaixo, mesmo mecanismo de
+ * `sessionToWire`/`movieToWire`.
+ */
+export type BackupRow = {
+  id: number
+  drive_file_id: string
+  drive_file_name: string
+  size_bytes: number
+  trigger_type: 'cron' | 'manual' | 'session_close'
+  created_at: string
+}
+
 /** Linha de `session_movies` como o binding D1 devolve (snake_case). */
 export type SessionMovieRow = {
   id: number
@@ -93,5 +107,41 @@ export function movieToWire(row: SessionMovieRow): WireMovie {
     TMDbID: row.tmdb_id,
     WasWatched: row.was_watched === 1,
     SheetNumber: row.sheet_number,
+  }
+}
+
+/**
+ * Shape de fio de `Backup` — espelha `apps/web/lib/votacao/types.ts:98-105`
+ * LITERALMENTE (Fatia ③, Task 5). O struct Go (`apps/api/internal/votacao/
+ * backups.go:11-18`) não tem tag `json:` nenhuma — `GET /admin/backups`
+ * devolve `[]Backup` DIRETO (`httpx.Data(w, 200, map[string]any{"backups":
+ * rows})`), então o encoder usa os nomes de campo Go como estão.
+ *
+ * ⚠️ Diferente de `WireSession`/`WireMovie`: emitir `drive_file_name` em vez
+ * de `DriveFileName` quebra `components/votacao/admin/backups-panel.tsx`
+ * (`apps/web`) em produção — a tabela renderiza `undefined` em toda linha,
+ * sem erro nenhum (o Go não usa struct tag, então nada denuncia em
+ * compile-time nos dois lados). Ver `wire.test.ts` pro teste que afirma as
+ * chaves PascalCase literalmente contra o vetor dourado (`go-parity.json#backup`,
+ * gerado rodando o Go de verdade — `apps/api/cmd/paritybackup`, descartável,
+ * apagado depois de capturar a saída).
+ */
+export type WireBackup = {
+  ID: number
+  DriveFileID: string
+  DriveFileName: string
+  SizeBytes: number
+  TriggerType: 'cron' | 'manual' | 'session_close'
+  CreatedAt: string
+}
+
+export function backupToWire(row: BackupRow): WireBackup {
+  return {
+    ID: row.id,
+    DriveFileID: row.drive_file_id,
+    DriveFileName: row.drive_file_name,
+    SizeBytes: row.size_bytes,
+    TriggerType: row.trigger_type,
+    CreatedAt: toIsoUtc(row.created_at),
   }
 }

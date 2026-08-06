@@ -67,5 +67,14 @@
       "idx": 2,
       "winnerMovieId": 42
     }
+  },
+  "_comentario_backup": "backup abaixo é json.Marshal(votacao.Backup{...}) de apps/api/internal/votacao/backups.go, gerado via go run num apps/api/cmd/paritybackup/main.go descartável (apagado depois de capturar a saída, git status confirmado limpo em apps/api — Task 5). O struct Backup não tem tag `json:` nenhuma, então as chaves saem PascalCase na ordem dos campos do struct — é essa mistura de convenção (backups é PascalCase, users é snake_case) que os testes desta task afirmam literalmente.",
+  "backup": {
+    "ID": 5,
+    "DriveFileID": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    "DriveFileName": "votacao-2026-05-19.sqlite",
+    "SizeBytes": 123456,
+    "TriggerType": "manual",
+    "CreatedAt": "2026-05-19T12:00:00Z"
   }
 }
