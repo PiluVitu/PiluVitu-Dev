@@ -308,7 +308,11 @@ Mutação obrigatória: troque uma chave de `sessionToWire` para snake_case (ex.
 
 - [ ] **Step 1: Domínio — teste primeiro**
 
-Semeie o D1 direto (`INSERT`) e cubra: sessão inexistente devolve `null` (não lança); listagem respeita `limit`/`offset` e ordena por `created_at DESC` (o índice `idx_voting_sessions_created` existe para isso); filmes vêm ordenados de forma estável.
+Semeie o D1 direto (`INSERT`) e cubra: sessão inexistente devolve `null` (não lança); listagem respeita `limit`/`offset` e ordena por **`id DESC`**; filmes vêm ordenados de forma estável.
+
+⚠️ **CORREÇÃO (2026-07-29): o rascunho deste plano dizia `created_at DESC`, citando o índice `idx_voting_sessions_created`. Errado nas duas pontas** — MEDIDO em `apps/api/internal/votacao/sessions.go:52`: o Go ordena por `id DESC` e **não usa** aquele índice (a PK já é ordenada). E a divergência não é cosmética: a fatia ④ importa o histórico do SQLite da Go escrevendo `created_at` explícito, e aí os dois critérios dão listas diferentes. O teste de ordem precisa de um caso onde `created_at` esteja em ordem INVERSA ao `id` — senão os dois critérios são indistinguíveis e o teste não prova nada.
+
+⚠️ **O Store do Go também CLAMPA, além do `atoiOr` do handler** (`sessions.go:45-50`): `limit <= 0 || limit > 100` vira 20, e `offset < 0` vira 0. Então `?limit=500` devolve **20**. Sem o teto, um `?limit=100000` vira scan grande no D1, onde "rows read" conta linha escaneada. As guardas moram no domínio, como no Go — não na rota.
 
 ⚠️ **`ListVotingSessions` do Go usa `limit`/`offset` com defaults 20/0** (`sessions.go:154-156`, via `atoiOr`). Query malformada (`?limit=abc`) cai no default, **não** dá 400 — paridade.
 
