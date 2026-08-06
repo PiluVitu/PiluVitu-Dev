@@ -222,3 +222,167 @@ export async function setSessionWinner(
     .bind(winnerMovieId, method, sessionId)
     .run()
 }
+
+// ---------------------------------------------------------------------------
+// Criação de sessão (fatia ③, Task 4) — `createVotingSession` +
+// `insertSessionMovies`, portes de `Store.CreateVotingSession`
+// (`apps/api/internal/votacao/sessions.go:23-39`) e
+// `Store.InsertSessionMovies` (`apps/api/internal/votacao/movies.go:21-60`).
+// Continuam neste arquivo pela mesma regra da I3 (corte por TABELA): as duas
+// escrevem `voting_sessions`/`session_movies`, tabelas das quais este
+// arquivo já é dono.
+// ---------------------------------------------------------------------------
+
+export type CreateVotingSessionInput = {
+  title: string
+  createdBy: number
+  /**
+   * Serializado pela ROTA (`JSON.stringify` do corpo validado de `POST
+   * /votacao/sessions`) — string vazia cai pro default `'{}'`, mesma
+   * paridade do Go (`if sortOptionsJSON == "" { sortOptionsJSON = "{}" }`,
+   * `sessions.go:24-26`).
+   */
+  sortOptionsJson: string
+}
+
+/**
+ * Insere a sessão (`status='open'` sempre) — porte de
+ * `Store.CreateVotingSession`. INSERT simples com `RETURNING id` (mesmo
+ * mecanismo MEDIDO funcional no D1 em `schema.test.ts`, Step 5 da T2) e,
+ * como o Go, um segundo passo — aqui reusando `getVotingSession` já
+ * existente acima — pra devolver a linha completa (com `status`,
+ * `created_at` etc. já aplicados pelos defaults da migration), em vez de
+ * montar a row à mão em JS.
+ */
+export async function createVotingSession(
+  db: D1Database,
+  input: CreateVotingSessionInput,
+): Promise<VotingSessionRow> {
+  const sortOptionsJson =
+    input.sortOptionsJson === '' ? '{}' : input.sortOptionsJson
+
+  const inserted = await db
+    .prepare(
+      `INSERT INTO voting_sessions (title, status, created_by, sort_options_json)
+       VALUES (?, 'open', ?, ?)
+       RETURNING id`,
+    )
+    .bind(input.title, input.createdBy, sortOptionsJson)
+    .first<{ id: number }>()
+
+  if (inserted === null) {
+    throw new Error(
+      'createVotingSession: INSERT ... RETURNING id não devolveu linha',
+    )
+  }
+
+  const row = await getVotingSession(db, inserted.id)
+  if (row === null) {
+    throw new Error(
+      'createVotingSession: linha não encontrada logo após o insert',
+    )
+  }
+  return row
+}
+
+/** Um filme a gravar em `session_movies` — espelha `votacao.SessionMovie` do Go (sem `ID`/`SessionID`, que esta função já sabe). */
+export type SessionMovieInsert = {
+  category: string
+  title: string
+  type: 'filme' | 'serie'
+  /** `''` quando não há pôster (fail-soft do TMDb) — vira `NULL` na coluna, mesma regra de `nullableStr` (`votacao/users.go:113-118`, reusada por `InsertSessionMovies`). */
+  posterUrl: string
+  /** `0` quando não há id do TMDb — vira `NULL`, mesma regra de `m.tmdbID > 0` no Go (`handlers/votacao/sessions.go:91-94`). */
+  tmdbId: number
+  wasWatched: boolean
+  /** `0` quando o número da planilha é desconhecido/ausente — vira `NULL`, mesma regra de `m.movie.Number > 0` no Go (`handlers/votacao/sessions.go:95-98`). */
+  sheetNumber: number
+}
+
+// Teto de 100 bound params por statement no D1 — mesmo orçamento já medido e
+// documentado em `voteInsertStatements` (`domain/votes.ts`).
+//
+//   session_movies: 8 colunas bound (session_id, category, title, type,
+//                   poster_url, tmdb_id, was_watched, sheet_number; `id` é
+//                   AUTOINCREMENT, nunca bound) -> floor(100/8) = 12
+//                   linhas/statement (96 params).
+//
+// Com as ~11 categorias medidas na planilha real, isto NUNCA chunka na
+// prática (sortOnePerCategory devolve no máximo 1 filme por categoria).
+// Escrito e testado mesmo assim — mesmo aviso do brief já seguido em
+// `voteInsertStatements`: o custo de descobrir o teto em produção é uma
+// sessão de votação perdida.
+const MAX_BOUND_PARAMS = 100
+const SESSION_MOVIE_COLUMNS_INSERT = [
+  'session_id',
+  'category',
+  'title',
+  'type',
+  'poster_url',
+  'tmdb_id',
+  'was_watched',
+  'sheet_number',
+] as const
+const SESSION_MOVIE_ROWS_PER_STATEMENT = Math.floor(
+  MAX_BOUND_PARAMS / SESSION_MOVIE_COLUMNS_INSERT.length,
+) // 12
+const SESSION_MOVIE_TUPLE = `(${SESSION_MOVIE_COLUMNS_INSERT.map(() => '?').join(', ')})`
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size)
+    out.push(items.slice(i, i + size))
+  return out
+}
+
+function sessionMovieInsertStatements(
+  db: D1Database,
+  sessionId: number,
+  movies: SessionMovieInsert[],
+): D1PreparedStatement[] {
+  const head = `INSERT INTO session_movies (${SESSION_MOVIE_COLUMNS_INSERT.join(', ')}) VALUES `
+  return chunk(movies, SESSION_MOVIE_ROWS_PER_STATEMENT).map((group) =>
+    db
+      .prepare(head + group.map(() => SESSION_MOVIE_TUPLE).join(', '))
+      .bind(
+        ...group.flatMap((m) => [
+          sessionId,
+          m.category,
+          m.title,
+          m.type,
+          m.posterUrl === '' ? null : m.posterUrl,
+          m.tmdbId > 0 ? m.tmdbId : null,
+          m.wasWatched ? 1 : 0,
+          m.sheetNumber > 0 ? m.sheetNumber : null,
+        ]),
+      ),
+  )
+}
+
+/**
+ * Grava os filmes da sessão — porte de `Store.InsertSessionMovies`
+ * (`movies.go:21-60`). `db.batch()` dá rollback real pro CONJUNTO de
+ * statements gerados (um por chunk de até 12 filmes) — mesma garantia do
+ * `tx.BeginTx()/.../tx.Commit()` do Go: todos os filmes desta chamada, ou
+ * nenhum.
+ *
+ * ⚠️ **NÃO inclui o INSERT da sessão em si no mesmo `db.batch()`** — mesma
+ * separação do Go, onde `CreateVotingSession` (um INSERT isolado) e
+ * `InsertSessionMovies` (a transação acima) são DUAS operações
+ * independentes, não uma só. A rota (`routes/votacao.ts`) chama
+ * `createVotingSession` primeiro (precisa do `id` gerado pra montar as
+ * linhas de `session_movies`) e só ENTÃO chama esta função — se esta
+ * lançar, a sessão já existe no banco sem filme nenhum (órfã), mesmo
+ * comportamento observável do Go nesse cenário de falha.
+ *
+ * Array vazio é um no-op — mesmo guard `if len(movies) == 0 { return nil }`
+ * do Go, evita um `db.batch([])` sem necessidade.
+ */
+export async function insertSessionMovies(
+  db: D1Database,
+  sessionId: number,
+  movies: SessionMovieInsert[],
+): Promise<void> {
+  if (movies.length === 0) return
+  await db.batch(sessionMovieInsertStatements(db, sessionId, movies))
+}

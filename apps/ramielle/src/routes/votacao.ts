@@ -38,10 +38,21 @@ import {
   type SessionVariables,
 } from '../lib/session'
 import { errJson, okJson } from '../lib/envelope'
-import { getCategories } from '../lib/gsheets'
+import {
+  getCategories,
+  readMovies,
+  type GsheetsConfig,
+  type SheetMovie,
+} from '../lib/gsheets'
 import { parseServiceAccount, type ServiceAccount } from '../lib/google-auth'
+import {
+  searchPoster,
+  type TmdbConfig,
+  type TmdbSearchResult,
+} from '../lib/tmdb'
 import { movieToWire, sessionToWire } from '../lib/wire'
 import { computeTopMovies, tallyVotes } from '../domain/tally'
+import { NoCandidatesError, sortOnePerCategory } from '../domain/sortear'
 import {
   bytesToHex,
   hexToBytes,
@@ -52,14 +63,18 @@ import {
 // é por TABELA/AGREGADO, não mais por leitura/escrita — ver o cabeçalho dos
 // dois arquivos. `sessions.ts` é dono de `voting_sessions`/`session_movies`
 // (leitura E escrita, daí `closeVotingSession`/`setSessionWinner` virem de
-// lá agora); `votes.ts` é dono de `votes`/`tiebreaks` (idem, daí
-// `getUserVotedMovieIds` vir de lá).
+// lá agora, e `createVotingSession`/`insertSessionMovies` — Task 4 — também);
+// `votes.ts` é dono de `votes`/`tiebreaks` (idem, daí `getUserVotedMovieIds`
+// vir de lá).
 import {
   closeVotingSession,
+  createVotingSession,
   getSessionMovies,
   getVotingSession,
+  insertSessionMovies,
   listVotingSessions,
   setSessionWinner,
+  type SessionMovieInsert,
 } from '../domain/sessions'
 import {
   countVoters,
@@ -81,20 +96,29 @@ const votacaoRoutes = new Hono<Env>()
 /** Default do Go quando `GSHEETS_MOVIES_RANGE` está ausente/vazia (`cmd/api/main.go:63-65`). */
 const DEFAULT_SHEETS_RANGE = 'A2:F'
 
+type SheetsConfigResolution =
+  | { ok: true; config: GsheetsConfig }
+  | { ok: false; response: Response }
+
 /**
- * `GET /votacao/categorias` — porte de `GetCategorias`
- * (`handlers/votacao/categorias.go`). Devolve a lista de categorias
- * presentes na planilha de filmes, deduplicada e ordenada
- * (`lib/gsheets.ts#getCategories`).
+ * Resolve a config do Sheets a partir das bindings — extraído na Task 4
+ * (fatia ③) porque `POST /votacao/sessions` (abaixo) precisa EXATAMENTE da
+ * mesma checagem que `GET /categorias` já fazia inline: ausência OU
+ * malformação de `GOOGLE_SA_JSON`/`GSHEETS_MOVIES_SPREADSHEET_ID` é "sheets
+ * desligado" (503), nunca "falha de leitura" (502) — mesma distinção
+ * MEDIDA contra `cmd/api/main.go:61-72` já documentada abaixo antes desta
+ * task existir como função própria. Puramente uma extração — nenhum
+ * comportamento mudou (`GET /categorias` continua idêntico, ver
+ * `routes/votacao.test.ts`).
  *
  * ⚠️ **Sheets DESLIGADO ⇒ 503 `sheets_disabled`** — no Go, o cliente só é
  * construído se `GSHEETS_MOVIES_SPREADSHEET_ID` estiver setado
- * (`cmd/api/main.go:61-72`), e o handler responde 503 quando ele é `nil`.
- * Aqui: falta `GOOGLE_SA_JSON` OU `GSHEETS_MOVIES_SPREADSHEET_ID` ⇒ 503,
- * mesma mensagem do Go.
+ * (`cmd/api/main.go:61-72`), e os handlers respondem 503 quando ele é
+ * `nil`. Aqui: falta `GOOGLE_SA_JSON` OU `GSHEETS_MOVIES_SPREADSHEET_ID` ⇒
+ * 503, mesma mensagem do Go.
  *
- * ⚠️ **Achado além do brief, MEDIDO contra `cmd/api/main.go:66-71`**: o Go
- * trata QUALQUER falha de CONSTRUÇÃO do cliente (`gsheets.NewClient`
+ * ⚠️ **Achado além do brief (T2), MEDIDO contra `cmd/api/main.go:66-71`**:
+ * o Go trata QUALQUER falha de CONSTRUÇÃO do cliente (`gsheets.NewClient`
  * devolvendo erro — o que acontece se a credencial ADC/service account for
  * malformada) como "sheets desligado" — ele só LOGA e segue com
  * `sheetsClient` permanecendo `nil` (`if gerr != nil { fmt.Fprintf(...);
@@ -103,29 +127,23 @@ const DEFAULT_SHEETS_RANGE = 'A2:F'
  * fetch do range) viram 502. Um `GOOGLE_SA_JSON` presente mas malformado
  * (JSON inválido ou campo obrigatório faltando) é o equivalente exato de
  * `NewClient` falhar — por isso cai em 503 `sheets_disabled` aqui também,
- * não 502. O brief só cobria "faltar" a env var; isto cobre "estar
- * presente e quebrada", comportamento real do Go que o brief não descrevia.
- *
- * ⚠️ **Falha do Sheets (depois da configuração validada) ⇒ 502
- * `sheets_read_failed`**, não 500 (o Go usa `StatusBadGateway`) — cobre
- * troca de token, `fetch` do range, resposta não-ok, JSON malformado
- * (tudo dentro de `lib/gsheets.ts#getCategories`/`readMovies`).
- *
- * `GSHEETS_MOVIES_RANGE` ausente/vazia cai no default `'A2:F'` — mesmo
- * fallback do Go.
+ * não 502.
  */
-votacaoRoutes.get('/categorias', requireAuth<AuthBindings>(), async (c) => {
+function resolverSheetsConfig(env: AuthBindings): SheetsConfigResolution {
   const {
     GOOGLE_SA_JSON,
     GSHEETS_MOVIES_SPREADSHEET_ID,
     GSHEETS_MOVIES_RANGE,
-  } = c.env
+  } = env
   if (!GOOGLE_SA_JSON || !GSHEETS_MOVIES_SPREADSHEET_ID) {
-    return errJson(
-      503,
-      'sheets_disabled',
-      'Integração com a planilha está desativada.',
-    )
+    return {
+      ok: false,
+      response: errJson(
+        503,
+        'sheets_disabled',
+        'Integração com a planilha está desativada.',
+      ),
+    }
   }
 
   let serviceAccount: ServiceAccount
@@ -133,23 +151,48 @@ votacaoRoutes.get('/categorias', requireAuth<AuthBindings>(), async (c) => {
     serviceAccount = parseServiceAccount(GOOGLE_SA_JSON)
   } catch (err) {
     console.error(
-      'GET /votacao/categorias — GOOGLE_SA_JSON malformado, tratando como sheets desligado (paridade com gsheets.NewClient falhando no Go)',
+      'resolverSheetsConfig — GOOGLE_SA_JSON malformado, tratando como sheets desligado (paridade com gsheets.NewClient falhando no Go)',
       err,
     )
-    return errJson(
-      503,
-      'sheets_disabled',
-      'Integração com a planilha está desativada.',
-    )
+    return {
+      ok: false,
+      response: errJson(
+        503,
+        'sheets_disabled',
+        'Integração com a planilha está desativada.',
+      ),
+    }
   }
 
-  let categories: string[]
-  try {
-    categories = await getCategories({
+  return {
+    ok: true,
+    config: {
       serviceAccount,
       spreadsheetId: GSHEETS_MOVIES_SPREADSHEET_ID,
       range: GSHEETS_MOVIES_RANGE || DEFAULT_SHEETS_RANGE,
-    })
+    },
+  }
+}
+
+/**
+ * `GET /votacao/categorias` — porte de `GetCategorias`
+ * (`handlers/votacao/categorias.go`). Devolve a lista de categorias
+ * presentes na planilha de filmes, deduplicada e ordenada
+ * (`lib/gsheets.ts#getCategories`). A checagem de config (503
+ * `sheets_disabled`) mora em `resolverSheetsConfig` acima.
+ *
+ * ⚠️ **Falha do Sheets (depois da configuração validada) ⇒ 502
+ * `sheets_read_failed`**, não 500 (o Go usa `StatusBadGateway`) — cobre
+ * troca de token, `fetch` do range, resposta não-ok, JSON malformado
+ * (tudo dentro de `lib/gsheets.ts#getCategories`/`readMovies`).
+ */
+votacaoRoutes.get('/categorias', requireAuth<AuthBindings>(), async (c) => {
+  const resolucao = resolverSheetsConfig(c.env)
+  if (!resolucao.ok) return resolucao.response
+
+  let categories: string[]
+  try {
+    categories = await getCategories(resolucao.config)
   } catch (err) {
     console.error('GET /votacao/categorias — falha ao ler a planilha', err)
     return errJson(
@@ -160,6 +203,342 @@ votacaoRoutes.get('/categorias', requireAuth<AuthBindings>(), async (c) => {
   }
 
   return okJson({ categories })
+})
+
+// ---------------------------------------------------------------------------
+// POST /votacao/sessions (admin) — fatia ③, Task 4. Porte de `CreateSession`
+// (`handlers/votacao/sessions.go:30-111`): lê o catálogo do Sheets, sorteia
+// 1 filme por categoria (`domain/sortear.ts`, fatia ③ Task 3), busca
+// pôsteres no TMDb em paralelo (fail-soft), grava sessão + filmes
+// (`domain/sessions.ts`, chunking acima do teto de bound params).
+//
+// ⚠️ **A ORDEM das checagens abaixo é a MEDIDA no Go, e diverge da leitura
+// "óbvia" do corpo do handler — e diverge do que um resumo apressado deste
+// brief diria.** `handlers/votacao/sessions.go:30-51`, linha a linha:
+//
+//   0. (middleware) sem sessão válida        -> 401 not_authenticated
+//   0. (middleware) não-admin                -> 403 admin_only
+//   1. Sheets desligado/malformado           -> 503 sheets_disabled
+//   2. corpo não é JSON válido               -> 400 invalid_json
+//   3. `title` vazio (após decode OK)        -> 400 title_required (field: title)
+//   4. falha ao ler a planilha               -> 502 sheets_read_failed
+//   5. nenhum filme sobrevive aos filtros    -> 422 no_candidates
+//   6. (defensivo, inalcançável na prática)  -> 500 internal_error
+//
+// ⚠️ **Achado próprio desta task: o Sheets é checado ANTES de decodificar o
+// corpo — não depois, como um resumo linear sugeriria.** `CreateSession`
+// (Go) testa `h.deps.Sheets == nil` como a PRIMEIRA linha da função, antes
+// até de checar `user == nil` (código morto — o guard real é o middleware,
+// mesma topologia já estabelecida por `POST /close`/`POST /tiebreak`) e
+// muito antes de `json.NewDecoder(r.Body).Decode(&body)`. Um `POST
+// /votacao/sessions` com `Content-Type` quebrado E sheets desligado responde
+// 503, nunca 400 — a ordem é OBSERVÁVEL via HTTP nesse cenário, e só se
+// prova lendo o handler, não resumindo-o.
+//
+// ⚠️ **Achado próprio desta task: `title` vazio NÃO é `invalid_json`.** O Go
+// usa `httpx.Errors` (não `httpx.Error`) com um código e campo PRÓPRIOS:
+// `Code: "title_required"`, `Field: "title"`, mensagem "Informe um título
+// para a sessão." — um código DIFERENTE de `invalid_json` e com o campo
+// ofensor marcado. Confundir os dois quebraria o toast do `apps/web` (que
+// lê `primary.message` direto) e qualquer destaque de campo no formulário.
+// ---------------------------------------------------------------------------
+
+type RawCreateSessionBody = {
+  title?: unknown
+  types?: unknown
+  include_watched?: unknown
+  categories?: unknown
+}
+
+type ParsedCreateSessionBody = {
+  title: string
+  types: string[]
+  includeWatched: boolean
+  categories: string[]
+}
+
+function parseStringArray(raw: unknown): string[] | null {
+  if (raw === undefined || raw === null) return []
+  if (!Array.isArray(raw)) return null
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') return null
+    out.push(item)
+  }
+  return out
+}
+
+/**
+ * Espelha a semântica de `json.NewDecoder(r.Body).Decode(&createSessionBody{})`
+ * do Go: campo AUSENTE (ou corpo `null`) decodifica pro zero-value —
+ * `title:''`, `types:[]`, `includeWatched:false`, `categories:[]` — nunca
+ * erro. Só vira inválido (devolve `null`, a rota decide o 400
+ * `invalid_json`) quando o corpo não é um objeto, ou quando um campo
+ * PRESENTE tem o tipo errado (`title` não-string, `types`/`categories`
+ * não-array-de-strings, `include_watched` não-bool) — mesma rigidez de tipo
+ * que o decoder JSON do Go teria nesses casos.
+ *
+ * ⚠️ **NÃO faz `trim()` no título** — o Go compara `body.Title == ""` cru;
+ * um título só de espaços PASSA nesta validação (mesma paridade).
+ */
+function parseCreateSessionBody(raw: unknown): ParsedCreateSessionBody | null {
+  if (raw === null) {
+    return { title: '', types: [], includeWatched: false, categories: [] }
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  const body = raw as RawCreateSessionBody
+
+  let title = ''
+  if (body.title !== undefined && body.title !== null) {
+    if (typeof body.title !== 'string') return null
+    title = body.title
+  }
+
+  const types = parseStringArray(body.types)
+  if (types === null) return null
+
+  let includeWatched = false
+  if (body.include_watched !== undefined && body.include_watched !== null) {
+    if (typeof body.include_watched !== 'boolean') return null
+    includeWatched = body.include_watched
+  }
+
+  const categories = parseStringArray(body.categories)
+  if (categories === null) return null
+
+  return { title, types, includeWatched, categories }
+}
+
+const TMDB_MAX_CONCURRENCY = 5
+const TMDB_TIMEOUT_MS = 3000
+
+/**
+ * Semáforo simples de concorrência — código próprio, sem dependência nova
+ * (convenção do workspace). `adquirir()` resolve quando uma vaga libera,
+ * devolvendo a função de liberação (quem chamou tem que invocá-la, sempre
+ * num `finally`, pra devolver a vaga pro próximo da fila).
+ */
+function criarSemaforo(max: number): { adquirir: () => Promise<() => void> } {
+  let emUso = 0
+  const fila: (() => void)[] = []
+
+  function liberar(): void {
+    emUso -= 1
+    const proximo = fila.shift()
+    if (proximo) {
+      emUso += 1
+      proximo()
+    }
+  }
+
+  function adquirir(): Promise<() => void> {
+    return new Promise((resolve) => {
+      if (emUso < max) {
+        emUso += 1
+        resolve(liberar)
+      } else {
+        fila.push(() => resolve(liberar))
+      }
+    })
+  }
+
+  return { adquirir }
+}
+
+/**
+ * Busca pôsteres em PARALELO com teto de concorrência 5 e timeout de 3s
+ * cada — porte de `fetchPosters` (`handlers/votacao/sessions.go:119-151`,
+ * usa `errgroup.SetLimit(5)` + `context.WithTimeout(gctx, 3*time.Second)`
+ * por busca).
+ *
+ * ⚠️ **Fail-soft é o ponto — uma busca que falha NUNCA derruba a sessão.**
+ * O `try/catch` AQUI DENTRO (por filme) é o que garante isso: uma falha
+ * (erro do TMDb, timeout por abort) é logada e a entrada correspondente
+ * fica com `{posterUrl:'', tmdbId:0}` (default), sem propagar. `Promise.all`
+ * (não `allSettled`) é seguro porque NENHUMA das tarefas mapeadas abaixo
+ * jamais rejeita — o catch garante isso; é exatamente esse catch que a
+ * mutação obrigatória desta task remove, pra provar que sem ele uma falha
+ * REALMENTE propagaria (`Promise.all` rejeitando) e derrubaria a sessão
+ * inteira com 500.
+ *
+ * Devolve um array na MESMA ordem/índice de `movies` — cada posição
+ * corresponde ao filme de mesmo índice.
+ */
+async function fetchPostersConcorrente(
+  cfg: TmdbConfig,
+  movies: SheetMovie[],
+): Promise<TmdbSearchResult[]> {
+  const semaforo = criarSemaforo(TMDB_MAX_CONCURRENCY)
+
+  const tarefas = movies.map(async (movie): Promise<TmdbSearchResult> => {
+    const liberar = await semaforo.adquirir()
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), TMDB_TIMEOUT_MS)
+      try {
+        return await searchPoster(cfg, movie.title, movie.type, {
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeoutId)
+      }
+    } catch (err) {
+      console.error(
+        'POST /votacao/sessions — busca de pôster falhou, seguindo sem pôster (fail-soft)',
+        err,
+      )
+      return { posterUrl: '', tmdbId: 0 }
+    } finally {
+      liberar()
+    }
+  })
+
+  return Promise.all(tarefas)
+}
+
+/**
+ * `POST /votacao/sessions` (admin) — ver a ordem completa das checagens no
+ * comentário acima. Resposta: `{session, movies}` via `sessionToWire`/
+ * `movieToWire` (PascalCase — contrato), notification de sucesso "Sessão
+ * criada." (sem `code`, mesma paridade de `httpx.Success` já estabelecida
+ * em `POST /votes`/`POST /tiebreak`).
+ */
+votacaoRoutes.post('/sessions', requireAdmin<AuthBindings>(), async (c) => {
+  const resolucaoSheets = resolverSheetsConfig(c.env)
+  if (!resolucaoSheets.ok) return resolucaoSheets.response
+
+  let rawBody: unknown
+  try {
+    rawBody = await c.req.json()
+  } catch {
+    return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+  }
+  const parsed = parseCreateSessionBody(rawBody)
+  if (parsed === null) {
+    return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+  }
+  if (parsed.title === '') {
+    return errJson(
+      400,
+      'title_required',
+      'Informe um título para a sessão.',
+      'title',
+    )
+  }
+
+  let movies: SheetMovie[]
+  try {
+    movies = await readMovies(resolucaoSheets.config)
+  } catch (err) {
+    console.error('POST /votacao/sessions — falha ao ler a planilha', err)
+    return errJson(
+      502,
+      'sheets_read_failed',
+      'Falha ao ler a planilha de filmes.',
+    )
+  }
+
+  let picked: SheetMovie[]
+  try {
+    picked = sortOnePerCategory(
+      movies,
+      {
+        types: parsed.types,
+        includeWatched: parsed.includeWatched,
+        categories: parsed.categories,
+      },
+      Math.random,
+    )
+  } catch (err) {
+    if (err instanceof NoCandidatesError) {
+      return errJson(
+        422,
+        'no_candidates',
+        'Nenhum filme corresponde aos filtros escolhidos.',
+      )
+    }
+    // Defensivo — sortOnePerCategory só lança NoCandidatesError na prática;
+    // este ramo espelha o `else` do Go (`sessions.go:68`, `internal_error`
+    // pra qualquer OUTRO erro do sorteio) mas é INALCANÇÁVEL hoje.
+    console.error('POST /votacao/sessions — falha ao sortear os filmes', err)
+    return errJson(500, 'internal_error', 'Falha ao sortear os filmes.')
+  }
+
+  // Sem TMDB_API_KEY, a busca é DESLIGADA — a sessão é criada SEM pôsteres,
+  // nunca com erro (mesma paridade do Go: `h.deps.Posters == nil` faz
+  // `fetchPosters` devolver os filmes sem pôster/tmdbId).
+  const tmdbApiKey = c.env.TMDB_API_KEY
+  const posters = tmdbApiKey
+    ? await fetchPostersConcorrente({ apiKey: tmdbApiKey }, picked)
+    : picked.map(() => ({ posterUrl: '', tmdbId: 0 }))
+
+  // `sortJSON, _ := json.Marshal(body)` no Go — o corpo INTEIRO da requisição
+  // (já validado), não só os campos de filtro. Vira `sort_options_json`.
+  const sortOptionsJson = JSON.stringify({
+    title: parsed.title,
+    types: parsed.types,
+    include_watched: parsed.includeWatched,
+    categories: parsed.categories,
+  })
+
+  const votacaoUser = c.get('votacaoUser')
+
+  let sessionRow: Awaited<ReturnType<typeof createVotingSession>>
+  try {
+    sessionRow = await createVotingSession(c.env.DB, {
+      title: parsed.title,
+      createdBy: votacaoUser.id,
+      sortOptionsJson,
+    })
+  } catch (err) {
+    console.error('POST /votacao/sessions — falha ao criar a sessão', err)
+    return errJson(500, 'internal_error', 'Falha ao criar a sessão.')
+  }
+
+  const movieInserts: SessionMovieInsert[] = picked.map((movie, i) => ({
+    category: movie.category,
+    title: movie.title,
+    type: movie.type,
+    posterUrl: posters[i]?.posterUrl ?? '',
+    tmdbId: posters[i]?.tmdbId ?? 0,
+    wasWatched: movie.watched,
+    sheetNumber: movie.number,
+  }))
+
+  try {
+    await insertSessionMovies(c.env.DB, sessionRow.id, movieInserts)
+  } catch (err) {
+    console.error(
+      'POST /votacao/sessions — falha ao salvar os filmes da sessão',
+      err,
+    )
+    return errJson(
+      500,
+      'internal_error',
+      'Falha ao salvar os filmes da sessão.',
+    )
+  }
+
+  // Mesmo padrão de `GET /sessions/{id}` (M1): o Go também engole este erro
+  // (`stored, _ := h.deps.Store.GetSessionMovies(...)`, sessions.go:106) e
+  // devolve `"movies":null` (zero value de slice Go) em vez de 500.
+  let movieRows: ReturnType<typeof movieToWire>[] | null
+  try {
+    const rows = await getSessionMovies(c.env.DB, sessionRow.id)
+    movieRows = rows.map(movieToWire)
+  } catch (err) {
+    console.error(
+      'POST /votacao/sessions — getSessionMovies falhou, devolvendo movies:null (paridade com o Go)',
+      err,
+    )
+    movieRows = null
+  }
+
+  return okJson(
+    { session: sessionToWire(sessionRow), movies: movieRows },
+    201,
+    [{ type: 'success', message: 'Sessão criada.' }],
+  )
 })
 
 const INT64_MIN = -9223372036854775808n

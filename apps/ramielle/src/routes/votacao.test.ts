@@ -12,6 +12,10 @@ import app, { type Bindings } from '../index'
 import { hexToBytes } from '../domain/tiebreak'
 import type { Envelope } from '../lib/envelope'
 import { sessionToWire, type VotingSessionRow } from '../lib/wire'
+import {
+  gerarServiceAccountDeTeste,
+  instalarMockGoogleSheets,
+} from '../test-support/gsheets-mock'
 import goParity from './__fixtures__/go-parity.json'
 
 const DB = env.DB
@@ -2105,83 +2109,10 @@ describe('I2 — mensagens de erro EXATAS, iguais ao Go (não só o code)', () =
 // real) + pro endpoint de values do Sheets, delegando o resto pro fetch
 // original, restaurado num `finally` — mesmo padrão de lib/auth.test.ts e
 // lib/google-auth.test.ts (o fetchMock do cloudflare:test não existe na
-// versão instalada).
+// versão instalada). `gerarServiceAccountDeTeste`/`instalarMockGoogleSheets`
+// vêm de `../test-support/gsheets-mock` (fatia ③, Task 4 — extraído daqui,
+// era a 2ª de 3 cópias idênticas; ver o cabeçalho daquele arquivo).
 // --------------------------------------------------------------------------
-
-async function gerarServiceAccountDeTesteCategorias(
-  clientEmail: string,
-): Promise<{
-  client_email: string
-  private_key: string
-  token_uri: string
-}> {
-  const par = await crypto.subtle.generateKey(
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
-    },
-    true,
-    ['sign', 'verify'],
-  )
-  const pkcs8 = await crypto.subtle.exportKey('pkcs8', par.privateKey)
-  const bytes = new Uint8Array(pkcs8)
-  let binario = ''
-  for (let i = 0; i < bytes.length; i++)
-    binario += String.fromCharCode(bytes[i])
-  const base64 = btoa(binario)
-  const linhas = base64.match(/.{1,64}/g) ?? [base64]
-  const pem = `-----BEGIN PRIVATE KEY-----\n${linhas.join('\n')}\n-----END PRIVATE KEY-----\n`
-  return {
-    client_email: clientEmail,
-    private_key: pem,
-    token_uri: 'https://oauth2.googleapis.com/token',
-  }
-}
-
-function instalarMockGoogleSheetsCategorias(
-  tokenUri: string,
-  spreadsheetId: string,
-  range: string,
-  valuesOuStatus: unknown[][] | number,
-): { restaurar: () => void } {
-  const fetchOriginal = globalThis.fetch
-  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const urlTexto =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url
-    if (urlTexto === tokenUri) {
-      return new Response(
-        JSON.stringify({
-          access_token: 'token-de-teste-categorias-rota',
-          token_type: 'Bearer',
-          expires_in: 3599,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }
-    if (urlTexto === valuesUrl) {
-      if (typeof valuesOuStatus === 'number') {
-        return new Response('erro simulado', { status: valuesOuStatus })
-      }
-      return new Response(JSON.stringify({ values: valuesOuStatus }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
-  }) as typeof fetch
-  return {
-    restaurar: () => {
-      globalThis.fetch = fetchOriginal
-    },
-  }
-}
 
 describe('GET /votacao/categorias', () => {
   test('sem cookie -> 401 not_authenticated (guard roda ANTES de checar config)', async () => {
@@ -2255,11 +2186,11 @@ describe('GET /votacao/categorias', () => {
   })
 
   test('planilha falha (resposta não-ok do Sheets) -> 502 sheets_read_failed, mensagem exata do Go', async () => {
-    const sa = await gerarServiceAccountDeTesteCategorias(
+    const sa = await gerarServiceAccountDeTeste(
       'cat-falha@projeto-de-teste.iam.gserviceaccount.com',
     )
     const spreadsheetId = 'planilha-falha'
-    const mock = instalarMockGoogleSheetsCategorias(
+    const mock = instalarMockGoogleSheets(
       sa.token_uri,
       spreadsheetId,
       'A2:F',
@@ -2292,21 +2223,16 @@ describe('GET /votacao/categorias', () => {
   })
 
   test('happy path — 200 {categories: [...]}, dedupe + ordenado, usa GSHEETS_MOVIES_RANGE quando setado', async () => {
-    const sa = await gerarServiceAccountDeTesteCategorias(
+    const sa = await gerarServiceAccountDeTeste(
       'cat-ok@projeto-de-teste.iam.gserviceaccount.com',
     )
     const spreadsheetId = 'planilha-ok'
     const range = 'A2:F'
-    const mock = instalarMockGoogleSheetsCategorias(
-      sa.token_uri,
-      spreadsheetId,
-      range,
-      [
-        ['1', 'Filme A', 'Filme', 'Terror', 'sim'],
-        ['2', 'Filme B', 'Filme', 'Romance', 'sim'],
-        ['3', 'Filme C', 'Filme', 'Terror', 'sim'], // duplicata proposital
-      ],
-    )
+    const mock = instalarMockGoogleSheets(sa.token_uri, spreadsheetId, range, [
+      ['1', 'Filme A', 'Filme', 'Terror', 'sim'],
+      ['2', 'Filme B', 'Filme', 'Romance', 'sim'],
+      ['3', 'Filme C', 'Filme', 'Terror', 'sim'], // duplicata proposital
+    ])
     try {
       const cookie = await cookieDeSessaoValido('cat-ok-user@example.com', 'OK')
       const res = await app.request(
@@ -2328,16 +2254,13 @@ describe('GET /votacao/categorias', () => {
   })
 
   test('sem GSHEETS_MOVIES_RANGE -> usa o default A2:F (mesmo fallback do Go, cmd/api/main.go:63-65)', async () => {
-    const sa = await gerarServiceAccountDeTesteCategorias(
+    const sa = await gerarServiceAccountDeTeste(
       'cat-default-range@projeto-de-teste.iam.gserviceaccount.com',
     )
     const spreadsheetId = 'planilha-default-range'
-    const mock = instalarMockGoogleSheetsCategorias(
-      sa.token_uri,
-      spreadsheetId,
-      'A2:F',
-      [['1', 'Filme A', 'Filme', 'Drama', 'sim']],
-    )
+    const mock = instalarMockGoogleSheets(sa.token_uri, spreadsheetId, 'A2:F', [
+      ['1', 'Filme A', 'Filme', 'Drama', 'sim'],
+    ])
     try {
       const cookie = await cookieDeSessaoValido(
         'cat-default-range-user@example.com',
@@ -2394,35 +2317,13 @@ describe('GET /votacao/categorias', () => {
 // --------------------------------------------------------------------------
 
 describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1)', () => {
-  async function gerarServiceAccountSegura(clientEmail: string): Promise<{
-    client_email: string
-    private_key: string
-    token_uri: string
-  }> {
-    const par = await crypto.subtle.generateKey(
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: 'SHA-256',
-      },
-      true,
-      ['sign', 'verify'],
-    )
-    const pkcs8 = await crypto.subtle.exportKey('pkcs8', par.privateKey)
-    const bytes = new Uint8Array(pkcs8)
-    let binario = ''
-    for (let i = 0; i < bytes.length; i++)
-      binario += String.fromCharCode(bytes[i])
-    const base64 = btoa(binario)
-    const linhas = base64.match(/.{1,64}/g) ?? [base64]
-    const pem = `-----BEGIN PRIVATE KEY-----\n${linhas.join('\n')}\n-----END PRIVATE KEY-----\n`
-    return {
-      client_email: clientEmail,
-      private_key: pem,
-      token_uri: 'https://oauth2.googleapis.com/token',
-    }
-  }
+  // `gerarServiceAccountSegura` era uma cópia BYTE A BYTE de
+  // `gerarServiceAccountDeTeste` (`../test-support/gsheets-mock`, fatia ③
+  // Task 4) — 3ª de 3 cópias idênticas, agora só um alias local pra manter o
+  // nome usado abaixo (`gerarServiceAccountSegura mudou de formato?` na
+  // mensagem de erro de `trechoChaveSemQuebras`) sem reescrever cada
+  // chamada.
+  const gerarServiceAccountSegura = gerarServiceAccountDeTeste
 
   /**
    * ⚠️ MEDIDO durante a mutação desta fix round: `JSON.stringify(sa)`
@@ -2446,52 +2347,6 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
     return linha
   }
 
-  /**
-   * Mocka o token endpoint SEMPRE, e o endpoint de values do Sheets só
-   * quando `sheetsResposta` é passado — permite simular "token falha antes
-   * de chegar no Sheets" (sem `sheetsResposta`) e "token OK, Sheets falha
-   * depois" (com `sheetsResposta`).
-   */
-  function instalarMockComCorpo(
-    tokenUri: string,
-    spreadsheetId: string,
-    range: string,
-    tokenResposta: { status: number; body: unknown },
-    sheetsResposta?: { status: number; body: unknown },
-  ): { restaurar: () => void } {
-    const fetchOriginal = globalThis.fetch
-    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const urlTexto =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
-      if (urlTexto === tokenUri) {
-        return new Response(JSON.stringify(tokenResposta.body), {
-          status: tokenResposta.status,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (urlTexto === valuesUrl && sheetsResposta) {
-        return new Response(JSON.stringify(sheetsResposta.body), {
-          status: sheetsResposta.status,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      return fetchOriginal(input as Parameters<typeof fetch>[0], init)
-    }) as typeof fetch
-    return {
-      restaurar: () => {
-        globalThis.fetch = fetchOriginal
-      },
-    }
-  }
-
   /** Achata os args de TODAS as chamadas de console.error num texto só pesquisável. */
   function textoDosLogs(spy: ReturnType<typeof vi.spyOn>): string {
     return spy.mock.calls
@@ -2510,10 +2365,21 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
     )
     const spreadsheetId = 'planilha-seguranca-token'
     const marcadorCorpoToken = 'MARCADOR-CORPO-TOKEN-NAO-PODE-VAZAR'
-    const mock = instalarMockComCorpo(sa.token_uri, spreadsheetId, 'A2:F', {
-      status: 400,
-      body: { error: 'invalid_grant', error_description: marcadorCorpoToken },
-    })
+    // Sem sheetsResposta (undefined) — o endpoint de values nunca é
+    // alcançado, o token falha primeiro.
+    const mock = instalarMockGoogleSheets(
+      sa.token_uri,
+      spreadsheetId,
+      'A2:F',
+      undefined,
+      {
+        status: 400,
+        body: {
+          error: 'invalid_grant',
+          error_description: marcadorCorpoToken,
+        },
+      },
+    )
     const spyConsole = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const cookie = await cookieDeSessaoValido(
@@ -2554,10 +2420,14 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
     const spreadsheetId = 'planilha-seguranca-sheets'
     const marcadorAccessToken = 'MARCADOR-ACCESS-TOKEN-NAO-PODE-VAZAR'
     const marcadorCorpoSheets = 'MARCADOR-CORPO-SHEETS-NAO-PODE-VAZAR'
-    const mock = instalarMockComCorpo(
+    const mock = instalarMockGoogleSheets(
       sa.token_uri,
       spreadsheetId,
       'A2:F',
+      {
+        status: 500,
+        body: { error: { message: marcadorCorpoSheets } },
+      },
       {
         status: 200,
         body: {
@@ -2565,10 +2435,6 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
           token_type: 'Bearer',
           expires_in: 3599,
         },
-      },
-      {
-        status: 500,
-        body: { error: { message: marcadorCorpoSheets } },
       },
     )
     const spyConsole = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -2600,6 +2466,748 @@ describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1
       expect(textoConsole).not.toContain(trechoChave)
       expect(textoConsole).not.toContain(marcadorAccessToken)
       expect(textoConsole).not.toContain(marcadorCorpoSheets)
+    } finally {
+      spyConsole.mockRestore()
+      mock.restaurar()
+    }
+  })
+})
+
+// --------------------------------------------------------------------------
+// POST /votacao/sessions (admin, fatia ③ Task 4) — porte de `CreateSession`
+// (`handlers/votacao/sessions.go:30-111`). Ver o comentário no topo de
+// `routes/votacao.ts`, logo acima da rota, pra ordem completa das checagens
+// — inclui um achado desta task que o brief descrevia errado (o Sheets é
+// checado ANTES do corpo, não depois).
+//
+// UM SÓ mock de fetch cobre os TRÊS serviços externos que esta rota pode
+// chamar num único request (token do Google, values do Sheets, busca do
+// TMDb) — evita a armadilha de encadear/restaurar dois `globalThis.fetch`
+// mockados fora de ordem (LIFO), que `instalarMockGoogleSheets` sozinho não
+// cobriria aqui.
+// --------------------------------------------------------------------------
+
+type TmdbMockResponder = (url: URL) => Response | Promise<Response>
+
+function instalarMockCriarSessao(opts: {
+  tokenUri: string
+  spreadsheetId: string
+  range: string
+  sheetsResposta: unknown[][] | number
+  tmdb?: TmdbMockResponder
+}): { restaurar: () => void } {
+  const fetchOriginal = globalThis.fetch
+  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(opts.spreadsheetId)}/values/${encodeURIComponent(opts.range)}`
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlTexto =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+    if (urlTexto === opts.tokenUri) {
+      return new Response(
+        JSON.stringify({
+          access_token: 'token-de-teste-criar-sessao',
+          token_type: 'Bearer',
+          expires_in: 3599,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    if (urlTexto === valuesUrl) {
+      if (typeof opts.sheetsResposta === 'number') {
+        return new Response('erro simulado', { status: opts.sheetsResposta })
+      }
+      return new Response(JSON.stringify({ values: opts.sheetsResposta }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (urlTexto.startsWith('https://api.themoviedb.org') && opts.tmdb) {
+      return opts.tmdb(new URL(urlTexto))
+    }
+    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+  }) as typeof fetch
+  return {
+    restaurar: () => {
+      globalThis.fetch = fetchOriginal
+    },
+  }
+}
+
+/** TMDb responder que devolve 200 com `results:[]` — fail-soft sem pôster, usado quando o teste não se importa com o conteúdo do pôster. */
+const tmdbSemResultados: TmdbMockResponder = () =>
+  new Response(JSON.stringify({ results: [] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+
+/** Devolve um responder do TMDb que resolve por `query` (o título buscado) — cada filme sai com um pôster/id DISTINGUÍVEL. */
+function tmdbPorTitulo(
+  mapa: Record<string, { id: number; posterPath: string | null } | number>,
+): TmdbMockResponder {
+  return (url) => {
+    const query = url.searchParams.get('query') ?? ''
+    const entrada = mapa[query]
+    if (entrada === undefined) {
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (typeof entrada === 'number') {
+      return new Response('erro simulado', { status: entrada })
+    }
+    return new Response(
+      JSON.stringify({
+        results: [{ id: entrada.id, poster_path: entrada.posterPath }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+  }
+}
+
+type SessionMovieRowTeste = {
+  category: string
+  title: string
+  type: string
+  poster_url: string | null
+  tmdb_id: number | null
+  was_watched: number
+  sheet_number: number | null
+}
+
+async function sessionMoviesDireto(
+  sessionId: number,
+): Promise<SessionMovieRowTeste[]> {
+  const { results } = await DB.prepare(
+    `SELECT category, title, type, poster_url, tmdb_id, was_watched, sheet_number
+       FROM session_movies WHERE session_id = ? ORDER BY id ASC`,
+  )
+    .bind(sessionId)
+    .all<SessionMovieRowTeste>()
+  return results
+}
+
+type CreateSessionData = {
+  session: {
+    ID: number
+    Title: string
+    Status: string
+    CreatedBy: number
+    SortOptionsJSON: string
+  }
+  movies:
+    | {
+        Category: string
+        Title: string
+        Type: string
+        PosterURL: string
+        TMDbID: number | null
+        WasWatched: boolean
+        SheetNumber: number | null
+      }[]
+    | null
+}
+
+describe('POST /votacao/sessions', () => {
+  test('sem cookie responde 401 not_authenticated (requireAdmin roda ANTES de tudo)', async () => {
+    const res = await app.request(
+      '/votacao/sessions',
+      { method: 'POST' },
+      testEnv(),
+    )
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  test('conta autenticada mas não-admin responde 403 admin_only', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'criar-naoadmin@example.com',
+      'Não Admin',
+    )
+    const res = await app.request(
+      '/votacao/sessions',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Nova Sessão' }),
+      },
+      testEnv(), // ADMIN_EMAILS vazio — ninguém é admin
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+  })
+
+  // ⚠️ Achado desta task: o Go checa Sheets ANTES de decodificar o corpo —
+  // um corpo JSON QUEBRADO some atrás do 503, nunca vira 400. Prova a ordem
+  // real, não só o resultado isolado de cada checagem.
+  test('Sheets desligado responde 503 sheets_disabled MESMO com corpo JSON quebrado (a checagem do Sheets roda ANTES do parse do corpo)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'criar-semsheets@example.com',
+      'Sem Sheets',
+    )
+    const res = await app.request(
+      '/votacao/sessions',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: '{ isto nao e json valido',
+      },
+      testEnv('criar-semsheets@example.com'), // sem GOOGLE_SA_JSON/GSHEETS_*
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]).toEqual({
+      type: 'error',
+      code: 'sheets_disabled',
+      message: 'Integração com a planilha está desativada.',
+    })
+  })
+
+  test('corpo JSON quebrado (com Sheets configurado) responde 400 invalid_json', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-jsonquebrado@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-json-quebrado'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [],
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-jsonquebrado@example.com',
+        'JSON Quebrado',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: '{ isto nao e json valido',
+        },
+        {
+          ...testEnv('criar-jsonquebrado@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]?.code).toBe('invalid_json')
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  // ⚠️ Achado desta task: title vazio NÃO é invalid_json — é um código e
+  // campo PRÓPRIOS (`title_required`, `field:'title'`), diferente do que um
+  // resumo apressado do brief diria.
+  test('title vazio (com Sheets configurado) responde 400 title_required, field=title, mensagem exata do Go', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-semtitulo@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-sem-titulo'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [],
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-semtitulo@example.com',
+        'Sem Título',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+        {
+          ...testEnv('criar-semtitulo@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]).toEqual({
+        type: 'error',
+        code: 'title_required',
+        message: 'Informe um título para a sessão.',
+        field: 'title',
+      })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  // ⚠️ Prova que o Go NÃO faz trim: um título só de espaços passa direto da
+  // checagem de title_required — prossegue pro sorteio (aqui, planilha
+  // vazia ⇒ no_candidates, não title_required).
+  test("título só de espaços NÃO dispara title_required (o Go compara Title == '' cru, sem trim)", async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-titulo-espacos@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-titulo-espacos'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [], // planilha vazia -> no_candidates, nunca title_required
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-titulo-espacos@example.com',
+        'Título Espaços',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: '   ' }),
+        },
+        {
+          ...testEnv('criar-titulo-espacos@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(422)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]?.code).toBe('no_candidates')
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('falha ao ler a planilha (resposta não-ok do Sheets) responde 502 sheets_read_failed', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-sheetsfalha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-falha-criar'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: 500,
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-sheetsfalha@example.com',
+        'Sheets Falha',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão Qualquer' }),
+        },
+        {
+          ...testEnv('criar-sheetsfalha@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(502)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]).toEqual({
+        type: 'error',
+        code: 'sheets_read_failed',
+        message: 'Falha ao ler a planilha de filmes.',
+      })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('nenhum filme sobrevive aos filtros responde 422 no_candidates', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-semcandidatos@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-sem-candidatos'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      // Só filmes JÁ ASSISTIDOS — includeWatched (default false) filtra tudo.
+      sheetsResposta: [['1', 'Já Visto', 'Filme', 'Drama', 'sim']],
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-semcandidatos@example.com',
+        'Sem Candidatos',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão Sem Candidatos' }),
+        },
+        {
+          ...testEnv('criar-semcandidatos@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(422)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]).toEqual({
+        type: 'error',
+        code: 'no_candidates',
+        message: 'Nenhum filme corresponde aos filtros escolhidos.',
+      })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('happy path — 201, session em PascalCase (sessionToWire), movies em PascalCase com pôster/tmdbId corretos por filme, notification de sucesso sem code', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-feliz@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-feliz'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [
+        ['1', 'Matrix', 'Filme', 'Ficção Científica', 'não'],
+        ['2', 'Breaking Bad', 'Série', 'Drama', 'não'],
+      ],
+      tmdb: tmdbPorTitulo({
+        Matrix: { id: 100, posterPath: '/matrix.jpg' },
+        'Breaking Bad': { id: 200, posterPath: '/breakingbad.jpg' },
+      }),
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-feliz@example.com',
+        'Feliz',
+      )
+      const adminId = await votacaoUserId(cookie)
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Sessão Feliz',
+            types: [],
+            include_watched: false,
+            categories: [],
+          }),
+        },
+        {
+          ...testEnv('criar-feliz@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          TMDB_API_KEY: 'chave-tmdb-teste',
+        },
+      )
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as Envelope<CreateSessionData>
+      expect(body.notifications).toEqual([
+        { type: 'success', message: 'Sessão criada.' },
+      ])
+      expect(body.data?.session.Title).toBe('Sessão Feliz')
+      expect(body.data?.session.Status).toBe('open')
+      expect(body.data?.session.CreatedBy).toBe(adminId)
+      expect(body.data?.session.SortOptionsJSON).toBe(
+        JSON.stringify({
+          title: 'Sessão Feliz',
+          types: [],
+          include_watched: false,
+          categories: [],
+        }),
+      )
+
+      const movies = body.data?.movies
+      expect(movies).toHaveLength(2)
+      const matrix = movies?.find((m) => m.Title === 'Matrix')
+      const breakingBad = movies?.find((m) => m.Title === 'Breaking Bad')
+      expect(matrix).toMatchObject({
+        Category: 'ficção científica',
+        Type: 'filme',
+        PosterURL: 'https://image.tmdb.org/t/p/w500/matrix.jpg',
+        TMDbID: 100,
+        WasWatched: false,
+        SheetNumber: 1,
+      })
+      expect(breakingBad).toMatchObject({
+        Category: 'drama',
+        Type: 'serie',
+        PosterURL: 'https://image.tmdb.org/t/p/w500/breakingbad.jpg',
+        TMDbID: 200,
+        WasWatched: false,
+        SheetNumber: 2,
+      })
+
+      // A linha existe DE VERDADE no D1, não só no valor devolvido.
+      const sessionId = body.data?.session.ID
+      if (sessionId === undefined) throw new Error('esperava session.ID')
+      const rows = await sessionMoviesDireto(sessionId)
+      expect(rows).toHaveLength(2)
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('TMDB_API_KEY ausente — sessão criada SEM pôsteres (fail-soft de config, nunca erro), TMDb nunca é chamado', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-semtmdbkey@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-sem-tmdb-key'
+    let chamadasTmdb = 0
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [['1', 'Filme Sem Chave', 'Filme', 'Ação', 'não']],
+      tmdb: (url) => {
+        chamadasTmdb += 1
+        return tmdbSemResultados(url)
+      },
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-semtmdbkey@example.com',
+        'Sem Chave TMDb',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão Sem Chave TMDb' }),
+        },
+        {
+          ...testEnv('criar-semtmdbkey@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          // TMDB_API_KEY ausente de propósito
+        },
+      )
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as Envelope<CreateSessionData>
+      expect(body.data?.movies).toHaveLength(1)
+      expect(body.data?.movies?.[0]).toMatchObject({
+        PosterURL: '',
+        TMDbID: null,
+      })
+      expect(chamadasTmdb).toBe(0)
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  // ⚠️ O CORAÇÃO DO FAIL-SOFT (Step 4/5 do brief) — uma busca do TMDb que
+  // falha NUNCA derruba a criação da sessão. Valores DISTINGUÍVEIS por
+  // filme (ids/pôsteres diferentes) provam que o mapeamento por índice
+  // continua correto mesmo com uma falha no meio — não só que "alguma
+  // sessão" foi criada.
+  test('uma busca do TMDb que FALHA não derruba a sessão — fail-soft: aquele filme fica sem pôster, os outros continuam corretos', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-tmdbfalha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-tmdb-falha'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [
+        ['1', 'Filme OK 1', 'Filme', 'Ação', 'não'],
+        ['2', 'Filme Que Falha', 'Filme', 'Comédia', 'não'],
+        ['3', 'Filme OK 2', 'Filme', 'Terror', 'não'],
+      ],
+      tmdb: tmdbPorTitulo({
+        'Filme OK 1': { id: 111, posterPath: '/ok1.jpg' },
+        'Filme Que Falha': 500, // TMDb devolve 500 pra este título específico
+        'Filme OK 2': { id: 333, posterPath: '/ok2.jpg' },
+      }),
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-tmdbfalha@example.com',
+        'TMDb Falha',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão Com Falha Parcial' }),
+        },
+        {
+          ...testEnv('criar-tmdbfalha@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          TMDB_API_KEY: 'chave-tmdb-teste',
+        },
+      )
+      // A CONFIRMAÇÃO CENTRAL: 201, não 500 — a sessão SOBREVIVE à falha.
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as Envelope<CreateSessionData>
+      const movies = body.data?.movies
+      expect(movies).toHaveLength(3)
+
+      const ok1 = movies?.find((m) => m.Title === 'Filme OK 1')
+      const falhou = movies?.find((m) => m.Title === 'Filme Que Falha')
+      const ok2 = movies?.find((m) => m.Title === 'Filme OK 2')
+
+      expect(ok1).toMatchObject({
+        PosterURL: 'https://image.tmdb.org/t/p/w500/ok1.jpg',
+        TMDbID: 111,
+      })
+      // O filme que falhou fica com pôster/tmdbId VAZIOS — nunca derruba os
+      // outros dois, nem faz a resposta inteira falhar.
+      expect(falhou).toMatchObject({ PosterURL: '', TMDbID: null })
+      expect(ok2).toMatchObject({
+        PosterURL: 'https://image.tmdb.org/t/p/w500/ok2.jpg',
+        TMDbID: 333,
+      })
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  // ⚠️ Teto de concorrência 5 (errgroup.SetLimit(5) no Go) — usa um lote de
+  // 7 categorias (acima do teto) com DELAY controlado em cada busca, pra
+  // observar o PICO real de chamadas simultâneas. Um teste sem delay não
+  // provaria nada (todas resolveriam antes da próxima começar, picos
+  // indistinguíveis de execução serial) — lição da T3 sobre valores
+  // DISTINGUÍVEIS/observáveis, aplicada aqui a TIMING em vez de conteúdo.
+  test('busca pôsteres com no máximo 5 buscas simultâneas (semáforo), mesmo com 7 filmes', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-concorrencia@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-concorrencia'
+    const categorias = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7']
+    const sheetsResposta = categorias.map((cat, i) => [
+      String(i + 1),
+      `Filme ${cat}`,
+      'Filme',
+      cat,
+      'não',
+    ])
+
+    let emVoo = 0
+    let pico = 0
+    let totalChamadas = 0
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta,
+      tmdb: async () => {
+        totalChamadas += 1
+        emVoo += 1
+        pico = Math.max(pico, emVoo)
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        emVoo -= 1
+        return new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-concorrencia@example.com',
+        'Concorrência',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão Concorrência' }),
+        },
+        {
+          ...testEnv('criar-concorrencia@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          TMDB_API_KEY: 'chave-tmdb-teste',
+        },
+      )
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as Envelope<CreateSessionData>
+      expect(body.data?.movies).toHaveLength(7)
+
+      expect(totalChamadas).toBe(7)
+      // Nunca ultrapassa 5 EM VOO ao mesmo tempo...
+      expect(pico).toBeLessThanOrEqual(5)
+      // ...e REALMENTE chega a 5 (prova que o semáforo deixa rodar em
+      // paralelo de verdade, não serializa tudo por acidente).
+      expect(pico).toBe(5)
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  // Mesmo padrão de "segredo NUNCA vaza" já usado pro GOOGLE_SA_JSON — aqui
+  // pra TMDB_API_KEY, que vai na query string da busca (lib/tmdb.ts) e é
+  // fácil de vazar numa mensagem de erro que ecoa a URL.
+  test('TMDB_API_KEY NUNCA vaza — mesmo com o TMDb falhando (fail-soft), a chave não aparece na resposta nem no console.error', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-tmdbkeyvaza@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-tmdb-key-vaza'
+    const chaveMarcador = 'MARCADOR-TMDB-API-KEY-ROTA-NAO-PODE-VAZAR'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [['1', 'Filme Qualquer', 'Filme', 'Ação', 'não']],
+      tmdb: () => new Response('erro interno simulado', { status: 500 }),
+    })
+    const spyConsole = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-tmdbkeyvaza@example.com',
+        'TMDb Key Vaza',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão TMDb Key Vaza' }),
+        },
+        {
+          ...testEnv('criar-tmdbkeyvaza@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+          TMDB_API_KEY: chaveMarcador,
+        },
+      )
+      // Fail-soft: a sessão é criada mesmo com o TMDb falhando.
+      expect(res.status).toBe(201)
+
+      const textoResposta = await res.text()
+      expect(textoResposta).not.toContain(chaveMarcador)
+
+      const textoConsole = spyConsole.mock.calls
+        .flat()
+        .map((arg: unknown) =>
+          arg instanceof Error
+            ? `${arg.message} ${arg.stack ?? ''}`
+            : String(arg),
+        )
+        .join('\n')
+      expect(textoConsole).not.toContain(chaveMarcador)
     } finally {
       spyConsole.mockRestore()
       mock.restaurar()

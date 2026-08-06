@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { getCategories, parseRow, readMovies, type SheetMovie } from './gsheets'
-import type { ServiceAccount } from './google-auth'
+import {
+  gerarServiceAccountDeTeste,
+  instalarMockGoogleSheets,
+} from '../test-support/gsheets-mock'
 
 describe('parseRow', () => {
   test('linha REAL da planilha: título na coluna B (índice 1), categoria na D (índice 3)', () => {
@@ -107,79 +110,10 @@ describe('parseRow', () => {
 // endpoint de values do Sheets, delegando o resto pro fetch original,
 // restaurado num `finally` — mesmo padrão de lib/auth.test.ts e
 // lib/google-auth.test.ts (o fetchMock do cloudflare:test não existe na
-// versão instalada).
+// versão instalada). `gerarServiceAccountDeTeste`/`instalarMockGoogleSheets`
+// vêm de `../test-support/gsheets-mock` (fatia ③, Task 4 — extraído daqui,
+// era a 1ª de 3 cópias idênticas; ver o cabeçalho daquele arquivo).
 // --------------------------------------------------------------------------
-
-async function gerarServiceAccountDeTeste(
-  clientEmail: string,
-): Promise<ServiceAccount> {
-  const par = await crypto.subtle.generateKey(
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
-    },
-    true,
-    ['sign', 'verify'],
-  )
-  const pkcs8 = await crypto.subtle.exportKey('pkcs8', par.privateKey)
-  const bytes = new Uint8Array(pkcs8)
-  let binario = ''
-  for (let i = 0; i < bytes.length; i++)
-    binario += String.fromCharCode(bytes[i])
-  const base64 = btoa(binario)
-  const linhas = base64.match(/.{1,64}/g) ?? [base64]
-  const pem = `-----BEGIN PRIVATE KEY-----\n${linhas.join('\n')}\n-----END PRIVATE KEY-----\n`
-  return {
-    client_email: clientEmail,
-    private_key: pem,
-    token_uri: 'https://oauth2.googleapis.com/token',
-  }
-}
-
-function instalarMockGoogleSheets(
-  tokenUri: string,
-  spreadsheetId: string,
-  range: string,
-  valuesOuStatus: unknown[][] | number,
-): { restaurar: () => void } {
-  const fetchOriginal = globalThis.fetch
-  const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const urlTexto =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url
-    if (urlTexto === tokenUri) {
-      return new Response(
-        JSON.stringify({
-          access_token: 'token-de-teste-gsheets',
-          token_type: 'Bearer',
-          expires_in: 3599,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }
-    if (urlTexto === valuesUrl) {
-      if (typeof valuesOuStatus === 'number') {
-        return new Response('erro simulado', { status: valuesOuStatus })
-      }
-      return new Response(JSON.stringify({ values: valuesOuStatus }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
-  }) as typeof fetch
-  return {
-    restaurar: () => {
-      globalThis.fetch = fetchOriginal
-    },
-  }
-}
 
 describe('readMovies — descarte em massa (paridade com a planilha real)', () => {
   test('4 linhas — 1 curta (len<5), 1 sem título, 1 sem categoria, 1 boa ⇒ devolve 1', async () => {

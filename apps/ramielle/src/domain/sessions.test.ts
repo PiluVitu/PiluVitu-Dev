@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { nowIsoUtc } from '../lib/dates'
 import {
   closeVotingSession,
+  createVotingSession,
   getSessionMovies,
   getVotingSession,
+  insertSessionMovies,
   listVotingSessions,
   setSessionWinner,
+  type SessionMovieInsert,
 } from './sessions'
 
 const DB = env.DB
@@ -359,5 +362,207 @@ describe('setSessionWinner', () => {
     const row = await sessaoRow(sessionId)
     expect(row.winner_movie_id).toBe(m1)
     expect(row.winner_method).toBe('votes')
+  })
+})
+
+// --------------------------------------------------------------------------
+// createVotingSession/insertSessionMovies (fatia ③, Task 4) — portes de
+// Store.CreateVotingSession (sessions.go:23-39) e Store.InsertSessionMovies
+// (movies.go:21-60). Ver o cabeçalho do arquivo pro porquê as duas moram
+// aqui (dono de voting_sessions/session_movies desde a I3).
+// --------------------------------------------------------------------------
+
+describe('createVotingSession', () => {
+  it('insere com status=open e devolve a linha completa (mesma forma de getVotingSession)', async () => {
+    const userId = await novoUsuario('sub-create-happy')
+
+    const row = await createVotingSession(DB, {
+      title: 'Sessão Nova',
+      createdBy: userId,
+      sortOptionsJson:
+        '{"title":"Sessão Nova","types":[],"include_watched":false,"categories":[]}',
+    })
+
+    expect(row.id).toBeGreaterThan(0)
+    expect(row.title).toBe('Sessão Nova')
+    expect(row.status).toBe('open')
+    expect(row.created_by).toBe(userId)
+    expect(row.closed_at).toBeNull()
+    expect(row.winner_movie_id).toBeNull()
+    expect(row.sort_options_json).toBe(
+      '{"title":"Sessão Nova","types":[],"include_watched":false,"categories":[]}',
+    )
+
+    // A linha realmente existe no banco, não só no valor devolvido.
+    const lida = await getVotingSession(DB, row.id)
+    expect(lida).toEqual(row)
+  })
+
+  it("sortOptionsJson vazio cai pro default '{}' — mesma paridade do Go (sessions.go:24-26)", async () => {
+    const userId = await novoUsuario('sub-create-sortjson-vazio')
+
+    const row = await createVotingSession(DB, {
+      title: 'Sem Sort Options',
+      createdBy: userId,
+      sortOptionsJson: '',
+    })
+
+    expect(row.sort_options_json).toBe('{}')
+  })
+
+  it('duas sessões sucessivas recebem ids diferentes (autoincrement real, não um valor cacheado)', async () => {
+    const userId = await novoUsuario('sub-create-ids-diferentes')
+
+    const s1 = await createVotingSession(DB, {
+      title: 'Primeira',
+      createdBy: userId,
+      sortOptionsJson: '{}',
+    })
+    const s2 = await createVotingSession(DB, {
+      title: 'Segunda',
+      createdBy: userId,
+      sortOptionsJson: '{}',
+    })
+
+    expect(s1.id).not.toBe(s2.id)
+  })
+})
+
+describe('insertSessionMovies', () => {
+  function filme(
+    overrides: Partial<SessionMovieInsert> = {},
+  ): SessionMovieInsert {
+    return {
+      category: 'acao',
+      title: 'Filme',
+      type: 'filme',
+      posterUrl: '',
+      tmdbId: 0,
+      wasWatched: false,
+      sheetNumber: 0,
+      ...overrides,
+    }
+  }
+
+  it('array vazio é no-op — não chama db.batch()', async () => {
+    const userId = await novoUsuario('sub-insertmovies-vazio')
+    const sessionId = await novaSessao(userId)
+
+    let batchChamado = false
+    const spyDb = new Proxy(DB, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return (statements: unknown[]) => {
+            batchChamado = true
+            return (target.batch as (s: unknown[]) => unknown)(statements)
+          }
+        }
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as D1Database
+
+    await insertSessionMovies(spyDb, sessionId, [])
+    expect(batchChamado).toBe(false)
+    await expect(getSessionMovies(DB, sessionId)).resolves.toEqual([])
+  })
+
+  it('happy path — grava poster_url/tmdb_id/sheet_number NULL quando 0/vazio (fail-soft do TMDb, filme sem número na planilha)', async () => {
+    const userId = await novoUsuario('sub-insertmovies-nulls')
+    const sessionId = await novaSessao(userId)
+
+    await insertSessionMovies(DB, sessionId, [
+      filme({
+        category: 'acao',
+        title: 'Sem Pôster',
+        posterUrl: '',
+        tmdbId: 0,
+        sheetNumber: 0,
+      }),
+    ])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.poster_url).toBeNull()
+    expect(rows[0]?.tmdb_id).toBeNull()
+    expect(rows[0]?.sheet_number).toBeNull()
+    expect(rows[0]?.was_watched).toBe(0)
+  })
+
+  it('happy path — grava poster_url/tmdb_id/sheet_number reais quando > 0/não-vazio', async () => {
+    const userId = await novoUsuario('sub-insertmovies-valores')
+    const sessionId = await novaSessao(userId)
+
+    await insertSessionMovies(DB, sessionId, [
+      filme({
+        category: 'drama',
+        title: 'Com Pôster',
+        posterUrl: 'https://image.tmdb.org/t/p/w500/x.jpg',
+        tmdbId: 777,
+        wasWatched: true,
+        sheetNumber: 42,
+      }),
+    ])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.poster_url).toBe('https://image.tmdb.org/t/p/w500/x.jpg')
+    expect(rows[0]?.tmdb_id).toBe(777)
+    expect(rows[0]?.sheet_number).toBe(42)
+    expect(rows[0]?.was_watched).toBe(1)
+  })
+
+  // ⚠️ Mutação obrigatória do brief adaptada ao chunking: prova que um lote
+  // ACIMA do teto de 12 linhas/statement (8 colunas bound) ainda grava TODAS
+  // as linhas, num ÚNICO db.batch() com múltiplos statements dentro —
+  // mesmo padrão de domain/votes.test.ts (voteInsertStatements).
+  it('lote acima do teto de 12 linhas/statement gera múltiplos statements num único batch (regressão do teto de 100 bound params)', async () => {
+    const userId = await novoUsuario('sub-insertmovies-chunk')
+    const sessionId = await novaSessao(userId)
+    // 25 filmes -> ceil(25/12) = 3 statements de INSERT, num único batch().
+    const movies: SessionMovieInsert[] = []
+    for (let i = 0; i < 25; i++) {
+      movies.push(filme({ category: `categoria-${i}`, title: `Filme ${i}` }))
+    }
+
+    const batchSizes: number[] = []
+    const spyDb = new Proxy(DB, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return (statements: D1PreparedStatement[]) => {
+            batchSizes.push(statements.length)
+            return target.batch(statements)
+          }
+        }
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as D1Database
+
+    await insertSessionMovies(spyDb, sessionId, movies)
+    // 1 único batch() com ceil(25/12)=3 statements dentro.
+    expect(batchSizes).toEqual([3])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(25)
+    expect(rows.map((r) => r.title).sort()).toEqual(
+      movies.map((m) => m.title).sort(),
+    )
+  })
+
+  it('UNIQUE(session_id, category) — categoria duplicada faz o batch inteiro falhar, e NENHUM filme fica gravado (rollback real do db.batch())', async () => {
+    const userId = await novoUsuario('sub-insertmovies-unique')
+    const sessionId = await novaSessao(userId)
+
+    await expect(
+      insertSessionMovies(DB, sessionId, [
+        filme({ category: 'acao', title: 'Primeiro' }),
+        filme({ category: 'acao', title: 'Categoria Repetida' }),
+      ]),
+    ).rejects.toThrow()
+
+    // Rollback real: NENHUM dos dois ficou gravado, nem o primeiro (que por
+    // si só seria válido).
+    await expect(getSessionMovies(DB, sessionId)).resolves.toEqual([])
   })
 })

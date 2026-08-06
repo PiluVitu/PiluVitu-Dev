@@ -62,6 +62,15 @@ export type AuthBindings = {
   GSHEETS_MOVIES_SPREADSHEET_ID?: string
   /** Default `'A2:F'` aplicado em `routes/votacao.ts` quando ausente/vazia — mesmo fallback do Go (`cmd/api/main.go:63-65`). */
   GSHEETS_MOVIES_RANGE?: string
+  /**
+   * Fatia ③, Task 4 — chave do TMDb (`lib/tmdb.ts`, consumida por `POST
+   * /votacao/sessions`). Opcional pelo MESMO motivo das três de cima:
+   * ausente é o estado normal até `wrangler secret put TMDB_API_KEY`. Sem
+   * ela, a rota cria a sessão SEM buscar pôsteres — nunca um erro (mesma
+   * paridade do Go: `h.deps.Posters == nil` faz `fetchPosters` devolver os
+   * filmes sem pôster/tmdbId, `handlers/votacao/sessions.go:124-129`).
+   */
+  TMDB_API_KEY?: string
 }
 
 /**
