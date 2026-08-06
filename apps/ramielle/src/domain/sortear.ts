@@ -82,8 +82,10 @@ function filterMovies(
  * Porte de `SortOnePerCategory` (`sortear.go:31-52`). Filtra (`opts`),
  * agrupa por categoria, sorteia exatamente 1 filme por grupo.
  *
- * ⚠️ **As categorias são iteradas em ordem alfabética** — `Array#sort()`
- * sem comparador, mesma justificativa já documentada em
+ * ⚠️ **As categorias são iteradas em ordem alfabética** — comparador
+ * explícito (`<`/`>`, porque o que se ordena são as tuplas `[chave, valor]`
+ * do `Map`, não strings soltas), equivalente ao sort padrão de string:
+ * mesma justificativa já documentada em
  * `lib/gsheets.ts#getCategories`: pra toda categoria real deste catálogo
  * (acentuadas incluídas, nenhuma astral/suplementar), a ordenação por
  * unidade de código UTF-16 produz a MESMA ordem relativa que `slices.Sort`

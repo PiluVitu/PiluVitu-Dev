@@ -199,6 +199,28 @@ describe('sortOnePerCategory — o rng injetado decide a escolha (nunca Math.ran
     ])
   })
 
+  it('valores DISTINTOS na fila provam a ORDEM de consumo: cada grupo recebe o valor da sua posição alfabética', () => {
+    // Os dois testes acima usam valor CONSTANTE na fila — com valor
+    // constante a ordem de consumo é inobservável (qualquer ordem de
+    // chamada devolveria o mesmo número). Só com valores distintos dá pra
+    // provar QUAL valor foi parar em QUAL grupo.
+    //
+    // Ordem alfabética (o que a implementação faz): ação←0, drama←0.9,
+    // terror←0 ⇒ [John Wick, Forrest Gump, A Coisa].
+    // Ordem de inserção (o que ela NÃO faz): terror←0, ação←0.9, drama←0
+    // ⇒ drama sairia 'Breaking Bad'. É esse par que o teste distingue.
+    const got = sortOnePerCategory(
+      sample(),
+      { includeWatched: true },
+      queueRng([0, 0.9, 0]),
+    )
+    expect(got.map((m) => m.title)).toEqual([
+      'John Wick', // ação  ← rng 0     → índice 0 de 1 candidato
+      'Forrest Gump', // drama ← rng 0.9   → índice 1 de [Breaking Bad, Forrest Gump]
+      'A Coisa', // terror← rng 0     → índice 0 de [A Coisa, Hereditário]
+    ])
+  })
+
   it('nunca chama Math.random — a escolha vem só do rng injetado', () => {
     const spy = vi.spyOn(Math, 'random')
     sortOnePerCategory(sample(), { includeWatched: true }, seededRng(7))
