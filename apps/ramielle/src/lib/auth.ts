@@ -132,7 +132,7 @@ export function createAuth(env: AuthBindings) {
     // ⚠️ Explícito, não default — MEDIDO no finanças: sem config,
     // `trustedOrigins` é SÓ a origem de `BETTER_AUTH_URL`
     // (better-auth/dist/context/helpers.mjs:72-75). O apps/web vive numa
-    // origem DIFERENTE da API (api.piluvitu.com.br vs. piluvitu.com.br) —
+    // origem DIFERENTE da API (ramielle.piluvitu.com.br vs. piluvitu.com.br) —
     // sem esta linha, `POST /api/auth/sign-in/social` chamado a partir do
     // apps/web responde 403 (origem não confiável) e o login nunca
     // completa.

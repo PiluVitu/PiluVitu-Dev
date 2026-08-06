@@ -2,7 +2,7 @@
  * CORS com credenciais — paridade com `apps/api/internal/router/router.go`
  * (`corsOptions`/`allowedOrigins`) nas ORIGENS, nas CREDENCIAIS e na leitura
  * de `CORS_ALLOWED_ORIGINS` (mesmo CSV, mesmo default). O `apps/web` mora em
- * `piluvitu.com.br` (Vercel); o ramielle mora em `api.piluvitu.com.br` —
+ * `piluvitu.com.br` (Vercel); o ramielle mora em `ramielle.piluvitu.com.br` —
  * origens DIFERENTES, e é isso que obriga CORS explícito aqui: sem
  * `Access-Control-Allow-Origin` + `Access-Control-Allow-Credentials`
  * corretos, o cookie de sessão do Better Auth nunca atravessa um

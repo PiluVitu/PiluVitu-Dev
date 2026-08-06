@@ -72,7 +72,7 @@ Os dois passaram — `RETURNING id` funciona no D1 local. `domain/users.ts#upser
 
 ## CORS com credenciais (Task 5)
 
-`apps/web` mora em `piluvitu.com.br` (Vercel); o ramielle vai morar em `api.piluvitu.com.br` — origens **diferentes**. Sem CORS explícito com credenciais, o cookie de sessão do Better Auth nunca atravessa um `fetch(..., { credentials: 'include' })` do `apps/web`.
+`apps/web` mora em `piluvitu.com.br` (Vercel); o ramielle vai morar em `ramielle.piluvitu.com.br` — origens **diferentes**. Sem CORS explícito com credenciais, o cookie de sessão do Better Auth nunca atravessa um `fetch(..., { credentials: 'include' })` do `apps/web`.
 
 `src/lib/cors.ts` espelha `apps/api/internal/router/router.go` (`corsOptions`/`allowedOrigins`) nas **origens**, nas **credenciais** e na **leitura de `CORS_ALLOWED_ORIGINS`**: mesmo default (`http://localhost:3333,https://piluvitu.com.br`), mesmo CSV, `credentials: true`. `wrangler.jsonc#vars.CORS_ALLOWED_ORIGINS` declara explicitamente `https://piluvitu.com.br` (só produção, sem `localhost`) — mesma paridade que `infra/docker-compose.yml` da Go já faz pro ambiente de produção dela; não é obrigatório (o default do código já cobriria sozinho), mas deixa a origem de produção explícita em vez de depender só do fallback.
 
@@ -123,8 +123,8 @@ pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations list piluvitu-ramie
 
 - **Aplicar as migrations `0001`/`0002`/`0003` em produção** (`--remote`, comando acima) — hoje só rodaram `--local`. ⚠️ A `0003` (índice `account(providerId, accountId)`, M4 acima) foi criada DEPOIS de `0001`/`0002` já estarem só `--local` — o comando `--remote` aplica as três de uma vez, não seletivamente.
 - **Cadastrar os secrets** (`wrangler secret put <NOME>`, do diretório `apps/ramielle`): `BETTER_AUTH_SECRET` (gerar com `openssl rand -base64 32`, nunca reusar o valor de `.dev.vars`), `ADMIN_EMAILS` (hoje está em `wrangler.jsonc#vars` com o e-mail do dono — mover pra secret ou atualizar o var se a lista crescer antes do primeiro deploy real), e **`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`**. ⚠️ **Estes dois NÃO são de um OAuth Client novo — são os valores do MESMO OAuth Client que hoje já serve a área de admin de outro app e a API Go** (ver bullet da redirect URI abaixo). Criar um client novo pro ramielle quebraria a premissa do bullet seguinte: um client novo não tem URI nenhuma pra preservar, e o aviso "adicionar, nunca substituir" perderia o sentido.
-- **Criar o Custom Domain** `api.piluvitu.com.br` (dashboard: Workers & Pages → `piluvitu-ramielle` → Settings → Domains & Routes → Add → Custom Domain) — `wrangler.jsonc` já declara a rota (`routes: [{ pattern: "api.piluvitu.com.br", custom_domain: true }]`), falta o domínio existir de fato.
-- **Registrar a redirect URI no Google Console, no MESMO OAuth Client do bullet acima**: `https://api.piluvitu.com.br/api/auth/callback/google`. ⚠️ **ADICIONAR, NUNCA SUBSTITUIR AS EXISTENTES** — é justamente por ser o mesmo client (não um novo) que esta URI é ADITIVA: ele hoje serve a área de admin de outro app **e** a API Go (`promeia.piluvitu.com.br/auth/google/callback`); remover uma URI existente quebra o que já está no ar.
+- **Criar o Custom Domain** `ramielle.piluvitu.com.br` (dashboard: Workers & Pages → `piluvitu-ramielle` → Settings → Domains & Routes → Add → Custom Domain) — `wrangler.jsonc` já declara a rota (`routes: [{ pattern: "ramielle.piluvitu.com.br", custom_domain: true }]`), falta o domínio existir de fato.
+- **Registrar a redirect URI no Google Console, no MESMO OAuth Client do bullet acima**: `https://ramielle.piluvitu.com.br/api/auth/callback/google`. ⚠️ **ADICIONAR, NUNCA SUBSTITUIR AS EXISTENTES** — é justamente por ser o mesmo client (não um novo) que esta URI é ADITIVA: ele hoje serve a área de admin de outro app **e** a API Go (`promeia.piluvitu.com.br/auth/google/callback`); remover uma URI existente quebra o que já está no ar.
 
 ## Nada em produção mudou nesta fatia
 

@@ -45,7 +45,9 @@ Levantado contra o código, não de memória.
 
 **1. `apps/ramielle` é um Worker NOVO, não uma extensão do `apps/financas`.** Os dois têm ciclos de vida, bancos e políticas de acesso diferentes — o finanças é fail-closed de usuário único, o ramielle precisa aceitar qualquer conta Google. Fundi-los agora acoplaria o deploy do livro-caixa ao da votação. O split da API do próprio finanças (spec §6) é assunto de outra fatia.
 
-**2. O hostname do ramielle é `api.piluvitu.com.br`.** Precisa estar sob `piluvitu.com.br` para o cookie de sessão continuar _same-site_ com o `apps/web` (mesmo raciocínio que já obriga o Custom Domain no finanças). `promeia.*` está ocupado pela Go e é do promeia no fim; `api.*` está livre e é o que `NEXT_PUBLIC_API_URL` já significa. **É uma string em `wrangler.jsonc` mais uma entrada no painel** — trivial de trocar se o dono preferir outro nome.
+**2. O hostname do ramielle é `ramielle.piluvitu.com.br`** — o serviço leva o próprio nome, simétrico a `promeia.piluvitu.com.br`. A única restrição técnica é estar sob `piluvitu.com.br`, para o cookie de sessão continuar _same-site_ com o `apps/web` (mesmo raciocínio que já obriga o Custom Domain no finanças); qualquer subdomínio serve.
+
+⚠️ **Correção do dono (2026-07-29).** O rascunho deste plano propunha `api.piluvitu.com.br`, argumentando que era o que `NEXT_PUBLIC_API_URL` já significa. O dono corrigiu: os serviços têm nome próprio e deliberado (ramielle/promeia), e a simetria entre eles vale mais que a semântica genérica de "api". Trocado antes de existir Custom Domain ou secret cadastrado, então o custo foi só o de reescrever a string. Registrado aqui porque a versão anterior deste parágrafo aparece nos briefs e relatórios das tasks 1–5, que foram executadas com o nome antigo.
 
 **3. PK continua `INTEGER AUTOINCREMENT`, com `RETURNING id`.** O `CLAUDE.md` do finanças documenta que lá toda PK é TEXT/UUID porque "não há `last_insert_rowid()` confiável entre statements de um `batch()`". ⚠️ **Essa restrição não se aplica aqui**: a votação insere sequencialmente, e o SQLite do D1 suporta `INSERT ... RETURNING id`, que devolve o id no mesmo statement sem depender de `last_insert_rowid()`. Trocar para UUID quebraria os tipos do `apps/web` (`movie_id: number`) e todos os mocks E2E — custo alto, ganho nenhum. **O Step 5 da Task 2 é a medição que confirma o `RETURNING`; se ele falhar, pare e reporte** — é a premissa desta decisão.
 
@@ -127,7 +129,7 @@ Copie a ESTRUTURA (não o conteúdo) de `apps/financas/package.json` — mesmos 
   // cross-SITE, SameSite=Lax deixa de ser enviado, e a quebra SÓ aparece em
   // produção (local usa localhost dos dois lados). Mesmo motivo já
   // documentado no finanças.
-  "routes": [{ "pattern": "api.piluvitu.com.br", "custom_domain": true }],
+  "routes": [{ "pattern": "ramielle.piluvitu.com.br", "custom_domain": true }],
 
   "d1_databases": [
     {
@@ -454,7 +456,7 @@ Cubra, cada fato uma vez só (a regra do monorepo é fonte única — não repit
 - Duas tabelas de usuário no mesmo banco (`user` da lib, `users` do domínio) e por quê.
 - A decisão da PK `INTEGER` + `RETURNING id`, com o resultado da medição da Task 2.
 - Comandos (`make dev-ramielle`, `test-ramielle`, migrations local/remote).
-- ⚠️ **Pendências do dono**, sem rodeio: criar o D1 (`wrangler d1 create`), preencher `database_id`, cadastrar os secrets, criar o Custom Domain `api.piluvitu.com.br`, e registrar `https://api.piluvitu.com.br/api/auth/callback/google` no Google Console **sem remover** as URIs existentes (o mesmo OAuth client serve o admin e a Go hoje — remover uma quebra o que está no ar).
+- ⚠️ **Pendências do dono**, sem rodeio: criar o D1 (`wrangler d1 create`), preencher `database_id`, cadastrar os secrets, criar o Custom Domain `ramielle.piluvitu.com.br`, e registrar `https://ramielle.piluvitu.com.br/api/auth/callback/google` no Google Console **sem remover** as URIs existentes (o mesmo OAuth client serve o admin e a Go hoje — remover uma quebra o que está no ar).
 - ⚠️ **Nada em produção mudou nesta fatia.** `apps/web` segue falando com a Go.
 
 No `CLAUDE.md` da raiz: linha na tabela de workspaces, comandos, e o job novo no CI.

@@ -24,7 +24,7 @@ describe('GET /health', () => {
   })
 
   test('via SELF.fetch (env real do wrangler.jsonc) responde o mesmo envelope', async () => {
-    const res = await SELF.fetch('https://api.piluvitu.com.br/health')
+    const res = await SELF.fetch('https://ramielle.piluvitu.com.br/health')
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       ok: true,

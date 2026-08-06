@@ -17,7 +17,7 @@
   // cross-SITE, SameSite=Lax deixa de ser enviado, e a quebra SÓ aparece em
   // produção (local usa localhost dos dois lados). Mesmo motivo já
   // documentado no finanças.
-  "routes": [{ "pattern": "api.piluvitu.com.br", "custom_domain": true }],
+  "routes": [{ "pattern": "ramielle.piluvitu.com.br", "custom_domain": true }],
 
   "d1_databases": [
     {
@@ -35,7 +35,7 @@
     // Não é conveniência: no Worker isProduction é sempre falso (não há
     // NODE_ENV), então é o https:// deste valor que liga o `secure` e o
     // prefixo __Secure- do cookie de sessão (mesmo raciocínio do finanças).
-    "BETTER_AUTH_URL": "https://api.piluvitu.com.br",
+    "BETTER_AUTH_URL": "https://ramielle.piluvitu.com.br",
 
     // ⚠️ CSV de verdade (ao contrário do ALLOWED_EMAIL do finanças, que é
     // um e-mail só) — src/lib/auth.ts#isAdminEmail trata como lista,
