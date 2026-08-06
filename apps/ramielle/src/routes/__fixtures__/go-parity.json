@@ -1,0 +1,47 @@
+{
+  "_gerado_por": "go run contra apps/api/internal/votacao — NÃO editar à mão",
+  "sessionAberta": {
+    "ID": 7,
+    "Title": "Sessão de maio",
+    "Status": "open",
+    "CreatedBy": 1,
+    "CreatedAt": "2026-05-19T12:00:00Z",
+    "ClosedAt": null,
+    "WinnerMovieID": null,
+    "WinnerMethod": null,
+    "SortOptionsJSON": "{}"
+  },
+  "sessionFechada": {
+    "ID": 7,
+    "Title": "Sessão de maio",
+    "Status": "closed",
+    "CreatedBy": 1,
+    "CreatedAt": "2026-05-19T12:00:00Z",
+    "ClosedAt": "2026-05-20T18:30:00Z",
+    "WinnerMovieID": 42,
+    "WinnerMethod": "roulette",
+    "SortOptionsJSON": "{}"
+  },
+  "filmeSemTmdb": {
+    "ID": 3,
+    "SessionID": 7,
+    "Category": "comedia",
+    "Title": "Um Filme Qualquer",
+    "Type": "filme",
+    "PosterURL": "",
+    "TMDbID": null,
+    "WasWatched": false,
+    "SheetNumber": null
+  },
+  "filmeComTmdb": {
+    "ID": 4,
+    "SessionID": 7,
+    "Category": "terror",
+    "Title": "Outro Filme",
+    "Type": "serie",
+    "PosterURL": "https://image.tmdb.org/t/p/w500/abc123.jpg",
+    "TMDbID": 603,
+    "WasWatched": true,
+    "SheetNumber": 12
+  }
+}
