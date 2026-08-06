@@ -307,9 +307,28 @@ Caminho feliz com `fetch` mockado (Sheets + TMDb), os quatro erros, e o chunking
 
 - [ ] **Step 1: `listUsers` e `listBackups`**
 
-`listUsers` devolve **todos** os usuários, `created_at DESC` (leia `internal/votacao/users.go#ListUsers` para confirmar a ordem). Shape controlado: `id`, `name`, `email`, `picture`, `is_admin`, `created_at` — ⚠️ **`google_sub` NUNCA sai** (o Go o omite de propósito). `created_at` por `toIsoUtc`.
+`listUsers` devolve **todos** os usuários. Shape controlado: `id`, `name`, `email`, `picture`, `is_admin`, `created_at` — ⚠️ **`google_sub` NUNCA sai** (o Go o omite de propósito, montando um `map[string]any` explícito em `handlers/admin/users.go`). `created_at` por `toIsoUtc`.
 
 `listBackups` devolve os **50** mais recentes da tabela `backups`.
+
+⚠️ **Ordenação, nos DOIS:** `ORDER BY created_at DESC, id DESC`. O desempate por `id DESC` não é decoração — sem ele, linhas criadas no mesmo segundo saem em ordem indefinida. (`internal/votacao/users.go:52`, `internal/votacao/backups.go:56`.)
+
+⚠️ **`ListBackups` do Go trava o limite:** `if limit <= 0 || limit > 200 { limit = 50 }` (`backups.go:51`). O handler passa 50, então na prática é sempre 50 — mas porte o clamp, não só o 50.
+
+⚠️⚠️ **A ARMADILHA DESTA TASK — as duas rotas têm convenções de wire OPOSTAS, e a intuição de "deixar consistente" quebra a produção.** `/admin/users` é `snake_case` porque o handler Go monta um `map[string]any` à mão; `/admin/backups` é **`PascalCase`** porque o handler devolve o `[]Backup` **direto** e o struct `Backup` **não tem nenhuma tag `json`**. O contrato que o `apps/web` já consome (`apps/web/lib/votacao/types.ts:98-105`, renderizado campo a campo em `components/votacao/admin/backups-panel.tsx`):
+
+```ts
+export interface Backup {
+  ID: number
+  DriveFileID: string
+  DriveFileName: string
+  SizeBytes: number
+  TriggerType: 'cron' | 'manual' | 'session_close'
+  CreatedAt: string
+}
+```
+
+Emitir `drive_file_name` em vez de `DriveFileName` **quebra o `/admin/sessoes` em produção** — a tabela renderiza `undefined` em toda linha, sem erro nenhum. Afirme as chaves PascalCase literalmente no teste.
 
 - [ ] **Step 2: As três rotas (todas `requireAdmin`)**
 
@@ -319,7 +338,9 @@ Caminho feliz com `fetch` mockado (Sheets + TMDb), os quatro erros, e o chunking
 
 - [ ] **Step 3: Testes**
 
-401 sem cookie e 403 com conta não-admin **para as três**; o shape de `users` sem `google_sub` (asserção **negativa** sobre o JSON serializado); o teto de 50 em `backups`; e o 503 fixo do `POST /admin/backup`.
+401 sem cookie e 403 com conta não-admin **para as três**; o shape de `users` sem `google_sub` (asserção **negativa** sobre o JSON serializado); as chaves **PascalCase** de `backups` afirmadas literalmente; o teto de 50 em `backups`; e o 503 fixo do `POST /admin/backup`.
+
+⚠️ **Lição medida na T3 desta fatia:** um teste que injeta valores INDISTINGUÍVEIS não consegue observar ORDEM. Para o `ORDER BY created_at DESC, id DESC`, use linhas com `created_at` IGUAL e `id` diferente — senão o desempate por `id` passa sem ser exercido.
 
 - [ ] **Step 4: Montagem acima do catch-all, provada por execução; mutação (`requireAdmin`→`requireAuth` numa delas; o 403 tem que falhar); commit**
 
