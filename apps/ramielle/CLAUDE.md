@@ -23,7 +23,7 @@ Construído em tasks sequenciais, plano em `.superpowers/sdd/2026-07-28-ramielle
 
 **Nada em produção mudou nesta fatia.** `apps/web` continua falando com a API Go em `promeia.piluvitu.com.br` (ver `apps/api/CLAUDE.md`). O ramielle sobe, responde `/health` contra o D1, autentica com Google aceitando qualquer conta, distingue admin por `ADMIN_EMAILS` a cada request, e responde CORS com credenciais para `piluvitu.com.br` — tudo isso hoje só é alcançável localmente, até o dono completar as pendências no fim deste arquivo.
 
-## Estado da fatia ② (votação) — em andamento
+## Estado da fatia ② (votação) — COMPLETA
 
 Plano em `.superpowers/sdd/2026-07-29-ramielle-fatia2-votacao/` (relatórios de task são gitignored — os achados que precisavam sobreviver estão aqui). Paridade contra o Go é o critério de aceitação de TODA rota desta fatia — `apps/web` em produção ainda fala com a API Go, nada muda até o cutover (fatia ④).
 
@@ -48,7 +48,51 @@ Plano em `.superpowers/sdd/2026-07-29-ramielle-fatia2-votacao/` (relatórios de 
   - `crypto.getRandomValues` É espiável em teste (`vi.spyOn(globalThis.crypto, 'getRandomValues')`, confirmado por sondagem antes de escrever o teste de rota) — mas o Better Auth também chama `crypto.getRandomValues` internamente (hash de senha, token de sessão) durante o mesmo request/setup de teste, com tamanhos de buffer diferentes de 32. O mock do teste de rota faz login ANTES de instalar o spy, e o spy só intercepta arrays de EXATAMENTE 32 bytes (o tamanho que a rota pede), delegando qualquer outro tamanho pro `getRandomValues` original — sem esse guard por tamanho, `array.set(nonceEsperado)` estoura `RangeError: offset is out of bounds` quando o Better Auth pede um buffer menor no meio do mesmo teste.
   - Ordem das 7 checagens (`invalid_id` → `invalid_json` → `invalid_entropy` → `session_not_found` → `session_not_closed` → `no_tie` 422 → `winner_already_set` 409) é a medida linha a linha em `votes.go:172-233`; `winner_already_set` só é alcançável DEPOIS de `no_tie` — testado com um cenário que tem empate de verdade nos votos ATUAIS e `winner_movie_id` já gravado por fora (simula um sorteio anterior), provando que a rota recomputa o empate mesmo quando já existe vencedor, não usa o campo como atalho.
 
-**Próximo (fatia ②):** T6 (`GET /sessions/{id}/votes` admin + montagem final + docs).
+- **T6** (esta, ÚLTIMA da fatia) — `GET /votacao/sessions/{id}/votes` (admin): o JOIN `votes ⋈ users ⋈ session_movies` que devolve quem votou em quê. `src/domain/votes.ts` estendido (`listSessionVotesWithUsers`, I/O puro — porte 1:1 de `Store.ListSessionVotesWithUsers`, `apps/api/internal/votacao/votes.go:99-127`) + rota em `src/routes/votacao.ts`. Três achados/decisões desta task:
+  - ⚠️ **Esta é a ÚNICA rota da API inteira que liga e-mail de pessoa a voto** — nenhuma outra devolve `user_email`/`user_name` (nem `GET /sessions/{id}`, nem `/results`). `requireAdmin` aqui não é detalhe de implementação: é a única barreira entre o e-mail de quem votou e qualquer sessão válida. Testado com o 403 (conta não-admin) escrito e verificado ANTES do caminho feliz, e confirmado por mutação (trocar `requireAdmin` por `requireAuth` na rota derruba exatamente esse teste — ver `routes/votacao.test.ts`, describe `GET /votacao/sessions/:id/votes`).
+  - **A resposta não passa por `lib/wire.ts`** — diferente de `sessionToWire`/`movieToWire`, todo o shape aqui já é snake_case (`user_id`, `user_name`, `user_email`, `movie_id`, `movie_title`, `category`, `created_at`), porque o handler Go monta um `map[string]any` de chaves explícitas (não faz `json.Marshal` de uma struct PascalCase, ao contrário de `VotingSession`/`SessionMovie`). O domínio devolve `created_at` CRU (formato D1); a ROTA aplica `toIsoUtc` na montagem final — mesma divisão de responsabilidade que `sessionToWire`/`movieToWire` já seguem, só que sem struct intermediária porque não existe uma do lado Go.
+  - **Mesma família de `/results` (T4): não checa se a sessão existe.** `ListSessionVotes` do Go só valida o FORMATO do id (`parseID`) e vai direto pro SELECT/JOIN — um id positivo mas inexistente não bate nenhuma linha e devolve **200** com `votes:[]`, `total:0`, nunca 404.
+- **Também nesta task:** `app.onError` global em `src/index.ts` (ver § _`app.onError` global_ abaixo) e a rename `parseParseIDStyle` → `parseIdDaRota` em `routes/votacao.ts` (puramente estético — "parse" duplicado no nome original, nenhuma mudança de comportamento).
+
+**Fatia ② (votação) está COMPLETA** — as 7 rotas que só dependem do D1 (sem Sheets/TMDb) estão montadas e testadas. `apps/web` em produção continua na Go; nada muda até o cutover (fatia ④). Ver § _As duas rotas que ficaram pra fatia ③_ abaixo pro que falta pra fechar `/votacao` inteiro.
+
+## A mistura de convenções É O CONTRATO — PascalCase × snake_case, e o vetor dourado
+
+Toda resposta de `/votacao/*` mistura duas convenções de caso, de propósito, porque a API Go que ela reproduz também mistura:
+
+- **PascalCase** — só `session`/`movies` em `GET /sessions/{id}` (e `sessions[]` em `GET /sessions`). Vem de `json.Marshal` das structs Go `VotingSession`/`SessionMovie` (`apps/api/internal/votacao/sessions.go:11-21`, `movies.go:9-19`) — **sem tag `json:` nenhuma**, então o Go emite o nome do campo Go literal (`ID`, `CreatedBy`, `WinnerMovieID`...). `src/lib/wire.ts#sessionToWire`/`movieToWire` reproduzem isso byte a byte.
+- **snake_case** — tudo o mais: `has_voted`, `voted_movie_ids`, `movie_id`, `total_votes`, `total_voters`, `winner_movie_id`, e a resposta inteira de `GET /sessions/{id}/votes` (T6). Vem de handlers que montam a resposta com `map[string]any` de chaves explícitas, em vez de serializar uma struct.
+
+**Não "padronizar" pra um caso só** — `apps/web/lib/votacao/types.ts` já tipa `VotingSession.ID`/`.Title` em PascalCase e o resto em snake_case; trocar quebra a tela em silêncio (`res.json()` é `any` em TS, nada denuncia em compile-time).
+
+**O vetor dourado** (`src/routes/__fixtures__/go-parity.json`) é a prova de que `sessionToWire`/`movieToWire` reproduzem o Go byte a byte — gerado rodando o Go DE VERDADE, nunca escrito à mão a partir da leitura do código-fonte. Regenerá-lo (se as structs Go mudarem, ou pra ampliar o vetor com um novo shape):
+
+1. `VotingSession`/`SessionMovie` moram em `internal/votacao` (pacote `internal` do Go — a regra de visibilidade é resolvida pelo **import path**, `github.com/PiluVitu/api/internal/votacao`, não pelo disco físico). Um módulo `parity` separado com `replace` no `go.mod` **não funciona**: `replace` aponta o compilador pro disco certo, mas o import path continua `parity`, que nunca fica "dentro" de `github.com/PiluVitu/api` — `go run` falha com `use of internal package ... not allowed`. Medido de verdade na T1 (`.superpowers/sdd/2026-07-29-ramielle-fatia2-votacao/task-1-report.md`, gitignored — por isso este raciocínio está aqui, não só lá).
+2. **Caminho que funciona:** um arquivo `main.go` temporário DENTRO do módulo Go, em `apps/api/cmd/<nome-descartável>/main.go` (import path automaticamente `github.com/PiluVitu/api/cmd/<nome>`, autorizado a importar `internal/votacao`). Monta os valores (`VotingSession{...}`, `SessionMovie{...}`) e imprime `json.Marshal` de cada um.
+3. Rodar de dentro de `apps/api`: `go run ./cmd/<nome-descartável>`.
+4. Copiar a saída **literal** (sem editar um caractere) pro JSON do fixture.
+5. **Apagar `apps/api/cmd/<nome-descartável>/` inteiro** e confirmar `/usr/bin/git status --porcelain` limpo em `apps/api` antes de tocar em qualquer outro arquivo — nenhum resíduo do experimento pode entrar no diff da API Go (este workspace só PORTA a Go, nunca a modifica). Feito duas vezes nesta fatia (T1: `sessionAberta`/`sessionFechada`/`filmeSemTmdb`/`filmeComTmdb`; T5: os dois cenários de `tiebreak`, com nonces de 16 e 32 bytes) — as duas com o `git status` limpo confirmado.
+
+## `created_at`/`CreatedAt`: por que passa por `toIsoUtc`
+
+O Go serializa `time.Time` em RFC3339 (`2026-05-19T12:00:00Z`). O D1 grava a coluna como `TEXT DEFAULT CURRENT_TIMESTAMP`, e o `CURRENT_TIMESTAMP` do SQLite escreve `2026-05-19 12:00:00` — **espaço** como separador, sem `T`, sem `Z`. Devolver esse valor cru quebra o cliente: `new Date('2026-05-19 12:00:00')` é aceito pelo V8 (Node/Chrome) e **rejeitado pelo Safari** (`Invalid Date`) — mesma classe de armadilha de fuso/parsing que só aparece em um dos ambientes, já medida três vezes neste projeto.
+
+`src/lib/dates.ts#toIsoUtc` normaliza qualquer variação de formato pro RFC3339 completo antes de sair no fio; `nowIsoUtc` gera timestamps novos já nesse formato (usado por `closeVotingSession`, nunca `new Date()` cru dentro do domínio). Aplicado em `sessionToWire`/`movieToWire` (`CreatedAt`/`ClosedAt`) e, desde a T6, também na rota `GET /sessions/{id}/votes` (`created_at`) — ali direto na rota, não no domínio, porque `listSessionVotesWithUsers` é I/O puro e a normalização de fio é responsabilidade de quem monta a resposta.
+
+## As duas rotas que ficaram pra fatia ③ — `/categorias` e `POST /sessions`
+
+O Go tem **9** rotas em `/votacao` (`router.go:69-77`); esta fatia (②) implementa **7**. As duas de fora — `GET /categorias` e `POST /sessions` — dependem de `h.deps.Sheets` (Google Sheets), que este Worker ainda não tem:
+
+- **`GET /categorias`** (`handlers/votacao/categorias.go`) chama `h.deps.Sheets.GetCategories(ctx)` — lê a aba de categorias da planilha de filmes.
+- **`POST /sessions`** (`handlers/votacao/sessions.go:30-`) chama `h.deps.Sheets.ReadMovies(ctx)` — lê a lista de filmes candidatos da planilha (com enriquecimento TMDb a jusante) pra popular `session_movies` da sessão nova.
+
+As duas respondem `503 sheets_disabled` no Go quando `h.deps.Sheets == nil` — ou seja, mesmo a Go trata isso como dependência OPCIONAL/desligável, não uma garantia. Ficam pra fatia ③ (junto do sorteio administrativo, `/users`, `/backups`) porque exigem a integração Sheets/TMDb inteira, fora do escopo "só D1" desta fatia — ver `.superpowers/sdd/2026-07-29-ramielle-fatia2-votacao/task-6-brief.md` § _Estado ao fim desta fatia_.
+
+## `app.onError` global — rede de segurança do envelope (T6)
+
+MEDIDO nas T2–T5: sem um `app.onError` registrado, uma exceção não mapeada dentro de uma rota sobe pro handler default do **Hono**, que responde `text/plain "Internal Server Error"` — **fora** do envelope `{ok,data,notifications}` que toda outra resposta desta API usa. O `call<T>()` do `apps/web` (que sempre espera o envelope) levanta `invalid_envelope` — um sintoma sem relação nenhuma com a causa real, que só apareceria investigando `wrangler tail`.
+
+`src/index.ts` registra `app.onError((err) => {...})`, devolvendo `errJson(500, 'internal_error', 'erro interno — tente novamente')` — a MESMA paridade de contrato que o Go já tem (`httpx.Error` sempre dentro do envelope, mesmo em erro não mapeado). O erro real vai só pro `console.error` (visível via `wrangler tail`), **nunca** pro corpo da resposta — `err.message`/`String(err)` são exatamente por onde um `D1_ERROR`/`SQLITE_*` cru vazaria (mesmo cuidado já tomado em `GET /health`/`db_down`). Testado em `index.test.ts` (describe `app.onError global`) com um DB shim que quebra só o SELECT de `voting_sessions`, disparado via `GET /votacao/sessions` (que não tem `try/catch` próprio em volta do domínio) — confirma 500 dentro do envelope, `code: internal_error`, e uma asserção NEGATIVA de que o texto cru do erro simulado (`D1_ERROR`, `disk I/O`) não aparece em lugar nenhum do JSON serializado.
 
 ## Votação LIVRE × finanças fail-closed — desenhos OPOSTOS do MESMO Better Auth
 
@@ -142,7 +186,7 @@ pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations list piluvitu-ramie
 pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations list piluvitu-ramielle --remote
 ```
 
-**Contagem de testes: 216** (`vitest run`, 15 arquivos), confirmado via `pnpm --filter @piluvitu/ramielle exec vitest run --reporter=json` (campo `numTotalTests`), não só o resumo condensado do terminal. Recontar antes de citar este número num relatório futuro — a fatia ② (T6) ainda vai crescer este total. Composição na T5 (fatia ②): os 191 até a T4, mais 25 novos desta task — 13 em `domain/tiebreak.test.ts` (arquivo NOVO: vetor dourado das duas funções puras + o segundo cenário de 32 bytes usado pelo teste de rota), 12 novos em `routes/votacao.test.ts` (45→57: os 7 códigos HTTP + o happy path com vetor dourado/nonce mockado + a auditoria).
+**Contagem de testes: 238** (`vitest run`, 15 arquivos — nenhum arquivo NOVO nesta task, só extensão dos existentes), confirmado via `pnpm --filter @piluvitu/ramielle exec vitest run --reporter=json` (campo `numTotalTests`), não só o resumo condensado do terminal. Recontar antes de citar este número num relatório futuro — já mudou 2× nesta sessão (191→216 na T5, 216→238 na T6). Composição na T6 (fatia ②, ÚLTIMA): os 216 até a T5, mais 22 novos desta task — 6 em `domain/votes.test.ts` (describe `listSessionVotesWithUsers`: vazio, sessão inexistente, happy path com JOIN completo, voto de aprovação não-colapsado, isolamento entre sessões, ordenação por `created_at ASC`), 8 em `routes/votacao.test.ts` (describe `GET /votacao/sessions/:id/votes`: 401 → 403 não-admin ANTES do happy path, por brief → 3× `invalid_id` → sessão inexistente 200 zeros → happy path snake_case/`toIsoUtc` → voto de aprovação 2 linhas), 8 em `index.test.ts` (1 no describe `app.onError global` + 7 no `test.each` de montagem das 7 rotas de votação acima do catch-all).
 
 ## Pendências do dono — nada disto foi feito nesta fatia
 

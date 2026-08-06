@@ -322,3 +322,72 @@ export async function createTiebreak(
     )
     .run()
 }
+
+// ---------------------------------------------------------------------------
+// `GET /sessions/{id}/votes` — admin, Task 6 (fatia2 T6). Porte de
+// `Store.ListSessionVotesWithUsers` (`apps/api/internal/votacao/votes.go:99-
+// 127`) + do handler `ListSessionVotes` (`handlers/votacao/votes.go:272-
+// 293`), que monta a resposta com `map[string]any` de chaves explícitas — por
+// isso o SELECT abaixo já sai em snake_case, com apelidos (`AS`) casando 1:1
+// com o JSON de fio, sem passar por `lib/wire.ts` (aquele arquivo é só pras
+// duas structs PascalCase, `sessionToWire`/`movieToWire` — ver o cabeçalho
+// dele). `created_at` continua no formato cru do D1 aqui (I/O puro, sem
+// side-effect de formatação); a ROTA aplica `toIsoUtc` na montagem final,
+// mesmo padrão de responsabilidade que `sessionToWire`/`movieToWire` seguem
+// para as outras duas leituras.
+//
+// ⚠️ **Esta é a ÚNICA query da API inteira que liga e-mail de pessoa a voto**
+// — o JOIN com `users` expõe `email`/`name`, que nenhuma outra rota de
+// votação devolve (nem `GET /sessions/{id}`, nem `/results`). O admin-only
+// (`requireAdmin`) é aplicado na ROTA (`routes/votacao.ts`), não aqui: esta
+// função não sabe nada sobre quem está chamando, só executa o JOIN — a
+// mesma separação já usada em toda leitura deste arquivo (quem decide 404/
+// 403 é sempre a rota, nunca o domínio).
+// ---------------------------------------------------------------------------
+
+/**
+ * Uma linha de `GET /sessions/{id}/votes`, já no formato snake_case de fio —
+ * espelha o `map[string]any` que `ListSessionVotes` monta a partir de cada
+ * `votacao.VoteDetail` do Go. `created_at` ainda cru (formato D1); a rota
+ * normaliza via `toIsoUtc`.
+ */
+export type VoteDetailRow = {
+  user_id: number
+  user_name: string
+  user_email: string
+  movie_id: number
+  movie_title: string
+  category: string
+  created_at: string
+}
+
+/**
+ * `JOIN votes ⋈ users ⋈ session_movies` — porte 1:1 do SELECT de
+ * `ListSessionVotesWithUsers` (`votes.go:102-109`), mesmas três colunas de
+ * junção (`u.id = v.user_id`, `m.id = v.movie_id`), mesmo `WHERE
+ * v.session_id = ?`, mesma ordenação (`ORDER BY v.created_at ASC`, oldest
+ * first). Não checa se a sessão existe — igual a `listVoteMovieIds`
+ * (`/results`): um id inexistente (ou sem voto nenhum) simplesmente não bate
+ * nenhuma linha no JOIN, devolvendo `[]`, nunca lança. Quem decide 400
+ * `invalid_id` pra um id malformado é a ROTA (`parseIdDaRota`), não este
+ * SELECT.
+ */
+export async function listSessionVotesWithUsers(
+  db: D1Database,
+  sessionId: number,
+): Promise<VoteDetailRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT u.id AS user_id, u.name AS user_name, u.email AS user_email,
+              m.id AS movie_id, m.title AS movie_title, m.category AS category,
+              v.created_at AS created_at
+         FROM votes v
+         JOIN users u ON u.id = v.user_id
+         JOIN session_movies m ON m.id = v.movie_id
+        WHERE v.session_id = ?
+        ORDER BY v.created_at ASC`,
+    )
+    .bind(sessionId)
+    .all<VoteDetailRow>()
+  return results
+}

@@ -1621,3 +1621,199 @@ describe('POST /votacao/sessions/:id/tiebreak', () => {
     }
   })
 })
+
+// --------------------------------------------------------------------------
+// GET /votacao/sessions/:id/votes (admin) — Task 6 (fatia2 T6). Fonte de
+// verdade: apps/api/internal/handlers/votacao/votes.go#ListSessionVotes
+// (~272) + apps/api/internal/votacao/votes.go#ListSessionVotesWithUsers
+// (~99). O SELECT em si já é testado em domain/votes.test.ts; aqui só a
+// fiação HTTP: guard (401/403), validação de id, e o shape snake_case final.
+//
+// ⚠️ ESTA ROTA QUEBRA O ANONIMATO DO VOTO — é a única da API que liga e-mail
+// de pessoa a voto. O teste de 403 (não-admin) vem ANTES do caminho feliz DE
+// PROPÓSITO (brief da T6): é a única coisa entre o e-mail de quem votou e
+// qualquer sessão válida.
+// --------------------------------------------------------------------------
+
+type VoteDetailData = {
+  votes: {
+    user_id: number
+    user_name: string
+    user_email: string
+    movie_id: number
+    movie_title: string
+    category: string
+    created_at: string
+  }[]
+  total: number
+}
+
+describe('GET /votacao/sessions/:id/votes', () => {
+  test('sem cookie responde 401 not_authenticated MESMO com id inválido no path (requireAdmin roda ANTES do parseIdDaRota interno)', async () => {
+    const res = await app.request('/votacao/sessions/abc/votes', {}, testEnv())
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+  })
+
+  // ⚠️ Escrito ANTES do caminho feliz, de propósito (brief da T6): esta rota
+  // quebra o anonimato do voto (JOIN com `users`, expõe e-mail/nome de quem
+  // votou) — `requireAdmin` não é um detalhe de implementação aqui, é a
+  // ÚNICA barreira entre o e-mail de quem votou e qualquer sessão válida.
+  // É este o teste que a mutação obrigatória desta task (trocar
+  // `requireAdmin` por `requireAuth` na rota) tem que quebrar.
+  test('conta autenticada mas NÃO-ADMIN responde 403 admin_only — esta rota quebra o anonimato do voto, só admin pode chamá-la', async () => {
+    const criador = await novoUsuario('sub-votedetail-naoadmin-criador')
+    const sessionId = await novaSessao(criador)
+    const cookie = await cookieDeSessaoValido(
+      'votedetail-naoadmin@example.com',
+      'Não Admin',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/votes`,
+      { headers: { cookie } },
+      testEnv(), // ADMIN_EMAILS vazio — ninguém é admin
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+  })
+
+  test('id não numérico (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'votedetail-idinvalido@example.com',
+      'Id Inválido',
+    )
+    const res = await app.request(
+      '/votacao/sessions/abc/votes',
+      { headers: { cookie } },
+      testEnv('votedetail-idinvalido@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  test('id=0 (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'votedetail-idzero@example.com',
+      'Id Zero',
+    )
+    const res = await app.request(
+      '/votacao/sessions/0/votes',
+      { headers: { cookie } },
+      testEnv('votedetail-idzero@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  test('id negativo (admin) responde 400 invalid_id', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'votedetail-idneg@example.com',
+      'Id Neg',
+    )
+    const res = await app.request(
+      '/votacao/sessions/-5/votes',
+      { headers: { cookie } },
+      testEnv('votedetail-idneg@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // ⚠️ Mesma família de /results (T4): ListSessionVotes do Go só faz
+  // parseID, nunca checa se a sessão existe — um id positivo mas inexistente
+  // não bate nenhuma linha no JOIN e devolve 200 com zeros, nunca 404.
+  test('sessão inexistente (mas id positivo) responde 200 com array vazio e total:0 — NUNCA 404 (ListSessionVotes não checa existência, mesma família de /results)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'votedetail-inexistente@example.com',
+      'Inexistente',
+    )
+    const res = await app.request(
+      '/votacao/sessions/999999/votes',
+      { headers: { cookie } },
+      testEnv('votedetail-inexistente@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<VoteDetailData>
+    expect(body.data).toEqual({ votes: [], total: 0 })
+  })
+
+  test('happy path — 200, shape snake_case exato (user_id/user_name/user_email/movie_id/movie_title/category/created_at), created_at normalizado por toIsoUtc, total bate com o length', async () => {
+    const criador = await novoUsuario('sub-votedetail-happy-criador')
+    const sessionId = await novaSessao(criador, { title: 'Sessão votada' })
+    const m1 = await novoFilmeAuto(sessionId, 'terror', 'Um Filme')
+
+    const cookieVotante = await cookieDeSessaoValido(
+      'votedetail-votante@example.com',
+      'Quem Votou',
+    )
+    const votanteId = await votacaoUserId(cookieVotante)
+    await postVoto(`/votacao/sessions/${sessionId}/votes`, cookieVotante, {
+      movie_ids: [m1],
+    })
+
+    const cookieAdmin = await cookieDeSessaoValido(
+      'votedetail-admin@example.com',
+      'Admin',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/votes`,
+      { headers: { cookie: cookieAdmin } },
+      testEnv('votedetail-admin@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<VoteDetailData>
+    expect(body.ok).toBe(true)
+    expect(body.data?.total).toBe(1)
+    expect(body.data?.votes).toEqual([
+      {
+        user_id: votanteId,
+        user_name: 'Quem Votou',
+        user_email: 'votedetail-votante@example.com',
+        movie_id: m1,
+        movie_title: 'Um Filme',
+        category: 'terror',
+        // ⚠️ toIsoUtc — nunca o formato cru "YYYY-MM-DD HH:MM:SS" do
+        // CURRENT_TIMESTAMP do SQLite (que o Safari rejeita como data).
+        created_at: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+        ) as unknown as string,
+      },
+    ])
+  })
+
+  test('voto de aprovação — 1 pessoa votando em 2 filmes gera 2 LINHAS na resposta, nunca colapsado por usuário', async () => {
+    const criador = await novoUsuario('sub-votedetail-aprovacao-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const m2 = await novoFilmeAuto(sessionId, 'Drama')
+
+    const cookieVotante = await cookieDeSessaoValido(
+      'votedetail-aprovacao@example.com',
+      'Aprovador',
+    )
+    await postVoto(`/votacao/sessions/${sessionId}/votes`, cookieVotante, {
+      movie_ids: [m1, m2],
+    })
+
+    const cookieAdmin = await cookieDeSessaoValido(
+      'votedetail-aprovacao-admin@example.com',
+      'Admin',
+    )
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/votes`,
+      { headers: { cookie: cookieAdmin } },
+      testEnv('votedetail-aprovacao-admin@example.com'),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<VoteDetailData>
+    expect(body.data?.total).toBe(2)
+    expect(
+      body.data?.votes.map((v) => v.movie_id).sort((a, b) => a - b),
+    ).toEqual([m1, m2].sort((a, b) => a - b))
+  })
+})

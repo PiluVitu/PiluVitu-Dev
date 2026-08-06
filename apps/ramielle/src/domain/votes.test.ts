@@ -4,6 +4,7 @@ import { nowIsoUtc } from '../lib/dates'
 import {
   closeVotingSession,
   countVoters,
+  listSessionVotesWithUsers,
   listVoteMovieIds,
   MovieNotInSessionError,
   replaceUserVotes,
@@ -356,5 +357,103 @@ describe('setSessionWinner', () => {
     const row = await sessaoRow(sessionId)
     expect(row.winner_movie_id).toBe(m1)
     expect(row.winner_method).toBe('votes')
+  })
+})
+
+// --------------------------------------------------------------------------
+// `listSessionVotesWithUsers` (Task 6, fatia2 T6) — o JOIN admin-only que
+// quebra o anonimato do voto. Porte de `Store.ListSessionVotesWithUsers`
+// (`apps/api/internal/votacao/votes.go:99-127`). Este arquivo testa só o
+// SELECT em si (I/O puro, sem guard nenhum — quem decide 403/404 é a rota);
+// os testes de guard/status HTTP ficam em `routes/votacao.test.ts`.
+// --------------------------------------------------------------------------
+
+describe('listSessionVotesWithUsers', () => {
+  it('sessão sem voto devolve array vazio', async () => {
+    const userId = await novoUsuario('sub-votedetail-vazio')
+    const sessionId = await novaSessao(userId)
+
+    await expect(listSessionVotesWithUsers(DB, sessionId)).resolves.toEqual([])
+  })
+
+  it('sessão inexistente devolve array vazio — nunca lança (mesma família de listVoteMovieIds/results, que também não checa existência)', async () => {
+    await expect(listSessionVotesWithUsers(DB, 999999)).resolves.toEqual([])
+  })
+
+  it('happy path — JOIN devolve user_id/user_name/user_email/movie_id/movie_title/category, snake_case; created_at ainda CRU (sem toIsoUtc — normalização é responsabilidade da ROTA, não deste SELECT)', async () => {
+    const userId = await novoUsuario('sub-votedetail-happy') // email/name derivados do googleSub por novoUsuario
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'terror', 'Um Filme')
+    await replaceUserVotes(DB, sessionId, userId, [m1])
+
+    const details = await listSessionVotesWithUsers(DB, sessionId)
+    expect(details).toHaveLength(1)
+    const [d] = details
+    expect(d).toMatchObject({
+      user_id: userId,
+      user_name: 'User sub-votedetail-happy',
+      user_email: 'sub-votedetail-happy@example.com',
+      movie_id: m1,
+      movie_title: 'Um Filme',
+      category: 'terror',
+    })
+    // CURRENT_TIMESTAMP do SQLite: espaço como separador, sem T nem Z — o
+    // mesmo formato cru que lib/dates.ts#toIsoUtc normaliza NA ROTA.
+    expect(d?.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('um item POR LINHA de votes — 1 pessoa aprovando 2 filmes gera 2 linhas (voto de aprovação, nunca colapsado por usuário)', async () => {
+    const userId = await novoUsuario('sub-votedetail-aprovacao')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    const m2 = await novoFilme(sessionId, 'Drama')
+    await replaceUserVotes(DB, sessionId, userId, [m1, m2])
+
+    const details = await listSessionVotesWithUsers(DB, sessionId)
+    expect(details).toHaveLength(2)
+    expect(details.map((d) => d.user_id)).toEqual([userId, userId])
+    expect(details.map((d) => d.movie_id).sort((a, b) => a - b)).toEqual(
+      [m1, m2].sort((a, b) => a - b),
+    )
+  })
+
+  it('votos de outras sessões não vazam', async () => {
+    const userId = await novoUsuario('sub-votedetail-isolado')
+    const sessionA = await novaSessao(userId)
+    const sessionB = await novaSessao(userId)
+    const mA = await novoFilme(sessionA, 'Ação')
+    const mB = await novoFilme(sessionB, 'Drama')
+    await replaceUserVotes(DB, sessionA, userId, [mA])
+    await replaceUserVotes(DB, sessionB, userId, [mB])
+
+    const details = await listSessionVotesWithUsers(DB, sessionA)
+    expect(details).toHaveLength(1)
+    expect(details[0]?.movie_id).toBe(mA)
+  })
+
+  // ⚠️ Discrimina de verdade contra "ordem de leitura/inserção": o voto mais
+  // NOVO por created_at é gravado com o id de LINHA menor (inserido
+  // primeiro), o mais ANTIGO por created_at com o id maior (inserido
+  // depois) — só passa se a query ordenar por `v.created_at ASC` de fato,
+  // igual ao Go (`votes.go:108`), não por rowid/ordem de inserção.
+  it('ordena por created_at ASC (oldest first) — porte do ORDER BY v.created_at ASC do Go', async () => {
+    const userId = await novoUsuario('sub-votedetail-ordem')
+    const sessionId = await novaSessao(userId)
+    const maisNovo = await novoFilme(sessionId, 'Ação', 'Mais novo')
+    const maisAntigo = await novoFilme(sessionId, 'Drama', 'Mais antigo')
+
+    await DB.prepare(
+      `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, ?, ?)`,
+    )
+      .bind(sessionId, userId, maisNovo, '2026-06-01 00:00:00')
+      .run()
+    await DB.prepare(
+      `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, ?, ?)`,
+    )
+      .bind(sessionId, userId, maisAntigo, '2026-01-01 00:00:00')
+      .run()
+
+    const details = await listSessionVotesWithUsers(DB, sessionId)
+    expect(details.map((d) => d.movie_id)).toEqual([maisAntigo, maisNovo])
   })
 })

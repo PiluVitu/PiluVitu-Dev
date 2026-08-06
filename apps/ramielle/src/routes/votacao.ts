@@ -31,7 +31,7 @@
  */
 import { Hono } from 'hono'
 import type { AuthBindings } from '../lib/auth'
-import { nowIsoUtc } from '../lib/dates'
+import { nowIsoUtc, toIsoUtc } from '../lib/dates'
 import {
   requireAdmin,
   requireAuth,
@@ -56,6 +56,7 @@ import {
   closeVotingSession,
   countVoters,
   createTiebreak,
+  listSessionVotesWithUsers,
   listVoteMovieIds,
   MovieNotInSessionError,
   replaceUserVotes,
@@ -282,14 +283,16 @@ votacaoRoutes.post(
 
 /**
  * Valida o `id` do path do MESMO jeito que `parseID` no Go
- * (`handlers/votacao/votes.go:299-307`, compartilhado por `GetResults` e
- * `CloseSession`): não-numérico OU `<= 0` ⇒ `null` (a rota devolve 400
- * `invalid_id`). Diferente do `ParseInt` puro de `GET /sessions/{id}` (T2),
- * que aceita `id <= 0` e cai em 404 — aqui é a MESMA validação já usada por
- * `POST /sessions/{id}/votes` (T3), replicada em vez de extraída pra não
- * acoplar rotas que o Go também mantém como handlers/checagens distintas.
+ * (`handlers/votacao/votes.go:299-307`, compartilhado por `GetResults`,
+ * `CloseSession`, `Tiebreak` e `ListSessionVotes`): não-numérico OU `<= 0` ⇒
+ * `null` (a rota devolve 400 `invalid_id`). Diferente do `ParseInt` puro de
+ * `GET /sessions/{id}` (T2), que aceita `id <= 0` e cai em 404 — aqui é a
+ * MESMA validação já usada por `POST /sessions/{id}/votes` (T3), replicada
+ * em vez de extraída pra não acoplar rotas que o Go também mantém como
+ * handlers/checagens distintas. (Renomeada de `parseParseIDStyle` na T6 —
+ * "parse" duplicado no nome original, puramente estético.)
  */
-function parseParseIDStyle(idParam: string): number | null {
+function parseIdDaRota(idParam: string): number | null {
   if (!/^[+-]?\d+$/.test(idParam)) return null
   const id = Number.parseInt(idParam, 10)
   if (id <= 0) return null
@@ -321,7 +324,7 @@ votacaoRoutes.get(
   '/sessions/:id/results',
   requireAuth<AuthBindings>(),
   async (c) => {
-    const id = parseParseIDStyle(c.req.param('id'))
+    const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
       return errJson(400, 'invalid_id', 'identificador inválido')
     }
@@ -384,7 +387,7 @@ votacaoRoutes.post(
   '/sessions/:id/close',
   requireAdmin<AuthBindings>(),
   async (c) => {
-    const id = parseParseIDStyle(c.req.param('id'))
+    const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
       return errJson(400, 'invalid_id', 'identificador inválido')
     }
@@ -470,7 +473,7 @@ votacaoRoutes.post(
   '/sessions/:id/tiebreak',
   requireAdmin<AuthBindings>(),
   async (c) => {
-    const id = parseParseIDStyle(c.req.param('id'))
+    const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
       return errJson(400, 'invalid_id', 'identificador inválido')
     }
@@ -557,6 +560,63 @@ votacaoRoutes.post(
         },
       ],
     )
+  },
+)
+
+/**
+ * `GET /votacao/sessions/{id}/votes` (admin) — porte de `ListSessionVotes`
+ * (`handlers/votacao/votes.go:272-293`), que lê de
+ * `Store.ListSessionVotesWithUsers` (`votacao/votes.go:99-127`).
+ *
+ * ⚠️ **ESTA ROTA QUEBRA O ANONIMATO DO VOTO** — é a ÚNICA da API inteira que
+ * liga uma pessoa (`user_id`/`user_name`/`user_email`) ao que ela votou. O
+ * `requireAdmin` abaixo não é um detalhe de implementação: é a ÚNICA coisa
+ * entre o e-mail de quem votou e qualquer sessão válida (nenhuma outra rota
+ * de votação devolve e-mail nenhum — nem `GET /sessions/{id}`, nem
+ * `/results`). Mesma topologia de guard das outras rotas admin (T4/T5): o
+ * middleware roda ANTES de tudo em qualquer request real — 401/403 SEMPRE
+ * primeiro, nunca alcançam o `parseIdDaRota` abaixo.
+ *
+ * Ordem das checagens:
+ *
+ *   0. (middleware) sem sessão válida  -> 401 not_authenticated
+ *   0. (middleware) não-admin          -> 403 admin_only
+ *   1. `id` não numérico OU `<= 0`     -> 400 invalid_id
+ *
+ * ⚠️ **NÃO checa se a sessão existe** — mesma família de `/results` (T4):
+ * `ListSessionVotes` do Go só faz `parseID` e vai direto pro SELECT/JOIN; um
+ * id inexistente (mas positivo) não bate nenhuma linha no JOIN e devolve
+ * **200** com `votes: []`, `total: 0`, nunca 404.
+ *
+ * `created_at` sai normalizado por `toIsoUtc` aqui na rota — o domínio
+ * (`listSessionVotesWithUsers`) devolve a coluna crua do D1, mesma divisão
+ * de responsabilidade que `sessionToWire`/`movieToWire` (`lib/wire.ts`)
+ * seguem pras outras duas leituras (ver o cabeçalho de `domain/votes.ts` pro
+ * porquê isto NÃO passa por `lib/wire.ts`: aquele arquivo é só pras duas
+ * structs PascalCase, e esta resposta é inteiramente snake_case — a MISTURA
+ * de convenções É o contrato, não uma inconsistência a "corrigir").
+ */
+votacaoRoutes.get(
+  '/sessions/:id/votes',
+  requireAdmin<AuthBindings>(),
+  async (c) => {
+    const id = parseIdDaRota(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'identificador inválido')
+    }
+
+    const details = await listSessionVotesWithUsers(c.env.DB, id)
+    const votes = details.map((d) => ({
+      user_id: d.user_id,
+      user_name: d.user_name,
+      user_email: d.user_email,
+      movie_id: d.movie_id,
+      movie_title: d.movie_title,
+      category: d.category,
+      created_at: toIsoUtc(d.created_at),
+    }))
+
+    return okJson({ votes, total: votes.length })
   },
 )
 

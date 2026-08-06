@@ -54,12 +54,34 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 app.route('/auth', authRoutes)
 
 // As rotas de votação (fatia ②) — precisam vir ACIMA do catch-all, mesma
-// regra de sempre. `GET /sessions` e `GET /sessions/{id}` são as duas
-// primeiras (Task 2); as demais entram nas próximas tasks desta fatia.
+// regra de sempre. As 7 rotas desta fatia estão TODAS montadas aqui (T2–T6,
+// ver apps/ramielle/CLAUDE.md § "Estado da fatia ② (votação)" pro histórico
+// task a task); a prova de que nenhuma caiu abaixo do catch-all é por
+// EXECUÇÃO (`index.test.ts`, describe da montagem), não por leitura deste
+// comentário.
 app.route('/votacao', votacaoRoutes)
 
 // SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
 // app.route() registrado depois desta linha fica inalcançável.
 app.all('*', () => errJson(404, 'not_found', 'rota não encontrada'))
+
+// Rede de segurança GLOBAL (T6) — pega qualquer exceção que uma rota deixe
+// escapar sem `try/catch` próprio. SEM isto, o handler default do Hono
+// responde `text/plain "Internal Server Error"`, FORA do envelope
+// {ok,data,notifications} que toda outra resposta desta API usa — o
+// `call<T>()` do apps/web levanta `invalid_envelope`, um sintoma sem
+// relação nenhuma com a causa real. O Go, pro mesmo cenário (panic/erro não
+// tratado num handler), sempre responde `internal_error` DENTRO do
+// envelope (`httpx.Error`) — este handler fecha essa paridade.
+//
+// ⚠️ NUNCA incluir `err.message`/`String(err)` na resposta — é exatamente
+// por onde um `D1_ERROR`/`SQLITE_*` cru vazaria pro cliente (mesma classe de
+// cuidado já tomada em `GET /health`, `db_down`). A mensagem é sempre o
+// texto fixo abaixo; o erro REAL só vai pro `console.error` (visível via
+// `wrangler tail`), nunca pro corpo da resposta.
+app.onError((err) => {
+  console.error('exceção não tratada chegou ao onError global', err)
+  return errJson(500, 'internal_error', 'erro interno — tente novamente')
+})
 
 export default app
