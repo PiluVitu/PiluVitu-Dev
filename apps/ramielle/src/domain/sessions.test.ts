@@ -49,6 +49,27 @@ async function novaSessao(
   return row.id
 }
 
+/**
+ * Semeia com `id` EXPLÍCITO (SQLite aceita atribuir qualquer inteiro a uma
+ * coluna `INTEGER PRIMARY KEY`, mesmo fora da sequência de autoincremento)
+ * — necessário pro teste que prova `id DESC` mesmo quando `created_at` está
+ * fora de ordem em relação ao `id` (Fix round 1, Finding 1).
+ */
+async function novaSessaoComId(row: {
+  id: number
+  title: string
+  status: 'open' | 'closed'
+  createdBy: number
+  createdAt: string
+}): Promise<void> {
+  await DB.prepare(
+    `INSERT INTO voting_sessions (id, title, status, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  )
+    .bind(row.id, row.title, row.status, row.createdBy, row.createdAt)
+    .run()
+}
+
 async function novoFilme(
   sessionId: number,
   category: string,
@@ -101,26 +122,62 @@ describe('getVotingSession', () => {
 })
 
 describe('listVotingSessions', () => {
-  it('ordena por created_at DESC', async () => {
+  it('ordena por id DESC — caso normal (inserido em ordem, id e created_at crescem juntos)', async () => {
     const userId = await novoUsuario('sub-list-ordem')
+    // Inserido na MESMA ordem cronológica do created_at — id ascende junto
+    // com a data, então id DESC e created_at DESC dão o mesmo resultado
+    // aqui (este teste sozinho NÃO discrimina entre os dois critérios; quem
+    // discrimina é o teste seguinte, de propósito).
     const antiga = await novaSessao(userId, {
       title: 'Antiga',
       createdAt: '2026-01-01 00:00:00',
     })
-    const nova = await novaSessao(userId, {
-      title: 'Nova',
-      createdAt: '2026-06-01 00:00:00',
-    })
     const media = await novaSessao(userId, {
       title: 'Média',
       createdAt: '2026-03-01 00:00:00',
+    })
+    const nova = await novaSessao(userId, {
+      title: 'Nova',
+      createdAt: '2026-06-01 00:00:00',
     })
 
     const rows = await listVotingSessions(DB, { limit: 20, offset: 0 })
     expect(rows.map((r) => r.id)).toEqual([nova, media, antiga])
   })
 
-  it('respeita limit e offset (paginação sobre a ordem created_at DESC)', async () => {
+  // ⚠️ Fix round 1 (Finding 1): este é o caso que SÓ passa com `ORDER BY id
+  // DESC` — com `created_at DESC` (a versão original, errada, desta
+  // função) o resultado seria [id 1, id 2], o INVERSO do esperado. Sem
+  // este teste, `created_at DESC` e `id DESC` são indistinguíveis (todo
+  // outro teste deste arquivo insere em ordem crescente nos dois campos ao
+  // mesmo tempo) e a suíte não prova a paridade de verdade — só que ALGUMA
+  // ordenação por data/id crescente funciona.
+  it('ordena por id DESC mesmo quando created_at diverge da ordem de id — só passa com id DESC (sessions.go:52, não usa created_at)', async () => {
+    const userId = await novoUsuario('sub-list-ordem-id-diverge')
+    // id=1 tem o created_at MAIS RECENTE; id=2 tem o MAIS ANTIGO — invertido
+    // de propósito.
+    await novaSessaoComId({
+      id: 1,
+      title: 'Id baixo, created_at recente',
+      status: 'open',
+      createdBy: userId,
+      createdAt: '2026-06-01 00:00:00',
+    })
+    await novaSessaoComId({
+      id: 2,
+      title: 'Id alto, created_at antigo',
+      status: 'open',
+      createdBy: userId,
+      createdAt: '2026-01-01 00:00:00',
+    })
+
+    const rows = await listVotingSessions(DB, { limit: 20, offset: 0 })
+    // id DESC ⇒ [2, 1]. Se a implementação voltasse a ordenar por
+    // created_at DESC, isto falharia com [1, 2].
+    expect(rows.map((r) => r.id)).toEqual([2, 1])
+  })
+
+  it('respeita limit e offset (paginação sobre a ordem id DESC)', async () => {
     const userId = await novoUsuario('sub-list-paginacao')
     const ids: number[] = []
     for (let i = 0; i < 5; i++) {
@@ -131,7 +188,7 @@ describe('listVotingSessions', () => {
         }),
       )
     }
-    // ids[4] tem o created_at mais recente (2026-01-05), ids[0] o mais antigo.
+    // ids[4] tem o maior id (inserido por último).
     const pagina1 = await listVotingSessions(DB, { limit: 2, offset: 0 })
     expect(pagina1.map((r) => r.id)).toEqual([ids[4], ids[3]])
 
@@ -142,33 +199,67 @@ describe('listVotingSessions', () => {
     expect(pagina3.map((r) => r.id)).toEqual([ids[0]])
   })
 
-  it('limit fora de (0,100] cai pro default 20 — mesmo clamp do Store Go (sessions.go:45-51)', async () => {
+  // ⚠️ Fix round 1 (Finding 2): reforçado para provar o VALOR EFETIVO do
+  // clamp, não só "devolveu resultado nenhum a mais que o esperado". Com
+  // só 3 linhas semeadas, `toHaveLength(3)` passaria pra QUALQUER limit
+  // efetivo >= 3 (20, 50, 100...) — não discrimina o clamp de verdade.
+  // Semeando 25 linhas (mais que os 20 do default), `toHaveLength(20)`
+  // só passa se o clamp caiu EXATAMENTE no default, nunca em 100 (o teto
+  // documentado) nem nas 25 linhas reais.
+  it('limit fora de (0,100] cai pro default 20 EXATO — mesmo clamp do Store Go (sessions.go:45-51)', async () => {
     const userId = await novoUsuario('sub-list-clamp-limit')
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 25; i++) {
       await novaSessao(userId, {
         title: `S${i}`,
-        createdAt: `2026-02-0${i + 1} 00:00:00`,
+        createdAt: `2026-02-${String(i + 1).padStart(2, '0')} 00:00:00`,
       })
     }
 
     await expect(
       listVotingSessions(DB, { limit: 0, offset: 0 }),
-    ).resolves.toHaveLength(3)
+    ).resolves.toHaveLength(20)
     await expect(
       listVotingSessions(DB, { limit: -5, offset: 0 }),
-    ).resolves.toHaveLength(3)
-    // 200 > 100: NÃO vira 100, vira o default 20 — comportamento medido no Go.
+    ).resolves.toHaveLength(20)
+    // 200 > 100: NÃO vira 100 (haveria 25 disponíveis pra confirmar um teto
+    // em 100 se fosse o caso), vira o default 20 — comportamento medido no
+    // Go, onde limit>100 reseta pro default em vez de ser truncado.
     await expect(
       listVotingSessions(DB, { limit: 200, offset: 0 }),
-    ).resolves.toHaveLength(3)
+    ).resolves.toHaveLength(20)
+    // Controle positivo: um limit válido dentro de (0,100] passa direto,
+    // sem cair no clamp — prova que o clamp é sobre a FAIXA, não um teto
+    // silencioso escondendo todo valor grande.
+    await expect(
+      listVotingSessions(DB, { limit: 25, offset: 0 }),
+    ).resolves.toHaveLength(25)
   })
 
-  it('offset negativo cai pra 0', async () => {
+  it('offset negativo cai pra 0 EXATO — mesmo resultado de offset:0, não um valor arbitrário', async () => {
     const userId = await novoUsuario('sub-list-clamp-offset')
-    await novaSessao(userId)
+    const ids: number[] = []
+    for (let i = 0; i < 5; i++) {
+      ids.push(
+        await novaSessao(userId, {
+          title: `O${i}`,
+          createdAt: `2026-03-0${i + 1} 00:00:00`,
+        }),
+      )
+    }
 
-    const rows = await listVotingSessions(DB, { limit: 20, offset: -10 })
-    expect(rows).toHaveLength(1)
+    const comOffsetNegativo = await listVotingSessions(DB, {
+      limit: 3,
+      offset: -10,
+    })
+    const comOffsetZero = await listVotingSessions(DB, {
+      limit: 3,
+      offset: 0,
+    })
+    // Mesma página exata — não só "algum resultado", o valor efetivo é 0.
+    expect(comOffsetNegativo.map((r) => r.id)).toEqual(
+      comOffsetZero.map((r) => r.id),
+    )
+    expect(comOffsetNegativo.map((r) => r.id)).toEqual([ids[4], ids[3], ids[2]])
   })
 })
 

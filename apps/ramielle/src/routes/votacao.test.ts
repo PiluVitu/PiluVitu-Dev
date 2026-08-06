@@ -183,8 +183,11 @@ describe('GET /votacao/sessions', () => {
     expect(body.notifications[0]?.code).toBe('not_authenticated')
   })
 
-  test('happy path — 200, ordenada por created_at DESC, shape PascalCase via sessionToWire', async () => {
+  test('happy path — 200, ordenada por id DESC, shape PascalCase via sessionToWire', async () => {
     const criador = await novoUsuario('sub-list-criador')
+    // Inserido na mesma ordem cronológica do created_at — id e created_at
+    // crescem juntos, então este teste sozinho não discrimina id DESC de
+    // created_at DESC (quem discrimina é o teste seguinte, de propósito).
     const antiga = await novaSessao(criador, {
       title: 'Antiga',
       createdAt: '2026-01-01 00:00:00',
@@ -225,6 +228,42 @@ describe('GET /votacao/sessions', () => {
     ])
   })
 
+  // ⚠️ Fix round 1 (Finding 1): prova PONTA A PONTA (via HTTP, não só no
+  // domínio) que a ordenação é por `id DESC` — o teste acima não
+  // discrimina entre `id DESC` e `created_at DESC` porque as duas colunas
+  // crescem juntas ali. Aqui `created_at` é gravado EXPLICITAMENTE fora da
+  // ordem do `id` (id=1 com data mais recente, id=2 com data mais antiga)
+  // — o mesmo cenário que a fatia ④ (importação do histórico da Go) vai
+  // produzir de verdade. Só passa se a rota usar `id DESC`.
+  test('ordena por id DESC mesmo quando created_at diverge da ordem de id (paridade com sessions.go:52)', async () => {
+    const criador = await novoUsuario('sub-list-ordem-diverge')
+    await novaSessaoComId({
+      id: 1,
+      title: 'Id baixo, created_at recente',
+      status: 'open',
+      createdBy: criador,
+      createdAt: '2026-06-01 00:00:00',
+    })
+    await novaSessaoComId({
+      id: 2,
+      title: 'Id alto, created_at antigo',
+      status: 'open',
+      createdBy: criador,
+      createdAt: '2026-01-01 00:00:00',
+    })
+
+    const cookie = await cookieDeSessaoValido('diverge@example.com', 'Diverge')
+    const res = await app.request(
+      '/votacao/sessions',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ sessions: { ID: number }[] }>
+    // id DESC ⇒ [2, 1]. Com created_at DESC (o bug corrigido) seria [1, 2].
+    expect(body.data?.sessions.map((s) => s.ID)).toEqual([2, 1])
+  })
+
   test('limit/offset funcionam (paginação)', async () => {
     const criador = await novoUsuario('sub-list-pag-criador')
     const ids: number[] = []
@@ -236,7 +275,7 @@ describe('GET /votacao/sessions', () => {
         }),
       )
     }
-    // ids[4] é o mais recente.
+    // ids[4] tem o maior id (inserido por último).
     const cookie = await cookieDeSessaoValido('pag@example.com', 'Paginador')
 
     const res = await app.request(

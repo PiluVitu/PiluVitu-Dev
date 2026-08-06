@@ -49,9 +49,29 @@ export type ListVotingSessionsOptions = {
 /**
  * Mesmo clamp do `Store.ListVotingSessions` do Go (`sessions.go:45-51`):
  * `limit` fora de `(0, 100]` cai pro default 20 (não é TETO em 100 — reseta
- * pro default inteiro); `offset` negativo cai pra 0. A validação de query
- * MALFORMADA (`?limit=abc` → default 20) é da ROTA (`atoiOr`, em
+ * pro default inteiro, então `?limit=100000` também vira 20, não 100);
+ * `offset` negativo cai pra 0. Estas duas guardas moram no DOMÍNIO — igual
+ * ao Go, onde elas vivem no Store, não no handler — porque valem
+ * independentemente de quem chame esta função, não só da rota HTTP. A
+ * validação de query MALFORMADA (`?limit=abc` → default 20, "não é número")
+ * é uma camada ANTERIOR e separada, da ROTA (`atoiOr`, em
  * `routes/votacao.ts`) — esta função já recebe números, só clampa faixa.
+ *
+ * ⚠️ **Ordena por `id DESC` — NUNCA `created_at`.** Medido contra
+ * `sessions.go:52`: `ORDER BY id DESC LIMIT ? OFFSET ?`, sem nenhum
+ * critério por `created_at` e sem tiebreaker (o Go não usa o índice
+ * `idx_voting_sessions_created` pra esta query — ele existe no schema, mas
+ * fica sem uso aqui). Nas condições normais (linhas inseridas em ordem,
+ * `id` autoincrement e `created_at` crescendo junto) as duas ordenações
+ * produzem o MESMO resultado — mas divergem de verdade quando `created_at`
+ * é gravado EXPLÍCITO fora da ordem de inserção, como a fatia ④ vai fazer
+ * ao importar o histórico do SQLite da Go. Fix round 1 (Task 2): a
+ * primeira versão desta função ordenava por `created_at DESC, id DESC`,
+ * seguindo uma instrução do brief que citava o índice acima como
+ * justificativa — a citação estava errada nos dois sentidos (o Go não usa
+ * esse índice, e paridade é o critério, não a existência de um índice).
+ * `listVotingSessions` ordena por `id DESC` para valer também depois da
+ * importação, não só hoje.
  *
  * `LIMIT`/`OFFSET` sempre presentes na query: no D1 "rows read" conta linha
  * ESCANEADA, e uma listagem sem teto queima cota.
@@ -67,7 +87,7 @@ export async function listVotingSessions(
     .prepare(
       `SELECT ${VOTING_SESSION_COLUMNS}
          FROM voting_sessions
-        ORDER BY created_at DESC, id DESC
+        ORDER BY id DESC
         LIMIT ? OFFSET ?`,
     )
     .bind(clampedLimit, clampedOffset)
