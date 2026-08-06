@@ -16,14 +16,31 @@
  * MISTURA de convenções entre as duas rotas É o contrato — ver
  * `routes/admin.ts` pro raciocínio completo.
  */
+import { toIsoUtc } from '../lib/dates'
 import type { BackupRow } from '../lib/wire'
 
-/** Shape final de `GET /admin/users` — já sem `google_sub`, já com `is_admin` como boolean. */
+/**
+ * Shape final de `GET /admin/users` — já sem `google_sub`, já com `is_admin`
+ * como boolean.
+ *
+ * ⚠️ `picture: string` (NUNCA `string | null`) — o Go declara
+ * `votacao.User.Picture` como `string` (nunca ponteiro); o scan usa
+ * `sql.NullString.String`, que vira `""` quando a coluna é `NULL`. Mesma
+ * convenção que `routes/auth.ts#GET /auth/me` já segue
+ * (`picture: user.picture ?? ''`) — os dois campos vêm do MESMO
+ * `User.Picture` do Go, não são independentes.
+ *
+ * `created_at` é RFC3339 (`toIsoUtc`) — o Go serializa `User.CreatedAt`
+ * (`time.Time`) via `json.NewEncoder` (`internal/httpx/respond.go:57`), que
+ * produz RFC3339 (`"2026-05-19T12:00:00Z"`), nunca o formato cru do D1
+ * (`"2026-05-19 12:00:00"`, sem `T`/`Z` — rejeitado como `Invalid Date` no
+ * Safari, mesma classe de bug já medida 3× neste projeto).
+ */
 export type AdminUser = {
   id: number
   name: string
   email: string
-  picture: string | null
+  picture: string
   is_admin: boolean
   created_at: string
 }
@@ -59,9 +76,14 @@ export async function listUsers(db: D1Database): Promise<AdminUser[]> {
     id: row.id,
     name: row.name,
     email: row.email,
-    picture: row.picture,
+    // `?? ''` — coluna NULL vira string vazia, nunca `null` (ver o
+    // comentário de `AdminUser.picture` acima).
+    picture: row.picture ?? '',
     is_admin: row.is_admin === 1,
-    created_at: row.created_at,
+    // toIsoUtc — nunca o formato cru "YYYY-MM-DD HH:MM:SS" do
+    // CURRENT_TIMESTAMP do SQLite (ver o comentário de `AdminUser.created_at`
+    // acima).
+    created_at: toIsoUtc(row.created_at),
   }))
 }
 

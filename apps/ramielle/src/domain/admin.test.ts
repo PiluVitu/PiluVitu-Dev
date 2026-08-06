@@ -102,6 +102,22 @@ describe('listUsers', () => {
     expect(serializado).not.toContain('sub-secreto-nao-deveria-vazar')
   })
 
+  // ⚠️ C1 (fix round 1 da revisão): esta era a lacuna. `created_at` saía
+  // CRU do D1 ("2026-05-19 12:00:00", sem T/Z) — o Go serializa `time.Time`
+  // via `json.NewEncoder` (`internal/httpx/respond.go:57`), que produz
+  // RFC3339 ("2026-05-19T12:00:00Z"). `new Date('2026-05-19 12:00:00')` é
+  // aceito no V8 e REJEITADO no Safari (Invalid Date) — mesma classe de bug
+  // já medida 3× neste projeto (`apps/ramielle/CLAUDE.md`).
+  it('created_at é RFC3339 (toIsoUtc) — nunca o formato cru do D1, paridade com json.Marshal(time.Time) do Go', async () => {
+    await novoUsuarioComId({
+      id: 1,
+      googleSub: 'sub-data',
+      createdAt: '2026-05-19 12:00:00',
+    })
+    const [user] = await listUsers(DB)
+    expect(user?.created_at).toBe('2026-05-19T12:00:00Z')
+  })
+
   it('is_admin sai como boolean — não o INTEGER 0|1 do banco', async () => {
     await novoUsuarioComId({
       id: 1,
@@ -121,7 +137,13 @@ describe('listUsers', () => {
     expect(users.find((u) => u.id === 2)?.is_admin).toBe(false)
   })
 
-  it('picture nulo permanece null — nunca vira string vazia aqui (diferente de GET /auth/me)', async () => {
+  // ⚠️ Fix round 1 da revisão: `picture` nulo tinha ficado `null` aqui, mas
+  // o Go declara `votacao.User.Picture` como `string` (nunca ponteiro) —
+  // `sql.NullString.String` vira `""` quando a coluna é `NULL`. MESMO campo
+  // que `GET /auth/me` já normaliza (`routes/auth.ts`, `picture: user.
+  // picture ?? ''`) — não são campos independentes, os dois vêm do mesmo
+  // `User.Picture` do Go.
+  it('picture nulo vira string vazia — MESMA normalização de GET /auth/me, nunca null', async () => {
     await novoUsuarioComId({
       id: 1,
       googleSub: 'sub-sem-foto',
@@ -129,7 +151,7 @@ describe('listUsers', () => {
       createdAt: '2026-05-19 12:00:00',
     })
     const [user] = await listUsers(DB)
-    expect(user?.picture).toBeNull()
+    expect(user?.picture).toBe('')
   })
 
   it('ORDER BY created_at DESC — caso normal (id e created_at crescem juntos)', async () => {
@@ -234,12 +256,15 @@ describe('listBackups', () => {
 
   // ⚠️ Porta o CLAMP do Go (`backups.go:51`), não só o "sempre 50" — o
   // handler admin sempre passa 50, mas a função em si tem que se comportar
-  // como a Go pra qualquer valor.
-  it('clamp: limit <= 0, ou > 200, cai pro default 50 — um limit VÁLIDO não é clampado', async () => {
-    for (let i = 0; i < 52; i++) {
+  // como a Go pra qualquer valor. Minor da revisão (fix round 1): a
+  // fronteira do clamp (`> 200`) não estava fixada — `200` é o maior valor
+  // que NÃO clampa, `201` é o menor que clampa; sem os dois, um off-by-one
+  // em `> 200` (ex.: trocado por `>= 200`) passaria batido.
+  it('clamp: limit <= 0, ou > 200, cai pro default 50 — a fronteira exata (200 passa, 201 clampa) e um limit VÁLIDO qualquer não são afetados', async () => {
+    for (let i = 0; i < 205; i++) {
       await novoBackupComId({
         id: i + 1,
-        createdAt: `2026-05-19 12:00:${String(i).padStart(2, '0')}`,
+        createdAt: `2026-05-19 ${String(12 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}:00`,
       })
     }
 
@@ -247,5 +272,9 @@ describe('listBackups', () => {
     expect(await listBackups(DB, -5)).toHaveLength(50)
     expect(await listBackups(DB, 500)).toHaveLength(50)
     expect(await listBackups(DB, 10)).toHaveLength(10)
+    // Fronteira exata do clamp: 200 é válido (NÃO clampa — devolve as 200
+    // linhas pedidas), 201 já cai no default 50.
+    expect(await listBackups(DB, 200)).toHaveLength(200)
+    expect(await listBackups(DB, 201)).toHaveLength(50)
   })
 })

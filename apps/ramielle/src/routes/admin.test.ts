@@ -132,13 +132,14 @@ describe('GET /admin/users', () => {
     expect(body.notifications[0]?.code).toBe('admin_only')
   })
 
-  test('happy path — 200, snake_case exato, is_admin boolean, google_sub NUNCA sai', async () => {
+  test('happy path — 200, snake_case exato, is_admin boolean, picture "" (nunca null), created_at RFC3339, google_sub NUNCA sai', async () => {
     await novoUsuarioComId({
       id: 1,
       googleSub: 'sub-secreto-nao-deveria-vazar',
       email: 'a@example.com',
       name: 'Fulano',
       isAdmin: true,
+      picture: null,
       createdAt: '2026-05-19 12:00:00',
     })
 
@@ -162,9 +163,14 @@ describe('GET /admin/users', () => {
       id: 1,
       name: 'Fulano',
       email: 'a@example.com',
-      picture: null,
+      // ⚠️ C1/I1 (fix round 1 da revisão): `picture` nulo sai "" (nunca
+      // `null` — mesma normalização de GET /auth/me, MESMO `User.Picture`
+      // do Go) e `created_at` sai RFC3339 (`toIsoUtc`, paridade com
+      // `json.NewEncoder` serializando `time.Time` no Go), NUNCA o formato
+      // cru "2026-05-19 12:00:00" do CURRENT_TIMESTAMP do SQLite.
+      picture: '',
       is_admin: true,
-      created_at: '2026-05-19 12:00:00',
+      created_at: '2026-05-19T12:00:00Z',
     })
 
     // Asserção NEGATIVA — google_sub nunca sai, nem a chave nem o valor, em
