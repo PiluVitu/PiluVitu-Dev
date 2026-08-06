@@ -23,7 +23,19 @@ Construído em tasks sequenciais, plano em `.superpowers/sdd/2026-07-28-ramielle
 
 **Nada em produção mudou nesta fatia.** `apps/web` continua falando com a API Go em `promeia.piluvitu.com.br` (ver `apps/api/CLAUDE.md`). O ramielle sobe, responde `/health` contra o D1, autentica com Google aceitando qualquer conta, distingue admin por `ADMIN_EMAILS` a cada request, e responde CORS com credenciais para `piluvitu.com.br` — tudo isso hoje só é alcançável localmente, até o dono completar as pendências no fim deste arquivo.
 
-**Próximo (fatia ②):** as 10 rotas de votação, com paridade provada lado a lado contra o Go antes de qualquer cutover.
+## Estado da fatia ② (votação) — em andamento
+
+Plano em `.superpowers/sdd/2026-07-29-ramielle-fatia2-votacao/` (relatórios de task são gitignored — os achados que precisavam sobreviver estão aqui). Paridade contra o Go é o critério de aceitação de TODA rota desta fatia — `apps/web` em produção ainda fala com a API Go, nada muda até o cutover (fatia ④).
+
+- **T1** — camada de fio (`src/lib/wire.ts`): `sessionToWire`/`movieToWire` (D1 snake_case → PascalCase, vetor dourado provado contra fixture do Go).
+- **T2** — `GET /votacao/sessions` e `GET /votacao/sessions/{id}` (`src/routes/votacao.ts`, `src/domain/sessions.ts`).
+- **T3** — `POST /votacao/sessions/{id}/votes` (`src/domain/votes.ts#replaceUserVotes`, rota em `src/routes/votacao.ts`) — voto de aprovação: `{movie_ids: number[]}` SUBSTITUI o conjunto inteiro do usuário na sessão (nunca merge), array vazio limpa (operação válida). Três achados que uma port "limpa" erraria:
+  - ⚠️ **A ORDEM real entre `not_authenticated` (401) e `invalid_id` (400) não se lê só em `CreateVote`** (`apps/api/internal/handlers/votacao/votes.go`) — o handler tem um `user == nil` redundante DEPOIS do `parseID`, mas `router.go` monta a rota atrás de `r.With(auth.RequireAuth(...))`, MIDDLEWARE que roda ANTES do corpo do handler em qualquer request real. A ordem OBSERVÁVEL via HTTP é 401 primeiro, sempre — o check interno é código morto pela rota montada, só alcançável chamando o handler direto (é assim que `votes_test.go` o exercita, por isso aquele teste não prova a ordem real). `requireAuth<AuthBindings>()` aqui é montado como middleware Hono, mesma topologia, mesma convenção já usada por `GET /sessions/{id}` (T2).
+  - ⚠️ **`'success'` voltou a `NotificationKind`** (`src/lib/envelope.ts`) — T1/T2 tinham omitido de propósito ("especulativo"), mas o Go usa `httpx.DataMsg(..., httpx.Success("Voto registrado."))` aqui, e `apps/web/lib/votacao/api-client.ts` já tipava `ApiNotification.type` incluindo `'success'` há tempo. `okJson` ganhou um terceiro parâmetro opcional (`notifications`, default `[]`) — todo chamador existente continua idêntico. É paridade de CONTRATO, não uma tela nova: `call<T>()` do `apps/web` descarta `notifications` no caminho feliz.
+  - ⚠️ **Teto de 100 bound params por statement no D1** — `votes` tem 3 colunas bound (`session_id`, `user_id`, `movie_id`) ⇒ 33 linhas/statement. Uma sessão real nunca chega perto disso, mas o chunking está escrito e testado com um lote de 70 ids (`domain/votes.test.ts`) — mesmo padrão de `apps/financas/src/domain/installments.ts`.
+  - Dedupe de `movie_ids` ANTES de gravar (evita 500 por `UNIQUE(session_id,user_id,movie_id)` — divergência INTENCIONAL do Go, que não dedupa e quebraria nesse cenário) e validação de pertencimento via `SELECT id FROM session_movies WHERE session_id=?` ANTES do `db.batch()` (nunca deixa a FK estourar; rejeição não é destrutiva — votos existentes sobrevivem a um replace rejeitado).
+
+**Próximo (fatia ②):** T4 (`GET /results`, `POST /close`), T5 (`POST /tiebreak`), T6 (`GET /sessions/{id}/votes` admin + montagem final + docs).
 
 ## Votação LIVRE × finanças fail-closed — desenhos OPOSTOS do MESMO Better Auth
 
@@ -117,7 +129,7 @@ pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations list piluvitu-ramie
 pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations list piluvitu-ramielle --remote
 ```
 
-**Contagem de testes: 91** (`vitest run`, 8 arquivos) — 5 `index.test.ts` + 10 `schema.test.ts` (M4: +1 índice) + 7 `domain/users.test.ts` + 26 `lib/auth.test.ts` (+3, I2) + 20 `lib/cors.test.ts` (+1, I3) + 8 `lib/envelope.test.ts` + 10 `lib/session.test.ts` (+1, I1) + 5 `routes/auth.test.ts`, confirmado via `pnpm --filter @piluvitu/ramielle exec vitest run --reporter=json` (campo `numTotalTests`), não só o resumo condensado do terminal. Recontar antes de citar este número num relatório futuro.
+**Contagem de testes: 157** (`vitest run`, 13 arquivos), confirmado via `pnpm --filter @piluvitu/ramielle exec vitest run --reporter=json` (campo `numTotalTests`), não só o resumo condensado do terminal. Recontar antes de citar este número num relatório futuro — a fatia ② (T4-T6) ainda vai crescer este total. Composição na T3 (fatia ②): os 133 da fatia ① + T1/T2 da fatia ②, mais 24 novos desta task — 8 `domain/votes.test.ts`, 1 em `lib/envelope.test.ts`, 15 em `routes/votacao.test.ts`.
 
 ## Pendências do dono — nada disto foi feito nesta fatia
 

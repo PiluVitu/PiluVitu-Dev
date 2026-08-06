@@ -31,6 +31,18 @@ describe('okJson', () => {
     const texto = await okJson({ id: 'abc' }).text()
     expect(texto).toContain('"notifications":[]')
   })
+
+  test('terceiro parâmetro opcional carrega notification de sucesso (paridade com httpx.DataMsg + httpx.Success do Go)', async () => {
+    const res = okJson({ voted_movie_ids: [1, 2] }, 200, [
+      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+    ])
+    const body = (await res.json()) as Envelope<{ voted_movie_ids: number[] }>
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual({ voted_movie_ids: [1, 2] })
+    expect(body.notifications).toEqual([
+      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+    ])
+  })
 })
 
 describe('errJson', () => {
