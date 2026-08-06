@@ -45,7 +45,7 @@ function testEnv(adminEmails: string): AuthBindings {
 type CorpoErro = {
   ok: boolean
   data: null
-  notifications: Array<{ code: string; type: string }>
+  notifications: Array<{ code: string; type: string; message: string }>
 }
 
 /**
@@ -89,6 +89,11 @@ describe('requireAuth — sem cookie', () => {
     const body = (await res.json()) as CorpoErro
     expect(body.ok).toBe(false)
     expect(body.notifications[0].code).toBe('not_authenticated')
+    // I2 (revisão final): mensagem EXATA do Go (`internal/auth/
+    // middleware.go:33`, `handlers.go:100`) — antes saía "requisição sem
+    // sessão válida", jargão de dev que `apps/web` jogaria direto num
+    // toast pro usuário final depois do cutover (fatia ④).
+    expect(body.notifications[0].message).toBe('Você precisa estar logado.')
   })
 })
 
@@ -209,6 +214,12 @@ describe('requireAdmin — 403 para conta fora de ADMIN_EMAILS, 200 para conta d
     expect(res.status).toBe(403)
     const body = (await res.json()) as CorpoErro
     expect(body.notifications[0].code).toBe('admin_only')
+    // I2 (revisão final): mensagem EXATA do Go
+    // (`internal/auth/middleware.go:59`) — antes saía "apenas
+    // administradores podem acessar este recurso".
+    expect(body.notifications[0].message).toBe(
+      'Acesso restrito a administradores.',
+    )
   })
 
   test('conta em ADMIN_EMAILS recebe 200', async () => {

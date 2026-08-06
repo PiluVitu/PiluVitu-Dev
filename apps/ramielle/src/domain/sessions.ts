@@ -1,16 +1,29 @@
 /**
- * Domínio de LEITURA da votação — porta as funções só-SELECT do Store Go
- * (`apps/api/internal/votacao/sessions.go` + `movies.go` + o SELECT de
- * `votes.go#GetUserVotes`). Devolve as ROWS como o D1 as devolve
+ * Domínio de `voting_sessions` + `session_movies` — porta as funções do
+ * Store Go que leem/escrevem essas duas tabelas (`apps/api/internal/
+ * votacao/sessions.go` + `movies.go`). Devolve as ROWS como o D1 as devolve
  * (snake_case, `VotingSessionRow`/`SessionMovieRow` de `lib/wire.ts`) — a
  * conversão pra `WireSession`/`WireMovie` (PascalCase) é responsabilidade
  * das rotas (`sessionToWire`/`movieToWire`), não deste arquivo.
  *
- * `getUserVotedMovieIds` pertence conceitualmente ao domínio de votos
- * (`domain/votes.ts`, que a Task 3 desta fatia cria pro lado de ESCRITA —
- * `replaceUserVotes` etc.), mas `GET /sessions/{id}` já precisa da LEITURA
- * pra montar `has_voted`/`voted_movie_ids`. Fica aqui por enquanto; quem
- * mexer na Task 3 decide se consolida em `domain/votes.ts`.
+ * ⚠️ **I3 (revisão final da fatia): o corte entre este arquivo e
+ * `domain/votes.ts` é por TABELA/AGREGADO, não por leitura/escrita.** A
+ * regra antiga ("sessions.ts é só leitura, votes.ts é escrita") foi
+ * documentada aqui numa versão anterior e já estava quebrada nas duas
+ * pontas antes desta revisão: `getUserVotedMovieIds` LIA `votes` mas
+ * morava aqui (moveu pra `domain/votes.ts`); `closeVotingSession`/
+ * `setSessionWinner` ESCREVEM `voting_sessions` mas moravam em
+ * `domain/votes.ts` (vieram pra cá). Sob a regra antiga, a fatia ③ (`POST
+ * /votacao/sessions` — escrita em `voting_sessions` + `session_movies`,
+ * ver `apps/ramielle/CLAUDE.md`) não teria lugar certo: por
+ * leitura/escrita cairia em `votes.ts` (absurdo, não toca a tabela
+ * `votes`); pela documentação "só-leitura" deste arquivo, também não
+ * caberia aqui. Cortando por TABELA, a resposta é óbvia: `POST /sessions`
+ * escreve `voting_sessions`/`session_movies`, logo é deste arquivo — dono
+ * das DUAS tabelas, leitura E escrita. `domain/votes.ts` é o espelho: dono
+ * de `votes`/`tiebreaks`, leitura E escrita. Movimentação PURA — nenhuma
+ * assinatura ou corpo de função mudou, só o arquivo; os testes só trocaram
+ * de `import` (ver `sessions.test.ts`/`votes.test.ts`).
  */
 import type { SessionMovieRow, VotingSessionRow } from '../lib/wire'
 
@@ -116,26 +129,96 @@ export async function getSessionMovies(
   return results
 }
 
+// ---------------------------------------------------------------------------
+// Escrita em `voting_sessions` — `closeVotingSession`/`setSessionWinner`.
+// Movidas de `domain/votes.ts` na I3 (revisão final): cortar por
+// leitura/escrita as classificava erradamente lá (elas ESCREVEM
+// `voting_sessions`, a tabela que este arquivo é dono); cortando por
+// TABELA/AGREGADO — a regra vigente agora, ver o cabeçalho do arquivo —
+// pertencem aqui. Nenhuma mudança de assinatura ou corpo, só de arquivo.
+// ---------------------------------------------------------------------------
+
 /**
- * Ids dos filmes que o usuário aprovou nesta sessão, ordenados asc — mesma
- * query de `Store.GetUserVotes` (`votes.go:129-149`). Devolve `[]` (nunca
- * `null`) quando o usuário não votou.
+ * Fecha a sessão — porte de `Store.CloseVotingSession`
+ * (`apps/api/internal/votacao/sessions.go:74-103`). `WHERE id = ? AND
+ * status = 'open'` é a MESMA guarda do Go: devolve `false` (nenhuma linha
+ * afetada) tanto pra id INEXISTENTE quanto pra sessão JÁ FECHADA — a rota
+ * (`POST /close`) não distingue os dois casos, os dois viram 404
+ * `session_not_open`. Ambiguidade INTENCIONAL herdada do Go, não
+ * "melhorada" aqui com uma query extra de existência antes do UPDATE.
  *
- * A rota (`GET /sessions/{id}`) engole qualquer erro desta leitura — mesma
- * semântica do `if ids, err := ...; err == nil { votedMovieIDs = ids }` do
- * Go (`handlers/votacao/sessions.go:184-189`): a sessão é devolvida mesmo
- * que este SELECT falhe, com `voted_movie_ids` ficando `[]`.
+ * `winnerMovieId === null` faz o UPDATE OMITIR a coluna `winner_movie_id`
+ * inteira (fica com o valor que já tinha — NULL numa sessão aberta) — a
+ * mesma bifurcação de dois SQLs do Go (`if winnerMovieID != nil {...} else
+ * {...}`), não um `SET winner_movie_id = NULL` explícito (mesmo efeito,
+ * texto de SQL diferente do que o Go de fato roda).
+ *
+ * `closedAtIso` é o relógio INJETADO pela rota (`nowIsoUtc()` de
+ * `lib/dates.ts`) — nunca `new Date()` chamado aqui dentro, pra manter este
+ * domínio testável sem mockar relógio global. Grava já em ISO (o Go usa
+ * `CURRENT_TIMESTAMP`; a leitura de qualquer linha do D1 passa por
+ * `toIsoUtc` de qualquer forma, mas gravar normalizado evita depender
+ * dessa conversão neste valor específico).
  */
-export async function getUserVotedMovieIds(
+export async function closeVotingSession(
   db: D1Database,
   sessionId: number,
-  userId: number,
-): Promise<number[]> {
-  const { results } = await db
+  winnerMovieId: number | null,
+  closedAtIso: string,
+): Promise<boolean> {
+  const stmt =
+    winnerMovieId !== null
+      ? db
+          .prepare(
+            `UPDATE voting_sessions
+                SET status = 'closed', closed_at = ?, winner_movie_id = ?
+              WHERE id = ? AND status = 'open'`,
+          )
+          .bind(closedAtIso, winnerMovieId, sessionId)
+      : db
+          .prepare(
+            `UPDATE voting_sessions
+                SET status = 'closed', closed_at = ?
+              WHERE id = ? AND status = 'open'`,
+          )
+          .bind(closedAtIso, sessionId)
+
+  const result = await stmt.run()
+  return (result.meta.changes ?? 0) > 0
+}
+
+/**
+ * Grava o vencedor + o método de desempate — porte de
+ * `Store.SetSessionWinner` (`apps/api/internal/votacao/tiebreaks.go:47-57`).
+ * Chamada num PASSO SEPARADO de `closeVotingSession`, espelhando o Go
+ * (`CloseSession` primeiro fecha com `winner_movie_id` já embutido no mesmo
+ * UPDATE, DEPOIS chama `SetSessionWinner` de novo só pra gravar
+ * `winner_method` — redundante pro `winner_movie_id`, que já foi gravado,
+ * mas é o que o Go faz, e paridade OBSERVÁVEL é o critério desta fatia, não
+ * o SQL mais enxuto). `method` só chega `'votes'` na T4 — `'roulette'` é a
+ * T5 (`POST /tiebreak`).
+ *
+ * Não recebe `sessionId` como garantia de que a sessão está fechada — quem
+ * chama (`POST /close`) só invoca isto DEPOIS de `closeVotingSession`
+ * devolver `true`, mesma ordem do Go.
+ *
+ * ⚠️ **I1 (revisão final): o CALLER (`routes/votacao.ts`) engole qualquer
+ * erro desta chamada** — mesma paridade do Go (`votes.go:99-103`, só
+ * loga). Esta função em si continua propagando (não tem `try/catch`
+ * próprio); é responsabilidade de quem chama decidir engolir ou não —
+ * mesma divisão já usada no resto do domínio (quem decide 404/403/500 é
+ * sempre a rota).
+ */
+export async function setSessionWinner(
+  db: D1Database,
+  sessionId: number,
+  winnerMovieId: number,
+  method: 'votes' | 'roulette',
+): Promise<void> {
+  await db
     .prepare(
-      `SELECT movie_id FROM votes WHERE session_id = ? AND user_id = ? ORDER BY movie_id ASC`,
+      `UPDATE voting_sessions SET winner_movie_id = ?, winner_method = ? WHERE id = ?`,
     )
-    .bind(sessionId, userId)
-    .all<{ movie_id: number }>()
-  return results.map((row) => row.movie_id)
+    .bind(winnerMovieId, method, sessionId)
+    .run()
 }

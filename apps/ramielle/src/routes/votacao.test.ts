@@ -314,6 +314,41 @@ describe('GET /votacao/sessions', () => {
     expect(body.ok).toBe(true)
     expect(body.data?.sessions).toHaveLength(3)
   })
+
+  // ⚠️ M3 (revisão final): um `offset` de 20 dígitos — fora da faixa do
+  // int64 — tem que cair no DEFAULT, exatamente como uma string
+  // não-numérica, não virar um `number` JS impreciso usado como offset
+  // real. `atoiOr` do Go usa `strconv.Atoi` (`sessions.go:199-208`), que
+  // em plataformas 64-bit falha com `ErrRange` pro mesmo cenário — a MESMA
+  // falha de parse de uma string "xyz". Sem o teto de faixa em
+  // `parseInt64`, este offset passava no regex `\d+`, virava um número
+  // impreciso, e produzia uma página (quase certamente) vazia em vez do
+  // default.
+  test('offset fora da faixa do int64 cai no default (0), não num offset impreciso (M3)', async () => {
+    const criador = await novoUsuario('sub-list-offset-gigante-criador')
+    for (let i = 0; i < 3; i++) {
+      await novaSessao(criador, {
+        title: `G${i}`,
+        createdAt: `2026-04-0${i + 1} 00:00:00`,
+      })
+    }
+    const cookie = await cookieDeSessaoValido(
+      'offsetgigante@example.com',
+      'Offset Gigante',
+    )
+
+    const res = await app.request(
+      '/votacao/sessions?offset=99999999999999999999',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<SessionsListData>
+    expect(body.ok).toBe(true)
+    // offset:0 (default) devolve a página inteira das 3 sessões — um
+    // offset gigante usado cru devolveria uma página vazia.
+    expect(body.data?.sessions).toHaveLength(3)
+  })
 })
 
 describe('GET /votacao/sessions/:id', () => {
@@ -331,6 +366,29 @@ describe('GET /votacao/sessions/:id', () => {
     )
     const res = await app.request(
       '/votacao/sessions/abc',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
+  // ⚠️ M3 (revisão final): esta rota aceita `id <= 0` (ver o teste "id=0"
+  // abaixo), mas AINDA recusa um id fora da faixa do int64 — `strconv.
+  // ParseInt(idStr, 10, 64)` do Go falha com `ErrRange` pra um id de 20
+  // dígitos, a MESMA falha de parse de uma string não-numérica, não um
+  // `number` válido só "grande". Sem o teto de faixa em `parseInt64`, isto
+  // passava no regex `\d+`, virava um `number` JS impreciso, e caía em 404
+  // `session_not_found` (não bate nenhuma linha) em vez do 400 `invalid_id`
+  // que o Go devolve de verdade.
+  test('id fora da faixa do int64 (20 dígitos) responde 400 invalid_id, NUNCA 404 (M3 — strconv.ParseInt falha com ErrRange)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'idgigante@example.com',
+      'Id Gigante',
+    )
+    const res = await app.request(
+      '/votacao/sessions/99999999999999999999',
       { headers: { cookie } },
       testEnv(),
     )
@@ -521,6 +579,59 @@ describe('GET /votacao/sessions/:id', () => {
     expect(body.data?.voted_movie_ids).toEqual([])
   })
 
+  // ⚠️ M1 (revisão final): o Go TAMBÉM engole este erro — `movies, _ :=
+  // h.deps.Store.GetSessionMovies(...)` (sessions.go:182) ignora o `error`
+  // e segue com `movies` no zero value de slice Go (`nil`), que
+  // `json.Marshal` serializa como `null`. Antes desta task, `routes/
+  // votacao.ts` não tinha `try/catch` nenhum em volta deste SELECT — uma
+  // falha aqui devolvia 500 cru em vez do 200 com `movies:null` que o Go
+  // devolve de verdade. Shim que quebra SÓ a query de filmes ("FROM
+  // session_movies") — todo o resto (getSession, votos) passa direto pro
+  // D1 real.
+  test('erro ao ler os filmes é ENGOLIDO — a sessão ainda é devolvida com movies:null (M1 — paridade com o Go)', async () => {
+    const criador = await novoUsuario('sub-m1-criador')
+    const sessionId = await novaSessao(criador, {
+      title: 'Sessão resiliente M1',
+    })
+
+    const cookie = await cookieDeSessaoValido('m1-movies@example.com', 'M1')
+
+    const dbComMoviesQuebrado = {
+      prepare: (sql: string) => {
+        if (sql.includes('FROM session_movies')) {
+          throw new Error('D1_ERROR: no such table: session_movies (simulado)')
+        }
+        return DB.prepare(sql)
+      },
+      batch: DB.batch.bind(DB),
+      exec: DB.exec.bind(DB),
+      withSession: DB.withSession.bind(DB),
+      dump: DB.dump.bind(DB),
+    } as unknown as D1Database
+
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}`,
+      { headers: { cookie } },
+      { ...testEnv(), DB: dbComMoviesQuebrado },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      session: { Title: string }
+      movies: unknown
+      has_voted: boolean
+      voted_movie_ids: number[]
+    }>
+    expect(body.ok).toBe(true)
+    expect(body.data?.session.Title).toBe('Sessão resiliente M1')
+    // NULL, não [] — o zero value de slice do Go serializa `null`; diferente
+    // de `voted_movie_ids` (o Go inicializa `[]int64{}` ANTES do try, ver o
+    // teste "erro ao ler os votos" acima — os dois campos engolem o erro,
+    // mas com resultados DIFERENTES no JSON, de propósito).
+    expect(body.data?.movies).toBeNull()
+    expect(body.data?.has_voted).toBe(false)
+    expect(body.data?.voted_movie_ids).toEqual([])
+  })
+
   test('movies vazio quando a sessão não tem filme nenhum — array [], nunca ausente', async () => {
     const criador = await novoUsuario('sub-sem-filme-criador')
     const sessionId = await novaSessao(criador)
@@ -622,6 +733,25 @@ describe('POST /votacao/sessions/:id/votes', () => {
     expect(body.notifications[0]?.code).toBe('invalid_id')
   })
 
+  // ⚠️ M3 (revisão final): prova o mesmo teto de faixa em `parseIdDaRota`
+  // (usada por esta rota desde o fix do M2), não só em `parseInt64`
+  // isolado — um id de 20 dígitos tem que cair em 400 `invalid_id`, a MESMA
+  // falha de parse de `strconv.ParseInt` com `ErrRange` no Go.
+  test('id fora da faixa do int64 (20 dígitos) responde 400 invalid_id (M3 — mesmo teto em parseIdDaRota)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'voto-idgigante@example.com',
+      'Id Gigante',
+    )
+    const res = await postVoto(
+      '/votacao/sessions/99999999999999999999/votes',
+      cookie,
+      { movie_ids: [] },
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_id')
+  })
+
   test('sessão inexistente responde 404 session_not_found', async () => {
     const cookie = await cookieDeSessaoValido(
       'voto-inexistente@example.com',
@@ -717,7 +847,19 @@ describe('POST /votacao/sessions/:id/votes', () => {
     expect(body.notifications[0]?.code).toBe('invalid_json')
   })
 
-  test('movie_ids AUSENTE do corpo é tratado como conjunto vazio — não é invalid_json (paridade com o zero value nil de []int64 no Go)', async () => {
+  // ⚠️ Comentário corrigido (revisão final): o nome antigo deste teste
+  // afirmava "paridade com o zero value nil de []int64 no Go", mas isso não
+  // é exato. O Go decodifica `{}` com `body.MovieIDs` no zero value `nil`
+  // e ECOA esse mesmo valor na resposta (`httpx.DataMsg(...,
+  // map[string]any{"voted_movie_ids": body.MovieIDs}, ...)`), que
+  // `json.Marshal` serializa como `"voted_movie_ids":null`. Aqui
+  // `parseMovieIds` trata AUSENTE como `[]`, e `replaceUserVotes` devolve o
+  // array deduplicado (vazio) que gravou — a resposta sai
+  // `"voted_movie_ids":[]`, NUNCA `null`. Divergência INTENCIONAL e
+  // inócua: `apps/web` sempre manda `{movie_ids:[...]}` explícito, nunca
+  // um corpo `{}` sem a chave. O que de fato tem paridade é só o outro
+  // metade — corpo AUSENTE/`{}` não é erro (`invalid_json`), igual ao Go.
+  test('movie_ids AUSENTE do corpo é tratado como conjunto vazio — não é invalid_json (o Go também aceita, mas ECOA null; aqui devolvemos [] — divergência intencional e inócua)', async () => {
     const criador = await novoUsuario('sub-voto-ausente-criador')
     const sessionId = await novaSessao(criador)
     const cookie = await cookieDeSessaoValido(
@@ -762,11 +904,13 @@ describe('POST /votacao/sessions/:id/votes', () => {
     const body = (await res.json()) as Envelope<{ voted_movie_ids: number[] }>
     expect(body.ok).toBe(true)
     expect(body.data?.voted_movie_ids).toEqual([m1, m2])
-    // Paridade de CONTRATO com httpx.DataMsg(..., httpx.Success(...)) — não
-    // é comportamento de tela, `apps/web` descarta notifications no
-    // caminho feliz (ver lib/envelope.ts).
+    // Paridade de CONTRATO byte a byte com httpx.DataMsg(...,
+    // httpx.Success("Voto registrado.")) — mensagem idêntica, SEM `code`
+    // (I2, revisão final: antes saía `code:'vote_registered'` inventado e
+    // a mensagem em minúscula). Não é comportamento de tela, `apps/web`
+    // descarta notifications no caminho feliz (ver lib/envelope.ts).
     expect(body.notifications).toEqual([
-      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+      { type: 'success', message: 'Voto registrado.' },
     ])
 
     const { results } = await DB.prepare(
@@ -1160,6 +1304,57 @@ describe('POST /votacao/sessions/:id/close', () => {
     expect(row.closed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
     expect(row.winner_movie_id).toBe(m1)
     expect(row.winner_method).toBe('votes')
+  })
+
+  // ⚠️ I1 (revisão final): o Go ENGOLE o erro do SEGUNDO UPDATE
+  // (`SetSessionWinner`, `votes.go:99-103` — `if err != nil { log }`,
+  // sem `return`) e responde 200 mesmo assim; só `winner_method` fica sem
+  // gravar. Shim que quebra SÓ esse UPDATE — o texto "winner_method = ?"
+  // só aparece no statement de `setSessionWinner` (nunca no primeiro
+  // UPDATE de `closeVotingSession`, nem em nenhum SELECT) — todo o resto
+  // (login, requireAdmin, listVoteMovieIds, o PRIMEIRO UPDATE) passa
+  // direto pro D1 real. Sem o `try/catch` em `routes/votacao.ts`, esta
+  // chamada devolveria 500 em vez de 200 — e um retry subsequente bateria
+  // 404 `session_not_open` (a sessão já fechou no primeiro UPDATE),
+  // fazendo parecer que o close falhou quando não falhou.
+  test('setSessionWinner falhando NÃO impede o 200 nem o winner_movie_id correto (I1 — o Go também engole este erro)', async () => {
+    const criador = await novoUsuario('sub-close-i1-criador')
+    const sessionId = await novaSessao(criador)
+    const m1 = await novoFilmeAuto(sessionId, 'Ação')
+    const votante = await novoUsuario('sub-close-i1-votante')
+    await votar(sessionId, votante, m1)
+
+    const cookie = await cookieDeSessaoValido('close-i1@example.com', 'I1')
+
+    const dbComSetWinnerQuebrado = {
+      prepare: (sql: string) => {
+        if (sql.includes('winner_method = ?')) {
+          throw new Error('D1_ERROR: disk I/O error (simulado)')
+        }
+        return DB.prepare(sql)
+      },
+      batch: DB.batch.bind(DB),
+      exec: DB.exec.bind(DB),
+      withSession: DB.withSession.bind(DB),
+      dump: DB.dump.bind(DB),
+    } as unknown as D1Database
+
+    const res = await app.request(
+      `/votacao/sessions/${sessionId}/close`,
+      { method: 'POST', headers: { cookie } },
+      { ...testEnv('close-i1@example.com'), DB: dbComSetWinnerQuebrado },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<CloseData>
+    expect(body.data?.winner_movie_id).toBe(m1)
+
+    // A sessão FECHOU e winner_movie_id foi gravado pelo PRIMEIRO UPDATE
+    // (closeVotingSession, que já embute winner_movie_id) — só
+    // winner_method fica NULL, porque foi o SEGUNDO UPDATE que quebrou.
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.winner_movie_id).toBe(m1)
+    expect(row.winner_method).toBeNull()
   })
 
   // ⚠️ O detalhe de paridade #5 do brief: empate deixa winner_movie_id NULL
@@ -1586,15 +1781,29 @@ describe('POST /votacao/sessions/:id/tiebreak', () => {
       expect(body.data?.tied_movie_ids).toEqual(
         [...cenario.tiedIds].sort((a, b) => a - b),
       )
-      // Paridade de CONTRATO com httpx.DataMsg(..., httpx.Success(...)) do
-      // Go — mesmo padrão de POST /votes (T3).
+      // Paridade de CONTRATO byte a byte com httpx.DataMsg(...,
+      // httpx.Success("Desempate concluído.")) do Go — mensagem idêntica,
+      // SEM `code` (I2, revisão final: antes saía `code:'tiebreak_done'`
+      // inventado e a mensagem em minúscula). Mesmo padrão de POST /votes
+      // (T3).
       expect(body.notifications).toEqual([
-        {
-          type: 'success',
-          code: 'tiebreak_done',
-          message: 'desempate concluído',
-        },
+        { type: 'success', message: 'Desempate concluído.' },
       ])
+
+      // ⚠️ M5 (revisão final): endurece o mock — afirma que o spy
+      // interceptou EXATAMENTE UMA chamada de 32 bytes (a que a rota faz
+      // pra gerar o `serverNonce`). Antes o teste só checava o RESULTADO
+      // final (`server_nonce`/`winner_movie_id` batem com o vetor
+      // dourado) — uma chamada EXTRA de 32 bytes vinda de algum refactor
+      // futuro (ex.: gerar o nonce duas vezes, ou uma segunda leitura de
+      // entropia em outro ponto do request) passaria batida, porque
+      // `array.set(nonceEsperado)` é idempotente pra chamadas repetidas
+      // com o mesmo array. Uma chamada a mais agora é falha EXPLÍCITA, não
+      // risco silencioso.
+      const chamadasDe32Bytes = spy.mock.calls.filter(
+        ([array]) => array instanceof Uint8Array && array.length === 32,
+      )
+      expect(chamadasDe32Bytes).toHaveLength(1)
 
       // Sessão gravada com o vencedor + winner_method='roulette'.
       const row = await sessaoRow(cenario.sessionId)
@@ -1815,5 +2024,76 @@ describe('GET /votacao/sessions/:id/votes', () => {
     expect(
       body.data?.votes.map((v) => v.movie_id).sort((a, b) => a - b),
     ).toEqual([m1, m2].sort((a, b) => a - b))
+  })
+})
+
+// --------------------------------------------------------------------------
+// I2 (revisão final) — paridade das MENSAGENS com o Go, medida de verdade,
+// não só o `code`. Todo `errJson`/`okJson` desta fatia foi escrito com uma
+// string PRÓPRIA (minúscula, sem ponto final) — 10 de 10 mensagens de erro
+// divergiam do Go byte a byte, e as duas notifications de sucesso tinham um
+// `code` INVENTADO que o Go nunca emite (`httpx.Success` não preenche
+// `Code`, `json:"code,omitempty"` remove a chave inteira). `apps/web/lib/
+// votacao/api-client.ts:44` usa `primary.message` como `.message` do
+// `ApiError`, e os componentes de UI fazem `toast.error(errorMessage(err))`
+// — depois do cutover (fatia ④), É esse texto que o usuário vê. Este bloco
+// fecha 3 dos 5 exemplos medidos no achado (`invalid_id`, `session_not_
+// found`, `session_closed`); os outros 2 (`not_authenticated`, `admin_only`)
+// são testados na fonte, `lib/session.test.ts` (guards compartilhados por
+// toda rota protegida, não só votação) — e as duas notifications de
+// SUCESSO (`Voto registrado.`/`Desempate concluído.`, sem `code`) já são
+// verificadas byte a byte nos testes de happy path de `POST /votes` e
+// `POST /tiebreak` acima.
+// --------------------------------------------------------------------------
+
+describe('I2 — mensagens de erro EXATAS, iguais ao Go (não só o code)', () => {
+  test('invalid_id — "Identificador inválido."', async () => {
+    const cookie = await cookieDeSessaoValido('i2-invalidid@example.com', 'I2')
+    const res = await app.request(
+      '/votacao/sessions/abc',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.message).toBe('Identificador inválido.')
+  })
+
+  test('session_not_found — "Sessão não encontrada."', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'i2-sessionnotfound@example.com',
+      'I2',
+    )
+    const res = await app.request(
+      '/votacao/sessions/999999',
+      { headers: { cookie } },
+      testEnv(),
+    )
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.message).toBe('Sessão não encontrada.')
+  })
+
+  test('session_closed — "Sessão encerrada — votação fechada."', async () => {
+    const criador = await novoUsuario('sub-i2-closed-criador')
+    await novaSessaoComId({
+      id: 1,
+      title: 'Fechada',
+      status: 'closed',
+      createdBy: criador,
+      createdAt: '2026-01-01 00:00:00',
+    })
+    const cookie = await cookieDeSessaoValido(
+      'i2-sessionclosed@example.com',
+      'I2',
+    )
+    const res = await postVoto('/votacao/sessions/1/votes', cookie, {
+      movie_ids: [],
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.message).toBe(
+      'Sessão encerrada — votação fechada.',
+    )
   })
 })

@@ -42,10 +42,16 @@ app.get('/health', async (c) => {
 })
 
 // Só GET e POST — os únicos métodos que o Better Auth usa. Precisa vir
-// ACIMA do catch-all: no Hono a ordem de registro decide. `/api/auth/*` não
-// passa pelo envelope {ok,data,notifications} — as respostas são as do
-// próprio Better Auth (getAuth(env).handler(...) devolvido cru), mesma
-// convenção já documentada no finanças.
+// ACIMA do catch-all: no Hono a ordem de registro decide. As respostas
+// NORMAIS deste mount (sucesso ou erro tratado pelo próprio Better Auth)
+// não passam pelo envelope {ok,data,notifications} — são as do handler do
+// Better Auth devolvidas cruas (`getAuth(env).handler(...)`), mesma
+// convenção já documentada no finanças. ⚠️ M6 (revisão final): isto NÃO
+// vale mais pra uma exceção que ESCAPE do handler do Better Auth (ex.: erro
+// de D1 que a lib não capture) — com o `app.onError` global registrado
+// abaixo, essa exceção agora É capturada e sai DENTRO do envelope, igual a
+// qualquer outra rota. O CLAUDE.md antes afirmava "este mount não passa
+// pelo envelope" sem essa ressalva — imprecisão corrigida lá também.
 app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 
 // `/auth/me` e `/auth/logout` — paridade de path com o Go (`apps/api`),
@@ -61,10 +67,6 @@ app.route('/auth', authRoutes)
 // comentário.
 app.route('/votacao', votacaoRoutes)
 
-// SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
-// app.route() registrado depois desta linha fica inalcançável.
-app.all('*', () => errJson(404, 'not_found', 'rota não encontrada'))
-
 // Rede de segurança GLOBAL (T6) — pega qualquer exceção que uma rota deixe
 // escapar sem `try/catch` próprio. SEM isto, o handler default do Hono
 // responde `text/plain "Internal Server Error"`, FORA do envelope
@@ -79,9 +81,22 @@ app.all('*', () => errJson(404, 'not_found', 'rota não encontrada'))
 // cuidado já tomada em `GET /health`, `db_down`). A mensagem é sempre o
 // texto fixo abaixo; o erro REAL só vai pro `console.error` (visível via
 // `wrangler tail`), nunca pro corpo da resposta.
+//
+// ⚠️ M6 (revisão final): registrado AQUI, ANTES do catch-all — não porque a
+// ORDEM de registro importe pro Hono (`app.onError` não é uma rota, é um
+// handler único no app inteiro; funciona igual não importa onde é chamado,
+// inclusive DEPOIS do catch-all, como estava antes). Movido só porque
+// "SEMPRE POR ÚLTIMO", no comentário do catch-all logo abaixo, é sobre
+// `app.route()`/rotas — deixar `onError` fisicamente depois daquele
+// comentário convidava a leitura errada de que ele também precisava vir
+// por último.
 app.onError((err) => {
   console.error('exceção não tratada chegou ao onError global', err)
   return errJson(500, 'internal_error', 'erro interno — tente novamente')
 })
+
+// SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
+// app.route() registrado depois desta linha fica inalcançável.
+app.all('*', () => errJson(404, 'not_found', 'rota não encontrada'))
 
 export default app

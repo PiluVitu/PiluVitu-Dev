@@ -1,14 +1,12 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { nowIsoUtc } from '../lib/dates'
 import {
-  closeVotingSession,
   countVoters,
+  getUserVotedMovieIds,
   listSessionVotesWithUsers,
   listVoteMovieIds,
   MovieNotInSessionError,
   replaceUserVotes,
-  setSessionWinner,
 } from './votes'
 
 const DB = env.DB
@@ -63,6 +61,18 @@ async function votosDoUsuario(
     .bind(sessionId, userId)
     .all<{ movie_id: number }>()
   return results.map((r) => r.movie_id)
+}
+
+async function votar(
+  sessionId: number,
+  userId: number,
+  movieId: number,
+): Promise<void> {
+  await DB.prepare(
+    `INSERT INTO votes (session_id, user_id, movie_id) VALUES (?, ?, ?)`,
+  )
+    .bind(sessionId, userId, movieId)
+    .run()
 }
 
 describe('replaceUserVotes', () => {
@@ -194,28 +204,56 @@ describe('replaceUserVotes', () => {
 })
 
 // --------------------------------------------------------------------------
-// Apuração (Task 4, fatia2 T4) — listVoteMovieIds/countVoters (leitura pra
-// GET /results) e closeVotingSession/setSessionWinner (escrita pra
-// POST /close).
+// getUserVotedMovieIds — movida de `domain/sessions.test.ts` na I3 (revisão
+// final): a função LÊ `votes`, tabela da qual este arquivo é dono desde o
+// corte por TABELA/AGREGADO (ver o cabeçalho de `domain/votes.ts`). Mesmo
+// corpo de teste, só o `import` mudou.
 // --------------------------------------------------------------------------
 
-type SessaoRow = {
-  status: 'open' | 'closed'
-  closed_at: string | null
-  winner_movie_id: number | null
-  winner_method: string | null
-}
+describe('getUserVotedMovieIds', () => {
+  it('usuário sem voto devolve array vazio, não null', async () => {
+    const userId = await novoUsuario('sub-votes-nenhum')
+    const sessionId = await novaSessao(userId)
 
-async function sessaoRow(sessionId: number): Promise<SessaoRow> {
-  const row = await DB.prepare(
-    `SELECT status, closed_at, winner_movie_id, winner_method
-       FROM voting_sessions WHERE id = ?`,
-  )
-    .bind(sessionId)
-    .first<SessaoRow>()
-  if (row === null) throw new Error('sessão não encontrada')
-  return row
-}
+    await expect(getUserVotedMovieIds(DB, sessionId, userId)).resolves.toEqual(
+      [],
+    )
+  })
+
+  it('devolve os movie_ids ordenados asc, mesmo votados fora de ordem', async () => {
+    const userId = await novoUsuario('sub-votes-alguns')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'acao', 'A')
+    const m2 = await novoFilme(sessionId, 'comedia', 'B')
+    // Vota em m2 primeiro, m1 depois — a ordem de inserção não deve importar.
+    await votar(sessionId, userId, m2)
+    await votar(sessionId, userId, m1)
+
+    await expect(getUserVotedMovieIds(DB, sessionId, userId)).resolves.toEqual([
+      m1,
+      m2,
+    ])
+  })
+
+  it('votos de outro usuário na mesma sessão não vazam', async () => {
+    const userId = await novoUsuario('sub-votes-isolado-a')
+    const outroUserId = await novoUsuario('sub-votes-isolado-b')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'acao', 'A')
+    await votar(sessionId, outroUserId, m1)
+
+    await expect(getUserVotedMovieIds(DB, sessionId, userId)).resolves.toEqual(
+      [],
+    )
+  })
+})
+
+// --------------------------------------------------------------------------
+// Apuração (Task 4, fatia2 T4) — listVoteMovieIds/countVoters, leitura pra
+// GET /results. A escrita de POST /close (closeVotingSession/
+// setSessionWinner) mora em `domain/sessions.test.ts` desde a I3 (revisão
+// final) — escreve `voting_sessions`, não `votes`.
+// --------------------------------------------------------------------------
 
 describe('listVoteMovieIds', () => {
   it('sessão sem voto devolve array vazio', async () => {
@@ -293,70 +331,6 @@ describe('countVoters', () => {
     await replaceUserVotes(DB, sessionId, u2, [m1])
 
     await expect(countVoters(DB, sessionId)).resolves.toBe(2)
-  })
-})
-
-describe('closeVotingSession', () => {
-  it('happy path com vencedor — status=closed, closed_at e winner_movie_id gravados', async () => {
-    const userId = await novoUsuario('sub-close-vencedor')
-    const sessionId = await novaSessao(userId)
-    const m1 = await novoFilme(sessionId, 'Ação')
-    const agora = nowIsoUtc()
-
-    await expect(closeVotingSession(DB, sessionId, m1, agora)).resolves.toBe(
-      true,
-    )
-
-    const row = await sessaoRow(sessionId)
-    expect(row.status).toBe('closed')
-    expect(row.closed_at).toBe(agora)
-    expect(row.winner_movie_id).toBe(m1)
-  })
-
-  it('empate (winnerMovieId=null) — fecha, closed_at gravado, winner_movie_id continua NULL', async () => {
-    const userId = await novoUsuario('sub-close-empate')
-    const sessionId = await novaSessao(userId)
-    const agora = nowIsoUtc()
-
-    await expect(closeVotingSession(DB, sessionId, null, agora)).resolves.toBe(
-      true,
-    )
-
-    const row = await sessaoRow(sessionId)
-    expect(row.status).toBe('closed')
-    expect(row.closed_at).toBe(agora)
-    expect(row.winner_movie_id).toBeNull()
-  })
-
-  it("sessão JÁ FECHADA devolve false — WHERE status='open' não bate nenhuma linha", async () => {
-    const userId = await novoUsuario('sub-close-jafechada')
-    const sessionId = await novaSessao(userId)
-    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
-
-    await expect(
-      closeVotingSession(DB, sessionId, null, nowIsoUtc()),
-    ).resolves.toBe(false)
-  })
-
-  it('sessão INEXISTENTE devolve false — mesma resposta de "já fechada" (ambiguidade intencional, herdada do Go)', async () => {
-    await expect(
-      closeVotingSession(DB, 999999, null, nowIsoUtc()),
-    ).resolves.toBe(false)
-  })
-})
-
-describe('setSessionWinner', () => {
-  it('grava winner_movie_id e winner_method na sessão', async () => {
-    const userId = await novoUsuario('sub-winner-grava')
-    const sessionId = await novaSessao(userId)
-    const m1 = await novoFilme(sessionId, 'Ação')
-    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
-
-    await setSessionWinner(DB, sessionId, m1, 'votes')
-
-    const row = await sessaoRow(sessionId)
-    expect(row.winner_movie_id).toBe(m1)
-    expect(row.winner_method).toBe('votes')
   })
 })
 

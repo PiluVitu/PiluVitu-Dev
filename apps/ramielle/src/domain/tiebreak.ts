@@ -1,17 +1,27 @@
 /**
- * Desempate provably-fair — porte 1:1 das duas funções PURAS de
+ * Desempate auditável/recomputável — porte 1:1 das duas funções PURAS de
  * `apps/api/internal/votacao/tiebreak.go` (`TiebreakSeed`,
  * `PickTiebreakIndex`). Sem D1, sem HTTP: só bytes in, bytes/índice out —
  * mesma razão de isolamento de `domain/tally.ts` (é o tipo de lógica que dá
  * pra testar contra um vetor dourado sem nenhum binding no meio).
  *
- * O resultado tem que ser **auditável**: qualquer pessoa com
- * `clientEntropy`, `serverNonce` (os dois saem em hex na resposta/registro
- * de auditoria), `sessionId` e os `tiedIds` tem que conseguir recomputar o
- * MESMO vencedor. Isso significa bit a bit igual ao Go, não "um sorteio
- * justo qualquer" — daí o vetor dourado em
- * `routes/__fixtures__/go-parity.json#tiebreak`, gerado rodando o Go de
- * verdade (ver `domain/tiebreak.test.ts` e o report da Task 5).
+ * ⚠️ **M8 (revisão final): "provably-fair" foi trocado por "auditável/
+ * recomputável" em toda a fatia** (aqui, `domain/votes.ts`,
+ * `routes/votacao.ts`, `apps/ramielle/CLAUDE.md`) — termo herdado do Go
+ * mas afirmado aqui como se fosse um fato MEDIDO, quando não é: o
+ * `server_nonce` sai público na própria resposta, o que garante que
+ * qualquer pessoa consegue RECOMPUTAR o sorteio a partir do que a API
+ * devolveu (é o que os parágrafos abaixo e os testes provam de verdade).
+ * "Provably-fair" no sentido técnico do termo (não-manipulável nem PELO
+ * SERVIDOR) exigiria um COMMIT prévio do nonce antes de ver a entropia do
+ * cliente — não é o que este desenho faz, nem o que o Go faz. O resultado
+ * tem que ser **auditável**: qualquer pessoa com `clientEntropy`,
+ * `serverNonce` (os dois saem em hex na resposta/registro de auditoria),
+ * `sessionId` e os `tiedIds` tem que conseguir recomputar o MESMO vencedor.
+ * Isso significa bit a bit igual ao Go, não "um sorteio justo qualquer" —
+ * daí o vetor dourado em `routes/__fixtures__/go-parity.json#tiebreak`,
+ * gerado rodando o Go de verdade (ver `domain/tiebreak.test.ts` e o report
+ * da Task 5).
  */
 
 /**

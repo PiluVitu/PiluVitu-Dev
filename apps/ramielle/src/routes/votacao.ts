@@ -46,21 +46,27 @@ import {
   pickTiebreakIndex,
   tiebreakSeed,
 } from '../domain/tiebreak'
-import {
-  getSessionMovies,
-  getUserVotedMovieIds,
-  getVotingSession,
-  listVotingSessions,
-} from '../domain/sessions'
+// I3 (revisão final): o corte entre `domain/sessions.ts` e `domain/votes.ts`
+// é por TABELA/AGREGADO, não mais por leitura/escrita — ver o cabeçalho dos
+// dois arquivos. `sessions.ts` é dono de `voting_sessions`/`session_movies`
+// (leitura E escrita, daí `closeVotingSession`/`setSessionWinner` virem de
+// lá agora); `votes.ts` é dono de `votes`/`tiebreaks` (idem, daí
+// `getUserVotedMovieIds` vir de lá).
 import {
   closeVotingSession,
+  getSessionMovies,
+  getVotingSession,
+  listVotingSessions,
+  setSessionWinner,
+} from '../domain/sessions'
+import {
   countVoters,
   createTiebreak,
+  getUserVotedMovieIds,
   listSessionVotesWithUsers,
   listVoteMovieIds,
   MovieNotInSessionError,
   replaceUserVotes,
-  setSessionWinner,
 } from '../domain/votes'
 
 type Env = {
@@ -70,18 +76,47 @@ type Env = {
 
 const votacaoRoutes = new Hono<Env>()
 
+const INT64_MIN = -9223372036854775808n
+const INT64_MAX = 9223372036854775807n
+
+/**
+ * Mimica `strconv.ParseInt(s, 10, 64)` do Go: a string tem que ser um
+ * inteiro completo E caber em int64 — fora da faixa é `ErrRange`, a MESMA
+ * falha de parse que uma string não-numérica, não um número válido só
+ * "grande". `BigInt` entra só pra checar a faixa (não dá pra confiar em
+ * `Number.parseInt` pra isso — perde precisão silenciosamente acima de
+ * 2^53, muito antes do teto do int64); o valor devolvido continua `number`
+ * (mesma limitação de representação que o resto do domínio já tem acima de
+ * 2^53 — D1/JS não representam int64 fielmente, mas MEDIR a faixa com
+ * `BigInt` não exige guardar o valor como `BigInt`).
+ *
+ * ⚠️ **M3 (revisão final)**: sem este teto de faixa, um id de 20 dígitos
+ * (`GET /votacao/sessions/99999999999999999999`) passava no regex `\d+`,
+ * virava um `number` JS impreciso, e caía em 404 `session_not_found` (ou no
+ * default de `atoiOr`) em vez do 400 `invalid_id` que o Go devolve de
+ * verdade (`ParseInt`/`Atoi` retornam `ErrRange` — a MESMA falha de
+ * `strconv.Atoi` usada por `atoiOr` no Go, `sessions.go:199-208`, que roda
+ * em plataformas 64-bit com o mesmo teto).
+ */
+function parseInt64(value: string): number | null {
+  if (!/^[+-]?\d+$/.test(value)) return null
+  const big = BigInt(value)
+  if (big < INT64_MIN || big > INT64_MAX) return null
+  return Number(big)
+}
+
 /**
  * Mesmo `atoiOr` do Go (`sessions.go:199-208`): string vazia/ausente ⇒
- * `fallback`; string que não é um inteiro completo (`strconv.Atoi` exige a
- * string INTEIRA numérica, não só o prefixo) ⇒ `fallback`, nunca 400. Um
+ * `fallback`; string que não é um inteiro completo, OU fora da faixa do
+ * int64 (M3 — ver `parseInt64`), ⇒ `fallback`, nunca 400. Um
  * `parseInt`/`Number.parseInt` puro seria "mais correto" (aceitaria
  * `"20abc"` como 20 via parsing parcial) e estaria ERRADO como paridade —
  * por isso o regex exige a string inteira.
  */
 function atoiOr(value: string | undefined, fallback: number): number {
   if (value === undefined || value === '') return fallback
-  if (!/^[+-]?\d+$/.test(value)) return fallback
-  return Number.parseInt(value, 10)
+  const parsed = parseInt64(value)
+  return parsed === null ? fallback : parsed
 }
 
 /**
@@ -105,21 +140,41 @@ votacaoRoutes.get('/sessions', requireAuth<AuthBindings>(), async (c) => {
  * `id=0` ou negativo passa pela validação de formato e cai no 404
  * `session_not_found` quando `getVotingSession` não acha a linha — nunca em
  * 400 `invalid_id`. Diferença deliberada da rota de listagem/demais rotas,
- * mantida por ser comportamento OBSERVÁVEL do Go.
+ * mantida por ser comportamento OBSERVÁVEL do Go. `id` fora da faixa do
+ * int64 (M3) AINDA cai em 400 `invalid_id` — `strconv.ParseInt` falha com
+ * `ErrRange` nesse caso, igual a uma string não-numérica; `parseInt64`
+ * cobre os dois.
  */
 votacaoRoutes.get('/sessions/:id', requireAuth<AuthBindings>(), async (c) => {
   const idParam = c.req.param('id')
-  if (!/^[+-]?\d+$/.test(idParam)) {
-    return errJson(400, 'invalid_id', 'identificador inválido')
+  const id = parseInt64(idParam)
+  if (id === null) {
+    return errJson(400, 'invalid_id', 'Identificador inválido.')
   }
-  const id = Number.parseInt(idParam, 10)
 
   const session = await getVotingSession(c.env.DB, id)
   if (session === null) {
-    return errJson(404, 'session_not_found', 'sessão não encontrada')
+    return errJson(404, 'session_not_found', 'Sessão não encontrada.')
   }
 
-  const movieRows = await getSessionMovies(c.env.DB, session.id)
+  // M1 (revisão final): o Go TAMBÉM engole este erro — `movies, _ :=
+  // h.deps.Store.GetSessionMovies(...)` (sessions.go:182) ignora o `error`
+  // e segue com `movies` no zero value de slice Go (`nil`), que
+  // `json.Marshal` serializa como `null`. Sem este catch, uma falha deste
+  // SELECT devolveria 500 aqui contra 200 com `"movies":null` no Go —
+  // mesma assimetria que o achado original (getUserVotedMovieIds, T2) já
+  // tinha corrigido, só que faltando aqui.
+  let movies: ReturnType<typeof movieToWire>[] | null
+  try {
+    const movieRows = await getSessionMovies(c.env.DB, session.id)
+    movies = movieRows.map(movieToWire)
+  } catch (err) {
+    console.error(
+      'GET /votacao/sessions/:id — getSessionMovies falhou, devolvendo movies:null (paridade com o Go)',
+      err,
+    )
+    movies = null
+  }
 
   // `votedMovieIds := []int64{}` no Go: inicializado vazio de propósito, e
   // o erro de leitura dos votos é ENGOLIDO (`if ids, err := ...; err ==
@@ -142,7 +197,7 @@ votacaoRoutes.get('/sessions/:id', requireAuth<AuthBindings>(), async (c) => {
 
   return okJson({
     session: sessionToWire(session),
-    movies: movieRows.map(movieToWire),
+    movies,
     has_voted: votedMovieIds.length > 0,
     voted_movie_ids: votedMovieIds,
   })
@@ -212,30 +267,35 @@ function parseMovieIds(raw: unknown): number[] | null {
  * <= 0` É recusado aqui, porque o Go usa `parseID` (compartilhado por
  * `CreateVote` e outras rotas de escrita) — não o `ParseInt` isolado de
  * `GetSession`. São handlers diferentes no Go, com validações diferentes;
- * não uniformizar.
+ * não uniformizar. ⚠️ **M2 (revisão final): a validação em si usa
+ * `parseIdDaRota` (abaixo)**, a MESMA função que `GET /results`/`POST
+ * /close`/`POST /tiebreak`/`GET /votes` já usam — antes duplicava a
+ * checagem inline com o argumento de "handlers distintos no Go", mas essa
+ * distinção só é REAL pra `GET /sessions/{id}` (semântica diferente: aceita
+ * `id <= 0`). Para `POST /votes` a semântica é IDÊNTICA à das outras rotas
+ * de escrita (todas usam `parseID` no Go) — duplicar aqui só arriscava as
+ * duas cópias divergirem sem motivo (foi exatamente o que aconteceu com o
+ * teto de faixa do int64, M3: só a cópia dentro de `parseIdDaRota` o
+ * ganhava até este fix).
  */
 votacaoRoutes.post(
   '/sessions/:id/votes',
   requireAuth<AuthBindings>(),
   async (c) => {
-    const idParam = c.req.param('id')
-    if (!/^[+-]?\d+$/.test(idParam)) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
-    }
-    const id = Number.parseInt(idParam, 10)
-    if (id <= 0) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
+    const id = parseIdDaRota(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
     }
 
     const session = await getVotingSession(c.env.DB, id)
     if (session === null) {
-      return errJson(404, 'session_not_found', 'sessão não encontrada')
+      return errJson(404, 'session_not_found', 'Sessão não encontrada.')
     }
     if (session.status === 'closed') {
       return errJson(
         409,
         'session_closed',
-        'sessão encerrada — votação fechada',
+        'Sessão encerrada — votação fechada.',
       )
     }
 
@@ -243,11 +303,11 @@ votacaoRoutes.post(
     try {
       rawBody = await c.req.json()
     } catch {
-      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
     }
     const movieIds = parseMovieIds(rawBody)
     if (movieIds === null) {
-      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
     }
 
     const votacaoUser = c.get('votacaoUser')
@@ -264,38 +324,45 @@ votacaoRoutes.post(
         return errJson(
           400,
           'movie_not_in_session',
-          'um dos filmes não pertence a esta sessão',
+          'Um dos filmes não pertence a esta sessão.',
         )
       }
       throw err
     }
 
     // `httpx.DataMsg(..., httpx.Success("Voto registrado."))` no Go —
-    // paridade de CONTRATO, não de tela: `apps/web` (`call<T>()`) descarta
-    // `notifications` inteiro no caminho feliz, então isto nunca vira um
-    // toast por conta própria. Ver `lib/envelope.ts` pro raciocínio de
-    // reativar `'success'` em `NotificationKind`.
+    // paridade de CONTRATO byte a byte agora (I2, revisão final): mensagem
+    // idêntica, sem `code` (a tag do Go é `json:"code,omitempty"`, e
+    // `httpx.Success` nunca preenche `Code` — um `code:'vote_registered'`
+    // inventado saía antes daqui). Não é tela nova: `apps/web`
+    // (`call<T>()`) descarta `notifications` inteiro no caminho feliz,
+    // então isto nunca vira um toast por conta própria.
     return okJson({ voted_movie_ids: votedMovieIds }, 200, [
-      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+      { type: 'success', message: 'Voto registrado.' },
     ])
   },
 )
 
 /**
  * Valida o `id` do path do MESMO jeito que `parseID` no Go
- * (`handlers/votacao/votes.go:299-307`, compartilhado por `GetResults`,
- * `CloseSession`, `Tiebreak` e `ListSessionVotes`): não-numérico OU `<= 0` ⇒
+ * (`handlers/votacao/votes.go:299-307`, compartilhado por `CreateVote`,
+ * `GetResults`, `CloseSession`, `Tiebreak` e `ListSessionVotes`):
+ * não-numérico, `<= 0`, OU fora da faixa do int64 (M3, via `parseInt64`) ⇒
  * `null` (a rota devolve 400 `invalid_id`). Diferente do `ParseInt` puro de
  * `GET /sessions/{id}` (T2), que aceita `id <= 0` e cai em 404 — aqui é a
- * MESMA validação já usada por `POST /sessions/{id}/votes` (T3), replicada
- * em vez de extraída pra não acoplar rotas que o Go também mantém como
- * handlers/checagens distintas. (Renomeada de `parseParseIDStyle` na T6 —
- * "parse" duplicado no nome original, puramente estético.)
+ * validação das rotas de ESCRITA/admin. (Renomeada de `parseParseIDStyle`
+ * na T6 — "parse" duplicado no nome original, puramente estético.)
+ *
+ * ⚠️ **M2 (revisão final): `POST /sessions/{id}/votes` também usa esta
+ * função** — antes duplicava a mesma checagem inline com o argumento de
+ * "handlers distintos no Go". Essa distinção só é real pra `GET
+ * /sessions/{id}` (semântica DIFERENTE: aceita `id <= 0`); pra `CreateVote`
+ * a semântica é idêntica à das outras rotas de escrita — não há motivo pra
+ * duas cópias divergirem.
  */
 function parseIdDaRota(idParam: string): number | null {
-  if (!/^[+-]?\d+$/.test(idParam)) return null
-  const id = Number.parseInt(idParam, 10)
-  if (id <= 0) return null
+  const id = parseInt64(idParam)
+  if (id === null || id <= 0) return null
   return id
 }
 
@@ -326,7 +393,7 @@ votacaoRoutes.get(
   async (c) => {
     const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
     }
 
     const votes = await listVoteMovieIds(c.env.DB, id)
@@ -382,6 +449,18 @@ votacaoRoutes.get(
  * numa goroutine (`votes.go:105-111`) — o D1 tem outro mecanismo de backup
  * (`scripts/backup-d1.sh`, export lógico), não um substituto ligado neste
  * caminho. Ver `apps/ramielle/CLAUDE.md`.
+ *
+ * ⚠️ **I1 (revisão final): o SEGUNDO `UPDATE` (`setSessionWinner`) é
+ * engolido — igual ao Go.** `votes.go:99-103` faz `if err :=
+ * ...SetSessionWinner(...); err != nil { log }` e SEGUE, respondendo 200
+ * com o vencedor mesmo que esta escrita falhe. Sem o `try/catch` abaixo, um
+ * `await` cru propagaria pro `onError` global e devolveria 500 DEPOIS que
+ * `closeVotingSession` já tinha gravado `status='closed'` — um retry do
+ * admin em `POST /close` bateria 404 `session_not_open` (o `UPDATE ...
+ * WHERE status='open'` já não acha a sessão), fazendo parecer que o close
+ * falhou quando na verdade só `winner_method` ficou sem gravar, e nenhuma
+ * rota consegue corrigir isso depois (`/tiebreak` recusa com
+ * `winner_already_set` porque `winner_movie_id` já não é `null`).
  */
 votacaoRoutes.post(
   '/sessions/:id/close',
@@ -389,7 +468,7 @@ votacaoRoutes.post(
   async (c) => {
     const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
     }
 
     const votes = await listVoteMovieIds(c.env.DB, id)
@@ -398,11 +477,18 @@ votacaoRoutes.post(
 
     const closed = await closeVotingSession(c.env.DB, id, winner, nowIsoUtc())
     if (!closed) {
-      return errJson(404, 'session_not_open', 'sessão não está aberta')
+      return errJson(404, 'session_not_open', 'Sessão não está aberta.')
     }
 
     if (winner !== null) {
-      await setSessionWinner(c.env.DB, id, winner, 'votes')
+      try {
+        await setSessionWinner(c.env.DB, id, winner, 'votes')
+      } catch (err) {
+        console.error(
+          'POST /close — setSessionWinner falhou, respondendo 200 mesmo assim (paridade com o Go)',
+          err,
+        )
+      }
     }
 
     return okJson({ winner_movie_id: winner })
@@ -436,12 +522,15 @@ function parseEntropy(raw: unknown): string | null {
 
 /**
  * `POST /votacao/sessions/{id}/tiebreak` (admin) — porte de `Tiebreak`
- * (`handlers/votacao/votes.go:172-270`). O sorteio é PROVABLY-FAIR: mistura
- * a entropia do cliente (o corpo só carrega um hash/hex — a foto/gesto de
- * origem nunca chega aqui) com um nonce de 32 bytes gerado no servidor,
- * escolhe um dos filmes empatados sem viés (`pickTiebreakIndex`,
- * `domain/tiebreak.ts`), grava o vencedor + uma linha de auditoria em
- * `tiebreaks`, e devolve `server_nonce` em hex.
+ * (`handlers/votacao/votes.go:172-270`). O sorteio é AUDITÁVEL/
+ * RECOMPUTÁVEL (M8, revisão final — antes chamado de "provably-fair" aqui,
+ * termo herdado do Go mas afirmado como fato medido sem sê-lo; ver
+ * `domain/tiebreak.ts` pra explicação completa): mistura a entropia do
+ * cliente (o corpo só carrega um hash/hex — a foto/gesto de origem nunca
+ * chega aqui) com um nonce de 32 bytes gerado no servidor, escolhe um dos
+ * filmes empatados sem viés (`pickTiebreakIndex`, `domain/tiebreak.ts`),
+ * grava o vencedor + uma linha de auditoria em `tiebreaks`, e devolve
+ * `server_nonce` em hex.
  *
  * ⚠️ **`server_nonce` é público POR DESIGN, não um vazamento a esconder** —
  * é o que torna o sorteio AUDITÁVEL: sem ele, ninguém consegue recomputar
@@ -475,44 +564,44 @@ votacaoRoutes.post(
   async (c) => {
     const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
     }
 
     let rawBody: unknown
     try {
       rawBody = await c.req.json()
     } catch {
-      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
     }
     const entropyHex = parseEntropy(rawBody)
     if (entropyHex === null) {
-      return errJson(400, 'invalid_json', 'corpo da requisição inválido')
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
     }
 
     const clientEntropy = hexToBytes(entropyHex)
     if (clientEntropy === null || clientEntropy.length < 16) {
-      return errJson(400, 'invalid_entropy', 'entropia inválida')
+      return errJson(400, 'invalid_entropy', 'Entropia inválida.')
     }
 
     const session = await getVotingSession(c.env.DB, id)
     if (session === null) {
-      return errJson(404, 'session_not_found', 'sessão não encontrada')
+      return errJson(404, 'session_not_found', 'Sessão não encontrada.')
     }
     if (session.status !== 'closed') {
       return errJson(
         409,
         'session_not_closed',
-        'encerre a sessão antes do desempate',
+        'Encerre a sessão antes do desempate.',
       )
     }
 
     const votes = await listVoteMovieIds(c.env.DB, id)
     const tied = computeTopMovies(votes).ids
     if (tied.length < 2) {
-      return errJson(422, 'no_tie', 'não há empate para desempatar')
+      return errJson(422, 'no_tie', 'Não há empate para desempatar.')
     }
     if (session.winner_movie_id !== null) {
-      return errJson(409, 'winner_already_set', 'esta sessão já tem vencedor')
+      return errJson(409, 'winner_already_set', 'Esta sessão já tem vencedor.')
     }
 
     const serverNonce = new Uint8Array(32)
@@ -542,9 +631,12 @@ votacaoRoutes.post(
     await setSessionWinner(c.env.DB, id, winner, 'roulette')
 
     // `httpx.DataMsg(..., httpx.Success("Desempate concluído."))` no Go —
-    // mesmo padrão de `POST /votes` (T3): paridade de CONTRATO, não de
-    // tela nova (`call<T>()` do apps/web descarta `notifications` no
-    // caminho feliz).
+    // paridade de CONTRATO byte a byte agora (I2, revisão final): mensagem
+    // idêntica, sem `code` (um `code:'tiebreak_done'` inventado saía antes
+    // daqui — ver `lib/envelope.ts` pro porquê `httpx.Success` do Go nunca
+    // preenche `Code`). Mesmo padrão de `POST /votes` (T3): paridade de
+    // CONTRATO, não de tela nova (`call<T>()` do apps/web descarta
+    // `notifications` no caminho feliz).
     return okJson(
       {
         winner_movie_id: winner,
@@ -552,13 +644,7 @@ votacaoRoutes.post(
         server_nonce: serverNonceHex,
       },
       200,
-      [
-        {
-          type: 'success',
-          code: 'tiebreak_done',
-          message: 'desempate concluído',
-        },
-      ],
+      [{ type: 'success', message: 'Desempate concluído.' }],
     )
   },
 )
@@ -602,7 +688,7 @@ votacaoRoutes.get(
   async (c) => {
     const id = parseIdDaRota(c.req.param('id'))
     if (id === null) {
-      return errJson(400, 'invalid_id', 'identificador inválido')
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
     }
 
     const details = await listSessionVotesWithUsers(c.env.DB, id)

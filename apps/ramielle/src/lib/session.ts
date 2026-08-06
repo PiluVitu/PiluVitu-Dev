@@ -99,10 +99,16 @@ async function resolveSession<TBindings extends AuthBindings>(
     if (!sessao?.user) {
       return {
         ok: false,
+        // I2 (revisão final): MEDIDO contra o Go — `internal/auth/
+        // middleware.go:33` e `handlers.go:100` respondem exatamente
+        // "Você precisa estar logado." pro mesmo 401 not_authenticated.
+        // Antes: "requisição sem sessão válida" — jargão de dev que
+        // `apps/web/lib/votacao/api-client.ts:44` (`primary.message`) joga
+        // direto num toast pro usuário final depois do cutover (fatia ④).
         response: errJson(
           401,
           'not_authenticated',
-          'requisição sem sessão válida',
+          'Você precisa estar logado.',
         ),
       }
     }
@@ -187,11 +193,9 @@ export function requireAdmin<
     const resolucao = await resolveSession<TBindings>(c)
     if (!resolucao.ok) return resolucao.response
     if (!resolucao.votacaoUser.isAdmin) {
-      return errJson(
-        403,
-        'admin_only',
-        'apenas administradores podem acessar este recurso',
-      )
+      // I2 (revisão final): MEDIDO contra `internal/auth/middleware.go:59`
+      // — mesma mensagem exata do Go pro 403 admin_only.
+      return errJson(403, 'admin_only', 'Acesso restrito a administradores.')
     }
     c.set('votacaoUser', resolucao.votacaoUser)
     await next()

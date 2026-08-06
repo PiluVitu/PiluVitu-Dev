@@ -1,12 +1,25 @@
 /**
- * Domínio de ESCRITA da votação — porta `Store.ReplaceUserVotes`
+ * Domínio de `votes` + `tiebreaks` — porta as funções do Store Go que leem/
+ * escrevem essas duas tabelas (`apps/api/internal/votacao/votes.go` +
+ * `tiebreaks.go`), incluindo `Store.ReplaceUserVotes`
  * (`apps/api/internal/votacao/votes.go:26-67`). Voto de aprovação: o
  * conjunto de `movie_ids` enviado SUBSTITUI inteiro o que o usuário já tinha
  * votado naquela sessão (delete + insert, nunca um merge). Conjunto vazio
  * limpa os votos — operação válida, não erro.
  *
- * Duas diferenças deliberadas do Go, ambas exigidas pelo brief da Task 3
- * (fatia2 T3) e nenhuma delas é "reimplementação limpa por acidente":
+ * ⚠️ **I3 (revisão final da fatia): o corte entre este arquivo e
+ * `domain/sessions.ts` é por TABELA/AGREGADO, não por leitura/escrita** —
+ * ver o cabeçalho de `domain/sessions.ts` pro raciocínio completo (a fatia
+ * ③, que escreve em `voting_sessions`, é o motivo concreto). Este arquivo é
+ * dono de `votes`/`tiebreaks`, leitura E escrita: `getUserVotedMovieIds`
+ * (lê `votes`) veio de `domain/sessions.ts` nesta revisão;
+ * `closeVotingSession`/`setSessionWinner` (escrevem `voting_sessions`)
+ * saíram daqui pra lá. Movimentação PURA — nenhuma assinatura ou corpo de
+ * função mudou.
+ *
+ * Duas diferenças deliberadas do Go em `replaceUserVotes`, ambas exigidas
+ * pelo brief da Task 3 (fatia2 T3) e nenhuma delas é "reimplementação
+ * limpa por acidente":
  *
  *  1. **Validação de pertencimento em UMA query**, não uma por filme. O Go
  *     faz `SELECT EXISTS(...)` dentro do loop (uma query por movie_id,
@@ -22,14 +35,8 @@
  *     explicitamente pra NÃO herdar esse defeito: dedupar aqui é a
  *     divergência intencional, preservando ORDEM de primeira ocorrência.
  *
- * Task 4 (fatia2 T4) estende este arquivo com a APURAÇÃO: `listVoteMovieIds`
- * + `countVoters` (leitura, usados por `GET /results`) e
- * `closeVotingSession` + `setSessionWinner` (escrita em `voting_sessions`,
- * usados por `POST /close`). Ficam aqui, não em `domain/sessions.ts` (que é
- * SÓ leitura de propósito — ver o topo daquele arquivo), porque
- * `closeVotingSession`/`setSessionWinner` são ESCRITAS, e porque o brief
- * desta task (`task-4-brief.md`) nomeia explicitamente só `tally.ts` (novo,
- * puro) e este arquivo pra estender — nenhum novo arquivo de domínio.
+ * Task 4 (fatia2 T4) estendeu este arquivo com a APURAÇÃO: `listVoteMovieIds`
+ * + `countVoters` (leitura, usados por `GET /results`).
  */
 import type { TalliableVote } from './tally'
 
@@ -132,10 +139,40 @@ export async function replaceUserVotes(
   return deduped
 }
 
+/**
+ * Ids dos filmes que o usuário aprovou nesta sessão, ordenados asc — mesma
+ * query de `Store.GetUserVotes` (`votes.go:129-149`). Devolve `[]` (nunca
+ * `null`) quando o usuário não votou.
+ *
+ * A rota (`GET /sessions/{id}`) engole qualquer erro desta leitura — mesma
+ * semântica do `if ids, err := ...; err == nil { votedMovieIDs = ids }` do
+ * Go (`handlers/votacao/sessions.go:184-189`): a sessão é devolvida mesmo
+ * que este SELECT falhe, com `voted_movie_ids` ficando `[]`.
+ *
+ * ⚠️ **I3 (revisão final): movida de `domain/sessions.ts` para cá** — lê
+ * `votes`, tabela da qual este arquivo é dono (ver o cabeçalho). Mesmo
+ * corpo, mesma assinatura; só o arquivo mudou.
+ */
+export async function getUserVotedMovieIds(
+  db: D1Database,
+  sessionId: number,
+  userId: number,
+): Promise<number[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT movie_id FROM votes WHERE session_id = ? AND user_id = ? ORDER BY movie_id ASC`,
+    )
+    .bind(sessionId, userId)
+    .all<{ movie_id: number }>()
+  return results.map((row) => row.movie_id)
+}
+
 // ---------------------------------------------------------------------------
-// Apuração (Task 4, fatia2 T4) — leitura pra `GET /results`, escrita pra
-// `POST /close`. `tallyVotes`/`computeTopMovies` (a lógica pura) moram em
-// `domain/tally.ts`; aqui só o I/O contra o D1.
+// Apuração (Task 4, fatia2 T4) — leitura pra `GET /results`.
+// `tallyVotes`/`computeTopMovies` (a lógica pura) moram em `domain/tally.ts`;
+// aqui só o I/O contra o D1. A escrita de `POST /close`
+// (`closeVotingSession`/`setSessionWinner`) mora em `domain/sessions.ts`
+// desde a I3 (revisão final) — escreve `voting_sessions`, não `votes`.
 // ---------------------------------------------------------------------------
 
 /**
@@ -189,93 +226,18 @@ export async function countVoters(
   return row?.n ?? 0
 }
 
-/**
- * Fecha a sessão — porte de `Store.CloseVotingSession`
- * (`apps/api/internal/votacao/sessions.go:74-103`). `WHERE id = ? AND
- * status = 'open'` é a MESMA guarda do Go: devolve `false` (nenhuma linha
- * afetada) tanto pra id INEXISTENTE quanto pra sessão JÁ FECHADA — a rota
- * (`POST /close`) não distingue os dois casos, os dois viram 404
- * `session_not_open`. Ambiguidade INTENCIONAL herdada do Go, não
- * "melhorada" aqui com uma query extra de existência antes do UPDATE.
- *
- * `winnerMovieId === null` faz o UPDATE OMITIR a coluna `winner_movie_id`
- * inteira (fica com o valor que já tinha — NULL numa sessão aberta) — a
- * mesma bifurcação de dois SQLs do Go (`if winnerMovieID != nil {...} else
- * {...}`), não um `SET winner_movie_id = NULL` explícito (mesmo efeito,
- * texto de SQL diferente do que o Go de fato roda).
- *
- * `closedAtIso` é o relógio INJETADO pela rota (`nowIsoUtc()` de
- * `lib/dates.ts`) — nunca `new Date()` chamado aqui dentro, pra manter este
- * domínio testável sem mockar relógio global. Grava já em ISO (o Go usa
- * `CURRENT_TIMESTAMP`; a leitura de qualquer linha do D1 passa por
- * `toIsoUtc` de qualquer forma, mas gravar normalizado evita depender
- * dessa conversão neste valor específico).
- */
-export async function closeVotingSession(
-  db: D1Database,
-  sessionId: number,
-  winnerMovieId: number | null,
-  closedAtIso: string,
-): Promise<boolean> {
-  const stmt =
-    winnerMovieId !== null
-      ? db
-          .prepare(
-            `UPDATE voting_sessions
-                SET status = 'closed', closed_at = ?, winner_movie_id = ?
-              WHERE id = ? AND status = 'open'`,
-          )
-          .bind(closedAtIso, winnerMovieId, sessionId)
-      : db
-          .prepare(
-            `UPDATE voting_sessions
-                SET status = 'closed', closed_at = ?
-              WHERE id = ? AND status = 'open'`,
-          )
-          .bind(closedAtIso, sessionId)
-
-  const result = await stmt.run()
-  return (result.meta.changes ?? 0) > 0
-}
-
-/**
- * Grava o vencedor + o método de desempate — porte de
- * `Store.SetSessionWinner` (`apps/api/internal/votacao/tiebreaks.go:47-57`).
- * Chamada num PASSO SEPARADO de `closeVotingSession`, espelhando o Go
- * (`CloseSession` primeiro fecha com `winner_movie_id` já embutido no mesmo
- * UPDATE, DEPOIS chama `SetSessionWinner` de novo só pra gravar
- * `winner_method` — redundante pro `winner_movie_id`, que já foi gravado,
- * mas é o que o Go faz, e paridade OBSERVÁVEL é o critério desta fatia, não
- * o SQL mais enxuto). `method` só chega `'votes'` nesta task — `'roulette'`
- * é a T5 (`POST /tiebreak`).
- *
- * Não recebe `sessionId` como garantia de que a sessão está fechada — quem
- * chama (`POST /close`) só invoca isto DEPOIS de `closeVotingSession`
- * devolver `true`, mesma ordem do Go.
- */
-export async function setSessionWinner(
-  db: D1Database,
-  sessionId: number,
-  winnerMovieId: number,
-  method: 'votes' | 'roulette',
-): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE voting_sessions SET winner_movie_id = ?, winner_method = ? WHERE id = ?`,
-    )
-    .bind(winnerMovieId, method, sessionId)
-    .run()
-}
-
 // ---------------------------------------------------------------------------
-// Desempate provably-fair (Task 5, fatia2 T5) — `createTiebreak` grava a
-// linha de AUDITORIA do sorteio (`tiebreaks`, porte de `Store.CreateTiebreak`,
-// `apps/api/internal/votacao/tiebreaks.go:21-34`). O cálculo puro
-// (`tiebreakSeed`/`pickTiebreakIndex`) fica isolado em `domain/tiebreak.ts`
-// (sem I/O), mesma separação que `tally.ts` (puro) × este arquivo (I/O) já
-// estabelece pra apuração. `setSessionWinner` acima é reusado com
-// `method='roulette'` — nenhuma escrita nova pro vencedor em si, só a linha
-// de auditoria é inédita desta task.
+// Desempate auditável/recomputável (Task 5, fatia2 T5; terminologia
+// corrigida na revisão final — M8, ver `apps/ramielle/CLAUDE.md`):
+// `createTiebreak` grava a linha de AUDITORIA do sorteio (`tiebreaks`,
+// porte de `Store.CreateTiebreak`, `apps/api/internal/votacao/
+// tiebreaks.go:21-34`). O cálculo puro (`tiebreakSeed`/`pickTiebreakIndex`)
+// fica isolado em `domain/tiebreak.ts` (sem I/O), mesma separação que
+// `tally.ts` (puro) × este arquivo (I/O) já
+// estabelece pra apuração. `setSessionWinner` (`domain/sessions.ts` desde a
+// I3 — escreve `voting_sessions`) é reusado com `method='roulette'` —
+// nenhuma escrita nova pro vencedor em si, só a linha de auditoria é
+// inédita desta task.
 // ---------------------------------------------------------------------------
 
 /** Uma linha de `tiebreaks` a gravar — espelha `votacao.TiebreakRecord` do Go. */

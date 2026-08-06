@@ -28,7 +28,17 @@ export type NotificationKind = 'error' | 'warning' | 'info' | 'success'
 
 export type Notification = {
   type: NotificationKind
-  code: string
+  /**
+   * `code?` (não `code:`) — espelha a tag `json:"code,omitempty"` do Go
+   * (`internal/httpx/respond.go`). `httpx.Success(msg)` do Go NUNCA
+   * preenche `Code` (fica com o zero value `""`, que `omitempty` remove do
+   * JSON) — uma notification de sucesso portada 1:1 (`POST /votes`,
+   * `POST /tiebreak`, ver `routes/votacao.ts`) tem que sair sem a chave
+   * `code` nenhuma, não com uma string vazia nem com um código inventado.
+   * Notifications de ERRO (`errJson`) sempre passam um `code`, então na
+   * prática esta chave só falta em sucesso.
+   */
+  code?: string
   message: string
   /** Campo ofensor num erro de validação (ex.: 'email', 'session_id'). */
   field?: string

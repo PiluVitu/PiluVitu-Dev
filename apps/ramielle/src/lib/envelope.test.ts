@@ -34,14 +34,26 @@ describe('okJson', () => {
 
   test('terceiro parâmetro opcional carrega notification de sucesso (paridade com httpx.DataMsg + httpx.Success do Go)', async () => {
     const res = okJson({ voted_movie_ids: [1, 2] }, 200, [
-      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+      { type: 'success', message: 'Voto registrado.' },
     ])
     const body = (await res.json()) as Envelope<{ voted_movie_ids: number[] }>
     expect(body.ok).toBe(true)
     expect(body.data).toEqual({ voted_movie_ids: [1, 2] })
     expect(body.notifications).toEqual([
-      { type: 'success', code: 'vote_registered', message: 'voto registrado' },
+      { type: 'success', message: 'Voto registrado.' },
     ])
+  })
+
+  // I2 (revisão final da fatia): `httpx.Success(msg)` do Go nunca preenche
+  // `Code` (`json:"code,omitempty"`) — uma notification de sucesso sem
+  // `code` tem que serializar SEM a chave `code` no JSON cru, não com
+  // `"code":""`. Sem isto, um `code` inventado (ex.: `vote_registered`,
+  // achado na revisão) passaria despercebido.
+  test('notification de sucesso sem `code` não emite a chave `code` no JSON cru — paridade com omitempty do Go', async () => {
+    const texto = await okJson({ ok: true }, 200, [
+      { type: 'success', message: 'Voto registrado.' },
+    ]).text()
+    expect(texto).not.toContain('"code"')
   })
 })
 
