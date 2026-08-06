@@ -35,3 +35,9 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 # GOOGLE_SA_JSON={"type":"service_account","client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","token_uri":"https://oauth2.googleapis.com/token",...}
 # GSHEETS_MOVIES_SPREADSHEET_ID=troque-pelo-id-da-planilha-de-filmes
 # GSHEETS_MOVIES_RANGE=A2:F
+
+# Task 4 (fatia ③): cliente do TMDb (src/lib/tmdb.ts) — busca pôster/id por
+# título em POST /votacao/sessions. Mesma chave que apps/api/.env já usa
+# (https://themoviedb.org/settings/api). Sem ela, a sessão é criada
+# normalmente, só SEM pôsteres — nunca erro.
+# TMDB_API_KEY=troque-pela-chave-do-tmdb
