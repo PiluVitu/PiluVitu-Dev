@@ -2361,3 +2361,220 @@ describe('GET /votacao/categorias', () => {
     }
   })
 })
+
+// --------------------------------------------------------------------------
+// Fix round 1, Finding 1 (Important) — rede de segurança automatizada contra
+// vazamento de segredo em GET /votacao/categorias. A implementação já estava
+// correta POR INSPEÇÃO (as mensagens de google-auth.ts/gsheets.ts são
+// construídas pra nunca incluir conteúdo bruto), mas nenhum teste provava
+// isso — mesmo padrão de index.test.ts, describe `app.onError global`, que
+// já faz asserção NEGATIVA de que D1_ERROR/disk I/O não aparecem no JSON
+// serializado. Aqui os dados são objetivamente mais críticos (chave privada
+// RSA, access token OAuth2) do que um erro de SQL.
+//
+// ⚠️ Pra chave privada, NÃO uso um marcador artificial tipo
+// "MARCADOR-CHAVE-..." dentro do PEM — um PEM com texto arbitrário misturado
+// no corpo base64 quebra o parse (atob lança ANTES de qualquer chamada de
+// rede), o que impediria os dois cenários abaixo (falha DEPOIS da
+// assinatura ter funcionado) de sequer acontecer. Uso a chave REAL gerada em
+// runtime como o próprio "marcador" — um valor único, improvável de aparecer
+// por acaso, e estritamente mais forte que um marcador inventado (é o
+// segredo de verdade, não um substituto que poderia deixar passar uma forma
+// diferente do mesmo vazamento).
+//
+// ⚠️ NÃO testo o JWT assinado byte a byte aqui (diferente de
+// lib/google-auth.test.ts) — a rota não expõe hook de relógio pra
+// `readMovies`/`getCategories` (chamados sem `deps` em `routes/votacao.ts`),
+// então recomputar o JWT exato exigiria correr contra o `new Date()` interno
+// da chamada real — risco de flakiness perto de uma virada de segundo
+// (`iat` muda, o JWT inteiro muda), exatamente o defeito que o CLAUDE.md da
+// raiz chama de mais recorrente do projeto ("teste que não pode falhar").
+// O JWT já é coberto byte a byte, com relógio INJETADO, em
+// lib/google-auth.test.ts — não duplicado aqui.
+// --------------------------------------------------------------------------
+
+describe('GET /votacao/categorias — segredo NUNCA vaza (fix round 1, Finding 1)', () => {
+  async function gerarServiceAccountSegura(clientEmail: string): Promise<{
+    client_email: string
+    private_key: string
+    token_uri: string
+  }> {
+    const par = await crypto.subtle.generateKey(
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: 'SHA-256',
+      },
+      true,
+      ['sign', 'verify'],
+    )
+    const pkcs8 = await crypto.subtle.exportKey('pkcs8', par.privateKey)
+    const bytes = new Uint8Array(pkcs8)
+    let binario = ''
+    for (let i = 0; i < bytes.length; i++)
+      binario += String.fromCharCode(bytes[i])
+    const base64 = btoa(binario)
+    const linhas = base64.match(/.{1,64}/g) ?? [base64]
+    const pem = `-----BEGIN PRIVATE KEY-----\n${linhas.join('\n')}\n-----END PRIVATE KEY-----\n`
+    return {
+      client_email: clientEmail,
+      private_key: pem,
+      token_uri: 'https://oauth2.googleapis.com/token',
+    }
+  }
+
+  /**
+   * Mocka o token endpoint SEMPRE, e o endpoint de values do Sheets só
+   * quando `sheetsResposta` é passado — permite simular "token falha antes
+   * de chegar no Sheets" (sem `sheetsResposta`) e "token OK, Sheets falha
+   * depois" (com `sheetsResposta`).
+   */
+  function instalarMockComCorpo(
+    tokenUri: string,
+    spreadsheetId: string,
+    range: string,
+    tokenResposta: { status: number; body: unknown },
+    sheetsResposta?: { status: number; body: unknown },
+  ): { restaurar: () => void } {
+    const fetchOriginal = globalThis.fetch
+    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const urlTexto =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      if (urlTexto === tokenUri) {
+        return new Response(JSON.stringify(tokenResposta.body), {
+          status: tokenResposta.status,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (urlTexto === valuesUrl && sheetsResposta) {
+        return new Response(JSON.stringify(sheetsResposta.body), {
+          status: sheetsResposta.status,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+    }) as typeof fetch
+    return {
+      restaurar: () => {
+        globalThis.fetch = fetchOriginal
+      },
+    }
+  }
+
+  /** Achata os args de TODAS as chamadas de console.error num texto só pesquisável. */
+  function textoDosLogs(spy: ReturnType<typeof vi.spyOn>): string {
+    return spy.mock.calls
+      .flat()
+      .map((arg: unknown) =>
+        arg instanceof Error
+          ? `${arg.message} ${arg.stack ?? ''}`
+          : String(arg),
+      )
+      .join('\n')
+  }
+
+  test('token endpoint falha com corpo sensível — nem a chave privada nem o corpo do token aparecem na resposta OU no console.error', async () => {
+    const sa = await gerarServiceAccountSegura(
+      'seg-token-falha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-seguranca-token'
+    const marcadorCorpoToken = 'MARCADOR-CORPO-TOKEN-NAO-PODE-VAZAR'
+    const mock = instalarMockComCorpo(sa.token_uri, spreadsheetId, 'A2:F', {
+      status: 400,
+      body: { error: 'invalid_grant', error_description: marcadorCorpoToken },
+    })
+    const spyConsole = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'seg-token-falha-user@example.com',
+        'Seg Token',
+      )
+      const res = await app.request(
+        '/votacao/categorias',
+        { headers: { cookie } },
+        {
+          ...testEnv(),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(502)
+
+      const textoResposta = await res.text()
+      expect(textoResposta).not.toContain(sa.private_key)
+      expect(textoResposta).not.toContain(marcadorCorpoToken)
+
+      const textoConsole = textoDosLogs(spyConsole)
+      expect(textoConsole).not.toContain(sa.private_key)
+      expect(textoConsole).not.toContain(marcadorCorpoToken)
+    } finally {
+      spyConsole.mockRestore()
+      mock.restaurar()
+    }
+  })
+
+  test('leitura do range falha com corpo sensível (token OK antes) — nem a chave privada, nem o access token, nem o corpo do Sheets aparecem na resposta OU no console.error', async () => {
+    const sa = await gerarServiceAccountSegura(
+      'seg-sheets-falha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-seguranca-sheets'
+    const marcadorAccessToken = 'MARCADOR-ACCESS-TOKEN-NAO-PODE-VAZAR'
+    const marcadorCorpoSheets = 'MARCADOR-CORPO-SHEETS-NAO-PODE-VAZAR'
+    const mock = instalarMockComCorpo(
+      sa.token_uri,
+      spreadsheetId,
+      'A2:F',
+      {
+        status: 200,
+        body: {
+          access_token: marcadorAccessToken,
+          token_type: 'Bearer',
+          expires_in: 3599,
+        },
+      },
+      {
+        status: 500,
+        body: { error: { message: marcadorCorpoSheets } },
+      },
+    )
+    const spyConsole = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'seg-sheets-falha-user@example.com',
+        'Seg Sheets',
+      )
+      const res = await app.request(
+        '/votacao/categorias',
+        { headers: { cookie } },
+        {
+          ...testEnv(),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(502)
+
+      const textoResposta = await res.text()
+      expect(textoResposta).not.toContain(sa.private_key)
+      expect(textoResposta).not.toContain(marcadorAccessToken)
+      expect(textoResposta).not.toContain(marcadorCorpoSheets)
+
+      const textoConsole = textoDosLogs(spyConsole)
+      expect(textoConsole).not.toContain(sa.private_key)
+      expect(textoConsole).not.toContain(marcadorAccessToken)
+      expect(textoConsole).not.toContain(marcadorCorpoSheets)
+    } finally {
+      spyConsole.mockRestore()
+      mock.restaurar()
+    }
+  })
+})
