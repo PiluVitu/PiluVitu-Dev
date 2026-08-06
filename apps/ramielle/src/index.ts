@@ -3,6 +3,7 @@ import { type AuthBindings, getAuth } from './lib/auth'
 import { corsMiddleware } from './lib/cors'
 import { errJson, okJson } from './lib/envelope'
 import authRoutes from './routes/auth'
+import votacaoRoutes from './routes/votacao'
 
 // `CORS_ALLOWED_ORIGINS` mora no tipo `AuthBindings` (`lib/auth.ts`), não
 // mais aqui — desde I2 (revisão final) `createAuth` também lê essa binding
@@ -51,6 +52,11 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth(c.env).handler(c.req.raw))
 // distinto de `/api/auth/*` acima (Better Auth). Precisa vir ACIMA do
 // catch-all, mesma regra de sempre.
 app.route('/auth', authRoutes)
+
+// As rotas de votação (fatia ②) — precisam vir ACIMA do catch-all, mesma
+// regra de sempre. `GET /sessions` e `GET /sessions/{id}` são as duas
+// primeiras (Task 2); as demais entram nas próximas tasks desta fatia.
+app.route('/votacao', votacaoRoutes)
 
 // SEMPRE POR ÚLTIMO — no Hono a ordem de registro decide. Qualquer
 // app.route() registrado depois desta linha fica inalcançável.
