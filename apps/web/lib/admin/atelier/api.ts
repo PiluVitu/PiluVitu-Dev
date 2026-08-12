@@ -4,9 +4,11 @@ import type { DistributionTarget, ProposalsBody, SelectedTarget } from './types'
 /**
  * Base do Atelier — DELIBERADAMENTE separada do `apiBase` da votação.
  *
- * A votação foi repontada pro ramielle (fatia ④); o Atelier NÃO, porque as 5
- * rotas dele (`/admin/llm/*`, `/admin/distribution/*`) só existem na Go e
- * estão previstas pro promeia (spec §7.2), que ainda não existe.
+ * A votação vai ser repontada pro ramielle na Task 2 desta fatia ④; o
+ * Atelier NÃO — é desacoplado agora, antes disso, exatamente pra essa troca
+ * não arrastá-lo junto. As 5 rotas dele (`/admin/llm/*`,
+ * `/admin/distribution/*`) só existem na Go e estão previstas pro promeia
+ * (spec §7.2), que ainda não existe.
  *
  * ⚠️ Se um dia isto voltar a apontar pro mesmo host da votação, o card
  * "Distribuição" volta a renderizar VAZIO SEM ERRO em todo post existente

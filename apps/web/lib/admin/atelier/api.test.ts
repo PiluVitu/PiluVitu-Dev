@@ -7,6 +7,14 @@ import { atelierApi } from './api'
 describe('atelierBase', () => {
   const ORIGINAL_ENV = process.env
 
+  // Valor DELIBERADAMENTE diferente do default (`http://localhost:8080`).
+  // Fix round 1 (revisão): os testes originais usavam o mesmo valor do
+  // default pra "env definida" — aí uma implementação hardcoded
+  // (`export const atelierBase = 'http://localhost:8080'`, ignorando
+  // `process.env` por completo) passava nos 3 testes igual. Usando um valor
+  // distinguível aqui, só passa quem de fato LÊ `NEXT_PUBLIC_ATELIER_URL`.
+  const VALOR_DISTINTO_DO_DEFAULT = 'http://localhost:9999'
+
   beforeEach(() => {
     jest.resetModules()
     process.env = { ...ORIGINAL_ENV }
@@ -17,9 +25,9 @@ describe('atelierBase', () => {
   })
 
   it('usa NEXT_PUBLIC_ATELIER_URL quando definida', async () => {
-    process.env.NEXT_PUBLIC_ATELIER_URL = 'http://localhost:8080'
+    process.env.NEXT_PUBLIC_ATELIER_URL = VALOR_DISTINTO_DO_DEFAULT
     const { atelierBase } = await import('./api')
-    expect(atelierBase).toBe('http://localhost:8080')
+    expect(atelierBase).toBe(VALOR_DISTINTO_DO_DEFAULT)
   })
 
   it('cai no default http://localhost:8080 quando NEXT_PUBLIC_ATELIER_URL não está definida', async () => {
@@ -30,15 +38,16 @@ describe('atelierBase', () => {
 
   it('NÃO cai no NEXT_PUBLIC_API_URL da votação — é o ponto inteiro desta task', async () => {
     // Com NEXT_PUBLIC_API_URL apontando pro ramielle (votação, fatia ④) e
-    // NEXT_PUBLIC_ATELIER_URL apontando pra Go, atelierBase tem que ser a Go.
-    // Se atelierBase voltar a derivar de apiBase, este teste falha — é a
-    // trava de regressão contra o card "Distribuição" ficando mudo (ver
+    // NEXT_PUBLIC_ATELIER_URL apontando pra Go (valor distinto do default,
+    // pelo mesmo motivo do teste acima), atelierBase tem que ser a Go. Se
+    // atelierBase voltar a derivar de apiBase, este teste falha — é a trava
+    // de regressão contra o card "Distribuição" ficando mudo (ver
     // comentário em ./api.ts).
     process.env.NEXT_PUBLIC_API_URL = 'https://ramielle.piluvitu.com.br'
-    process.env.NEXT_PUBLIC_ATELIER_URL = 'http://localhost:8080'
+    process.env.NEXT_PUBLIC_ATELIER_URL = VALOR_DISTINTO_DO_DEFAULT
     const { atelierBase } = await import('./api')
     expect(atelierBase).not.toContain('ramielle')
-    expect(atelierBase).toBe('http://localhost:8080')
+    expect(atelierBase).toBe(VALOR_DISTINTO_DO_DEFAULT)
   })
 })
 
