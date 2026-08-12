@@ -302,14 +302,52 @@ Deliberadamente deixadas pendentes nesta fatia — não foram resolvidas na Task
 Nenhum destes estava registrado antes. Ordem importa.
 
 1. **Medir o formato de `created_at` no SQLite de produção da Go ANTES do import.** `toIsoUtc` **lança `RangeError`** em formato irreconhecível. Sabe-se que a Go _serializa_ RFC3339 no fio, mas ninguém mediu o texto que o `modernc.org/sqlite` de fato **grava** na coluna. Medir antes, não durante.
-2. **Ordem de import por causa da FK circular.** `voting_sessions.winner_movie_id → session_movies(id)` e `session_movies.session_id → voting_sessions(id)` (paridade exata com o schema Go, e a Go roda com FK ligada). A única sequência que funciona é **inserir sessões com `winner_movie_id` NULL e dar UPDATE no fim** — a mesma cronologia que a app já executa (`createVotingSession` → `insertSessionMovies` → `setSessionWinner`). 100% das sessões fechadas reais têm `winner_movie_id` preenchido, então isto **vai** ser exercitado.
-3. **Colisão de ids / `AUTOINCREMENT`.** Se o D1 já tiver linhas e o histórico entrar preservando ids ⇒ colisão de PK. Se entrar reatribuindo ⇒ `winner_movie_id`, `votes.{movie_id,user_id}`, `session_id` e `tiebreaks.*` precisam ser remapeados **consistentemente**, e o `sqlite_sequence` ajustado, senão o próximo insert reusa um id.
+2. ✅ **Resolvido pela Task 3 da fatia ④ (`scripts/gerar-import.mjs`, ver seção abaixo).** **Ordem de import por causa da FK circular.** `voting_sessions.winner_movie_id → session_movies(id)` e `session_movies.session_id → voting_sessions(id)` (paridade exata com o schema Go, e a Go roda com FK ligada). A única sequência que funciona é **inserir sessões com `winner_movie_id` NULL e dar UPDATE no fim** — a mesma cronologia que a app já executa (`createVotingSession` → `insertSessionMovies` → `setSessionWinner`). 100% das sessões fechadas reais têm `winner_movie_id` preenchido, então isto **vai** ser exercitado.
+3. ✅ **Resolvido pela Task 3 da fatia ④ (`scripts/gerar-import.mjs`, ver seção abaixo) — ids são SEMPRE preservados, nunca reatribuídos.** **Colisão de ids / `AUTOINCREMENT`.** Se o D1 já tiver linhas e o histórico entrar preservando ids ⇒ colisão de PK. Se entrar reatribuindo ⇒ `winner_movie_id`, `votes.{movie_id,user_id}`, `session_id` e `tiebreaks.*` precisam ser remapeados **consistentemente**, e o `sqlite_sequence` ajustado, senão o próximo insert reusa um id. ⚠️ O gerador **não** protege sozinho contra colisão — ele assume um D1 destino vazio (preservar id só funciona sem colisão); é por isso que o import precisa rodar **antes** do primeiro login no ramielle (`upsertVotacaoUser` cria `users.id=1` via AUTOINCREMENT no primeiro login, colidindo com o `id=1` real do import — medido no plano da fatia ④, seção "Fatos medidos").
 4. **`users.google_sub` precisa guardar o `sub` do Google**, não o id interno do Better Auth (decisão da fatia ①) — senão o import duplica usuários.
 5. **`ADMIN_EMAILS`: decidir `vars` OU secret e remover a outra ANTES do primeiro deploy.** É o **único** gate de privilégio do Worker (`lib/session.ts:145,195`) e a votação é livre — qualquer conta Google chega até ali. Hoje está em `wrangler.jsonc#vars` (commitado) enquanto o handoff oferece `wrangler secret put` como alternativa: criar o secret **sem remover** a entrada de `vars` deixa duas fontes, e a de `vars` é reaplicada a cada `wrangler deploy`. (A precedência exata var×secret não foi medida — medir, ou simplesmente não deixar as duas.)
 6. ✅ **Feito na Task 2 da fatia ④ (`apps/web/lib/votacao/api-client.ts#startGoogleLogin`).** `GET /auth/google/login` **não existe** no ramielle — o login é `POST /api/auth/sign-in/social` do Better Auth, e a rota antiga caía no catch-all 404. `apps/web` já fala `POST /api/auth/sign-in/social` (`{url,redirect}`, navega via `window.location.href`) — falta só o repoint de PRODUÇÃO em si (env var na Vercel + redeploy, T6), que este item continua cobrindo: o cutover **não** é só trocar `NEXT_PUBLIC_API_URL`.
 7. **Smoke test real do TMDb** depois do `wrangler secret put TMDB_API_KEY`, **antes** de repontar o `apps/web` (ver o item de dívida acima).
 8. **Apontar um backup pro D1 do ramielle.** `apps/financas/scripts/backup-d1.sh` é parametrizado e transponível, mas nada o aponta pro `piluvitu-ramielle` e não há script `backup` no `package.json` daqui. Hoje não há o que perder (D1 remoto vazio); **depois do import, o histórico inteiro fica sem backup**.
 9. **As 13 rotas `/tools/*` da Go** (`router.go:97-111`) não existem no ramielle e nunca foram declaradas fora de escopo. O `apps/web` não as usa (a página `/tools` consome `@piluvitu/tools` local), mas um consumidor externo — o CLI Go `bin/piluvitu`, um `curl` de terceiro — as perde em silêncio ao desligar a Go. Decidir: portar, ou declarar aposentadas.
+
+## Gerador do arquivo de import — Go SQLite → D1 (fatia ④, Task 3)
+
+`scripts/gerar-import.mjs` lê as 6 tabelas do domínio de votação do SQLite da API Go (`node:sqlite`, sempre `readOnly: true` — nunca escreve na origem) e gera um `.sql` com `INSERT`s prontos pra `wrangler d1 execute --file`, na ordem FK-safe do checklist acima (itens 2/3). Zero dependência nova.
+
+- **Todo `INSERT` gerado tem lista de colunas EXPLÍCITA** — nunca `INSERT INTO tabela VALUES (...)` posicional. É a defesa contra o achado mais perigoso do plano da fatia ④ (seção "Fatos medidos" de `docs/superpowers/plans/2026-08-12-ramielle-fatia4-cutover.md`): `sqlite3 .dump` cru trocaria `winner_method` com `sort_options_json` **em silêncio**, porque a ordem física de `voting_sessions` diverge entre os dois schemas (`winner_method` entrou por `ALTER TABLE` na Go — foi pro fim da tabela — e está no meio na migration `0001` daqui). Como o gerador lê por nome de coluna (`SELECT <colunas>`, nunca `SELECT *`) e escreve por nome de coluna, a ordem física de origem OU destino é irrelevante.
+- **Ordem de import fixa**: `users` → `voting_sessions` (com `winner_movie_id` sempre `NULL`, mesmo pras sessões fechadas que já têm vencedor) → `session_movies` → `votes` → `tiebreaks` → `backups` → `UPDATE voting_sessions SET winner_movie_id=...` por último, só pras sessões que tinham vencedor na origem. `session_movies` já existe nesse ponto, então a FK sempre resolve.
+- **Ids são sempre preservados, nunca renumerados** — todo `INSERT` usa o id de origem literalmente, incl. ids buracados (`votes` do banco real tem 27 buracos por desvoto). `sqlite_sequence` nunca é lido nem escrito: inserir com id explícito numa tabela `AUTOINCREMENT` já avança o `seq` sozinho (medido contra o D1 real, ver validação abaixo).
+- **Escaping**: `sqlLiteral` faz só a regra real do SQLite (aspa simples literal → duas aspas simples), sem sanitização "esperta" por cima — e lança em qualquer tipo que não seja `string`/`number`/`bigint`/`null` (nunca deixa um valor inesperado virar texto solto no SQL).
+
+**Rodar:**
+
+```bash
+pnpm --filter @piluvitu/ramielle run gerar-import -- <caminho/votacao.db> [--saida <arquivo.sql>]
+```
+
+⚠️ **Se o `.db` de origem estiver em WAL não-checkpointado, ele pode ter só 4096 bytes vazios — o dado todo mora no `.db-wal`.** Copiar os dois arquivos junto (mesmo diretório, mesmo nome-base) resolve sozinho; o script recusa (código 1, mensagem explicando o WAL) se as 6 tabelas lidas vierem todas vazias, em vez de gerar um `.sql` "bem-sucedido" com zero linha.
+
+**Testes**: `scripts/gerar-import.test.mjs`, 37 casos, rodando sob `vitest.scripts.config.ts` (`environment: 'node'`, mesmo padrão de `apps/financas/scripts/pdf-import.mjs`) — `pnpm --filter @piluvitu/ramielle run test` encadeia esse config junto do principal (394 → 431). Cobre escaping (aspas simples, acento, emoji, tentativa de injeção SQL), a ordem FK-safe, preservação de ids buracados, e uma validação ponta a ponta **offline** (sem `wrangler`) que aplica o schema real (`migrations/0001_votacao.sql`) num SQLite em memória e confirma `PRAGMA foreign_key_check` vazio + contagens batendo — inclusive com um fixture cujo `voting_sessions` nasce com a MESMA armadilha de ordem física do banco real (`ALTER TABLE ADD COLUMN winner_method` depois do `CREATE TABLE`, não reescrito na posição "lógica").
+
+**Validado também contra `wrangler d1 --local` de verdade**, num `--persist-to` isolado (nunca o estado normal do projeto, nunca `--remote`): `PRAGMA foreign_key_check` vazio, contagens batendo (`users` 4, `voting_sessions` 4, `session_movies` 9, `votes` 6, `tiebreaks` 2 — fixture sintética, não dado real). As duas mutações obrigatórias do brief foram reproduzidas e confirmadas contra o D1 real, depois revertidas:
+
+- `winner_movie_id` preenchido direto no `INSERT` (sem forçar `NULL`) ⇒ `FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)`.
+- `INSERT` posicional (sem lista de colunas) lendo a origem via `SELECT *` (ordem física real) ⇒ reproduziu **os dois** sintomas documentados no plano: sessão fechada grava `winner_method`/`sort_options_json` **trocados em silêncio** (`🚣 2 commands executed successfully`, igual ao medido no spike), e a sessão aberta (`winner_method` NULL na origem) falha com `NOT NULL constraint failed: voting_sessions.sort_options_json` — a mensagem enganosa que aponta pra coluna errada.
+
+**Comando exato que o dono roda pra aplicar de verdade** (nunca um agente — `--remote` é ação manual, ordem obrigatória, import ANTES do primeiro login):
+
+```bash
+# 1. Migrations em produção, se ainda não aplicadas
+pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations apply piluvitu-ramielle --remote
+
+# 2. Gerar o .sql a partir do SQLite real (copiado do volume infra_api-data,
+#    .db + .db-wal juntos — ver aviso do WAL acima)
+pnpm --filter @piluvitu/ramielle run gerar-import -- /caminho/pra/votacao.db --saida import.sql
+
+# 3. Rodar o import — atômico, tem que ser ANTES do primeiro login no ramielle
+pnpm --filter @piluvitu/ramielle exec wrangler d1 execute piluvitu-ramielle --remote --file import.sql
+```
 
 ## Comandos
 
