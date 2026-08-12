@@ -196,13 +196,19 @@ Busca de chamador no repo inteiro: **zero chamadas HTTP**. Em particular, o CLI 
 
 - [ ] **Step 1: Teste primeiro**
 
+⚠️ **Correção deste template (achado da revisão da T1, 2026-08-12):** a primeira versão que escrevi aqui usava `'http://localhost:8080'` como valor esperado — **o mesmo valor do default**. Com isso, nenhum teste consegue distinguir "leu a env var" de "devolveu a constante": trocar a implementação por uma string hardcoded deixava os 5 testes **verdes**. O valor de teste tem que ser **distinguível do default**.
+
 ```ts
 // apps/web/lib/admin/atelier/api.test.ts
 import { atelierBase } from './api'
 
 describe('atelierBase', () => {
-  it('usa NEXT_PUBLIC_ATELIER_URL quando definida', () => {
-    // (montar via re-import com env stubada — ver padrão em outros testes do web)
+  it('LÊ a NEXT_PUBLIC_ATELIER_URL — valor distinguível do default', () => {
+    // (montar via jest.resetModules() + await import('./api') com env stubada)
+    expect(atelierBase).toBe('https://tunel-go-de-teste.exemplo')
+  })
+
+  it('sem a env var, cai no default local', () => {
     expect(atelierBase).toBe('http://localhost:8080')
   })
 
@@ -414,6 +420,7 @@ test('preserva ids buracados de votes (54 linhas, max id 81 no real)', () => {
 11. **Comparação lado a lado** (T4), Go local × ramielle.
 12. **CORS em produção** — `curl` com `Origin: https://piluvitu.com.br` e conferir `access-control-allow-origin` + `access-control-allow-credentials`.
 13. Merge + redeploy da Vercel (a env inlinada só vale depois disto).
+    ⚠️⚠️ **Cadastrar `NEXT_PUBLIC_ATELIER_URL` na Vercel ANTES do redeploy**, com a URL do túnel da Go — **não** o placeholder `http://localhost:8080` do `.env.example`. Achado da revisão da T1: sem essa variável o Atelier cai no default, que **do navegador do admin em produção é a máquina dele**, não a Go — e isso reproduz, por um gatilho diferente (env ausente em vez de derivação acidental de `apiBase`), exatamente o bug que a T1 existe para evitar: card "Distribuição" **vazio, sem erro nenhum**, em todo post que tinha distribuição salva. A instrução genérica do `CLAUDE.md` da raiz ("copiar todas as `NEXT_PUBLIC_*` do `.env.example`") **leva ao valor errado** se seguida literalmente.
 14. Verificar a votação real em `https://piluvitu.com.br/votacao`.
 15. **Ponto de não-retorno:** só depois de 14 verde, aposentar a Go.
 
