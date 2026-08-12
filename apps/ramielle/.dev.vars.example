@@ -25,11 +25,19 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 # contrário do ALLOWED_EMAIL do finanças, que é um e-mail só.
 # ADMIN_EMAILS=dono@exemplo.com,outro-admin@exemplo.com
 
-# Task 5 (CORS): só precisa disto se quiser testar uma origem diferente do
-# default local (src/lib/cors.ts#DEFAULT_ALLOWED_ORIGINS já inclui
-# http://localhost:3333 e https://piluvitu.com.br — o `wrangler dev` comum
-# não precisa desta linha). CSV, mesmo contrato de ADMIN_EMAILS acima.
-# CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
+# Task 5 (CORS). ⚠️ CORREÇÃO (achado da revisão da T2 da fatia ④): a versão
+# anterior deste comentário dizia que "o `wrangler dev` comum não precisa desta
+# linha", porque `src/lib/cors.ts#DEFAULT_ALLOWED_ORIGINS` já inclui
+# http://localhost:3333. **Está errado.** `wrangler.jsonc#vars` fixa
+# `CORS_ALLOWED_ORIGINS = "https://piluvitu.com.br"`, e `vars` do
+# wrangler.jsonc valem TAMBÉM em `wrangler dev` — só um `.dev.vars` as
+# sobrescreve. Ou seja: `allowedOrigins()` nunca cai no default em dev, e sem
+# a linha abaixo o `apps/web` em http://localhost:3333 fica fora do CORS **e**
+# fora de `trustedOrigins` (src/lib/auth.ts deriva um do outro) — o login
+# responde 403 INVALID_CALLBACK_URL, com um erro que não diz que a causa é
+# CORS. DESCOMENTE a linha para desenvolver o web contra o ramielle local.
+# CSV, mesmo contrato de ADMIN_EMAILS acima.
+CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
 
 # Task 2 (fatia ③): cliente do Sheets (src/lib/gsheets.ts) — lê filmes e
 # categorias da planilha de votação. Os três SEMPRE via `wrangler secret
