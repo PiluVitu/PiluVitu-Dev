@@ -127,7 +127,15 @@ export async function searchPoster(
   if (!first) {
     return { posterUrl: '', tmdbId: 0 }
   }
-  if (first.poster_path === null || first.poster_path === '') {
+  // ⚠️ `!first.poster_path` (não `=== null || === ''`): a chave AUSENTE
+  // (`{"results":[{"id":9}]}`) também tem que cair aqui. O Go decodifica pra
+  // um `searchResult` cujo `PosterPath` é a string zero (`""`), então ele
+  // fail-softa — a checagem estrita anterior deixava `undefined` passar e
+  // montava `".../w500undefined"`, que NÃO é string vazia e portanto era
+  // GRAVADO em `session_movies.poster_url` (`domain/sessions.ts`) e devolvido
+  // como `PosterURL`: `<img>` quebrado PERMANENTE onde o Go dá placeholder.
+  // Achado da revisão final da fatia ③, provado por mutação.
+  if (!first.poster_path) {
     return { posterUrl: '', tmdbId: first.id }
   }
   return { posterUrl: POSTER_CDN_BASE + first.poster_path, tmdbId: first.id }

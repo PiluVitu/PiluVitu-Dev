@@ -1,7 +1,14 @@
 # Task 3 (Better Auth com Google): três segredos, nunca `vars` em
 # wrangler.jsonc — BETTER_AUTH_URL e ADMIN_EMAILS já estão lá (não são
 # segredo). Em produção, os três abaixo vão via `wrangler secret put`.
-BETTER_AUTH_URL=http://localhost:8787
+# ⚠️ 8788, NÃO 8787. `make dev-ramielle` sobe este Worker na 8788
+# (Makefile:57); a 8787 é o wrangler do FINANÇAS. Não é cosmético: o Better
+# Auth deriva daqui o `redirect_uri` (`/api/auth/callback/google`) e a
+# primeira entrada de `trustedOrigins` (src/lib/auth.ts:158,185) — apontar
+# pra 8787 entrega o `code` do OAuth na origem do outro app, que tem o MESMO
+# mount `/api/auth/*` e o MESMO OAuth Client. O sintoma aparece como
+# "CORS/origem não confiável", não como configuração errada.
+BETTER_AUTH_URL=http://localhost:8788
 BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
 # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: NÃO crie um OAuth Client novo pro
 # ramielle. São os valores do MESMO client que já serve a área de admin de

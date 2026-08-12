@@ -124,6 +124,30 @@ describe('searchPoster — fail-soft (Step 1, o ponto inteiro deste arquivo)', (
     }
   })
 
+  test('poster_path AUSENTE (chave nem existe) é tratado igual a nulo — não vira ".../w500undefined"', async () => {
+    // Achado da revisão final da fatia ③. A checagem estrita anterior
+    // (`=== null || === ''`) deixava a chave ausente passar e montava
+    // `https://image.tmdb.org/t/p/w500undefined` — que NÃO é string vazia,
+    // logo era GRAVADO em `session_movies.poster_url` e devolvido como
+    // `PosterURL`. O Go decodifica a chave ausente pro zero-value `""` e
+    // fail-softa preservando o id, igual ao caso nulo.
+    const mock = instalarMockTmdb(() =>
+      jsonResponse(200, { results: [{ id: 557 }] }),
+    )
+    try {
+      const resultado = await searchPoster(
+        { apiKey: 'chave', baseUrl: BASE_URL_TESTE },
+        'Chave Ausente',
+        'filme',
+      )
+      expect(resultado).toEqual({ posterUrl: '', tmdbId: 557 })
+      // Asserção negativa explícita: é ESTA string que vazava pro banco.
+      expect(resultado.posterUrl).not.toContain('undefined')
+    } finally {
+      mock.restaurar()
+    }
+  })
+
   test('poster_path string vazia é tratado igual a nulo', async () => {
     const mock = instalarMockTmdb(() =>
       jsonResponse(200, { results: [{ id: 556, poster_path: '' }] }),

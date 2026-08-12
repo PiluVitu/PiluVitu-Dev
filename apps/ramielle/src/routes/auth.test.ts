@@ -124,11 +124,11 @@ describe('POST /auth/logout', () => {
       testEnvComum,
     )
     expect(resLogout.status).toBe(200)
-    const bodyLogout = (await resLogout.json()) as Envelope<{
-      loggedOut: boolean
-    }>
+    const bodyLogout = (await resLogout.json()) as Envelope<null>
     expect(bodyLogout.ok).toBe(true)
-    expect(bodyLogout.data?.loggedOut).toBe(true)
+    // Paridade com o Go: `httpx.Data(w, 200, nil)` ⇒ `"data":null`. O
+    // `{loggedOut:true}` anterior era campo inventado (revisão final ③).
+    expect(bodyLogout.data).toBeNull()
 
     // depois do logout, o MESMO cookie deixa de valer.
     const depois = await app.request(
@@ -146,7 +146,8 @@ describe('POST /auth/logout', () => {
       testEnv(''),
     )
     expect(res.status).toBe(200)
-    const body = (await res.json()) as Envelope<{ loggedOut: boolean }>
+    const body = (await res.json()) as Envelope<null>
     expect(body.ok).toBe(true)
+    expect(body.data).toBeNull()
   })
 })

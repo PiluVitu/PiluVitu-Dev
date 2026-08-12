@@ -72,7 +72,13 @@ authRoutes.post('/logout', async (c) => {
     asResponse: true,
   })
 
-  const res = okJson({ loggedOut: true })
+  // ⚠️ `null`, não `{loggedOut:true}`: o Go faz `httpx.Data(w, 200, nil)`
+  // (`internal/auth/handlers.go:123`) ⇒ `"data":null`. O `loggedOut` era um
+  // campo INVENTADO — não portado — e o cliente o descarta
+  // (`api-client.ts` chama `call<void>`). Mesma classe de dívida que o fix
+  // do `created_at` em `/auth/me` já cortou: campo que só sobrevive porque
+  // o TypeScript não valida resposta de fetch. Achado da revisão final ③.
+  const res = okJson(null)
   for (const cookie of signOutResponse.headers.getSetCookie()) {
     res.headers.append('set-cookie', cookie)
   }
