@@ -9,4 +9,4 @@ const meta: Meta<typeof AdminLoginScreen> = {
 export default meta
 type Story = StoryObj<typeof AdminLoginScreen>
 
-export const Default: Story = { args: { href: '#' } }
+export const Default: Story = { args: { onLogin: () => {} } }

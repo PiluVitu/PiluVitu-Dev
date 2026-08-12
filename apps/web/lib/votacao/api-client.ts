@@ -120,4 +120,61 @@ export const votacaoApi = {
   adminCreateBackup: () => call<null>('/admin/backup', { method: 'POST' }),
 }
 
-export const loginHref = `${apiBase}/auth/google/login`
+/**
+ * Inicia o login social com Google via Better Auth (Cutover T2 — ramielle).
+ *
+ * Substitui a antiga navegação top-level `<a href="${apiBase}/auth/google/login">`:
+ * essa rota não existe no ramielle (404, cai no catch-all — ver
+ * task-2-brief.md). O login lá é `POST /api/auth/sign-in/social`, que devolve
+ * `{ url, redirect }` — o cliente é quem navega, não o servidor (verificado
+ * contra o pacote `better-auth@1.6.25` instalado, `dist/api/routes/sign-in.mjs`).
+ * Sem lib nova (`better-auth` não é dependência de apps/web e não vira uma só
+ * pra montar uma URL — Global Constraint desta fatia): ~15 linhas de fetch puro.
+ *
+ * `callbackURL`/`errorCallbackURL` são SEMPRE absolutas (`window.location.href`,
+ * a página atual) — quem processa o callback OAuth é o ramielle, em outra
+ * origem; um path relativo (o padrão do finanças, mesma origem lá) resolveria
+ * contra `ramielle.piluvitu.com.br`, não contra `piluvitu.com.br`. Preserva o
+ * destino do usuário no round trip pelo mesmo motivo do `Gate.tsx` do finanças
+ * carregar o hash: sem isso, expirar a sessão em `/votacao/5` devolveria o
+ * usuário pra uma rota default depois do login, não pra onde ele estava.
+ */
+export async function startGoogleLogin(options?: {
+  /** Override só de teste — em produção sempre `window.location.href = url`. */
+  navigate?: (url: string) => void
+}): Promise<void> {
+  const navigate =
+    options?.navigate ??
+    ((url: string) => {
+      window.location.href = url
+    })
+  const destino = window.location.href
+
+  let res: Response
+  try {
+    res = await fetch(`${apiBase}/api/auth/sign-in/social`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'google',
+        callbackURL: destino,
+        errorCallbackURL: destino,
+      }),
+    })
+  } catch {
+    throw new Error(
+      'Não foi possível iniciar o login com Google. Verifique sua conexão e tente novamente.',
+    )
+  }
+
+  const body = (await res.json().catch(() => null)) as { url?: string } | null
+
+  if (!res.ok || !body?.url) {
+    throw new Error(
+      'Não foi possível iniciar o login com Google. Tente novamente.',
+    )
+  }
+
+  navigate(body.url)
+}
