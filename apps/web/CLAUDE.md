@@ -204,9 +204,11 @@ O editor de posts (`/admin/posts/{novo,[slug]}`) traz dois widgets de IA montado
   - `POST /admin/llm/refine` — refina o texto de uma plataforma com instrução livre (campo "instrução" + botão "Refinar IA").
   - `POST /admin/distribution/<slug>/publish` — publica os targets selecionados (checkboxes por plataforma) e devolve targets atualizados com `status: 'posted' | 'failed'` e `remote_url`. Status é exibido inline: ✅ link clicável ("publicado"), ❌ falhou (tooltip com erro), ⏳ pendente. Botão "Publicar selecionadas" → toast "Publicação concluída.". Depende do túnel/Ollama + credenciais de plataforma configuradas na Go API; falhas exibem `toast.error`.
 
-- **API client:** `lib/admin/atelier/api.ts` — chama `apiBase` (mesma base da votação, `NEXT_PUBLIC_API_URL`) com `credentials: 'include'` e desembrulha o envelope `{ok,data,notifications}` via `ApiError`. Metadados de plataforma (labels, charLimit) em `lib/admin/atelier/platform-meta.ts`.
+- **API client:** `lib/admin/atelier/api.ts` — chama `atelierBase` (`NEXT_PUBLIC_ATELIER_URL`, default `http://localhost:8080`) com `credentials: 'include'` e desembrulha o envelope `{ok,data,notifications}` via `ApiError` (tipo reaproveitado de `@/lib/votacao/api-client`). Metadados de plataforma (labels, charLimit) em `lib/admin/atelier/platform-meta.ts`.
 
-- **Spec/plano:** `docs/superpowers/{specs,plans}/2026-06-10-distribuicao-fase1-*`. Endpoints Go: ver `apps/api/CLAUDE.md`.
+  ⚠️ **`atelierBase` é DELIBERADAMENTE separada de `apiBase` (a base da votação, `NEXT_PUBLIC_API_URL`) — não fundir de novo.** Task 1 da fatia ④ do cutover ramielle (2026-08-12): a votação foi repontada pro ramielle, mas o ramielle **não tem** as 5 rotas do Atelier (`/admin/llm/proofread`, `/admin/llm/refine`, `/admin/distribution/proposals`, `/admin/distribution/{slug}`, `/admin/distribution/{slug}/publish`) — elas caem no catch-all dele e voltam 404. O Atelier continua apontando pra Go local (`make stack`) até o `promeia` implementar essas rotas (spec §7.2). MEDIDO: se `atelierBase` voltar a derivar de `apiBase`, o card "Distribuição" (`components/admin/posts/distribution-panel.tsx`) passa a renderizar **vazio, sem nenhum sinal de erro**, em todo post que já tinha distribuição salva — `useDistribution(slug, !!slug)` dispara sozinho no mount (`enabled` verdadeiro), o `QueryClient` é `new QueryClient()` cru (sem `defaultOptions`, `retry` default = 3 ⇒ 4 requisições falhas por post aberto), e `targets = localTargets ?? existing.data?.targets ?? []` engole o erro (nada no componente lê `isError`). Trava de regressão: `lib/admin/atelier/api.test.ts` (`describe('atelierBase', …)`).
+
+- **Spec/plano:** `docs/superpowers/{specs,plans}/2026-06-10-distribuicao-fase1-*`. Cutover ramielle fatia ④: `.superpowers/sdd/2026-08-12-ramielle-fatia4-cutover/`. Endpoints Go: ver `apps/api/CLAUDE.md`.
 
 - **E2E colocado:** `apps/web/app/(admin)/admin/posts/atelier.e2e.ts` — testa os 3 fluxos: (1) clicar "Corrigir texto" → dialog abre com diff → "Aplicar" fecha + toast; (2) "Rejeitar" fecha sem aplicar; (3) preencher o slug → card Distribuição aparece → "Gerar propostas" → dev.to e Bluesky renderizam → "Publicar selecionadas" → links ✅ aparecem. Todos os endpoints são mockados com `page.route('**/...')` host-agnóstico (padrão do repo).
 
@@ -229,6 +231,7 @@ Fonte: `apps/web/.env.example`. Cadastrar na Vercel (ver seção CI/CD na raiz).
 - `BLOG_REPO_NAME` — blog content repo name (default: `piluvitu-blog`)
 - `ADMIN_TOKEN_SECRET` — chave (≥32 chars) que cifra o cookie do token GitHub linkado do admin unificado (`/admin`). Gere com `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 - `NEXT_PUBLIC_API_URL` — base URL da Go API consumida pelo front (default `http://localhost:8080`).
+- `NEXT_PUBLIC_ATELIER_URL` — base URL do Atelier (revisão de artigo + distribuição, `/admin/posts`), **deliberadamente separada** de `NEXT_PUBLIC_API_URL` (default também `http://localhost:8080`, mesma Go local por enquanto). Ver seção _Atelier_ abaixo para o porquê.
 
 ## Edição de conteúdo & deploy (Vercel)
 
