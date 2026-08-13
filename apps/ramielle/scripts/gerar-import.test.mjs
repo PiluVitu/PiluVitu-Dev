@@ -11,7 +11,7 @@
 // docs/superpowers/plans/2026-08-12-ramielle-fatia4-cutover.md.
 
 import { DatabaseSync } from 'node:sqlite'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -295,18 +295,24 @@ function criarFixtureGo() {
 }
 
 /**
- * Fixture GENUINAMENTE em WAL (`PRAGMA journal_mode = WAL`) — achado I2 do
- * fix round 1: nenhum outro teste deste arquivo tinha exercitado o formato
- * de journal que o banco REAL de produção usa (`criarFixtureGo` usa o
- * journal mode default, rollback). Medido (fix round 1): mesmo depois de
- * `close()` fazer checkpoint automático pro `.db` principal, REABRIR pra
- * LEITURA um banco marcado `journal_mode=WAL` recria `.db-shm`/`.db-wal` —
- * a leitura em si só funciona com o diretório GRAVÁVEL, não só com o `.db`
- * intacto (ver docstring de `lerBancoOrigem`).
+ * Fixture marcada `PRAGMA journal_mode = WAL`, mas JÁ TOTALMENTE
+ * CHECKPOINTADA no momento da leitura — o `close()` de uma conexão única
+ * (sem outra conexão concorrente) faz checkpoint automático, então o
+ * `.db-wal` NÃO existe ainda quando `lerBancoOrigem` abre o arquivo; ele é
+ * recriado, VAZIO, como efeito colateral de abrir um banco marcado WAL
+ * (medido: `.db-wal` de 0 bytes logo depois do `prepare()`/`.all()`).
+ *
+ * ⚠️ Renomeado no fix round 2 (achado I1 da re-revisão): o nome/docstring
+ * anteriores ("lê corretamente uma origem GENUINAMENTE em WAL") afirmavam
+ * mais do que este teste prova. Este helper prova só que abrir um banco
+ * journal_mode=WAL, JÁ CHECKPOINTADO, exige diretório GRAVÁVEL — requisito
+ * real, mas diferente de "dado vivendo de fato no -wal", que é o cenário de
+ * maior risco (o formato exato do banco de produção) e tem um teste
+ * PRÓPRIO logo abaixo (`criarFixtureGoWALComDadoPendente`).
  */
-function criarFixtureGoWAL() {
+function criarFixtureGoWALJaCheckpointada() {
   const dir = novoDirTemp()
-  const dbPath = path.join(dir, 'votacao-wal.db')
+  const dbPath = path.join(dir, 'votacao-wal-checkpointada.db')
   const db = new DatabaseSync(dbPath)
   db.exec('PRAGMA journal_mode = WAL;')
   db.exec(GO_SCHEMA)
@@ -314,10 +320,55 @@ function criarFixtureGoWAL() {
     db,
     'users',
     ['id', 'google_sub', 'email', 'name', 'picture', 'is_admin', 'created_at'],
-    [1, 'sub-wal', 'wal@example.com', 'Usuário WAL', null, 0, '2026-05-01 10:00:00'],
+    [1, 'sub-wal', 'wal@example.com', 'Usuário WAL Checkpointada', null, 0, '2026-05-01 10:00:00'],
   )
-  db.close()
+  db.close() // checkpoint automático acontece AQUI — .db-wal não sobrevive.
   return dbPath
+}
+
+/**
+ * Fixture com dado GENUINAMENTE PENDENTE no `.db-wal` — o cenário de maior
+ * risco real, e o formato EXATO do banco de produção (medido no plano:
+ * `.db` de 4.096 bytes, 1,1 MB de dado no `-wal`, nunca checkpointado).
+ *
+ * Achado I1 do fix round 2 (re-revisão): a versão anterior deste teste
+ * fechava a única conexão de escrita logo depois do INSERT — e o SQLite
+ * faz CHECKPOINT AUTOMÁTICO no `close()` de uma conexão ÚNICA (sem lock
+ * concorrente), esvaziando o `-wal` antes da leitura acontecer. A técnica
+ * que de fato deixa dado pendente no `-wal`: abrir uma SEGUNDA conexão
+ * (`travaLeitura`) ANTES do INSERT, fazer essa segunda conexão tocar o
+ * banco (senão o lock nunca se estabelece), e mantê-la aberta durante e
+ * depois do `close()` da conexão de escrita — o SQLite não consegue fazer
+ * checkpoint completo enquanto outra conexão está usando o arquivo.
+ *
+ * Devolve `{ dbPath, travaLeitura }` — quem chama É OBRIGADO a fechar
+ * `travaLeitura` depois de terminar (o `afterEach` deste arquivo limpa o
+ * DIRETÓRIO, mas não fecha conexões `node:sqlite` abertas).
+ */
+function criarFixtureGoWALComDadoPendente() {
+  const dir = novoDirTemp()
+  const dbPath = path.join(dir, 'votacao-wal-pendente.db')
+  const dbEscrita = new DatabaseSync(dbPath)
+  dbEscrita.exec('PRAGMA journal_mode = WAL;')
+  dbEscrita.exec(GO_SCHEMA)
+
+  // Segunda conexão, aberta ANTES do INSERT e mantida viva — é ela que
+  // impede o checkpoint automático que aconteceria no close() da conexão
+  // de escrita se ela fosse a única. `SELECT` estabelece o snapshot de
+  // leitura (abrir a conexão sozinho não basta — medido).
+  const travaLeitura = new DatabaseSync(dbPath, { readOnly: true })
+  travaLeitura.prepare('SELECT count(*) FROM users').get()
+
+  inserirLinha(
+    dbEscrita,
+    'users',
+    ['id', 'google_sub', 'email', 'name', 'picture', 'is_admin', 'created_at'],
+    [1, 'sub-wal-pendente', 'wal-pendente@example.com', 'Usuário WAL Pendente', null, 0, '2026-05-01 10:00:00'],
+  )
+
+  dbEscrita.close()
+  // travaLeitura CONTINUA aberta de propósito — quem chama fecha depois.
+  return { dbPath, travaLeitura }
 }
 
 /**
@@ -726,11 +777,44 @@ describe('lerBancoOrigem', () => {
     expect(() => lerBancoOrigem('/definitivamente/nao/existe.db')).toThrow()
   })
 
-  test('lê corretamente uma origem GENUINAMENTE em WAL (journal_mode=WAL, diretório gravável)', () => {
-    const dados = lerBancoOrigem(criarFixtureGoWAL())
+  test('lê corretamente um banco journal_mode=WAL JÁ CHECKPOINTADO (exige diretório gravável, mesmo sem dado pendente no -wal)', () => {
+    // Renomeado no fix round 2 (achado I1) — este teste NÃO exercita dado
+    // vivendo no -wal (o close() de conexão única já checkpointou tudo
+    // pro .db antes da leitura começar). O que ele prova, de verdade: abrir
+    // um banco MARCADO journal_mode=WAL recria .db-shm/.db-wal como efeito
+    // colateral, mesmo já checkpointado — e isso só funciona com o
+    // diretório gravável (ver docstring do helper e de lerBancoOrigem).
+    const dados = lerBancoOrigem(criarFixtureGoWALJaCheckpointada())
     expect(dados.users).toHaveLength(1)
-    expect(dados.users[0].name).toBe('Usuário WAL')
+    expect(dados.users[0].name).toBe('Usuário WAL Checkpointada')
     expect(dados.users[0].google_sub).toBe('sub-wal')
+  })
+
+  test('lê corretamente dado GENUINAMENTE PENDENTE no .db-wal — o formato exato do banco de produção', () => {
+    // Achado I1 do fix round 2: este é o teste que faltava. O anterior
+    // (acima) provava só o requisito de diretório gravável contra um banco
+    // JÁ checkpointado; este exercita o cenário de maior risco real — dado
+    // que ainda não foi persistido no .db principal, só no -wal (medido no
+    // plano: .db de 4.096 bytes, 1,1 MB no -wal).
+    const { dbPath, travaLeitura } = criarFixtureGoWALComDadoPendente()
+    try {
+      // Afirma que o fixture É o que diz ser, ANTES de ler — sem isto, uma
+      // mudança futura no node:sqlite que volte a checkpointar sozinho
+      // faria este teste "passar" sem testar o cenário de risco nenhum
+      // (mesmo remédio já aplicado 2x nesta fatia: mutação + revert pra
+      // provar poder de detecção, aqui aplicado à FIXTURE em vez do código
+      // de produção).
+      const caminhoWal = `${dbPath}-wal`
+      expect(existsSync(caminhoWal)).toBe(true)
+      expect(statSync(caminhoWal).size).toBeGreaterThan(0)
+
+      const dados = lerBancoOrigem(dbPath)
+      expect(dados.users).toHaveLength(1)
+      expect(dados.users[0].name).toBe('Usuário WAL Pendente')
+      expect(dados.users[0].google_sub).toBe('sub-wal-pendente')
+    } finally {
+      travaLeitura.close()
+    }
   })
 })
 
