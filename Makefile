@@ -1,6 +1,7 @@
 .PHONY: dev dev-web dev-api storybook stack build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
         backup-financas backup-financas-test \
+        backup-ramielle backup-ramielle-test \
         dev-promeia test-promeia lint-promeia insight \
         dev-ramielle test-ramielle
 
@@ -98,6 +99,18 @@ backup-financas:
 
 backup-financas-test:
 	cd apps/financas && ./scripts/backup-d1.test.sh
+
+# --- Backup do D1 (ramielle) ---
+# Mesmo desenho do backup do finanças acima, script irmão (apps/ramielle/
+# scripts/backup-d1.sh) — ver o comentário daquele arquivo pro porquê de um
+# irmão em vez de generalizar o do finanças. Destino default
+# ~/Backups/ramielle, 30 arquivos; ajuste por env:
+#   RAMIELLE_BACKUP_DIR=/outro/lugar RAMIELLE_BACKUP_KEEP=7 make backup-ramielle
+backup-ramielle:
+	cd apps/ramielle && ./scripts/backup-d1.sh
+
+backup-ramielle-test:
+	cd apps/ramielle && ./scripts/backup-d1.test.sh
 
 # --- Docker Compose ---
 compose-up:
