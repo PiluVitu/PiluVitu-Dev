@@ -294,6 +294,64 @@ function criarFixtureGo() {
   return dbPath
 }
 
+/**
+ * Fixture GENUINAMENTE em WAL (`PRAGMA journal_mode = WAL`) — achado I2 do
+ * fix round 1: nenhum outro teste deste arquivo tinha exercitado o formato
+ * de journal que o banco REAL de produção usa (`criarFixtureGo` usa o
+ * journal mode default, rollback). Medido (fix round 1): mesmo depois de
+ * `close()` fazer checkpoint automático pro `.db` principal, REABRIR pra
+ * LEITURA um banco marcado `journal_mode=WAL` recria `.db-shm`/`.db-wal` —
+ * a leitura em si só funciona com o diretório GRAVÁVEL, não só com o `.db`
+ * intacto (ver docstring de `lerBancoOrigem`).
+ */
+function criarFixtureGoWAL() {
+  const dir = novoDirTemp()
+  const dbPath = path.join(dir, 'votacao-wal.db')
+  const db = new DatabaseSync(dbPath)
+  db.exec('PRAGMA journal_mode = WAL;')
+  db.exec(GO_SCHEMA)
+  inserirLinha(
+    db,
+    'users',
+    ['id', 'google_sub', 'email', 'name', 'picture', 'is_admin', 'created_at'],
+    [1, 'sub-wal', 'wal@example.com', 'Usuário WAL', null, 0, '2026-05-01 10:00:00'],
+  )
+  db.close()
+  return dbPath
+}
+
+/**
+ * Banco SQLite válido mas TOTALMENTE sem schema — reproduz o pior caso do
+ * achado I1 (fix round 1): copiar só o `.db` quando o schema INTEIRO
+ * (não só as linhas) mora no `.db-wal` não copiado. A primeira `SELECT`
+ * estoura `no such table`, ANTES de chegar no branch de "0 linhas" que
+ * exige schema presente.
+ */
+function criarDbSemSchema() {
+  const dir = novoDirTemp()
+  const dbPath = path.join(dir, 'votacao-sem-schema.db')
+  const db = new DatabaseSync(dbPath)
+  db.close()
+  return dbPath
+}
+
+/**
+ * Banco SQLite com o schema real da Go, mas as 6 tabelas genuinamente
+ * VAZIAS (0 linhas cada) — achado I1 (fix round 1): o teste anterior desse
+ * cenário usava um `lerBancoOrigemImpl` MOCKADO devolvendo 6 arrays
+ * vazios, um estado fabricado que `lerBancoOrigem` de verdade nunca
+ * devolveria sozinho sem uma fonte real. Este helper produz o estado
+ * genuíno via `node:sqlite`.
+ */
+function criarFixtureGoVazia() {
+  const dir = novoDirTemp()
+  const dbPath = path.join(dir, 'votacao-vazia.db')
+  const db = new DatabaseSync(dbPath)
+  db.exec(GO_SCHEMA)
+  db.close()
+  return dbPath
+}
+
 const MIGRATION_0001 = readFileSync(
   fileURLToPath(new URL('../migrations/0001_votacao.sql', import.meta.url)),
   'utf8',
@@ -384,12 +442,25 @@ describe('gerarImport — lista explícita de colunas, ordem FK-safe', () => {
   })
 
   test('sessão sem vencedor (aberta) não gera UPDATE nenhum pra ela', () => {
+    // M2 (fix round 1): a asserção negativa sozinha passa até com
+    // `gerarImportDeDados` mutado pra `return ''` — precisa de uma
+    // asserção POSITIVA que ancore que o SQL de fato tem conteúdo real.
     const sql = gerarImport(criarFixtureGo())
+    expect(sql).toContain("INSERT INTO voting_sessions")
+    expect(sql).toMatch(/VALUES \(1, 'Sess.o Aberta', 'open'/)
+    // só existe UM UPDATE no arquivo inteiro — o da sessão 2 (que TEM
+    // vencedor). Com `return ''`, o match abaixo dá `[]`, tamanho 0 ≠ 1.
+    expect(sql.match(/UPDATE voting_sessions/g) ?? []).toHaveLength(1)
     expect(sql).not.toMatch(/UPDATE voting_sessions SET winner_movie_id = \d+ WHERE id = 1;/)
   })
 
   test('nunca lê nem escreve sqlite_sequence', () => {
+    // M2 (fix round 1): idem — sem uma asserção positiva, `return ''`
+    // passaria por vacuidade (string vazia também "não contém"
+    // sqlite_sequence).
     const sql = gerarImport(criarFixtureGo())
+    expect(sql).toContain('INSERT INTO users')
+    expect(sql.match(/INSERT INTO \w+/g)?.length ?? 0).toBeGreaterThan(10)
     // nenhum statement (INSERT/UPDATE/DELETE) toca a tabela de controle do
     // AUTOINCREMENT — nem sequer a palavra aparece no SQL gerado.
     expect(sql.toLowerCase()).not.toContain('sqlite_sequence')
@@ -654,12 +725,30 @@ describe('lerBancoOrigem', () => {
   test('erro claro quando o arquivo de origem não existe', () => {
     expect(() => lerBancoOrigem('/definitivamente/nao/existe.db')).toThrow()
   })
+
+  test('lê corretamente uma origem GENUINAMENTE em WAL (journal_mode=WAL, diretório gravável)', () => {
+    const dados = lerBancoOrigem(criarFixtureGoWAL())
+    expect(dados.users).toHaveLength(1)
+    expect(dados.users[0].name).toBe('Usuário WAL')
+    expect(dados.users[0].google_sub).toBe('sub-wal')
+  })
 })
 
 describe('gerarImport — atalho leitura+geração', () => {
-  test('equivale a gerarImportDeDados(lerBancoOrigem(caminho))', () => {
-    const caminho = criarFixtureGo()
-    expect(gerarImport(caminho)).toBe(gerarImportDeDados(lerBancoOrigem(caminho)))
+  // M2 (fix round 1): a versão anterior comparava gerarImport(caminho) com
+  // gerarImportDeDados(lerBancoOrigem(caminho)) — como gerarImport É
+  // literalmente essa composição (uma linha só), a asserção é uma
+  // TAUTOLOGIA: se gerarImportDeDados fosse mutado pra `return ''`, os
+  // dois lados dariam '' e o teste continuaria verde, sem detectar nada.
+  // Substituída por conteúdo REAL esperado — prova que o atalho lê o
+  // banco de verdade e gera o SQL certo, não só que devolve o que quer
+  // que a composição interna devolva.
+  test('lê o SQLite de origem e gera o SQL final, com os dados reais da fixture', () => {
+    const sql = gerarImport(criarFixtureGo())
+    expect(sql).toContain(
+      "INSERT INTO users (id, google_sub, email, name, picture, is_admin, created_at) VALUES (1, 'sub-ana', 'ana@example.com', 'Ana D''Ávila', NULL, 1, '2026-05-01 10:00:00');",
+    )
+    expect(sql).toContain('UPDATE voting_sessions SET winner_movie_id = 5 WHERE id = 2;')
   })
 })
 
@@ -688,6 +777,34 @@ describe('parseArgs', () => {
 
   test('sem nenhum argumento: caminhoDb undefined', () => {
     expect(parseArgs([]).caminhoDb).toBeUndefined()
+  })
+
+  test('--esperado com 6 números válidos', () => {
+    const args = parseArgs(['votacao.db', '--esperado', '4,4,42,54,2,0'])
+    expect(args.error).toBeNull()
+    expect(args.esperado).toEqual({
+      users: 4,
+      voting_sessions: 4,
+      session_movies: 42,
+      votes: 54,
+      tiebreaks: 2,
+      backups: 0,
+    })
+  })
+
+  test('--esperado com número de campos errado é erro', () => {
+    const args = parseArgs(['votacao.db', '--esperado', '4,4,42'])
+    expect(args.error).toMatch(/--esperado/)
+  })
+
+  test('--esperado com valor não-numérico é erro', () => {
+    const args = parseArgs(['votacao.db', '--esperado', '4,4,42,54,2,abc'])
+    expect(args.error).toMatch(/--esperado/)
+  })
+
+  test('--esperado sem valor é erro', () => {
+    const args = parseArgs(['votacao.db', '--esperado'])
+    expect(args.error).toMatch(/precisa de um valor/)
   })
 })
 
@@ -736,20 +853,32 @@ describe('run — CLI', () => {
     expect(erros.join('\n')).toMatch(/não consegui ler/)
   })
 
-  test('banco de origem com as 6 tabelas vazias: recusa com dica sobre o -wal', async () => {
+  test('banco de origem com schema presente mas as 6 tabelas genuinamente vazias: recusa com dica sobre o -wal', async () => {
+    // Achado I1 (fix round 1): antes este teste usava um lerBancoOrigemImpl
+    // MOCKADO devolvendo 6 arrays vazios — um estado fabricado pelo mock,
+    // não alcançável de verdade. Agora parte de um SQLite real com schema
+    // aplicado e 0 linhas (criarFixtureGoVazia) — o cenário que
+    // `lerBancoOrigem` de verdade devolve sozinho, sem injeção nenhuma.
     const { log, logError, erros } = coletores()
-    const lerBancoOrigemImpl = () => ({
-      users: [],
-      votingSessions: [],
-      sessionMovies: [],
-      votes: [],
-      tiebreaks: [],
-      backups: [],
-    })
-    const codigo = await run(['qualquer.db'], { log, logError, lerBancoOrigemImpl })
+    const codigo = await run([criarFixtureGoVazia()], { log, logError })
     expect(codigo).toBe(1)
     expect(erros.join('\n')).toMatch(/nenhuma linha/i)
     expect(erros.join('\n')).toMatch(/wal/i)
+  })
+
+  test('banco de origem SEM SCHEMA NENHUM (schema inteiro morava no -wal não copiado): erro cita o WAL, não só "no such table"', async () => {
+    // Achado I1 (fix round 1): o cenário REAL medido contra o plano —
+    // copiar só o .db quando o schema inteiro estava no -wal não
+    // checkpointado — faz a PRIMEIRA leitura estourar "no such table" ANTES
+    // do branch de "0 linhas" (que exige schema presente). Sem este teste,
+    // o usuário real bateria numa mensagem genérica sem menção a WAL.
+    const { log, logError, erros } = coletores()
+    const codigo = await run([criarDbSemSchema()], { log, logError })
+    expect(codigo).toBe(1)
+    const mensagem = erros.join('\n')
+    expect(mensagem).toMatch(/no such table/i)
+    expect(mensagem).toMatch(/wal/i)
+    expect(mensagem).toMatch(/schema/i)
   })
 
   test('caminho feliz: escreve o .sql via writeFile injetado e reporta contagens', async () => {
@@ -798,5 +927,48 @@ describe('run — CLI', () => {
     const codigo = await run([caminhoDb], { log, logError, writeFile })
     expect(codigo).toBe(1)
     expect(erros.join('\n')).toMatch(/não consegui escrever/)
+  })
+
+  test('--esperado batendo com a contagem real: gera o .sql normalmente', async () => {
+    // M3 (fix round 1): a fixture de gerar-import.test.mjs tem
+    // 2 users, 2 voting_sessions, 4 session_movies, 4 votes, 1 tiebreak,
+    // 1 backup — os números exatos que --esperado precisa bater.
+    const { log, logError, erros } = coletores()
+    const caminhoDb = criarFixtureGo()
+    let escreveu = false
+    const writeFile = () => {
+      escreveu = true
+    }
+
+    const codigo = await run([caminhoDb, '--esperado', '2,2,4,4,1,1'], {
+      log,
+      logError,
+      writeFile,
+    })
+    expect(codigo).toBe(0)
+    expect(escreveu).toBe(true)
+    expect(erros).toEqual([])
+  })
+
+  test('--esperado divergindo da contagem real: recusa (código 1), NADA é escrito — defesa contra import parcial silencioso', async () => {
+    const { log, logError, erros } = coletores()
+    const caminhoDb = criarFixtureGo()
+    let escreveu = false
+    const writeFile = () => {
+      escreveu = true
+    }
+
+    // votes real é 4; --esperado pede 54 (o número real de produção,
+    // citado no plano) — simula uma origem PARCIALMENTE checkpointada.
+    const codigo = await run([caminhoDb, '--esperado', '2,2,4,54,1,1'], {
+      log,
+      logError,
+      writeFile,
+    })
+    expect(codigo).toBe(1)
+    expect(escreveu).toBe(false)
+    const mensagem = erros.join('\n')
+    expect(mensagem).toMatch(/não bate com --esperado/)
+    expect(mensagem).toMatch(/votes: lido 4, esperado 54/)
   })
 })

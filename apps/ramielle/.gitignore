@@ -1,0 +1,14 @@
+# scripts/gerar-import.mjs (fatia ④, Task 3) — o .sql de saída carrega DADO
+# PESSOAL de verdade (google_sub, e-mail, nome, foto de todo mundo que já
+# votou). O default de `--saida` nasce no cwd de quem roda o comando
+# (`pnpm --filter @piluvitu/ramielle run gerar-import`, cwd = apps/ramielle)
+# — sem este .gitignore, `import.sql`/`votacao.import.sql` nasceriam
+# rastreáveis por padrão. Achado I3 da revisão do fix round 1 da Task 3.
+import.sql
+*.import.sql
+
+# Cópia do SQLite de origem (Go) usada pra rodar o gerador localmente —
+# mesmo motivo: pode ser o banco real, nunca commitar.
+*.db
+*.db-wal
+*.db-shm

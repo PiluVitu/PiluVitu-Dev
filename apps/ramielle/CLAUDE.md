@@ -323,12 +323,14 @@ Nenhum destes estava registrado antes. Ordem importa.
 **Rodar:**
 
 ```bash
-pnpm --filter @piluvitu/ramielle run gerar-import -- <caminho/votacao.db> [--saida <arquivo.sql>]
+pnpm --filter @piluvitu/ramielle run gerar-import -- <caminho/votacao.db> [--saida <arquivo.sql>] [--esperado <csv>]
 ```
 
-⚠️ **Se o `.db` de origem estiver em WAL não-checkpointado, ele pode ter só 4096 bytes vazios — o dado todo mora no `.db-wal`.** Copiar os dois arquivos junto (mesmo diretório, mesmo nome-base) resolve sozinho; o script recusa (código 1, mensagem explicando o WAL) se as 6 tabelas lidas vierem todas vazias, em vez de gerar um `.sql` "bem-sucedido" com zero linha.
+⚠️ **Se o `.db` de origem estiver em WAL não-checkpointado, ele pode ter só 4096 bytes vazios — o dado todo mora no `.db-wal`.** Copiar os dois arquivos junto (mesmo diretório, mesmo nome-base, **diretório GRAVÁVEL** — ver achado I2 abaixo) resolve sozinho; o script recusa (código 1, mensagem explicando o WAL) se as 6 tabelas lidas vierem todas vazias, em vez de gerar um `.sql` "bem-sucedido" com zero linha. ⚠️ **Achado I1 (fix round 1): se o schema INTEIRO (não só as linhas) morava no `.db-wal` não copiado, o sintoma é diferente** — a primeira leitura estoura `no such table: <tabela>` ANTES de chegar no branch de "0 linhas" acima. O `catch` desse erro detecta `no such table` e repete o aviso do WAL na mensagem certa (testado com um `.db` genuinamente sem schema nenhum, sem mock).
 
-**Testes**: `scripts/gerar-import.test.mjs`, 37 casos, rodando sob `vitest.scripts.config.ts` (`environment: 'node'`, mesmo padrão de `apps/financas/scripts/pdf-import.mjs`) — `pnpm --filter @piluvitu/ramielle run test` encadeia esse config junto do principal (394 → 431). Cobre escaping (aspas simples, acento, emoji, tentativa de injeção SQL), a ordem FK-safe, preservação de ids buracados, e uma validação ponta a ponta **offline** (sem `wrangler`) que aplica o schema real (`migrations/0001_votacao.sql`) num SQLite em memória e confirma `PRAGMA foreign_key_check` vazio + contagens batendo — inclusive com um fixture cujo `voting_sessions` nasce com a MESMA armadilha de ordem física do banco real (`ALTER TABLE ADD COLUMN winner_method` depois do `CREATE TABLE`, não reescrito na posição "lógica").
+`--esperado <csv>` (achado M3, fix round 1) — 6 números na ordem `users,voting_sessions,session_movies,votes,tiebreaks,backups`; se informado, o script RECUSA gerar o `.sql` (código 1, nada escrito) quando a contagem lida não bater. Defesa contra uma origem **parcialmente** checkpointada (algumas tabelas completas, outras faltando linha) — sem isto, esse cenário sai com **exit 0** e parece um import completo. Ex.: `--esperado 4,4,42,54,2,0` (os números reais medidos no plano).
+
+**Testes**: `scripts/gerar-import.test.mjs`, 45 casos, rodando sob `vitest.scripts.config.ts` (`environment: 'node'`, mesmo padrão de `apps/financas/scripts/pdf-import.mjs`, e desde o fix round 1 também **incluído no `tsconfig.json#include`** deste app — achado M1, sem isso o `.mjs`/config novo não era typechecado pelo `run lint`) — `pnpm --filter @piluvitu/ramielle run test` encadeia esse config junto do principal (394 → 439). Cobre escaping (aspas simples, acento, emoji, tentativa de injeção SQL), a ordem FK-safe, preservação de ids buracados, e uma validação ponta a ponta **offline** (sem `wrangler`) que aplica o schema real (`migrations/0001_votacao.sql`) num SQLite em memória e confirma `PRAGMA foreign_key_check` vazio + contagens batendo — inclusive com um fixture cujo `voting_sessions` nasce com a MESMA armadilha de ordem física do banco real (`ALTER TABLE ADD COLUMN winner_method` depois do `CREATE TABLE`, não reescrito na posição "lógica"). Desde o fix round 1: um fixture GENUINAMENTE em `PRAGMA journal_mode=WAL` (achado I2 — nenhum teste antes exercitava o journal mode real de produção; medido que reabrir pra leitura recria `.db-shm`/`.db-wal` mesmo depois de um `close()` já ter feito checkpoint — a leitura em si exige diretório gravável, não só o `.db` intacto) e o cenário "0 linhas" passou a nascer de um SQLite real com schema aplicado (não mais de um `lerBancoOrigemImpl` mockado — achado I1, "higiene de teste").
 
 **Validado também contra `wrangler d1 --local` de verdade**, num `--persist-to` isolado (nunca o estado normal do projeto, nunca `--remote`): `PRAGMA foreign_key_check` vazio, contagens batendo (`users` 4, `voting_sessions` 4, `session_movies` 9, `votes` 6, `tiebreaks` 2 — fixture sintética, não dado real). As duas mutações obrigatórias do brief foram reproduzidas e confirmadas contra o D1 real, depois revertidas:
 
@@ -342,8 +344,11 @@ pnpm --filter @piluvitu/ramielle run gerar-import -- <caminho/votacao.db> [--sai
 pnpm --filter @piluvitu/ramielle exec wrangler d1 migrations apply piluvitu-ramielle --remote
 
 # 2. Gerar o .sql a partir do SQLite real (copiado do volume infra_api-data,
-#    .db + .db-wal juntos — ver aviso do WAL acima)
-pnpm --filter @piluvitu/ramielle run gerar-import -- /caminho/pra/votacao.db --saida import.sql
+#    .db + .db-wal juntos, em diretório GRAVÁVEL — ver aviso do WAL acima).
+#    --esperado com os números reais medidos no plano — recusa gerar se a
+#    contagem lida não bater (defesa contra checkpoint parcial).
+pnpm --filter @piluvitu/ramielle run gerar-import -- /caminho/pra/votacao.db \
+  --saida import.sql --esperado 4,4,42,54,2,0
 
 # 3. Rodar o import — atômico, tem que ser ANTES do primeiro login no ramielle
 pnpm --filter @piluvitu/ramielle exec wrangler d1 execute piluvitu-ramielle --remote --file import.sql

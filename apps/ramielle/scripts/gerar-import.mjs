@@ -109,9 +109,15 @@ function lerTabela(db, tabela, colunas) {
  * estão com 0 linhas em produção, ver "Fatos medidos").
  *
  * `caminhoDb` é sempre aberto `readOnly: true` — este script NUNCA escreve
- * no banco de origem. Se o arquivo `.db` estiver vazio mas o `.db-wal`
- * existir ao lado (mesmo diretório, mesmo nome-base), o SQLite lê os dois
- * juntos sozinho — não é preciso passar o `-wal` explicitamente.
+ * nos BYTES do banco de origem (`.db`/`.db-wal`). Se o arquivo `.db`
+ * estiver vazio mas o `.db-wal` existir ao lado (mesmo diretório, mesmo
+ * nome-base), o SQLite lê os dois juntos sozinho — não é preciso passar o
+ * `-wal` explicitamente. ⚠️ ISSO É VERDADEIRO MAS INCOMPLETO: exige que o
+ * DIRETÓRIO seja GRAVÁVEL (medido — ler um `.db`+`.db-wal` num diretório
+ * `555`/arquivos `444`, o que um mount `-v ...:/data:ro` produz, falha com
+ * "unable to open database file", sem citar permissão nem WAL). Copie os
+ * arquivos pra um diretório gravável (o scratchpad, por ex.) antes de
+ * rodar este script — nunca aponte direto pro mount read-only.
  */
 export function lerBancoOrigem(caminhoDb) {
   const db = new DatabaseSync(caminhoDb, { readOnly: true })
@@ -293,17 +299,39 @@ escreve o .sql de saída — quem aplica é o dono, com wrangler, escolhendo
 
 ⚠️ Se o banco de origem estiver em WAL não-checkpointado, o arquivo .db
 sozinho pode estar vazio (4096 bytes) — o dado todo mora no .db-wal.
-Copie os dois arquivos (mesmo diretório, mesmo nome-base) antes de rodar
-este script, ou rode PRAGMA wal_checkpoint(TRUNCATE) na CÓPIA.
+Copie os dois arquivos (mesmo diretório, mesmo nome-base, diretório
+GRAVÁVEL) antes de rodar este script, ou rode
+PRAGMA wal_checkpoint(TRUNCATE) na CÓPIA.
 
 Opções:
-  --saida <path>   Caminho do .sql de saída (default: <entrada>.import.sql)
-  --help, -h       Mostra esta ajuda
+  --saida <path>      Caminho do .sql de saída (default: <entrada>.import.sql)
+  --esperado <csv>     6 números separados por vírgula, na ordem
+                       users,voting_sessions,session_movies,votes,tiebreaks,backups
+                       — se informado, RECUSA gerar o .sql (código 1) quando a
+                       contagem lida não bater. Defesa contra uma origem
+                       PARCIALMENTE checkpointada: sem isto, um import parcial
+                       sai com exit 0 e parece bem-sucedido.
+  --help, -h           Mostra esta ajuda
 `
 }
 
+const TABELAS_EM_ORDEM = [
+  'users',
+  'voting_sessions',
+  'session_movies',
+  'votes',
+  'tiebreaks',
+  'backups',
+]
+
 export function parseArgs(argv) {
-  const args = { caminhoDb: undefined, saida: undefined, help: false, error: null }
+  const args = {
+    caminhoDb: undefined,
+    saida: undefined,
+    esperado: undefined,
+    help: false,
+    error: null,
+  }
   const posicionais = []
 
   for (let i = 0; i < argv.length; i++) {
@@ -319,6 +347,23 @@ export function parseArgs(argv) {
         return args
       }
       args.saida = valor
+      i++
+      continue
+    }
+    if (atual === '--esperado') {
+      const valor = argv[i + 1]
+      if (valor === undefined) {
+        args.error = `a opção ${atual} precisa de um valor`
+        return args
+      }
+      const partes = valor.split(',').map((p) => p.trim())
+      if (partes.length !== TABELAS_EM_ORDEM.length || partes.some((p) => !/^\d+$/.test(p))) {
+        args.error = `--esperado precisa de ${TABELAS_EM_ORDEM.length} números inteiros separados por vírgula, na ordem ${TABELAS_EM_ORDEM.join(',')}`
+        return args
+      }
+      args.esperado = Object.fromEntries(
+        TABELAS_EM_ORDEM.map((tabela, idx) => [tabela, Number(partes[idx])]),
+      )
       i++
       continue
     }
@@ -359,6 +404,20 @@ export async function run(argv, deps = {}) {
     dados = lerBancoOrigemImpl(args.caminhoDb)
   } catch (err) {
     logError(`erro: não consegui ler "${args.caminhoDb}": ${err.message}`)
+    // ⚠️ Achado I1 do fix round 1: quando o `.db` foi copiado SEM o
+    // `.db-wal`, o SCHEMA inteiro pode estar ausente (não só as linhas) —
+    // o primeiro SELECT estoura "no such table: <tabela>" antes de chegar
+    // no branch de "0 linhas" abaixo, que exige schema presente. Repete o
+    // aviso do WAL aqui, na mensagem que o cenário real de fato alcança.
+    if (/no such table/i.test(err.message)) {
+      logError(
+        '      "no such table" é sintoma de copiar só o .db sem o .db-wal — se o\n' +
+          '      banco de origem nunca foi checkpointado, o SCHEMA inteiro (não só\n' +
+          '      as linhas) pode morar no .db-wal. Copie os dois arquivos juntos\n' +
+          '      (mesmo diretório, mesmo nome-base, diretório GRAVÁVEL), ou rode\n' +
+          '      PRAGMA wal_checkpoint(TRUNCATE) na CÓPIA antes de tentar de novo.',
+      )
+    }
     return 1
   }
 
@@ -373,6 +432,28 @@ export async function run(argv, deps = {}) {
         '      rode PRAGMA wal_checkpoint(TRUNCATE) na CÓPIA antes de tentar de novo.',
     )
     return 1
+  }
+
+  // M3 (fix round 1): sem --esperado, uma origem PARCIALMENTE
+  // checkpointada (algumas tabelas com todas as linhas, outras faltando)
+  // gera um .sql "bem-sucedido" com exit 0 — parece um import completo,
+  // não é. Com --esperado, compara contagem lida × contagem esperada ANTES
+  // de escrever qualquer coisa, e recusa se divergir.
+  if (args.esperado !== undefined) {
+    const divergentes = TABELAS_EM_ORDEM.filter(
+      (tabela) => contagens[tabela] !== args.esperado[tabela],
+    )
+    if (divergentes.length > 0) {
+      logError(
+        'erro: a contagem lida não bate com --esperado — nada foi escrito.\n' +
+          '      Sintoma de origem PARCIALMENTE checkpointada (algumas tabelas OK,\n' +
+          '      outras faltando linha). Divergências:',
+      )
+      for (const tabela of divergentes) {
+        logError(`      ${tabela}: lido ${contagens[tabela]}, esperado ${args.esperado[tabela]}`)
+      }
+      return 1
+    }
   }
 
   const sql = gerarImportDeDados(dados)
