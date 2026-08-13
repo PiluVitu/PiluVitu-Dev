@@ -414,6 +414,14 @@ Também disponível como script `backup` no `package.json` (`pnpm --filter @pilu
 - **Criar o Custom Domain** `ramielle.piluvitu.com.br` (dashboard: Workers & Pages → `piluvitu-ramielle` → Settings → Domains & Routes → Add → Custom Domain) — `wrangler.jsonc` já declara a rota (`routes: [{ pattern: "ramielle.piluvitu.com.br", custom_domain: true }]`), falta o domínio existir de fato.
 - **Registrar a redirect URI no Google Console, no MESMO OAuth Client do bullet acima**: `https://ramielle.piluvitu.com.br/api/auth/callback/google`. ⚠️ **ADICIONAR, NUNCA SUBSTITUIR AS EXISTENTES** — é justamente por ser o mesmo client (não um novo) que esta URI é ADITIVA: ele hoje serve a área de admin de outro app **e** a API Go (`promeia.piluvitu.com.br/auth/google/callback`); remover uma URI existente quebra o que já está no ar.
 
-## Nada em produção mudou nesta fatia
+## Estado em produção — atualizado na fatia ④ (2026-08-13)
 
-`apps/web` continua falando com a Go (`promeia.piluvitu.com.br`, ver `apps/api/CLAUDE.md`). Nenhuma tela, nenhum endpoint em produção mudou — tudo o que este arquivo descreve (auth, CORS, guards) só é alcançável localmente/via preview até o dono completar as pendências acima.
+⚠️ **Esta seção dizia "nada em produção mudou nesta fatia" e ficou congelada na fatia ③.** Depois da fatia ④ (o cutover) a frase virou falsa sobre o **código**, e mantê-la levaria alguém a acreditar que o `apps/web` ainda aponta pra Go depois do merge. Corrigido na revisão final da fatia ④.
+
+**No código (branch `feat/ramielle-promeia`):** o `apps/web` **já reponta pro ramielle** — `NEXT_PUBLIC_API_URL` e o fluxo de login (`POST /api/auth/sign-in/social` do Better Auth, no lugar do `GET /auth/google/login` que não existe aqui). O Atelier foi **desacoplado** numa env própria (`NEXT_PUBLIC_ATELIER_URL`) e continua apontando pra Go. As 13 rotas `/tools/*` foram apagadas da Go.
+
+**No ar, hoje:** **nada disso vale ainda.** `NEXT_PUBLIC_API_URL` é compilada em build time, então o repoint só passa a existir depois de **merge + redeploy da Vercel** — o passo 14 do runbook. Até lá, `piluvitu.com.br` segue servindo o bundle antigo, que fala com a Go.
+
+⚠️ E a Go está em **530** desde ~2026-06 (containers `Exited`), então a votação em produção **já está quebrada hoje**, independente deste trabalho. O runbook começa registrando esse baseline justamente pra que o cutover não leve a culpa por uma quebra anterior a ele.
+
+**O que falta pra valer em produção:** o runbook completo — `docs/superpowers/runbooks/2026-08-12-cutover-ramielle.md`, 16 passos, todos comandos do dono.

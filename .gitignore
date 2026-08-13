@@ -91,3 +91,16 @@ apps/ramielle/.wrangler/
 **/__pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# Artefatos de cutover (fatia ④ do ramielle) — carregam DADO PESSOAL:
+# o import.sql tem google_sub, e-mail, nome e foto de todo mundo; o relatório
+# do harness de comparação tem e-mail e nome de quem votou. O .gitignore de
+# apps/ramielle já cobre esses nomes LÁ; estes padrões cobrem o resto do repo,
+# porque a guarda do --relatorio valida só o SUFIXO e um caminho relativo
+# (ex.: --relatorio ../../cutover.report.txt) nasce rastreável.
+import.sql
+*.import.sql
+*.report.txt
+*.db
+*.db-wal
+*.db-shm

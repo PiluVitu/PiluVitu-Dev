@@ -84,6 +84,20 @@ if ! grep -q 'CREATE TABLE' "$CRU"; then
   exit 1
 fi
 
+# ⚠️ Guarda de dump só-DDL (achado da revisão final da fatia ④). As checagens
+# acima aceitam um export truncado ENTRE o CREATE TABLE e o primeiro INSERT:
+# tem conteúdo, tem 'CREATE TABLE', comprime sem erro. A comparação de tamanho
+# lá embaixo pegaria isso — mas ela é PULADA quando não há backup anterior, e
+# a primeira execução da vida deste script é exatamente o passo 11 do runbook
+# de cutover, logo depois do import, quando o D1 vira o ÚNICO registro do
+# histórico. Um "backup" só-DDL ali significa acreditar que tem cópia e não
+# ter. Este script nunca é legitimamente rodado contra um banco vazio (o
+# runbook o roda depois do import), então exigir INSERT é seguro.
+if ! grep -q 'INSERT INTO' "$CRU"; then
+  echo "erro: export tem 'CREATE TABLE' mas nenhum 'INSERT INTO' — dump só-DDL (truncado antes das linhas), recusado, nada rotacionado. Se o banco estiver legitimamente vazio, não há o que fazer backup." >&2
+  exit 1
+fi
+
 gzip -c "$CRU" > "$TRABALHO/dump.sql.gz"
 if ! gzip -t "$TRABALHO/dump.sql.gz"; then
   echo "erro: gzip do export não passa no teste de integridade" >&2

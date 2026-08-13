@@ -34,11 +34,19 @@ docker ps -a
 
 ## 2. Subir a Go local (`make stack`)
 
+⚠️ **Prefira o caminho curto.** `make stack` (`process-compose up`) encadeia **Ollama** antes da API: `ollama serve` → `ollama-pull` (baixa `qwen2.5:7b-instruct` **e** `qwen2.5:14b-instruct`, vários GB) → só então `api`, com `depends_on: process_completed_successfully` → só então `tunnel`. **Nada do Ollama é usado por este cutover.** Se o pull falhar ou demorar (rede lenta, disco cheio, Ollama não instalado), a API nunca sobe, o túnel nunca sobe, e você fica travado neste passo sem nenhuma pista de que o bloqueio é um download de LLM sem relação com o que está fazendo.
+
 ```bash
-make stack
+make tunnel-up          # ← caminho curto: só a API Go + o túnel, sem Ollama
 ```
 
-Sobe Ollama + a API Go + o Cloudflare Tunnel via `process-compose`. Necessário pra três coisas mais adiante neste runbook: (a) confirmar que o Docker está de pé antes de tocar no volume de produção no passo 3; (b) ter uma Go local disponível pro passo 12 (comparação lado a lado); (c) ter `promeia.piluvitu.com.br` respondendo de novo — é o host que `NEXT_PUBLIC_ATELIER_URL` (passo 14) tem que apontar em produção.
+```bash
+make stack              # só se você TAMBÉM for usar o Atelier/LLM agora
+```
+
+⚠️ `make tunnel-up` exige `infra/.env` com `CLOUDFLARE_TUNNEL_TOKEN` (o compose usa `${CLOUDFLARE_TUNNEL_TOKEN:?…}` e falha alto sem ele). O arquivo existe hoje — confira antes de começar.
+
+Necessário pra três coisas mais adiante neste runbook: (a) confirmar que o Docker está de pé antes de tocar no volume de produção no passo 3; (b) ter uma Go local disponível pro passo 12 (comparação lado a lado); (c) ter `promeia.piluvitu.com.br` respondendo de novo — é o host que `NEXT_PUBLIC_ATELIER_URL` (passo 14) tem que apontar em produção.
 
 **Como verificar:** `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health` devolve `200`. Depois de alguns segundos, `curl -s -o /dev/null -w '%{http_code}\n' https://promeia.piluvitu.com.br/health` também deve parar de devolver `530` (o túnel reconectou).
 
@@ -217,7 +225,23 @@ pnpm --filter @piluvitu/ramielle exec wrangler d1 execute piluvitu-ramielle \
   --remote --file ~/ramielle-cutover-scratch/import.sql
 ```
 
-Se o banco de produção tiver crescido desde a medição do plano (4 usuários / 4 sessões / 42 filmes / 54 votos / 2 tiebreaks / 0 backups), o `--esperado` vai **recusar** gerar o `.sql** — nesse caso, recontar as tabelas na cópia (`sqlite3 ~/ramielle-cutover-scratch/votacao.db "SELECT count(\*) FROM users;"`etc., um por tabela) e refazer o comando com os números atuais. **Nunca** rodar sem`--esperado`.
+Se o banco de produção tiver crescido desde a medição do plano (4 usuários / 4 sessões / 42 filmes / 54 votos / 2 tiebreaks / 0 backups), o `--esperado` vai **recusar** gerar o `.sql`. Isso é proteção, não erro — recontar as 6 tabelas na cópia e refazer o comando com os números atuais. **Nunca** rodar sem `--esperado`.
+
+Um comando só, que já imprime as 6 contagens na ordem que o `--esperado` espera:
+
+```bash
+sqlite3 ~/ramielle-cutover-scratch/votacao.db \
+  'SELECT (SELECT count(*) FROM users) || "," ||
+          (SELECT count(*) FROM voting_sessions) || "," ||
+          (SELECT count(*) FROM session_movies) || "," ||
+          (SELECT count(*) FROM votes) || "," ||
+          (SELECT count(*) FROM tiebreaks) || "," ||
+          (SELECT count(*) FROM backups);'
+```
+
+Saída esperada hoje: `4,4,42,54,2,0` — cole o que sair direto no `--esperado`.
+
+⚠️ Use **aspas simples** em volta do SQL. Com aspas duplas o shell não protege o `*` da mesma forma e o SQLite reclama de token inesperado — erro que parece problema no banco e não é.
 
 **Como verificar:**
 
@@ -329,9 +353,13 @@ curl -sI -X OPTIONS \
 
 ---
 
-## 14. Merge + redeploy da Vercel
+## 14. ⚠️ Merge + redeploy da Vercel — **a partir daqui pessoas reais votam no ramielle**
 
 A env inlinada (`NEXT_PUBLIC_API_URL`) só passa a valer depois deste passo — é compilada em build time, editar a variável sozinha não reponta produção.
+
+⚠️⚠️ **É AQUI que a reversibilidade barata acaba, não no passo 16.** Assim que este deploy sair, `piluvitu.com.br/votacao` está falando com o ramielle: qualquer pessoa que votar a partir de agora grava **no D1**, não na Go. O passo 16 é só a decisão de desligar infra que já não recebe tráfego — o marcador 🛑 lá embaixo é o ponto de não-retorno _operacional_, mas o de **dados** é este.
+
+Consequência prática pro rollback: entre o 14 e o 16 pode haver horas (o checklist do passo 15 é pra ser feito com calma, do celular e do laptop). Voltar depois disso **não é só um revert** — ver "Como desfazer" abaixo.
 
 ⚠️⚠️ **Cadastrar `NEXT_PUBLIC_ATELIER_URL` na Vercel ANTES do redeploy — com a URL do túnel da Go (`https://promeia.piluvitu.com.br`, reativado no passo 2), NUNCA o placeholder `http://localhost:8080` do `.env.example`.** Achado da revisão da T1 desta fatia: sem essa variável, o Atelier cai no default, que do navegador do admin **em produção é a máquina dele**, não a Go — reproduz, por gatilho diferente (env ausente em vez de derivação acidental de `apiBase`), o mesmo bug que a T1 existe pra evitar: card "Distribuição" **vazio, sem erro nenhum**, em todo post que tinha distribuição salva. A instrução genérica do `CLAUDE.md` da raiz ("copiar todas as `NEXT_PUBLIC_*` do `.env.example`") **leva ao valor errado** se seguida literalmente aqui.
 
@@ -345,7 +373,14 @@ Passos:
 
 **Como verificar:** o deploy novo aparece como "Production" no dashboard da Vercel; `curl -s https://piluvitu.com.br/_next/static/chunks/*.js | grep -o 'ramielle\.piluvitu\.com\.br'` encontra o novo host inlinado no bundle (mesma técnica de verificação que a T2 usou pra confirmar `promeia.piluvitu.com.br` estava inlinado antes do repoint — ver "Fatos medidos" do plano).
 
-**Como desfazer:** reverter o merge (`git revert` do commit de merge em `main`, push, novo deploy automático) **ou**, mais rápido, na Vercel: Deployments → escolher o deployment de produção **anterior** → "Promote to Production". Os dois caminhos funcionam; o segundo é mais rápido em uma emergência.
+**Como desfazer:** mecanicamente há dois caminhos — reverter o merge (`git revert` do commit de merge em `main`, push, novo deploy automático) **ou**, mais rápido numa emergência, na Vercel: Deployments → deployment de produção **anterior** → "Promote to Production".
+
+⚠️ **Mas os dois só desfazem o ROTEAMENTO, não os dados.** Se alguém já votou depois deste passo, esses votos estão no **D1** e o site volta a apontar pra uma Go que (a) não os tem e (b) está fora do ar até você subir de novo. Os votos não somem — ficam **órfãos**, invisíveis pro site, até você repontar de volta pro ramielle.
+
+Antes de reverter, decida conscientemente:
+
+1. **Ninguém votou ainda** (confira: `wrangler d1 execute piluvitu-ramielle --remote --command "SELECT count(*) FROM votes WHERE created_at > '<timestamp do deploy>'"`) ⇒ revert é limpo, siga.
+2. **Alguém já votou** ⇒ reverter perde essas sessões de vista. Prefira **corrigir pra frente** (o problema costuma ser config: secret faltando, origem fora de `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_ATELIER_URL` errada) em vez de voltar. Se voltar for inevitável, exporte o D1 antes (passo 11) pra não depender só do Time Travel.
 
 ---
 

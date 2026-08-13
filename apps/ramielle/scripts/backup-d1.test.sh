@@ -164,12 +164,28 @@ else
 fi
 limpar_sandbox
 
-# --- 9. primeira execução da vida (sem backup anterior) não tem com o que
-#        comparar — continua aceitando um dump pequeno normalmente ----------
+# --- 9. primeira execução da vida (sem backup anterior): um dump SÓ-DDL tem
+#        que ser RECUSADO mesmo assim ------------------------------------------
+# ⚠️ Este cenário fixava o comportamento OPOSTO até a revisão final da fatia ④
+# ("sem backup anterior, dump pequeno ainda é aceito", exit 0). Era um buraco
+# real: a comparação de tamanho é pulada quando não há backup anterior, e a
+# PRIMEIRA execução da vida deste script é exatamente o passo 11 do runbook de
+# cutover — logo depois do import, quando o D1 vira o único registro do
+# histórico. Um "backup" só-DDL ali significa o dono acreditar que tem cópia e
+# não ter. A guarda `grep -q 'INSERT INTO'` fecha isso.
 montar_sandbox ddl_apenas
 rodar_backup 30
-checar "sem backup anterior, dump pequeno (aqui, só DDL) ainda é aceito" 0 "$?"
-checar "grava o único backup possível de comparar" 1 "$(contar_backups)"
+checar "sem backup anterior, dump SÓ-DDL é RECUSADO (não vira falso backup)" 1 "$?"
+checar "nada foi gravado" 0 "$(contar_backups)"
+limpar_sandbox
+
+# --- 10. primeira execução da vida com dump LEGÍTIMO continua sendo aceita ---
+# Contraprova do cenário 9: a guarda nova recusa só-DDL, não recusa um backup
+# pequeno e válido. Sem este teste, um fix que recusasse tudo passaria.
+montar_sandbox ok
+rodar_backup 30
+checar "sem backup anterior, dump COM INSERT é aceito" 0 "$?"
+checar "grava o primeiro backup" 1 "$(contar_backups)"
 limpar_sandbox
 
 echo
