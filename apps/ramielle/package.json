@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:gerar-import": "vitest run --config vitest.scripts.config.ts",
     "gerar-import": "node scripts/gerar-import.mjs",
+    "comparar-com-go": "node scripts/comparar-com-go.mjs",
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply piluvitu-ramielle --local",
     "db:migrate:remote": "wrangler d1 migrations apply piluvitu-ramielle --remote",

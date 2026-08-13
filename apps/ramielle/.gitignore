@@ -12,3 +12,18 @@ import.sql
 *.db
 *.db-wal
 *.db-shm
+
+# scripts/comparar-com-go.mjs (fatia ④, Task 4) — o relatório opcional
+# (`--relatorio <arquivo>`) ecoa os CORPOS reais das respostas das rotas
+# admin (`/admin/users`, `/sessions/{id}/votes`), que carregam e-mail/nome
+# de quem votou. Nunca o cookie (não passa por arquivo nenhum — só entra
+# via env var), mas o dado pessoal do payload sim. Glob amplo porque o
+# caminho é escolhido pelo dono via flag, não um nome fixo só.
+*.report.txt
+comparar-com-go.report.txt
+
+# D1 local ISOLADO usado só pra rodar esta comparação (--persist-to próprio,
+# nunca o estado normal de dev do projeto) — se o dono criar dentro deste
+# workspace em vez de no scratchpad, não pode ser rastreado (carrega o
+# histórico real da votação, importado da Go).
+d1-cutover-cmp/
