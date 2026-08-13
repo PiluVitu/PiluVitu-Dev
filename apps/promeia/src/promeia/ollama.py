@@ -1,10 +1,23 @@
-"""Cliente do Ollama local.
+"""Cliente do Ollama local — DOIS endpoints, de propósito.
 
-⚠️ Usa /api/generate (prompt único), não /api/chat (system+user). São duas
-APIs diferentes do Ollama: o insight sempre usou `generate`
-(scripts/insight.mjs:157) e a revisão de artigo em Go usa `chat`
-(internal/llm/client.go:76). `chat` entra quando a revisão de artigo migrar
-— depois do ramielle, por decisão do dono. Não antecipar.
+⚠️ `/api/generate` (prompt único) e `/api/chat` (system+user) são APIs
+DIFERENTES do Ollama, e este módulo expõe as duas porque os dois consumidores
+precisam de coisas diferentes:
+
+- **`generate`** — o insight (`insight.py`). Prompt único, temperatura fixa
+  em 0: é resumo de números já calculados, e variação entre execuções ali é
+  DEFEITO, não estilo.
+- **`chat`** — a revisão de artigo (`revisao.py`), porte de
+  `apps/api/internal/llm/client.go:76`. Precisa separar a instrução (system)
+  do texto a tratar (user), e usa temperatura VARIÁVEL (0.1 no proofread,
+  0.7 no refine).
+
+⚠️ A versão anterior deste aviso dizia que `chat` só entraria "quando a
+revisão de artigo migrar — depois do ramielle. Não antecipar." Ele cumpriu o
+papel: o ramielle ficou pronto na fatia ④ e a revisão de artigo migrou nesta.
+Mantido aqui em forma reescrita, e não apagado, porque a pergunta que ele
+respondia ("por que este módulo não tem `chat`?") virou outra igualmente
+válida: "por que tem os dois?".
 """
 
 from __future__ import annotations
@@ -42,26 +55,20 @@ class OllamaFailed(OllamaError):
     """Cheguei no Ollama e ele falhou (HTTP de erro, resposta malformada)."""
 
 
-def generate(
+def _postar(
     *,
+    url: str,
+    payload: dict,
     model: str,
-    prompt: str,
-    base_url: str,
-    client: httpx.Client | None = None,
-) -> str:
-    """Um turno não-streaming. Devolve o texto CRU (sem trim).
+    client: httpx.Client | None,
+) -> dict:
+    """POST no Ollama + as quatro traduções de falha. Devolve o corpo JSON.
 
-    O trim é de quem chama: quem publica precisa distinguir "veio vazio" de
-    "veio só espaço em branco", e essa decisão não é do transporte.
+    Extraído quando `chat` entrou (revisão de artigo): `generate` e `chat` são
+    endpoints diferentes com o MESMO tratamento de erro — duplicá-lo era
+    garantir que uma das cópias envelhecesse. O que muda entre os dois é só a
+    URL, o payload e QUAL campo da resposta interessa; nada disso mora aqui.
     """
-    url = f"{base_url.rstrip('/')}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0},
-    }
-
     proprio = client is None
     c = client if client is not None else httpx.Client(timeout=TIMEOUT)
     try:
@@ -110,14 +117,92 @@ def generate(
                 f"resposta do Ollama em {url} não é um objeto JSON como "
                 f"esperado: {payload_resposta!r:.500}"
             )
-
-        texto = payload_resposta.get("response")
-        if not isinstance(texto, str):
-            raise OllamaFailed(
-                'resposta do Ollama não trouxe o campo "response" esperado: '
-                f"{payload_resposta!r:.500}"
-            )
-        return texto
+        return payload_resposta
     finally:
         if proprio:
             c.close()
+
+
+def generate(
+    *,
+    model: str,
+    prompt: str,
+    base_url: str,
+    client: httpx.Client | None = None,
+) -> str:
+    """Um turno não-streaming em `/api/generate`. Devolve o texto CRU (sem trim).
+
+    O trim é de quem chama: quem publica precisa distinguir "veio vazio" de
+    "veio só espaço em branco", e essa decisão não é do transporte.
+    """
+    url = f"{base_url.rstrip('/')}/api/generate"
+    corpo = _postar(
+        url=url,
+        payload={
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0},
+        },
+        model=model,
+        client=client,
+    )
+    texto = corpo.get("response")
+    if not isinstance(texto, str):
+        raise OllamaFailed(
+            f'resposta do Ollama não trouxe o campo "response" esperado: {corpo!r:.500}'
+        )
+    return texto
+
+
+def chat(
+    *,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+    base_url: str,
+    client: httpx.Client | None = None,
+) -> str:
+    """Um turno system+user em `/api/chat`. Devolve o texto CRU (sem trim).
+
+    ⚠️ Endpoint DIFERENTE do `generate`: corpo com `messages` e resposta em
+    `message.content`. É o que a revisão de artigo usa (porte de
+    `apps/api/internal/llm/client.go`), porque proofread/refine precisam
+    separar a instrução (system) do texto a tratar (user) — no `generate`
+    os dois viram um prompt só e o modelo confunde um com o outro.
+
+    ⚠️ `temperature` é PARÂMETRO aqui, ao contrário do `generate` (que fixa 0):
+    o Go usa 0.1 no proofread (correção tem que ser conservadora) e 0.7 no
+    refine (reescrita precisa de variação). Uniformizar muda o comportamento
+    dos dois.
+    """
+    url = f"{base_url.rstrip('/')}/api/chat"
+    corpo = _postar(
+        url=url,
+        payload={
+            "model": model,
+            # A ORDEM importa: invertido, o modelo trata a instrução como
+            # conteúdo a revisar.
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "options": {"temperature": temperature},
+        },
+        model=model,
+        client=client,
+    )
+    mensagem = corpo.get("message")
+    if not isinstance(mensagem, dict):
+        raise OllamaFailed(
+            f'resposta do Ollama não trouxe o objeto "message" esperado: {corpo!r:.500}'
+        )
+    texto = mensagem.get("content")
+    if not isinstance(texto, str):
+        raise OllamaFailed(
+            'resposta do Ollama não trouxe o campo "message.content" esperado: '
+            f"{corpo!r:.500}"
+        )
+    return texto

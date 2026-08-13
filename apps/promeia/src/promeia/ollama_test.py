@@ -5,6 +5,7 @@ from promeia.ollama import (
     OllamaFailed,
     OllamaModelMissing,
     OllamaUnreachable,
+    chat,
     generate,
 )
 
@@ -139,3 +140,123 @@ def test_timeout_e_inalcancavel_nao_falha():
 
     with cliente(handler) as c, pytest.raises(OllamaUnreachable):
         generate(model="m", prompt="p", base_url=BASE, client=c)
+
+
+# --- chat() — /api/chat, para a revisão de artigo -------------------------
+#
+# ⚠️ É uma API DIFERENTE de /api/generate: corpo com `messages` (system+user)
+# e resposta em `message.content`, não `response`. O Go usa esta
+# (internal/llm/client.go); o insight continua no `generate`.
+
+
+def test_chat_caminho_feliz_devolve_message_content():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat"
+        return httpx.Response(200, json={"message": {"content": "  corrigido  "}})
+
+    with cliente(handler) as c:
+        assert (
+            chat(
+                model="m",
+                system="s",
+                user="u",
+                temperature=0.1,
+                base_url=BASE,
+                client=c,
+            )
+            == "  corrigido  "
+        )
+
+
+def test_chat_monta_system_e_user_nas_posicoes_certas():
+    import json
+
+    visto = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        visto.update(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    with cliente(handler) as c:
+        chat(
+            model="qwen-teste",
+            system="INSTRUCAO-DO-SISTEMA",
+            user="TEXTO-DO-USUARIO",
+            temperature=0.7,
+            base_url=BASE,
+            client=c,
+        )
+
+    assert visto["model"] == "qwen-teste"
+    assert visto["stream"] is False
+    # A ORDEM importa: system primeiro, user depois. Invertido, o modelo
+    # trata a instrução como conteúdo a revisar.
+    assert visto["messages"] == [
+        {"role": "system", "content": "INSTRUCAO-DO-SISTEMA"},
+        {"role": "user", "content": "TEXTO-DO-USUARIO"},
+    ]
+    # Temperatura é PARÂMETRO aqui (o generate fixa 0): proofread usa 0.1 e
+    # refine usa 0.7 no Go — uniformizar mudaria o comportamento dos dois.
+    assert visto["options"]["temperature"] == 0.7
+
+
+def test_chat_ollama_desligado_vira_unreachable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("recusada", request=request)
+
+    with cliente(handler) as c, pytest.raises(OllamaUnreachable):
+        chat(model="m", system="s", user="u", temperature=0.1, base_url=BASE, client=c)
+
+
+def test_chat_modelo_ausente_vira_model_missing():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "model 'sumido' not found"})
+
+    with cliente(handler) as c, pytest.raises(OllamaModelMissing) as err:
+        chat(
+            model="sumido",
+            system="s",
+            user="u",
+            temperature=0.1,
+            base_url=BASE,
+            client=c,
+        )
+    # A mensagem tem que citar o comando exato — mesma promessa do generate.
+    assert "ollama pull sumido" in str(err.value)
+
+
+def test_chat_404_generico_nao_vira_model_missing():
+    # O 404 do Ollama é AMBÍGUO (path errado vs. modelo ausente). Mandar o
+    # dono baixar 5 GB por causa de URL errada é o erro que _MODELO_AUSENTE_RE
+    # existe pra evitar — a regressão aqui é silenciosa e cara.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="404 page not found")
+
+    with cliente(handler) as c, pytest.raises(OllamaFailed):
+        chat(model="m", system="s", user="u", temperature=0.1, base_url=BASE, client=c)
+
+
+def test_chat_resposta_nao_objeto_vira_failed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["isto", "nao", "e", "objeto"])
+
+    with cliente(handler) as c, pytest.raises(OllamaFailed):
+        chat(model="m", system="s", user="u", temperature=0.1, base_url=BASE, client=c)
+
+
+def test_chat_sem_message_content_vira_failed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {}})
+
+    with cliente(handler) as c, pytest.raises(OllamaFailed):
+        chat(model="m", system="s", user="u", temperature=0.1, base_url=BASE, client=c)
+
+
+def test_chat_message_nao_objeto_vira_failed():
+    # `message` presente mas não-dict: o .get abaixo levantaria AttributeError
+    # cru em vez da mensagem acionável que este módulo promete.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": "texto solto"})
+
+    with cliente(handler) as c, pytest.raises(OllamaFailed):
+        chat(model="m", system="s", user="u", temperature=0.1, base_url=BASE, client=c)
