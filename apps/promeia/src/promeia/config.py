@@ -22,6 +22,21 @@ class Settings:
     ollama_model: str
     ramielle_url: str
     ingest_token: str = field(repr=False)
+    # Os três modelos da revisão de artigo. Separados do `ollama_model` (que é
+    # do insight) porque o Go já os tratava como três configurações distintas:
+    # o proofread rápido roda num modelo menor de propósito, e o `careful`
+    # existe justamente pra trocar por um maior quando o dono quer precisão.
+    #
+    # ⚠️ COM DEFAULT, ao contrário dos campos acima, e não é descuido: os
+    # valores são os mesmos que o Go já usa em produção (log de boot:
+    # `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`),
+    # então um ambiente que não os declare continua se comportando como a Go
+    # se comporta hoje. Sem default, acrescentá-los quebraria toda construção
+    # existente de `Settings` — inclusive as dos testes — por um motivo que
+    # não é do dono.
+    model_proofread: str = "qwen2.5:3b-instruct"
+    model_proofread_careful: str = "qwen2.5:7b-instruct"
+    model_hooks: str = "qwen2.5:7b-instruct"
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -55,4 +70,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             "/"
         ),
         ingest_token=src.get("INGEST_TOKEN", ""),
+        # Defaults iguais aos do Go em produção (log de boot da API:
+        # `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`).
+        model_proofread=src.get("MODEL_PROOFREAD", "qwen2.5:3b-instruct"),
+        model_proofread_careful=src.get(
+            "MODEL_PROOFREAD_CAREFUL", "qwen2.5:7b-instruct"
+        ),
+        model_hooks=src.get("MODEL_HOOKS", "qwen2.5:7b-instruct"),
     )

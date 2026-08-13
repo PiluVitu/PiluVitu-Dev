@@ -3,7 +3,59 @@
 Serviço Python (FastAPI) que roda no MacBook do dono, atrás de um túnel — o
 processamento que precisa de GPU, modelo local ou acesso a arquivo em disco.
 Hoje: o insight financeiro (lê números do ramielle, gera texto via Ollama
-local, publica de volta). Depois: PDF e transcrição (§9.3 do spec da fatia).
+local, publica de volta) **e a revisão de artigo** (`proofread`/`refine`).
+Depois: PDF e transcrição (§9.3 do spec da fatia).
+
+## Revisão de artigo — `POST /llm/proofread` e `POST /llm/refine`
+
+Porte da **inferência** de `apps/api/internal/llm/` (§7.2 do spec: _"os prompts
+e a inferência vão para promeia; o estado e a publicação ficam em ramielle"_).
+
+⚠️ **Quem chama é o ramielle, não o navegador** (§3). Por isso a forma de erro
+destas rotas é a do promeia (`{ok, code, message}`, a mesma de `/insight`) e
+**não** o envelope `{ok, data, notifications}` que o `apps/web` consome —
+traduzir é trabalho do ramielle, na fatia seguinte. Fazer aqui inverteria a
+camada e obrigaria o promeia a conhecer o formato do frontend.
+
+⚠️ **As mensagens daqui são melhores que as do Go, de propósito, e quem
+traduzir não pode achatá-las.** O Go dizia `"Falha ao corrigir o texto."` pra
+qualquer falha. Aqui a distinção estrutural do serviço (ver _Erros são o
+produto_) sobrevive: `ollama_unreachable` (503, "abra o Ollama") ≠
+`ollama_model_missing` (503, com o `ollama pull` exato) ≠ `ollama_failed`
+(502, o Ollama respondeu e falhou). Só `invalid_json` mantém a mensagem
+literal do Go (`"Corpo inválido: 'text' é obrigatório."`), porque é a única
+que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
+
+- **`proofread`** manda ao modelo **só os blocos de prosa** — código, tabela,
+  HTML/JSX, citação e imagem passam verbatim (`markdown_blocos.py`). Não é
+  otimização: é o que impede o LLM de "corrigir" um trecho de código.
+  ⚠️ A **invariante** do splitter (concatenar os blocos reproduz a entrada
+  byte a byte) é o que permite remontar o artigo sem corromper o texto do
+  dono — quebrá-la produz markdown que ainda *parece* certo. Provado por
+  mutação: trocar o split por `splitlines()` (que descarta os separadores)
+  derruba 16 testes.
+- **`careful`** é porte, não feature: o nível de revisão já existia no Go
+  (`Proofread(ctx, text, careful bool)`). `false` ⇒ modelo menor, `true` ⇒
+  maior. Configurável por `MODEL_PROOFREAD` / `MODEL_PROOFREAD_CAREFUL` /
+  `MODEL_HOOKS`, com defaults iguais aos que a Go usa em produção.
+- **Três temperaturas diferentes**, medidas no Go: `0.1` no proofread
+  (correção conservadora), `0.7` no refine (reescrita precisa variar), `0.3`
+  no encurtamento. Uniformizar muda o comportamento das três.
+- ⚠️ **Fail-soft no encurtador**, replicando o Go: se o LLM falhar ao encurtar
+  uma chamada que estourou o limite, o texto é **truncado** e devolvido, não
+  vira erro. Um refine que morre inteiro porque a melhoria opcional falhou
+  seria pior que uma chamada um pouco longa.
+- **Os prompts** (`prompts.py`) são **contrato byte a byte** com o Go —
+  igualdade verificada programaticamente contra `prompts.go` (672/289/168
+  caracteres). Por isso o arquivo tem `E501` no per-file-ignore, como
+  `insight.py`: quebrar linha pra caber em 88 colunas insere uma quebra
+  **real** no texto mandado ao modelo.
+- ⚠️ **Uma divergência consciente do Go, registrada:** `truncateRunes`
+  (`client.go:205`) compara um índice de **byte** com `limit/2`, que é
+  contagem de **runas** — em português acentuado o índice de byte é inflado.
+  `truncar` (`revisao.py`) usa índice de **caractere**, que é o que a condição
+  quer dizer. Efeito prático: só aparece quando o último espaço cai perto da
+  metade do limite, e o resultado é um texto mais curto, nunca quebrado.
 
 ## O que é promeia, e a regra de corte
 
@@ -107,10 +159,14 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   específico do promeia (o default do pytest, não uma regra de dependência),
   por isso mora aqui e não na raiz.
 - **`ruff`** para lint (`select = ["E", "F", "I", "UP", "B", "SIM"]`) e format.
-  Único per-file-ignore: `src/promeia/insight.py` tem `E501` desligado porque
-  o prompt que ele monta é contrato byte-a-byte com o que o dono já revisou —
-  quebrar linha ali inseriria uma quebra real no texto mandado pro modelo.
-- **Suíte hoje: 96 testes** (`uv run pytest`) — 91 herdadas (Task 6: 80 + 10
+  Per-file-ignores: **`insight.py` e `prompts.py`** têm `E501` desligado, pelo
+  mesmo motivo — os dois montam PROMPT, que é contrato byte a byte com o que o
+  dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
+  colunas insere uma quebra **real** no texto mandado pro modelo: não é
+  formatação, é mudar a entrada de dados.
+- **Suíte hoje: 171 testes** (`uv run pytest`) — **96 até a fatia do insight**,
+  **+75 da revisão de artigo** (8 do `chat`, 29 do splitter de blocos, 22 do
+  proofread/refine, 16 das rotas). A composição das 96 originais: 91 herdadas (Task 6: 80 + 10
   do CLI + 1 do fix round 1) **+ 5 da leva final de correções**: payload sem
   `"data"` e payload sem uma chave esperada (`insight_test.py`), `/api/generate`
   devolvendo uma lista em vez de objeto (`ollama_test.py`), o mesmo payload
