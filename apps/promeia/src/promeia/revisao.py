@@ -9,9 +9,11 @@ publicar em dev.to/Bluesky é HTTP pra API de terceiro ⇒ ramielle.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from promeia.markdown_blocos import Tipo, dividir_blocos, restaurar_bordas
 from promeia.prompts import (
+    HOOKS_SYSTEM_TMPL,
     INSTRUCAO_PADRAO,
     PROOFREAD_SYSTEM,
     REFINE_SYSTEM,
@@ -167,3 +169,67 @@ def refine(
     return _ajustar_ao_limite(
         saida, limite, chat=chat, model_hooks=model_hooks, base_url=base_url
     )
+
+
+@dataclass(frozen=True)
+class Artigo:
+    """Resumo do post usado pra gerar as chamadas (`llm.Article` no Go)."""
+
+    title: str = ""
+    excerpt: str = ""
+    url: str = ""
+    tags: list[str] = field(default_factory=list)
+    # Trecho do artigo, só pra calibrar o tom do autor — o prompt manda
+    # explicitamente NÃO copiá-lo.
+    voice_sample: str = ""
+
+
+@dataclass(frozen=True)
+class Chamada:
+    """Uma chamada gerada pra uma plataforma (`llm.Hook` no Go)."""
+
+    platform: str
+    text: str
+
+
+def gerar_hooks(
+    artigo: Artigo,
+    plataformas: list[str],
+    *,
+    chat: Chat,
+    model_hooks: str,
+    base_url: str,
+) -> list[Chamada]:
+    """Porte de `GenerateHooks` (client.go:152).
+
+    ⚠️ **Uma plataforma que falha derruba o lote inteiro**, igual ao Go
+    (`return nil, fmt.Errorf(...)`). É paridade deliberada: devolver 3 de 4
+    chamadas sem dizer qual faltou deixaria o dono publicar achando que
+    gerou tudo.
+    """
+    chamadas: list[Chamada] = []
+    for plataforma in plataformas:
+        limite = limite_da_plataforma(plataforma)
+        system = HOOKS_SYSTEM_TMPL.format(plataforma=plataforma, limite=limite)
+        user = (
+            f"Título: {artigo.title}\n"
+            f"Resumo: {artigo.excerpt}\n"
+            f"Tags: {', '.join(artigo.tags)}\n\n"
+            f"Trecho do meu artigo (referência de voz):\n{artigo.voice_sample}"
+        )
+        texto = chat(
+            model=model_hooks,
+            system=system,
+            user=user,
+            temperature=TEMP_REFINE,
+            base_url=base_url,
+        )
+        chamadas.append(
+            Chamada(
+                platform=plataforma,
+                text=_ajustar_ao_limite(
+                    texto, limite, chat=chat, model_hooks=model_hooks, base_url=base_url
+                ),
+            )
+        )
+    return chamadas

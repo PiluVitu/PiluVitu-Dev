@@ -147,3 +147,47 @@ def test_sem_token_da_401_antes_de_qualquer_coisa(cliente, monkeypatch, rota):
     r = cliente.post(rota, json={"text": ""})
     assert r.status_code == 401
     assert visto == []
+
+
+# --- /llm/hooks ----------------------------------------------------------
+
+
+def test_hooks_devolve_uma_chamada_por_plataforma(cliente, monkeypatch):
+    falso_chat(monkeypatch, resposta="chamada gerada")
+    r = cliente.post(
+        "/llm/hooks",
+        json={
+            "article": {"title": "T", "excerpt": "E", "tags": ["go"]},
+            "platforms": ["bluesky", "mastodon"],
+        },
+        headers=AUTH,
+    )
+    assert r.status_code == 200
+    assert r.json() == {
+        "ok": True,
+        "data": {
+            "hooks": [
+                {"platform": "bluesky", "text": "chamada gerada"},
+                {"platform": "mastodon", "text": "chamada gerada"},
+            ]
+        },
+    }
+
+
+def test_hooks_sem_platforms_da_400(cliente, monkeypatch):
+    visto = falso_chat(monkeypatch)
+    r = cliente.post("/llm/hooks", json={"article": {}}, headers=AUTH)
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_json"
+    assert visto == []  # nem chegou a chamar o modelo
+
+
+def test_hooks_traduz_falha_do_ollama_igual_as_outras(cliente, monkeypatch):
+    falso_chat(monkeypatch, erro=ollama.OllamaUnreachable("suba o Ollama"))
+    r = cliente.post("/llm/hooks", json={"platforms": ["bluesky"]}, headers=AUTH)
+    assert r.status_code == 503
+    assert r.json()["code"] == "ollama_unreachable"
+
+
+def test_hooks_sem_token_da_401(cliente):
+    assert cliente.post("/llm/hooks", json={"platforms": ["x"]}).status_code == 401

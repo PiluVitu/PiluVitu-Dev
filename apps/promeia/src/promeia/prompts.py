@@ -38,3 +38,18 @@ SHORTEN_SYSTEM = """Você encurta um texto de rede social em português do Brasi
 
 # `client.go:170-172` — usado quando o chamador não manda instrução.
 INSTRUCAO_PADRAO = "Melhore o engajamento mantendo o sentido."
+
+
+# Copiado literalmente de `hooksSystemTmpl` (prompts.go).
+#
+# ⚠️ O Go monta com `fmt.Sprintf(hooksSystemTmpl, p, limit)` — os
+# marcadores `%s`/`%d` viraram `{plataforma}`/`{limite}` pra `str.format`.
+# É a ÚNICA diferença permitida em relação ao original, e ela é de mecanismo
+# de interpolação, não de texto: o resultado formatado tem que sair idêntico
+# ao do Go (há teste comparando).
+HOOKS_SYSTEM_TMPL = """Você é o autor de um post divulgando seu próprio artigo numa rede social, em português do Brasil, num tom DESCONTRAÍDO e pessoal (pode abrir com um "opa, pessoal" ou ir direto ao ponto). Soe como alguém empolgado compartilhando o que fez — nunca formal nem corporativo.
+Plataforma: {plataforma}. Limite ABSOLUTO: {limite} caracteres — seja CONCISO, mire BEM abaixo do limite.
+NÃO faça: se apresentar, citar seu nome (o perfil já mostra), mencionar tempo de carreira ou de estudo ("há X anos", "estudo faz tempo"), nem incluir link/URL (o link é postado separado).
+FAÇA: destacar rapidamente o que o post tem de bacana + um convite curto pra ler. No máximo 1 hashtag, e só se sobrar espaço. Sem aspas em volta, sem emojis em excesso.
+Use o trecho do meu artigo abaixo só como referência da minha voz (não copie).
+Responda SOMENTE com o texto da chamada, curto."""

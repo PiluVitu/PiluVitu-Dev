@@ -38,6 +38,19 @@ class ProofreadBody(BaseModel):
     careful: bool = False
 
 
+class ArtigoBody(BaseModel):
+    title: str = ""
+    excerpt: str = ""
+    url: str = ""
+    tags: list[str] = []
+    voice_sample: str = ""
+
+
+class HooksBody(BaseModel):
+    article: ArtigoBody = ArtigoBody()
+    platforms: list[str] = []
+
+
 class RefineBody(BaseModel):
     platform: str = ""
     text: str = ""
@@ -107,4 +120,46 @@ def rota_refine(body: RefineBody, request: Request):
 
     return JSONResponse(
         status_code=200, content={"ok": True, "data": {"refined": refinado}}
+    )
+
+
+@router.post("/llm/hooks")
+def rota_hooks(body: HooksBody, request: Request):
+    """Gera uma chamada social por plataforma (porte de `GenerateHooks`).
+
+    ⚠️ Só a GERAÇÃO mora aqui. PUBLICAR em dev.to/Hashnode/Bluesky/Mastodon é
+    HTTP pra API de terceiro — não precisa de GPU nem de disco local, então é
+    ramielle pela regra de corte deste serviço, mesmo o texto tendo saído de
+    um LLM em outra etapa do fluxo.
+    """
+    if not body.platforms:
+        return _erro(400, "invalid_json", "Corpo inválido: 'platforms' é obrigatório.")
+
+    settings: Settings = request.app.state.settings
+    artigo = revisao.Artigo(
+        title=body.article.title,
+        excerpt=body.article.excerpt,
+        url=body.article.url,
+        tags=body.article.tags,
+        voice_sample=body.article.voice_sample,
+    )
+    try:
+        chamadas = revisao.gerar_hooks(
+            artigo,
+            body.platforms,
+            chat=ollama.chat,
+            model_hooks=settings.model_hooks,
+            base_url=settings.ollama_url,
+        )
+    except ollama.OllamaError as err:
+        return _traduzir_falha_do_ollama(err)
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "data": {
+                "hooks": [{"platform": c.platform, "text": c.text} for c in chamadas]
+            },
+        },
     )

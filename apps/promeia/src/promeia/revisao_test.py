@@ -8,6 +8,8 @@ from promeia.prompts import (
 )
 from promeia.revisao import (
     LIMITE_PADRAO,
+    Artigo,
+    gerar_hooks,
     limite_da_plataforma,
     proofread,
     refine,
@@ -222,3 +224,62 @@ def test_truncar_conta_CARACTERES_nao_bytes():
     acentuado = "ãããããããããã"
     assert len(acentuado) == 10
     assert truncar(acentuado, 10) == acentuado
+
+
+# --- gerar_hooks ---------------------------------------------------------
+
+
+def chamar_hooks(artigo, plataformas, *, chat):
+    return gerar_hooks(
+        artigo, plataformas, chat=chat, model_hooks=MODELO_HOOKS, base_url=BASE
+    )
+
+
+def test_hooks_gera_uma_chamada_por_plataforma():
+    fn, chamadas = chat_espiao(resposta="chamada")
+    r = chamar_hooks(Artigo(title="T"), ["bluesky", "mastodon"], chat=fn)
+    assert [c.platform for c in r] == ["bluesky", "mastodon"]
+    assert len(chamadas) == 2
+
+
+def test_hooks_poe_o_limite_DA_PLATAFORMA_no_prompt_de_sistema():
+    # O limite entra no system via template — se vazar o da plataforma errada,
+    # o modelo mira no tamanho errado e o texto é truncado depois.
+    fn, chamadas = chat_espiao(resposta="c")
+    chamar_hooks(Artigo(), ["bluesky", "mastodon", "outra"], chat=fn)
+    assert "Limite ABSOLUTO: 300" in chamadas[0]["system"]
+    assert "Limite ABSOLUTO: 500" in chamadas[1]["system"]
+    assert f"Limite ABSOLUTO: {LIMITE_PADRAO}" in chamadas[2]["system"]
+
+
+def test_hooks_monta_o_corpo_com_titulo_resumo_tags_e_trecho():
+    fn, chamadas = chat_espiao(resposta="c")
+    chamar_hooks(
+        Artigo(title="Título", excerpt="Resumo", tags=["go", "rust"], voice_sample="V"),
+        ["bluesky"],
+        chat=fn,
+    )
+    user = chamadas[0]["user"]
+    assert "Título: Título" in user
+    assert "Resumo: Resumo" in user
+    assert "Tags: go, rust" in user  # juntadas por vírgula, como no Go
+    assert user.rstrip().endswith("V")
+
+
+def test_hooks_aplica_o_limite_na_saida():
+    longo = "x" * 400
+    fn, _ = chat_espiao(respostas=[longo, "curta"])
+    r = chamar_hooks(Artigo(), ["bluesky"], chat=fn)
+    assert r[0].text == "curta"
+
+
+def test_hooks_UMA_plataforma_que_falha_derruba_o_LOTE():
+    # ⚠️ Paridade com o Go (`return nil, fmt.Errorf`). Devolver 3 de 4 chamadas
+    # sem dizer qual faltou deixaria o dono publicar achando que gerou tudo.
+    def fn(**kwargs):
+        if "mastodon" in kwargs["system"]:
+            raise RuntimeError("modelo caiu")
+        return "ok"
+
+    with pytest.raises(RuntimeError):
+        chamar_hooks(Artigo(), ["bluesky", "mastodon", "outra"], chat=fn)
