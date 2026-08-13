@@ -3,6 +3,7 @@ import { type AuthBindings, getAuth } from './lib/auth'
 import { corsMiddleware } from './lib/cors'
 import { errJson, okJson } from './lib/envelope'
 import adminRoutes from './routes/admin'
+import atelierRoutes from './routes/atelier'
 import authRoutes from './routes/auth'
 import votacaoRoutes from './routes/votacao'
 
@@ -72,6 +73,12 @@ app.route('/votacao', votacaoRoutes)
 // ACIMA do catch-all, mesma regra de sempre. Prova por EXECUÇÃO em
 // `index.test.ts` (describe da montagem), não por leitura deste comentário.
 app.route('/admin', adminRoutes)
+
+// As rotas do Atelier que dependem do promeia (`/admin/llm/*`) — mesma
+// regra de sempre: ACIMA do catch-all, com prova por EXECUÇÃO em
+// `index.test.ts`. Montadas sob `/admin` porque é onde o `apps/web` já as
+// chama hoje (`lib/admin/atelier/api.ts`), na Go.
+app.route('/admin', atelierRoutes)
 
 // Rede de segurança GLOBAL (T6) — pega qualquer exceção que uma rota deixe
 // escapar sem `try/catch` próprio. SEM isto, o handler default do Hono

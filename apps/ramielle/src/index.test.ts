@@ -221,6 +221,11 @@ describe('rotas de votação/admin — todas montadas ACIMA do catch-all', () =>
     ['GET', '/admin/users'],
     ['GET', '/admin/backups'],
     ['POST', '/admin/backup'],
+    // Atelier — as duas rotas que dependem do promeia. Entram no MESMO
+    // test.each de propósito: a prova de "não caiu abaixo do catch-all" é
+    // por EXECUÇÃO, e uma rota nova só é coberta se for acrescentada aqui.
+    ['POST', '/admin/llm/proofread'],
+    ['POST', '/admin/llm/refine'],
   ])(
     '%s %s responde 401 not_authenticated (da rota) — nunca 404 not_found (do catch-all)',
     async (method, path) => {

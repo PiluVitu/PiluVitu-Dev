@@ -56,3 +56,16 @@ CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
 # (https://themoviedb.org/settings/api). Sem ela, a sessão é criada
 # normalmente, só SEM pôsteres — nunca erro.
 # TMDB_API_KEY=troque-pela-chave-do-tmdb
+
+# Atelier (revisão de artigo) — o serviço promeia, que faz a inferência local.
+#
+# ⚠️ PROMEIA_TOKEN é SECRET (`wrangler secret put`), nunca `vars` do
+# wrangler.jsonc: é ele que impede que qualquer um que descubra o hostname do
+# túnel rode inferência na GPU do dono (§3 do spec). O navegador NUNCA o vê —
+# o fluxo é navegador → ramielle → promeia, e é este Worker que o guarda.
+#
+# Sem as DUAS, POST /admin/llm/proofread e /refine respondem 503
+# promeia_disabled: feature desligada, não quebrada (mesmo padrão do
+# sheets_disabled). Em dev, o promeia sobe com `make dev-promeia` na 8082.
+# PROMEIA_URL=http://localhost:8082
+# PROMEIA_TOKEN=o-mesmo-valor-do-PROMEIA_TOKEN-do-apps/promeia

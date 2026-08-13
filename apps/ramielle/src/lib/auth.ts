@@ -63,6 +63,22 @@ export type AuthBindings = {
   /** Default `'A2:F'` aplicado em `routes/votacao.ts` quando ausente/vazia — mesmo fallback do Go (`cmd/api/main.go:63-65`). */
   GSHEETS_MOVIES_RANGE?: string
   /**
+   * Fatia do Atelier — o serviço promeia (Python, no MacBook do dono, atrás
+   * do túnel), que faz a inferência de `proofread`/`refine`.
+   *
+   * ⚠️ `PROMEIA_TOKEN` é **secret**, nunca `vars` do `wrangler.jsonc` (texto
+   * claro, commitado). É ele que impede que qualquer um que descubra o
+   * hostname do túnel rode inferência na GPU do dono (§3 do spec) — e o
+   * navegador NUNCA o vê, porque o fluxo é navegador → ramielle → promeia.
+   *
+   * Opcionais pelo mesmo motivo das bindings acima: ausentes é o estado
+   * normal até o `wrangler secret put`. Sem as duas, as rotas do Atelier
+   * respondem `503 promeia_disabled` — feature desligada, não quebrada
+   * (mesmo padrão do `sheets_disabled`).
+   */
+  PROMEIA_URL?: string
+  PROMEIA_TOKEN?: string
+  /**
    * Fatia ③, Task 4 — chave do TMDb (`lib/tmdb.ts`, consumida por `POST
    * /votacao/sessions`). Opcional pelo MESMO motivo das três de cima:
    * ausente é o estado normal até `wrangler secret put TMDB_API_KEY`. Sem
