@@ -57,7 +57,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # inseriria uma quebra de linha real no prompt que o modelo recebe). Único
 # arquivo com essa exceção — E501 continua valendo para o resto do projeto.
 [tool.ruff.lint.per-file-ignores]
+# Os dois arquivos que montam PROMPT são contrato byte a byte com o que o dono
+# já revisou e calibrou contra o modelo real. Uma quebra de linha inserida
+# pra caber em 88 colunas é uma quebra de linha REAL no texto mandado ao
+# modelo — não é formatação, é mudar a entrada de dados.
 "src/promeia/insight.py" = ["E501"]
+"src/promeia/prompts.py" = ["E501"]
 
 [dependency-groups]
 dev = [
