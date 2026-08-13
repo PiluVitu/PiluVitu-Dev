@@ -6,10 +6,14 @@ Hoje: o insight financeiro (lê números do ramielle, gera texto via Ollama
 local, publica de volta) **e a revisão de artigo** (`proofread`/`refine`).
 Depois: PDF e transcrição (§9.3 do spec da fatia).
 
-## Revisão de artigo — `POST /llm/proofread` e `POST /llm/refine`
+## Revisão de artigo — `POST /llm/proofread`, `POST /llm/refine` e `POST /llm/hooks`
 
 Porte da **inferência** de `apps/api/internal/llm/` (§7.2 do spec: _"os prompts
 e a inferência vão para promeia; o estado e a publicação ficam em ramielle"_).
+`gerar_hooks`/`POST /llm/hooks` (porte de `GenerateHooks`, `client.go:152`)
+gera uma chamada social por plataforma — **sem consumidor no ramielle ainda**
+(M6 de uma revisão desta fatia: preparação deliberada, não código morto por
+descuido).
 
 ⚠️ **Quem chama é o ramielle, não o navegador** (§3). Por isso a forma de erro
 destas rotas é a do promeia (`{ok, code, message}`, a mesma de `/insight`) e
@@ -37,7 +41,23 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
 - **`careful`** é porte, não feature: o nível de revisão já existia no Go
   (`Proofread(ctx, text, careful bool)`). `false` ⇒ modelo menor, `true` ⇒
   maior. Configurável por `MODEL_PROOFREAD` / `MODEL_PROOFREAD_CAREFUL` /
-  `MODEL_HOOKS`, com defaults iguais aos que a Go usa em produção.
+  `MODEL_HOOKS`. ⚠️ **I4 (revisão): só `MODEL_PROOFREAD`/
+  `MODEL_PROOFREAD_CAREFUL` têm default IGUAL ao da Go em produção**
+  (`qwen2.5:3b-instruct`/`qwen2.5:7b-instruct`, do log de boot da API Go —
+  que nunca menciona hooks). `MODEL_HOOKS` é **divergência CONSCIENTE, não
+  paridade**: o Go usa `qwen2.5:14b-instruct` (`main.go:83`,
+  `.env.example`, `process-compose.yaml`), que **não está instalado** nesta
+  máquina (~9 GB) — o default aqui fica em `qwen2.5:7b-instruct` até o dono
+  baixar o 14b (ver "Pendências do dono"). Ver o comentário completo em
+  `config.py#Settings.model_hooks`.
+- ⚠️ **`refine`/`gerar_hooks` TRIMAM a saída do modelo antes de medir o
+  limite** (`I3` de uma revisão desta fatia) — paridade com o Go, cujo
+  `chat()` (`client.go:96`) sempre devolve `strings.TrimSpace(...)` pra todo
+  chamador. O `chat` injetado aqui (`ollama.py`) devolve texto CRU de
+  propósito ("o trim é de quem chama"); sem o `.strip()` em `refine`/
+  `gerar_hooks`, espaço em branco nas bordas contava pro limite de
+  caracteres — `proofread` já fazia isso certo (`.strip()` antes de
+  `restaurar_bordas`), os outros dois não.
 - **Três temperaturas diferentes**, medidas no Go: `0.1` no proofread
   (correção conservadora), `0.7` no refine (reescrita precisa variar), `0.3`
   no encurtamento. Uniformizar muda o comportamento das três.
@@ -54,8 +74,15 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   (`client.go:205`) compara um índice de **byte** com `limit/2`, que é
   contagem de **runas** — em português acentuado o índice de byte é inflado.
   `truncar` (`revisao.py`) usa índice de **caractere**, que é o que a condição
-  quer dizer. Efeito prático: só aparece quando o último espaço cai perto da
-  metade do limite, e o resultado é um texto mais curto, nunca quebrado.
+  quer dizer. ⚠️ **M1 (revisão): a frase antiga aqui tinha a conclusão
+  INVERTIDA.** Medido de verdade (`truncateRunes` do Go rodado contra este
+  `truncar` em 3.042 casos): 11 divergências, e em 100% delas é o **Go** que
+  recua até a palavra inteira (resultado mais curto, texto nunca quebrado) e
+  este **porte** que mantém o corte no meio da palavra — o oposto do que a
+  versão anterior desta linha afirmava. A conclusão prática segue de pé:
+  **0 divergências em 3.000 amostras de português realista** — o efeito só
+  aparece em casos adversariais (muito caractere multi-byte concentrado perto
+  da metade do limite), não em texto normal.
 
 ## O que é promeia, e a regra de corte
 
@@ -164,21 +191,26 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
   colunas insere uma quebra **real** no texto mandado pro modelo: não é
   formatação, é mudar a entrada de dados.
-- **Suíte hoje: 171 testes** (`uv run pytest`) — **96 até a fatia do insight**,
-  **+75 da revisão de artigo** (8 do `chat`, 29 do splitter de blocos, 22 do
-  proofread/refine, 16 das rotas). A composição das 96 originais: 91 herdadas (Task 6: 80 + 10
-  do CLI + 1 do fix round 1) **+ 5 da leva final de correções**: payload sem
-  `"data"` e payload sem uma chave esperada (`insight_test.py`), `/api/generate`
-  devolvendo uma lista em vez de objeto (`ollama_test.py`), o mesmo payload
-  malformado provado ponta a ponta até o CLI sem vazar traceback
-  (`cli_test.py`), e `repr(Settings)` não expor os dois segredos
-  (`config_test.py`) — mesma convenção de contagem de suíte que os outros
-  `CLAUDE.md` deste monorepo já registram. A remoção do CLI Node que esta task substituiu
-  (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou os 40 testes
+- **Suíte hoje: 184 testes** (`uv run pytest`, por arquivo:
+  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 6, `dates_test.py` 16,
+  `insight_test.py` 20, `markdown_blocos_test.py` 29, `money_test.py` 15,
+  `ollama_test.py` 18, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
+  `revisao_test.py` 31). ⚠️ **M7 (revisão): este número já tinha ficado pra
+  trás uma vez** — dizia "171 testes" enquanto a suíte real já estava em 180
+  (o `/llm/hooks`/`gerar_hooks` tinha entrado numa task anterior sem
+  atualizar esta contagem). Os **+4** desta revisão são de I3 (`revisao_
+  test.py`): `refine`/`gerar_hooks` trimando a saída do modelo como o Go —
+  ver a seção _Revisão de artigo_ acima. **Recontar sempre via `uv run
+  pytest -v` (linha final `N passed`), nunca confiar num número solto neste
+  arquivo** — mesmo aviso que `apps/ramielle/CLAUDE.md` já registra pra sua
+  própria suíte, e pelo mesmo motivo: o número já andou mais de uma vez sem
+  o arquivo acompanhar.
+- A remoção do CLI Node que a fatia do insight substituiu
+  (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou 40 testes
   correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
-test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
-  sob esse arquivo de config, `vitest.scripts.config.ts`) — esse segundo
-  número é a prova de que a remoção foi cirúrgica, não um efeito colateral.
+  test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
+  sob esse arquivo de config, `vitest.scripts.config.ts`) — prova de que a
+  remoção foi cirúrgica, não um efeito colateral.
 
 ## Comandos
 

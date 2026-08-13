@@ -33,7 +33,12 @@ function testEnv(extra: Partial<Bindings> = {}): Bindings {
   }
 }
 
-let contador = 0
+// ⚠️ M4 (revisão): a versão anterior tinha `contador++ === 0 ? ADMIN :
+// ADMIN` — os dois ramos do ternário eram IDÊNTICOS, e o comentário acima
+// ("e-mail único por chamada") descrevia um comportamento que o código não
+// tinha. Funciona (cada `test()` cadastrando o mesmo ADMIN de novo não
+// colide de verdade) por causa do `isolatedStorage` do pool de testes — o D1
+// é resetado a cada teste —, não por causa do ternário morto. Removido.
 async function cookieDeAdmin(): Promise<string> {
   const authDeTeste = betterAuth({
     database: DB,
@@ -41,10 +46,33 @@ async function cookieDeAdmin(): Promise<string> {
     secret: SECRET_TESTE,
     emailAndPassword: { enabled: true },
   })
-  // E-mail único por chamada: o mesmo admin cadastrado duas vezes falharia.
-  const email = contador++ === 0 ? ADMIN : ADMIN
   const cadastro = await authDeTeste.api.signUpEmail({
-    body: { email, password: 'senha-forte-123', name: 'Dono' },
+    body: { email: ADMIN, password: 'senha-forte-123', name: 'Dono' },
+    asResponse: true,
+  })
+  const cookie = cadastro.headers.getSetCookie()[0]?.split(';')[0]
+  if (!cookie) throw new Error('signUpEmail não devolveu cookie')
+  return cookie
+}
+
+// I1 (revisão): cookie de uma conta autenticada, mas SEM privilégio de
+// admin — o e-mail não está em ADMIN_EMAILS (só ADMIN está, ver testEnv()).
+// A votação do ramielle é LIVRE (qualquer conta Google loga), então esta
+// conta é exatamente o votante comum que não deveria conseguir queimar
+// inferência no Mac do dono.
+async function cookieDeNaoAdmin(): Promise<string> {
+  const authDeTeste = betterAuth({
+    database: DB,
+    baseURL: BASE_URL_TESTE,
+    secret: SECRET_TESTE,
+    emailAndPassword: { enabled: true },
+  })
+  const cadastro = await authDeTeste.api.signUpEmail({
+    body: {
+      email: 'atelier-naoadmin@exemplo.test',
+      password: 'senha-forte-123',
+      name: 'Não Admin',
+    },
     asResponse: true,
   })
   const cookie = cadastro.headers.getSetCookie()[0]?.split(';')[0]
@@ -94,6 +122,22 @@ async function chamar(
 }
 
 describe('POST /admin/llm/proofread', () => {
+  // I1 (revisão) — a ÚNICA barreira entre qualquer conta Google e a GPU do
+  // dono é `requireAdmin`. Escrito ANTES do caminho feliz, de propósito
+  // (mesmo padrão de `routes/admin.test.ts`): é este o teste que a mutação
+  // obrigatória (trocar requireAdmin por requireAuth nesta rota) tem que
+  // quebrar. Antes desta task, NENHUM teste provava isto — a suíte inteira
+  // ficava verde com o guard trocado.
+  test('conta autenticada mas não-admin responde 403 admin_only, sem chamar o promeia', async () => {
+    const cookie = await cookieDeNaoAdmin()
+    const vistos = mockarPromeia(() => json(200, { ok: true, data: {} }))
+    const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+    expect(vistos).toHaveLength(0)
+  })
+
   test('caminho feliz devolve corrected no envelope', async () => {
     const cookie = await cookieDeAdmin()
     mockarPromeia(() => json(200, { ok: true, data: { corrected: 'Olá.' } }))
@@ -132,6 +176,22 @@ describe('POST /admin/llm/proofread', () => {
 })
 
 describe('POST /admin/llm/refine', () => {
+  // I1 (revisão) — mesma barreira, mesma prova por mutação que
+  // `/admin/llm/proofread` acima.
+  test('conta autenticada mas não-admin responde 403 admin_only, sem chamar o promeia', async () => {
+    const cookie = await cookieDeNaoAdmin()
+    const vistos = mockarPromeia(() => json(200, { ok: true, data: {} }))
+    const res = await chamar(
+      '/admin/llm/refine',
+      { text: 't', platform: 'bluesky', instruction: 'x' },
+      cookie,
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+    expect(vistos).toHaveLength(0)
+  })
+
   test('caminho feliz devolve refined', async () => {
     const cookie = await cookieDeAdmin()
     mockarPromeia(() => json(200, { ok: true, data: { refined: 'curto' } }))
@@ -189,6 +249,78 @@ describe('degradação — os DOIS casos da §5 do spec, com frases diferentes',
     expect(res.status).toBe(503)
     const body = (await res.json()) as Envelope<null>
     expect(body.notifications[0]?.code).toBe('promeia_disabled')
+  })
+})
+
+// I2 (o achado mais grave da revisão) — o modo de falha MAIS PROVÁVEL na
+// prática (túnel Cloudflare respondendo no lugar de um Mac desligado/
+// travado) tem que cair no MESMO lado da §5 que o TypeError de fetch já
+// cobria acima ("Mac desligado ⇒ 503 promeia_unreachable"). Antes desta
+// correção, os dois cenários abaixo caíam em "RECUSOU" — a frase errada,
+// medida pelo revisor com o app real.
+describe('I2 — o túnel Cloudflare respondendo no lugar do promeia cai no MESMO lado da §5 que "fetch falhou"', () => {
+  test('túnel caído (530, HTML) ⇒ 503 promeia_unreachable, mandando SUBIR o promeia — não RECUSOU', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarPromeia(
+      () =>
+        new Response('<html><body>530</body></html>', {
+          status: 530,
+          headers: { 'content-type': 'text/html' },
+        }),
+    )
+    const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('promeia_unreachable')
+    expect(body.notifications[0]?.message).toContain('Suba o promeia')
+  })
+
+  test('timeout do túnel (524) ⇒ 503 promeia_unreachable, mandando SUBIR o promeia — não RECUSOU', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarPromeia(() => new Response('', { status: 524 }))
+    const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('promeia_unreachable')
+    expect(body.notifications[0]?.message).toContain('Suba o promeia')
+  })
+})
+
+// M3 — o segundo operando de `err.status >= 500 || err.status === 503` era
+// inalcançável (503 já é >= 500), e `errJson(status as 502 | 503, ...)` era
+// um cast que não protegia nada (`errJson` recebe `number`). Prova de que a
+// simplificação continua repassando 5xx do promeia intocado e mapeando 4xx
+// (um 401 dele — token do promeia desatualizado, por exemplo) pra 502, não
+// pro status cru do upstream.
+describe('M3 — status do PromeiaRecusou: 5xx repassado, 4xx do promeia vira 502', () => {
+  test('401 do PRÓPRIO promeia (token do promeia desatualizado) mapeia pra 502, não 401', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarPromeia(() =>
+      json(401, {
+        ok: false,
+        code: 'invalid_promeia_token',
+        message: 'token do promeia ausente ou inválido',
+      }),
+    )
+    const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_promeia_token')
+  })
+
+  test('502 ollama_failed do promeia é repassado como 502, intocado', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarPromeia(() =>
+      json(502, {
+        ok: false,
+        code: 'ollama_failed',
+        message: 'o Ollama respondeu e falhou',
+      }),
+    )
+    const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('ollama_failed')
   })
 })
 

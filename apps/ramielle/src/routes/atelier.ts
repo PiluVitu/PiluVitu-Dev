@@ -56,8 +56,17 @@ function traduzirFalha(err: unknown) {
     // 4xx do promeia vira 502 pro navegador (foi o upstream que recusou,
     // não o cliente que errou), exceto o 400 de corpo, que já foi barrado
     // aqui em cima e não chega neste ponto.
-    const status = err.status >= 500 || err.status === 503 ? err.status : 502
-    return errJson(status as 502 | 503, err.code, err.message)
+    //
+    // ⚠️ M3 (revisão): a condição antiga (`err.status >= 500 || err.status
+    // === 503`) tinha um segundo operando INALCANÇÁVEL — 503 já é >= 500,
+    // então o `||` nunca acrescentava nada. E o `as 502 | 503` era um cast
+    // MENTIROSO: `errJson` recebe `status: number` (não uma união), então o
+    // cast nunca protegia nada — um status como 500/524/530 atravessava pro
+    // navegador sem o TypeScript acusar. Removido: a condição agora só tem
+    // um operando (o que ela sempre precisou), e o valor segue como
+    // `number` puro, sem cast nenhum.
+    const status = err.status >= 500 ? err.status : 502
+    return errJson(status, err.code, err.message)
   }
   return errJson(502, 'promeia_failed', 'Falha ao falar com o promeia.')
 }

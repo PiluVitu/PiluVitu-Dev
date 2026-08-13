@@ -54,11 +54,21 @@ export class PromeiaRecusou extends Error {
 export const TIMEOUT_MS = 120_000
 
 type CorpoPromeia = {
-  ok?: boolean
   code?: string
   message?: string
   data?: unknown
 }
+
+/**
+ * Status HTTP que a própria Cloudflare documenta como "não alcancei a
+ * origem" (o túnel está de pé, o Mac atrás dele não está) — 520-527 e 530.
+ * Ver a checagem de corpo abaixo pra por que isto é redundante na prática
+ * (a Cloudflare nunca emite o shape `{code,message}` do promeia) e por que
+ * mantenho os dois mesmo assim.
+ */
+const STATUS_CLOUDFLARE_ORIGEM_INALCANCAVEL = new Set([
+  520, 521, 522, 523, 524, 525, 526, 527, 530,
+])
 
 /**
  * POST autenticado no promeia. Devolve o `data` do corpo em caso de sucesso.
@@ -110,19 +120,44 @@ export async function chamarPromeia<T>(
   }
 
   if (!resposta.ok) {
+    // ⚠️ I2 (revisão): um erro HTTP SEM `code`/`message` reconhecíveis no
+    // corpo NÃO é evidência de que o promeia recusou — é evidência de que o
+    // promeia nunca respondeu. Toda rota do promeia que devolve erro
+    // (`_erro` em `revisao_rotas.py`, e `TokenMiddleware`) SEMPRE inclui os
+    // dois no JSON. Quem responde SEM esse shape é a INFRAESTRUTURA entre o
+    // navegador e o Mac — o túnel Cloudflare, quando o Mac está desligado ou
+    // travado: HTML de erro (530) ou um 524 de timeout, nunca
+    // `{ok,code,message}`. Medido pelo revisor com o app real: os dois
+    // casos caíam no ramo "RECUSOU" (o `?? 'promeia_failed'` escondia a
+    // ausência), e a frase da §5 ("Suba o promeia no Mac") — que existe
+    // exatamente pra este cenário — nunca aparecia. `resposta.status` sendo
+    // um dos códigos que a própria Cloudflare documenta como "não alcancei
+    // a origem" (520-527, 530) é checado à parte, redundante na prática (a
+    // Cloudflare não emite o shape do promeia), mas explícito porque a
+    // distinção "não alcancei" × "recusou" é o PRODUTO desta função, não um
+    // acidente de parsing.
+    // Checks inline (não numa `const` boolean à parte) DE PROPÓSITO — é o
+    // que deixa o TypeScript estreitar `json` pra `{code: string, message:
+    // string}` depois deste `if`, sem cast nenhum na hora de montar o
+    // PromeiaRecusou logo abaixo.
+    if (
+      json === null ||
+      typeof json.code !== 'string' ||
+      json.code === '' ||
+      typeof json.message !== 'string' ||
+      json.message === '' ||
+      STATUS_CLOUDFLARE_ORIGEM_INALCANCAVEL.has(resposta.status)
+    ) {
+      throw new PromeiaInalcancavel(
+        'Suba o promeia no Mac para usar este recurso.',
+      )
+    }
+
     // A mensagem do promeia é MELHOR que qualquer coisa que o Worker
     // inventaria aqui: ela distingue "o Ollama está desligado, abra ele" de
     // "o modelo não está instalado, rode `ollama pull X`". Repassar, não
     // achatar num "falhou" genérico — é o que a §5 do spec pede.
-    const mensagem =
-      typeof json?.message === 'string' && json.message !== ''
-        ? json.message
-        : `O promeia recusou a requisição (HTTP ${resposta.status}).`
-    const code =
-      typeof json?.code === 'string' && json.code !== ''
-        ? json.code
-        : 'promeia_failed'
-    throw new PromeiaRecusou(mensagem, code, resposta.status)
+    throw new PromeiaRecusou(json.message, json.code, resposta.status)
   }
 
   if (json === null || typeof json !== 'object') {

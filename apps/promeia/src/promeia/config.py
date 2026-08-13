@@ -28,12 +28,27 @@ class Settings:
     # existe justamente pra trocar por um maior quando o dono quer precisão.
     #
     # ⚠️ COM DEFAULT, ao contrário dos campos acima, e não é descuido: os
-    # valores são os mesmos que o Go já usa em produção (log de boot:
+    # valores de `model_proofread`/`model_proofread_careful` são os MESMOS
+    # que o Go já usa em produção (log de boot:
     # `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`),
     # então um ambiente que não os declare continua se comportando como a Go
     # se comporta hoje. Sem default, acrescentá-los quebraria toda construção
     # existente de `Settings` — inclusive as dos testes — por um motivo que
     # não é do dono.
+    #
+    # ⚠️ **I4 (revisão): `model_hooks` é DIVERGÊNCIA CONSCIENTE, não
+    # paridade** — o parágrafo acima citava o mesmo log de boot como
+    # justificativa pros três campos, mas aquele log NUNCA menciona `hooks`,
+    # só `proofread`/`proofread_careful`. O Go de verdade usa
+    # `qwen2.5:14b-instruct` pra hooks (`OLLAMA_MODEL_HOOKS`,
+    # `apps/api/cmd/api/main.go:83`, também em `apps/api/.env.example` e
+    # `process-compose.yaml`). `qwen2.5:14b-instruct` NÃO está instalado
+    # nesta máquina (ver "Pendências do dono" no `CLAUDE.md` deste app) —
+    # ~9 GB de download. `7b-instruct` aqui é a escolha PRÁTICA até o dono
+    # baixar o 14b (`ollama pull qwen2.5:14b-instruct`); depois disso,
+    # `MODEL_HOOKS`/este default devem virar `qwen2.5:14b-instruct` pra bater
+    # com o Go de verdade. Registrado como divergência a resolver, não como
+    # paridade já alcançada.
     model_proofread: str = "qwen2.5:3b-instruct"
     model_proofread_careful: str = "qwen2.5:7b-instruct"
     model_hooks: str = "qwen2.5:7b-instruct"
@@ -76,5 +91,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         model_proofread_careful=src.get(
             "MODEL_PROOFREAD_CAREFUL", "qwen2.5:7b-instruct"
         ),
+        # ⚠️ I4: divergência CONSCIENTE do Go (que usa `qwen2.5:14b-instruct`
+        # aqui) — ver o comentário completo no campo `model_hooks` de
+        # `Settings` acima.
         model_hooks=src.get("MODEL_HOOKS", "qwen2.5:7b-instruct"),
     )

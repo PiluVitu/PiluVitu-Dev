@@ -182,6 +182,30 @@ def test_refine_trunca_quando_o_encurtador_tambem_estoura():
     assert saida.startswith("y")  # usou o encurtado, não o original
 
 
+def test_refine_TRIMA_o_resultado_do_chat_como_o_Go():
+    # ⚠️ I3 (revisão): o Go trima SEMPRE, em client.go:96 (`chat()` devolve
+    # `strings.TrimSpace(...)` pra todo chamador). O `chat` injetado aqui
+    # devolve texto CRU de propósito ("o trim é de quem chama" — ollama.py)
+    # — antes deste fix, `refine` devolvia o espaço em branco cru.
+    fn, _ = chat_espiao(resposta="\n  Olá pessoal!  \n\n")
+    assert chamar_refine("bluesky", "t", "i", chat=fn) == "Olá pessoal!"
+
+
+def test_refine_TRIM_evita_chamada_EXTRA_ao_encurtador_por_espaco_em_branco():
+    # ⚠️ I3: o espaço em branco nas bordas conta pro limite SEM o trim — 300
+    # caracteres de conteúdo (cabe exatamente no limite do bluesky) + as
+    # bordas de espaço em branco somam 305, disparando uma chamada EXTRA ao
+    # encurtador que o Go nunca faz (medido pelo revisor: 2 chamadas onde o
+    # Go faz 1). Com o trim, `_ajustar_ao_limite` vê 300<=300 e nem chama o
+    # encurtador.
+    conteudo = "y" * 300  # limite exato do bluesky
+    com_espacos_nas_bordas = f"\n  {conteudo}  \n\n"
+    fn, chamadas = chat_espiao(resposta=com_espacos_nas_bordas)
+    saida = chamar_refine("bluesky", "t", "i", chat=fn)
+    assert saida == conteudo
+    assert len(chamadas) == 1  # só o refine — SEM a chamada extra
+
+
 def test_refine_FAIL_SOFT_quando_o_encurtador_FALHA():
     # ⚠️ Comportamento do Go (`if shorter, err := ...; err == nil`): falha no
     # encurtamento NÃO derruba o refine. Um refine que morre inteiro porque a
@@ -219,11 +243,29 @@ def test_truncar_corta_no_limite_quando_nao_ha_espaco_util():
 
 
 def test_truncar_conta_CARACTERES_nao_bytes():
-    # Texto acentuado: 10 caracteres, 20 bytes em UTF-8. Contar bytes cortaria
-    # na metade e ainda poderia partir um caractere no meio.
+    # Guarda: texto que já cabe usa CONTAGEM DE CARACTERE (não bytes) pra
+    # decidir que não precisa cortar. 10 caracteres, 20 bytes em UTF-8 —
+    # contar bytes cortaria à toa.
     acentuado = "ãããããããããã"
     assert len(acentuado) == 10
     assert truncar(acentuado, 10) == acentuado
+
+    # ⚠️ M2 (revisão): a asserção acima só exercita a GUARDA (`len <=
+    # limite`, retorno imediato) — nunca chega na lógica de CORTE que o nome
+    # deste teste alega cobrir (mutar a comparação de volta pra índice de
+    # byte deixava a suíte inteira verde). Este segundo caso força a
+    # passagem pelo `rfind`/recuo, construído pra que o índice de CARACTERE
+    # e o de BYTE UTF-8 do espaço apontem posições DIFERENTES em relação a
+    # `limite // 2`: 9 caracteres acentuados (2 bytes cada em UTF-8) seguidos
+    # de um espaço — índice de CARACTERE do espaço = 9; índice de BYTE
+    # equivalente = 18. limite=20, limite//2=10.
+    #   - por CARACTERE (o que este porte usa): 9 > 10 é False — NÃO recua,
+    #     devolve a fatia inteira de 20 caracteres (corta a palavra de "b"s
+    #     no meio).
+    #   - por BYTE (o que o Go faz, e o que uma mutação reintroduziria):
+    #     18 > 10 é True — RECUARIA, devolvendo só os 9 acentuados.
+    texto_misto = "ã" * 9 + " " + "b" * 20
+    assert truncar(texto_misto, 20) == "ã" * 9 + " " + "b" * 10
 
 
 # --- gerar_hooks ---------------------------------------------------------
@@ -271,6 +313,23 @@ def test_hooks_aplica_o_limite_na_saida():
     fn, _ = chat_espiao(respostas=[longo, "curta"])
     r = chamar_hooks(Artigo(), ["bluesky"], chat=fn)
     assert r[0].text == "curta"
+
+
+def test_hooks_TRIMA_o_resultado_do_chat_como_o_Go():
+    # ⚠️ I3 (revisão): mesma paridade de `refine` — o Go trima SEMPRE
+    # (client.go:96), o `chat` injetado devolve cru.
+    fn, _ = chat_espiao(resposta="\n  Chamada boa!  \n\n")
+    r = chamar_hooks(Artigo(), ["bluesky"], chat=fn)
+    assert r[0].text == "Chamada boa!"
+
+
+def test_hooks_TRIM_evita_chamada_EXTRA_ao_encurtador_por_espaco_em_branco():
+    conteudo = "y" * 300  # limite exato do bluesky
+    com_espacos_nas_bordas = f"\n  {conteudo}  \n\n"
+    fn, chamadas = chat_espiao(resposta=com_espacos_nas_bordas)
+    r = chamar_hooks(Artigo(), ["bluesky"], chat=fn)
+    assert r[0].text == conteudo
+    assert len(chamadas) == 1  # só a geração — SEM a chamada extra
 
 
 def test_hooks_UMA_plataforma_que_falha_derruba_o_LOTE():

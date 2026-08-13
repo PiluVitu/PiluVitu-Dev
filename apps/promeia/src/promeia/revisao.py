@@ -50,11 +50,21 @@ def truncar(texto: str, limite: int) -> str:
     inteira com mais frequência do que a condição sugere. Aqui uso índice de
     CARACTERE, que é o que a condição quer dizer.
 
-    Efeito prático da diferença: só aparece quando o último espaço cai perto
-    da metade do limite. Nesse caso o Go preserva a palavra e este porte corta
-    — resultado mais curto, nunca texto quebrado. Preferi a semântica correta
-    à réplica do arredondamento, porque o valor aqui é o texto que vai pro
-    post, não um contrato de wire.
+    ⚠️ **M1 (revisão): o parágrafo anterior desta docstring tinha a
+    conclusão INVERTIDA — corrigido aqui, não no código.** O revisor rodou
+    `truncateRunes` do Go contra este `truncar` em 3.042 casos: 11
+    divergências, e em 100% delas é o Go que recua até a palavra inteira
+    (resultado mais CURTO, texto nunca quebrado) e este porte que MANTÉM o
+    corte no meio da palavra (resultado mais LONGO, podendo cortar uma
+    palavra ao meio) — o inverso do que a frase antiga afirmava. A conclusão
+    PRÁTICA segue válida: **0 divergências em 3.000 amostras de português
+    realista** — o efeito só aparece em casos adversariais onde o índice de
+    byte infla o bastante pra cruzar `limit/2` sem que o índice de caractere
+    cruze junto (texto com muitos caracteres multi-byte concentrados perto
+    da metade do limite). Preferi a semântica de CARACTERE (a que a condição
+    pretende) à réplica do arredondamento de byte do Go, porque o valor aqui
+    é o texto que vai pro post, não um contrato de wire — mas o efeito real
+    é "raramente pior, e só em casos artificiais", não "nunca pior".
     """
     if len(texto) <= limite:
         return texto
@@ -151,7 +161,19 @@ def refine(
     model_hooks: str,
     base_url: str,
 ) -> str:
-    """Reescreve uma chamada social conforme a instrução, dentro do limite."""
+    """Reescreve uma chamada social conforme a instrução, dentro do limite.
+
+    ⚠️ **I3 (revisão): `saida` é TRIMADA antes de medir o limite** — paridade
+    com o Go, cujo `chat()` (`client.go:96`) devolve
+    `strings.TrimSpace(out.Message.Content)` SEMPRE, pra TODO chamador
+    (Proofread, GenerateHooks, Refine). O `chat` injetado aqui (`ollama.chat`
+    em produção) devolve o texto CRU de propósito ("o trim é de quem chama"
+    — ver `ollama.py`), então sem este `.strip()` espaço em branco nas
+    bordas contava pro limite: 300 caracteres de conteúdo + 1 `\\n` = 301,
+    disparando uma chamada EXTRA ao encurtador (`_ajustar_ao_limite`) que o
+    Go nunca faria, e podendo devolver texto reescrito onde o Go devolve o
+    original intocado.
+    """
     if not instrucao:
         instrucao = INSTRUCAO_PADRAO
     limite = limite_da_plataforma(plataforma)
@@ -165,7 +187,7 @@ def refine(
         user=user,
         temperature=TEMP_REFINE,
         base_url=base_url,
-    )
+    ).strip()
     return _ajustar_ao_limite(
         saida, limite, chat=chat, model_hooks=model_hooks, base_url=base_url
     )
@@ -206,6 +228,10 @@ def gerar_hooks(
     (`return nil, fmt.Errorf(...)`). É paridade deliberada: devolver 3 de 4
     chamadas sem dizer qual faltou deixaria o dono publicar achando que
     gerou tudo.
+
+    ⚠️ **I3 (revisão): `texto` também é TRIMADO antes de medir o limite** —
+    mesmo motivo/paridade de `refine` acima (Go: `chat()` sempre devolve
+    `TrimSpace`; aqui o `chat` injetado devolve cru).
     """
     chamadas: list[Chamada] = []
     for plataforma in plataformas:
@@ -223,7 +249,7 @@ def gerar_hooks(
             user=user,
             temperature=TEMP_REFINE,
             base_url=base_url,
-        )
+        ).strip()
         chamadas.append(
             Chamada(
                 platform=plataforma,

@@ -117,20 +117,97 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
   })
 
   it('as duas falhas são classes DIFERENTES — nunca a mesma frase', async () => {
-    // Colapsar as duas manda o dono subir algo que já está de pé.
-    expect(PromeiaInalcancavel.prototype).not.toBeInstanceOf(PromeiaRecusou)
-    expect(PromeiaRecusou.prototype).not.toBeInstanceOf(PromeiaInalcancavel)
+    // ⚠️ M5 (revisão): `A.prototype instanceof B` é `false` pra QUALQUER
+    // duas classes que não estendem uma a outra — só falharia se uma
+    // estendesse a outra por engano. Não prova nada sobre INSTÂNCIAS reais,
+    // que é o que `traduzirFalha`/os testes de fato comparam. Comparar
+    // instâncias de verdade.
+    expect(new PromeiaInalcancavel('x')).not.toBeInstanceOf(PromeiaRecusou)
+    expect(new PromeiaRecusou('x', 'c', 500)).not.toBeInstanceOf(
+      PromeiaInalcancavel,
+    )
   })
 
-  it('erro sem corpo JSON ainda vira RECUSOU com mensagem própria', async () => {
+  // ⚠️ I2 (achado mais grave da revisão): este teste CONGELAVA como
+  // "correto" exatamente o defeito que a §5 do spec existe para evitar. Um
+  // erro HTTP sem corpo JSON reconhecível do promeia (`<html>502</html>` —
+  // texto cru, não `{ok,code,message}`) é o formato que o TÚNEL CLOUDFLARE
+  // devolve quando o Mac está desligado/travado, NUNCA o formato que o
+  // próprio promeia devolve (toda rota dele SEMPRE inclui `code`+`message`
+  // no erro — ver `_erro`/`TokenMiddleware` em revisao_rotas.py/auth.py). A
+  // versão antiga classificava isso como "RECUSOU" (alcancei e ele
+  // recusou) — a frase errada da §5, mandando o dono investigar um serviço
+  // que nunca respondeu.
+  it('erro HTTP SEM corpo reconhecível do promeia vira INALCANÇÁVEL — é a infraestrutura respondendo, não o promeia', async () => {
     const fetchImpl = vi.fn(
       async () => new Response('<html>502</html>', { status: 502 }),
     )
     const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
-    expect(erro).toBeInstanceOf(PromeiaRecusou)
-    expect((erro as PromeiaRecusou).code).toBe('promeia_failed')
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
+    expect((erro as PromeiaInalcancavel).message).toContain('Suba o promeia')
+  })
+
+  it('túnel Cloudflare caído (530, HTML) vira INALCANÇÁVEL, não RECUSOU — cenário medido pelo revisor com o app real', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('<html><body>530</body></html>', {
+          status: 530,
+          headers: { 'content-type': 'text/html' },
+        }),
+    )
+    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e) => e)
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
+    expect(erro).not.toBeInstanceOf(PromeiaRecusou)
+  })
+
+  it('túnel Cloudflare travado (524, sem corpo) vira INALCANÇÁVEL — mesmo cenário medido pelo revisor', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 524 }))
+    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e) => e)
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
+    expect(erro).not.toBeInstanceOf(PromeiaRecusou)
+  })
+
+  it('um 5xx com JSON que NÃO é o shape do promeia (sem code/message) também vira INALCANÇÁVEL, mesmo fora da lista de códigos Cloudflare', async () => {
+    // A regra é sobre o CORPO, não só sobre os status codes conhecidos da
+    // Cloudflare — um 500 genérico de qualquer proxy no meio do caminho
+    // também não é o promeia respondendo.
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ erro: 'algo genérico' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e) => e)
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
+  })
+
+  it('status na faixa Cloudflare VENCE mesmo com um corpo que parece do promeia — o promeia nunca emite esses status por contrato', async () => {
+    // Nunca acontece na prática (promeia só emite 400/401/502/503 — ver
+    // revisao_rotas.py/auth.py — e a Cloudflare não fala o shape do
+    // promeia), mas a checagem de STATUS é deliberadamente autoritativa:
+    // testar isto isolado evita que um refactor futuro troque o `||` por um
+    // `&&` (fazendo a checagem de status parar de proteger nada) sem que
+    // nenhum teste acuse.
+    const fetchImpl = vi.fn(async () =>
+      respostaJson(524, {
+        ok: false,
+        code: 'ollama_failed',
+        message: 'o Ollama respondeu e falhou',
+      }),
+    )
+    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e) => e)
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
   })
 
   it('200 com corpo não-JSON vira RECUSOU, não estoura', async () => {
