@@ -1,14 +1,13 @@
 /**
- * As três rotas de `/admin` da votação (fatia ③, Task 5, ÚLTIMA task de
- * código desta fatia) — porte de
- * `apps/api/internal/handlers/admin/users.go#ListUsers` e
- * `apps/api/internal/handlers/admin/backup.go#ListBackups`/`#CreateBackup`
- * (montagem em `router.go:81-95`, todas atrás de `RequireAdmin`). Mesma
- * convenção do resto do monorepo (`routes/votacao.ts`): `Env` local, NUNCA
- * importa `Bindings` de `../index` (evitaria import circular valor↔tipo).
+ * As três rotas de `/admin` da votação (fatia ③, Task 5, porte original) —
+ * porte de `apps/api/internal/handlers/admin/users.go#ListUsers` e
+ * `apps/api/internal/handlers/admin/backup.go#ListBackups` (montagem em
+ * `router.go:81-95`, todas atrás de `RequireAdmin`). Mesma convenção do
+ * resto do monorepo (`routes/votacao.ts`): `Env` local, NUNCA importa
+ * `Bindings` de `../index` (evitaria import circular valor↔tipo).
  *
- * ⚠️⚠️ **A ARMADILHA DESTA TASK — as duas rotas de LEITURA têm convenções de
- * wire OPOSTAS, e "deixar consistente" quebra a produção.**
+ * ⚠️⚠️ **A duas rotas de LEITURA têm convenções de wire OPOSTAS, e "deixar
+ * consistente" quebra a produção.**
  *
  *   - `GET /admin/users` é **snake_case** (`is_admin`, `created_at`) — o
  *     handler Go monta um `map[string]any` explícito, à mão
@@ -26,9 +25,14 @@
  * `components/votacao/admin/backups-panel.tsx`): emitir `drive_file_name`
  * em vez de `DriveFileName` quebraria `/admin/sessoes` em produção — a
  * tabela renderiza `undefined` em toda linha, sem erro nenhum.
+ *
+ * `POST /admin/backup` NÃO é mais porte de `CreateBackup` (a Go disparava
+ * o backup; aqui ele já não existe mais como capacidade do Worker) — ver o
+ * comentário da própria rota, mais abaixo, e `docs/superpowers/ROADMAP.md`
+ * § 1.
  */
 import { Hono } from 'hono'
-import { listBackups, listUsers } from '../domain/admin'
+import { listBackups, listUsers, registerBackup } from '../domain/admin'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
 import { requireAdmin, type SessionVariables } from '../lib/session'
@@ -62,23 +66,126 @@ adminRoutes.get('/backups', requireAdmin<AuthBindings>(), async (c) => {
   return okJson({ backups: rows.map(backupToWire) })
 })
 
+const TRIGGER_TYPES = new Set(['cron', 'manual', 'session_close'])
+
+type ParsedRegisterBackupBody = {
+  fileName: string
+  sizeBytes: number
+  triggerType: 'cron' | 'manual' | 'session_close'
+}
+
 /**
- * `POST /admin/backup` (admin) — porte de `CreateBackup`
- * (`handlers/admin/backup.go`). **Sempre** `503 backup_disabled` —
- * mensagem copiada LITERAL do Go ("Backup está desativado."). Não é um
- * stub preguiçoso: é o MESMO caminho degradado que a Go já tem quando
- * `h.deps.Runner == nil` (nenhum `GDRIVE_BACKUP_FOLDER_ID` configurado), e
- * `apps/web` já trata esse código (`components/votacao/admin/backups-panel.tsx`).
- *
- * Aqui o degradado é PERMANENTE, não uma pendência de configuração: o D1
- * não tem `VACUUM INTO` (a técnica que `backup.Runner.Run` usa pra gerar o
- * snapshot SQLite antes de subir pro Drive) — o backup deste monorepo já é
- * outro mecanismo inteiramente (`scripts/backup-d1.sh`, export lógico via
- * `wrangler d1 export`), não ligado a este endpoint. Ver
- * `apps/ramielle/CLAUDE.md`.
+ * Valida o corpo de `POST /admin/backup` — rota NOVA (ver o comentário da
+ * rota abaixo), sem decoder Go pra espelhar. `null` sinaliza corpo
+ * genericamente inválido (não é um objeto) — a rota decide `400
+ * invalid_json`; um campo específico faltando/com tipo errado devolve um
+ * erro dedicado com `field`, mesmo padrão de `title_required` em
+ * `POST /votacao/sessions` (`routes/votacao.ts`).
  */
-adminRoutes.post('/backup', requireAdmin<AuthBindings>(), () => {
-  return errJson(503, 'backup_disabled', 'Backup está desativado.')
+function parseRegisterBackupBody(
+  raw: unknown,
+):
+  | ParsedRegisterBackupBody
+  | { field: string; code: string; message: string }
+  | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return null
+  }
+  const body = raw as Record<string, unknown>
+
+  if (typeof body.file_name !== 'string' || body.file_name.trim() === '') {
+    return {
+      field: 'file_name',
+      code: 'file_name_required',
+      message: 'Informe o nome do arquivo de backup.',
+    }
+  }
+
+  if (
+    typeof body.size_bytes !== 'number' ||
+    !Number.isInteger(body.size_bytes) ||
+    body.size_bytes <= 0
+  ) {
+    return {
+      field: 'size_bytes',
+      code: 'invalid_size_bytes',
+      message: "'size_bytes' precisa ser um inteiro positivo.",
+    }
+  }
+
+  if (
+    typeof body.trigger_type !== 'string' ||
+    !TRIGGER_TYPES.has(body.trigger_type)
+  ) {
+    return {
+      field: 'trigger_type',
+      code: 'invalid_trigger_type',
+      message:
+        "'trigger_type' precisa ser 'cron', 'manual' ou 'session_close'.",
+    }
+  }
+
+  return {
+    fileName: body.file_name,
+    sizeBytes: body.size_bytes,
+    triggerType: body.trigger_type as 'cron' | 'manual' | 'session_close',
+  }
+}
+
+/**
+ * `POST /admin/backup` (admin) — trocou de sentido. Não existe MAIS
+ * equivalente Go pra portar: lá a rota DISPARAVA o backup (`VACUUM INTO` +
+ * upload pro Drive, síncrono dentro do request); aqui o D1 não tem `VACUUM
+ * INTO`, e `wrangler d1 export` é uma operação da API de gerenciamento da
+ * Cloudflare (credencial de CONTA) que não pode viver num Worker público —
+ * ver `apps/ramielle/CLAUDE.md` § _Backup do D1_.
+ *
+ * A troca de sentido está decidida e justificada em
+ * `docs/superpowers/ROADMAP.md` § 1, opção (b): em vez de *disparar* um
+ * backup, esta rota agora **REGISTRA** um backup feito FORA do Worker —
+ * `scripts/backup-d1.sh` chama esta rota, best-effort, DEPOIS de gravar e
+ * validar o `.sql.gz` local (as três checagens do próprio script:
+ * não-vazio, tem `CREATE TABLE`, gzip íntegro, mais a guarda de tamanho
+ * contra o backup anterior). O motivo de existir uma rota pra isso em vez
+ * de o script escrever direto no D1: o painel (`GET /admin/backups`, já
+ * existente) e o resto da API só enxergam o D1 de produção através do
+ * Worker — não há credencial de `wrangler d1 execute --remote` disponível
+ * pro script "gravar direto" sem reimplementar o mesmo caminho de auth que
+ * esta rota já tem.
+ *
+ * A ANTIGA resposta `503 backup_disabled` some por completo — não é mais
+ * um caminho alcançável desta rota (o Worker nunca dispara backup; a
+ * pergunta "está desabilitado?" deixou de fazer sentido pra este endpoint).
+ * `apps/web` também deixou de chamar esta rota do navegador: o corpo
+ * (`file_name`/`size_bytes`) só o script tem — ver `backups-panel.tsx`.
+ *
+ * Continua atrás de `requireAdmin` (a votação deste Worker é LIVRE —
+ * qualquer conta Google loga — então sem o guard certo qualquer votante
+ * conseguiria escrever linhas falsas em `backups`); mutação obrigatória
+ * (trocar `requireAdmin` por `requireAuth`) rodada e revertida contra o
+ * teste "conta autenticada mas não-admin responde 403" em
+ * `routes/admin.test.ts`.
+ */
+adminRoutes.post('/backup', requireAdmin<AuthBindings>(), async (c) => {
+  let rawBody: unknown
+  try {
+    rawBody = await c.req.json()
+  } catch {
+    return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+  }
+
+  const parsed = parseRegisterBackupBody(rawBody)
+  if (parsed === null) {
+    return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+  }
+  if ('code' in parsed) {
+    return errJson(400, parsed.code, parsed.message, parsed.field)
+  }
+
+  const row = await registerBackup(c.env.DB, parsed)
+  return okJson({ backup: backupToWire(row) }, 201, [
+    { type: 'success', message: 'Backup registrado.' },
+  ])
 })
 
 export default adminRoutes

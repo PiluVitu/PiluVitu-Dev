@@ -31,6 +31,5 @@ const backups: Backup[] = [
 ]
 
 export const Default: Story = { args: { backups } }
-export const BackingUp: Story = { args: { backups, backingUp: true } }
 export const Loading: Story = { args: { backups: [], isLoading: true } }
 export const Empty: Story = { args: { backups: [] } }

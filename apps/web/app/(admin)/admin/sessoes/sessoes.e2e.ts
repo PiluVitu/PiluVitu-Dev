@@ -159,9 +159,15 @@ test.describe('/admin/sessoes', () => {
     await expect(page.getByText('Nova sessão')).toBeVisible()
     await expect(page.getByText('Sexta 22/05')).toBeVisible()
     await expect(page.getByText('maria@example.com')).toBeVisible()
+    // O painel de backups é SÓ-LEITURA (ver backups-panel.tsx) — não existe
+    // botão "disparar backup" (o Worker não tem como fazer isso). O painel
+    // mostra o comando real e o histórico já registrado (o fixture
+    // `backups` acima tem SizeBytes:1_200_000 -> "1.1 MB").
     await expect(
-      page.getByRole('button', { name: 'Fazer backup agora' }),
-    ).toBeVisible()
+      page.getByRole('button', { name: /backup/i }),
+    ).not.toBeVisible()
+    await expect(page.getByText('make backup-ramielle')).toBeVisible()
+    await expect(page.getByText('1.1 MB')).toBeVisible()
   })
 
   test('expande uma sessão pra ver quem votou', async ({ page }) => {

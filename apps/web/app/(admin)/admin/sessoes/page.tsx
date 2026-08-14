@@ -1,6 +1,5 @@
 'use client'
 
-import { toast } from 'sonner'
 import { SectionHeader } from '@/components/section-header'
 import { CreateSessionForm } from '@/components/votacao/create-session-form'
 import { SessionsManager } from '@/components/votacao/sessions-manager'
@@ -8,11 +7,7 @@ import { UsersTable } from '@/components/votacao/admin/users-table'
 import { BackupsPanel } from '@/components/votacao/admin/backups-panel'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useAdminUsers } from '@/hooks/votacao/use-admin-users'
-import {
-  useAdminBackups,
-  useCreateBackup,
-} from '@/hooks/votacao/use-admin-backups'
-import { errorMessage } from '@/lib/votacao/api-client'
+import { useAdminBackups } from '@/hooks/votacao/use-admin-backups'
 
 export default function SessoesPage() {
   const user = useCurrentUser()
@@ -23,7 +18,6 @@ export default function SessoesPage() {
   // resolver / pra não-admin.
   const users = useAdminUsers(isAdmin)
   const backups = useAdminBackups(isAdmin)
-  const createBackup = useCreateBackup()
 
   return (
     <div className="space-y-8">
@@ -50,13 +44,6 @@ export default function SessoesPage() {
         <BackupsPanel
           backups={backups.data?.backups ?? []}
           isLoading={backups.isLoading}
-          backingUp={createBackup.isPending}
-          onBackup={() =>
-            createBackup.mutate(undefined, {
-              onSuccess: () => toast.success('Backup executado'),
-              onError: (err) => toast.error(errorMessage(err)),
-            })
-          }
         />
       </section>
     </div>

@@ -1,7 +1,10 @@
 /**
  * Testes de `GET /admin/users`, `GET /admin/backups`, `POST /admin/backup`
- * contra o app REAL (`../index`) — fatia ③, Task 5, porte de
- * `apps/api/internal/handlers/admin/{users,backup}.go`. Mesmo padrão de
+ * contra o app REAL (`../index`) — fatia ③, Task 5 (as duas rotas de
+ * leitura, porte de `apps/api/internal/handlers/admin/{users,backup}.go`)
+ * + o fix de UX do botão de backup (`POST /admin/backup` deixou de
+ * DISPARAR e passou a REGISTRAR — ver `routes/admin.ts` e
+ * `docs/superpowers/ROADMAP.md` § 1). Mesmo padrão de
  * `routes/votacao.test.ts`: cookie de sessão genuíno via uma segunda
  * instância `betterAuth()` (emailAndPassword, técnica de teste — produção é
  * só Google), D1 semeado direto via INSERT.
@@ -327,6 +330,15 @@ describe('GET /admin/backups', () => {
 })
 
 describe('POST /admin/backup', () => {
+  function corpoValido(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      file_name: 'ramielle-20260814T030000Z.sql.gz',
+      size_bytes: 12345,
+      trigger_type: 'manual',
+      ...overrides,
+    }
+  }
+
   test('sem cookie responde 401 not_authenticated', async () => {
     const res = await app.request(
       '/admin/backup',
@@ -338,6 +350,12 @@ describe('POST /admin/backup', () => {
     expect(body.notifications[0]?.code).toBe('not_authenticated')
   })
 
+  // Escrito ANTES do caminho feliz, de propósito (mesmo padrão de
+  // GET /votacao/sessions/:id/votes na T6 da fatia ②, e das outras duas
+  // rotas deste arquivo): é este o teste que a mutação obrigatória do fix
+  // de UX (trocar requireAdmin por requireAuth nesta rota) tem que quebrar.
+  // A votação deste Worker é LIVRE — sem o guard certo, qualquer conta
+  // Google conseguiria escrever linhas falsas em `backups`.
   test('conta autenticada mas não-admin responde 403 admin_only', async () => {
     const cookie = await cookieDeSessaoValido(
       'backup-naoadmin@example.com',
@@ -345,7 +363,11 @@ describe('POST /admin/backup', () => {
     )
     const res = await app.request(
       '/admin/backup',
-      { method: 'POST', headers: { cookie } },
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(corpoValido()),
+      },
       testEnv(),
     )
     expect(res.status).toBe(403)
@@ -353,27 +375,139 @@ describe('POST /admin/backup', () => {
     expect(body.notifications[0]?.code).toBe('admin_only')
   })
 
-  // ⚠️ Não é um stub preguiçoso: é o MESMO caminho degradado que a Go tem
-  // quando h.deps.Runner == nil (nenhum GDRIVE_BACKUP_FOLDER_ID
-  // configurado) — SEMPRE 503, mensagem copiada LITERAL do Go. O D1 não tem
-  // VACUUM INTO; o backup deste monorepo é scripts/backup-d1.sh (ver
-  // apps/ramielle/CLAUDE.md).
-  test('conta admin — SEMPRE 503 backup_disabled, mensagem LITERAL do Go', async () => {
+  test('corpo não é JSON válido -> 400 invalid_json', async () => {
     const cookie = await cookieDeSessaoValido(
-      'backup-admin@example.com',
+      'backup-invalidjson-admin@example.com',
       'Admin',
     )
     const res = await app.request(
       '/admin/backup',
-      { method: 'POST', headers: { cookie } },
-      testEnv('backup-admin@example.com'),
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: '{ nao é json',
+      },
+      testEnv('backup-invalidjson-admin@example.com'),
     )
-    expect(res.status).toBe(503)
+    expect(res.status).toBe(400)
     const body = (await res.json()) as Envelope<null>
-    expect(body.notifications[0]).toEqual({
-      type: 'error',
-      code: 'backup_disabled',
-      message: 'Backup está desativado.',
+    expect(body.notifications[0]?.code).toBe('invalid_json')
+  })
+
+  test('file_name ausente/vazio -> 400 file_name_required', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'backup-semnome-admin@example.com',
+      'Admin',
+    )
+    const res = await app.request(
+      '/admin/backup',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(corpoValido({ file_name: '' })),
+      },
+      testEnv('backup-semnome-admin@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]).toMatchObject({
+      code: 'file_name_required',
+      field: 'file_name',
     })
+  })
+
+  test('size_bytes zero/negativo/não-inteiro -> 400 invalid_size_bytes', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'backup-tamanhoinvalido-admin@example.com',
+      'Admin',
+    )
+    for (const sizeBytes of [0, -5, 1.5]) {
+      const res = await app.request(
+        '/admin/backup',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify(corpoValido({ size_bytes: sizeBytes })),
+        },
+        testEnv('backup-tamanhoinvalido-admin@example.com'),
+      )
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]).toMatchObject({
+        code: 'invalid_size_bytes',
+        field: 'size_bytes',
+      })
+    }
+  })
+
+  test('trigger_type fora do CHECK da migration -> 400 invalid_trigger_type', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'backup-triggerinvalido-admin@example.com',
+      'Admin',
+    )
+    const res = await app.request(
+      '/admin/backup',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(corpoValido({ trigger_type: 'nao-existe' })),
+      },
+      testEnv('backup-triggerinvalido-admin@example.com'),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]).toMatchObject({
+      code: 'invalid_trigger_type',
+      field: 'trigger_type',
+    })
+  })
+
+  // ⚠️ O caminho feliz — a troca de sentido da rota (ROADMAP.md § 1, opção
+  // b): não dispara nada, REGISTRA um backup feito fora do Worker (o script
+  // scripts/backup-d1.sh chama esta rota depois de gravar o .sql.gz). O
+  // 503 backup_disabled antigo NÃO existe mais — esta rota nunca mais
+  // responde 503.
+  test('conta admin, corpo válido — 201, registra e devolve o backup em PascalCase (backupToWire)', async () => {
+    const cookie = await cookieDeSessaoValido(
+      'backup-happy-admin@example.com',
+      'Admin',
+    )
+    const res = await app.request(
+      '/admin/backup',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(corpoValido()),
+      },
+      testEnv('backup-happy-admin@example.com'),
+    )
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Envelope<{ backup: WireBackup }>
+    expect(body.notifications[0]).toEqual({
+      type: 'success',
+      message: 'Backup registrado.',
+    })
+    expect(body.data?.backup).toMatchObject({
+      DriveFileID: 'ramielle-20260814T030000Z.sql.gz',
+      DriveFileName: 'ramielle-20260814T030000Z.sql.gz',
+      SizeBytes: 12345,
+      TriggerType: 'manual',
+    })
+
+    // O registro aparece de fato em GET /admin/backups depois — não é só
+    // um eco do corpo, é uma linha persistida.
+    const listagem = await app.request(
+      '/admin/backups',
+      { headers: { cookie } },
+      testEnv('backup-happy-admin@example.com'),
+    )
+    const listagemBody = (await listagem.json()) as Envelope<{
+      backups: WireBackup[]
+    }>
+    expect(
+      listagemBody.data?.backups.some(
+        (b) => b.DriveFileName === 'ramielle-20260814T030000Z.sql.gz',
+      ),
+    ).toBe(true)
   })
 })

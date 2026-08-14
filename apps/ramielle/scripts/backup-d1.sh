@@ -34,16 +34,25 @@
 #   ./scripts/backup-d1.sh
 #
 # Variáveis (todas opcionais):
-#   RAMIELLE_D1_NAME     nome do banco no D1        (default: piluvitu-ramielle)
-#   RAMIELLE_BACKUP_DIR  pasta de destino           (default: ~/Backups/ramielle)
-#   RAMIELLE_BACKUP_KEEP quantos arquivos manter    (default: 30)
-#   WRANGLER_BIN         como invocar o wrangler    (default: pnpm exec wrangler)
+#   RAMIELLE_D1_NAME      nome do banco no D1        (default: piluvitu-ramielle)
+#   RAMIELLE_BACKUP_DIR   pasta de destino           (default: ~/Backups/ramielle)
+#   RAMIELLE_BACKUP_KEEP  quantos arquivos manter    (default: 30)
+#   WRANGLER_BIN          como invocar o wrangler    (default: pnpm exec wrangler)
+#
+# Registro no painel admin (ROADMAP.md § 1, opção b — best-effort):
+#   RAMIELLE_ADMIN_URL     base do Worker             (default: https://ramielle.piluvitu.com.br)
+#   RAMIELLE_ADMIN_COOKIE  cookie de sessão de um admin (sem isso, o registro é PULADO)
+#   RAMIELLE_BACKUP_TRIGGER 'manual'|'cron'|'session_close' (default: manual)
+#   RAMIELLE_CURL_BIN      como invocar o curl        (default: curl — seam só pra teste)
 set -euo pipefail
 
 DB="${RAMIELLE_D1_NAME:-piluvitu-ramielle}"
 DEST="${RAMIELLE_BACKUP_DIR:-$HOME/Backups/ramielle}"
 KEEP="${RAMIELLE_BACKUP_KEEP:-30}"
 WRANGLER="${WRANGLER_BIN:-pnpm exec wrangler}"
+ADMIN_URL="${RAMIELLE_ADMIN_URL:-https://ramielle.piluvitu.com.br}"
+TRIGGER="${RAMIELLE_BACKUP_TRIGGER:-manual}"
+CURL="${RAMIELLE_CURL_BIN:-curl}"
 
 # KEEP=0 apagaria o backup recém-criado junto com os antigos. Recusar é melhor
 # que obedecer: quem escreve 0 quase sempre queria "não rotacionar".
@@ -126,7 +135,45 @@ fi
 # volume — então copia-e-renomeia dentro do próprio $DEST.
 cp "$TRABALHO/dump.sql.gz" "$FINAL.parcial"
 mv "$FINAL.parcial" "$FINAL"
-echo "==> gravado $FINAL ($(wc -c < "$FINAL" | tr -d ' ') bytes)"
+TAMANHO_FINAL="$(wc -c < "$FINAL" | tr -d ' ')"
+echo "==> gravado $FINAL ($TAMANHO_FINAL bytes)"
+
+# ---------------------------------------------------------------------------
+# Registro no painel admin (ROADMAP.md § 1, opção b) — best-effort, NUNCA
+# invalida o backup: o arquivo acima já está em disco, validado, e ISSO é o
+# que importa. `POST /admin/backup` deixou de DISPARAR export (o D1 não tem
+# VACUUM INTO) e passou a REGISTRAR um backup feito aqui, fora do Worker —
+# ver apps/ramielle/src/routes/admin.ts. A rota continua atrás de
+# `requireAdmin` (cookie de sessão Better Auth de uma conta admin); sem
+# `RAMIELLE_ADMIN_COOKIE` configurado, o registro é PULADO — não é erro, é
+# a infraestrutura de obter/renovar esse cookie por script ainda não
+# existir (decisão futura do dono). Qualquer falha daqui pra baixo só
+# imprime um aviso em stderr — nunca `exit`.
+# ---------------------------------------------------------------------------
+if [ -z "${RAMIELLE_ADMIN_COOKIE:-}" ]; then
+  echo "==> registro no painel pulado: RAMIELLE_ADMIN_COOKIE não configurado (o backup em disco continua válido)"
+else
+  NOME_ARQUIVO="$(basename "$FINAL")"
+  CORPO=$(printf '{"file_name":"%s","size_bytes":%s,"trigger_type":"%s"}' \
+    "$NOME_ARQUIVO" "$TAMANHO_FINAL" "$TRIGGER")
+
+  set +e
+  RESPOSTA_HTTP="$("$CURL" -sS --max-time 15 -o /dev/null -w '%{http_code}' \
+    -X POST "$ADMIN_URL/admin/backup" \
+    -H 'Content-Type: application/json' \
+    -H "Cookie: $RAMIELLE_ADMIN_COOKIE" \
+    -d "$CORPO")"
+  CURL_STATUS=$?
+  set -e
+
+  if [ "$CURL_STATUS" -ne 0 ]; then
+    echo "aviso: falha ao registrar o backup no painel (curl saiu com código $CURL_STATUS) — o arquivo em disco continua válido" >&2
+  elif [ "$RESPOSTA_HTTP" != "201" ]; then
+    echo "aviso: registro do backup respondeu HTTP $RESPOSTA_HTTP (esperado 201) — o arquivo em disco continua válido" >&2
+  else
+    echo "==> registrado no painel admin ($NOME_ARQUIVO)"
+  fi
+fi
 
 # Rotação só DEPOIS de existir um backup novo e válido. Ordem invertida
 # (rotacionar antes de exportar) apagaria o mais antigo mesmo quando o export

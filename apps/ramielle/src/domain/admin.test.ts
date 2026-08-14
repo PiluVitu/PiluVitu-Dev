@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { listBackups, listUsers } from './admin'
+import { listBackups, listUsers, registerBackup } from './admin'
 
 const DB = env.DB
 
@@ -276,5 +276,56 @@ describe('listBackups', () => {
     // linhas pedidas), 201 já cai no default 50.
     expect(await listBackups(DB, 200)).toHaveLength(200)
     expect(await listBackups(DB, 201)).toHaveLength(50)
+  })
+})
+
+describe('registerBackup', () => {
+  it('grava e devolve a linha completa, com drive_file_id === drive_file_name (sem Drive real por trás)', async () => {
+    const row = await registerBackup(DB, {
+      fileName: 'ramielle-20260814T030000Z.sql.gz',
+      sizeBytes: 12345,
+      triggerType: 'manual',
+    })
+    expect(row.drive_file_id).toBe('ramielle-20260814T030000Z.sql.gz')
+    expect(row.drive_file_name).toBe('ramielle-20260814T030000Z.sql.gz')
+    expect(row.size_bytes).toBe(12345)
+    expect(row.trigger_type).toBe('manual')
+    expect(row.id).toBeGreaterThan(0)
+    expect(typeof row.created_at).toBe('string')
+  })
+
+  it('o registro aparece em listBackups depois', async () => {
+    await registerBackup(DB, {
+      fileName: 'ramielle-20260814T030000Z.sql.gz',
+      sizeBytes: 999,
+      triggerType: 'cron',
+    })
+    const backups = await listBackups(DB, 50)
+    expect(backups).toHaveLength(1)
+    expect(backups[0]?.drive_file_name).toBe('ramielle-20260814T030000Z.sql.gz')
+    expect(backups[0]?.trigger_type).toBe('cron')
+  })
+
+  it('aceita os três trigger_type válidos (CHECK da migration 0001)', async () => {
+    for (const trigger of ['cron', 'manual', 'session_close'] as const) {
+      const row = await registerBackup(DB, {
+        fileName: `ramielle-${trigger}.sql.gz`,
+        sizeBytes: 1,
+        triggerType: trigger,
+      })
+      expect(row.trigger_type).toBe(trigger)
+    }
+  })
+
+  it('trigger_type inválido é rejeitado pelo CHECK da migration (defesa em profundidade — a rota já valida antes)', async () => {
+    await expect(
+      registerBackup(DB, {
+        fileName: 'ramielle-invalido.sql.gz',
+        sizeBytes: 1,
+        // @ts-expect-error — só pra provar que o CHECK do schema também barra,
+        // não só a validação da rota.
+        triggerType: 'nao-existe',
+      }),
+    ).rejects.toThrow()
   })
 })

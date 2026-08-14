@@ -1,19 +1,24 @@
 /**
- * Domínio de `/admin` (fatia ③, Task 5) — lê `users` (todos, mais recentes
- * primeiro) e `backups` (últimos N) para os handlers admin
- * (`routes/admin.ts`). Porte de `Store.ListUsers`
+ * Domínio de `/admin` (fatia ③, Task 5; `registerBackup` acrescentada
+ * depois, fix da UX do botão de backup — ver `routes/admin.ts` e
+ * `docs/superpowers/ROADMAP.md` § 1) — lê `users` (todos, mais recentes
+ * primeiro) e `backups` (últimos N), e REGISTRA um backup feito fora do
+ * Worker, para os handlers admin (`routes/admin.ts`). `listUsers`/
+ * `listBackups` são porte de `Store.ListUsers`
  * (`apps/api/internal/votacao/users.go:49-73`) e `Store.ListBackups`
- * (`apps/api/internal/votacao/backups.go:50-77`).
+ * (`apps/api/internal/votacao/backups.go:50-77`); `registerBackup` é NOVA,
+ * sem equivalente no Go (que disparava o backup via `VACUUM INTO`,
+ * indisponível no D1).
  *
- * ⚠️ Nenhuma das duas devolve algo pronto pro fio ainda — `listUsers` já
- * devolve o shape FINAL (snake_case, `google_sub` NUNCA selecionado — o Go
- * monta um `map[string]any` explícito sem essa coluna,
- * `handlers/admin/users.go`); `listBackups` devolve a ROW crua do D1
- * (snake_case), igual a `getSessionMovies`/`getVotingSession`
+ * ⚠️ Nenhuma das duas leituras devolve algo pronto pro fio ainda —
+ * `listUsers` já devolve o shape FINAL (snake_case, `google_sub` NUNCA
+ * selecionado — o Go monta um `map[string]any` explícito sem essa coluna,
+ * `handlers/admin/users.go`); `listBackups`/`registerBackup` devolvem a ROW
+ * crua do D1 (snake_case), igual a `getSessionMovies`/`getVotingSession`
  * (`domain/sessions.ts`) — a conversão pra PascalCase (`backupToWire`,
  * `lib/wire.ts`) é responsabilidade da ROTA, mesma divisão de
  * responsabilidade já estabelecida por `sessionToWire`/`movieToWire`. A
- * MISTURA de convenções entre as duas rotas É o contrato — ver
+ * MISTURA de convenções entre as duas rotas de LEITURA É o contrato — ver
  * `routes/admin.ts` pro raciocínio completo.
  */
 import { toIsoUtc } from '../lib/dates'
@@ -115,4 +120,66 @@ export async function listBackups(
     .bind(clampedLimit)
     .all<BackupRow>()
   return results
+}
+
+/** Corpo já validado de `POST /admin/backup` — ver `routes/admin.ts`. */
+export type RegisterBackupInput = {
+  fileName: string
+  sizeBytes: number
+  triggerType: 'cron' | 'manual' | 'session_close'
+}
+
+/**
+ * Registra um backup feito FORA do Worker — `apps/ramielle/scripts/backup-d1.sh`
+ * chama a rota depois de gravar e validar o `.sql.gz` local. Sem
+ * equivalente no Go: lá `POST /admin/backup` DISPARAVA o backup (`VACUUM
+ * INTO` + upload pro Drive); o D1 não tem `VACUUM INTO`, e `wrangler d1
+ * export` é uma operação da API de gerenciamento da Cloudflare que não pode
+ * viver num Worker público. Ver `routes/admin.ts` e
+ * `docs/superpowers/ROADMAP.md` § 1 pro raciocínio completo da troca de
+ * sentido da rota.
+ *
+ * ⚠️ **`drive_file_id`/`drive_file_name` recebem o MESMO valor
+ * (`input.fileName`).** As colunas são herdadas do desenho antigo (Drive),
+ * onde um arquivo tinha um ID de Drive separado do nome de exibição. Um
+ * backup local não tem essa distinção — o nome do arquivo (com o carimbo
+ * UTC embutido pelo script, `ramielle-<carimbo>.sql.gz`) já é único sozinho.
+ * Inventar um "id" fake só para preencher a coluna seria pior que
+ * reaproveitá-la com o mesmo valor de `drive_file_name`.
+ *
+ * INSERT simples com `RETURNING id` + um segundo SELECT pra devolver a
+ * linha completa (com `created_at` já aplicado pelo default da migration)
+ * — mesmo padrão de `domain/sessions.ts#createVotingSession`.
+ */
+export async function registerBackup(
+  db: D1Database,
+  input: RegisterBackupInput,
+): Promise<BackupRow> {
+  const inserted = await db
+    .prepare(
+      `INSERT INTO backups (drive_file_id, drive_file_name, size_bytes, trigger_type)
+       VALUES (?, ?, ?, ?)
+       RETURNING id`,
+    )
+    .bind(input.fileName, input.fileName, input.sizeBytes, input.triggerType)
+    .first<{ id: number }>()
+
+  if (inserted === null) {
+    throw new Error(
+      'registerBackup: INSERT ... RETURNING id não devolveu linha',
+    )
+  }
+
+  const row = await db
+    .prepare(
+      `SELECT id, drive_file_id, drive_file_name, size_bytes, trigger_type, created_at
+         FROM backups WHERE id = ?`,
+    )
+    .bind(inserted.id)
+    .first<BackupRow>()
+
+  if (row === null) {
+    throw new Error('registerBackup: linha não encontrada logo após o insert')
+  }
+  return row
 }

@@ -167,6 +167,7 @@ Porte de `apps/api/internal/handlers/admin/{users,backup}.go` (montagem em `rout
 - **Minor da mesma revisão — fronteira do clamp fixada.** O teste de clamp usava só `0, -5, 500, 10`, sem exercitar a fronteira exata de `limit > 200`. Acrescentados `200` (não clampa, devolve as 200 linhas) e `201` (clampa pro default 50) — é onde um off-by-one (`>= 200` no lugar de `> 200`) moraria sem ser pego.
 - **`listBackups` porta o CLAMP do Go, não só o "sempre 50"**: `if limit <= 0 || limit > 200 { limit = 50 }` (`backups.go:51`) — a rota sempre chama com `50`, então o clamp nunca dispara na prática, mas está testado pra qualquer valor (`domain/admin.test.ts`, describe `listBackups`).
 - **`POST /admin/backup` é SEMPRE `503 backup_disabled`** — não é um stub preguiçoso, é o MESMO caminho degradado que a Go tem quando `h.deps.Runner == nil` (nenhum `GDRIVE_BACKUP_FOLDER_ID` configurado), e `apps/web` já trata esse código. Aqui o degradado é **permanente**, não uma pendência de configuração futura: o D1 não tem `VACUUM INTO` (a técnica que `backup.Runner.Run` usa pra gerar o snapshot SQLite antes de subir pro Drive) — o backup deste monorepo é outro mecanismo inteiramente (`scripts/backup-d1.sh`, export lógico via `wrangler d1 export`), não ligado a este endpoint.
+  ⚠️ **Isto ficou histórico — NÃO é mais o comportamento atual.** Um botão clicável que só faz falhar é UX ruim, não paridade — corrigido no fix da UX do botão de backup (`docs/superpowers/ROADMAP.md` § 1): `POST /admin/backup` trocou de sentido pra REGISTRAR um backup feito fora do Worker; o `503 backup_disabled` não é mais um caminho alcançável desta rota. Ver § _Registro do backup no painel admin_ mais abaixo pro comportamento real.
 - ⚠️ **Achado desta task: a tabela `backups` já existia** — `migrations/0001_votacao.sql` (T2 da fatia ②) já criou `backups` + `idx_backups_created` no schema completo portado do Go, então **nenhuma migration nova foi necessária** aqui (o brief desta task cogitava a possibilidade de precisar criar a tabela; medido contra o schema real antes de escrever qualquer SQL, e ela já estava lá).
 - **Mutação obrigatória (Step 4) rodada e revertida**: trocar `requireAdmin` por `requireAuth` em `POST /admin/backup` faz o teste "conta autenticada mas não-admin responde 403 admin_only" falhar (recebe `503` em vez de `403` — a conta não-admin passa a atravessar o guard fraco e bate direto no caminho sempre-503) — confirmado rodando `vitest run src/routes/admin.test.ts` com a mutação aplicada. Revertida; `/usr/bin/git diff -- apps/ramielle/src/routes/admin.ts` confirmado vazio antes do commit (arquivo é NOVO nesta task, então o diff relevante é contra o estado já commitado deste mesmo arquivo, não contra HEAD).
 
@@ -392,16 +393,40 @@ Variáveis (todas opcionais):
 | `RAMIELLE_BACKUP_KEEP` | `30`                 | quantos arquivos manter |
 | `WRANGLER_BIN`         | `pnpm exec wrangler` | como invocar o wrangler |
 
+Registro do backup no painel admin (seção abaixo — também opcionais):
+
+| Variável                  | Default                            | Para quê                                                           |
+| ------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `RAMIELLE_ADMIN_URL`      | `https://ramielle.piluvitu.com.br` | base do Worker                                                     |
+| `RAMIELLE_ADMIN_COOKIE`   | _(vazio)_                          | cookie de sessão de uma conta admin — sem ele, o registro é PULADO |
+| `RAMIELLE_BACKUP_TRIGGER` | `manual`                           | `trigger_type` gravado (`cron` no job agendado)                    |
+| `RAMIELLE_CURL_BIN`       | `curl`                             | como invocar o curl (seam só pra teste)                            |
+
 ```bash
 make backup-ramielle        # exporta produção, comprime, rotaciona
-make backup-ramielle-test   # 27 testes de shell, wrangler stubado, sem tocar a rede
+make backup-ramielle-test   # 44 testes de shell, wrangler/curl stubados, sem tocar a rede
 ```
 
 Também disponível como script `backup` no `package.json` (`pnpm --filter @piluvitu/ramielle run backup` — equivalente a `./scripts/backup-d1.sh` do próprio diretório).
 
 ⚠️ **Hoje o D1 remoto está vazio — não há o que perder ainda.** É só **depois** do import do histórico real (Task 3, runbook de cutover) que este script passa a proteger algo de verdade — por isso o runbook (`docs/superpowers/runbooks/2026-08-12-cutover-ramielle.md`, passo 11) roda o primeiro backup **imediatamente após** o import, antes de qualquer outro passo, e agenda a recorrência (`launchd`, mesmo mecanismo do finanças).
 
-⚠️ **Testado só com `wrangler` stubado (`backup-d1.test.sh`) — nunca contra o D1 remoto de verdade.** Nenhum agente executa este script contra produção (regra dura da fatia ④); a primeira execução real é ato do dono, no runbook.
+⚠️ **Testado só com `wrangler`/`curl` stubados (`backup-d1.test.sh`) — nunca contra o D1 remoto nem o Worker de verdade.** Nenhum agente executa este script contra produção (regra dura da fatia ④); a primeira execução real é ato do dono, no runbook.
+
+### Registro do backup no painel admin (fix da UX do botão, `docs/superpowers/ROADMAP.md` § 1)
+
+`POST /admin/backup` (`src/routes/admin.ts`) **trocou de sentido** — não é mais o porte de `CreateBackup` da Go (que DISPARAVA o backup via `VACUUM INTO`, indisponível no D1). O painel `/admin/sessoes` tinha um botão "Fazer backup agora" que era clicável e **falhar era o único desfecho possível** (a rota sempre respondia `503 backup_disabled`) — um controle que nunca funciona ensina o dono a ignorar erro. A opção (b) do ROADMAP foi a escolhida: a rota agora **REGISTRA** um backup feito FORA do Worker.
+
+- **Corpo**: `{file_name, size_bytes, trigger_type}` — `trigger_type` tem que ser um dos três valores do `CHECK` da migration `0001` (`cron`\|`manual`\|`session_close`), senão `400 invalid_trigger_type`. `file_name` vazio ⇒ `400 file_name_required`; `size_bytes` não-inteiro/`<=0` ⇒ `400 invalid_size_bytes`.
+- **`drive_file_id` = `drive_file_name` = `file_name`** — as colunas são herdadas do desenho antigo (Drive), onde um arquivo tinha um ID de Drive separado do nome. Um backup local não tem essa distinção; o nome já é único (carimbo UTC embutido pelo próprio script). Ver `domain/admin.ts#registerBackup`.
+- **Sempre `201` no sucesso** (paridade com o padrão de criação já usado em `POST /votacao/sessions`), nunca mais `503 backup_disabled` — esse código não existe mais nesta rota.
+- **Continua atrás de `requireAdmin`** — a votação deste Worker é LIVRE (qualquer conta Google loga), então sem o guard certo qualquer votante conseguiria escrever linhas falsas em `backups`. Provado por mutação (trocar `requireAdmin` por `requireAuth` na rota, rodar `routes/admin.test.ts`, confirmar que só o teste "conta autenticada mas não-admin responde 403" quebra — vira `201` — e reverter).
+- **`scripts/backup-d1.sh` chama a rota, best-effort, DEPOIS de gravar e validar o `.sql.gz`** (as checagens já existentes do script: não-vazio, tem `CREATE TABLE`, gzip íntegro, tamanho contra o backup anterior). ⚠️ **Falha ao registrar NUNCA invalida o backup** — o arquivo já está em disco e válido antes desse passo rodar; o registro é só metadado. `set +e`/`set -e` isola só a chamada de `curl`; qualquer falha (rede, HTTP != 201) vira um `aviso:` em stderr, o script segue e sai `0`. Provado por mutação: removendo esse isolamento, um `curl` que falha (`exit 7`, simulando rede fora) derruba o script inteiro (herdando o código de saída do `curl` via `set -euo pipefail`) — exatamente o comportamento que o guard existe para evitar. Cenários 11–14 de `backup-d1.test.sh` cobrem: sem `RAMIELLE_ADMIN_COOKIE` (registro pulado, `curl` nunca chamado), sucesso (`201`), falha HTTP (`403`) e falha de transporte (`curl` saindo != 0) — os dois últimos provam que o script sai `0` e o backup continua contado, mesmo com o registro falhando.
+- **Autenticação do script é o ponto em aberto**: `requireAdmin` exige cookie de sessão Better Auth — um script de terminal não tem browser pra fazer login OAuth. Sem `RAMIELLE_ADMIN_COOKIE` configurado (obtido manualmente, ex. via DevTools depois de logar como admin em `ramielle.piluvitu.com.br`), o registro é PULADO — o backup em si roda normal, só não aparece no painel. Automatizar a obtenção/renovação desse cookie (a sessão expira) é decisão futura do dono, fora do escopo deste fix.
+
+### A UI deixou de prometer um botão que nunca funciona
+
+`components/votacao/admin/backups-panel.tsx` (`apps/web`) removeu o botão "Fazer backup agora" — não sobrou capacidade nenhuma no Worker pra ele chamar (o corpo `{file_name,size_bytes,trigger_type}` só o script tem; o navegador não tem como preencher isso de forma honesta). No lugar: uma linha fixa com o comando real (`make backup-ramielle`) + o histórico de backups já registrados (`GET /admin/backups`, inalterado), que já mostra o backup mais recente no topo — não foi necessário um destaque redundante de "último backup" separado da lista. `hooks/votacao/use-admin-backups.ts` perdeu `useCreateBackup`; `lib/votacao/api-client.ts` perdeu `adminCreateBackup`. `fmtSize` foi extraída pra `apps/web/lib/votacao/format-bytes.ts#formatBackupSize` (lib pura, testável em Jest) — o componente em si continua sem teste próprio, seguindo o padrão já estabelecido dos outros componentes de `components/votacao/admin/` (puros, só stories).
 
 ## Pendências do dono — nada disto foi feito nesta fatia
 

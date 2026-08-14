@@ -63,6 +63,52 @@ contar_backups() {
   echo "$n"
 }
 
+# --- stub de curl, pro registro no painel admin (ROADMAP.md § 1) -----------
+# Um curl-falso programável por $MODO_CURL: grava se foi chamado (marca) e
+# com que corpo (-d), e decide a saída (status HTTP em stdout via -w, ou
+# saindo != 0 pra simular falha de transporte). Nada aqui toca a rede.
+montar_curl_stub() {
+  cat > "$SANDBOX/bin/curl-falso" <<'STUB'
+#!/usr/bin/env bash
+corpo=''
+prev=''
+for arg in "$@"; do
+  if [ "$prev" = "-d" ]; then corpo="$arg"; fi
+  prev="$arg"
+done
+: > "$CURL_LOG_MARCA"
+echo "$corpo" > "$CURL_LOG_BODY"
+case "${MODO_CURL:-sucesso}" in
+  sucesso)    printf '201' ;;
+  http-erro)  printf '403' ;;
+  rede-falha) exit 7 ;;
+esac
+STUB
+  chmod +x "$SANDBOX/bin/curl-falso"
+}
+
+rodar_backup_sem_registro() {
+  RAMIELLE_BACKUP_DIR="$SANDBOX/dest" \
+  RAMIELLE_BACKUP_KEEP=30 \
+  WRANGLER_BIN="$SANDBOX/bin/wrangler-falso" \
+  RAMIELLE_CURL_BIN="$SANDBOX/bin/curl-falso" \
+  CURL_LOG_MARCA="$SANDBOX/curl-chamado.marca" \
+  CURL_LOG_BODY="$SANDBOX/curl-body.log" \
+    bash "$ALVO" > "$SANDBOX/saida.log" 2>&1
+}
+
+rodar_backup_com_registro() { # rodar_backup_com_registro <modo-curl>
+  RAMIELLE_BACKUP_DIR="$SANDBOX/dest" \
+  RAMIELLE_BACKUP_KEEP=30 \
+  WRANGLER_BIN="$SANDBOX/bin/wrangler-falso" \
+  RAMIELLE_CURL_BIN="$SANDBOX/bin/curl-falso" \
+  RAMIELLE_ADMIN_COOKIE='cookie-de-teste' \
+  MODO_CURL="$1" \
+  CURL_LOG_MARCA="$SANDBOX/curl-chamado.marca" \
+  CURL_LOG_BODY="$SANDBOX/curl-body.log" \
+    bash "$ALVO" > "$SANDBOX/saida.log" 2>&1
+}
+
 echo "backup-d1.sh (ramielle)"
 
 # --- 1. caminho feliz -------------------------------------------------------
@@ -186,6 +232,78 @@ montar_sandbox ok
 rodar_backup 30
 checar "sem backup anterior, dump COM INSERT é aceito" 0 "$?"
 checar "grava o primeiro backup" 1 "$(contar_backups)"
+limpar_sandbox
+
+# --- 11. sem RAMIELLE_ADMIN_COOKIE, o registro no painel é PULADO — curl
+#         nunca é chamado, e o backup em disco não é afetado ---------------
+montar_sandbox ok
+montar_curl_stub
+rodar_backup_sem_registro
+checar "sem cookie, o backup ainda sai com 0" 0 "$?"
+checar "sem cookie, o backup ainda é gravado" 1 "$(contar_backups)"
+if [ -e "$SANDBOX/curl-chamado.marca" ]; then
+  nok "sem cookie, curl NÃO deveria ter sido chamado"
+else
+  ok "sem cookie, curl nunca é chamado (registro pulado de verdade, não só 'falha silenciosa')"
+fi
+if grep -q 'registro no painel pulado' "$SANDBOX/saida.log"; then
+  ok "avisa que o registro foi pulado"
+else
+  nok "não avisou que o registro foi pulado"
+fi
+limpar_sandbox
+
+# --- 12. registro bem-sucedido (curl devolve 201) --------------------------
+montar_sandbox ok
+montar_curl_stub
+rodar_backup_com_registro sucesso
+checar "registro bem-sucedido: script sai com 0" 0 "$?"
+checar "registro bem-sucedido: backup gravado" 1 "$(contar_backups)"
+if [ -e "$SANDBOX/curl-chamado.marca" ]; then
+  ok "curl foi chamado"
+else
+  nok "curl deveria ter sido chamado (RAMIELLE_ADMIN_COOKIE estava configurado)"
+fi
+if grep -q '"file_name":"ramielle-' "$SANDBOX/curl-body.log" 2>/dev/null; then
+  ok "o corpo enviado inclui file_name com o nome real do arquivo"
+else
+  nok "o corpo enviado não tem file_name (ou está errado)"
+fi
+if grep -q 'registrado no painel admin' "$SANDBOX/saida.log"; then
+  ok "confirma o registro no log"
+else
+  nok "não confirmou o registro no log"
+fi
+limpar_sandbox
+
+# --- 13. registro falha por HTTP != 201 (ex.: 403) — NÃO invalida o backup -
+# O arquivo .sql.gz já está gravado e validado ANTES deste passo rodar; o
+# registro é só metadado. Isto é o requisito central do fix (ROADMAP.md § 1):
+# falhar ao registrar não pode fazer o dono achar que perdeu o backup.
+montar_sandbox ok
+montar_curl_stub
+rodar_backup_com_registro http-erro
+checar "registro c/ HTTP de erro: script AINDA sai com 0" 0 "$?"
+checar "registro c/ HTTP de erro: backup AINDA é gravado" 1 "$(contar_backups)"
+if grep -q 'aviso: registro do backup respondeu HTTP 403' "$SANDBOX/saida.log"; then
+  ok "avisa o HTTP de erro em stderr sem derrubar o script"
+else
+  nok "não avisou o HTTP de erro corretamente"
+fi
+limpar_sandbox
+
+# --- 14. registro falha por erro de transporte (curl sai != 0) — MESMO
+#         efeito do cenário 13: falha suave, backup intocado ---------------
+montar_sandbox ok
+montar_curl_stub
+rodar_backup_com_registro rede-falha
+checar "registro c/ falha de rede: script AINDA sai com 0" 0 "$?"
+checar "registro c/ falha de rede: backup AINDA é gravado" 1 "$(contar_backups)"
+if grep -q 'aviso: falha ao registrar o backup no painel' "$SANDBOX/saida.log"; then
+  ok "avisa a falha de transporte em stderr sem derrubar o script"
+else
+  nok "não avisou a falha de transporte corretamente"
+fi
 limpar_sandbox
 
 echo

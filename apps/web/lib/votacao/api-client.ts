@@ -116,8 +116,13 @@ export const votacaoApi = {
   adminUsers: () => call<AdminUsersResponse>('/admin/users'),
   adminSessionVotes: (id: number) =>
     call<SessionVotesResponse>(`/votacao/sessions/${id}/votes`),
+  // ⚠️ Não existe `adminCreateBackup` — `POST /admin/backup` (ramielle)
+  // trocou de sentido (registra um backup feito fora do Worker, corpo
+  // {file_name,size_bytes,trigger_type} que só scripts/backup-d1.sh
+  // possui). O navegador não tem esses dados; chamar essa rota daqui não
+  // faz sentido. Ver `docs/superpowers/ROADMAP.md` § 1 e
+  // `components/votacao/admin/backups-panel.tsx`.
   adminBackups: () => call<BackupsResponse>('/admin/backups'),
-  adminCreateBackup: () => call<null>('/admin/backup', { method: 'POST' }),
 }
 
 /**

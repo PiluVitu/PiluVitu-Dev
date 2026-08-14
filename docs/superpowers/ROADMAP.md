@@ -4,23 +4,17 @@ Itens conhecidos, medidos e deliberadamente adiados. Cada um diz **por que** foi
 
 ---
 
-## 1. O botão "Disparar backup" do `/admin/sessoes` sempre falha
+## 1. ✅ O botão "Disparar backup" do `/admin/sessoes` sempre falha — FEITO em 2026-08-14
 
-**Estado hoje:** `POST /admin/backup` responde **`503 backup_disabled`**, com a mensagem `"Backup está desativado."` — sempre, por design. É paridade com a Go: `handlers/admin/backup.go` devolve exatamente isso quando o `Runner` não está configurado, e o `apps/web` já trata esse caminho.
+**Estado antes:** `POST /admin/backup` respondia **`503 backup_disabled`**, com a mensagem `"Backup está desativado."` — sempre, por design (paridade com a Go: `handlers/admin/backup.go` devolvia exatamente isso quando o `Runner` não estava configurado). O botão "Fazer backup agora" (`apps/web`) existia, era clicável, e falhar era o único desfecho possível. Um controle que nunca funciona ensina o dono a ignorar erro.
 
-**Por que está assim:** o backup da Go usava `VACUUM INTO` do SQLite, que **o D1 não tem**. O backup real deste Worker é `apps/ramielle/scripts/backup-d1.sh` (export lógico via `wrangler d1 export --remote`, gzip, rotação) — um script de máquina, não uma rota HTTP. Um Worker não tem como se auto-exportar: `wrangler d1 export` é uma operação da API de gerenciamento da Cloudflare, autenticada com credencial de conta, que **não pode viver num Worker público**.
+**Solução aplicada: opção (b), trocar o sentido da rota.** `POST /admin/backup` (`apps/ramielle/src/routes/admin.ts`) deixou de tentar _disparar_ o backup (o D1 continua sem `VACUUM INTO` — isso não mudou) e passou a **REGISTRAR** um backup feito fora, no script. Corpo `{file_name, size_bytes, trigger_type}`, valida `trigger_type` contra o `CHECK` da migration `0001`, grava em `backups` reaproveitando `drive_file_id`/`drive_file_name` (os dois recebem o mesmo `file_name` — não existe mais um "id de Drive" separado do nome). Sempre `201` no sucesso; o `503 backup_disabled` não é mais um caminho alcançável desta rota. Continua atrás de `requireAdmin`, provado por mutação.
 
-**O problema real, e é de UX, não de backend:** o botão existe, é clicável, e falhar é o único desfecho possível. Um controle que nunca funciona ensina o dono a ignorar erro — e o dia em que o erro for de verdade, ele já não olha.
+**`apps/ramielle/scripts/backup-d1.sh`** ganhou um passo final, best-effort: depois de gravar e validar o `.sql.gz` (as checagens que já existiam), chama a rota acima via `curl` (novo seam `RAMIELLE_CURL_BIN`, só pra teste). Autenticação via `RAMIELLE_ADMIN_COOKIE` (cookie de sessão de uma conta admin) — sem ele configurado, o registro é **pulado**, não é erro. **Falha ao registrar NUNCA invalida o backup**: o arquivo já está em disco e válido antes desse passo rodar; qualquer falha (rede, HTTP != 201) vira um aviso em stderr e o script segue, saindo `0`. Provado por mutação: removendo o isolamento (`set +e`/`set -e`) em volta da chamada, uma falha de `curl` derruba o script inteiro — exatamente o que o guard existe pra evitar.
 
-**Caminhos possíveis (decidir antes de implementar):**
+**`apps/web/components/votacao/admin/backups-panel.tsx`** removeu o botão — não sobrou capacidade nenhuma no Worker pra ele chamar (o corpo `{file_name,size_bytes,trigger_type}` só o script possui; o navegador não tem como preencher isso honestamente). No lugar: uma linha fixa com o comando real (`make backup-ramielle`) + o histórico já registrado (`GET /admin/backups`, inalterado — já mostra o mais recente no topo, sem precisar de um destaque duplicado). `useCreateBackup`/`adminCreateBackup` foram removidos (dead code, nada mais os chama).
 
-- **(a) Esconder o botão** quando o backup não estiver disponível, e mostrar no lugar o comando (`make backup-ramielle`) + a data do último backup em disco. Menor esforço, resolve o engano. ⚠️ Exige o `apps/web` saber que a rota é permanentemente 503 — hoje ele não distingue "desligado" de "falhou".
-- **(b) Trocar o sentido da rota:** em vez de _disparar_ backup, `GET /admin/backups` já lista o histórico da tabela `backups`. Fazer o `POST` virar um **registro** de backup feito fora (o script chamaria a rota depois de gravar o `.sql.gz`), em vez de tentar executá-lo. Mantém o painel útil e verdadeiro.
-- **(c) Cloudflare Queue / Cron Trigger** disparando o export por outra via. Mais infraestrutura do que o problema pede.
-
-**Recomendação:** (b) — é o único que deixa o painel dizer a verdade (_"último backup: há 3 horas"_) sem inventar capacidade que o Worker não tem. A tabela `backups` já existe e já é lida.
-
-**Onde mexer:** `apps/ramielle/src/routes/admin.ts` (a rota), `apps/ramielle/scripts/backup-d1.sh` (passaria a registrar), `apps/web/components/votacao/admin/backups-panel.tsx` (a UI).
+**Pendência que sobrou, registrada em `apps/ramielle/CLAUDE.md` § _Registro do backup no painel admin_**: o script depende de `RAMIELLE_ADMIN_COOKIE`, que hoje só existe se o dono colar manualmente um cookie de sessão válido (a sessão expira; automatizar a obtenção/renovação por script é decisão futura, fora do escopo deste fix). Sem essa variável, o backup em si roda normal — só não aparece no painel.
 
 ---
 
@@ -44,7 +38,7 @@ dono, como referência de paridade. O que foi desligado:
 - **compose**: o `depends_on: [api]` do `cloudflared` foi removido. ⚠️ Era ele que
   fazia `make tunnel-up` subir a Go sem necessidade, dando a impressão de que ela
   ainda era parte do caminho. Provado depois da mudança: `docker compose --profile
-  tunnel up -d cloudflared` sobe **só** o túnel, e a cadeia inteira segue verde.
+tunnel up -d cloudflared` sobe **só** o túnel, e a cadeia inteira segue verde.
 
 ⚠️ **O que passou a depender do Mac estar ligado:** o botão "Corrigir texto" e a
 distribuição só funcionam com o `apps/promeia` rodando em `:8082`. Ele é um
