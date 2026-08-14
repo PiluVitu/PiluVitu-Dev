@@ -215,10 +215,17 @@ Esperado: corpo `{"ok":false,...,"code":"not_found"}` (o envelope do catch-all H
 # 1. Gerar o .sql a partir da cópia do passo 3, com --esperado como guarda
 #    (recusa gerar se a contagem lida não bater com os números medidos —
 #    defesa contra uma cópia parcialmente checkpointada).
-pnpm --filter @piluvitu/ramielle run gerar-import -- \
+#    ⚠️ Rode direto com `node`, de dentro de `apps/ramielle`. A forma
+#    `pnpm --filter … run gerar-import -- <caminho>` NÃO funciona: o pnpm
+#    repassa o próprio `--` como primeiro argumento, o `parseArgs` do script
+#    o lê como o caminho do banco, e a execução morre com exit 1 antes de
+#    gerar qualquer coisa. MEDIDO em 2026-08-14, rodando o passo de verdade.
+cd apps/ramielle
+node scripts/gerar-import.mjs \
   ~/ramielle-cutover-scratch/votacao.db \
   --saida ~/ramielle-cutover-scratch/import.sql \
   --esperado 4,4,42,54,2,0
+cd -
 
 # 2. Rodar o import de verdade.
 pnpm --filter @piluvitu/ramielle exec wrangler d1 execute piluvitu-ramielle \
