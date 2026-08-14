@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { formatBRL } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@piluvitu/ui/dialog'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -38,6 +47,18 @@ const KIND_LABELS: Record<(typeof KINDS)[number], string> = {
   benefit: 'Benefício',
 }
 
+/**
+ * Confirmação via `Dialog` do design system, nunca `window.confirm()` —
+ * mesma decisão (e mesmo motivo: o modo de falha real do Chrome Android, que
+ * passa a devolver `false` em silêncio depois de "impedir caixas de diálogo
+ * adicionais") já tomada em `debt-detail.tsx` e `recorrentes.tsx`.
+ */
+type ConfirmacaoPendente = {
+  titulo: string
+  mensagem: string
+  onConfirm: () => void | Promise<void>
+}
+
 function dd(n: number): string {
   return String(n).padStart(2, '0')
 }
@@ -51,8 +72,17 @@ export function AccountsPage() {
   const [kind, setKind] = useState<(typeof KINDS)[number]>('checking')
   const [closingDay, setClosingDay] = useState('')
   const [dueDay, setDueDay] = useState('')
+  const [saldoInicial, setSaldoInicial] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+
+  // Arquivamento: `processando` guarda o id da conta em voo, pra desabilitar
+  // só o botão daquela linha (mesmo padrão de debt-detail.tsx/recorrentes.tsx).
+  const [acaoErro, setAcaoErro] = useState<string | null>(null)
+  const [processando, setProcessando] = useState<string | null>(null)
+  const [confirmacao, setConfirmacao] = useState<ConfirmacaoPendente | null>(
+    null,
+  )
 
   // `vivo` no mesmo formato das outras telas (debt-detail.tsx, DividasPage.tsx):
   // sem a guarda, uma resposta atrasada podia sobrescrever a tela depois que
@@ -94,6 +124,21 @@ export function AccountsPage() {
       return
     }
 
+    // Saldo inicial é OPCIONAL: em branco, a chave nem viaja no corpo —
+    // `JSON.stringify` omite `undefined`, e o domínio já aplica `?? 0`
+    // (src/domain/accounts.ts). Mandar 0 explícito seria indistinguível de
+    // "o dono digitou zero de propósito" e ainda faria toda conta comum
+    // carregar uma chave a mais só pra repetir o default.
+    let openingBalanceCents: number | undefined
+    if (saldoInicial.trim() !== '') {
+      try {
+        openingBalanceCents = parseBRL(saldoInicial)
+      } catch {
+        setFormError('Saldo inicial inválido. Use o formato 8.000,50.')
+        return
+      }
+    }
+
     setSalvando(true)
     try {
       await api('/api/accounts', {
@@ -104,11 +149,13 @@ export function AccountsPage() {
           kind,
           closing_day: kind === 'credit_card' ? Number(closingDay) : undefined,
           due_day: kind === 'credit_card' ? Number(dueDay) : undefined,
+          opening_balance_cents: openingBalanceCents,
         }),
       })
       setNome('')
       setClosingDay('')
       setDueDay('')
+      setSaldoInicial('')
       await carregar()
     } catch (err: unknown) {
       setFormError(err instanceof ApiError ? err.message : String(err))
@@ -117,12 +164,42 @@ export function AccountsPage() {
     }
   }
 
+  function arquivar(a: AccountView) {
+    setConfirmacao({
+      titulo: 'Arquivar conta',
+      // O texto diz o que a rota FAZ (soft delete: grava `archived_at`, e
+      // `GET /api/accounts` passa a esconder a conta) e o que ela NÃO faz
+      // (não apaga lançamento nenhum — `transactions.account_id` é
+      // ON DELETE RESTRICT). Também diz que não há volta pela tela: não
+      // existe rota de desarquivar nem PUT /accounts/:id.
+      mensagem: `Arquivar "${a.name}"? Ela some da lista de contas e dos seletores de Lançar e Dívidas. Os lançamentos já feitos continuam no histórico — nada é apagado. Não dá para desarquivar por aqui.`,
+      onConfirm: async () => {
+        setAcaoErro(null)
+        setProcessando(a.id)
+        try {
+          await api(`/api/accounts/${a.id}/archive`, { method: 'POST' })
+          await carregar()
+        } catch (err: unknown) {
+          setAcaoErro(err instanceof ApiError ? err.message : String(err))
+        } finally {
+          setProcessando(null)
+        }
+      },
+    })
+  }
+
   if (error) return <p role="alert">{error}</p>
   if (!accounts) return <p>Carregando…</p>
 
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Contas</h1>
+
+      {acaoErro ? (
+        <p role="alert" className="text-destructive text-sm">
+          {acaoErro}
+        </p>
+      ) : null}
 
       <div className="space-y-4">
         {SCOPES.map((scope) => {
@@ -151,6 +228,24 @@ export function AccountsPage() {
                                 {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
                               </small>
                             ) : null}
+                            {/* Link dentro da célula do nome (a mais larga e
+                                flexível), não uma coluna "Ações" nova — a ~390px
+                                uma 3ª coluna sai cortada, achado já medido em
+                                debt-detail.tsx. */}
+                            <div>
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="sm"
+                                className="text-destructive h-auto p-0 text-xs no-underline"
+                                aria-label={`Arquivar conta ${a.name}`}
+                                data-testid={`arquivar-${a.id}`}
+                                disabled={processando === a.id}
+                                onClick={() => arquivar(a)}
+                              >
+                                arquivar
+                              </Button>
+                            </div>
                           </td>
                           <td
                             data-testid={`saldo-${a.id}`}
@@ -228,6 +323,26 @@ export function AccountsPage() {
               </select>
             </div>
 
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="conta-saldo-inicial">Saldo inicial</Label>
+                <Ajuda rotulo="Saldo inicial">
+                  O que a conta já tem hoje, antes de qualquer lançamento aqui —
+                  em reais (8.000,50). Em branco vale zero. É este número que a
+                  Reserva divide pelo custo fixo pra dizer quantos meses você
+                  sobrevive; deixar zerado faz ela mostrar 0,0 meses sem motivo.
+                  Não existe edição de conta ainda: se errar, arquive e crie de
+                  novo.
+                </Ajuda>
+              </div>
+              <Input
+                id="conta-saldo-inicial"
+                value={saldoInicial}
+                onChange={(e) => setSaldoInicial(e.target.value)}
+                placeholder="8.000,50"
+              />
+            </div>
+
             {kind === 'credit_card' ? (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -266,6 +381,38 @@ export function AccountsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={confirmacao !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmacao(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{confirmacao?.titulo}</DialogTitle>
+            <DialogDescription>{confirmacao?.mensagem}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                const pedido = confirmacao
+                setConfirmacao(null)
+                void pedido?.onConfirm()
+              }}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

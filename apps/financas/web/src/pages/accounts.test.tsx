@@ -50,14 +50,26 @@ function mockFetch(body: unknown, status = 200) {
  * GET /api/accounts devolve `initial` na primeira chamada e `depois` (ou
  * `initial` de novo) nas seguintes — é o que permite testar "criei a conta e
  * ela aparece depois do recarregar" sem reimplementar o backend.
+ *
+ * O POST é roteado por PATH (não só por método): `/api/accounts` é a criação,
+ * `/api/accounts/:id/archive` é o arquivamento. Sem essa separação, um teste
+ * de arquivamento passaria batendo no mock de criação e não provaria nada.
  */
 function mockRoutes(opts: {
   initial: unknown[]
   depois?: unknown[]
   post?: { status: number; body: unknown }
+  archive?: { status: number; body: unknown }
 }) {
   let getCount = 0
-  const fn = vi.fn(async (_path: string, init?: RequestInit) => {
+  const fn = vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method === 'POST' && path.endsWith('/archive')) {
+      const archive = opts.archive ?? {
+        status: 200,
+        body: { ok: true, data: { archived: true }, notifications: [] },
+      }
+      return { status: archive.status, json: async () => archive.body }
+    }
     if (init?.method === 'POST') {
       const post = opts.post ?? {
         status: 201,
@@ -74,6 +86,17 @@ function mockRoutes(opts: {
   })
   vi.stubGlobal('fetch', fn)
   return fn
+}
+
+function corpoDoPost(fetchMock: ReturnType<typeof mockRoutes>) {
+  const post = fetchMock.mock.calls.find(
+    ([path, init]) =>
+      (init as RequestInit)?.method === 'POST' && path === '/api/accounts',
+  )
+  return JSON.parse((post![1] as RequestInit).body as string) as Record<
+    string,
+    unknown
+  >
 }
 
 afterEach(() => {
@@ -219,5 +242,213 @@ describe('AccountsPage', () => {
       await screen.findByText(/dá para pagar algo PF pelo cartão PJ/),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Escopo')).toBeInTheDocument()
+  })
+
+  // `POST /api/accounts` sempre aceitou `opening_balance_cents`
+  // (src/domain/accounts.ts), mas a tela nunca mandava — toda conta nascia
+  // com saldo 0, e #/reserva dividia 0 pelo custo fixo mostrando "0,0 meses"
+  // com alerta vermelho permanente e falso. Não existe PUT /accounts/:id:
+  // sem este campo, não havia como corrigir pela interface.
+  describe('saldo inicial', () => {
+    async function preencherNome(valor: string) {
+      await waitFor(() =>
+        expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+      )
+      fireEvent.change(screen.getByLabelText('Nome'), {
+        target: { value: valor },
+      })
+    }
+
+    // DECISÃO: em branco NÃO manda a chave, em vez de mandar 0 explícito.
+    // `JSON.stringify` omite `undefined`, e o domínio já aplica `?? 0` — o
+    // corpo do caso comum fica idêntico ao de antes desta mudança (nenhuma
+    // chave nova viajando só pra dizer "o default"), e um 0 explícito seria
+    // indistinguível de "o dono digitou zero de propósito".
+    it('em branco não manda opening_balance_cents no corpo', async () => {
+      const fetchMock = mockRoutes({ initial: [] })
+
+      render(<AccountsPage />)
+      await preencherNome('Caixinha')
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([, init]) => (init as RequestInit)?.method === 'POST',
+          ),
+        ).toBe(true),
+      )
+      const body = corpoDoPost(fetchMock)
+      expect('opening_balance_cents' in body).toBe(false)
+      expect(body).toEqual({ name: 'Caixinha', scope: 'PF', kind: 'checking' })
+    })
+
+    it('converte reais com vírgula decimal em centavos', async () => {
+      const fetchMock = mockRoutes({ initial: [] })
+
+      render(<AccountsPage />)
+      await preencherNome('Inter PJ')
+      fireEvent.change(screen.getByLabelText('Saldo inicial'), {
+        target: { value: '8000,50' },
+      })
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([, init]) => (init as RequestInit)?.method === 'POST',
+          ),
+        ).toBe(true),
+      )
+      expect(corpoDoPost(fetchMock).opening_balance_cents).toBe(800050)
+    })
+
+    it('aceita separador de milhar (8.000,50) — mesmo parseBRL das outras telas', async () => {
+      const fetchMock = mockRoutes({ initial: [] })
+
+      render(<AccountsPage />)
+      await preencherNome('Inter PJ')
+      fireEvent.change(screen.getByLabelText('Saldo inicial'), {
+        target: { value: '8.000,50' },
+      })
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([, init]) => (init as RequestInit)?.method === 'POST',
+          ),
+        ).toBe(true),
+      )
+      expect(corpoDoPost(fetchMock).opening_balance_cents).toBe(800050)
+    })
+
+    it('valor inválido mostra erro legível e NÃO chama a API', async () => {
+      const fetchMock = mockRoutes({ initial: [] })
+
+      render(<AccountsPage />)
+      await preencherNome('Inter PJ')
+      fireEvent.change(screen.getByLabelText('Saldo inicial'), {
+        target: { value: 'oito mil' },
+      })
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(/saldo inicial/i),
+      )
+      expect(
+        fetchMock.mock.calls.some(
+          ([, init]) => (init as RequestInit)?.method === 'POST',
+        ),
+      ).toBe(false)
+    })
+  })
+
+  // `POST /api/accounts/:id/archive` existe e é testada no Worker desde a
+  // fatia ①, mas a SPA nunca a chamava: conta criada com nome ou escopo
+  // errado era permanente (não há DELETE de conta), aparecendo pra sempre
+  // em Contas, no BlocoSaldos e em todo <select> de #/lancar e #/dividas.
+  //
+  // Confirmação via `Dialog` do design system, nunca `window.confirm()` —
+  // mesma decisão (e mesmo motivo) já registrada em debt-detail.tsx.
+  describe('arquivar conta', () => {
+    it('pede confirmação; cancelar pelo diálogo NÃO chama a API', async () => {
+      const fetchMock = mockRoutes({ initial: contas })
+      const user = userEvent.setup()
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('arquivar-a1')).toBeInTheDocument(),
+      )
+      fetchMock.mockClear()
+
+      await user.click(screen.getByTestId('arquivar-a1'))
+
+      expect(
+        await screen.findByRole('heading', { name: 'Arquivar conta' }),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toHaveTextContent('Nubank')
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(
+        screen.queryByRole('heading', { name: 'Arquivar conta' }),
+      ).not.toBeInTheDocument()
+      expect(
+        fetchMock.mock.calls.some(
+          ([, init]) => (init as RequestInit)?.method === 'POST',
+        ),
+      ).toBe(false)
+    })
+
+    it('confirmar posta em /archive e a lista recarrega sem a conta', async () => {
+      const fetchMock = mockRoutes({
+        initial: contas,
+        depois: contas.filter((c) => c.id !== 'a1'),
+      })
+      const user = userEvent.setup()
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('arquivar-a1')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('arquivar-a1'))
+      await screen.findByRole('heading', { name: 'Arquivar conta' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            ([path, init]) =>
+              path === '/api/accounts/a1/archive' &&
+              (init as RequestInit)?.method === 'POST',
+          ),
+        ).toBe(true),
+      )
+      // A lista recarrega: a conta arquivada some da tela.
+      await waitFor(() =>
+        expect(screen.queryByTestId('saldo-a1')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('saldo-a2')).toBeInTheDocument()
+    })
+
+    it('falha da rota mostra role="alert" sem derrubar a tela', async () => {
+      mockRoutes({
+        initial: contas,
+        archive: {
+          status: 404,
+          body: {
+            ok: false,
+            data: null,
+            notifications: [
+              {
+                type: 'error',
+                code: 'not_found',
+                message: 'conta a1 nao encontrada ou ja arquivada',
+              },
+            ],
+          },
+        },
+      })
+      const user = userEvent.setup()
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('arquivar-a1')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('arquivar-a1'))
+      await screen.findByRole('heading', { name: 'Arquivar conta' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'conta a1 nao encontrada ou ja arquivada',
+        ),
+      )
+      // A tela continua de pé — a conta ainda está lá (o arquivamento falhou).
+      expect(screen.getByTestId('saldo-a1')).toBeInTheDocument()
+    })
   })
 })
