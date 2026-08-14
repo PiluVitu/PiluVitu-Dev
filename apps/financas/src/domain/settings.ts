@@ -37,9 +37,13 @@ export async function getFixedNetCents(db: D1Database): Promise<number> {
     // este SELECT falha com `no such table: settings`. Antes deste fix o
     // erro subia cru (sem try/catch aqui, e `routes/reports.ts` chama
     // `resolveFixedNetCents`/`getFixedNetCents` FORA do try/catch da rota)
-    // até um `throw` não tratado — `src/index.ts` não registra `onError`,
-    // então virava um 500 sem envelope, e a SPA (`api()`) traduzia isso
-    // pra `ApiError(code: 'invalid_envelope')`. Três telas dependem deste
+    // até um `throw` não tratado — `src/index.ts` NÃO registrava `onError`
+    // na época, então virava um 500 sem envelope, e a SPA (`api()`)
+    // traduzia isso pra `ApiError(code: 'invalid_envelope')`. (Hoje o
+    // `onError` global existe e devolveria `500 internal_error` DENTRO do
+    // envelope — mensagem melhor, tela igualmente quebrada: esta defesa
+    // continua sendo o que mantém as três telas de pé.) Três telas
+    // dependem deste
     // caminho: o bloco Comprometido da home, `#/comprometido` (mesma
     // chamada) e `#/configuracoes` (`GET /api/settings`, que também chama
     // `getFixedNetCents`) — uma tabela faltando derrubava as três de uma

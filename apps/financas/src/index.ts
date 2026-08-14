@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
 import { isRotaDeAuth, requireSession } from './lib/session'
@@ -78,6 +79,57 @@ app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
 app.route('/api', reserveRoutes)
 app.route('/api', insightsRoutes)
+
+/**
+ * Rede de segurança GLOBAL — pega qualquer exceção que uma rota deixe
+ * escapar sem `try/catch` próprio. SEM isto, o handler default do Hono
+ * responde `text/plain "Internal Server Error"`, FORA do envelope
+ * {ok,data,notifications} que toda outra resposta desta API usa: `api<T>()`
+ * (web/src/api.ts) não acha o envelope e a tela renderiza, dentro de um
+ * `role="alert"`, a string literal "resposta sem envelope (HTTP 500)" — que
+ * não diz nada ao dono. O achado C2 do fix final (tabela `settings` ausente
+ * 500ando três telas) tratou UM caso pontual, dentro do domínio; este
+ * handler fecha o buraco genérico, pra qualquer rota.
+ *
+ * ⚠️ NUNCA incluir `err.message`/`String(err)` na resposta — é exatamente
+ * por onde um `D1_ERROR`/`SQLITE_*` cru vazaria pro cliente (mesma
+ * disciplina de `friendlyConstraintMessage`/`logConstraintError`,
+ * lib/errors.ts, que toda rota já segue). A mensagem do corpo é sempre o
+ * texto fixo abaixo; o erro REAL só vai pro `console.error`, visível no
+ * `wrangler tail`.
+ *
+ * `code: 'internal_error'` é o MESMO código que `apps/ramielle` usa pro
+ * mesmo cenário (envelope compartilhado, tipado por `apps/web`) — não um
+ * código novo desta fatia.
+ *
+ * Registrado ANTES do catch-all só por leitura: `app.onError` não é rota
+ * (é um handler único do app, funciona igual em qualquer posição), mas
+ * deixá-lo fisicamente abaixo do "SEMPRE POR ÚLTIMO" convidaria a leitura
+ * errada de que a ordem importa pra ele também.
+ *
+ * Exportado para teste: `index.test.ts` o monta num Hono descartável pra
+ * exercitar o ramo de `HTTPException` através de um caminho de erro real do
+ * framework (nenhuma rota deste Worker lança uma — medido: zero ocorrências
+ * em `src/`).
+ */
+export function onErrorGlobal(err: Error): Response {
+  // HTTPException carrega um status DELIBERADO (404/401/...) escolhido por
+  // quem lançou — transformá-lo em 500 esconderia a causa. Se veio com
+  // Response própria, ela vale (foi escolha explícita do lançador); sem
+  // ela, o status é preservado e o corpo entra no envelope, porque sair
+  // dele reproduziria o mesmo "resposta sem envelope" que este handler
+  // existe pra eliminar, só com outro número.
+  if (err instanceof HTTPException) {
+    console.error('HTTPException chegou ao onError global', err.status, err)
+    if (err.res) return err.res
+    return errJson(err.status, 'http_error', 'requisição não pôde ser atendida')
+  }
+
+  console.error('exceção não tratada chegou ao onError global', err)
+  return errJson(500, 'internal_error', 'erro interno — tente novamente')
+}
+
+app.onError(onErrorGlobal)
 
 // Catch-all do /api: 404 também sai no envelope. Fora de /api quem responde é
 // o Static Assets (SPA), que roda antes do Worker.

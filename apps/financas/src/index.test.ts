@@ -1,6 +1,8 @@
 import { env, SELF } from 'cloudflare:test'
+import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { describe, expect, test } from 'vitest'
-import app, { type Bindings } from './index'
+import app, { onErrorGlobal, type Bindings } from './index'
 import type { Envelope } from './lib/envelope'
 
 describe('worker financas — bindings', () => {
@@ -309,5 +311,154 @@ describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3 +
     expect((body as { data: { texto: string } }).data.texto).toBe(
       'Insight de ponta a ponta.',
     )
+  })
+})
+
+// --------------------------------------------------------------------------
+// Rede de segurança GLOBAL: sem `app.onError`, qualquer exceção que uma rota
+// deixe escapar sai pelo handler default do Hono como `text/plain "Internal
+// Server Error"` — FORA do envelope {ok,data,notifications} que toda outra
+// resposta desta API usa. `api<T>()` (web/src/api.ts) não acha o envelope e
+// a tela renderiza, dentro de um role="alert", a string literal "resposta sem
+// envelope (HTTP 500)", que não diz nada ao dono. O achado C2 do fix final
+// (tabela `settings` ausente 500ando três telas) tratou UM caso pontual; este
+// describe cobre o buraco genérico.
+// --------------------------------------------------------------------------
+describe('app.onError global', () => {
+  /**
+   * Shim que quebra SÓ o statement pedido — todo o resto passa pro D1 real
+   * do Miniflare, então a guarda do INGEST_TOKEN e o parse do corpo
+   * completam normalmente e a exceção nasce lá no fundo, dentro do domínio,
+   * exatamente como nasceria em produção. Mesmo padrão de `apps/ramielle`.
+   */
+  function dbQueQuebraEm(marcador: string): D1Database {
+    return {
+      prepare: (sql: string) => {
+        if (sql.includes(marcador)) {
+          throw new Error('D1_ERROR: disk I/O error (simulado)')
+        }
+        return env.DB.prepare(sql)
+      },
+      batch: env.DB.batch.bind(env.DB),
+      exec: env.DB.exec.bind(env.DB),
+      withSession: env.DB.withSession.bind(env.DB),
+      dump: env.DB.dump.bind(env.DB),
+    } as unknown as D1Database
+  }
+
+  test('exceção comum de dentro de uma rota vira 500 DENTRO do envelope, code internal_error', async () => {
+    // POST /api/insights: `createInsight` relança qualquer erro que não seja
+    // RangeError (routes/insights.ts, `throw err`), então a exceção sobe crua
+    // até o Hono — o caminho que só o onError global cobre. Rota escolhida
+    // por autenticar com o INGEST_TOKEN (sem precisar forjar cookie de
+    // sessão), não por ser especial: o handler é do app inteiro.
+    const res = await app.request(
+      '/api/insights',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${INGEST_TOKEN}`,
+        },
+        body: JSON.stringify({
+          texto: 'Insight que nunca chega ao banco.',
+          modelo: 'qwen2.5:7b-instruct',
+          periodo: '2026-07',
+        }),
+      },
+      { ...authTestEnv, DB: dbQueQuebraEm('INSERT INTO insights') },
+    )
+
+    expect(res.status).toBe(500)
+    expect(res.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    )
+
+    const texto = await res.text()
+    // Nunca "Internal Server Error" cru: é o corpo do handler default do
+    // Hono, o sintoma exato que este handler existe pra eliminar.
+    expect(texto).not.toContain('Internal Server Error')
+
+    const body = JSON.parse(texto) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.data).toBeNull()
+    expect(body.notifications).toEqual([
+      {
+        type: 'error',
+        code: 'internal_error',
+        message: 'erro interno — tente novamente',
+      },
+    ])
+  })
+
+  test('a mensagem interna do erro NÃO aparece no corpo (só no log do servidor)', async () => {
+    const res = await app.request(
+      '/api/insights',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${INGEST_TOKEN}`,
+        },
+        body: JSON.stringify({
+          texto: 'Insight que nunca chega ao banco.',
+          modelo: 'qwen2.5:7b-instruct',
+          periodo: '2026-07',
+        }),
+      },
+      { ...authTestEnv, DB: dbQueQuebraEm('INSERT INTO insights') },
+    )
+
+    const texto = await res.text()
+    // É por aqui que um D1_ERROR/SQLITE_* cru vazaria pro cliente se
+    // `err.message`/`String(err)` entrasse na resposta — mesma disciplina de
+    // `friendlyConstraintMessage` (lib/errors.ts) em toda rota do módulo.
+    expect(texto).not.toContain('D1_ERROR')
+    expect(texto).not.toContain('disk I/O')
+    expect(texto).not.toContain('simulado')
+    expect(texto).not.toContain('insights') // nem o nome da tabela/statement
+  })
+
+  test('HTTPException preserva o status deliberado do lançador, nunca vira 500', async () => {
+    // Hoje NENHUMA rota deste Worker lança HTTPException (medido: zero
+    // ocorrências em src/) — mas um middleware do Hono ou uma dependência
+    // futura pode, e transformar um 404/401 deliberado em 500 esconderia a
+    // causa. O handler é exercitado através de um Hono real (mesmo caminho
+    // de erro do app de produção), não chamado direto, pra provar que o
+    // `instanceof` sobrevive ao trajeto pelo framework.
+    const appDeTeste = new Hono()
+    appDeTeste.onError(onErrorGlobal)
+    appDeTeste.get('/deliberado', () => {
+      throw new HTTPException(404, { message: 'não encontrei o recurso' })
+    })
+
+    const res = await appDeTeste.request('/deliberado')
+    expect(res.status).toBe(404)
+    expect(res.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    )
+
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('http_error')
+    // A mensagem do lançador também não vaza — mesma regra do 500.
+    expect(body.notifications[0].message).not.toContain('não encontrei')
+  })
+
+  test('HTTPException que carrega Response própria devolve exatamente ela', async () => {
+    const appDeTeste = new Hono()
+    appDeTeste.onError(onErrorGlobal)
+    appDeTeste.get('/com-resposta', () => {
+      throw new HTTPException(401, {
+        res: new Response('{"ok":false}', {
+          status: 401,
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+        }),
+      })
+    })
+
+    const res = await appDeTeste.request('/com-resposta')
+    expect(res.status).toBe(401)
+    expect(await res.text()).toBe('{"ok":false}')
   })
 })

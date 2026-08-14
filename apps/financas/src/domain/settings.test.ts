@@ -109,7 +109,9 @@ describe('getFixedNetCents — defesa contra linha corrompida (INSERT direto, fo
 // `wrangler d1 migrations apply --remote`, o SELECT desta função batia
 // contra uma tabela inexistente e propagava cru (sem try/catch aqui, e
 // `routes/reports.ts#resolveFixedNetCents` chamava isso FORA do try/catch
-// da rota) até um 500 sem envelope — `src/index.ts` não registra `onError`.
+// da rota) até um 500 sem envelope — `src/index.ts` não registrava `onError`
+// na época (hoje registra: seria 500 `internal_error` DENTRO do envelope,
+// ainda assim com as três telas quebradas — por isso esta defesa fica).
 // Três telas dependiam do mesmo caminho: o bloco Comprometido da home,
 // `#/comprometido` e `#/configuracoes` (`GET /api/settings`, mesma função).
 // Este teste prova o fallback no nível mais baixo (o domínio); os testes

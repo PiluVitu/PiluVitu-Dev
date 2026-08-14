@@ -163,7 +163,7 @@ describe('GET /api/reports/commitments', () => {
 
   // CRITICAL C2 (fix final): `resolveFixedNetCents` é chamado FORA do
   // try/catch da rota (linha acima da chamada de `commitments()`), e
-  // `src/index.ts` não registra `onError` — antes deste fix, um `SELECT`
+  // `src/index.ts` não registrava `onError` na época — antes deste fix, um `SELECT`
   // contra uma tabela `settings` ausente (deploy rodado antes da
   // migration 0005, ver CLAUDE.md/"Deploy") propagava cru até um 500 sem
   // envelope. `getFixedNetCents` (`domain/settings.ts`) agora captura
