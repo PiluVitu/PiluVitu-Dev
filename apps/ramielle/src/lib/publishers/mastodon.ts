@@ -9,17 +9,20 @@
  * comentário de `bluesky.ts`. `[...texto].length` itera por code point.
  */
 import type { DistributionKind } from '../../domain/distribution'
-import type { Payload } from './types'
+import { isTimeoutErro, lerCorpoErroLimitado, mensagemTimeout } from './http'
+import type { DistributionPlatform, Payload } from './types'
 
 export type MastodonConfig = {
   instanceUrl: string
   token: string
+  /** Parametrizável só pra teste — produção usa `TIMEOUT_MS` (30s). */
+  timeoutMs?: number
 }
 
 const TIMEOUT_MS = 30_000
 const MAX_CHARS = 500
 
-export const MASTODON_PLATFORM = 'mastodon'
+export const MASTODON_PLATFORM: DistributionPlatform = 'mastodon'
 export const MASTODON_KIND: DistributionKind = 'social_hook'
 
 type MastodonApiResponse = {
@@ -30,6 +33,9 @@ type MastodonApiResponse = {
  * Posta um status no Mastodon. Rejeita textos > 500 code points (após
  * anexar `payload.canonicalUrl`, quando presente). Retorna a URL pública do
  * toot — porte de `Mastodon.Publish` (`mastodon.go:37-68`).
+ *
+ * ⚠️ O timeout de `timeoutMs` cobre o `fetch` E a leitura do corpo (fix
+ * round 1, I1) — ver o comentário equivalente em `devto.ts`.
  */
 export async function publishMastodon(
   cfg: MastodonConfig,
@@ -46,9 +52,8 @@ export async function publishMastodon(
 
   // Mesma normalização de `NewMastodon` (`mastodon.go:23-29`, `TrimRight`).
   const instance = cfg.instanceUrl.replace(/\/+$/, '')
+  const timeoutMs = cfg.timeoutMs ?? TIMEOUT_MS
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
   let res: Response
   try {
     res = await fetch(`${instance}/api/v1/statuses`, {
@@ -58,26 +63,39 @@ export async function publishMastodon(
         Authorization: `Bearer ${cfg.token}`,
       },
       body: JSON.stringify({ status }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeoutMs),
     })
-  } catch {
-    throw new Error('mastodon: falha ao executar a requisição de publicação')
-  } finally {
-    clearTimeout(timeoutId)
+  } catch (err) {
+    throw new Error(
+      isTimeoutErro(err)
+        ? mensagemTimeout('mastodon', timeoutMs)
+        : 'mastodon: falha ao executar a requisição de publicação',
+    )
   }
 
   if (res.status < 200 || res.status >= 300) {
-    const corpo = await res.text().catch(() => '')
-    throw new Error(
-      `mastodon: status ${res.status}: ${corpo.slice(0, 4096).trim()}`,
-    )
+    let corpo: string
+    try {
+      corpo = await lerCorpoErroLimitado(res)
+    } catch (err) {
+      throw new Error(
+        isTimeoutErro(err)
+          ? mensagemTimeout('mastodon', timeoutMs)
+          : 'mastodon: falha ao executar a requisição de publicação',
+      )
+    }
+    throw new Error(`mastodon: status ${res.status}: ${corpo}`)
   }
 
   let out: MastodonApiResponse
   try {
     out = (await res.json()) as MastodonApiResponse
-  } catch {
-    throw new Error('mastodon: resposta não é um JSON válido')
+  } catch (err) {
+    throw new Error(
+      isTimeoutErro(err)
+        ? mensagemTimeout('mastodon', timeoutMs)
+        : 'mastodon: resposta não é um JSON válido',
+    )
   }
   return out.url ?? ''
 }

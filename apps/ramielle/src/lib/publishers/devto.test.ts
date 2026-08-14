@@ -1,18 +1,27 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { respostaComCorpoQueNuncaResolve } from '../../test-support/hanging-response'
 import { publishDevTo } from './devto'
 
 const BASE_URL_TESTE = 'https://devto-teste.invalido'
 
 /**
  * Mesmo padrão de `lib/tmdb.test.ts`/`lib/gsheets.test.ts`: intercepta só
- * requisições cujo `url` começa com `BASE_URL_TESTE`, delega o resto pro
- * `fetch` original, sempre restaurado no `finally` de quem chama.
+ * requisições cujo `url` começa com `BASE_URL_TESTE`.
+ *
+ * ⚠️ M5 (fix round 1, achado da revisão): a versão anterior delegava pro
+ * `fetch` ORIGINAL quando a URL não batia — nenhum teste hoje alcança essa
+ * ramificação (todo `publishDevTo` deste arquivo usa `baseUrl:
+ * BASE_URL_TESTE`), mas a proteção contra chamar a plataforma real era o
+ * `baseUrl`, não o mock. Agora lança — se algum teste futuro esquecer o
+ * `baseUrl`, ele falha ALTO (erro explícito) em vez de silenciosamente
+ * tentar `fetch` de verdade.
  */
 function instalarMockDevTo(
   responder: (req: {
     url: URL
     headers: Headers
     body: unknown
+    signal: AbortSignal | null | undefined
   }) => Response | Promise<Response>,
 ): { restaurar: () => void } {
   const fetchOriginal = globalThis.fetch
@@ -23,12 +32,17 @@ function instalarMockDevTo(
         : input instanceof URL
           ? input.toString()
           : input.url
-    if (urlTexto.startsWith(BASE_URL_TESTE)) {
-      const headers = new Headers(init?.headers)
-      const body = init?.body ? JSON.parse(init.body as string) : undefined
-      return responder({ url: new URL(urlTexto), headers, body })
+    if (!urlTexto.startsWith(BASE_URL_TESTE)) {
+      throw new Error(`URL não mockada: ${urlTexto}`)
     }
-    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+    const headers = new Headers(init?.headers)
+    const body = init?.body ? JSON.parse(init.body as string) : undefined
+    return responder({
+      url: new URL(urlTexto),
+      headers,
+      body,
+      signal: init?.signal,
+    })
   }) as typeof fetch
   return {
     restaurar: () => {
@@ -45,10 +59,10 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('publishDevTo — caminho feliz (porte de TestDevToPublish, devto_test.go)', () => {
-  test('publica o artigo, envia api-key e o corpo com published:true/canonical_url', async () => {
-    const requisicoes: Array<{ headers: Headers; body: unknown }> = []
-    const mock = instalarMockDevTo(({ headers, body }) => {
-      requisicoes.push({ headers, body })
+  test('publica o artigo no path certo, envia api-key e o CORPO COMPLETO (I2)', async () => {
+    const requisicoes: Array<{ url: URL; headers: Headers; body: unknown }> = []
+    const mock = instalarMockDevTo(({ url, headers, body }) => {
+      requisicoes.push({ url, headers, body })
       return jsonResponse(201, { url: 'https://dev.to/me/post-123', id: 1 })
     })
     try {
@@ -57,19 +71,29 @@ describe('publishDevTo — caminho feliz (porte de TestDevToPublish, devto_test.
         {
           title: 'T',
           bodyMd: 'corpo',
+          description: 'desc',
           canonicalUrl: 'https://blog/p',
           tags: ['go', 'ai'],
         },
       )
       expect(url).toBe('https://dev.to/me/post-123')
+      expect(requisicoes[0]?.url.pathname).toBe('/api/articles')
       expect(requisicoes[0]?.headers.get('api-key')).toBe('KEY')
-      const article = (
-        requisicoes[0]?.body as { article: Record<string, unknown> }
-      ).article
-      expect(article.canonical_url).toBe('https://blog/p')
-      expect(article.published).toBe(true)
-      expect(article.title).toBe('T')
-      expect(article.body_markdown).toBe('corpo')
+      // ⚠️ I2 (fix round 1): `toEqual` COMPLETO, não campo a campo — pega
+      // em silêncio um campo REMOVIDO (ex.: `description` sumindo, o caso
+      // mudo do achado do revisor: dev.to gera descrição automática quando
+      // o campo não vem, sem erro nenhum) que asserções soltas (`article
+      // .title === 'T'` etc.) deixariam passar batido.
+      expect(requisicoes[0]?.body).toEqual({
+        article: {
+          title: 'T',
+          body_markdown: 'corpo',
+          published: true,
+          canonical_url: 'https://blog/p',
+          description: 'desc',
+          tags: ['go', 'ai'],
+        },
+      })
     } finally {
       mock.restaurar()
     }
@@ -201,6 +225,31 @@ describe('publishDevTo — status fora de 200/201 lança', () => {
       ).rejects.toThrow()
     } finally {
       globalThis.fetch = fetchOriginal
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⚠️ I1 (fix round 1): o timeout precisa cobrir a LEITURA DO CORPO, não só
+// o fetch inicial — uma plataforma que responde os headers e depois estola
+// o corpo tinha que fazer o adapter FALHAR por timeout, nunca ficar
+// pendurado pra sempre. `timeoutMs` curto (20ms) pra o teste não esperar
+// os 30s reais.
+// ---------------------------------------------------------------------------
+describe('publishDevTo — timeout cobre a leitura do corpo (I1)', () => {
+  test('corpo que nunca resolve: falha por timeout, não fica pendurado', async () => {
+    const mock = instalarMockDevTo(({ signal }) =>
+      respostaComCorpoQueNuncaResolve(500, signal),
+    )
+    try {
+      await expect(
+        publishDevTo(
+          { apiKey: 'KEY', baseUrl: BASE_URL_TESTE, timeoutMs: 20 },
+          { title: 'T', bodyMd: 'x' },
+        ),
+      ).rejects.toThrow(/tempo limite/)
+    } finally {
+      mock.restaurar()
     }
   })
 })

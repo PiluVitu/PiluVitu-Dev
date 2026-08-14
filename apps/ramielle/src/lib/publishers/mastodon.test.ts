@@ -1,14 +1,21 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { respostaComCorpoQueNuncaResolve } from '../../test-support/hanging-response'
 import { publishMastodon } from './mastodon'
 
-type RequisicaoCapturada = { url: URL; headers: Headers; body: unknown }
+type RequisicaoCapturada = {
+  url: URL
+  headers: Headers
+  body: unknown
+  signal: AbortSignal | null | undefined
+}
 
 /**
  * Mesmo padrão de `lib/tmdb.test.ts`, mas o Mastodon NÃO tem `baseUrl`
  * separada de teste no Go (`NewMastodon(instanceURL, token)` já recebe a
  * URL completa) — então aqui interceptamos TUDO que passa por
- * `globalThis.fetch`, delegando pro original só se o teste específico
- * precisar (nenhum precisa: todo teste deste arquivo usa `instalarMock`).
+ * `globalThis.fetch` (nenhum teste deste arquivo precisa de fetch real —
+ * M5 do fix round 1 não se aplica aqui pela mesma razão que já não se
+ * aplicava antes: não há branch de delegação nenhuma pra corrigir).
  */
 function instalarMockMastodon(
   responder: (req: RequisicaoCapturada) => Response | Promise<Response>,
@@ -24,7 +31,12 @@ function instalarMockMastodon(
           : input.url
     const headers = new Headers(init?.headers)
     const body = init?.body ? JSON.parse(init.body as string) : undefined
-    const req = { url: new URL(urlTexto), headers, body }
+    const req = {
+      url: new URL(urlTexto),
+      headers,
+      body,
+      signal: init?.signal,
+    }
     requisicoes.push(req)
     return responder(req)
   }) as typeof fetch
@@ -44,10 +56,11 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('publishMastodon — caminho feliz (porte de TestMastodonPublish)', () => {
-  test('posta com Authorization: Bearer e devolve a url do toot', async () => {
+  test('posta com Authorization: Bearer, corpo COMPLETO (I2) e devolve a url do toot', async () => {
     const mock = instalarMockMastodon((req) => {
       expect(req.headers.get('Authorization')).toBe('Bearer TOK')
       expect(req.url.pathname).toBe('/api/v1/statuses')
+      expect(req.body).toEqual({ status: 'toot!' })
       return jsonResponse(200, { url: 'https://mast.odon/@me/9', id: '9' })
     })
     try {
@@ -257,6 +270,28 @@ describe('publishMastodon — outros modos de falha', () => {
       ).rejects.toThrow()
     } finally {
       globalThis.fetch = fetchOriginal
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⚠️ I1 (fix round 1): timeout precisa cobrir a leitura do corpo — ver o
+// comentário equivalente em `devto.test.ts`.
+// ---------------------------------------------------------------------------
+describe('publishMastodon — timeout cobre a leitura do corpo (I1)', () => {
+  test('corpo que nunca resolve: falha por timeout, não fica pendurado', async () => {
+    const mock = instalarMockMastodon(({ signal }) =>
+      respostaComCorpoQueNuncaResolve(500, signal),
+    )
+    try {
+      await expect(
+        publishMastodon(
+          { instanceUrl: 'https://x', token: 't', timeoutMs: 20 },
+          { text: 'x' },
+        ),
+      ).rejects.toThrow(/tempo limite/)
+    } finally {
+      mock.restaurar()
     }
   })
 })

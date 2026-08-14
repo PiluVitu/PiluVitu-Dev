@@ -1,15 +1,24 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { respostaComCorpoQueNuncaResolve } from '../../test-support/hanging-response'
 import { publishBluesky } from './bluesky'
 
 const BASE_URL_TESTE = 'https://bluesky-teste.invalido'
 
-type RequisicaoCapturada = { path: string; headers: Headers; body: unknown }
+type RequisicaoCapturada = {
+  path: string
+  headers: Headers
+  body: unknown
+  signal: AbortSignal | null | undefined
+}
 
 /**
  * Mesmo padrão de `lib/tmdb.test.ts` (intercepta por prefixo de URL,
- * delega o resto, restaura no `finally`), mas roteando por `pathname` —
- * espelha o `switch` do `httptest.Server` de `bluesky_test.go` (Go), que
- * também distingue `createSession` de `createRecord` pelo path.
+ * restaura no `finally`), mas roteando por `pathname` — espelha o `switch`
+ * do `httptest.Server` de `bluesky_test.go` (Go), que também distingue
+ * `createSession` de `createRecord` pelo path.
+ *
+ * ⚠️ M5 (fix round 1): lança em vez de delegar pro `fetch` real quando a
+ * URL não bate — ver o comentário equivalente em `devto.test.ts`.
  */
 function instalarMockBluesky(
   responder: (req: RequisicaoCapturada) => Response | Promise<Response>,
@@ -23,15 +32,15 @@ function instalarMockBluesky(
         : input instanceof URL
           ? input.toString()
           : input.url
-    if (urlTexto.startsWith(BASE_URL_TESTE)) {
-      const url = new URL(urlTexto)
-      const headers = new Headers(init?.headers)
-      const body = init?.body ? JSON.parse(init.body as string) : undefined
-      const req = { path: url.pathname, headers, body }
-      requisicoes.push(req)
-      return responder(req)
+    if (!urlTexto.startsWith(BASE_URL_TESTE)) {
+      throw new Error(`URL não mockada: ${urlTexto}`)
     }
-    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+    const url = new URL(urlTexto)
+    const headers = new Headers(init?.headers)
+    const body = init?.body ? JSON.parse(init.body as string) : undefined
+    const req = { path: url.pathname, headers, body, signal: init?.signal }
+    requisicoes.push(req)
+    return responder(req)
   }) as typeof fetch
   return {
     restaurar: () => {
@@ -49,7 +58,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('publishBluesky — sem canonicalUrl, 1 única escrita (porte de TestBlueskyPublish)', () => {
-  test('createSession → createRecord único, devolve a url do post principal', async () => {
+  test('createSession → createRecord único, CORPO COMPLETO nos dois (I2), devolve a url do post principal', async () => {
     const mock = instalarMockBluesky((req) => {
       if (req.path.endsWith('createSession')) {
         return jsonResponse(200, { accessJwt: 'JWT', did: 'did:plc:abc' })
@@ -73,10 +82,33 @@ describe('publishBluesky — sem canonicalUrl, 1 única escrita (porte de TestBl
         { text: 'olá mundo' },
       )
       expect(url).toBe('https://bsky.app/profile/me.bsky.social/post/rkey9')
+
+      const sessionCall = mock.requisicoes.find((r) =>
+        r.path.endsWith('createSession'),
+      )
+      expect(sessionCall?.body).toEqual({
+        identifier: 'me.bsky.social',
+        password: 'app-pass',
+      })
+
       const createRecordCalls = mock.requisicoes.filter((r) =>
         r.path.endsWith('createRecord'),
       )
       expect(createRecordCalls).toHaveLength(1)
+      // ⚠️ I2 (fix round 1): `toEqual` COMPLETO — pega em silêncio um
+      // `$type`/`collection` REMOVIDO ou um NSID trocado (ex.:
+      // `app.bsky.feed.like` em vez de `app.bsky.feed.post`), o achado do
+      // revisor: um `collection` válido porém errado ainda devolveria uma
+      // URL `bsky.app`, alvo marcado `posted` com `remote_url` morta.
+      expect(createRecordCalls[0]?.body).toEqual({
+        repo: 'did:plc:abc',
+        collection: 'app.bsky.feed.post',
+        record: {
+          $type: 'app.bsky.feed.post',
+          text: 'olá mundo',
+          createdAt: expect.any(String),
+        },
+      })
     } finally {
       mock.restaurar()
     }
@@ -106,7 +138,7 @@ describe('publishBluesky — com canonicalUrl, DUAS escritas (porte de TestBlues
     })
   }
 
-  test('faz exatamente 2 createRecord — o principal (sem link) e a reply (com link)', async () => {
+  test('faz exatamente 2 createRecord — o principal (sem link) e a reply (com link), CORPO COMPLETO nos dois (I2)', async () => {
     const mock = montarMockDuasEscritas()
     const canonicalUrl = 'https://blog/x'
     try {
@@ -125,42 +157,51 @@ describe('publishBluesky — com canonicalUrl, DUAS escritas (porte de TestBlues
       )
       expect(createRecordCalls).toHaveLength(2)
 
-      const primeiroRecord = (
-        createRecordCalls[0]?.body as { record: Record<string, unknown> }
-      ).record
-      expect(primeiroRecord.text).toBe('meu hook')
-      expect(primeiroRecord.text as string).not.toContain('http')
-
-      const segundoRecord = (
-        createRecordCalls[1]?.body as { record: Record<string, unknown> }
-      ).record
-      expect(segundoRecord.text).toBe(canonicalUrl)
-
-      const facets = segundoRecord.facets as Array<{
-        index: { byteStart: number; byteEnd: number }
-        features: Array<{ $type: string; uri: string }>
-      }>
-      expect(facets).toHaveLength(1)
-      expect(facets[0]?.index).toEqual({
-        byteStart: 0,
-        byteEnd: new TextEncoder().encode(canonicalUrl).length,
+      // ⚠️ I2 (fix round 1): os dois `toEqual` são COMPLETOS — um mock que
+      // remova `$type`/`createdAt` do record, ou troque `collection` por
+      // um NSID válido porém errado, derruba estes dois agora (antes só
+      // `record.text`/`record.facets` eram checados soltos).
+      expect(createRecordCalls[0]?.body).toEqual({
+        repo: 'did:plc:abc',
+        collection: 'app.bsky.feed.post',
+        record: {
+          $type: 'app.bsky.feed.post',
+          text: 'meu hook',
+          createdAt: expect.any(String),
+        },
       })
-      expect(facets[0]?.features[0]).toEqual({
-        $type: 'app.bsky.richtext.facet#link',
-        uri: canonicalUrl,
-      })
-
-      const reply = segundoRecord.reply as {
-        root: { uri: string; cid: string }
-        parent: { uri: string; cid: string }
-      }
-      expect(reply.parent).toEqual({
-        uri: 'at://did:plc:abc/app.bsky.feed.post/rkey9',
-        cid: 'cid-main',
-      })
-      expect(reply.root).toEqual({
-        uri: 'at://did:plc:abc/app.bsky.feed.post/rkey9',
-        cid: 'cid-main',
+      expect(createRecordCalls[1]?.body).toEqual({
+        repo: 'did:plc:abc',
+        collection: 'app.bsky.feed.post',
+        record: {
+          $type: 'app.bsky.feed.post',
+          text: canonicalUrl,
+          createdAt: expect.any(String),
+          facets: [
+            {
+              index: {
+                byteStart: 0,
+                byteEnd: new TextEncoder().encode(canonicalUrl).length,
+              },
+              features: [
+                {
+                  $type: 'app.bsky.richtext.facet#link',
+                  uri: canonicalUrl,
+                },
+              ],
+            },
+          ],
+          reply: {
+            root: {
+              uri: 'at://did:plc:abc/app.bsky.feed.post/rkey9',
+              cid: 'cid-main',
+            },
+            parent: {
+              uri: 'at://did:plc:abc/app.bsky.feed.post/rkey9',
+              cid: 'cid-main',
+            },
+          },
+        },
       })
     } finally {
       mock.restaurar()
@@ -308,20 +349,17 @@ describe('publishBluesky — facet em bytes UTF-8, não .length (armadilha 1, bl
 // ---------------------------------------------------------------------------
 // ⚠️ armadilha 2: se a SEGUNDA escrita (reply com link) falhar, a função
 // lança — mas o post PRINCIPAL já foi criado com sucesso no passo anterior.
-// Republicar duplicaria. Provado abaixo: o mock confirma que createRecord
-// foi chamado (e respondeu 200) na primeira vez, ANTES da segunda falhar.
+// Republicar duplicaria.
 // ---------------------------------------------------------------------------
 describe('publishBluesky — armadilha 2: falha da 2ª escrita não desfaz a 1ª', () => {
-  test('reply falha (500) → função lança, mas o createRecord principal já respondeu sucesso', async () => {
+  test('reply falha (500) → o rkey do post principal (já existente de verdade) fica IRRECUPERÁVEL', async () => {
     let chamadasCreateRecord = 0
-    let primeiraChamadaTeveSucesso = false
     const mock = instalarMockBluesky((req) => {
       if (req.path.endsWith('createSession')) {
         return jsonResponse(200, { accessJwt: 'JWT', did: 'did:plc:abc' })
       }
       chamadasCreateRecord += 1
       if (chamadasCreateRecord === 1) {
-        primeiraChamadaTeveSucesso = true
         return jsonResponse(200, {
           uri: 'at://did:plc:abc/app.bsky.feed.post/rkey9',
           cid: 'cid-main',
@@ -331,22 +369,35 @@ describe('publishBluesky — armadilha 2: falha da 2ª escrita não desfaz a 1ª
       return new Response('erro simulado no servidor', { status: 500 })
     })
     try {
-      await expect(
-        publishBluesky(
-          {
-            handle: 'me.bsky.social',
-            appPassword: 'p',
-            baseUrl: BASE_URL_TESTE,
-          },
-          { text: 'hook', canonicalUrl: 'https://blog/x' },
-        ),
-      ).rejects.toThrow()
+      // A URL que o post principal JÁ TEM no Bluesky de verdade (deduzida
+      // do uri que a 1ª chamada devolveu) — o ponto do teste (M2, fix
+      // round 1) é que esta STRING nunca chega ao chamador de jeito
+      // nenhum: nem como retorno resolvido (a promise REJEITA), nem
+      // embutida na mensagem de erro.
+      const urlDoPostPrincipalJaCriado =
+        'https://bsky.app/profile/me.bsky.social/post/rkey9'
 
-      // O post principal JÁ EXISTE: a 1ª chamada de createRecord aconteceu
-      // e respondeu sucesso ANTES da 2ª falhar — a função não tem como
-      // desfazer isso, e o comentário em bluesky.ts registra a exposição.
+      const erro = await publishBluesky(
+        {
+          handle: 'me.bsky.social',
+          appPassword: 'p',
+          baseUrl: BASE_URL_TESTE,
+        },
+        { text: 'hook', canonicalUrl: 'https://blog/x' },
+      ).catch((e: unknown) => e)
+
+      // Rejeita — não há retorno nenhum pro chamador; o rkey do passo 1
+      // (que a linha abaixo prova que existe de verdade no servidor) fica
+      // fora de alcance.
+      expect(erro).toBeInstanceOf(Error)
+      expect((erro as Error).message).not.toContain(urlDoPostPrincipalJaCriado)
+
+      // As DUAS chamadas de createRecord aconteceram — a 1ª (que criou o
+      // post principal de verdade, servidor respondeu 200) não é desfeita
+      // pela 2ª falhar. Isto é o que sustenta a alegação de "post já
+      // existe, republicar duplica" — não é redundante com a rejeição
+      // acima, é o fato que EXPLICA por que a rejeição é perigosa.
       expect(chamadasCreateRecord).toBe(2)
-      expect(primeiraChamadaTeveSucesso).toBe(true)
     } finally {
       mock.restaurar()
     }
@@ -408,6 +459,36 @@ describe('publishBluesky — outros modos de falha', () => {
       ).rejects.toThrow()
     } finally {
       globalThis.fetch = fetchOriginal
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⚠️ I1 (fix round 1): timeout precisa cobrir a leitura do corpo — testado
+// nas TRÊS posições em que `blueskyPost` pode ser chamado (createSession,
+// createRecord principal, createRecord da reply), porque as três passam
+// pelo MESMO helper — provar uma prova as três, mas testamos a mais
+// exposta (createSession, a primeira chamada de todas).
+// ---------------------------------------------------------------------------
+describe('publishBluesky — timeout cobre a leitura do corpo (I1)', () => {
+  test('corpo que nunca resolve (createSession): falha por timeout, não fica pendurado', async () => {
+    const mock = instalarMockBluesky(({ signal }) =>
+      respostaComCorpoQueNuncaResolve(500, signal),
+    )
+    try {
+      await expect(
+        publishBluesky(
+          {
+            handle: 'h',
+            appPassword: 'p',
+            baseUrl: BASE_URL_TESTE,
+            timeoutMs: 20,
+          },
+          { text: 'x' },
+        ),
+      ).rejects.toThrow(/tempo limite/)
+    } finally {
+      mock.restaurar()
     }
   })
 })

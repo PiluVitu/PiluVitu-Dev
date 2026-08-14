@@ -8,13 +8,16 @@
  * (`bluesky.go:41`, `utf8.RuneCountInString`) — `.length` do JS conta
  * unidades de código UTF-16, que DIVERGE de code point pra qualquer coisa
  * fora do BMP (emoji incluso). `[...texto].length` itera por code point —
- * é o que usamos abaixo. Ver `bluesky.test.ts`, describe "code point ≠
- * .length", pra um caso que só passa com a contagem certa.
+ * é o que usamos abaixo, em `publishBluesky`. Ver `bluesky.test.ts`,
+ * describe "code point ≠ .length", pra um caso que só passa com a
+ * contagem certa.
  *
  * ⚠️ **O offset do facet do link é em BYTES UTF-8, não `.length`**
- * (`bluesky.go:78`, `len([]byte(...))`) — `new TextEncoder().encode(url)
- * .length` é o equivalente exato em JS. Um caractere acentuado na URL
- * (2 bytes UTF-8, 1 unidade UTF-16) já basta pra divergir.
+ * (`bluesky.go:78`) — calculado dentro de `publishBluesky` (M8, fix round
+ * 1: um comentário anterior atribuía isso a `blueskyPost`, que só faz o
+ * POST genérico; o cálculo em si é `new TextEncoder().encode(url).length`,
+ * na montagem do `replyRecord`). Um caractere acentuado na URL (2 bytes
+ * UTF-8, 1 unidade UTF-16) já basta pra divergir.
  *
  * ⚠️ **DUAS escritas por publicação, se houver `canonicalUrl`**: o post
  * principal (só o hook) e uma REPLY com o link clicável via richtext facet.
@@ -23,25 +26,34 @@
  * Republicar (o fluxo normal de "clicar Publicar de novo" num alvo
  * `failed`) cria um SEGUNDO post duplicado, porque o AT Protocol não
  * dedupa. **Isto é comportamento medido do Go, replicado de propósito —
- * NÃO consertar aqui.** É decisão do dono (ver plano da fatia, armadilha 2:
+ * NÃO consertar aqui.** É decisão do dono (armadilha 2 do plano da fatia:
  * `docs/superpowers/plans/2026-08-13-ramielle-distribuicao.md`). Provado em
- * `bluesky.test.ts`, describe "armadilha 2".
+ * `bluesky.test.ts` (describe "armadilha 2").
+ *
+ * ⚠️ **M7 (fix round 1, registrado — não corrigir): `createdAt` sai com
+ * milissegundos.** `new Date().toISOString()` produz
+ * `2026-08-13T12:00:00.000Z`; o Go usa `time.RFC3339`
+ * (`2026-08-13T12:00:00Z`, sem fração). O léxico RFC3339/ISO8601 do AT
+ * Protocol aceita os dois formatos — divergência cosmética, não funcional.
  */
 import type { DistributionKind } from '../../domain/distribution'
-import type { Payload } from './types'
+import { isTimeoutErro, lerCorpoErroLimitado, mensagemTimeout } from './http'
+import type { DistributionPlatform, Payload } from './types'
 
 export type BlueskyConfig = {
   handle: string
   appPassword: string
   /** Parametrizável só pra teste — produção usa o default real. */
   baseUrl?: string
+  /** Parametrizável só pra teste — produção usa `TIMEOUT_MS` (30s). */
+  timeoutMs?: number
 }
 
 const DEFAULT_BASE_URL = 'https://bsky.social'
 const TIMEOUT_MS = 30_000
 const MAX_CHARS = 300
 
-export const BLUESKY_PLATFORM = 'bluesky'
+export const BLUESKY_PLATFORM: DistributionPlatform = 'bluesky'
 export const BLUESKY_KIND: DistributionKind = 'social_hook'
 
 type Session = { accessJwt: string; did: string }
@@ -51,15 +63,20 @@ type RecordResult = { uri: string; cid: string }
  * POST autenticado (opcional) no AT Protocol — porte de `Bluesky.post`
  * (`bluesky.go:105-125`). `bearer === ''` omite o header `Authorization`
  * (usado só por `createSession`, que ainda não tem token).
+ *
+ * ⚠️ O timeout de `timeoutMs` cobre o `fetch` E a leitura do corpo (fix
+ * round 1, I1) — `AbortSignal.timeout(timeoutMs)` direto no `fetch`, sem
+ * `AbortController`/`clearTimeout` manual (ver o comentário equivalente em
+ * `devto.ts`). Como as TRÊS chamadas de `publishBluesky` passam por aqui,
+ * isto cobre `createSession` e os dois `createRecord` de uma vez.
  */
 async function blueskyPost<T>(
   base: string,
   path: string,
   bearer: string,
   body: unknown,
+  timeoutMs: number,
 ): Promise<T> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
@@ -71,26 +88,41 @@ async function blueskyPost<T>(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeoutMs),
     })
-  } catch {
+  } catch (err) {
     // Texto FIXO: nem a URL (não carrega credencial hoje, mas a disciplina
-    // é uniforme neste Worker) nem o erro cru do fetch.
-    throw new Error(`bluesky: falha ao executar a requisição (${path})`)
-  } finally {
-    clearTimeout(timeoutId)
+    // é uniforme neste Worker) nem o erro cru do fetch. Timeout ganha
+    // mensagem PRÓPRIA (M3), com o `path` de contexto (igual ao resto das
+    // mensagens deste adapter).
+    throw new Error(
+      isTimeoutErro(err)
+        ? mensagemTimeout('bluesky', timeoutMs, path)
+        : `bluesky: falha ao executar a requisição (${path})`,
+    )
   }
 
   if (res.status < 200 || res.status >= 300) {
-    const corpo = await res.text().catch(() => '')
-    throw new Error(
-      `bluesky: ${path} status ${res.status}: ${corpo.slice(0, 4096).trim()}`,
-    )
+    let corpo: string
+    try {
+      corpo = await lerCorpoErroLimitado(res)
+    } catch (err) {
+      throw new Error(
+        isTimeoutErro(err)
+          ? mensagemTimeout('bluesky', timeoutMs, path)
+          : `bluesky: falha ao executar a requisição (${path})`,
+      )
+    }
+    throw new Error(`bluesky: ${path} status ${res.status}: ${corpo}`)
   }
   try {
     return (await res.json()) as T
-  } catch {
-    throw new Error(`bluesky: resposta de ${path} não é um JSON válido`)
+  } catch (err) {
+    throw new Error(
+      isTimeoutErro(err)
+        ? mensagemTimeout('bluesky', timeoutMs, path)
+        : `bluesky: resposta de ${path} não é um JSON válido`,
+    )
   }
 }
 
@@ -113,6 +145,7 @@ export async function publishBluesky(
     throw new Error('bluesky: texto excede 300 caracteres')
   }
   const base = cfg.baseUrl ?? DEFAULT_BASE_URL
+  const timeoutMs = cfg.timeoutMs ?? TIMEOUT_MS
 
   // 1) Criar sessão: recebe accessJwt + did.
   const sess = await blueskyPost<Session>(
@@ -120,6 +153,7 @@ export async function publishBluesky(
     '/xrpc/com.atproto.server.createSession',
     '',
     { identifier: cfg.handle, password: cfg.appPassword },
+    timeoutMs,
   )
 
   // 2) Criar record principal (só o hook, sem link).
@@ -133,6 +167,7 @@ export async function publishBluesky(
     '/xrpc/com.atproto.repo.createRecord',
     sess.accessJwt,
     { repo: sess.did, collection: 'app.bsky.feed.post', record },
+    timeoutMs,
   )
   const mainUri = rec.uri
   const mainCid = rec.cid
@@ -176,6 +211,7 @@ export async function publishBluesky(
       '/xrpc/com.atproto.repo.createRecord',
       sess.accessJwt,
       { repo: sess.did, collection: 'app.bsky.feed.post', record: replyRecord },
+      timeoutMs,
     )
   }
 

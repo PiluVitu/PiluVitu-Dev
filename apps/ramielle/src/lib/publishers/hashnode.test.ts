@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { respostaComCorpoQueNuncaResolve } from '../../test-support/hanging-response'
 import { publishHashnode } from './hashnode'
 
 const BASE_URL_TESTE = 'https://hashnode-teste.invalido'
 
+/**
+ * ⚠️ M5 (fix round 1): lança em vez de delegar pro `fetch` real quando a
+ * URL não bate — ver o comentário equivalente em `devto.test.ts`.
+ */
 function instalarMockHashnode(
   responder: (req: {
     url: URL
     headers: Headers
     body: { query: string; variables: unknown }
+    signal: AbortSignal | null | undefined
   }) => Response | Promise<Response>,
 ): { restaurar: () => void } {
   const fetchOriginal = globalThis.fetch
@@ -18,12 +24,17 @@ function instalarMockHashnode(
         : input instanceof URL
           ? input.toString()
           : input.url
-    if (urlTexto.startsWith(BASE_URL_TESTE)) {
-      const headers = new Headers(init?.headers)
-      const body = JSON.parse(init?.body as string)
-      return responder({ url: new URL(urlTexto), headers, body })
+    if (!urlTexto.startsWith(BASE_URL_TESTE)) {
+      throw new Error(`URL não mockada: ${urlTexto}`)
     }
-    return fetchOriginal(input as Parameters<typeof fetch>[0], init)
+    const headers = new Headers(init?.headers)
+    const body = JSON.parse(init?.body as string)
+    return responder({
+      url: new URL(urlTexto),
+      headers,
+      body,
+      signal: init?.signal,
+    })
   }) as typeof fetch
   return {
     restaurar: () => {
@@ -40,10 +51,10 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('publishHashnode — caminho feliz (porte de TestHashnodePublish, hashnode_test.go)', () => {
-  test('publica o artigo, header Authorization SEM "Bearer ", query contém publishPost', async () => {
-    const requisicoes: Array<{ headers: Headers; body: unknown }> = []
-    const mock = instalarMockHashnode(({ headers, body }) => {
-      requisicoes.push({ headers, body })
+  test('publica no path certo, header Authorization SEM "Bearer ", variables COMPLETO (I2)', async () => {
+    const requisicoes: Array<{ url: URL; headers: Headers; body: unknown }> = []
+    const mock = instalarMockHashnode(({ url, headers, body }) => {
+      requisicoes.push({ url, headers, body })
       return jsonResponse(200, {
         data: { publishPost: { post: { url: 'https://hn.dev/p' } } },
       })
@@ -54,13 +65,30 @@ describe('publishHashnode — caminho feliz (porte de TestHashnodePublish, hashn
         { title: 'T', bodyMd: 'corpo', canonicalUrl: 'https://blog/p' },
       )
       expect(url).toBe('https://hn.dev/p')
+      expect(requisicoes[0]?.url.pathname).toBe('/')
       // ⚠️ Header SEM "Bearer " — o token cru, literal.
       expect(requisicoes[0]?.headers.get('Authorization')).toBe('TOK')
       expect(requisicoes[0]?.headers.get('Authorization')).not.toMatch(
         /^Bearer/,
       )
-      const corpo = requisicoes[0]?.body as { query: string }
+      const corpo = requisicoes[0]?.body as {
+        query: string
+        variables: unknown
+      }
       expect(corpo.query).toContain('publishPost')
+      // ⚠️ I2 (fix round 1): `toEqual` COMPLETO em `variables` — pega em
+      // silêncio um campo REMOVIDO (ex.: `publicationId`, o achado do
+      // revisor: sem ele, o Hashnode publica no lugar errado ou recusa sem
+      // um teste solto por campo detectar).
+      expect(corpo.variables).toEqual({
+        input: {
+          title: 'T',
+          contentMarkdown: 'corpo',
+          publicationId: 'PUBID',
+          originalArticleURL: 'https://blog/p',
+          tags: [],
+        },
+      })
     } finally {
       mock.restaurar()
     }
@@ -232,6 +260,33 @@ describe('publishHashnode — outros modos de falha', () => {
       ).rejects.toThrow()
     } finally {
       globalThis.fetch = fetchOriginal
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ⚠️ I1 (fix round 1): timeout precisa cobrir a leitura do corpo — ver o
+// comentário equivalente em `devto.test.ts`.
+// ---------------------------------------------------------------------------
+describe('publishHashnode — timeout cobre a leitura do corpo (I1)', () => {
+  test('corpo que nunca resolve: falha por timeout, não fica pendurado', async () => {
+    const mock = instalarMockHashnode(({ signal }) =>
+      respostaComCorpoQueNuncaResolve(500, signal),
+    )
+    try {
+      await expect(
+        publishHashnode(
+          {
+            token: 'TOK',
+            publicationId: 'PUBID',
+            baseUrl: BASE_URL_TESTE,
+            timeoutMs: 20,
+          },
+          { title: 'T', bodyMd: 'x' },
+        ),
+      ).rejects.toThrow(/tempo limite/)
+    } finally {
+      mock.restaurar()
     }
   })
 })

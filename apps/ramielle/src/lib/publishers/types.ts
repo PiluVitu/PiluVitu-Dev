@@ -26,3 +26,18 @@ export type Payload = {
   // Social (kind: 'social_hook') — Bluesky e Mastodon:
   text?: string
 }
+
+/**
+ * M4 (fix round 1, achado da revisão): os 4 `<PLATAFORMA>_PLATFORM`
+ * exportados por `devto.ts`/`hashnode.ts`/`bluesky.ts`/`mastodon.ts` eram
+ * string literal SEM tipo — um typo (`'blusky'`) compilava e só apareceria
+ * como dado errado em `distribution_targets.platform` na Task 3 (a chave do
+ * `UNIQUE(slug, platform)` e do casamento com `distribution-panel.tsx` do
+ * `apps/web`). Os `<PLATAFORMA>_KIND` já eram protegidos pela anotação
+ * `: DistributionKind` — este union type dá a mesma proteção pro platform.
+ * Não existe um tipo equivalente em `domain/distribution.ts` porque
+ * `DistributionTarget.platform` espelha o Go (`Target.Platform string`,
+ * sem union) — este tipo é NOVO, específico de `lib/publishers`, sem
+ * equivalente no schema Go.
+ */
+export type DistributionPlatform = 'devto' | 'hashnode' | 'bluesky' | 'mastodon'
