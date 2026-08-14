@@ -27,31 +27,48 @@ class Settings:
     # o proofread rápido roda num modelo menor de propósito, e o `careful`
     # existe justamente pra trocar por um maior quando o dono quer precisão.
     #
-    # ⚠️ COM DEFAULT, ao contrário dos campos acima, e não é descuido: os
-    # valores de `model_proofread`/`model_proofread_careful` são os MESMOS
-    # que o Go já usa em produção (log de boot:
-    # `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`),
-    # então um ambiente que não os declare continua se comportando como a Go
-    # se comporta hoje. Sem default, acrescentá-los quebraria toda construção
-    # existente de `Settings` — inclusive as dos testes — por um motivo que
-    # não é do dono.
+    # ⚠️ COM DEFAULT, ao contrário dos campos acima, e não é descuido: sem
+    # default, acrescentá-los quebraria toda construção existente de
+    # `Settings` — inclusive as dos testes — por um motivo que não é do dono.
     #
-    # ⚠️ **I4 (revisão): `model_hooks` é DIVERGÊNCIA CONSCIENTE, não
-    # paridade** — o parágrafo acima citava o mesmo log de boot como
-    # justificativa pros três campos, mas aquele log NUNCA menciona `hooks`,
-    # só `proofread`/`proofread_careful`. O Go de verdade usa
-    # `qwen2.5:14b-instruct` pra hooks (`OLLAMA_MODEL_HOOKS`,
-    # `apps/api/cmd/api/main.go:83`, também em `apps/api/.env.example` e
-    # `process-compose.yaml`). `qwen2.5:14b-instruct` NÃO está instalado
-    # nesta máquina (ver "Pendências do dono" no `CLAUDE.md` deste app) —
-    # ~9 GB de download. `7b-instruct` aqui é a escolha PRÁTICA até o dono
-    # baixar o 14b (`ollama pull qwen2.5:14b-instruct`); depois disso,
-    # `MODEL_HOOKS`/este default devem virar `qwen2.5:14b-instruct` pra bater
-    # com o Go de verdade. Registrado como divergência a resolver, não como
-    # paridade já alcançada.
-    model_proofread: str = "qwen2.5:3b-instruct"
-    model_proofread_careful: str = "qwen2.5:7b-instruct"
-    model_hooks: str = "qwen2.5:7b-instruct"
+    # ⚠️ **A PARIDADE COM A GO ACABOU AQUI, de propósito.** Até esta task os
+    # defaults de `model_proofread`/`model_proofread_careful` eram os mesmos
+    # da API Go em produção (`qwen2.5:3b-instruct`/`qwen2.5:7b-instruct`, do
+    # log de boot dela), e `model_hooks` era registrado como "divergência a
+    # resolver" porque o Go usava `qwen2.5:14b-instruct` (`main.go:83`), que
+    # nunca foi instalado nesta máquina. **A Go foi APOSENTADA**
+    # (`docs/superpowers/ROADMAP.md` §2): não há mais um comportamento de
+    # produção do outro lado pra empatar, então "igual ao Go" deixou de ser
+    # um critério de qualidade e virou só uma âncora num serviço morto. Os
+    # três slots passam a ser ESCOLHA PRÓPRIA, e a divergência do
+    # `model_hooks` deixa de existir enquanto conceito — não há mais de quem
+    # divergir.
+    #
+    # ⚠️ **Os valores abaixo foram MEDIDOS**, não escolhidos por tamanho.
+    # Corpus com gabarito (9 erros plantados + 18 armadilhas, prompt de
+    # produção `PROOFREAD_SYSTEM`, temperatura 0.2, tudo com `"think": false`):
+    #
+    #   qwen3.5:9b            9/9 erros, 0 violações,  68 s  ← careful e hooks
+    #   gemma4:12b            9/9 erros, 0 violações, 139 s  (2x mais lento)
+    #   qwen2.5:7b-instruct   8/9 erros, 0 violações,  58 s  (careful ANTIGO)
+    #   qwen3.5:4b            8/9 erros, 1 violação,   31 s  ← rápido
+    #   qwen2.5:3b-instruct   5/9 erros, 0 violações,  70 s  (rápido ANTIGO)
+    #
+    # O slot rápido melhorou nos DOIS eixos: o `qwen2.5:3b-instruct` que
+    # estava aqui era pior E mais lento que o `qwen3.5:4b` (5/9 em 70 s
+    # contra 8/9 em 31 s). O `gemma4:12b` empata em qualidade com o
+    # `qwen3.5:9b` e perde feio no relógio (artigo real de 5.778 chars pelo
+    # caminho real do `proofread`: 381 s contra 232 s, pior bloco de 35,9 s
+    # contra 20,6 s) — por isso o careful é o 9b, com 89% de folga contra o
+    # `read=180.0` de `ollama.TIMEOUT`.
+    #
+    # ⚠️ Os três são modelos de RACIOCÍNIO (`capabilities` inclui
+    # `"thinking"`): só funcionam porque `ollama.chat` manda `"think": false`.
+    # Sem esse campo, os números acima viram `message.content` VAZIO — ver o
+    # cabeçalho de `ollama.py`.
+    model_proofread: str = "qwen3.5:4b"
+    model_proofread_careful: str = "qwen3.5:9b"
+    model_hooks: str = "qwen3.5:9b"
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -85,14 +102,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             "/"
         ),
         ingest_token=src.get("INGEST_TOKEN", ""),
-        # Defaults iguais aos do Go em produção (log de boot da API:
-        # `proofread=qwen2.5:3b-instruct proofread_careful=qwen2.5:7b-instruct`).
-        model_proofread=src.get("MODEL_PROOFREAD", "qwen2.5:3b-instruct"),
-        model_proofread_careful=src.get(
-            "MODEL_PROOFREAD_CAREFUL", "qwen2.5:7b-instruct"
-        ),
-        # ⚠️ I4: divergência CONSCIENTE do Go (que usa `qwen2.5:14b-instruct`
-        # aqui) — ver o comentário completo no campo `model_hooks` de
-        # `Settings` acima.
-        model_hooks=src.get("MODEL_HOOKS", "qwen2.5:7b-instruct"),
+        # ⚠️ `OLLAMA_MODEL` (o insight, acima) segue em `qwen2.5:7b-instruct`
+        # DE PROPÓSITO, e não por esquecimento de atualizar junto: a tarefa do
+        # insight é redigir um parágrafo sobre números JÁ CALCULADOS pelo
+        # Worker, e o gargalo medido dele é o PROMPT e a quantidade de dado,
+        # não a capacidade do modelo. Evidência: o insight de 2026-08 saiu
+        # afirmando "mantendo-se igual ao mesmo período do ano anterior" sobre
+        # um banco que não TEM ano anterior — nenhum modelo maior conserta um
+        # prompt que deixa essa afirmação ser possível. Trocar o modelo aqui
+        # seria gastar GPU pra fingir que o problema é outro.
+        #
+        # Os três de baixo são os medidos nesta task — ver `Settings` acima.
+        model_proofread=src.get("MODEL_PROOFREAD", "qwen3.5:4b"),
+        model_proofread_careful=src.get("MODEL_PROOFREAD_CAREFUL", "qwen3.5:9b"),
+        model_hooks=src.get("MODEL_HOOKS", "qwen3.5:9b"),
     )

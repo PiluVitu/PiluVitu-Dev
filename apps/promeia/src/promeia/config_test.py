@@ -41,6 +41,48 @@ def test_env_sobrescreve_os_defaults():
     assert s.ingest_token == "ingest"
 
 
+def test_defaults_de_modelo_da_revisao_sao_os_MEDIDOS_de_2026():
+    # ⚠️ Estes três valores são ESCOLHA PRÓPRIA, medida contra um corpus com
+    # gabarito — não mais "igual ao que o Go usava" (a Go foi aposentada, ver
+    # ROADMAP §2). Rápido: qwen3.5:4b (8/9 erros em 31 s) contra o
+    # qwen2.5:3b-instruct antigo (5/9 em 70 s — pior E mais lento). Careful e
+    # hooks: qwen3.5:9b (9/9, 0 violações), preferido ao gemma4:12b que empata
+    # em qualidade e perde no relógio.
+    s = load_settings({"PROMEIA_TOKEN": "x"})
+    assert s.model_proofread == "qwen3.5:4b"
+    assert s.model_proofread_careful == "qwen3.5:9b"
+    assert s.model_hooks == "qwen3.5:9b"
+
+
+def test_o_modelo_do_insight_NAO_acompanha_os_da_revisao():
+    # ⚠️ Decisão deliberada, não esquecimento: a tarefa do insight é redigir um
+    # parágrafo sobre números JÁ calculados pelo Worker, e o gargalo medido
+    # dele é o PROMPT, não o modelo — o insight de 2026-08 saiu afirmando
+    # "mantendo-se igual ao mesmo período do ano anterior" sobre um banco sem
+    # ano anterior, coisa que modelo maior nenhum conserta. Este teste é o que
+    # impede alguém de "uniformizar" os quatro slots numa próxima passada.
+    s = load_settings({"PROMEIA_TOKEN": "x"})
+    assert s.ollama_model == "qwen2.5:7b-instruct"
+    assert s.ollama_model != s.model_proofread_careful
+
+
+def test_env_sobrescreve_os_tres_modelos_da_revisao():
+    # Cada slot lê a SUA env: um `src.get` copiado e colado (os três lendo
+    # MODEL_PROOFREAD, por exemplo) passa despercebido se o teste usar o mesmo
+    # valor nos três.
+    s = load_settings(
+        {
+            "PROMEIA_TOKEN": "x",
+            "MODEL_PROOFREAD": "rapido-X",
+            "MODEL_PROOFREAD_CAREFUL": "cuidadoso-Y",
+            "MODEL_HOOKS": "hooks-Z",
+        }
+    )
+    assert s.model_proofread == "rapido-X"
+    assert s.model_proofread_careful == "cuidadoso-Y"
+    assert s.model_hooks == "hooks-Z"
+
+
 def test_repr_de_settings_nao_expoe_os_segredos():
     # Ninguém loga `settings` hoje, mas o dataclass gera __repr__ com todos
     # os campos por padrão — os dois únicos segredos do serviço (o token que

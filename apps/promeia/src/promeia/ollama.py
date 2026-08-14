@@ -12,6 +12,22 @@ precisam de coisas diferentes:
   do texto a tratar (user), e usa temperatura VARIÁVEL (0.1 no proofread,
   0.7 no refine).
 
+⚠️ **`"think": false` no payload do `chat` é OBRIGATÓRIO, e a geração 2026 é
+thinking-by-default.** MEDIDO contra o Ollama local, sem o campo: `qwen3.5:4b`
+queimou 3.614 tokens e devolveu `message.content` VAZIO; `gemma4:12b` queimou
+3.621 tokens com 12.435 caracteres em `message.thinking` e `message.content`
+também VAZIO. Não é peculiaridade de uma família — os dois modelos anunciam
+`"thinking"` em `capabilities` e o ligam sozinhos. Sem o campo, a revisão não
+"fica lenta": ela devolve NADA, gastando GPU. Ver `OllamaVazio` abaixo, que é
+a rede de segurança pro dia em que este campo for removido por engano.
+
+⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO**, e por isso
+aqui não tem fallback (YAGNI): `qwen2.5:7b-instruct` (`capabilities:
+["completion","tools"]`, sem `"thinking"`) recebeu `"think": false` em
+`/api/chat` e respondeu **HTTP 200** com o `message.content` normal. Um
+fallback "tenta com, repete sem" só existiria pra um erro que não acontece —
+e custaria uma segunda rodada de inferência pra descobrir isso.
+
 ⚠️ A versão anterior deste aviso dizia que `chat` só entraria "quando a
 revisão de artigo migrar — depois do ramielle. Não antecipar." Ele cumpriu o
 papel: o ramielle ficou pronto na fatia ④ e a revisão de artigo migrou nesta.
@@ -53,6 +69,28 @@ class OllamaModelMissing(OllamaError):
 
 class OllamaFailed(OllamaError):
     """Cheguei no Ollama e ele falhou (HTTP de erro, resposta malformada)."""
+
+
+class OllamaVazio(OllamaFailed):
+    """O Ollama respondeu 200 e o texto veio vazio (ou só espaço em branco).
+
+    ⚠️ **Subclasse de `OllamaFailed`, não de `OllamaError` nem uma exceção
+    solta, e nada disso é detalhe de estilo:**
+
+    - `revisao_rotas.py` tem UM `except ollama.OllamaError` por rota. Uma
+      exceção que não descenda dessa base atravessaria as três rotas e viraria
+      500 com stack trace — exatamente o que _Erros são o produto_ proíbe.
+    - Herdar de `OllamaFailed` (e não direto de `OllamaError`) mantém a
+      classificação honesta pela régua deste módulo: o Ollama foi ALCANÇADO e
+      respondeu — não é `OllamaUnreachable` ("suba o Ollama") nem
+      `OllamaModelMissing` ("ollama pull X"). Também preserva todo `except
+      OllamaFailed` já escrito, incluindo os testes desta suíte.
+
+    ⚠️ **Não é `InsightVazio` (`insight.py`) reusada**, embora o conceito seja
+    irmão: `insight.py` importa `ollama`, então importar de volta seria ciclo;
+    e `InsightVazio` herda de `Exception` pura — cairia no problema do primeiro
+    item acima. Duas classes irmãs, cada uma na sua camada, é o desenho certo.
+    """
 
 
 def _postar(
@@ -133,7 +171,32 @@ def generate(
     """Um turno não-streaming em `/api/generate`. Devolve o texto CRU (sem trim).
 
     O trim é de quem chama: quem publica precisa distinguir "veio vazio" de
-    "veio só espaço em branco", e essa decisão não é do transporte.
+    "veio só espaço em branco", e essa decisão não é do transporte — aqui ela é
+    do `run_insight` (`insight.py`), que já trima e levanta `InsightVazio`.
+
+    ⚠️ **`"think": false` aqui NÃO é o mesmo defeito do `chat`, e mesmo assim
+    foi tratado — os dois lados MEDIDOS, com a mesma prompt de uma frase:**
+
+    | endpoint        | modelo      | think   | `response`/`content` | tokens | tempo  |
+    | --------------- | ----------- | ------- | -------------------- | ------ | ------ |
+    | `/api/chat`     | qwen3.5:4b  | ausente | **VAZIO**            | 3.614  | —      |
+    | `/api/generate` | qwen3.5:4b  | ausente | preenchido           | 3.481  | >120 s |
+    | `/api/generate` | qwen3.5:4b  | `false` | preenchido           | **21** | 5,4 s  |
+
+    Ou seja: os dois endpoints do Ollama tratam thinking de forma DIFERENTE —
+    `/api/chat` engole a resposta (raciocínio em `message.thinking`, `content`
+    vazio), `/api/generate` separa em `thinking` e ainda preenche `response`.
+    Então o insight NÃO tem o bug de resposta vazia. O que ele tem é 166x mais
+    tokens e >120 s de parede contra o `read=180.0` do `TIMEOUT` acima, num
+    prompt de UMA frase — o prompt real do insight é muito maior, e a margem
+    que sobra vira `OllamaUnreachable` ("não respondeu a tempo") no dia em que
+    o dono apontar `OLLAMA_MODEL` pra um modelo de 2026.
+
+    Tratado agora, e não só registrado, porque o campo é uma linha, está
+    MEDIDO como inofensivo no modelo que o insight realmente usa
+    (`qwen2.5:7b-instruct`, sem `"thinking"` em `capabilities`: HTTP 200 em
+    5,0 s), e porque o insight fixa `temperature: 0` justamente por exigir
+    determinismo — deixar o modelo raciocinar livre remaria contra isso.
     """
     url = f"{base_url.rstrip('/')}/api/generate"
     corpo = _postar(
@@ -142,6 +205,9 @@ def generate(
             "model": model,
             "prompt": prompt,
             "stream": False,
+            # Ver a tabela na docstring: aqui é custo/latência, não resposta
+            # vazia — mas é o mesmo campo e a mesma medição.
+            "think": False,
             "options": {"temperature": 0},
         },
         model=model,
@@ -189,6 +255,10 @@ def chat(
                 {"role": "user", "content": user},
             ],
             "stream": False,
+            # ⚠️ OBRIGATÓRIO, não otimização — ver o cabeçalho do módulo.
+            # Sem isto, todo modelo da geração 2026 devolve `message.content`
+            # VAZIO e joga o raciocínio em `message.thinking`.
+            "think": False,
             "options": {"temperature": temperature},
         },
         model=model,
@@ -204,5 +274,28 @@ def chat(
         raise OllamaFailed(
             'resposta do Ollama não trouxe o campo "message.content" esperado: '
             f"{corpo!r:.500}"
+        )
+    # ⚠️ `isinstance(str)` acima NÃO cobre isto: "" é str e passava reto. A
+    # consequência não é um erro visível — é um SUCESSO FALSO. Na revisão, um
+    # bloco vazio volta pro `restaurar_bordas`, que remonta um markdown que
+    # ainda PARECE válido, e o dono publica um artigo com um parágrafo comido
+    # sem nada ter falhado em lugar nenhum.
+    #
+    # ⚠️ **Só-espaço-em-branco CONTA como vazio, e isso não briga com o "sem
+    # trim" desta função:** o texto devolvido no caminho feliz continua CRU
+    # (nenhum `.strip()` no `return` — invariante I3, de que `refine`/
+    # `gerar_hooks` dependem). O `.strip()` aqui é do TESTE, não do valor.
+    # Conta como vazio porque TODO consumidor de produção já trima antes de
+    # usar (`proofread` antes do `restaurar_bordas`, `refine`/`gerar_hooks`
+    # antes de medir o limite): pra todos eles "\n  \n" e "" são o mesmo nada,
+    # e deixar passar reproduziria o sucesso falso descrito acima.
+    if texto.strip() == "":
+        raise OllamaVazio(
+            f"o modelo {model!r} respondeu sem texto nenhum (message.content "
+            f"vazio) em {url} — nada foi gerado. Se este for um modelo de "
+            f'raciocínio (qwen3.5, gemma4...), confira se o payload manda "think": '
+            f"false: sem isso o modelo escreve tudo em message.thinking e devolve "
+            f"content vazio. Caso contrário, tente de novo ou troque o modelo "
+            f"(MODEL_PROOFREAD / MODEL_PROOFREAD_CAREFUL / MODEL_HOOKS)"
         )
     return texto

@@ -41,15 +41,19 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
 - **`careful`** é porte, não feature: o nível de revisão já existia no Go
   (`Proofread(ctx, text, careful bool)`). `false` ⇒ modelo menor, `true` ⇒
   maior. Configurável por `MODEL_PROOFREAD` / `MODEL_PROOFREAD_CAREFUL` /
-  `MODEL_HOOKS`. ⚠️ **I4 (revisão): só `MODEL_PROOFREAD`/
-  `MODEL_PROOFREAD_CAREFUL` têm default IGUAL ao da Go em produção**
-  (`qwen2.5:3b-instruct`/`qwen2.5:7b-instruct`, do log de boot da API Go —
-  que nunca menciona hooks). `MODEL_HOOKS` é **divergência CONSCIENTE, não
-  paridade**: o Go usa `qwen2.5:14b-instruct` (`main.go:83`,
-  `.env.example`, `process-compose.yaml`), que **não está instalado** nesta
-  máquina (~9 GB) — o default aqui fica em `qwen2.5:7b-instruct` até o dono
-  baixar o 14b (ver "Pendências do dono"). Ver o comentário completo em
-  `config.py#Settings.model_hooks`.
+  `MODEL_HOOKS`.
+  ⚠️ **A PARIDADE DE MODELO COM A GO ACABOU — e a "divergência do
+  `MODEL_HOOKS`" deixou de existir junto.** A versão anterior desta seção
+  dizia que `MODEL_PROOFREAD`/`MODEL_PROOFREAD_CAREFUL` tinham default IGUAL
+  ao da Go em produção e que `MODEL_HOOKS` era a única divergência (porque o
+  Go usava `qwen2.5:14b-instruct`, nunca instalado aqui). **As duas frases
+  morreram nesta task**, e a razão não é preguiça: a **Go foi aposentada**
+  (`docs/superpowers/ROADMAP.md` §2), então não há mais um comportamento de
+  produção do outro lado pra empatar — "igual ao Go" virou âncora num serviço
+  morto, e o `14b` deixou de ser uma dívida a pagar porque não há mais de quem
+  divergir. Os **três slots agora são escolha própria, MEDIDA** (ver a tabela
+  em _Modelos de 2026_ abaixo): `qwen3.5:4b` no rápido, `qwen3.5:9b` no
+  careful e no hooks. Comentário completo em `config.py#Settings`.
 - ⚠️ **`refine`/`gerar_hooks` TRIMAM a saída do modelo antes de medir o
   limite** (`I3` de uma revisão desta fatia) — paridade com o Go, cujo
   `chat()` (`client.go:96`) sempre devolve `strings.TrimSpace(...)` pra todo
@@ -83,6 +87,101 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   **0 divergências em 3.000 amostras de português realista** — o efeito só
   aparece em casos adversariais (muito caractere multi-byte concentrado perto
   da metade do limite), não em texto normal.
+
+## Modelos de 2026: `"think": false` é obrigatório, não otimização
+
+⚠️ **A geração 2026 é thinking-by-default, e no `/api/chat` isso não deixa a
+revisão lenta — deixa ela VAZIA.** MEDIDO contra o Ollama local, sem o campo
+`think` no payload:
+
+| Modelo       | Tokens gastos | `message.thinking` | `message.content` |
+| ------------ | ------------- | ------------------ | ----------------- |
+| `qwen3.5:4b` | 3.614         | —                  | **VAZIO**         |
+| `gemma4:12b` | 3.621         | 12.435 chars       | **VAZIO**         |
+
+Não é peculiaridade de uma família: os dois anunciam `"thinking"` em
+`capabilities` (`GET /api/tags`) e o ligam sozinhos. Por isso `ollama.chat`
+manda `"think": false` — sem ele, os três defaults novos gastariam GPU pra
+devolver nada.
+
+⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO, e é por isso que
+não existe fallback aqui** (seria YAGNI, e custaria uma segunda rodada de
+inferência pra descobrir um erro que não acontece): `qwen2.5:7b-instruct`
+(`capabilities: ["completion","tools"]`) recebeu `"think": false` em
+`/api/chat` **e** em `/api/generate` e respondeu **HTTP 200** normalmente.
+
+⚠️ **Os dois endpoints do Ollama tratam thinking DIFERENTE** — descoberto ao
+checar se o insight tinha o mesmo defeito latente. `/api/chat` engole a
+resposta; `/api/generate` separa o raciocínio em `thinking` e **ainda preenche
+`response`**. Mesma prompt de uma frase, `qwen3.5:4b`:
+
+| Endpoint        | `think`   | Resposta   | Tokens | Tempo      |
+| --------------- | --------- | ---------- | ------ | ---------- |
+| `/api/chat`     | ausente   | **VAZIA**  | 3.614  | —          |
+| `/api/generate` | ausente   | preenchida | 3.481  | **>120 s** |
+| `/api/generate` | `false`   | preenchida | **21** | **5,4 s**  |
+
+Ou seja: o insight (que usa `generate`) **não** tem o bug de resposta vazia —
+tem 166x mais tokens e >120 s de parede contra o `read=180.0` de
+`ollama.TIMEOUT`, num prompt de UMA frase (o prompt real do insight é bem
+maior). `generate` também manda `"think": false` desde esta task: uma linha,
+medida como inofensiva no modelo que o insight de fato usa, e coerente com o
+`temperature: 0` que aquele caminho fixa justamente por exigir determinismo.
+
+**Os números que escolheram os defaults** (corpus com gabarito: 9 erros
+plantados, 18 armadilhas, prompt de produção `PROOFREAD_SYSTEM`, temperatura
+0.2, tudo com `"think": false`):
+
+| Modelo                              | Erros   | Violações | Tempo    |
+| ----------------------------------- | ------- | --------- | -------- |
+| `qwen3.5:9b` ← careful, hooks       | **9/9** | 0         | 68 s     |
+| `gemma4:12b`                        | **9/9** | 0         | 139 s    |
+| `qwen2.5:7b-instruct` (careful ANT.) | 8/9     | 0         | 58 s     |
+| `qwen3.5:4b` ← rápido               | 8/9     | 1         | **31 s** |
+| `qwen2.5:3b-instruct` (rápido ANT.) | 5/9     | 0         | 70 s     |
+
+⚠️ **O slot rápido melhorou nos DOIS eixos:** o `qwen2.5:3b-instruct` que
+estava lá era pior E mais lento que o `qwen3.5:4b` (5/9 em 70 s contra 8/9 em
+31 s). O `gemma4:12b` empata com o `qwen3.5:9b` em qualidade e perde no
+relógio — no artigo REAL do blog (5.778 chars, 27 blocos de prosa, pelo
+caminho real do `proofread`): **381 s contra 232 s**, pior bloco de 35,9 s
+contra 20,6 s, o que dá ao 9b **89% de folga** contra o `read=180.0`.
+
+⚠️ **`OLLAMA_MODEL` (o insight) NÃO mudou, e isso é decisão, não esquecimento.**
+A tarefa dele é redigir um parágrafo sobre números **já calculados** pelo
+Worker; o gargalo medido é o **prompt** e a quantidade de dado, não o modelo.
+Evidência: o insight de 2026-08 saiu afirmando _"mantendo-se igual ao mesmo
+período do ano anterior"_ sobre um banco que **não tem ano anterior** — modelo
+maior nenhum conserta um prompt que deixa essa frase ser possível. Pinado por
+`test_o_modelo_do_insight_NAO_acompanha_os_da_revisao` (`config_test.py`), pra
+ninguém "uniformizar" os quatro slots numa próxima passada.
+
+## Resposta vazia do modelo é FALHA, nunca sucesso silencioso
+
+`ollama.chat` levanta **`OllamaVazio`** quando `message.content` volta vazio.
+Antes, a guarda era só `isinstance(texto, str)` — e **`""` É `str`**, então
+passava reto: o `proofread` devolvia o bloco vazio pro `restaurar_bordas`, que
+remontava um markdown que ainda **parecia válido**, e o artigo saía com um
+parágrafo comido sem nada ter falhado em lugar nenhum. O teste que existia
+(`test_chat_sem_message_content_vira_failed`) cobria o campo **ausente**, nunca
+o vazio.
+
+- **`OllamaVazio` herda de `OllamaFailed`** (que herda de `OllamaError`), e não
+  é uma exceção solta nem o `InsightVazio` de `insight.py` reusado. Dois
+  motivos: `revisao_rotas.py` tem **um** `except ollama.OllamaError` por rota —
+  algo fora dessa árvore viraria **500 com stack trace**, o que _Erros são o
+  produto_ proíbe; e `insight.py` já importa `ollama`, então importar de volta
+  seria ciclo. Duas classes irmãs, uma em cada camada. Herdar de `OllamaFailed`
+  (não direto de `OllamaError`) mantém a régua honesta: o Ollama foi
+  **alcançado** e respondeu ⇒ 502, nunca o 503 de "suba o Ollama".
+- ⚠️ **Só-espaço-em-branco CONTA como vazio** — decisão, não descuido. Todo
+  consumidor de produção já trima antes de usar (`proofread` antes do
+  `restaurar_bordas`; `refine`/`gerar_hooks` antes de medir o limite), então
+  pra todos eles `"\n \t "` e `""` são o mesmo nada.
+- ⚠️ **E isso NÃO quebra o "sem trim" (achado I3):** o `.strip()` é do **teste**,
+  nunca do valor — o `return` segue devolvendo o texto CRU. Pinado por
+  `test_chat_NAO_trima_o_retorno_apesar_da_guarda_de_vazio`, que falha na hora
+  se alguém "arrumar" o retorno pra `texto.strip()`.
 
 ## O que é promeia, e a regra de corte
 
@@ -191,16 +290,20 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
   colunas insere uma quebra **real** no texto mandado pro modelo: não é
   formatação, é mudar a entrada de dados.
-- **Suíte hoje: 184 testes** (`uv run pytest`, por arquivo:
-  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 6, `dates_test.py` 16,
+- **Suíte hoje: 192 testes** (`uv run pytest`, por arquivo:
+  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 9, `dates_test.py` 16,
   `insight_test.py` 20, `markdown_blocos_test.py` 29, `money_test.py` 15,
-  `ollama_test.py` 18, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
+  `ollama_test.py` 23, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
   `revisao_test.py` 31). ⚠️ **M7 (revisão): este número já tinha ficado pra
   trás uma vez** — dizia "171 testes" enquanto a suíte real já estava em 180
   (o `/llm/hooks`/`gerar_hooks` tinha entrado numa task anterior sem
-  atualizar esta contagem). Os **+4** desta revisão são de I3 (`revisao_
-  test.py`): `refine`/`gerar_hooks` trimando a saída do modelo como o Go —
-  ver a seção _Revisão de artigo_ acima. **Recontar sempre via `uv run
+  atualizar esta contagem). Os **+8** da task dos modelos de 2026 são **+5**
+  em `ollama_test.py` (o `"think": false` nos dois endpoints, e as três faces
+  da guarda de resposta vazia: vazio, só-espaço, e o retorno seguir cru) e
+  **+3** em `config_test.py` (os defaults medidos, o insight NÃO acompanhando
+  a revisão, e cada `MODEL_*` lendo a env certa) — o `config_test.py` não
+  tinha asserção NENHUMA sobre os três slots de modelo até então. **Recontar
+  sempre via `uv run
   pytest -v` (linha final `N passed`), nunca confiar num número solto neste
   arquivo** — mesmo aviso que `apps/ramielle/CLAUDE.md` já registra pra sua
   própria suíte, e pelo mesmo motivo: o número já andou mais de uma vez sem
@@ -308,13 +411,21 @@ nunca finge sucesso.
 
 - **Gerar `PROMEIA_TOKEN`** (`openssl rand -base64 32`) e colocá-lo no
   ambiente onde o serviço roda.
-- **O hostname `promeia.piluvitu.com.br` ainda é da API Go.**
-  `NEXT_PUBLIC_API_URL` (Vercel) e o redirect URI (Google Console) continuam
-  apontando pra ela. O promeia só assume esse hostname quando a Go sair do ar
-  — o que depende do ramielle (§9.4 do plano geral) estar pronto. Até lá o
-  promeia **não recebe requisição nenhuma pela internet** — só empurra, pela
-  rede local/túnel, para o ramielle.
-- **`process-compose.yaml` puxa `qwen2.5:14b-instruct`, que não está
-  instalado nesta máquina** (hoje: `qwen2.5:3b-instruct` e
-  `qwen2.5:7b-instruct`). `make stack` baixaria ~9 GB na primeira execução —
-  decidir se corrige o arquivo ou aceita o download fica com o dono.
+- ~~**O hostname `promeia.piluvitu.com.br` ainda é da API Go**, e o promeia não
+  recebe requisição nenhuma pela internet~~ — **VENCIDA em 2026-08-14**
+  (`ROADMAP.md` §2): o promeia **assumiu** o hostname e serve tráfego real.
+  Cadeia provada ponta a ponta: `piluvitu.com.br → ramielle.piluvitu.com.br →
+  promeia.piluvitu.com.br → Ollama local`. Consequência que vale pra esta
+  seção: os defaults de modelo daqui não são mais teoria de laboratório — o
+  botão "Corrigir texto" bate neles em produção assim que o Mac está ligado.
+- ~~**Baixar o `qwen2.5:14b-instruct` pra bater com o Go**~~ — **OBSOLETA,
+  resolvida por não ser mais um problema.** Ela existia só porque
+  `MODEL_HOOKS` divergia do Go; a Go foi aposentada e o slot de hooks agora é
+  escolha própria (`qwen3.5:9b`, medido 9/9). Não há mais motivo pra baixar
+  ~9 GB de um modelo de 2024 pra empatar com um serviço que saiu do ar.
+- **`process-compose.yaml` (na raiz, não neste app) ainda puxa
+  `qwen2.5:14b-instruct`**, que continua não instalado — `make stack` baixaria
+  ~9 GB na primeira execução. Isto **sobrevive** à pendência acima: é um
+  arquivo da stack local da API Go, e limpá-lo faz parte de aposentar a Go, não
+  desta task. Instalados hoje: `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:12b`,
+  `qwen2.5:3b-instruct` e `qwen2.5:7b-instruct`.
