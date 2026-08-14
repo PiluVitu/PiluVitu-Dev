@@ -76,6 +76,48 @@ function criarPublisherFalso(
   return { pub, chamadas: () => n }
 }
 
+/**
+ * Shim de `D1Database` pro teste de mutação do C1 (fix round 1, Critical):
+ * intercepta SÓ o `UPDATE ... SET status = 'posted', remote_url = ...`
+ * (`markDistributionTargetPosted`, `domain/distribution.ts`) e faz esse
+ * `.run()` falhar `falhas` vezes antes de delegar pro D1 real. Todo o
+ * resto (`prepare` de qualquer outro SQL) vai direto pro `db` real —
+ * objeto plano com só `prepare` sobrescrito, nunca `Proxy`, porque as
+ * funções deste domínio só chamam `db.prepare(...)` (nunca `.batch()`
+ * nem outro método do binding).
+ *
+ * O substring de match (`"remote_url = ?, error = '', posted_at"`) é
+ * exclusivo dessa query — o `UPDATE` do upsert também contém a substring
+ * `status = 'posted'` (dentro do `CASE WHEN`), então casar só por essa
+ * substring pegaria a query ERRADA.
+ */
+function criarShimQuebraMarkPosted(db: D1Database, falhas: number): D1Database {
+  let restantes = falhas
+  const prepareReal = db.prepare.bind(db)
+  return {
+    prepare(sql: string) {
+      const stmt = prepareReal(sql)
+      if (!sql.includes("remote_url = ?, error = '', posted_at")) return stmt
+      const bindReal = stmt.bind.bind(stmt)
+      return {
+        bind: (...args: unknown[]) => {
+          const bound = bindReal(...(args as []))
+          const runReal = bound.run.bind(bound)
+          return {
+            run: async () => {
+              if (restantes > 0) {
+                restantes--
+                throw new Error('D1_ERROR: disk I/O error')
+              }
+              return runReal()
+            },
+          } as unknown as D1PreparedStatement
+        },
+      } as unknown as D1PreparedStatement
+    },
+  } as unknown as D1Database
+}
+
 describe('buildDistributionProposals', () => {
   it('monta artigos + hooks sociais via promeia e persiste tudo — porte de TestBuildProposals (service_test.go:20-48)', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
@@ -108,7 +150,8 @@ describe('buildDistributionProposals', () => {
     expect(stored).toHaveLength(2)
   })
 
-  it('manda o article certo e a lista de plataformas sociais pro promeia', async () => {
+  it('manda o article certo e a lista de plataformas sociais pro promeia — M4 (fix round 1): array EXATO, não superset, e com um publisher de artigo na cena', async () => {
+    const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
     const { pub: mastodon } = criarPublisherFalso('mastodon', 'social_hook')
     const chamadas: unknown[] = []
@@ -125,9 +168,9 @@ describe('buildDistributionProposals', () => {
       })
     }) as unknown as typeof fetch
 
-    await buildDistributionProposals(
+    const targets = await buildDistributionProposals(
       DB,
-      [bluesky, mastodon],
+      [devto, bluesky, mastodon],
       PROMEIA_CFG,
       'p2',
       ARTIGO,
@@ -135,9 +178,16 @@ describe('buildDistributionProposals', () => {
     )
 
     expect(chamadas).toHaveLength(1)
-    const chamada = chamadas[0] as { url: string; body: unknown }
+    const chamada = chamadas[0] as {
+      url: string
+      body: { platforms: string[] }
+    }
     expect(chamada.url).toBe('https://promeia.exemplo.test/llm/hooks')
-    expect(chamada.body).toEqual({
+    // M4: array EXATO (ordenado) — `arrayContaining` aceitaria um superset
+    // (ex.: 'devto' vazando pra dentro de `platforms`, o que seria um bug:
+    // o artigo NÃO passa por hook nenhum).
+    expect([...chamada.body.platforms].sort()).toEqual(['bluesky', 'mastodon'])
+    expect(chamada.body).toMatchObject({
       article: {
         title: 'T',
         excerpt: 'e',
@@ -145,8 +195,12 @@ describe('buildDistributionProposals', () => {
         tags: ['go'],
         voice_sample: 'trecho de referência',
       },
-      platforms: expect.arrayContaining(['bluesky', 'mastodon']),
     })
+    // e o publisher de artigo continua gerando o alvo dele, sem passar
+    // pelo promeia.
+    expect(targets.find((t) => t.platform === 'devto')?.kind).toBe(
+      'article_crosspost',
+    )
   })
 
   it('gerador NÃO configurado (promeiaCfg null) pula os sociais em SILÊNCIO — devolve só os artigos, sem erro (acréscimo do coordenador)', async () => {
@@ -269,21 +323,67 @@ describe('buildDistributionProposals', () => {
     expect(stored[0]?.content).toBe('novo corpo')
   })
 
-  it('dedup por platform: dois publishers com a mesma plataforma — o ÚLTIMO da lista vence', async () => {
-    const { pub: devtoV1 } = criarPublisherFalso('devto', 'social_hook')
-    const { pub: devtoV2 } = criarPublisherFalso('devto', 'article_crosspost')
+  // ⚠️ I1 (fix round 1) — a versão anterior deste teste usava
+  // `promeiaCfg: null` com um devtoV1 SOCIAL: nesse caso o ramo social é
+  // pulado inteiro (`promeiaCfg === null`), então o resultado (1 alvo, do
+  // devtoV2 artigo) seria IDÊNTICO com ou sem dedup — removendo a dedup
+  // inteira (`pubsUnicos = pubs`), a suíte continuava 100% verde. Corrigido
+  // com `promeiaCfg` CONFIGURADO (o ramo social de fato executa) e as duas
+  // ORDENS testadas, provando que quem sobrevive é o ÚLTIMO da lista, não
+  // o primeiro (um `.find()` no lugar do `Map` também passaria pela versão
+  // antiga do teste).
+  it('dedup por platform (I1, fix round 1): social por ÚLTIMO vence — o artigo NÃO aparece, e o promeia É chamado pra essa plataforma', async () => {
+    const { pub: devtoArtigo } = criarPublisherFalso(
+      'devto',
+      'article_crosspost',
+    )
+    const { pub: devtoSocial } = criarPublisherFalso('devto', 'social_hook')
+    const chamadas = mockarPromeia(() =>
+      jsonResponse(200, {
+        ok: true,
+        data: { hooks: [{ platform: 'devto', text: 'hook-devto' }] },
+      }),
+    )
 
     const targets = await buildDistributionProposals(
       DB,
-      [devtoV1, devtoV2],
-      null,
-      'p8',
+      [devtoArtigo, devtoSocial], // social por ÚLTIMO
+      PROMEIA_CFG,
+      'p8a',
       ARTIGO,
       'corpo',
     )
-    // só um alvo (mesma plataforma dedupada), com o kind do ÚLTIMO da lista.
+
+    expect(chamadas).toHaveLength(1) // o promeia FOI chamado pra 'devto'
+    expect(targets).toHaveLength(1)
+    expect(targets[0]?.kind).toBe('social_hook')
+    expect(targets[0]?.content).toBe('hook-devto')
+  })
+
+  it('dedup por platform (I1, fix round 1): artigo por ÚLTIMO vence — o social NÃO aparece, e o promeia NÃO é chamado pra essa plataforma', async () => {
+    const { pub: devtoSocial } = criarPublisherFalso('devto', 'social_hook')
+    const { pub: devtoArtigo } = criarPublisherFalso(
+      'devto',
+      'article_crosspost',
+    )
+    globalThis.fetch = (async () => {
+      throw new Error(
+        'fetch não deveria ser chamado — devto não é social depois do dedup',
+      )
+    }) as unknown as typeof fetch
+
+    const targets = await buildDistributionProposals(
+      DB,
+      [devtoSocial, devtoArtigo], // artigo por ÚLTIMO
+      PROMEIA_CFG,
+      'p8b',
+      ARTIGO,
+      'corpo',
+    )
+
     expect(targets).toHaveLength(1)
     expect(targets[0]?.kind).toBe('article_crosspost')
+    expect(targets[0]?.content).toBe('corpo')
   })
 })
 
@@ -345,6 +445,40 @@ describe('publishDistributionTargets', () => {
     const alvo = out.find((t) => t.platform === 'bluesky')
     expect(alvo?.status).toBe('posted')
     expect(alvo?.remote_url).toBe('https://bsky.app/retry')
+    // ⚠️ I2 (fix round 1) — sem esta linha, o teste passava mesmo se o
+    // re-upsert PARASSE de reescrever `content`/`kind` (o único guard
+    // observado era `posted`/`remote_url`, que não dependem do reset). O
+    // que o reset faz de OBSERVÁVEL é gravar o texto EDITADO na UI — sem
+    // isto, um refactor futuro publicaria o texto certo mas deixaria o
+    // painel mostrando o rascunho antigo, em verde.
+    expect(alvo?.content).toBe('edited')
+  })
+
+  // ⚠️ I1 (fix round 1) — o "último da lista vence" do dedup NUNCA tinha
+  // teste aqui: um `.find()` (primeiro vence) no lugar do `Map` interno
+  // (`pubsPorPlataforma`) passaria por todo o resto da suíte sem acusar
+  // nada.
+  it('dedup por platform (I1, fix round 1): dois publishers na mesma plataforma — o ÚLTIMO da lista é quem publica', async () => {
+    const { pub: pubV1, chamadas: chamadasV1 } = criarPublisherFalso(
+      'mastodon',
+      'social_hook',
+      { url: 'https://um' },
+    )
+    const { pub: pubV2, chamadas: chamadasV2 } = criarPublisherFalso(
+      'mastodon',
+      'social_hook',
+      { url: 'https://dois' },
+    )
+
+    const out = await publishDistributionTargets(DB, [pubV1, pubV2], 'r2', [
+      { platform: 'mastodon', content: 'x' },
+    ])
+
+    expect(chamadasV1()).toBe(0) // o primeiro NUNCA foi chamado
+    expect(chamadasV2()).toBe(1) // só o ÚLTIMO foi
+    expect(out.find((t) => t.platform === 'mastodon')?.remote_url).toBe(
+      'https://dois',
+    )
   })
 
   it('kind vem do publisher, NUNCA do cliente (armadilha 8)', async () => {
@@ -412,6 +546,75 @@ describe('publishDistributionTargets', () => {
     expect(bluesky?.error).toBe('boom')
     expect(mastodon?.status).toBe('posted')
     expect(mastodon?.remote_url).toBe('https://m/2')
+  })
+
+  // ⚠️ C1 (fix round 1, Critical) — o `markDistributionTargetPosted`
+  // estava dentro do MESMO `try` de `pub.publish`, e uma falha de ESCRITA
+  // no D1 (não de publicação — o publish já tinha retornado sucesso) caía
+  // no mesmo `catch` e virava `MarkFailed`. Consequência: post JÁ EXISTIA
+  // na plataforma, alvo saía `'failed'`, `remote_url` perdida, e a PRÓXIMA
+  // publicação republicava — post DUPLICADO (nenhuma das 4 plataformas
+  // dedupa do lado delas).
+  describe('C1 (fix round 1) — falha de ESCRITA ao marcar posted nunca pode rebaixar o alvo', () => {
+    it('1ª tentativa de marcar posted falha (transitória): retenta e recupera — resultado final é UMA publicação só, mesmo numa segunda tentativa do admin', async () => {
+      const { pub, chamadas } = criarPublisherFalso('mastodon', 'social_hook', {
+        url: 'https://m/recuperado',
+      })
+      // falha só a 1ª chamada de `SET status = 'posted'`; a 2ª (o retry
+      // interno de `marcarPostadoComRetry`) usa o D1 real.
+      const dbComFalhaTransitoria = criarShimQuebraMarkPosted(DB, 1)
+
+      await upsertDistributionTarget(DB, {
+        slug: 'c1a',
+        platform: 'mastodon',
+        kind: 'social_hook',
+        content: 'oi',
+        status: 'pending',
+      })
+      const sel: Selected[] = [{ platform: 'mastodon', content: 'oi editado' }]
+
+      // 1ª "tentativa" — o request original do admin.
+      const out1 = await publishDistributionTargets(
+        dbComFalhaTransitoria,
+        [pub],
+        'c1a',
+        sel,
+      )
+      expect(chamadas()).toBe(1) // pub.publish só foi chamado 1 vez
+      const alvo1 = out1.find((t) => t.platform === 'mastodon')
+      expect(alvo1?.status).toBe('posted') // NUNCA caiu pra failed/pending
+      expect(alvo1?.remote_url).toBe('https://m/recuperado') // o retry recuperou a URL real
+
+      // 2ª "tentativa" — o admin, sem saber que já funcionou, publica de
+      // novo (D1 real desta vez, sem o shim — irrelevante, o alvo já está
+      // 'posted').
+      const out2 = await publishDistributionTargets(DB, [pub], 'c1a', sel)
+      expect(chamadas()).toBe(1) // NÃO publicou de novo — sem isso, seria 2
+      const alvo2 = out2.find((t) => t.platform === 'mastodon')
+      expect(alvo2?.status).toBe('posted')
+      expect(alvo2?.remote_url).toBe('https://m/recuperado')
+    })
+
+    it('as DUAS tentativas com a URL real falham: grava posted com remote_url vazia — nunca rebaixa, nunca guarda texto cru de infra em `error`', async () => {
+      const { pub, chamadas } = criarPublisherFalso('bluesky', 'social_hook', {
+        url: 'https://bsky/nao-sera-gravada',
+      })
+      const dbSempreFalha = criarShimQuebraMarkPosted(DB, 2)
+
+      const out = await publishDistributionTargets(
+        dbSempreFalha,
+        [pub],
+        'c1b',
+        [{ platform: 'bluesky', content: 'x' }],
+      )
+
+      expect(chamadas()).toBe(1) // publish só é chamado 1 vez — já aconteceu
+      const alvo = out.find((t) => t.platform === 'bluesky')
+      expect(alvo?.status).toBe('posted') // selo preservado, nunca failed/pending
+      expect(alvo?.remote_url).toBe('') // URL perdida (aceitável)
+      expect(alvo?.error ?? '').not.toContain('D1_ERROR') // (c) nunca texto cru
+      expect(alvo?.error ?? '').not.toContain('disk I/O')
+    })
   })
 })
 

@@ -157,7 +157,14 @@ export async function buildDistributionProposals(
       },
       promeiaCfg,
     )
-    for (const hook of data.hooks) {
+    // ⚠️ M1 (fix round 1) — `chamarPromeia` devolve `json.data as T` sem
+    // checar o shape: um `{ok:true}` sem `data.hooks` (ou com `hooks`
+    // não-array) viraria `TypeError: ... is not iterable` aqui, que na
+    // Task 4 sairia como `500 internal_error` genérico em vez de atribuído
+    // ao promeia. O Go, com um slice `nil`, simplesmente não itera —
+    // replicado com o guard abaixo.
+    const hooks = Array.isArray(data.hooks) ? data.hooks : []
+    for (const hook of hooks) {
       targets.push({
         slug,
         platform: hook.platform,
@@ -193,6 +200,17 @@ export async function buildDistributionProposals(
  * ⚠️ **Não tem campo `kind`, de propósito** — mesma proteção estrutural do
  * Go, onde `Selected` também não carrega `Kind`. Ver a armadilha 8 no
  * comentário de `publishDistributionTargets` abaixo.
+ *
+ * ⚠️ **M2 (fix round 1) — aviso pra Task 4 (as rotas).** Este tipo é
+ * camelCase; o contrato vivo do `apps/web` é snake_case (`canonical_url`,
+ * não `canonicalUrl`). Todo campo além de `platform`/`content` é OPCIONAL
+ * — uma rota que repasse o corpo JSON parseado direto (`corpo as
+ * Selected`, sem traduzir campo a campo) COMPILA e descarta
+ * `title`/`canonical_url`/`description`/`tags` em SILÊNCIO: o Bluesky
+ * deixa de criar a reply com o link (armadilha 2 do plano) e os crossposts
+ * de artigo saem sem `canonical_url`, gerando conteúdo duplicado contra o
+ * próprio blog do dono — sem erro nenhum, sem teste vermelho. A rota
+ * precisa TRADUZIR os campos, nunca só repassar o corpo.
  */
 export type Selected = {
   platform: string
@@ -201,6 +219,58 @@ export type Selected = {
   canonicalUrl?: string
   description?: string
   tags?: string[]
+}
+
+/**
+ * Marca `'posted'` com retentativa — porte NOVO, sem equivalente direto no
+ * Go, escrito na correção do C1 (fix round 1, Critical) abaixo.
+ *
+ * Chamada só DEPOIS que `pub.publish` já retornou sucesso: a publicação
+ * JÁ EXISTE na plataforma, então uma falha aqui é SEMPRE uma falha de
+ * ESCRITA no D1 (nunca de publicação) — e nunca pode fazer o alvo cair pra
+ * `'failed'`/`'pending'`, porque nenhuma das 4 plataformas dedupa do lado
+ * delas: rebaixar o selo faz a PRÓXIMA tentativa de publicar chamar
+ * `pub.publish` de novo, duplicando o post público.
+ *
+ * Tenta a escrita com a `remoteUrl` REAL até 2 vezes (a primeira falha
+ * pode ser transitória). Se as duas falharem, uma 3ª tentativa grava
+ * `'posted'` com `remote_url` VAZIA — perder a URL é barato; perder o
+ * selo `'posted'` é o que duplica um post público. Se até essa 3ª
+ * tentativa falhar, o erro só vai pro `console.error` (visível via
+ * `wrangler tail`) — NUNCA é escrito na coluna `error` (que o admin
+ * renderiza, `distribution-panel.tsx:259`, `title={target.error}`):
+ * `markDistributionTargetPosted` sempre grava `error=''`, então nenhuma
+ * chamada aqui passa texto cru de infraestrutura (`D1_ERROR`/`SQLITE_*`)
+ * pra coluna nenhuma.
+ */
+async function marcarPostadoComRetry(
+  db: D1Database,
+  slug: string,
+  platform: string,
+  remoteUrl: string,
+): Promise<void> {
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    try {
+      await markDistributionTargetPosted(
+        db,
+        slug,
+        platform,
+        remoteUrl,
+        nowIsoUtc(),
+      )
+      return
+    } catch {
+      // tenta de novo — pode ser uma falha transitória de escrita no D1.
+    }
+  }
+  try {
+    await markDistributionTargetPosted(db, slug, platform, '', nowIsoUtc())
+  } catch (err) {
+    console.error(
+      `ramielle: falha ao marcar '${platform}'/'${slug}' como posted depois de publicar (D1 indisponível para escrita)`,
+      err,
+    )
+  }
 }
 
 /**
@@ -223,10 +293,28 @@ export type Selected = {
  * Falhas de publicação (`pub.publish` rejeitando) são capturadas POR ALVO —
  * marcam `failed` com a mensagem e o loop CONTINUA pros próximos
  * selecionados (mesma semântica do `perr != nil { markFailed; continue }`
- * do Go). Diferente disso, uma falha de ESCRITA no D1 (upsert/mark*)
- * propaga normalmente — o Go descarta esses erros (`_ = s.store.Upsert(...)`
- * etc.), mas nada no plano/brief desta task pede replicar esse descarte
- * silencioso, e mantê-los visíveis é mais seguro.
+ * do Go).
+ *
+ * ⚠️ **C1 (fix round 1, Critical) — uma falha de ESCRITA ao marcar
+ * `'posted'` NUNCA pode virar `'failed'`/`'pending'`.** A entrega original
+ * desta task tinha `markDistributionTargetPosted` dentro do MESMO `try` de
+ * `pub.publish`: um erro de D1 (não de publicação — o publish já tinha
+ * retornado sucesso) caía no mesmo `catch` e virava `MarkFailed` com o
+ * texto CRU do driver D1 (`"D1_ERROR: disk I/O error"`) gravado em
+ * `error`. Consequência medida por um revisor com um shim de D1: o post
+ * JÁ EXISTIA na plataforma, mas o alvo saía `'failed'`, a `remote_url` que
+ * o publisher tinha devolvido era perdida pra sempre, e a PRÓXIMA
+ * publicação republicava — post DUPLICADO no perfil público (nenhuma das
+ * 4 plataformas dedupa do lado delas). Corrigido: `pub.publish` e a
+ * gravação de `'posted'` são passos SEPARADOS — `marcarPostadoComRetry`
+ * (acima) faz a parte de nunca rebaixar o selo.
+ *
+ * Diferente disso, as OUTRAS escritas no D1 deste loop (`getDistributionTarget`
+ * e o upsert que reseta pra `'pending'` antes de tentar) ainda propagam
+ * normalmente se falharem — só a gravação de `'posted'`, que acontece
+ * DEPOIS de uma publicação já efetivada, tem a proteção especial acima;
+ * nada no plano/brief pede blindar as demais, e mantê-las visíveis é mais
+ * seguro.
  */
 export async function publishDistributionTargets(
   db: D1Database,
@@ -240,6 +328,17 @@ export async function publishDistributionTargets(
     const pub = porPlataforma.get(sel.platform)
     if (pub === undefined) continue // plataforma sem adapter configurado
 
+    // ⚠️ M3 (fix round 1) — divergência REAL do Go, a favor da segurança
+    // (diferente da divergência que a entrega original desta task tinha
+    // documentado aqui, que o C1 acima mostrou não existir de fato no
+    // código). O Go faz `existing, err := Get(...); if err == nil &&
+    // existing.Status == "posted" { continue }` (`service.go:89-92`): um
+    // erro de LEITURA cai no ramo "não está posted" e o Go PUBLICA assim
+    // mesmo — duplicando, se o alvo já estava posted e a leitura só falhou
+    // por acaso. Aqui, `getDistributionTarget` nunca lança por "não
+    // encontrado" (devolve `null`), mas uma falha de LEITURA genuína do D1
+    // propaga e interrompe o loop inteiro — NÃO publica. Mais seguro que o
+    // Go; intocado por esta correção.
     const existente = await getDistributionTarget(db, slug, sel.platform)
     if (existente !== null && existente.status === 'posted') {
       continue // idempotência (armadilha 3) — pula alvo já publicado
@@ -264,19 +363,19 @@ export async function publishDistributionTargets(
       tags: sel.tags,
     }
 
+    // C1 (fix round 1): SÓ a chamada de rede fica neste `try` — uma falha
+    // de ESCRITA ao gravar 'posted' depois que `pub.publish` já retornou
+    // sucesso NUNCA cai neste `catch` (ver o comentário da função acima).
+    let remoteUrl: string
     try {
-      const remoteUrl = await pub.publish(payload)
-      await markDistributionTargetPosted(
-        db,
-        slug,
-        sel.platform,
-        remoteUrl,
-        nowIsoUtc(),
-      )
+      remoteUrl = await pub.publish(payload)
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : String(err)
       await markDistributionTargetFailed(db, slug, sel.platform, mensagem)
+      continue
     }
+
+    await marcarPostadoComRetry(db, slug, sel.platform, remoteUrl)
   }
 
   return listDistributionTargetsBySlug(db, slug)
