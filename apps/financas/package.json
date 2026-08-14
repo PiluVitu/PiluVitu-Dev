@@ -20,7 +20,6 @@
     "backup": "./scripts/backup-d1.sh",
     "backup:test": "./scripts/backup-d1.test.sh",
     "pdf-import": "node scripts/pdf-import.mjs",
-    "insight": "node scripts/insight.mjs",
     "test:pdf-import": "vitest run --config vitest.scripts.config.ts"
   },
   "dependencies": {

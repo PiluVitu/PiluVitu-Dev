@@ -1,8 +1,26 @@
-import { apiBase, ApiError, type ApiEnvelope } from '@/lib/votacao/api-client'
+import { ApiError, type ApiEnvelope } from '@/lib/votacao/api-client'
 import type { DistributionTarget, ProposalsBody, SelectedTarget } from './types'
 
+/**
+ * Base do Atelier — DELIBERADAMENTE separada do `apiBase` da votação.
+ *
+ * A votação vai ser repontada pro ramielle na Task 2 desta fatia ④; o
+ * Atelier NÃO — é desacoplado agora, antes disso, exatamente pra essa troca
+ * não arrastá-lo junto. As 5 rotas dele (`/admin/llm/*`,
+ * `/admin/distribution/*`) só existem na Go e estão previstas pro promeia
+ * (spec §7.2), que ainda não existe.
+ *
+ * ⚠️ Se um dia isto voltar a apontar pro mesmo host da votação, o card
+ * "Distribuição" volta a renderizar VAZIO SEM ERRO em todo post existente
+ * (`useDistribution` dispara no mount, `retry` default = 3 ⇒ 4 requisições
+ * falhas por post, e nada lê `isError`) — um post com distribuição salva
+ * passa a parecer que nunca teve. Medido em 2026-08-12.
+ */
+export const atelierBase =
+  process.env.NEXT_PUBLIC_ATELIER_URL ?? 'http://localhost:8080'
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBase}${path}`, {
+  const res = await fetch(`${atelierBase}${path}`, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,

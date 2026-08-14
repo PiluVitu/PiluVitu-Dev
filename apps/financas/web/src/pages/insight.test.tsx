@@ -88,6 +88,27 @@ describe('InsightPage — os números independem do texto (propriedade central)'
     )
   })
 
+  // Regressão (fix round 1, Finding 1 CRITICAL): o CLI Node
+  // (scripts/insight.mjs) foi apagado na migração pro promeia — esta tela
+  // continuava mandando o dono rodar exatamente esse arquivo apagado no
+  // estado vazio, o comando real que ele veria em produção hoje (o dado
+  // sintético da prova real foi limpo depois de provar o promeia). Copiar e
+  // colar aquele comando falharia. A asserção NEGATIVA é a que importa: sem
+  // ela, o comando morto pode voltar num copy-paste futuro sem nada pegar —
+  // mesmo padrão de importar.test.tsx (accept não contendo "pdf").
+  it('o estado vazio manda rodar "make insight", nunca o CLI Node apagado', async () => {
+    mockApi({ latest: () => null })
+
+    render(<InsightPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toHaveTextContent(
+        'make insight',
+      ),
+    )
+    expect(document.body.textContent).not.toContain('insight.mjs')
+  })
+
   it('os números aparecem mesmo que a BUSCA do insight falhe (não só "nunca gravado")', async () => {
     mockApi({
       latest: () => {

@@ -1,4 +1,10 @@
-import { ApiError, errorMessage, votacaoApi } from './api-client'
+import {
+  apiBase,
+  ApiError,
+  errorMessage,
+  startGoogleLogin,
+  votacaoApi,
+} from './api-client'
 import type { ApiNotification } from './api-client'
 
 function mockFetch(status: number, body: unknown) {
@@ -103,5 +109,130 @@ describe('call (via votacaoApi)', () => {
       name: 'ApiError',
       status: 502,
     })
+  })
+})
+
+describe('startGoogleLogin', () => {
+  function mockSignInSocial(status: number, body: unknown) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: `HTTP ${status}`,
+      json: async () => body,
+    } as Response)
+  }
+
+  // O login NÃO usa GET /auth/google/login (essa rota não existe no
+  // ramielle — cai no catch-all, 404). O fluxo novo é POST
+  // /api/auth/sign-in/social (Better Auth). Esta é a trava de regressão
+  // pedida pelo brief da Task 2: reverter startGoogleLogin pra montar
+  // `${apiBase}/auth/google/login` (a rota antiga) faz este teste falhar.
+  it('não usa GET /auth/google/login (rota que não existe no ramielle — 404)', async () => {
+    mockSignInSocial(200, {
+      url: 'https://accounts.google.com/o/oauth2/v2/auth?...',
+      redirect: true,
+    })
+    const navigate = jest.fn()
+    await startGoogleLogin({ navigate })
+
+    const fetchMock = global.fetch as jest.Mock
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).not.toContain('/auth/google/login')
+    expect(url).toBe(`${apiBase}/api/auth/sign-in/social`)
+    expect(init).toMatchObject({ method: 'POST', credentials: 'include' })
+  })
+
+  it('manda provider google + callbackURL/errorCallbackURL absolutas (preserva o destino do usuário)', async () => {
+    // M3 (fix round 1): comparar contra `window.location.href` nos dois
+    // lados (implementação E asserção) não provava nada — sob a URL default
+    // do jsdom ('http://localhost/'), uma implementação que devolvesse '/'
+    // fixo passaria igual. Navegando pra uma rota não-raiz via pushState
+    // (não é reload real — o jsdom só atualiza `location`, não recarrega o
+    // documento) e comparando contra o literal esperado fecha a lacuna: só
+    // passa se o valor mandado de fato rastrear a página atual.
+    window.history.pushState({}, '', '/votacao/5')
+    expect(window.location.href).toBe('http://localhost/votacao/5')
+
+    try {
+      mockSignInSocial(200, {
+        url: 'https://accounts.google.com/x',
+        redirect: true,
+      })
+      await startGoogleLogin({ navigate: jest.fn() })
+
+      const fetchMock = global.fetch as jest.Mock
+      const [, init] = fetchMock.mock.calls[0]
+      const body = JSON.parse(init.body as string)
+      expect(body).toEqual({
+        provider: 'google',
+        callbackURL: 'http://localhost/votacao/5',
+        errorCallbackURL: 'http://localhost/votacao/5',
+      })
+    } finally {
+      // Não vazar a rota pros testes seguintes do describe.
+      window.history.pushState({}, '', '/')
+    }
+  })
+
+  it('navega pra URL devolvida pelo Better Auth em caso de sucesso', async () => {
+    mockSignInSocial(200, {
+      url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x',
+      redirect: true,
+    })
+    const navigate = jest.fn()
+    await startGoogleLogin({ navigate })
+    expect(navigate).toHaveBeenCalledWith(
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=x',
+    )
+  })
+
+  it('lança erro tratável (não navega) quando a resposta não é 2xx', async () => {
+    mockSignInSocial(500, { message: 'boom' })
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('lança erro tratável (não navega) quando a resposta não tem `url`', async () => {
+    mockSignInSocial(200, { redirect: false })
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('lança erro tratável (não navega) quando o fetch falha (rede fora)', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'))
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  // I2 (fix round 1, segurança): guarda de esquema — replica a checagem que
+  // o cliente oficial do Better Auth faz (`isSafeUrlScheme`) antes de
+  // navegar. Sem ela, um `body.url` malicioso viraria XSS local via
+  // `window.location.href` (ver o JSDoc de `startGoogleLogin`).
+  it('lança erro tratável (não navega) quando a URL devolvida usa esquema perigoso (javascript:)', async () => {
+    mockSignInSocial(200, { url: 'javascript:alert(1)', redirect: true })
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('lança erro tratável (não navega) quando a URL devolvida usa esquema perigoso (data:)', async () => {
+    mockSignInSocial(200, {
+      url: 'data:text/html,<script>alert(1)</script>',
+      redirect: true,
+    })
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('lança erro tratável (não navega) quando a URL devolvida não é absoluta', async () => {
+    mockSignInSocial(200, { url: '/votacao', redirect: true })
+    const navigate = jest.fn()
+    await expect(startGoogleLogin({ navigate })).rejects.toThrow()
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

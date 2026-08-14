@@ -96,8 +96,11 @@ test('not authenticated shows the Google login screen', async ({ page }) => {
   )
   await mockCommon(page, { linked: false })
   await page.goto('/admin')
+  // O gatilho de login virou <button> (POST /api/auth/sign-in/social, Better
+  // Auth), não mais <a href> — mesma correção de votacao.e2e.ts (cutover T2,
+  // fix round 1: role=link não casava mais com <button>).
   await expect(
-    page.getByRole('link', { name: /entrar com google/i }),
+    page.getByRole('button', { name: /entrar com google/i }),
   ).toBeVisible()
 })
 

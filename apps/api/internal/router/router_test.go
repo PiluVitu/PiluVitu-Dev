@@ -74,7 +74,7 @@ func TestCORS_Preflight_AllowedOrigin(t *testing.T) {
 	srv := httptest.NewServer(New(Deps{}))
 	defer srv.Close()
 
-	req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/tools/cpf/validate", nil)
+	req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/health", nil)
 	req.Header.Set("Origin", "http://localhost:3333")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
@@ -218,6 +218,21 @@ func TestAdminBackup_RequiresAdmin(t *testing.T) {
 	resp, _ := http.Post(srv.URL+"/admin/backup", "application/json", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestToolsRoutes_Removed(t *testing.T) {
+	srv := httptest.NewServer(New(Deps{}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/tools/cpf/validate", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /tools/cpf/validate: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 (rota /tools/* deve ter sido apagada), got %d", resp.StatusCode)
 	}
 }
 

@@ -1,0 +1,29 @@
+# scripts/gerar-import.mjs (fatia ④, Task 3) — o .sql de saída carrega DADO
+# PESSOAL de verdade (google_sub, e-mail, nome, foto de todo mundo que já
+# votou). O default de `--saida` nasce no cwd de quem roda o comando
+# (`pnpm --filter @piluvitu/ramielle run gerar-import`, cwd = apps/ramielle)
+# — sem este .gitignore, `import.sql`/`votacao.import.sql` nasceriam
+# rastreáveis por padrão. Achado I3 da revisão do fix round 1 da Task 3.
+import.sql
+*.import.sql
+
+# Cópia do SQLite de origem (Go) usada pra rodar o gerador localmente —
+# mesmo motivo: pode ser o banco real, nunca commitar.
+*.db
+*.db-wal
+*.db-shm
+
+# scripts/comparar-com-go.mjs (fatia ④, Task 4) — o relatório opcional
+# (`--relatorio <arquivo>`) ecoa os CORPOS reais das respostas das rotas
+# admin (`/admin/users`, `/sessions/{id}/votes`), que carregam e-mail/nome
+# de quem votou. Nunca o cookie (não passa por arquivo nenhum — só entra
+# via env var), mas o dado pessoal do payload sim. Glob amplo porque o
+# caminho é escolhido pelo dono via flag, não um nome fixo só.
+*.report.txt
+comparar-com-go.report.txt
+
+# D1 local ISOLADO usado só pra rodar esta comparação (--persist-to próprio,
+# nunca o estado normal de dev do projeto) — se o dono criar dentro deste
+# workspace em vez de no scratchpad, não pode ser rastreado (carrega o
+# histórico real da votação, importado da Go).
+d1-cutover-cmp/

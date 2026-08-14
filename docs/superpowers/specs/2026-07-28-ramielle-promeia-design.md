@@ -7,7 +7,9 @@
 
 Levantados contra o código, não de memória.
 
-**A superfície do Go são 29 rotas**, em `apps/api/internal/router`:
+⚠️ **Atualizado depois do merge (2026-07-28).** Este spec foi escrito medindo a `main` **antes** dos merges de `feat/financas-pj` e `feat/distribuicao-artigos-llm-local`. Com as duas na `main`, a superfície do Go é de **33 rotas** — as 29 originais mais `/llm/proofread`, `/llm/refine`, `/distribution/proposals`, `/distribution/{slug}` e `/distribution/{slug}/publish`, que agora **existem na `main`** em vez de numa branch parada.
+
+**A superfície do Go são 33 rotas**, em `apps/api/internal/router`:
 
 | Grupo           | Rotas                                                                                                                |
 | --------------- | -------------------------------------------------------------------------------------------------------------------- |

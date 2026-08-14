@@ -217,8 +217,11 @@ test.describe('/votacao listing', () => {
   test('shows login button when anonymous', async ({ page }) => {
     await mockAPI(page, { loggedIn: false })
     await page.goto('/votacao')
+    // O login virou POST /api/auth/sign-in/social (Better Auth, ramielle) em
+    // vez de navegação top-level via <a href>, então o gatilho agora é um
+    // <button>, não um <a> (role muda de link pra button).
     await expect(
-      page.getByRole('link', { name: /entrar com google/i }),
+      page.getByRole('button', { name: /entrar com google/i }),
     ).toBeVisible()
   })
 

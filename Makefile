@@ -1,6 +1,9 @@
 .PHONY: dev dev-web dev-api storybook stack build-api build-cli test test-go test-web test-e2e lint clean stop \
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
-        backup-financas backup-financas-test
+        backup-financas backup-financas-test \
+        backup-ramielle backup-ramielle-test \
+        dev-promeia test-promeia lint-promeia insight \
+        dev-ramielle test-ramielle
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -24,7 +27,7 @@ dev:
 # Escape hatch: free the dev ports if a process got stuck (rare with air,
 # handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
 stop:
-	@for p in 8081 3333 6017; do \
+	@for p in 8081 8082 3333 6017; do \
 		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done
@@ -39,7 +42,7 @@ build-cli:
 	cd apps/api && go build -o ../../bin/piluvitu ./cmd/cli
 
 test:
-	pnpm -r test && cd apps/api && go test ./...
+	pnpm -r test && cd apps/api && go test ./... && cd ../promeia && uv run pytest
 
 test-go:
 	cd apps/api && go test ./... -v
@@ -47,11 +50,42 @@ test-go:
 test-web:
 	pnpm --filter @piluvitu/web test
 
+# --- ramielle (Cloudflare Worker Hono + D1) ---
+# Porta 8788, não 8787: o wrangler dev do finanças já ocupa 8787 por default
+# (ver comentário de dev-promeia abaixo) — os dois precisam poder rodar ao
+# mesmo tempo sem colidir.
+dev-ramielle:
+	pnpm --filter @piluvitu/ramielle dev --port 8788
+
+test-ramielle:
+	pnpm --filter @piluvitu/ramielle test
+
+# --- promeia (serviço Python local) ---
+# Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,
+# 6017 o Storybook, 5273 o Vite do financas, 8787 o wrangler, 11434 o Ollama.
+dev-promeia:
+	cd apps/promeia && uv run uvicorn promeia.app:create_app --factory --reload --port 8082
+
+test-promeia:
+	cd apps/promeia && uv run pytest
+
+lint-promeia:
+	cd apps/promeia && uv run ruff check . && uv run ruff format --check .
+
+# Gera e publica o insight financeiro. Exige Ollama de pé e PROMEIA_TOKEN +
+# INGEST_TOKEN no ambiente. Nada precisa continuar rodando depois.
+#
+# `uv run` NÃO lê .env sozinho (só com --env-file, que erra se o arquivo não
+# existir — quebraria quem exporta as vars na mão sem ter copiado o .env.example).
+# Mesmo padrão de dev-api: source condicional, só se o arquivo existir.
+insight:
+	cd apps/promeia && set -a && [ -f .env ] && . ./.env; set +a && uv run promeia-insight
+
 test-e2e:
 	pnpm --filter @piluvitu/web test:e2e
 
 lint:
-	pnpm -r lint && cd apps/api && go vet ./...
+	pnpm -r lint && cd apps/api && go vet ./... && cd ../promeia && uv run ruff check . && uv run ruff format --check .
 
 clean:
 	rm -rf bin/ apps/api/api apps/api/piluvitu
@@ -65,6 +99,18 @@ backup-financas:
 
 backup-financas-test:
 	cd apps/financas && ./scripts/backup-d1.test.sh
+
+# --- Backup do D1 (ramielle) ---
+# Mesmo desenho do backup do finanças acima, script irmão (apps/ramielle/
+# scripts/backup-d1.sh) — ver o comentário daquele arquivo pro porquê de um
+# irmão em vez de generalizar o do finanças. Destino default
+# ~/Backups/ramielle, 30 arquivos; ajuste por env:
+#   RAMIELLE_BACKUP_DIR=/outro/lugar RAMIELLE_BACKUP_KEEP=7 make backup-ramielle
+backup-ramielle:
+	cd apps/ramielle && ./scripts/backup-d1.sh
+
+backup-ramielle-test:
+	cd apps/ramielle && ./scripts/backup-d1.test.sh
 
 # --- Docker Compose ---
 compose-up:

@@ -1,0 +1,32 @@
+{
+  "name": "@piluvitu/ramielle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "lint": "tsc --noEmit",
+    "test": "vitest run && vitest run --config vitest.scripts.config.ts",
+    "test:watch": "vitest",
+    "test:gerar-import": "vitest run --config vitest.scripts.config.ts",
+    "gerar-import": "node scripts/gerar-import.mjs",
+    "comparar-com-go": "node scripts/comparar-com-go.mjs",
+    "backup": "./scripts/backup-d1.sh",
+    "cf-typegen": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply piluvitu-ramielle --local",
+    "db:migrate:remote": "wrangler d1 migrations apply piluvitu-ramielle --remote",
+    "db:migrate:list:local": "wrangler d1 migrations list piluvitu-ramielle --local",
+    "db:migrate:list:remote": "wrangler d1 migrations list piluvitu-ramielle --remote"
+  },
+  "dependencies": {
+    "better-auth": "1.6.25",
+    "hono": "^4.12.32"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.114.0"
+  }
+}

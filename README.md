@@ -6,18 +6,20 @@ Monorepo pessoal: site + blog, dashboard de ferramentas, votação de filmes e u
 
 ## Frentes
 
-| Workspace        | O que é                                                              | Onde roda                                       |
-| ---------------- | -------------------------------------------------------------------- | ----------------------------------------------- |
-| `apps/web`       | Next.js 16 — site, blog, `/tools`, `/tasks`, `/admin`, `/votacao`    | Vercel                                          |
-| `apps/api`       | Go 1.23 + chi — votação, auth, distribuição de artigos com LLM local | MacBook, exposto por Cloudflare Tunnel          |
-| `apps/financas`  | Cloudflare Worker (Hono + D1) + SPA Vite                             | `financas.piluvitu.com.br`                      |
-| `packages/ui`    | `@piluvitu/ui` — design system (tokens + componentes shadcn)         | consumido por `apps/web` e pela SPA do finanças |
-| `packages/tools` | `@piluvitu/tools` — lógica pura em TS                                | consumido pelo `/tools` e pelo finanças         |
+| Workspace        | O que é                                                                                  | Onde roda                                       |
+| ---------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `apps/web`       | Next.js 16 — site, blog, `/tools`, `/tasks`, `/admin`, `/votacao`                        | Vercel                                          |
+| `apps/api`       | Go 1.23 + chi — votação, auth, distribuição de artigos com LLM local                     | MacBook, exposto por Cloudflare Tunnel          |
+| `apps/financas`  | Cloudflare Worker (Hono + D1) + SPA Vite                                                 | `financas.piluvitu.com.br`                      |
+| `apps/promeia`   | Python 3.13 (FastAPI + uv) — insight financeiro via Ollama local, PDF/transcrição depois | MacBook, atrás de túnel                         |
+| `packages/ui`    | `@piluvitu/ui` — design system (tokens + componentes shadcn)                             | consumido por `apps/web` e pela SPA do finanças |
+| `packages/tools` | `@piluvitu/tools` — lógica pura em TS                                                    | consumido pelo `/tools` e pelo finanças         |
 
 ## Pré-requisitos
 
 - **Node 22** e **pnpm ≥ 11**
 - **Go 1.23** (para `apps/api`)
+- **Python 3.13** e **uv** (para `apps/promeia`) — `brew install uv` (ou o instalador em https://docs.astral.sh/uv/getting-started/installation/); `uv sync` baixa o Python certo sozinho a partir de `apps/promeia/.python-version`
 - **Ollama** com `qwen2.5:3b-instruct` e `qwen2.5:7b-instruct` (revisão de artigo, insight, leitura de PDF)
 - **wrangler** autenticado na conta Cloudflare que hospeda a zona `piluvitu.com.br`
 
@@ -53,9 +55,11 @@ make stack
 ## Testes e lint
 
 ```bash
-make test    # pnpm -r test + go test ./...
-make lint    # ESLint + tsc + go vet
+make test    # pnpm -r test + go test ./... + uv run pytest (apps/promeia)
+make lint    # ESLint + tsc + go vet + ruff check/format --check (apps/promeia)
 ```
+
+⚠️ Os dois alvos agora encadeiam `uv run pytest`/`uv run ruff` — numa máquina sem `uv` instalado, `make test` e `make lint` falham nesse último passo. Ver pré-requisitos acima.
 
 ⚠️ **`pnpm -r <script>` pula em silêncio** workspace que não declara aquele script — sem erro e sem aviso. Já custou a este projeto os 14 componentes migrados ficarem um commit inteiro sem lint. Ao criar pacote novo, confirme que ele aparece na contagem de "N of M workspace projects".
 
@@ -122,8 +126,8 @@ Rodam no MacBook com o Ollama ligado. Nenhum precisa de servidor no ar depois.
 # fatura em PDF → CSV que a tela #/importar lê
 node apps/financas/scripts/pdf-import.mjs fatura.pdf
 
-# gera o insight financeiro e empurra para o D1
-INGEST_TOKEN=<valor> node apps/financas/scripts/insight.mjs
+# gera o insight financeiro e empurra para o D1 (serviço Python, apps/promeia)
+make insight
 ```
 
 ## Deploy automatizado

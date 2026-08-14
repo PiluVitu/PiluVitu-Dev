@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/PiluVitu/api/internal/auth"
-	"github.com/PiluVitu/api/internal/handlers"
 	handlersadmin "github.com/PiluVitu/api/internal/handlers/admin"
 	handlersdistribution "github.com/PiluVitu/api/internal/handlers/distribution"
 	handlersllm "github.com/PiluVitu/api/internal/handlers/llm"
@@ -94,22 +93,6 @@ func New(deps Deps) http.Handler {
 			}
 		})
 	}
-
-	r.Route("/tools", func(r chi.Router) {
-		r.Post("/cpf/validate", handlers.ValidateCPF)
-		r.Get("/cpf/generate", handlers.GenerateCPF)
-		r.Post("/cnpj/validate", handlers.ValidateCNPJ)
-		r.Get("/cnpj/generate", handlers.GenerateCNPJ)
-		r.Post("/base64/encode", handlers.EncodeBase64)
-		r.Post("/base64/decode", handlers.DecodeBase64)
-		r.Post("/jwt/decode", handlers.DecodeJWT)
-		r.Post("/json/format", handlers.FormatJSON)
-		r.Post("/json/minify", handlers.MinifyJSON)
-		r.Post("/json/validate", handlers.ValidateJSON)
-		r.Get("/uuid", handlers.GenerateUUID)
-		r.Post("/qr/encode", handlers.EncodeQR)
-		r.Post("/qr/decode", handlers.DecodeQR)
-	})
 
 	return r
 }

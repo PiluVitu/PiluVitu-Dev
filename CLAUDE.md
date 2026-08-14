@@ -4,33 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **Monorepo.** Este arquivo cobre só o que é **transversal** (orquestração, segurança de deps, colocation, CI/CD). Cada workspace tem seu próprio `CLAUDE.md` com os detalhes — quando mexer num app, o Claude Code carrega este + o do app. Não duplicar: cada fato mora num único arquivo.
 >
-> | Workspace        | `CLAUDE.md`                | Cobre                                                                                                                                                                        |
-> | ---------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-> | `apps/web`       | `apps/web/CLAUDE.md`       | Next.js/React frontend, conteúdo (Keystatic), tema, blog, `/tasks`, `/tools`, `/admin`, votação **UI**, deploy Vercel                                                        |
-> | `apps/api`       | `apps/api/CLAUDE.md`       | Go API (chi), votação **backend**, auth Google, Sheets/TMDb/Drive, envelope, logging, hosting (Cloudflare Tunnel)                                                            |
-> | `apps/financas`  | `apps/financas/CLAUDE.md`  | Worker Cloudflare (Hono + D1 + Static Assets), SPA Vite/React no design system compartilhado, dívidas, parcelas, comprometido, login Google (Better Auth), deploy `wrangler` |
-> | `packages/tools` | `packages/tools/CLAUDE.md` | `@piluvitu/tools` — lógica pura (TS, sem React/DOM) compartilhada pelo `/tools`                                                                                              |
-> | `packages/ui`    | `packages/ui/CLAUDE.md`    | `@piluvitu/ui` — design system compartilhado: tokens, `cn()`, 14 componentes shadcn/ui (New York/Radix), consumidos por `apps/web` **e** `apps/financas/web`                 |
+> | Workspace        | `CLAUDE.md`                | Cobre                                                                                                                                                                                                                                                 |
+> | ---------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | `apps/web`       | `apps/web/CLAUDE.md`       | Next.js/React frontend, conteúdo (Keystatic), tema, blog, `/tasks`, `/tools`, `/admin`, votação **UI**, deploy Vercel                                                                                                                                 |
+> | `apps/api`       | `apps/api/CLAUDE.md`       | Go API (chi), votação **backend**, auth Google, Sheets/TMDb/Drive, envelope, logging, hosting (Cloudflare Tunnel)                                                                                                                                     |
+> | `apps/financas`  | `apps/financas/CLAUDE.md`  | Worker Cloudflare (Hono + D1 + Static Assets), SPA Vite/React no design system compartilhado, dívidas, parcelas, comprometido, login Google (Better Auth), deploy `wrangler`                                                                          |
+> | `apps/ramielle`  | `apps/ramielle/CLAUDE.md`  | Worker Cloudflare (Hono + D1), substituindo a API Go fatia a fatia: as 9 rotas de `/votacao` (Sheets, sorteio, TMDb inclusos, fatia ③) + as 3 de `/admin`, auth Google (Better Auth, votação **LIVRE** — oposto do finanças), CORS, deploy `wrangler` |
+> | `apps/promeia`   | `apps/promeia/CLAUDE.md`   | Serviço Python local (FastAPI): o que exige GPU, modelo local ou arquivo em disco. Insight financeiro; PDF/transcrição depois                                                                                                                         |
+> | `packages/tools` | `packages/tools/CLAUDE.md` | `@piluvitu/tools` — lógica pura (TS, sem React/DOM) compartilhada pelo `/tools`                                                                                                                                                                       |
+> | `packages/ui`    | `packages/ui/CLAUDE.md`    | `@piluvitu/ui` — design system compartilhado: tokens, `cn()`, 14 componentes shadcn/ui (New York/Radix), consumidos por `apps/web` **e** `apps/financas/web`                                                                                          |
 
 > **Regra de manutenção (global):** sempre que implementar uma nova tecnologia ou mudar um fluxo, atualize o `CLAUDE.md` **do workspace onde mexeu** (ou este, se for transversal) pra mantê-lo sempre atualizado.
 
 ## Tech Stack (visão geral)
 
-Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com cinco frentes:
+Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com sete frentes:
 
 - **`apps/web`** — **Next.js 16** (App Router), **React 19**, **TypeScript** strict, **Tailwind CSS 4** + **shadcn/ui**. Consome os tokens **e os componentes** do design system compartilhado de **`packages/ui`** (`@piluvitu/ui`) via `@import`/`@source` em `app/globals.css` + imports `@piluvitu/ui/<componente>`. **Storybook 10**. Hospedado na **Vercel** com ISR. → detalhes em `apps/web/CLAUDE.md`.
 - **`apps/api`** — **Go 1.23**, **chi v5**, **SQLite** (`modernc.org/sqlite`, puro Go, sem CGo). Exposto hoje via **Cloudflare Tunnel**; destino futuro **Google Cloud Run** (`deploy-api.yml` pronto, fica skipado até `GCP_PROJECT_ID` ser cadastrado em Variables). Stack local LLM co-hospeda **Ollama** (nativo, GPU/Metal) + API + túnel via `process-compose` (`make stack`). → detalhes em `apps/api/CLAUDE.md`.
 - **`apps/financas`** — **Cloudflare Worker** (Hono + D1 SQLite) servindo uma **SPA Vite + React 19** por Static Assets, em `financas.piluvitu.com.br`, protegida por login Google (**Better Auth** — o Cloudflare Access saiu do módulo). SPA no **Tailwind CSS 4** + **`packages/ui`** (`@piluvitu/ui`, mesmo design system do `apps/web`), via plugin Vite. Testes com `@cloudflare/vitest-pool-workers` (Worker) e Vitest/jsdom (SPA). → detalhes em `apps/financas/CLAUDE.md`.
+- **`apps/ramielle`** — **Cloudflare Worker** (Hono + D1 SQLite), substituindo a API Go (`apps/api`) fatia a fatia — hoje: as **9** rotas de `/votacao` (sessões, votos, apuração, desempate e, desde a fatia ③, o sorteio via Google Sheets + enriquecimento TMDb) e as **3** de `/admin` (usuários, backups), todas com paridade de shape/código/mensagem contra a Go, com login Google (**Better Auth**, mesma lib do finanças, mas votação **LIVRE**: sem allowlist de acesso, oposto do finanças que é fail-closed de usuário único). Vai morar em `ramielle.piluvitu.com.br`; CORS explícito com credenciais porque `apps/web` mora em outra origem (`piluvitu.com.br`). Testes com `@cloudflare/vitest-pool-workers`. Nada em produção depende dele ainda — `apps/web` segue na Go. → detalhes em `apps/ramielle/CLAUDE.md`.
+- **`apps/promeia`** — **Python 3.13** (FastAPI + uv), serviço local no MacBook do dono, atrás de túnel, para o que exige GPU/modelo local/disco — hoje o insight financeiro (lê agregados do ramielle, gera texto via **Ollama** local, publica de volta). **Segunda linguagem no monorepo** (a primeira além de TS/Go): custo aceito de propósito — segundo toolchain (`uv`), segundo runner de CI, segunda política de dependência (ver _Dependency security policy_ abaixo) — porque Whisper/pdfplumber/OCR são Python de referência, e Go foi descartado por ser a linguagem que está saindo do monorepo (ver `project-migrar-go-para-ts-worker` na memória). → detalhes em `apps/promeia/CLAUDE.md`.
 - **`packages/tools`** — **`@piluvitu/tools`**, biblioteca de lógica pura em TS consumida pelo web. → detalhes em `packages/tools/CLAUDE.md`.
 - **`packages/ui`** — **`@piluvitu/ui`**, design system compartilhado (tokens + `cn()` + 14 componentes shadcn/ui, um export por subpath, sem barrel, sem build próprio), consumido por `apps/web` (webpack/Turbopack) **e** `apps/financas/web` (Vite). → detalhes em `packages/ui/CLAUDE.md`.
 - **GitHub Actions** — CI (`ci.yml`) bloqueia PR; `deploy-api.yml` aguarda credenciais GCP; `trivy.yml` para scan de segurança.
 
 ## Dependency security policy
 
+This section is about the **pnpm** side of the monorepo (`apps/web`, `apps/financas`, `packages/*`). The Python side (`apps/promeia`) has its own rules, listed separately below — the two toolchains don't share a policy.
+
 - **pnpm ≥ 11 required.** pnpm 11 blocks lifecycle scripts by default (supply-chain defense).
 - **Adding a dependency that needs install scripts:** add it explicitly to `allowBuilds` in `pnpm-workspace.yaml`. Never set `dangerouslyAllowAllBuilds: true`.
 - **`minimumReleaseAge: 1440`** (set in `pnpm-workspace.yaml`): pnpm skips versions published less than 24 h ago, giving the community time to detect and report malicious releases.
 - Run `pnpm audit` periodically and before releases.
+
+**Python (`apps/promeia`):** `uv.lock` is committed, and CI/reproducible installs always use `uv sync --locked` (errors out if the lock is stale instead of silently resolving a new version — the exact equivalent of `pnpm install --frozen-lockfile`; `--frozen` is weaker, see gotcha below). **There IS a Python equivalent of `minimumReleaseAge`, and it's on:** `exclude-newer = "24 hours"` under `[tool.uv]` in `apps/promeia/pyproject.toml` — same friendly-duration cooldown window as pnpm's `minimumReleaseAge: 1440`, just spelled differently because `uv` takes a duration string instead of minutes. `uv lock`/`uv sync` refuse to resolve any version published in the last 24h; this was proven to bite for real once already (`fastapi` had to be pinned down from `0.140.7` to `0.140.0` because `0.140.7` fell inside the window — see the comment above `fastapi` in `apps/promeia/pyproject.toml`).
+
+⚠️ **`uv sync --frozen` vs `--locked`:** `--frozen` installs from the lock as-is, with no check that it still matches `pyproject.toml` — an edited dependency without a re-lock passes silently. `--locked` errors instead. Use `--locked` wherever the intent is "reproducible install, fail if the lock drifted" (CI, this policy); `--frozen` is only for the rare case of deliberately installing a lockfile you know is stale.
 
 ## Commands
 
@@ -43,11 +53,17 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `make dev-api`                          | Go API com **hot reload** (air)                                                      |
 | `make storybook`                        | Só o Storybook em http://localhost:6017                                              |
 | `make stack`                            | Sobe **Ollama + Go API + Cloudflare Tunnel** via `process-compose` (stack local LLM) |
-| `make stop`                             | Libera as portas 8081/3333/6017 se travarem                                          |
+| `make stop`                             | Libera as portas 8081/8082/3333/6017 se travarem                                     |
 | `make build-api`                        | Compila binário Go API em bin/api                                                    |
 | `make build-cli`                        | Compila CLI Go em bin/piluvitu                                                       |
-| `make test`                             | Todos os testes (pnpm -r test + go test)                                             |
-| `make lint`                             | ESLint + go vet                                                                      |
+| `make dev-ramielle`                     | Worker ramielle (Hono + D1) via `wrangler dev` em http://localhost:8788              |
+| `make test-ramielle`                    | `pnpm --filter @piluvitu/ramielle test`                                              |
+| `make dev-promeia`                      | Serviço Python (FastAPI) local com `--reload` em http://localhost:8082               |
+| `make test-promeia`                     | `cd apps/promeia && uv run pytest`                                                   |
+| `make lint-promeia`                     | `uv run ruff check .` + `uv run ruff format --check .` (apps/promeia)                |
+| `make insight`                          | Gera e publica o insight financeiro (`promeia-insight`) — exige Ollama + tokens      |
+| `make test`                             | Todos os testes (pnpm -r test + go test + **uv run pytest** do promeia)              |
+| `make lint`                             | ESLint + go vet + **ruff** (check + format --check) do promeia                       |
 | `pnpm --filter @piluvitu/web dev`       | Dev Next.js direto                                                                   |
 | `pnpm --filter @piluvitu/web build`     | Build Next.js                                                                        |
 | `pnpm --filter @piluvitu/web storybook` | Storybook em 6017                                                                    |
@@ -78,10 +94,11 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 
 ### Pre-commit hook (lint-staged)
 
-`.husky/pre-commit` roda **`pnpm exec lint-staged`** — formata/linta só os arquivos staged (antes era `prettier --write "**/*"`, que varria o repo inteiro incluindo `.next/`). Configs em dois níveis (lint-staged usa a mais próxima de cada arquivo, com cwd no diretório dela):
+`.husky/pre-commit` roda **`pnpm exec lint-staged`** — formata/linta só os arquivos staged (antes era `prettier --write "**/*"`, que varria o repo inteiro incluindo `.next/`). Configs em três níveis (lint-staged usa a mais próxima de cada arquivo, com cwd no diretório dela — comportamento documentado do próprio pacote, não algo amarrado à mão: "the directory of each config file will be used as the working directory for those tasks"):
 
-- **Root `package.json`** → `*.{js,ts,tsx,json,md,css}: prettier --write` (arquivos da raiz / fora de apps/web). `prettier` + `prettier-plugin-tailwindcss` estão nas devDeps do root pra resolverem onde o hook roda.
+- **Root `package.json`** → `*.{js,ts,tsx,json,md,css}: prettier --write` (arquivos da raiz / fora de apps/web e apps/promeia). `prettier` + `prettier-plugin-tailwindcss` estão nas devDeps do root pra resolverem onde o hook roda.
 - **`apps/web/package.json`** → `*.{ts,tsx}: [eslint --fix, prettier --write]` e demais assets só prettier. Fica em apps/web (não no root) porque o ESLint 9 flat config (`eslint.config.mjs`) e o plugin tailwind precisam resolver com cwd em apps/web.
+- **`apps/promeia/.lintstagedrc.json`** → `*.py: [uv run ruff check --fix, uv run ruff format]`. Arquivo `.lintstagedrc.json` avulso, não uma entrada em `package.json` — `apps/promeia` não tem (nem precisa de) `package.json`. Fica ali, e não na raiz, pelo mesmo motivo do apps/web: `uv run` resolve o projeto Python a partir do cwd, então rodar com cwd na raiz não acharia o `pyproject.toml`/venv de `apps/promeia`. Provado rodando de verdade: um `.py` mal formatado, `git add` + `git commit`, teve o hook reformatando-o antes do commit fechar.
 
 Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e CI).
 
@@ -110,11 +127,11 @@ Fontes separadas por frente — a lista completa de cada uma vive no `CLAUDE.md`
 
 ### Workflows GitHub Actions
 
-| Workflow         | Trigger                                          | Faz o quê                                                                                                                                                                                                                                                                                                               |
-| ---------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`         | PR + push em `main`                              | Em paralelo: web (`lint` + `lint`/`test` de `packages/ui` + `tsc --noEmit` + `jest` + `next build:ci`, gate do `@source` incluso), api (`go vet` + `go test -race` + `go build`) e financas (`tsc --noEmit` do Worker e do SPA + build do SPA — os dois gates, `@source` e lazy-chart, inclusos — + `vitest` dos dois). |
-| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU).                                                                                                                                                                                               |
-| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                                                                                                                                                                                                                        |
+| Workflow         | Trigger                                          | Faz o quê                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`         | PR + push em `main`                              | Em paralelo, **cinco** jobs: web (`lint` + `lint`/`test` de `packages/ui` + `tsc --noEmit` + `jest` + `next build:ci`, gate do `@source` incluso), api (`go vet` + `go test -race` + `go build`), financas (`tsc --noEmit` do Worker e do SPA + build do SPA — os dois gates, `@source` e lazy-chart, inclusos — + `vitest` dos dois), ramielle (`tsc --noEmit` + `vitest` — Worker sem SPA, sem gate de build) e promeia (`uv sync --locked` + `ruff check` + `ruff format --check` + `pytest`). |
+| `deploy-api.yml` | push em `main` que toca `apps/api/**` + dispatch | Build da imagem com `apps/api/Dockerfile`, push pra Artifact Registry, deploy no Cloud Run (min=0, max=3, 256Mi, 1 vCPU).                                                                                                                                                                                                                                                                                                                                                                         |
+| `trivy.yml`      | push/PR em `main` + cron semanal                 | Scan de filesystem, secrets (estrito) e misconfig — sobe SARIF pra aba Security.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### Secrets/Vars necessários no GitHub (Settings → Secrets and variables → Actions)
 

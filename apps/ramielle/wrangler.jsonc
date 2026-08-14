@@ -1,0 +1,56 @@
+{
+  // Mesma conta do finanças (confirmado com `wrangler whoami` na Task 1) —
+  // conta única, sem ambiguidade hoje, mas é o padrão que apps/financas/wrangler.jsonc
+  // já segue e que esta task tinha que espelhar.
+  "account_id": "c52a9959db02d735ef489d9728ccf4de",
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "piluvitu-ramielle",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  // nodejs_compat: o better-auth (Task 3) importa node:crypto/node:async_hooks.
+  // Mesma justificativa medida em apps/financas/wrangler.jsonc.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Custom Domain, não *.workers.dev: em workers.dev o domínio registrável
+  // passa a ser diferente do de piluvitu.com.br, o cookie de sessão vira
+  // cross-SITE, SameSite=Lax deixa de ser enviado, e a quebra SÓ aparece em
+  // produção (local usa localhost dos dois lados). Mesmo motivo já
+  // documentado no finanças.
+  "routes": [{ "pattern": "ramielle.piluvitu.com.br", "custom_domain": true }],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "piluvitu-ramielle",
+      // `wrangler d1 create piluvitu-ramielle` rodou nesta task (conta já
+      // autenticada, mesmo account_id do finanças) e criou o banco real.
+      // Ainda sem nenhuma migration aplicada em produção — 0001 é Task 2.
+      "database_id": "19fac981-5b34-4c76-9885-c21cb7539dde",
+      "migrations_dir": "migrations",
+    },
+  ],
+
+  "vars": {
+    // Não é conveniência: no Worker isProduction é sempre falso (não há
+    // NODE_ENV), então é o https:// deste valor que liga o `secure` e o
+    // prefixo __Secure- do cookie de sessão (mesmo raciocínio do finanças).
+    "BETTER_AUTH_URL": "https://ramielle.piluvitu.com.br",
+
+    // ⚠️ CSV de verdade (ao contrário do ALLOWED_EMAIL do finanças, que é
+    // um e-mail só) — src/lib/auth.ts#isAdminEmail trata como lista,
+    // espelhando o Go (apps/api). A votação é LIVRE: isto NÃO é allowlist
+    // de acesso (todo mundo entra), é só quem o guard da Task 4 trata como
+    // admin. Vazio não travaria login nenhum — só ninguém seria admin.
+    "ADMIN_EMAILS": "paulo.tspi@gmail.com",
+
+    // Task 5 (CORS): mesma paridade do infra/docker-compose.yml da Go —
+    // produção declara só a origem de produção do apps/web, sem
+    // http://localhost:3333. Não é obrigatório (src/lib/cors.ts#DEFAULT_
+    // ALLOWED_ORIGINS já inclui os dois e cobriria produção sozinho), mas
+    // deixa explícito aqui, sem depender do default do código pra saber o
+    // que está de fato permitido em produção. CSV — src/lib/cors.ts trata
+    // como lista, trim por item.
+    "CORS_ALLOWED_ORIGINS": "https://piluvitu.com.br",
+  },
+}

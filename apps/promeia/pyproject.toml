@@ -1,0 +1,71 @@
+[project]
+name = "promeia"
+version = "0.1.0"
+description = "Serviço local do MacBook: processamento que exige GPU, modelo local ou arquivo em disco"
+requires-python = ">=3.13"
+# fastapi>=0.140.0, não 0.140.7: o piso original (0.140.7) era só o que
+# `uv add` resolveu na hora — não uma versão exigida por nenhum recurso. Ao
+# ligar `exclude-newer` (abaixo), 0.140.7 caiu dentro da janela de 24h e
+# `uv lock` passou a recusar resolver (o piso antigo tornava a resolução
+# impossível, não só mais lenta). Rebaixado para 0.140.0, a última versão
+# fora da janela — os três gates (pytest/ruff check/ruff format) foram
+# re-rodados depois do rebaixamento e continuam verdes.
+dependencies = [
+    "fastapi>=0.140.0",
+    "httpx>=0.28.1",
+    "uvicorn>=0.51.0",
+]
+
+[project.scripts]
+promeia-insight = "promeia.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/promeia"]
+exclude = ["*_test.py"]
+
+# python_files: o default do pytest é `test_*.py`, que BRIGA com a lei de
+# colocation deste projeto (teste no mesmo diretório do fonte, nomeado a
+# partir dele — `cpf.go` → `cpf_test.go`). Aqui é `money.py` → `money_test.py`.
+[tool.pytest.ini_options]
+python_files = ["*_test.py"]
+testpaths = ["src"]
+addopts = "-q"
+
+# Espelho do `minimumReleaseAge: 1440` de pnpm-workspace.yaml: recusa
+# resolver/instalar qualquer versão publicada há menos de 24h, dando tempo
+# da comunidade reportar um release malicioso antes que ele entre no lock
+# deste projeto. Mesma defesa contra supply-chain, outro toolchain — friendly
+# duration ("24 hours"), não minutos, é o formato que `uv` aceita aqui.
+[tool.uv]
+exclude-newer = "24 hours"
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+# insight.py:build_prompt monta o prompt enviado ao modelo como um bloco de
+# texto em português corrido — o "PROMPT É CONTRATO" (task 5): o texto tem
+# que bater byte a byte com o que o dono já revisou, então as linhas longas
+# do parágrafo não podem ser quebradas só para caber em 88 colunas (isso
+# inseriria uma quebra de linha real no prompt que o modelo recebe). Único
+# arquivo com essa exceção — E501 continua valendo para o resto do projeto.
+[tool.ruff.lint.per-file-ignores]
+# Os dois arquivos que montam PROMPT são contrato byte a byte com o que o dono
+# já revisou e calibrou contra o modelo real. Uma quebra de linha inserida
+# pra caber em 88 colunas é uma quebra de linha REAL no texto mandado ao
+# modelo — não é formatação, é mudar a entrada de dados.
+"src/promeia/insight.py" = ["E501"]
+"src/promeia/prompts.py" = ["E501"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+]

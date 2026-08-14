@@ -1,0 +1,80 @@
+{
+  "_gerado_por": "go run contra apps/api/internal/votacao — NÃO editar à mão",
+  "sessionAberta": {
+    "ID": 7,
+    "Title": "Sessão de maio",
+    "Status": "open",
+    "CreatedBy": 1,
+    "CreatedAt": "2026-05-19T12:00:00Z",
+    "ClosedAt": null,
+    "WinnerMovieID": null,
+    "WinnerMethod": null,
+    "SortOptionsJSON": "{}"
+  },
+  "sessionFechada": {
+    "ID": 7,
+    "Title": "Sessão de maio",
+    "Status": "closed",
+    "CreatedBy": 1,
+    "CreatedAt": "2026-05-19T12:00:00Z",
+    "ClosedAt": "2026-05-20T18:30:00Z",
+    "WinnerMovieID": 42,
+    "WinnerMethod": "roulette",
+    "SortOptionsJSON": "{}"
+  },
+  "filmeSemTmdb": {
+    "ID": 3,
+    "SessionID": 7,
+    "Category": "comedia",
+    "Title": "Um Filme Qualquer",
+    "Type": "filme",
+    "PosterURL": "",
+    "TMDbID": null,
+    "WasWatched": false,
+    "SheetNumber": null
+  },
+  "filmeComTmdb": {
+    "ID": 4,
+    "SessionID": 7,
+    "Category": "terror",
+    "Title": "Outro Filme",
+    "Type": "serie",
+    "PosterURL": "https://image.tmdb.org/t/p/w500/abc123.jpg",
+    "TMDbID": 603,
+    "WasWatched": true,
+    "SheetNumber": 12
+  },
+  "tiebreak": {
+    "_comentario": "hex(TiebreakSeed(...)) e PickTiebreakIndex(seed, n) de apps/api/internal/votacao/tiebreak.go, gerados via go run num apps/api/cmd/paritytmp/main.go descartável (apagado depois de capturar a saída — ver git status limpo no report da Task 5). tiedIds está FORA DE ORDEM de propósito: TiebreakSeed ordena internamente antes de escrever no hash.",
+    "clientEntropyHex": "00112233445566778899aabbccddeeff",
+    "serverNonceHex": "ffeeddccbbaa99887766554433221100",
+    "sessionId": 7,
+    "tiedIds": [42, 7, 19],
+    "seedHex": "a7e8e8027007954c478c3545e65b9a0c829da0764dd159f29b681c2eb9c627d3",
+    "pickIndexByN": {
+      "2": 0,
+      "3": 0,
+      "5": 3,
+      "8": 2
+    },
+    "routeScenario": {
+      "_comentario": "SEGUNDO vetor, mesma metodologia (go run descartável, apagado) — desta vez com serverNonce de 32 bytes (o tamanho REAL que o handler Go gera via crypto/rand; o vetor acima usa 16 só pras funções puras). Usado no teste de POST /sessions/{id}/tiebreak: o teste mocka crypto.getRandomValues do Worker pra devolver EXATAMENTE este serverNonceHex e confere que a rota devolve o mesmo winner_movie_id que o Go produziria pra esta combinação exata de entropy+nonce+sessionId+tiedIds.",
+      "clientEntropyHex": "00112233445566778899aabbccddeeff",
+      "serverNonceHex": "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4",
+      "sessionId": 7,
+      "tiedIds": [42, 7, 19],
+      "seedHex": "41e49c180a6fbfbbd3f8877fee9e45a790591e9c830d9ae27602008cddb77293",
+      "idx": 2,
+      "winnerMovieId": 42
+    }
+  },
+  "_comentario_backup": "backup abaixo é json.Marshal(votacao.Backup{...}) de apps/api/internal/votacao/backups.go, gerado via go run num apps/api/cmd/paritybackup/main.go descartável (apagado depois de capturar a saída, git status confirmado limpo em apps/api — Task 5). O struct Backup não tem tag `json:` nenhuma, então as chaves saem PascalCase na ordem dos campos do struct — é essa mistura de convenção (backups é PascalCase, users é snake_case) que os testes desta task afirmam literalmente.",
+  "backup": {
+    "ID": 5,
+    "DriveFileID": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    "DriveFileName": "votacao-2026-05-19.sqlite",
+    "SizeBytes": 123456,
+    "TriggerType": "manual",
+    "CreatedAt": "2026-05-19T12:00:00Z"
+  }
+}

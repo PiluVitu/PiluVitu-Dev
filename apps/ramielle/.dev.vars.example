@@ -1,0 +1,97 @@
+# Task 3 (Better Auth com Google): três segredos, nunca `vars` em
+# wrangler.jsonc — BETTER_AUTH_URL e ADMIN_EMAILS já estão lá (não são
+# segredo). Em produção, os três abaixo vão via `wrangler secret put`.
+# ⚠️ 8788, NÃO 8787. `make dev-ramielle` sobe este Worker na 8788
+# (Makefile:57); a 8787 é o wrangler do FINANÇAS. Não é cosmético: o Better
+# Auth deriva daqui o `redirect_uri` (`/api/auth/callback/google`) e a
+# primeira entrada de `trustedOrigins` (src/lib/auth.ts:158,185) — apontar
+# pra 8787 entrega o `code` do OAuth na origem do outro app, que tem o MESMO
+# mount `/api/auth/*` e o MESMO OAuth Client. O sintoma aparece como
+# "CORS/origem não confiável", não como configuração errada.
+BETTER_AUTH_URL=http://localhost:8788
+BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: NÃO crie um OAuth Client novo pro
+# ramielle. São os valores do MESMO client que já serve a área de admin de
+# outro app e a API Go (ver apps/ramielle/CLAUDE.md § Pendências do dono) —
+# é por ser o mesmo client que a redirect URI de produção pode ser ADITIVA
+# (adicionar, nunca substituir as existentes). Pra dev local, qualquer client
+# de teste serve (o fluxo OAuth não completa contra o Google de verdade —
+# ver src/lib/auth.test.ts, que mocka o token endpoint).
+GOOGLE_CLIENT_ID=troque-pelo-client-id-de-teste-ou-do-client-existente
+GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
+
+# Só localmente, se quiser testar como admin com um e-mail diferente do de
+# wrangler.jsonc. CSV de verdade (ver src/lib/auth.ts#isAdminEmail) — ao
+# contrário do ALLOWED_EMAIL do finanças, que é um e-mail só.
+# ADMIN_EMAILS=dono@exemplo.com,outro-admin@exemplo.com
+
+# Task 5 (CORS). ⚠️ CORREÇÃO (achado da revisão da T2 da fatia ④): a versão
+# anterior deste comentário dizia que "o `wrangler dev` comum não precisa desta
+# linha", porque `src/lib/cors.ts#DEFAULT_ALLOWED_ORIGINS` já inclui
+# http://localhost:3333. **Está errado.** `wrangler.jsonc#vars` fixa
+# `CORS_ALLOWED_ORIGINS = "https://piluvitu.com.br"`, e `vars` do
+# wrangler.jsonc valem TAMBÉM em `wrangler dev` — só um `.dev.vars` as
+# sobrescreve. Ou seja: `allowedOrigins()` nunca cai no default em dev, e sem
+# a linha abaixo o `apps/web` em http://localhost:3333 fica fora do CORS **e**
+# fora de `trustedOrigins` (src/lib/auth.ts deriva um do outro) — o login
+# responde 403 INVALID_CALLBACK_URL, com um erro que não diz que a causa é
+# CORS. DESCOMENTE a linha para desenvolver o web contra o ramielle local.
+# CSV, mesmo contrato de ADMIN_EMAILS acima.
+CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
+
+# Task 2 (fatia ③): cliente do Sheets (src/lib/gsheets.ts) — lê filmes e
+# categorias da planilha de votação. Os três SEMPRE via `wrangler secret
+# put` em produção — nunca `vars` do wrangler.jsonc (texto claro
+# commitado), nem GSHEETS_MOVIES_SPREADSHEET_ID/RANGE: não são secretos por
+# natureza, mas o valor real da planilha de produção não é commitado (mesmo
+# tratamento que apps/api/.env já dá a eles, também fora do git). Sem
+# GOOGLE_SA_JSON OU GSHEETS_MOVIES_SPREADSHEET_ID, GET /votacao/categorias
+# responde 503 sheets_disabled — feature desligada, não erro.
+# GOOGLE_SA_JSON={"type":"service_account","client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","token_uri":"https://oauth2.googleapis.com/token",...}
+# GSHEETS_MOVIES_SPREADSHEET_ID=troque-pelo-id-da-planilha-de-filmes
+# GSHEETS_MOVIES_RANGE=A2:F
+
+# Task 4 (fatia ③): cliente do TMDb (src/lib/tmdb.ts) — busca pôster/id por
+# título em POST /votacao/sessions. Mesma chave que apps/api/.env já usa
+# (https://themoviedb.org/settings/api). Sem ela, a sessão é criada
+# normalmente, só SEM pôsteres — nunca erro.
+# TMDB_API_KEY=troque-pela-chave-do-tmdb
+
+# Atelier (revisão de artigo) — o serviço promeia, que faz a inferência local.
+#
+# ⚠️ PROMEIA_TOKEN é SECRET (`wrangler secret put`), nunca `vars` do
+# wrangler.jsonc: é ele que impede que qualquer um que descubra o hostname do
+# túnel rode inferência na GPU do dono (§3 do spec). O navegador NUNCA o vê —
+# o fluxo é navegador → ramielle → promeia, e é este Worker que o guarda.
+#
+# Sem as DUAS, POST /admin/llm/proofread e /refine respondem 503
+# promeia_disabled: feature desligada, não quebrada (mesmo padrão do
+# sheets_disabled). Em dev, o promeia sobe com `make dev-promeia` na 8082.
+# PROMEIA_URL=http://localhost:8082
+# PROMEIA_TOKEN=o-mesmo-valor-do-PROMEIA_TOKEN-do-apps/promeia
+
+# Distribuição de artigo (dev.to/Hashnode/Bluesky/Mastodon) —
+# `.superpowers/sdd/2026-08-13-ramielle-distribuicao/`, Task 4
+# (`src/routes/distribution.ts#montarPublishers`). As 7 SEMPRE via `wrangler
+# secret put` em produção — nunca `vars` do wrangler.jsonc (texto claro
+# commitado): são credenciais de terceiro, mesmo tratamento de
+# GOOGLE_SA_JSON/PROMEIA_TOKEN acima.
+#
+# ⚠️ Só o BLUESKY tem credencial real hoje (medido em apps/api/.env,
+# 2026-08-13) — dev.to, Hashnode e Mastodon têm as chaves presentes e
+# VAZIAS na API Go: o dono ainda não criou conta/token nessas três. Sem
+# NENHUMA das 4 plataformas configurada, as 3 rotas respondem 503
+# distribution_unavailable — feature desligada, não quebrada.
+#
+# ⚠️ Armadilha 9 (replicada de propósito, ver o comentário em
+# `montarPublishers`): nas 3 plataformas de 2 credenciais (Hashnode,
+# Bluesky, Mastodon), só a PRIMEIRA é validada antes de o publisher ser
+# construído — a segunda pode ficar vazia sem impedir a plataforma de
+# "contar" pro 503 acima; ela só falha na hora de publicar de verdade.
+# DEVTO_API_KEY=troque-pela-chave-do-dev.to
+# HASHNODE_API_TOKEN=troque-pelo-token-do-hashnode
+# HASHNODE_PUBLICATION_ID=troque-pelo-id-da-publicacao-hashnode
+# BLUESKY_HANDLE=troque-pelo-handle-do-bluesky
+# BLUESKY_APP_PASSWORD=troque-pelo-app-password-do-bluesky
+# MASTODON_INSTANCE_URL=troque-pela-url-da-instancia-mastodon
+# MASTODON_ACCESS_TOKEN=troque-pelo-access-token-mastodon

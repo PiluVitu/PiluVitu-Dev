@@ -1,0 +1,568 @@
+import { env } from 'cloudflare:test'
+import { describe, expect, it } from 'vitest'
+import { nowIsoUtc } from '../lib/dates'
+import {
+  closeVotingSession,
+  createVotingSession,
+  getSessionMovies,
+  getVotingSession,
+  insertSessionMovies,
+  listVotingSessions,
+  setSessionWinner,
+  type SessionMovieInsert,
+} from './sessions'
+
+const DB = env.DB
+
+// --------------------------------------------------------------------------
+// Helpers de fixture — semeiam o D1 direto via INSERT (mesmo padrão de
+// schema.test.ts). Cada teste usa google_sub/emails próprios; o reset() do
+// beforeEach global (test-setup.ts) já limpa tudo entre testes.
+// --------------------------------------------------------------------------
+
+async function novoUsuario(googleSub: string): Promise<number> {
+  const row = await DB.prepare(
+    `INSERT INTO users (google_sub, email, name, is_admin) VALUES (?, ?, ?, 0) RETURNING id`,
+  )
+    .bind(googleSub, `${googleSub}@example.com`, `User ${googleSub}`)
+    .first<{ id: number }>()
+  if (row === null) throw new Error('RETURNING id não devolveu linha')
+  return row.id
+}
+
+async function novaSessao(
+  createdBy: number,
+  opts: {
+    title?: string
+    createdAt?: string
+    status?: 'open' | 'closed'
+  } = {},
+): Promise<number> {
+  const {
+    title = 'Sessão de teste',
+    createdAt = '2026-05-19 12:00:00',
+    status = 'open',
+  } = opts
+  const row = await DB.prepare(
+    `INSERT INTO voting_sessions (title, status, created_by, created_at)
+     VALUES (?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(title, status, createdBy, createdAt)
+    .first<{ id: number }>()
+  if (row === null) throw new Error('RETURNING id não devolveu linha')
+  return row.id
+}
+
+/**
+ * Semeia com `id` EXPLÍCITO (SQLite aceita atribuir qualquer inteiro a uma
+ * coluna `INTEGER PRIMARY KEY`, mesmo fora da sequência de autoincremento)
+ * — necessário pro teste que prova `id DESC` mesmo quando `created_at` está
+ * fora de ordem em relação ao `id` (Fix round 1, Finding 1).
+ */
+async function novaSessaoComId(row: {
+  id: number
+  title: string
+  status: 'open' | 'closed'
+  createdBy: number
+  createdAt: string
+}): Promise<void> {
+  await DB.prepare(
+    `INSERT INTO voting_sessions (id, title, status, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  )
+    .bind(row.id, row.title, row.status, row.createdBy, row.createdAt)
+    .run()
+}
+
+async function novoFilme(
+  sessionId: number,
+  category: string,
+  title = 'Filme',
+): Promise<number> {
+  const row = await DB.prepare(
+    `INSERT INTO session_movies (session_id, category, title, type)
+     VALUES (?, ?, ?, 'filme')
+     RETURNING id`,
+  )
+    .bind(sessionId, category, title)
+    .first<{ id: number }>()
+  if (row === null) throw new Error('RETURNING id não devolveu linha')
+  return row.id
+}
+
+// --------------------------------------------------------------------------
+
+describe('getVotingSession', () => {
+  it('sessão inexistente devolve null — não lança', async () => {
+    await expect(getVotingSession(DB, 999999)).resolves.toBeNull()
+  })
+
+  it('sessão existente devolve a row com as colunas esperadas', async () => {
+    const userId = await novoUsuario('sub-get-existente')
+    const sessionId = await novaSessao(userId, { title: 'Minha sessão' })
+
+    const row = await getVotingSession(DB, sessionId)
+    expect(row).not.toBeNull()
+    expect(row?.id).toBe(sessionId)
+    expect(row?.title).toBe('Minha sessão')
+    expect(row?.status).toBe('open')
+    expect(row?.created_by).toBe(userId)
+    expect(row?.closed_at).toBeNull()
+    expect(row?.winner_movie_id).toBeNull()
+    expect(row?.winner_method).toBeNull()
+  })
+})
+
+describe('listVotingSessions', () => {
+  it('ordena por id DESC — caso normal (inserido em ordem, id e created_at crescem juntos)', async () => {
+    const userId = await novoUsuario('sub-list-ordem')
+    // Inserido na MESMA ordem cronológica do created_at — id ascende junto
+    // com a data, então id DESC e created_at DESC dão o mesmo resultado
+    // aqui (este teste sozinho NÃO discrimina entre os dois critérios; quem
+    // discrimina é o teste seguinte, de propósito).
+    const antiga = await novaSessao(userId, {
+      title: 'Antiga',
+      createdAt: '2026-01-01 00:00:00',
+    })
+    const media = await novaSessao(userId, {
+      title: 'Média',
+      createdAt: '2026-03-01 00:00:00',
+    })
+    const nova = await novaSessao(userId, {
+      title: 'Nova',
+      createdAt: '2026-06-01 00:00:00',
+    })
+
+    const rows = await listVotingSessions(DB, { limit: 20, offset: 0 })
+    expect(rows.map((r) => r.id)).toEqual([nova, media, antiga])
+  })
+
+  // ⚠️ Fix round 1 (Finding 1): este é o caso que SÓ passa com `ORDER BY id
+  // DESC` — com `created_at DESC` (a versão original, errada, desta
+  // função) o resultado seria [id 1, id 2], o INVERSO do esperado. Sem
+  // este teste, `created_at DESC` e `id DESC` são indistinguíveis (todo
+  // outro teste deste arquivo insere em ordem crescente nos dois campos ao
+  // mesmo tempo) e a suíte não prova a paridade de verdade — só que ALGUMA
+  // ordenação por data/id crescente funciona.
+  it('ordena por id DESC mesmo quando created_at diverge da ordem de id — só passa com id DESC (sessions.go:52, não usa created_at)', async () => {
+    const userId = await novoUsuario('sub-list-ordem-id-diverge')
+    // id=1 tem o created_at MAIS RECENTE; id=2 tem o MAIS ANTIGO — invertido
+    // de propósito.
+    await novaSessaoComId({
+      id: 1,
+      title: 'Id baixo, created_at recente',
+      status: 'open',
+      createdBy: userId,
+      createdAt: '2026-06-01 00:00:00',
+    })
+    await novaSessaoComId({
+      id: 2,
+      title: 'Id alto, created_at antigo',
+      status: 'open',
+      createdBy: userId,
+      createdAt: '2026-01-01 00:00:00',
+    })
+
+    const rows = await listVotingSessions(DB, { limit: 20, offset: 0 })
+    // id DESC ⇒ [2, 1]. Se a implementação voltasse a ordenar por
+    // created_at DESC, isto falharia com [1, 2].
+    expect(rows.map((r) => r.id)).toEqual([2, 1])
+  })
+
+  it('respeita limit e offset (paginação sobre a ordem id DESC)', async () => {
+    const userId = await novoUsuario('sub-list-paginacao')
+    const ids: number[] = []
+    for (let i = 0; i < 5; i++) {
+      ids.push(
+        await novaSessao(userId, {
+          title: `Sessão ${i}`,
+          createdAt: `2026-01-0${i + 1} 00:00:00`,
+        }),
+      )
+    }
+    // ids[4] tem o maior id (inserido por último).
+    const pagina1 = await listVotingSessions(DB, { limit: 2, offset: 0 })
+    expect(pagina1.map((r) => r.id)).toEqual([ids[4], ids[3]])
+
+    const pagina2 = await listVotingSessions(DB, { limit: 2, offset: 2 })
+    expect(pagina2.map((r) => r.id)).toEqual([ids[2], ids[1]])
+
+    const pagina3 = await listVotingSessions(DB, { limit: 2, offset: 4 })
+    expect(pagina3.map((r) => r.id)).toEqual([ids[0]])
+  })
+
+  // ⚠️ Fix round 1 (Finding 2): reforçado para provar o VALOR EFETIVO do
+  // clamp, não só "devolveu resultado nenhum a mais que o esperado". Com
+  // só 3 linhas semeadas, `toHaveLength(3)` passaria pra QUALQUER limit
+  // efetivo >= 3 (20, 50, 100...) — não discrimina o clamp de verdade.
+  // Semeando 25 linhas (mais que os 20 do default), `toHaveLength(20)`
+  // só passa se o clamp caiu EXATAMENTE no default, nunca em 100 (o teto
+  // documentado) nem nas 25 linhas reais.
+  it('limit fora de (0,100] cai pro default 20 EXATO — mesmo clamp do Store Go (sessions.go:45-51)', async () => {
+    const userId = await novoUsuario('sub-list-clamp-limit')
+    for (let i = 0; i < 25; i++) {
+      await novaSessao(userId, {
+        title: `S${i}`,
+        createdAt: `2026-02-${String(i + 1).padStart(2, '0')} 00:00:00`,
+      })
+    }
+
+    await expect(
+      listVotingSessions(DB, { limit: 0, offset: 0 }),
+    ).resolves.toHaveLength(20)
+    await expect(
+      listVotingSessions(DB, { limit: -5, offset: 0 }),
+    ).resolves.toHaveLength(20)
+    // 200 > 100: NÃO vira 100 (haveria 25 disponíveis pra confirmar um teto
+    // em 100 se fosse o caso), vira o default 20 — comportamento medido no
+    // Go, onde limit>100 reseta pro default em vez de ser truncado.
+    await expect(
+      listVotingSessions(DB, { limit: 200, offset: 0 }),
+    ).resolves.toHaveLength(20)
+    // Controle positivo: um limit válido dentro de (0,100] passa direto,
+    // sem cair no clamp — prova que o clamp é sobre a FAIXA, não um teto
+    // silencioso escondendo todo valor grande.
+    await expect(
+      listVotingSessions(DB, { limit: 25, offset: 0 }),
+    ).resolves.toHaveLength(25)
+  })
+
+  it('offset negativo cai pra 0 EXATO — mesmo resultado de offset:0, não um valor arbitrário', async () => {
+    const userId = await novoUsuario('sub-list-clamp-offset')
+    const ids: number[] = []
+    for (let i = 0; i < 5; i++) {
+      ids.push(
+        await novaSessao(userId, {
+          title: `O${i}`,
+          createdAt: `2026-03-0${i + 1} 00:00:00`,
+        }),
+      )
+    }
+
+    const comOffsetNegativo = await listVotingSessions(DB, {
+      limit: 3,
+      offset: -10,
+    })
+    const comOffsetZero = await listVotingSessions(DB, {
+      limit: 3,
+      offset: 0,
+    })
+    // Mesma página exata — não só "algum resultado", o valor efetivo é 0.
+    expect(comOffsetNegativo.map((r) => r.id)).toEqual(
+      comOffsetZero.map((r) => r.id),
+    )
+    expect(comOffsetNegativo.map((r) => r.id)).toEqual([ids[4], ids[3], ids[2]])
+  })
+})
+
+describe('getSessionMovies', () => {
+  it('sessão sem filmes devolve array vazio', async () => {
+    const userId = await novoUsuario('sub-movies-vazio')
+    const sessionId = await novaSessao(userId)
+
+    await expect(getSessionMovies(DB, sessionId)).resolves.toEqual([])
+  })
+
+  it('filmes vêm ordenados de forma estável (id ASC)', async () => {
+    const userId = await novoUsuario('sub-movies-ordem')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'acao', 'Filme A')
+    const m2 = await novoFilme(sessionId, 'comedia', 'Filme B')
+    const m3 = await novoFilme(sessionId, 'terror', 'Filme C')
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows.map((r) => r.id)).toEqual([m1, m2, m3])
+  })
+})
+
+// --------------------------------------------------------------------------
+// closeVotingSession/setSessionWinner (Task 4, fatia2 T4) — movidas de
+// `domain/votes.ts` na I3 (revisão final): ESCREVEM `voting_sessions`,
+// tabela da qual este arquivo é dono desde o corte por TABELA/AGREGADO (ver
+// o cabeçalho do arquivo fonte). Mesmo corpo de teste, só o `import` mudou.
+// --------------------------------------------------------------------------
+
+type SessaoRow = {
+  status: 'open' | 'closed'
+  closed_at: string | null
+  winner_movie_id: number | null
+  winner_method: string | null
+}
+
+async function sessaoRow(sessionId: number): Promise<SessaoRow> {
+  const row = await DB.prepare(
+    `SELECT status, closed_at, winner_movie_id, winner_method
+       FROM voting_sessions WHERE id = ?`,
+  )
+    .bind(sessionId)
+    .first<SessaoRow>()
+  if (row === null) throw new Error('sessão não encontrada')
+  return row
+}
+
+describe('closeVotingSession', () => {
+  it('happy path com vencedor — status=closed, closed_at e winner_movie_id gravados', async () => {
+    const userId = await novoUsuario('sub-close-vencedor')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    const agora = nowIsoUtc()
+
+    await expect(closeVotingSession(DB, sessionId, m1, agora)).resolves.toBe(
+      true,
+    )
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.closed_at).toBe(agora)
+    expect(row.winner_movie_id).toBe(m1)
+  })
+
+  it('empate (winnerMovieId=null) — fecha, closed_at gravado, winner_movie_id continua NULL', async () => {
+    const userId = await novoUsuario('sub-close-empate')
+    const sessionId = await novaSessao(userId)
+    const agora = nowIsoUtc()
+
+    await expect(closeVotingSession(DB, sessionId, null, agora)).resolves.toBe(
+      true,
+    )
+
+    const row = await sessaoRow(sessionId)
+    expect(row.status).toBe('closed')
+    expect(row.closed_at).toBe(agora)
+    expect(row.winner_movie_id).toBeNull()
+  })
+
+  it("sessão JÁ FECHADA devolve false — WHERE status='open' não bate nenhuma linha", async () => {
+    const userId = await novoUsuario('sub-close-jafechada')
+    const sessionId = await novaSessao(userId)
+    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
+
+    await expect(
+      closeVotingSession(DB, sessionId, null, nowIsoUtc()),
+    ).resolves.toBe(false)
+  })
+
+  it('sessão INEXISTENTE devolve false — mesma resposta de "já fechada" (ambiguidade intencional, herdada do Go)', async () => {
+    await expect(
+      closeVotingSession(DB, 999999, null, nowIsoUtc()),
+    ).resolves.toBe(false)
+  })
+})
+
+describe('setSessionWinner', () => {
+  it('grava winner_movie_id e winner_method na sessão', async () => {
+    const userId = await novoUsuario('sub-winner-grava')
+    const sessionId = await novaSessao(userId)
+    const m1 = await novoFilme(sessionId, 'Ação')
+    await closeVotingSession(DB, sessionId, null, nowIsoUtc())
+
+    await setSessionWinner(DB, sessionId, m1, 'votes')
+
+    const row = await sessaoRow(sessionId)
+    expect(row.winner_movie_id).toBe(m1)
+    expect(row.winner_method).toBe('votes')
+  })
+})
+
+// --------------------------------------------------------------------------
+// createVotingSession/insertSessionMovies (fatia ③, Task 4) — portes de
+// Store.CreateVotingSession (sessions.go:23-39) e Store.InsertSessionMovies
+// (movies.go:21-60). Ver o cabeçalho do arquivo pro porquê as duas moram
+// aqui (dono de voting_sessions/session_movies desde a I3).
+// --------------------------------------------------------------------------
+
+describe('createVotingSession', () => {
+  it('insere com status=open e devolve a linha completa (mesma forma de getVotingSession)', async () => {
+    const userId = await novoUsuario('sub-create-happy')
+
+    const row = await createVotingSession(DB, {
+      title: 'Sessão Nova',
+      createdBy: userId,
+      sortOptionsJson:
+        '{"title":"Sessão Nova","types":[],"include_watched":false,"categories":[]}',
+    })
+
+    expect(row.id).toBeGreaterThan(0)
+    expect(row.title).toBe('Sessão Nova')
+    expect(row.status).toBe('open')
+    expect(row.created_by).toBe(userId)
+    expect(row.closed_at).toBeNull()
+    expect(row.winner_movie_id).toBeNull()
+    expect(row.sort_options_json).toBe(
+      '{"title":"Sessão Nova","types":[],"include_watched":false,"categories":[]}',
+    )
+
+    // A linha realmente existe no banco, não só no valor devolvido.
+    const lida = await getVotingSession(DB, row.id)
+    expect(lida).toEqual(row)
+  })
+
+  it("sortOptionsJson vazio cai pro default '{}' — mesma paridade do Go (sessions.go:24-26)", async () => {
+    const userId = await novoUsuario('sub-create-sortjson-vazio')
+
+    const row = await createVotingSession(DB, {
+      title: 'Sem Sort Options',
+      createdBy: userId,
+      sortOptionsJson: '',
+    })
+
+    expect(row.sort_options_json).toBe('{}')
+  })
+
+  it('duas sessões sucessivas recebem ids diferentes (autoincrement real, não um valor cacheado)', async () => {
+    const userId = await novoUsuario('sub-create-ids-diferentes')
+
+    const s1 = await createVotingSession(DB, {
+      title: 'Primeira',
+      createdBy: userId,
+      sortOptionsJson: '{}',
+    })
+    const s2 = await createVotingSession(DB, {
+      title: 'Segunda',
+      createdBy: userId,
+      sortOptionsJson: '{}',
+    })
+
+    expect(s1.id).not.toBe(s2.id)
+  })
+})
+
+describe('insertSessionMovies', () => {
+  function filme(
+    overrides: Partial<SessionMovieInsert> = {},
+  ): SessionMovieInsert {
+    return {
+      category: 'acao',
+      title: 'Filme',
+      type: 'filme',
+      posterUrl: '',
+      tmdbId: 0,
+      wasWatched: false,
+      sheetNumber: 0,
+      ...overrides,
+    }
+  }
+
+  it('array vazio é no-op — não chama db.batch()', async () => {
+    const userId = await novoUsuario('sub-insertmovies-vazio')
+    const sessionId = await novaSessao(userId)
+
+    let batchChamado = false
+    const spyDb = new Proxy(DB, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return (statements: unknown[]) => {
+            batchChamado = true
+            return (target.batch as (s: unknown[]) => unknown)(statements)
+          }
+        }
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as D1Database
+
+    await insertSessionMovies(spyDb, sessionId, [])
+    expect(batchChamado).toBe(false)
+    await expect(getSessionMovies(DB, sessionId)).resolves.toEqual([])
+  })
+
+  it('happy path — grava poster_url/tmdb_id/sheet_number NULL quando 0/vazio (fail-soft do TMDb, filme sem número na planilha)', async () => {
+    const userId = await novoUsuario('sub-insertmovies-nulls')
+    const sessionId = await novaSessao(userId)
+
+    await insertSessionMovies(DB, sessionId, [
+      filme({
+        category: 'acao',
+        title: 'Sem Pôster',
+        posterUrl: '',
+        tmdbId: 0,
+        sheetNumber: 0,
+      }),
+    ])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.poster_url).toBeNull()
+    expect(rows[0]?.tmdb_id).toBeNull()
+    expect(rows[0]?.sheet_number).toBeNull()
+    expect(rows[0]?.was_watched).toBe(0)
+  })
+
+  it('happy path — grava poster_url/tmdb_id/sheet_number reais quando > 0/não-vazio', async () => {
+    const userId = await novoUsuario('sub-insertmovies-valores')
+    const sessionId = await novaSessao(userId)
+
+    await insertSessionMovies(DB, sessionId, [
+      filme({
+        category: 'drama',
+        title: 'Com Pôster',
+        posterUrl: 'https://image.tmdb.org/t/p/w500/x.jpg',
+        tmdbId: 777,
+        wasWatched: true,
+        sheetNumber: 42,
+      }),
+    ])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.poster_url).toBe('https://image.tmdb.org/t/p/w500/x.jpg')
+    expect(rows[0]?.tmdb_id).toBe(777)
+    expect(rows[0]?.sheet_number).toBe(42)
+    expect(rows[0]?.was_watched).toBe(1)
+  })
+
+  // ⚠️ Mutação obrigatória do brief adaptada ao chunking: prova que um lote
+  // ACIMA do teto de 12 linhas/statement (8 colunas bound) ainda grava TODAS
+  // as linhas, num ÚNICO db.batch() com múltiplos statements dentro —
+  // mesmo padrão de domain/votes.test.ts (voteInsertStatements).
+  it('lote acima do teto de 12 linhas/statement gera múltiplos statements num único batch (regressão do teto de 100 bound params)', async () => {
+    const userId = await novoUsuario('sub-insertmovies-chunk')
+    const sessionId = await novaSessao(userId)
+    // 25 filmes -> ceil(25/12) = 3 statements de INSERT, num único batch().
+    const movies: SessionMovieInsert[] = []
+    for (let i = 0; i < 25; i++) {
+      movies.push(filme({ category: `categoria-${i}`, title: `Filme ${i}` }))
+    }
+
+    const batchSizes: number[] = []
+    const spyDb = new Proxy(DB, {
+      get(target, prop, receiver) {
+        if (prop === 'batch') {
+          return (statements: D1PreparedStatement[]) => {
+            batchSizes.push(statements.length)
+            return target.batch(statements)
+          }
+        }
+        const value = Reflect.get(target, prop, receiver)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as D1Database
+
+    await insertSessionMovies(spyDb, sessionId, movies)
+    // 1 único batch() com ceil(25/12)=3 statements dentro.
+    expect(batchSizes).toEqual([3])
+
+    const rows = await getSessionMovies(DB, sessionId)
+    expect(rows).toHaveLength(25)
+    expect(rows.map((r) => r.title).sort()).toEqual(
+      movies.map((m) => m.title).sort(),
+    )
+  })
+
+  it('UNIQUE(session_id, category) — categoria duplicada faz o batch inteiro falhar, e NENHUM filme fica gravado (rollback real do db.batch())', async () => {
+    const userId = await novoUsuario('sub-insertmovies-unique')
+    const sessionId = await novaSessao(userId)
+
+    await expect(
+      insertSessionMovies(DB, sessionId, [
+        filme({ category: 'acao', title: 'Primeiro' }),
+        filme({ category: 'acao', title: 'Categoria Repetida' }),
+      ]),
+    ).rejects.toThrow()
+
+    // Rollback real: NENHUM dos dois ficou gravado, nem o primeiro (que por
+    // si só seria válido).
+    await expect(getSessionMovies(DB, sessionId)).resolves.toEqual([])
+  })
+})
