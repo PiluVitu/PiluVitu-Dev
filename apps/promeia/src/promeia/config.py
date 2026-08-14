@@ -44,31 +44,52 @@ class Settings:
     # `model_hooks` deixa de existir enquanto conceito — não há mais de quem
     # divergir.
     #
-    # ⚠️ **Os valores abaixo foram MEDIDOS**, não escolhidos por tamanho.
-    # Corpus com gabarito (9 erros plantados + 18 armadilhas, prompt de
-    # produção `PROOFREAD_SYSTEM`, temperatura 0.2, tudo com `"think": false`):
+    # ⚠️ **Os valores abaixo foram MEDIDOS PELO CAMINHO REAL — e a escolha
+    # anterior (`qwen3.5:4b`/`qwen3.5:9b`, commit 6808f60) foi um ERRO DE
+    # MÉTODO, não de gosto.** O corpus que elegeu o qwen3.5 mandava o texto
+    # INTEIRO numa chamada só. O `proofread` de produção NÃO faz isso: ele
+    # divide (`dividir_blocos`) e manda UM bloco de prosa por chamada, então
+    # um título chega ao modelo SOZINHO, como `'## Subtitulo\n'`, sem nenhum
+    # contexto ao redor — e é aí que a família qwen3.5 "normaliza" o nível
+    # dele. Texto inteiro nunca expõe esse caso, por isso deu 9/9 a um modelo
+    # que destrói mais da metade dos títulos.
     #
-    #   qwen3.5:9b            9/9 erros, 0 violações,  68 s  ← careful e hooks
-    #   gemma4:12b            9/9 erros, 0 violações, 139 s  (2x mais lento)
-    #   qwen2.5:7b-instruct   8/9 erros, 0 violações,  58 s  (careful ANTIGO)
-    #   qwen3.5:4b            8/9 erros, 1 violação,   31 s  ← rápido
-    #   qwen2.5:3b-instruct   5/9 erros, 0 violações,  70 s  (rápido ANTIGO)
+    # Preservação do NÍVEL do título, 9 repetições por modelo, blocos
+    # `## Subtitulo` / `### Secao` / `#### Detalhe`, temperatura 0.1, pelo
+    # caminho real do `chat()`:
     #
-    # O slot rápido melhorou nos DOIS eixos: o `qwen2.5:3b-instruct` que
-    # estava aqui era pior E mais lento que o `qwen3.5:4b` (5/9 em 70 s
-    # contra 8/9 em 31 s). O `gemma4:12b` empata em qualidade com o
-    # `qwen3.5:9b` e perde feio no relógio (artigo real de 5.778 chars pelo
-    # caminho real do `proofread`: 381 s contra 232 s, pior bloco de 35,9 s
-    # contra 20,6 s) — por isso o careful é o 9b, com 89% de folga contra o
-    # `read=180.0` de `ollama.TIMEOUT`.
+    #   gemma4:12b            9/9  —                            11,8 s/bloco
+    #   qwen2.5:7b-instruct   9/9  —                             3,7 s/bloco
+    #   qwen2.5:3b-instruct   6/9  '##\nSubtitulo'               2,1 s/bloco
+    #   qwen3.5:9b            4/9  '# Subtítulo', '### Detalhe'
+    #   qwen3.5:4b            1/9  '# Subtítulo'                 1,4 s/bloco
     #
-    # ⚠️ Os três são modelos de RACIOCÍNIO (`capabilities` inclui
-    # `"thinking"`): só funcionam porque `ollama.chat` manda `"think": false`.
-    # Sem esse campo, os números acima viram `message.content` VAZIO — ver o
-    # cabeçalho de `ollama.py`.
-    model_proofread: str = "qwen3.5:4b"
-    model_proofread_careful: str = "qwen3.5:9b"
-    model_hooks: str = "qwen3.5:9b"
+    # ⚠️ `'##\nSubtitulo'` NÃO É UM TÍTULO: com a quebra de linha no meio, o
+    # markdown renderiza `##` como texto literal — defeito que o
+    # `qwen2.5:3b-instruct` (o rápido de sempre) já tinha. E o `qwen3.5:9b`
+    # ainda vazou ESPANHOL uma vez: `'#### Detalhe'` → `'#### Detalle'`.
+    #
+    # Os dois slots MELHORAM contra o estado anterior ao 6808f60, mesmo com a
+    # correção: o rápido sobe de 6/9 pra 9/9 em título e de 5/9 pra 8/9 no
+    # corpus de erros; o careful sobe de 8/9 pra 9/9 no corpus, mantendo 9/9
+    # em título. O careful paga no relógio (`gemma4:12b` no artigo real de
+    # 5.778 chars, caminho real do `proofread`: 381 s contra 232 s, pior bloco
+    # 35,9 s) — mas é exatamente o slot cuja razão de existir é trocar tempo
+    # por precisão, e 35,9 s deixa 80% de folga contra o `read=180.0` de
+    # `ollama.TIMEOUT`.
+    #
+    # ⚠️ **QUEM FOR REMEDIR: meça bloco a bloco** (`dividir_blocos` + um
+    # `chat` por bloco), NUNCA o texto inteiro numa chamada — foi essa
+    # diferença, e só ela, que produziu a escolha errada.
+    #
+    # ⚠️ `gemma4:12b` é modelo de RACIOCÍNIO (`capabilities` inclui
+    # `"thinking"`): só funciona porque `ollama.chat` manda `"think": false`.
+    # Sem esse campo devolve `message.content` VAZIO — medido: 3.621 tokens e
+    # 12.435 chars em `thinking`. O `qwen2.5:7b-instruct` não tem thinking e
+    # IGNORA o campo (HTTP 200 normal). Ver o cabeçalho de `ollama.py`.
+    model_proofread: str = "qwen2.5:7b-instruct"
+    model_proofread_careful: str = "gemma4:12b"
+    model_hooks: str = "gemma4:12b"
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -112,8 +133,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         # prompt que deixa essa afirmação ser possível. Trocar o modelo aqui
         # seria gastar GPU pra fingir que o problema é outro.
         #
-        # Os três de baixo são os medidos nesta task — ver `Settings` acima.
-        model_proofread=src.get("MODEL_PROOFREAD", "qwen3.5:4b"),
-        model_proofread_careful=src.get("MODEL_PROOFREAD_CAREFUL", "qwen3.5:9b"),
-        model_hooks=src.get("MODEL_HOOKS", "qwen3.5:9b"),
+        # ⚠️ Os três de baixo foram medidos BLOCO A BLOCO (é assim que o
+        # `proofread` roda) — ver a tabela de preservação de título em
+        # `Settings` acima antes de trocar qualquer um deles.
+        model_proofread=src.get("MODEL_PROOFREAD", "qwen2.5:7b-instruct"),
+        model_proofread_careful=src.get("MODEL_PROOFREAD_CAREFUL", "gemma4:12b"),
+        model_hooks=src.get("MODEL_HOOKS", "gemma4:12b"),
     )

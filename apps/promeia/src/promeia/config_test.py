@@ -42,16 +42,47 @@ def test_env_sobrescreve_os_defaults():
 
 
 def test_defaults_de_modelo_da_revisao_sao_os_MEDIDOS_de_2026():
-    # ⚠️ Estes três valores são ESCOLHA PRÓPRIA, medida contra um corpus com
-    # gabarito — não mais "igual ao que o Go usava" (a Go foi aposentada, ver
-    # ROADMAP §2). Rápido: qwen3.5:4b (8/9 erros em 31 s) contra o
-    # qwen2.5:3b-instruct antigo (5/9 em 70 s — pior E mais lento). Careful e
-    # hooks: qwen3.5:9b (9/9, 0 violações), preferido ao gemma4:12b que empata
-    # em qualidade e perde no relógio.
+    # ⚠️ Estes três valores são ESCOLHA PRÓPRIA, medida BLOCO A BLOCO (o
+    # caminho real do `proofread`) — não mais "igual ao que o Go usava" (a Go
+    # foi aposentada, ver ROADMAP §2). Rápido: qwen2.5:7b-instruct (9/9 em
+    # preservação de nível de título, 8/9 no corpus de erros) contra o
+    # qwen2.5:3b-instruct antigo (6/9 e 5/9). Careful e hooks: gemma4:12b
+    # (9/9 nos dois), pagando 11,8 s/bloco — que é o preço que o slot
+    # "careful" existe pra pagar. Comentário completo em `config.py#Settings`.
     s = load_settings({"PROMEIA_TOKEN": "x"})
-    assert s.model_proofread == "qwen3.5:4b"
-    assert s.model_proofread_careful == "qwen3.5:9b"
-    assert s.model_hooks == "qwen3.5:9b"
+    assert s.model_proofread == "qwen2.5:7b-instruct"
+    assert s.model_proofread_careful == "gemma4:12b"
+    assert s.model_hooks == "gemma4:12b"
+
+
+def test_nenhum_slot_da_revisao_usa_a_familia_qwen3_5():
+    # ⚠️ Este é o teste que teria impedido o 6808f60, e o de cima NÃO seria.
+    # Fixar a string do default não protege nada: quem troca o default troca a
+    # string do teste junto, no mesmo commit, sem nunca encarar o motivo. O que
+    # protege é uma trava sobre a FAMÍLIA medida como ruim, com a evidência na
+    # mensagem de falha: pra reintroduzir um qwen3.5 é preciso APAGAR uma
+    # asserção que diz, em português, que ela destrói o nível do título — vira
+    # ato consciente, não troca mecânica de valor. E ela pega o caso que uma
+    # igualdade não pega: uma tag qwen3.5 QUALQUER (4b, 9b, ou a próxima que
+    # sair), inclusive num slot que hoje está certo.
+    #
+    # MEDIDO, 9 repetições, blocos `## Subtitulo`/`### Secao`/`#### Detalhe`
+    # mandados sozinhos (é assim que o `proofread` manda): qwen3.5:4b preservou
+    # o nível 1/9 vez, qwen3.5:9b 4/9 — devolvendo `'# Subtítulo'` no lugar de
+    # `'## Subtitulo'` — e o 9b ainda vazou espanhol (`'#### Detalle'`).
+    s = load_settings({"PROMEIA_TOKEN": "x"})
+    for slot, modelo in (
+        ("MODEL_PROOFREAD", s.model_proofread),
+        ("MODEL_PROOFREAD_CAREFUL", s.model_proofread_careful),
+        ("MODEL_HOOKS", s.model_hooks),
+    ):
+        assert not modelo.startswith("qwen3.5"), (
+            f"{slot}={modelo}: a família qwen3.5 REBAIXA o nível dos títulos "
+            f"quando o bloco chega sozinho (4b: 1/9; 9b: 4/9), que é como o "
+            f"proofread manda. Ela já foi escolhida uma vez (6808f60) com base "
+            f"num corpus de texto INTEIRO, que não mede esse caso. Se for medir "
+            f"de novo, meça bloco a bloco."
+        )
 
 
 def test_o_modelo_do_insight_NAO_acompanha_os_da_revisao():
@@ -61,6 +92,11 @@ def test_o_modelo_do_insight_NAO_acompanha_os_da_revisao():
     # "mantendo-se igual ao mesmo período do ano anterior" sobre um banco sem
     # ano anterior, coisa que modelo maior nenhum conserta. Este teste é o que
     # impede alguém de "uniformizar" os quatro slots numa próxima passada.
+    #
+    # ⚠️ `ollama_model` e `model_proofread` calharem de ser o MESMO modelo hoje
+    # é coincidência de valor, não decisão compartilhada: um venceu no corpus
+    # de revisão bloco a bloco, o outro nunca foi medido porque não é o gargalo
+    # dele. Por isso a asserção de independência é contra o `careful`.
     s = load_settings({"PROMEIA_TOKEN": "x"})
     assert s.ollama_model == "qwen2.5:7b-instruct"
     assert s.ollama_model != s.model_proofread_careful

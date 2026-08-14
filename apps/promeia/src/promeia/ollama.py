@@ -18,15 +18,21 @@ queimou 3.614 tokens e devolveu `message.content` VAZIO; `gemma4:12b` queimou
 3.621 tokens com 12.435 caracteres em `message.thinking` e `message.content`
 também VAZIO. Não é peculiaridade de uma família — os dois modelos anunciam
 `"thinking"` em `capabilities` e o ligam sozinhos. Sem o campo, a revisão não
-"fica lenta": ela devolve NADA, gastando GPU. Ver `OllamaVazio` abaixo, que é
-a rede de segurança pro dia em que este campo for removido por engano.
+"fica lenta": ela devolve NADA, gastando GPU. **`gemma4:12b` é hoje o default
+de `MODEL_PROOFREAD_CAREFUL` e `MODEL_HOOKS`**, então isto não é hipótese: é o
+que faz o botão "Corrigir texto (cuidadoso)" devolver alguma coisa. Ver
+`OllamaVazio` abaixo, que é a rede de segurança pro dia em que este campo for
+removido por engano.
 
 ⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO**, e por isso
 aqui não tem fallback (YAGNI): `qwen2.5:7b-instruct` (`capabilities:
 ["completion","tools"]`, sem `"thinking"`) recebeu `"think": false` em
-`/api/chat` e respondeu **HTTP 200** com o `message.content` normal. Um
-fallback "tenta com, repete sem" só existiria pra um erro que não acontece —
-e custaria uma segunda rodada de inferência pra descobrir isso.
+`/api/chat` e respondeu **HTTP 200** com o `message.content` normal. Isso
+também deixou de ser hipótese: **ele é o default de `MODEL_PROOFREAD`** (venceu
+a medição de preservação de título, ver `config.py#Settings`), então o campo
+convive com os dois tipos de modelo em produção. Um fallback "tenta com, repete
+sem" só existiria pra um erro que não acontece — e custaria uma segunda rodada
+de inferência pra descobrir isso.
 
 ⚠️ A versão anterior deste aviso dizia que `chat` só entraria "quando a
 revisão de artigo migrar — depois do ramielle. Não antecipar." Ele cumpriu o
@@ -177,7 +183,10 @@ def generate(
     ⚠️ **`"think": false` aqui NÃO é o mesmo defeito do `chat`, e mesmo assim
     foi tratado — os dois lados MEDIDOS, com a mesma prompt de uma frase:**
 
-    Tudo com `qwen3.5:4b`, mesma prompt de uma frase:
+    Tudo com `qwen3.5:4b`, mesma prompt de uma frase. ⚠️ Ele NÃO é mais
+    default de slot nenhum (rebaixa o nível dos títulos — ver
+    `config.py#Settings`); segue citado aqui porque a medição é sobre
+    thinking-by-default, e vale pra qualquer modelo dessa geração:
 
     | endpoint    | think   | saiu       | tokens      | tempo         |
     | ----------- | ------- | ---------- | ----------- | ------------- |
@@ -303,7 +312,7 @@ def chat(
         raise OllamaVazio(
             f"o modelo {model!r} respondeu sem texto nenhum (message.content "
             f"vazio) em {url} — nada foi gerado. Se este for um modelo de "
-            f'raciocínio (qwen3.5, gemma4...), confira se o payload manda "think": '
+            f'raciocínio (gemma4, qwen3.5...), confira se o payload manda "think": '
             f"false: sem isso o modelo escreve tudo em message.thinking e devolve "
             f"content vazio. Caso contrário, tente de novo ou troque o modelo "
             f"(MODEL_PROOFREAD / MODEL_PROOFREAD_CAREFUL / MODEL_HOOKS)"

@@ -35,7 +35,7 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   otimização: é o que impede o LLM de "corrigir" um trecho de código.
   ⚠️ A **invariante** do splitter (concatenar os blocos reproduz a entrada
   byte a byte) é o que permite remontar o artigo sem corromper o texto do
-  dono — quebrá-la produz markdown que ainda *parece* certo. Provado por
+  dono — quebrá-la produz markdown que ainda _parece_ certo. Provado por
   mutação: trocar o split por `splitlines()` (que descarta os separadores)
   derruba 16 testes.
 - **`careful`** é porte, não feature: o nível de revisão já existia no Go
@@ -52,8 +52,12 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   produção do outro lado pra empatar — "igual ao Go" virou âncora num serviço
   morto, e o `14b` deixou de ser uma dívida a pagar porque não há mais de quem
   divergir. Os **três slots agora são escolha própria, MEDIDA** (ver a tabela
-  em _Modelos de 2026_ abaixo): `qwen3.5:4b` no rápido, `qwen3.5:9b` no
-  careful e no hooks. Comentário completo em `config.py#Settings`.
+  em _Modelos de 2026_ abaixo): `qwen2.5:7b-instruct` no rápido, `gemma4:12b`
+  no careful e no hooks. ⚠️ **Não confundir com os defaults de sempre:** o
+  rápido era `qwen2.5:3b-instruct` e virou o `7b`; o `7b` era o careful e saiu
+  de lá. O `qwen3.5` que o `6808f60` pôs nos três **foi revertido** — ele
+  rebaixa o nível dos títulos, ver o erro de método em _Modelos de 2026_.
+  Comentário completo em `config.py#Settings`.
 - ⚠️ **`refine`/`gerar_hooks` TRIMAM a saída do modelo antes de medir o
   limite** (`I3` de uma revisão desta fatia) — paridade com o Go, cujo
   `chat()` (`client.go:96`) sempre devolve `strings.TrimSpace(...)` pra todo
@@ -101,8 +105,10 @@ revisão lenta — deixa ela VAZIA.** MEDIDO contra o Ollama local, sem o campo
 
 Não é peculiaridade de uma família: os dois anunciam `"thinking"` em
 `capabilities` (`GET /api/tags`) e o ligam sozinhos. Por isso `ollama.chat`
-manda `"think": false` — sem ele, os três defaults novos gastariam GPU pra
-devolver nada.
+manda `"think": false` — sem ele, `MODEL_PROOFREAD_CAREFUL` e `MODEL_HOOKS`
+(hoje `gemma4:12b` nos dois) gastariam GPU pra devolver nada. O
+`MODEL_PROOFREAD` (`qwen2.5:7b-instruct`) não tem thinking e **ignora** o
+campo — os dois tipos convivem sem fallback, como diz o parágrafo seguinte.
 
 ⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO, e é por isso que
 não existe fallback aqui** (seria YAGNI, e custaria uma segunda rodada de
@@ -115,11 +121,11 @@ checar se o insight tinha o mesmo defeito latente. `/api/chat` engole a
 resposta; `/api/generate` separa o raciocínio em `thinking` e **ainda preenche
 `response`**. Mesma prompt de uma frase, `qwen3.5:4b`:
 
-| Endpoint        | `think` | Resposta   | Tokens        | Tempo            |
-| --------------- | ------- | ---------- | ------------- | ---------------- |
-| `/api/chat`     | ausente | **VAZIA**  | 3.614         | —                |
-| `/api/generate` | ausente | preenchida | 248 a 3.481   | **22 s a >120 s** |
-| `/api/generate` | `false` | preenchida | **2 a 21**    | **1 s a 5,4 s**  |
+| Endpoint        | `think` | Resposta   | Tokens      | Tempo             |
+| --------------- | ------- | ---------- | ----------- | ----------------- |
+| `/api/chat`     | ausente | **VAZIA**  | 3.614       | —                 |
+| `/api/generate` | ausente | preenchida | 248 a 3.481 | **22 s a >120 s** |
+| `/api/generate` | `false` | preenchida | **2 a 21**  | **1 s a 5,4 s**   |
 
 ⚠️ **As faixas do `/api/generate` são largas de propósito: o custo do thinking
 NÃO é reprodutível.** A 1ª medição desta task deu 3.481 tokens / >120 s; a
@@ -137,24 +143,65 @@ maior). `generate` também manda `"think": false` desde esta task: uma linha,
 medida como inofensiva no modelo que o insight de fato usa, e coerente com o
 `temperature: 0` que aquele caminho fixa justamente por exigir determinismo.
 
-**Os números que escolheram os defaults** (corpus com gabarito: 9 erros
-plantados, 18 armadilhas, prompt de produção `PROOFREAD_SYSTEM`, temperatura
-0.2, tudo com `"think": false`):
+### ⚠️ O erro de método que escolheu os modelos errados (commit `6808f60`)
 
-| Modelo                              | Erros   | Violações | Tempo    |
-| ----------------------------------- | ------- | --------- | -------- |
-| `qwen3.5:9b` ← careful, hooks       | **9/9** | 0         | 68 s     |
-| `gemma4:12b`                        | **9/9** | 0         | 139 s    |
-| `qwen2.5:7b-instruct` (careful ANT.) | 8/9     | 0         | 58 s     |
-| `qwen3.5:4b` ← rápido               | 8/9     | 1         | **31 s** |
-| `qwen2.5:3b-instruct` (rápido ANT.) | 5/9     | 0         | 70 s     |
+**O `6808f60` mediu a coisa errada, e o registro disso é a parte útil desta
+seção.** Ele elegeu `qwen3.5:4b` (rápido) e `qwen3.5:9b` (careful/hooks) com
+base num corpus com gabarito — 9 erros plantados, 18 armadilhas — que mandava
+**o artigo INTEIRO numa chamada só**. Nesse formato o `qwen3.5:9b` tirou 9/9 e
+pareceu o melhor candidato.
 
-⚠️ **O slot rápido melhorou nos DOIS eixos:** o `qwen2.5:3b-instruct` que
-estava lá era pior E mais lento que o `qwen3.5:4b` (5/9 em 70 s contra 8/9 em
-31 s). O `gemma4:12b` empata com o `qwen3.5:9b` em qualidade e perde no
-relógio — no artigo REAL do blog (5.778 chars, 27 blocos de prosa, pelo
-caminho real do `proofread`): **381 s contra 232 s**, pior bloco de 35,9 s
-contra 20,6 s, o que dá ao 9b **89% de folga** contra o `read=180.0`.
+⚠️ **Só que o `proofread` de produção não manda o texto inteiro.** Ele divide
+(`dividir_blocos`) e manda **um bloco de prosa por chamada** — então um título
+chega ao modelo **SOZINHO**, como `'## Subtitulo\n'`, sem nenhum parágrafo
+antes ou depois que indique que `##` é estrutura e não texto. É exatamente
+nesse caso que a família qwen3.5 "normaliza" o nível do título, e é exatamente
+esse caso que um corpus de texto inteiro **nunca produz**. Um corpus que manda
+o texto inteiro numa chamada NÃO mede o que a produção faz — foi por isso que
+deu 9/9 pro `qwen3.5:9b`, que na verdade destrói o nível de mais da metade dos
+títulos.
+
+**Preservação do NÍVEL do título** — 9 repetições por modelo, blocos
+`## Subtitulo` / `### Secao` / `#### Detalhe` mandados isolados, temperatura
+0.1, pelo caminho real do `chat()`:
+
+| Modelo                              | Preservou o nível | Amostra do erro                  | s/bloco |
+| ----------------------------------- | ----------------- | -------------------------------- | ------- |
+| `gemma4:12b` ← careful, hooks       | **9/9**           | —                                | 11,8    |
+| `qwen2.5:7b-instruct` ← rápido      | **9/9**           | —                                | **3,7** |
+| `qwen2.5:3b-instruct` (rápido ANT.) | 6/9               | `'##\nSubtitulo'` (quebra!)      | 2,1     |
+| `qwen3.5:9b` (6808f60)              | 4/9               | `'# Subtítulo'`, `'### Detalhe'` | —       |
+| `qwen3.5:4b` (6808f60)              | 1/9               | `'# Subtítulo'`                  | 1,4     |
+
+⚠️ **`'##\nSubtitulo'` NÃO é um título** — com a quebra de linha no meio, o
+markdown renderiza `##` como texto literal. O `qwen2.5:3b-instruct`, que era o
+rápido desde sempre, já tinha esse defeito.
+
+⚠️ **O `qwen3.5:9b` ainda vazou ESPANHOL** uma vez: `'#### Detalhe'` virou
+`'#### Detalle'`.
+
+**A correção ainda MELHORA os dois slots** em relação ao estado anterior ao
+`6808f60` — não é um recuo: o rápido sobe de **6/9 pra 9/9** em título e de
+**5/9 pra 8/9** no corpus de erros; o careful sobe de **8/9 pra 9/9** no
+corpus, mantendo 9/9 em título. O careful paga no relógio (`gemma4:12b` no
+artigo REAL do blog, 5.778 chars, 27 blocos, caminho real do `proofread`:
+**381 s** contra 232 s do 9b, pior bloco **35,9 s**) — e é o slot cuja razão
+de existir é justamente trocar tempo por precisão; 35,9 s deixa **80% de
+folga** contra o `read=180.0` de `ollama.TIMEOUT`.
+
+⚠️ **PRA QUEM FOR REMEDIR NO FUTURO: meça pelo CAMINHO REAL** — `dividir_blocos`
+e um `chat` por bloco, com títulos entre os blocos —, **nunca o texto inteiro
+numa chamada**. Foi essa diferença, e só ela, que separou a escolha errada da
+certa. A premissa está pinada por
+`test_proofread_manda_o_TITULO_SOZINHO_sem_contexto_ao_redor`
+(`revisao_test.py`): se alguém agrupar blocos, o teste cai e avisa que a tabela
+acima precisa ser refeita antes de mudar qualquer default.
+
+⚠️ **O que o `6808f60` acertou continua valendo:** o `"think": false` e a
+guarda `OllamaVazio` (as duas seções acima e abaixo) não dependem da escolha de
+modelo, e o `gemma4:12b` que entrou agora **É** thinking model — sem o campo
+ele devolve `content` vazio (3.621 tokens, 12.435 chars em `thinking`). Só os
+DEFAULTS estavam errados.
 
 ⚠️ **`OLLAMA_MODEL` (o insight) NÃO mudou, e isso é decisão, não esquecimento.**
 A tarefa dele é redigir um parágrafo sobre números **já calculados** pelo
@@ -299,11 +346,15 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
   colunas insere uma quebra **real** no texto mandado pro modelo: não é
   formatação, é mudar a entrada de dados.
-- **Suíte hoje: 192 testes** (`uv run pytest`, por arquivo:
-  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 9, `dates_test.py` 16,
+- **Suíte hoje: 194 testes** (`uv run pytest`, por arquivo:
+  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 10, `dates_test.py` 16,
   `insight_test.py` 20, `markdown_blocos_test.py` 29, `money_test.py` 15,
   `ollama_test.py` 23, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
-  `revisao_test.py` 31). ⚠️ **M7 (revisão): este número já tinha ficado pra
+  `revisao_test.py` 32). Os **+2** da correção dos modelos são a trava de
+  família (`test_nenhum_slot_da_revisao_usa_a_familia_qwen3_5`,
+  `config_test.py`) e a premissa de medição
+  (`test_proofread_manda_o_TITULO_SOZINHO_sem_contexto_ao_redor`,
+  `revisao_test.py`). ⚠️ **M7 (revisão): este número já tinha ficado pra
   trás uma vez** — dizia "171 testes" enquanto a suíte real já estava em 180
   (o `/llm/hooks`/`gerar_hooks` tinha entrado numa task anterior sem
   atualizar esta contagem). Os **+8** da task dos modelos de 2026 são **+5**
@@ -313,14 +364,14 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   a revisão, e cada `MODEL_*` lendo a env certa) — o `config_test.py` não
   tinha asserção NENHUMA sobre os três slots de modelo até então. **Recontar
   sempre via `uv run
-  pytest -v` (linha final `N passed`), nunca confiar num número solto neste
+pytest -v` (linha final `N passed`), nunca confiar num número solto neste
   arquivo** — mesmo aviso que `apps/ramielle/CLAUDE.md` já registra pra sua
   própria suíte, e pelo mesmo motivo: o número já andou mais de uma vez sem
   o arquivo acompanhar.
 - A remoção do CLI Node que a fatia do insight substituiu
   (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou 40 testes
   correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
-  test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
+test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
   sob esse arquivo de config, `vitest.scripts.config.ts`) — prova de que a
   remoção foi cirúrgica, não um efeito colateral.
 
@@ -424,14 +475,15 @@ nunca finge sucesso.
   recebe requisição nenhuma pela internet~~ — **VENCIDA em 2026-08-14**
   (`ROADMAP.md` §2): o promeia **assumiu** o hostname e serve tráfego real.
   Cadeia provada ponta a ponta: `piluvitu.com.br → ramielle.piluvitu.com.br →
-  promeia.piluvitu.com.br → Ollama local`. Consequência que vale pra esta
+promeia.piluvitu.com.br → Ollama local`. Consequência que vale pra esta
   seção: os defaults de modelo daqui não são mais teoria de laboratório — o
   botão "Corrigir texto" bate neles em produção assim que o Mac está ligado.
 - ~~**Baixar o `qwen2.5:14b-instruct` pra bater com o Go**~~ — **OBSOLETA,
   resolvida por não ser mais um problema.** Ela existia só porque
   `MODEL_HOOKS` divergia do Go; a Go foi aposentada e o slot de hooks agora é
-  escolha própria (`qwen3.5:9b`, medido 9/9). Não há mais motivo pra baixar
-  ~9 GB de um modelo de 2024 pra empatar com um serviço que saiu do ar.
+  escolha própria (`gemma4:12b`, medido 9/9 em preservação de título). Não há
+  mais motivo pra baixar ~9 GB de um modelo de 2024 pra empatar com um serviço
+  que saiu do ar.
 - **`process-compose.yaml` (na raiz, não neste app) ainda puxa
   `qwen2.5:14b-instruct`**, que continua não instalado — `make stack` baixaria
   ~9 GB na primeira execução. Isto **sobrevive** à pendência acima: é um

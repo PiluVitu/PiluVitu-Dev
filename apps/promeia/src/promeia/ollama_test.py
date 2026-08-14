@@ -264,9 +264,10 @@ def test_chat_manda_think_falso():
     # 3.614 tokens e devolveu `message.content` VAZIO, e `gemma4:12b` queimou
     # 3.621 tokens com 12.435 chars em `message.thinking` e `content` também
     # vazio. A geração 2026 é thinking-by-default: sem o campo, a revisão não
-    # fica lenta — ela devolve NADA, gastando GPU. Os três defaults de modelo
-    # (config.py) são modelos de raciocínio, então isto é o que os faz
-    # funcionar, não uma otimização.
+    # fica lenta — ela devolve NADA, gastando GPU. `gemma4:12b` é o default de
+    # MODEL_PROOFREAD_CAREFUL e MODEL_HOOKS (config.py), então isto é o que os
+    # faz funcionar, não uma otimização. (MODEL_PROOFREAD é `qwen2.5:7b-
+    # instruct`, sem thinking — ele IGNORA o campo, medido: HTTP 200 normal.)
     import json
 
     visto = {}
@@ -277,7 +278,7 @@ def test_chat_manda_think_falso():
 
     with cliente(handler) as c:
         chat(
-            model="qwen3.5:9b",
+            model="gemma4:12b",
             system="s",
             user="u",
             temperature=0.1,

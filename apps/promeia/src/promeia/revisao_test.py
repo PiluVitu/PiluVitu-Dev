@@ -71,6 +71,27 @@ def test_proofread_manda_ao_modelo_SO_os_blocos_de_prosa():
     assert "| a | b |" in saida
 
 
+def test_proofread_manda_o_TITULO_SOZINHO_sem_contexto_ao_redor():
+    # ⚠️ Esta é a PREMISSA DE MEDIÇÃO dos defaults de `config.py`, e o
+    # 6808f60 escolheu modelo sem ela: um título não chega ao modelo dentro do
+    # artigo, chega como uma chamada inteira contendo só `'## Subtítulo\n'` —
+    # nenhum parágrafo antes, nenhum depois, nada que indique que `##` é
+    # estrutura e não texto. É nessa condição que a família qwen3.5 rebaixa o
+    # nível (medido: 1/9 e 4/9), e é por isso que um corpus que manda o texto
+    # INTEIRO numa chamada só não mede o que a produção faz.
+    entrada = "Antes.\n\n## Subtítulo\n\n### Seção\n\nDepois.\n"
+    fn, chamadas = chat_espiao(resposta="X")
+    chamar_proofread(entrada, chat=fn)
+
+    enviados = [c["user"] for c in chamadas]
+    assert enviados == ["Antes.\n", "## Subtítulo\n", "### Seção\n", "Depois.\n"]
+    # O que importa não é a contagem: é que a chamada do título NÃO carrega
+    # nada além do título. Agrupar blocos (ou mandar o artigo inteiro) invalida
+    # a tabela de `config.py#Settings` — remeça antes de mudar isto.
+    titulos = [e for e in enviados if e.lstrip().startswith("#")]
+    assert titulos == ["## Subtítulo\n", "### Seção\n"]
+
+
 def test_proofread_usa_o_prompt_de_sistema_literal():
     fn, chamadas = chat_espiao()
     chamar_proofread("texto\n", chat=fn)
