@@ -29,16 +29,25 @@
  * `handlers_test.go` chamando o handler DIRETO (bypassando o router) — é
  * código morto no binário real. Decisão: **implementei o CONTRATO
  * documentado/testado (sempre montar; `503` quando `pubs.length === 0`),
- * não o efeito colateral da fiação do main.go**, por três motivos: (1) é
+ * não o efeito colateral da fiação do main.go**, por quatro motivos: (1) é
  * o que os comentários E o teste dedicado do Go realmente afirmam ser o
- * comportamento pretendido; (2) Hono não tem como replicar "só registra a
- * rota se o env tiver X" — `app.route()` roda na montagem do módulo, antes
- * de qualquer `env`/request existir, então "desmontar condicionalmente"
- * exigiria reescrever o modelo de roteamento inteiro deste Worker; (3) é
- * exatamente o padrão que TODA outra rota degradável deste Worker já usa
- * (`routes/atelier.ts#promeiaConfigurado`, `routes/votacao.ts`
- * `sheets_disabled`) — sempre montada, 503 decidido dentro do handler a
- * cada request. Reportado ao coordenador, não uma correção silenciosa.
+ * comportamento pretendido; (2) o que é estruturalmente impossível no Hono
+ * é só a REGISTRAÇÃO CONDICIONAL no escopo do módulo — `app.route()` roda
+ * na montagem, antes de qualquer `env`/request existir, então "montar só
+ * se o env tiver X" não tem hook. Emular o 404 cru DENTRO do handler
+ * (checar `pubs.length === 0` e devolver um 404 manual em vez do 503) seria
+ * TECNICAMENTE possível — só seria uma escolha pior, não uma impossibilidade
+ * (ver motivo 4); (3) é exatamente o padrão que TODA outra rota degradável
+ * deste Worker já usa (`routes/atelier.ts#promeiaConfigurado`,
+ * `routes/votacao.ts` `sheets_disabled`) — sempre montada, 503 decidido
+ * dentro do handler a cada request; (4) replicar o 404 cru do chi seria
+ * ATIVAMENTE PIOR pro cliente, não neutro: um 404 fora do envelope
+ * `{ok,data,notifications}` faz `call<T>()` (`apps/web/lib/admin/atelier/
+ * api.ts`) levantar `invalid_envelope` — sintoma sem relação nenhuma com a
+ * causa real ("faltam credenciais"), exatamente a classe de bug que o
+ * `app.onError` global deste Worker (`src/index.ts`) existe pra evitar em
+ * qualquer OUTRA rota. Reportado ao coordenador, não uma correção
+ * silenciosa — revisado e confirmado no fix round 1 desta task.
  */
 import { Hono } from 'hono'
 import {
@@ -173,6 +182,21 @@ function tagsOr(v: unknown): string[] {
  * decodifica rune a rune até `n` ou o fim da string). `[...s]` itera por
  * code point (o "rune" do Go) — mesma técnica já usada pro limite de
  * caracteres em `lib/publishers/bluesky.ts`/`mastodon.ts`.
+ *
+ * ⚠️ **I1 (fix round 1) — a propriedade "code point, não `.length`" só tem
+ * teste que a prove de verdade com entrada FORA do BMP.** `'x'.repeat(1000)`
+ * (ASCII puro) não discrimina `[...s].slice(0,n).join('')` de `s.slice(0,n)`
+ * — as duas produzem 800 caracteres, e `toHaveLength(800)` passa pelas duas
+ * implementações (é o 11º caso desse padrão nesta migração — mesma
+ * armadilha 1 do plano já provada por mutação em `bluesky.ts`/`mastodon.ts`
+ * na Task 2). O teste que discrimina usa `'😀'.repeat(1000)`
+ * (`distribution.test.ts`, describe "firstRunes corta por code point"):
+ * com emoji, `s.slice(0,800)` corta no MEIO de um par surrogate (cada 😀 é
+ * 2 unidades UTF-16), produzindo `.length` errado E possivelmente um
+ * surrogate solto: `[...voice_sample].length` só bate com 800 na versão
+ * por code point. Provado por mutação (trocar a implementação por
+ * `s.slice(0, n)`, rodar, confirmar falha, reverter) — ver o relatório da
+ * task.
  */
 function firstRunes(s: string, n: number): string {
   return [...s].slice(0, n).join('')
@@ -202,6 +226,28 @@ type SelectedWire = {
  * contra o próprio blog do dono. `distribution.test.ts` prova o
  * mapeamento `canonical_url → canonicalUrl` ponta a ponta (corpo da
  * requisição → corpo REAL enviado ao dev.to).
+ *
+ * ⚠️ **M4 (fix round 1, registrado — não corrigido nesta task): a coerção
+ * abaixo é FROUXA, o decode do Go (`json.NewDecoder(...).Decode(&in)` em
+ * `handlers.go:109`) é ESTRITO — dois casos divergem de verdade, na
+ * direção OPOSTA um do outro:**
+ * - Um campo de tipo errado (`{"title": 123}`, número onde `Selected.Title`
+ *   é `string`) faz o Go FALHAR o decode inteiro (`400 invalid_json`, nada
+ *   publicado). Aqui, `typeof t.title === 'string' ? t.title : undefined`
+ *   silenciosamente vira `title: undefined` — a REQUISIÇÃO INTEIRA segue e
+ *   PUBLICA com o título faltando, em vez de ser rejeitada. É o mesmo modo
+ *   de falha que a tradução `canonical_url → canonicalUrl` acima existe pra
+ *   evitar (metadado incompleto indo pro ar em silêncio), só que por
+ *   COERÇÃO em vez de por CAMPO OMITIDO — inalcançável pelo `apps/web` de
+ *   hoje (que é tipado e sempre manda `string`), mas um cliente HTTP
+ *   qualquer (ou um bug de serialização futuro) alcançaria.
+ * - Já `{"targets": null}` no corpo INTEIRO (não um campo de dentro de um
+ *   alvo) vai pro lado SEGURO: o Go aceita (`Targets` vira o slice `nil`,
+ *   decode não erra, `200` com a lista atual relida, ninguém publicado);
+ *   `distribution.ts` (a checagem antes de chamar esta função, `if
+ *   (corpo.targets !== undefined && !Array.isArray(corpo.targets))`)
+ *   REJEITA com `400 invalid_json` — mais estrito que o Go, nunca mais
+ *   frouxo, então não é a mesma classe de risco do ponto acima.
  */
 function traduzirSelected(bruto: unknown): Selected {
   const t: SelectedWire =

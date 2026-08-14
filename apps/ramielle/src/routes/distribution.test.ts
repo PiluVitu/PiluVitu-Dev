@@ -201,6 +201,27 @@ describe('POST /admin/distribution/proposals', () => {
     expect(body.notifications[0]?.code).toBe('invalid_json')
   })
 
+  // ⚠️ M2 (fix round 1): a ORDEM entre a checagem de plataforma e o parse do
+  // corpo é observável, e só este teste (combinando os dois defeitos ao
+  // mesmo tempo) trava ela. Sem plataforma nenhuma configurada E corpo
+  // quebrado, o correto (`handlers.go:57`, down() é a PRIMEIRA linha do
+  // handler, antes de decodificar) é 503 — não 400. Provado por mutação:
+  // mover a checagem `pubs.length === 0` pra DEPOIS do `c.req.json()`
+  // mantém os outros 25 testes verdes (nenhum combina os dois defeitos) e
+  // derruba só este.
+  test('sem plataforma E com corpo quebrado ⇒ 503 (não 400) — a ordem importa', async () => {
+    const cookie = await cookieDeAdmin()
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      '{ isso não é json',
+      cookie,
+      testEnv(), // nenhuma das 4 plataformas configurada
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('distribution_unavailable')
+  })
+
   test('caminho feliz: artigo (devto) persiste com content = corpo completo, status pending', async () => {
     const cookie = await cookieDeAdmin()
     const res = await postJson(
@@ -294,6 +315,54 @@ describe('POST /admin/distribution/proposals', () => {
     }
     expect(enviado.article.voice_sample).toHaveLength(800)
     expect(enviado.platforms).toEqual(['bluesky'])
+  })
+
+  // ⚠️ I1 (fix round 1, Important): o teste ACIMA usa 'x'.repeat(1000)
+  // (ASCII puro) — `toHaveLength(800)` sobre uma string ASCII passa
+  // IGUALMENTE com `[...s].slice(0,800).join('')` (code point, a
+  // implementação certa) e com `s.slice(0,800)` (unidade UTF-16, a
+  // implementação ERRADA) — ele é ESTRUTURALMENTE incapaz de provar a
+  // propriedade que `firstRunes` alega. É o 11º caso desse padrão nesta
+  // migração (armadilha 1 do plano, já provada por mutação em
+  // `bluesky.ts`/`mastodon.ts` na Task 2 — aqui não tinha sido). Este teste
+  // usa emoji (cada 😀 ocupa 2 unidades UTF-16, 1 code point): só a versão
+  // por CODE POINT bate exatamente 800 em `[...voice_sample].length` — a
+  // versão por `.length`/`.slice` cortaria no MEIO de um par surrogate,
+  // divergindo do Go em silêncio (o hook social gerado a partir de um
+  // voice_sample truncado errado é o que vai pro perfil público).
+  test('firstRunes corta por CODE POINT, não unidade UTF-16 — prova com emoji', async () => {
+    const cookie = await cookieDeAdmin()
+    const vistos = mockarFetch([
+      {
+        prefixo: 'https://promeia.exemplo.test',
+        responder: () => jsonResponse(200, { ok: true, data: { hooks: [] } }),
+      },
+    ])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      {
+        slug: 'post-emoji',
+        title: 'T',
+        excerpt: 'e',
+        url: 'https://blog/post-emoji',
+        body: '😀'.repeat(1000),
+        tags: [],
+      },
+      cookie,
+      testEnv({
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-password',
+        PROMEIA_URL: 'https://promeia.exemplo.test',
+        PROMEIA_TOKEN: 'tok',
+      }),
+    )
+    expect(res.status).toBe(200)
+
+    const enviado = JSON.parse(vistos[0]?.init.body as string) as {
+      article: { voice_sample: string }
+    }
+    expect([...enviado.article.voice_sample]).toHaveLength(800)
   })
 
   test('promeia recusa ⇒ 502 proposals_failed, nada é persistido', async () => {
@@ -396,6 +465,10 @@ describe('GET /admin/distribution/:slug', () => {
     expect(res.status).toBe(500)
     const body = (await res.json()) as Envelope<null>
     expect(body.notifications[0]?.code).toBe('internal_error')
+    // M3 (fix round 1): a mensagem também é conteúdo — o apps/web joga
+    // primary.message direto em toast.error, então um typo aqui chegaria
+    // ao dono sem teste vermelho se só o code fosse conferido.
+    expect(body.notifications[0]?.message).toBe('Falha ao ler distribuição.')
     const texto = JSON.stringify(body)
     expect(texto).not.toContain('D1_ERROR')
     expect(texto).not.toContain('disk I/O')
@@ -441,6 +514,21 @@ describe('POST /admin/distribution/:slug/publish', () => {
     const body = (await res.json()) as Envelope<null>
     expect(body.notifications[0]?.code).toBe('invalid_json')
     expect(body.notifications[0]?.message).toBe('Corpo inválido.')
+  })
+
+  // ⚠️ M2 (fix round 1) — mesma prova de ordem que `proposals` ganhou acima,
+  // aplicada aqui. Ver o comentário lá pro raciocínio completo.
+  test('sem plataforma E com corpo quebrado ⇒ 503 (não 400) — a ordem importa', async () => {
+    const cookie = await cookieDeAdmin()
+    const res = await postJson(
+      '/admin/distribution/meu-post/publish',
+      '{ isso não é json',
+      cookie,
+      testEnv(), // nenhuma das 4 plataformas configurada
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('distribution_unavailable')
   })
 
   // ⚠️ O teste que a advertência da T3 pedia: prova, por MUTAÇÃO possível
@@ -505,7 +593,12 @@ describe('POST /admin/distribution/:slug/publish', () => {
     })
   })
 
-  test('plataforma remota recusa ⇒ 502 publish_failed, alvo persiste como failed', async () => {
+  // ⚠️ M1 (fix round 1): o nome ANTERIOR deste teste ("⇒ 502 publish_failed")
+  // contradizia a própria asserção (`toBe(200)`) — quem grepasse "502
+  // publish_failed" achava este teste e podia apagar o que de fato exercita
+  // 502 (o próximo, "falha do próprio orquestrador"). O corpo/comentário já
+  // explicavam certo o PORQUÊ de ser 200; só o título mentia.
+  test('plataforma remota recusa ⇒ 200 com o alvo marcado failed (publishDistributionTargets não relança por falha individual)', async () => {
     const cookie = await cookieDeAdmin()
     mockarFetch([
       {
@@ -523,10 +616,9 @@ describe('POST /admin/distribution/:slug/publish', () => {
     // ⚠️ Paridade com o Go: publishDistributionTargets NUNCA lança por uma
     // falha de publicação individual (marca 'failed' e segue o loop) — só
     // relança se a LEITURA/ESCRITA do D1 falhar. Então este cenário sai
-    // 200 com o alvo marcado 'failed', não 502. O 502 publish_failed
-    // (asserção abaixo) é reservado pra uma falha do PRÓPRIO
-    // publishDistributionTargets (ex.: D1 fora do ar) — coberto no describe
-    // seguinte.
+    // 200 com o alvo marcado 'failed', não 502. O 502 publish_failed é
+    // reservado pra uma falha do PRÓPRIO publishDistributionTargets (ex.:
+    // D1 fora do ar) — coberto no teste seguinte.
     expect(res.status).toBe(200)
     const body = (await res.json()) as Envelope<{
       targets: Array<{ platform: string; status: string; error: string }>
@@ -633,22 +725,76 @@ describe('montarPublishers — armadilha 9 (só a PRIMEIRA credencial do par é 
   })
 })
 
-describe('as 7 credenciais nunca vazam numa resposta de erro', () => {
-  test('publish_failed não ecoa nenhum marcador de credencial', async () => {
-    const cookie = await cookieDeAdmin()
-    mockarFetch([
-      {
-        prefixo: 'https://dev.to',
-        responder: () => new Response('erro remoto', { status: 500 }),
+// ⚠️ M1+M5 (fix round 1): esta describe se chamava "as 7 credenciais nunca
+// vazam", mas só exercitava o dev.to (1 de 4 plataformas) — nome prometia
+// mais cobertura do que o teste entregava. A T2 (lib/publishers/*.test.ts)
+// já prova não-vazamento por ADAPTER isoladamente; o que faltava aqui era a
+// mesma garantia na FRONTEIRA da rota (`traduzirSelected`/`montarPublishers`
+// não introduzem um vazamento novo), então agora é um caso por plataforma,
+// não um resumo de 1.
+describe('nenhuma credencial vaza numa resposta de erro (as 4 plataformas, na fronteira da rota)', () => {
+  const MASTODON_URL_TESTE = 'https://mastodon.exemplo.test'
+
+  test.each([
+    {
+      platform: 'devto',
+      marcador: MARCADOR_DEVTO,
+      prefixo: 'https://dev.to',
+      env: { DEVTO_API_KEY: MARCADOR_DEVTO },
+    },
+    {
+      platform: 'hashnode',
+      marcador: MARCADOR_HASHNODE,
+      prefixo: 'https://gql.hashnode.com',
+      env: {
+        HASHNODE_API_TOKEN: MARCADOR_HASHNODE,
+        HASHNODE_PUBLICATION_ID: 'pub-1',
       },
-    ])
-    const res = await postJson(
-      '/admin/distribution/meu-post/publish',
-      { targets: [{ platform: 'devto', content: 'corpo' }] },
-      cookie,
-      envComDevto(),
-    )
-    const texto = await res.text()
-    expect(texto).not.toContain(MARCADOR_DEVTO)
-  })
+    },
+    {
+      platform: 'bluesky',
+      marcador: MARCADOR_BLUESKY,
+      prefixo: 'https://bsky.social',
+      env: {
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-pw',
+      },
+    },
+    {
+      platform: 'mastodon',
+      marcador: MARCADOR_MASTODON,
+      prefixo: MASTODON_URL_TESTE,
+      env: {
+        MASTODON_INSTANCE_URL: MASTODON_URL_TESTE,
+        MASTODON_ACCESS_TOKEN: MARCADOR_MASTODON,
+      },
+    },
+  ])(
+    '$platform: o marcador de credencial não aparece na resposta de erro',
+    async ({ platform, marcador, prefixo, env }) => {
+      const cookie = await cookieDeAdmin()
+      mockarFetch([
+        {
+          prefixo,
+          responder: () => new Response('erro remoto', { status: 500 }),
+        },
+      ])
+      const res = await postJson(
+        '/admin/distribution/marcador-post/publish',
+        { targets: [{ platform, content: 'corpo' }] },
+        cookie,
+        testEnv(env),
+      )
+      expect(res.status).toBe(200)
+      // `res.text()`, não `res.json()` — o corpo só pode ser lido uma vez;
+      // esta é a asserção de não-vazamento (via texto cru) E a de status
+      // (via JSON.parse do MESMO texto já lido).
+      const texto = await res.text()
+      const body = JSON.parse(texto) as Envelope<{
+        targets: Array<{ platform: string; status: string }>
+      }>
+      expect(body.data?.targets[0]?.status).toBe('failed')
+      expect(texto).not.toContain(marcador)
+    },
+  )
 })
