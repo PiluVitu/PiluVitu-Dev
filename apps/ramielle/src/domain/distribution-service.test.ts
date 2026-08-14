@@ -7,6 +7,7 @@
 import { env } from 'cloudflare:test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PromeiaInalcancavel, PromeiaRecusou } from '../lib/promeia'
+import { publishBluesky } from '../lib/publishers/bluesky'
 import type { DistributionKind } from './distribution'
 import {
   listDistributionTargetsBySlug,
@@ -615,6 +616,74 @@ describe('publishDistributionTargets', () => {
       expect(alvo?.error ?? '').not.toContain('D1_ERROR') // (c) nunca texto cru
       expect(alvo?.error ?? '').not.toContain('disk I/O')
     })
+  })
+})
+
+// ⚠️ A1 (revisão final da fatia) — `Payload.text` (`text: sel.content`,
+// `publishDistributionTargets`) era o ÚNICO campo do caminho de publicação
+// sem NENHUMA asserção de valor na suíte inteira: mutar pra `text: ''` e
+// rodar a suíte inteira do Worker deixava os 559 testes verdes (reproduzido
+// 4×), enquanto o mesmo experimento em `bodyMd`/`title`/`canonicalUrl`/
+// `description`/`tags` (os 5 campos do caminho de ARTIGO) é morto por
+// `routes/distribution.test.ts:542`. O `text` não tinha par: `Payload` é
+// montado pelo SERVIÇO (`domain/distribution-service.ts:357-364`), mas todo
+// teste existente que provava `record.text` (`lib/publishers/bluesky.test.ts`)
+// recebia um `Payload` já pronto NA MÃO do teste — nunca o que o serviço
+// monta a partir de `sel.content` — e o único teste de rota que exercita
+// Bluesky/Mastodon usa um mock que responde 500 sem ler o corpo enviado.
+//
+// Este teste fecha a lacuna chamando o `publishBluesky` DE VERDADE (não um
+// publisher falso) através de `publishDistributionTargets`, e afirma que o
+// `record.text` que de fato chega no `createRecord` do Bluesky é
+// EXATAMENTE `sel.content` — o único jeito de provar que `text: sel.content`
+// sobrevive do domínio até o corpo real enviado à plataforma.
+describe('publishDistributionTargets — A1: Payload.text chega ao texto REAL enviado à plataforma (via publishBluesky de verdade, não um Payload montado à mão)', () => {
+  const BLUESKY_BASE_A1 = 'https://bluesky-a1.exemplo.test'
+
+  it("o content do Selected é EXATAMENTE o texto que o Bluesky recebe no createRecord — prova por mutação (text: sel.content → text: '')", async () => {
+    let corpoCreateRecord: { record?: { text?: string } } | undefined
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const urlTexto = String(url)
+      if (!urlTexto.startsWith(BLUESKY_BASE_A1)) {
+        throw new Error(`URL não mockada: ${urlTexto}`)
+      }
+      if (urlTexto.endsWith('createSession')) {
+        return jsonResponse(200, { accessJwt: 'JWT', did: 'did:plc:a1' })
+      }
+      if (urlTexto.endsWith('createRecord')) {
+        corpoCreateRecord = JSON.parse(init?.body as string)
+        return jsonResponse(200, {
+          uri: 'at://did:plc:a1/app.bsky.feed.post/rkey-a1',
+          cid: 'cid-a1',
+        })
+      }
+      throw new Error(`URL não mockada: ${urlTexto}`)
+    }) as unknown as typeof fetch
+
+    // Publisher REAL (não `criarPublisherFalso`) — a única forma de provar
+    // que o `Payload` MONTADO PELO SERVIÇO (não um `Payload` escrito à mão
+    // no teste) chega intacto até o adapter.
+    const pubBlueskyReal: Publisher = {
+      platform: 'bluesky',
+      kind: 'social_hook',
+      publish: (payload) =>
+        publishBluesky(
+          {
+            handle: 'dono.bsky.social',
+            appPassword: 'pw',
+            baseUrl: BLUESKY_BASE_A1,
+          },
+          payload,
+        ),
+    }
+
+    await publishDistributionTargets(DB, [pubBlueskyReal], 'a1-texto-real', [
+      { platform: 'bluesky', content: 'texto do domínio, sem intermediário' },
+    ])
+
+    expect(corpoCreateRecord?.record?.text).toBe(
+      'texto do domínio, sem intermediário',
+    )
   })
 })
 

@@ -105,8 +105,30 @@ function lerTabela(db, tabela, colunas) {
 /**
  * Lê as 6 tabelas do domínio de votação do SQLite de origem (schema da Go)
  * e devolve um objeto plano — nunca toca `sqlite_sequence`, nunca lê
- * `sessions`/`distribution_targets` (não têm equivalente no ramielle e
- * estão com 0 linhas em produção, ver "Fatos medidos").
+ * `sessions` (auth de admin da própria Go, `apps/api/internal/auth/session.go`
+ * — sem equivalente aqui, o ramielle usa a `session` do Better Auth).
+ *
+ * ⚠️ **`distribution_targets` ficou de fora por ESCOPO, não por falta de
+ * equivalente.** A frase que estava aqui antes ("não tem equivalente no
+ * ramielle") era verdadeira quando esta task foi escrita (fatia ④) e ficou
+ * FALSA a partir da Task 1 da fatia de distribuição
+ * (`.superpowers/sdd/2026-08-13-ramielle-distribuicao/`): o ramielle TEM a
+ * tabela desde `migrations/0004_distribution.sql`, mesmo schema portado de
+ * `apps/api/internal/distribution/schema.sql`. Continua inócuo HOJE — a
+ * origem Go tinha 0 linhas em `distribution_targets` na medição registrada
+ * em "Fatos medidos" do plano da fatia ④ —, mas quem estender este script
+ * pra importar essa tabela no futuro (se a Go acumular linhas reais antes
+ * do cutover valer) TEM QUE preservar `status`/`remote_url`/`posted_at`
+ * literalmente da origem, nunca resetar pra `'pending'`:
+ * `status === 'posted'` é a ÚNICA proteção contra publicar em duplicidade
+ * que existe no sistema inteiro (`publishDistributionTargets`,
+ * `src/domain/distribution-service.ts` — nenhuma das 4 plataformas dedupa
+ * do lado delas). Um import que descarte ou resete esse selo em silêncio
+ * faria o primeiro "Publicar selecionadas" no ramielle depois do cutover
+ * REPUBLICAR, no perfil PÚBLICO do dono, todo post que já tinha sido
+ * publicado por fora (ex.: pela API Go, antes do cutover) — sem erro, sem
+ * teste vermelho, só um post duplicado de verdade em dev.to/Hashnode/
+ * Bluesky/Mastodon.
  *
  * `caminhoDb` é sempre aberto `readOnly: true` — este script NUNCA escreve
  * nos BYTES do banco de origem (`.db`/`.db-wal`). Se o arquivo `.db`

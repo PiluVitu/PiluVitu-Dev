@@ -732,36 +732,95 @@ describe('montarPublishers — armadilha 9 (só a PRIMEIRA credencial do par é 
 // mesma garantia na FRONTEIRA da rota (`traduzirSelected`/`montarPublishers`
 // não introduzem um vazamento novo), então agora é um caso por plataforma,
 // não um resumo de 1.
-describe('nenhuma credencial vaza numa resposta de erro (as 4 plataformas, na fronteira da rota)', () => {
+//
+// ⚠️ A2 (revisão final da fatia) — o caso `bluesky` estava testando o
+// marcador ERRADO. `BLUESKY_HANDLE` é o dado que o produto PUBLICA de
+// propósito (`lib/publishers/bluesky.ts:218`, dentro da `remote_url`) — não
+// é o segredo. `BLUESKY_APP_PASSWORD` (a credencial de verdade) não tinha
+// NENHUMA asserção: vazar a app password passava verde na fronteira da
+// rota. Corrigido pra 1 linha POR CREDENCIAL (7 no total — as 3 "segundas
+// do par", `HASHNODE_PUBLICATION_ID`/`BLUESKY_APP_PASSWORD`/
+// `MASTODON_INSTANCE_URL`, ganharam marcador próprio; a 4ª segunda,
+// `MASTODON_ACCESS_TOKEN`, já tinha), em vez de 1 por plataforma — cada
+// linha isola a credencial sob teste (as outras do mesmo par recebem um
+// valor comum, não-marcador), então cada uma prova por mutação
+// independentemente.
+describe('nenhuma credencial vaza numa resposta de erro (as 7 credenciais, na fronteira da rota) — A2', () => {
   const MASTODON_URL_TESTE = 'https://mastodon.exemplo.test'
+  const MASTODON_INSTANCE_URL_MARCADA =
+    'https://instancia-marcador-mastodon-nao-pode-vazar-52c1.test'
+  const MARCADOR_HASHNODE_PUBLICATION_ID =
+    'MARCADOR-HASHNODE-PUBLICATION-ID-NAO-PODE-VAZAR-6b1c'
+  const MARCADOR_BLUESKY_APP_PASSWORD =
+    'MARCADOR-BLUESKY-APP-PASSWORD-NAO-PODE-VAZAR-4d8e'
 
   test.each([
     {
       platform: 'devto',
+      credencial: 'DEVTO_API_KEY',
       marcador: MARCADOR_DEVTO,
       prefixo: 'https://dev.to',
       env: { DEVTO_API_KEY: MARCADOR_DEVTO },
     },
     {
       platform: 'hashnode',
+      credencial: 'HASHNODE_API_TOKEN (1ª do par)',
       marcador: MARCADOR_HASHNODE,
       prefixo: 'https://gql.hashnode.com',
       env: {
         HASHNODE_API_TOKEN: MARCADOR_HASHNODE,
-        HASHNODE_PUBLICATION_ID: 'pub-1',
+        HASHNODE_PUBLICATION_ID: 'pub-normal',
       },
     },
     {
+      // ⚠️ A2: sem marcador antes.
+      platform: 'hashnode',
+      credencial: 'HASHNODE_PUBLICATION_ID (2ª do par)',
+      marcador: MARCADOR_HASHNODE_PUBLICATION_ID,
+      prefixo: 'https://gql.hashnode.com',
+      env: {
+        HASHNODE_API_TOKEN: 'token-normal',
+        HASHNODE_PUBLICATION_ID: MARCADOR_HASHNODE_PUBLICATION_ID,
+      },
+    },
+    {
+      // Pública de propósito (embutida na remote_url em sucesso) — mantida
+      // aqui só por completude das 7; NÃO é a asserção decisiva do par.
       platform: 'bluesky',
+      credencial: 'BLUESKY_HANDLE (1ª do par, pública)',
       marcador: MARCADOR_BLUESKY,
       prefixo: 'https://bsky.social',
       env: {
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
-        BLUESKY_APP_PASSWORD: 'app-pw',
+        BLUESKY_APP_PASSWORD: 'app-password-normal',
+      },
+    },
+    {
+      // ⚠️ A2: a credencial que é SEGREDO de verdade — sem asserção nenhuma
+      // antes (o caso `bluesky` original testava só o HANDLE, acima).
+      platform: 'bluesky',
+      credencial: 'BLUESKY_APP_PASSWORD (2ª do par, segredo)',
+      marcador: MARCADOR_BLUESKY_APP_PASSWORD,
+      prefixo: 'https://bsky.social',
+      env: {
+        BLUESKY_HANDLE: 'handle-normal.bsky.social',
+        BLUESKY_APP_PASSWORD: MARCADOR_BLUESKY_APP_PASSWORD,
+      },
+    },
+    {
+      // ⚠️ A2: sem marcador antes.
+      platform: 'mastodon',
+      credencial: 'MASTODON_INSTANCE_URL (1ª do par)',
+      marcador: MASTODON_INSTANCE_URL_MARCADA,
+      prefixo: MASTODON_INSTANCE_URL_MARCADA,
+      env: {
+        MASTODON_INSTANCE_URL: MASTODON_INSTANCE_URL_MARCADA,
+        MASTODON_ACCESS_TOKEN: 'token-normal',
       },
     },
     {
       platform: 'mastodon',
+      credencial: 'MASTODON_ACCESS_TOKEN (2ª do par)',
       marcador: MARCADOR_MASTODON,
       prefixo: MASTODON_URL_TESTE,
       env: {
@@ -770,7 +829,7 @@ describe('nenhuma credencial vaza numa resposta de erro (as 4 plataformas, na fr
       },
     },
   ])(
-    '$platform: o marcador de credencial não aparece na resposta de erro',
+    '$platform ($credencial): o marcador não aparece na resposta de erro',
     async ({ platform, marcador, prefixo, env }) => {
       const cookie = await cookieDeAdmin()
       mockarFetch([
