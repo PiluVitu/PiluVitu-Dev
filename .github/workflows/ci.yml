@@ -145,10 +145,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # v9 (major mais recente publicada nesta sessão — o brief citava v6,
-      # desatualizada). `uv sync` baixa o Python de .python-version sozinho,
-      # então não há setup-python aqui.
-      - uses: astral-sh/setup-uv@v9
+      # ⚠️ VERSÃO COMPLETA (`v9.0.0`), não a major móvel (`v9`) — e isso NÃO é
+      # preferência de estilo, é o único jeito que funciona. `astral-sh/setup-uv`
+      # publica releases até `v10.x`, mas as tags MÓVEIS de major param na `v7`
+      # (medido: `gh api repos/astral-sh/setup-uv/git/refs/tags` lista v1..v7 e
+      # nada além). Escrever `@v9` — por analogia com `actions/checkout@v4` e
+      # `pnpm/action-setup@v4`, que têm major móvel — faz o job morrer no "Set up
+      # job", ANTES de qualquer step, com `Unable to resolve action
+      # astral-sh/setup-uv@v9, unable to find version v9`.
+      #
+      # Foi exatamente o que aconteceu: este job nasceu com `@v9` e FALHOU nas 4
+      # execuções que teve, sem nunca rodar um teste sequer. Passou despercebido
+      # porque a suíte do promeia era verificada localmente (`make test-promeia`),
+      # onde passa — o vermelho só existia na CI. ⚠️ Consequência que amplifica:
+      # `deploy-financas.yml` exige `workflow_run.conclusion == 'success'`, então
+      # um CI vermelho por este motivo bloquearia o deploy automático do finanças
+      # mesmo depois do token estar configurado.
+      #
+      # Ao atualizar: conferir se a major móvel existe antes de usá-la, e não
+      # adotar release com menos de 24 h (mesma carência de `minimumReleaseAge`
+      # do pnpm e de `exclude-newer` do uv — uma action roda código arbitrário
+      # no CI com acesso ao repositório). `v10.0.1` foi descartada aqui por ter
+      # saído há ~8 h no momento desta correção.
+      #
+      # `uv sync` baixa o Python de .python-version sozinho, então não há
+      # setup-python aqui.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
 
