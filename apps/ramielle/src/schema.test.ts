@@ -42,13 +42,14 @@ async function novaSessao(
 // --------------------------------------------------------------------------
 
 describe('migration 0001 — tabelas e índices', () => {
-  // ⚠️ 6 → 10 tabelas nesta task (T3): a 0002_better_auth.sql soma `user`,
-  // `session`, `account`, `verification` (Better Auth) às 6 do domínio da
-  // votação. Este teste conta TODAS as tabelas do banco (não filtra por
-  // migration), então ele quebraria em silêncio assim que 0002 fosse
-  // aplicada sem este ajuste — atualizado aqui de propósito, não uma
-  // regressão da Task 3.
-  it('cria exatamente as 10 tabelas (6 da votação + 4 do Better Auth)', async () => {
+  // ⚠️ 6 → 10 → 11 tabelas: a 0002_better_auth.sql somou `user`, `session`,
+  // `account`, `verification` (Better Auth) às 6 do domínio da votação; a
+  // 0004_distribution.sql (Task 1 da fatia de distribuição de artigo) soma
+  // `distribution_targets`. Este teste conta TODAS as tabelas do banco (não
+  // filtra por migration), então ele quebraria em silêncio assim que uma
+  // migration nova fosse aplicada sem este ajuste — atualizado aqui de
+  // propósito, não uma regressão desta task.
+  it('cria exatamente as 11 tabelas (6 da votação + 4 do Better Auth + 1 da distribuição)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -61,6 +62,7 @@ describe('migration 0001 — tabelas e índices', () => {
     expect(results.map((r) => r.name)).toEqual([
       'account',
       'backups',
+      'distribution_targets',
       'session',
       'session_movies',
       'tiebreaks',
