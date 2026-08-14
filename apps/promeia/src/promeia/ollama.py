@@ -177,20 +177,30 @@ def generate(
     ⚠️ **`"think": false` aqui NÃO é o mesmo defeito do `chat`, e mesmo assim
     foi tratado — os dois lados MEDIDOS, com a mesma prompt de uma frase:**
 
-    | endpoint        | modelo      | think   | `response`/`content` | tokens | tempo  |
-    | --------------- | ----------- | ------- | -------------------- | ------ | ------ |
-    | `/api/chat`     | qwen3.5:4b  | ausente | **VAZIO**            | 3.614  | —      |
-    | `/api/generate` | qwen3.5:4b  | ausente | preenchido           | 3.481  | >120 s |
-    | `/api/generate` | qwen3.5:4b  | `false` | preenchido           | **21** | 5,4 s  |
+    Tudo com `qwen3.5:4b`, mesma prompt de uma frase:
+
+    | endpoint    | think   | saiu       | tokens      | tempo         |
+    | ----------- | ------- | ---------- | ----------- | ------------- |
+    | `chat`      | ausente | **VAZIO**  | 3.614       | —             |
+    | `generate`  | ausente | preenchido | 248 a 3.481 | 22 s a >120 s |
+    | `generate`  | `false` | preenchido | **2 a 21**  | 1 s a 5,4 s   |
+
+    ⚠️ **As faixas do `/api/generate` são largas porque o custo do thinking NÃO
+    é reprodutível** — nem com `temperature: 0`. A 1ª medição deu 3.481 tokens
+    e >120 s; a verificação independente, mesmo modelo e mesma prompt, deu 248
+    tokens e 22,3 s. ~14x de diferença, mesma direção. Um número único aqui
+    seria mais preciso do que o fenômeno permite, e quem tentasse reproduzir
+    concluiria que este comentário mente. O que se sustenta é a ORDEM DE
+    GRANDEZA.
 
     Ou seja: os dois endpoints do Ollama tratam thinking de forma DIFERENTE —
     `/api/chat` engole a resposta (raciocínio em `message.thinking`, `content`
     vazio), `/api/generate` separa em `thinking` e ainda preenche `response`.
-    Então o insight NÃO tem o bug de resposta vazia. O que ele tem é 166x mais
-    tokens e >120 s de parede contra o `read=180.0` do `TIMEOUT` acima, num
-    prompt de UMA frase — o prompt real do insight é muito maior, e a margem
-    que sobra vira `OllamaUnreachable` ("não respondeu a tempo") no dia em que
-    o dono apontar `OLLAMA_MODEL` pra um modelo de 2026.
+    Então o insight NÃO tem o bug de resposta vazia. O que ele tem é uma a duas
+    ordens de grandeza a mais de tokens e de parede contra o `read=180.0` do
+    `TIMEOUT` acima, num prompt de UMA frase — o prompt real do insight é muito
+    maior, e a margem que sobra vira `OllamaUnreachable` ("não respondeu a
+    tempo") no dia em que o dono apontar `OLLAMA_MODEL` pra um modelo de 2026.
 
     Tratado agora, e não só registrado, porque o campo é uma linha, está
     MEDIDO como inofensivo no modelo que o insight realmente usa

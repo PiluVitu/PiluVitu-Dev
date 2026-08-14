@@ -115,15 +115,24 @@ checar se o insight tinha o mesmo defeito latente. `/api/chat` engole a
 resposta; `/api/generate` separa o raciocínio em `thinking` e **ainda preenche
 `response`**. Mesma prompt de uma frase, `qwen3.5:4b`:
 
-| Endpoint        | `think`   | Resposta   | Tokens | Tempo      |
-| --------------- | --------- | ---------- | ------ | ---------- |
-| `/api/chat`     | ausente   | **VAZIA**  | 3.614  | —          |
-| `/api/generate` | ausente   | preenchida | 3.481  | **>120 s** |
-| `/api/generate` | `false`   | preenchida | **21** | **5,4 s**  |
+| Endpoint        | `think` | Resposta   | Tokens        | Tempo            |
+| --------------- | ------- | ---------- | ------------- | ---------------- |
+| `/api/chat`     | ausente | **VAZIA**  | 3.614         | —                |
+| `/api/generate` | ausente | preenchida | 248 a 3.481   | **22 s a >120 s** |
+| `/api/generate` | `false` | preenchida | **2 a 21**    | **1 s a 5,4 s**  |
+
+⚠️ **As faixas do `/api/generate` são largas de propósito: o custo do thinking
+NÃO é reprodutível.** A 1ª medição desta task deu 3.481 tokens / >120 s; a
+verificação independente, com o mesmo modelo e o mesmo `temperature: 0`, deu
+**248 tokens / 22,3 s** — ~14× menos, mesma direção. Um número único aqui seria
+mais preciso do que o fenômeno permite, e a próxima pessoa que tentasse
+reproduzi-lo concluiria que a tabela mente. O que se sustenta é a ORDEM DE
+GRANDEZA: uma a duas ordens a mais de tokens e de tempo, num prompt de UMA
+frase.
 
 Ou seja: o insight (que usa `generate`) **não** tem o bug de resposta vazia —
-tem 166x mais tokens e >120 s de parede contra o `read=180.0` de
-`ollama.TIMEOUT`, num prompt de UMA frase (o prompt real do insight é bem
+tem uma a duas ordens de grandeza a mais de tokens e de parede contra o
+`read=180.0` de `ollama.TIMEOUT`, num prompt de UMA frase (o prompt real é bem
 maior). `generate` também manda `"think": false` desde esta task: uma linha,
 medida como inofensiva no modelo que o insight de fato usa, e coerente com o
 `temperature: 0` que aquele caminho fixa justamente por exigir determinismo.
