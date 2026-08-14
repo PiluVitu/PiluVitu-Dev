@@ -82,7 +82,8 @@ app.route('/api', insightsRoutes)
 
 /**
  * Rede de segurança GLOBAL — pega qualquer exceção que uma rota deixe
- * escapar sem `try/catch` próprio. SEM isto, o handler default do Hono
+ * escapar sem `try/catch` próprio, DESDE QUE seja um `Error`. SEM isto,
+ * o handler default do Hono
  * responde `text/plain "Internal Server Error"`, FORA do envelope
  * {ok,data,notifications} que toda outra resposta desta API usa: `api<T>()`
  * (web/src/api.ts) não acha o envelope e a tela renderiza, dentro de um
@@ -102,6 +103,14 @@ app.route('/api', insightsRoutes)
  * mesmo cenário (envelope compartilhado, tipado por `apps/web`) — não um
  * código novo desta fatia.
  *
+ * ⚠️ NÃO é "nenhuma exceção sai fora do envelope" — o Hono só chama este
+ * handler quando o que foi lançado é um `Error`: `if (err instanceof Error
+ * && onError)` (`hono/dist/compose.js`). Um `throw 'string'` ou um objeto
+ * cru continua saindo como `text/plain`, fora do envelope. Nenhum código
+ * deste Worker lança valor não-`Error` hoje, então é inofensivo na prática
+ * — mas a frase absoluta convidaria a confiar demais numa rede que tem
+ * esse furo.
+ *
  * Registrado ANTES do catch-all só por leitura: `app.onError` não é rota
  * (é um handler único do app, funciona igual em qualquer posição), mas
  * deixá-lo fisicamente abaixo do "SEMPRE POR ÚLTIMO" convidaria a leitura
@@ -119,6 +128,26 @@ export function onErrorGlobal(err: Error): Response {
   // ela, o status é preservado e o corpo entra no envelope, porque sair
   // dele reproduziria o mesmo "resposta sem envelope" que este handler
   // existe pra eliminar, só com outro número.
+  //
+  // ⚠️ Um `HTTPException(401)` sai daqui como `401 http_error`, e isso TEM
+  // consequência concreta — não é só uma etiqueta genérica. A SPA só
+  // re-gateia a sessão quando `res.status === 401 && code ===
+  // 'not_authenticated'` (web/src/api.ts, o `$store.notify('$sessionSignal')`
+  // que devolve o dono pro login); com qualquer outro código o 401 vira erro
+  // cru na tela, com o header logado de pé, sem caminho de volta. Ou seja:
+  // 401 → `not_authenticated` NÃO seria "chute semântico", é o contrato que
+  // a SPA já exige.
+  //
+  // DECISÃO: só documentar, não mapear. Mapear agora criaria comportamento
+  // sem nenhum chamador real — MEDIDO: zero `HTTPException` em `src/`, então
+  // o ramo só existe pra middleware do Hono/dependência futura. Um mapa
+  // 401→`not_authenticated` escrito hoje nasceria sem teste que o exercite
+  // por um caminho de produção, e poderia estar errado quando o primeiro
+  // lançador real aparecer (uma lib pode lançar 401 por motivo que NÃO é
+  // "sua sessão acabou" — mandar o dono pro login seria a resposta errada).
+  // Quem introduzir a primeira `HTTPException` aqui deve preferir `errJson`
+  // (o envelope é o contrato do módulo); se ela for de sessão, mapear o 401
+  // para `not_authenticated` JUNTO com o caso de uso que a justifique.
   if (err instanceof HTTPException) {
     console.error('HTTPException chegou ao onError global', err.status, err)
     if (err.res) return err.res

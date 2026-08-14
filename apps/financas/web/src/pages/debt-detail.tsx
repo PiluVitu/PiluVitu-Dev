@@ -18,6 +18,7 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import type { AccountView } from './accounts'
 import { NovoItemForm } from './NovoItemForm'
 
@@ -267,35 +268,19 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   }
 
   /**
-   * Executa uma mutação e SÓ DEPOIS recarrega — em dois `try` separados,
-   * não um só (fix de revisão). Antes, `carregar()` morava dentro do MESMO
-   * `try` da mutação: se a mutação tivesse sucesso mas o `GET` seguinte
-   * falhasse (rede instável logo depois), o `catch` escrevia o erro do GET
-   * em `acaoErro` e a tela continuava mostrando o estado ANTIGO — ex.:
-   * "Dar baixa" (POST 200) seguido de falha no recarregar deixava o botão
-   * "Dar baixa" ainda visível, e tentar de novo batia num 404 "já baixada"
-   * — a ação tinha funcionado, a tela dizia que não. Mutação e
-   * recarregamento são sucessos/falhas INDEPENDENTES aos olhos do dono.
+   * Casca fina sobre `mutarERecarregar` (lib/mutar-e-recarregar.ts, onde
+   * mora o porquê dos dois `try` separados): amarra o resultado ao estado
+   * DESTA tela — `acaoErro` pra mensagem, `processando` pro botão da linha.
+   * A estrutura (e a distinção entre "a ação falhou" e "a ação foi
+   * concluída, o recarregamento é que não") tem um dono só, compartilhado
+   * com `accounts.tsx`.
    */
-  async function mutarERecarregar(id: string, mutar: () => Promise<void>) {
+  async function executarAcao(id: string, mutar: () => Promise<unknown>) {
     setAcaoErro(null)
     setProcessando(id)
-    try {
-      await mutar()
-    } catch (err: unknown) {
-      setAcaoErro(err instanceof ApiError ? err.message : String(err))
-      setProcessando(null)
-      return
-    }
-    try {
-      await carregar()
-    } catch {
-      setAcaoErro(
-        'A ação foi concluída, mas não consegui recarregar a tela — atualize a página pra ver o resultado.',
-      )
-    } finally {
-      setProcessando(null)
-    }
+    const resultado = await mutarERecarregar(mutar, carregar)
+    if (!resultado.ok) setAcaoErro(resultado.mensagem)
+    setProcessando(null)
   }
 
   // Mensagem do SERVIDOR mostrada sem reescrever (crítico pra
@@ -329,7 +314,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
       titulo: 'Dar baixa',
       mensagem: `Dar baixa em "${detail!.debt.title}"? Ela sai do comprometido; itens, pagamentos e lançamentos continuam no histórico.`,
       onConfirm: () =>
-        mutarERecarregar('baixa', async () => {
+        executarAcao('baixa', async () => {
           await api(`/api/debts/${debtId}/write-off`, { method: 'POST' })
         }),
     })
@@ -341,7 +326,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
       mensagem: `Excluir o item "${item.description}"? Não há como desfazer.`,
       variante: 'destructive',
       onConfirm: () =>
-        mutarERecarregar(`item:${item.item_id}`, async () => {
+        executarAcao(`item:${item.item_id}`, async () => {
           await api(`/api/debts/${debtId}/items/${item.item_id}`, {
             method: 'DELETE',
           })
@@ -355,7 +340,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
       mensagem: `Excluir o pagamento de ${formatBRL(pagamento.amount_cents)} em ${dataBR(pagamento.paid_on)}? O lançamento no caixa some junto. Não há como desfazer.`,
       variante: 'destructive',
       onConfirm: () =>
-        mutarERecarregar(`pagamento:${pagamento.id}`, async () => {
+        executarAcao(`pagamento:${pagamento.id}`, async () => {
           await api(`/api/debts/${debtId}/payments/${pagamento.id}`, {
             method: 'DELETE',
           })

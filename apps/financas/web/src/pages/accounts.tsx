@@ -16,6 +16,7 @@ import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 
 export type AccountView = {
   id: string
@@ -140,28 +141,35 @@ export function AccountsPage() {
     }
 
     setSalvando(true)
-    try {
-      await api('/api/accounts', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: nome,
-          scope,
-          kind,
-          closing_day: kind === 'credit_card' ? Number(closingDay) : undefined,
-          due_day: kind === 'credit_card' ? Number(dueDay) : undefined,
-          opening_balance_cents: openingBalanceCents,
-        }),
-      })
-      setNome('')
-      setClosingDay('')
-      setDueDay('')
-      setSaldoInicial('')
-      await carregar()
-    } catch (err: unknown) {
-      setFormError(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setSalvando(false)
-    }
+    // Criar e recarregar são sucessos INDEPENDENTES (ver
+    // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um POST 201
+    // seguido de um GET que falha mostrava o erro do GET como se a conta
+    // não tivesse sido criada — e o dono submetia de novo, criando uma
+    // conta duplicada. Defeito pré-existente, mesma forma do arquivar.
+    const resultado = await mutarERecarregar(
+      async () => {
+        await api('/api/accounts', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: nome,
+            scope,
+            kind,
+            closing_day:
+              kind === 'credit_card' ? Number(closingDay) : undefined,
+            due_day: kind === 'credit_card' ? Number(dueDay) : undefined,
+            opening_balance_cents: openingBalanceCents,
+          }),
+        })
+        setNome('')
+        setClosingDay('')
+        setDueDay('')
+        setSaldoInicial('')
+      },
+      carregar,
+      'A conta foi criada, mas não consegui recarregar a lista — atualize a página pra vê-la. Não envie de novo: criaria uma conta duplicada.',
+    )
+    if (!resultado.ok) setFormError(resultado.mensagem)
+    setSalvando(false)
   }
 
   function arquivar(a: AccountView) {
@@ -176,14 +184,17 @@ export function AccountsPage() {
       onConfirm: async () => {
         setAcaoErro(null)
         setProcessando(a.id)
-        try {
-          await api(`/api/accounts/${a.id}/archive`, { method: 'POST' })
-          await carregar()
-        } catch (err: unknown) {
-          setAcaoErro(err instanceof ApiError ? err.message : String(err))
-        } finally {
-          setProcessando(null)
-        }
+        // Arquivar e recarregar em dois `try` separados (padrão de
+        // lib/mutar-e-recarregar.ts): um POST 200 seguido de um GET que
+        // falha NÃO pode ler como "o arquivamento falhou" — o dono
+        // tentaria de novo e bateria em 404 "já arquivada", sem saída.
+        const resultado = await mutarERecarregar(
+          () => api(`/api/accounts/${a.id}/archive`, { method: 'POST' }),
+          carregar,
+          `A conta "${a.name}" foi arquivada, mas não consegui recarregar a lista — atualize a página pra vê-la fora dela.`,
+        )
+        if (!resultado.ok) setAcaoErro(resultado.mensagem)
+        setProcessando(null)
       },
     })
   }

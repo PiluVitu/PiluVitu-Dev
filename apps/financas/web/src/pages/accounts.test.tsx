@@ -54,12 +54,17 @@ function mockFetch(body: unknown, status = 200) {
  * O POST é roteado por PATH (não só por método): `/api/accounts` é a criação,
  * `/api/accounts/:id/archive` é o arquivamento. Sem essa separação, um teste
  * de arquivamento passaria batendo no mock de criação e não provaria nada.
+ *
+ * `getFalhaApartirDe` faz o GET rejeitar a partir da N-ésima chamada — é o
+ * que reproduz "a mutação deu 200 e a rede caiu antes do recarregar", o
+ * cenário que `lib/mutar-e-recarregar.ts` existe pra tratar.
  */
 function mockRoutes(opts: {
   initial: unknown[]
   depois?: unknown[]
   post?: { status: number; body: unknown }
   archive?: { status: number; body: unknown }
+  getFalhaApartirDe?: number
 }) {
   let getCount = 0
   const fn = vi.fn(async (path: string, init?: RequestInit) => {
@@ -78,6 +83,14 @@ function mockRoutes(opts: {
       return { status: post.status, json: async () => post.body }
     }
     getCount++
+    if (
+      opts.getFalhaApartirDe !== undefined &&
+      getCount >= opts.getFalhaApartirDe
+    ) {
+      // Rede caindo de verdade: `fetch` rejeita, não devolve um envelope
+      // de erro — é o modo de falha do Android do dono num sinal ruim.
+      throw new TypeError('Failed to fetch')
+    }
     const data = getCount === 1 ? opts.initial : (opts.depois ?? opts.initial)
     return {
       status: 200,
@@ -449,6 +462,118 @@ describe('AccountsPage', () => {
       )
       // A tela continua de pé — a conta ainda está lá (o arquivamento falhou).
       expect(screen.getByTestId('saldo-a1')).toBeInTheDocument()
+    })
+
+    // O POST deu 200 e o GET seguinte caiu. Antes, os dois moravam no mesmo
+    // `try`: a tela gravava o erro do GET em `acaoErro`, o dono lia "falhou",
+    // tentava de novo e batia em 404 "já arquivada" — sem saída. A ação
+    // ACONTECEU; a mensagem tem que dizer isso.
+    it('arquivou mas o recarregar falhou: a mensagem diz que arquivou, nunca que falhou', async () => {
+      const fetchMock = mockRoutes({
+        initial: contas,
+        getFalhaApartirDe: 2, // 1º GET = mount; o 2º é o recarregar
+      })
+      const user = userEvent.setup()
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('arquivar-a1')).toBeInTheDocument(),
+      )
+
+      await user.click(screen.getByTestId('arquivar-a1'))
+      await screen.findByRole('heading', { name: 'Arquivar conta' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      const alerta = await screen.findByRole('alert')
+      expect(alerta).toHaveTextContent(/foi arquivada/i)
+      expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+      // NUNCA pode ler como falha da ação, nem vazar o erro do GET.
+      expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+      expect(alerta.textContent ?? '').not.toMatch(/Failed to fetch/)
+
+      // O POST em si aconteceu — é isso que torna a mensagem verdadeira.
+      expect(
+        fetchMock.mock.calls.some(
+          ([path, init]) =>
+            path === '/api/accounts/a1/archive' &&
+            (init as RequestInit)?.method === 'POST',
+        ),
+      ).toBe(true)
+      // A tela não é derrubada: a lista antiga continua de pé.
+      expect(screen.getByTestId('saldo-a1')).toBeInTheDocument()
+    })
+  })
+
+  // Mesma forma do arquivar, defeito PRÉ-EXISTENTE: com POST e GET no mesmo
+  // `try`, um 201 seguido de GET caído mostrava o erro do GET como se a
+  // conta não tivesse sido criada — e reenviar criaria uma duplicata (não
+  // existe DELETE de conta).
+  describe('criar conta: POST ok + recarregar falhando', () => {
+    it('a mensagem diz que a conta foi criada e avisa pra não reenviar', async () => {
+      const fetchMock = mockRoutes({
+        initial: [],
+        getFalhaApartirDe: 2,
+      })
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+      )
+
+      fireEvent.change(screen.getByLabelText('Nome'), {
+        target: { value: 'Caixinha' },
+      })
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      const alerta = await screen.findByRole('alert')
+      expect(alerta).toHaveTextContent(/foi criada/i)
+      expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+      expect(alerta).toHaveTextContent(/duplicada/i)
+      expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+
+      expect(
+        fetchMock.mock.calls.some(
+          ([path, init]) =>
+            path === '/api/accounts' &&
+            (init as RequestInit)?.method === 'POST',
+        ),
+      ).toBe(true)
+    })
+
+    it('POST falhando mostra a mensagem do SERVIDOR (não a de recarga)', async () => {
+      mockRoutes({
+        initial: [],
+        post: {
+          status: 422,
+          body: {
+            ok: false,
+            data: null,
+            notifications: [
+              {
+                type: 'error',
+                code: 'invalid_account',
+                message: 'cartao de credito exige dia de fechamento',
+              },
+            ],
+          },
+        },
+      })
+
+      render(<AccountsPage />)
+      await waitFor(() =>
+        expect(screen.getByLabelText('Nome')).toBeInTheDocument(),
+      )
+
+      fireEvent.change(screen.getByLabelText('Nome'), {
+        target: { value: 'Caixinha' },
+      })
+      fireEvent.submit(screen.getByTestId('form-nova-conta'))
+
+      const alerta = await screen.findByRole('alert')
+      expect(alerta).toHaveTextContent(
+        'cartao de credito exige dia de fechamento',
+      )
+      expect(alerta.textContent ?? '').not.toMatch(/foi criada/i)
     })
   })
 })

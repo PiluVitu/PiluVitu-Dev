@@ -68,10 +68,31 @@ jobs:
           echo "Backup ok: $(wc -c < "$arquivo") bytes"
         id: backup
 
+      # `if: always()` porque este artifact é a ÚNICA rede sob a migration
+      # automática — o D1 não tem down migration. Sem ele, um passo de
+      # backup que falha DEPOIS de já ter escrito um arquivo parcial (export
+      # truncado, checagem de `CREATE TABLE` reprovando) some com a única
+      # evidência que serviria pra depurar o que o banco devolveu.
+      #
+      # `if: failure() || success()` seria a MESMA coisa que `always()` —
+      # não é alternativa. O que `always()` sozinho traz de ruim é upload
+      # rodando quando o export nem chegou a criar arquivo: `upload-artifact`
+      # avisa e segue, gerando um artifact vazio/inútil. Daí o par com
+      # `if-no-files-found: ignore` — nada pra subir vira silêncio, arquivo
+      # parcial vira artifact. Nunca o contrário.
+      #
+      # Isto NÃO afrouxa o guard: o passo "Backup antes de migrar" tem
+      # `set -euo pipefail` e sai != 0 num export vazio/truncado, e um passo
+      # que falha aborta o job — "Barrar migration destrutiva", "Aplicar
+      # migrations" e "Deploy" não rodam (nenhum deles tem `if:`, então o
+      # default `success()` vale). Backup inválido continua significando
+      # migration não aplicada; o que muda é só existir ou não a evidência.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: d1-pre-migration-${{ github.sha }}
           path: financas-pre-migration-*.sql
+          if-no-files-found: ignore
           retention-days: 30
 
       # ---------------------------------------------------------------
