@@ -20,7 +20,7 @@ Monorepo pessoal: site + blog, dashboard de ferramentas, votação de filmes e u
 - **Node 22** e **pnpm ≥ 11**
 - **Go 1.23** (para `apps/api`)
 - **Python 3.13** e **uv** (para `apps/promeia`) — `brew install uv` (ou o instalador em https://docs.astral.sh/uv/getting-started/installation/); `uv sync` baixa o Python certo sozinho a partir de `apps/promeia/.python-version`
-- **Ollama** com `qwen2.5:7b-instruct` (insight, leitura de PDF, revisão rápida) e `gemma4:12b` (revisão cuidadosa e chamadas sociais) — `qwen2.5:3b-instruct` só para a leitura de PDF em máquina apertada
+- **Ollama** com `qwen2.5:7b-instruct` (insight, leitura de PDF em `apps/financas/scripts/pdf-import.mjs`, e a revisão rápida) e `gemma4:12b` (revisão cuidadosa e chamadas sociais). Só esses dois — `qwen2.5:3b-instruct` deixou de ser default de qualquer slot (ver `apps/promeia/CLAUDE.md` § _Modelos de 2026_: ele devolve `'##\n Subtitulo'`, com quebra de linha, o que o markdown renderiza como texto literal em vez de título)
 - **wrangler** autenticado na conta Cloudflare que hospeda a zona `piluvitu.com.br`
 
 ```bash
