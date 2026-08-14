@@ -66,35 +66,13 @@ jobs:
           KEYSTATIC_SECRET: 'ci-dummy-secret-32-chars-padding-x'
           NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG: 'ci-dummy'
 
-  api:
-    name: API (vet + test + build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: apps/api
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache-dependency-path: apps/api/go.sum
-
-      - name: Download modules
-        run: go mod download
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race -count=1 ./...
-
-      - name: Build api
-        run: go build -o /tmp/api ./cmd/api
-
-      - name: Build cli
-        run: go build -o /tmp/piluvitu ./cmd/cli
+  # ⚠️ O job `api` (Go: vet + test + build) foi REMOVIDO em 2026-08-14, quando a
+  # migração para ramielle/promeia terminou e a Go parou de servir qualquer
+  # tráfego. O código de `apps/api` CONTINUA no repositório, de propósito, como
+  # referência de paridade — mas não roda mais em CI, não é deployado e não sobe
+  # no compose. Ver docs/superpowers/ROADMAP.md § "Substituir a Go por completo".
+  #
+  # Reativar é reverter este commit: o job estava aqui, com go-version 1.25.
 
   financas:
     name: Finanças (typecheck + test + build)

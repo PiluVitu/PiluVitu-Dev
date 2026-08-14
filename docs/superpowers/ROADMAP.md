@@ -24,20 +24,38 @@ Itens conhecidos, medidos e deliberadamente adiados. Cada um diz **por que** foi
 
 ---
 
-## 2. Substituir a Go por completo
+## 2. ✅ Substituir a Go — FEITO em 2026-08-14
 
-**Estado hoje:** a votação inteira já saiu da Go — `piluvitu.com.br` fala com o `ramielle.piluvitu.com.br` desde o cutover. **O que ainda depende da Go é só o Atelier** (revisão de artigo + distribuição), porque `NEXT_PUBLIC_ATELIER_URL` aponta para `promeia.piluvitu.com.br`, que hoje é o hostname da Go.
+**A Go não serve mais tráfego nenhum.** A cadeia em produção é
+`piluvitu.com.br → ramielle.piluvitu.com.br → promeia.piluvitu.com.br → Ollama local`,
+provada ponta a ponta: o log do promeia registrou um `POST /llm/proofread 200 OK`
+vindo de `2a06:98c0:…` — faixa da **Cloudflare**, ou seja, o Worker. Não do
+navegador do dono (IPv6 residencial) nem de curl local (`127.0.0.1`). É a §3 do
+spec funcionando: o navegador nunca fala com o Mac, porque teria que carregar o
+`PROMEIA_TOKEN` — e token no cliente é token público.
 
-⚠️ **As rotas do Atelier JÁ EXISTEM no ramielle** (`/admin/llm/proofread`, `/admin/llm/refine`, `/admin/distribution/*`) e respondem `503` só porque faltam os secrets. Não falta código — falta ligar.
+**O código de `apps/api` CONTINUA no repositório, de propósito** — decisão do
+dono, como referência de paridade. O que foi desligado:
 
-**O que falta, na ordem:**
+- **CI**: o job `api` saiu de `ci.yml`; `deploy-api.yml` (Cloud Run) foi apagado.
+- **Makefile**: `make test`/`make lint` não rodam mais `go test`/`go vet`; `make dev`
+  não sobe mais a Go. `dev-api`/`build-api`/`stack` ficam marcados como aposentados;
+  `build-cli` sobrevive (o CLI de terminal é o único Go que ainda faz sentido).
+- **compose**: o `depends_on: [api]` do `cloudflared` foi removido. ⚠️ Era ele que
+  fazia `make tunnel-up` subir a Go sem necessidade, dando a impressão de que ela
+  ainda era parte do caminho. Provado depois da mudança: `docker compose --profile
+  tunnel up -d cloudflared` sobe **só** o túnel, e a cadeia inteira segue verde.
 
-1. Subir o **promeia** local e deixá-lo alcançável pelo ramielle (o Worker precisa de uma URL pública — hoje o túnel aponta para o container da Go).
-2. Cadastrar `PROMEIA_URL` + `PROMEIA_TOKEN` como secrets do ramielle.
-3. Repontar `NEXT_PUBLIC_ATELIER_URL` para `https://ramielle.piluvitu.com.br`.
-4. Só então a Go fica dispensável (passo 16 do runbook de cutover).
+⚠️ **O que passou a depender do Mac estar ligado:** o botão "Corrigir texto" e a
+distribuição só funcionam com o `apps/promeia` rodando em `:8082`. Ele é um
+processo solto — **não sobrevive a reiniciar o Mac**, e não há `launchd`
+configurado (decisão do dono). É a fragilidade real do desenho, e é por desenho:
+o spec chama o promeia de oportunista.
 
-**Detalhe que decide o passo 1:** o mapeamento `promeia.piluvitu.com.br → api:8080` mora no **dashboard da Cloudflare**, não no repositório (não há arquivo de ingress em `infra/`). Repontá-lo para o promeia é ação de dashboard, do dono.
+⚠️ **`apps/ramielle/scripts/comparar-com-go.mjs` ficou órfão** — ele compara as
+duas APIs lado a lado, e uma delas não roda mais. Continua útil se a Go for
+ressuscitada localmente (`make dev-api`) para conferir uma dúvida de paridade;
+fora disso, é história.
 
 ---
 

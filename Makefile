@@ -16,13 +16,17 @@ storybook:
 # `go run` so it needs no global install and stays out of the API's go.mod.
 # .env is sourced before launch so air's child binary inherits it (and keeps
 # it across reloads). Edits to .env still need a restart.
+# ⚠️ APOSENTADA. A Go nao serve mais trafego desde 2026-08-14 — a votacao esta
+# no ramielle e a inferencia no promeia. Este alvo fica so para inspecionar o
+# codigo de referencia de paridade, que continua em apps/api de proposito.
 dev-api:
 	mkdir -p apps/api/tmp
 	cd apps/api && set -a && [ -f .env ] && . ./.env; set +a && go run github.com/air-verse/air@latest
 
-# Sobe web + Go API + Storybook em paralelo
+# Sobe web + Storybook em paralelo. A Go saiu daqui em 2026-08-14 — ela nao
+# serve mais trafego (ver docs/superpowers/ROADMAP.md).
 dev:
-	make -j3 dev-web dev-api storybook
+	make -j2 dev-web storybook
 
 # Escape hatch: free the dev ports if a process got stuck (rare with air,
 # handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
@@ -32,17 +36,22 @@ stop:
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done
 
-stack: ## Sobe Ollama + Go API + Cloudflare Tunnel (process-compose)
+# ⚠️ Sobe a Go APOSENTADA junto. Para o promeia + tunel, use `make tunnel-up`.
+stack: ## [legado] Ollama + Go API + tunel (process-compose)
 	process-compose up
 
+# ⚠️ APOSENTADO — nada em producao consome este binario.
 build-api:
 	cd apps/api && go build -o ../../bin/api ./cmd/api
 
+# O CLI de terminal (cpf/cnpj/base64/jwt/json/uuid/qr). Unico alvo Go que
+# continua fazendo sentido: as mesmas 7 ferramentas existem em packages/tools,
+# mas o front de terminal e so dele.
 build-cli:
 	cd apps/api && go build -o ../../bin/piluvitu ./cmd/cli
 
 test:
-	pnpm -r test && cd apps/api && go test ./... && cd ../promeia && uv run pytest
+	pnpm -r test && cd apps/promeia && uv run pytest
 
 test-go:
 	cd apps/api && go test ./... -v
@@ -85,7 +94,7 @@ test-e2e:
 	pnpm --filter @piluvitu/web test:e2e
 
 lint:
-	pnpm -r lint && cd apps/api && go vet ./... && cd ../promeia && uv run ruff check . && uv run ruff format --check .
+	pnpm -r lint && cd ../promeia && uv run ruff check . && uv run ruff format --check .
 
 clean:
 	rm -rf bin/ apps/api/api apps/api/piluvitu

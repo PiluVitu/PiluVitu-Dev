@@ -50,8 +50,19 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN não definido — copie infra/.env.example para infra/.env}
-    depends_on:
-      - api
+    # ⚠️ O `depends_on: [api]` foi REMOVIDO em 2026-08-14. O túnel não serve mais
+    # a Go: o ingress de `promeia.piluvitu.com.br` aponta hoje para
+    # `http://host.docker.internal:8082` — o serviço Python `apps/promeia`, que
+    # roda NO HOST, não em container. Por isso o `host.docker.internal`: de
+    # dentro deste container, `localhost` seria o próprio container.
+    #
+    # Enquanto o `depends_on` existia, `make tunnel-up` subia a Go junto sem
+    # necessidade nenhuma — e dava a impressão de que ela ainda era parte do
+    # caminho. Não é: o Worker `ramielle` é quem chama o promeia, e o promeia é
+    # quem fala com o Ollama local.
+    #
+    # ⚠️ O promeia precisa estar rodando NO HOST para o túnel ter o que servir
+    # (`make dev-promeia`, porta 8082). Sem ele, o túnel conecta e devolve 502.
 
 volumes:
   api-data:
