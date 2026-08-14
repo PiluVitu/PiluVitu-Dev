@@ -1307,7 +1307,9 @@ Review confirmou "seguro pra deploy" (zero Critical/Important) e corrigiu de fat
 
 #### Os 5 call sites que faltavam — o padrão passou a ser universal na SPA
 
-Rodada seguinte de revisão: sobravam **5** lugares com a forma antiga (mutação e `await carregar()` no MESMO `try`), 3 deles corrompendo dado de verdade. Todos migrados; **hoje não existe mais nenhum `await carregar()` dentro do `try` de uma mutação em `web/src/pages/`**.
+Rodada seguinte de revisão: sobravam **5** lugares com a forma antiga (mutação e `await carregar()` no MESMO `try`), 3 deles corrompendo dado de verdade. Todos migrados.
+
+⚠️ **Esta linha afirmava "hoje não existe mais nenhum `await carregar()` dentro do `try` de uma mutação em `web/src/pages/`" — a frase era LITERALMENTE verdadeira e a propriedade continuava FALSA.** Sobrava um 7º call site (`NovoItemForm.tsx`), corrigido na rodada seguinte — ver _O 7º call site, e por que o grep não o achou_ logo abaixo.
 
 | Call site                  | Ação                | O que o reenvio criava                                                            |
 | -------------------------- | ------------------- | --------------------------------------------------------------------------------- |
@@ -1324,6 +1326,31 @@ Três decisões que valem pra qualquer call site futuro:
 - ⚠️ **Mensagem específica por ação, e o aviso de "não envie de novo" SÓ onde o reenvio custa algo.** Os 3 primeiros nomeiam o que a duplicata criaria (pagamento + lançamento de caixa; dívida + pessoa; recorrente contada duas vezes no Comprometido). Os 2 últimos não carregam esse aviso — genérico onde o reenvio custa dinheiro é ruim, mas alarme onde não custa nada também é. No mesmo espírito, `recorrentes.tsx` escolhe a mensagem por `editandoId`: **editar é PUT** (reenviar não duplica ⇒ sem aviso), **criar é POST** (com aviso).
 
 ⚠️ **Verificado por MUTAÇÃO (a mesma de cima, ampliada):** trocar a mensagem fixa de `fase: 'recarga'` por `mensagemDoErro(err)` em `lib/mutar-e-recarregar.ts` derruba agora **11 testes** — os 5 anteriores mais os 6 novos de recarga (um por call site, com `recorrentes.tsx` contribuindo dois: criar e editar). Revertida antes do commit. Mutação adicional POR SITE no caso do dinheiro: dobrar `await carregar()` de volta pra dentro do callback de mutação em `debt-detail.tsx#enviar` derruba **só** `pagamento registrado mas recarga falhou…` (1 de 35 no arquivo), também revertida. **SPA: 312 → 321 testes** (+9: 1 em `debt-detail.test.tsx`, 2 em `DividasPage.test.tsx`, 4 em `recorrentes.test.tsx`, 2 em `reserva.test.tsx` — cada site ganhou "recarga falhou" e, onde ainda não existia, "falha REAL da mutação continua mostrando a mensagem do servidor"). Worker intocado (478).
+
+#### O 7º call site, e por que o grep não o achou
+
+⚠️ **Grep por NOME de função é instrumento insuficiente pra checar esta propriedade, e este caso é a prova.** A cobertura da rodada anterior foi "provada" com `grep "await carregar()"` em `web/src/pages/` — a frase que saiu daí ("não existe mais nenhum `await carregar()` dentro do `try` de uma mutação") era **literalmente verdadeira**, e a propriedade que ela pretendia atestar continuava **falsa**. `pages/NovoItemForm.tsx` fazia exatamente o defeito, só que a recarga ali se chama **`onCreated()`** — uma prop, não `carregar`. O grep não tinha como vê-la, e a frase soava conclusiva.
+
+**A propriedade a varrer é semântica, não lexical:** _dentro do mesmo `try` de uma mutação (`api(...)` com `POST`/`PUT`/`DELETE`), existe alguma chamada assíncrona que RECARREGA estado do servidor?_ O nome dela pode ser qualquer coisa — `carregar`, `onCreated`, `recarregar`, `refetch`, `mutate`, uma prop, um callback vindo de fora, um `Promise.all` embutido. **O instrumento correto é abrir todos os arquivos que fazem `api(...)` com método de mutação, um a um** (hoje são 10 arquivos em `web/src/`, listáveis com `grep -rn "method: '\(POST\|PUT\|DELETE\|PATCH\)'"`) e julgar cada `try` — o grep serve pra achar os CANDIDATOS, nunca pra emitir o veredito.
+
+**`NovoItemForm.tsx` era o pior lugar possível pra sobrar**, e não por acaso: `onCreated` é o `carregar` de `debt-detail.tsx` (um `Promise.all` de dois GETs que **lançam**), o POST dispara e cria o item, e o `role="alert"` do formulário exibia a mensagem do **GET**. Reenviar duplica o item — e **o total da dívida é a SOMA dos itens**, então a duplicata infla o Comprometido; pior, `addDebtItem` (`src/domain/debts.ts:170-171`, segundo statement do mesmo `db.batch()` do `INSERT`) **REABRE uma dívida `settled`** a cada item novo, então o reenvio também podia ressuscitar uma dívida já fechada. Migrado pra `mutarERecarregar` com mensagem que diz que o item **foi criado**, nomeia descrição e valor digitados, manda atualizar a página e proíbe o reenvio nomeando o estrago ("criaria um item duplicado, e o total da dívida … ficaria inflado"). Limpeza do formulário dentro do callback de mutação, logo após o 201 — mesma decisão dos outros 6, e ela serve aqui pelo mesmo motivo (formulário preenchido convida ao reenvio; o que foi digitado vai nomeado na mensagem).
+
+**Varredura por propriedade, veredito de cada arquivo** (todos os 10 que fazem `api(...)` com `POST`/`PUT`/`DELETE` em `web/src/`, abertos um a um):
+
+| Arquivo                  | Mutações                                        | Veredito                                                                                                       |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `pages/NovoItemForm.tsx` | `POST /debts/:id/items`                         | **defeituoso → corrigido** (recarga chamada `onCreated`, invisível ao grep)                                    |
+| `pages/accounts.tsx`     | `POST /accounts`, `POST /accounts/:id/archive`  | migrado (rodada anterior)                                                                                      |
+| `pages/debt-detail.tsx`  | `POST /payments`, 3× `DELETE`, `POST write-off` | migrado — `excluirDivida` **não** usa o padrão de propósito: não recarrega, navega pra `#/dividas` no sucesso  |
+| `pages/DividasPage.tsx`  | `POST /payees`, `POST /debts`                   | migrado                                                                                                        |
+| `pages/recorrentes.tsx`  | `POST`/`PUT`/`DELETE /recurring`                | migrado                                                                                                        |
+| `pages/reserva.tsx`      | `PUT /reserve/accounts`                         | migrado                                                                                                        |
+| `pages/config.tsx`       | `PUT /settings`                                 | **limpo** — o estado é atualizado com o corpo da PRÓPRIA resposta do `PUT`; não há segunda requisição no `try` |
+| `pages/new-entry.tsx`    | `POST /transactions`, `POST /installment-plans` | **limpo** — só `setOkMsg`/limpeza de campos depois do 201; a tela não recarrega nada                           |
+| `pages/importar.tsx`     | `POST /transactions/import` (em lotes)          | **limpo** — `try` por lote, sem recarga; o resultado vem do próprio envelope de cada lote                      |
+| `lib/import-settings.ts` | `PUT /settings/:key`                            | **limpo** — `salvarMapa` só engole a falha (não pode travar a importação em curso); nenhuma recarga no `try`   |
+
+⚠️ **Verificado por MUTAÇÃO (duas):** (1) mover `await onCreated()` de volta pra dentro do callback de mutação em `NovoItemForm.tsx` derruba **só** o teste novo de recarga (1 de 5 no arquivo); (2) trocar a mensagem fixa de `fase: 'recarga'` por `mensagemDoErro(err)` em `lib/mutar-e-recarregar.ts` derruba agora **12 testes** (eram 11 antes desta rodada — o 12º é justamente o de `NovoItemForm`). As duas revertidas antes do commit, com `git status --porcelain -uall` vazio depois. **SPA: 321 → 323 testes** (+2 em `pages/NovoItemForm.test.tsx`: recarga falhou e falha REAL do POST). Worker intocado (478).
 
 #### Ajuda contextual — os 7 pontos do §3.2 do spec, e por que viram 10 lugares no código
 
