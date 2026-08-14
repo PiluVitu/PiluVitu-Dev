@@ -6,7 +6,7 @@ import {
   simulateCashPurchase,
   simulateFinancedPurchase,
 } from '@piluvitu/tools/simulacao'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { formatMeses } from '../lib/reserve'
 import { ReservaPage } from './reserva'
 
@@ -248,6 +248,75 @@ describe('ReservaPage', () => {
         body: JSON.stringify({ account_ids: ['a1'] }),
       }),
     )
+  })
+
+  // PUT 200 + GET seguinte caindo. O PUT é idempotente (substitui a lista
+  // inteira), então reenviar não corrompe nada — o defeito aqui é só
+  // enganar: a tela dizia "falhou" e continuava mostrando o saldo/os meses
+  // ANTIGOS, confirmando visualmente a mentira.
+  it('designação salva mas recarga falhou: diz que salvou, nunca que falhou', async () => {
+    let gets = 0
+    mockApi({
+      reserve: () => {
+        gets++
+        // 1º GET = mount; o 2º é o `carregar()` de depois do PUT.
+        if (gets >= 2) {
+          throw new ApiError(503, 'sem_conexao', 'sem conexão com o servidor')
+        }
+        return statusVazio
+      },
+    })
+
+    const user = userEvent.setup()
+    render(<ReservaPage />)
+    await waitFor(() => expect(screen.getByTestId('saldo')).toBeInTheDocument())
+
+    await user.click(screen.getByLabelText(/Nubank PJ/))
+    await user.click(
+      screen.getByRole('button', { name: 'Salvar contas designadas' }),
+    )
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/foram salvas/i)
+    expect(alerta).toHaveTextContent(/não consegui recarregar os números/i)
+    expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+    expect(alerta.textContent ?? '').not.toMatch(/sem conexão/)
+
+    // O PUT em si aconteceu — é isso que torna a mensagem verdadeira.
+    expect(api).toHaveBeenCalledWith(
+      '/api/reserve/accounts',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+    // A tela continua de pé com os números anteriores.
+    expect(screen.getByTestId('saldo')).toBeInTheDocument()
+  })
+
+  it('falha REAL do PUT continua mostrando a mensagem do servidor', async () => {
+    mockApi({
+      put: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'Referência inválida: a conta informada não existe (ou foi removida).',
+        )
+      },
+    })
+
+    const user = userEvent.setup()
+    render(<ReservaPage />)
+    await waitFor(() => expect(screen.getByTestId('saldo')).toBeInTheDocument())
+
+    await user.click(screen.getByLabelText(/Nubank PJ/))
+    await user.click(
+      screen.getByRole('button', { name: 'Salvar contas designadas' }),
+    )
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(
+      'Referência inválida: a conta informada não existe (ou foi removida).',
+    )
+    // Falha de MUTAÇÃO nunca vira a mensagem de recarga.
+    expect(alerta.textContent ?? '').not.toMatch(/foram salvas/i)
   })
 
   it('erro ao carregar mostra role="alert", sem renderizar o resto da tela', async () => {

@@ -7,6 +7,7 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 
 export type DebtListRow = {
   id: string
@@ -114,32 +115,43 @@ export function DividasPage() {
     }
 
     setSalvando(true)
-    try {
-      let id = payeeId
-      if (id === NOVO) {
-        const criado = await api<PayeeOption>('/api/payees', {
+    // Criar e recarregar são sucessos INDEPENDENTES (ver
+    // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um 201
+    // seguido de um GET que cai mostrava o erro do GET como se a dívida
+    // não tivesse sido criada — o dono reenviava e ficava com uma dívida
+    // duplicada (e um payee duplicado junto, quando cadastrou pessoa nova:
+    // `POST /api/payees` não deduplica por `norm_name`).
+    const resultado = await mutarERecarregar(
+      async () => {
+        let id = payeeId
+        if (id === NOVO) {
+          const criado = await api<PayeeOption>('/api/payees', {
+            method: 'POST',
+            body: JSON.stringify({ name: nomeNovo, kind: 'person' }),
+          })
+          id = criado.id
+        }
+        await api<{ id: string }>('/api/debts', {
           method: 'POST',
-          body: JSON.stringify({ name: nomeNovo, kind: 'person' }),
+          body: JSON.stringify({
+            payee_id: id,
+            direction: 'i_owe',
+            title: titulo,
+            opened_at: abertura || todayInTeresina(),
+          }),
         })
-        id = criado.id
-      }
-      await api<{ id: string }>('/api/debts', {
-        method: 'POST',
-        body: JSON.stringify({
-          payee_id: id,
-          direction: 'i_owe',
-          title: titulo,
-          opened_at: abertura || todayInTeresina(),
-        }),
-      })
-      setTitulo('')
-      setNomeNovo('')
-      await carregar()
-    } catch (e: unknown) {
-      setErro(e instanceof ApiError ? e.message : String(e))
-    } finally {
-      setSalvando(false)
-    }
+        // Limpar só depois do 201, ainda dentro da mutação — mesma decisão
+        // de accounts.tsx: com a dívida já criada, um formulário ainda
+        // preenchido convida ao reenvio, e reenviar duplica. O título vai
+        // nomeado na mensagem de recarga, então nada some em silêncio.
+        setTitulo('')
+        setNomeNovo('')
+      },
+      carregar,
+      `A dívida "${titulo}" foi criada, mas não consegui recarregar a lista — atualize a página pra vê-la. Não envie de novo: criaria uma dívida duplicada${payeeId === NOVO ? ` e uma segunda pessoa "${nomeNovo}"` : ''}.`,
+    )
+    if (!resultado.ok) setErro(resultado.mensagem)
+    setSalvando(false)
   }
 
   const menorQueSm = useMenorQueSm()

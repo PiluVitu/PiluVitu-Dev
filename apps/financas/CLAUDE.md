@@ -1305,6 +1305,26 @@ Review confirmou "seguro pra deploy" (zero Critical/Important) e corrigiu de fat
 
 ⚠️ **Verificado por MUTAÇÃO:** trocar a mensagem fixa de `fase: 'recarga'` pela mensagem do erro do GET (`mensagemDoErro(err)` — exatamente a regressão que reintroduziria o defeito) derruba **5 testes**: 2 em `lib/mutar-e-recarregar.test.ts`, 2 novos em `pages/accounts.test.tsx` (arquivar e criar) e o pré-existente `dar baixa > sucesso na baixa mas falha ao RECARREGAR não diz que a ação falhou` em `pages/debt-detail.test.tsx`. Revertida antes do commit. O mock de `accounts.test.tsx` ganhou `getFalhaApartirDe` pra reproduzir o cenário: o `fetch` do GET **rejeita** (`TypeError('Failed to fetch')`, o modo de falha real de rede caindo), não devolve envelope de erro.
 
+#### Os 5 call sites que faltavam — o padrão passou a ser universal na SPA
+
+Rodada seguinte de revisão: sobravam **5** lugares com a forma antiga (mutação e `await carregar()` no MESMO `try`), 3 deles corrompendo dado de verdade. Todos migrados; **hoje não existe mais nenhum `await carregar()` dentro do `try` de uma mutação em `web/src/pages/`**.
+
+| Call site                  | Ação                | O que o reenvio criava                                                            |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------- |
+| `debt-detail.tsx#enviar`   | `POST /payments`    | **pagamento + `transaction` de caixa duplicados** (dinheiro)                      |
+| `DividasPage.tsx#enviar`   | `POST /debts`       | dívida duplicada (+ payee duplicado)                                              |
+| `recorrentes.tsx#enviar`   | `POST/PUT`          | recorrente duplicada ⇒ **dupla contagem no Comprometido**                         |
+| `recorrentes.tsx#excluir`  | `DELETE`            | nada (404) — só engana                                                            |
+| `reserva.tsx#salvarContas` | `PUT` (idempotente) | nada — só engana, e a tela ainda confirmava a mentira exibindo os números ANTIGOS |
+
+Três decisões que valem pra qualquer call site futuro:
+
+- ⚠️ **`executarAcao` (a casca de `debt-detail.tsx`) NÃO serve pro formulário de pagamento da MESMA tela** — e a incoerência interna do arquivo é aparente, não real. Ela é amarrada a `acaoErro`/`processando` (o estado das ações de LINHA): usada no form, o erro apareceria fora dele e o botão "Registrar" nunca sairia de "Enviando…". Além disso fixa a mensagem genérica (que não pode avisar sobre dinheiro duplicado) e não tem onde caber o ramo de `over_allocation`. O form chama `mutarERecarregar` direto; `over_allocation` é reembrulhado num `ApiError` novo **dentro do callback de mutação**, pra continuar sendo tratado como falha de mutação (`mutarERecarregar` repassa `err.message` intacto) em vez de escrito direto em `formError`.
+- ⚠️ **Onde limpar o formulário quando a mutação deu certo e a recarga não: LIMPAR, dentro do callback de mutação, logo depois do 2xx** — mesma escolha de `accounts.tsx`, agora aplicada aos 3 formulários. Deixá-lo preenchido é o que **convida ao reenvio**, e reenvio aqui duplica dinheiro; a perda de "o que o dono digitou" é compensada nomeando o valor/título/descrição **dentro da própria mensagem de recarga** (`O pagamento de R$ 1.360,00 foi registrado…`, `A dívida "Tio" foi criada…`), então nada some em silêncio.
+- ⚠️ **Mensagem específica por ação, e o aviso de "não envie de novo" SÓ onde o reenvio custa algo.** Os 3 primeiros nomeiam o que a duplicata criaria (pagamento + lançamento de caixa; dívida + pessoa; recorrente contada duas vezes no Comprometido). Os 2 últimos não carregam esse aviso — genérico onde o reenvio custa dinheiro é ruim, mas alarme onde não custa nada também é. No mesmo espírito, `recorrentes.tsx` escolhe a mensagem por `editandoId`: **editar é PUT** (reenviar não duplica ⇒ sem aviso), **criar é POST** (com aviso).
+
+⚠️ **Verificado por MUTAÇÃO (a mesma de cima, ampliada):** trocar a mensagem fixa de `fase: 'recarga'` por `mensagemDoErro(err)` em `lib/mutar-e-recarregar.ts` derruba agora **11 testes** — os 5 anteriores mais os 6 novos de recarga (um por call site, com `recorrentes.tsx` contribuindo dois: criar e editar). Revertida antes do commit. Mutação adicional POR SITE no caso do dinheiro: dobrar `await carregar()` de volta pra dentro do callback de mutação em `debt-detail.tsx#enviar` derruba **só** `pagamento registrado mas recarga falhou…` (1 de 35 no arquivo), também revertida. **SPA: 312 → 321 testes** (+9: 1 em `debt-detail.test.tsx`, 2 em `DividasPage.test.tsx`, 4 em `recorrentes.test.tsx`, 2 em `reserva.test.tsx` — cada site ganhou "recarga falhou" e, onde ainda não existia, "falha REAL da mutação continua mostrando a mensagem do servidor"). Worker intocado (478).
+
 #### Ajuda contextual — os 7 pontos do §3.2 do spec, e por que viram 10 lugares no código
 
 A tabela do spec tem 7 linhas (7 perguntas reais), mas 3 delas citam mais de uma tela — cada UMA dessas telas precisa do próprio `<Ajuda>` (é um componente React, não uma injeção de CSS global), então a contagem de _lugares no código_ é maior que a de _perguntas respondidas_:

@@ -293,6 +293,118 @@ describe('RecorrentesPage', () => {
     expect(api).not.toHaveBeenCalled()
   })
 
+  // POST 201 + GET seguinte caindo. Antes os dois moravam no mesmo `try`:
+  // o dono lia "falhou", criava de novo, e o Comprometido passava a contar
+  // a mesma recorrente DUAS vezes — a dupla contagem que este módulo
+  // existe pra matar.
+  it('recorrente criada mas recarga falhou: diz que criou e avisa da dupla contagem', async () => {
+    let gets = 0
+    mockApi({
+      recurring: () => {
+        gets++
+        // 1º GET = mount; o 2º é o `carregar()` de depois do POST.
+        if (gets >= 2) {
+          throw new ApiError(503, 'sem_conexao', 'sem conexão com o servidor')
+        }
+        return recorrentes
+      },
+    })
+
+    render(<RecorrentesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Descrição'), {
+      target: { value: 'Contador' },
+    })
+    fireEvent.change(screen.getByLabelText('Valor'), {
+      target: { value: '250,00' },
+    })
+    fireEvent.change(screen.getByLabelText('Começa em'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/A recorrente "Contador" foi criada/i)
+    expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+    expect(alerta).toHaveTextContent(/não envie de novo/i)
+    expect(alerta).toHaveTextContent(/duas vezes/i)
+    expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+    expect(alerta.textContent ?? '').not.toMatch(/sem conexão/)
+    expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument()
+  })
+
+  // Editar é PUT: reenviar não duplica nada, então a mensagem NÃO carrega o
+  // aviso de "não envie de novo" — genérico onde o reenvio custa dinheiro é
+  // ruim, mas alarme onde não custa nada também é.
+  it('edição salva mas recarga falhou: diz que salvou, SEM o aviso de duplicata', async () => {
+    let gets = 0
+    mockApi({
+      recurring: () => {
+        gets++
+        if (gets >= 2) {
+          throw new ApiError(503, 'sem_conexao', 'sem conexão com o servidor')
+        }
+        return recorrentes
+      },
+    })
+    const user = userEvent.setup()
+
+    render(<RecorrentesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('recorrente-r-das')).toBeInTheDocument(),
+    )
+
+    const linhaDas = within(screen.getByTestId('recorrente-r-das'))
+    await user.click(linhaDas.getByRole('button', { name: 'Editar' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Descrição')).toHaveValue('DAS'),
+    )
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/A recorrente "DAS" foi salva/i)
+    expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+    expect(alerta.textContent ?? '').not.toMatch(/não envie de novo/i)
+    expect(alerta.textContent ?? '').not.toMatch(/duplicad/i)
+    expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+  })
+
+  it('falha REAL do POST continua mostrando a mensagem do servidor', async () => {
+    mockApi({
+      post: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'Dia do mês precisa estar entre 1 e 31.',
+        )
+      },
+    })
+
+    render(<RecorrentesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Descrição'), {
+      target: { value: 'Contador' },
+    })
+    fireEvent.change(screen.getByLabelText('Valor'), {
+      target: { value: '250,00' },
+    })
+    fireEvent.change(screen.getByLabelText('Começa em'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('Dia do mês precisa estar entre 1 e 31.')
+    // Falha de MUTAÇÃO nunca vira a mensagem de recarga.
+    expect(alerta.textContent ?? '').not.toMatch(/foi criada/i)
+  })
+
   it('editar preenche o formulário com os valores da linha (incl. faixa e status pausada)', async () => {
     mockApi()
     const user = userEvent.setup()
@@ -459,6 +571,47 @@ describe('RecorrentesPage', () => {
       )
       // A tela continua de pé — a linha ainda está lá (a exclusão falhou).
       expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument()
+    })
+
+    // DELETE 200 + GET seguinte caindo. Não corrompe dado (reenviar dá 404),
+    // mas ler "falhou" depois de uma exclusão que ACONTECEU não tem saída:
+    // a linha continua na tela, e tentar de novo devolve "não encontrada".
+    it('exclusão feita mas recarga falhou: diz que excluiu, nunca que falhou', async () => {
+      let gets = 0
+      mockApi({
+        recurring: () => {
+          gets++
+          if (gets >= 2) {
+            throw new ApiError(503, 'sem_conexao', 'sem conexão com o servidor')
+          }
+          return recorrentes
+        },
+      })
+      const user = userEvent.setup()
+
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+      )
+
+      const linha = within(screen.getByTestId('recorrente-r-starlink'))
+      await user.click(linha.getByRole('button', { name: 'Excluir' }))
+      await screen.findByRole('heading', { name: 'Excluir recorrente' })
+      await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+      const alerta = await screen.findByRole('alert')
+      expect(alerta).toHaveTextContent(/A recorrente "Starlink" foi excluída/i)
+      expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+      expect(alerta).toHaveTextContent(
+        /nenhum lançamento já feito foi apagado/i,
+      )
+      expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+      expect(alerta.textContent ?? '').not.toMatch(/sem conexão/)
+
+      // O DELETE em si aconteceu.
+      expect(api).toHaveBeenCalledWith('/api/recurring/r-starlink', {
+        method: 'DELETE',
+      })
     })
   })
 

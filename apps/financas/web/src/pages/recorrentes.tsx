@@ -18,6 +18,7 @@ import { api, ApiError } from '../api'
 import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import type { AccountView } from './accounts'
 
 /**
@@ -226,38 +227,54 @@ export function RecorrentesPage() {
     }
 
     setSalvando(true)
-    try {
-      const payload = {
-        description: descricao,
-        category_id: categoryId || null,
-        account_id: accountId || null,
-        scope,
-        day_of_month: dia,
-        amount_min_cents: minCents,
-        amount_max_cents: maxCents,
-        starts_on: comecaEm,
-        ends_on: terminaEm || null,
-        active: ativa ? 1 : 0,
-        notes: notas || null,
-      }
-      if (editandoId) {
-        await api(`/api/recurring/${editandoId}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await api('/api/recurring', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        })
-      }
-      limparFormulario()
-      await carregar()
-    } catch (err: unknown) {
-      setFormError(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setSalvando(false)
-    }
+    // Salvar e recarregar são sucessos INDEPENDENTES (ver
+    // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um 201/200
+    // seguido de um GET que cai mostrava o erro do GET como se a recorrente
+    // não tivesse sido salva. No caso da CRIAÇÃO isso custa caro — o dono
+    // reenviava e criava uma recorrente duplicada, que o Comprometido passa
+    // a somar duas vezes: exatamente a dupla contagem que este módulo
+    // existe pra matar.
+    const editando = editandoId !== null
+    const resultado = await mutarERecarregar(
+      async () => {
+        const payload = {
+          description: descricao,
+          category_id: categoryId || null,
+          account_id: accountId || null,
+          scope,
+          day_of_month: dia,
+          amount_min_cents: minCents,
+          amount_max_cents: maxCents,
+          starts_on: comecaEm,
+          ends_on: terminaEm || null,
+          active: ativa ? 1 : 0,
+          notes: notas || null,
+        }
+        if (editandoId) {
+          await api(`/api/recurring/${editandoId}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          })
+        } else {
+          await api('/api/recurring', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          })
+        }
+        // Limpar só depois do 201/200, ainda dentro da mutação — mesma
+        // decisão de accounts.tsx/DividasPage.tsx: com a recorrente já
+        // salva, um formulário ainda preenchido convida ao reenvio, e
+        // reenviar uma CRIAÇÃO duplica. A descrição vai nomeada na
+        // mensagem de recarga, então nada some em silêncio.
+        limparFormulario()
+      },
+      carregar,
+      editando
+        ? `A recorrente "${descricao}" foi salva, mas não consegui recarregar a lista — atualize a página pra ver a alteração.`
+        : `A recorrente "${descricao}" foi criada, mas não consegui recarregar a lista — atualize a página pra vê-la. Não envie de novo: criaria uma recorrente duplicada, e o Comprometido passaria a contar esse valor duas vezes.`,
+    )
+    if (!resultado.ok) setFormError(resultado.mensagem)
+    setSalvando(false)
   }
 
   function excluir(r: RecurringExpenseView) {
@@ -267,15 +284,20 @@ export function RecorrentesPage() {
       onConfirm: async () => {
         setAcaoErro(null)
         setProcessando(r.id)
-        try {
-          await api(`/api/recurring/${r.id}`, { method: 'DELETE' })
-          if (editandoId === r.id) limparFormulario()
-          await carregar()
-        } catch (err: unknown) {
-          setAcaoErro(err instanceof ApiError ? err.message : String(err))
-        } finally {
-          setProcessando(null)
-        }
+        // Excluir e recarregar em dois `try` separados (padrão de
+        // lib/mutar-e-recarregar.ts): um DELETE 200 seguido de um GET que
+        // cai NÃO pode ler como "a exclusão falhou" — o dono tentaria de
+        // novo e bateria num 404, sem nada explicando por quê.
+        const resultado = await mutarERecarregar(
+          async () => {
+            await api(`/api/recurring/${r.id}`, { method: 'DELETE' })
+            if (editandoId === r.id) limparFormulario()
+          },
+          carregar,
+          `A recorrente "${r.description}" foi excluída, mas não consegui recarregar a lista — atualize a página pra confirmar. Nenhum lançamento já feito foi apagado.`,
+        )
+        if (!resultado.ok) setAcaoErro(resultado.mensagem)
+        setProcessando(null)
       },
     })
   }

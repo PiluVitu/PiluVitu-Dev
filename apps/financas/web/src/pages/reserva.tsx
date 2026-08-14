@@ -16,6 +16,7 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { formatRange } from '../lib/commitments'
 import { CHECKBOX_CLASSNAME } from '../lib/form-classes'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import {
   abaixoDaMeta,
   formatMeses,
@@ -158,17 +159,24 @@ export function ReservaPage() {
   async function salvarContas() {
     setSaveError(null)
     setSalvando(true)
-    try {
-      await api('/api/reserve/accounts', {
-        method: 'PUT',
-        body: JSON.stringify({ account_ids: Array.from(selecionadas) }),
-      })
-      await carregar()
-    } catch (err: unknown) {
-      setSaveError(err instanceof ApiError ? err.message : String(err))
-    } finally {
-      setSalvando(false)
-    }
+    // Salvar e recarregar são sucessos INDEPENDENTES (ver
+    // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um PUT 200
+    // seguido de um GET que cai mostrava o erro do GET como se a
+    // designação não tivesse sido salva — e a tela continuava exibindo o
+    // saldo/os meses ANTIGOS, confirmando visualmente a mentira. O PUT é
+    // idempotente (substitui a lista inteira), então reenviar não corrompe
+    // nada; o defeito aqui é só enganar o dono sobre o que está salvo.
+    const resultado = await mutarERecarregar(
+      () =>
+        api('/api/reserve/accounts', {
+          method: 'PUT',
+          body: JSON.stringify({ account_ids: Array.from(selecionadas) }),
+        }),
+      carregar,
+      'As contas da reserva foram salvas, mas não consegui recarregar os números — atualize a página pra ver o saldo e os meses de sobrevivência corretos.',
+    )
+    if (!resultado.ok) setSaveError(resultado.mensagem)
+    setSalvando(false)
   }
 
   if (loadError) return <p role="alert">{loadError}</p>

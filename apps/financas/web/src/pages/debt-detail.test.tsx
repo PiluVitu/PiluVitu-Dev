@@ -397,6 +397,65 @@ describe('DebtDetailPage', () => {
     )
   })
 
+  // ⚠️ É DINHEIRO: o 201 cria o pagamento E uma `transaction` real no caixa.
+  // Antes, POST e GET moravam no mesmo `try` — um 201 seguido de um GET que
+  // cai gravava o erro do GET em `formError`, e o formulário já tinha sido
+  // limpo: o dono lia "falhou" com os campos vazios, reenviava, e ficava com
+  // pagamento e lançamento de caixa DUPLICADOS.
+  it('pagamento registrado mas recarga falhou: diz que registrou e avisa pra NÃO reenviar', async () => {
+    let gets = 0
+    mockApi({
+      detail: () => {
+        gets++
+        // 1º GET = mount; o 2º é o `carregar()` de depois do POST.
+        if (gets >= 2) {
+          throw new ApiError(503, 'sem_conexao', 'sem conexão com o servidor')
+        }
+        return detail
+      },
+    })
+
+    render(<DebtDetailPage debtId="d1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+    )
+
+    const formPagamento = within(screen.getByTestId('form-pagamento'))
+    fireEvent.change(formPagamento.getByLabelText('Valor'), {
+      target: { value: '1.360,00' },
+    })
+    fireEvent.change(formPagamento.getByLabelText('Steam Deck'), {
+      target: { value: '1.360,00' },
+    })
+    fireEvent.submit(screen.getByTestId('form-pagamento'))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/foi registrado/i)
+    // O valor exato aparece na mensagem — é o que impede o dono de perder o
+    // que digitou quando o formulário é limpo apesar da recarga ter caído.
+    expect(alerta).toHaveTextContent(/R\$\s*1\.360,00/)
+    expect(alerta).toHaveTextContent(/lançamento no caixa também/i)
+    expect(alerta).toHaveTextContent(/não consegui recarregar/i)
+    expect(alerta).toHaveTextContent(/não envie de novo/i)
+    expect(alerta).toHaveTextContent(/duplicad/i)
+    // NUNCA pode ler como falha da ação, nem vazar a mensagem do GET.
+    expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+    expect(alerta.textContent ?? '').not.toMatch(/sem conexão/)
+
+    // O POST em si aconteceu — é isso que torna a mensagem verdadeira.
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(([p, init]) =>
+          p === '/api/debts/d1/payments'
+            ? (init as RequestInit | undefined)?.method === 'POST'
+            : false,
+        ),
+    ).toBe(true)
+    // A tela continua de pé com o estado anterior — nada é derrubado.
+    expect(screen.getByTestId('item-i2')).toBeInTheDocument()
+  })
+
   it('descarta resposta obsoleta quando debtId muda antes dela chegar', async () => {
     // A troca de divida no App (App.tsx) so troca a prop debtId — nao
     // desmonta o componente. Uma resposta lenta da divida antiga chegando

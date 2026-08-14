@@ -233,34 +233,63 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
       .map(([item_id, amount_cents]) => ({ item_id, amount_cents }))
 
     setEnviando(true)
-    try {
-      await api(`/api/debts/${debtId}/payments`, {
-        method: 'POST',
-        body: JSON.stringify({
-          paid_on: paidOn || todayInTeresina(),
-          amount_cents: totalCents,
-          kind: 'cash',
-          account_id: accountId,
-          description: `Pgto divida — ${detail!.debt.title}`,
-          allocations,
-        }),
-      })
-      setValor('')
-      setAllocRaw({})
-      await carregar()
-    } catch (err: unknown) {
-      if (err instanceof ApiError && err.code === 'over_allocation') {
-        // O trigger do D1 abortou e o batch inteiro reverteu: nem pagamento,
-        // nem lançamento no caixa, nem alocação parcial ficaram.
-        setFormError(
-          `O banco recusou: ${err.message}. Nada foi gravado — recarregue a divida.`,
-        )
-      } else {
-        setFormError(err instanceof ApiError ? err.message : String(err))
-      }
-    } finally {
-      setEnviando(false)
-    }
+    // Registrar o pagamento e recarregar são sucessos INDEPENDENTES (ver
+    // lib/mutar-e-recarregar.ts). Aqui é DINHEIRO: o 201 cria o pagamento
+    // E uma `transaction` real no caixa. Com os dois no mesmo `try`, um 201
+    // seguido de um GET que cai gravava o erro do GET em `formError` — o
+    // dono lia "falhou" com o formulário já limpo, reenviava, e ficava com
+    // pagamento e lançamento de caixa DUPLICADOS.
+    //
+    // ⚠️ `executarAcao` (a casca das quatro ações destrutivas desta mesma
+    // tela) NÃO serve aqui, por três razões: escreve em
+    // `acaoErro`/`processando` (o estado das ações de LINHA, não deste
+    // formulário — o erro apareceria fora do form e o botão "Registrar"
+    // nunca sairia de "Enviando…"); fixa a mensagem genérica de recarga,
+    // que não pode avisar sobre dinheiro duplicado; e não tem onde caber o
+    // ramo de `over_allocation`, que só faz sentido na fase de MUTAÇÃO.
+    const resultado = await mutarERecarregar(
+      async () => {
+        try {
+          await api(`/api/debts/${debtId}/payments`, {
+            method: 'POST',
+            body: JSON.stringify({
+              paid_on: paidOn || todayInTeresina(),
+              amount_cents: totalCents,
+              kind: 'cash',
+              account_id: accountId,
+              description: `Pgto divida — ${detail!.debt.title}`,
+              allocations,
+            }),
+          })
+        } catch (err: unknown) {
+          if (err instanceof ApiError && err.code === 'over_allocation') {
+            // O trigger do D1 abortou e o batch inteiro reverteu: nem
+            // pagamento, nem lançamento no caixa, nem alocação parcial
+            // ficaram. Rebrulhado em `ApiError` (em vez de escrito direto em
+            // `formError`) pra continuar sendo tratado como falha de
+            // MUTAÇÃO — `mutarERecarregar` repassa `err.message` intacto.
+            throw new ApiError(
+              err.status,
+              err.code,
+              `O banco recusou: ${err.message}. Nada foi gravado — recarregue a divida.`,
+            )
+          }
+          throw err
+        }
+        // Limpar SÓ depois do 201, ainda dentro da mutação — de propósito:
+        // se a recarga falhar, o formulário já está vazio. Deixá-lo
+        // preenchido convidaria ao reenvio, e reenviar aqui duplica
+        // dinheiro de verdade (pagamento + lançamento de caixa). O que o
+        // dono digitou não se perde em silêncio: a mensagem de recarga
+        // nomeia o valor exato que foi registrado.
+        setValor('')
+        setAllocRaw({})
+      },
+      carregar,
+      `O pagamento de ${formatBRL(totalCents)} foi registrado, e o lançamento no caixa também, mas não consegui recarregar a dívida — atualize a página pra ver os saldos. Não envie de novo: criaria um pagamento e um lançamento de caixa duplicados.`,
+    )
+    if (!resultado.ok) setFormError(resultado.mensagem)
+    setEnviando(false)
   }
 
   function pedirConfirmacao(pedido: ConfirmacaoPendente) {

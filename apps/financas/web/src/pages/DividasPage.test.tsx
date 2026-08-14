@@ -151,6 +151,101 @@ describe('DividasPage', () => {
     expect(corpoDivida.title).toBe('Tio')
     expect(corpoDivida.direction).toBe('i_owe')
   })
+
+  // POST 201 + GET seguinte caindo. Antes os dois moravam no mesmo `try`:
+  // a tela gravava o erro do GET em `erro`, o dono lia "falhou" e criava
+  // de novo — dívida duplicada (e payee duplicado junto, `POST /api/payees`
+  // não deduplica por `norm_name`).
+  it('dívida criada mas recarga falhou: diz que criou e avisa pra NÃO reenviar', async () => {
+    let getsDebts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && url.startsWith('/api/debts')) {
+          getsDebts++
+          // 1º GET = mount; o 2º é o `carregar()` de depois do POST.
+          if (getsDebts >= 2) throw new TypeError('Failed to fetch')
+          return json(dividas)
+        }
+        if (method === 'GET' && url.startsWith('/api/payees'))
+          return json(payees)
+        if (method === 'POST' && url === '/api/payees')
+          return json({ id: 'p9', name: 'Tio', kind: 'person' }, 201)
+        if (method === 'POST' && url === '/api/debts')
+          return json({ id: 'd9' }, 201)
+        throw new Error(`url inesperada: ${method} ${url}`)
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(<DividasPage />)
+    await screen.findByRole('link', { name: 'Pai' })
+
+    await user.type(screen.getByLabelText('Título'), 'Tio')
+    await user.selectOptions(screen.getByLabelText('Pessoa'), '__novo__')
+    await user.type(screen.getByLabelText('Nome da pessoa'), 'Tio')
+    await user.click(screen.getByRole('button', { name: 'Criar dívida' }))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(/A dívida "Tio" foi criada/i)
+    expect(alerta).toHaveTextContent(/não consegui recarregar a lista/i)
+    expect(alerta).toHaveTextContent(/não envie de novo/i)
+    expect(alerta).toHaveTextContent(/dívida duplicada/i)
+    // Pessoa nova cadastrada nesta mesma submissão: a duplicata seria dupla.
+    expect(alerta).toHaveTextContent(/segunda pessoa "Tio"/i)
+    expect(alerta.textContent ?? '').not.toMatch(/falh/i)
+    expect(alerta.textContent ?? '').not.toMatch(/Failed to fetch/)
+    // A tela continua de pé com a lista anterior.
+    expect(screen.getByRole('link', { name: 'Pai' })).toBeInTheDocument()
+  })
+
+  it('falha REAL do POST continua mostrando a mensagem do servidor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && url.startsWith('/api/debts'))
+          return json(dividas)
+        if (method === 'GET' && url.startsWith('/api/payees'))
+          return json(payees)
+        if (method === 'POST' && url === '/api/debts')
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              data: null,
+              notifications: [
+                {
+                  type: 'error',
+                  code: 'constraint_violation',
+                  message:
+                    'Referência inválida: a pessoa informada não existe.',
+                },
+              ],
+            }),
+            { status: 422, headers: { 'content-type': 'application/json' } },
+          )
+        throw new Error(`url inesperada: ${method} ${url}`)
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(<DividasPage />)
+    await screen.findByRole('link', { name: 'Pai' })
+
+    await user.type(screen.getByLabelText('Título'), 'Tio')
+    await user.selectOptions(screen.getByLabelText('Pessoa'), 'p1')
+    await user.click(screen.getByRole('button', { name: 'Criar dívida' }))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(
+      'Referência inválida: a pessoa informada não existe.',
+    )
+    // Falha de MUTAÇÃO nunca vira a mensagem de recarga.
+    expect(alerta.textContent ?? '').not.toMatch(/foi criada/i)
+  })
 })
 
 // Important 3 (fix final): em ~390px (Android) a tabela de 5 colunas

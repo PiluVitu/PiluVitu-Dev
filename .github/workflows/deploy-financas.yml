@@ -74,12 +74,31 @@ jobs:
       # truncado, checagem de `CREATE TABLE` reprovando) some com a única
       # evidência que serviria pra depurar o que o banco devolveu.
       #
-      # `if: failure() || success()` seria a MESMA coisa que `always()` —
-      # não é alternativa. O que `always()` sozinho traz de ruim é upload
-      # rodando quando o export nem chegou a criar arquivo: `upload-artifact`
-      # avisa e segue, gerando um artifact vazio/inútil. Daí o par com
-      # `if-no-files-found: ignore` — nada pra subir vira silêncio, arquivo
-      # parcial vira artifact. Nunca o contrário.
+      # ⚠️ `if: success() || failure()` NÃO é a mesma coisa que `always()`
+      # (esta linha já afirmou que era — falso, corrigido). Pela referência
+      # de expressões do GitHub Actions
+      # (https://docs.github.com/en/actions/reference/workflows-and-actions/expressions):
+      # `always()` "Causes the step to always execute, and returns `true`,
+      # even when canceled" — ou seja, roda TAMBÉM em cancelamento, que
+      # `success() || failure()` não cobre. A alternativa de fato
+      # equivalente a "roda deu certo ou deu errado, menos cancelado" é
+      # `if: ${{ !cancelled() }}`, que a própria doc recomenda no lugar de
+      # `always()`. Aqui `always()` continua sendo a escolha certa de
+      # propósito: um job cancelado no meio pode ter deixado um export
+      # parcial em disco, e é exatamente essa evidência que se quer
+      # preservar — o aviso da doc é contra `always()` em passos que podem
+      # travar (checkout, etc.), não contra este upload.
+      #
+      # ⚠️ `if-no-files-found: ignore` NÃO existe pra evitar "artifact
+      # vazio" (esta linha também afirmava isso — falso). Pelo README e
+      # pelo código de `actions/upload-artifact@v4`
+      # (src/upload/upload-artifact.ts): sem nenhum arquivo casando com
+      # `path`, a action retorna ANTES de chamar `uploadArtifact()` — "No
+      # files were found with the provided path: … No artifacts will be
+      # uploaded." Artifact vazio não é criado em nenhuma das opções. O que
+      # `ignore` muda é só o RUÍDO: o default `warn` emite um warning no
+      # run, `ignore` não emite nada. Par inofensivo, mantido pra um job
+      # que abortou antes do export não pendurar um warning enganoso.
       #
       # Isto NÃO afrouxa o guard: o passo "Backup antes de migrar" tem
       # `set -euo pipefail` e sai != 0 num export vazio/truncado, e um passo
