@@ -3,7 +3,56 @@
 **Data:** 2026-07-27
 **Estado:** levantado contra o código e o banco reais, não de memória.
 
+---
+
+> ## ⚠️ ADENDO DE ESTADO (2026-08-14) — este documento estava obsoleto no dia seguinte
+>
+> **As fatias ⑥, ②, ⑦, ⑧ e ③ deste roadmap foram TODAS construídas em 2026-07-27/28** — ou
+> seja, nas ~48 h seguintes a ele ter sido escrito. O texto abaixo nunca foi atualizado, e por
+> isso descrevia como "❌ nunca começou" coisas que já estavam em produção. **Ele enganou uma
+> sessão de planejamento em 2026-08-14**, que quase reimplementou a fatia ⑥ inteira do zero.
+>
+> **Medido em 2026-08-14, não de memória:**
+>
+> | Fatia                    | Estado real  | Evidência                                                                                              |
+> | ------------------------ | ------------ | ------------------------------------------------------------------------------------------------------ |
+> | ⑥ Recorrentes com faixa  | ✅ produção  | `migrations/0006`, `domain/recurring.ts`, `pages/recorrentes.tsx`, `commitments()` devolve `{min,max}` |
+> | ② Import CSV/OFX         | ✅ produção  | `domain/import.ts`, `routes/import.ts`, `pages/importar.tsx`                                           |
+> | ⑦ Reserva de emergência  | ✅ produção  | `domain/reserve.ts`, `routes/reserve.ts`, `pages/reserva.tsx`, simulador em `packages/tools`           |
+> | ⑧ Mapa de fluxo de caixa | ✅ produção  | `domain/cashflow.ts`, `GET /api/reports/cashflow`, `pages/fluxo.tsx` — `v_cashflow` deixou de ser órfã |
+> | ③ PDF com LLM local      | ✅ produção  | `scripts/pdf-import.mjs` (CLI no Mac, via Ollama)                                                      |
+> | ④ Open Finance           | ⛔ bloqueada | inalterado — ver §3 e `apps/financas/CLAUDE.md` § _Pendente — Open Finance / Pluggy_                   |
+>
+> São **12 telas**, não as 7 que a §2 abaixo descreve. A §1 e a §3 ficam preservadas como
+> **registro histórico do que se sabia em 2026-07-27** — leia-as como diário, não como estado.
+>
+> **A regra que faltava, e que este adendo institui:** um documento de estado sem data de
+> revisão mente por omissão assim que o código anda. Ao fechar uma fatia, atualizar a linha
+> dela aqui faz parte da fatia.
+>
+> ### O que de fato continua aberto no finanças
+>
+> 1. **⛔ Fatia ④ (Open Finance)** — bloqueada por restrição regulatória/comercial, não técnica.
+>    Precisa de um spike de ~1 h antes de virar promessa (§3).
+> 2. **⚠️ O deploy automatizado nunca rodou.** `deploy-financas.yml` acumula **5 execuções, todas
+>    `skipped`** — `gh variable list` e `gh secret list` voltam **vazios**: falta
+>    `CLOUDFLARE_ACCOUNT_ID` em Variables e `CLOUDFLARE_API_TOKEN` em Secrets (a própria seção
+>    _Deploy automatizado_ no fim deste arquivo já previa isso). Toda publicação até hoje foi
+>    manual, e é isso que produz o item 3.
+> 3. **Produção fica para trás da `main` sem ninguém perceber.** Medido em 2026-08-14: o bundle
+>    publicado estava 4 commits atrás e continha um **Critical já corrigido na `main`** — a tela
+>    `#/insight` mandava rodar `node apps/financas/scripts/insight.mjs`, arquivo **apagado** em
+>    `e4b25d7`. O fix (`c0fc9e1`) existia havia semanas, só não tinha sido publicado. É o custo
+>    exato do item 2.
+> 4. **Ambiente de dev para o Worker** — produção segue sendo o primeiro lugar onde uma migration
+>    roda (ver última seção deste arquivo).
+
+---
+
 ## 1. O que foi pedido, o que existe
+
+> ⚠️ **Tabela de 2026-07-27, mantida como registro histórico.** As linhas 9 a 16 estão
+> desatualizadas — ver o adendo de 2026-08-14 no topo para o estado real.
 
 Legenda: ✅ entregue e em produção · 🟡 parcial · ❌ nunca começou
 
@@ -53,6 +102,10 @@ A tela passa a mostrar **intervalo**: "comprometido: R$ 2.400 a R$ 2.988". O pis
 Consequência de design que um valor fixo fecharia: como o app já registra receita, um dia dá para **estimar** o DAS a partir do faturamento em vez de o dono chutar a faixa.
 
 ## 3. O plano, em cinco fatias ordenadas
+
+> ⚠️ **Plano de 2026-07-27, mantido como registro histórico.** Ele foi **executado**: ⑥, ②, ⑦,
+> ⑧ e ③ estão em produção desde 2026-07-28 (ver adendo no topo). Só a ④ segue bloqueada. Leia
+> as seções abaixo pelo raciocínio e pelas decisões de desenho — não como trabalho pendente.
 
 A ordem não é preferência — é dependência e valor por esforço.
 
