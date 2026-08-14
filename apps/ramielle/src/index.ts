@@ -5,6 +5,7 @@ import { errJson, okJson } from './lib/envelope'
 import adminRoutes from './routes/admin'
 import atelierRoutes from './routes/atelier'
 import authRoutes from './routes/auth'
+import distributionRoutes from './routes/distribution'
 import votacaoRoutes from './routes/votacao'
 
 // `CORS_ALLOWED_ORIGINS` mora no tipo `AuthBindings` (`lib/auth.ts`), não
@@ -79,6 +80,14 @@ app.route('/admin', adminRoutes)
 // `index.test.ts`. Montadas sob `/admin` porque é onde o `apps/web` já as
 // chama hoje (`lib/admin/atelier/api.ts`), na Go.
 app.route('/admin', atelierRoutes)
+
+// As 3 rotas de distribuição de artigo (dev.to/Hashnode/Bluesky/Mastodon,
+// `.superpowers/sdd/2026-08-13-ramielle-distribuicao/`, Task 4) — mesma
+// regra de sempre: ACIMA do catch-all, com prova por EXECUÇÃO em
+// `index.test.ts`. Montada sob `/admin` pelo MESMO motivo de `atelierRoutes`
+// acima: é onde o `apps/web` já as chama (`lib/admin/atelier/api.ts`), hoje
+// contra a Go.
+app.route('/admin', distributionRoutes)
 
 // Rede de segurança GLOBAL (T6) — pega qualquer exceção que uma rota deixe
 // escapar sem `try/catch` próprio. SEM isto, o handler default do Hono

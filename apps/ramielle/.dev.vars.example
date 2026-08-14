@@ -69,3 +69,29 @@ CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
 # sheets_disabled). Em dev, o promeia sobe com `make dev-promeia` na 8082.
 # PROMEIA_URL=http://localhost:8082
 # PROMEIA_TOKEN=o-mesmo-valor-do-PROMEIA_TOKEN-do-apps/promeia
+
+# Distribuição de artigo (dev.to/Hashnode/Bluesky/Mastodon) —
+# `.superpowers/sdd/2026-08-13-ramielle-distribuicao/`, Task 4
+# (`src/routes/distribution.ts#montarPublishers`). As 7 SEMPRE via `wrangler
+# secret put` em produção — nunca `vars` do wrangler.jsonc (texto claro
+# commitado): são credenciais de terceiro, mesmo tratamento de
+# GOOGLE_SA_JSON/PROMEIA_TOKEN acima.
+#
+# ⚠️ Só o BLUESKY tem credencial real hoje (medido em apps/api/.env,
+# 2026-08-13) — dev.to, Hashnode e Mastodon têm as chaves presentes e
+# VAZIAS na API Go: o dono ainda não criou conta/token nessas três. Sem
+# NENHUMA das 4 plataformas configurada, as 3 rotas respondem 503
+# distribution_unavailable — feature desligada, não quebrada.
+#
+# ⚠️ Armadilha 9 (replicada de propósito, ver o comentário em
+# `montarPublishers`): nas 3 plataformas de 2 credenciais (Hashnode,
+# Bluesky, Mastodon), só a PRIMEIRA é validada antes de o publisher ser
+# construído — a segunda pode ficar vazia sem impedir a plataforma de
+# "contar" pro 503 acima; ela só falha na hora de publicar de verdade.
+# DEVTO_API_KEY=troque-pela-chave-do-dev.to
+# HASHNODE_API_TOKEN=troque-pelo-token-do-hashnode
+# HASHNODE_PUBLICATION_ID=troque-pelo-id-da-publicacao-hashnode
+# BLUESKY_HANDLE=troque-pelo-handle-do-bluesky
+# BLUESKY_APP_PASSWORD=troque-pelo-app-password-do-bluesky
+# MASTODON_INSTANCE_URL=troque-pela-url-da-instancia-mastodon
+# MASTODON_ACCESS_TOKEN=troque-pelo-access-token-mastodon

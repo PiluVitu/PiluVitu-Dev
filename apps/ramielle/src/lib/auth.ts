@@ -87,6 +87,38 @@ export type AuthBindings = {
    * filmes sem pôster/tmdbId, `handlers/votacao/sessions.go:124-129`).
    */
   TMDB_API_KEY?: string
+  /**
+   * Fatia de distribuição de artigo (`.superpowers/sdd/2026-08-13-ramielle-distribuicao/`,
+   * Task 4) — as 7 credenciais dos 4 adapters de plataforma
+   * (`lib/publishers/{devto,hashnode,bluesky,mastodon}.ts`), lidas por
+   * `routes/distribution.ts#montarPublishers`. TODAS opcionais — ausente é
+   * o estado normal até `wrangler secret put <NOME>` (ver `apps/ramielle/CLAUDE.md`
+   * § Pendências do dono). **NENHUMA vai em `wrangler.jsonc#vars`** — são
+   * credenciais de terceiro (texto claro commitado seria uma exposição
+   * real), sempre `wrangler secret put`, mesmo padrão de `PROMEIA_TOKEN`/
+   * `TMDB_API_KEY` acima.
+   *
+   * ⚠️ **Armadilha 9 do plano da fatia — replicada de propósito, não
+   * endurecer.** MEDIDO em `apps/api/cmd/api/main.go:93-105`: das 3
+   * plataformas que precisam de DUAS credenciais (Hashnode, Bluesky,
+   * Mastodon), o Go só valida a PRIMEIRA (`HASHNODE_API_TOKEN`,
+   * `BLUESKY_HANDLE`, `MASTODON_INSTANCE_URL`) antes de construir o
+   * publisher — a segunda pode estar ausente/vazia e o publisher é
+   * construído do mesmo jeito, falhando só na hora de publicar de verdade.
+   * Exigir as duas mudaria comportamento OBSERVÁVEL (uma plataforma
+   * "meio-configurada" deixaria de contar pro `len(pubs) > 0`/`pubs.length
+   * === 0` que decide `503 distribution_unavailable`).
+   */
+  DEVTO_API_KEY?: string
+  HASHNODE_API_TOKEN?: string
+  /** Segunda credencial do Hashnode — NÃO validada isoladamente, ver a armadilha 9 acima. */
+  HASHNODE_PUBLICATION_ID?: string
+  BLUESKY_HANDLE?: string
+  /** Segunda credencial do Bluesky — NÃO validada isoladamente, ver a armadilha 9 acima. */
+  BLUESKY_APP_PASSWORD?: string
+  MASTODON_INSTANCE_URL?: string
+  /** Segunda credencial do Mastodon — NÃO validada isoladamente, ver a armadilha 9 acima. */
+  MASTODON_ACCESS_TOKEN?: string
 }
 
 /**

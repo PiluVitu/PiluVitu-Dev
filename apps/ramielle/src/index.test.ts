@@ -226,6 +226,10 @@ describe('rotas de votação/admin — todas montadas ACIMA do catch-all', () =>
     // por EXECUÇÃO, e uma rota nova só é coberta se for acrescentada aqui.
     ['POST', '/admin/llm/proofread'],
     ['POST', '/admin/llm/refine'],
+    // Distribuição de artigo (fatia 2026-08-13, Task 4) — mesma técnica.
+    ['POST', '/admin/distribution/proposals'],
+    ['GET', '/admin/distribution/algum-slug'],
+    ['POST', '/admin/distribution/algum-slug/publish'],
   ])(
     '%s %s responde 401 not_authenticated (da rota) — nunca 404 not_found (do catch-all)',
     async (method, path) => {
