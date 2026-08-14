@@ -106,46 +106,67 @@ describe('BlocoCategorias', () => {
   })
 
   it('o seletor de mês REFAZ a busca — não é só um re-render local com o dado antigo', async () => {
-    const reportAgosto = {
-      competence: '2026-08',
-      rows: [
-        {
-          category_id: 'c-inss',
-          category_name: 'INSS',
-          category_slug: 'inss',
-          total_cents: -20000,
-        },
-      ],
-      total_cents: -20000,
-    }
-    vi.mocked(api).mockImplementation((path: string) => {
-      if (path.includes('competence=2026-08')) {
-        return Promise.resolve(reportAgosto)
+    // Relógio fixado — mesmo motivo do último teste do arquivo ("mês
+    // default vem de todayInTeresina()"): o mock abaixo distingue os dois
+    // reports por COMPETÊNCIA LITERAL ('2026-08' = "o mês pra onde o dono
+    // troca"), e o carregamento INICIAL usa `competenciaAtual()` (relógio
+    // real). Sem fixar o relógio, o dia em que "hoje" cair em agosto/2026
+    // faz a competência do carregamento inicial colidir com a competência
+    // do mock de troca — o primeiro fetch já bate no branch errado
+    // (`reportAgosto` em vez de `reportComDados`), quebrando o teste por
+    // deriva de calendário, não por regressão no componente. Achado real:
+    // este arquivo foi escrito em 2026-07-27 (quando "hoje" era julho); o
+    // relógio da máquina alcançou 2026-08 e o teste passou a falhar sozinho.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-20T15:00:00Z'))
+    try {
+      const reportAgosto = {
+        competence: '2026-08',
+        rows: [
+          {
+            category_id: 'c-inss',
+            category_name: 'INSS',
+            category_slug: 'inss',
+            total_cents: -20000,
+          },
+        ],
+        total_cents: -20000,
       }
-      return Promise.resolve(reportComDados)
-    })
+      vi.mocked(api).mockImplementation((path: string) => {
+        if (path.includes('competence=2026-08')) {
+          return Promise.resolve(reportAgosto)
+        }
+        return Promise.resolve(reportComDados)
+      })
 
-    render(<BlocoCategorias />)
+      render(<BlocoCategorias />)
 
-    await waitFor(() =>
-      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00'),
-    )
-    expect(api).toHaveBeenCalledTimes(1)
+      await waitFor(() =>
+        expect(screen.getByTestId('total-gasto')).toHaveTextContent(
+          'R$ 900,00',
+        ),
+      )
+      expect(api).toHaveBeenCalledTimes(1)
 
-    fireEvent.change(screen.getByLabelText('Mês'), {
-      target: { value: '2026-08' },
-    })
+      fireEvent.change(screen.getByLabelText('Mês'), {
+        target: { value: '2026-08' },
+      })
 
-    await waitFor(() =>
-      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 200,00'),
-    )
+      await waitFor(() =>
+        expect(screen.getByTestId('total-gasto')).toHaveTextContent(
+          'R$ 200,00',
+        ),
+      )
 
-    // A PROVA que importa: uma SEGUNDA chamada de rede com a competência
-    // nova — não só o `<select>` mudando de valor visualmente.
-    expect(api).toHaveBeenCalledTimes(2)
-    expect(api).toHaveBeenLastCalledWith(
-      '/api/reports/by-category?competence=2026-08',
-    )
+      // A PROVA que importa: uma SEGUNDA chamada de rede com a competência
+      // nova — não só o `<select>` mudando de valor visualmente.
+      expect(api).toHaveBeenCalledTimes(2)
+      expect(api).toHaveBeenLastCalledWith(
+        '/api/reports/by-category?competence=2026-08',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('refetch falho DEPOIS de um carregamento inicial bem-sucedido não esconde o report antigo nem o seletor — erro aparece inline, o dono consegue tentar de novo', async () => {
@@ -159,72 +180,90 @@ describe('BlocoCategorias', () => {
     // comportamento correto: erro de refetch aparece inline (role="alert"),
     // o total/seletor/gráfico do mês anterior continuam de pé, e uma nova
     // troca de mês (a "tentativa de novo") se recupera normalmente.
-    const reportSetembro = {
-      competence: '2026-09',
-      rows: [
-        {
-          category_id: 'c-inss',
-          category_name: 'INSS',
-          category_slug: 'inss',
-          total_cents: -15000,
-        },
-      ],
-      total_cents: -15000,
+    // Relógio fixado — mesmo motivo do teste anterior ("o seletor de mês
+    // REFAZ a busca"): o mock abaixo distingue os três reports por
+    // COMPETÊNCIA LITERAL, e o carregamento INICIAL usa `competenciaAtual()`
+    // (relógio real). Sem fixar, "hoje" caindo em '2026-08'/'2026-09' faz o
+    // PRIMEIRO fetch (o carregamento inicial, que este teste espera que dê
+    // CERTO) colidir com o branch de FALHA — o card nunca chega a mostrar o
+    // total antigo, e o teste falha antes mesmo de chegar no cenário de
+    // refetch que ele existe pra provar.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-20T15:00:00Z'))
+    try {
+      const reportSetembro = {
+        competence: '2026-09',
+        rows: [
+          {
+            category_id: 'c-inss',
+            category_name: 'INSS',
+            category_slug: 'inss',
+            total_cents: -15000,
+          },
+        ],
+        total_cents: -15000,
+      }
+      vi.mocked(api).mockImplementation((path: string) => {
+        if (path.includes('competence=2026-08')) {
+          return Promise.reject(
+            new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),
+          )
+        }
+        if (path.includes('competence=2026-09')) {
+          return Promise.resolve(reportSetembro)
+        }
+        return Promise.resolve(reportComDados)
+      })
+
+      render(<BlocoCategorias />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('total-gasto')).toHaveTextContent(
+          'R$ 900,00',
+        ),
+      )
+
+      // troca pra um mês cuja busca vai falhar (refetch, não carregamento inicial)
+      fireEvent.change(screen.getByLabelText('Mês'), {
+        target: { value: '2026-08' },
+      })
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'sem conexão com o servidor',
+        ),
+      )
+
+      // NADA do que já estava na tela sumiu por causa do erro de refetch:
+      // total antigo, seletor (com o valor novo, mesmo a busca tendo falhado
+      // — é um `<input>` controlado, reflete o que o dono digitou) e gráfico
+      // continuam de pé, ao lado do alerta — não em vez dele.
+      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00')
+      expect(screen.getByLabelText('Mês')).toBeInTheDocument()
+      expect(screen.getByLabelText('Mês')).toHaveValue('2026-08')
+      expect(screen.getByTestId('grafico-categorias')).toBeInTheDocument()
+      // o `Bloco` NÃO assumiu o card inteiro — o heading do bloco continua
+      // no ar junto com o alerta (contraste direto com o teste de erro
+      // INICIAL acima, onde só o alerta aparece).
+      expect(
+        screen.getByRole('heading', { name: 'Para onde foi o dinheiro' }),
+      ).toBeInTheDocument()
+
+      // recuperação: o seletor continua alcançável, então o dono TENTA DE
+      // NOVO — troca pra um mês que dá certo, o alerta some, o total atualiza.
+      fireEvent.change(screen.getByLabelText('Mês'), {
+        target: { value: '2026-09' },
+      })
+
+      await waitFor(() =>
+        expect(screen.getByTestId('total-gasto')).toHaveTextContent(
+          'R$ 150,00',
+        ),
+      )
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
     }
-    vi.mocked(api).mockImplementation((path: string) => {
-      if (path.includes('competence=2026-08')) {
-        return Promise.reject(
-          new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),
-        )
-      }
-      if (path.includes('competence=2026-09')) {
-        return Promise.resolve(reportSetembro)
-      }
-      return Promise.resolve(reportComDados)
-    })
-
-    render(<BlocoCategorias />)
-
-    await waitFor(() =>
-      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00'),
-    )
-
-    // troca pra um mês cuja busca vai falhar (refetch, não carregamento inicial)
-    fireEvent.change(screen.getByLabelText('Mês'), {
-      target: { value: '2026-08' },
-    })
-
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'sem conexão com o servidor',
-      ),
-    )
-
-    // NADA do que já estava na tela sumiu por causa do erro de refetch:
-    // total antigo, seletor (com o valor novo, mesmo a busca tendo falhado
-    // — é um `<input>` controlado, reflete o que o dono digitou) e gráfico
-    // continuam de pé, ao lado do alerta — não em vez dele.
-    expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00')
-    expect(screen.getByLabelText('Mês')).toBeInTheDocument()
-    expect(screen.getByLabelText('Mês')).toHaveValue('2026-08')
-    expect(screen.getByTestId('grafico-categorias')).toBeInTheDocument()
-    // o `Bloco` NÃO assumiu o card inteiro — o heading do bloco continua
-    // no ar junto com o alerta (contraste direto com o teste de erro
-    // INICIAL acima, onde só o alerta aparece).
-    expect(
-      screen.getByRole('heading', { name: 'Para onde foi o dinheiro' }),
-    ).toBeInTheDocument()
-
-    // recuperação: o seletor continua alcançável, então o dono TENTA DE
-    // NOVO — troca pra um mês que dá certo, o alerta some, o total atualiza.
-    fireEvent.change(screen.getByLabelText('Mês'), {
-      target: { value: '2026-09' },
-    })
-
-    await waitFor(() =>
-      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 150,00'),
-    )
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('o mês default vem de todayInTeresina() — não de new Date().toISOString() cru (UTC)', async () => {
