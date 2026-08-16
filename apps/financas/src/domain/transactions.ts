@@ -203,10 +203,61 @@ export async function createTransfer(
   return { transfer_id, out, inbound }
 }
 
-export async function listTransactions(
-  db: D1Database,
-  opts: { account_id?: string; from?: string; to?: string; limit?: number },
-): Promise<Transaction[]> {
+/**
+ * Cursor de keyset do extrato. As TRÊS colunas, sempre — ver
+ * `buildListTransactionsQuery` para o porquê de `id` não ser opcional.
+ */
+export type TransactionCursor = {
+  purchase_date: string
+  created_at: string
+  id: string
+}
+
+export type ListTransactionsOpts = {
+  account_id?: string
+  from?: string
+  to?: string
+  limit?: number
+  /** 1 = já liquidado; 0 = ainda não ("o que falta marcar como pago"). */
+  settled?: 0 | 1
+  /** Página seguinte: só linhas ESTRITAMENTE anteriores a este cursor. */
+  before?: TransactionCursor
+}
+
+/**
+ * Monta a query do extrato. Exportada (e não só usada por
+ * `listTransactions`) porque o teste de PLANO — o que garante que o índice
+ * `idx_tx_purchase_date` (migration 0008) continua sendo usado e que não
+ * sobrou nenhum `USE TEMP B-TREE FOR ORDER BY` — precisa rodar
+ * `EXPLAIN QUERY PLAN` sobre o SQL REAL. Uma cópia do SQL dentro do teste
+ * passaria a valer sozinha no dia em que esta função mudasse.
+ *
+ * ⚠️ PAGINAÇÃO É KEYSET, NUNCA `OFFSET`. No D1 "rows read" conta linha
+ * ESCANEADA: `OFFSET n` obriga o motor a percorrer e descartar as n linhas
+ * anteriores, então a página 10 custa 10x a página 1 e o preço cresce
+ * enquanto o livro-caixa cresce. O cursor entra no `WHERE` e o índice
+ * SALTA direto pra borda (MEDIDO por EXPLAIN QUERY PLAN:
+ * `SEARCH transactions USING INDEX idx_tx_purchase_date
+ * ((purchase_date,created_at,id)<(?,?,?))`).
+ *
+ * ⚠️ O CURSOR TEM TRÊS PARTES PORQUE `(purchase_date, created_at)` NÃO É
+ * ÚNICO — e isso não é hipótese: `createInstallmentPlan`
+ * (domain/installments.ts) grava as N parcelas com o MESMO `purchase_date`
+ * (o da compra) e o MESMO `created_at` (um `nowIsoUtc()` só pro batch
+ * inteiro), e `createTransfer` faz igual com as duas pernas. Com cursor de
+ * duas partes, uma página que termina NO MEIO desse grupo pede a seguinte a
+ * partir de um par que TODO o resto do grupo também tem — e o `<` estrito
+ * descarta os irmãos: parcela sumindo do extrato, sem erro nenhum. `id`
+ * (TEXT PRIMARY KEY) fecha a ordem total.
+ *
+ * A comparação é ROW VALUE (`(a,b,c) < (?,?,?)`), não a cadeia de OR
+ * equivalente: MEDIDO que o SQLite do D1 a resolve como um seek único no
+ * índice de 3 colunas; a cadeia de OR desmonta esse seek.
+ */
+export function buildListTransactionsQuery(opts: ListTransactionsOpts): {
+  sql: string
+  binds: unknown[]
+} {
   const where: string[] = []
   const binds: unknown[] = []
   if (opts.account_id) {
@@ -221,17 +272,37 @@ export async function listTransactions(
     where.push('purchase_date <= ?')
     binds.push(opts.to)
   }
+  if (opts.settled === 1) where.push('settled_at IS NOT NULL')
+  if (opts.settled === 0) where.push('settled_at IS NULL')
+  if (opts.before) {
+    where.push('(purchase_date, created_at, id) < (?, ?, ?)')
+    binds.push(
+      opts.before.purchase_date,
+      opts.before.created_at,
+      opts.before.id,
+    )
+  }
   // LIMIT sempre presente: no D1 "rows read" conta linha ESCANEADA, e uma
   // listagem sem teto vira cota queimada.
-  const limit = Math.min(opts.limit ?? 200, 500)
+  binds.push(Math.min(opts.limit ?? 200, 500))
 
-  const sql = `SELECT ${TX_COLUMNS} FROM transactions
+  return {
+    sql: `SELECT ${TX_COLUMNS} FROM transactions
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY purchase_date DESC, created_at DESC
-    LIMIT ?`
+    ORDER BY purchase_date DESC, created_at DESC, id DESC
+    LIMIT ?`,
+    binds,
+  }
+}
+
+export async function listTransactions(
+  db: D1Database,
+  opts: ListTransactionsOpts,
+): Promise<Transaction[]> {
+  const { sql, binds } = buildListTransactionsQuery(opts)
   const res = await db
     .prepare(sql)
-    .bind(...binds, limit)
+    .bind(...binds)
     .all<Transaction>()
   return res.results
 }

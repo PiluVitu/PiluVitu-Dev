@@ -1,0 +1,43 @@
+-- 0008 — extrato paginado por KEYSET, na visão "todas as contas".
+--
+-- POR QUE ELA EXISTE (a decisão, não só o efeito):
+--
+-- `GET /api/transactions` SEMPRE aceitou `account_id` como OPCIONAL (rota e
+-- domínio, desde a fatia ①) — a visão "todas as contas" não é uma feature
+-- nova desta fatia, é um caminho que já existia e NUNCA teve índice: sem
+-- `account_id`, `idx_tx_account_date` (account_id, purchase_date) não serve
+-- (a coluna de igualdade não foi informada) e `0004` é parcial
+-- (`WHERE amount_cents < 0 AND transfer_id IS NULL AND parent_id IS NULL`),
+-- então também não. Resultado hoje: SCAN da tabela inteira + TEMP B-TREE de
+-- ordenação a cada abertura do extrato — e no D1 "rows read" conta linha
+-- ESCANEADA, não linha devolvida.
+--
+-- A visão "todas as contas" precisa existir porque `?settled=0` ("o que
+-- falta marcar como pago") é uma pergunta INERENTEMENTE cross-conta: exigir
+-- uma conta selecionada obrigaria o dono a percorrer as 4 contas pra
+-- responder uma pergunta só. E `idx_tx_settled` (0001:220) NÃO cobre esse
+-- filtro: ele é parcial `WHERE settled_at IS NOT NULL`, ou seja, exclui
+-- exatamente as linhas que `settled=0` procura (MEDIDO por EXPLAIN QUERY
+-- PLAN — ver CLAUDE.md § "Extrato paginado"). Este índice é o que dá a esse
+-- caso um scan ORDENADO com terminação antecipada no LIMIT, em vez de
+-- varrer tudo e ordenar depois.
+--
+-- POR QUE TRÊS COLUNAS, e não `(purchase_date, created_at)` como o desenho
+-- inicial: `(purchase_date, created_at)` NÃO é único, e isso não é
+-- hipotético — `createInstallmentPlan` (domain/installments.ts) insere as N
+-- parcelas com o MESMO `purchase_date` e o MESMO `created_at` (um `now` só
+-- pro batch inteiro), e `createTransfer` faz o mesmo com as duas pernas. Um
+-- cursor de keyset sobre uma chave não-única PULA o resto do grupo quando a
+-- borda da página cai no meio dele — linha do livro-caixa sumindo do extrato
+-- em silêncio. `id` (TEXT PRIMARY KEY) é o desempate que torna a ordem
+-- TOTAL. Ele não vem de graça no índice: a tabela não é WITHOUT ROWID, então
+-- o que o SQLite anexa implicitamente é o rowid, não o nosso `id`.
+--
+-- CUSTO: +1 "row written" por INSERT em transactions (todo lançamento casa
+-- com este índice — ele não é parcial, ao contrário de quase todos os do
+-- 0001). Aceito porque é o índice que sustenta a tela de extrato inteira, e
+-- porque índice no D1 é IRREVERSÍVEL (só DROP + CREATE, nunca ALTER): o
+-- momento mais barato pra acertar o desenho é agora, com produção em 0
+-- transactions — mesmo raciocínio já registrado no 0003 e no 0004.
+CREATE INDEX IF NOT EXISTS idx_tx_purchase_date
+  ON transactions(purchase_date, created_at, id);
