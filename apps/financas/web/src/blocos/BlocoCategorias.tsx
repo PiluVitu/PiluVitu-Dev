@@ -222,8 +222,21 @@ function Variacao({ numeros }: { numeros: InsightNumbersView | null }) {
   return (
     <p
       data-testid="variacao"
+      // ⚠️ SEM `whitespace-nowrap`, e isso é conserto de regressão medida,
+      // não preferência. Com ele, esta frase media **213 px** dentro de um
+      // `div.text-right` que divide 308 px com o `<input type="month">`
+      // (`max-w-40`) + `gap-3` — sobram **136 px**. Resultado, medido no
+      // Chrome real a 390×844 variando só o mock: sem variação → 390/390;
+      // `+R$ 1,00 (+1%)…` → 405/390; `+R$ 326,90 (+21%)…` → **426/390**.
+      // Ou seja, QUALQUER variação com `%` fazia a HOME — a primeira tela
+      // do celular — rolar na horizontal e cortar o fim da frase.
+      //
+      // `variation_pct` só é `null` quando o mês anterior não teve gasto
+      // nenhum, então o caso que estourava era o comum, não a borda.
+      // Deixar a frase quebrar em duas linhas custa altura; `nowrap` custava
+      // a página inteira.
       className={cn(
-        'text-xs whitespace-nowrap tabular-nums',
+        'text-xs tabular-nums',
         gastouMais ? 'text-destructive' : 'text-muted-foreground',
       )}
     >
