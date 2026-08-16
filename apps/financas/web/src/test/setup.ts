@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach, beforeAll } from 'vitest'
+import { afterEach, beforeAll, vi } from 'vitest'
 
 // Sem `globals: true` o auto-cleanup da Testing Library não se registra.
 afterEach(() => {
@@ -125,4 +125,22 @@ globalThis.ResizeObserver =
 
 afterEach(() => {
   resizeWatchers.clear()
+})
+
+/**
+ * `scrollIntoView` NÃO existe no jsdom — ele não faz layout, então nada que
+ * dependa de posição de scroll é implementado. Sem este polyfill, qualquer
+ * componente que chame o método quebra com `el.scrollIntoView is not a
+ * function`, e o erro aparece como se fosse defeito do código de produção.
+ *
+ * ⚠️ **É polyfill, não mock global cego.** Fica como `vi.fn()` justamente
+ * pra que um teste possa AFIRMAR a chamada e os argumentos — o `#/extrato`
+ * usa `{ block: 'nearest' }` e a escolha desse valor é carregada de razão
+ * (rolar o mínimo, e só quando o alerta está fora da vista), então ela
+ * precisa ser verificável, não só tolerada.
+ */
+beforeAll(() => {
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = vi.fn()
+  }
 })

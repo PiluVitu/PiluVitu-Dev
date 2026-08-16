@@ -423,6 +423,35 @@ describe('ExtratoPage — editar', () => {
     expect(screen.getByTestId('form-edicao-t1')).toBeInTheDocument()
   })
 
+  it('a recusa se rola para dentro da vista com "nearest" — nunca "center"', async () => {
+    const user = comRelogio()
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const estado: Estado = { linhas: [tx({ id: 't1' })] }
+    estado.mutacao = async () => {
+      throw new ApiError(422, 'protected_field', 'recusado pelo servidor.')
+    }
+    montarApi(estado)
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    const valor = screen.getByLabelText('Valor')
+    await user.clear(valor)
+    await user.type(valor, '200,00')
+    scroll.mockClear()
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await screen.findByTestId('erro-linha-t1')
+
+    // ⚠️ O ARGUMENTO é a asserção, não a chamada. Medido no Chrome real a
+    // 390x844: com o botão na zona do polegar (`bottom:844`), o alerta
+    // inline nascia em `top:852` — 0 px visíveis. `'nearest'` conserta isso
+    // rolando o mínimo; `'center'`/`'start'` rolariam SEMPRE, inclusive
+    // quando o alerta já estava visível, tirando o dono do lugar onde ele
+    // tocou — que é exatamente o motivo de o erro ser inline e não no topo.
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
   it('valor ilegível é barrado no cliente, sem gastar requisição', async () => {
     const user = comRelogio()
     const estado: Estado = { linhas: [tx({ id: 't1' })] }

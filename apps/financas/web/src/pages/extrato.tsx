@@ -468,6 +468,23 @@ export function ExtratoPage() {
             role="alert"
             data-testid={`erro-linha-${t.id}`}
             className="text-destructive mt-2 text-sm"
+            // ⚠️ `block: 'nearest'` rola o MÍNIMO, e só quando o alerta está
+            // fora da vista. É o que fecha o residual medido no fix round: o
+            // erro inline nasce logo abaixo do botão, e quando o botão tocado
+            // está na faixa inferior da tela (a zona do polegar) o alerta cai
+            // fora do viewport. MEDIDO no Chrome real a 390x844, 30 linhas:
+            // botão em `bottom:844` => alerta em `top:852`, **0 px visíveis**;
+            // só fica inteiro com o botão em `bottom <= 714`.
+            //
+            // ⚠️ NÃO é `'center'`/`'start'`: eles rolam SEMPRE, inclusive
+            // quando o alerta já estava visível, e tirar o dono do lugar onde
+            // ele tocou foi exatamente o motivo de descartar `scrollIntoView`
+            // genérico e escolher o erro inline. `'nearest'` é no-op quando já
+            // está visível — mantém a propriedade "não move nada" no caso
+            // comum, e conserta só o caso que quebrava.
+            ref={(el) => {
+              el?.scrollIntoView({ block: 'nearest' })
+            }}
           >
             {erroLinha.mensagem}
           </p>
