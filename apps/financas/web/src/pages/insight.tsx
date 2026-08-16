@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { rotuloCompetencia } from '../lib/commitments'
 import { competenciaAtual, formatDateTimeTeresina } from '../lib/dates'
 import {
+  dicaParaErroDeGeracao,
   formatInsightAge,
   insightAgeDays,
   isStaleInsight,
+  respostaTemTexto,
   STALE_THRESHOLD_DAYS,
+  type GerarInsightResposta,
   type InsightNumbersView,
   type InsightView,
 } from '../lib/insight'
@@ -30,7 +34,55 @@ import {
  * `GET /api/insights/numbers`, que nunca lê a tabela `insights`).
  * `insight.texto` é renderizado só como PROSA, dentro de um único
  * parágrafo (`data-testid="insight-texto"`), nunca interpretado/parseado.
+ *
+ * ⚠️ **O botão "Gerar insight deste mês" não muda nada disso.** Ele fala
+ * com `POST /api/insights/generate` (Worker → túnel → promeia no Mac →
+ * Ollama); o navegador NUNCA fala com o Mac (carregaria o `PROMEIA_TOKEN`,
+ * e token no cliente é token público — ver o cabeçalho de
+ * `apps/financas/src/lib/promeia.ts`). Se o botão falhar por qualquer
+ * motivo, o card "Números" ao lado continua exatamente como está: o erro é
+ * escrito só dentro do bloco do botão, nunca lançado, nunca propagado.
  */
+
+/**
+ * Intervalo entre releituras de `GET /api/insights/latest` depois de um
+ * 202. Medido na spike: a geração leva **20,3-32,8 s** — 5 s dá ~4 a 6
+ * checagens dentro do caso normal, sem transformar a espera em uma rajada
+ * de requisições contra o D1.
+ */
+export const POLL_INTERVALO_MS = 5_000
+
+/**
+ * ⚠️ **O polling PRECISA de fim.** Teto de ~90 s — quase 3× o pior caso
+ * medido (32,8 s, modelo frio), com folga pro túnel e pra publicação. Ao
+ * estourar, a tela diz a verdade (`MENSAGEM_SEM_CONFIRMACAO`) em vez de
+ * girar pra sempre: um spinner eterno é pior que um erro, porque não
+ * ensina nada — o dono ficaria olhando uma tela que não sabe distinguir
+ * "está demorando" de "o Ollama nem estava aberto".
+ */
+export const POLL_LIMITE_MS = 90_000
+
+/**
+ * Fim honesto do polling: NÃO afirma que falhou (o promeia pode ter
+ * publicado logo depois — ele publica sozinho, ver `routes/insights.ts`),
+ * e NÃO afirma que deu certo. Diz o que de fato se sabe: não houve
+ * confirmação, e o que conferir.
+ */
+export const MENSAGEM_SEM_CONFIRMACAO =
+  'Não recebi confirmação de que o texto ficou pronto — ele pode não ter sido gerado. Confira se o Ollama está aberto no Mac e recarregue a página daqui a pouco.'
+
+/**
+ * Mutação OK, recarga não. ⚠️ **Nunca pode ler como falha da geração** —
+ * mesma regra de `lib/mutar-e-recarregar.ts` (ver por que aquele módulo
+ * não é chamado aqui, no comentário de `gerar()` abaixo).
+ */
+export const MENSAGEM_GERADO_SEM_RECARGA =
+  'O insight foi gerado, mas não consegui recarregar a tela — atualize a página pra ver o texto novo. Não clique de novo: gerar outro custa mais 20-35 s de GPU no Mac.'
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export function InsightPage() {
   const [mes, setMes] = useState(() => competenciaAtual())
 
@@ -40,6 +92,31 @@ export function InsightPage() {
   const [insight, setInsight] = useState<InsightView | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [insightLoaded, setInsightLoaded] = useState(false)
+
+  const [gerando, setGerando] = useState(false)
+  const [geracaoErro, setGeracaoErro] = useState<{
+    mensagem: string
+    dica: string | null
+  } | null>(null)
+  const [geracaoAviso, setGeracaoAviso] = useState<string | null>(null)
+
+  // Guarda SÍNCRONA contra dois disparos em paralelo — duas gerações
+  // custariam duas rodadas de GPU e dois textos pro mesmo mês.
+  // ⚠️ MEDIDO por mutação: quem os testes pegam é o `disabled` do botão
+  // (removê-lo derruba 2 casos); remover ESTA ref não derruba nenhum,
+  // porque o React não despacha `click` em botão desabilitado — ou seja,
+  // o DOM não consegue reproduzir o único cenário que ela cobre (dois
+  // cliques no MESMO tick, antes do re-render aplicar o `disabled`).
+  // Fica pelo que custa (uma linha) contra o que evita, não por prova.
+  const gerandoRef = useRef(false)
+  // Nada de `setState` depois de desmontar (o polling vive até 90 s).
+  const vivoRef = useRef(true)
+  useEffect(() => {
+    vivoRef.current = true
+    return () => {
+      vivoRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     let vivo = true
@@ -59,29 +136,129 @@ export function InsightPage() {
     }
   }, [mes])
 
+  /**
+   * Lê o insight publicado. LANÇA em caso de falha — quem chama decide o
+   * que a falha significa: no mount é "não consegui mostrar o texto"; logo
+   * depois de gerar é "gerou, mas não recarreguei" (duas leituras
+   * diferentes do MESMO erro, ver `gerar()`).
+   */
+  const carregarInsight = useCallback(async () => {
+    const data = await api<InsightView | null>('/api/insights/latest')
+    if (!vivoRef.current) return
+    setInsight(data)
+    setInsightError(null)
+    setInsightLoaded(true)
+  }, [])
+
   // Busca independente do bloco de números acima (ver comentário do
   // componente). Falhar aqui (rede fora, 5xx) não pode esconder os
   // números — só esconde a leitura em texto, que é exatamente o que
   // "funciona sem AI" quer dizer.
   useEffect(() => {
-    let vivo = true
-    api<InsightView | null>('/api/insights/latest')
-      .then((data) => {
-        if (vivo) {
-          setInsight(data)
-          setInsightLoaded(true)
-        }
-      })
-      .catch((e: unknown) => {
-        if (vivo) {
-          setInsightError(e instanceof ApiError ? e.message : String(e))
-          setInsightLoaded(true)
-        }
-      })
-    return () => {
-      vivo = false
+    carregarInsight().catch((e: unknown) => {
+      if (!vivoRef.current) return
+      setInsightError(e instanceof ApiError ? e.message : String(e))
+      setInsightLoaded(true)
+    })
+  }, [carregarInsight])
+
+  /**
+   * Depois do 202: relê `latest` até `generated_at` MUDAR em relação ao
+   * que já havia — comparar o carimbo, e não "existe algum insight", é o
+   * que impede um insight antigo de passar por resultado novo (o caso
+   * comum: já existe leitura de ontem na tela).
+   *
+   * Erro no meio da espera não encerra nada: o trabalho segue no Mac, e o
+   * ciclo seguinte tenta de novo. Só o TETO encerra.
+   */
+  async function aguardarPublicacao(anterior: string | null): Promise<void> {
+    const limite = Date.now() + POLL_LIMITE_MS
+    while (Date.now() < limite) {
+      await esperar(POLL_INTERVALO_MS)
+      if (!vivoRef.current) return
+
+      let novo: InsightView | null
+      try {
+        novo = await api<InsightView | null>('/api/insights/latest')
+      } catch {
+        continue
+      }
+      if (!vivoRef.current) return
+
+      if (novo !== null && novo.generated_at !== anterior) {
+        setInsight(novo)
+        setInsightError(null)
+        setInsightLoaded(true)
+        return
+      }
     }
-  }, [])
+    setGeracaoAviso(MENSAGEM_SEM_CONFIRMACAO)
+  }
+
+  /**
+   * O botão. `POST /api/insights/generate` → 200 (texto pronto, relê e
+   * mostra) ou 202 (`{status:'gerando'}`, entra em polling).
+   *
+   * ⚠️ **`lib/mutar-e-recarregar.ts` foi avaliado e NÃO serve aqui.** O
+   * contrato dele descarta exatamente as duas coisas em que este fluxo se
+   * ramifica: o PAYLOAD da mutação (é ele quem diz se existe algo a
+   * recarregar — no 202 não existe ainda, quem busca é o polling) e o
+   * `code` do erro (é ele que separa dois 503 que mandam o dono pra lados
+   * opostos: `promeia_disabled` × `promeia_unreachable`). Usá-lo exigiria
+   * duas variáveis de saída por closure mais uma "recarga" que é no-op
+   * metade das vezes — forçar, não reusar. O que ELE existe pra impedir
+   * fica preservado aqui, explícito: mutação e recarga em `try`
+   * SEPARADOS, e a falha da recarga vira `MENSAGEM_GERADO_SEM_RECARGA`
+   * (um aviso que diz que gerou), nunca a mensagem de erro da geração.
+   */
+  async function gerar(): Promise<void> {
+    if (gerandoRef.current) return
+    gerandoRef.current = true
+    setGerando(true)
+    setGeracaoErro(null)
+    setGeracaoAviso(null)
+
+    // Lido ANTES do POST: é a linha de base do polling.
+    const anterior = insight?.generated_at ?? null
+
+    try {
+      let resposta: GerarInsightResposta
+      try {
+        resposta = await api<GerarInsightResposta>('/api/insights/generate', {
+          method: 'POST',
+          body: JSON.stringify({ competence: mes }),
+        })
+      } catch (e: unknown) {
+        if (!vivoRef.current) return
+        // A mensagem do servidor é repassada INTEIRA (é ela que distingue
+        // "abra o Ollama" de "rode ollama pull X"); a dica é um segundo
+        // parágrafo, nunca uma reescrita.
+        setGeracaoErro({
+          mensagem: e instanceof ApiError ? e.message : String(e),
+          dica: e instanceof ApiError ? dicaParaErroDeGeracao(e.code) : null,
+        })
+        return
+      }
+
+      if (respostaTemTexto(resposta)) {
+        // 200: o promeia já publicou antes de responder — só falta ler.
+        try {
+          await carregarInsight()
+        } catch {
+          if (!vivoRef.current) return
+          setGeracaoAviso(MENSAGEM_GERADO_SEM_RECARGA)
+        }
+        return
+      }
+
+      // 202: nada se perdeu — o promeia publica sozinho, abortar o fetch
+      // não interrompe o trabalho dele.
+      await aguardarPublicacao(anterior)
+    } finally {
+      gerandoRef.current = false
+      if (vivoRef.current) setGerando(false)
+    }
+  }
 
   const numbersCarregando = numbers === null && numbersError === null
 
@@ -146,14 +323,70 @@ export function InsightPage() {
               data-testid="sem-insight"
               className="text-muted-foreground text-sm"
             >
-              Nenhuma leitura foi gerada ainda. Rode{' '}
-              <code className="text-foreground">make insight</code> no Mac para
-              gerar uma — os números acima já funcionam sem ela, só o texto que
+              Nenhuma leitura foi gerada ainda. Use o botão abaixo — o texto é
+              escrito por um modelo local no Mac e publicado aqui quando fica
+              pronto. Os números acima já funcionam sem ele, só o texto que
               falta.
             </p>
           ) : (
             <LeituraGerada insight={insight} />
           )}
+
+          {/*
+            O botão fica FORA da cadeia acima (erro/carregando/vazio/texto)
+            de propósito: é o único jeito de sair do estado de erro do card
+            sem trocar de tela. Desabilitado enquanto `!insightLoaded`
+            porque o polling compara contra `insight.generated_at` — sem a
+            leitura inicial, um insight ANTIGO passaria por resultado novo.
+          */}
+          <div className="mt-4 space-y-2 border-t pt-4">
+            <Button
+              type="button"
+              data-testid="botao-gerar"
+              disabled={gerando || !insightLoaded}
+              onClick={() => {
+                void gerar()
+              }}
+            >
+              {gerando ? 'Gerando…' : 'Gerar insight deste mês'}
+            </Button>
+
+            {gerando ? (
+              <p
+                role="status"
+                aria-busy="true"
+                data-testid="gerando-status"
+                className="text-muted-foreground text-sm"
+              >
+                Gerando… o texto é escrito no Mac e leva de 20 a 35 segundos.
+                Pode deixar esta tela aberta — o resultado aparece sozinho.
+              </p>
+            ) : null}
+
+            {geracaoErro ? (
+              <div role="alert" data-testid="geracao-erro" className="text-sm">
+                <p className="text-destructive">{geracaoErro.mensagem}</p>
+                {geracaoErro.dica ? (
+                  <p
+                    data-testid="geracao-dica"
+                    className="text-muted-foreground mt-1"
+                  >
+                    {geracaoErro.dica}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {geracaoAviso ? (
+              <p
+                role="status"
+                data-testid="geracao-aviso"
+                className="text-muted-foreground text-sm"
+              >
+                {geracaoAviso}
+              </p>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
     </section>

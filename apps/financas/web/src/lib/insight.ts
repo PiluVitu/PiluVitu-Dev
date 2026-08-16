@@ -109,3 +109,54 @@ export function isStaleInsight(
 ): boolean {
   return insightAgeDays(generatedAt, now) > STALE_THRESHOLD_DAYS
 }
+
+/**
+ * Resposta de `POST /api/insights/generate` (`src/routes/insights.ts`).
+ *
+ * ⚠️ **As duas formas são disjuntas de propósito, e é por elas que a tela
+ * distingue 200 de 202** — `api<T>()` (`src/api.ts`) devolve só
+ * `envelope.data`, nunca o status HTTP, e ir de `fetch` cru pra ler
+ * `res.status` custaria o re-gate de sessão que `api()` faz no 401
+ * (`$sessionSignal`). O Worker responde `{competence, texto, modelo}` no
+ * 200 e `{status: 'gerando'}` no 202: `texto` presente ⟺ o texto já está
+ * publicado.
+ */
+export type GerarInsightResposta = {
+  status?: unknown
+  texto?: unknown
+  modelo?: unknown
+  competence?: unknown
+}
+
+/** 200 (texto pronto) × 202 (`{status:'gerando'}`) — ver o tipo acima. */
+export function respostaTemTexto(r: GerarInsightResposta | null): boolean {
+  return typeof r?.texto === 'string' && r.texto !== ''
+}
+
+/**
+ * A dica que traduz o `code` do erro em AÇÃO — e a razão dela existir é
+ * que dois erros de mesmo status HTTP (503) mandam o dono pra lados
+ * OPOSTOS: `promeia_disabled` é secret que nunca foi configurado NESTE
+ * Worker (ligar o Mac não resolve nada), `promeia_unreachable` é o Mac
+ * fora (configuração está certa). Trocar os dois faz perder tempo
+ * arrumando o que já está certo — mesma disciplina de `lib/promeia.ts`
+ * (Worker), aqui no nível da tela.
+ *
+ * A mensagem do servidor continua sendo mostrada como está (é ela que
+ * distingue "abra o Ollama" de "rode `ollama pull X`" nos códigos
+ * repassados pelo promeia); esta dica é um SEGUNDO parágrafo, nunca uma
+ * reescrita. `null` para todo código sem ação específica conhecida — não
+ * inventar conselho para erro que não foi mapeado.
+ */
+export function dicaParaErroDeGeracao(code: string): string | null {
+  if (code === 'promeia_disabled') {
+    return 'Isto NÃO é o Mac desligado: os secrets PROMEIA_URL e PROMEIA_TOKEN nunca foram configurados neste Worker. Rode `wrangler secret put PROMEIA_URL` e `wrangler secret put PROMEIA_TOKEN` e publique de novo.'
+  }
+  if (code === 'promeia_unreachable') {
+    return 'Ninguém respondeu do outro lado: ligue o MacBook, suba o serviço (`make dev-promeia`) e o túnel, e tente de novo.'
+  }
+  if (code === 'promeia_ilegivel') {
+    return 'O Mac RESPONDEU — então não é caso de subir o serviço. Confira o log do promeia.'
+  }
+  return null
+}
