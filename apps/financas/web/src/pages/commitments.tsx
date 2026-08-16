@@ -4,6 +4,7 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
+import { useMenorQueSm } from '../lib/breakpoint'
 import {
   formatPctRange,
   formatRange,
@@ -41,6 +42,7 @@ export function CommitmentsPage({
 }) {
   const [report, setReport] = useState<CommitmentReportView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const menorQueSm = useMenorQueSm()
 
   useEffect(() => {
     let vivo = true
@@ -104,40 +106,115 @@ export function CommitmentsPage({
           <CardTitle className="text-base">Por conta</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead data-testid="cabecalho">
-                <tr>
-                  <th className="border-b py-1.5 pr-2 text-left font-medium" />
-                  {report.competences.map((c) => (
-                    <th
-                      key={c}
-                      className="border-b px-2 py-1.5 text-right font-medium"
-                    >
-                      {rotuloCompetencia(c)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((r) => (
-                  <tr key={r.account_id} data-testid={`linha-${r.account_id}`}>
-                    <td className="border-b py-1.5 pr-2 text-left">
-                      {r.account_name}
-                    </td>
-                    {r.cells.map((cents, i) => (
-                      <td
-                        key={i}
-                        data-testid={`celula-${r.account_id}-${i}`}
-                        className="border-b px-2 py-1.5 text-right tabular-nums"
+          {menorQueSm ? (
+            /*
+              ⚠️ MEDIDO em Chrome real a 390×844, com 3 contas e 6
+              competências: a tabela dava `scrollWidth 524` contra
+              `clientWidth 308` — 216px, ou seja METADE da janela, atrás de um
+              drag horizontal sem nenhuma indicação. Três das seis
+              competências e metade da linha de `%` eram INALCANÇÁVEIS pra
+              quem não descobrisse o arrasto. Mesmo defeito (e mesma
+              correção) de `DividasPage.tsx`: abaixo de `sm`, um card por
+              competência em vez de uma coluna por competência.
+
+              O card lidera com `%` e TOTAL porque é a pergunta da tela
+              ("quanto da renda fixa já está prometido"); a quebra por conta
+              vem embaixo, menor — nada da tabela se perde, só muda de eixo.
+            */
+            <ul className="space-y-3" data-testid="comprometido-cards">
+              {report.competences.map((c, i) => {
+                const total = report.totals[i]
+                const pct = report.pct_of_fixed_net[i]
+                // Mesmo TETO (`range.max`) e mesmo `>` da tabela — nunca uma
+                // segunda regra de risco, que faria os dois markups
+                // discordarem sobre o mesmo mês.
+                const emAlerta = pct.max > LIMIAR_ALERTA_PCT
+                return (
+                  <li
+                    key={c}
+                    data-testid={`card-competencia-${c}`}
+                    className="rounded-md border p-3"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium">
+                        {rotuloCompetencia(c)}
+                      </span>
+                      <span
+                        data-testid={`card-pct-${i}`}
+                        className={cn(
+                          'text-lg font-semibold tabular-nums',
+                          emAlerta && 'alerta text-destructive',
+                        )}
                       >
-                        {cents === 0 ? '—' : formatBRL(cents)}
-                      </td>
+                        {formatPctRange(pct)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between gap-2">
+                      <span className="text-muted-foreground text-xs">
+                        TOTAL
+                      </span>
+                      <span
+                        data-testid={`card-total-${i}`}
+                        className="font-semibold tabular-nums"
+                      >
+                        {formatRange(total)}
+                      </span>
+                    </div>
+                    <ul className="text-muted-foreground mt-2 space-y-0.5 text-xs">
+                      {report.rows.map((r) => (
+                        <li
+                          key={r.account_id}
+                          className="flex justify-between gap-2"
+                        >
+                          <span>{r.account_name}</span>
+                          <span className="tabular-nums">
+                            {r.cells[i] === 0 ? '—' : formatBRL(r.cells[i])}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead data-testid="cabecalho">
+                  <tr>
+                    <th className="border-b py-1.5 pr-2 text-left font-medium" />
+                    {report.competences.map((c) => (
+                      <th
+                        key={c}
+                        className="border-b px-2 py-1.5 text-right font-medium"
+                      >
+                        {rotuloCompetencia(c)}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-              {/*
+                </thead>
+                <tbody>
+                  {report.rows.map((r) => (
+                    <tr
+                      key={r.account_id}
+                      data-testid={`linha-${r.account_id}`}
+                    >
+                      <td className="border-b py-1.5 pr-2 text-left">
+                        {r.account_name}
+                      </td>
+                      {r.cells.map((cents, i) => (
+                        <td
+                          key={i}
+                          data-testid={`celula-${r.account_id}-${i}`}
+                          className="border-b px-2 py-1.5 text-right tabular-nums"
+                        >
+                          {cents === 0 ? '—' : formatBRL(cents)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                {/*
                 Fidelidade com o `tfoot th, tfoot td { border-top: 2px }`
                 apagado (fix round 1, Task 9): a regra original valia pras
                 DUAS linhas do tfoot (o seletor não distinguia TOTAL de %),
@@ -147,47 +224,48 @@ export function CommitmentsPage({
                 tabela) sumiam silenciosamente em vez de terem sido uma
                 escolha.
               */}
-              <tfoot>
-                <tr>
-                  <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
-                    TOTAL
-                  </th>
-                  {report.totals.map((range, i) => (
-                    <td
-                      key={i}
-                      data-testid={`total-${i}`}
-                      className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
-                    >
-                      {formatRange(range)}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
-                    % do líquido fixo
-                  </th>
-                  {report.pct_of_fixed_net.map((range, i) => (
-                    // O alerta dispara pelo TETO (range.max), não pelo piso —
-                    // §5 do spec: a tela existe pra mostrar risco, e o pior
-                    // mês é o risco. Mesmo limiar/mesmo `>` (não `>=`) de
-                    // sempre, só o operando mudou de "pct" (número) pra
-                    // "range.max".
-                    <td
-                      key={i}
-                      data-testid={`pct-${i}`}
-                      className={cn(
-                        'border-t-2 border-b px-2 py-1.5 text-right tabular-nums',
-                        range.max > LIMIAR_ALERTA_PCT &&
-                          'alerta text-destructive font-bold',
-                      )}
-                    >
-                      {formatPctRange(range)}
-                    </td>
-                  ))}
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                <tfoot>
+                  <tr>
+                    <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
+                      TOTAL
+                    </th>
+                    {report.totals.map((range, i) => (
+                      <td
+                        key={i}
+                        data-testid={`total-${i}`}
+                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                      >
+                        {formatRange(range)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
+                      % do líquido fixo
+                    </th>
+                    {report.pct_of_fixed_net.map((range, i) => (
+                      // O alerta dispara pelo TETO (range.max), não pelo piso —
+                      // §5 do spec: a tela existe pra mostrar risco, e o pior
+                      // mês é o risco. Mesmo limiar/mesmo `>` (não `>=`) de
+                      // sempre, só o operando mudou de "pct" (número) pra
+                      // "range.max".
+                      <td
+                        key={i}
+                        data-testid={`pct-${i}`}
+                        className={cn(
+                          'border-t-2 border-b px-2 py-1.5 text-right tabular-nums',
+                          range.max > LIMIAR_ALERTA_PCT &&
+                            'alerta text-destructive font-bold',
+                        )}
+                      >
+                        {formatPctRange(range)}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </section>

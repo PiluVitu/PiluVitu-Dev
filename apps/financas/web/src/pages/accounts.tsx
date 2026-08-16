@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { formatBRL, parseBRL } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { badgeVariants } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import {
   Dialog,
   DialogClose,
@@ -219,11 +221,41 @@ export function AccountsPage() {
           return (
             <Card key={scope} data-testid={`grupo-${scope}`}>
               <CardHeader>
-                <CardTitle className="text-base">{scope}</CardTitle>
+                {/*
+                  `badgeVariants` num `<span>`, não o componente `Badge` (que
+                  é um `<div>`): `CardTitle` é um `<h3>`, cujo conteúdo é
+                  *phrasing content* — um `<div>` ali dentro é inválido. O
+                  escopo vira um chip de verdade sem quebrar a semântica do
+                  cabeçalho.
+                */}
+                <CardTitle className="text-base">
+                  <span
+                    data-testid={`escopo-${scope}`}
+                    className={badgeVariants({
+                      variant: scope === 'PJ' ? 'default' : 'secondary',
+                    })}
+                  >
+                    {scope}
+                  </span>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
+                    {/*
+                      A tabela não tinha cabeçalho: a coluna da direita era
+                      um número solto, sem nada dizendo que aquilo é saldo.
+                    */}
+                    <thead>
+                      <tr>
+                        <th className="border-b py-1.5 pr-2 text-left font-medium">
+                          Conta
+                        </th>
+                        <th className="border-b py-1.5 text-right font-medium">
+                          Saldo
+                        </th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {list.map((a) => (
                         <tr key={a.id}>
@@ -232,12 +264,15 @@ export function AccountsPage() {
                             {a.kind === 'credit_card' &&
                             a.closing_day !== null &&
                             a.due_day !== null ? (
-                              <small
+                              <span
                                 data-testid={`fatura-${a.id}`}
-                                className="text-muted-foreground block text-xs"
+                                className={cn(
+                                  badgeVariants({ variant: 'outline' }),
+                                  'mt-1 ml-2 font-normal',
+                                )}
                               >
-                                {` fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
-                              </small>
+                                {`fecha ${dd(a.closing_day)} · vence ${dd(a.due_day)}`}
+                              </span>
                             ) : null}
                             {/* Link dentro da célula do nome (a mais larga e
                                 flexível), não uma coluna "Ações" nova — a ~390px
@@ -267,6 +302,30 @@ export function AccountsPage() {
                         </tr>
                       ))}
                     </tbody>
+                    {/*
+                      A home mostra o total por escopo (`BlocoSaldos`), e a
+                      tela DEDICADA a contas não mostrava — o dono somava as
+                      linhas de cabeça pra responder "quanto tenho no PJ".
+                      Mesmo `sumCents` do bloco da home, nunca uma segunda
+                      soma: PJ e PF continuam separados, jamais somados entre
+                      si (é a separação que o módulo inteiro existe pra
+                      manter).
+                    */}
+                    <tfoot>
+                      <tr>
+                        <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
+                          TOTAL {scope}
+                        </th>
+                        <td
+                          data-testid={`total-${scope}`}
+                          className="border-t-2 border-b py-1.5 text-right font-medium tabular-nums"
+                        >
+                          {formatBRL(
+                            sumCents(list.map((a) => a.balance_cents)),
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </CardContent>

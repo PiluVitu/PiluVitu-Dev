@@ -1219,6 +1219,86 @@ O sinal segue o **TETO** (`pct.max`), mesma regra da cor e do alerta da tabela.
 
 **Bundle (`vite build`, antes = fatia de categorias / depois = esta):** JS principal 441,04 → 443,69 kB (135,08 → **135,77 kB gzip**, +0,69); chunk lazy `GraficoComprometido` 388,47 → 389,07 kB (113,09 → **113,32 kB gzip**, +0,23 — `LabelList` já fazia parte do `recharts` presente, não é pacote novo); CSS 32,88 → 33,39 kB (6,70 → 6,78 kB gzip). ⚠️ **Continua existindo UM único chunk lazy** (`ls dist/assets/*.js` = 2 arquivos: entrada + `GraficoComprometido-*.js`) — nenhum gráfico novo virou arquivo novo, `GraficoFluxo`/`GraficoCategorias`/`GraficoComprometido` seguem no mesmo módulo. Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) saem com exit 0.
 
+## Mobile e navegação (fatia de bloqueantes — o celular é o dispositivo primário)
+
+Cinco mudanças, todas de LEITURA/layout: Worker intocado (627), nenhuma rota nova, nenhuma migration. O que liga as cinco é o mesmo fato medido — **o dono abre no Android (390px) e a tela gastava altura e largura com o que não é a resposta**.
+
+⚠️ **Tudo aqui foi MEDIDO em Chrome real** (`playwright-core` + o Chrome instalado do sistema, `vite build` + `vite preview`, viewport 390×844 com `hasTouch`/`isMobile`), nunca estimado — instrumento ad-hoc, não commitado, mesmo padrão das fatias anteriores. A rodada anterior registrou "sem browser Playwright instalado nesta máquina": `playwright-core` ESTÁ instalado e `/Applications/Google Chrome.app` existe — dá pra dirigir o Chrome real via `executablePath`, sem baixar browser nenhum. Vale pra qualquer medição futura.
+
+| Medida a 390×844          | antes            | depois                      |
+| ------------------------- | ---------------- | --------------------------- |
+| `#/comprometido` — tabela | `524` / `308` px | **sem overflow nenhum**     |
+| `#/fluxo` — tabela        | `367` / `358` px | **sem overflow nenhum**     |
+| altura do `<nav>`         | **153 px**       | **81 px**                   |
+| 1º card de conteúdo (y)   | **233 px**       | **161 px**                  |
+| itens na barra do nav     | 13               | 5 + 1 gatilho (13 no total) |
+
+### ① `#/comprometido`: card por competência abaixo de `sm`
+
+⚠️ **MEDIDO: `scrollWidth 524` contra `clientWidth 308` — 216px, METADE da janela, atrás de um drag horizontal que nada indicava.** Três das seis competências e metade da linha de `%` eram inalcançáveis pra quem não descobrisse o arrasto, na tela que existe pra responder "quanto da renda fixa já está prometido".
+
+Mesmo padrão (e mesma correção) que `DividasPage.tsx` já tinha: `useMenorQueSm` (`lib/breakpoint.ts`, terceiro consumidor), um card por competência abaixo de `sm`, **só um dos dois markups no DOM por vez** (jsdom não computa CSS — os dois juntos duplicariam todo `getByText`).
+
+O card lidera com `%` e TOTAL (a pergunta da tela) e mantém a quebra por conta embaixo, menor — **nada da tabela se perde, só muda de eixo**. O alerta usa o MESMO teto (`pct.max > LIMIAR_ALERTA_PCT`) e o mesmo `>` da tabela, nunca uma segunda regra que faria os dois markups discordarem sobre o mesmo mês.
+
+### ② O nav: 5 destinos primários + `dropdown-menu` pro resto
+
+⚠️ **MEDIDO: 153px de altura, 13 pílulas em três linhas, empurrando o primeiro card pra y=233** — mais de um quarto da altura do celular gasto em navegação ANTES de qualquer número. (As fatias B e C somaram Extrato e Categorias: eram 11, hoje são **13**.)
+
+**Primeiro consumidor de `@piluvitu/ui/dropdown-menu` no monorepo** — o componente já existia com zero imports. A divisão é por FREQUÊNCIA DE USO, não por importância conceitual: o que o dono abre todo dia (Início, Lançar, Extrato, Dívidas, Comprometido) fica sempre à mão; cadastro (Contas, Categorias, Recorrentes), operação pontual (Importar) e leitura ocasional (Reserva, Fluxo, Insight, Configurações) moram no "Mais".
+
+- ⚠️ **`aria-current="page"` continua no `<a>` de verdade, inclusive dentro do menu** — é ele que é a página. O GATILHO ganha `data-secao-ativa`, atributo próprio, **nunca `aria-current`**: um botão que ABRE um menu não é a página corrente, e anunciá-lo como tal mentiria pro leitor de tela.
+- ⚠️ **O gatilho ASSUME o rótulo da seção corrente quando a rota ativa mora nele** (`Fluxo de caixa ▾` em vez de `Mais ▾`). Sem isso, estar numa dessas oito telas deixaria o nav inteiro sem NENHUMA marca de "onde estou" — exatamente o que o estado ativo existe pra responder, e ele não pode se perder só porque o destino saiu da primeira fila.
+- **Verificado por TOQUE em Chrome real** (`page.tap`, `hasTouch`), não por hover: 0 → 8 `menuitem` ao tocar, o menu cabe no viewport (`x=71.7`, `width=128`, dentro de 390), tocar "Fluxo de caixa" navega de verdade (`location.hash === '#/fluxo'`) e o gatilho passa a `data-secao-ativa="true"`.
+
+### ③ `#/fluxo`: a tabela FICA, mas ganha sinal, TOTAL e 3 colunas
+
+A tabela **continua existindo** (decisão anterior preservada: é a única prova de que mês sem movimento aparece ZERADO — uma barra de valor exatamente 0 não renderiza `<path>` no recharts, então o gráfico é justo onde vazio e ausente são indistinguíveis). O que mudou:
+
+- **Mês negativo destacado** (`text-destructive font-semibold`). ⚠️ `< 0`, nunca `<= 0` — com `<=` o mês ZERADO (a prova que a tabela existe pra dar) seria pintado como problema. Coberto por controle explícito nos dois lados.
+- **Linha de TOTAL da janela** (entrou, saiu, saldo), via `sumCents` — nunca `reduce` com `+` solto.
+- ⚠️ **O acumulado NÃO é somado.** Ele já é um saldo corrente, e somar saldos correntes não significa nada (daria "o dinheiro contado N vezes"). O valor final da janela já está na última linha, logo acima; repeti-lo como "total" convidaria exatamente a essa leitura errada. A célula sai `—`, e um teste afirma que a soma ingênua não aparece em lugar nenhum da linha.
+- **Abaixo de `sm`, colapsa pras 3 colunas que respondem a pergunta** (mês, saldo, acumulado). Entrou/Saiu são o detalhe de COMO o saldo se formou, e o saldo já os resume — saem do DOM, não ficam escondidos por CSS.
+
+### ④ `#/contas`: cabeçalho e total por escopo
+
+A tabela não tinha cabeçalho (o número da direita era um valor solto, sem nada dizendo que era saldo) e **a home mostrava o total por escopo enquanto a tela DEDICADA a contas não** — o dono somava as linhas de cabeça pra responder "quanto tenho no PJ". Linha de TOTAL por `Card`/escopo, com o mesmo `sumCents` de `BlocoSaldos`.
+
+⚠️ **PJ e PF continuam jamais somados entre si** — é a separação que o módulo inteiro existe pra manter. Teste dedicado varre `document.body.textContent` contra o total combinado.
+
+### ⑤ `@piluvitu/ui/badge` adotado nos 5 pontos de status
+
+Outro componente do design system com **zero imports** até aqui. Status que era texto solto com markup próprio virou chip: "Pausada" (`recorrentes`), "Situação: Quitada" (`debt-detail`), o PJ/PF e o `fecha/vence` (`accounts`), "Já importada" (`importar`).
+
+- ⚠️ **`badgeVariants` num `<span>`, não o componente `Badge`, onde o contexto exige _phrasing content_** — `Badge` renderiza um `<div>`, e `CardTitle` é um `<h3>` (div ali dentro é inválido). Pelo mesmo motivo, o "Pausada" de `recorrentes` teve o `<p>` pai trocado por `<div>`: div dentro de p faz o navegador FECHAR o parágrafo sozinho e o layout quebra.
+- **A frase inteira mora dentro do badge em `debt-detail`** ("Situação: Quitada") — quebrar em "Situação:" + chip partiria o texto entre dois elementos, e "Quitada" solta não diz de que é situação.
+- Em `importar`, o badge é o rótulo curto ("Já importada") e a instrução ("Marque para forçar") fica em texto ao lado — badge não é lugar de frase de instrução.
+
+### Suítes, mutação e bundle
+
+**SPA: 432 → 453** (39 arquivos). **Worker 627, intocado**; `apps/web`/`packages/*` intocados. `tsc --noEmit` (Worker e SPA) e prettier limpos; os dois gates (`check-tailwind-source`, `check-financas-lazy-chart`) saem com exit 0 e **continua existindo UM único chunk lazy** (`ls dist/assets/*.js` = 2).
+
+⚠️ **Verificado por MUTAÇÃO — 15, cada uma matando só o teste certo pelo motivo certo** (todas revertidas; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                                    | Falha observada                        |
+| ---------------------------------------------------------- | -------------------------------------- |
+| ① ramo mobile desligado (sempre tabela)                    | 5 — os cards somem                     |
+| ① alerta do card por `pct.min`                             | 1 — piso 40%/teto 66% deixa de alertar |
+| ② gatilho nunca marca seção ativa                          | 1                                      |
+| ② gatilho SEMPRE marcado (o contrapositivo)                | 1                                      |
+| ② um destino some do menu (Reserva)                        | 1                                      |
+| ② destino primário vira secundário (Extrato)               | 3                                      |
+| ③ negativo com `<= 0`                                      | 1 — o mês ZERADO passa a ser pintado   |
+| ③ TOTAL somando o acumulado                                | 1                                      |
+| ③ colunas não colapsam no mobile                           | 2                                      |
+| ④ total somando PJ + PF                                    | 1                                      |
+| ④ cabeçalho removido                                       | 1                                      |
+| ⑤ badge → texto cru (escopo / Pausada / Situação / import) | 1 cada (4)                             |
+
+⚠️ **Uma mutação NÃO matou nada na primeira tentativa, e o teste foi CORRIGIDO em vez de aceito.** "Nenhum destino sumiu" somava `barra.length + menu.length` e comparava com uma constante exportada de `App.tsx` — que era **derivada das mesmas duas listas**. Apagar "Reserva" encolhia os dois lados da igualdade e o teste seguia verde (medido). Uma asserção derivada do código sob teste não testa esse código: trocada pelos **13 rótulos literais**, e a constante (que só existia pra ela) foi removida. Com a correção, a mesma mutação mata o teste.
+
+**Bundle (`vite build`, antes = fatia dos números / depois = esta):** JS principal 443,69 → 474,31 kB (**135,77 → 144,03 kB gzip, +8,26**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado** (nada aqui toca `recharts`); CSS **6,78 kB gzip, intocado**. ⚠️ **O +8,26 kB é honesto e é o preço do `dropdown-menu`**: `@radix-ui/react-dropdown-menu` reusa a família de internals que `popover`/`dialog` já traziam (dismissable-layer, focus-scope, popper), mas soma os primitives de menu e navegação por teclado — é a maior adição de bundle desta série de fatias, aceita porque o que ela compra são 72px de altura de volta no topo de TODA tela.
+
 ## Insight de IA — backend (fatia ⑨, Task 3 — `migrations/0007_insights.sql` + `src/domain/insights.ts` + `src/routes/insights.ts`)
 
 Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1. ⚠️ Esse comando nasceu como `scripts/insight.mjs` (Task 4 desta fatia) e foi substituído por `make insight`/`promeia-insight` (`apps/promeia`) numa fatia posterior — ver seção _O comando do Mac_ mais abaixo.

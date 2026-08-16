@@ -5,6 +5,7 @@ import { idEstavel } from '@piluvitu/tools/import/id'
 import { parseOfx } from '@piluvitu/tools/import/ofx'
 import { formatBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Label } from '@piluvitu/ui/label'
@@ -634,12 +635,15 @@ export function ImportarPage() {
                     </span>
                   </div>
                   {linha.duplicada ? (
-                    <p
+                    <div
                       data-testid={`duplicada-${i}`}
-                      className="text-destructive text-xs"
+                      className="flex flex-wrap items-center gap-2"
                     >
-                      Já importada — desmarcada por padrão. Marque para forçar.
-                    </p>
+                      <Badge variant="destructive">Já importada</Badge>
+                      <span className="text-muted-foreground text-xs">
+                        Desmarcada por padrão. Marque para forçar.
+                      </span>
+                    </div>
                   ) : null}
                   <p className="text-sm">{linha.description}</p>
                   <div className="grid grid-cols-1 gap-2">

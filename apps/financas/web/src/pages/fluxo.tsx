@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { formatBRL } from '@piluvitu/tools/money'
+import { formatBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Card, CardContent } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
+import { useMenorQueSm } from '../lib/breakpoint'
 import type { CashflowReportView } from '../lib/cashflow'
 import { addMonthsToCompetence, competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
@@ -29,6 +31,7 @@ export function FluxoPage() {
   const [months, setMonths] = useState<number>(12)
   const [report, setReport] = useState<CashflowReportView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const menorQueSm = useMenorQueSm()
 
   // Padrão "N meses até o mês corrente" (spec §5) — `from` é sempre
   // recalculado a partir da janela escolhida, nunca guardado separado dela
@@ -64,6 +67,13 @@ export function FluxoPage() {
   const vazio = report.linhas.every(
     (l) => l.entrou_cents === 0 && l.saiu_cents === 0,
   )
+
+  // `sumCents` (@piluvitu/tools/money), nunca `reduce` com `+` solto — é o
+  // mesmo helper que `BlocoSaldos` já usa pra somar dinheiro, e centavos são
+  // INTEIROS de ponta a ponta.
+  const totalEntrou = sumCents(report.linhas.map((l) => l.entrou_cents))
+  const totalSaiu = sumCents(report.linhas.map((l) => l.saiu_cents))
+  const totalSaldo = sumCents(report.linhas.map((l) => l.saldo_cents))
 
   return (
     <section className="space-y-6">
@@ -109,6 +119,17 @@ export function FluxoPage() {
         </Card>
       )}
 
+      {/*
+        ⚠️ A tabela CONTINUA existindo, e não vira "só o gráfico": ela é a
+        única prova de que um mês sem movimento aparece ZERADO em vez de
+        sumir — uma barra de valor exatamente 0 não renderiza `<path>` no
+        recharts (medido), então o gráfico é justamente o lugar onde um mês
+        vazio é indistinguível de um mês ausente.
+
+        O que muda: abaixo de `sm` ela colapsa pras 3 colunas que respondem a
+        pergunta (mês, saldo, acumulado) em vez de espremer 5 — Entrou/Saiu
+        são o detalhe de COMO o saldo se formou, e o saldo já os resume.
+      */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -116,12 +137,16 @@ export function FluxoPage() {
               <th className="border-b py-1.5 pr-2 text-left font-medium">
                 Mês
               </th>
-              <th className="border-b px-2 py-1.5 text-right font-medium">
-                Entrou
-              </th>
-              <th className="border-b px-2 py-1.5 text-right font-medium">
-                Saiu
-              </th>
+              {!menorQueSm && (
+                <>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    Entrou
+                  </th>
+                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                    Saiu
+                  </th>
+                </>
+              )}
               <th className="border-b px-2 py-1.5 text-right font-medium">
                 Saldo
               </th>
@@ -136,21 +161,35 @@ export function FluxoPage() {
                 <td className="border-b py-1.5 pr-2 text-left">
                   {l.competence}
                 </td>
-                <td
-                  data-testid="entrou"
-                  className="border-b px-2 py-1.5 text-right tabular-nums"
-                >
-                  {formatBRL(l.entrou_cents)}
-                </td>
-                <td
-                  data-testid="saiu"
-                  className="border-b px-2 py-1.5 text-right tabular-nums"
-                >
-                  {formatBRL(l.saiu_cents)}
-                </td>
+                {!menorQueSm && (
+                  <>
+                    <td
+                      data-testid="entrou"
+                      className="border-b px-2 py-1.5 text-right tabular-nums"
+                    >
+                      {formatBRL(l.entrou_cents)}
+                    </td>
+                    <td
+                      data-testid="saiu"
+                      className="border-b px-2 py-1.5 text-right tabular-nums"
+                    >
+                      {formatBRL(l.saiu_cents)}
+                    </td>
+                  </>
+                )}
+                {/*
+                  Mês que fechou no vermelho é a única linha que pede ação, e
+                  até aqui saía com exatamente o mesmo peso das outras — o
+                  sinal é a COR mais o negrito, nunca a cor sozinha (o `-` do
+                  próprio valor formatado continua sendo o canal não-cromático,
+                  mesma disciplina do resto do app).
+                */}
                 <td
                   data-testid="saldo"
-                  className="border-b px-2 py-1.5 text-right tabular-nums"
+                  className={cn(
+                    'border-b px-2 py-1.5 text-right tabular-nums',
+                    l.saldo_cents < 0 && 'text-destructive font-semibold',
+                  )}
                 >
                   {formatBRL(l.saldo_cents)}
                 </td>
@@ -163,6 +202,51 @@ export function FluxoPage() {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr data-testid="linha-total">
+              <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
+                TOTAL
+              </th>
+              {!menorQueSm && (
+                <>
+                  <td
+                    data-testid="total-entrou"
+                    className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                  >
+                    {formatBRL(totalEntrou)}
+                  </td>
+                  <td
+                    data-testid="total-saiu"
+                    className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                  >
+                    {formatBRL(totalSaiu)}
+                  </td>
+                </>
+              )}
+              <td
+                data-testid="total-saldo"
+                className={cn(
+                  'border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums',
+                  totalSaldo < 0 && 'text-destructive font-semibold',
+                )}
+              >
+                {formatBRL(totalSaldo)}
+              </td>
+              {/*
+                Acumulado NÃO é somado: ele já é um saldo corrente, e somar
+                saldos correntes não significa nada (daria "o dinheiro contado
+                N vezes"). O valor final da janela já está na última linha da
+                tabela, logo acima — repeti-lo aqui como se fosse um total
+                convidaria exatamente a essa leitura errada.
+              */}
+              <td
+                data-testid="total-acumulado"
+                className="text-muted-foreground border-t-2 border-b px-2 py-1.5 text-right"
+              >
+                —
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>

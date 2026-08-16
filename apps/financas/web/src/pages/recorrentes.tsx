@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL, parseBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import {
@@ -336,17 +337,24 @@ export function RecorrentesPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium">
-                        {r.description}
+                      {/*
+                        `<div>` no lugar do `<p>`: `Badge` renderiza um
+                        `<div>`, e div dentro de p é HTML inválido (o
+                        navegador FECHA o parágrafo sozinho e o layout
+                        quebra). O texto continua idêntico — só o container
+                        virou flex.
+                      */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{r.description}</span>
                         {r.active === 0 ? (
-                          <span
+                          <Badge
+                            variant="secondary"
                             data-testid={`status-${r.id}`}
-                            className="text-muted-foreground ml-2 text-xs font-normal"
                           >
                             Pausada
-                          </span>
+                          </Badge>
                         ) : null}
-                      </p>
+                      </div>
                       <p className="text-muted-foreground text-xs">
                         {r.scope} · dia {dd(r.day_of_month)}
                         {nomeCategoria(r.category_id)

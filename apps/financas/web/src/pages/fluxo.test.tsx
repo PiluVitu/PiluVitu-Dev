@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -7,6 +8,43 @@ import {
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FluxoPage } from './fluxo'
+
+function setLarguraJanela(largura: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    writable: true,
+    configurable: true,
+    value: largura,
+  })
+}
+
+// Janela com um mês NEGATIVO e um mês zerado — o negativo é o que a tela
+// precisa destacar, o zerado é a prova que a tabela existe pra dar.
+const reportComNegativo = {
+  meses: ['2026-06', '2026-07', '2026-08'],
+  linhas: [
+    {
+      competence: '2026-06',
+      entrou_cents: 500000,
+      saiu_cents: 200000,
+      saldo_cents: 300000,
+      acumulado_cents: 300000,
+    },
+    {
+      competence: '2026-07',
+      entrou_cents: 0,
+      saiu_cents: 0,
+      saldo_cents: 0,
+      acumulado_cents: 300000,
+    },
+    {
+      competence: '2026-08',
+      entrou_cents: 100000,
+      saiu_cents: 450000,
+      saldo_cents: -350000,
+      acumulado_cents: -50000,
+    },
+  ],
+}
 
 const reportBase = {
   meses: ['2026-06', '2026-07'],
@@ -217,5 +255,112 @@ describe('FluxoPage', () => {
     for (const celula of ['entrou', 'saiu', 'saldo', 'acumulado']) {
       expect(linha.getByTestId(celula)).toHaveClass('tabular-nums')
     }
+  })
+
+  // ③ A tabela CONTINUA (é a prova de "mês zerado aparece"), mas ganhou o
+  // que faltava: sinal de mês negativo, TOTAL da janela, e 3 colunas no
+  // celular.
+  describe('tabela: negativo, TOTAL e colapso mobile', () => {
+    afterEach(() => setLarguraJanela(1024))
+
+    it('destaca o mês que fechou negativo, e só ele', async () => {
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      const negativo = await screen.findByTestId('linha-2026-08')
+      expect(within(negativo).getByTestId('saldo')).toHaveClass(
+        'text-destructive',
+      )
+      // Controles: nem o mês positivo nem o ZERADO são destacados — um
+      // `<= 0` no lugar de `< 0` pintaria o mês zerado de vermelho.
+      const positivo = screen.getByTestId('linha-2026-06')
+      expect(within(positivo).getByTestId('saldo')).not.toHaveClass(
+        'text-destructive',
+      )
+      const zerado = screen.getByTestId('linha-2026-07')
+      expect(within(zerado).getByTestId('saldo')).not.toHaveClass(
+        'text-destructive',
+      )
+    })
+
+    it('soma o TOTAL da janela (entrou, saiu e saldo)', async () => {
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      await screen.findByTestId('linha-total')
+      expect(screen.getByTestId('total-entrou')).toHaveTextContent(
+        'R$ 6.000,00',
+      )
+      expect(screen.getByTestId('total-saiu')).toHaveTextContent('R$ 6.500,00')
+      expect(screen.getByTestId('total-saldo')).toHaveTextContent('-R$ 500,00')
+    })
+
+    it('o TOTAL negativo também é destacado', async () => {
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      await screen.findByTestId('linha-total')
+      expect(screen.getByTestId('total-saldo')).toHaveClass('text-destructive')
+    })
+
+    it('NÃO soma o acumulado — somar saldo corrente não significa nada', async () => {
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      await screen.findByTestId('linha-total')
+      // A soma ingênua (300000 + 300000 - 50000 = R$ 5.500,00) não pode
+      // aparecer em lugar nenhum da linha de TOTAL.
+      expect(screen.getByTestId('total-acumulado')).toHaveTextContent('—')
+      expect(screen.getByTestId('linha-total')).not.toHaveTextContent(
+        'R$ 5.500,00',
+      )
+    })
+
+    it('em 390px colapsa pra 3 colunas (mês, saldo, acumulado)', async () => {
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      const linha = await screen.findByTestId('linha-2026-08')
+      expect(within(linha).getByTestId('saldo')).toBeInTheDocument()
+      expect(within(linha).getByTestId('acumulado')).toBeInTheDocument()
+      // Entrou/Saiu são o detalhe de COMO o saldo se formou — saem do DOM,
+      // não ficam escondidos por CSS (jsdom não computa CSS).
+      expect(within(linha).queryByTestId('entrou')).not.toBeInTheDocument()
+      expect(within(linha).queryByTestId('saiu')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('total-entrou')).not.toBeInTheDocument()
+    })
+
+    it('mesmo colapsada, a tabela continua provando que mês zerado aparece', async () => {
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      const zerado = await screen.findByTestId('linha-2026-07')
+      expect(within(zerado).getByTestId('saldo')).toHaveTextContent('R$ 0,00')
+    })
+
+    it('acompanha resize em runtime: encolher pra 390px tira Entrou/Saiu', async () => {
+      mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+
+      render(<FluxoPage />)
+
+      await screen.findByTestId('linha-total')
+      expect(screen.getByTestId('total-entrou')).toBeInTheDocument()
+
+      setLarguraJanela(390)
+      act(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+
+      expect(screen.queryByTestId('total-entrou')).not.toBeInTheDocument()
+      expect(screen.getByTestId('total-saldo')).toBeInTheDocument()
+    })
   })
 })

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
@@ -395,9 +396,16 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
           </p>
         )}
         {detail.debt.status !== 'open' ? (
-          <p className="text-muted-foreground mt-1 text-sm">
-            Situação: {STATUS_LABEL[detail.debt.status]}
-          </p>
+          <div className="mt-2">
+            {/*
+              A frase inteira mora DENTRO do badge de propósito: quebrá-la em
+              "Situação:" + badge partiria o texto entre dois elementos, e
+              "quitada" sozinha, solta na tela, não diz de que ela é situação.
+            */}
+            <Badge variant="secondary">
+              Situação: {STATUS_LABEL[detail.debt.status]}
+            </Badge>
+          </div>
         ) : null}
 
         {acaoErro ? (

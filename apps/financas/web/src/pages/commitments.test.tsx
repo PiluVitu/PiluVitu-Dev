@@ -1,7 +1,18 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommitmentsPage } from './commitments'
+
+// Mesmo helper de `DividasPage.test.tsx` — `useMenorQueSm` lê
+// `window.innerWidth` (jsdom suporta, default 1024, o que mantém todos os
+// testes de tabela pré-existentes no ramo ">= sm" sem tocar em nenhum).
+function setLarguraJanela(largura: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    writable: true,
+    configurable: true,
+    value: largura,
+  })
+}
 
 const report = {
   competences: [
@@ -332,5 +343,101 @@ describe('CommitmentsPage', () => {
     expect(screen.getByTestId('celula-a1-0')).toHaveClass('tabular-nums')
     expect(screen.getByTestId('total-0')).toHaveClass('tabular-nums')
     expect(screen.getByTestId('pct-0')).toHaveClass('tabular-nums')
+  })
+
+  // ⚠️ MEDIDO em Chrome real a 390×844: a matriz dava `scrollWidth 524`
+  // contra `clientWidth 308` — metade das competências (e metade da linha de
+  // `%`) inalcançável sem um drag horizontal que nada indicava. Abaixo de
+  // `sm`, um card por competência, mesmo padrão de `DividasPage`.
+  describe('mobile: card por competência abaixo de sm', () => {
+    afterEach(() => setLarguraJanela(1024))
+
+    it('em 390px troca a matriz por um card por competência', async () => {
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: report, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('comprometido-cards')).toBeInTheDocument(),
+      )
+      // A tabela some do DOM (não fica escondida por CSS) — jsdom não computa
+      // CSS, então os dois markups juntos duplicariam todo `getByText`.
+      expect(screen.queryByTestId('linha-a1')).not.toBeInTheDocument()
+
+      // As SEIS competências existem como card — nenhuma atrás de swipe.
+      for (const c of report.competences) {
+        expect(screen.getByTestId(`card-competencia-${c}`)).toBeInTheDocument()
+      }
+    })
+
+    it('o card lidera com o % e o TOTAL da competência, e mantém a quebra por conta', async () => {
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: report, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      const card = await screen.findByTestId('card-competencia-2026-08')
+      expect(within(card).getByTestId('card-pct-0')).toHaveTextContent('60%')
+      expect(within(card).getByTestId('card-total-0')).toHaveTextContent(
+        'R$ 2.160,00',
+      )
+      // Nada da tabela se perdeu: a quebra por conta continua no card.
+      expect(within(card).getByText('Nubank cartao')).toBeInTheDocument()
+      expect(within(card).getByText('R$ 1.240,00')).toBeInTheDocument()
+    })
+
+    it('o alerta do card segue o TETO da faixa, igual à tabela', async () => {
+      setLarguraJanela(390)
+      // Piso abaixo do limiar, teto acima — se o card olhasse `min`, não
+      // alertaria. É a MESMA regra que a tabela já usa (`range.max`).
+      const emFaixa = {
+        ...report,
+        pct_of_fixed_net: [
+          { min: 40, max: 66 },
+          ...report.pct_of_fixed_net.slice(1),
+        ],
+      }
+      mockFetch({ ok: true, data: emFaixa, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      const alvo = await screen.findByTestId('card-pct-0')
+      expect(alvo).toHaveClass('alerta')
+      // Controle: 25% (índice 4) fica abaixo do limiar nos DOIS extremos —
+      // prova que o alerta não está pintando tudo.
+      expect(screen.getByTestId('card-pct-4')).not.toHaveClass('alerta')
+    })
+
+    it('acompanha resize em runtime: encolher pra 390px troca matriz por cards', async () => {
+      mockFetch({ ok: true, data: report, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('linha-a1')).toBeInTheDocument(),
+      )
+
+      setLarguraJanela(390)
+      act(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+
+      expect(screen.getByTestId('comprometido-cards')).toBeInTheDocument()
+      expect(screen.queryByTestId('linha-a1')).not.toBeInTheDocument()
+    })
+
+    it('os números do card usam tabular-nums', async () => {
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: report, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      const card = await screen.findByTestId('card-competencia-2026-08')
+      expect(within(card).getByTestId('card-pct-0')).toHaveClass('tabular-nums')
+      expect(within(card).getByTestId('card-total-0')).toHaveClass(
+        'tabular-nums',
+      )
+    })
   })
 })

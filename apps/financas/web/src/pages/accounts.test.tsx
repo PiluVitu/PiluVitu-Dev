@@ -590,4 +590,100 @@ describe('AccountsPage', () => {
     expect(screen.getByTestId('saldo-a1')).toHaveClass('tabular-nums')
     expect(screen.getByTestId('saldo-a2')).toHaveClass('tabular-nums')
   })
+
+  // ④ A home (`BlocoSaldos`) sempre mostrou o total por escopo; a tela
+  // DEDICADA a contas, não — o dono somava as linhas de cabeça pra responder
+  // "quanto tenho no PJ".
+  describe('cabeçalho e total por escopo', () => {
+    it('soma o total de cada escopo, sem NUNCA somar PJ com PF', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('total-PF')).toBeInTheDocument(),
+      )
+      // PF: 2.340,12 + (-1.847,90) = 492,22
+      expect(screen.getByTestId('total-PF')).toHaveTextContent('R$ 492,22')
+      // PJ: só a Inter
+      expect(screen.getByTestId('total-PJ')).toHaveTextContent('R$ 4.120,00')
+
+      // O total combinado (R$ 4.612,22) não pode existir em lugar nenhum —
+      // somar PJ com PF é exatamente o que a separação existe pra impedir.
+      expect(document.body.textContent).not.toContain('R$ 4.612,22')
+    })
+
+    it('o total de cada escopo mora DENTRO do card daquele escopo', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('grupo-PJ')).toBeInTheDocument(),
+      )
+      const pj = within(screen.getByTestId('grupo-PJ'))
+      expect(pj.getByTestId('total-PJ')).toBeInTheDocument()
+      expect(pj.queryByTestId('total-PF')).not.toBeInTheDocument()
+    })
+
+    it('a tabela ganhou cabeçalho — o número da direita é nomeado como Saldo', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('grupo-PJ')).toBeInTheDocument(),
+      )
+      const pj = within(screen.getByTestId('grupo-PJ'))
+      expect(
+        pj.getByRole('columnheader', { name: 'Conta' }),
+      ).toBeInTheDocument()
+      expect(
+        pj.getByRole('columnheader', { name: 'Saldo' }),
+      ).toBeInTheDocument()
+    })
+
+    it('o total usa tabular-nums, igual às linhas que ele soma', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('total-PF')).toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('total-PF')).toHaveClass('tabular-nums')
+    })
+  })
+
+  // ⑤ `@piluvitu/ui/badge` tinha ZERO imports no monorepo. Status que era
+  // texto solto com markup próprio virou chip do design system. A asserção é
+  // `inline-flex` (a base do `badgeVariants`) — é o que distingue um chip de
+  // um texto corrido, e some se alguém voltar pro `<span>`/`<small>` cru.
+  describe('badge do design system nos status', () => {
+    it('o escopo do card (PJ/PF) é um badge', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('escopo-PJ')).toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('escopo-PJ')).toHaveClass('inline-flex')
+      expect(screen.getByTestId('escopo-PJ')).toHaveTextContent('PJ')
+    })
+
+    it('o fecha/vence do cartão é um badge, com o mesmo texto de antes', async () => {
+      mockFetch({ ok: true, data: contas, notifications: [] })
+
+      render(<AccountsPage />)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('fatura-a2')).toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('fatura-a2')).toHaveClass('inline-flex')
+      expect(screen.getByTestId('fatura-a2')).toHaveTextContent(
+        'fecha 25 · vence 05',
+      )
+    })
+  })
 })

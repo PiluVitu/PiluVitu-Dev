@@ -571,6 +571,10 @@ describe('DebtDetailPage', () => {
         screen.queryByRole('button', { name: 'Ajuda sobre Dar baixa' }),
       ).not.toBeInTheDocument()
       expect(screen.getByText('Situação: Quitada')).toBeInTheDocument()
+      // ⑤ A situação virou badge do design system — a frase INTEIRA fica
+      // dentro dele (quebrar em "Situação:" + chip partiria o texto entre dois
+      // elementos, e "Quitada" sozinha não diz de que é situação).
+      expect(screen.getByText('Situação: Quitada')).toHaveClass('inline-flex')
     })
 
     it('"Dar baixa" (aberta): a ajuda abre no clique com o texto de que preserva histórico', async () => {

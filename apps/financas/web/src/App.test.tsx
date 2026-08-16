@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { App } from './App'
 
@@ -368,32 +369,107 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     )
   })
 
-  test('#/categorias marca "Categorias" como ativo', async () => {
+  // ⚠️ "Categorias" e "Insight" deixaram de ser pílulas soltas e passaram
+  // pro menu "Mais" (o nav ocupava 153px a 390px, medido). O teste ficou
+  // MAIS forte, não mais fraco: além do `aria-current`, agora ele prova que
+  // o destino continua ALCANÇÁVEL — abre o menu de verdade, por clique, e
+  // acha o link lá dentro. Um item que sumisse do menu falharia aqui.
+  test('#/categorias marca "Categorias" como ativo (dentro do menu "Mais")', async () => {
     mockFetchVazio()
     window.location.hash = '#/categorias'
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Categorias' })).toBeDefined(),
     )
-    expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
+    await userEvent.click(screen.getByTestId('nav-mais'))
+    expect(
+      await screen.findByRole('menuitem', { name: 'Categorias' }),
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   // Task 5 (fatia ⑨): nova rota, mesmo padrão das demais — o nav marca
   // "Insight" ativo, consistente com o estado ativo que a Task 2 introduziu.
-  test('#/insight marca "Insight" como ativo', async () => {
+  test('#/insight marca "Insight" como ativo (dentro do menu "Mais")', async () => {
     mockFetchVazio()
     window.location.hash = '#/insight'
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Insight' })).toBeDefined(),
     )
-    expect(screen.getByRole('link', { name: 'Insight' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    await userEvent.click(screen.getByTestId('nav-mais'))
+    expect(
+      await screen.findByRole('menuitem', { name: 'Insight' }),
+    ).toHaveAttribute('aria-current', 'page')
+  })
+
+  // O gatilho do "Mais" ASSUME o rótulo da seção corrente quando a rota
+  // ativa mora dentro dele. Sem isso, estar numa dessas telas deixaria o nav
+  // inteiro sem NENHUMA marca de "onde estou" — o estado ativo existe
+  // justamente pra responder isso, e ele não pode se perder só porque o
+  // destino saiu da primeira fila.
+  test('o gatilho "Mais" mostra a seção corrente quando a rota ativa mora nele', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/fluxo'
+    render(<App />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Fluxo de caixa' }),
+      ).toBeDefined(),
     )
+    const gatilho = screen.getByTestId('nav-mais')
+    expect(gatilho).toHaveTextContent('Fluxo de caixa')
+    expect(gatilho).toHaveAttribute('data-secao-ativa', 'true')
+  })
+
+  // O contrapositivo do teste acima: numa rota PRIMÁRIA o gatilho volta a
+  // ser um "Mais" neutro. Sem este caso, um gatilho marcado como ativo o
+  // TEMPO TODO passaria no teste anterior sem provar nada.
+  test('numa rota primária o gatilho "Mais" não se marca como seção ativa', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/extrato'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
+    )
+    const gatilho = screen.getByTestId('nav-mais')
+    expect(gatilho).toHaveTextContent('Mais')
+    expect(gatilho).not.toHaveAttribute('data-secao-ativa')
+  })
+
+  // ⚠️ O ponto da fatia: a primeira fila do nav encolheu, mas NENHUM destino
+  // sumiu do app.
+  //
+  // ⚠️ Os 13 rótulos são LITERAIS aqui de propósito. A primeira versão deste
+  // teste somava `barra.length + menu.length` e comparava com uma constante
+  // exportada de `App.tsx` — que era derivada das MESMAS duas listas. Apagar
+  // um destino encolhia os dois lados da igualdade e o teste continuava
+  // verde: MEDIDO por mutação (removi "Reserva" e nenhum teste caiu). Uma
+  // asserção que se deriva do código sob teste não testa esse código.
+  test('nenhum destino sumiu: os 13 continuam alcançáveis (5 na barra, 8 no menu)', async () => {
+    mockFetchVazio()
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    const nav = screen.getByRole('navigation', { name: 'Navegação principal' })
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(['Início', 'Lançar', 'Extrato', 'Dívidas', 'Comprometido'])
+
+    await userEvent.click(screen.getByTestId('nav-mais'))
+    const noMenu = await screen.findAllByRole('menuitem')
+    expect(noMenu.map((a) => a.textContent)).toEqual([
+      'Contas',
+      'Categorias',
+      'Recorrentes',
+      'Reserva',
+      'Importar',
+      'Fluxo de caixa',
+      'Insight',
+      'Configurações',
+    ])
   })
 
   // #/dividas/:id (detalhe de uma dívida) não é um link próprio no nav —

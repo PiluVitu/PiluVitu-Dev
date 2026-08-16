@@ -442,6 +442,13 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
 
     const linha0 = screen.getByTestId('linha-0')
     expect(within(linha0).getByTestId('duplicada-0')).toBeInTheDocument()
+    // ⑤ O aviso de duplicata virou badge do design system + a instrução em
+    // texto ao lado — o rótulo curto é o que se lê de relance, a frase
+    // continua dizendo o que fazer.
+    expect(within(linha0).getByText('Já importada')).toHaveClass('inline-flex')
+    expect(within(linha0).getByTestId('duplicada-0')).toHaveTextContent(
+      'Marque para forçar',
+    )
     expect(within(linha0).getByRole('checkbox')).not.toBeChecked()
 
     const linha1 = screen.getByTestId('linha-1')

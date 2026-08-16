@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@piluvitu/ui/button'
 import { cn } from '@piluvitu/ui/cn'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@piluvitu/ui/dropdown-menu'
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
@@ -73,21 +79,95 @@ export function resolveRoute(hash: string): RouteKey {
   return 'home'
 }
 
-const NAV_ITEMS: { href: string; label: string; route: RouteKey }[] = [
+type NavItem = { href: string; label: string; route: RouteKey }
+
+// ⚠️ MEDIDO em Chrome real a 390×844: com os 13 destinos como pílulas soltas,
+// o `<nav>` ocupava **153px** (três linhas) e empurrava o primeiro card pra
+// y=233 — ou seja, mais de um quarto da altura do celular gasto em navegação
+// ANTES de qualquer número. A tela do dono tem UMA pergunta; ele não chega
+// nela por engano, chega por um link — mas não precisa de treze deles à mão.
+//
+// A divisão é por FREQUÊNCIA DE USO, não por importância conceitual: o que
+// ele abre todo dia (ver a home, lançar um gasto, conferir o extrato, cobrar
+// uma dívida, olhar o comprometido) fica sempre à mão; o resto — cadastro
+// (contas, categorias, recorrentes), operação pontual (importar) e leitura
+// ocasional (reserva, fluxo, insight, configurações) — mora no "Mais".
+const NAV_PRIMARIOS: NavItem[] = [
   { href: '#/', label: 'Início', route: 'home' },
-  { href: '#/contas', label: 'Contas', route: 'contas' },
-  { href: '#/dividas', label: 'Dívidas', route: 'dividas' },
   { href: '#/lancar', label: 'Lançar', route: 'lancar' },
   { href: '#/extrato', label: 'Extrato', route: 'extrato' },
-  { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
+  { href: '#/dividas', label: 'Dívidas', route: 'dividas' },
+  { href: '#/comprometido', label: 'Comprometido', route: 'comprometido' },
+]
+
+const NAV_SECUNDARIOS: NavItem[] = [
+  { href: '#/contas', label: 'Contas', route: 'contas' },
   { href: '#/categorias', label: 'Categorias', route: 'categorias' },
+  { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
   { href: '#/reserva', label: 'Reserva', route: 'reserva' },
   { href: '#/importar', label: 'Importar', route: 'importar' },
-  { href: '#/comprometido', label: 'Comprometido', route: 'comprometido' },
   { href: '#/fluxo', label: 'Fluxo de caixa', route: 'fluxo' },
   { href: '#/insight', label: 'Insight', route: 'insight' },
   { href: '#/configuracoes', label: 'Configurações', route: 'configuracoes' },
 ]
+
+const CLASSE_PILULA =
+  'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors'
+const CLASSE_ATIVA = 'bg-primary text-primary-foreground'
+const CLASSE_INATIVA =
+  'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+
+/**
+ * Os destinos que não cabem no bolso do polegar, atrás de um `dropdown-menu`
+ * do design system (primeiro consumidor dele no monorepo — o componente já
+ * existia em `@piluvitu/ui` com zero imports).
+ *
+ * ⚠️ **O gatilho ASSUME o rótulo da seção corrente quando a rota ativa mora
+ * aqui dentro** — sem isso, estar em `#/fluxo` deixaria o nav inteiro sem
+ * NENHUMA marca de "onde estou", que é justamente o que o estado ativo
+ * existe pra responder. O `aria-current="page"` continua no `<a>` de
+ * verdade, dentro do menu (é ele que é a página), e o gatilho ganha
+ * `data-secao-ativa` — atributo próprio, não `aria-current`, porque o botão
+ * que ABRE um menu não é a página corrente e anunciá-lo como tal mentiria
+ * pro leitor de tela.
+ */
+function NavMais({ route }: { route: RouteKey }) {
+  const ativo = NAV_SECUNDARIOS.find((i) => i.route === route)
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        data-testid="nav-mais"
+        data-secao-ativa={ativo ? 'true' : undefined}
+        aria-label={
+          ativo
+            ? `Mais destinos — ${ativo.label} é a seção atual`
+            : 'Mais destinos'
+        }
+        className={cn(
+          CLASSE_PILULA,
+          'cursor-pointer',
+          ativo ? CLASSE_ATIVA : CLASSE_INATIVA,
+        )}
+      >
+        {ativo ? ativo.label : 'Mais'} ▾
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {NAV_SECUNDARIOS.map((item) => (
+          <DropdownMenuItem key={item.href} asChild>
+            <a
+              href={item.href}
+              aria-current={item.route === route ? 'page' : undefined}
+              className="cursor-pointer"
+            >
+              {item.label}
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 function AppShell() {
   const { data: sessao } = useSession()
@@ -109,9 +189,9 @@ function AppShell() {
       </header>
       <nav
         aria-label="Navegação principal"
-        className="flex flex-wrap gap-1 border-b pb-3"
+        className="flex flex-wrap items-center gap-1 border-b pb-3"
       >
-        {NAV_ITEMS.map((item) => {
+        {NAV_PRIMARIOS.map((item) => {
           const active = item.route === route
           return (
             <a
@@ -119,16 +199,15 @@ function AppShell() {
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                CLASSE_PILULA,
+                active ? CLASSE_ATIVA : CLASSE_INATIVA,
               )}
             >
               {item.label}
             </a>
           )
         })}
+        <NavMais route={route} />
       </nav>
       {debtId ? (
         <DebtDetailPage debtId={debtId} />

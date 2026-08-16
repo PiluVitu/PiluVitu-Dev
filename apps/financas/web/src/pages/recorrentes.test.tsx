@@ -155,6 +155,10 @@ describe('RecorrentesPage', () => {
     // decisão do backend) — a tela precisa mostrar as duas, distinguindo.
     expect(screen.queryByTestId('status-r-starlink')).not.toBeInTheDocument()
     expect(screen.getByTestId('status-r-das')).toHaveTextContent('Pausada')
+    // ⑤ "Pausada" era texto solto com markup próprio; virou badge do design
+    // system (`@piluvitu/ui/badge`, que tinha zero imports). `inline-flex` é
+    // a base do `badgeVariants` — some se voltar a ser um `<span>` cru.
+    expect(screen.getByTestId('status-r-das')).toHaveClass('inline-flex')
   })
 
   it('um só campo de valor por padrão — "Valor máximo" só aparece depois de marcar "varia?"', async () => {
