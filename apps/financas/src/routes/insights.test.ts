@@ -429,6 +429,75 @@ describe('POST /api/insights/generate', () => {
     expect(body.notifications).toEqual([])
   })
 
+  /**
+   * ⚠️ **A GUARDA DA CONSTANTE, e ela prende a PROPRIEDADE — não o número.**
+   * `expect(ESPERA_CURTA_MS).toBe(8000)` seria decorativo: quem encolhe a
+   * constante edita o teste junto, e a suíte continua verde enquanto o
+   * comportamento piora. MEDIDO que era esse o buraco: trocar `8_000` por
+   * `50` (160× menor) mantinha 46/46 testes passando.
+   *
+   * O vale existe porque as duas populações medidas não se tocam — toda
+   * falha real leva 0,3-0,4 s, toda geração real leva ≥ 20 s. O que o teste
+   * abaixo trava é a borda de BAIXO: uma resposta de ERRO que chega em
+   * 0,4 s tem que virar erro, nunca `202 {status:"gerando"}`. Com a janela
+   * pequena demais, a falha rápida seria abortada pela própria janela e sairia
+   * como "gerando": o dono esperaria 90 s de polling na tela por algo que já
+   * tinha falhado, e a mensagem acionável do promeia ("inicie com `ollama
+   * serve`") seria jogada fora.
+   *
+   * A borda de CIMA fica travada pelo teste do 202 logo acima (que avança
+   * exatamente 8 s de relógio falso): esticar a janela pra 40 s prenderia o
+   * navegador por uma rodada inteira de GPU, e aquele teste pendura.
+   */
+  const ATRASO_FALHA_MEDIDO_MS = 400
+
+  it('falha que chega em 0,4 s (o pior caso medido) vira ERRO, nunca 202 "gerando"', async () => {
+    vi.useFakeTimers()
+
+    let avisarQueChamou: () => void = () => {}
+    const fetchChamado = new Promise<void>((r) => {
+      avisarQueChamou = r
+    })
+
+    // O promeia RESPONDE, e rápido: é o perfil medido de toda falha real
+    // (Mac off, token errado, competência inválida — 0,3-0,4 s). O abort é
+    // honrado pra que uma janela curta demais produza `PromeiaDemorou`
+    // (⇒ 202) em vez de pendurar o teste — é assim que a mutação aparece.
+    globalThis.fetch = ((_url: string, init: RequestInit) => {
+      avisarQueChamou()
+      return new Promise<Response>((resolve, reject) => {
+        const id = setTimeout(
+          () =>
+            resolve(
+              respostaJson(503, {
+                ok: false,
+                code: 'ollama_unreachable',
+                message:
+                  'não consegui conectar ao Ollama — inicie com `ollama serve`',
+              }),
+            ),
+          ATRASO_FALHA_MEDIDO_MS,
+        )
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(id)
+          reject(new DOMException('abortado', 'AbortError'))
+        })
+      })
+    }) as unknown as typeof fetch
+
+    const pendente = gerar({ competence: '2026-07' })
+    await fetchChamado
+    await vi.advanceTimersByTimeAsync(ATRASO_FALHA_MEDIDO_MS)
+
+    const res = await pendente
+    expect(res.status).not.toBe(202)
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope
+    // A mensagem acionável chega ao dono na hora, em vez de virar "gerando".
+    expect(body.notifications[0].code).toBe('ollama_unreachable')
+    expect(body.notifications[0].message).toContain('ollama serve')
+  })
+
   it('Mac/túnel fora (fetch rejeita): 503 promeia_unreachable com mensagem acionável', async () => {
     mockarPromeia(() => {
       throw new TypeError('fetch failed')
@@ -440,26 +509,41 @@ describe('POST /api/insights/generate', () => {
     expect(body.notifications[0].message).toContain('Ligue o Mac')
   })
 
-  // ⚠️ O achado da spike: a Cloudflare SUBSTITUI o corpo do 502 da origem
-  // pelo próprio error page (`text/plain`, 16 bytes) — 3/3, determinístico.
-  // A regra herdada do ramielle ("erro sem code/message ⇒ inalcançável")
-  // diria aqui "suba o promeia no Mac" com o promeia DE PÉ. As duas
-  // asserções negativas abaixo são o que trava essa confusão.
-  it('502 com o corpo comido pelo túnel: 502 promeia_ilegivel, NUNCA "suba o promeia"', async () => {
+  // ⚠️ O MODO DE QUEDA MAIS COMUM, medido 3/3: `cloudflared` no ar (serviço
+  // docker) + promeia parado (comando de terminal que não sobrevive a
+  // reboot) ⇒ 502, text/plain, 16 bytes. É AUSÊNCIA de origem, e a ação é
+  // subir o serviço — tratar como corpo ilegível dizia ao dono o CONTRÁRIO
+  // ("o Mac respondeu, NÃO é caso de subir o serviço"), proibindo a única
+  // coisa que resolve. As asserções negativas são o que trava a inversão.
+  it('502 do túnel (promeia parado): 503 promeia_unreachable, mandando SUBIR o serviço', async () => {
     mockarPromeia(
       () =>
-        new Response('error code: 502', {
+        // Byte a byte o corpo medido, `\n` final incluso (16 b).
+        new Response('error code: 502\n', {
           status: 502,
           headers: { 'content-type': 'text/plain' },
         }),
     )
+    const res = await gerar({})
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('promeia_unreachable')
+    expect(body.notifications[0].code).not.toBe('promeia_ilegivel')
+    expect(body.notifications[0].message).toContain('Ligue o Mac')
+    expect(body.notifications[0].message).toMatch(/suba o serviço/i)
+  })
+
+  // A distinção continua existindo — só deixou de comer o 502: um erro que
+  // NÃO é 502 e não fala o shape do promeia segue sendo "alguém respondeu e
+  // eu não entendi", com a frase que PROÍBE subir o serviço.
+  it('500 com JSON fora do shape: 502 promeia_ilegivel, NUNCA "suba o promeia"', async () => {
+    mockarPromeia(() => respostaJson(500, { erro: 'algo genérico' }))
     const res = await gerar({})
     expect(res.status).toBe(502)
     const body = (await res.json()) as Envelope
     expect(body.notifications[0].code).toBe('promeia_ilegivel')
     expect(body.notifications[0].code).not.toBe('promeia_unreachable')
     expect(body.notifications[0].message).not.toContain('Ligue o Mac')
-    expect(body.notifications[0].message).toContain('502')
   })
 
   it('túnel caído (530): aí sim 503 promeia_unreachable — a faixa da Cloudflare é a única evidência de ausência', async () => {

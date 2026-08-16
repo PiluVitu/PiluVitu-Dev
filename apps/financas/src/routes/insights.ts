@@ -244,9 +244,12 @@ function traduzirFalhaPromeia(err: unknown): Response {
   if (err instanceof PromeiaRespostaIlegivel) {
     // ⚠️ Alguém RESPONDEU, e o corpo é que não deu pra ler — o oposto do
     // ramo acima. Mandar "suba o promeia no Mac" aqui é a pior mensagem
-    // possível (manda arrumar o que está certo), e era exatamente o que
-    // aconteceria se este ramo não existisse: o corpo do 502 é comido pelo
-    // túnel (ver PromeiaRespostaIlegivel em lib/promeia.ts).
+    // possível (manda arrumar o que está certo).
+    // ⚠️ O 502 do túnel NÃO cai aqui: `cloudflared` no ar com o promeia
+    // parado é AUSÊNCIA de origem e sai pelo ramo `PromeiaInalcancavel`
+    // acima (regra e medição em STATUS_502_TUNEL_SEM_ORIGEM,
+    // lib/promeia.ts). Sobra pra este ramo o 200 fora de formato e os
+    // erros NÃO-502 sem `code`/`message`.
     console.error(
       'promeia respondeu num formato irreconhecível',
       err.status,

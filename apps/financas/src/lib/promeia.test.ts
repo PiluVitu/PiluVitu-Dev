@@ -124,35 +124,78 @@ describe('chamarPromeia — os QUATRO desfechos, que mandam o dono a lados difer
     expect((erro as PromeiaRecusou).message).toContain('ollama serve')
   })
 
-  // ⚠️ O CASO MEDIDO NA SPIKE, e a razão desta classe existir: a Cloudflare
-  // SUBSTITUI o corpo de um 502 da origem pelo próprio error page
-  // (`text/plain`, 16 bytes). Determinístico, 3/3 de cada lado; 500 e 503
-  // passam intactos, só o 502 é comido. A regra do ramielle ("erro sem
-  // code/message ⇒ inalcançável") diria aqui "suba o promeia no Mac" com o
-  // promeia DE PÉ — a pior mensagem possível, porque manda arrumar o que
-  // está certo.
-  it('502 com o corpo comido pelo túnel vira ILEGÍVEL, nunca INALCANÇÁVEL', async () => {
+  // ⚠️ O MODO DE QUEDA MAIS COMUM da cadeia, medido 3/3: `cloudflared` no
+  // ar (serviço docker, sobrevive a reboot) e o promeia PARADO (comando de
+  // terminal, não sobrevive) ⇒ a Cloudflare devolve 502 com o próprio error
+  // page no lugar do corpo da origem. Isto é AUSÊNCIA de origem: a ação é
+  // subir o serviço. Classificar como "corpo ilegível" produzia a mensagem
+  // INVERTIDA — "o Mac respondeu, NÃO é caso de subir o serviço" — que
+  // proíbe o dono de fazer a única coisa que resolve.
+  it('502 do túnel com o corpo medido (text/plain, 16 b) vira INALCANÇÁVEL — a frase de subir o serviço', async () => {
+    // Byte a byte o que foi medido, incluindo o `\n` final que fecha os 16 b.
+    const CORPO_MEDIDO = 'error code: 502\n'
+    expect(new TextEncoder().encode(CORPO_MEDIDO)).toHaveLength(16)
+
     const erro = await chamarPromeia('/insight', {}, CFG, {
       fetchImpl: fetchFake(
         () =>
-          new Response('error code: 502', {
+          new Response(CORPO_MEDIDO, {
             status: 502,
             headers: { 'content-type': 'text/plain' },
           }),
       ),
     }).catch((e) => e)
 
-    expect(erro).toBeInstanceOf(PromeiaRespostaIlegivel)
-    expect(erro).not.toBeInstanceOf(PromeiaInalcancavel)
-    expect((erro as PromeiaRespostaIlegivel).status).toBe(502)
-    expect((erro as PromeiaRespostaIlegivel).amostra).toBe('error code: 502')
+    expect(erro).toBeInstanceOf(PromeiaInalcancavel)
+    expect(erro).not.toBeInstanceOf(PromeiaRespostaIlegivel)
+    expect((erro as Error).message).toBe(MSG_INALCANCAVEL)
+    expect((erro as Error).message).toMatch(/suba o serviço/i)
   })
 
-  it('um 5xx com JSON que não é o shape do promeia também vira ILEGÍVEL', async () => {
+  // O outro lado da MESMA regra: é (status 502 + corpo sem o shape do
+  // promeia), nunca o status sozinho. Um 502 que traga `code`+`message` veio
+  // de alguém que fala o protocolo dele — a mensagem acionável é repassada.
+  it('502 COM code+message vira RECUSOU — a regra é (502 + corpo não-promeia), não o status sozinho', async () => {
+    const erro = await chamarPromeia('/insight', {}, CFG, {
+      fetchImpl: fetchFake(() =>
+        respostaJson(502, {
+          ok: false,
+          code: 'publish_failed',
+          message: 'gerei o texto e falhei ao publicar',
+        }),
+      ),
+    }).catch((e) => e)
+
+    expect(erro).toBeInstanceOf(PromeiaRecusou)
+    expect(erro).not.toBeInstanceOf(PromeiaInalcancavel)
+    expect((erro as PromeiaRecusou).code).toBe('publish_failed')
+  })
+
+  it('um 5xx que NÃO é 502 com JSON fora do shape continua ILEGÍVEL', async () => {
+    // MEDIDO: 401/422/500/503 da origem atravessam o túnel com o JSON
+    // INTACTO — só o 502 é comido. Então "500 sem code/message" é mesmo
+    // alguém respondendo estranho, nunca ausência de origem. Estender a
+    // regra do 502 a estes status apagaria a distinção inteira.
     const erro = await chamarPromeia('/insight', {}, CFG, {
       fetchImpl: fetchFake(() => respostaJson(500, { erro: 'algo genérico' })),
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaRespostaIlegivel)
+    expect(erro).not.toBeInstanceOf(PromeiaInalcancavel)
+  })
+
+  it('503 com corpo não-JSON também continua ILEGÍVEL, não INALCANÇÁVEL', async () => {
+    const erro = await chamarPromeia('/insight', {}, CFG, {
+      fetchImpl: fetchFake(
+        () =>
+          new Response('nao e json', {
+            status: 503,
+            headers: { 'content-type': 'text/plain' },
+          }),
+      ),
+    }).catch((e) => e)
+    expect(erro).toBeInstanceOf(PromeiaRespostaIlegivel)
+    expect(erro).not.toBeInstanceOf(PromeiaInalcancavel)
+    expect((erro as PromeiaRespostaIlegivel).status).toBe(503)
   })
 
   it('túnel caído (530, HTML) vira INALCANÇÁVEL — a faixa 520-527/530 é a ÚNICA evidência de ausência por status', async () => {

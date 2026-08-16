@@ -79,6 +79,17 @@ export const MENSAGEM_SEM_CONFIRMACAO =
 export const MENSAGEM_GERADO_SEM_RECARGA =
   'O insight foi gerado, mas não consegui recarregar a tela — atualize a página pra ver o texto novo. Não clique de novo: gerar outro custa mais 20-35 s de GPU no Mac.'
 
+/**
+ * ⚠️ **Não dá pra gerar sem saber o que já existe.** Ver `gerar()` abaixo:
+ * o polling só distingue "chegou texto novo" de "continua o de antes"
+ * comparando `generated_at` contra uma LINHA DE BASE — sem ela, o insight
+ * de ontem passa por resultado do clique de agora, e a tela afirma um
+ * sucesso que não houve. Quando a releitura falha, o certo é **não gerar**:
+ * nada é gasto (nem os 20-35 s de GPU), nada é afirmado.
+ */
+export const MENSAGEM_BASELINE_INDISPONIVEL =
+  'Não consegui ler o insight atual antes de gerar — sem isso eu não teria como saber se o texto que aparecesse seria novo ou o de antes. Nada foi gerado. Confira a conexão e tente de novo.'
+
 function esperar(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -137,17 +148,23 @@ export function InsightPage() {
   }, [mes])
 
   /**
-   * Lê o insight publicado. LANÇA em caso de falha — quem chama decide o
-   * que a falha significa: no mount é "não consegui mostrar o texto"; logo
-   * depois de gerar é "gerou, mas não recarreguei" (duas leituras
-   * diferentes do MESMO erro, ver `gerar()`).
+   * Lê o insight publicado e **devolve o que leu** — o retorno é o que
+   * torna a leitura utilizável como linha de base do polling (ver
+   * `gerar()`), sem depender do `insight` do estado, que pode estar
+   * desatualizado ou nunca ter sido preenchido.
+   *
+   * LANÇA em caso de falha — quem chama decide o que a falha significa: no
+   * mount é "não consegui mostrar o texto"; antes de gerar é "não sei o que
+   * já existe, então não gero"; logo depois de gerar é "gerou, mas não
+   * recarreguei" (três leituras diferentes do MESMO erro).
    */
-  const carregarInsight = useCallback(async () => {
+  const carregarInsight = useCallback(async (): Promise<InsightView | null> => {
     const data = await api<InsightView | null>('/api/insights/latest')
-    if (!vivoRef.current) return
+    if (!vivoRef.current) return data
     setInsight(data)
     setInsightError(null)
     setInsightLoaded(true)
+    return data
   }, [])
 
   // Busca independente do bloco de números acima (ver comentário do
@@ -199,6 +216,30 @@ export function InsightPage() {
    * O botão. `POST /api/insights/generate` → 200 (texto pronto, relê e
    * mostra) ou 202 (`{status:'gerando'}`, entra em polling).
    *
+   * ⚠️ **A PRIMEIRA coisa que ele faz é reler `latest` — a linha de base do
+   * polling nasce AQUI, não do estado da tela.** Sem isso, um mount cujo
+   * `latest` falhou (503 `auth_unavailable`, rede instável no Android —
+   * caminho real e documentado) deixava a base como `null` com o botão
+   * habilitado, e o primeiro ciclo do polling aceitava QUALQUER insight —
+   * o de ontem, já publicado, virava "resultado" do clique de agora: o erro
+   * some da tela, "gerando" some, e a tela afirma um sucesso que não houve.
+   * Se a releitura falhar, **nada é gerado** (`MENSAGEM_BASELINE_INDISPONIVEL`):
+   * o clique não custa GPU e a tela não afirma nada que não possa verificar.
+   * De brinde, fecha a janela mount→clique: um insight publicado nesse meio
+   * (o Mac também publica sozinho) entra na base em vez de ser confundido
+   * com o resultado.
+   *
+   * ⚠️ **Descartada a alternativa "exigir `generated_at` posterior ao
+   * instante do clique": ela compara DOIS RELÓGIOS que nunca combinaram.**
+   * `generated_at` é sempre o relógio do SERVIDOR (`nowIsoUtc()`, nunca
+   * aceito do corpo do POST — ver `domain/insights.ts`), e o instante do
+   * clique é o relógio do CLIENTE, que num celular pode estar minutos ou
+   * horas fora. Cliente atrasado aceitaria o insight de ontem como novo
+   * (o bug de volta, agora silencioso); cliente adiantado rejeitaria o
+   * insight legítimo e todo clique terminaria nos 90 s do teto. Trocaria
+   * uma falha rara por uma sistemática, e dependente de um relógio que
+   * este app não controla.
+   *
    * ⚠️ **`lib/mutar-e-recarregar.ts` foi avaliado e NÃO serve aqui.** O
    * contrato dele descarta exatamente as duas coisas em que este fluxo se
    * ramifica: o PAYLOAD da mutação (é ele quem diz se existe algo a
@@ -218,10 +259,20 @@ export function InsightPage() {
     setGeracaoErro(null)
     setGeracaoAviso(null)
 
-    // Lido ANTES do POST: é a linha de base do polling.
-    const anterior = insight?.generated_at ?? null
-
     try {
+      // Linha de base do polling: RELIDA do servidor, nunca herdada do
+      // estado da tela (que pode nunca ter carregado). Falhar aqui encerra
+      // o clique sem gerar nada — ver o ⚠️ do bloco acima.
+      let anterior: string | null
+      try {
+        anterior = (await carregarInsight())?.generated_at ?? null
+      } catch {
+        if (!vivoRef.current) return
+        setGeracaoErro({ mensagem: MENSAGEM_BASELINE_INDISPONIVEL, dica: null })
+        return
+      }
+      if (!vivoRef.current) return
+
       let resposta: GerarInsightResposta
       try {
         resposta = await api<GerarInsightResposta>('/api/insights/generate', {
@@ -335,9 +386,11 @@ export function InsightPage() {
           {/*
             O botão fica FORA da cadeia acima (erro/carregando/vazio/texto)
             de propósito: é o único jeito de sair do estado de erro do card
-            sem trocar de tela. Desabilitado enquanto `!insightLoaded`
-            porque o polling compara contra `insight.generated_at` — sem a
-            leitura inicial, um insight ANTIGO passaria por resultado novo.
+            sem trocar de tela — e é por isso que ele continua HABILITADO
+            depois de uma leitura inicial que falhou. Quem garante a linha
+            de base do polling nesse caso é a releitura dentro de `gerar()`,
+            não este `disabled` (que só evita clicar com a leitura inicial
+            ainda em voo, gastando uma requisição a mais à toa).
           */}
           <div className="mt-4 space-y-2 border-t pt-4">
             <Button

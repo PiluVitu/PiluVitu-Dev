@@ -5,6 +5,7 @@ import { api, ApiError } from '../api'
 import type { InsightView } from '../lib/insight'
 import {
   InsightPage,
+  MENSAGEM_BASELINE_INDISPONIVEL,
   MENSAGEM_GERADO_SEM_RECARGA,
   MENSAGEM_SEM_CONFIRMACAO,
   POLL_INTERVALO_MS,
@@ -409,8 +410,9 @@ describe('InsightPage — o botão de gerar', () => {
     mockApi({
       latest: () => {
         chamadasLatest += 1
-        // 1ª chamada = mount (ok); a recarga pós-geração é que cai.
-        if (chamadasLatest > 1) {
+        // 1ª = mount, 2ª = a releitura da linha de base dentro de `gerar()`
+        // (as duas OK); só a 3ª — a recarga PÓS-geração — é que cai.
+        if (chamadasLatest > 2) {
           throw new ApiError(503, 'auth_unavailable', 'sem conexão')
         }
         return null
@@ -612,6 +614,107 @@ describe('InsightPage — o botão de gerar', () => {
     )
     expect(erro.textContent).not.toMatch(/ligue o macbook/i)
     expect(screen.getByTestId('insight-total')).toHaveTextContent('R$ 1.230,00')
+  })
+
+  /**
+   * ⚠️ O caminho REAL que a revisão mediu com probe: `latest` falha SÓ no
+   * mount (503 `auth_unavailable` — rede instável no Android, caminho
+   * documentado no módulo) e depois volta a funcionar, devolvendo o insight
+   * de ONTEM. Antes da correção, o `catch` do efeito marcava
+   * `insightLoaded` com `insight` ainda `null`: botão habilitado, linha de
+   * base `null`, e o PRIMEIRO ciclo do polling aceitava qualquer `latest`
+   * (`novo !== null && novo.generated_at !== anterior`). Resultado medido:
+   * o erro sumia, o texto de ontem aparecia, "gerando" sumia — a tela
+   * afirmando um sucesso que não houve.
+   */
+  it('leitura inicial que FALHA não deixa a base desconhecida — o insight de ONTEM não passa por novo', async () => {
+    const user = relogioFixo()
+    const ontem: InsightView = {
+      id: 'i1',
+      texto: 'Leitura de ontem.',
+      modelo: 'qwen2.5:7b-instruct',
+      periodo: '2026-07',
+      generated_at: '2026-07-24T12:00:00Z',
+    }
+    let chamadasLatest = 0
+    mockApi({
+      latest: () => {
+        chamadasLatest += 1
+        if (chamadasLatest === 1) {
+          throw new ApiError(503, 'auth_unavailable', 'sem conexão')
+        }
+        return ontem
+      },
+      gerar: () => ({ status: 'gerando' }),
+    })
+
+    render(<InsightPage />)
+    // Estado de partida do defeito: a leitura inicial caiu, e o botão
+    // continua habilitado (ele é a saída do erro — ver comentário na tela).
+    await waitFor(() => expect(screen.getByTestId('botao-gerar')).toBeEnabled())
+    expect(screen.queryByTestId('insight-texto')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('botao-gerar'))
+    await waitFor(() =>
+      expect(screen.getByTestId('gerando-status')).toBeInTheDocument(),
+    )
+
+    // Vários ciclos com `latest` devolvendo SEMPRE o insight de ontem: ele
+    // é a linha de base agora, então nada aqui é "resultado".
+    await avancar(POLL_INTERVALO_MS * 4)
+    expect(screen.getByTestId('gerando-status')).toBeInTheDocument()
+
+    // E o fim é honesto — "não recebi confirmação", nunca um sucesso.
+    await avancar(POLL_LIMITE_MS)
+    await waitFor(() =>
+      expect(screen.getByTestId('geracao-aviso')).toHaveTextContent(
+        MENSAGEM_SEM_CONFIRMACAO,
+      ),
+    )
+    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
+    // O texto de ontem fica visível (com a data/idade dele, como sempre) —
+    // "frescor, não silêncio"; o que não pode é ter sido anunciado como o
+    // resultado do clique, e não foi.
+    expect(screen.getByTestId('insight-texto')).toHaveTextContent(
+      'Leitura de ontem.',
+    )
+  })
+
+  it('se a releitura da base falhar no clique, NADA é gerado — e a tela diz isso', async () => {
+    const user = userEvent.setup()
+    let chamadasLatest = 0
+    mockApi({
+      latest: () => {
+        chamadasLatest += 1
+        // Mount OK; a releitura da base (no clique) é que cai.
+        if (chamadasLatest > 1) {
+          throw new ApiError(503, 'auth_unavailable', 'sem conexão')
+        }
+        return null
+      },
+      gerar: () => ({ status: 'gerando' }),
+    })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('geracao-erro')).toHaveTextContent(
+        MENSAGEM_BASELINE_INDISPONIVEL,
+      ),
+    )
+    // O ponto inteiro: nenhuma rodada de GPU foi disparada às cegas.
+    expect(chamadasDeGeracao()).toBe(0)
+    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
+    expect(screen.getByTestId('botao-gerar')).toBeEnabled()
+    // A propriedade central da tela segue de pé: os números não dependem
+    // disso — e a mensagem do GET não é repassada como se fosse a falha.
+    expect(screen.getByTestId('insight-total')).toHaveTextContent('R$ 1.230,00')
+    expect(document.body.textContent).not.toContain('sem conexão')
   })
 
   it('clique duplo não dispara duas gerações', async () => {

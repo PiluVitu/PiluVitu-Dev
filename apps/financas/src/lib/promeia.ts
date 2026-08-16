@@ -88,33 +88,25 @@ export class PromeiaRecusou extends Error {
 }
 
 /**
- * ⚠️ **Classe NOVA em relação ao ramielle, e o motivo é um defeito MEDIDO na
- * spike: o túnel COME o corpo do 502.** Determinístico, 3/3 de cada lado,
- * isolado por status contra uma origem descartável:
+ * ⚠️ **Classe NOVA em relação ao ramielle: "não respondeu" e "respondeu e eu
+ * não entendi o corpo" mandam o dono para lados OPOSTOS, então colapsá-las
+ * num tipo só é o próprio bug.** O original do ramielle classifica todo
+ * "erro HTTP sem `code`/`message`" como inalcançável; aqui isso diria "suba
+ * o promeia no Mac" para um Mac que respondeu — a pior mensagem possível,
+ * porque manda arrumar o que já está certo.
  *
- * | Status da origem | Local (:8082)    | Pelo túnel                              |
- * | ---------------- | ---------------- | --------------------------------------- |
- * | 401 / 422        | application/json | JSON intacto                            |
- * | 500              | application/json | JSON intacto                            |
- * | **502**          | application/json | text/plain, 16 bytes: `error code: 502` |
- * | 503              | application/json | JSON intacto                            |
+ * ⚠️ **O 502 do túnel NÃO é caso desta classe — é ausência de origem.** Ver
+ * `STATUS_502_TUNEL_SEM_ORIGEM` abaixo para a medição e a regra; foi
+ * exatamente essa confusão (o modo de queda MAIS COMUM produzindo a
+ * mensagem invertida) que a revisão pegou.
  *
- * O original do ramielle classifica "erro HTTP sem `code`/`message`" como
- * **inalcançável** — regra que estava certa lá com a informação que existia
- * lá (a Cloudflare responde assim quando o Mac está fora), mas que com o
- * fato acima produz a PIOR mensagem possível num caso real: o promeia de pé,
- * respondendo 502, e o dono lendo *"suba o promeia no Mac"*.
- *
- * Por isso "não respondeu" (`PromeiaInalcancavel`) e "respondeu e eu não
- * entendi o corpo" (esta classe) são coisas SEPARADAS aqui — as duas mandam
- * o dono para lados opostos, então colapsá-las num tipo só é o próprio bug.
- * Só a faixa que a Cloudflare documenta como "não alcancei a origem"
- * (520-527/530, abaixo) continua sendo evidência suficiente de ausência.
- *
- * (Hoje `apps/promeia/src/promeia/insight.py` já não emite NENHUM 502 — os
- * sete ramos viraram 503 justamente por causa desta medição —, mas quem
- * responde 502 pode ser qualquer camada no meio do caminho, e a classe existe
- * pra não voltar a chutar.)
+ * O que SOBRA para esta classe, e é por isso que ela continua existindo:
+ * corpo que não dá nem pra ler, `200` com corpo não-JSON (ou JSON que não é
+ * objeto), e qualquer erro HTTP **fora** do 502 cujo corpo não tenha o shape
+ * do promeia — 500 e 503, MEDIDOS, atravessam o túnel com o JSON INTACTO
+ * (tabela em `STATUS_502_TUNEL_SEM_ORIGEM`), então um 500/503 sem
+ * `code`+`message` é mesmo alguém respondendo num formato que não reconheço,
+ * nunca "o Mac está fora".
  */
 export class PromeiaRespostaIlegivel extends Error {
   /** Status que chegou (pode ser o da origem OU o que o túnel reescreveu). */
@@ -161,13 +153,58 @@ type CorpoPromeia = {
 /**
  * Status HTTP que a própria Cloudflare documenta como "não alcancei a
  * origem" (o túnel está de pé, o Mac atrás dele não está) — 520-527 e 530.
- * Esta lista é a ÚNICA evidência de ausência baseada em status: qualquer
- * outro erro HTTP significa que ALGUÉM respondeu (ver
- * `PromeiaRespostaIlegivel` acima).
+ * Evidência de ausência que vale SOZINHA, sem olhar o corpo: o promeia não
+ * emite esses status por contrato, e a Cloudflare não fala o shape dele.
  */
 const STATUS_CLOUDFLARE_ORIGEM_INALCANCAVEL = new Set([
   520, 521, 522, 523, 524, 525, 526, 527, 530,
 ])
+
+/**
+ * ⚠️ **O SEGUNDO modo de queda do túnel, e o MAIS COMUM dos dois.** Medido
+ * 3/3 de cada lado contra a cadeia real:
+ *
+ * | Cenário                              | O que volta                             | Latência |
+ * | ------------------------------------ | --------------------------------------- | -------- |
+ * | `cloudflared` NO AR + promeia PARADO | **502**, text/plain, 16 b `error code: 502` | 0,18 s |
+ * | `cloudflared` parado                 | 530, `error code: 1033`                 | 0,13 s   |
+ *
+ * O primeiro é o caso do dia a dia: `cloudflared` é serviço docker
+ * (`infra-cloudflared-1`, no ar há dias), e o promeia é comando de terminal
+ * que não sobrevive a reboot — "túnel de pé, serviço fora" é o normal. Tratar
+ * esse 502 como corpo ilegível dizia ao dono *"o Mac respondeu — então NÃO é
+ * caso de subir o serviço"*, ou seja, o proibia de fazer a ÚNICA coisa que
+ * resolve. Provado ponta a ponta: porta fechada ⇒ `503 promeia_unreachable`
+ * ("Ligue o Mac, suba o serviço") ✅; túnel real com o promeia parado ⇒
+ * `502 promeia_ilegivel` ❌.
+ *
+ * **A REGRA, e por que é esta:** `502` **E** corpo que não é o envelope do
+ * promeia (`code`+`message`) ⇒ **ausência de origem**.
+ *
+ * - **Por que o corpo entra na regra, e não só o status:** hoje
+ *   `apps/promeia/src/promeia/insight.py` não emite NENHUM 502 no fluxo de
+ *   insight (os sete ramos viraram 503 no commit `d6eb69c`), então um 502
+ *   aqui só pode ser da Cloudflare. Mas isso é propriedade do código do
+ *   OUTRO lado do túnel, não contrato que este Worker controla — manter a
+ *   condição do corpo custa nada e garante que um 502 que um dia venha COM
+ *   `code`+`message` seja REPASSADO (`PromeiaRecusou`, a mensagem acionável
+ *   dele) em vez de virar "o Mac está fora".
+ * - **Por que NÃO o par (status, content-type):** `text/plain` é o formato
+ *   do error page da Cloudflare HOJE; o 530 da mesma família já chega como
+ *   HTML. A pergunta que a decisão precisa responder é "isto veio do
+ *   promeia?", e quem responde isso é o SHAPE do corpo — que já é computado
+ *   logo abaixo. Amarrar a regra ao content-type a faria quebrar no dia em
+ *   que a Cloudflare mudasse o error page, e quebrar de volta para a
+ *   mensagem INVERTIDA, que é o defeito que ela existe pra consertar.
+ * - **Por que só 502, e não 500 também:** MEDIDO — 401, 422, 500 e 503 da
+ *   origem atravessam o túnel com o **JSON INTACTO**; só o 502 é comido. Um
+ *   500/503 sem `code`+`message` é, portanto, alguém que não é o promeia
+ *   respondendo num formato estranho: `PromeiaRespostaIlegivel` de verdade.
+ *   Estender a regra a eles apagaria a distinção que aquela classe existe
+ *   pra fazer, e traria de volta a regra do ramielle que este módulo
+ *   deliberadamente não copiou.
+ */
+const STATUS_502_TUNEL_SEM_ORIGEM = 502
 
 /**
  * POST autenticado no promeia. Devolve o `data` do corpo em caso de sucesso.
@@ -258,9 +295,7 @@ export async function chamarPromeia<T>(
 
     // Toda rota do promeia que devolve erro (`_erro` em `insight.py`,
     // `TokenMiddleware` em `auth.py`) SEMPRE inclui `code`+`message` no
-    // JSON. Sem os dois, alguém respondeu num formato que não é o dele — o
-    // caso medido é o túnel reescrevendo o corpo do 502. Isso é
-    // ILEGÍVEL, nunca "inalcançável" (ver PromeiaRespostaIlegivel acima).
+    // JSON. Sem os dois, quem respondeu não foi ele.
     // Checks inline (não numa `const` boolean) DE PROPÓSITO — é o que deixa
     // o TypeScript estreitar `json` pra `{code: string, message: string}`
     // depois deste `if`, sem cast nenhum.
@@ -271,6 +306,17 @@ export async function chamarPromeia<T>(
       typeof json.message !== 'string' ||
       json.message === ''
     ) {
+      // 502 + corpo que não é do promeia = o túnel sem origem atrás dele
+      // (`cloudflared` no ar, promeia parado — o modo de queda mais comum).
+      // Ausência, não corpo ilegível: a ação é subir o serviço. Ver a regra
+      // inteira, e por que ela é (status + shape) e não (status +
+      // content-type), em STATUS_502_TUNEL_SEM_ORIGEM acima.
+      if (resposta.status === STATUS_502_TUNEL_SEM_ORIGEM) {
+        throw new PromeiaInalcancavel()
+      }
+      // Qualquer outro status sem o shape dele: ALGUÉM respondeu e eu não
+      // entendi — nunca "o Mac está fora" (500/503 chegam com JSON intacto,
+      // medido).
       throw new PromeiaRespostaIlegivel(resposta.status, amostra)
     }
 
