@@ -236,6 +236,17 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 
+  // Fatia do extrato: nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/extrato mostra a tela Extrato', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/extrato'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
+    )
+  })
+
   // Task 10: nova rota, mesmo padrão das demais (link no <nav> + entrada na
   // cadeia do AppShell).
   test('#/configuracoes mostra a tela Configurações', async () => {
@@ -330,6 +341,19 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     )
     expect(screen.getByRole('link', { name: 'Início' })).not.toHaveAttribute(
       'aria-current',
+    )
+  })
+
+  test('#/extrato marca "Extrato" como ativo', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/extrato'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Extrato' })).toHaveAttribute(
+      'aria-current',
+      'page',
     )
   })
 

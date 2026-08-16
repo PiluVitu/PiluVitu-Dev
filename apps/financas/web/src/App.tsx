@@ -9,6 +9,7 @@ import { CommitmentsPage } from './pages/commitments'
 import { ConfigPage } from './pages/config'
 import { DebtDetailPage } from './pages/debt-detail'
 import { DividasPage } from './pages/DividasPage'
+import { ExtratoPage } from './pages/extrato'
 import { FluxoPage } from './pages/fluxo'
 import { HomePage } from './pages/home'
 import { ImportarPage } from './pages/importar'
@@ -40,6 +41,7 @@ type RouteKey =
   | 'home'
   | 'contas'
   | 'dividas'
+  | 'extrato'
   | 'comprometido'
   | 'fluxo'
   | 'insight'
@@ -53,6 +55,7 @@ export function resolveRoute(hash: string): RouteKey {
   // `startsWith('#/dividas/')` já cobre o caso `hash === '#/dividas/'`
   // (toda string é prefixo de si mesma) — só falta o exato sem barra.
   if (hash.startsWith('#/dividas/') || hash === '#/dividas') return 'dividas'
+  if (hash === '#/extrato' || hash === '#/extrato/') return 'extrato'
   if (hash.startsWith('#/comprometido')) return 'comprometido'
   if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
   if (hash === '#/insight' || hash === '#/insight/') return 'insight'
@@ -72,6 +75,7 @@ const NAV_ITEMS: { href: string; label: string; route: RouteKey }[] = [
   { href: '#/contas', label: 'Contas', route: 'contas' },
   { href: '#/dividas', label: 'Dívidas', route: 'dividas' },
   { href: '#/lancar', label: 'Lançar', route: 'lancar' },
+  { href: '#/extrato', label: 'Extrato', route: 'extrato' },
   { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
   { href: '#/reserva', label: 'Reserva', route: 'reserva' },
   { href: '#/importar', label: 'Importar', route: 'importar' },
@@ -126,6 +130,8 @@ function AppShell() {
         <DebtDetailPage debtId={debtId} />
       ) : route === 'dividas' ? (
         <DividasPage />
+      ) : route === 'extrato' ? (
+        <ExtratoPage />
       ) : route === 'comprometido' ? (
         <CommitmentsPage from={competenciaAtual()} />
       ) : route === 'fluxo' ? (

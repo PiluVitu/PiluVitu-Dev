@@ -529,6 +529,101 @@ Corpo **ausente** é o caso normal ("paguei hoje"), não erro — só corpo pres
 
 ⚠️ **`invalid_settled`/`invalid_cursor` saem como `422`, contrariando a regra "query string malformada é sempre `400 invalid_query`"** de `reports.ts`/`debts.ts`. Motivo: ESTA rota já respondia `422 invalid_limit` desde a fatia ①, com teste travando o contrato — dois parâmetros malformados do MESMO endpoint devolvendo status diferentes seria pior que a divergência entre endpoints. `field` nomeia o parâmetro nos dois casos novos.
 
+## A tela do extrato (`web/src/pages/extrato.tsx`, rota `#/extrato`)
+
+⚠️ **O problema que ela resolve: depois de lançar, NÃO HAVIA TELA NENHUMA que mostrasse o lançamento.** O único consumidor de `GET /api/transactions` em toda a SPA era a dedupe do import (`importar.tsx:212`) — ou seja, as rotas de editar/liquidar/apagar da fatia anterior existiam e eram inalcançáveis pela interface, e um lançamento errado (valor, data, conta) era permanente **e invisível**. Esta tela é o consumidor que faltava.
+
+Consome `GET /api/transactions` (com `?limit=`, `?settled=`, `?before=`), `PATCH /api/transactions/:id`, `POST /api/transactions/:id/settle` e `DELETE /api/transactions/:id`, mais `GET /api/accounts`/`GET /api/categories` só pros NOMES ao lado de cada linha (o servidor não faz JOIN de nome de propósito — 4 contas e 7 categorias que a SPA já carrega, ver _Extrato, editar, liquidar e apagar_ acima).
+
+- ⚠️ **Conta/categoria falhando NÃO derruba a tela.** São dois `useEffect` independentes: um busca o extrato, outro busca contas/categorias. Um `Promise.all` juntaria o destino dos dois, e uma falha na busca de NOMES apagaria a lista inteira de lançamentos — mesmo raciocínio (e mesmo precedente) dos dois efeitos separados de `pages/insight.tsx`. Sem os nomes a linha lê `— · Sem categoria` e continua legível.
+
+### Paginação: keyset com FIM, e uma recarga que preserva as páginas
+
+- **"Carregar mais" monta `?before=` a partir da ÚLTIMA linha recebida** — `cursorDe()` (exportada só pra teste) produz as **TRÊS** partes (`purchase_date|created_at|id`). ⚠️ Duas partes não bastam, e isso é MEDIDO no backend: `createInstallmentPlan` grava as N parcelas com os dois primeiros IDÊNTICOS, e paginar 6 parcelas de 2 em 2 devolveu **4** (ver _Paginação do extrato_ acima). O teste de paginação usa `PAGINA + 2` linhas com `purchase_date` **e** `created_at` iguais de propósito — é o cenário do plano de parcelas, não uma lista genérica.
+- **O botão SOME quando a última página veio incompleta** — nunca rolagem infinita sem fim. No D1 "rows read" conta linha ESCANEADA: quem decide pagar por mais linhas é o dono, num clique, não um scroll.
+- ⚠️ **`recarregar` (o que roda depois de toda mutação) recarrega do começo PRESERVANDO quantas páginas já tinham sido pedidas** (`limit = PAGINA * páginas`, capado no teto de 500 de `listTransactions`). Sem preservar, marcar como pago uma linha da 3ª página jogaria o dono de volta pra 1ª, e uma ação bem-sucedida pareceria ter "perdido" o resto da lista. O contador de páginas fica num **`useRef`**, não em estado: como dependência de `useCallback` ele trocaria a identidade de `recarregar` a cada "carregar mais", o efeito de carga inicial rodaria de novo e jogaria fora exatamente as páginas recém-pedidas.
+
+### Busca textual no CLIENTE, sobre o que já carregou
+
+`LIKE %x%` não é sargable — no servidor viraria varredura da tabela inteira a cada tecla, que é o que o D1 cobra. O termo alcança descrição, nome da conta **e** nome da categoria (nenhum dos dois últimos existe literalmente na linha do banco). Quando a busca esconde linhas, o rodapé passa de `N lançamento(s) carregado(s)` pra `X de N` — sem isso, "não achei" seria indistinguível de "não carreguei ainda"; o vazio da busca aponta explicitamente pro "carregar mais".
+
+### Editar em dois níveis, e por que o corpo leva SÓ o que mudou
+
+⚠️ **O `PATCH` manda apenas os campos que de fato mudaram — não é economia de bytes, é correção.** Mandar `amount_cents` inalterado numa parcela faria o servidor recusar (nível B em linha com dono, `422 protected_field`) uma edição que só trocava a **categoria** — e corrigir a categoria de uma parcela é exatamente o que o nível A existe pra permitir. Com o corpo enxuto, rótulo (descrição/categoria/PJ) continua editável até numa parcela, e a recusa só aparece quando o dono realmente mexe em valor/data/conta.
+
+⚠️ **Quem decide se a linha é livre é a RESPOSTA da API, nunca uma heurística da tela.** `inspectTransaction` **não tem porta HTTP** (`GET /api/transactions/:id` não existe — registrado acima), e a linha do extrato só carrega `transfer_id`/`parent_id`/`imported_id`: parcela, pagamento de dívida e rateio-pai são **indeterminados** no cliente. Desabilitar os campos "por precaução" travaria a edição de linhas livres; adivinhar erraria em silêncio. A tela mostra os campos, e a mensagem da recusa vem **crua do domínio** — é ela que nomeia a porta certa ("cancele o parcelamento inteiro"). Um parágrafo fixo dentro do formulário avisa disso ANTES de o dono tentar.
+
+⚠️ **A recusa NÃO fecha o formulário** (só a falha de recarga fecha) — o dono precisa do que digitou na tela pra desfazer a mudança recusada. Valor ilegível é barrado no cliente por `parseBRL`, sem gastar requisição; o campo nasce com `formatBRL(amount_cents)`, que faz round-trip por `parseBRL` **com o sinal** (negativo = saiu, positivo = entrou — aqui o sinal É o significado).
+
+### Marcar como pago: a data é escolhida, não é o instante do clique
+
+Rota própria (`POST /:id/settle`), nunca um campo do PATCH — "já saiu da conta" é outra pergunta. O campo abre com **`todayInTeresina()`**, ⚠️ **nunca `new Date().toISOString().slice(0,10)`**: às 22h de Teresina o UTC já virou o dia seguinte e a data sairia um dia à frente — o mesmo bug de fuso que este módulo já pagou quatro vezes. O teste finca `2026-08-01T01:00:00Z` (22h de 31/07 local) e exige `2026-07-31`.
+
+Com o filtro ligado, marcar como pago faz a linha **sair da lista** — é a confirmação visível de que a ação valeu (`commitments()` deixa de somá-la, `cashflow()` passa a somar).
+
+### Apagar: `Dialog`, e uma mensagem que diz o que AQUELE apagar faz
+
+⚠️ **`Dialog` de `@piluvitu/ui/dialog`, NUNCA `window.confirm()`** — regra do módulo, com motivo medido: o Chrome Android passa a devolver `false` em silêncio depois de "impedir caixas de diálogo adicionais", e os botões ficariam inertes até um F5, sem nada na tela avisando por quê. Os testes de cancelamento **confirmam que o diálogo ABRIU** antes de clicar em "Cancelar": um botão inerte falha já nessa asserção, não na que fala da API (a mutação que troca o `Dialog` por chamada direta morre exatamente aí, com `Unable to find role="dialog"`).
+
+`mensagemDeExclusao(t)` (exportada, testada em isolamento) escolhe o texto pela classe **derivável da própria linha**:
+
+| Sinal na linha         | O que a mensagem diz                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `transfer_id !== null` | as **DUAS** pernas somem juntas — apagar meia deixaria a outra órfã e os saldos errados                                          |
+| `imported_id !== null` | apagar **não** bloqueia: reimportar o mesmo arquivo **traz a linha de volta** (dedupe é `account_id+imported_id`)                |
+| nenhum dos dois        | some do extrato/saldos/relatórios, sem desfazer — e, se pertencer a parcelamento/dívida/rateio, o servidor recusa e diz por onde |
+
+⚠️ **A terceira linha é honesta por necessidade, não por preguiça:** parcela, pagamento de dívida e rateio exigiriam `inspectTransaction`, que não tem rota. Prometer "vai apagar" e devolver um 422 seria pior que avisar antes.
+
+### Mobile: cards abaixo de `sm`, e o hook que saiu de `DividasPage`
+
+⚠️ **Tabela apertada a 390px já foi achado medido neste módulo** (`DividasPage` cortava as DUAS colunas de dinheiro atrás de um drag sem indicação). Aqui a tabela tem só **3** colunas (Data | Lançamento | Valor) — conta, categoria, estado e ações moram como sublinhas DENTRO da célula "Lançamento", mesma lição da coluna "Ações" que saiu cortada como a letra "E" em `debt-detail.tsx`. Abaixo de `sm`, um card por lançamento (data e valor na mesma faixa, o resto embaixo).
+
+**`useMenorQueSm` foi extraído de `DividasPage.tsx` pra `web/src/lib/breakpoint.ts` na SEGUNDA cópia**, não na terceira — mesma disciplina de `lib/mutar-e-recarregar.ts`: o que estava sendo copiado não é a chamada, é a regra (qual largura, medida por `window.innerWidth` e não por `ResizeObserver`, e ⚠️ **só UM dos dois markups existe por vez** — jsdom não computa CSS, então `hidden`/`sm:block` deixariam os dois no DOM e duplicariam todo `getByText`). `DividasPage` passou a importar de lá, sem mudança de comportamento nem de asserção.
+
+⚠️ **`tabular-nums` na coluna de dinheiro** — o app tinha essa classe em UM lugar só (`GraficoComprometido.tsx:371`), e sem ela os dígitos têm larguras diferentes: uma coluna feita pra ser lida de cima a baixo deixa de alinhar. Coberta por teste próprio (a mutação que a remove mata só ele).
+
+### `mutarERecarregar` no oitavo call site
+
+As **quatro** mutações desta tela (settle, PATCH, DELETE) passam por `lib/mutar-e-recarregar.ts` — a regra do app desde que POST 2xx + GET falhando fez a tela dizer "falhou" e o dono reenviar, duplicando dado. Cada uma tem mensagem de recarga PRÓPRIA, que nomeia o que aconteceu e proíbe o reenvio dizendo o que ele custaria: `"X" foi apagado … Não clique de novo: a segunda tentativa responde "não encontrado" e pareceria falha` (idem pro settle, com "já liquidado"); no PATCH, o aviso é o inverso e mais caro — **a tela ainda mostra o valor ANTIGO, e reenviar gravaria por cima do que acabou de ser salvo**.
+
+### Testes
+
+`pnpm --filter @piluvitu/financas-web exec vitest run src/pages/extrato.test.tsx` — **18 casos**. O "servidor" mockado tem **estado de verdade** (replica `settled=0`, o cursor `before` e o `limit`), não respostas fixas: com respostas fixas, os testes de filtro e de paginação passariam contra uma tela que ignorasse os dois.
+
+⚠️ **Relógio FIXO no arquivo inteiro** (`vi.useFakeTimers({ shouldAdvanceTime: true })` + `setSystemTime`) — este app já teve dois testes vermelhos por deriva de calendário, e o default de "marcar como pago" é `todayInTeresina()`. `shouldAdvanceTime` é o que mantém `waitFor`/`userEvent` funcionando (os dois dependem de `setTimeout` por baixo).
+
+⚠️ **Armadilha achada escrevendo o próprio teste, registrada porque vai repetir:** trocar o filtro dispara uma recarga, e o teste seguia clicando num DOM que ainda era o de ANTES do filtro. A correção não é `waitFor` genérico — é incluir na fixture uma linha **já paga**, que some quando o filtro liga: um sinal OBSERVÁVEL de que a lista filtrada terminou de chegar. Sem sinal observável (todas as linhas passando pelo filtro), não há o que esperar e o teste vira corrida.
+
+⚠️ **Verificado por MUTAÇÃO — 10, uma por classe, cada uma matando só o teste certo e PELO MOTIVO certo** (todas revertidas; `git status --porcelain -uall` vazio depois):
+
+| Mutação                                        | Falha observada                                                                   |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| cursor de 2 partes (sem `id`)                  | `Unable to find … [data-testid="linha-t31"]` — a página 2 não avança da borda     |
+| filtro `settled=0` fora da query               | a linha já paga não some                                                          |
+| default de liquidação em UTC cru               | `expect(element).toHaveValue(2026-07-31)` (veio `2026-08-01`)                     |
+| PATCH mandando o objeto inteiro                | `deeply equal` do corpo falha (levaria data/conta inalteradas)                    |
+| mensagem de exclusão genérica pra toda classe  | o diálogo não fala das "DUAS pernas"                                              |
+| apagar sem `Dialog` (chamada direta)           | `Unable to find role="dialog"` — morre na ABERTURA, antes da asserção sobre a API |
+| recarga que falha repassando a mensagem do GET | `acao-erro` deixa de dizer "foi apagado"                                          |
+| tabela em qualquer largura                     | `extrato-cards` ausente a 390px                                                   |
+| busca só na descrição                          | `cofre` não acha a linha pelo nome da conta                                       |
+| coluna de dinheiro sem `tabular-nums`          | `toHaveClass("tabular-nums")` falha                                               |
+
+**SPA: 334 → 354** (+20: 18 em `pages/extrato.test.tsx`, 2 em `App.test.tsx` — a rota `#/extrato` alcança a tela e o nav a marca ativa). Worker **577** intocado, `tsc --noEmit` limpo nos dois, prettier limpo. Os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos.
+
+**Bundle, medido (`vite build`, antes = fatia de contas / depois = esta tela):**
+
+|                                    | antes                      | depois                                |
+| ---------------------------------- | -------------------------- | ------------------------------------- |
+| JS principal                       | 412,18 kB / 127,71 kB gzip | 429,85 kB / 132,35 kB gzip            |
+| Chunk `GraficoComprometido` (lazy) | 388,47 kB / 113,09 kB gzip | 388,47 kB / 113,09 kB gzip (intocado) |
+| CSS                                | 32,81 kB / 6,69 kB gzip    | 32,88 kB / 6,70 kB gzip               |
+
++4,64 kB gzip no principal é a tela em si: `Card`/`Button`/`Input`/`Label`/`Dialog`/`Ajuda` já estavam no bundle, nenhuma dependência nova entrou. O chunk do gráfico fica intocado (nada aqui toca `recharts`).
+
+**Fora de escopo, registrado:** `POST /:id/unsettle` tem rota e **nenhum botão** — desmarcar um pagamento é a operação inversa e menos frequente, e entraria com teste próprio numa fatia futura; `?account_id=`/`?from=`/`?to=` também existem na rota e não viraram filtro de tela (a visão "todas as contas" é a que responde `?settled=0`, a pergunta que dá valor à fatia).
+
 ## Import de fatura e extrato (fatia ②, Task 3 — `src/domain/import.ts` + `src/routes/import.ts`)
 
 Spec completa: `docs/superpowers/specs/2026-07-27-financas-import-design.md`. `POST /api/transactions/import` → `importRoutes` (montada em `src/index.ts` **antes** do catch-all, mesmo grupo `app.route('/api', ...)` de `accountsRoutes`/`transactionsRoutes`) → `importTransactions` em `src/domain/import.ts`.

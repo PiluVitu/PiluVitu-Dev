@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
@@ -23,50 +24,12 @@ export type PayeeOption = { id: string; name: string; kind: string }
 
 const NOVO = '__novo__'
 
-// Mesmo valor do breakpoint `sm` padrão do Tailwind v4 (nenhum breakpoint
-// customizado em packages/ui/src/styles.css) — abaixo disso a tabela de 5
-// colunas (Dívida/Pessoa/Total/Pago/Falta) não cabe sem cortar texto.
-const BREAKPOINT_SM = 640
-
-function larguraAbaixoDeSm(): boolean {
-  return window.innerWidth < BREAKPOINT_SM
-}
-
-/**
- * ⚠️ **Important 3 (fix final): em ~390px (Android, o dispositivo
- * PRIMÁRIO do dono pra registrar gasto), a tabela de 5 colunas cortava
- * `Pago` E `Falta` — as DUAS colunas de dinheiro — atrás de um drag
- * horizontal sem indicação nenhuma, e um título comprido quebrava em até
- * 4 linhas.** O ledger original só citava `Falta`; medindo com dívidas
- * reais, o corte cai no meio de `Pa|go`, então as duas somem juntas.
- *
- * Abaixo de `sm`: um card por dívida (título, pessoa, `Falta` em
- * destaque — a pergunta que essa tela responde primeiro, "quanto ainda
- * falta"). De `sm` pra cima: a tabela de sempre, intocada.
- *
- * `window.innerWidth` (não `ResizeObserver`/medição de container, ao
- * contrário do fix do Important 1 em `GraficoComprometido.tsx`) porque o
- * problema aqui É de viewport: `DividasPage` não vive dentro de um grid
- * multi-coluna que aperta o card (`AppShell` é `max-w-2xl`, coluna
- * única) — é uma decisão de layout de PÁGINA (tabela vs. cards), o
- * mesmo tipo de breakpoint que o `sm:` do Tailwind já resolve em CSS.
- * jsdom suporta `innerWidth`/evento `resize` nativamente (mesma
- * constatação da Task 6, ver CLAUDE.md), então dá pra testar sem stub
- * nenhum. Só UM dos dois markups (card OU tabela) é renderizado por vez
- * — nunca os dois ao mesmo tempo — porque jsdom não computa CSS
- * (`hidden`/`sm:block` não teriam efeito nos testes), então duplicar o
- * DOM duplicaria todo texto que os testes existentes buscam por
- * `getByText`/`getByRole`, quebrando-os.
- */
-function useMenorQueSm(): boolean {
-  const [menor, setMenor] = useState(larguraAbaixoDeSm)
-  useEffect(() => {
-    const onResize = () => setMenor(larguraAbaixoDeSm())
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-  return menor
-}
+// ⚠️ Abaixo de `sm` a tabela de 5 colunas (Dívida/Pessoa/Total/Pago/Falta)
+// cortava as DUAS colunas de dinheiro em ~390px (Important 3 do fix final) —
+// vira um card por dívida, com `Falta` em destaque (a pergunta que a tela
+// responde primeiro). O hook mora em `lib/breakpoint.ts` desde a segunda
+// cópia (o extrato precisa da mesma regra); o porquê completo — inclusive
+// por que só UM dos dois markups existe por vez — está lá.
 
 export function DividasPage() {
   const [dividas, setDividas] = useState<DebtListRow[]>([])
