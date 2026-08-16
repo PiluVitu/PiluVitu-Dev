@@ -346,8 +346,15 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
   colunas insere uma quebra **real** no texto mandado pro modelo: não é
   formatação, é mudar a entrada de dados.
-- **Suíte hoje: 194 testes** (`uv run pytest`, por arquivo:
-  `app_test.py` 9, `cli_test.py` 12, `config_test.py` 10, `dates_test.py` 16,
+- **Suíte hoje: 210 testes** (`uv run pytest`, linha final `N passed`). Os
+  **+16** da task do `POST /insight` por HTTP: **+4** em `config_test.py` (o
+  fail-open deliberado do `INGEST_TOKEN` no boot, `exigir_ingest_token`
+  levantando/devolvendo, e a mensagem dizendo que NÃO é rede) e **+12** em
+  `insight_test.py` (a guarda antes de qualquer I/O, os 9 ramos parametrizados
+  de `test_NENHUM_erro_da_rota_sai_como_502`, o `ingest_token_missing` pela
+  rota e o `publish_failed` preservando `data.texto`). Composição anterior,
+  **194** (por arquivo): `app_test.py` 9, `cli_test.py` 12, `config_test.py`
+  10, `dates_test.py` 16,
   `insight_test.py` 20, `markdown_blocos_test.py` 29, `money_test.py` 15,
   `ollama_test.py` 23, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
   `revisao_test.py` 32). Os **+2** da correção dos modelos são a trava de
@@ -391,12 +398,24 @@ check .` / `uv run ruff format --check .` / `uv run promeia-insight`.
 `--env-file <arquivo>`/`UV_ENV_FILE`, MEDIDO no uv 0.11.32 instalado aqui).
 Quem fizer `cp .env.example .env` e rodar `uv run promeia-insight` direto
 recebe só "PROMEIA_TOKEN não está definido", sem pista de que o `.env`
-existe e não foi lido. `make insight` já resolve isso — mesmo padrão do
-`dev-api` da raiz, source condicional (`set -a && [ -f .env ] && . ./.env;
-set +a`), só carrega se o arquivo existir, nunca quebra quem prefere
-exportar as vars na mão. Rodando `uv run promeia-insight` direto (sem
-`make`), a saída é sua: `set -a; source .env; set +a` antes, ou
+existe e não foi lido. `make insight` **e `make dev-promeia`** já resolvem
+isso — mesmo padrão do `dev-api` da raiz, source condicional (`set -a && [ -f
+.env ] && . ./.env; set +a`), só carrega se o arquivo existir, nunca quebra
+quem prefere exportar as vars na mão. Rodando `uv run promeia-insight` direto
+(sem `make`), a saída é sua: `set -a; source .env; set +a` antes, ou
 `uv run --env-file .env promeia-insight`.
+
+⚠️ **`dev-promeia` NÃO fazia esse source até agora, e o defeito era invisível
+justamente porque só metade dele aparecia.** `PROMEIA_TOKEN` ausente derruba o
+boot (`ConfigError`), então quem subia o serviço sem `.env` percebia na hora e
+exportava o token na mão — e seguia com `INGEST_TOKEN=""`, que **não** impede o
+serviço de subir. `/health` respondia, `/llm/proofread` funcionava, e só
+`POST /insight` quebrava: **502** com `Illegal header value b'Bearer '`
+(o header `"Bearer "` que o httpx recusa), classificado como
+`ramielle_unreachable` — "confira a conexão e a URL". MEDIDO por HTTP contra o
+serviço que estava de pé havia dois dias. Os dois lados do defeito foram
+consertados: o alvo faz source (aqui) e o token vazio agora falha com nome
+próprio (§ _INGEST_TOKEN_ abaixo).
 
 `make test`/`make lint` (raiz) **incluem o promeia** desde esta task — os dois
 alvos encadeiam `cd apps/promeia && uv run pytest` / `uv run ruff check . &&
@@ -466,6 +485,101 @@ CLI imprime esse texto sob `--- texto gerado (NÃO publicado) ---` (`stderr`),
 porque ele já custou uma rodada de inferência e perdê-lo obrigaria rodar tudo
 de novo. Texto vazio (`InsightVazio`) sai com código ≠ 0 e nunca é publicado —
 nunca finge sucesso.
+
+## ⚠️ O túnel COME o corpo do 502 — e só o do 502
+
+MEDIDO contra o túnel real (`promeia.piluvitu.com.br`), 3/3 de cada lado, e
+depois **isolado por status** com uma origem descartável em :8082 que só
+devolvia um JSON fixo (nenhuma rota do promeia envolvida, então o resultado é
+sobre a Cloudflare, não sobre este serviço):
+
+| Status da origem | Local (:8082)               | Pelo túnel                              |
+| ---------------- | --------------------------- | --------------------------------------- |
+| 400 / 422        | application/json            | **JSON intacto**                        |
+| **500**          | application/json, 162 bytes | **JSON intacto, 162 bytes**             |
+| **502**          | application/json, 162 bytes | text/plain, 16 bytes: `error code: 502` |
+| **503**          | application/json, 162 bytes | **JSON intacto, 162 bytes**             |
+
+A Cloudflare substitui o corpo de um 502 da origem pelo próprio error page.
+**500 e 503 — as duas lacunas que a spike tinha deixado abertas — passam
+intactos**, incluindo o `ollama_unreachable` (503) verificado pelo caminho real
+(`POST /llm/proofread` com `OLLAMA_URL` numa porta fechada: 215 bytes idênticos
+local e pelo túnel, 3/3).
+
+**Consequência, e por que ela é grave:** o cliente do outro lado
+(`apps/ramielle/src/lib/promeia.ts#chamarPromeia`) trata "erro HTTP sem
+`code`/`message` no corpo" como **não alcancei o Mac** — de propósito, porque
+é a Cloudflare (não o promeia) quem responde sem esse shape quando o Mac está
+desligado. Então **todo 502 daqui chega ao dono como _"Suba o promeia no
+Mac"_, com o promeia de pé**: a pior mensagem possível, porque manda arrumar
+o que está certo.
+
+Por isso **`insight.py` não emite mais nenhum 502** — os sete ramos de erro
+(`empty_insight`, `publish_failed`, `ollama_failed`, `ramielle_unreachable`,
+`ramielle_refused` e as duas redes de segurança `ollama_error`/
+`ramielle_error`) responderam 502 até esta task e agora respondem **503**; o
+corpo inválido segue em 422. A distinção que importa nunca morou no status —
+mora no campo `code`, que viaja **dentro** do corpo e só sobrevive se o corpo
+sobreviver. O caso que mais dependia disso é o `publish_failed`: ele carrega
+em `data.texto` a leitura que já custou 20-33 s de GPU, e num 502 ela sumia
+sem ninguém saber que existiu. A regra é grepável (nenhum `502` no arquivo) e
+travada por `test_NENHUM_erro_da_rota_sai_como_502` (parametrizado sobre os
+nove ramos, `insight_test.py`) — inclusive contra o ramo novo nascido de
+copiar/colar um existente, que é exatamente como os cinco anteriores nasceram.
+
+⚠️ **`revisao_rotas.py` NÃO foi alinhado a isto, e é contrato, não
+esquecimento.** `/llm/*` é consumido hoje pelo `apps/ramielle`, cujo
+`src/routes/atelier.test.ts` tem um teste explícito — _"502 ollama_failed do
+promeia é repassado como 502, intocado"_ — fixando aquele status. Mudá-lo é
+decisão dos dois lados, com o teste de lá junto. (Verificado também que
+`/insight` **não tem consumidor nenhum** no ramielle: `grep -rn insight
+apps/ramielle/src` não devolve nada — por isso a mudança aqui não quebra
+ninguém.) Vale registrar que o mesmo defeito existe lá: um `ollama_failed`
+(502) pelo túnel chega ao admin como "Suba o promeia no Mac", com o Mac de pé.
+
+## `INGEST_TOKEN`: exigido no PONTO DE USO, não no boot
+
+`load_settings` levanta `ConfigError` sem `PROMEIA_TOKEN`, mas **deixa o
+`INGEST_TOKEN` cair em string vazia de propósito** — e a assimetria é decisão
+medida rota a rota, não a mesma lacuna com outro nome:
+
+| Rota                  | usa `INGEST_TOKEN`?                        |
+| --------------------- | ------------------------------------------ |
+| `POST /insight`       | **SIM** — `fetch_numbers` + `post_insight` |
+| `POST /llm/proofread` | não — só Ollama                            |
+| `POST /llm/refine`    | não — só Ollama                            |
+| `POST /llm/hooks`     | não — só Ollama                            |
+| `GET /health`         | não                                        |
+
+Três das quatro rotas POST não tocam o ramielle, e `/llm/proofread` está **em
+produção** (é o botão "Corrigir texto" do admin, via ramielle). Exigir o token
+no boot derrubaria o serviço inteiro por uma credencial que essas três não
+usam — trocaria um modo de falha silencioso por uma feature que funciona
+caindo. O `PROMEIA_TOKEN` é o caso oposto (protege TODA rota, por middleware):
+subir sem ele não tem nenhum uso legítimo, é publicar a GPU do dono.
+
+**A regra que sai disso: credencial que TODA rota precisa ⇒ boot; credencial
+que UMA rota precisa ⇒ ponto de uso, com mensagem que diga o que fazer.**
+
+Quem exige é `Settings.exigir_ingest_token()` (`config.py`), chamado por
+`run_insight` **antes de qualquer I/O e antes da rodada de modelo** — nada de
+queimar 20-33 s de GPU pra descobrir no fim que não dá pra publicar. `cli.py`
+já fazia exatamente isso desde sempre (checa antes de chamar `run_insight`,
+com mensagem de terminal) e **continua fazendo**: a dele sai antes das linhas
+"==> buscando os números", que seriam mentira; a nova é a rede pra todo
+chamador, inclusive o HTTP, que não passa pelo CLI.
+
+⚠️ **A classificação também estava errada, e isso era metade do defeito.** Sem
+essa guarda o token vazio virava o header `"Bearer "`, que o httpx recusa
+(`Illegal header value b'Bearer '`) — e o `except httpx.RequestError` de
+`ramielle.py` o classificava como `RamielleUnreachable`, ou seja **502
+`ramielle_unreachable`, "confira a conexão e a URL"**, mandando o dono
+investigar uma rede que não tinha problema nenhum. Agora é **503
+`ingest_token_missing`**, com uma mensagem que diz explicitamente _"NÃO é
+problema de rede: o serviço está de pé, falta configuração"_ e cita o
+`wrangler secret put INGEST_TOKEN`. Verificado pelo túnel: 578 bytes idênticos
+local e remoto. Um erro só é de transporte se uma requisição chegou a ser
+tentada.
 
 ## Pendências do dono, sem rodeio
 

@@ -136,6 +136,52 @@ def test_repr_de_settings_nao_expoe_os_segredos():
     assert "segredo-ingest" not in texto
 
 
+def test_load_settings_NAO_derruba_o_servico_por_INGEST_TOKEN_ausente():
+    # ⚠️ Este teste fixa uma DECISÃO, não um descuido. A simetria óbvia com o
+    # PROMEIA_TOKEN (que levanta ConfigError logo acima) é ERRADA aqui: das
+    # quatro rotas POST do serviço, só `/insight` usa o INGEST_TOKEN;
+    # `/llm/proofread`, `/llm/refine` e `/llm/hooks` mandam texto pro Ollama e
+    # devolvem texto, sem tocar o ramielle. Exigir o token no boot derrubaria
+    # o serviço inteiro — incluindo o `/llm/proofread` que está EM PRODUÇÃO,
+    # por trás do botão "Corrigir texto" do admin — por uma credencial que
+    # nenhuma dessas três usa.
+    #
+    # Quem for "consertar a assimetria" trocando isto por um pytest.raises tem
+    # que apagar esta explicação antes — que é o ponto de ela estar aqui.
+    s = load_settings({"PROMEIA_TOKEN": "so-o-do-middleware"})
+    assert s.ingest_token == ""
+    assert s.promeia_token == "so-o-do-middleware"
+
+
+def test_exigir_ingest_token_levanta_quando_vazio():
+    # String vazia é o caso REAL: `make dev-promeia` sem source do .env, ou um
+    # `INGEST_TOKEN=` solto. Sem esta guarda o valor vazio virava o header
+    # "Bearer " e o httpx o recusava com `Illegal header value b'Bearer '` —
+    # que `ramielle.py` classificava como falha de TRANSPORTE.
+    s = load_settings({"PROMEIA_TOKEN": "x"})
+    with pytest.raises(ConfigError, match="INGEST_TOKEN"):
+        s.exigir_ingest_token()
+
+
+def test_exigir_ingest_token_devolve_o_token_quando_configurado():
+    s = load_settings({"PROMEIA_TOKEN": "x", "INGEST_TOKEN": "ingest-de-verdade"})
+    assert s.exigir_ingest_token() == "ingest-de-verdade"
+
+
+def test_a_mensagem_do_ingest_token_diz_que_NAO_e_rede_e_o_que_fazer():
+    # A classificação errada não era só um `code` trocado: a mensagem mandava
+    # "confira a conexão e a URL". Quem lê a nova precisa sair dela sabendo
+    # (a) que o serviço está de pé e (b) qual comando resolve.
+    s = load_settings({"PROMEIA_TOKEN": "x"})
+    with pytest.raises(ConfigError) as exc:
+        s.exigir_ingest_token()
+    msg = str(exc.value)
+    assert "NÃO é problema de rede" in msg
+    assert "wrangler secret put INGEST_TOKEN" in msg
+    assert ".dev.vars" in msg
+    assert "confira a conexão" not in msg
+
+
 def test_barra_final_do_ramielle_url_e_removida():
     # Sem isso, `f"{url}/api/insights"` vira `...com.br//api/insights`.
     s = load_settings(

@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from promeia import ollama, ramielle
-from promeia.config import Settings
+from promeia.config import ConfigError, Settings
 from promeia.dates import competencia_atual, competencia_valida
 from promeia.money import format_brl
 
@@ -144,6 +144,23 @@ def run_insight(
     if not competencia_valida(comp):
         raise ValueError(f"competência inválida (esperado YYYY-MM): {comp}")
 
+    # ⚠️ ANTES de qualquer I/O, e antes da rodada de modelo. Com o token vazio
+    # nada aqui pode dar certo: `fetch_numbers` monta o header "Bearer " e o
+    # httpx o recusa (`Illegal header value b'Bearer '`) — que o `except
+    # RequestError` de ramielle.py classificava como RamielleUnreachable,
+    # "confira a conexão e a URL", mandando o dono mexer na rede por um
+    # problema de CONFIGURAÇÃO. Falhar aqui, com nome próprio, é o conserto da
+    # classificação: um erro só é de transporte se uma requisição chegou a ser
+    # tentada. Ver Settings.exigir_ingest_token para por que a exigência mora
+    # neste ponto e não no boot.
+    #
+    # `cli.py` já faz a mesma checagem antes de chamar esta função — e continua
+    # fazendo, de propósito: a mensagem dele fala a língua de quem está num
+    # terminal ("export INGEST_TOKEN=..."), e ele a emite ANTES das linhas
+    # "==> buscando os números", que seriam mentira. Esta aqui é a rede para
+    # TODO chamador, incluindo o HTTP, que não passa pelo CLI.
+    settings.exigir_ingest_token()
+
     _ler = ler or (
         lambda c: ramielle.fetch_numbers(
             base_url=settings.ramielle_url,
@@ -213,20 +230,67 @@ def _erro(status: int, code: str, message: str) -> JSONResponse:
 
 @router.post("/insight")
 def gerar_insight(body: InsightBody, request: Request):
+    """Gera e publica o insight. **Nenhum erro daqui sai como 502 — MEDIDO.**
+
+    ⚠️ A Cloudflare SUBSTITUI o corpo de um 502 da origem pelo próprio error
+    page. Medido pelo túnel real (`promeia.piluvitu.com.br`), 3/3 de cada lado,
+    e depois isolado por status contra uma origem descartável que só devolvia
+    um JSON fixo:
+
+    | Status da origem | Local (:8082)               | Pelo túnel                    |
+    | ---------------- | --------------------------- | ----------------------------- |
+    | 400 / 422        | application/json            | **JSON intacto**              |
+    | **500**          | application/json            | **JSON intacto**              |
+    | **502**          | application/json, 162 bytes | text/plain, 16b: `error code: 502` |
+    | **503**          | application/json            | **JSON intacto**              |
+
+    Ou seja: **o 502 é o único status cujo corpo o túnel come**, e comer o
+    corpo aqui não perde só uma frase bonita — perde o produto. As mensagens
+    deste serviço são a feature (`CLAUDE.md` § _Erros são o produto_), e o
+    cliente do outro lado (`apps/ramielle/src/lib/promeia.ts#chamarPromeia`)
+    trata "erro HTTP sem `code`/`message` no corpo" como **não alcancei o
+    Mac** — então todo 502 daqui chegaria ao dono como *"Suba o promeia no
+    Mac"*, com o promeia de pé. A pior mensagem possível: manda arrumar o que
+    está certo.
+
+    Por isso **todo** erro deste módulo responde 503 (ou 422, para corpo
+    inválido), e a regra é grepável: nenhum `502` aparece neste arquivo. A
+    distinção que importa — "não alcancei" × "alcancei e recusou" — nunca
+    morou no status, mora no campo `code`, que viaja DENTRO do corpo e
+    sobrevive junto com ele.
+
+    ⚠️ **`revisao_rotas.py` NÃO foi alinhado a isto, e a razão é contrato, não
+    esquecimento**: `/llm/*` é consumido hoje pelo `apps/ramielle`, cujo
+    `src/routes/atelier.test.ts` tem um teste explícito
+    (`'502 ollama_failed do promeia é repassado como 502, intocado'`) que fixa
+    o 502 daquelas rotas. Mudá-lo é uma decisão dos dois lados, com o teste de
+    lá junto — não um efeito colateral desta task, que é sobre `/insight`
+    (zero consumidor no ramielle: `grep -rn insight apps/ramielle/src` não
+    devolve nada).
+    """
     settings: Settings = request.app.state.settings
     try:
         competence, texto = run_insight(settings=settings, competence=body.competence)
     except ValueError as err:
         return _erro(422, "invalid_competence", str(err))
+    except ConfigError as err:
+        # Configuração faltando ≠ falha de transporte. Este ramo existe para o
+        # INGEST_TOKEN vazio, que antes saía como `ramielle_unreachable`.
+        return _erro(503, "ingest_token_missing", str(err))
     except InsightVazio as err:
-        return _erro(502, "empty_insight", str(err))
+        return _erro(503, "empty_insight", str(err))
     except PublicacaoFalhou as err:
         # Devolve o texto no corpo do erro: quem chamou pode republicar sem
         # gastar outra rodada de modelo. Precisa vir ANTES dos ramos de
         # RamielleError — PublicacaoFalhou não herda deles de propósito, mas
         # a ordem deixa a intenção explícita pra quem lê.
+        #
+        # ⚠️ É o caso que mais dependia de sair do 502: o texto já custou uma
+        # rodada de modelo (20-33 s de GPU medidos), viaja em `data.texto`, e
+        # com o corpo comido pelo túnel ele sumia — sem ninguém saber que
+        # existiu.
         return JSONResponse(
-            status_code=502,
+            status_code=503,
             content={
                 "ok": False,
                 "code": "publish_failed",
@@ -237,23 +301,24 @@ def gerar_insight(body: InsightBody, request: Request):
     except ollama.OllamaModelMissing as err:
         return _erro(503, "ollama_model_missing", str(err))
     except ollama.OllamaUnreachable as err:
-        # 503, não 502: o promeia está de pé, o Ollama não. Quem chama precisa
-        # dessa distinção pra dizer "abra o Ollama" em vez de "suba o promeia".
+        # O promeia está de pé, o Ollama não. Quem chama precisa dessa
+        # distinção pra dizer "abra o Ollama" em vez de "suba o promeia" — e
+        # ela viaja no `code`, que sobrevive ao túnel junto com o corpo.
         return _erro(503, "ollama_unreachable", str(err))
     except ollama.OllamaFailed as err:
-        return _erro(502, "ollama_failed", str(err))
+        return _erro(503, "ollama_failed", str(err))
     except ramielle.RamielleUnreachable as err:
-        return _erro(502, "ramielle_unreachable", str(err))
+        return _erro(503, "ramielle_unreachable", str(err))
     except ramielle.RamielleRefused as err:
-        return _erro(502, "ramielle_refused", str(err))
+        return _erro(503, "ramielle_refused", str(err))
     # Rede de segurança, DEPOIS de toda classe-folha: uma subclasse nova de
     # OllamaError/RamielleError que ninguém lembrou de listar acima degrada
-    # para um 502 com mensagem própria em vez de virar 500 cru — a mesma
+    # para um erro com mensagem própria em vez de virar 500 cru — a mesma
     # assimetria que cli.py (que já captura as classes-base) não tinha.
     except ollama.OllamaError as err:
-        return _erro(502, "ollama_error", str(err))
+        return _erro(503, "ollama_error", str(err))
     except ramielle.RamielleError as err:
-        return _erro(502, "ramielle_error", str(err))
+        return _erro(503, "ramielle_error", str(err))
 
     return {
         "ok": True,

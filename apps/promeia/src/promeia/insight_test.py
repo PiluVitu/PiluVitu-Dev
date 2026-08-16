@@ -2,15 +2,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from promeia.app import create_app
-from promeia.config import Settings
+from promeia.config import ConfigError, Settings
 from promeia.insight import (
     InsightVazio,
     PublicacaoFalhou,
     build_prompt,
     run_insight,
 )
-from promeia.ollama import OllamaUnreachable
-from promeia.ramielle import RamielleRefused
+from promeia.ollama import (
+    OllamaError,
+    OllamaFailed,
+    OllamaModelMissing,
+    OllamaUnreachable,
+)
+from promeia.ramielle import RamielleError, RamielleRefused, RamielleUnreachable
 
 TOKEN = "token-de-teste"
 
@@ -246,6 +251,27 @@ def test_falha_ao_LER_nao_vira_PublicacaoFalhou():
         )
 
 
+def test_ingest_token_vazio_falha_ANTES_de_ler_gerar_ou_publicar():
+    # O caso real medido: `make dev-promeia` sem source do .env sobe o serviço
+    # com INGEST_TOKEN="". Sem esta guarda, `fetch_numbers` montava o header
+    # "Bearer " e o httpx o recusava — erro de CONFIGURAÇÃO saindo como
+    # "confira a conexão". Falhar antes de qualquer I/O também protege a GPU:
+    # nada de rodar 20-33 s de modelo pra descobrir no fim que não dá pra
+    # publicar.
+    tocou = []
+
+    with pytest.raises(ConfigError, match="INGEST_TOKEN"):
+        run_insight(
+            settings=settings(ingest_token=""),
+            competence="2026-07",
+            ler=lambda c: tocou.append(("ler", c)) or numeros(),
+            gerar=lambda p: tocou.append(("gerar", p)) or "x",
+            publicar=lambda *a: tocou.append(("publicar", a)),
+        )
+
+    assert tocou == []
+
+
 # --- rota ---------------------------------------------------------------
 
 
@@ -288,6 +314,94 @@ def test_rota_insight_traduz_ollama_desligado_em_503():
     assert r.status_code == 503
     assert r.json()["code"] == "ollama_unreachable"
     assert "suba o ollama" in r.json()["message"]
+
+
+def _resposta_para(excecao: Exception, cfg: Settings | None = None):
+    """Faz a rota falhar com `excecao` sem tocar Ollama, rede ou o ramielle."""
+    app = create_app(cfg or settings())
+    from promeia import insight as mod
+
+    original = mod.run_insight
+    mod.run_insight = lambda **kw: (_ for _ in ()).throw(excecao)
+    try:
+        return TestClient(app).post(
+            "/insight", json={"competence": "2026-07"}, headers=auth()
+        )
+    finally:
+        mod.run_insight = original
+
+
+@pytest.mark.parametrize(
+    ("excecao", "code"),
+    [
+        (ConfigError("INGEST_TOKEN não está definido"), "ingest_token_missing"),
+        (InsightVazio("texto vazio"), "empty_insight"),
+        (OllamaModelMissing("ollama pull x"), "ollama_model_missing"),
+        (OllamaUnreachable("suba o ollama"), "ollama_unreachable"),
+        (OllamaFailed("o ollama respondeu e falhou"), "ollama_failed"),
+        (RamielleUnreachable("não alcancei a API"), "ramielle_unreachable"),
+        (RamielleRefused("a API recusou"), "ramielle_refused"),
+        # As duas redes de segurança: subclasses novas que ninguém listou.
+        (type("OllamaNova", (OllamaError,), {})("nova"), "ollama_error"),
+        (type("RamielleNova", (RamielleError,), {})("nova"), "ramielle_error"),
+    ],
+)
+def test_NENHUM_erro_da_rota_sai_como_502(excecao, code):
+    """O 502 é o único status cujo corpo o túnel Cloudflare COME — medido.
+
+    Local (:8082) contra o túnel (promeia.piluvitu.com.br), 3/3 de cada lado e
+    depois isolado por status com uma origem descartável: 400, 422, 500 e 503
+    chegam com o JSON intacto; **502 chega como `text/plain`, 16 bytes,
+    `error code: 502`** — corpo da origem substituído pelo error page da
+    Cloudflare.
+
+    Isso não perde só a frase: `apps/ramielle/src/lib/promeia.ts#chamarPromeia`
+    trata "erro HTTP sem code/message no corpo" como NÃO ALCANCEI O MAC, então
+    todo 502 daqui chegaria ao dono como "Suba o promeia no Mac" — com o
+    promeia de pé. A distinção que importa mora no `code`, dentro do corpo, e
+    só sobrevive se o corpo sobreviver.
+
+    Este teste falha se alguém devolver um 502 novo aqui — inclusive por
+    copiar/colar um ramo existente, que é exatamente como os cinco anteriores
+    nasceram.
+    """
+    r = _resposta_para(excecao)
+
+    assert r.status_code != 502
+    assert r.status_code == 503
+    corpo = r.json()
+    assert corpo["ok"] is False
+    assert corpo["code"] == code
+    assert corpo["message"] != ""
+
+
+def test_ingest_token_vazio_pela_rota_NAO_se_disfarca_de_falha_de_rede():
+    # O defeito medido por HTTP antes desta correção: 502
+    # `ramielle_unreachable`, mensagem "confira a conexão e a URL
+    # (RAMIELLE_URL). Detalhe: Illegal header value b'Bearer '". Rede nenhuma
+    # tinha problema.
+    app = create_app(settings(ingest_token=""))
+    r = TestClient(app).post("/insight", json={"competence": "2026-07"}, headers=auth())
+
+    assert r.status_code == 503
+    corpo = r.json()
+    assert corpo["code"] == "ingest_token_missing"
+    assert corpo["code"] != "ramielle_unreachable"
+    assert "INGEST_TOKEN" in corpo["message"]
+    assert "confira a conexão" not in corpo["message"]
+    assert "Illegal header value" not in corpo["message"]
+
+
+def test_publicacao_falhou_devolve_o_texto_caro_num_status_que_atravessa_o_tunel():
+    # `data.texto` é o único lugar onde o texto sobrevive quando a publicação
+    # falha depois da rodada de modelo. Num 502 o túnel apagaria o corpo
+    # inteiro — o texto sumiria sem ninguém saber que existiu.
+    r = _resposta_para(PublicacaoFalhou("a leitura do mês", RamielleRefused("caiu")))
+
+    assert r.status_code == 503
+    corpo = r.json()
+    assert corpo["code"] == "publish_failed"
+    assert corpo["data"]["texto"] == "a leitura do mês"
 
 
 def test_a_rota_insight_aparece_na_prova_de_toda_rota():
