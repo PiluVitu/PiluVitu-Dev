@@ -1,5 +1,5 @@
 import type { LinhaImportada } from '@piluvitu/tools/import'
-import { billCompetence, nowIsoUtc } from '../lib/dates'
+import { billCompetence, isRealCalendarDate, nowIsoUtc } from '../lib/dates'
 import { newId } from '../lib/ids'
 
 /**
@@ -50,28 +50,6 @@ export const IMPORT_SOURCES = [
   'pluggy',
   'share-target',
 ] as const
-
-const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
-
-// Mesma técnica de lib/dates.ts#daysInMonth: Date.UTC com y/m/d EXPLÍCITOS
-// não tem fuso a resolver (ao contrário de parsear uma string ISO completa),
-// então o round-trip é um jeito seguro de rejeitar data que passa no FORMATO
-// mas não existe no calendário (ex.: 2026-02-30).
-function isRealCalendarDate(value: string): boolean {
-  const match = DATE_RE.exec(value)
-  if (match === null) return false
-  const [, y, m, d] = match
-  const year = Number(y)
-  const month = Number(m)
-  const day = Number(d)
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false
-  const dt = new Date(Date.UTC(year, month - 1, day))
-  return (
-    dt.getUTCFullYear() === year &&
-    dt.getUTCMonth() === month - 1 &&
-    dt.getUTCDate() === day
-  )
-}
 
 // ORÇAMENTO DE BOUND PARAMS — mesmo teto medido no resto do módulo (ver
 // domain/installments.ts): 100 params por statement no D1. 19 colunas bound

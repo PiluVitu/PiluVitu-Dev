@@ -389,6 +389,56 @@ Cada arquivo de `src/domain/` recebe o `D1Database` por parâmetro (nunca lê `e
 
 - **Por que `boolean` e não uma exceção:** id-não-encontrado numa transição de estado é um resultado esperado da chamada, não um erro de programação — diferente do `RangeError` de `createAccount` (que sinaliza entrada inválida) ou do `constraint_violation` (erro cru do D1). Devolver `boolean` mantém essas duas categorias visualmente separadas no call site da rota: `if (!ok) return errJson(404, ...)` para "não mudou nada", `try/catch` só para "algo está errado com a entrada". Tasks 7–14 que implementarem sua própria rota de transição de estado (cancelar parcelamento, quitar dívida, marcar fatura como paga, etc.) devem seguir o mesmo padrão: função de domínio devolve `boolean` a partir de `meta.changes`, rota traduz `false` em `404 not_found`.
 
+## Editar, apagar e liquidar lançamento (`src/domain/transactions.ts`)
+
+`inspectTransaction` / `updateTransaction` / `settleTransaction` / `unsettleTransaction` / `deleteTransaction` + `TransactionHasOwnerError`. Até aqui o livro-caixa só sabia CRIAR: nenhuma linha podia ser corrigida, apagada ou marcada como paga. **Só domínio — nenhuma rota HTTP ainda.**
+
+**⚠️ O mapa de FK é a regra inteira — `transactions` é a fonte única do dinheiro e MEIA DÚZIA de tabelas apontam pra ela com regras DIFERENTES** (medido em `migrations/0001_financas_init.sql`):
+
+| Referenciador   | Coluna                    | ON DELETE    | Linha  | Efeito real de um DELETE cru                                                                                                                      |
+| --------------- | ------------------------- | ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `installments`  | `transaction_id` NOT NULL | **CASCADE**  | `:282` | ⚠️ **sucesso SILENCIOSO** — a parcela some, o plano fica com buraco (falta a seq 3 de 10) e `installment_plans.installments_count` passa a mentir |
+| `debt_payments` | `transaction_id`          | **RESTRICT** | `:374` | falha com `SQLITE_CONSTRAINT` cru                                                                                                                 |
+| `debt_items`    | `transaction_id`          | SET NULL     | `:350` | item perde o elo, sobrevive — é o desenho                                                                                                         |
+| `transactions`  | `parent_id` (rateio)      | CASCADE      | `:187` | 0 escritores hoje, alcançável amanhã                                                                                                              |
+| `transactions`  | `transfer_id`             | **SEM FK**   | `:181` | coluna solta: apagar UMA perna tem sucesso e deixa a outra órfã                                                                                   |
+
+⚠️ **`transactions.installment_plan_id` NÃO EXISTE** — a ligação é INVERSA (`installments.transaction_id`, com `uq_installments_tx`). Quem procurar a coluna no lado errado conclui que não há vínculo e apaga.
+
+**① Uma query só sonda o dono** (`probeOwner`): quatro subconsultas, cada uma em índice único (`uq_installments_tx`, `uq_debt_payments_tx`, `uq_debt_items_tx`) ou parcial (`idx_tx_parent`) — zero scan. Quatro round-trips custariam 4× "rows read" pra responder uma pergunta só. `inspectTransaction` expõe o resultado (`class`, `imported`, `transfer_id`) pra tela poder AVISAR antes de apagar e desabilitar campo não-editável — um `boolean` de retorno não tem como dizer isso.
+
+**② Política de DELETE por classe** — mesmo princípio de `deleteDebt`/`deleteDebtPayment`: **cascatear só quando dono e dependente são a MESMA unidade de significado; recusar quando são unidades separadas.**
+
+| Classe                                   | Política                     | Por quê                                                                                 |
+| ---------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------- |
+| `transfer_leg`                           | **cascateia as DUAS pernas** | `createTransfer` cria as duas num `batch()`; apagar meia É o defeito                    |
+| `installment_line`                       | **recusa**                   | o CASCADE faria sumir em silêncio — mensagem manda cancelar o plano                     |
+| `debt_payment_line`                      | **recusa**                   | aponta `DELETE /api/debts/:id/payments/:paymentId`                                      |
+| `split_child_line` / `split_parent_line` | **recusa** (defensivo)       | 0 escritores hoje; o pai levaria as filhas junto por CASCADE                            |
+| `debt_item_line`                         | **permite**, a tela avisa    | SET NULL, o item sobrevive sem o elo                                                    |
+| (`imported`)                             | **permite**, a tela avisa    | dedupe é `(account_id, imported_id)` — reimportar o MESMO arquivo TRAZ A LINHA DE VOLTA |
+
+⚠️ **A cascata da transferência é UM statement (`DELETE ... WHERE transfer_id = ?`), não um `db.batch()` de dois `DELETE`s** — um statement único já é atômico por definição (não há meio caminho a desfazer), usa `idx_tx_transfer`, e não deixa espaço pra um segundo `DELETE` mirar o id errado. `batch()` só seria necessário com dois statements.
+
+⚠️ **Nenhuma recusa vaza `SQLITE_CONSTRAINT`/nome de tabela.** `TransactionHasOwnerError` é da família de `DebtHasLedgerError`: a **mensagem mora no domínio** e o `mapError` da rota a repassa crua — cada uma nomeia a porta certa, porque recusa que só diz "não" deixa o dono travado. Coberto por asserção NEGATIVA (`not.toMatch(/SQLITE|D1_ERROR|FOREIGN KEY/i)`).
+
+**③ Edição em DOIS níveis** (espelha `PATCHABLE_FIELDS` de `domain/recurring.ts`):
+
+- **Nível A — sempre, inclusive numa parcela ou pagamento de dívida:** `description`, `payee_id`, `category_id`, `is_business`, `recurring_expense_id`. São **rótulos**; nenhum invariante depende deles, e corrigir a categoria de uma parcela é exatamente o que o dono precisa.
+- **Nível B — só em linha LIVRE:** `amount_cents`, `purchase_date`, `account_id`. `amount_cents` numa parcela quebraria `SUM(parcelas) = total_cents` (`0001:250-253`); num pagamento de dívida divergiria de `debt_payments.amount_cents`.
+
+⚠️ **Mudar `purchase_date` OU `account_id` RE-DERIVA `bill_competence`** com a MESMA `billCompetence(purchase_date, closing_day)` de `createTransaction` — **nunca uma segunda regra**. Sem isso, corrigir a data de uma compra de cartão deixa a linha na fatura ERRADA em silêncio. `bill_competence` de propósito NÃO é patchável direto (é derivada; um segundo caminho de escrita poderia contradizer a conta). `updated_at` existia e só era escrito no INSERT — o UPDATE agora o toca (`nowIsoUtc()`).
+
+**④ Liquidar é rota de transição de ESTADO própria, nunca um campo do PATCH genérico** — "já saiu da conta" é pergunta diferente de "corrigi a categoria", e misturá-las faria um patch de rótulo liquidar uma linha por acidente. `UPDATE ... WHERE id = ? AND settled_at IS NULL` devolvendo `boolean` de `meta.changes` (convenção de `archiveAccount`): id inexistente e linha já liquidada casam zero vezes.
+
+⚠️ **`settled_at` é DATA PURA `YYYY-MM-DD`, local** — mesmo formato dos dois únicos escritores anteriores (`createTransfer`, `payDebt`). Não é o instante do clique: "marquei como pago no dia X" é data que o dono ESCOLHE. Um timestamp UTC aqui cairia no outro ramo de `cashflow.ts:40-43` (`settledAt.includes('T')`) e, no dia 1 de cada mês, jogaria a linha pro mês errado. Validado com `isRealCalendarDate` (rejeita `2026-02-30` e qualquer coisa com `T`).
+
+**Efeitos exatos de marcar como pago:** sai do Comprometido (`reports.ts:69` filtra `settled_at IS NULL`); entra no fluxo de caixa (`cashflow.ts:92` exige NOT NULL); **nenhum efeito** em `accountBalances()` (soma sem olhar `settled_at`) nem em `byCategory()` (agrupa por `purchase_date`).
+
+⚠️ **`isRealCalendarDate` foi HOISTADA de `domain/import.ts` para `lib/dates.ts`** (exportada) em vez de ganhar uma segunda cópia — a data de liquidação e a data importada têm que concordar sobre o que é uma data real. `assertDate` (regex) só valida FORMATO e aceita `2026-02-30`; a validação de calendário é round-trip por `Date.UTC`.
+
+Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/transactions.test.ts` (17 → **50** casos). ⚠️ **Verificado por MUTAÇÃO, 9 vezes, cada uma matando só o teste certo e PELO MOTIVO certo** (todas revertidas, `git status --porcelain -uall` vazio depois): sem o guard de parcela o DELETE **tem sucesso** (`promise resolved "true" instead of rejecting` — o CASCADE silencioso, exatamente o defeito); sem o de pagamento de dívida o erro que sobe é o `SQLITE_CONSTRAINT` cru do RESTRICT (`expected undefined to be 'debt_payment_line'`); sem o de rateio a filha some; cascatear por `id` em vez de `transfer_id` deixa a perna órfã (`expected 1 to be +0`); sem o guard de nível B seis testes de recusa passam a resolver; sem a re-derivação a compra fica na fatura errada (`expected '2026-07' to be '2026-08'`); sem a validação de `settled_at` um timestamp é aceito; sem `updated_at` no SET a coluna fica em `2000-01-01`; sem `AND settled_at IS NULL` a segunda liquidação devolve `true` e sobrescreve a data escolhida pelo dono. **Worker: 513 → 546 testes**; SPA (334), `apps/web` e `packages/*` intocados.
+
 ## Rotas
 
 `src/routes/*.ts` exporta routers Hono montados com `app.route('/api', ...)` em `src/index.ts`. Todas as respostas passam por `okJson`/`errJson` (`src/lib/envelope.ts`). Rotas de contas: `GET /api/accounts` (aceita `?scope=PJ|PF` e `?archived=1`, e devolve cada conta com `balance_cents` anexado), `POST /api/accounts`, `POST /api/accounts/:id/archive` (`404 not_found` se a conta não existir ou já estiver arquivada). `POST /api/accounts` tem caller na SPA desde o formulário "Nova conta" em `accounts.tsx` (ver seção _SPA_) — antes existia só a rota, sem UI, o que travava toda a cadeia de aceitação (sem `credit_card` não dá pra parcelar; sem conta nenhuma, `debt-detail.tsx` barra pagamento de dívida por falta de opção no `<select>`).

@@ -39,6 +39,36 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * Data que existe no CALENDÁRIO, não só no formato — `assertDate` acima
+ * (regex puro) aceita '2026-02-30'. Mesma técnica de `daysInMonth`: Date.UTC
+ * com y/m/d EXPLÍCITOS não tem fuso a resolver (ao contrário de parsear uma
+ * string ISO completa), então o round-trip rejeita o dia inexistente.
+ *
+ * Mora aqui, e não em quem usa, porque já são DOIS consumidores em domínios
+ * diferentes (`domain/import.ts`, onde nasceu, e `domain/transactions.ts#
+ * settleTransaction`) — uma segunda cópia da regra é exatamente o que este
+ * módulo evita em toda parte (a data de liquidação e a data importada têm
+ * que concordar sobre o que é uma data real).
+ */
+export function isRealCalendarDate(value: string): boolean {
+  const match = DATE_RE.exec(value)
+  if (match === null) return false
+  const [, y, m, d] = match
+  const year = Number(y)
+  const month = Number(m)
+  const day = Number(d)
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false
+  const dt = new Date(Date.UTC(year, month - 1, day))
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  )
+}
+
 export function todayInTeresina(now: Date = new Date()): string {
   return new Date(now.getTime() - TERESINA_OFFSET_MS).toISOString().slice(0, 10)
 }
