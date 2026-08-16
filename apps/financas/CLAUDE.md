@@ -215,32 +215,38 @@ pnpm --filter @piluvitu/financas exec wrangler d1 execute piluvitu-financas --re
 
 ⚠️ **MEDIDO no dump real:** as tabelas do schema saem como `CREATE TABLE accounts (…)`, **sem** `IF NOT EXISTS` — só `d1_migrations` tem a cláusula. Reimportar por cima de um banco que já tem as tabelas falha na primeira delas. Restauração real é em banco vazio (ou depois de dropar), e é ato deliberado de uma pessoa — igual à migration. O lado bom de `d1_migrations` vir junto: restaurar num banco vazio recupera também o controle de quais migrations já rodaram, então o `migrations apply` seguinte não tenta reaplicar tudo.
 
-### Agendamento — ⚠️ NÃO ESTÁ INSTALADO (receita, não estado)
+### Agendamento — ✅ INSTALADO em 2026-08-16
 
-⚠️ **O backup NÃO roda sozinho hoje. MEDIDO em 2026-08-14, não presumido.** O plist abaixo é uma receita pronta que nunca foi instalada; `scripts/backup-d1.sh` **nunca rodou de forma automática**. Os três comandos e o que cada um devolveu:
+**`~/Library/LaunchAgents/com.piluvitu.financas-backup.plist`**, todo dia às **03:00**, destino `~/Backups/financas/`, retenção 30 arquivos. Instalado a pedido explícito do dono (a versão anterior desta seção dizia que nenhum agente deveria instalar; a instrução direta do dono venceu a política).
 
-| Comando                     | Resultado medido                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ls ~/Library/LaunchAgents` | 9 plists (Setapp ×4, Google/Edge updater, Steam, Riot, Amazon) — **nenhum** com `piluvitu`/`financas` no nome |
-| `crontab -l`                | `crontab: no crontab for piluvitu` (exit 1) — não existe crontab nenhum                                       |
-| `ls ~/Backups/financas`     | `No such file or directory` — a pasta de destino **não existe**                                               |
+⚠️ **A verificação foi feita até o fim, e é o padrão a repetir se alguém mexer nisto.** "Carregou" não prova nada — o `launchd` roda com `PATH` mínimo, e a falha típica é o `pnpm` não ser encontrado, o que só apareceria semanas depois, quando o backup fizesse falta. O que foi medido, em ordem:
 
-O terceiro é o mais conclusivo: `~/Backups` **existe** e tem `api-go/` e `ramielle/` — pastas de backup de outros serviços —, e `financas/` não está lá. Como o script faz `mkdir -p "$DEST"` logo no começo, a ausência da pasta prova que **nenhuma execução do script chegou a esse ponto no destino padrão** — não há um único `.sql.gz` de finanças em disco. (O que _não_ se pode concluir daí: que ninguém nunca rodou `wrangler d1 export` na mão. As medições de dump real espalhadas por esta seção — "2,6 KB comprimido, 7 linhas", os `CREATE TABLE` sem `IF NOT EXISTS` — vieram de exports avulsos, não de um backup rotacionado que ainda exista.)
+| Etapa                                | Como                                                 | Resultado                                  |
+| ------------------------------------ | ---------------------------------------------------- | ------------------------------------------ |
+| plist é XML válido                   | `plutil -lint`                                       | `OK`                                       |
+| carregou                             | `launchctl list \| grep financas-backup`             | `-  0  com.piluvitu.financas-backup`       |
+| **roda sob o ambiente do `launchd`** | `launchctl kickstart -k gui/$(id -u)/com.piluvitu.…` | gravou 5.888 bytes, `stderr` sem erro real |
+| gzip íntegro                         | `gzip -t`                                            | OK                                         |
+| conteúdo                             | `gzip -dc \| grep -c 'CREATE TABLE'`                 | 18 tabelas, 27 `INSERT`                    |
+| ⚠️ **RESTAURA num SQLite limpo**     | `gzip -dc "$B" \| sqlite3 novo.db`                   | **20 tabelas, 7 linhas em `categories`**   |
 
-⚠️ **Consequência direta: hoje não há nenhuma cópia PERSISTIDA deste banco fora da Cloudflare, e nenhum mecanismo automático produzindo uma.** A tabela do topo desta seção descreve o que cada mecanismo cobre _quando roda_ — o único de fato ativo hoje é o Time Travel, justamente o que **não** cobre "perdi a conta Cloudflare" nem "quero o dado comigo".
+O último é o único que prova que existe backup: um dump que nunca foi restaurado é uma suposição, não uma cópia.
 
-A outra fonte teórica seria o dump **pré-migration** do `deploy-financas.yml` (passo _Backup antes de migrar_ → `actions/upload-artifact@v4`, `retention-days: 30`) — e ele **também não está sendo gerado**. O workflow precisa de `CLOUDFLARE_API_TOKEN`, e esse secret **não existe no repositório**: `gh secret list` volta **vazio** (só existe a _variable_ `CLOUDFLARE_ACCOUNT_ID`). Medido no run `31821708562` (`deploy-financas.yml`, 2026-08-14, conclusão **failure**): o log do passo mostra `CLOUDFLARE_API_TOKEN:` em branco no env e o wrangler abortando com _"In a non-interactive environment, it's necessary to set a `CLOUDFLARE_API_TOKEN` environment variable for wrangler to work"_ → `wrangler d1 export` sai 1 → o passo falha. E como o `upload-artifact` **não tem `if: always()`**, ele nem chega a rodar. Nenhum artifact, nenhum dump, em nenhum run.
-
-**Instalar o agendamento é ação manual do dono** — nada neste repositório instala isso, e nenhum agente deve instalar (mexer em `launchd` está fora de "só código local"). Salvar o plist abaixo como `~/Library/LaunchAgents/com.piluvitu.financas-backup.plist`, trocando `<CAMINHO-DO-REPO>`, e então:
+**Comandos de operação:**
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.piluvitu.financas-backup.plist
-launchctl list | grep financas-backup   # confirma que carregou (sai vazio se não carregou)
+launchctl list | grep financas-backup                        # está carregado?
+launchctl kickstart -k "gui/$(id -u)/com.piluvitu.financas-backup"  # rodar agora
+tail /tmp/financas-backup.log /tmp/financas-backup.err       # o que aconteceu
+ls -lt ~/Backups/financas/                                   # as cópias
+launchctl unload ~/Library/LaunchAgents/com.piluvitu.financas-backup.plist  # desligar
 ```
 
-Enquanto isso não for feito, a ÚNICA forma de tirar uma cópia é alguém digitar `make backup-financas`.
+⚠️ **Se o Mac estiver DESLIGADO às 03:00, o dia é perdido.** Dormindo não é problema (o `launchd` roda o job atrasado ao acordar); desligado, sim — não há recuperação de janela perdida. É por isso que a retenção de 30 arquivos importa mais que a hora exata: com 30 dias de histórico, alguns dias sem backup não são perda de dado.
 
-**O plist** (macOS, `launchd` — `cron` também serviria):
+⚠️ **`RunAtLoad` é `false` de propósito.** Com `true`, todo `launchctl load` (e todo login) dispararia um `wrangler d1 export --remote`, que **conta cota de rows read** — ver a nota sobre o `--remote` no fim desta seção.
+
+**O plist instalado:**
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -252,15 +258,20 @@ Enquanto isso não for feito, a ÚNICA forma de tirar uma cópia é alguém digi
     <array>
       <string>/bin/bash</string>
       <string>-lc</string>
-      <string>cd <CAMINHO-DO-REPO>/apps/financas &amp;&amp; ./scripts/backup-d1.sh</string>
+      <string>cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/financas &amp;&amp; ./scripts/backup-d1.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
     <key>StandardOutPath</key><string>/tmp/financas-backup.log</string>
     <key>StandardErrorPath</key><string>/tmp/financas-backup.err</string>
+    <key>RunAtLoad</key><false/>
   </dict>
 </plist>
 ```
+
+⚠️ **`-lc` (login shell) não é detalhe** — é o que faz o `PATH` completo existir e o `pnpm` ser encontrado. Sem isso o job carrega, dispara, e falha todo dia em silêncio.
+
+**A outra fonte de cópia continua ausente:** o dump **pré-migration** do `deploy-financas.yml` (`upload-artifact@v4`, `retention-days: 30`) não é gerado, porque o workflow precisa de `CLOUDFLARE_API_TOKEN` e esse secret **não existe** (`gh secret list` volta vazio; só há a _variable_ `CLOUDFLARE_ACCOUNT_ID`). Medido no run `31821708562` (2026-08-14, **failure**): `wrangler d1 export` aborta com _"it's necessary to set a `CLOUDFLARE_API_TOKEN`"_. O `if: always()` foi acrescentado ao `upload-artifact` depois disso, então quando o token existir um export parcial ao menos deixa rastro.
 
 `-lc` (login shell) não é detalhe: o `launchd` roda com um `PATH` mínimo, e sem isso o `pnpm` não é encontrado. Conferir o `/tmp/financas-backup.err` depois da primeira execução agendada — um backup que nunca rodou é indistinguível de um backup que rodou bem, até o dia em que faz falta.
 
