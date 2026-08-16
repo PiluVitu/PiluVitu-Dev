@@ -576,4 +576,18 @@ describe('AccountsPage', () => {
       expect(alerta.textContent ?? '').not.toMatch(/foi criada/i)
     })
   })
+
+  // ③ A coluna de saldo é a única coluna numérica da tela — é ela que se lê
+  // de cima a baixo comparando contas.
+  it('a coluna de saldo usa tabular-nums', async () => {
+    mockFetch({ ok: true, data: contas, notifications: [] })
+
+    render(<AccountsPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('grupo-PF')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('saldo-a1')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('saldo-a2')).toHaveClass('tabular-nums')
+  })
 })

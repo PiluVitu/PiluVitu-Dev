@@ -311,4 +311,29 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
     expect(screen.getByTestId('dividas-cards')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
+
+  // ③ Vale nos DOIS markups — a tela troca de tabela pra cards abaixo de
+  // `sm`, e só um dos dois existe por vez no DOM (jsdom não computa CSS).
+  it('as colunas de dinheiro usam tabular-nums na tabela (>= sm)', async () => {
+    render(<DividasPage />)
+    await screen.findByRole('link', { name: 'Pai' })
+
+    const celulas = Array.from(
+      document.querySelectorAll('td.tabular-nums'),
+    ).map((c) => c.textContent)
+    expect(celulas).toEqual([
+      formatBRL(730000),
+      formatBRL(594000),
+      formatBRL(136000),
+    ])
+  })
+
+  it('as colunas de dinheiro usam tabular-nums nos cards (< sm)', async () => {
+    setLarguraJanela(390)
+    render(<DividasPage />)
+    await screen.findByRole('link', { name: 'Pai' })
+
+    const falta = screen.getByText(formatBRL(136000))
+    expect(falta).toHaveClass('tabular-nums')
+  })
 })

@@ -72,7 +72,10 @@ export function CommitmentsPage({
       </div>
       <p className="text-muted-foreground flex items-center gap-1 text-sm">
         Denominador: líquido fixo (mês sem freela) de{' '}
-        <strong data-testid="denominador" className="text-foreground">
+        <strong
+          data-testid="denominador"
+          className="text-foreground tabular-nums"
+        >
           {formatBRL(report.fixed_net_cents)}
         </strong>
         .
@@ -126,7 +129,7 @@ export function CommitmentsPage({
                       <td
                         key={i}
                         data-testid={`celula-${r.account_id}-${i}`}
-                        className="border-b px-2 py-1.5 text-right"
+                        className="border-b px-2 py-1.5 text-right tabular-nums"
                       >
                         {cents === 0 ? '—' : formatBRL(cents)}
                       </td>
@@ -153,7 +156,7 @@ export function CommitmentsPage({
                     <td
                       key={i}
                       data-testid={`total-${i}`}
-                      className="border-t-2 border-b px-2 py-1.5 text-right font-medium"
+                      className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
                     >
                       {formatRange(range)}
                     </td>
@@ -173,7 +176,7 @@ export function CommitmentsPage({
                       key={i}
                       data-testid={`pct-${i}`}
                       className={cn(
-                        'border-t-2 border-b px-2 py-1.5 text-right',
+                        'border-t-2 border-b px-2 py-1.5 text-right tabular-nums',
                         range.max > LIMIAR_ALERTA_PCT &&
                           'alerta text-destructive font-bold',
                       )}

@@ -145,11 +145,11 @@ export function DividasPage() {
                   </p>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
                     <span className="text-muted-foreground text-xs">Falta</span>
-                    <span className="text-lg font-semibold">
+                    <span className="text-lg font-semibold tabular-nums">
                       {formatBRL(d.remaining_cents)}
                     </span>
                   </div>
-                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs">
+                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs tabular-nums">
                     <span>Total {formatBRL(d.total_cents)}</span>
                     <span>Pago {formatBRL(d.paid_cents)}</span>
                   </div>
@@ -192,13 +192,13 @@ export function DividasPage() {
                       <td className="border-b px-2 py-1.5 text-right">
                         {d.payee_name}
                       </td>
-                      <td className="border-b px-2 py-1.5 text-right">
+                      <td className="border-b px-2 py-1.5 text-right tabular-nums">
                         {formatBRL(d.total_cents)}
                       </td>
-                      <td className="border-b px-2 py-1.5 text-right">
+                      <td className="border-b px-2 py-1.5 text-right tabular-nums">
                         {formatBRL(d.paid_cents)}
                       </td>
-                      <td className="border-b py-1.5 pl-2 text-right font-medium">
+                      <td className="border-b py-1.5 pl-2 text-right font-medium tabular-nums">
                         {formatBRL(d.remaining_cents)}
                       </td>
                     </tr>

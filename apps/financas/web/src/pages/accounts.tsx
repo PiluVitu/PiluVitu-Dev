@@ -260,7 +260,7 @@ export function AccountsPage() {
                           </td>
                           <td
                             data-testid={`saldo-${a.id}`}
-                            className="border-b py-1.5 text-right font-medium"
+                            className="border-b py-1.5 text-right font-medium tabular-nums"
                           >
                             {formatBRL(a.balance_cents)}
                           </td>

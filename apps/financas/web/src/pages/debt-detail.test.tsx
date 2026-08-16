@@ -1020,4 +1020,22 @@ describe('DebtDetailPage', () => {
     )
     expect(screen.queryByTestId('pagamento-pg1')).not.toBeInTheDocument()
   })
+
+  // ③ Três colunas de dinheiro por item + o total de cada pagamento.
+  it('as colunas de dinheiro (item e pagamento) usam tabular-nums', async () => {
+    mockApi()
+
+    render(<DebtDetailPage debtId="d1" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('item-i1')).toBeInTheDocument(),
+    )
+
+    expect(screen.getByTestId('item-i1-total')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('item-i1-pago')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('item-i1-falta')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('pagamento-pg1-total')).toHaveClass(
+      'tabular-nums',
+    )
+  })
 })

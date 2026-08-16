@@ -69,3 +69,58 @@ export function abaixoDaMeta(
 ): boolean {
   return meses !== null && meses.min < goalMonths
 }
+
+/**
+ * Custo fixo mensal, DERIVADO de `GET /api/reserve` — não existe rota que
+ * devolva `monthlyFixedCost()` (`src/domain/reserve.ts`) cru, e a Reserva é
+ * a única consumidora dele hoje.
+ *
+ * A derivação é exata, não uma estimativa: `emergencyStatus()` calcula
+ * `meta_cents = custo * goal_months` (multiplicação de inteiros em
+ * centavos, sem arredondar — `src/domain/reserve.ts`), e `goal_months` vem
+ * no MESMO envelope, anexado pela rota. Dividir de volta recupera o custo
+ * sem perda.
+ *
+ * `null` quando não há custo fixo cadastrado (`meta_cents.max === 0`, que
+ * só acontece com zero recorrente ativa em vigor — `amount_min_cents > 0`
+ * é CHECK do schema): mesma disciplina de `meses: null` do domínio —
+ * ausência de dado é ausência, nunca um zero que a tela leria como
+ * "custo fixo zero".
+ */
+export function custoFixoMensal(
+  status: EmergencyStatusView,
+): FixedCostRangeView | null {
+  if (status.goal_months <= 0 || status.meta_cents.max <= 0) return null
+  return {
+    min: status.meta_cents.min / status.goal_months,
+    max: status.meta_cents.max / status.goal_months,
+  }
+}
+
+/**
+ * "Este saldo dura quantos meses?" — `saldo ÷ custo fixo mensal`, a MESMA
+ * conta de `emergencyStatus()` (Worker), reimplementada aqui porque a SPA
+ * não importa código do Worker (dois runtimes/bundles, mesma razão de
+ * `lib/dates.ts` duplicar `todayInTeresina`). Um lugar só no cliente — o
+ * ponto inteiro de morar em `lib/` e não dentro de `BlocoSaldos.tsx`.
+ *
+ * ⚠️ **A FAIXA INVERTE em relação ao custo, e é isto que não pode ser
+ * "simplificado":** dividir pelo custo MÁXIMO dá a sobrevivência MÍNIMA
+ * (pior cenário — DAS caro), dividir pelo custo MÍNIMO dá a MÁXIMA. É o
+ * oposto do Comprometido, onde o TETO é o perigo; aqui o PISO é o perigo.
+ * Trocar os dois divisores compila, roda, e devolve um número otimista
+ * exatamente no cenário ruim.
+ *
+ * `null` quando não há custo fixo — nunca `Infinity` ("imortal") nem `0`
+ * ("falido"), as duas mentiras que o domínio já evita.
+ */
+export function mesesDeSobrevivencia(
+  saldoCents: number,
+  custo: FixedCostRangeView | null,
+): FixedCostRangeView | null {
+  if (custo === null || custo.max <= 0 || custo.min <= 0) return null
+  return {
+    min: saldoCents / custo.max, // custo MÁXIMO ⇒ sobrevivência MÍNIMA
+    max: saldoCents / custo.min, // custo MÍNIMO ⇒ sobrevivência MÁXIMA
+  }
+}

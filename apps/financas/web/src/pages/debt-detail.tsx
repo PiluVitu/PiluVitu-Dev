@@ -520,19 +520,19 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                       </td>
                       <td
                         data-testid={`item-${i.item_id}-total`}
-                        className="border-b px-2 py-1.5 text-right"
+                        className="border-b px-2 py-1.5 text-right tabular-nums"
                       >
                         {formatBRL(i.amount_cents)}
                       </td>
                       <td
                         data-testid={`item-${i.item_id}-pago`}
-                        className="border-b px-2 py-1.5 text-right"
+                        className="border-b px-2 py-1.5 text-right tabular-nums"
                       >
                         {formatBRL(i.allocated_cents)}
                       </td>
                       <td
                         data-testid={`item-${i.item_id}-falta`}
-                        className="border-b py-1.5 pl-2 text-right font-medium"
+                        className="border-b py-1.5 pl-2 text-right font-medium tabular-nums"
                       >
                         {formatBRL(Math.max(0, i.remaining_cents))}
                       </td>
@@ -575,7 +575,10 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                     <span className="text-muted-foreground">
                       {dataBR(p.paid_on)}
                     </span>{' '}
-                    <strong data-testid={`pagamento-${p.id}-total`}>
+                    <strong
+                      data-testid={`pagamento-${p.id}-total`}
+                      className="tabular-nums"
+                    >
                       {formatBRL(p.amount_cents)}
                     </strong>
                   </div>

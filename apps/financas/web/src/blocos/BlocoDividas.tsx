@@ -64,7 +64,7 @@ export function BlocoDividas() {
                   </span>
                   <span
                     data-testid={`divida-${d.id}-falta`}
-                    className="font-semibold"
+                    className="font-semibold tabular-nums"
                   >
                     {formatBRL(d.remaining_cents)}
                   </span>

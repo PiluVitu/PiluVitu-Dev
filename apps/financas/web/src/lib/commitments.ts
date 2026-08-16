@@ -70,6 +70,27 @@ export function rotuloCompetencia(competence: string): string {
 }
 
 /**
+ * '2026-08' -> 'ago' — o MESMO nome de mês de `rotuloCompetencia`, sem o
+ * ano. Existe por causa do eixo X de `blocos/GraficoComprometido.tsx`:
+ * MEDIDO (390px E 1280px) que o recharts rotulava só 3 das 6 competências
+ * — e o mês CORRENTE, o que a tela existe pra responder, era um dos
+ * omitidos. Com `interval={0}` (rotula todas) `ago/26` × 6 não cabe nos
+ * ~190px de área de plotagem do card; `ago` × 6 cabe.
+ *
+ * ⚠️ Seguro contra ambiguidade porque a janela do Comprometido é de 6
+ * meses: num intervalo menor que 12 meses nenhum nome de mês se repete,
+ * então 'ago…jan' identifica cada barra sem o ano. O ano NÃO some da tela
+ * — o tooltip continua usando `rotuloCompetencia` ('ago/26'), que é onde a
+ * virada de ano fica disponível sob demanda. NÃO reusar isto num gráfico
+ * de janela ≥ 12 meses (ex.: `GraficoFluxo`, que vai até 24 meses): lá o
+ * nome do mês repete e a abreviação passa a mentir.
+ */
+export function rotuloMesCurto(competence: string): string {
+  const mes = competence.split('-')[1]
+  return MESES[Number(mes) - 1]
+}
+
+/**
  * Formata uma faixa em reais. Degenerada (`min === max` — ex.: Starlink
  * fixo, ou qualquer competência sem recorrente em faixa cadastrada) mostra
  * UM número só ("R$ 189,00"); faixa de verdade (ex.: DAS R$ 12–600) mostra

@@ -138,25 +138,25 @@ export function FluxoPage() {
                 </td>
                 <td
                   data-testid="entrou"
-                  className="border-b px-2 py-1.5 text-right"
+                  className="border-b px-2 py-1.5 text-right tabular-nums"
                 >
                   {formatBRL(l.entrou_cents)}
                 </td>
                 <td
                   data-testid="saiu"
-                  className="border-b px-2 py-1.5 text-right"
+                  className="border-b px-2 py-1.5 text-right tabular-nums"
                 >
                   {formatBRL(l.saiu_cents)}
                 </td>
                 <td
                   data-testid="saldo"
-                  className="border-b px-2 py-1.5 text-right"
+                  className="border-b px-2 py-1.5 text-right tabular-nums"
                 >
                   {formatBRL(l.saldo_cents)}
                 </td>
                 <td
                   data-testid="acumulado"
-                  className="border-b px-2 py-1.5 text-right font-medium"
+                  className="border-b px-2 py-1.5 text-right font-medium tabular-nums"
                 >
                   {formatBRL(l.acumulado_cents)}
                 </td>

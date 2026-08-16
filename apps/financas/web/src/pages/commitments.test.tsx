@@ -316,4 +316,21 @@ describe('CommitmentsPage', () => {
       ),
     )
   })
+
+  // ③ `tabular-nums` existia em UM lugar no app inteiro. Numa matriz
+  // competência × conta os dígitos com larguras diferentes destroem a
+  // leitura de coluna, que é a única leitura que esta tabela tem.
+  it('as células de dinheiro (matriz, TOTAL e %) usam tabular-nums', async () => {
+    mockFetch({ ok: true, data: report, notifications: [] })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('linha-a1')).toBeInTheDocument(),
+    )
+
+    expect(screen.getByTestId('celula-a1-0')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('total-0')).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('pct-0')).toHaveClass('tabular-nums')
+  })
 })

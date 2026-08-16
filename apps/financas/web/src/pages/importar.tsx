@@ -626,8 +626,8 @@ export function ImportarPage() {
                     <span
                       className={
                         linha.amount_cents < 0
-                          ? 'text-destructive text-sm font-medium'
-                          : 'text-success text-sm font-medium'
+                          ? 'text-destructive text-sm font-medium tabular-nums'
+                          : 'text-success text-sm font-medium tabular-nums'
                       }
                     >
                       {formatBRL(linha.amount_cents)}

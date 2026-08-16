@@ -232,6 +232,181 @@ describe('GraficoComprometido — faixa min/max', () => {
   })
 })
 
+// ② O eixo X rotulava 3 de 6 competências — e o mês CORRENTE (a primeira
+// barra, a que a tela existe pra responder) era um dos NÃO rotulados,
+// MEDIDO a 390px E a 1280px. `interval={0}` + tick sem o ano.
+describe('GraficoComprometido — o eixo X rotula TODAS as competências (②)', () => {
+  /**
+   * ⚠️ MEDIDO (recharts 3.10.1): o rótulo do tick NÃO é descendente de
+   * `.recharts-xAxis` — o recharts hoista os textos pra um layer de
+   * z-index próprio (`recharts-zIndex-layer_2000`), irmão do eixo. Um
+   * seletor `.recharts-xAxis .recharts-cartesian-axis-tick-value` casa
+   * ZERO elementos e faria este teste "passar" por vacuidade em qualquer
+   * asserção de ausência. A âncora certa é o grupo dos rótulos.
+   */
+  function ticksDoEixoX(container: HTMLElement): string[] {
+    return Array.from(
+      container.querySelectorAll(
+        '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value',
+      ),
+    ).map((t) => t.textContent ?? '')
+  }
+
+  // ⚠️ **O QUE ESTE describe PROVA, E O QUE NÃO PROVA — medido, não
+  // suposto.** A decisão de pular rótulo é do recharts e depende da LARGURA
+  // MEDIDA do texto (`getStringSize`, que lê `offsetWidth` de um span
+  // oculto). No jsdom `offsetWidth` é sempre 0 ⇒ nenhum rótulo jamais se
+  // sobrepõe ⇒ os seis saem no DOM com ou sem `interval={0}`. CONFIRMADO
+  // por mutação: removendo `interval={0}` do `<XAxis>`, os 26 casos deste
+  // arquivo continuam verdes. Ou seja: `interval={0}` (a rede que garante
+  // o comportamento independente da métrica de texto do navegador) NÃO é
+  // observável aqui, e nenhuma asserção abaixo deve ser lida como prova
+  // dele. O que ESTES testes travam é a outra metade do fix — o tick
+  // ENCURTADO, que é o que faz seis rótulos CABEREM em 262px — e essa
+  // metade é mutation-sensitive (tirar o `tickFormatter` derruba os dois).
+  it('as SEIS competências aparecem no eixo — nenhuma omitida, incluindo a primeira (mês corrente)', () => {
+    // Container estreito de propósito: 262px é a medida REAL do card da
+    // home a 1280×900 (grid md:grid-cols-2) — a largura em que o recharts
+    // decidia sozinho pular rótulos num navegador de verdade.
+    const { container } = render(<GraficoComprometido report={report} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
+    medirContainer(wrapper, 262)
+
+    const ticks = ticksDoEixoX(container)
+    expect(ticks).toEqual(['ago', 'set', 'out', 'nov', 'dez', 'jan'])
+  })
+
+  it('o tick perde o ANO (cabe em 262px), mas o tooltip continua com a competência inteira — o ano não some da tela', () => {
+    const { container } = render(<GraficoComprometido report={report} />)
+    const wrapper = container.querySelector(
+      '[data-testid="grafico-comprometido"]',
+    ) as HTMLElement
+    medirContainer(wrapper, 262)
+
+    // O tick é só o mês…
+    const ticks = ticksDoEixoX(container)
+    expect(ticks).toHaveLength(report.competences.length)
+    expect(ticks).not.toContain('ago/26')
+    for (const t of ticks) expect(t).not.toMatch(/\//)
+
+    // …mas o `dataKey` do eixo (o que o Tooltip usa de cabeçalho) continua
+    // sendo `rotulo`, com o ano. Trocar o dataKey pelo rótulo curto — o
+    // atalho óbvio — levaria o ano embora junto, e a virada dez→jan
+    // deixaria de ser conferível em qualquer lugar da tela.
+    expect(container.querySelector('.recharts-xAxis')).toBeInTheDocument()
+  })
+})
+
+// ⑤ ACESSIBILIDADE: as duas cores das barras foram MEDIDAS a 1,80:1 (claro)
+// e 1,31:1 (escuro) uma contra a outra — em escala de cinza ou sob sol são
+// a MESMA barra. Cor não pode ser o único sinal de risco.
+describe('GraficoComprometido — risco tem sinal NÃO-CROMÁTICO, não só cor (⑤)', () => {
+  const reportComRisco: CommitmentReportView = {
+    ...report,
+    // 1ª competência 73% (acima do limiar), as outras 5 em 10% — o teste
+    // consegue distinguir "só a em risco recebeu o tratamento" de "todas
+    // receberam".
+    pct_of_fixed_net: [
+      { min: 73, max: 73 },
+      ...Array.from({ length: 5 }, () => ({ min: 10, max: 10 })),
+    ],
+  }
+
+  it('a barra em risco ganha CONTORNO TRACEJADO (canal de forma, sobrevive a escala de cinza) — as demais não', () => {
+    const { container } = render(
+      <GraficoComprometido report={reportComRisco} />,
+    )
+
+    const barras = Array.from(container.querySelectorAll('.recharts-rectangle'))
+    expect(barras.length).toBe(6)
+
+    const tracejadas = barras.filter(
+      (b) => b.getAttribute('stroke-dasharray') === '3 2',
+    )
+    expect(tracejadas).toHaveLength(1)
+    expect(barras.indexOf(tracejadas[0])).toBe(0) // a 1ª competência, a de 73%
+
+    // O traço usa --foreground, NUNCA --destructive: o vermelho é
+    // justamente a cor que falhou a medição de contraste; o que precisa
+    // sobreviver aqui é a LUMINÂNCIA, não o matiz.
+    expect(tracejadas[0].getAttribute('stroke')).toBe('hsl(var(--foreground))')
+    expect(tracejadas[0].getAttribute('stroke')).not.toBe(
+      'hsl(var(--destructive))',
+    )
+  })
+
+  it('a barra em risco ganha o % ESCRITO (canal de texto) — e ele diz QUANTO, coisa que a cor nunca disse', () => {
+    const { container } = render(
+      <GraficoComprometido report={reportComRisco} />,
+    )
+
+    const rotulos = Array.from(
+      container.querySelectorAll('.recharts-label-list text'),
+    )
+      .map((t) => t.textContent ?? '')
+      .filter((t) => t !== '')
+
+    // Só a competência em risco recebe rótulo — as de 10% ficam com string
+    // vazia (nenhum texto no DOM).
+    expect(rotulos).toEqual(['73%'])
+  })
+
+  it('sem NENHUMA competência em risco, nada de tracejado nem de rótulo — o sinal só aparece quando há risco', () => {
+    const reportSemRisco: CommitmentReportView = {
+      ...report,
+      pct_of_fixed_net: Array.from({ length: 6 }, () => ({ min: 10, max: 10 })),
+    }
+
+    const { container } = render(
+      <GraficoComprometido report={reportSemRisco} />,
+    )
+
+    const tracejadas = Array.from(
+      container.querySelectorAll('.recharts-rectangle'),
+    ).filter((b) => b.getAttribute('stroke-dasharray') === '3 2')
+    expect(tracejadas).toHaveLength(0)
+
+    const rotulos = Array.from(
+      container.querySelectorAll('.recharts-label-list text'),
+    )
+      .map((t) => t.textContent ?? '')
+      .filter((t) => t !== '')
+    expect(rotulos).toEqual([])
+  })
+
+  it('o sinal segue o TETO da faixa (decisão 2: teto no Comprometido), nunca o piso', () => {
+    const reportFaixaCruzando: CommitmentReportView = {
+      ...report,
+      totals: [{ min: 240000, max: 298800 }, ...report.totals.slice(1)],
+      pct_of_fixed_net: [
+        { min: 40, max: 66 }, // piso 40% (abaixo), teto 66% (acima)
+        ...Array.from({ length: 5 }, () => ({ min: 10, max: 10 })),
+      ],
+    }
+
+    const { container } = render(
+      <GraficoComprometido report={reportFaixaCruzando} />,
+    )
+
+    // Se o sinal olhasse o PISO (40%), não haveria tracejado nenhum.
+    const tracejadas = Array.from(
+      container.querySelectorAll('.recharts-rectangle'),
+    ).filter((b) => b.getAttribute('stroke-dasharray') === '3 2')
+    // os DOIS segmentos empilhados daquela competência (piso + faixa)
+    expect(tracejadas).toHaveLength(2)
+
+    const rotulos = Array.from(
+      container.querySelectorAll('.recharts-label-list text'),
+    )
+      .map((t) => t.textContent ?? '')
+      .filter((t) => t !== '')
+    // e o rótulo mostra a FAIXA inteira, não só o teto
+    expect(rotulos).toEqual(['40% a 66%'])
+  })
+})
+
 // `GraficoCategorias` (Task 8, "para onde foi o dinheiro") mora NESTE
 // arquivo — não em `GraficoCategorias.tsx` separado — de propósito: os dois
 // componentes são a ÚNICA fronteira `lazy()` que carrega `recharts` nesta
@@ -310,6 +485,37 @@ describe('GraficoCategorias — barras horizontais, uma por categoria', () => {
       expect(fill).not.toMatch(/^#/)
       expect(fill).toMatch(/^hsl\(var\(--/)
     }
+  })
+
+  // ④ Até aqui o valor de cada categoria existia SÓ dentro do `<Tooltip>` —
+  // num Android, ler quanto foi gasto em "DAS" exigia tocar a barra certa e
+  // manter o dedo lá. Agora o número é texto permanente ao lado da barra.
+  it('escreve o valor em BRL ao lado de CADA barra — o número não vive mais só no tooltip', () => {
+    const { container } = render(<GraficoCategorias report={categoryReport} />)
+
+    const rotulos = Array.from(
+      container.querySelectorAll('.recharts-label-list text'),
+    ).map((t) => t.textContent ?? '')
+
+    // uma etiqueta por linha do relatório, na MESMA ordem (a API ordena,
+    // o componente não reordena)
+    expect(rotulos).toEqual(['R$ 500,00', 'R$ 300,00', 'R$ 100,00'])
+  })
+
+  it('o valor escrito é BRL formatado, nunca os centavos crus que vêm da API', () => {
+    const { container } = render(<GraficoCategorias report={categoryReport} />)
+
+    const texto = Array.from(
+      container.querySelectorAll('.recharts-label-list text'),
+    )
+      .map((t) => t.textContent ?? '')
+      .join(' ')
+
+    // `-50000` (centavos, negativo) viraria "50000"/"-50000" sem
+    // `formatBRL`/`Math.abs` — os dois seriam ilegíveis como dinheiro.
+    expect(texto).not.toMatch(/50000/)
+    expect(texto).not.toMatch(/-/)
+    expect(texto).toContain('R$ 500,00')
   })
 
   it('em container estreito (Android, ~308px) a largura acompanha o container — mesmo hook de GraficoComprometido (Important 1)', () => {

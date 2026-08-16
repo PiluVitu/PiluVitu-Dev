@@ -38,13 +38,58 @@ const reportComDados = {
 
 const reportVazio = { competence: '2026-07', rows: [], total_cents: 0 }
 
+// ⑥ `GET /api/insights/numbers` — a referência ("é muito ou pouco?") que o
+// total absoluto não tinha. Shape de `InsightNumbersView` (`lib/insight.ts`).
+const numerosNeutros = {
+  competence: '2026-07',
+  previous_competence: '2026-06',
+  top_categories: [],
+  total_cents: 0,
+  previous_total_cents: 0,
+  variation_cents: 0,
+  variation_pct: null,
+  biggest_increase: null,
+}
+
+/**
+ * ⚠️ **O mock precisa ROTEAR por path — um `mockResolvedValue` único não
+ * serve mais.** Desde ⑥ este bloco busca DUAS rotas, e um mock que
+ * respondesse a mesma coisa pras duas entregaria o relatório de categorias
+ * onde o componente espera `variation_cents`/`previous_competence`: o teste
+ * passaria a exercitar um shape que a API nunca devolve, e a variação
+ * renderizaria `NaN` sem nada apontar isso.
+ *
+ * Rota fora da lista REJEITA (mesma disciplina de `App.test.tsx#mockFetchVazio`
+ * depois do achado da Task 8): uma rota nova esquecida vira erro visível,
+ * não um dado silenciosamente errado.
+ */
+function mockRotas(
+  opts: { categorias?: unknown; numeros?: unknown } = {},
+): void {
+  vi.mocked(api).mockImplementation((path: string) => {
+    if (path.startsWith('/api/insights/numbers'))
+      return Promise.resolve(opts.numeros ?? numerosNeutros)
+    if (path.startsWith('/api/reports/by-category'))
+      return Promise.resolve(opts.categorias ?? reportVazio)
+    return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
+  })
+}
+
+/** Só as chamadas de UMA rota — a de números não pode contaminar a contagem. */
+function chamadas(prefixo: string): string[] {
+  return vi
+    .mocked(api)
+    .mock.calls.map((c) => String(c[0]))
+    .filter((p) => p.startsWith(prefixo))
+}
+
 afterEach(() => {
   vi.clearAllMocks()
 })
 
 describe('BlocoCategorias', () => {
   it('com dados: busca a competência atual, mostra o total gasto e, quando o gráfico (lazy) termina de carregar, o conteúdo', async () => {
-    vi.mocked(api).mockResolvedValue(reportComDados)
+    mockRotas({ categorias: reportComDados })
 
     render(<BlocoCategorias />)
 
@@ -64,7 +109,7 @@ describe('BlocoCategorias', () => {
     // (só despesa), mas "gastei -R$900,00" é uma dupla negativa confusa.
     expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00')
 
-    expect(api).toHaveBeenCalledTimes(1)
+    expect(chamadas('/api/reports/by-category')).toHaveLength(1)
     expect(api).toHaveBeenCalledWith(
       expect.stringMatching(
         /^\/api\/reports\/by-category\?competence=\d{4}-\d{2}$/,
@@ -73,7 +118,7 @@ describe('BlocoCategorias', () => {
   })
 
   it('mês vazio (sem gasto no período): mostra a mensagem, sem gráfico — mas o seletor de mês continua disponível', async () => {
-    vi.mocked(api).mockResolvedValue(reportVazio)
+    mockRotas({ categorias: reportVazio })
 
     render(<BlocoCategorias />)
 
@@ -88,6 +133,167 @@ describe('BlocoCategorias', () => {
     // conteúdo normal em vez do `vazio` do card, pra manter uma ação real
     // disponível.
     expect(screen.getByLabelText('Mês')).toBeInTheDocument()
+  })
+
+  // ⑥ "R$ 900,00 é muito ou pouco?" — a resposta é contra o mês anterior,
+  // e os números vêm prontos de `GET /api/insights/numbers` (a regra de
+  // sinal/magnitude mora no Worker; ver o ⚠️ em BlocoCategorias.tsx).
+  it('mostra a variação contra o mês anterior, com sinal e mês nomeados', async () => {
+    mockRotas({
+      categorias: reportComDados,
+      numeros: {
+        ...numerosNeutros,
+        previous_competence: '2026-06',
+        variation_cents: 34000, // gastou R$ 340,00 a MAIS
+        variation_pct: 61,
+      },
+    })
+
+    render(<BlocoCategorias />)
+
+    const variacao = await screen.findByTestId('variacao')
+    expect(variacao).toHaveTextContent('+R$ 340,00')
+    expect(variacao).toHaveTextContent('61%')
+    expect(variacao).toHaveTextContent('a mais')
+    // nomeia CONTRA QUAL mês — "+61%" sozinho não diz de onde saiu
+    expect(variacao).toHaveTextContent('jun/26')
+  })
+
+  it('gastou MENOS: sinal e palavra invertem, e NUNCA entra verde (o par acessível do app é azul/vermelho)', async () => {
+    mockRotas({
+      categorias: reportComDados,
+      numeros: {
+        ...numerosNeutros,
+        previous_competence: '2026-06',
+        variation_cents: -34000,
+        variation_pct: -27,
+      },
+    })
+
+    render(<BlocoCategorias />)
+
+    const variacao = await screen.findByTestId('variacao')
+    expect(variacao).toHaveTextContent('−R$ 340,00')
+    expect(variacao).toHaveTextContent('a menos')
+    // Gastar menos é boa notícia, e o impulso óbvio é pintar de verde —
+    // seria regressão de acessibilidade (protanopia/deuteranopia preservam
+    // o azul, não o verde; --success fica pra confirmação de salvamento).
+    expect(variacao).not.toHaveClass('text-success')
+    expect(variacao).toHaveClass('text-muted-foreground')
+    // e o sinal não é a cor: é o "−" e a palavra "a menos"
+    expect(variacao).not.toHaveClass('text-destructive')
+  })
+
+  it('gastou mais usa --destructive (vermelho = dinheiro saindo, coerente com o resto do app)', async () => {
+    mockRotas({
+      categorias: reportComDados,
+      numeros: { ...numerosNeutros, variation_cents: 34000, variation_pct: 61 },
+    })
+
+    render(<BlocoCategorias />)
+
+    expect(await screen.findByTestId('variacao')).toHaveClass(
+      'text-destructive',
+    )
+  })
+
+  it('mês anterior sem gasto nenhum (variation_pct null): mostra só o valor, nunca um "Infinity%"', async () => {
+    mockRotas({
+      categorias: reportComDados,
+      numeros: {
+        ...numerosNeutros,
+        previous_competence: '2026-06',
+        variation_cents: 90000,
+        variation_pct: null,
+      },
+    })
+
+    render(<BlocoCategorias />)
+
+    const variacao = await screen.findByTestId('variacao')
+    expect(variacao).toHaveTextContent('+R$ 900,00')
+    expect(variacao.textContent).not.toMatch(/Infinity|NaN|%/)
+  })
+
+  it('variação ZERO não renderiza nada — "+R$ 0,00 a mais" seria ruído', async () => {
+    mockRotas({
+      categorias: reportComDados,
+      numeros: { ...numerosNeutros, variation_cents: 0, variation_pct: 0 },
+    })
+
+    render(<BlocoCategorias />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-gasto')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('variacao')).not.toBeInTheDocument()
+  })
+
+  it('⑥ falha em /api/insights/numbers NÃO derruba o card — a referência some, o total e o gráfico ficam', async () => {
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path.startsWith('/api/insights/numbers'))
+        return Promise.reject(
+          new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),
+        )
+      return Promise.resolve(reportComDados)
+    })
+
+    render(<BlocoCategorias />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 900,00'),
+    )
+    expect(screen.queryByTestId('variacao')).not.toBeInTheDocument()
+    // sem alerta: a rota da referência não é o assunto deste card, e o dono
+    // não tem o que fazer a respeito dela aqui
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('a variação é REBUSCADA ao trocar de mês — nunca fica a do mês anterior colada na tela', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-20T15:00:00Z'))
+    try {
+      vi.mocked(api).mockImplementation((path: string) => {
+        if (path.startsWith('/api/insights/numbers')) {
+          return Promise.resolve(
+            path.includes('competence=2026-08')
+              ? {
+                  ...numerosNeutros,
+                  previous_competence: '2026-07',
+                  variation_cents: -1000,
+                  variation_pct: -5,
+                }
+              : {
+                  ...numerosNeutros,
+                  previous_competence: '2026-06',
+                  variation_cents: 34000,
+                  variation_pct: 61,
+                },
+          )
+        }
+        return Promise.resolve(reportComDados)
+      })
+
+      render(<BlocoCategorias />)
+
+      expect(await screen.findByTestId('variacao')).toHaveTextContent(
+        '+R$ 340,00',
+      )
+
+      fireEvent.change(screen.getByLabelText('Mês'), {
+        target: { value: '2026-08' },
+      })
+
+      await waitFor(() =>
+        expect(screen.getByTestId('variacao')).toHaveTextContent('−R$ 10,00'),
+      )
+      expect(chamadas('/api/insights/numbers')).toEqual([
+        '/api/insights/numbers?competence=2026-07',
+        '/api/insights/numbers?competence=2026-08',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('estado erro: mostra a mensagem dentro do próprio card, com role="alert"', async () => {
@@ -133,6 +339,8 @@ describe('BlocoCategorias', () => {
         total_cents: -20000,
       }
       vi.mocked(api).mockImplementation((path: string) => {
+        if (path.startsWith('/api/insights/numbers'))
+          return Promise.resolve(numerosNeutros)
         if (path.includes('competence=2026-08')) {
           return Promise.resolve(reportAgosto)
         }
@@ -146,7 +354,7 @@ describe('BlocoCategorias', () => {
           'R$ 900,00',
         ),
       )
-      expect(api).toHaveBeenCalledTimes(1)
+      expect(chamadas('/api/reports/by-category')).toHaveLength(1)
 
       fireEvent.change(screen.getByLabelText('Mês'), {
         target: { value: '2026-08' },
@@ -160,10 +368,10 @@ describe('BlocoCategorias', () => {
 
       // A PROVA que importa: uma SEGUNDA chamada de rede com a competência
       // nova — não só o `<select>` mudando de valor visualmente.
-      expect(api).toHaveBeenCalledTimes(2)
-      expect(api).toHaveBeenLastCalledWith(
+      expect(chamadas('/api/reports/by-category')).toEqual([
+        '/api/reports/by-category?competence=2026-07',
         '/api/reports/by-category?competence=2026-08',
-      )
+      ])
     } finally {
       vi.useRealTimers()
     }
@@ -204,6 +412,8 @@ describe('BlocoCategorias', () => {
         total_cents: -15000,
       }
       vi.mocked(api).mockImplementation((path: string) => {
+        if (path.startsWith('/api/insights/numbers'))
+          return Promise.resolve(numerosNeutros)
         if (path.includes('competence=2026-08')) {
           return Promise.reject(
             new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),
@@ -274,7 +484,7 @@ describe('BlocoCategorias', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-08-01T01:00:00Z'))
     try {
-      vi.mocked(api).mockResolvedValue(reportVazio)
+      mockRotas({ categorias: reportVazio })
 
       render(<BlocoCategorias />)
 

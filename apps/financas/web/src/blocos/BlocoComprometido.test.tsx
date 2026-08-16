@@ -190,6 +190,104 @@ describe('BlocoComprometido', () => {
     expect(await screen.findByText(/parcelas previstas/)).toBeInTheDocument()
   })
 
+  // ① O card que justifica o módulo mostrava 6 barras em R$ e NENHUM
+  // número — e o `%`, que já vinha no payload, era descartado.
+  it('manchete: o % e o valor do MÊS CORRENTE aparecem como texto, acima do gráfico', async () => {
+    vi.mocked(api).mockResolvedValue(report)
+
+    render(<BlocoComprometido />)
+
+    // report[0] = 55% / R$ 2.000,00 (a competência corrente, porque a
+    // busca é `?from=competenciaAtual()`)
+    expect(await screen.findByTestId('manchete-pct')).toHaveTextContent('55%')
+    expect(screen.getByTestId('manchete-total')).toHaveTextContent(
+      'R$ 2.000,00',
+    )
+
+    // é o mês CORRENTE, não um mês qualquer da janela: 51% (a 2ª
+    // competência) não pode aparecer na manchete
+    expect(screen.getByTestId('manchete-pct')).not.toHaveTextContent('51%')
+  })
+
+  it('manchete acima de 50%: fica em --destructive E ganha uma frase que NOMEIA o limiar (cor não é o único sinal)', async () => {
+    vi.mocked(api).mockResolvedValue(report) // [0] = 55%, acima do limiar
+
+    render(<BlocoComprometido />)
+
+    const pct = await screen.findByTestId('manchete-pct')
+    expect(pct).toHaveClass('text-destructive')
+
+    // A redundância não-cromática da manchete — mesma razão medida de ⑤:
+    // --primary × --destructive ficam a 1,80:1, então quem não distingue
+    // as duas cores precisa de TEXTO dizendo o que aconteceu.
+    const alerta = screen.getByTestId('manchete-alerta')
+    expect(alerta).toHaveAttribute('role', 'alert')
+    expect(alerta).toHaveTextContent('50%')
+  })
+
+  it('manchete EXATAMENTE no limiar (50%) não alerta — o limiar é ">", nunca ">="', async () => {
+    vi.mocked(api).mockResolvedValue({
+      ...report,
+      pct_of_fixed_net: [
+        { min: 50, max: 50 },
+        ...report.pct_of_fixed_net.slice(1),
+      ],
+    })
+
+    render(<BlocoComprometido />)
+
+    const pct = await screen.findByTestId('manchete-pct')
+    expect(pct).toHaveTextContent('50%')
+    expect(pct).not.toHaveClass('text-destructive')
+    expect(screen.queryByTestId('manchete-alerta')).not.toBeInTheDocument()
+  })
+
+  it('manchete segue o TETO da faixa (decisão: teto no Comprometido), nunca o piso', async () => {
+    vi.mocked(api).mockResolvedValue({
+      ...report,
+      totals: [{ min: 240000, max: 298800 }, ...report.totals.slice(1)],
+      // piso 40% (abaixo do limiar), teto 66% (acima) — se a manchete
+      // olhasse o piso, não haveria alerta nenhum
+      pct_of_fixed_net: [
+        { min: 40, max: 66 },
+        ...report.pct_of_fixed_net.slice(1),
+      ],
+    })
+
+    render(<BlocoComprometido />)
+
+    expect(await screen.findByTestId('manchete-pct')).toHaveTextContent(
+      '40% a 66%',
+    )
+    expect(screen.getByTestId('manchete-pct')).toHaveClass('text-destructive')
+    expect(screen.getByTestId('manchete-alerta')).toBeInTheDocument()
+    // faixa de verdade também no valor, não só na porcentagem
+    expect(screen.getByTestId('manchete-total')).toHaveTextContent(
+      'R$ 2.400,00 a R$ 2.988,00',
+    )
+  })
+
+  it('manchete usa tabular-nums — a coluna de números precisa alinhar', async () => {
+    vi.mocked(api).mockResolvedValue(report)
+
+    expect(
+      (render(<BlocoComprometido />),
+      await screen.findByTestId('manchete-pct')),
+    ).toHaveClass('tabular-nums')
+    expect(screen.getByTestId('manchete-total')).toHaveClass('tabular-nums')
+  })
+
+  it('estado vazio não renderiza manchete nenhuma — não existe "0% de nada"', async () => {
+    vi.mocked(api).mockResolvedValue(reportVazio)
+
+    render(<BlocoComprometido />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/nenhum compromisso/i)).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('manchete-pct')).not.toBeInTheDocument()
+  })
+
   it('estado erro: mostra a mensagem dentro do próprio card, com role="alert"', async () => {
     vi.mocked(api).mockRejectedValue(
       new ApiError(503, 'auth_unavailable', 'sem conexão com o servidor'),

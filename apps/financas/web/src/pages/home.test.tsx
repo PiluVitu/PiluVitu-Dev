@@ -24,6 +24,32 @@ const reportVazio = {
   pct_of_fixed_net: Array.from({ length: 6 }, () => ({ min: 0, max: 0 })),
 }
 
+// ⑥ As duas rotas de REFERÊNCIA que os blocos passaram a consumir:
+// `/api/reserve` (custo fixo mensal, pra BlocoSaldos) e
+// `/api/insights/numbers` (variação vs. mês anterior, pra BlocoCategorias).
+// Precisam estar no allowlist EXPLICITAMENTE — o fallback deste mock
+// rejeita, e uma rota esquecida ficaria degradando em silêncio (é o mesmo
+// achado que endureceu `App.test.tsx#mockFetchVazio` na Task 8).
+const reserva = {
+  saldo_cents: 0,
+  // meta = custo * goal_months ⇒ custo fixo de R$ 800,00 a R$ 1.000,00/mês
+  meta_cents: { min: 240000, max: 300000 },
+  meses: { min: 0, max: 0 },
+  contas: [],
+  goal_months: 3,
+}
+
+const numeros = {
+  competence: '2026-07',
+  previous_competence: '2026-06',
+  top_categories: [],
+  total_cents: -70000,
+  previous_total_cents: -35000,
+  variation_cents: 35000,
+  variation_pct: 100,
+  biggest_increase: null,
+}
+
 afterEach(() => {
   vi.clearAllMocks()
 })
@@ -41,6 +67,9 @@ describe('HomePage', () => {
           rows: [],
           total_cents: 0,
         })
+      if (path.startsWith('/api/reserve')) return Promise.resolve(reserva)
+      if (path.startsWith('/api/insights/numbers'))
+        return Promise.resolve(numeros)
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -116,6 +145,9 @@ describe('HomePage', () => {
           total_cents: -70000,
         })
       }
+      if (path.startsWith('/api/reserve')) return Promise.resolve(reserva)
+      if (path.startsWith('/api/insights/numbers'))
+        return Promise.resolve(numeros)
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -142,10 +174,22 @@ describe('HomePage', () => {
       screen.getByRole('progressbar', { name: /empréstimo do pai/i }),
     ).toHaveAttribute('aria-valuenow', '81')
 
+    // ⑥ As duas REFERÊNCIAS renderizadas na home de verdade — números
+    // absolutos ganharam contra o que comparar. Saldos: R$ 5.000,00 contra
+    // custo de R$ 800,00–1.000,00/mês ⇒ 5,0 a 6,3 meses.
+    await waitFor(() =>
+      expect(screen.getByTestId('meses-PJ')).toHaveTextContent(
+        '≈ entre 5,0 e 6,3 meses de custo fixo',
+      ),
+    )
+
     // Categorias: dado REAL renderizado, com o gráfico (lazy) montado
     await waitFor(() =>
       expect(screen.getByTestId('total-gasto')).toHaveTextContent('R$ 700,00'),
     )
+    // …e a variação contra o mês anterior ao lado do total
+    expect(screen.getByTestId('variacao')).toHaveTextContent('+R$ 350,00')
+    expect(screen.getByTestId('variacao')).toHaveTextContent('jun/26')
     // O `<Suspense>` do gráfico resolve numa promise separada da `api()` —
     // `total-gasto` (fora do boundary) já pode estar no DOM antes do
     // `import()` dinâmico terminar, então isto precisa do próprio `waitFor`.

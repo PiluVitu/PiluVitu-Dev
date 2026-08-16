@@ -359,7 +359,7 @@ export function RecorrentesPage() {
                     </div>
                     <span
                       data-testid={`faixa-${r.id}`}
-                      className="text-right text-sm font-semibold whitespace-nowrap"
+                      className="text-right text-sm font-semibold whitespace-nowrap tabular-nums"
                     >
                       {formatRange({
                         min: r.amount_min_cents,

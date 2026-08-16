@@ -12,13 +12,19 @@ import {
   BarChart,
   Cell,
   ComposedChart,
+  LabelList,
   ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 import type { CashflowReportView } from '../lib/cashflow'
-import { LIMIAR_ALERTA_PCT, rotuloCompetencia } from '../lib/commitments'
+import {
+  formatPctRange,
+  LIMIAR_ALERTA_PCT,
+  rotuloCompetencia,
+  rotuloMesCurto,
+} from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
 
@@ -39,6 +45,12 @@ const COR_SEM_CATEGORIA = 'hsl(var(--muted-foreground))'
 // Nenhum token novo, mesma disciplina de cor do resto do arquivo.
 const COR_ENTROU = COR_PADRAO
 const COR_SAIU = COR_ALERTA
+// Texto/traço desenhado SOBRE o fundo do card (rótulo de valor, rótulo de
+// risco, contorno tracejado) — o par de maior contraste de luminância que o
+// design system tem contra o fundo, nos dois temas. Nunca `--primary`/
+// `--destructive`: são justamente as duas cores que a medição de contraste
+// reprovou uma contra a outra (ver CONTORNO_ALERTA mais abaixo).
+const COR_TEXTO = 'hsl(var(--foreground))'
 
 const ALTURA = 220
 const LARGURA_MAXIMA = 640
@@ -150,20 +162,78 @@ function useLarguraContainer<T extends HTMLElement>(): {
  */
 const COR_FAIXA_OPACIDADE = 0.45
 
+/**
+ * ⚠️ **ACESSIBILIDADE — a competência em risco (>50%) NÃO pode ser
+ * distinguida só por cor.** MEDIDO: `--primary` × `--destructive` ficam a
+ * **1,80:1 no tema claro e 1,31:1 no escuro** — em escala de cinza, sob sol
+ * no celular, ou pra protanopia/deuteranopia, as duas barras são
+ * praticamente a MESMA. Cor sozinha não é sinal.
+ *
+ * Redundância NÃO-CROMÁTICA escolhida, em dois canais independentes:
+ *
+ * 1. **Contorno tracejado** (`stroke` + `strokeDasharray`) na barra em
+ *    risco. O canal é a FORMA, não o matiz: um tracejado sobrevive à
+ *    escala de cinza, ao brilho do sol e a qualquer daltonismo. O traço usa
+ *    `--foreground` (não `--destructive`) de propósito — o vermelho é
+ *    justamente a cor que falhou a medição; `--foreground` é o par de maior
+ *    contraste de luminância que o design system tem contra o fundo do
+ *    card, nos DOIS temas.
+ * 2. **O `%` escrito na barra** (`LabelList`), só nas competências em
+ *    risco. O canal é o TEXTO: "73%" identifica o mês de risco pelo número,
+ *    sem depender de enxergar cor nenhuma — e ainda diz QUANTO, que a cor
+ *    nunca disse.
+ *
+ * Por que só nas em risco, e não em todas: o card da home mede ~262px
+ * (grid `md:grid-cols-2`, MEDIDO) e já carrega o eixo Y em BRL, a linha de
+ * referência do líquido fixo e a manchete de `BlocoComprometido`. Seis
+ * rótulos a mais empurrariam a leitura pra pior, que é o oposto do
+ * objetivo. A ausência do rótulo não é o sinal — o sinal é o par
+ * tracejado+número, e a manchete acima do gráfico já explicou o limiar.
+ */
+const CONTORNO_ALERTA = COR_TEXTO
+const CONTORNO_ALERTA_DASH = '3 2'
+const CONTORNO_ALERTA_LARGURA = 2
+
 export default function GraficoComprometido({
   report,
 }: {
   report: CommitmentReportView
 }) {
   const { ref, largura } = useLarguraContainer<HTMLDivElement>()
-  const dados = report.competences.map((competence, i) => ({
-    competence,
-    rotulo: rotuloCompetencia(competence),
-    min: report.totals[i].min,
-    faixaAdicional: report.totals[i].max - report.totals[i].min,
-    max: report.totals[i].max,
-    pctMax: report.pct_of_fixed_net[i].max,
-  }))
+  const dados = report.competences.map((competence, i) => {
+    const pct = report.pct_of_fixed_net[i]
+    const emAlerta = pct.max > LIMIAR_ALERTA_PCT
+    return {
+      competence,
+      rotulo: rotuloCompetencia(competence),
+      rotuloCurto: rotuloMesCurto(competence),
+      min: report.totals[i].min,
+      faixaAdicional: report.totals[i].max - report.totals[i].min,
+      max: report.totals[i].max,
+      // `pctMax` saiu do payload: quem decidia cor era `d.pctMax >
+      // LIMIAR_ALERTA_PCT` repetido em CADA `<Cell>`, e agora a decisão é
+      // tomada UMA vez aqui (`emAlerta`) e reusada pelos três consumidores
+      // (cor, contorno tracejado e rótulo de risco). Deixar os dois abriria
+      // espaço pra um deles divergir do outro dentro da mesma barra.
+      emAlerta,
+      // Canal 2 da redundância não-cromática (ver CONTORNO_ALERTA acima).
+      // String vazia nas demais competências — `LabelList` não desenha
+      // texto nenhum pra ela.
+      rotuloRisco: emAlerta ? formatPctRange(pct) : '',
+    }
+  })
+
+  // ② O eixo X rotulava 3 de 6 meses — e o mês CORRENTE era um dos NÃO
+  // rotulados (MEDIDO a 390px E a 1280px). `interval={0}` obriga o recharts
+  // a rotular todas as seis; pra caber, o tick perde o ano
+  // (`rotuloMesCurto`, ver o porquê e a garantia de não-ambiguidade em
+  // `lib/commitments.ts`) e a fonte cai de 12 pra 10.
+  //
+  // ⚠️ `dataKey` continua sendo `rotulo` ('ago/26'), NÃO `rotuloCurto`: o
+  // `dataKey` do eixo é o que o Tooltip usa como cabeçalho, então trocá-lo
+  // tiraria o ano também de lá — e aí a virada dez→jan não teria onde ser
+  // conferida. Só a APRESENTAÇÃO do tick encurta, via `tickFormatter`.
+  const curtoPorRotulo = new Map(dados.map((d) => [d.rotulo, d.rotuloCurto]))
 
   return (
     <div
@@ -172,7 +242,14 @@ export default function GraficoComprometido({
       data-testid="grafico-comprometido"
     >
       <BarChart width={largura} height={ALTURA} data={dados}>
-        <XAxis dataKey="rotulo" fontSize={12} />
+        <XAxis
+          dataKey="rotulo"
+          interval={0}
+          fontSize={10}
+          tickFormatter={(rotulo: string) =>
+            curtoPorRotulo.get(rotulo) ?? rotulo
+          }
+        />
         <YAxis
           width={72}
           fontSize={12}
@@ -206,9 +283,26 @@ export default function GraficoComprometido({
           {dados.map((d) => (
             <Cell
               key={`${d.competence}-min`}
-              fill={d.pctMax > LIMIAR_ALERTA_PCT ? COR_ALERTA : COR_PADRAO}
+              fill={d.emAlerta ? COR_ALERTA : COR_PADRAO}
+              stroke={d.emAlerta ? CONTORNO_ALERTA : undefined}
+              strokeWidth={d.emAlerta ? CONTORNO_ALERTA_LARGURA : 0}
+              strokeDasharray={d.emAlerta ? CONTORNO_ALERTA_DASH : undefined}
             />
           ))}
+          {/* Canal 2 da redundância não-cromática (ver CONTORNO_ALERTA).
+              Ancorado na `<Bar>` do PISO, não na do teto: o segmento
+              `faixaAdicional` vale EXATAMENTE 0 na maioria das
+              competências (min === max), e uma barra de valor 0 não
+              renderiza retângulo nenhum no recharts (MEDIDO, já
+              documentado neste arquivo) — pendurar o rótulo lá o deixaria
+              ausente justo no caso mais comum. O piso sempre existe. */}
+          <LabelList
+            dataKey="rotuloRisco"
+            position="top"
+            fontSize={10}
+            fontWeight={600}
+            fill={COR_TEXTO}
+          />
         </Bar>
         <Bar
           dataKey="faixaAdicional"
@@ -219,8 +313,11 @@ export default function GraficoComprometido({
           {dados.map((d) => (
             <Cell
               key={`${d.competence}-faixa`}
-              fill={d.pctMax > LIMIAR_ALERTA_PCT ? COR_ALERTA : COR_PADRAO}
+              fill={d.emAlerta ? COR_ALERTA : COR_PADRAO}
               fillOpacity={COR_FAIXA_OPACIDADE}
+              stroke={d.emAlerta ? CONTORNO_ALERTA : undefined}
+              strokeWidth={d.emAlerta ? CONTORNO_ALERTA_LARGURA : 0}
+              strokeDasharray={d.emAlerta ? CONTORNO_ALERTA_DASH : undefined}
             />
           ))}
         </Bar>
@@ -239,6 +336,13 @@ const ALTURA_MINIMA_CATEGORIAS = 120
 // "DAS — Simples Nacional" precisam de mais espaço que os 72px usados pro
 // eixo Y numérico de GraficoComprometido acima.
 const LARGURA_ROTULO_CATEGORIA = 108
+// ④ Espaço à DIREITA da barra pro valor em BRL (`LabelList`). Até aqui o
+// valor de cada categoria só existia dentro do `<Tooltip>` — num Android
+// isso significa que ler "quanto foi o DAS" exigia acertar o toque em cima
+// da barra certa, e o número sumia no dedo levantado. O eixo Y já tinha
+// reserva própria (LARGURA_ROTULO_CATEGORIA); a margem direita não tinha, e
+// sem ela o rótulo sai cortado na borda do SVG. ~76px cobre "R$ 1.234,56".
+const MARGEM_ROTULO_VALOR = 76
 
 /**
  * "Para onde foi o dinheiro" (Task 8) — barras HORIZONTAIS, uma por
@@ -293,7 +397,7 @@ export function GraficoCategorias({
         height={altura}
         data={dados}
         layout="vertical"
-        margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
+        margin={{ left: 8, right: MARGEM_ROTULO_VALOR, top: 8, bottom: 8 }}
       >
         <XAxis
           type="number"
@@ -314,6 +418,18 @@ export function GraficoCategorias({
               fill={d.semCategoria ? COR_SEM_CATEGORIA : COR_PADRAO}
             />
           ))}
+          {/* ④ O valor sai do tooltip e vira texto permanente ao lado da
+              barra — ver MARGEM_ROTULO_VALOR acima pro problema medido.
+              `--foreground` (não a cor da barra): o rótulo fica sobre o
+              fundo do card, não sobre a barra, então precisa do contraste
+              de texto normal. */}
+          <LabelList
+            dataKey="valor"
+            position="right"
+            fontSize={10}
+            fill={COR_TEXTO}
+            formatter={(valor: unknown) => formatBRL(Number(valor))}
+          />
         </Bar>
       </BarChart>
     </div>

@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
+import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
 import { rotuloCompetencia } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
+import type { InsightNumbersView } from '../lib/insight'
 import { Bloco } from './Bloco'
 
 // Mesmo chunk lazy de `GraficoComprometido.tsx` (Task 6) — NÃO um segundo
@@ -60,6 +62,7 @@ export function BlocoCategorias() {
   const [mes, setMes] = useState(() => competenciaAtual())
   const [report, setReport] = useState<ByCategoryReportView | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [numeros, setNumeros] = useState<InsightNumbersView | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -72,6 +75,40 @@ export function BlocoCategorias() {
       })
       .catch((e: unknown) => {
         if (vivo) setErro(e instanceof ApiError ? e.message : String(e))
+      })
+    return () => {
+      vivo = false
+    }
+  }, [mes])
+
+  // ⑥ A REFERÊNCIA: "R$ 900,00 é muito ou pouco?" — a resposta é contra o
+  // mês anterior. `GET /api/insights/numbers` já devolve `variation_cents`/
+  // `variation_pct` prontos.
+  //
+  // ⚠️ **Por que consumir a rota em vez de buscar o mês anterior e subtrair
+  // aqui:** a variação NÃO é `atual - anterior` dos totais crus.
+  // `byCategory` devolve despesa com sinal NEGATIVO, e o Worker compara
+  // MAGNITUDES (`Math.abs`) de propósito — usar os totais crus inverteria
+  // o sinal, e "gastei mais" apareceria como variação negativa
+  // (`src/domain/insights.ts`, comentário do `variation_cents`). Reproduzir
+  // essa regra no cliente seria uma segunda cópia de uma conta cuja versão
+  // errada PARECE certa. Custo aceito: `/api/insights/numbers` roda
+  // `byCategory` duas vezes (atual + anterior), então a home passa a
+  // executá-la 3× no mesmo mês — dado de um usuário só, tabela minúscula.
+  //
+  // ⚠️ Efeito SEPARADO e falha SILENCIOSA, mesmo desenho de `BlocoSaldos`:
+  // esta rota é a referência, não o assunto do card. Se ela cair, o total
+  // e o gráfico continuam — nunca um `role="alert"` sobre uma rota que o
+  // dono não pediu.
+  useEffect(() => {
+    let vivo = true
+    setNumeros(null)
+    api<InsightNumbersView>(`/api/insights/numbers?competence=${mes}`)
+      .then((data) => {
+        if (vivo) setNumeros(data)
+      })
+      .catch(() => {
+        if (vivo) setNumeros(null)
       })
     return () => {
       vivo = false
@@ -117,12 +154,15 @@ export function BlocoCategorias() {
                 className="border-input focus-visible:ring-ring mt-1 flex h-9 w-full max-w-40 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
               />
             </label>
-            <span
-              data-testid="total-gasto"
-              className="text-sm font-semibold whitespace-nowrap"
-            >
-              {formatBRL(Math.abs(report.total_cents))}
-            </span>
+            <div className="text-right">
+              <span
+                data-testid="total-gasto"
+                className="text-sm font-semibold whitespace-nowrap tabular-nums"
+              >
+                {formatBRL(Math.abs(report.total_cents))}
+              </span>
+              <Variacao numeros={numeros} />
+            </div>
           </div>
           {erroRefetch ? (
             <p role="alert" className="text-destructive text-sm">
@@ -141,5 +181,56 @@ export function BlocoCategorias() {
         </div>
       ) : null}
     </Bloco>
+  )
+}
+
+/**
+ * "Gastou R$ 340,00 (+61%) a mais que jun/26" — a referência que faltava
+ * pro total absoluto (⑥). Todos os números vêm de
+ * `GET /api/insights/numbers`; nada é recalculado aqui (ver o ⚠️ do efeito
+ * que os busca).
+ *
+ * ⚠️ **Nenhum VERDE.** Gastar menos é uma boa notícia, e o impulso óbvio é
+ * pintá-la de verde — mas o par verde/vermelho é exatamente a regressão de
+ * acessibilidade que este app já recusou (protanopia/deuteranopia
+ * preservam o azul, não o verde; `--success` fica reservado pra confirmação
+ * de salvamento). Gastou MAIS usa `--destructive`, coerente com "vermelho =
+ * dinheiro saindo" no resto do app; gastou menos fica no cinza neutro de
+ * `--muted-foreground`.
+ *
+ * ⚠️ **E a cor não é o sinal de qualquer jeito**: o sinal é o `+`/`−`
+ * explícito na frente do valor, mais as palavras "a mais"/"a menos". Cinza
+ * e vermelho a 1,80:1 teriam o mesmo problema medido de ⑤ — aqui o texto
+ * carrega tudo sozinho.
+ */
+function Variacao({ numeros }: { numeros: InsightNumbersView | null }) {
+  // Rota falhou, ainda carregando, ou nada a comparar — a ausência é
+  // silenciosa (o total continua lá).
+  if (numeros === null || numeros.variation_cents === 0) return null
+
+  const gastouMais = numeros.variation_cents > 0
+  const sinal = gastouMais ? '+' : '−'
+  const valor = formatBRL(Math.abs(numeros.variation_cents))
+  // `variation_pct` é null quando o mês anterior não teve gasto nenhum
+  // (divisão por zero evitada no Worker) — aí só o valor absoluto aparece,
+  // nunca um "Infinity%" nem um 0% inventado.
+  const pct =
+    numeros.variation_pct === null
+      ? ''
+      : ` (${sinal}${Math.abs(numeros.variation_pct)}%)`
+
+  return (
+    <p
+      data-testid="variacao"
+      className={cn(
+        'text-xs whitespace-nowrap tabular-nums',
+        gastouMais ? 'text-destructive' : 'text-muted-foreground',
+      )}
+    >
+      {sinal}
+      {valor}
+      {pct} {gastouMais ? 'a mais' : 'a menos'} que{' '}
+      {rotuloCompetencia(numeros.previous_competence)}
+    </p>
   )
 }

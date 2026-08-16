@@ -202,4 +202,20 @@ describe('FluxoPage', () => {
     )
     expect(await screen.findByText(/liquidado/i)).toBeInTheDocument()
   })
+
+  // ③ Quatro colunas de dinheiro lidas de cima a baixo — sem tabular-nums
+  // os dígitos não alinham entre os meses.
+  it('as quatro colunas de dinheiro usam tabular-nums', async () => {
+    mockFetch({ ok: true, data: reportBase, notifications: [] })
+
+    render(<FluxoPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('linha-2026-06')).toBeInTheDocument(),
+    )
+
+    const linha = within(screen.getByTestId('linha-2026-06'))
+    for (const celula of ['entrou', 'saiu', 'saldo', 'acumulado']) {
+      expect(linha.getByTestId(celula)).toHaveClass('tabular-nums')
+    }
+  })
 })

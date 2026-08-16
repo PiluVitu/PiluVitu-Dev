@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { formatBRL, sumCents } from '@piluvitu/tools/money'
 import { api, ApiError } from '../api'
+import {
+  custoFixoMensal,
+  formatMeses,
+  mesesDeSobrevivencia,
+} from '../lib/reserve'
+import type { EmergencyStatusView, FixedCostRangeView } from '../lib/reserve'
 import { Bloco } from './Bloco'
 
 export type AccountBalanceView = {
@@ -30,6 +36,7 @@ const SCOPES = ['PJ', 'PF'] as const
 export function BlocoSaldos() {
   const [accounts, setAccounts] = useState<AccountBalanceView[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [custo, setCusto] = useState<FixedCostRangeView | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -39,6 +46,34 @@ export function BlocoSaldos() {
       })
       .catch((e: unknown) => {
         if (vivo) setErro(e instanceof ApiError ? e.message : String(e))
+      })
+    return () => {
+      vivo = false
+    }
+  }, [])
+
+  // ⑥ A REFERÊNCIA: "R$ 6.778,40 é muito ou pouco?" só tem resposta contra
+  // alguma coisa, e a coisa é o custo fixo mensal — o mesmo número que a
+  // Reserva já usa, derivado de `GET /api/reserve` (ver `custoFixoMensal`
+  // em `lib/reserve.ts` pro porquê da derivação e de por que ela é exata).
+  //
+  // ⚠️ EFEITO SEPARADO, nunca um `Promise.all` com o de cima. Um
+  // `Promise.all` amarraria o destino dos dois: uma falha em `/api/reserve`
+  // (rota que este bloco NÃO existe pra mostrar) apagaria a lista de
+  // saldos inteira. Precedente do módulo: os dois efeitos independentes de
+  // `pages/insight.tsx` e o `erroInicial`/`erroRefetch` de
+  // `BlocoCategorias.tsx`. Aqui a degradação é ainda mais simples: falhou,
+  // `custo` fica `null` e a referência some — os saldos, que são o assunto
+  // do card, continuam de pé sem nenhuma menção a um erro que o dono não
+  // pode resolver a partir DESTE card.
+  useEffect(() => {
+    let vivo = true
+    api<EmergencyStatusView>('/api/reserve')
+      .then((status) => {
+        if (vivo) setCusto(custoFixoMensal(status))
+      })
+      .catch(() => {
+        if (vivo) setCusto(null)
       })
     return () => {
       vivo = false
@@ -74,17 +109,33 @@ export function BlocoSaldos() {
             const list = accounts.filter((a) => a.scope === scope)
             if (list.length === 0) return null
             const total = sumCents(list.map((a) => a.balance_cents))
+            // ⑥ A referência é POR ESCOPO, nunca sobre um PJ+PF somado —
+            // somar os dois é justamente o que o card se recusa a fazer
+            // (ver o ⚠️ do topo deste arquivo: um total único mente sobre
+            // qual dinheiro é de fato do dono). Cada pilha responde
+            // sozinha "quanto tempo isto aguenta", contra o MESMO custo
+            // fixo mensal — que não é dividido por escopo porque a conta
+            // do mês também não é.
+            const meses = mesesDeSobrevivencia(total, custo)
             return (
               <div key={scope}>
                 <div className="flex items-baseline justify-between">
                   <h4 className="text-sm font-semibold">{scope}</h4>
                   <span
                     data-testid={`total-${scope}`}
-                    className="text-sm font-semibold"
+                    className="text-sm font-semibold tabular-nums"
                   >
                     {formatBRL(total)}
                   </span>
                 </div>
+                {meses ? (
+                  <p
+                    data-testid={`meses-${scope}`}
+                    className="text-muted-foreground text-right text-xs"
+                  >
+                    ≈ {formatMeses(meses)} de custo fixo
+                  </p>
+                ) : null}
                 <ul className="mt-1 space-y-1">
                   {list.map((a) => (
                     <li
@@ -92,7 +143,10 @@ export function BlocoSaldos() {
                       className="text-muted-foreground flex justify-between text-sm"
                     >
                       <span>{a.name}</span>
-                      <span data-testid={`saldo-${a.id}`}>
+                      <span
+                        data-testid={`saldo-${a.id}`}
+                        className="tabular-nums"
+                      >
                         {formatBRL(a.balance_cents)}
                       </span>
                     </li>

@@ -516,7 +516,7 @@ function NumerosCalculados({ numbers }: { numbers: InsightNumbersView }) {
               data-testid={`insight-categoria-${i}`}
             >
               {row.category_name}:{' '}
-              <strong className="text-foreground">
+              <strong className="text-foreground tabular-nums">
                 {formatBRL(Math.abs(row.total_cents))}
               </strong>
             </li>

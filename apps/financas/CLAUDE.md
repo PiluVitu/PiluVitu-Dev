@@ -1135,6 +1135,90 @@ Motivado por dois relatos do dono usando o app em produção: _"queria tmb que m
   - Testado em `importar.test.tsx`, `describe('ImportarPage — PDF: ...')`: o comando aparece por extenso, a frase "nenhum servidor precisa estar ligado" aparece (regex, cobre "ficar"/"estar"), a razão GPU/Metal aparece, e o `accept` do input de arquivo não muda.
 - **282 testes na SPA** (276 → 282, +6: 4 em `App.test.tsx` — estado ativo do nav — e 2 em `importar.test.tsx` — descoberta do PDF). Worker/`apps/web`/`packages/ui`/`packages/tools` intocados (427/89/14/123). Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos — bundle cresceu +1,99 kB / +0,74 kB gzip no JS principal (nav com `NAV_ITEMS`/`cn()` + o card novo do PDF) e +0,49 kB / +0,05 kB gzip no CSS; o chunk lazy do gráfico ficou intocado (nada nesta task toca `recharts`).
 
+## Fazer os números falarem (fatia de bloqueantes — home, gráficos e alinhamento)
+
+Seis mudanças de LEITURA, nenhuma de dado: o Worker está intocado (627 testes), nenhuma rota nova, nenhuma migration. O problema comum às seis é o mesmo — o app tinha os números e não os mostrava, ou os mostrava sem nada com que compará-los.
+
+### ① A manchete do Comprometido (`blocos/BlocoComprometido.tsx`)
+
+⚠️ **O card que justifica o módulo mostrava 6 barras em R$ e NENHUM número — e o `%`, que já vinha em `pct_of_fixed_net`, era DESCARTADO.** A resposta da única pergunta da tela ("quanto da renda fixa já está prometido?") existia só como altura relativa de uma barra contra uma linha tracejada. Agora `formatPctRange(pct_of_fixed_net[0])` + `formatRange(totals[0])` saem em `text-2xl` acima do gráfico.
+
+- **Índice `[0]` é o MÊS CORRENTE**, não escolha arbitrária: a busca é `?from=competenciaAtual()`. É também exatamente a barra que o eixo X deixava sem rótulo antes de ② — as duas mudanças atacam o mesmo buraco por lados diferentes.
+- **O alerta olha o TETO (`max`)**, reusando `LIMIAR_ALERTA_PCT` de `lib/commitments.ts` — nunca um `50` solto: um segundo número aqui faria a manchete e a barra se contradizerem dentro do MESMO card.
+- **Em alerta, a cor não é o único sinal:** junto vem um `role="alert"` que NOMEIA o limiar (mesma razão medida de ⑤).
+
+### ② O eixo X rotula as SEIS competências (`GraficoComprometido`)
+
+⚠️ **MEDIDO a 390px E a 1280px: o recharts rotulava 3 de 6 — e o mês CORRENTE era um dos omitidos.** Corrigido com `interval={0}` + tick ENCURTADO (`rotuloMesCurto`, novo em `lib/commitments.ts`) + fonte 12 → 10.
+
+**Decisão (o brief oferecia reduzir a home a 4 meses como alternativa): manter 6 e encurtar o rótulo.** "Dos próximos 6 meses" é a afirmação inteira do bloco; cortar pra 4 faria a home e `#/comprometido` responderem a MESMA pergunta com janelas diferentes — dois números para uma pergunta só, que é o defeito que este módulo mais caça. Encurtar não perde informação: numa janela de 6 meses (< 12) nenhum nome de mês repete, então `ago…jan` é não-ambíguo — e o **ano não some da tela**, porque o `dataKey` do eixo continua sendo `rotulo` (`'ago/26'`), que é o que o Tooltip usa de cabeçalho. Só a APRESENTAÇÃO do tick encurta, via `tickFormatter`.
+
+⚠️ **O que o teste PROVA e o que NÃO prova (medido, não suposto).** A decisão de pular rótulo é do recharts e depende da largura MEDIDA do texto (`getStringSize` → `offsetWidth`), que no jsdom é sempre 0 ⇒ nada nunca se sobrepõe ⇒ os seis rótulos saem no DOM **com ou sem `interval={0}`**. CONFIRMADO por mutação: removendo `interval={0}`, os 26 casos do arquivo continuam verdes. `interval={0}` fica como a rede que garante o comportamento independente da métrica de texto do navegador, mas **não é observável em teste aqui** — o que os testes travam é a outra metade (o tick encurtado, que é o que faz seis rótulos CABEREM em 262px), e essa metade é mutation-sensitive: remover o `tickFormatter` derruba os dois casos.
+
+⚠️ **MEDIDO (recharts 3.10.1): o rótulo do tick NÃO é descendente de `.recharts-xAxis`** — o recharts hoista os textos pra um layer de z-index próprio (`recharts-zIndex-layer_2000`), irmão do eixo. Um seletor `.recharts-xAxis .recharts-cartesian-axis-tick-value` casa ZERO elementos e faria qualquer asserção de ausência passar por vacuidade. A âncora certa é `.recharts-xAxis-tick-labels`.
+
+### ③ `tabular-nums` em toda coluna de BRL
+
+Existia em **um** lugar no app inteiro (`GraficoComprometido.tsx:371`, o tooltip do fluxo) e em `extrato.tsx`. Sem ela os dígitos têm larguras diferentes e uma coluna feita pra ser lida de cima a baixo deixa de alinhar. Acrescentada em `pages/commitments.tsx` (matriz + TOTAL + %), `pages/fluxo.tsx` (as 4 colunas), `pages/accounts.tsx` (saldo), `pages/debt-detail.tsx` (total/pago/falta + total do pagamento), `pages/DividasPage.tsx` (**os DOIS markups** — tabela ≥ sm e cards < sm), mais `blocos/BlocoSaldos`, `BlocoDividas`, `BlocoCategorias`, a manchete de ①, e as listas verticais de `insight.tsx`/`importar.tsx`/`recorrentes.tsx`. `categorias.tsx` não entrou porque não renderiza dinheiro nenhum (`grep formatBRL` = 0).
+
+### ④ O valor de cada categoria sai do tooltip (`GraficoCategorias`)
+
+⚠️ **O valor só existia dentro do `<Tooltip>`** — num Android, ler quanto foi gasto em "DAS" exigia acertar o toque na barra certa E manter o dedo lá. Agora é `<LabelList dataKey="valor" position="right" formatter={formatBRL}/>`, texto permanente. `LARGURA_ROTULO_CATEGORIA` já reservava o eixo Y, mas a **margem direita não existia** (era 16) — sem `MARGEM_ROTULO_VALOR = 76` o rótulo sai cortado na borda do SVG.
+
+### ⑤ ACESSIBILIDADE — risco com sinal NÃO-CROMÁTICO (`GraficoComprometido`)
+
+⚠️ **Uma competência acima de 50% se distinguia SÓ POR COR, e as duas cores foram MEDIDAS a 1,80:1 no claro e 1,31:1 no escuro** — em escala de cinza, sob sol no celular, ou para protanopia/deuteranopia, as duas barras são praticamente a MESMA. Cor sozinha não é sinal.
+
+**Decisão: dois canais independentes, os dois não-cromáticos** (o brief oferecia `LabelList`, `strokeDasharray` ou marcador; nenhum sozinho cobre os dois modos de falha):
+
+1. **Contorno tracejado** (`stroke` + `strokeDasharray="3 2"`) na barra em risco — o canal é a **FORMA**, que sobrevive a escala de cinza, brilho de sol e qualquer daltonismo. ⚠️ O traço usa **`--foreground`, nunca `--destructive`**: o vermelho é justamente a cor que falhou a medição; o que precisa sobreviver aqui é LUMINÂNCIA, não matiz.
+2. **O `%` escrito na barra** (`LabelList`) — o canal é o **TEXTO**: "73%" identifica o mês pelo número, sem depender de enxergar cor, e ainda diz QUANTO, que a cor nunca disse.
+
+**Por que só nas em risco, e não em todas as barras:** o card da home mede ~262px (grid `md:grid-cols-2`, medida já registrada neste arquivo) e já carrega eixo Y em BRL, a linha de referência do líquido fixo e a manchete de ①; seis rótulos a mais pioram a leitura, o oposto do objetivo. A ausência do rótulo não é o sinal — o sinal é o par tracejado+número.
+
+⚠️ **O `LabelList` do `%` fica ancorado na `<Bar>` do PISO, não na do teto:** o segmento `faixaAdicional` vale EXATAMENTE 0 na maioria das competências (min === max), e uma barra de valor 0 não renderiza retângulo nenhum (achado já documentado neste arquivo) — pendurar o rótulo lá o deixaria ausente justo no caso mais comum.
+
+O sinal segue o **TETO** (`pct.max`), mesma regra da cor e do alerta da tabela.
+
+### ⑥ Números absolutos ganharam referência
+
+**`BlocoSaldos` — "≈ N meses de custo fixo".** `monthlyFixedCost()` existia e só a Reserva usava. Não há rota que o devolva cru, então `lib/reserve.ts#custoFixoMensal` o **DERIVA de `GET /api/reserve`**: `emergencyStatus()` calcula `meta_cents = custo * goal_months` (inteiros em centavos, sem arredondar) e `goal_months` vem no mesmo envelope — dividir de volta é exato, não estimativa. `mesesDeSobrevivencia(saldo, custo)` faz a conta.
+
+- ⚠️ **A faixa INVERTE em relação ao custo** (custo MÁXIMO ⇒ sobrevivência MÍNIMA), mesma regra do domínio. Mora em `lib/reserve.ts` com teste próprio, num lugar só — trocar os dois divisores compila, roda, e devolve um número otimista exatamente no cenário ruim. Provado por mutação (fixture de faixa ABERTA de propósito: com `min === max` a inversão trocada daria o mesmo resultado e o teste não provaria nada).
+- ⚠️ **A referência é POR ESCOPO — PJ e PF continuam SEM nunca serem somados.** Uma referência sobre o total combinado reintroduziria exatamente o número que a separação existe pra evitar. Teste dedicado varre `document.body.textContent` contra o total somado e contra a sua tradução em meses.
+- **Sem nenhuma recorrente cadastrada (o estado real de produção hoje) a referência simplesmente não aparece** — nunca "≈ 0 meses" nem "∞".
+
+**`BlocoCategorias` — variação contra o mês anterior**, de `GET /api/insights/numbers` (`variation_cents`/`variation_pct`/`previous_competence`).
+
+- ⚠️ **Por que consumir a rota em vez de buscar o mês anterior e subtrair no cliente:** a variação NÃO é `atual − anterior` dos totais crus. `byCategory` devolve despesa com sinal NEGATIVO e o Worker compara MAGNITUDES de propósito — usar os totais crus inverteria o sinal, e "gastei mais" apareceria como variação negativa. Reproduzir isso no cliente seria uma segunda cópia de uma conta cuja versão errada PARECE certa. **Custo aceito e medido:** `/api/insights/numbers` roda `byCategory` duas vezes, então a home passa a executá-la 3× para o mesmo mês — dado de um usuário só, tabela minúscula.
+- ⚠️ **Nenhum VERDE.** Gastar menos é boa notícia e o impulso óbvio é pintá-la de verde — seria a regressão de acessibilidade que este app já recusou (`--success` fica só em confirmação de salvamento). Gastou MAIS usa `--destructive` (vermelho = dinheiro saindo, coerente com o resto do app); gastou menos fica no cinza neutro. **E a cor não é o sinal de qualquer jeito:** o sinal é o `+`/`−` explícito e as palavras "a mais"/"a menos".
+- `variation_pct: null` (mês anterior sem gasto) mostra só o valor — nunca `Infinity%`.
+
+⚠️ **As DUAS rotas de referência são buscadas em `useEffect` SEPARADO, nunca num `Promise.all` com a busca principal, e falham em SILÊNCIO** (sem `role="alert"`). Um `Promise.all` amarraria o destino dos dois: uma falha em `/api/reserve` apagaria a lista de saldos inteira. E um alerta sobre uma rota que o dono não pediu — e não pode resolver a partir daquele card — seria só ruído. Precedente: os dois efeitos independentes de `pages/insight.tsx` e o `erroInicial`/`erroRefetch` de `BlocoCategorias`. Coberto por um teste por bloco.
+
+⚠️ **Os mocks de `BlocoSaldos.test.tsx`/`BlocoCategorias.test.tsx` deixaram de ser `mockResolvedValue` único e passaram a ROTEAR por path, rejeitando rota fora do allowlist** (mesma disciplina que endureceu `App.test.tsx#mockFetchVazio` na Task 8). Um mock que respondesse a mesma coisa pras duas rotas entregaria o relatório de categorias onde o componente espera `variation_cents` — o teste exercitaria um shape que a API nunca devolve, e a variação renderizaria `NaN` sem nada apontar isso. `pages/home.test.tsx` também ganhou as duas rotas explicitamente (sem isso, a home testava um estado degradado achando que testava o normal).
+
+### Suítes, mutação e bundle
+
+**SPA: 390 → 432** (base MEDIDA nesta fatia, depois das fatias B e C — o `CLAUDE.md` ainda registrava 389). 34 arquivos, `tsc --noEmit` e prettier limpos. **Worker 627, `apps/web`/`packages/*` intocados** — esta fatia é 100% de leitura.
+
+⚠️ **Verificado por MUTAÇÃO, 9 vezes, cada uma matando só o teste certo pelo motivo certo** (todas revertidas; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                                 | Falha observada                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `tickFormatter` removido do `<XAxis>` (②)               | 2 — os ticks voltam a `ago/26` e não cabem                              |
+| `interval={0}` removido (②)                             | **0 — jsdom não mede texto** (registrado acima, não é lacuna escondida) |
+| `strokeDasharray` do `<Cell>` em risco (⑤)              | 2 — sobra só a cor a 1,80:1                                             |
+| `rotuloRisco` sempre `''` (⑤)                           | 2 — o canal de texto some                                               |
+| `emAlerta` decidido por `pct.min` (⑤ + decisão 2)       | 2 — inclui o teste pré-existente de cor pelo teto                       |
+| `LabelList` do valor removido (④)                       | 2 — o valor volta a viver só no tooltip                                 |
+| manchete lendo `[1]` em vez de `[0]` (①)                | 3 — deixa de ser o mês corrente                                         |
+| manchete decidida por `pct.min` (①)                     | 1 — piso 40%/teto 66% deixa de alertar                                  |
+| divisores de `mesesDeSobrevivencia` invertidos (⑥)      | 3 — incl. `home.test.tsx`, o número otimista no cenário ruim            |
+| `tabular-nums` removido das 5 telas + `BlocoSaldos` (③) | 7 — um por tela, mais os dois markups de `DividasPage`                  |
+
+**Bundle (`vite build`, antes = fatia de categorias / depois = esta):** JS principal 441,04 → 443,69 kB (135,08 → **135,77 kB gzip**, +0,69); chunk lazy `GraficoComprometido` 388,47 → 389,07 kB (113,09 → **113,32 kB gzip**, +0,23 — `LabelList` já fazia parte do `recharts` presente, não é pacote novo); CSS 32,88 → 33,39 kB (6,70 → 6,78 kB gzip). ⚠️ **Continua existindo UM único chunk lazy** (`ls dist/assets/*.js` = 2 arquivos: entrada + `GraficoComprometido-*.js`) — nenhum gráfico novo virou arquivo novo, `GraficoFluxo`/`GraficoCategorias`/`GraficoComprometido` seguem no mesmo módulo. Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) saem com exit 0.
+
 ## Insight de IA — backend (fatia ⑨, Task 3 — `migrations/0007_insights.sql` + `src/domain/insights.ts` + `src/routes/insights.ts`)
 
 Spec: `docs/superpowers/specs/2026-07-28-financas-ui-insights-design.md` §3. **O Mac empurra, o app lê** — nenhuma tela chama o Mac. O dono roda um comando no MacBook com Ollama local (custo zero — Workers AI foi medido funcionando nesta conta e **descartado por ser pago**), que lê os números, gera texto e faz `POST /api/insights`. A app só lê do D1. ⚠️ Esse comando nasceu como `scripts/insight.mjs` (Task 4 desta fatia) e foi substituído por `make insight`/`promeia-insight` (`apps/promeia`) numa fatia posterior — ver seção _O comando do Mac_ mais abaixo.
