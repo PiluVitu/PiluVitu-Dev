@@ -242,13 +242,30 @@ export function ImportarPage() {
 
       const duplicada = existentes.has(idNatural)
       const sugestao = sugerirPayee(l.description, payees)
+      // ⚠️ A categoria sugerida SÓ vale se ainda estiver na lista. O
+      // `payees.default_category_id` é um id gravado no passado e nada o
+      // atualiza quando a categoria é arquivada — e arquivar passou a ser
+      // possível nesta mesma fatia (`POST /api/categories/:id/archive`),
+      // então esta janela nasceu agora, não é dívida antiga.
+      //
+      // Sem esta checagem o `<select>` mostraria "Sem categoria" (o id não
+      // casa com nenhuma `<option>`) enquanto o ESTADO carregaria o id
+      // arquivado, e o envio o mandaria assim mesmo (`:357` faz
+      // `l.category_id || null`). O lançamento nasceria com uma categoria
+      // que nenhuma tela lista — invisível no relatório, sem erro nenhum.
+      // A tela e o dado têm que concordar: se não dá pra ver, não vai.
+      const categoriaSugerida =
+        sugestao?.default_category_id &&
+        categories.some((c) => c.id === sugestao.default_category_id)
+          ? sugestao.default_category_id
+          : ''
       return {
         imported_id: idNatural,
         purchase_date: l.purchase_date,
         amount_cents: l.amount_cents,
         description: l.description,
         payee_id: sugestao?.id ?? '',
-        category_id: sugestao?.default_category_id ?? '',
+        category_id: categoriaSugerida,
         duplicada,
         // Duplicata aparece DESMARCADA por padrão (spec §5) — o dono vê e
         // pode forçar marcando de novo; linha nova vem marcada, pronta pra

@@ -114,6 +114,10 @@ type Chamada = { url: string; method: string; body: string | undefined }
 function mockRede(opts: {
   chamadas: Chamada[]
   transacoesExistentes?: Array<{ imported_id: string | null }>
+  // Lista que `GET /api/categories` devolve. O default e `categories`;
+  // passar uma lista MENOR simula categoria arquivada (a rota filtra
+  // `archived_at IS NULL`, entao arquivada some da resposta).
+  categoriasVisiveis?: typeof categories
   resultadoImport?: (rows: unknown[]) => {
     total: number
     imported: number
@@ -136,7 +140,8 @@ function mockRede(opts: {
 
         if (url.includes('/api/accounts')) return respondJson(accounts)
         if (url.includes('/api/payees')) return respondJson(payees)
-        if (url.includes('/api/categories')) return respondJson(categories)
+        if (url.includes('/api/categories'))
+          return respondJson(opts.categoriasVisiveis ?? categories)
         if (method === 'POST' && url.includes('/api/transactions/import')) {
           const rows = (
             body ? (JSON.parse(body) as { rows: unknown[] }) : { rows: [] }
@@ -381,6 +386,50 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     // Linha 1 (FITID-2, "Uber") sugere p2, sem categoria default.
     expect(screen.getByTestId('payee-1')).toHaveValue('p2')
     expect(screen.getByTestId('categoria-1')).toHaveValue('')
+  })
+
+  test('categoria default ARQUIVADA não é sugerida nem enviada em silêncio', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      // `GET /api/categories` filtra `archived_at IS NULL`, então uma
+      // categoria arquivada simplesmente NÃO vem na lista — mas o
+      // `payees.default_category_id` de p1 continua apontando pra ela
+      // (nada atualiza esse campo quando a categoria é arquivada).
+      categoriasVisiveis: [
+        {
+          id: 'c-transporte',
+          name: 'Transporte',
+          kind: 'expense',
+          slug: 'transporte',
+        },
+      ],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    // ⚠️ O `<select>` sempre mostraria vazio (o id não casa com nenhuma
+    // `<option>`). A asserção que importa é a de BAIXO: o que vai no envio.
+    expect(screen.getByTestId('categoria-0')).toHaveValue('')
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    const envio = chamadas.find((c) =>
+      c.url.includes('/api/transactions/import'),
+    )
+    const corpo = JSON.parse(String(envio?.body)) as {
+      rows: Array<{ category_id: string | null }>
+    }
+    // Antes do conserto, o id arquivado ia daqui e o lançamento nascia com
+    // uma categoria que nenhuma tela lista — invisível no relatório, sem
+    // erro nenhum.
+    expect(corpo.rows[0].category_id).toBeNull()
   })
 
   test('linha já importada aparece marcada como duplicata e desmarcada por padrão — e confirmar não a envia', async () => {
