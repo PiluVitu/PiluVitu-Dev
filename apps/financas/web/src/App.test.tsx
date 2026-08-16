@@ -225,6 +225,17 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 
+  // Fatia de categorias: nova rota, mesmo padrão das demais (link no <nav> +
+  // entrada na cadeia do AppShell).
+  test('#/categorias mostra a tela Categorias', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/categorias'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Categorias' })).toBeDefined(),
+    )
+  })
+
   // Tasks 4-5 (fatia ②): nova rota, mesmo padrão das demais (link no <nav> +
   // entrada na cadeia do AppShell).
   test('#/importar mostra a tela Importar', async () => {
@@ -352,6 +363,19 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
     )
     expect(screen.getByRole('link', { name: 'Extrato' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  test('#/categorias marca "Categorias" como ativo', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/categorias'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Categorias' })).toBeDefined(),
+    )
+    expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute(
       'aria-current',
       'page',
     )

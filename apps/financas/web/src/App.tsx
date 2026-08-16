@@ -5,6 +5,7 @@ import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
 import { AccountsPage } from './pages/accounts'
+import { CategoriasPage } from './pages/categorias'
 import { CommitmentsPage } from './pages/commitments'
 import { ConfigPage } from './pages/config'
 import { DebtDetailPage } from './pages/debt-detail'
@@ -40,6 +41,7 @@ export function useHash(): string {
 type RouteKey =
   | 'home'
   | 'contas'
+  | 'categorias'
   | 'dividas'
   | 'extrato'
   | 'comprometido'
@@ -65,6 +67,7 @@ export function resolveRoute(hash: string): RouteKey {
   if (hash === '#/reserva' || hash === '#/reserva/') return 'reserva'
   if (hash === '#/importar' || hash === '#/importar/') return 'importar'
   if (hash === '#/contas' || hash === '#/contas/') return 'contas'
+  if (hash === '#/categorias' || hash === '#/categorias/') return 'categorias'
   if (hash === '#/configuracoes' || hash === '#/configuracoes/')
     return 'configuracoes'
   return 'home'
@@ -77,6 +80,7 @@ const NAV_ITEMS: { href: string; label: string; route: RouteKey }[] = [
   { href: '#/lancar', label: 'Lançar', route: 'lancar' },
   { href: '#/extrato', label: 'Extrato', route: 'extrato' },
   { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
+  { href: '#/categorias', label: 'Categorias', route: 'categorias' },
   { href: '#/reserva', label: 'Reserva', route: 'reserva' },
   { href: '#/importar', label: 'Importar', route: 'importar' },
   { href: '#/comprometido', label: 'Comprometido', route: 'comprometido' },
@@ -148,6 +152,8 @@ function AppShell() {
         <ImportarPage />
       ) : route === 'contas' ? (
         <AccountsPage />
+      ) : route === 'categorias' ? (
+        <CategoriasPage />
       ) : route === 'configuracoes' ? (
         <ConfigPage />
       ) : (
