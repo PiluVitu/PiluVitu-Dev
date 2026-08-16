@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createPayee, listPayees, normalizeName } from './payees'
+import { createPayee, listPayees, normalizeName, updatePayee } from './payees'
 
 describe('normalizeName', () => {
   it('sobe pra caixa alta', () => {
@@ -75,5 +75,92 @@ describe('createPayee / listPayees', () => {
 
     const todos = await listPayees(env.DB)
     expect(todos).toHaveLength(3)
+  })
+})
+
+describe('updatePayee', () => {
+  // Categoria semeada pela migration 0001 — 'DAS — Simples Nacional'.
+  const DAS = '00000000-0000-4000-8000-000000000002'
+
+  it('ENSINA a categoria padrão de um payee já criado (o buraco real)', async () => {
+    // DividasPage.tsx posta só { name, kind } — todo payee de produção nasce
+    // com default_category_id NULL, e sem PUT ele ficava NULL pra sempre.
+    const payee = await createPayee(env.DB, { name: 'Pai', kind: 'person' })
+    expect(payee.default_category_id).toBeNull()
+
+    const upd = await updatePayee(env.DB, payee.id, {
+      default_category_id: DAS,
+    })
+    expect(upd?.default_category_id).toBe(DAS)
+
+    const row = await env.DB.prepare(
+      'SELECT default_category_id FROM payees WHERE id = ?',
+    )
+      .bind(payee.id)
+      .first<{ default_category_id: string | null }>()
+    expect(row?.default_category_id).toBe(DAS)
+  })
+
+  it('RECALCULA norm_name ao renomear — é a chave de matching do import', async () => {
+    const payee = await createPayee(env.DB, {
+      name: 'Mercado São Luiz  Teresina PI',
+      kind: 'merchant',
+    })
+    expect(payee.norm_name).toBe('MERCADO SAO LUIZ')
+
+    const upd = await updatePayee(env.DB, payee.id, {
+      name: 'Padaria do Zé PAGSEGURO',
+    })
+    expect(upd?.name).toBe('Padaria do Zé PAGSEGURO')
+    // Sem o recálculo, o payee continuaria casando com 'MERCADO SAO LUIZ' na
+    // próxima importação — silenciosamente, com a categoria errada.
+    expect(upd?.norm_name).toBe('PADARIA DO ZE')
+
+    const row = await env.DB.prepare(
+      'SELECT norm_name FROM payees WHERE id = ?',
+    )
+      .bind(payee.id)
+      .first<{ norm_name: string }>()
+    expect(row?.norm_name).toBe('PADARIA DO ZE')
+  })
+
+  it('corrige document e aceita voltar campos pra null', async () => {
+    const payee = await createPayee(env.DB, {
+      name: 'Minha PJ',
+      kind: 'self_entity',
+      document: '00000000000000',
+      default_category_id: DAS,
+    })
+
+    const upd = await updatePayee(env.DB, payee.id, {
+      document: '11444777000161',
+      default_category_id: null,
+    })
+    expect(upd?.document).toBe('11444777000161')
+    expect(upd?.default_category_id).toBeNull()
+  })
+
+  it('devolve null pra id inexistente (patch cheio e patch vazio)', async () => {
+    expect(await updatePayee(env.DB, 'nao-existe', { name: 'X' })).toBeNull()
+    expect(await updatePayee(env.DB, 'nao-existe', {})).toBeNull()
+  })
+
+  it('patch vazio devolve a linha atual sem alterar nada', async () => {
+    const payee = await createPayee(env.DB, { name: 'Pai', kind: 'person' })
+    const igual = await updatePayee(env.DB, payee.id, {})
+    expect(igual?.name).toBe('Pai')
+    expect(igual?.norm_name).toBe('PAI')
+  })
+
+  it('recusa name vazio com RangeError, sem tocar a linha', async () => {
+    const payee = await createPayee(env.DB, { name: 'Pai', kind: 'person' })
+    await expect(updatePayee(env.DB, payee.id, { name: '  ' })).rejects.toThrow(
+      /name/,
+    )
+
+    const row = await env.DB.prepare('SELECT name FROM payees WHERE id = ?')
+      .bind(payee.id)
+      .first<{ name: string }>()
+    expect(row?.name).toBe('Pai')
   })
 })

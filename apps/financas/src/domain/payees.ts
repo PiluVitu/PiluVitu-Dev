@@ -126,6 +126,75 @@ export async function createPayee(
   return row
 }
 
+export type PayeePatch = Partial<{
+  name: string
+  document: string | null
+  default_category_id: string | null
+}>
+
+/**
+ * Update parcial por whitelist. Existe porque `routes/payees.ts` só tinha
+ * `GET /` e `POST /`: `default_category_id` era ACEITO na criação
+ * (`createPayee` sempre o bindou) e IMUTÁVEL depois — e o único chamador da
+ * SPA, `DividasPage.tsx`, posta só `{name, kind:'person'}`. A cadeia inteira
+ * ficava: a coluna existe → ninguém preenche → `sugerirPayee` (import, fatia
+ * ②) lê `default_category_id` e a sugestão SEMPRE vem sem categoria. Sem um
+ * PUT não havia como ENSINAR um payee já criado.
+ *
+ * ⚠️ `norm_name` é RECALCULADO junto com `name`, sempre, na mesma statement.
+ * Ele é a CHAVE DE MATCHING do import (`idx_payees_norm`, casado contra a
+ * descrição normalizada da linha importada) — não um campo de exibição.
+ * Renomear "Mercado Sao Luiz" pra "Padaria do Zé" e deixar o `norm_name`
+ * velho faria o payee continuar casando com o estabelecimento ANTIGO,
+ * silenciosamente, e a categoria sugerida sairia errada em toda importação
+ * seguinte. Por isso `norm_name` também não é aceito do cliente (a rota o
+ * recusa como campo protegido): ele é derivado, e um segundo caminho de
+ * escrita poderia contradizer o `name`.
+ *
+ * Devolve `null` pra id inexistente — convenção do módulo
+ * (archiveAccount/updateRecurring); a rota traduz em 404.
+ */
+export async function updatePayee(
+  db: D1Database,
+  id: string,
+  patch: PayeePatch,
+): Promise<Payee | null> {
+  const set: string[] = []
+  const values: unknown[] = []
+
+  if ('name' in patch) {
+    const name = (patch.name ?? '').trim()
+    if (name === '') throw new RangeError('name é obrigatório')
+    set.push('name = ?', 'norm_name = ?')
+    values.push(name, normalizeName(name))
+  }
+  if ('document' in patch) {
+    set.push('document = ?')
+    values.push(patch.document ?? null)
+  }
+  if ('default_category_id' in patch) {
+    set.push('default_category_id = ?')
+    values.push(patch.default_category_id ?? null)
+  }
+
+  if (set.length === 0) return getPayee(db, id)
+
+  const res = await db
+    .prepare(`UPDATE payees SET ${set.join(', ')} WHERE id = ?`)
+    .bind(...values, id)
+    .run()
+  if (res.meta.changes === 0) return null
+
+  return getPayee(db, id)
+}
+
+export async function getPayee(
+  db: D1Database,
+  id: string,
+): Promise<Payee | null> {
+  return db.prepare('SELECT * FROM payees WHERE id = ?').bind(id).first<Payee>()
+}
+
 export async function listPayees(
   db: D1Database,
   opts: { kind?: PayeeKind } = {},
