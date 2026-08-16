@@ -113,21 +113,39 @@ type ConfirmacaoPendente = {
   onConfirm: () => void | Promise<void>
 }
 
+/** Erro de UMA ação, preso à LINHA em que a ação foi disparada. */
+type ErroDeLinha = { id: string; mensagem: string }
+
 type FormEdicao = {
   descricao: string
+  /** MAGNITUDE, sem sinal — quem carrega o sinal é `entrada`. */
   valor: string
+  entrada: boolean
   data: string
   contaId: string
   categoriaId: string
   pj: boolean
 }
 
+/**
+ * ⚠️ O sinal do valor NÃO é digitado — é o checkbox "Entrada", exatamente
+ * como a tela Lançar (`new-entry.tsx:122`, `entrada ? total : -total`).
+ *
+ * O campo nascia com `formatBRL(t.amount_cents)` (`-R$ 13.600,00`) e exigia
+ * que o dono redigitasse o `-` junto com o valor novo. MEDIDO ponta a ponta:
+ * campo `-R$ 13.600,00` → digitado `12.000,00` → `PATCH {"amount_cents":
+ * 1200000}` POSITIVO, sem erro nenhum (o servidor aceita qualquer inteiro
+ * != 0). A despesa virava entrada: o saldo errava 2× o valor, a linha sumia
+ * de `byCategory` (que filtra `amount_cents < 0`) e passava a contar como
+ * "entrou" no fluxo de caixa. A ajuda que existia ("-1.360,00 (saída) ou
+ * 1.360,00") só aparecia quando o parse FALHAVA — nunca no caso perigoso,
+ * que é o parse ACERTAR com o sinal errado.
+ */
 function formDe(t: TransactionView): FormEdicao {
   return {
     descricao: t.description,
-    // `formatBRL` faz round-trip por `parseBRL` (inclusive o sinal, que
-    // aqui carrega o significado: negativo = saiu, positivo = entrou).
-    valor: formatBRL(t.amount_cents),
+    valor: formatBRL(Math.abs(t.amount_cents)),
+    entrada: t.amount_cents > 0,
     data: t.purchase_date,
     contaId: t.account_id,
     categoriaId: t.category_id ?? '',
@@ -146,7 +164,36 @@ export function ExtratoPage() {
   const [somenteNaoPagos, setSomenteNaoPagos] = useState(false)
   const [busca, setBusca] = useState('')
 
+  /**
+   * Erro de PÁGINA — o que não pertence a nenhuma linha: a busca de
+   * contas/categorias e o "carregar mais".
+   */
   const [acaoErro, setAcaoErro] = useState<string | null>(null)
+  /**
+   * ⚠️ Erro de LINHA, renderizado DENTRO da linha que falhou — nunca no topo
+   * da página.
+   *
+   * As três mutações (apagar, editar, liquidar) escreviam num `<p>` único lá
+   * em cima. MEDIDO no Chrome real a 390×844, com 30 linhas e um DELETE
+   * recusado (422 `transaction_has_owner`) na linha t28:
+   * `{top:-3828, bottom:-3788, scrollY:4181, visivelNoViewport:false}` — a
+   * recusa renderizava 3.828 px ACIMA do viewport, e pro dono o botão
+   * "apagar" simplesmente não fazia nada.
+   *
+   * Isso anulava a decisão CENTRAL da fatia: a mensagem vem crua do domínio
+   * porque é ELA que nomeia a porta certa ("cancele o parcelamento
+   * inteiro", "use DELETE /api/debts/:id/payments/:paymentId"). Uma
+   * mensagem que ninguém vê não nomeia nada.
+   *
+   * Por que inline por linha, e não `scrollIntoView` no `<p>` do topo: o
+   * dedo do dono está NA LINHA, e rolar a página inteira até o topo tira
+   * dele o lugar onde estava (com 30+ linhas ele perde a referência do que
+   * tocou); e a mensagem do domínio é uma frase inteira, que no topo fica
+   * longe da ação que a provocou. Aqui ela nasce a poucos pixels do botão,
+   * sem mover nada. `role="alert"` continua (leitor de tela segue sendo
+   * avisado) — só mudou ONDE o elemento vive.
+   */
+  const [erroLinha, setErroLinha] = useState<ErroDeLinha | null>(null)
   const [processando, setProcessando] = useState<string | null>(null)
   const [confirmacao, setConfirmacao] = useState<ConfirmacaoPendente | null>(
     null,
@@ -270,12 +317,13 @@ export function ExtratoPage() {
   function trocarFiltro(valor: boolean) {
     paginasRef.current = 1
     setAcaoErro(null)
+    setErroLinha(null)
     setSomenteNaoPagos(valor)
   }
 
   function abrirLiquidacao(t: TransactionView) {
     setEditando(null)
-    setAcaoErro(null)
+    setErroLinha(null)
     setLiquidando(t.id)
     // ⚠️ `todayInTeresina()`, NUNCA `new Date().toISOString()`: às 22h de
     // Teresina o UTC já virou o dia seguinte, e a data escolhida sairia um
@@ -286,7 +334,7 @@ export function ExtratoPage() {
   }
 
   async function confirmarLiquidacao(t: TransactionView) {
-    setAcaoErro(null)
+    setErroLinha(null)
     setProcessando(t.id)
     const resultado = await mutarERecarregar(
       () =>
@@ -297,21 +345,21 @@ export function ExtratoPage() {
       recarregar,
       `"${t.description}" foi marcado como pago em ${formatarData(dataLiquidacao)}, mas não consegui recarregar a lista — atualize a página pra vê-la. Não clique de novo: a segunda tentativa responde "não encontrado ou já liquidado" e pareceria falha.`,
     )
-    if (!resultado.ok) setAcaoErro(resultado.mensagem)
+    if (!resultado.ok) setErroLinha({ id: t.id, mensagem: resultado.mensagem })
     setProcessando(null)
     setLiquidando(null)
   }
 
   function abrirEdicao(t: TransactionView) {
     setLiquidando(null)
-    setAcaoErro(null)
+    setErroLinha(null)
     setEditando(t.id)
     setForm(formDe(t))
   }
 
   async function salvarEdicao(t: TransactionView) {
     if (form === null) return
-    setAcaoErro(null)
+    setErroLinha(null)
 
     // Só o que MUDOU entra no corpo. Não é economia de bytes: mandar
     // `amount_cents` inalterado numa parcela faria o servidor recusar
@@ -320,7 +368,7 @@ export function ExtratoPage() {
     // precisa poder fazer.
     const patch: Record<string, unknown> = {}
     if (form.descricao.trim() === '') {
-      setAcaoErro('Descreva o lançamento.')
+      setErroLinha({ id: t.id, mensagem: 'Descreva o lançamento.' })
       return
     }
     if (form.descricao !== t.description) patch.description = form.descricao
@@ -330,15 +378,34 @@ export function ExtratoPage() {
     if (form.data !== t.purchase_date) patch.purchase_date = form.data
     if (form.contaId !== t.account_id) patch.account_id = form.contaId
 
-    let valorCents: number
+    // ⚠️ O campo guarda a MAGNITUDE; o sinal vem do checkbox "Entrada" —
+    // mesmo precedente da tela Lançar (`new-entry.tsx:122`). Um `-` digitado
+    // é RECUSADO em vez de silenciosamente absorvido: ele significaria que o
+    // dono ainda acha que o sinal se digita aqui, e `Math.abs()` calado
+    // deixaria essa crença de pé até a próxima edição.
+    let magnitude: number
     try {
-      valorCents = parseBRL(form.valor)
+      magnitude = parseBRL(form.valor)
     } catch {
-      setAcaoErro(
-        'Valor inválido. Use o formato -1.360,00 (saída) ou 1.360,00.',
-      )
+      setErroLinha({
+        id: t.id,
+        mensagem:
+          'Valor inválido. Digite só o número (ex.: 1.360,00) — quem decide se entrou ou saiu é o "Entrada" logo abaixo.',
+      })
       return
     }
+    if (magnitude <= 0) {
+      setErroLinha({
+        id: t.id,
+        mensagem:
+          'Digite o valor sem sinal (ex.: 1.360,00) e marque "Entrada" se o dinheiro ENTROU. Sem marcar, é saída.',
+      })
+      return
+    }
+    const valorCents = form.entrada ? magnitude : -magnitude
+    // Só entra no corpo se de fato MUDOU: mandar `amount_cents` inalterado
+    // numa parcela faria o servidor recusar (nível B) uma edição que só
+    // trocava a categoria.
     if (valorCents !== t.amount_cents) patch.amount_cents = valorCents
 
     if (Object.keys(patch).length === 0) {
@@ -357,7 +424,7 @@ export function ExtratoPage() {
       `"${t.description}" foi corrigido, mas não consegui recarregar a lista — atualize a página pra ver o valor novo. Não envie de novo: a tela ainda mostra o valor ANTIGO, e reenviar gravaria por cima do que você acabou de salvar.`,
     )
     if (!resultado.ok) {
-      setAcaoErro(resultado.mensagem)
+      setErroLinha({ id: t.id, mensagem: resultado.mensagem })
       // A recusa de nível B (`protected_field`) nomeia a porta certa
       // ("cancele o parcelamento inteiro"...) — o formulário fica aberto
       // pro dono desfazer a mudança que foi recusada, em vez de sumir
@@ -374,20 +441,42 @@ export function ExtratoPage() {
       titulo: 'Apagar lançamento',
       mensagem: mensagemDeExclusao(t),
       onConfirm: async () => {
-        setAcaoErro(null)
+        setErroLinha(null)
         setProcessando(t.id)
         const resultado = await mutarERecarregar(
           () => api(`/api/transactions/${t.id}`, { method: 'DELETE' }),
           recarregar,
           `"${t.description}" foi apagado, mas não consegui recarregar a lista — atualize a página pra vê-la sem ele. Não clique de novo: a segunda tentativa responde "não encontrado" e pareceria falha.`,
         )
-        if (!resultado.ok) setAcaoErro(resultado.mensagem)
+        if (!resultado.ok)
+          setErroLinha({ id: t.id, mensagem: resultado.mensagem })
         setProcessando(null)
       },
     })
   }
 
+  /**
+   * O conteúdo da linha + o erro DAQUELA linha, logo abaixo da ação que
+   * falhou (ver o comentário de `erroLinha` lá em cima pro porquê).
+   */
   function corpoDaLinha(t: TransactionView) {
+    return (
+      <>
+        {conteudoDaLinha(t)}
+        {erroLinha !== null && erroLinha.id === t.id ? (
+          <p
+            role="alert"
+            data-testid={`erro-linha-${t.id}`}
+            className="text-destructive mt-2 text-sm"
+          >
+            {erroLinha.mensagem}
+          </p>
+        ) : null}
+      </>
+    )
+  }
+
+  function conteudoDaLinha(t: TransactionView) {
     if (editando === t.id && form !== null) {
       return (
         <form
@@ -434,14 +523,29 @@ export function ExtratoPage() {
             PJ
           </label>
 
+          {/* ⚠️ Valor SEM sinal + checkbox "Entrada" — o mesmo jeito de a
+              tela Lançar representar sinal (`new-entry.tsx`), nunca um
+              terceiro. Digitar o `-` já custou uma despesa virando entrada
+              em silêncio (ver `formDe`). */}
           <div className="space-y-1.5">
             <Label htmlFor={`ed-valor-${t.id}`}>Valor</Label>
             <Input
               id={`ed-valor-${t.id}`}
               value={form.valor}
+              placeholder="1.360,00"
               onChange={(e) => setForm({ ...form, valor: e.target.value })}
             />
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className={CHECKBOX_CLASSNAME}
+              data-testid={`ed-entrada-${t.id}`}
+              checked={form.entrada}
+              onChange={(e) => setForm({ ...form, entrada: e.target.checked })}
+            />
+            Entrada (dinheiro que ENTROU; sem marcar, é saída)
+          </label>
           <div className="space-y-1.5">
             <Label htmlFor={`ed-data-${t.id}`}>Data</Label>
             <Input
@@ -617,6 +721,9 @@ export function ExtratoPage() {
           {erro}
         </p>
       )}
+      {/* Só o que NÃO pertence a nenhuma linha mora aqui (nomes de
+          conta/categoria, "carregar mais"). Falha de mutação vai pra dentro
+          da linha — ver `erroLinha`. */}
       {acaoErro !== null && (
         <p
           role="alert"

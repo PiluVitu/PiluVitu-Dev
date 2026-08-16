@@ -411,11 +411,11 @@ describe('ExtratoPage — editar', () => {
     await user.click(screen.getByTestId('editar-t1'))
     const valor = screen.getByLabelText('Valor')
     await user.clear(valor)
-    await user.type(valor, '-200,00')
+    await user.type(valor, '200,00')
     await user.click(screen.getByTestId('salvar-t1'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('acao-erro')).toHaveTextContent(
+      expect(screen.getByTestId('erro-linha-t1')).toHaveTextContent(
         /cancele o parcelamento inteiro/i,
       ),
     )
@@ -440,13 +440,136 @@ describe('ExtratoPage — editar', () => {
     await user.click(screen.getByTestId('salvar-t1'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('acao-erro')).toHaveTextContent(
+      expect(screen.getByTestId('erro-linha-t1')).toHaveTextContent(
         /Valor inválido/i,
       ),
     )
     expect(
       vi.mocked(api).mock.calls.filter((c) => (c[1] as RequestInit)?.method),
     ).toHaveLength(0)
+  })
+})
+
+/**
+ * ⚠️ Defeito ② — MEDIDO ponta a ponta no Chrome real: campo nascia
+ * `-R$ 13.600,00`, o dono digitava `12.000,00` (sem redigitar o `-`) e o
+ * `PATCH` saía com `amount_cents: 1200000` POSITIVO, sem erro nenhum. A
+ * despesa virava entrada: saldo errado em 2× o valor, a linha sumia de
+ * `byCategory` (que filtra `< 0`) e entrava como "entrou" no fluxo de caixa.
+ *
+ * Todas as asserções aqui são de VALOR (o número exato que sai no corpo),
+ * nunca de presença — "mandou `amount_cents`" passaria com o sinal trocado,
+ * que é exatamente o defeito.
+ */
+describe('ExtratoPage — editar valor: o sinal vem do "Entrada", nunca digitado', () => {
+  function estadoComMutacaoEspiada(linhas: TransactionView[]) {
+    const estado: Estado = { linhas }
+    const corpos: Record<string, unknown>[] = []
+    estado.mutacao = async (_path, init) => {
+      corpos.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+      return {}
+    }
+    montarApi(estado)
+    return corpos
+  }
+
+  it('o campo nasce SEM sinal e o PATCH sai NEGATIVO numa despesa', async () => {
+    const user = comRelogio()
+    const corpos = estadoComMutacaoEspiada([
+      tx({ id: 't1', amount_cents: -1360000, description: 'Notebook' }),
+    ])
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    // Nasce sem o `-`: não há sinal pra o dono redigitar (nem esquecer).
+    expect(screen.getByLabelText('Valor')).toHaveValue('R$ 13.600,00')
+    expect(screen.getByTestId('ed-entrada-t1')).not.toBeChecked()
+
+    await user.clear(screen.getByLabelText('Valor'))
+    await user.type(screen.getByLabelText('Valor'), '12.000,00')
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await waitFor(() => expect(corpos.length).toBe(1))
+    expect(corpos[0]).toEqual({ amount_cents: -1200000 })
+  })
+
+  it('marcar "Entrada" é o que torna o valor POSITIVO', async () => {
+    const user = comRelogio()
+    const corpos = estadoComMutacaoEspiada([
+      tx({ id: 't1', amount_cents: -1360000 }),
+    ])
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    await user.click(screen.getByTestId('ed-entrada-t1'))
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await waitFor(() => expect(corpos.length).toBe(1))
+    expect(corpos[0]).toEqual({ amount_cents: 1360000 })
+  })
+
+  it('uma linha que JÁ é entrada abre com o checkbox marcado e volta igual', async () => {
+    const user = comRelogio()
+    const corpos = estadoComMutacaoEspiada([
+      tx({ id: 't1', amount_cents: 500000, description: 'Freela' }),
+    ])
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    expect(screen.getByLabelText('Valor')).toHaveValue('R$ 5.000,00')
+    expect(screen.getByTestId('ed-entrada-t1')).toBeChecked()
+
+    // Só a descrição muda: o valor volta com o MESMO sinal, então
+    // `amount_cents` nem entra no corpo.
+    await user.type(screen.getByLabelText('Descrição'), ' de julho')
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await waitFor(() => expect(corpos.length).toBe(1))
+    expect(corpos[0]).toEqual({ description: 'Freela de julho' })
+  })
+
+  it('não tocar no valor NÃO manda amount_cents (senão o servidor recusaria uma parcela)', async () => {
+    const user = comRelogio()
+    const corpos = estadoComMutacaoEspiada([
+      tx({ id: 't1', amount_cents: -1360000 }),
+    ])
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    await user.selectOptions(
+      screen.getByLabelText('Categoria'),
+      'DAS — Simples Nacional',
+    )
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await waitFor(() => expect(corpos.length).toBe(1))
+    expect(corpos[0]).toEqual({ category_id: 'c2' })
+    expect(corpos[0]).not.toHaveProperty('amount_cents')
+  })
+
+  it('digitar o "-" é RECUSADO — não vira entrada em silêncio nem some por Math.abs', async () => {
+    const user = comRelogio()
+    const corpos = estadoComMutacaoEspiada([
+      tx({ id: 't1', amount_cents: -1360000 }),
+    ])
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('editar-t1'))
+    await user.clear(screen.getByLabelText('Valor'))
+    await user.type(screen.getByLabelText('Valor'), '-12.000,00')
+    await user.click(screen.getByTestId('salvar-t1'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('erro-linha-t1')).toHaveTextContent(
+        /sem sinal/i,
+      ),
+    )
+    expect(corpos).toEqual([])
   })
 })
 
@@ -543,7 +666,7 @@ describe('ExtratoPage — apagar', () => {
       }),
     )
 
-    const alerta = await screen.findByTestId('acao-erro')
+    const alerta = await screen.findByTestId('erro-linha-t1')
     // O DELETE ACONTECEU — a mensagem tem que dizer isso, e nunca repetir a
     // mensagem do GET (503 "sem conexão"), que faria o dono clicar de novo
     // e receber um 404 "não encontrado" parecendo falha.
@@ -551,6 +674,146 @@ describe('ExtratoPage — apagar', () => {
     expect(alerta).toHaveTextContent(/Não clique de novo/i)
     expect(alerta).not.toHaveTextContent(/sem conexão/i)
     expect(chamadas).toEqual(['DELETE /api/transactions/t1'])
+  })
+})
+
+/**
+ * ⚠️ Defeito ① — MEDIDO no Chrome real a 390×844, com 30 linhas e um DELETE
+ * recusado (422 `transaction_has_owner`) na linha t28: a recusa renderizava
+ * em `{top:-3828, bottom:-3788, scrollY:4181, visivelNoViewport:false}` —
+ * 3.828 px ACIMA do viewport. Pro dono, o botão "apagar" era inerte.
+ *
+ * jsdom não faz layout, então "visível no viewport" é aferido pela única
+ * propriedade que o produz de fato e que dá pra medir aqui: o alerta é
+ * DESCENDENTE da linha em que o dedo está, e não existe nenhum alerta fora
+ * da lista. As três mutações têm caso próprio — as três escreviam no MESMO
+ * `<p>` do topo.
+ */
+describe('ExtratoPage — a recusa aparece NA LINHA, nunca no topo da página', () => {
+  const trinta = Array.from({ length: 30 }, (_, i) =>
+    tx({
+      id: `t${i}`,
+      description: `Lançamento ${i}`,
+      purchase_date: '2026-07-20',
+      created_at: '2026-07-20T10:00:00Z',
+    }),
+  )
+
+  it('DELETE recusado escreve dentro de linha-t28, e nada no topo', async () => {
+    const user = comRelogio()
+    window.innerWidth = 390
+    const estado: Estado = { linhas: [...trinta] }
+    estado.mutacao = async () => {
+      throw new ApiError(
+        422,
+        'transaction_has_owner',
+        'esta linha é um pagamento de dívida: use DELETE /api/debts/:id/payments/:paymentId pra apagá-la junto com o pagamento.',
+      )
+    }
+    montarApi(estado)
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t28')
+
+    await user.click(screen.getByTestId('apagar-t28'))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Confirmar',
+      }),
+    )
+
+    const linha = await screen.findByTestId('linha-t28')
+    await waitFor(() =>
+      expect(within(linha).getByRole('alert')).toHaveTextContent(
+        /use DELETE \/api\/debts/i,
+      ),
+    )
+    // A mensagem CRUA do domínio (a que nomeia a porta certa) sobrevive
+    // inteira — nada de "não foi possível apagar" genérico.
+    expect(within(linha).getByTestId('erro-linha-t28')).toHaveTextContent(
+      'esta linha é um pagamento de dívida: use DELETE /api/debts/:id/payments/:paymentId pra apagá-la junto com o pagamento.',
+    )
+    // Nenhum alerta no topo: o `<p>` de página fica pro que não é de linha.
+    expect(screen.queryByTestId('acao-erro')).not.toBeInTheDocument()
+    // E nenhuma OUTRA linha ganha o erro.
+    expect(
+      within(screen.getByTestId('linha-t0')).queryByRole('alert'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('PATCH recusado escreve dentro da linha, com o formulário ainda aberto', async () => {
+    const user = comRelogio()
+    window.innerWidth = 390
+    const estado: Estado = { linhas: [...trinta] }
+    estado.mutacao = async () => {
+      throw new ApiError(
+        422,
+        'protected_field',
+        'esta linha é uma parcela de um parcelamento: cancele o parcelamento inteiro.',
+      )
+    }
+    montarApi(estado)
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t28')
+
+    await user.click(screen.getByTestId('editar-t28'))
+    await user.clear(screen.getByLabelText('Valor'))
+    await user.type(screen.getByLabelText('Valor'), '200,00')
+    await user.click(screen.getByTestId('salvar-t28'))
+
+    const linha = await screen.findByTestId('linha-t28')
+    await waitFor(() =>
+      expect(within(linha).getByTestId('erro-linha-t28')).toHaveTextContent(
+        /cancele o parcelamento inteiro/i,
+      ),
+    )
+    expect(within(linha).getByTestId('form-edicao-t28')).toBeInTheDocument()
+    expect(screen.queryByTestId('acao-erro')).not.toBeInTheDocument()
+  })
+
+  it('settle recusado escreve dentro da linha', async () => {
+    const user = comRelogio()
+    window.innerWidth = 390
+    const estado: Estado = { linhas: [...trinta] }
+    estado.mutacao = async () => {
+      throw new ApiError(404, 'not_found', 'não encontrado ou já liquidado')
+    }
+    montarApi(estado)
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t28')
+
+    await user.click(screen.getByTestId('marcar-pago-t28'))
+    await user.click(screen.getByTestId('confirmar-pago-t28'))
+
+    const linha = await screen.findByTestId('linha-t28')
+    await waitFor(() =>
+      expect(within(linha).getByTestId('erro-linha-t28')).toHaveTextContent(
+        /já liquidado/i,
+      ),
+    )
+    expect(screen.queryByTestId('acao-erro')).not.toBeInTheDocument()
+  })
+
+  it('o erro some quando o dono começa outra ação na mesma linha', async () => {
+    const user = comRelogio()
+    window.innerWidth = 390
+    const estado: Estado = { linhas: [...trinta] }
+    estado.mutacao = async () => {
+      throw new ApiError(422, 'transaction_has_owner', 'recusado pelo domínio')
+    }
+    montarApi(estado)
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t28')
+
+    await user.click(screen.getByTestId('apagar-t28'))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Confirmar',
+      }),
+    )
+    await screen.findByTestId('erro-linha-t28')
+
+    await user.click(screen.getByTestId('editar-t28'))
+    expect(screen.queryByTestId('erro-linha-t28')).not.toBeInTheDocument()
   })
 })
 

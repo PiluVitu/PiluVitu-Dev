@@ -553,7 +553,19 @@ Consome `GET /api/transactions` (com `?limit=`, `?settled=`, `?before=`), `PATCH
 
 ⚠️ **Quem decide se a linha é livre é a RESPOSTA da API, nunca uma heurística da tela.** `inspectTransaction` **não tem porta HTTP** (`GET /api/transactions/:id` não existe — registrado acima), e a linha do extrato só carrega `transfer_id`/`parent_id`/`imported_id`: parcela, pagamento de dívida e rateio-pai são **indeterminados** no cliente. Desabilitar os campos "por precaução" travaria a edição de linhas livres; adivinhar erraria em silêncio. A tela mostra os campos, e a mensagem da recusa vem **crua do domínio** — é ela que nomeia a porta certa ("cancele o parcelamento inteiro"). Um parágrafo fixo dentro do formulário avisa disso ANTES de o dono tentar.
 
-⚠️ **A recusa NÃO fecha o formulário** (só a falha de recarga fecha) — o dono precisa do que digitou na tela pra desfazer a mudança recusada. Valor ilegível é barrado no cliente por `parseBRL`, sem gastar requisição; o campo nasce com `formatBRL(amount_cents)`, que faz round-trip por `parseBRL` **com o sinal** (negativo = saiu, positivo = entrou — aqui o sinal É o significado).
+⚠️ **A recusa NÃO fecha o formulário** (só a falha de recarga fecha) — o dono precisa do que digitou na tela pra desfazer a mudança recusada. Valor ilegível é barrado no cliente por `parseBRL`, sem gastar requisição.
+
+#### ⚠️ O sinal do valor NÃO se digita — é o checkbox "Entrada", mesmo jeito da tela Lançar
+
+**O campo guarda a MAGNITUDE** (`formatBRL(Math.abs(amount_cents))`, nasce `R$ 13.600,00`) e o sinal sai de um checkbox **"Entrada"** — `entrada ? magnitude : -magnitude`, byte a byte o precedente de `new-entry.tsx:122` (`entrada ? total : -total`). **Nunca um terceiro jeito de o app representar sinal.**
+
+O campo nascia com `formatBRL(t.amount_cents)` — ou seja, `-R$ 13.600,00` — e exigia que o dono redigitasse o `-` junto com o valor novo. **MEDIDO ponta a ponta no Chrome real:** campo `-R$ 13.600,00` → digitado `12.000,00` → `PATCH {"amount_cents":1200000}` **POSITIVO**, `acao-erro: null`. O servidor aceita (qualquer inteiro != 0), e a despesa vira entrada: o saldo erra **2× o valor**, a linha **some** de `byCategory` (que filtra `amount_cents < 0`) e **entra como "entrou"** no fluxo de caixa. A ajuda que existia ("-1.360,00 (saída) ou 1.360,00") só aparecia quando o parse **falhava** — nunca quando ele acertava com o sinal errado, que é justamente o caso perigoso.
+
+⚠️ **Um `-` digitado é RECUSADO, nunca absorvido por `Math.abs()`** — ele significa que o dono ainda acha que o sinal se digita ali, e um `abs` calado deixaria essa crença de pé até a próxima edição. A mensagem manda digitar sem sinal e aponta o checkbox.
+
+⚠️ **O que isso NÃO pode quebrar, e não quebrou:** o `PATCH` continua mandando **só o que mudou**. Valor intocado ⇒ `parseBRL(formatBRL(abs))` devolve a mesma magnitude, `entrada` devolve o mesmo sinal ⇒ `valorCents === t.amount_cents` ⇒ `amount_cents` **não entra no corpo** (mandá-lo inalterado numa parcela faria o servidor recusar uma edição que só trocava a categoria). Coberto por teste próprio, e a mutação abaixo o derruba junto.
+
+**Testes com asserção de VALOR, nunca de presença** (`"mandou amount_cents"` passaria com o sinal trocado, que É o defeito): despesa editada sai `-1200000`; marcar "Entrada" sai `+1360000`; linha que já é entrada abre com o checkbox marcado e volta sem `amount_cents`; `-12.000,00` digitado não chama a API. ⚠️ **Verificado por MUTAÇÃO:** trocar `form.entrada ? magnitude : -magnitude` por `magnitude` derruba 3 testes — `expected { amount_cents: 1200000 } to deeply equal { amount_cents: -1200000 }` (o defeito medido, literal) mais os dois que provam que valor intocado não vaza pro corpo. Revertida.
 
 ### Marcar como pago: a data é escolhida, não é o instante do clique
 
@@ -575,6 +587,20 @@ Com o filtro ligado, marcar como pago faz a linha **sair da lista** — é a con
 
 ⚠️ **A terceira linha é honesta por necessidade, não por preguiça:** parcela, pagamento de dívida e rateio exigiriam `inspectTransaction`, que não tem rota. Prometer "vai apagar" e devolver um 422 seria pior que avisar antes.
 
+### ⚠️ A recusa aparece NA LINHA que falhou, nunca no topo da página
+
+As três mutações (apagar, editar, liquidar) escreviam num `<p role="alert">` **único, no topo**. **MEDIDO no Chrome real a 390×844**, com 30 linhas e um DELETE recusado (422 `transaction_has_owner`) na linha t28: `{top:-3828, bottom:-3788, scrollY:4181, visivelNoViewport:false}` — a recusa renderizava **3.828 px ACIMA do viewport**. O dono tocava "apagar", **nada acontecia e nada explicava**; o mesmo valia pro 422 do PATCH (o formulário ficava aberto, aparentemente mudo) e pro settle.
+
+**Isso anulava a decisão CENTRAL da fatia** — "a mensagem vem crua do domínio, é ela que nomeia a porta certa" (_"cancele o parcelamento inteiro"_, _"use DELETE /api/debts/:id/payments/:paymentId"_). Uma mensagem que ninguém vê não nomeia nada.
+
+**Escolhido: erro INLINE por linha** (`erroLinha: { id, mensagem } | null`, renderizado dentro de `corpoDaLinha`, `data-testid="erro-linha-<id>"`), **não** manter no topo com `scrollIntoView`. O dedo do dono está NA LINHA: rolar a página inteira até o topo tira dele o lugar onde estava (com 30+ linhas, ele perde a referência do que tocou), e a mensagem do domínio é uma **frase inteira** — no topo ela fica longe da ação que a provocou, e mais longe ainda de qualquer decisão sobre o que fazer em seguida. Inline ela nasce a poucos pixels do botão, sem mover nada na tela.
+
+⚠️ **`role="alert"` continua** — só mudou ONDE o elemento vive; leitor de tela segue sendo avisado no momento em que a recusa chega.
+
+**O `<p>` do topo (`acao-erro`) NÃO sumiu — ficou com o que não pertence a linha nenhuma:** a falha da busca de contas/categorias e a do "carregar mais". Erro de mutação nunca mais vai pra lá.
+
+**Aferido no teste pela única propriedade que jsdom permite medir** (não há layout lá): o alerta é **descendente da linha** que falhou (`within(linha).getByRole('alert')`), nenhuma outra linha o recebe, e `acao-erro` está **ausente**. Um caso por mutação — as três escreviam no mesmo `<p>` — mais um provando que o erro some quando o dono começa outra ação na mesma linha.
+
 ### Mobile: cards abaixo de `sm`, e o hook que saiu de `DividasPage`
 
 ⚠️ **Tabela apertada a 390px já foi achado medido neste módulo** (`DividasPage` cortava as DUAS colunas de dinheiro atrás de um drag sem indicação). Aqui a tabela tem só **3** colunas (Data | Lançamento | Valor) — conta, categoria, estado e ações moram como sublinhas DENTRO da célula "Lançamento", mesma lição da coluna "Ações" que saiu cortada como a letra "E" em `debt-detail.tsx`. Abaixo de `sm`, um card por lançamento (data e valor na mesma faixa, o resto embaixo).
@@ -589,7 +615,7 @@ As **quatro** mutações desta tela (settle, PATCH, DELETE) passam por `lib/muta
 
 ### Testes
 
-`pnpm --filter @piluvitu/financas-web exec vitest run src/pages/extrato.test.tsx` — **18 casos**. O "servidor" mockado tem **estado de verdade** (replica `settled=0`, o cursor `before` e o `limit`), não respostas fixas: com respostas fixas, os testes de filtro e de paginação passariam contra uma tela que ignorasse os dois.
+`pnpm --filter @piluvitu/financas-web exec vitest run src/pages/extrato.test.tsx` — **27 casos** (18 + 9 dos dois defeitos de UI corrigidos depois: 4 do erro inline por linha, 5 do sinal vindo do "Entrada"). O "servidor" mockado tem **estado de verdade** (replica `settled=0`, o cursor `before` e o `limit`), não respostas fixas: com respostas fixas, os testes de filtro e de paginação passariam contra uma tela que ignorasse os dois.
 
 ⚠️ **Relógio FIXO no arquivo inteiro** (`vi.useFakeTimers({ shouldAdvanceTime: true })` + `setSystemTime`) — este app já teve dois testes vermelhos por deriva de calendário, e o default de "marcar como pago" é `todayInTeresina()`. `shouldAdvanceTime` é o que mantém `waitFor`/`userEvent` funcionando (os dois dependem de `setTimeout` por baixo).
 
@@ -605,12 +631,19 @@ As **quatro** mutações desta tela (settle, PATCH, DELETE) passam por `lib/muta
 | PATCH mandando o objeto inteiro                | `deeply equal` do corpo falha (levaria data/conta inalteradas)                    |
 | mensagem de exclusão genérica pra toda classe  | o diálogo não fala das "DUAS pernas"                                              |
 | apagar sem `Dialog` (chamada direta)           | `Unable to find role="dialog"` — morre na ABERTURA, antes da asserção sobre a API |
-| recarga que falha repassando a mensagem do GET | `acao-erro` deixa de dizer "foi apagado"                                          |
+| recarga que falha repassando a mensagem do GET | `erro-linha-t1` deixa de dizer "foi apagado"                                      |
 | tabela em qualquer largura                     | `extrato-cards` ausente a 390px                                                   |
 | busca só na descrição                          | `cofre` não acha a linha pelo nome da conta                                       |
 | coluna de dinheiro sem `tabular-nums`          | `toHaveClass("tabular-nums")` falha                                               |
 
-**SPA: 334 → 354** (+20: 18 em `pages/extrato.test.tsx`, 2 em `App.test.tsx` — a rota `#/extrato` alcança a tela e o nav a marca ativa). Worker **577** intocado, `tsc --noEmit` limpo nos dois, prettier limpo. Os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos.
+⚠️ **Mais 2 mutações, uma por defeito de UI corrigido depois** (as duas revertidas; `git status --porcelain -uall` vazio):
+
+| Mutação                                                                             | Falha observada                                                                                                                                                   |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| erro de mutação de volta pro `<p>` do topo (o defeito medido)                       | **8** testes — `Unable to find role="alert"` dentro de `linha-t28` / `[data-testid="erro-linha-*"]` ausente                                                       |
+| `form.entrada ? magnitude : -magnitude` → `magnitude` (o sinal digitado, o defeito) | **3** testes — `expected { amount_cents: 1200000 } to deeply equal { amount_cents: -1200000 }` + `amount_cents` vazando pro corpo em edição que não tocou o valor |
+
+**SPA: 334 → 354** (+20: 18 em `pages/extrato.test.tsx`, 2 em `App.test.tsx` — a rota `#/extrato` alcança a tela e o nav a marca ativa) **→ 363** (+9 em `pages/extrato.test.tsx` com os dois defeitos de UI acima). Worker **577** intocado nas duas rodadas, `tsc --noEmit` limpo nos dois lados, prettier limpo. Os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) continuam silenciosos.
 
 **Bundle, medido (`vite build`, antes = fatia de contas / depois = esta tela):**
 
