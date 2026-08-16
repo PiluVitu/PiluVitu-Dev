@@ -105,6 +105,16 @@ export function InsightPage() {
   const [insightLoaded, setInsightLoaded] = useState(false)
 
   const [gerando, setGerando] = useState(false)
+  // ⚠️ Fase SEPARADA de `gerando`, e a separação é o ponto (achado da revisão
+  // do fix round). `gerar()` relê a linha de base ANTES de pedir qualquer
+  // coisa ao Mac; enquanto essa leitura não volta, NADA foi gerado. Marcar
+  // `gerando` já ali fazia a tela afirmar "Gerando… leva de 20 a 35 segundos"
+  // com ZERO chamadas de geração feitas — medido por probe, com a releitura
+  // pendurada. E `api()` não tem timeout de cliente, então numa rede instável
+  // (o Android que motivou a correção da baseline) a tela afirmaria isso
+  // indefinidamente. O botão precisa travar nas duas fases; só a MENSAGEM é
+  // que não pode mentir sobre em qual delas estamos.
+  const [preparando, setPreparando] = useState(false)
   const [geracaoErro, setGeracaoErro] = useState<{
     mensagem: string
     dica: string | null
@@ -255,7 +265,7 @@ export function InsightPage() {
   async function gerar(): Promise<void> {
     if (gerandoRef.current) return
     gerandoRef.current = true
-    setGerando(true)
+    setPreparando(true)
     setGeracaoErro(null)
     setGeracaoAviso(null)
 
@@ -272,6 +282,11 @@ export function InsightPage() {
         return
       }
       if (!vivoRef.current) return
+
+      // Só AQUI a tela pode dizer "Gerando…": a base está resolvida e o POST
+      // vai de fato sair. Antes disto, nada foi pedido ao Mac.
+      setPreparando(false)
+      setGerando(true)
 
       let resposta: GerarInsightResposta
       try {
@@ -307,7 +322,12 @@ export function InsightPage() {
       await aguardarPublicacao(anterior)
     } finally {
       gerandoRef.current = false
-      if (vivoRef.current) setGerando(false)
+      // As DUAS fases zeram aqui: sair pelo `return` da base indisponível
+      // deixaria `preparando` preso em `true` e o botão travado pra sempre.
+      if (vivoRef.current) {
+        setPreparando(false)
+        setGerando(false)
+      }
     }
   }
 
@@ -396,12 +416,16 @@ export function InsightPage() {
             <Button
               type="button"
               data-testid="botao-gerar"
-              disabled={gerando || !insightLoaded}
+              disabled={gerando || preparando || !insightLoaded}
               onClick={() => {
                 void gerar()
               }}
             >
-              {gerando ? 'Gerando…' : 'Gerar insight deste mês'}
+              {gerando
+                ? 'Gerando…'
+                : preparando
+                  ? 'Conferindo…'
+                  : 'Gerar insight deste mês'}
             </Button>
 
             {gerando ? (

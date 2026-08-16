@@ -717,6 +717,43 @@ describe('InsightPage — o botão de gerar', () => {
     expect(document.body.textContent).not.toContain('sem conexão')
   })
 
+  it('enquanto CONFERE a base, não afirma que está gerando', async () => {
+    const user = userEvent.setup()
+    let chamadasLatest = 0
+    mockApi({
+      latest: () => {
+        chamadasLatest += 1
+        // 1ª: o mount, resolve. 2ª: a releitura da base dentro de `gerar()`,
+        // que NUNCA resolve — simula a rede instável do Android que motivou
+        // a correção da baseline. `api()` não tem timeout de cliente, então
+        // este é um estado em que a tela pode ficar presa de verdade.
+        if (chamadasLatest === 1) return null
+        return new Promise(() => {})
+      },
+      gerar: () => ({ status: 'gerando' }),
+    })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    // O botão TRAVA (nada de clique duplo)...
+    await waitFor(() =>
+      expect(screen.getByTestId('botao-gerar')).toBeDisabled(),
+    )
+    // ...mas o rótulo diz a verdade sobre a fase.
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent('Conferindo…')
+
+    // ⚠️ A asserção que importa: NADA foi pedido ao Mac, então a tela não
+    // pode prometer "leva de 20 a 35 segundos". Antes do conserto, este
+    // bloco aparecia com `chamadasDeGeracao() === 0`.
+    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
+    expect(chamadasDeGeracao()).toBe(0)
+  })
+
   it('clique duplo não dispara duas gerações', async () => {
     const user = userEvent.setup()
     mockApi({
