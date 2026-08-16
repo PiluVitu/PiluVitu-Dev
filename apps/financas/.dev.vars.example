@@ -19,6 +19,21 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
 # `wrangler secret put INGEST_TOKEN`. Gerar com `openssl rand -base64 32`.
 INGEST_TOKEN=troque-por-openssl-rand-base64-32
 
+# A OUTRA PONTA DA MESMA CADEIA (botão "gerar insight", POST
+# /api/insights/generate): o INGEST_TOKEN acima autentica o Mac ESCREVENDO
+# aqui; estes dois autenticam este Worker CHAMANDO o Mac.
+#   navegador -> Worker -> túnel -> promeia (Mac) -> Ollama -> POST /api/insights
+# O navegador NUNCA fala com o Mac: carregaria o PROMEIA_TOKEN, e token no
+# cliente é token público. Os dois são SEGREDO (nunca `vars` em
+# wrangler.jsonc); em produção, `wrangler secret put PROMEIA_URL` /
+# `wrangler secret put PROMEIA_TOKEN`.
+# ⚠️ PROMEIA_TOKEN é o MESMO valor que `apps/promeia` usa como PROMEIA_TOKEN
+# (ver apps/promeia/CLAUDE.md) — não gere um novo aqui, senão toda chamada
+# volta 401. Ausentes/vazios, a rota responde 503 promeia_disabled: a
+# feature fica DESLIGADA, não quebrada.
+# PROMEIA_URL=http://localhost:8082
+# PROMEIA_TOKEN=o-mesmo-valor-do-apps-promeia
+
 # M5: também é `vars` em wrangler.jsonc (não é segredo), mas listar aqui
 # comentado deixa claro que a chave existe e o que faz, mesmo num clone
 # fresco que só olhou .dev.vars.example. Útil localmente só se quiser testar

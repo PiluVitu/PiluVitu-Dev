@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
+import type { PromeiaBindings } from './lib/promeia'
 import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
 import { categoriesRoutes } from './routes/categories'
@@ -23,7 +24,14 @@ import { transactionsRoutes } from './routes/transactions'
 // é o próprio index.ts, dono do Bindings final do Worker, quem soma os
 // dois. Via `wrangler secret put INGEST_TOKEN` em produção, `.dev.vars`
 // localmente — mesmo padrão de BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET.
-export type Bindings = AuthBindings & { INGEST_TOKEN: string }
+// PROMEIA_URL/PROMEIA_TOKEN (fatia do botão de insight): a outra ponta da
+// mesma cadeia. O INGEST_TOKEN acima autentica o Mac ESCREVENDO aqui; estes
+// dois autenticam este Worker CHAMANDO o Mac (POST /api/insights/generate →
+// túnel → promeia). Os dois são secrets (`wrangler secret put`), nunca
+// `vars` em wrangler.jsonc — ver routes/insights.ts e lib/promeia.ts.
+export type Bindings = AuthBindings & {
+  INGEST_TOKEN: string
+} & PromeiaBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -45,6 +53,11 @@ const app = new Hono<{ Bindings: Bindings }>()
  *  GET, que cai de volta pro caminho de sessão quando não há header
  *  Authorization nenhum) — sem essa guarda na rota, pular requireSession()
  *  aqui abriria a rota pra qualquer requisição sem exigir nada.
+ *  ⚠️ POST /api/insights/generate (o botão da tela) também NÃO está em
+ *  nenhuma exceção, e a diferença é de quem chama: o INGEST_TOKEN é do
+ *  comando que roda no Mac; o botão é o dono, no navegador, com cookie.
+ *  Abrir uma exceção pra ela exporia o disparo de uma rodada de GPU a
+ *  qualquer requisição anônima.
  *  ⚠️ GET /api/insights/latest NÃO está em nenhuma exceção — continua
  *  exigindo só sessão, igual toda outra leitura do app (ver
  *  src/index.test.ts, "fronteira do INGEST_TOKEN", pras provas de que o

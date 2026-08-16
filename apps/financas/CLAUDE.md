@@ -286,7 +286,7 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 - **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
 - **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
-Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente).
+Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente).
 
 ### `app.onError` global — todo `Error` que escapa sai no envelope
 
@@ -937,6 +937,62 @@ Crescimento pequeno e esperado (+1,34 kB gzip no principal): `InsightPage` reusa
 **282 → 295 testes na SPA** (13 novos: 2 em `lib/dates.test.ts` — `formatDateTimeTeresina` —, 9 em `pages/insight.test.tsx`, 2 em `App.test.tsx` — rota + estado ativo do nav). `typecheck` (`tsc --noEmit`) silencioso. Worker/`apps/web`/`packages/ui`/`packages/tools` intocados (474/89/14/123).
 
 ⚠️ **295 → 296 (migração promeia, fix round 1 da Task 6 do plano `2026-07-28-promeia-servico-local`):** +1 em `pages/insight.test.tsx` — o teste de regressão que prova que o estado vazio desta tela manda rodar `make insight`, nunca mais o CLI Node apagado (`scripts/insight.mjs`), com asserção negativa de que a string `insight.mjs` não aparece em lugar nenhum do documento. Sem esse +1 registrado aqui, a próxima contagem lida neste arquivo (295) já estaria desatualizada em relação à suíte real.
+
+## O botão de gerar insight — `POST /api/insights/generate` (`src/lib/promeia.ts` + `src/routes/insights.ts`)
+
+O dono quer um **botão** na tela `#/insight` no lugar de abrir um terminal e rodar `make insight`. Esta seção é o lado Worker disso (a UI é outra fatia). Nada do que já existia mudou: `POST /api/insights` (ingestão pelo Mac) e `GET /api/insights/numbers|latest` seguem idênticos.
+
+**A cadeia inteira, e por que ela tem esse formato:**
+
+```
+navegador → apps/financas (Worker) → túnel → apps/promeia (Mac) → Ollama
+                    ↑                                    │
+                    └──────── POST /api/insights ────────┘  (o promeia publica sozinho)
+```
+
+⚠️ **O navegador NUNCA fala com o Mac.** Falar direto exigiria o `PROMEIA_TOKEN` no cliente — ou seja, público, e o túnel expõe `promeia.piluvitu.com.br` pra internet inteira: seria a GPU do dono publicada de graça. O Worker é o único que guarda o token (secret), mesmo desenho que o `apps/ramielle` já usa pro Atelier.
+
+**`src/lib/promeia.ts` é cópia deliberada de `apps/ramielle/src/lib/promeia.ts`** — os dois Workers são bundles separados, sem fronteira de import (mesma família das outras cópias entre Workers deste monorepo). O aprendizado medido do original veio inteiro (faixa 520-527/530 do túnel, timeout, token fora de toda mensagem de erro), mais **duas classes que não existem lá**:
+
+- ⚠️ **`PromeiaDemorou` — estourar a janela curta NÃO é falha.** No ramielle um timeout vira `PromeiaInalcancavel` (lá o teto é 120 s: estourar significa que algo está errado). Aqui a espera é curta DE PROPÓSITO, então reportá-la como "suba o promeia no Mac" seria a mensagem errada no caminho **mais comum**.
+- ⚠️ **`PromeiaRespostaIlegivel` — "não respondeu" ≠ "respondeu e eu não entendi o corpo".** A spike MEDIU (3/3 de cada lado, isolado por status contra uma origem descartável) que **a Cloudflare substitui o corpo do 502 da origem** pelo próprio error page (`text/plain`, 16 bytes, `error code: 502`); 500 e 503 passam intactos. A regra do ramielle ("erro HTTP sem `code`/`message` ⇒ inalcançável") diria, nesse caso, _"suba o promeia no Mac"_ com o promeia **de pé** — a pior mensagem possível, porque manda arrumar o que está certo. Por isso só a faixa que a própria Cloudflare documenta como "não alcancei a origem" (520-527/530) continua sendo evidência de ausência; qualquer outro erro sem o shape do promeia é ILEGÍVEL (502 `promeia_ilegivel`, mensagem que diz explicitamente que o Mac respondeu). Travado por teste com asserção negativa nos dois níveis (`lib/promeia.test.ts` e `routes/insights.test.ts`).
+
+**O desenho da rota — assíncrono com espera curta, decidido por medição:**
+
+| O que                                                          | Medido            |
+| -------------------------------------------------------------- | ----------------- |
+| Ollama gerando o insight, mês com dado real                    | **20,3 - 26,2 s** |
+| Ollama com o modelo FRIO (`keep_alive` de 5 min vencido)       | **32,8 s**        |
+| Ida e volta pelo túnel (`GET /health`)                         | 0,30 s            |
+| Falhas rápidas (Mac off / token errado / competência inválida) | **0,3 - 0,4 s**   |
+
+`ESPERA_CURTA_MS = 8_000` fica no vale entre os dois grupos, com uma ordem de grandeza de folga pra cada lado: **toda falha real cabe dentro** (o dono recebe o erro acionável na hora, nunca um "gerando" que esconde "o Mac está fora") e **nenhuma geração bem-sucedida cabe** (o 202 é o caminho normal do caso feliz). Responde 200 se der tempo, **202 `{status:"gerando"}`** se estourar.
+
+- ⚠️ **`ctx.waitUntil()` está DESCARTADO POR MEDIÇÃO, não por preferência:** o teto dele é **30 s**, MENOR que o caso frio de 32,8 s — cortaria justamente o cenário mais comum (Mac recém-ligado, modelo não carregado).
+- ⚠️ **Abandonar a espera não cancela nada.** `run_insight` (`apps/promeia`) faz `POST /api/insights` **por conta própria** antes de responder — a resposta ao navegador é confirmação redundante, não o canal de entrega; e `gerar_insight` é um `def` **síncrono**, que o Starlette roda em threadpool sem checar desconexão. É isso que torna o 202 honesto: o resultado aparece em `GET /api/insights/latest` quando ficar pronto.
+- **Sem `PROMEIA_URL`/`PROMEIA_TOKEN` ⇒ 503 `promeia_disabled`** (desligada, não quebrada — mesmo padrão de `sheets_disabled`/`promeia_disabled` do ramielle), e **nenhuma chamada de rede acontece** (provado por teste).
+- **`competence` é opcional** e validado AQUI antes de gastar uma ida ao Mac (`addMonthsToCompetence(x, 0)`, a mesma validação central de `lib/dates.ts` que `byCategory`/`createInsight` já reusam) ⇒ 422 `invalid_competence` com `field`. O código é o MESMO que o promeia emitiria, de propósito: o front lê a mesma coisa venha de onde vier.
+- **Mensagem do promeia é REPASSADA, nunca achatada** — é ela que distingue "abra o Ollama" de "rode `ollama pull X`". Limitação registrada no código: `publish_failed` carrega em `data.texto` o insight que já custou 20-33 s de GPU, e `chamarPromeia` só devolve `data` no caminho feliz — exibir um texto NÃO persistido é decisão de produto, não de tradução de erro.
+
+⚠️ **A rota fica atrás da sessão por AUSÊNCIA deliberada, não por guard local:** `src/index.ts` aplica `requireSession()` a `/api/*` e abre exceção só pra `/api/health`, `/api/auth/*`, `POST /api/insights` (path exato) e `GET /api/insights/numbers`. `POST /api/insights/generate` **não entra em nenhuma** — o `INGEST_TOKEN` é do comando que roda no Mac, quem clica o botão é o dono no navegador. Provado contra o app montado de verdade (`routes/insights.test.ts`, describe "sem sessão"): sem cookie é 401 `not_authenticated` **e o `fetch` pro promeia nunca é chamado**; nem o `INGEST_TOKEN` correto abre a rota. Verificado por MUTAÇÃO (acrescentar a rota à lista de exceções derruba exatamente esses dois testes).
+
+### Secrets novos — `PROMEIA_URL` e `PROMEIA_TOKEN` (⚠️ ação MANUAL do dono)
+
+Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` (mesmo critério de `INGEST_TOKEN`/`GOOGLE_CLIENT_SECRET`). Nenhum agente roda estes comandos:
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler secret put PROMEIA_URL
+pnpm --filter @piluvitu/financas exec wrangler secret put PROMEIA_TOKEN
+```
+
+- `PROMEIA_URL` — a URL pública do túnel que expõe o promeia (hoje `https://promeia.piluvitu.com.br`; localmente, `http://localhost:8082` em `.dev.vars`).
+- `PROMEIA_TOKEN` — ⚠️ **o MESMO valor que `apps/promeia` já usa como `PROMEIA_TOKEN`** (ver `apps/promeia/CLAUDE.md`), nunca um novo: gerar outro aqui faz toda chamada voltar 401 do `TokenMiddleware` de lá.
+
+Conferir depois (o `secret put` não avisa se o nome foi digitado errado — mesma armadilha já registrada em _Deploy_ § 3): `pnpm --filter @piluvitu/financas exec wrangler secret list`.
+
+Sem os dois, nada quebra: a rota responde `503 promeia_disabled` e o resto do módulo segue idêntico.
+
+**Testes:** `src/lib/promeia.test.ts` (novo, `fetch` sempre injetado) + describe `POST /api/insights/generate` em `src/routes/insights.test.ts` (`fetch` global mockado e restaurado num `afterEach`; a janela de 8 s é exercitada com `vi.useFakeTimers()` + `advanceTimersByTimeAsync` — MEDIDO que fake timers funcionam no `@cloudflare/vitest-pool-workers`, então o teste do 202 é instantâneo em vez de esperar 8 s de verdade). **Nenhum teste chama o promeia, o Ollama ou a rede** — `PROMEIA_URL` aponta pra um host `.test` inexistente, então um teste que esquecesse o mock falharia alto em vez de sair pela rede. **Worker: 478 → 509 testes**; SPA (323), `apps/promeia` (210), `apps/web` e `packages/*` intocados.
 
 ## Configurações (`src/domain/settings.ts` + `src/routes/settings.ts` + `web/src/pages/config.tsx`, Task 10)
 
