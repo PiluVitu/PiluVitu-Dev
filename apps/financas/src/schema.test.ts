@@ -168,8 +168,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007 — tabelas', () => {
-  it('cria exatamente as 17 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009 — tabelas', () => {
+  it('cria exatamente as 18 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -192,12 +192,110 @@ describe('migrations 0001+0002+0005+0006+0007 — tabelas', () => {
       'installments',
       'payees',
       'recurring_expenses',
+      'rules',
       'session',
       'settings',
       'transactions',
       'user',
       'verification',
     ])
+  })
+})
+
+describe('migration 0009 — rules (STRICT, CHECKs estruturais, sem índice)', () => {
+  const REGRA = `INSERT INTO rules
+    (id, name, match_text, set_is_business, priority, active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 100, 1, ?, ?)`
+
+  it('insere uma regra completa e relê', async () => {
+    await DB.prepare(REGRA)
+      .bind('rl1', 'Uber → Transporte', 'UBER', 1, NOW, NOW)
+      .run()
+    const row = await DB.prepare(
+      `SELECT name, match_text, set_is_business, priority, active FROM rules WHERE id = 'rl1'`,
+    ).first()
+    expect(row).toEqual({
+      name: 'Uber → Transporte',
+      match_text: 'UBER',
+      set_is_business: 1,
+      priority: 100,
+      active: 1,
+    })
+  })
+
+  it('⚠️ CHECK barra regra SEM NENHUMA CONDIÇÃO — ela casaria com todo lançamento', async () => {
+    // A guarda mais importante desta tabela, e ela vive no BANCO (não só em
+    // TS) porque uma linha escrita por `wrangler d1 execute` não passa pelo
+    // domínio — e recategorizaria a vida inteira do dono no import seguinte.
+    await expect(
+      DB.prepare(
+        `INSERT INTO rules (id, name, set_is_business, created_at, updated_at)
+         VALUES ('ruim', 'tudo', 1, ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('CHECK barra regra SEM NENHUMA AÇÃO', async () => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO rules (id, name, match_text, created_at, updated_at)
+         VALUES ('inerte', 'nada', 'UBER', ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it.each([
+    ['name vazio', `('x', '', 'UBER', 1, ?, ?)`],
+    ['match_text vazio', `('x', 'n', '', 1, ?, ?)`],
+  ])('CHECK barra %s', async (_label, values) => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO rules (id, name, match_text, set_is_business, created_at, updated_at)
+         VALUES ${values}`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('CHECK barra faixa invertida e valor <= 0', async () => {
+    for (const [min, max] of [
+      [5000, 100],
+      [0, null],
+    ] as const) {
+      await expect(
+        DB.prepare(
+          `INSERT INTO rules
+            (id, name, match_min_cents, match_max_cents, set_is_business, created_at, updated_at)
+           VALUES ('x', 'n', ?, ?, 1, ?, ?)`,
+        )
+          .bind(min, max, NOW, NOW)
+          .run(),
+      ).rejects.toThrow(/CHECK constraint failed/)
+    }
+  })
+
+  it('CHECK barra match_direction fora do enum', async () => {
+    await expect(
+      DB.prepare(
+        `INSERT INTO rules (id, name, match_direction, set_is_business, created_at, updated_at)
+         VALUES ('x', 'n', 'ambos', 1, ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('nenhum índice além da PK — decisão consciente, e índice no D1 é irreversível', async () => {
+    const { results } = await DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'rules'
+        AND name NOT LIKE 'sqlite_%'`,
+    ).all<{ name: string }>()
+    expect(results).toEqual([])
   })
 })
 

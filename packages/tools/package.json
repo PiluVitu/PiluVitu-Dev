@@ -17,6 +17,7 @@
     "./entropy": "./src/entropy.ts",
     "./roleta": "./src/roleta.ts",
     "./money": "./src/money.ts",
+    "./regras": "./src/regras.ts",
     "./simulacao": "./src/simulacao.ts",
     "./import": "./src/import/index.ts",
     "./import/ofx": "./src/import/ofx.ts",

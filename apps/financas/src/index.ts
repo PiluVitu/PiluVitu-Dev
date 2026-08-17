@@ -14,6 +14,7 @@ import { payeesRoutes } from './routes/payees'
 import { recurringRoutes } from './routes/recurring'
 import { reportsRoutes } from './routes/reports'
 import { reserveRoutes } from './routes/reserve'
+import { rulesRoutes } from './routes/rules'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 
@@ -90,6 +91,7 @@ app.route('/api/reports', reportsRoutes)
 app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
+app.route('/api/rules', rulesRoutes)
 app.route('/api', reserveRoutes)
 app.route('/api', insightsRoutes)
 
