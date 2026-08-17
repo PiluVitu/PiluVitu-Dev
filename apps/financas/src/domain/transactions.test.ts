@@ -1,10 +1,13 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { accountBalances, createAccount } from './accounts'
+import { cashflow } from './cashflow'
+import { archiveCategory, createCategory } from './categories'
 import { addDebtItem, createDebt, payDebt } from './debts'
 import { createInstallmentPlan } from './installments'
 import { createPayee } from './payees'
 import { createRecurring } from './recurring'
+import { byCategory, commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
 import {
   createTransaction,
   createTransfer,
@@ -349,6 +352,212 @@ describe('createTransfer', () => {
       .bind(de.id)
       .all()
     expect(results).toHaveLength(0)
+  })
+})
+
+// Categoria por SLUG, nunca pelo UUID literal da migration: o slug e a
+// identidade estavel que o codigo procura (mesmo criterio de payDebt achando
+// 'quitacao-divida'); um UUID copiado no teste quebraria em silencio se o
+// seed mudasse.
+async function categoriaPorSlug(slug: string): Promise<string> {
+  const row = await env.DB.prepare('SELECT id FROM categories WHERE slug = ?')
+    .bind(slug)
+    .first<{ id: string }>()
+  if (!row) throw new Error(`categoria de slug ${slug} nao esta semeada`)
+  return row.id
+}
+
+describe('createTransfer — categoria', () => {
+  it('grava a categoria SO na perna de saida, e a soma ingenua por categoria nao zera', async () => {
+    const pj = await contaCorrente('PJ pro-labore', 900000)
+    const pf = await contaCorrente('PF pro-labore', 0)
+    const proLabore = await categoriaPorSlug('pro-labore')
+
+    const { out, inbound } = await createTransfer(env.DB, {
+      from_account_id: pj.id,
+      to_account_id: pf.id,
+      amount_cents: 430000,
+      date: '2026-08-05',
+      description: 'Pro-labore agosto',
+      category_id: proLabore,
+    })
+
+    expect(out.category_id).toBe(proLabore)
+
+    // A consulta que responde "quanto tirei de pro-labore este ano?" — SEM
+    // filtro de sinal, que e exatamente o ponto, e por isso ela vem ANTES da
+    // asserção de campo: com a categoria nas DUAS pernas ela devolve 0 (as
+    // duas se cancelam), e 0 e um numero plausivel ("nao tirei nada"), entao
+    // a resposta errada nao pareceria errada. Esta e a asserção que mata a
+    // alternativa, e a mensagem de falha dela nomeia a CONSEQUENCIA.
+    const soma = await env.DB.prepare(
+      'SELECT SUM(amount_cents) AS total FROM transactions WHERE category_id = ?',
+    )
+      .bind(proLabore)
+      .first<{ total: number }>()
+    expect(soma?.total).toBe(-430000)
+
+    expect(inbound.category_id).toBeNull()
+  })
+
+  it('aceita categoria que NAO e kind=transfer — o nonsense e inerte, a restricao nao seria', async () => {
+    // A tela de categorias so cria expense/income; exigir kind='transfer'
+    // prenderia o dono nas duas linhas semeadas pra sempre.
+    const de = await contaCorrente('Origem kind', 500000)
+    const para = await contaCorrente('Destino kind', 0)
+    const alimentacao = await createCategory(env.DB, {
+      name: 'Alimentacao',
+      kind: 'expense',
+    })
+
+    const { out } = await createTransfer(env.DB, {
+      from_account_id: de.id,
+      to_account_id: para.id,
+      amount_cents: 1000,
+      date: '2026-08-05',
+      description: 'PIX',
+      category_id: alimentacao.id,
+    })
+    expect(out.category_id).toBe(alimentacao.id)
+  })
+
+  it('recusa categoria ARQUIVADA e nao grava nenhuma das duas pernas', async () => {
+    const de = await contaCorrente('Origem arquivada', 500000)
+    const para = await contaCorrente('Destino arquivada', 0)
+    const velha = await createCategory(env.DB, {
+      name: 'Aporte antigo',
+      kind: 'expense',
+    })
+    expect(await archiveCategory(env.DB, velha.id)).toBe(true)
+
+    await expect(
+      createTransfer(env.DB, {
+        from_account_id: de.id,
+        to_account_id: para.id,
+        amount_cents: 1000,
+        date: '2026-08-05',
+        description: 'PIX com categoria morta',
+        category_id: velha.id,
+      }),
+    ).rejects.toThrow(/arquivada/)
+
+    // A recusa roda ANTES do batch: nem meia transferencia fica no caixa.
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions',
+    ).all()
+    expect(results).toHaveLength(0)
+  })
+
+  it('categoria inexistente cai na FK, nao no guard de arquivada (mesma porta de createTransaction)', async () => {
+    const de = await contaCorrente('Origem categoria fantasma', 500000)
+    const para = await contaCorrente('Destino categoria fantasma', 0)
+
+    const erro = await createTransfer(env.DB, {
+      from_account_id: de.id,
+      to_account_id: para.id,
+      amount_cents: 1000,
+      date: '2026-08-05',
+      description: 'PIX com categoria fantasma',
+      category_id: 'categoria-que-nao-existe',
+    }).catch((e: unknown) => e)
+
+    expect(erro).toBeInstanceOf(Error)
+    // Nao e RangeError: quem barra e a FK, igual em POST /transactions — o
+    // MESMO payload errado nao pode responder codigo diferente por rota.
+    expect(erro).not.toBeInstanceOf(RangeError)
+    expect((erro as Error).message).not.toMatch(/arquivada/)
+
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions',
+    ).all()
+    expect(results).toHaveLength(0)
+  })
+
+  it('transferencia CATEGORIZADA continua fora de cashflow(), commitments() e byCategory()', async () => {
+    const pj = await contaCorrente('PJ relatorios', 900000)
+    const pf = await contaCorrente('PF relatorios', 0)
+    const card = await cartao('Cartao relatorios', 25)
+    const proLabore = await categoriaPorSlug('pro-labore')
+    const alimentacao = await createCategory(env.DB, {
+      name: 'Mercado',
+      kind: 'expense',
+    })
+
+    await createTransfer(env.DB, {
+      from_account_id: pj.id,
+      to_account_id: pf.id,
+      amount_cents: 430000,
+      date: '2026-08-05',
+      description: 'Pro-labore agosto',
+      category_id: proLabore,
+    })
+
+    // Controles POSITIVOS: sem eles os tres `expect` de ausencia passariam
+    // contra queries que nao veem NADA, e o teste nao provaria nada.
+    await createTransaction(env.DB, {
+      account_id: pj.id,
+      amount_cents: -3000,
+      purchase_date: '2026-08-06',
+      description: 'Mercado',
+      settled_at: '2026-08-06',
+      category_id: alimentacao.id,
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -20000,
+      purchase_date: '2026-08-10',
+      description: 'Compra prevista',
+    })
+
+    const fluxo = await cashflow(env.DB, { from: '2026-08', months: 1 })
+    expect(fluxo.linhas[0].saiu_cents).toBe(3000)
+    expect(fluxo.linhas[0].entrou_cents).toBe(0)
+
+    const comp = await commitments(env.DB, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    expect(comp.rows).toHaveLength(1)
+    expect(comp.rows[0].account_id).toBe(card.id)
+    expect(comp.totals[0]).toEqual({ min: 20000, max: 20000 })
+
+    // byCategory nao filtra por settled, entao a compra de cartao tambem
+    // entra (no bucket "Sem categoria") — o que NAO entra e a perna de saida
+    // da transferencia, que e o ponto. Somar 430000 aqui inflaria o mes em
+    // ~14x o gasto real.
+    const cats = await byCategory(env.DB, { competence: '2026-08' })
+    expect(cats.rows.map((r) => r.category_id)).not.toContain(proLabore)
+    expect(
+      cats.rows.find((r) => r.category_id === alimentacao.id)?.total_cents,
+    ).toBe(-3000)
+    expect(cats.total_cents).toBe(-23000)
+  })
+
+  it('accountBalances muda CADA conta e nao muda o consolidado — a categoria nao altera isso', async () => {
+    const pj = await contaCorrente('PJ saldo categorizado', 900000)
+    const pf = await contaCorrente('PF saldo categorizado', 100000)
+    const proLabore = await categoriaPorSlug('pro-labore')
+
+    const antes = await accountBalances(env.DB)
+    const consolidadoAntes = antes.reduce((acc, s) => acc + s.balance_cents, 0)
+
+    await createTransfer(env.DB, {
+      from_account_id: pj.id,
+      to_account_id: pf.id,
+      amount_cents: 430000,
+      date: '2026-08-05',
+      description: 'Pro-labore agosto',
+      category_id: proLabore,
+    })
+
+    const depois = await accountBalances(env.DB)
+    const porConta = new Map(depois.map((s) => [s.account_id, s.balance_cents]))
+    expect(porConta.get(pj.id)).toBe(470000)
+    expect(porConta.get(pf.id)).toBe(530000)
+    expect(depois.reduce((acc, s) => acc + s.balance_cents, 0)).toBe(
+      consolidadoAntes,
+    )
   })
 })
 

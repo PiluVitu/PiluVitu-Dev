@@ -139,6 +139,78 @@ export async function createTransaction(
   return row
 }
 
+/**
+ * ⚠️ Arquivada RECUSA; inexistente NAO — e a assimetria e a regra.
+ *
+ * "Nao existe" ja tem DONO UNICO: a FK `transactions.category_id REFERENCES
+ * categories(id)`. Ela barra igual em `POST /transactions` e em
+ * `POST /transfers`, e a rota traduz o SQLITE_CONSTRAINT em 422
+ * `constraint_violation` com mensagem cozida. Lancar RangeError aqui pro id
+ * inexistente faria o MESMO payload errado responder codigos diferentes
+ * dependendo da rota — divergencia sem ganho nenhum.
+ *
+ * "Arquivada" nao tem dono nenhum: categoria neste app se ARQUIVA, nao se
+ * apaga (`archiveCategory` e um UPDATE de `archived_at`), entao a FK nunca
+ * dispara — ela so olha DELETE. E `listCategories` esconde arquivada, logo a
+ * tela nunca a oferece: um id arquivado chegando aqui e sempre estado velho
+ * (cliente desatualizado, payload montado a mao). Aceitar em silencio e
+ * exatamente o defeito ja pago em `6ba822c` — a linha nasce numa categoria
+ * que NENHUMA tela lista, invisivel no relatorio, sem erro nenhum.
+ *
+ * Diferente da regra que aponta pra categoria arquivada (que a tela MANTEM,
+ * porque a regra ja existia e continua correta), aqui a linha esta NASCENDO:
+ * nao ha estado bom anterior a preservar, e criar dado novo apontando pra
+ * algo que o dono arquivou de proposito nunca e o que ele quis.
+ *
+ * A mensagem nao promete desarquivar — nao existe rota de desarquivamento
+ * (`archived_at` so e escrito, nunca limpo); manda escolher categoria ativa.
+ */
+async function assertCategoriaUsavel(
+  db: D1Database,
+  category_id: string,
+): Promise<void> {
+  const cat = await db
+    .prepare('SELECT archived_at FROM categories WHERE id = ?')
+    .bind(category_id)
+    .first<{ archived_at: string | null }>()
+  if (cat === null) return
+  if (cat.archived_at !== null) {
+    throw new RangeError(
+      `categoria ${category_id} esta arquivada — escolha uma categoria ativa`,
+    )
+  }
+}
+
+/**
+ * ⚠️ `category_id` vai SO NA PERNA DE SAIDA, nunca nas duas — e o motivo e o
+ * modo de falha da alternativa, nao simetria estetica.
+ *
+ * Com a categoria nas DUAS pernas, a consulta mais obvia que alguem
+ * escreveria pra responder "quanto tirei de pro-labore este ano?" —
+ * `SELECT SUM(amount_cents) ... GROUP BY category_id` — devolve ZERO: as duas
+ * pernas tem o mesmo valor com sinais opostos e se cancelam. Zero e um numero
+ * plausivel ("nao tirei nada"), entao a resposta errada nao PARECE errada, e
+ * acertar passaria a exigir que TODO consumidor futuro lembrasse de filtrar
+ * `amount_cents < 0`. Com a categoria so na saida, a consulta ingenua ja
+ * devolve o total certo, e a com filtro de sinal tambem — as duas acertam.
+ *
+ * O que a perna de entrada perde nao e recuperavel? E: ela carrega o mesmo
+ * `transfer_id`, entao "o que entrou na PF como pro-labore" e um JOIN pela
+ * outra perna. Categorizar aqui e classificar a NATUREZA da saida ("este
+ * dinheiro saiu da PJ como pro-labore"); a entrada e a mesma movimentacao
+ * chegando, ja descrita pela contraparte.
+ *
+ * ⚠️ NAO se exige `kind = 'transfer'` na categoria, de proposito. O risco de
+ * nao exigir e cosmetico e MEDIDO: `cashflow()`, `commitments()` e
+ * `byCategory()` filtram `transfer_id IS NULL`, entao uma perna marcada como
+ * "Alimentacao" nao infla relatorio nenhum — e nonsense inerte. Ja o risco de
+ * exigir e concreto: a tela de categorias so cria `expense`/`income` (as duas
+ * classes estruturais ficam de fora de proposito, ver `pages/categorias.tsx`),
+ * entao exigir `transfer` prenderia o dono pra sempre nas DUAS linhas
+ * semeadas (`Pro-labore`, `Transferencia entre contas`) — um "Aporte" novo
+ * exigiria SQL manual. Recusar o util pra impedir o inofensivo e a troca
+ * errada.
+ */
 export async function createTransfer(
   db: D1Database,
   input: {
@@ -147,6 +219,7 @@ export async function createTransfer(
     amount_cents: number
     date: string
     description: string
+    category_id?: string | null
   },
 ): Promise<{ transfer_id: string; out: Transaction; inbound: Transaction }> {
   if (input.amount_cents <= 0)
@@ -154,6 +227,9 @@ export async function createTransfer(
   if (input.from_account_id === input.to_account_id) {
     throw new RangeError('transferencia exige duas contas diferentes')
   }
+
+  const category_id = input.category_id ?? null
+  if (category_id !== null) await assertCategoriaUsavel(db, category_id)
 
   const transfer_id = newId()
   const now = nowIsoUtc()
@@ -174,6 +250,7 @@ export async function createTransfer(
           ...base,
           account_id: input.from_account_id,
           amount_cents: -input.amount_cents,
+          category_id,
         },
         transfer_id,
         now,

@@ -2,6 +2,7 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createAccount } from '../domain/accounts'
+import { archiveCategory, createCategory } from '../domain/categories'
 import { createInstallmentPlan } from '../domain/installments'
 import { createRecurring } from '../domain/recurring'
 import {
@@ -155,6 +156,82 @@ describe('rotas de lancamentos', () => {
     expect(body.data.inbound.amount_cents).toBe(150000)
     expect(body.data.out.transfer_id).toBe(body.data.transfer_id)
     expect(body.data.inbound.transfer_id).toBe(body.data.transfer_id)
+  })
+
+  it('POST /api/transfers repassa category_id — so a perna de saida recebe', async () => {
+    const de = await createAccount(env.DB, {
+      name: 'Origem categoria rota',
+      scope: 'PJ',
+      kind: 'checking',
+      opening_balance_cents: 900000,
+    })
+    const para = await createAccount(env.DB, {
+      name: 'Destino categoria rota',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const cat = await env.DB.prepare(
+      "SELECT id FROM categories WHERE slug = 'pro-labore'",
+    ).first<{ id: string }>()
+
+    const res = await post('/api/transfers', {
+      from_account_id: de.id,
+      to_account_id: para.id,
+      amount_cents: 430000,
+      date: '2026-08-05',
+      description: 'Pro-labore agosto',
+      category_id: cat?.id,
+    })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as {
+      data: {
+        out: { category_id: string | null }
+        inbound: { category_id: string | null }
+      }
+    }
+    expect(body.data.out.category_id).toBe(cat?.id)
+    expect(body.data.inbound.category_id).toBeNull()
+  })
+
+  it('POST /api/transfers com categoria ARQUIVADA devolve 422 invalid_transfer (contrato de erro intacto)', async () => {
+    const de = await createAccount(env.DB, {
+      name: 'Origem categoria arquivada rota',
+      scope: 'PF',
+      kind: 'checking',
+      opening_balance_cents: 500000,
+    })
+    const para = await createAccount(env.DB, {
+      name: 'Destino categoria arquivada rota',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const cat = await createCategory(env.DB, {
+      name: 'Aporte antigo rota',
+      kind: 'expense',
+    })
+    await archiveCategory(env.DB, cat.id)
+
+    const res = await post('/api/transfers', {
+      from_account_id: de.id,
+      to_account_id: para.id,
+      amount_cents: 1000,
+      date: '2026-08-05',
+      description: 'PIX com categoria morta',
+      category_id: cat.id,
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as {
+      ok: boolean
+      notifications: Array<{ code: string; message: string }>
+    }
+    expect(body.ok).toBe(false)
+    // RangeError => invalid_transfer, nunca constraint_violation: a recusa e
+    // do dominio, nao do D1 (arquivar nao e DELETE, a FK nem chega a olhar).
+    expect(body.notifications[0].code).toBe('invalid_transfer')
+    expect(body.notifications[0].message).toMatch(/arquivada/)
+    expect(body.notifications[0].message).not.toMatch(
+      /D1_ERROR|SQLITE_CONSTRAINT/i,
+    )
   })
 
   it('POST /api/transfers para conta inexistente devolve 422 com mensagem legivel, sem texto cru do D1', async () => {

@@ -25,6 +25,15 @@ type NewTransfer = {
   amount_cents: number
   date: string
   description: string
+  // Opcional: sem ele, "pro-labore" fica so na string de descricao e nenhum
+  // relatorio consegue responder "quanto tirei de pro-labore este ano?".
+  // Declarado no tipo (e nao so repassado por acidente, ja que o handler
+  // encaminha `body` inteiro) pra ser CONTRATO da rota. Quem decide onde a
+  // categoria e gravada, e o que e recusado, e `createTransfer` — ver o
+  // comentario dela: so a perna de SAIDA recebe, categoria arquivada e
+  // recusada (RangeError => 422 invalid_transfer) e categoria inexistente cai
+  // na FK (=> 422 constraint_violation), igual em POST /transactions.
+  category_id?: string | null
 }
 
 // CHECK/FK do schema (amount_cents <> 0, moeda sem valor original) chegam como
