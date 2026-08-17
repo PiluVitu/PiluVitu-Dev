@@ -195,6 +195,37 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 
+  // ⚠️ A transferência é SUB-ROTA de `#/lancar`, não um destino novo: o nav
+  // não ganhou nenhum item (medição do custo em `AbasLancar`,
+  // `pages/new-entry.tsx`). Este par de testes é o que prova as duas metades
+  // — a tela certa aparece, e a pílula "Lançar" continua sendo a ativa.
+  test('#/lancar mostra o formulário de lançamento (a aba padrão)', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/lancar'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('form-lancamento')).toBeDefined(),
+    )
+    expect(screen.queryByTestId('form-transferencia')).toBeNull()
+  })
+
+  test('#/lancar/transferir troca o formulário SEM tirar "Lançar" do nav', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/lancar/transferir'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('form-transferencia')).toBeDefined(),
+    )
+    expect(screen.queryByTestId('form-lancamento')).toBeNull()
+    // `resolveRoute` é `startsWith('#/lancar')` — é isso que faz a sub-rota
+    // custar zero ao estado ativo do nav.
+    expect(
+      within(screen.getByRole('navigation')).getByRole('link', {
+        name: 'Lançar',
+      }),
+    ).toHaveAttribute('aria-current', 'page')
+  })
+
   // Task 2/3 (fatia ⑦): nova rota, mesmo padrão das demais (link no <nav> +
   // entrada na cadeia do AppShell).
   test('#/reserva mostra a tela Reserva de emergência', async () => {

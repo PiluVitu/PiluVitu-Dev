@@ -439,7 +439,89 @@ Cada arquivo de `src/domain/` recebe o `D1Database` por parâmetro (nunca lê `e
 
 **Worker: 679 → 687 testes** (+6 em `domain/transactions.test.ts`, +2 em `routes/transactions.test.ts`); SPA (508), `packages/tools` (147), `apps/web` e `packages/ui` intocados. `tsc --noEmit` e prettier limpos.
 
-**Fora de escopo, registrado:** a TELA de transferência (o consumidor que falta), e `updateTransaction` já permite corrigir `category_id` de uma perna pelo nível A (rótulo) — sem nenhuma mudança nesta fatia.
+✅ **A TELA chegou na fatia seguinte** — ver _A tela de transferência_ logo abaixo. `updateTransaction` já permitia corrigir `category_id` de uma perna pelo nível A (rótulo), sem nenhuma mudança nem naquela fatia nem nesta.
+
+## A tela de transferência (`web/src/pages/transferir.tsx`, rota `#/lancar/transferir`)
+
+⚠️ **`POST /api/transfers` existia, era testado, e tinha ZERO consumidores em `web/src` (grep).** O backend inteiro estava pronto e inalcançável por qualquer clique — e a consequência não era "falta uma feature": era **dupla contagem acontecendo em produção**. Sem esta tela, registrar uma transferência exige dois lançamentos soltos, e aí `#/fluxo` conta uma despesa real **e** uma receita real, inflando os dois lados. `transfer_id` existe exatamente pra impedir isso, e estava sendo contornado por ausência de interface.
+
+### ⚠️ Onde ela mora: ABA dentro de `#/lancar`, não tela própria — o custo de nav foi MEDIDO
+
+O `<nav>` tem 13 destinos, reduzidos a 5 primários + o menu "Mais" (fatia D). MEDIDO em Chrome real (build de produção via `vite preview`, 390×844, `hasTouch`/`isMobile`), clonando uma pílula pra simular um 6º destino primário:
+
+| Estado                                            | Altura do `<nav>`                             |
+| ------------------------------------------------- | --------------------------------------------- |
+| hoje (5 primários + "Mais ▾")                     | **81 px**, 2 linhas, a 2ª terminando em x=287 |
+| com um 6º primário "Transferir" (pílula de 84 px) | **81 px** — cabe na sobra de 87 px            |
+
+**Ou seja: o custo NÃO é vertical.** É triplo, e nenhuma das três parcelas aparece num pixel:
+
+1. Um 6º primário consome TODA a folga da 2ª linha — o 7º (ou um rótulo mais longo) quebra pra uma 3ª linha, +36 px em **toda** tela.
+2. A fatia D dividiu primários/secundários por **frequência de uso**. Transferência é mensal (pro-labore, aporte), não diária — promovê-la ao lado de "Lançar"/"Extrato" contradiz o critério medido.
+3. Jogá-la no "Mais" (14º item) custa 0 px e 2 toques — **mas a esconde de quem não sabe que a resposta é "transferência"**, que é exatamente a pessoa pra quem a tela existe. O dono vai a `#/lancar` pra registrar o pro-labore **achando que é despesa**; a correção precisa estar onde ele comete o erro, não numa gaveta que só encontra quem já entendeu.
+
+Some-se o óbvio: os campos são quase os mesmos (valor, data, descrição, categoria) e transferir **é** "lançar dinheiro" — só que entre duas contas.
+
+**Custo real cobrado: ZERO destino novo, 0 px de nav** — MEDIDO com a aba no ar: `navAltura: 81`, `aria-current="page"` ainda em "Lançar".
+
+As abas são `<a href>` de verdade (`#/lancar` × `#/lancar/transferir`), não estado local: recarregar mantém a aba, o botão voltar funciona, e `resolveRoute` já resolve qualquer `#/lancar*` pra `'lancar'` (é `startsWith`) — a sub-rota não custa nada ao estado ativo do nav. `AbasLancar` mora em `pages/new-entry.tsx` (o `#/lancar` é a rota-pai; `transferir.tsx` a importa, nunca o contrário — sem ciclo), e `AppShell` escolhe a tela pelo hash, mesmo padrão do `debtId`.
+
+⚠️ **`aria-current="true"` na aba, nunca `"page"`** — a página corrente já é o `<a>` do nav; dois elementos anunciados como "page" mentiriam pro leitor de tela sobre onde ele está.
+
+### ⚠️ O filtro de categoria é o OPOSTO do de `#/lancar` — mas NÃO é o espelho invertido dele
+
+Em `new-entry.tsx` (`categoriasVisiveis`, comentário nas linhas 88-98) a lista segue o checkbox "Entrada" (`income` × `expense`), o que deixa `transfer` e `debt_settlement` **sempre** de fora — as duas classes que todo relatório de resultado exclui; escolhê-las num gasto recriaria a dupla contagem que o slug dedicado de `payDebt()` existe pra impedir. **Esse filtro está certo e esta fatia não o afrouxa.**
+
+Aqui `transfer` é justamente o que faz sentido (é o `kind` de "Pro-labore"). Mas a lista **não** é "só `transfer`", pelo mesmo motivo que levou `createTransfer` a não exigir `kind = 'transfer'` (seção acima): a tela de categorias só cria `expense`/`income`, então exigir `transfer` prenderia o dono nas **duas** linhas semeadas e um "Aporte" novo exigiria SQL manual. Oferecer menos do que o servidor aceita seria recusar o útil pra impedir o inofensivo.
+
+**O único excluído é `debt_settlement`**, e ele tem DONO: `payDebt()` acha a categoria por `slug='quitacao-divida'`, e quitar dívida tem tela própria. Uma perna de transferência marcada como "Quitação de dívida" é inerte no banco (todo relatório filtra `transfer_id IS NULL`), mas seria uma mentira sobre um mecanismo que o app opera sozinho — a regra desta base é não **oferecer** o que não faz sentido, mesmo quando o servidor toleraria.
+
+### Ajuda contextual — a confusão que a tela existe pra desfazer
+
+Dois popovers (`@piluvitu/ui/ajuda`, **clique, nunca hover** — decisão registrada com evidência de touch). O primeiro, no título do card, responde a pergunta do dono: transferência é dinheiro **dele** que muda de conta, não dinheiro que sai do bolso; **pro-labore é transferência, não despesa**, porque sai da PJ e entra na PF — lançado como despesa ele sairia da PJ **sem entrar** na PF e o saldo total ficaria menor do que é. O segundo, na categoria, explica o filtro invertido acima e que a categoria vai na perna de **saída** (é ela que responde "quanto tirei de pro-labore este ano?").
+
+### Validações no cliente, e a recusa do servidor que PRECISA aparecer
+
+Contas iguais / contas não escolhidas / valor não-parseável / valor ≤ 0 / data que não existe no calendário / descrição vazia — todas antes de gastar requisição, cada uma com a frase que diz o que fazer (a de valor ≤ 0 aponta que **o sinal não se digita**: quem sai é a origem, quem entra é o destino). `isRealCalendarDate` foi espelhada do Worker pra `web/src/lib/dates.ts` — um `<input type="date">` não produz `2026-02-30` sozinho, mas produz string **vazia** (campo limpo, preenchimento parcial no Android), e é isso que precisa ser recusado.
+
+⚠️ **A recusa do SERVIDOR chega crua e rola até a vista — a lição de `#/extrato`, reproduzida e medida AQUI.** MEDIDO em Chrome real a 390×844, com o formulário rolado pro topo e um 422 `invalid_transfer` de volta:
+
+| Versão                         | Alerta                                                    |
+| ------------------------------ | --------------------------------------------------------- |
+| sem `scrollIntoView`           | `{top:806, bottom:846, viewportH:844, visivel:**false**}` |
+| com `scrollIntoView` `nearest` | `{top:804, bottom:844, viewportH:844, visivel:**true**}`  |
+
+Dois pixels abaixo da dobra — e pro dono isso é "toquei em Transferir e nada aconteceu". `block: 'nearest'` rola o MÍNIMO e é **no-op quando já está visível**: nunca tira o dono do lugar onde ele estava (o motivo de `'center'`/`'start'` terem sido descartados no extrato).
+
+### `mutarERecarregar` — o 9º call site, e a mensagem que nomeia o estrago
+
+Mutação e recarga em `try` separados (`lib/mutar-e-recarregar.ts`). Aqui a regra vale mais do que em qualquer outra tela: um POST 2xx seguido de um GET que cai faria a tela dizer "falhou" para uma transferência que **aconteceu**, e o reenvio não é inofensivo — é dinheiro contado a mais. Por isso a mensagem de recarga diz que a transferência **FOI registrada**, nomeia as duas contas e o valor, e proíbe o reenvio dizendo o que a duplicata criaria: _"criaria uma SEGUNDA transferência, e o mesmo dinheiro apareceria saindo duas vezes de X e entrando duas vezes em Y"_. A recarga busca `/api/accounts` de novo porque os **dois** saldos mudam.
+
+`category_id: categoryId || undefined` — a chave é OMITIDA por `JSON.stringify`, nunca string vazia (que bateria na FK de `categories(id)` e viraria 422 por um campo opcional). O campo Data nasce em **`todayInTeresina()`**, nunca `new Date().toISOString().slice(0,10)`: às 22h de Teresina o UTC já virou o dia seguinte, e aqui isso contaminaria também `settled_at` (transferência já nasce liquidada), decidindo o mês errado no fluxo de caixa.
+
+### 390 px, suítes e mutação
+
+**MEDIDO em Chrome real** (build de produção, 390×844, `hasTouch`/`isMobile`): `scrollWidth === clientWidth === 390` com **zero** elemento estourando, em claro e escuro, antes e depois do envio, e depois de voltar pra aba Lançamento **por toque**. As duas abas cabem numa linha só (x=16..241 de 358 disponíveis). Nenhum uso de `useMenorQueSm` foi necessário: o formulário já é coluna única, não há tabela a colapsar.
+
+**SPA: 508 → 526** (+18: 15 em `pages/transferir.test.tsx`, 1 em `pages/new-entry.test.tsx`, 2 em `App.test.tsx`). Worker **687**, `packages/tools` **147** — intocados (nenhuma linha de servidor nesta fatia). `tsc --noEmit` e prettier limpos; os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) com exit 0 e **um** único chunk lazy.
+
+⚠️ **Relógio FIXO no arquivo de teste inteiro** (`vi.useFakeTimers({ toFake: ['Date'] })` + `setSystemTime('2026-08-01T01:00:00Z')` = 22h de 31/07 em Teresina) — `toFake: ['Date']` e não `useFakeTimers()` puro, senão `waitFor`/`userEvent` param (dependem de `setTimeout` real por baixo).
+
+⚠️ **Verificado por MUTAÇÃO — 7, cada uma matando só o teste certo pelo motivo certo** (todas revertidas; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                                    | Falha observada                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| guard de "mesma conta" removido                            | 1 — a recusa some e a requisição é gasta                            |
+| `category_id: categoryId` (string vazia em vez de omitido) | 2 — incl. a asserção de AUSÊNCIA da chave                           |
+| recarga de volta pra DENTRO do `try` da mutação            | 1 — "FOI registrada" vira a mensagem do GET que caiu                |
+| data default em UTC cru                                    | 3 — `expected 2026-08-01 to be 2026-07-31` + os dois corpos de POST |
+| filtro de categoria removido                               | 1 — "Quitação de dívida" reaparece no `<select>`                    |
+| `scrollIntoView` removido do alerta                        | 1 — a recusa do servidor deixa de rolar até a vista                 |
+| validação de data removida                                 | 1 — data vazia passa e gasta requisição                             |
+
+**Bundle (`vite build`, antes = fatia do domínio / depois = esta tela):** JS principal 491,99 → 499,40 kB (**148,25 → 150,37 kB gzip, +2,12**) — a tela nova, sem nenhuma dependência nova (`Card`/`Button`/`Input`/`Label`/`Ajuda`/`cn` já estavam no bundle); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**; CSS **6,79 kB gzip, intocado**.
+
+**Fora de escopo, registrado:** o extrato não distingue visualmente uma perna de transferência de um lançamento comum (só `mensagemDeExclusao` sabe disso, na hora de apagar); e não há como EDITAR uma transferência inteira — corrigir o valor exigiria apagar as duas pernas (o `DELETE` já cascateia) e refazer.
 
 ## Editar, apagar e liquidar lançamento (`src/domain/transactions.ts`)
 

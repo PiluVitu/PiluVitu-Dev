@@ -3,6 +3,7 @@ import { formatBRL, parseBRL, splitInstallments } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -25,6 +26,82 @@ const NENHUMA_RECORRENTE = ''
 // criada com um POST próprio ANTES do POST principal, dentro do callback de
 // mutação de `mutarERecarregar`.
 const NOVO_FAVORECIDO = '__novo__'
+
+export type ModoLancar = 'lancamento' | 'transferencia'
+
+const ABAS: { href: string; label: string; modo: ModoLancar }[] = [
+  { href: '#/lancar', label: 'Lançamento', modo: 'lancamento' },
+  {
+    href: '#/lancar/transferir',
+    label: 'Transferência',
+    modo: 'transferencia',
+  },
+]
+
+/**
+ * As duas formas de registrar dinheiro, lado a lado dentro de `#/lancar`.
+ *
+ * ⚠️ **Por que a transferência mora AQUI e não numa tela própria — medido, não
+ * suposto.** O `<nav>` já tem 13 destinos e foi reduzido a 5 primários + o
+ * menu "Mais" (fatia D). MEDIDO em Chrome real a 390×844, com o build de
+ * produção: o nav ocupa **81 px em duas linhas**, e a segunda termina em
+ * `x=287` — clonar uma pílula e inserir um 6º destino primário ("Transferir")
+ * mantém os mesmos **81 px** (cabe na sobra de 87 px). Ou seja: **o custo NÃO
+ * é vertical.** O custo é outro, e é triplo:
+ *
+ * 1. Um 6º primário consome TODA a folga da segunda linha — o 7º (ou um
+ *    rótulo mais longo) quebra pra uma terceira linha, +36 px em toda tela.
+ * 2. A fatia D dividiu primários/secundários por FREQUÊNCIA DE USO. Uma
+ *    transferência é mensal (pro-labore, aporte), não diária — promovê-la ao
+ *    lado de "Lançar"/"Extrato" contradiz o critério medido.
+ * 3. Jogá-la no "Mais" (14º item) custa 0 px e 2 toques — mas a esconde de
+ *    quem **não sabe que a resposta é "transferência"**, que é exatamente a
+ *    pessoa pra quem esta tela existe: o dono vai a `#/lancar` pra registrar
+ *    o pro-labore achando que é despesa. A correção precisa estar onde ele
+ *    comete o erro, não numa gaveta que só encontra quem já entendeu.
+ *
+ * Some-se o óbvio: os campos são quase os mesmos (valor, data, descrição,
+ * categoria) e transferir É "lançar dinheiro" — só que entre duas contas.
+ *
+ * São `<a href>` de verdade (hash real, `#/lancar/transferir`), não estado
+ * local: recarregar mantém a aba, o botão voltar do navegador funciona, e
+ * `resolveRoute` já resolve qualquer `#/lancar*` pra `'lancar'` (é
+ * `startsWith`), então a pílula "Lançar" do nav continua marcada — a aba não
+ * custa nada ao estado ativo que a fatia D introduziu.
+ *
+ * `aria-current="true"` (item corrente DENTRO de um conjunto), nunca
+ * `"page"`: a página corrente já é o `<a>` do nav, e dois elementos
+ * anunciados como "page" mentiriam pro leitor de tela sobre onde ele está.
+ */
+export function AbasLancar({ ativo }: { ativo: ModoLancar }) {
+  return (
+    <div
+      role="group"
+      aria-label="Tipo de movimentação"
+      data-testid="abas-lancar"
+      className="flex flex-wrap gap-1"
+    >
+      {ABAS.map((aba) => {
+        const atual = aba.modo === ativo
+        return (
+          <a
+            key={aba.href}
+            href={aba.href}
+            aria-current={atual ? 'true' : undefined}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              atual
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground border-input border',
+            )}
+          >
+            {aba.label}
+          </a>
+        )
+      })}
+    </div>
+  )
+}
 
 export function NewEntryPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])
@@ -240,6 +317,7 @@ export function NewEntryPage() {
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Lançar</h1>
+      <AbasLancar ativo="lancamento" />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Novo lançamento</CardTitle>

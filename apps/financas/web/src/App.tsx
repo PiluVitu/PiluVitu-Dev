@@ -25,6 +25,7 @@ import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
 import { RegrasPage } from './pages/regras'
 import { ReservaPage } from './pages/reserva'
+import { TransferirPage } from './pages/transferir'
 
 export function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || '#/')
@@ -180,6 +181,13 @@ function AppShell() {
     ? hash.slice('#/dividas/'.length)
     : null
   const route = resolveRoute(hash)
+  // A aba de transferência é uma SUB-rota de `#/lancar`, não um destino novo
+  // do nav: `resolveRoute` já resolve qualquer `#/lancar*` pra `'lancar'`
+  // (é `startsWith`), então a pílula "Lançar" continua marcada como ativa e o
+  // `<nav>` não cresce nem um pixel. O porquê dessa escolha (com a medição em
+  // Chrome real) está em `AbasLancar`, `pages/new-entry.tsx`. Mesmo padrão do
+  // `debtId` acima: quem lê o hash pra escolher a tela é o AppShell.
+  const transferindo = hash.startsWith('#/lancar/transferir')
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
@@ -226,7 +234,11 @@ function AppShell() {
       ) : route === 'insight' ? (
         <InsightPage />
       ) : route === 'lancar' ? (
-        <NewEntryPage />
+        transferindo ? (
+          <TransferirPage />
+        ) : (
+          <NewEntryPage />
+        )
       ) : route === 'recorrentes' ? (
         <RecorrentesPage />
       ) : route === 'regras' ? (

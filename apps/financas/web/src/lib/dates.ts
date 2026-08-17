@@ -16,6 +16,38 @@ export function todayInTeresina(now: Date = new Date()): string {
   return new Date(now.getTime() - TERESINA_OFFSET_MS).toISOString().slice(0, 10)
 }
 
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * Data que existe no CALENDÁRIO, não só no formato. Espelho do
+ * `isRealCalendarDate` do Worker (`src/lib/dates.ts`) — mesma razão de
+ * `todayInTeresina` estar duplicado aqui: dois runtimes/bundles diferentes, a
+ * SPA não importa através dessa fronteira. Mesma técnica lá e aqui: `Date.UTC`
+ * com ano/mês/dia EXPLÍCITOS (não parse de string ISO, que arrastaria fuso) e
+ * round-trip — é o que rejeita `2026-02-30`, que um regex de FORMATO aceita.
+ *
+ * ⚠️ Um `<input type="date">` não produz data inexistente sozinho — mas
+ * produz string VAZIA (campo limpo, ou preenchimento parcial no Android), e
+ * é isso que `pages/transferir.tsx` precisa recusar antes de gastar uma
+ * requisição. A checagem de calendário vem junto por ser a mesma pergunta, e
+ * porque o valor de um input é sempre texto: nada garante que ele veio do
+ * seletor nativo.
+ */
+export function isRealCalendarDate(value: string): boolean {
+  const match = DATE_RE.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false
+  const dt = new Date(Date.UTC(year, month - 1, day))
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  )
+}
+
 /**
  * Competência (`YYYY-MM`) do mês corrente em Teresina. Movida de
  * `App.tsx#competenciaAtual` (Task 6) pra cá — `BlocoComprometido` também

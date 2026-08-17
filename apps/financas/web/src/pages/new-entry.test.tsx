@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NewEntryPage } from './new-entry'
@@ -230,6 +236,30 @@ afterEach(() => {
 })
 
 describe('NewEntryPage', () => {
+  // A porta pra transferência mora AQUI, e não no nav, de propósito: o dono
+  // vem a `#/lancar` pra registrar o pro-labore achando que é despesa, e é
+  // aqui que ele precisa encontrar a correção. Ver `AbasLancar` (new-entry.tsx)
+  // pro custo de nav medido em Chrome real.
+  it('oferece a aba de transferência, com "Lançamento" marcada como a atual', async () => {
+    mockRoutes()
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Conta')).toBeInTheDocument(),
+    )
+
+    const abas = screen.getByTestId('abas-lancar')
+    const lancamento = within(abas).getByRole('link', { name: 'Lançamento' })
+    const transferencia = within(abas).getByRole('link', {
+      name: 'Transferência',
+    })
+
+    expect(lancamento).toHaveAttribute('aria-current', 'true')
+    expect(transferencia).toHaveAttribute('href', '#/lancar/transferir')
+    // ⚠️ Só a aba atual carrega `aria-current` — as duas marcadas mentiriam
+    // pro leitor de tela sobre onde o dono está.
+    expect(transferencia).not.toHaveAttribute('aria-current')
+  })
+
   it('lanca uma saida simples com valor negativo em centavos', async () => {
     const fetchMock = mockRoutes()
 
