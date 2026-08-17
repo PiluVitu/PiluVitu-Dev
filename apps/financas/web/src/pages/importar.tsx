@@ -165,7 +165,16 @@ export function ImportarPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])
   const [payees, setPayees] = useState<PayeeView[]>([])
   const [categories, setCategories] = useState<CategoryView[]>([])
-  const [regras, setRegras] = useState<Regra[]>([])
+  // ⚠️ `null` = AINDA CARREGANDO, `[]` = carregou e não há (ou falhou).
+  // A distinção não é preciosismo: com `[]` como inicial, escolher o arquivo
+  // antes de a resposta chegar produzia uma conferência montada SEM regra
+  // nenhuma e SEM alerta — a tela parecia pronta e sugeria errado, em
+  // silêncio. MEDIDO com `/api/rules` respondendo 200 porém 3 s depois: a
+  // linha vinha com a categoria do favorecido (`c1`) em vez da da regra
+  // (`c2`), `[role="alert"]` vazio o tempo todo, e o import fechava assim.
+  // Foi regressão introduzida pelo próprio fix que tirou `/api/rules` do
+  // `Promise.all` — antes, o `await` garantia a ordem de brinde.
+  const [regras, setRegras] = useState<Regra[] | null>(null)
   const [regrasIndisponiveis, setRegrasIndisponiveis] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -303,7 +312,10 @@ export function ImportarPage() {
         accountId,
         payees,
         categories,
-        regras,
+        // Não pode ser `null` aqui: o input de arquivo fica desabilitado
+        // até a leitura resolver (ver `regrasCarregando` no JSX). O `?? []`
+        // seria o caminho silencioso que este fix existe pra fechar.
+        regras: regras ?? [],
       })
       return {
         imported_id: idNatural,
@@ -503,9 +515,25 @@ export function ImportarPage() {
                 id="importar-arquivo"
                 type="file"
                 accept=".ofx,.qfx,.csv"
+                // ⚠️ Travado ATÉ as regras resolverem (sucesso ou falha). Sem
+                // isso existe uma janela em que a tela parece pronta e monta
+                // a conferência sem regra nenhuma, sem avisar — medido com a
+                // resposta chegando 3 s depois. A janela é estreita, e é
+                // exatamente por isso que ela passaria despercebida.
+                disabled={regras === null}
                 onChange={selecionarArquivo}
                 className={FILE_INPUT_CLASSNAME}
               />
+              {regras === null ? (
+                <p
+                  role="status"
+                  aria-busy="true"
+                  data-testid="regras-carregando"
+                  className="text-muted-foreground text-xs"
+                >
+                  Carregando suas regras de categorização…
+                </p>
+              ) : null}
             </div>
             <p className="text-muted-foreground text-xs">
               O arquivo é lido aqui no navegador — nunca sobe pro servidor. Só

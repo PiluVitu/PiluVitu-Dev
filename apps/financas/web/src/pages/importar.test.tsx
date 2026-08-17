@@ -146,6 +146,10 @@ function mockRede(opts: {
   // migration 0009 não é aplicada (ela é ação manual do dono). Ver o teste
   // dedicado abaixo.
   regrasFalha?: boolean
+  // Segura `GET /api/rules` ate o teste liberar: simula a resposta
+  // chegando DEPOIS de o dono escolher o arquivo — a janela silenciosa que
+  // o `disabled` do input existe pra fechar.
+  regrasAtraso?: Promise<void>
 }) {
   vi.stubGlobal(
     'fetch',
@@ -162,6 +166,8 @@ function mockRede(opts: {
         if (url.includes('/api/rules')) {
           if (opts.regrasFalha)
             return respondErro(500, 'internal_error', 'erro interno')
+          if (opts.regrasAtraso)
+            return opts.regrasAtraso.then(() => respondJson(opts.regras ?? []))
           return respondJson(opts.regras ?? [])
         }
         if (url.includes('/api/categories'))
@@ -1497,6 +1503,54 @@ describe('ImportarPage — regras de categorização', () => {
     expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
     expect(screen.getByTestId('categoria-1')).toHaveValue('')
   })
+  test('⚠️ regras que ainda NÃO chegaram travam o arquivo — nunca sugerem calado', async () => {
+    // Regressão introduzida pelo próprio fix que tirou `/api/rules` do
+    // `Promise.all`: antes, o `await` garantia a ordem de brinde. Depois,
+    // MEDIDO com a resposta chegando 3 s tarde, existia uma janela em que a
+    // tela parecia pronta, o dono escolhia o arquivo, e a conferência era
+    // montada SEM regra nenhuma e SEM alerta — sugerindo a categoria do
+    // favorecido em vez da da regra, em silêncio.
+    let liberar!: () => void
+    const atraso = new Promise<void>((r) => {
+      liberar = r
+    })
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regrasAtraso: atraso,
+      regras: [
+        regra({ match_text: 'PADARIA', set_category_id: 'c-transporte' }),
+      ],
+    })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+
+    // A tela está de pé, MAS o arquivo não aceita nada ainda — e diz por quê.
+    expect(screen.getByLabelText(/Arquivo/i)).toBeDisabled()
+    expect(screen.getByTestId('regras-carregando')).toBeInTheDocument()
+
+    liberar()
+    await waitFor(() => expect(screen.getByLabelText(/Arquivo/i)).toBeEnabled())
+    expect(screen.queryByTestId('regras-carregando')).not.toBeInTheDocument()
+
+    // E agora a regra de fato vale: a sugestão vem dela, não do favorecido.
+    const usuario = userEvent.setup()
+    await usuario.upload(
+      screen.getByLabelText(/Arquivo/i),
+      arquivoOfx(OFX_DUAS_LINHAS),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
+  })
+
   test('⚠️ /api/rules FORA DO AR não derruba a tela — import não precisa de regra', async () => {
     // MEDIDO em Chrome real com `/api/rules` devolvendo 500: `#/importar`
     // renderizava **só** um `<p role="alert">erro interno</p>` — sem `<h1>`,
