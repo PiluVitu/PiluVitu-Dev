@@ -127,6 +127,10 @@ function mockRede(opts: {
   // anterior daquele banco (GET /api/settings/:key devolve isso em vez de
   // `value: null`). `undefined` = nada salvo ainda (comportamento default).
   mapaImportSalvo?: string
+  // Regras de categorização automática que `GET /api/rules` devolve.
+  // Default: nenhuma — o comportamento pré-fatia (só `default_category_id`)
+  // continua sendo o que a maioria dos testes deste arquivo exercita.
+  regras?: unknown[]
 }) {
   vi.stubGlobal(
     'fetch',
@@ -140,6 +144,7 @@ function mockRede(opts: {
 
         if (url.includes('/api/accounts')) return respondJson(accounts)
         if (url.includes('/api/payees')) return respondJson(payees)
+        if (url.includes('/api/rules')) return respondJson(opts.regras ?? [])
         if (url.includes('/api/categories'))
           return respondJson(opts.categoriasVisiveis ?? categories)
         if (method === 'POST' && url.includes('/api/transactions/import')) {
@@ -449,11 +454,15 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     expect(within(linha0).getByTestId('duplicada-0')).toHaveTextContent(
       'Marque para forçar',
     )
-    expect(within(linha0).getByRole('checkbox')).not.toBeChecked()
+    expect(
+      within(linha0).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    ).not.toBeChecked()
 
     const linha1 = screen.getByTestId('linha-1')
     expect(within(linha1).queryByTestId('duplicada-1')).not.toBeInTheDocument()
-    expect(within(linha1).getByRole('checkbox')).toBeChecked()
+    expect(
+      within(linha1).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    ).toBeChecked()
 
     await usuario.click(
       screen.getByRole('button', { name: /Confirmar importação/i }),
@@ -484,8 +493,12 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     const usuario = await irParaConferencia(chamadas)
 
     const linha0 = screen.getByTestId('linha-0')
-    await usuario.click(within(linha0).getByRole('checkbox'))
-    expect(within(linha0).getByRole('checkbox')).toBeChecked()
+    await usuario.click(
+      within(linha0).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    )
+    expect(
+      within(linha0).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    ).toBeChecked()
 
     await usuario.click(
       screen.getByRole('button', { name: /Confirmar importação/i }),
@@ -614,6 +627,7 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
 
           if (url.includes('/api/accounts')) return respondJson(accounts)
           if (url.includes('/api/payees')) return respondJson(payees)
+          if (url.includes('/api/rules')) return respondJson([])
           if (url.includes('/api/categories')) return respondJson(categories)
           if (method === 'POST' && url.includes('/api/transactions/import')) {
             const rows = (JSON.parse(body as string) as { rows: unknown[] })
@@ -742,10 +756,14 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     expect(screen.queryByTestId('duplicada-0')).not.toBeInTheDocument()
     expect(screen.queryByTestId('duplicada-1')).not.toBeInTheDocument()
     expect(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).toBeChecked()
     expect(
-      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-1')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).toBeChecked()
 
     await usuario.click(
@@ -795,6 +813,7 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
 
           if (url.includes('/api/accounts')) return respondJson(accounts)
           if (url.includes('/api/payees')) return respondJson(payees)
+          if (url.includes('/api/rules')) return respondJson([])
           if (url.includes('/api/categories')) return respondJson(categories)
           if (method === 'POST' && url.includes('/api/transactions/import')) {
             const rows = (
@@ -842,7 +861,9 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
       ).toBeInTheDocument(),
     )
     await usuario.click(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     )
     await usuario.click(
       screen.getByRole('button', { name: /Confirmar importação/i }),
@@ -875,15 +896,21 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     // (FITID-1 da rodada 1, FITID-2 REALMENTE importada na rodada 1) — as
     // duas vêm desmarcadas por padrão.
     expect(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).not.toBeChecked()
     expect(
-      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-1')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).not.toBeChecked()
 
     // Força a linha 0 DE NOVO — sem tocar na linha 1.
     await usuario.click(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     )
     await usuario.click(
       screen.getByRole('button', { name: /Confirmar importação/i }),
@@ -976,6 +1003,7 @@ describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
 
           if (url.includes('/api/accounts')) return respondJson(accounts)
           if (url.includes('/api/payees')) return respondJson(payees)
+          if (url.includes('/api/rules')) return respondJson([])
           if (url.includes('/api/categories')) return respondJson(categories)
           if (method === 'POST' && url.includes('/api/transactions/import')) {
             const parsed = JSON.parse(body as string) as {
@@ -1047,10 +1075,14 @@ describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
     expect(screen.queryByTestId('duplicada-0')).not.toBeInTheDocument()
     expect(screen.queryByTestId('duplicada-1')).not.toBeInTheDocument()
     expect(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).toBeChecked()
     expect(
-      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-1')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).toBeChecked()
 
     await usuario.click(
@@ -1104,10 +1136,14 @@ describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
     expect(screen.getByTestId('duplicada-0')).toBeInTheDocument()
     expect(screen.getByTestId('duplicada-1')).toBeInTheDocument()
     expect(
-      within(screen.getByTestId('linha-0')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).not.toBeChecked()
     expect(
-      within(screen.getByTestId('linha-1')).getByRole('checkbox'),
+      within(screen.getByTestId('linha-1')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
     ).not.toBeChecked()
 
     // Nada marcado ⇒ o botão fica desabilitado — a tela real nem deixa
@@ -1172,5 +1208,274 @@ describe('ImportarPage — PDF: a tela explica o caminho (Task 2, fatia ⑨)', (
     const input = screen.getByLabelText(/Arquivo/i)
     expect(input).toHaveAttribute('accept', '.ofx,.qfx,.csv')
     expect(input.getAttribute('accept')).not.toMatch(/pdf/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Categorização automática por REGRA (fase 1) — a sugestão passa a vir das
+// regras E do `payees.default_category_id`.
+// ---------------------------------------------------------------------------
+
+type RegraDeTeste = {
+  id: string
+  name: string
+  match_text: string | null
+  match_account_id: string | null
+  match_min_cents: number | null
+  match_max_cents: number | null
+  match_direction: 'expense' | 'income' | null
+  set_category_id: string | null
+  set_payee_id: string | null
+  set_is_business: number | null
+  priority: number
+  active: number
+  created_at: string
+  updated_at: string
+}
+
+function regra(patch: Partial<RegraDeTeste> = {}): RegraDeTeste {
+  return {
+    id: 'r1',
+    name: 'regra',
+    match_text: null,
+    match_account_id: null,
+    match_min_cents: null,
+    match_max_cents: null,
+    match_direction: null,
+    set_category_id: null,
+    set_payee_id: null,
+    set_is_business: null,
+    priority: 100,
+    active: 1,
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+    ...patch,
+  }
+}
+
+async function confirmarELerRows(
+  usuario: ReturnType<typeof userEvent.setup>,
+  chamadas: Chamada[],
+) {
+  await usuario.click(
+    screen.getByRole('button', { name: /Confirmar importação/i }),
+  )
+  await waitFor(() =>
+    expect(
+      screen.getByRole('heading', { name: /Importação concluída/i }),
+    ).toBeInTheDocument(),
+  )
+  const envio = chamadas.find((c) => c.url.includes('/api/transactions/import'))
+  return (
+    JSON.parse(String(envio?.body)) as {
+      rows: Array<{
+        category_id: string | null
+        payee_id: string | null
+        is_business: number
+      }>
+    }
+  ).rows
+}
+
+describe('ImportarPage — regras de categorização', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  test('⚠️ quando a regra e o default do favorecido DISCORDAM, a regra vence', async () => {
+    // Linha 0 é "Padaria X PagSeguro": o payee p1 casa e o
+    // `default_category_id` dele é 'c-alimentacao'. A regra manda
+    // 'c-transporte'. Se o default vencesse, uma regra JAMAIS conseguiria
+    // corrigir um favorecido já cadastrado.
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          name: 'Padaria → Transporte',
+          match_text: 'padaria',
+          set_category_id: 'c-transporte',
+        }),
+      ],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
+    // A linha que a regra não tocou continua no default de sempre.
+    expect(screen.getByTestId('categoria-1')).toHaveValue('')
+
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows[0].category_id).toBe('c-transporte')
+  })
+
+  test('a tela diz POR QUE a linha foi categorizada, nomeando a regra', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          name: 'Padaria → Transporte',
+          match_text: 'padaria',
+          set_category_id: 'c-transporte',
+        }),
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('regras-0')).toHaveTextContent(
+      'Sugerido pela regra "Padaria → Transporte"',
+    )
+    // Linha que nenhuma regra tocou não ganha explicação nenhuma.
+    expect(screen.queryByTestId('regras-1')).not.toBeInTheDocument()
+  })
+
+  test('duas regras em conflito: a tela mostra a ORDEM, não só o vencedor', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          id: 'a',
+          name: 'Padaria',
+          priority: 100,
+          match_text: 'padaria',
+          set_category_id: 'c-alimentacao',
+        }),
+        regra({
+          id: 'b',
+          name: 'PagSeguro',
+          priority: 200,
+          match_text: 'pagseguro',
+          set_category_id: 'c-transporte',
+        }),
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
+    expect(screen.getByTestId('regras-0')).toHaveTextContent(
+      'Padaria → PagSeguro',
+    )
+  })
+
+  test('regra PAUSADA não sugere nada', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          match_text: 'padaria',
+          set_category_id: 'c-transporte',
+          active: 0,
+        }),
+      ],
+    })
+    await irParaConferencia(chamadas)
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-alimentacao')
+  })
+
+  test('⚠️ regra apontando pra categoria ARQUIVADA não é enviada em silêncio, e a tela AVISA', async () => {
+    // O mesmo defeito de 6ba822c, agora pelo caminho novo. `GET
+    // /api/categories` esconde arquivada, mas `rules.set_category_id`
+    // continua apontando pra ela (a FK só dispara em DELETE, e arquivar não
+    // é DELETE).
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      categoriasVisiveis: [
+        {
+          id: 'c-transporte',
+          name: 'Transporte',
+          kind: 'expense',
+          slug: 'transporte',
+        },
+      ],
+      regras: [
+        regra({
+          name: 'Uber → arquivada',
+          match_text: 'uber',
+          set_category_id: 'c-alimentacao',
+        }),
+      ],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('categoria-1')).toHaveValue('')
+    // "A regra não casou" e "a regra casou e a categoria dela sumiu" deixam
+    // a mesma tela por motivos opostos — só um dos dois pede ação.
+    expect(screen.getByTestId('sugestao-descartada-1')).toBeInTheDocument()
+
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows[1].category_id).toBeNull()
+  })
+
+  test('regra marca PJ: o checkbox nasce marcado e o envio leva is_business 1', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          name: 'Padaria é PJ',
+          match_text: 'padaria',
+          set_is_business: 1,
+        }),
+      ],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('pj-0')).toBeChecked()
+    expect(screen.getByTestId('pj-1')).not.toBeChecked()
+
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows[0].is_business).toBe(1)
+    expect(rows[1].is_business).toBe(0)
+  })
+
+  test('⚠️ o PJ sugerido por regra CONTINUA sendo sugestão — desmarcar chega ao servidor', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [regra({ match_text: 'padaria', set_is_business: 1 })],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    await usuario.click(screen.getByTestId('pj-0'))
+    expect(screen.getByTestId('pj-0')).not.toBeChecked()
+
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows[0].is_business).toBe(0)
+  })
+
+  test('sem regra nenhuma, o comportamento é o de antes — e is_business vai explícito', async () => {
+    // Antes desta fatia a chave nunca era enviada e TODA linha importada
+    // nascia PF por omissão. Agora ela vai sempre, com o valor que a tela
+    // mostra.
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    const usuario = await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-alimentacao')
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows[0].is_business).toBe(0)
+    expect(rows[0].category_id).toBe('c-alimentacao')
+  })
+
+  test('regra por FAIXA de valor casa pela magnitude, não pelo sinal', async () => {
+    // -45,90 (linha 0) e -12,50 (linha 1). Faixa 2000..9999 centavos pega
+    // só a primeira — com o valor cru (negativo), não pegaria nenhuma.
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      regras: [
+        regra({
+          name: 'Gasto médio',
+          match_min_cents: 2000,
+          match_max_cents: 9999,
+          set_category_id: 'c-transporte',
+        }),
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
+    expect(screen.getByTestId('categoria-1')).toHaveValue('')
   })
 })

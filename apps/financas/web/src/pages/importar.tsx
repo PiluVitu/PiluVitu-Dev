@@ -4,6 +4,7 @@ import { parseCsv, type MapaColunas } from '@piluvitu/tools/import/csv'
 import { idEstavel } from '@piluvitu/tools/import/id'
 import { parseOfx } from '@piluvitu/tools/import/ofx'
 import { formatBRL } from '@piluvitu/tools/money'
+import type { Regra, RegraAplicada } from '@piluvitu/tools/regras'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
@@ -16,7 +17,8 @@ import {
   SELECT_CLASSNAME,
 } from '../lib/form-classes'
 import { mapaSalvo, salvarMapa } from '../lib/import-settings'
-import { sugerirPayee, type PayeeParaSugestao } from '../lib/payee-suggest'
+import { type PayeeParaSugestao } from '../lib/payee-suggest'
+import { explicarRegras, sugerirParaLinha } from '../lib/regras-import'
 import type { AccountView } from './accounts'
 
 /**
@@ -47,6 +49,18 @@ type LinhaRevisao = {
   description: string
   payee_id: string
   category_id: string
+  // ⚠️ ATÉ ESTA FATIA, TODA LINHA IMPORTADA NASCIA is_business = 0 —
+  // `importTransactions` grava `row.is_business ?? 0` e a tela nunca mandava
+  // a chave. Ou seja: a separação PJ/PF, que é a razão de este módulo
+  // existir, ficava em branco pra toda fatura importada, e o dono só
+  // descobriria conferindo lançamento por lançamento no extrato. É a
+  // primeira ação de regra que precisou de um campo novo aqui, e ela tem
+  // checkbox próprio por linha porque sugestão continua sendo SUGESTÃO.
+  is_business: 0 | 1
+  /** Trilha do "por quê" — quais regras casaram, na ordem em que rodaram. */
+  regras: RegraAplicada[]
+  /** Alguma sugestão apontava pra categoria/favorecido fora da lista. */
+  sugestaoDescartada: boolean
   duplicada: boolean
   marcada: boolean
 }
@@ -151,6 +165,7 @@ export function ImportarPage() {
   const [accounts, setAccounts] = useState<AccountView[]>([])
   const [payees, setPayees] = useState<PayeeView[]>([])
   const [categories, setCategories] = useState<CategoryView[]>([])
+  const [regras, setRegras] = useState<Regra[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [accountId, setAccountId] = useState('')
@@ -187,13 +202,15 @@ export function ImportarPage() {
       api<AccountView[]>('/api/accounts'),
       api<PayeeView[]>('/api/payees'),
       api<CategoryView[]>('/api/categories'),
+      api<Regra[]>('/api/rules'),
     ])
-      .then(([contas, pys, cats]) => {
+      .then(([contas, pys, cats, rs]) => {
         if (!vivo) return
         setAccounts(contas)
         setAccountId((atual) => atual || contas[0]?.id || '')
         setPayees(pys)
         setCategories(cats)
+        setRegras(rs)
       })
       .catch((e: unknown) => {
         if (vivo) setLoadError(e instanceof ApiError ? e.message : String(e))
@@ -242,31 +259,30 @@ export function ImportarPage() {
         ocorrencia === 0 ? l.imported_id : `${l.imported_id}:occ:${ocorrencia}`
 
       const duplicada = existentes.has(idNatural)
-      const sugestao = sugerirPayee(l.description, payees)
-      // ⚠️ A categoria sugerida SÓ vale se ainda estiver na lista. O
-      // `payees.default_category_id` é um id gravado no passado e nada o
-      // atualiza quando a categoria é arquivada — e arquivar passou a ser
-      // possível nesta mesma fatia (`POST /api/categories/:id/archive`),
-      // então esta janela nasceu agora, não é dívida antiga.
-      //
-      // Sem esta checagem o `<select>` mostraria "Sem categoria" (o id não
-      // casa com nenhuma `<option>`) enquanto o ESTADO carregaria o id
-      // arquivado, e o envio o mandaria assim mesmo (`:357` faz
-      // `l.category_id || null`). O lançamento nasceria com uma categoria
-      // que nenhuma tela lista — invisível no relatório, sem erro nenhum.
-      // A tela e o dado têm que concordar: se não dá pra ver, não vai.
-      const categoriaSugerida =
-        sugestao?.default_category_id &&
-        categories.some((c) => c.id === sugestao.default_category_id)
-          ? sugestao.default_category_id
-          : ''
+      // ⚠️ A sugestão vem das REGRAS **e** do `payees.default_category_id`,
+      // e QUEM GANHA QUANDO OS DOIS DISCORDAM é a regra — o porquê (e a
+      // validação da categoria contra a lista carregada, pelos DOIS
+      // caminhos, que é o defeito de `6ba822c` não podendo voltar pelo
+      // caminho novo) mora inteiro em `lib/regras-import.ts`. Aqui não se
+      // decide nada: uma segunda cópia da precedência divergiria da
+      // testada, e o sintoma seria a tela sugerindo diferente do que a tela
+      // de regras promete.
+      const sugestao = sugerirParaLinha(l, {
+        accountId,
+        payees,
+        categories,
+        regras,
+      })
       return {
         imported_id: idNatural,
         purchase_date: l.purchase_date,
         amount_cents: l.amount_cents,
         description: l.description,
-        payee_id: sugestao?.id ?? '',
-        category_id: categoriaSugerida,
+        payee_id: sugestao.payee_id,
+        category_id: sugestao.category_id,
+        is_business: sugestao.is_business,
+        regras: sugestao.regras,
+        sugestaoDescartada: sugestao.sugestaoDescartada,
         duplicada,
         // Duplicata aparece DESMARCADA por padrão (spec §5) — o dono vê e
         // pode forçar marcando de novo; linha nova vem marcada, pronta pra
@@ -373,6 +389,11 @@ export function ImportarPage() {
               description: l.description,
               payee_id: l.payee_id || null,
               category_id: l.category_id || null,
+              // Mandado SEMPRE (não só quando 1): a coluna é NOT NULL
+              // DEFAULT 0 no schema, então omitir seria indistinguível de
+              // "PF", e o dono desmarcar um PJ que uma regra marcou tem que
+              // chegar ao servidor como uma decisão dele, não como omissão.
+              is_business: l.is_business,
             })),
           }),
         })
@@ -646,6 +667,28 @@ export function ImportarPage() {
                     </div>
                   ) : null}
                   <p className="text-sm">{linha.description}</p>
+                  {linha.regras.length > 0 ? (
+                    <p
+                      data-testid={`regras-${i}`}
+                      className="text-muted-foreground text-xs"
+                    >
+                      {explicarRegras(linha.regras)}
+                    </p>
+                  ) : null}
+                  {linha.sugestaoDescartada ? (
+                    // "A regra não casou" e "a regra casou e a categoria
+                    // dela sumiu" deixam a mesma tela (campo vazio) por
+                    // motivos opostos — só um deles pede ação do dono.
+                    <p
+                      data-testid={`sugestao-descartada-${i}`}
+                      role="alert"
+                      className="text-destructive text-xs"
+                    >
+                      Uma sugestão apontava para uma categoria ou favorecido que
+                      não está mais na lista (arquivado ou removido) — foi
+                      descartada. Escolha abaixo.
+                    </p>
+                  ) : null}
                   <div className="grid grid-cols-1 gap-2">
                     <div className="space-y-1">
                       <Label htmlFor={`payee-${i}`}>Payee sugerido</Label>
@@ -689,6 +732,25 @@ export function ImportarPage() {
                         ))}
                       </select>
                     </div>
+                    {/* Checkbox, não badge: a sugestão de PJ vinda de uma
+                        regra continua sendo SUGESTÃO, e o dono precisa poder
+                        desmarcar antes de gravar — igual à categoria e ao
+                        favorecido. */}
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        data-testid={`pj-${i}`}
+                        className={CHECKBOX_CLASSNAME}
+                        checked={linha.is_business === 1}
+                        disabled={passo === 'enviando'}
+                        onChange={(e) =>
+                          atualizarLinha(i, {
+                            is_business: e.target.checked ? 1 : 0,
+                          })
+                        }
+                      />
+                      PJ (despesa da empresa)
+                    </label>
                   </div>
                 </div>
               ))}

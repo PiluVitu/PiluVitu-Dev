@@ -145,6 +145,20 @@ Aplicada só **localmente** nesta task (`--local`, `src/schema.test.ts` com as t
 
 Aplicada só **localmente** (via a suíte, que lê `migrations/` com `readD1Migrations`); produção é ação manual do dono — ver _Deploy_ § 2.
 
+### `0009_rules.sql` — categorização automática por REGRA (fase 1)
+
+Ver a seção _Regras de categorização_ mais abaixo pro desenho completo (o porquê de cada coluna, a precedência de conflito, e por que o matcher mora em `packages/tools`). Aqui ficam só os fatos de schema:
+
+- **Colunas fixas, não um JSON de condições genérico.** O Actual Budget tem motor genérico porque atende muitos usuários/bancos; aqui é single-user, e um JSON custaria um validador em TS (o CHECK não enxerga dentro de `TEXT`), uma tela que monta/lê esse JSON, e a impossibilidade de inspecionar uma regra com um `SELECT` durante depuração. Prefixos `match_` (condição) e `set_` (ação) fazem a linha se ler como "SE … ENTÃO …".
+- ⚠️ **`match_account_id` é `ON DELETE CASCADE`, NÃO `SET NULL` — a direção OPOSTA da lição da `0006`, de propósito.** Lá (`recurring_expense_id`) o dependente é um FATO (dinheiro que saiu) e CASCADE apagaria dinheiro. Aqui o dependente é uma **condição que ESTREITA**: com SET NULL, apagar a conta transformaria "só no cartão da PJ" em "em qualquer conta" — a regra **ALARGA sozinha, em silêncio**, que é o pior resultado possível. Os dois FKs de ação (`set_category_id`/`set_payee_id`) também são CASCADE: uma regra cujo alvo sumiu aparece na lista, casa lançamentos e não faz nada — mente. Na prática quase nunca dispara: categoria neste app se **arquiva**, não se apaga (ver o bullet da categoria arquivada na seção _Regras_).
+- ⚠️ **DOIS CHECKs estruturais, e o primeiro é a guarda mais importante da tabela: pelo menos UMA condição.** Uma regra com todos os `match_*` nulos casaria **todo lançamento do livro-caixa** e recategorizaria a vida inteira do dono num import. Vive no BANCO, não só em TS, porque uma linha escrita por `wrangler d1 execute` não passa pelo domínio. O segundo (pelo menos uma ação) barra a regra que ocupa espaço na tela sem nunca explicar por que existe.
+- ⚠️ **`set_is_business` é NULLABLE (`0|1|NULL`), nunca `NOT NULL DEFAULT 0`** — os três valores são três coisas: `1` marque PJ, `0` marque PF (sobrescrevendo uma regra ampla que veio antes), `NULL` **não mexa**. Com `DEFAULT 0`, toda regra de categoria zeraria o PJ de brinde, e `is_business` é a coluna que sustenta a separação PJ/PF inteira.
+- **`DELETE` de verdade + `active`, nunca `archived_at`.** `archived_at` existe em `accounts`/`categories` porque `transactions` APONTA pra elas. **Nada aponta pra `rules`** — o que fica gravado no lançamento é a categoria, nunca um `rule_id` —, então apagar não deixa órfão: precedente correto é `recurring_expenses` (`0006`), com `active` pra PAUSAR sem perder o texto.
+- **Sem índice**, decisão consciente com a tabela vazia (índice no D1 é irreversível): o único acesso é "leia TODAS as regras" (o matching é em TS, sobre dezenas de linhas), e índice que nenhuma query usa é "row written" a mais por escrita, pra sempre. Mesmo raciocínio da `0006`/`0003`. `src/schema.test.ts` trava isso com uma asserção de que `sqlite_master` não tem índice nenhum em `rules` além da PK.
+- **`match_kind` (`contains`/`equals`/…) NÃO existe, de propósito.** Descrição de banco vem cheia de ruído (`*1234`, cidade, UF), então `equals` quase nunca serve, e um seletor de operador é mais uma coisa pra o dono errar. Se um dia fizer falta, `ALTER TABLE ADD COLUMN match_kind TEXT DEFAULT 'contains'` é aditivo e seguro — mesmo padrão já MEDIDO na `0006`.
+
+Aplicada só **localmente** nesta fatia; produção é ação manual do dono — ver _Deploy_ § 2.
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
@@ -918,6 +932,114 @@ As quatro funções acima ganharam rota HTTP nesta task — antes só existiam n
 - ⚠️ **`DELETE /:id/items/:itemId` e `DELETE /:id/payments/:paymentId` têm teste dedicado com DUAS dívidas reais** (não só id inexistente) — mesmo padrão que os testes de domínio já cobrem (`domain/debts.test.ts`, "item/pagamento que pertence a OUTRA dívida"), replicado no limite HTTP porque é a rota que expõe o par `(id, itemId)`/`(id, paymentId)` da URL a uma requisição real. Cria dívida A com item/pagamento, dívida B vazia, tenta apagar o item/pagamento de A através da URL de B — espera 404 `not_found` **e** confirma que a linha (e a `transaction` associada, no caso do pagamento) sobrevive intacta. Fecha o risco de uma troca futura na ordem dos argumentos passados a `deleteDebtItem`/`deleteDebtPayment` dentro da rota passar batido: com só id-inexistente coberto, uma regressão desse tipo podia reabrir o furo silenciosamente sobre HTTP real, mesmo com o domínio correto e testado.
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/routes/debts.test.ts` (19/19: 7 do caminho feliz/erros pré-existentes + 12 novos em `describe('rotas de exclusao e baixa (Task 3)', ...)`) — uma linha por combinação sucesso/erro da tabela acima, mais os casos citados nos bullets (mensagem cozida sem `SQLITE_CONSTRAINT`/nome de tabela; `debt_has_ledger` citando `'Dar baixa'`; os dois casos de dívida cruzada).
+
+## Regras de categorização (`packages/tools/src/regras.ts` + `src/domain/rules.ts` + `src/routes/rules.ts` + `web/src/pages/regras.tsx`)
+
+Fase 1 do pedido do dono. Migration `0009_rules.sql` (fatos de schema na seção _Migrations_ acima).
+
+**O buraco medido:** `payees.default_category_id` existe desde a `0001`, o import já o lê (`web/src/lib/payee-suggest.ts:83` → `pages/importar.tsx`) e a tela Lançar finalmente o escreve — mas isso só cobre "este favorecido cai nesta categoria". Não cobre **"qualquer descrição contendo X vai pra Y"**, que é como um extrato de banco de verdade se lê (`UBER *TRIP`, `PAG*Padaria`, `DAS SIMPLES NACIONAL`), onde o favorecido muitas vezes nem existe como cadastro.
+
+⚠️ **NÃO é machine learning, e a decisão fica registrada** — um usuário só não gera dado de treino, e o dono precisa poder ver **POR QUE** uma transação foi categorizada e **desfazer**. Um modelo não responde nenhuma das duas. O modelo copiado é o **Actual Budget Rules** (https://actualbudget.org/docs/budgeting/rules/): declarativo e auditável.
+
+### O motor mora em `@piluvitu/tools/regras`, não em `src/domain/`
+
+⚠️ **Os DOIS lados precisam do MESMO matcher** — o Worker (pra contar quantos lançamentos existentes cada regra casaria) e a SPA (pra sugerir na conferência do import, que roda 100% no navegador porque o Worker nunca vê o arquivo). Worker e SPA são bundles/runtimes diferentes, sem fronteira de import — foi essa fronteira que já obrigou `todayInTeresina` e `normalizeName` a existirem em duas cópias. **Uma segunda cópia de um MATCHER seria pior que as duas anteriores:** cópias de formatação divergem e alguém nota; cópias de matching divergem e a tela passa a sugerir categoria diferente da que o contador de "quantas casariam" prometeu, **em silêncio**. `@piluvitu/tools` já é importado pelos dois, então é o único lugar hoje capaz de ser fonte ÚNICA.
+
+Exporta `Regra` (espelha 1:1 a linha da tabela — nomes de COLUNA, sem tradução no meio), `normalizarParaRegra`, `regraCasa`, `ordenarRegras` e `aplicarRegras`.
+
+- **`aplicarRegras(tx, regras)` é PURA e devolve O QUE MUDARIA** (`{category_id, payee_id, is_business, aplicadas}`), nunca grava. É essa forma que permite mostrar ao dono o que vai acontecer ANTES de confirmar — o requisito central da fatia.
+- **`aplicadas` é a trilha de auditoria**: TODAS as regras que casaram, na ordem em que rodaram. ⚠️ Uma regra cujo campo foi **sobrescrito** por outra mais adiante **continua na trilha** — é o conflito que o dono precisa ver pra saber que existe uma ordem a reordenar; omiti-la esconderia justamente o que a trilha existe pra mostrar.
+- **Condição `null` é IGNORADA, nunca "casa com nada"** — senão toda regra parcialmente preenchida viraria letra morta, em silêncio. Condições preenchidas são AND.
+- ⚠️ **A faixa compara MAGNITUDE (`Math.abs`), não o valor com sinal.** `amount_cents` é negativo pra despesa: "entre R$ 50 e R$ 200" com sinal seria uma faixa invertida e vazia (`-5000 >= 5000`) e **nunca casaria despesa nenhuma** — que é 100% do caso de uso. O sinal é outra pergunta e tem coluna própria (`match_direction`).
+- **`normalizarParaRegra` NÃO vira uma coluna derivada `match_text_norm`.** `payees.norm_name` existe porque é CHAVE DE ÍNDICE (lookup sargable em SQL) — e por isso precisa ser recalculada junto com o `name`, disciplina que já custou um bug. Aqui não há índice nem matching em SQL: uma coluna derivada só criaria um jeito de a normalização gravada discordar do texto gravado, sem comprar velocidade nenhuma.
+
+### ⚠️ Conflito é o CASO COMUM, não a borda — ordem explícita, e a última vence POR CAMPO
+
+"UBER" e "UBER \*EATS" casam a mesma linha. A decisão: **`priority` ASC explícito, TODAS as que casam se aplicam, e a ÚLTIMA vence por CAMPO.** As duas alternativas foram descartadas com motivo:
+
+- **"primeira que casa e para"** — mata composição, que é o uso real. "Tudo no cartão da PJ é `is_business=1`" (regra ampla) e "Uber → Transporte" (regra estreita) precisam valer **juntas**; com a primeira vencendo, o dono perderia uma das duas e teria que repetir o `is_business` dentro de cada regra de estabelecimento — dezenas de cópias da mesma decisão, que é como uma regra deixa de ser auditável.
+- **"a mais específica vence"** — exige uma métrica de especificidade que o dono **não vê** (texto mais longo? mais condições preenchidas?), e que empata o tempo todo. Qualquer critério inventado aqui vira uma regra secreta que ele teria que adivinhar pra prever o resultado — e uma regra que ele não consegue prever é uma regra que ele não vai confiar.
+- **ordem explícita (escolhida)** — é o modelo do Actual, e o único em que a UI mostra a cadeia inteira ("estas 3 regras casaram, nesta ordem"). Conflito deixa de ser algo que o motor resolve escondido e vira algo que o dono resolve mexendo num número visível.
+
+⚠️ **O desempate tem TRÊS partes (`priority`, `created_at`, `id`), e a lição é medida neste módulo:** o cursor do extrato (`0008`) precisou de três colunas porque duas não eram únicas, e paginar de 2 em 2 devolveu 4 de 6 parcelas. Aqui o sintoma seria pior por ser **intermitente** — duas regras com a mesma `priority` aplicadas em ordem arbitrária do SQLite fariam o MESMO conjunto de regras produzir categorias diferentes entre execuções, sem o dono ter como reproduzir. `id` (PK) fecha a ordem TOTAL.
+
+### Onde as regras são aplicadas: só no import, nesta fase — e isso é decisão
+
+**Import sim, Lançar não.** No import o dono está conferindo dezenas de linhas que ele **não digitou**, e uma sugestão poupa trabalho real. Na tela Lançar ele está digitando UMA linha, com o campo na frente dele — e um valor que muda sozinho sob os dedos é pior que valor nenhum (a própria tela Lançar já tem um efeito deliberado que LIMPA a categoria ao trocar "Entrada", justamente pra não deixar dado incoerente de pé). O motor é puro e a rota existe: adotar em Lançar depois é acrescentar um preview ("estas regras casariam"), nunca uma mutação silenciosa.
+
+### `src/domain/rules.ts` e `src/routes/rules.ts`
+
+CRUD nas convenções do módulo (TS valida antes do banco com mensagem legível; `null` pra id inexistente que a rota traduz em 404; `DELETE` devolvendo `boolean` de `meta.changes`).
+
+| Rota                     | Sucesso | Erros                                          |
+| ------------------------ | ------- | ---------------------------------------------- |
+| `GET /api/rules`         | 200     | —                                              |
+| `GET /api/rules/matches` | 200     | —                                              |
+| `POST /api/rules`        | 201     | 400 `invalid_json`, 422 `constraint_violation` |
+| `PUT /api/rules/:id`     | 200     | 400 `invalid_json`, 404, 422                   |
+| `DELETE /api/rules/:id`  | 200     | 404 `not_found`                                |
+
+Nenhum código de erro novo no catálogo. `GET /` devolve ativas **E** pausadas (listagem de CRUD — esconder a pausada a tornaria inalcançável, mesmo motivo de `GET /api/recurring`); quem filtra `active = 1` é `aplicarRegras`, no motor, pra todo consumidor de uma vez.
+
+⚠️ **`updateRule` valida a linha FUNDIDA (atual + patch), não o patch sozinho — e esse é o ponto.** Um patch que limpa a única condição (`{match_text: null}` numa regra que só tinha texto) é individualmente inofensivo e produziria uma regra que casa **todo** lançamento; validar só o que veio no corpo deixaria passar exatamente esse caminho. Ler antes de escrever custa um `SELECT` numa tabela de dezenas de linhas. Coberto por teste que confere a coluna no D1 depois do 422 (a linha antiga sobrevive intacta).
+
+⚠️ **`GET /api/rules/matches` REUSA `regraCasa` — nunca um `LIKE` em SQL.** Um `LIKE '%'||?||'%'` seria uma segunda implementação: sem normalização de acento, com semântica de `LIKE` (curinga `%`/`_` dentro do texto do dono) e sem a faixa em magnitude — três jeitos de divergir do que a tela de import de fato vai fazer. Carrega uma janela bounded de lançamentos e roda o matcher em TS: **uma** varredura, N regras. Os mesmos dois filtros anti-dupla-contagem de `v_cashflow`/`byCategory` (`transfer_id IS NULL AND parent_id IS NULL`) — perna de transferência e filha de rateio repetem o valor de outra linha, e contá-las inflaria o número que o dono usa pra decidir se confia na regra. `scanned` volta no corpo de propósito: apresentar a contagem como se fosse o histórico inteiro seria a mesma desonestidade que o teto de 500 da dedupe do import evita dizendo o número em voz alta.
+
+### No import: quem ganha quando regra e `default_category_id` discordam
+
+Toda a política mora em `web/src/lib/regras-import.ts#sugerirParaLinha` — um lugar só, testável isolado, porque uma segunda cópia da precedência divergiria da testada.
+
+⚠️ **A REGRA VENCE.** `payees.default_category_id` é um _default_ pendurado num favorecido — um palpite permanente, gravado uma vez, sem nome, sem tela própria, que o dono nem lembra que existe. A regra é uma frase explícita que ELE escreveu, com nome, prioridade visível e uma tela onde dá pra editar e apagar. Entre uma afirmação explícita e um atributo implícito de outro registro ganha a explícita — e o motivo prático fecha o argumento: **se o default vencesse, uma regra JAMAIS conseguiria corrigir um favorecido já cadastrado**, que é onde o dono mais precisa corrigir; as regras seriam inúteis justo nas linhas que ele mais importa. O default continua valendo em tudo que a regra não disser (linha sem regra cai nele igual a antes; regra que só mexe em `is_business` não apaga a categoria que veio do favorecido).
+
+⚠️ **Sem encadeamento:** quando uma regra troca o FAVORECIDO, o `default_category_id` do favorecido NOVO não é puxado. Seria uma terceira camada com uma ordem que ninguém prevê de cabeça ("a regra venceu o default, mas o default do payee que a regra escolheu venceu a regra?"). O que a regra diz vale; o que ela não diz fica como estava.
+
+⚠️ **A categoria é validada contra a lista CARREGADA, pelos DOIS caminhos — o defeito de `6ba822c` não pode voltar pelo caminho novo.** Categoria neste app se **arquiva**, e `GET /api/categories` esconde arquivada — mas nem `payees.default_category_id` nem `rules.set_category_id` são atualizados quando isso acontece (a FK só dispara em `DELETE`, e arquivar não é `DELETE`). Sem a checagem, o `<select>` mostraria "Sem categoria" enquanto o ESTADO carregaria o id arquivado, e o envio o mandaria assim mesmo: o lançamento nasceria numa categoria que nenhuma tela lista — invisível no relatório, sem erro nenhum. Mesma checagem pro favorecido. E "a regra não casou" ≠ "a regra casou e a categoria dela sumiu": o segundo caso mostra um `role="alert"` próprio, porque só ele pede ação.
+
+**A sugestão continua sendo SUGESTÃO** — a conferência existe pra isso. Cada linha mostra `explicarRegras(...)` nomeando as regras que casaram (e, com duas ou mais, a ORDEM e o aviso de que a última vence), e todo campo continua editável antes de confirmar.
+
+⚠️ **`is_business` passou a ser enviado no import, e isso conserta um buraco que já existia:** `importTransactions` grava `row.is_business ?? 0` e a tela **nunca mandava a chave** — ou seja, a separação PJ/PF, que é a razão de este módulo existir, ficava em branco pra **toda** fatura importada, e o dono só descobriria conferindo lançamento por lançamento no extrato. Agora vai sempre explícito (não só quando `1`: a coluna é `NOT NULL DEFAULT 0`, então omitir seria indistinguível de "PF", e o dono **desmarcar** um PJ que uma regra marcou tem que chegar ao servidor como decisão dele, não como omissão), com **checkbox próprio por linha** — nunca um badge não-editável.
+
+### A tela (`web/src/pages/regras.tsx`, rota `#/regras`, no menu "Mais")
+
+Molde de `recorrentes.tsx`/`categorias.tsx`: lista + UM formulário reusado pra criar/editar (`editandoId`) + `Dialog` do design system pra confirmar exclusão (⚠️ **nunca `window.confirm()`** — o modo de falha medido no Chrome Android). `mutarERecarregar` nas quatro mutações, cada uma com mensagem de recarga própria.
+
+⚠️ **A coluna "casaria N de M lançamentos" é o que faz esta tela valer alguma coisa.** Uma regra cujo efeito o dono não consegue prever é uma regra que ele não vai usar — e ele não tem como adivinhar que "MERCADO" pega 40 linhas e não as 3 que ele imaginou. A tela diz o tamanho da janela varrida junto com o número, em vez de vendê-lo como "o histórico inteiro".
+
+⚠️ **A contagem é buscada num `useEffect` SEPARADO e falha em SILÊNCIO.** Um `Promise.all` com a carga principal juntaria o destino dos dois: uma varredura lenta (ou fora do ar) apagaria a lista de regras inteira, que é a única coisa desta tela que o dono não consegue obter de outro jeito. Mesmo precedente dos dois efeitos independentes de `pages/insight.tsx` e das referências de `BlocoSaldos`/`BlocoCategorias`.
+
+- `descreverCondicoes`/`descreverAcoes` (exportadas, testadas isoladas) traduzem a linha do schema pra "Se … Então …" em português. ⚠️ **`set_is_business === 0` aparece como "marca PF"** — um `if (r.set_is_business)` trataria `0` como "não faz nada" e sumiria com metade das regras de PJ/PF da listagem, em silêncio. Categoria/conta que sumiu é nomeada (`(arquivada ou removida)`), nunca some da frase.
+- **As duas guardas estruturais são checadas no CLIENTE também**, apesar de domínio e schema já as terem: a regra sem condição é justamente a que recategorizaria o livro-caixa inteiro, e explicar isso na hora custa zero round-trip.
+- **Opção que o servidor sempre recusaria não é oferecida** e o diálogo de exclusão diz o que aquele apagar faz: **não mexe em nenhum lançamento já gravado** (a categoria que a regra sugeriu no passado continua onde está; só as próximas importações deixam de usá-la), não há como desfazer, e aponta "Pausar" como a alternativa reversível.
+
+**Mobile (390 px) MEDIDO em Chrome real** (`playwright-core` + Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`): `scrollWidth === clientWidth === 390` em `#/regras` e na conferência de `#/importar`, **zero elemento estourando a largura da página**, e o `Dialog` de exclusão cabe exato (`x: 0, width: 390`). A mesma medição confirmou a resolução de conflito ponta a ponta em navegador real: linha `UBER *TRIP` → regra de prioridade 100 → Transporte + PJ marcado; linha `UBER *EATS` → as DUAS regras casam, a de prioridade 200 vence → Alimentação + PJ **desmarcado** (`set_is_business: 0`), com a trilha mostrando `Uber → Transporte → Uber Eats…` e a frase "A última vence quando duas mexem no mesmo campo".
+
+### Suítes e mutação
+
+**Worker 627 → 678** (+51: 26 em `domain/rules.test.ts`, 17 em `routes/rules.test.ts`, 8 em `schema.test.ts`). **SPA 453 → 500** (+47: 14 em `lib/regras-import.test.ts`, 22 em `pages/regras.test.tsx`, 9 em `pages/importar.test.tsx`, 2 em `App.test.tsx`). **`packages/tools` 123 → 147** (+24 em `src/regras.test.ts`). `apps/web` (116) e `packages/ui` (14) intocados. `tsc --noEmit` limpo nos dois lados; os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) saem com exit 0 e continua existindo **um** único chunk lazy.
+
+⚠️ **Nenhuma asserção pré-existente mudou de valor.** `pages/importar.test.tsx` teve 14 queries `getByRole('checkbox')` desambiguadas (`{ name: /\d{2}\/\d{2}\/\d{4}/ }` — a caixa que SELECIONA a linha é a que fica ao lado da data), porque o checkbox de PJ passou a existir na mesma linha; os valores esperados são os mesmos.
+
+⚠️ **Verificado por MUTAÇÃO — 13, cada uma matando só o teste certo pelo motivo certo** (todas revertidas; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                                            | Falha observada                                            |
+| ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `aplicarRegras` ignora `ordenarRegras` (ordem de chegada)          | 1 — o conflito passa a depender da ordem do array          |
+| `break` depois do primeiro match (first-match-wins)                | 3 — composição some, e o `is_business` PF junto            |
+| faixa comparando valor COM SINAL                                   | 6 — nenhuma despesa casa mais                              |
+| condição `null` tratada como "não casa"                            | 9 — toda regra parcial vira letra morta                    |
+| `updateRule` validando só o patch, não a linha fundida             | 4 — incl. o patch que apaga a última condição              |
+| `countRuleMatches` sem o filtro `transfer_id`/`parent_id`          | 1 — a contagem infla com perna de transferência            |
+| **o DEFAULT do favorecido vencendo a regra** (precedência trocada) | 5 — em `lib/` e na tela de import                          |
+| sem validar a categoria contra a lista carregada                   | 4 — incl. o teste pré-existente de `6ba822c`               |
+| import não mandando `is_business` (o estado pré-fatia)             | 3                                                          |
+| `descreverAcoes` com `if (r.set_is_business)`                      | 1 — "marca PF" desaparece da listagem                      |
+| excluir sem `Dialog` (chamada direta)                              | 1 — morre na ABERTURA do diálogo, antes da asserção de API |
+| guarda cliente de "sem condição" removida                          | 1                                                          |
+| contagem no MESMO `Promise.all` da carga principal                 | 1 — a lista de regras inteira some quando a contagem cai   |
+
+**Bundle (`vite build`, antes = fatia mobile / depois = esta):** JS principal 474,31 → 490,26 kB (**144,03 → 147,82 kB gzip**, +3,79 — a tela nova + o motor puro, nenhuma dependência nova); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**; CSS 6,78 → 6,79 kB gzip.
+
+**Fora de escopo, registrado:** aplicar regras na tela Lançar (ver a decisão acima); regra que age sobre `description` (renomear a linha); e uma ação "pular esta linha" no import.
 
 ## Payees e categorias (`src/domain/payees.ts` + `src/routes/payees.ts` + `src/routes/categories.ts`)
 
@@ -2187,7 +2309,7 @@ Migrations to be applied:
 
 Depois do `apply`, um `list --remote` novo devolve **✅ No migrations to apply!** (mesmo texto que o `--local` já devolve hoje, verificado nesta task). Sem down migration — se o schema sair errado, a correção é uma migration nova, nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
 
-⚠️ **`0008_tx_purchase_date_idx.sql` (extrato paginado) também está pendente em produção** — escrita, aplicada só localmente pela suíte, NUNCA rodada contra o D1 remoto por um agente. O comando é o mesmo do topo desta seção:
+⚠️ **`0009_rules.sql` (regras de categorização) e `0008_tx_purchase_date_idx.sql` (extrato paginado) também estão pendentes em produção** — escritas, aplicadas só localmente pela suíte, NUNCA rodadas contra o D1 remoto por um agente. O comando é o mesmo do topo desta seção:
 
 ```bash
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote

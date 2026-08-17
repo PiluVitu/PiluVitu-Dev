@@ -74,6 +74,12 @@ function mockFetchVazio() {
       if (url.includes('/api/settings')) return respond({ fixed_net_cents: 0 })
       // RecorrentesPage (Task 5, fatia ⑥) — três listas.
       if (url.includes('/api/recurring')) return respond([])
+      // RegrasPage — a listagem é lista; /api/rules/matches é OBJETO (e
+      // precisa vir ANTES, senão `includes('/api/rules')` captura os dois e
+      // a tela recebe um array onde espera `{scanned, counts}`).
+      if (url.includes('/api/rules/matches'))
+        return respond({ scanned: 0, counts: {}, scan_limit: 1000 })
+      if (url.includes('/api/rules')) return respond([])
       if (url.includes('/api/categories')) return respond([])
       // ReservaPage (Task 2/3, fatia ⑦) — objeto, não lista. `meses: null` é
       // o estado real de producao hoje (sem recorrente cadastrada).
@@ -175,6 +181,17 @@ describe('App — roteamento por hash com Gate autenticado', () => {
       expect(
         screen.getByRole('heading', { name: 'Recorrentes' }),
       ).toBeDefined(),
+    )
+  })
+
+  // Categorização por regra (fase 1): nova rota, mesmo padrão das demais
+  // (link no menu "Mais" + entrada na cadeia do AppShell).
+  test('#/regras mostra a tela Regras', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/regras'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Regras' })).toBeDefined(),
     )
   })
 
@@ -421,6 +438,18 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     expect(gatilho).toHaveAttribute('data-secao-ativa', 'true')
   })
 
+  test('#/regras marca "Regras" ativo no menu "Mais"', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/regras'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Regras' })).toBeDefined(),
+    )
+    const gatilho = screen.getByTestId('nav-mais')
+    expect(gatilho).toHaveTextContent('Regras')
+    expect(gatilho).toHaveAttribute('data-secao-ativa', 'true')
+  })
+
   // O contrapositivo do teste acima: numa rota PRIMÁRIA o gatilho volta a
   // ser um "Mais" neutro. Sem este caso, um gatilho marcado como ativo o
   // TEMPO TODO passaria no teste anterior sem provar nada.
@@ -439,13 +468,13 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
   // ⚠️ O ponto da fatia: a primeira fila do nav encolheu, mas NENHUM destino
   // sumiu do app.
   //
-  // ⚠️ Os 13 rótulos são LITERAIS aqui de propósito. A primeira versão deste
+  // ⚠️ Os 14 rótulos são LITERAIS aqui de propósito. A primeira versão deste
   // teste somava `barra.length + menu.length` e comparava com uma constante
   // exportada de `App.tsx` — que era derivada das MESMAS duas listas. Apagar
   // um destino encolhia os dois lados da igualdade e o teste continuava
   // verde: MEDIDO por mutação (removi "Reserva" e nenhum teste caiu). Uma
   // asserção que se deriva do código sob teste não testa esse código.
-  test('nenhum destino sumiu: os 13 continuam alcançáveis (5 na barra, 8 no menu)', async () => {
+  test('nenhum destino sumiu: os 14 continuam alcançáveis (5 na barra, 9 no menu)', async () => {
     mockFetchVazio()
     render(<App />)
     await waitFor(() =>
@@ -464,6 +493,7 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       'Contas',
       'Categorias',
       'Recorrentes',
+      'Regras',
       'Reserva',
       'Importar',
       'Fluxo de caixa',

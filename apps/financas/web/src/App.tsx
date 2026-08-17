@@ -23,6 +23,7 @@ import { ImportarPage } from './pages/importar'
 import { InsightPage } from './pages/insight'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
+import { RegrasPage } from './pages/regras'
 import { ReservaPage } from './pages/reserva'
 
 export function useHash(): string {
@@ -55,6 +56,7 @@ type RouteKey =
   | 'insight'
   | 'lancar'
   | 'recorrentes'
+  | 'regras'
   | 'reserva'
   | 'importar'
   | 'configuracoes'
@@ -70,6 +72,7 @@ export function resolveRoute(hash: string): RouteKey {
   if (hash.startsWith('#/lancar')) return 'lancar'
   if (hash === '#/recorrentes' || hash === '#/recorrentes/')
     return 'recorrentes'
+  if (hash === '#/regras' || hash === '#/regras/') return 'regras'
   if (hash === '#/reserva' || hash === '#/reserva/') return 'reserva'
   if (hash === '#/importar' || hash === '#/importar/') return 'importar'
   if (hash === '#/contas' || hash === '#/contas/') return 'contas'
@@ -104,6 +107,7 @@ const NAV_SECUNDARIOS: NavItem[] = [
   { href: '#/contas', label: 'Contas', route: 'contas' },
   { href: '#/categorias', label: 'Categorias', route: 'categorias' },
   { href: '#/recorrentes', label: 'Recorrentes', route: 'recorrentes' },
+  { href: '#/regras', label: 'Regras', route: 'regras' },
   { href: '#/reserva', label: 'Reserva', route: 'reserva' },
   { href: '#/importar', label: 'Importar', route: 'importar' },
   { href: '#/fluxo', label: 'Fluxo de caixa', route: 'fluxo' },
@@ -225,6 +229,8 @@ function AppShell() {
         <NewEntryPage />
       ) : route === 'recorrentes' ? (
         <RecorrentesPage />
+      ) : route === 'regras' ? (
+        <RegrasPage />
       ) : route === 'reserva' ? (
         <ReservaPage />
       ) : route === 'importar' ? (

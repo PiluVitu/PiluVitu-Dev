@@ -35,6 +35,18 @@ Exportados via subpaths (`@piluvitu/tools/prng|entropy|roleta`). Testados em Jes
 
 Exposto via `@piluvitu/tools/simulacao`.
 
+## Módulo `regras` (motor de categorização automática, `apps/financas`)
+
+`regras.ts` — o matcher declarativo por trás das regras de categorização do finanças (tabela `rules`, migration `0009`). `Regra` (espelha 1:1 a linha da tabela), `normalizarParaRegra`, `regraCasa`, `ordenarRegras`, `aplicarRegras`. Exposto via `@piluvitu/tools/regras`.
+
+⚠️ **Mora AQUI, e não em `apps/financas/src/domain/`, por um motivo específico: é o único módulo deste pacote cujos dois consumidores estão dos DOIS lados da fronteira Worker/SPA.** O Worker precisa dele pra contar quantos lançamentos existentes cada regra casaria (`GET /api/rules/matches`); a SPA precisa dele pra sugerir na conferência do import (que roda 100% no navegador, porque o Worker nunca vê o arquivo). Não há import entre os dois bundles — a mesma fronteira que já obrigou `todayInTeresina`/`normalizeName` a existirem em duas cópias. **Uma segunda cópia de um MATCHER seria pior que as duas anteriores:** cópias de formatação divergem e alguém nota; cópias de matching divergem e a tela passa a sugerir categoria diferente da que o contador prometeu, em silêncio.
+
+- **`aplicarRegras` devolve o que MUDARIA, nunca grava** — é essa forma (entrada → efeito descrito, mais a trilha de quais regras casaram) que permite mostrar ao dono o que vai acontecer antes de confirmar.
+- ⚠️ **Conflito é o caso comum:** todas as regras que casam se aplicam, em `priority` ASC, e a última vence POR CAMPO. O desempate tem TRÊS partes (`priority`, `created_at`, `id`) — ordem parcial faria o mesmo conjunto de regras produzir resultados diferentes entre execuções.
+- ⚠️ **A faixa de valor compara MAGNITUDE (`Math.abs`)**, porque `transactions.amount_cents` é negativo pra despesa; com sinal, a faixa seria invertida e vazia. O sinal tem condição própria.
+
+O porquê de cada coluna, a precedência contra `payees.default_category_id` e a tela vivem em `apps/financas/CLAUDE.md` § _Regras de categorização_ — aqui fica só o que é do pacote.
+
 ## Módulo `import` (parsers de extrato/fatura, fatia ②)
 
 `src/import/` — parsers puros para o import de CSV/OFX (`docs/superpowers/specs/2026-07-27-financas-import-design.md`). O arquivo é sempre lido no navegador (nunca sobe pro Worker); estas funções só transformam texto já em memória.
