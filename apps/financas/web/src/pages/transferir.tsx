@@ -65,6 +65,26 @@ function categoriaOferecivel(c: CategoryView): boolean {
 
 export function TransferirPage() {
   const [contas, setContas] = useState<AccountView[]>([])
+  /**
+   * ⚠️ Cartão de crédito FORA dos dois selects, e isso é conserto de defeito
+   * MEDIDO, não simetria estética. Transferir R$ 180 da PJ pro cartão deixa o
+   * app dizendo duas coisas opostas sobre a MESMA obrigação: `accountBalances`
+   * leva o cartão de -18000 pra 0 (a tela Contas passa a dizer **pago**),
+   * enquanto `commitments()` continua devolvendo `{min:18000,max:18000}` (o
+   * Comprometido continua dizendo **devendo**). Nenhum dos dois está errado
+   * isoladamente — o modelo é que não fecha: pagar fatura de cartão não é
+   * mover dinheiro entre contas, é liquidar as linhas daquela competência, e
+   * isso não tem tela (é a entidade Bill que o roadmap registra como ausente).
+   *
+   * O precedente é do próprio app: `pages/debt-detail.tsx:158` esconde cartão
+   * do select de conta de pagamento pelo mesmo motivo — não oferecer o que o
+   * modelo não sabe fechar. Aqui o servidor nem recusa, o que é pior: ele
+   * aceita e o app fica incoerente consigo mesmo, em silêncio.
+   */
+  const contasTransferiveis = useMemo(
+    () => contas.filter((c) => c.kind !== 'credit_card'),
+    [contas],
+  )
   const [categorias, setCategorias] = useState<CategoryView[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -253,7 +273,7 @@ export function TransferirPage() {
                 value={origemId}
                 onChange={(e) => setOrigemId(e.target.value)}
               >
-                {contas.map((c) => (
+                {contasTransferiveis.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -271,7 +291,7 @@ export function TransferirPage() {
                 value={destinoId}
                 onChange={(e) => setDestinoId(e.target.value)}
               >
-                {contas.map((c) => (
+                {contasTransferiveis.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -329,11 +349,29 @@ export function TransferirPage() {
                     "Quitação de dívida" fica de fora: pagar dívida tem tela
                     própria.
                   </p>
+                  {/*
+                    ⚠️ A versão anterior deste texto dizia que a categoria
+                    "responde 'quanto tirei de pro-labore este ano?'". É FALSO
+                    hoje, e foi medido: 12 transferências categorizadas
+                    (R$ 51.600 no banco) e `byCategory('2026-08')` devolve
+                    `rows: []`, `total_cents: 0` — porque os três relatórios
+                    agregados (`cashflow`, `commitments`, `byCategory`) filtram
+                    `transfer_id IS NULL`, e isso está CERTO (é o que impede a
+                    dupla contagem). O dado é gravado e é o certo; falta
+                    consumidor. Prometer o relatório que não existe faria o
+                    dono confiar num número que ele nunca vai ver.
+                  */}
                   <p className="mt-2">
-                    A categoria é gravada na perna de <strong>saída</strong> — é
-                    ela que responde "quanto tirei de pro-labore este ano?". Sem
-                    categoria, "pro-labore" fica só na descrição e nenhum
-                    relatório o encontra.
+                    A categoria é gravada na perna de <strong>saída</strong>, e
+                    hoje ela serve pra você <strong>achar</strong> a
+                    transferência no Extrato — pelo nome ou pela busca.
+                  </p>
+                  <p className="mt-2">
+                    ⚠️ Ela ainda <strong>não</strong> aparece em relatório:
+                    Comprometido, Fluxo de caixa e "para onde foi o dinheiro"
+                    excluem transferência de propósito, senão o mesmo dinheiro
+                    seria contado duas vezes. Um total de "quanto tirei de
+                    pro-labore no ano" é tela que ainda não existe.
                   </p>
                 </Ajuda>
               </div>

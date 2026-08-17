@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import {
   addMonthsToCompetence,
+  isRealCalendarDate,
   competenciaAtual,
   formatDateTimeTeresina,
   todayInTeresina,
@@ -77,5 +78,46 @@ describe('formatDateTimeTeresina', () => {
     expect(formatDateTimeTeresina('2026-01-05T06:07:00Z')).toBe(
       '05/01/2026 03:07',
     )
+  })
+})
+
+describe('isRealCalendarDate', () => {
+  // ⚠️ Esta função nasceu SEM teste da parte que justifica ela existir.
+  // MEDIDO por um revisor: pondo `return true` logo depois do regex de
+  // formato, a suíte inteira (28 casos) continuava verde — porque o único
+  // caso que a exercitava usava `''`, que o regex já barra. Ou seja: o
+  // round-trip de `Date.UTC`, que é a RAZÃO de ela não ser só um regex,
+  // não era provado por nada.
+  it('recusa data que passa no formato mas não existe no calendário', () => {
+    // O caso do próprio comentário da função.
+    expect(isRealCalendarDate('2026-02-30')).toBe(false)
+    expect(isRealCalendarDate('2026-04-31')).toBe(false)
+    expect(isRealCalendarDate('2026-06-31')).toBe(false)
+    // ⚠️ 2026 NÃO é bissexto — 29/02 não existe.
+    expect(isRealCalendarDate('2026-02-29')).toBe(false)
+  })
+
+  it('aceita 29/02 em ano bissexto — a regra não é "todo 29/02 é falso"', () => {
+    expect(isRealCalendarDate('2024-02-29')).toBe(true)
+    expect(isRealCalendarDate('2028-02-29')).toBe(true)
+    // ⚠️ Século não divisível por 400 não é bissexto: 1900 não, 2000 sim.
+    // Um `%4` ingênuo passaria no primeiro e o round-trip de Date.UTC não.
+    expect(isRealCalendarDate('1900-02-29')).toBe(false)
+    expect(isRealCalendarDate('2000-02-29')).toBe(true)
+  })
+
+  it('recusa formato inválido antes de olhar calendário', () => {
+    expect(isRealCalendarDate('')).toBe(false)
+    expect(isRealCalendarDate('2026-2-3')).toBe(false)
+    expect(isRealCalendarDate('30/02/2026')).toBe(false)
+    expect(isRealCalendarDate('2026-13-01')).toBe(false)
+    expect(isRealCalendarDate('2026-00-10')).toBe(false)
+    expect(isRealCalendarDate('2026-01-00')).toBe(false)
+  })
+
+  it('aceita datas comuns, incluindo bordas de mês', () => {
+    expect(isRealCalendarDate('2026-01-31')).toBe(true)
+    expect(isRealCalendarDate('2026-08-17')).toBe(true)
+    expect(isRealCalendarDate('2026-12-31')).toBe(true)
   })
 })

@@ -188,10 +188,14 @@ async function montar(opts?: Parameters<typeof mockRoutes>[0]) {
   const fetchMock = mockRoutes(opts)
   render(<TransferirPage />)
   await screen.findByTestId('form-transferencia')
+  // ⚠️ DOIS, não três: a fixture tem 3 contas, e o cartão de crédito é
+  // filtrado de propósito (ver `contasTransferiveis` em `transferir.tsx`).
+  // O teste dedicado abaixo prova QUAL ficou de fora — este aqui só espera
+  // o carregamento terminar.
   await waitFor(() =>
     expect(
       (screen.getByLabelText(/^De \(/) as HTMLSelectElement).options.length,
-    ).toBe(3),
+    ).toBe(2),
   )
   return fetchMock
 }
@@ -311,6 +315,31 @@ describe('TransferirPage — o formulário que faltava pra POST /api/transfers',
       description: 'Pro-labore de agosto',
       category_id: 'c-prolabore',
     })
+  })
+
+  it('cartão de crédito NÃO é oferecido — o modelo não fecha pagar fatura como transferência', async () => {
+    // MEDIDO: transferir R$ 180 da PJ pro cartão deixa o app dizendo duas
+    // coisas OPOSTAS sobre a mesma obrigação — `accountBalances` leva o
+    // cartão de -18000 pra 0 (a tela Contas diz PAGO) enquanto
+    // `commitments()` segue em {min:18000,max:18000} (o Comprometido diz
+    // DEVENDO). O servidor nem recusa, o que é pior: aceita e o app fica
+    // incoerente consigo mesmo, calado.
+    await montar()
+
+    const rotulos = (sel: HTMLSelectElement) =>
+      Array.from(sel.options).map((o) => o.textContent)
+
+    const de = screen.getByLabelText(/^De \(/) as HTMLSelectElement
+    const para = screen.getByLabelText(/^Para \(/) as HTMLSelectElement
+
+    // As duas contas correntes estão lá...
+    expect(rotulos(de)).toContain('Nubank PJ')
+    expect(rotulos(de)).toContain('Nubank PF')
+    expect(rotulos(para)).toContain('Nubank PJ')
+    expect(rotulos(para)).toContain('Nubank PF')
+    // ...e o cartão NÃO, nos DOIS selects (origem e destino).
+    expect(rotulos(de)).not.toContain('Nubank cartao')
+    expect(rotulos(para)).not.toContain('Nubank cartao')
   })
 
   it('a mesma conta nos dois lados é recusada NO CLIENTE, sem gastar requisição', async () => {
