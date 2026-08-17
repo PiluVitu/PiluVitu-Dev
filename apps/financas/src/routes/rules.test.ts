@@ -241,6 +241,34 @@ describe('GET /api/rules/matches', () => {
     expect(body.data.scan_limit).toBeGreaterThan(0)
   })
 
+  it('⚠️ regra PAUSADA também é contada — é o número que decide se vale reativar', async () => {
+    // CONTRATO, não descuido (ver o comentário de `/matches` em routes/rules.ts).
+    // Filtrar `active = 1` aqui deixaria a tela sem nada a dizer justamente
+    // sobre a regra cujo futuro o dono está decidindo. Quem paga o preço é o
+    // TEMPO VERBAL na SPA ("se reativada, casaria…"), nunca a contagem.
+    const conta = await createAccount(db, {
+      name: 'Nubank',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    await db
+      .prepare(
+        `INSERT INTO transactions
+          (id, account_id, amount_cents, currency, purchase_date, description,
+           is_business, created_at, updated_at)
+         VALUES (?, ?, -2350, 'BRL', '2026-08-10', 'UBER *TRIP', 0, ?, ?)`,
+      )
+      .bind(newId(), conta.id, '2026-08-10T00:00:00Z', '2026-08-10T00:00:00Z')
+      .run()
+
+    const ativa = await createRule(db, corpoValido)
+    const pausada = await createRule(db, { ...corpoValido, active: 0 })
+
+    const { body } = await req<{ counts: Record<string, number> }>('/matches')
+    expect(body.data.counts[ativa.id]).toBe(1)
+    expect(body.data.counts[pausada.id]).toBe(1)
+  })
+
   it('/matches NÃO é capturado como id — a ordem de registro importa', async () => {
     // Se um `GET /:id` for acrescentado ACIMA desta rota um dia, "matches"
     // vira o id e este teste morre — que é exatamente o ponto.

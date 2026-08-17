@@ -104,6 +104,17 @@ function respondJson(data: unknown, status = 200) {
   })
 }
 
+function respondErro(status: number, code: string, message: string) {
+  return Promise.resolve({
+    status,
+    json: async () => ({
+      ok: false,
+      data: null,
+      notifications: [{ type: 'error', code, message }],
+    }),
+  })
+}
+
 type Chamada = { url: string; method: string; body: string | undefined }
 
 /**
@@ -131,6 +142,10 @@ function mockRede(opts: {
   // Default: nenhuma — o comportamento pré-fatia (só `default_category_id`)
   // continua sendo o que a maioria dos testes deste arquivo exercita.
   regras?: unknown[]
+  // `GET /api/rules` devolvendo 500 — o estado REAL de produção enquanto a
+  // migration 0009 não é aplicada (ela é ação manual do dono). Ver o teste
+  // dedicado abaixo.
+  regrasFalha?: boolean
 }) {
   vi.stubGlobal(
     'fetch',
@@ -144,7 +159,11 @@ function mockRede(opts: {
 
         if (url.includes('/api/accounts')) return respondJson(accounts)
         if (url.includes('/api/payees')) return respondJson(payees)
-        if (url.includes('/api/rules')) return respondJson(opts.regras ?? [])
+        if (url.includes('/api/rules')) {
+          if (opts.regrasFalha)
+            return respondErro(500, 'internal_error', 'erro interno')
+          return respondJson(opts.regras ?? [])
+        }
         if (url.includes('/api/categories'))
           return respondJson(opts.categoriasVisiveis ?? categories)
         if (method === 'POST' && url.includes('/api/transactions/import')) {
@@ -1477,5 +1496,41 @@ describe('ImportarPage — regras de categorização', () => {
 
     expect(screen.getByTestId('categoria-0')).toHaveValue('c-transporte')
     expect(screen.getByTestId('categoria-1')).toHaveValue('')
+  })
+  test('⚠️ /api/rules FORA DO AR não derruba a tela — import não precisa de regra', async () => {
+    // MEDIDO em Chrome real com `/api/rules` devolvendo 500: `#/importar`
+    // renderizava **só** um `<p role="alert">erro interno</p>` — sem `<h1>`,
+    // sem select de conta, sem input de arquivo. E é alcançável AGORA: a
+    // migration `0009` (que cria a tabela `rules`) é ação MANUAL do dono, e
+    // publicar o Worker antes dela faz `GET /api/rules` 500ar — derrubando
+    // uma tela que hoje funciona. Mesma classe de defeito do achado C2 (a
+    // tabela `settings` ausente 500ava TRÊS telas).
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas, regrasFalha: true })
+    const usuario = await irParaConferencia(chamadas)
+
+    // A tela chegou inteira até a conferência, e a sugestão degradou pro
+    // `payees.default_category_id` — que é como o import funcionava ANTES
+    // das regras existirem. Degradado, não morto.
+    expect(screen.getByTestId('categoria-0')).toHaveValue('c-alimentacao')
+    expect(screen.queryByTestId('regras-0')).not.toBeInTheDocument()
+
+    // Degradar não é engolir: a tela DIZ que as sugestões vieram sem regras.
+    expect(screen.getByTestId('regras-indisponiveis')).toHaveTextContent(
+      /sugest(õ|o)es v(ê|e)m s(ó|o) do favorecido/i,
+    )
+
+    // E confirmar continua funcionando de ponta a ponta.
+    const rows = await confirmarELerRows(usuario, chamadas)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].category_id).toBe('c-alimentacao')
+  })
+
+  test('com as regras NO AR, o aviso de indisponível não aparece', async () => {
+    // Controle positivo: sem ele, um aviso renderizado SEMPRE passaria acima.
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    await irParaConferencia(chamadas)
+    expect(screen.queryByTestId('regras-indisponiveis')).not.toBeInTheDocument()
   })
 })

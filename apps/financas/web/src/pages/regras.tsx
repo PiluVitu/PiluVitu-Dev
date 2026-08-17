@@ -390,6 +390,36 @@ export function RegrasPage() {
   const nomePayee = (id: string) =>
     payees.find((p) => p.id === id)?.name ?? null
 
+  // ⚠️ **O FORMULÁRIO EXIBIA O OPOSTO DO QUE A REGRA FAZ.** Conta e categoria
+  // neste app se **arquivam**, não se apagam — e `GET /api/accounts` /
+  // `GET /api/categories` escondem arquivada, enquanto `rules` continua
+  // apontando pra ela (arquivar não é `DELETE`, então o `ON DELETE CASCADE`
+  // da 0009 nunca dispara). Sem estas duas opções sintéticas, o `<select>`
+  // ficava sem `<option>` casando o valor e caía na PRIMEIRA — "Qualquer
+  // conta" / "Não mexe" —, enquanto o estado seguia com o id arquivado:
+  // salvar sem tocar em nada mandava `match_account_id: "a-arquivada"` por
+  // baixo de um campo que dizia "Qualquer conta".
+  //
+  // ⚠️ O caso da CONTA é o mais grave, e é irônico: "a regra alarga sozinha,
+  // em silêncio" é exatamente o que o CASCADE da 0009 foi escrito pra
+  // impedir. O schema impede de verdade; era a TELA que exibia como se
+  // tivesse acontecido — e o dono lê "Qualquer conta", acredita, e salva.
+  //
+  // **A escolha: MOSTRAR a opção arquivada, marcada e nomeada, com aviso — e
+  // NÃO bloquear o salvamento.** Bloquear recusaria uma edição que não tem
+  // nada a ver com o campo arquivado (renomear a regra, mudar a Ordem)
+  // enquanto força uma decisão que o dono pode legitimamente não querer
+  // tomar: uma regra "só no cartão X" continua CERTA depois de o cartão ser
+  // arquivado — os lançamentos daquela conta continuam existindo, e a regra
+  // continua casando exatamente eles. O que era inaceitável não é a regra
+  // apontar pra uma conta arquivada, é a tela MENTIR sobre isso. A lista já
+  // era honesta (`na conta (removida)`, `(arquivada ou removida)`); o
+  // formulário agora também é, e o aviso nomeia a saída em vez de impô-la.
+  const contaSumida =
+    contaId !== NENHUMA && !contas.some((c) => c.id === contaId)
+  const categoriaSumida =
+    categoriaId !== NENHUMA && !categorias.some((c) => c.id === categoriaId)
+
   return (
     <section className="space-y-6">
       <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -452,13 +482,26 @@ export function RegrasPage() {
                     Então {descreverAcoes(r, nomeCategoria, nomePayee)}
                   </p>
                   {/* ⚠️ O número que faz o dono confiar (ou desconfiar) da
-                      regra ANTES de rodar um import com ela ligada. */}
+                      regra ANTES de rodar um import com ela ligada.
+
+                      ⚠️ `GET /api/rules/matches` conta ativas E pausadas (ver
+                      a decisão em `src/routes/rules.ts`), então a frase de uma
+                      regra PAUSADA precisa dizer isso — a versão anterior
+                      afirmava "Casaria N de M lançamento(s) já existentes."
+                      ao lado do badge "Pausada", prometendo um efeito que a
+                      regra hoje não tem. Filtrar as pausadas na rota teria
+                      sido mais simples e PIOR: o número é justamente o que
+                      responde "vale a pena reativar esta?", e uma regra
+                      pausada é onde essa pergunta é feita. Corrigido o TEMPO
+                      VERBAL, não a contagem. */}
                   <p
                     data-testid={`casaria-${r.id}`}
                     className="text-sm tabular-nums"
                   >
                     {matches
-                      ? `Casaria ${matches.counts[r.id] ?? 0} de ${matches.scanned} lançamento(s) já existentes.`
+                      ? r.active === 1
+                        ? `Casaria ${matches.counts[r.id] ?? 0} de ${matches.scanned} lançamento(s) já existentes.`
+                        : `Pausada, não casa nada hoje — se reativada, casaria ${matches.counts[r.id] ?? 0} de ${matches.scanned} lançamento(s) já existentes.`
                       : 'Não consegui contar quantos lançamentos existentes ela casaria.'}
                   </p>
                   <div className="flex flex-wrap gap-2 pt-1">
@@ -538,12 +581,29 @@ export function RegrasPage() {
                   onChange={(e) => setContaId(e.target.value)}
                 >
                   <option value={NENHUMA}>Qualquer conta</option>
+                  {contaSumida ? (
+                    <option value={contaId}>
+                      Conta arquivada ou removida (mantida)
+                    </option>
+                  ) : null}
                   {contas.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
+                {contaSumida ? (
+                  <p
+                    role="alert"
+                    data-testid="regra-conta-arquivada"
+                    className="text-destructive text-xs"
+                  >
+                    Esta regra está presa a uma conta arquivada, e vai continuar
+                    assim se você salvar — ela ainda casa os lançamentos daquela
+                    conta. Só escolha &quot;Qualquer conta&quot; se quiser mesmo
+                    ALARGAR a regra para todas as contas.
+                  </p>
+                ) : null}
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -598,12 +658,30 @@ export function RegrasPage() {
                   onChange={(e) => setCategoriaId(e.target.value)}
                 >
                   <option value={NENHUMA}>Não mexe</option>
+                  {categoriaSumida ? (
+                    <option value={categoriaId}>
+                      Categoria arquivada ou removida (mantida)
+                    </option>
+                  ) : null}
                   {categorias.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
+                {categoriaSumida ? (
+                  <p
+                    role="alert"
+                    data-testid="regra-categoria-arquivada"
+                    className="text-destructive text-xs"
+                  >
+                    Esta regra aponta para uma categoria arquivada, e vai
+                    continuar assim se você salvar. Na conferência do import a
+                    sugestão dela é descartada com aviso, porque a categoria não
+                    aparece em nenhuma tela — escolha outra categoria ou
+                    &quot;Não mexe&quot; para a regra voltar a ter efeito.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="regra-payee">Favorecido</Label>

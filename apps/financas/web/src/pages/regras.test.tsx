@@ -254,6 +254,40 @@ describe('RegrasPage', () => {
     ).toBeInTheDocument()
   })
 
+  test('⚠️ regra PAUSADA não afirma casar nada hoje — a contagem vira condicional', async () => {
+    // `GET /api/rules/matches` conta ativas E pausadas (contrato, ver
+    // routes/rules.ts). A frase anterior — "Casaria N de M lançamento(s) já
+    // existentes." — ficava ao lado do badge "Pausada" prometendo um efeito
+    // presente que a regra não tem. A contagem CONTINUA (é ela que responde
+    // "vale reativar?"); o que mudou é o tempo verbal.
+    await montar({
+      chamadas: [],
+      regras: [regra({ active: 0 })],
+      matches: { scanned: 6, counts: { r1: 5 }, scan_limit: 1000 },
+    })
+    const casaria = screen.getByTestId('casaria-r1')
+    expect(casaria).toHaveTextContent(
+      'Pausada, não casa nada hoje — se reativada, casaria 5 de 6 lançamento(s) já existentes.',
+    )
+    // Asserção NEGATIVA: a afirmação no presente não pode sobreviver.
+    expect(casaria.textContent).not.toMatch(/^Casaria 5 de 6/)
+  })
+
+  test('regra ATIVA continua na afirmação direta, sem o condicional', async () => {
+    // Controle positivo do teste acima: sem ele, uma implementação que
+    // escrevesse "se reativada" pra TODA regra passaria.
+    await montar({
+      chamadas: [],
+      regras: [regra({ active: 1 })],
+      matches: { scanned: 6, counts: { r1: 5 }, scan_limit: 1000 },
+    })
+    const casaria = screen.getByTestId('casaria-r1')
+    expect(casaria).toHaveTextContent(
+      'Casaria 5 de 6 lançamento(s) já existentes.',
+    )
+    expect(casaria.textContent).not.toMatch(/reativada/i)
+  })
+
   test('sem nenhuma regra, a tela ensina a primeira em vez de ficar em branco', async () => {
     await montar({ chamadas: [], regras: [] })
     expect(screen.getByText(/Nenhuma regra ainda/i)).toBeInTheDocument()
@@ -386,6 +420,88 @@ describe('RegrasPage', () => {
         ),
       ).toBeDefined(),
     )
+  })
+
+  test('⚠️ conta ARQUIVADA: o select mostra a verdade, não "Qualquer conta"', async () => {
+    // O defeito medido: `GET /api/accounts` esconde arquivada, então o
+    // `<select>` ficava sem `<option>` casando o valor e caía na primeira —
+    // "Qualquer conta" —, enquanto o estado seguia com `a-arquivada`. Salvar
+    // sem tocar em nada mandava `match_account_id: "a-arquivada"` por baixo
+    // de um campo que dizia o OPOSTO. É ironicamente o "alarga sozinha, em
+    // silêncio" que o CASCADE da 0009 existe pra impedir — o schema impede,
+    // era a TELA que exibia como se tivesse acontecido.
+    const chamadas: Chamada[] = []
+    const usuario = await montar({
+      chamadas,
+      regras: [regra({ match_account_id: 'a-arquivada' })],
+    })
+
+    await usuario.click(screen.getByRole('button', { name: 'Editar' }))
+    const select = screen.getByLabelText('Conta')
+    expect(select).toHaveValue('a-arquivada')
+    expect(
+      within(select).getByRole('option', { name: /arquivada ou removida/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('regra-conta-arquivada')).toHaveTextContent(
+      /ALARGAR a regra para todas as contas/,
+    )
+
+    // NÃO bloqueia: salvar sem tocar em nada preserva o que a regra já fazia.
+    await usuario.click(screen.getByRole('button', { name: 'Salvar regra' }))
+    await waitFor(() => {
+      const put = chamadas.find((c) => c.method === 'PUT')
+      expect(JSON.parse(String(put?.body))).toMatchObject({
+        match_account_id: 'a-arquivada',
+      })
+    })
+  })
+
+  test('⚠️ categoria ARQUIVADA: o select mostra a verdade, não "Não mexe"', async () => {
+    const chamadas: Chamada[] = []
+    const usuario = await montar({
+      chamadas,
+      regras: [regra({ set_category_id: 'c-arquivada' })],
+    })
+
+    await usuario.click(screen.getByRole('button', { name: 'Editar' }))
+    const select = screen.getByLabelText('Categoria')
+    expect(select).toHaveValue('c-arquivada')
+    expect(
+      within(select).getByRole('option', { name: /arquivada ou removida/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('regra-categoria-arquivada')).toBeInTheDocument()
+
+    await usuario.click(screen.getByRole('button', { name: 'Salvar regra' }))
+    await waitFor(() => {
+      const put = chamadas.find((c) => c.method === 'PUT')
+      expect(JSON.parse(String(put?.body))).toMatchObject({
+        set_category_id: 'c-arquivada',
+      })
+    })
+  })
+
+  test('regra sã não ganha opção sintética nem aviso (controle positivo)', async () => {
+    // Sem este caso, uma implementação que mostrasse o aviso SEMPRE passaria
+    // nos dois testes acima.
+    const usuario = await montar({
+      chamadas: [],
+      regras: [
+        regra({ match_account_id: 'a1', set_category_id: 'c-transporte' }),
+      ],
+    })
+
+    await usuario.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(screen.getByLabelText('Conta')).toHaveValue('a1')
+    expect(screen.getByLabelText('Categoria')).toHaveValue('c-transporte')
+    expect(
+      screen.queryByTestId('regra-conta-arquivada'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('regra-categoria-arquivada'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('option', { name: /arquivada ou removida/i }),
+    ).not.toBeInTheDocument()
   })
 
   test('pausar manda active: 0 sem apagar a regra', async () => {

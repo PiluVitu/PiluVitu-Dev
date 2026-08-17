@@ -99,6 +99,18 @@ export const rulesRoutes = new Hono<Env>()
  * (`MATCH_SCAN_LIMIT`), e apresentar a contagem como se fosse o histórico
  * inteiro seria a mesma desonestidade que o teto de 500 da dedupe do import
  * evita dizendo o número em voz alta.
+ *
+ * ⚠️ **CONTA ATIVAS *E* PAUSADAS — `listRules(db)` sem `onlyActive`, de
+ * propósito, e isso é contrato, não descuido.** A alternativa (filtrar
+ * `active = 1` aqui) é mais simples e entrega MENOS: o número é justamente
+ * o que responde "vale a pena reativar esta regra?", e uma regra pausada é
+ * onde essa pergunta é feita — filtrando, a tela não teria nada a dizer
+ * sobre a única regra cujo futuro o dono está decidindo. Quem paga esse
+ * preço é o TEMPO VERBAL da frase, não a contagem: `web/src/pages/regras.tsx`
+ * escreve "Pausada, não casa nada hoje — se reativada, casaria N de M"
+ * quando `active = 0`. Sem esse cuidado, a tela afirmava um efeito presente
+ * ao lado do badge "Pausada" — foi assim que o defeito foi medido. Travado
+ * por teste em `rules.test.ts` ("regra PAUSADA também é contada").
  */
 rulesRoutes.get('/matches', async (c) => {
   const rules = await listRules(c.env.DB)

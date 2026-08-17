@@ -166,6 +166,7 @@ export function ImportarPage() {
   const [payees, setPayees] = useState<PayeeView[]>([])
   const [categories, setCategories] = useState<CategoryView[]>([])
   const [regras, setRegras] = useState<Regra[]>([])
+  const [regrasIndisponiveis, setRegrasIndisponiveis] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [accountId, setAccountId] = useState('')
@@ -198,23 +199,54 @@ export function ImportarPage() {
 
   useEffect(() => {
     let vivo = true
+    // O que o import PRECISA pra funcionar: conta (pra onde vai), favorecidos
+    // e categorias (pra sugerir e pros `<select>` da conferência). Falha aqui
+    // é fatal de verdade — sem conta não há o que importar.
     Promise.all([
       api<AccountView[]>('/api/accounts'),
       api<PayeeView[]>('/api/payees'),
       api<CategoryView[]>('/api/categories'),
-      api<Regra[]>('/api/rules'),
     ])
-      .then(([contas, pys, cats, rs]) => {
+      .then(([contas, pys, cats]) => {
         if (!vivo) return
         setAccounts(contas)
         setAccountId((atual) => atual || contas[0]?.id || '')
         setPayees(pys)
         setCategories(cats)
-        setRegras(rs)
       })
       .catch((e: unknown) => {
         if (vivo) setLoadError(e instanceof ApiError ? e.message : String(e))
       })
+
+    // ⚠️ As REGRAS são buscadas num efeito SEPARADO e NUNCA entram no
+    // `Promise.all` acima. Um `Promise.all` junta o destino dos dois: com
+    // `/api/rules` fora do ar, o `catch` acima setava `loadError` e a tela
+    // inteira virava um `<p role="alert">` — sem `<h1>`, sem select de conta,
+    // sem input de arquivo. **Importar não precisa de regra nenhuma**: sem
+    // elas a sugestão volta a sair só do `payees.default_category_id`, que é
+    // como funcionava antes das regras existirem. Degradado, não morto.
+    //
+    // ⚠️ E é alcançável AGORA, não em teoria: a migration `0009` (que cria a
+    // tabela `rules`) só é aplicada em produção por ação manual do dono —
+    // publicar o Worker antes dela faz `GET /api/rules` devolver 500 e
+    // derrubaria a tela de import, que hoje funciona. Mesma classe de defeito
+    // do achado C2 (a tabela `settings` ausente 500ava TRÊS telas); mesmo
+    // padrão de correção de `pages/regras.tsx#carregarMatches`.
+    //
+    // O que NÃO é feito aqui: engolir em silêncio. `regrasIndisponiveis`
+    // avisa na tela que a sugestão veio sem regras — a alternativa seria o
+    // dono conferir dezenas de linhas sem categoria nenhuma e concluir que
+    // as regras dele pararam de funcionar.
+    api<Regra[]>('/api/rules')
+      .then((rs) => {
+        if (vivo) setRegras(rs)
+      })
+      .catch(() => {
+        if (!vivo) return
+        setRegras([])
+        setRegrasIndisponiveis(true)
+      })
+
     return () => {
       vivo = false
     }
@@ -429,6 +461,18 @@ export function ImportarPage() {
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Importar</h1>
+
+      {regrasIndisponiveis ? (
+        <p
+          role="alert"
+          data-testid="regras-indisponiveis"
+          className="text-destructive text-sm"
+        >
+          Não consegui carregar suas regras de categorização — a importação
+          continua funcionando, mas as sugestões vêm só do favorecido. Confira
+          categoria e PJ/PF linha a linha antes de confirmar.
+        </p>
+      ) : null}
 
       {passo === 'selecionar' ? (
         <Card>
