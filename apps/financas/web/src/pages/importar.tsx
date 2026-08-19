@@ -14,6 +14,12 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { isRealCalendarDate, todayInTeresina } from '../lib/dates'
 import {
+  detectarProvaveis,
+  rotuloOrigem,
+  type ColisaoProvavel,
+  type TxExistente,
+} from '../lib/duplicata-provavel'
+import {
   CHECKBOX_CLASSNAME,
   FILE_INPUT_CLASSNAME,
   SELECT_CLASSNAME,
@@ -90,7 +96,19 @@ type LinhaRevisao = {
   regras: RegraAplicada[]
   /** Alguma sugestão apontava pra categoria/favorecido fora da lista. */
   sugestaoDescartada: boolean
+  /**
+   * Dedupe EXATA: o `imported_id` desta linha já existe nesta conta. Só
+   * enxerga a MESMA origem — ver `provavelDuplicata` logo abaixo.
+   */
   duplicada: boolean
+  /**
+   * ⚠️ Dedupe HEURÍSTICA, o que a exata não consegue ver: a linha bate em
+   * data (±1 dia) e valor com um lançamento já gravado de OUTRA origem.
+   * `null` quando não bate em nada. O critério inteiro, com o lado pro qual
+   * ele erra de propósito, mora em `lib/duplicata-provavel.ts` — aqui não
+   * se decide nada.
+   */
+  provavelDuplicata: ColisaoProvavel | null
   marcada: boolean
 }
 
@@ -191,6 +209,12 @@ function chunk<T>(items: T[], size: number): T[][] {
 // do arquivo já resolvida em `prepararConferencia`, abaixo), o único dado
 // que falta pra tornar o envio único é o próprio fato "isto foi forçado" —
 // literal, sem componente variável.
+//
+// ⚠️ A duplicata PROVÁVEL (heurística, `provavelDuplicata`) NÃO entra
+// aqui, de propósito: o id dela não colide com nada no banco — é
+// justamente por isso que a heurística existe. Marcá-la de volta manda o
+// id natural, e o `:forcado` só serviria pra sujar o `imported_id` de uma
+// linha que o backend vai aceitar normalmente.
 function idParaEnvio(linha: LinhaRevisao): string {
   return linha.duplicada ? `${linha.imported_id}:forcado` : linha.imported_id
 }
@@ -354,14 +378,28 @@ export function ImportarPage() {
     fonte: Origem,
   ) {
     let existentes: Set<string>
+    let existentesCompletos: TxExistente[]
     let jaImportouPluggy: boolean
     try {
+      // ⚠️ MESMA requisição de sempre — a checagem heurística de duplicata
+      // (abaixo) NÃO acrescentou nenhuma. `listTransactions` já faz
+      // `SELECT` das 20 colunas, então `purchase_date`/`amount_cents`/
+      // `description`/`import_source` sempre vieram neste payload e eram
+      // descartados aqui. Custo medido no D1: `rows_read = 600` com 300
+      // lançamentos na conta (2 por linha: índice `idx_tx_account_date` +
+      // tabela), idêntico antes e depois. Ver o ⚠️ de custo em
+      // `lib/duplicata-provavel.ts`.
       const txs = await api<
-        Array<{ imported_id: string | null; import_source: string | null }>
+        Array<
+          TxExistente & {
+            imported_id: string | null
+          }
+        >
       >(`/api/transactions?account_id=${accountId}&limit=500`)
       existentes = new Set(
         txs.map((t) => t.imported_id).filter((id): id is string => id !== null),
       )
+      existentesCompletos = txs
       // ⚠️ **A guarda do PRIMEIRO import sai daqui, do dado, sem custar uma
       // requisição a mais nem uma flag a lembrar de limpar.** Esta busca já
       // existia (é a dedupe); `import_source` já vinha no payload. O aviso
@@ -396,8 +434,19 @@ export function ImportarPage() {
     // de a 2ª ser silenciosamente descartada pelo dedupe intra-requisição
     // do backend (`seenInThisRequest`, domain/import.ts) só porque as duas
     // chegariam com o mesmo id cru.
+    // ⚠️ A SEGUNDA checagem, a que a dedupe exata é estruturalmente
+    // incapaz de fazer: bate data (±1 dia) e valor contra lançamentos de
+    // OUTRA origem. Roda sobre as linhas BRUTAS, na mesma ordem, e o
+    // resultado é posicional — o critério, a justificativa e o lado pro
+    // qual ele erra moram em `lib/duplicata-provavel.ts`.
+    const provaveis = detectarProvaveis(
+      linhasBrutas,
+      existentesCompletos,
+      fonte,
+    )
+
     const ocorrenciaPorIdBase = new Map<string, number>()
-    const revisao: LinhaRevisao[] = linhasBrutas.map((l) => {
+    const revisao: LinhaRevisao[] = linhasBrutas.map((l, i) => {
       const ocorrencia = ocorrenciaPorIdBase.get(l.imported_id) ?? 0
       ocorrenciaPorIdBase.set(l.imported_id, ocorrencia + 1)
       const idNatural =
@@ -432,10 +481,15 @@ export function ImportarPage() {
         regras: sugestao.regras,
         sugestaoDescartada: sugestao.sugestaoDescartada,
         duplicada,
+        // A heurística nunca sobrepõe a certeza: quando o id já existe, o
+        // motivo mostrado é o exato, não o palpite.
+        provavelDuplicata: duplicada ? null : (provaveis[i] ?? null),
         // Duplicata aparece DESMARCADA por padrão (spec §5) — o dono vê e
         // pode forçar marcando de novo; linha nova vem marcada, pronta pra
-        // confirmar.
-        marcada: !duplicada,
+        // confirmar. ⚠️ A PROVÁVEL também nasce desmarcada, pelo mesmo
+        // motivo e com o mesmo direito de ser remarcada: a heurística erra,
+        // e a tela não pode ser mais confiante que o método.
+        marcada: !duplicada && (provaveis[i] ?? null) === null,
       }
     })
 
@@ -1031,10 +1085,16 @@ export function ImportarPage() {
             <CardTitle className="flex items-center gap-2 text-base">
               Conferir importação
               <Ajuda rotulo="Duplicata">
-                Duas compras genuinamente diferentes com mesma data, mesmo valor
-                e mesma descrição (dois cafés de R$ 8 na mesma padaria no mesmo
-                dia) geram o mesmo id — a segunda aparece marcada como duplicata
-                mesmo sendo real. Marque de novo pra forçar a importação dela.
+                São duas checagens diferentes. A primeira é exata: o id da linha
+                já existe nesta conta. Ela só funciona dentro da MESMA origem —
+                OFX, CSV, banco e lançamento manual usam ids de esquemas
+                diferentes (ou nenhum), então a mesma compra vinda por duas
+                portas nunca colide. A segunda é um palpite pra cobrir isso:
+                mesma conta, mesmo valor, data com até 1 dia de diferença, e um
+                lançamento já gravado de outra origem. As duas erram nos dois
+                sentidos — dois cafés de R$ 8 no mesmo dia podem aparecer como
+                duplicata sendo reais. Nada é descartado: as linhas só nascem
+                desmarcadas, e marcar de volta importa normalmente.
               </Ajuda>
             </CardTitle>
           </CardHeader>
@@ -1076,11 +1136,29 @@ export function ImportarPage() {
               </div>
             ) : null}
 
-            <p className="text-muted-foreground text-sm">
-              {linhas.length} linha(s) encontrada(s).{' '}
-              {linhas.filter((l) => l.duplicada).length} já parecem importadas —
-              desmarcadas por padrão.
-            </p>
+            {/* ⚠️ A FRASE TEM QUE DIZER A VERDADE. Ela era "N já parecem
+                importadas — desmarcadas por padrão", afirmação que só vale
+                sobre `imported_id` e portanto só dentro da MESMA origem: a
+                mesma compra vinda por OFX e por Pluggy dava "0 já parecem
+                importadas" com o checkbox PRÉ-MARCADO (medido no D1 e na
+                tela). Agora ela separa as duas checagens, diz sobre o que
+                cada uma vale, e chama o palpite de palpite. */}
+            <div className="text-muted-foreground space-y-1 text-sm">
+              <p data-testid="conferencia-resumo">
+                {linhas.length} linha(s) encontrada(s).{' '}
+                {linhas.filter((l) => l.duplicada).length} com id já importado
+                nesta conta;{' '}
+                {linhas.filter((l) => l.provavelDuplicata !== null).length} com
+                data (±1 dia) e valor batendo em lançamento de OUTRA origem —
+                todas essas vêm desmarcadas.
+              </p>
+              <p data-testid="conferencia-limite-dedupe">
+                A checagem por id só enxerga a MESMA origem: OFX, CSV, banco e
+                lançamento manual dão ids diferentes (ou nenhum) para a mesma
+                compra. A segunda é um palpite — confira e marque de volta o que
+                for legítimo.
+              </p>
+            </div>
 
             <div className="divide-y">
               {linhas.map((linha, i) => (
@@ -1121,6 +1199,41 @@ export function ImportarPage() {
                       <span className="text-muted-foreground text-xs">
                         Desmarcada por padrão. Marque para forçar.
                       </span>
+                    </div>
+                  ) : null}
+                  {/* ⚠️ O motivo fica VISÍVEL e nomeia a linha com que
+                      colide — data, valor, descrição e de onde ela veio.
+                      Sem isso o dono não tem como julgar o palpite, e um
+                      aviso que ele não consegue julgar é um aviso que ele
+                      aprende a ignorar. O checkbox continua dele. */}
+                  {linha.provavelDuplicata ? (
+                    <div
+                      data-testid={`provavel-duplicata-${i}`}
+                      className="space-y-1"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">Talvez duplicada</Badge>
+                        <span className="text-muted-foreground text-xs">
+                          Desmarcada por padrão. Marque se for uma compra
+                          diferente.
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        Mesmo valor e{' '}
+                        {linha.provavelDuplicata.diasDeDiferenca === 0
+                          ? 'mesma data'
+                          : '1 dia de diferença'}{' '}
+                        de um lançamento que já existe, vindo de{' '}
+                        {rotuloOrigem(linha.provavelDuplicata.origem)}:{' '}
+                        <strong>
+                          {dataBR(linha.provavelDuplicata.purchase_date)} ·{' '}
+                          {formatBRL(linha.provavelDuplicata.amount_cents)} ·{' '}
+                          {linha.provavelDuplicata.description}
+                        </strong>
+                        {linha.provavelDuplicata.descricaoBate
+                          ? ' — a descrição também bate.'
+                          : ' — a descrição é outra, o que é normal entre origens diferentes.'}
+                      </p>
                     </div>
                   ) : null}
                   <p className="text-sm">{linha.description}</p>

@@ -124,9 +124,17 @@ type Chamada = { url: string; method: string; body: string | undefined }
  */
 function mockRede(opts: {
   chamadas: Chamada[]
+  // `purchase_date`/`amount_cents`/`description` são opcionais aqui só pra
+  // não reescrever os fixtures antigos, que só se importam com o
+  // `imported_id` — o payload REAL de `GET /api/transactions` sempre traz
+  // as 20 colunas (`listTransactions` faz `SELECT` de todas). Os testes da
+  // dedupe HEURÍSTICA preenchem os três, porque é sobre eles que ela decide.
   transacoesExistentes?: Array<{
     imported_id: string | null
     import_source?: string | null
+    purchase_date?: string
+    amount_cents?: number
+    description?: string
   }>
   // Fatia ④ — conexão do Pluggy salva pra conta 'a1' (`settings`, chave
   // `pluggy:a1`). `undefined` = nenhuma conexão configurada ainda, que é o
@@ -2041,5 +2049,211 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
       screen.getByRole('heading', { name: 'Importar' }),
     ).toBeInTheDocument()
     expect(screen.getByLabelText(/Id da conta no Pluggy/)).toBeInTheDocument()
+  })
+})
+
+/**
+ * ⚠️ O DEFEITO: a dedupe não cruza origens, e a tela afirmava o contrário.
+ *
+ * MEDIDO no D1 real — a MESMA compra (`2026-07-10`, `-18990`,
+ * `SUPERMERCADO XPTO`) importada por OFX (`imported_id` = FITID) e depois
+ * por Pluggy (`imported_id` = UUID) deu `skipped: 0`, DUAS linhas,
+ * `SUM(amount_cents) = -37980`. E a tela dizia "1 linha(s) encontrada(s).
+ * 0 já parecem importadas — desmarcadas por padrão", com o checkbox
+ * PRÉ-MARCADO e nenhuma palavra sobre o limite da checagem.
+ *
+ * `uq_tx_imported` é `(account_id, imported_id)` e FITID ≠ UUID ≠ hash de
+ * CSV: não existe colisão pro índice ver. Dedupe EXATA entre origens é
+ * impossível — o que estes testes travam é (a) a frase parar de afirmar o
+ * que não sabe e (b) o palpite aparecer, com motivo, sem tirar a decisão
+ * do dono.
+ */
+describe('ImportarPage — dedupe entre origens', () => {
+  test('a frase diz sobre o que cada checagem vale — nunca "0 já parecem importadas" e pronto', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('conferencia-resumo')).toHaveTextContent(
+      '2 linha(s) encontrada(s). 0 com id já importado nesta conta; 0 com data (±1 dia) e valor batendo em lançamento de OUTRA origem — todas essas vêm desmarcadas.',
+    )
+    const limite = screen.getByTestId('conferencia-limite-dedupe')
+    expect(limite).toHaveTextContent(/só enxerga a MESMA origem/)
+    expect(limite).toHaveTextContent(/palpite/)
+  })
+
+  test('a MESMA compra já importada por OUTRA origem nasce DESMARCADA, com o motivo e a linha que colide', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      // O FITID é outro (o Pluggy carimbou um UUID) — a dedupe exata é
+      // cega. Data e valor são os da linha FITID-1 do OFX.
+      transacoesExistentes: [
+        {
+          imported_id: '5c8f2e10-0f4a-4a1e-9a2e-000000000001',
+          import_source: 'pluggy',
+          purchase_date: '2026-07-10',
+          amount_cents: -4590,
+          description: 'Padaria',
+        },
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    const linha0 = screen.getByTestId('linha-0')
+    // Não é a checagem exata — é a heurística.
+    expect(within(linha0).queryByTestId('duplicada-0')).not.toBeInTheDocument()
+    const aviso = within(linha0).getByTestId('provavel-duplicata-0')
+    expect(aviso).toHaveTextContent('Talvez duplicada')
+    // ③ o motivo E o que ela colide, à vista.
+    expect(aviso).toHaveTextContent(/Mesmo valor e mesma data/)
+    expect(aviso).toHaveTextContent('sincronização com o banco')
+    expect(aviso).toHaveTextContent('10/07/2026')
+    expect(aviso).toHaveTextContent('R$ 45,90')
+    expect(aviso).toHaveTextContent('Padaria')
+    expect(
+      within(linha0).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    ).not.toBeChecked()
+
+    // A linha genuinamente nova continua marcada.
+    const linha1 = screen.getByTestId('linha-1')
+    expect(
+      within(linha1).queryByTestId('provavel-duplicata-1'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(linha1).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    ).toBeChecked()
+
+    expect(screen.getByTestId('conferencia-resumo')).toHaveTextContent(
+      '0 com id já importado nesta conta; 1 com data (±1 dia) e valor batendo em lançamento de OUTRA origem',
+    )
+  })
+
+  test('1 dia de diferença entre origens também é sinalizado (a conversão de fuso)', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      transacoesExistentes: [
+        {
+          imported_id: 'uuid-do-pluggy',
+          import_source: 'pluggy',
+          purchase_date: '2026-07-11',
+          amount_cents: -4590,
+          description: 'Padaria',
+        },
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('provavel-duplicata-0')).toHaveTextContent(
+      /Mesmo valor e 1 dia de diferença/,
+    )
+  })
+
+  test('lançamento MANUAL (sem imported_id) também colide — é onde a dedupe exata nunca teve chance', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      transacoesExistentes: [
+        {
+          imported_id: null,
+          import_source: null,
+          purchase_date: '2026-07-10',
+          amount_cents: -4590,
+          description: 'padaria da esquina',
+        },
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.getByTestId('provavel-duplicata-0')).toHaveTextContent(
+      'lançamento manual',
+    )
+  })
+
+  test('O DONO PODE MARCAR MESMO ASSIM — e a linha vai com o id natural, sem :forcado', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      transacoesExistentes: [
+        {
+          imported_id: 'uuid-do-pluggy',
+          import_source: 'pluggy',
+          purchase_date: '2026-07-10',
+          amount_cents: -4590,
+          description: 'Padaria',
+        },
+      ],
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    const linha0 = screen.getByTestId('linha-0')
+    await usuario.click(
+      within(linha0).getByRole('checkbox', { name: /\d{2}\/\d{2}\/\d{4}/ }),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    const envio = chamadas.find((c) => c.url.includes('/transactions/import'))
+    const corpo = JSON.parse(String(envio?.body)) as {
+      rows: Array<{ imported_id: string }>
+    }
+    expect(corpo.rows.map((r) => r.imported_id)).toEqual(['FITID-1', 'FITID-2'])
+  })
+
+  test('a MESMA origem NÃO dispara o palpite — quem manda ali é o id, e dois cafés iguais são legítimos', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      // Mesma data/valor da linha FITID-1, mas veio de OFX, igual ao que
+      // está sendo importado agora: a dedupe exata é autoritativa e a
+      // heurística só somaria falso positivo.
+      transacoesExistentes: [
+        {
+          imported_id: 'OUTRO-FITID',
+          import_source: 'ofx',
+          purchase_date: '2026-07-10',
+          amount_cents: -4590,
+          description: 'Padaria X',
+        },
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    expect(screen.queryByTestId('provavel-duplicata-0')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('linha-0')).getByRole('checkbox', {
+        name: /\d{2}\/\d{2}\/\d{4}/,
+      }),
+    ).toBeChecked()
+  })
+
+  test('id já importado mostra a certeza, nunca o palpite, mesmo quando os dois batem', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      transacoesExistentes: [
+        {
+          imported_id: 'FITID-1',
+          import_source: 'pluggy',
+          purchase_date: '2026-07-10',
+          amount_cents: -4590,
+          description: 'Padaria',
+        },
+      ],
+    })
+    await irParaConferencia(chamadas)
+
+    const linha0 = screen.getByTestId('linha-0')
+    expect(within(linha0).getByTestId('duplicada-0')).toBeInTheDocument()
+    expect(
+      within(linha0).queryByTestId('provavel-duplicata-0'),
+    ).not.toBeInTheDocument()
   })
 })
