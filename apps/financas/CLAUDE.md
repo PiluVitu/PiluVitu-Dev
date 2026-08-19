@@ -309,7 +309,7 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 - **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
 - **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
-Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente).
+Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente), e os oito da fatia ④ (`GET /api/pluggy/transactions`, todos com a mensagem do domínio repassada crua — ver _A ROTA e O BOTÃO_): `pluggy_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `pluggy_invalid_credentials` (503, o Pluggy recusou a credencial do APLICATIVO), `pluggy_item_disconnected` (**409**, não 503: repetir nunca resolve, o dono precisa reconectar no app Meu Pluggy), `pluggy_rate_limited` (429, com os segundos do `Retry-After` na mensagem), `pluggy_unreachable` (503, ninguém respondeu ou 5xx deles), `pluggy_token_expired` (502) e `pluggy_ilegivel` (502) — os dois de "alguém respondeu e não entendi", nunca confundidos com o anterior —, e `pluggy_janela_grande` (422, teto de 40 páginas por execução).
 
 ### `app.onError` global — todo `Error` que escapa sai no envelope
 
@@ -2654,7 +2654,7 @@ Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` (mesmo critério de `
 
 **Worker: 687 → 750 testes** (36 → 37 arquivos). SPA (**549**), `packages/tools`, `apps/web` e `packages/ui` **intocados** — esta fatia é 100% servidor, sem rota, sem tela, sem migration. `tsc --noEmit` e prettier limpos.
 
-**Fora de escopo, registrado explicitamente:** ✅ o **mapeador** chegou na fatia seguinte (ver _O adaptador_ logo abaixo); a **rota** (`503 pluggy_disabled` + o código no catálogo do envelope) e a **persistência de `itemId`/`accountId`** em `settings` continuam pendentes. `PATCH /items` (forçar sync) também não foi implementado — o teto de **20/min** dele é o mais apertado da API e merece decisão própria.
+**Fora de escopo, registrado explicitamente:** ✅ o **mapeador**, a **rota** e a **persistência de `itemId`/`accountId`** chegaram nas fatias seguintes (ver _O adaptador_ e _A rota e o botão_ abaixo). `PATCH /items` (forçar sync) continua não implementado — o teto de **20/min** dele é o mais apertado da API e merece decisão própria.
 
 ⚠️ **`PluggyTransacao` ganhou `status?: string` na fatia do mapeador** — o tipo do fio não o declarava, e ele é o campo que decide ④ abaixo. Aditivo, sem mudança de comportamento do cliente.
 
@@ -2754,7 +2754,7 @@ Ou seja: **a fatura do mês corrente não entra pelo Pluggy até fechar** — e 
 | ④ sem o filtro de `status`                | 4                                                  |
 | ⑥ sem a guarda de moeda                   | 1 — USD gravado como BRL                           |
 
-**Fora de escopo, registrado:** a rota (`503 pluggy_disabled`), a tela de conferência mostrando `rejeitadas`, e a persistência de `itemId`/`accountId` em `settings`.
+**Fora de escopo, registrado:** ✅ os três (rota, `rejeitadas` na conferência e persistência de `itemId`/`accountId`) chegaram na fatia seguinte — ver _A rota e o botão_ abaixo.
 
 ## Acessibilidade de toque e leitura (fatia a11y — 5 defeitos MEDIDOS a 390×844)
 
@@ -2839,3 +2839,116 @@ A tela dizia `15 lançamento(s) carregado(s).` — e a pergunta do filtro é **q
 ⚠️ **Armadilha do próprio processo de mutação, registrada porque vai repetir: NUNCA reverter uma mutação com `git checkout <arquivo>`.** Ele restaura do índice, ou seja, do **HEAD** — e leva junto TODO o trabalho não commitado daquele arquivo, não só a mutação. Aconteceu aqui com `extrato.tsx` e `debt-detail.tsx` (recuperados do commit de stash ainda alcançável pelo reflog, e reconferidos pela suíte). O jeito certo é copiar o arquivo antes (`shutil.copy2`) e restaurar da cópia — foi o que o harness passou a fazer nas 12 mutações acima.
 
 **Bundle (`vite build`, antes = fatia de contraste / depois = esta):** JS principal 499,76 → 502,50 kB (**150,44 → 151,07 kB gzip, +0,63**); CSS 34,01 → 34,95 kB (**6,83 → 6,97 kB gzip**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova — o crescimento é classe utilitária e o texto novo do rodapé do extrato.
+
+## Open Finance / Pluggy — A ROTA e O BOTÃO (`src/routes/pluggy.ts` + `#/importar`)
+
+Fecha a fatia ④: o cliente HTTP e o adaptador existiam **testados e inalcançáveis por qualquer requisição real**. Esta fatia liga os dois a `GET /api/pluggy/transactions` e põe o botão **"Sincronizar com o banco"** em `#/importar`. **Zero migration** (`'pluggy'` já estava no CHECK de `import_source` desde a `0001`), **zero rota de escrita nova**.
+
+### A cadeia inteira
+
+```
+navegador  →  Worker (GET /api/pluggy/transactions)  →  api.pluggy.ai
+   │              │  POST /auth · GET /items/:id · GET /transactions (páginas de 500)
+   │              └─ mapearTransacoes()  →  LinhaImportada[]  (o MESMO shape do OFX/CSV)
+   ▼
+tela de conferência (#/importar)  →  POST /api/transactions/import  →  D1
+```
+
+⚠️ **O Pluggy entra como TERCEIRA ORIGEM do pipeline que já existia, nunca como caminho paralelo.** `prepararConferencia` (`web/src/pages/importar.tsx`) ganhou `'pluggy'` como `fonte` e daí pra frente **tudo já funcionava**: dedup por `imported_id`, sugestão por regra, checkbox por linha, envio em lotes. Nenhuma dessas peças foi duplicada.
+
+⚠️ **A rota LÊ e não grava NADA** — quem grava continua sendo `POST /api/transactions/import`, depois da conferência. E **não existe sync automático, de propósito**: com as duas armadilhas do adaptador (sinal que depende do tipo da conta; data UTC contra um app GMT-3 `purchase_date`-cêntrico), conferir linha a linha é a única rede que existe — `uq_tx_imported` impede reimportar por cima, então o desfazer seria `DELETE ... WHERE import_source='pluggy'` ou Time Travel (que restaura o banco INTEIRO).
+
+⚠️ **Fica atrás da SESSÃO por AUSÊNCIA deliberada, não por guard local:** `src/index.ts` aplica `requireSession()` a `/api/*` e abre exceção só pra `/api/health`, `/api/auth/*`, `POST /api/insights` e `GET /api/insights/numbers`. `/api/pluggy/*` **não entra em nenhuma** — o `INGEST_TOKEN` é do comando que roda no Mac, quem toca o botão é o dono no navegador. Provado em `src/index.test.ts` contra o app montado de verdade, **com os secrets do Pluggy configurados no `env` do teste** (sem eles a rota responderia `503 pluggy_disabled` antes de qualquer coisa e o teste passaria por vacuidade), mais um `fetch` espião confirmando **zero** chamada ao Pluggy.
+
+### `GET /api/pluggy/transactions?account_id=&item_id=&from=&to=`
+
+| Param        | Obrigatório | O quê                                                 |
+| ------------ | ----------- | ----------------------------------------------------- |
+| `account_id` | sim         | id da conta **no Pluggy** (não o `accounts.id` daqui) |
+| `item_id`    | sim         | id da **conexão** no Pluggy                           |
+| `from`/`to`  | sim         | `YYYY-MM-DD`, calendário real                         |
+
+Resposta: `{account_id, item_id, from, to, paginas, recebidas, linhas, rejeitadas}` — `linhas` já no shape de `LinhaImportada`.
+
+⚠️ **`item_id` é OBRIGATÓRIO, e a exigência é a diferença entre a mensagem certa e a pior de todas.** Sem ele não há `GET /items/:id`, e um item desconectado devolveria **`200` com uma janela vazia**: "sincronizei e não veio nada", sem nada dizendo que a conexão com o banco caiu — exatamente o erro que mais aparece com o tempo e o que mais parece genérico quando mal escrito. No Pluggy toda conta pertence a um item, então pedir o par não inventa conceito nenhum. A checagem roda **antes** de gastar página (1 subrequest pra não pagar 40 e concluir nada).
+
+⚠️ **NÃO EXISTE JANELA DEFAULT NO SERVIDOR — a ausência é a guarda.** Um default aqui seria, na prática, o tamanho do primeiro import de 12 meses de alguém, e é justamente o primeiro que não tem desfazer barato. Sem `from`/`to`, `400`. Nenhum caminho deste Worker consegue pedir "tudo".
+
+**Orçamento de subrequests** (o número que amarra o desenho): teto de **50** por invocação no free tier; pior caso aqui = 1 (`/auth`) + 1 (`/items`) + 40 (`MAX_PAGINAS`) = **42**, com 8 de folga.
+
+⚠️ **`rejeitadas[].index` é GLOBAL, não por página.** `mapearTransacoes` numera dentro da página; sem somar o total recebido antes, a página 2 recomeçaria do 0 e a tela apontaria "linha 3" pra duas linhas diferentes — um número que parece preciso e não localiza nada.
+
+**Erros — um por CAUSA, com a `message` do domínio REPASSADA CRUA** (é ela que diz "abra o app Meu Pluggy e reconecte" em vez de "erro"):
+
+| Classe                              | HTTP | code                         |
+| ----------------------------------- | ---- | ---------------------------- |
+| não configurado / `PluggyDesligado` | 503  | `pluggy_disabled`            |
+| `PluggyCredencialInvalida`          | 503  | `pluggy_invalid_credentials` |
+| `PluggyItemDesconectado`            | 409  | `pluggy_item_disconnected`   |
+| `PluggyRateLimitado`                | 429  | `pluggy_rate_limited`        |
+| `PluggyInalcancavel`                | 503  | `pluggy_unreachable`         |
+| `PluggyTokenExpirado`               | 502  | `pluggy_token_expired`       |
+| `PluggyRespostaIlegivel`            | 502  | `pluggy_ilegivel`            |
+| teto de 40 páginas (`RangeError`)   | 422  | `pluggy_janela_grande`       |
+| query malformada                    | 400  | `invalid_query`              |
+
+⚠️ **`409` no item desconectado, e não mais um `503`:** os três `503` significam "indisponível, tente mais tarde", e este é o ÚNICO em que tentar de novo **nunca** resolve — algo precisa mudar de estado antes (o dono reconectar no app). Dar o mesmo número convidaria um retry automático futuro a bater nele pra sempre. ⚠️ **`502` em `token_expired`/`ilegivel`** pelo motivo já medido no promeia: "ninguém respondeu" ≠ "alguém respondeu e eu não entendi" — as duas mandam o dono pra lados opostos.
+
+⚠️ **O guard de "desligado" roda ANTES da validação de query**, e isso tem teste próprio: pra quem nunca ligou o Pluggy, "corrija o `from`" é uma resposta que não leva a lugar nenhum.
+
+### A tela — `#/importar`, card "Sincronizar com o banco"
+
+**Configuração por conta, em `settings`** (`web/src/lib/pluggy.ts`, chave `pluggy:<account_id>`) — mesmo padrão (e mesmo ganho) de `import_map:<account_id>`: o dono conecta no MacBook e sincroniza pelo Android sem reconfigurar, o que `localStorage` não daria. `itemId`/`accountId` **não são credencial**; o que é credencial (`PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET`) nunca chega ao navegador.
+
+⚠️ **`salvarConexaoPluggy` LANÇA quando falha, ao contrário de `salvarMapa` — divergência deliberada.** Lá o salvamento é efeito colateral no meio de uma importação em curso (engolir é melhor que travar o que o dono está fazendo); aqui é ação PRÓPRIA dele, com botão: um "salvei" mudo o faria voltar amanhã pro formulário vazio. Usa **`mutarERecarregar`** (10º call site): o `PUT` é a mutação, reler do servidor é a recarga — releitura de verdade, não cosmética. Se o PUT passa e o GET cai, a mensagem diz que **a conexão FOI salva** e proíbe reenviar.
+
+⚠️ **A SINCRONIZAÇÃO em si NÃO usa `mutarERecarregar`, e a ausência é decisão:** é um `GET`, não há mutação nenhuma no servidor. O contrato daquele helper é "a ação aconteceu, o recarregamento é que não" — usá-lo aqui faria a tela afirmar que algo foi gravado quando nada foi, o oposto da propriedade que ele protege.
+
+**③ A guarda do primeiro import — duas peças, nenhuma delas burocracia:**
+
+1. **A janela default é de UM MÊS** (`janelaPadrao`, `lib/pluggy.ts`), nunca dos 12 que o Pluggy guarda, com o texto ao lado explicando o porquê ANTES do toque. É estrutural, não conselho: o servidor não tem default, então não dá pra "esquecer" e cair no ano inteiro. Travado por teste que falha se a janela passar de ~31 dias.
+2. **O aviso de sinal/data aparece na CONFERÊNCIA, na primeira importação Pluggy daquela conta — e some sozinho.** ⚠️ **Como isso não vira chateação nas vezes seguintes: o gatilho é DERIVADO DO DADO, não uma flag.** `prepararConferencia` já buscava `/api/transactions?account_id=…&limit=500` pra dedupe, e `import_source` já vinha no payload — o aviso aparece enquanto não existe nenhuma linha `pluggy` naquela conta. **Sem custo de requisição, sem botão de "não mostrar de novo", sem `localStorage`** (que mentiria entre o Android e o MacBook) **e sem `settings`** (que continuaria dizendo "já importou" depois de um restore que apagou as linhas). Ele fica na conferência, e não antes do toque, porque é lá que a ação existe: conferir linha a linha. Limitação aceita: a busca é capada em 500 linhas, então numa conta com mais de 500 lançamentos mais novos o aviso reaparece — erra pro lado de avisar demais, que é o lado certo pra dado sem desfazer.
+
+**④ Erros na tela, cada causa com saída própria** — `dicaParaErroPluggy(code)` (`lib/pluggy.ts`, puro e testado isolado) acrescenta um SEGUNDO parágrafo com a AÇÃO; a mensagem do servidor é mostrada como está, nunca reescrita. `null` pra código não mapeado — não inventar conselho. As três que mais se confundem: `pluggy_disabled` (secret nunca configurado; ligar/reconectar não resolve) × `pluggy_invalid_credentials` (credencial do APLICATIVO recusada; nada a ver com a conexão bancária) × **`pluggy_item_disconnected` (a que o dono mais vai ver com o tempo: só o app Meu Pluggy refaz, e a dica diz que repetir aqui dá exatamente o mesmo resultado)**. Cada teste de dica tem asserção NEGATIVA contra a dica da outra.
+
+**Janela sem movimento não é erro** — não vira conferência vazia (que pareceria ter dado errado): fica no lugar dizendo que a conexão respondeu normalmente e não havia lançamento no período.
+
+⚠️ **A conexão fora do ar NÃO derruba o import por arquivo** — efeito separado, nunca num `Promise.all` com o resto (mesma lição que `/api/rules` já custou nesta tela, quando uma capacidade opcional apagou o `<h1>`, o select de conta e o input de arquivo).
+
+**A fatura ABERTA continua saindo por fora, e agora aparece:** `rejeitadas` é renderizada com o motivo de cada linha (num cartão, `PENDING` é a fatura aberta INTEIRA — ver ④ do adaptador). Nunca um sucesso mudo.
+
+### Secrets (⚠️ ação MANUAL do dono — nenhum agente roda)
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler secret put PLUGGY_CLIENT_ID
+pnpm --filter @piluvitu/financas exec wrangler secret put PLUGGY_CLIENT_SECRET
+pnpm --filter @piluvitu/financas exec wrangler secret list   # conferir que os dois chegaram
+```
+
+Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` — e não podem ir pra `settings` por um motivo medido: `scripts/backup-d1.sh` exporta o D1 INTEIRO às 03:00 e guarda **30 cópias em texto claro**, que rotacionar a chave depois não apagaria. Sem eles, nada quebra: `503 pluggy_disabled`, feature DESLIGADA.
+
+### Suítes, mutação e mobile
+
+**Worker 785 → 810** (39 arquivos: +23 em `routes/pluggy.test.ts`, +2 em `index.test.ts`). **SPA 549 → 581** (38 arquivos: +18 em `lib/pluggy.test.ts`, +14 em `pages/importar.test.tsx`). `tsc --noEmit` e prettier limpos nos dois lados; os dois gates de build silenciosos. ⚠️ **Nenhuma das 32 asserções pré-existentes de `importar.test.tsx` mudou de valor.** ⚠️ **Nenhum teste toca a API do Pluggy** — `globalThis.fetch` é substituído e restaurado, e o contador de chamadas é o que prova "nem chegou a tentar".
+
+⚠️ **Verificado por MUTAÇÃO — 11, cada uma matando só o teste certo pelo motivo certo** (revertidas por **cópia de arquivo**, nunca `git checkout`; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                              | Falha observada                                 |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| ① guard de `item_id` removido                        | 1 — `expected 422 to be 400`                    |
+| ② item desconectado vira `503` como os outros        | 1 — `expected 503 to be 409`                    |
+| ③ `index` das rejeitadas sem o deslocamento global   | 1 — `index: 0` onde a página 2 devia dar `2`    |
+| ④ `assertItemConectado` removido                     | 1 — conexão caída passa a responder `200`       |
+| ⑤ guard de desligado DEPOIS da validação de query    | 1 — `expected 400 to be 503`                    |
+| ⑥ `isRealCalendarDate` trocada por checagem de vazio | 1 — `2026-02-30` deixa de ser recusado          |
+| ⑦ janela default de 12 meses                         | 7 — incl. o teto de ~31 dias (`expected 365 …`) |
+| ⑧ aviso de primeiro import nunca aparece             | 1                                               |
+| ⑨ aviso ignora a origem                              | 1 — reaparece no import por arquivo             |
+| ⑩ dica única e genérica pra toda causa               | 9 — incl. as duas asserções negativas cruzadas  |
+| ⑪ bloco de `rejeitadas` removido da conferência      | 1 — a fatura aberta volta a sumir em silêncio   |
+
+**Mobile MEDIDO em Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`), nos QUATRO estados — sem conexão, com conexão, conferência e erro de item desconectado: `document.documentElement.scrollWidth === clientWidth === 390` nos quatro, **zero elemento estourando** (o único com scroll interno é o `<pre>` do comando de PDF, `overflow-x-auto`, pré-existente). Alvos novos: "trocar a conexão desta conta" **181×44** (`ALVO_LINK`, `lib/touch.ts`); inputs e botões em 308×36 / 36 px de altura, os mesmos de todo formulário do app (o conjunto já registrado como aceito na fatia de a11y — ≥24 px, WCAG 2.5.8 AA — em vez de virar lista de blocos altos).
+
+**Bundle (`vite build`, antes = fatia de a11y / depois = esta):** JS principal 502,50 → 510,92 kB (**151,07 → 153,85 kB gzip, +2,78**); CSS 34,95 → 35,03 kB (**6,97 → 6,99 kB gzip**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova.
+
+**Fora de escopo, registrado:** `PATCH /items` (forçar sync antes de ler — teto de 20/min, o mais apertado da API); descobrir `itemId`/`accountId` sem copiar à mão (exigiria o widget Pluggy Connect e um endpoint de connect token); e retomar a paginação entre invocações (`buscarPaginaDeTransacoes` aceita `page`, mas nada nesta fatia usa — o teto de 40 páginas por janela de um mês está muito longe de apertar).

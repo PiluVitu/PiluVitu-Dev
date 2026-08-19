@@ -9,16 +9,29 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { isRealCalendarDate, todayInTeresina } from '../lib/dates'
 import {
   CHECKBOX_CLASSNAME,
   FILE_INPUT_CLASSNAME,
   SELECT_CLASSNAME,
 } from '../lib/form-classes'
 import { mapaSalvo, salvarMapa } from '../lib/import-settings'
+import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { type PayeeParaSugestao } from '../lib/payee-suggest'
+import {
+  conexaoPluggy,
+  dicaParaErroPluggy,
+  janelaPadrao,
+  salvarConexaoPluggy,
+  type ConexaoPluggy,
+  type LinhaRejeitadaView,
+  type PluggyTransactionsView,
+} from '../lib/pluggy'
 import { explicarRegras, sugerirParaLinha } from '../lib/regras-import'
+import { ALVO_LINK } from '../lib/touch'
 import type { AccountView } from './accounts'
 
 /**
@@ -32,6 +45,22 @@ import type { AccountView } from './accounts'
  *  2. Mostrar a conferência (data/valor/descrição/payee/categoria
  *     sugeridos) antes de mandar qualquer coisa pro servidor — nada é
  *     gravado por adivinhação (§7).
+ *
+ * ⚠️ **Fatia ④: o Pluggy entrou como TERCEIRA ORIGEM deste MESMO pipeline,
+ * ao lado de OFX e CSV — nunca como um caminho paralelo.** `GET
+ * /api/pluggy/transactions` devolve `LinhaImportada[]` (o mesmo shape que
+ * `parseOfx`/`parseCsv` produzem), `prepararConferencia` ganhou `'pluggy'`
+ * como `fonte`, e daí pra frente **tudo já funcionava**: dedup por
+ * `imported_id`, sugestão por regra, checkbox por linha, envio em lotes.
+ * Zero duplicação de fluxo.
+ *
+ * ⚠️ **A conferência NÃO é pulável, e não existe sync automático.** Com as
+ * duas armadilhas do Pluggy (sinal que depende do tipo da conta; data em
+ * UTC contra um app GMT-3 `purchase_date`-cêntrico), conferir linha a
+ * linha na primeira vez é a única rede que existe: `uq_tx_imported`
+ * impede reimportar por cima, então o desfazer seria
+ * `DELETE ... WHERE import_source='pluggy'` ou Time Travel (que restaura o
+ * banco INTEIRO).
  */
 
 type PayeeView = PayeeParaSugestao & { kind: string }
@@ -66,6 +95,21 @@ type LinhaRevisao = {
 }
 
 type Passo = 'selecionar' | 'mapear' | 'conferencia' | 'enviando' | 'concluido'
+
+/**
+ * As TRÊS origens do mesmo pipeline. `'pluggy'` já era aceito pelo CHECK
+ * de `import_source` (`migrations/0001_financas_init.sql:194`) e por
+ * `IMPORT_SOURCES` (`src/domain/import.ts`) desde a fatia ② — nenhuma
+ * migration foi necessária pra fatia ④, só o caminho que o produz.
+ */
+type Origem = 'ofx' | 'csv' | 'pluggy'
+
+type ErroPluggy = { code: string; message: string }
+
+/** Um lugar só pro "hoje" local (Teresina, UTC−3), nunca `toISOString()` cru. */
+function hoje(): string {
+  return todayInTeresina()
+}
 
 // Teto de bound params por statement no D1 é problema do SERVIDOR
 // (`domain/import.ts` já chunka em 5 linhas/statement dentro de UM
@@ -180,8 +224,27 @@ export function ImportarPage() {
 
   const [accountId, setAccountId] = useState('')
   const [passo, setPasso] = useState<Passo>('selecionar')
-  const [origem, setOrigem] = useState<'ofx' | 'csv'>('ofx')
+  const [origem, setOrigem] = useState<Origem>('ofx')
   const [arquivoErro, setArquivoErro] = useState<string | null>(null)
+
+  // Pluggy (fatia ④). `conexao === null` com `conexaoCarregada === true` é
+  // "esta conta ainda não foi conectada" — estado NORMAL, não erro.
+  const [conexao, setConexao] = useState<ConexaoPluggy | null>(null)
+  const [conexaoCarregada, setConexaoCarregada] = useState(false)
+  const [editandoConexao, setEditandoConexao] = useState(false)
+  const [formItemId, setFormItemId] = useState('')
+  const [formAccountId, setFormAccountId] = useState('')
+  const [conexaoErro, setConexaoErro] = useState<string | null>(null)
+  const [salvandoConexao, setSalvandoConexao] = useState(false)
+  const [pluggyDe, setPluggyDe] = useState(() => janelaPadrao(hoje()).de)
+  const [pluggyAte, setPluggyAte] = useState(() => janelaPadrao(hoje()).ate)
+  const [sincronizando, setSincronizando] = useState(false)
+  const [pluggyErro, setPluggyErro] = useState<ErroPluggy | null>(null)
+  const [rejeitadas, setRejeitadas] = useState<LinhaRejeitadaView[]>([])
+  // Primeira importação Pluggy NESTA conta — derivado do banco (nenhuma
+  // linha com `import_source: 'pluggy'` entre as carregadas), nunca de uma
+  // flag/localStorage. Ver `prepararConferencia`.
+  const [primeiroPluggy, setPrimeiroPluggy] = useState(false)
 
   // Etapa de mapeamento (CSV sem mapa salvo)
   const [textoCsv, setTextoCsv] = useState('')
@@ -261,18 +324,59 @@ export function ImportarPage() {
     }
   }, [])
 
+  // ⚠️ Efeito SEPARADO, por conta, e que NUNCA derruba a tela: a conexão
+  // do Pluggy é capacidade OPCIONAL — sem ela o import por arquivo (a
+  // capacidade PRINCIPAL desta tela) continua inteiro. Mesma lição já paga
+  // aqui com `/api/rules` (uma capacidade opcional que falhava e apagava o
+  // `<h1>`, o select de conta e o input de arquivo). `conexaoPluggy` já
+  // degrada pra `null` em qualquer falha — o que este efeito garante é que
+  // ela nunca entre num `Promise.all` com o resto.
+  useEffect(() => {
+    if (accountId === '') return
+    let vivo = true
+    setConexaoCarregada(false)
+    setEditandoConexao(false)
+    setPluggyErro(null)
+    conexaoPluggy(accountId).then((c) => {
+      if (!vivo) return
+      setConexao(c)
+      setFormItemId(c?.item_id ?? '')
+      setFormAccountId(c?.account_id ?? '')
+      setConexaoCarregada(true)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [accountId])
+
   async function prepararConferencia(
     linhasBrutas: LinhaImportada[],
-    fonte: 'ofx' | 'csv',
+    fonte: Origem,
   ) {
     let existentes: Set<string>
+    let jaImportouPluggy: boolean
     try {
-      const txs = await api<Array<{ imported_id: string | null }>>(
-        `/api/transactions?account_id=${accountId}&limit=500`,
-      )
+      const txs = await api<
+        Array<{ imported_id: string | null; import_source: string | null }>
+      >(`/api/transactions?account_id=${accountId}&limit=500`)
       existentes = new Set(
         txs.map((t) => t.imported_id).filter((id): id is string => id !== null),
       )
+      // ⚠️ **A guarda do PRIMEIRO import sai daqui, do dado, sem custar uma
+      // requisição a mais nem uma flag a lembrar de limpar.** Esta busca já
+      // existia (é a dedupe); `import_source` já vinha no payload. O aviso
+      // aparece exatamente enquanto não existe nenhuma linha `pluggy`
+      // NESTA conta e some sozinho depois da primeira importação — sem
+      // botão de "não mostrar de novo", sem `localStorage` (que mentiria
+      // entre o Android e o MacBook) e sem `settings` (que continuaria
+      // dizendo "já importou" depois de um restore que apagou as linhas).
+      //
+      // Limitação herdada e aceita: a busca é capada em 500 linhas (teto de
+      // `listTransactions`). Numa conta com mais de 500 lançamentos mais
+      // NOVOS que a última importação Pluggy, o aviso reaparece. Erra pro
+      // lado de avisar demais — que é o lado certo pra um aviso cujo
+      // assunto é dado sem desfazer.
+      jaImportouPluggy = txs.some((t) => t.import_source === 'pluggy')
     } catch (err) {
       setArquivoErro(err instanceof ApiError ? err.message : String(err))
       return
@@ -336,10 +440,106 @@ export function ImportarPage() {
     })
 
     setOrigem(fonte)
+    setPrimeiroPluggy(fonte === 'pluggy' && !jaImportouPluggy)
     setLinhas(revisao)
     setResultado(null)
     setEnvioErro(null)
     setPasso('conferencia')
+  }
+
+  async function salvarConexao(e: FormEvent) {
+    e.preventDefault()
+    const item_id = formItemId.trim()
+    const account_id = formAccountId.trim()
+    if (item_id === '' || account_id === '') {
+      setConexaoErro('Informe os dois: o id da conexão (item) e o da conta.')
+      return
+    }
+
+    setConexaoErro(null)
+    setSalvandoConexao(true)
+    // `mutarERecarregar` (o 10º call site): a mutação é o `PUT` e a recarga
+    // é reler do servidor — releitura de verdade, não cosmética: é ela que
+    // mostra o que de fato ficou salvo, em vez de espelhar o formulário e
+    // acreditar. Se o PUT passa e o GET cai, a mensagem NÃO pode ler como
+    // "não salvou" (o dono reescreveria por cima do que já está certo).
+    const r = await mutarERecarregar(
+      () => salvarConexaoPluggy(accountId, { item_id, account_id }),
+      async () => {
+        const salva = await conexaoPluggy(accountId)
+        setConexao(salva)
+        setEditandoConexao(false)
+      },
+      'A conexão foi salva, mas não consegui reler pra confirmar — atualize a página. Não salve de novo por precaução: o valor já está gravado.',
+    )
+    setSalvandoConexao(false)
+    if (!r.ok) setConexaoErro(r.mensagem)
+  }
+
+  /**
+   * ⚠️ **NÃO usa `mutarERecarregar`, e a ausência é decisão.** Isto é uma
+   * LEITURA (`GET`) — não há mutação nenhuma no servidor, e o contrato
+   * daquele helper é "a ação aconteceu, o recarregamento é que não". Usá-lo
+   * aqui faria a tela afirmar que algo foi gravado quando nada foi: o
+   * oposto da propriedade que ele existe pra proteger. O que grava
+   * continua sendo `enviarConfirmadas`, depois da conferência.
+   */
+  async function sincronizarPluggy() {
+    if (conexao === null) return
+
+    if (!isRealCalendarDate(pluggyDe) || !isRealCalendarDate(pluggyAte)) {
+      // Validado no cliente antes de gastar requisição — um
+      // `<input type="date">` não produz data inexistente sozinho, mas
+      // produz string VAZIA (campo limpo, preenchimento parcial no
+      // Android), mesma lição de `pages/transferir.tsx`.
+      setPluggyErro({
+        code: 'invalid_query',
+        message: 'Escolha as duas datas do período (de e até).',
+      })
+      return
+    }
+    if (pluggyDe > pluggyAte) {
+      setPluggyErro({
+        code: 'invalid_query',
+        message: 'O início do período não pode ser depois do fim.',
+      })
+      return
+    }
+
+    setPluggyErro(null)
+    setArquivoErro(null)
+    setSincronizando(true)
+    try {
+      const params = new URLSearchParams({
+        account_id: conexao.account_id,
+        item_id: conexao.item_id,
+        from: pluggyDe,
+        to: pluggyAte,
+      })
+      const resposta = await api<PluggyTransactionsView>(
+        `/api/pluggy/transactions?${params.toString()}`,
+      )
+      setRejeitadas(resposta.rejeitadas)
+      if (resposta.linhas.length === 0 && resposta.rejeitadas.length === 0) {
+        // Zero linha NÃO é erro (janela sem movimento é comum) — mas
+        // também não pode virar uma tela de conferência vazia, que pareceu
+        // ter dado errado. Fica no lugar, dizendo o que aconteceu.
+        setPluggyErro({
+          code: 'sem_lancamentos',
+          message: `O banco não trouxe nenhum lançamento entre ${pluggyDe} e ${pluggyAte}. Isso não é erro — a conexão respondeu normalmente.`,
+        })
+        return
+      }
+      await prepararConferencia(resposta.linhas, 'pluggy')
+    } catch (err) {
+      setPluggyErro(
+        err instanceof ApiError
+          ? { code: err.code, message: err.message }
+          : { code: 'desconhecido', message: String(err) },
+      )
+    } finally {
+      setSincronizando(false)
+    }
   }
 
   async function selecionarArquivo(e: ChangeEvent<HTMLInputElement>) {
@@ -466,6 +666,9 @@ export function ImportarPage() {
     setEnvioErro(null)
     setArquivoErro(null)
     setProgresso(null)
+    setRejeitadas([])
+    setPrimeiroPluggy(false)
+    setPluggyErro(null)
   }
 
   if (loadError) return <p role="alert">{loadError}</p>
@@ -543,6 +746,151 @@ export function ImportarPage() {
               <p role="alert" className="text-destructive text-sm">
                 {arquivoErro}
               </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {passo === 'selecionar' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              Sincronizar com o banco
+              <Ajuda rotulo="Sincronizar com o banco">
+                Puxa os lançamentos direto do banco pelo Pluggy, em vez de
+                baixar um arquivo. O que vem cai na MESMA tela de conferência do
+                .ofx/.csv — nada é gravado antes de você confirmar linha a
+                linha. Não existe sincronização automática de propósito: é a
+                conferência que separa &quot;importei&quot; de &quot;importei
+                errado e não tem volta&quot;.
+              </Ajuda>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!conexaoCarregada ? (
+              <p
+                role="status"
+                aria-busy="true"
+                data-testid="pluggy-carregando"
+                className="text-muted-foreground text-sm"
+              >
+                Verificando a conexão desta conta…
+              </p>
+            ) : conexao === null || editandoConexao ? (
+              <form onSubmit={salvarConexao} className="space-y-4">
+                <p className="text-muted-foreground text-sm">
+                  Conecte esta conta no app <strong>Meu Pluggy</strong> e cole
+                  aqui os dois identificadores que ele mostra: o da conexão
+                  (item) e o da conta/cartão dentro dela. Ficam salvos nesta
+                  conta, não no aparelho — conectar no computador e sincronizar
+                  pelo celular funciona.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pluggy-item">
+                    Id da conexão (item) no Pluggy
+                  </Label>
+                  <Input
+                    id="pluggy-item"
+                    value={formItemId}
+                    onChange={(e) => setFormItemId(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pluggy-conta">Id da conta no Pluggy</Label>
+                  <Input
+                    id="pluggy-conta"
+                    value={formAccountId}
+                    onChange={(e) => setFormAccountId(e.target.value)}
+                  />
+                </div>
+                {conexaoErro ? (
+                  <p
+                    role="alert"
+                    data-testid="pluggy-conexao-erro"
+                    className="text-destructive text-sm"
+                  >
+                    {conexaoErro}
+                  </p>
+                ) : null}
+                <Button type="submit" disabled={salvandoConexao}>
+                  {salvandoConexao ? 'Salvando…' : 'Salvar conexão'}
+                </Button>
+              </form>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pluggy-de">De</Label>
+                    <Input
+                      id="pluggy-de"
+                      type="date"
+                      value={pluggyDe}
+                      onChange={(e) => setPluggyDe(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pluggy-ate">Até</Label>
+                    <Input
+                      id="pluggy-ate"
+                      type="date"
+                      value={pluggyAte}
+                      onChange={(e) => setPluggyAte(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {/* ⚠️ O texto do período NÃO é decoração: é onde a guarda do
+                    primeiro import é explicada ANTES do toque. O default de
+                    um mês está em `lib/pluggy.ts#janelaPadrao`, e o servidor
+                    não tem default nenhum. */}
+                <p className="text-muted-foreground text-xs">
+                  O período já vem com <strong>um mês</strong>, não com os 12
+                  que o banco guarda. Traga aos poucos: uma dezena de linhas dá
+                  pra conferir a olho, e a conferência é o que impede um erro de
+                  sinal ou de data virar histórico sem volta.
+                </p>
+                <Button onClick={sincronizarPluggy} disabled={sincronizando}>
+                  {sincronizando ? 'Buscando…' : 'Sincronizar com o banco'}
+                </Button>
+                <p className="text-muted-foreground text-xs">
+                  Nada é gravado agora — o que vier passa pela mesma tela de
+                  conferência do arquivo.
+                </p>
+                <button
+                  type="button"
+                  data-testid="pluggy-trocar-conexao"
+                  className={`text-muted-foreground text-xs underline ${ALVO_LINK}`}
+                  onClick={() => {
+                    setEditandoConexao(true)
+                    setConexaoErro(null)
+                  }}
+                >
+                  trocar a conexão desta conta
+                </button>
+              </>
+            )}
+
+            {pluggyErro ? (
+              <div className="space-y-1">
+                <p
+                  role="alert"
+                  data-testid="pluggy-erro"
+                  className="text-destructive text-sm"
+                >
+                  {pluggyErro.message}
+                </p>
+                {/* Cada causa tem uma AÇÃO diferente — e a do item
+                    desconectado é a que o dono mais vai ver com o tempo. A
+                    mensagem do servidor fica como está; isto é um segundo
+                    parágrafo. */}
+                {dicaParaErroPluggy(pluggyErro.code) !== null ? (
+                  <p
+                    data-testid="pluggy-dica"
+                    className="text-muted-foreground text-xs"
+                  >
+                    {dicaParaErroPluggy(pluggyErro.code)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -691,6 +1039,43 @@ export function ImportarPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* ⚠️ Aparece SÓ na primeira importação Pluggy desta conta (ver
+                `prepararConferencia`), e some sozinho depois — nenhuma flag,
+                nenhum botão de dispensar. As duas coisas que ele manda
+                conferir são exatamente as duas armadilhas do adaptador:
+                sinal e data. */}
+            {primeiroPluggy ? (
+              <p
+                role="alert"
+                data-testid="pluggy-primeiro-import"
+                className="text-destructive text-sm"
+              >
+                Esta é a <strong>primeira importação pelo banco</strong> nesta
+                conta. Confira duas coisas linha a linha antes de confirmar: o{' '}
+                <strong>sinal</strong> (gasto tem que aparecer em vermelho,
+                estorno/entrada em verde) e a <strong>data</strong> (compras
+                feitas à noite são as que mais escorregam de dia). Depois de
+                gravado não dá pra reimportar por cima pra corrigir.
+              </p>
+            ) : null}
+
+            {origem === 'pluggy' && rejeitadas.length > 0 ? (
+              <div
+                data-testid="pluggy-rejeitadas"
+                className="text-muted-foreground space-y-1 text-xs"
+              >
+                <p>
+                  {rejeitadas.length} lançamento(s) vieram do banco e{' '}
+                  <strong>não entram nesta lista</strong>:
+                </p>
+                <ul className="list-disc space-y-0.5 pl-5">
+                  {rejeitadas.map((r) => (
+                    <li key={`${r.id}-${r.index}`}>{r.motivo}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             <p className="text-muted-foreground text-sm">
               {linhas.length} linha(s) encontrada(s).{' '}
               {linhas.filter((l) => l.duplicada).length} já parecem importadas —

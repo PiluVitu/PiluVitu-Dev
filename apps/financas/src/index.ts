@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
+import type { PluggyBindings } from './lib/pluggy'
 import type { PromeiaBindings } from './lib/promeia'
 import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
@@ -11,6 +12,7 @@ import { importRoutes } from './routes/import'
 import { installmentPlansRoutes } from './routes/installments'
 import { insightsRoutes } from './routes/insights'
 import { payeesRoutes } from './routes/payees'
+import { pluggyRoutes } from './routes/pluggy'
 import { recurringRoutes } from './routes/recurring'
 import { reportsRoutes } from './routes/reports'
 import { reserveRoutes } from './routes/reserve'
@@ -30,9 +32,17 @@ import { transactionsRoutes } from './routes/transactions'
 // dois autenticam este Worker CHAMANDO o Mac (POST /api/insights/generate →
 // túnel → promeia). Os dois são secrets (`wrangler secret put`), nunca
 // `vars` em wrangler.jsonc — ver routes/insights.ts e lib/promeia.ts.
+// PLUGGY_CLIENT_ID/PLUGGY_CLIENT_SECRET (fatia ④): credenciais do app no
+// Meu Pluggy, lidas SÓ por routes/pluggy.ts (via lib/pluggy.ts). Também
+// secrets, e por um motivo medido: scripts/backup-d1.sh exporta o D1
+// INTEIRO às 03:00 e guarda 30 cópias em texto claro — guardá-las em
+// `settings` publicaria a credencial em 30 arquivos que rotacionar a chave
+// depois não apagaria. `itemId`/`accountId` NÃO são credencial e vão em
+// `settings` normalmente.
 export type Bindings = AuthBindings & {
   INGEST_TOKEN: string
-} & PromeiaBindings
+} & PromeiaBindings &
+  PluggyBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -92,6 +102,11 @@ app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
 app.route('/api/rules', rulesRoutes)
+// Fatia ④: `GET /api/pluggy/transactions`. Atrás da guarda de sessão como
+// qualquer outra rota — NENHUMA exceção foi acrescentada ao middleware
+// acima (o INGEST_TOKEN é do comando do Mac; quem sincroniza é o dono no
+// navegador). Provado em src/index.test.ts.
+app.route('/api/pluggy', pluggyRoutes)
 app.route('/api', reserveRoutes)
 app.route('/api', insightsRoutes)
 

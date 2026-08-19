@@ -462,3 +462,61 @@ describe('app.onError global', () => {
     expect(await res.text()).toBe('{"ok":false}')
   })
 })
+
+// Fatia ④ (Pluggy) — a rota nova NÃO ganhou exceção nenhuma no middleware
+// global de sessão, e isso precisa ser provado contra o APP MONTADO DE
+// VERDADE: um router isolado (routes/pluggy.test.ts) nunca veria o
+// middleware. As duas asserções que importam: barra sem sessão, e barra
+// mesmo com o Bearer do Mac.
+//
+// ⚠️ O `env` deste describe CONFIGURA os secrets do Pluggy de propósito.
+// Sem eles a rota responderia `503 pluggy_disabled` antes de qualquer
+// coisa, e o teste passaria por vacuidade — 503 "desligado" não prova
+// nada sobre a guarda de sessão. Com eles, a única coisa entre a
+// requisição e a rede é o `requireSession()`; o `fetch` espião confirma
+// que ela nunca é atravessada.
+describe('worker de finanças — /api/pluggy fica atrás da sessão (fatia ④)', () => {
+  const pluggyTestEnv = {
+    ...authTestEnv,
+    PLUGGY_CLIENT_ID: 'client-id-de-teste',
+    PLUGGY_CLIENT_SECRET: 'client-secret-de-teste',
+  } as unknown as Bindings
+
+  const JANELA = 'account_id=acc-1&item_id=item-1&from=2026-07-01&to=2026-07-31'
+
+  test('sem sessão: 401 not_authenticated e NENHUMA chamada ao Pluggy', async () => {
+    const fetchOriginal = globalThis.fetch
+    let chamadas = 0
+    globalThis.fetch = (async () => {
+      chamadas += 1
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    try {
+      const res = await app.request(
+        `/api/pluggy/transactions?${JANELA}`,
+        {},
+        pluggyTestEnv,
+      )
+      expect(res.status).toBe(401)
+      expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+        'not_authenticated',
+      )
+      expect(chamadas).toBe(0)
+    } finally {
+      globalThis.fetch = fetchOriginal
+    }
+  })
+
+  test('o token do Mac NÃO abre a sincronização — quem sincroniza é o dono no navegador', async () => {
+    const res = await app.request(
+      `/api/pluggy/transactions?${JANELA}`,
+      { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
+      pluggyTestEnv,
+    )
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_authenticated',
+    )
+  })
+})

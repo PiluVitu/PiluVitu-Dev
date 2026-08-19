@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ImportarPage, IMPORT_BATCH_SIZE } from './importar'
 
 const accounts = [
@@ -124,7 +124,23 @@ type Chamada = { url: string; method: string; body: string | undefined }
  */
 function mockRede(opts: {
   chamadas: Chamada[]
-  transacoesExistentes?: Array<{ imported_id: string | null }>
+  transacoesExistentes?: Array<{
+    imported_id: string | null
+    import_source?: string | null
+  }>
+  // Fatia ④ — conexão do Pluggy salva pra conta 'a1' (`settings`, chave
+  // `pluggy:a1`). `undefined` = nenhuma conexão configurada ainda, que é o
+  // estado da maioria dos testes deste arquivo.
+  conexaoPluggySalva?: string
+  // Resposta de `GET /api/pluggy/transactions`.
+  pluggyResposta?: {
+    linhas: unknown[]
+    rejeitadas?: Array<{ index: number; id: string; motivo: string }>
+  }
+  pluggyErro?: { status: number; code: string; message: string }
+  // `GET /api/settings/:key` caindo — a conexão do Pluggy é capacidade
+  // OPCIONAL e não pode derrubar o import por arquivo.
+  settingsFalha?: boolean
   // Lista que `GET /api/categories` devolve. O default e `categories`;
   // passar uma lista MENOR simula categoria arquivada (a rota filtra
   // `archived_at IS NULL`, entao arquivada some da resposta).
@@ -184,13 +200,43 @@ function mockRede(opts: {
         // Mapa de colunas — GET|PUT /api/settings/:key (backend genérico,
         // não localStorage). PUT ecoa o value enviado; GET devolve o mapa
         // pré-semeado pra este teste (ou null, se nenhum foi passado).
+        if (url.includes('/api/pluggy/transactions')) {
+          if (opts.pluggyErro) {
+            return respondErro(
+              opts.pluggyErro.status,
+              opts.pluggyErro.code,
+              opts.pluggyErro.message,
+            )
+          }
+          const r = opts.pluggyResposta ?? { linhas: [] }
+          return respondJson({
+            account_id: 'pluggy-acc',
+            item_id: 'pluggy-item',
+            from: '2026-07-19',
+            to: '2026-08-19',
+            paginas: 1,
+            recebidas: r.linhas.length + (r.rejeitadas?.length ?? 0),
+            linhas: r.linhas,
+            rejeitadas: r.rejeitadas ?? [],
+          })
+        }
         if (url.includes('/api/settings/')) {
           const key = decodeURIComponent(url.split('/api/settings/')[1])
+          if (opts.settingsFalha)
+            return respondErro(500, 'internal_error', 'erro interno')
           if (method === 'PUT') {
             const parsed = body
               ? (JSON.parse(body) as { value: string })
               : { value: '' }
+            // O GET seguinte (a recarga de `mutarERecarregar`) precisa ler o
+            // que acabou de ser gravado — senão a tela nunca sairia do
+            // formulário e o teste passaria por um motivo errado.
+            if (key.startsWith('pluggy:'))
+              opts.conexaoPluggySalva = parsed.value
             return respondJson({ key, value: parsed.value })
+          }
+          if (key.startsWith('pluggy:')) {
+            return respondJson({ key, value: opts.conexaoPluggySalva ?? null })
           }
           return respondJson({ key, value: opts.mapaImportSalvo ?? null })
         }
@@ -1586,5 +1632,414 @@ describe('ImportarPage — regras de categorização', () => {
     mockRede({ chamadas })
     await irParaConferencia(chamadas)
     expect(screen.queryByTestId('regras-indisponiveis')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fatia ④ — Pluggy como TERCEIRA ORIGEM do mesmo pipeline.
+//
+// ⚠️ Relógio FIXO no describe inteiro (`toFake: ['Date']`, nunca
+// `useFakeTimers()` puro — `waitFor`/`userEvent` dependem de `setTimeout`
+// real por baixo): a janela default é calculada a partir de HOJE, e sem
+// fixar o relógio o teste do "um mês, não doze" viraria uma bomba de
+// calendário.
+// ---------------------------------------------------------------------------
+describe('ImportarPage — Pluggy (fatia ④)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const CONEXAO = JSON.stringify({
+    item_id: 'item-do-nubank',
+    account_id: 'conta-do-nubank',
+  })
+
+  const LINHA_COMPRA = {
+    imported_id: 'pluggy-tx-1',
+    purchase_date: '2026-08-15',
+    amount_cents: -18990,
+    description: 'Mercado',
+  }
+
+  async function abrir() {
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Importar' }),
+      ).toBeInTheDocument(),
+    )
+    return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  }
+
+  test('sem conexão salva mostra o formulário, não o botão de sincronizar', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(/Id da conta no Pluggy/),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Sincronizar com o banco' }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('salvar a conexão grava na chave da conta e libera o botão', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(/Id da conta no Pluggy/),
+      ).toBeInTheDocument(),
+    )
+    await usuario.type(
+      screen.getByLabelText(/Id da conexão \(item\)/),
+      'item-do-nubank',
+    )
+    await usuario.type(
+      screen.getByLabelText(/Id da conta no Pluggy/),
+      'conta-do-nubank',
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Salvar conexão' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    const put = chamadas.find(
+      (c) => c.method === 'PUT' && c.url.includes('pluggy'),
+    )
+    expect(put?.url).toContain('/api/settings/pluggy%3Aa1')
+    expect(JSON.parse(put?.body ?? '{}')).toEqual({ value: CONEXAO })
+  })
+
+  test('o período nasce com UM MÊS, nunca com os 12 que o banco guarda', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas, conexaoPluggySalva: CONEXAO })
+    await abrir()
+
+    await waitFor(() => expect(screen.getByLabelText('De')).toBeInTheDocument())
+    expect(screen.getByLabelText('De')).toHaveValue('2026-07-19')
+    expect(screen.getByLabelText('Até')).toHaveValue('2026-08-19')
+  })
+
+  test('sincronizar manda conta, conexão e janela — e cai na MESMA conferência do arquivo', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: { linhas: [LINHA_COMPRA] },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    const params = new URLSearchParams(
+      (
+        chamadas.find((c) => c.url.includes('/api/pluggy/transactions'))?.url ??
+        ''
+      ).split('?')[1],
+    )
+    expect(params.get('account_id')).toBe('conta-do-nubank')
+    expect(params.get('item_id')).toBe('item-do-nubank')
+    expect(params.get('from')).toBe('2026-07-19')
+    expect(params.get('to')).toBe('2026-08-19')
+
+    // A linha chega na conferência com o VALOR e o SINAL que o servidor
+    // mapeou — e é justamente isso que o dono precisa poder conferir.
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.getByText('-R$ 189,90')).toBeInTheDocument()
+    expect(screen.getByText('15/08/2026')).toBeInTheDocument()
+    // Todo o resto do pipeline continua: checkbox por linha, selects de
+    // payee/categoria.
+    expect(screen.getByTestId('payee-0')).toBeInTheDocument()
+  })
+
+  test('o envio usa import_source "pluggy" (o CHECK do schema já aceitava)', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: { linhas: [LINHA_COMPRA] },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/ }),
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId('resultado-resumo')).toBeInTheDocument(),
+    )
+    const envio = chamadas.find((c) =>
+      c.url.includes('/api/transactions/import'),
+    )
+    const corpo = JSON.parse(envio?.body ?? '{}') as {
+      import_source: string
+      account_id: string
+      rows: Array<{ imported_id: string; amount_cents: number }>
+    }
+    expect(corpo.import_source).toBe('pluggy')
+    expect(corpo.account_id).toBe('a1')
+    expect(corpo.rows[0]).toMatchObject({
+      imported_id: 'pluggy-tx-1',
+      amount_cents: -18990,
+    })
+  })
+
+  test('PRIMEIRA importação pelo banco avisa sobre sinal e data', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: { linhas: [LINHA_COMPRA] },
+      // Já existe histórico na conta, mas NADA vindo do Pluggy.
+      transacoesExistentes: [
+        { imported_id: 'FITID-antigo', import_source: 'ofx' },
+      ],
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    const aviso = await screen.findByTestId('pluggy-primeiro-import')
+    expect(aviso).toHaveTextContent(/sinal/)
+    expect(aviso).toHaveTextContent(/data/)
+  })
+
+  test('a partir da SEGUNDA o aviso some sozinho — sem botão de dispensar, sem flag', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: { linhas: [LINHA_COMPRA] },
+      transacoesExistentes: [
+        { imported_id: 'pluggy-tx-antiga', import_source: 'pluggy' },
+      ],
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    expect(
+      screen.queryByTestId('pluggy-primeiro-import'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('o aviso NÃO aparece numa importação por arquivo (é do Pluggy, não da tela)', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    await irParaConferencia(chamadas)
+
+    expect(
+      screen.queryByTestId('pluggy-primeiro-import'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a fatura aberta que ficou de fora aparece COM MOTIVO, nunca sucesso mudo', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: {
+        linhas: [LINHA_COMPRA],
+        rejeitadas: [
+          {
+            index: 1,
+            id: 'pluggy-tx-2',
+            motivo:
+              'status PENDING — só POSTED é importado. Num cartão isso é a fatura ainda aberta.',
+          },
+        ],
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    const bloco = await screen.findByTestId('pluggy-rejeitadas')
+    expect(bloco).toHaveTextContent(/1 lançamento\(s\)/)
+    expect(bloco).toHaveTextContent(/fatura ainda aberta/)
+  })
+
+  test('conexão caída: mensagem do servidor + a dica que nomeia o app Meu Pluggy', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyErro: {
+        status: 409,
+        code: 'pluggy_item_disconnected',
+        message:
+          'a conexão com o banco caiu e o Pluggy está pedindo autenticação de novo.',
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    const erro = await screen.findByTestId('pluggy-erro')
+    expect(erro).toHaveTextContent(/a conexão com o banco caiu/)
+    expect(screen.getByTestId('pluggy-dica')).toHaveTextContent(/Meu Pluggy/)
+    // A tela NÃO cai: o import por arquivo continua alcançável.
+    expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument()
+  })
+
+  test('desligado ≠ conexão caída: a dica fala dos secrets e não manda reconectar', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyErro: {
+        status: 503,
+        code: 'pluggy_disabled',
+        message: 'A sincronização com o Pluggy está desligada.',
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    const dica = await screen.findByTestId('pluggy-dica')
+    expect(dica).toHaveTextContent(/PLUGGY_CLIENT_ID/)
+    expect(dica).not.toHaveTextContent(/Meu Pluggy/)
+  })
+
+  test('janela invertida é barrada no cliente, sem gastar requisição', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas, conexaoPluggySalva: CONEXAO })
+    const usuario = await abrir()
+
+    await waitFor(() => expect(screen.getByLabelText('De')).toBeInTheDocument())
+    await usuario.clear(screen.getByLabelText('De'))
+    await usuario.type(screen.getByLabelText('De'), '2026-08-31')
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    expect(await screen.findByTestId('pluggy-erro')).toHaveTextContent(
+      /não pode ser depois/,
+    )
+    expect(
+      chamadas.filter((c) => c.url.includes('/api/pluggy/transactions')),
+    ).toHaveLength(0)
+  })
+
+  test('janela sem movimento não vira conferência vazia — diz que não é erro', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      conexaoPluggySalva: CONEXAO,
+      pluggyResposta: { linhas: [] },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+
+    expect(await screen.findByTestId('pluggy-erro')).toHaveTextContent(
+      /não é erro/,
+    )
+    expect(
+      screen.queryByRole('heading', { name: 'Conferir importação' }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('a conexão fora do ar NÃO derruba o import por arquivo', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas, settingsFalha: true })
+    await abrir()
+
+    // Capacidade OPCIONAL caindo não pode apagar a PRINCIPAL — a mesma
+    // lição que `/api/rules` já custou nesta tela.
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Importar' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/Id da conta no Pluggy/)).toBeInTheDocument()
   })
 })
