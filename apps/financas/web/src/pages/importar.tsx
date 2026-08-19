@@ -439,20 +439,39 @@ export function ImportarPage() {
     // OUTRA origem. Roda sobre as linhas BRUTAS, na mesma ordem, e o
     // resultado é posicional — o critério, a justificativa e o lado pro
     // qual ele erra moram em `lib/duplicata-provavel.ts`.
+    // ⚠️ Pré-passe do id natural ANTES do palpite, e a ordem importa (achado
+    // BAIXO da revisão, que erra pro lado CARO). `detectarProvaveis` CONSOME o
+    // candidato que casou (`usado = true`), pra um lançamento gravado não
+    // servir de par pra duas linhas. Passando as linhas já-duplicadas junto,
+    // uma delas podia comer o único lançamento de outra origem — e o aviso da
+    // linha genuinamente NOVA sumia, marcada e sem alerta.
+    //
+    // MEDIDO por unidade: gravados `[manual 07-10 -1200]`, linhas
+    // `[já-importada 07-10 -1200, nova 07-10 -1200]` => `["cafe manual", null]`.
+    // A segunda é a nova, e saía sem aviso. Falso NEGATIVO — o lado que o
+    // critério declara como o caro (dinheiro contado 2x, sem desfazer barato).
+    const ocorrenciaPorIdBase = new Map<string, number>()
+    const idsNaturais = linhasBrutas.map((l) => {
+      const ocorrencia = ocorrenciaPorIdBase.get(l.imported_id) ?? 0
+      ocorrenciaPorIdBase.set(l.imported_id, ocorrencia + 1)
+      return ocorrencia === 0
+        ? l.imported_id
+        : `${l.imported_id}:occ:${ocorrencia}`
+    })
+    const jaDuplicada = idsNaturais.map((id) => existentes.has(id))
+
+    // Só as linhas que o dono de fato vai considerar entram no palpite — as
+    // já-duplicadas não competem por candidato.
     const provaveis = detectarProvaveis(
       linhasBrutas,
       existentesCompletos,
       fonte,
+      jaDuplicada,
     )
 
-    const ocorrenciaPorIdBase = new Map<string, number>()
     const revisao: LinhaRevisao[] = linhasBrutas.map((l, i) => {
-      const ocorrencia = ocorrenciaPorIdBase.get(l.imported_id) ?? 0
-      ocorrenciaPorIdBase.set(l.imported_id, ocorrencia + 1)
-      const idNatural =
-        ocorrencia === 0 ? l.imported_id : `${l.imported_id}:occ:${ocorrencia}`
-
-      const duplicada = existentes.has(idNatural)
+      const idNatural = idsNaturais[i]
+      const duplicada = jaDuplicada[i]
       // ⚠️ A sugestão vem das REGRAS **e** do `payees.default_category_id`,
       // e QUEM GANHA QUANDO OS DOIS DISCORDAM é a regra — o porquê (e a
       // validação da categoria contra a lista carregada, pelos DOIS

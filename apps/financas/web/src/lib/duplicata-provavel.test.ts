@@ -327,3 +327,44 @@ describe('detectarProvaveis — o que NÃO pode virar ruído', () => {
     expect(resultado.filter((c) => c !== null)).toHaveLength(30)
   })
 })
+
+describe('linha já duplicada não consome o candidato', () => {
+  // ⚠️ Achado da revisão, e ele erra pro lado CARO. `detectarProvaveis`
+  // marca o candidato como `usado` pra um gravado não servir de par a duas
+  // linhas — mas se uma linha JÁ duplicada (id exato batendo) entrasse na
+  // disputa, ela comia o único lançamento de outra origem e a linha
+  // genuinamente NOVA saía marcada e sem aviso. Falso negativo: dinheiro
+  // contado 2× e sem desfazer barato.
+  const cafeManual: TxExistente = {
+    purchase_date: '2026-07-10',
+    amount_cents: -1200,
+    description: 'cafe',
+    import_source: null, // manual
+  }
+  const duas = [
+    { purchase_date: '2026-07-10', amount_cents: -1200, description: 'Cafe A' },
+    { purchase_date: '2026-07-10', amount_cents: -1200, description: 'Cafe B' },
+  ]
+
+  it('SEM a marcação, a 1ª linha come o candidato e a 2ª fica sem aviso', () => {
+    // Comportamento antigo, preservado quando o array é omitido.
+    const r = detectarProvaveis(duas, [cafeManual], 'pluggy')
+    expect(r[0]).not.toBeNull()
+    expect(r[1]).toBeNull() // ⚠️ o defeito
+  })
+
+  it('COM a 1ª marcada como já-duplicada, o aviso vai pra linha NOVA', () => {
+    const r = detectarProvaveis(duas, [cafeManual], 'pluggy', [true, false])
+    // A já-duplicada não disputa...
+    expect(r[0]).toBeNull()
+    // ...e a nova recebe o aviso que antes sumia.
+    expect(r[1]).not.toBeNull()
+    expect(r[1]?.origem).toBe('manual')
+    expect(r[1]?.amount_cents).toBe(-1200)
+  })
+
+  it('marcar todas devolve só nulls, sem tocar nos candidatos', () => {
+    const r = detectarProvaveis(duas, [cafeManual], 'pluggy', [true, true])
+    expect(r).toEqual([null, null])
+  })
+})

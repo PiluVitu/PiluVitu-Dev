@@ -187,13 +187,23 @@ export function detectarProvaveis(
   linhas: LinhaCandidata[],
   existentes: TxExistente[],
   origemDaImportacao: string,
+  /**
+   * ⚠️ Linhas que JÁ colidiram por `imported_id` exato — elas não competem
+   * por candidato. Sem isso, uma linha que o dono nem vai considerar CONSOME
+   * (`usado = true`) o único lançamento de outra origem, e a linha
+   * genuinamente nova sai marcada e SEM aviso. Falso negativo: o lado caro,
+   * segundo o critério declarado acima (dinheiro contado 2x, sem desfazer
+   * barato). Omitir o array preserva o comportamento antigo.
+   */
+  ignorar?: readonly boolean[],
 ): (ColisaoProvavel | null)[] {
   const alvo = origemDe(origemDaImportacao)
   const candidatos = existentes
     .filter((t) => origemDe(t.import_source) !== alvo)
     .map((t) => ({ tx: t, usado: false }))
 
-  return linhas.map((linha) => {
+  return linhas.map((linha, i) => {
+    if (ignorar?.[i]) return null
     let melhor: (typeof candidatos)[number] | null = null
     let melhorDias = Number.POSITIVE_INFINITY
     let melhorBate = false
