@@ -123,28 +123,50 @@
     --card-foreground: 222 36% 9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 36% 9%;
-    --primary: 198 93% 60%;
-    --primary-foreground: 200 75% 6%;
+    /* ⚠️ CONTRASTE (tema claro) — os valores de LUMINOSIDADE destes tokens
+       são fixados por medição WCAG 2.1, não por gosto. Ver
+       `contraste.test.ts` (mesmo diretório), que lê ESTE arquivo e falha se
+       qualquer token de texto cair abaixo de 4,5:1 sobre `--card`/`--background`.
+       Antes desta correção: --primary 2,10:1, --destructive 3,78:1,
+       --success 3,06:1 e --warn 3,61:1 sobre `--card` — todos reprovados, e o
+       --primary reprovava até o mínimo de 3:1 de componente gráfico.
+       Clarear qualquer um deles de volta reintroduz o defeito; o teste avisa. */
+    --primary: 198 93% 26%;
+    /* Era `200 75% 6%` (quase preto sobre o azul claro antigo). Com o
+       --primary escuro, texto quase preto em cima dele daria 3,77:1 — o par
+       precisa virar branco. Medido: branco sobre o --primary novo = 7,47:1. */
+    --primary-foreground: 0 0% 100%;
     --secondary: 216 42% 95%;
     --secondary-foreground: 222 36% 9%;
     --muted: 216 42% 95%;
     --muted-foreground: 215 18% 35%;
     --accent: 216 43% 93%;
     --accent-foreground: 222 36% 9%;
-    --destructive: 0 84% 60%;
+    --destructive: 0 84% 47%;
     --destructive-foreground: 0 0% 100%;
     --border: 216 30% 88%;
     --input: 216 30% 88%;
-    --ring: 198 93% 60%;
-    --success: 158 64% 40%;
+    /* Espelha --primary de propósito (sempre espelhou): um anel de foco a
+       2,00:1 sobre o fundo era invisível, e o mínimo de componente de
+       interface é 3:1. */
+    --ring: 198 93% 26%;
+    --success: 158 64% 29%;
     --success-foreground: 0 0% 100%;
-    --ok: 158 64% 40%;
+    --ok: 158 64% 29%;
     --ok-foreground: 0 0% 100%;
-    --warn: 38 92% 38%;
+    --warn: 38 92% 31%;
     --warn-foreground: 0 0% 100%;
     --win: 255 60% 60%;
     --win-foreground: 0 0% 100%;
     --radius: 1.125rem;
+    /* ⚠️ NÃO tocados na correção de contraste, e a consequência fica dita:
+       `--chart-1` era um espelho de `--primary` (os dois eram `198 93% 60%`) e
+       DEIXOU de ser no tema claro. Série de gráfico é componente gráfico
+       (mínimo 3:1), não texto (4,5:1), e a paleta é deliberadamente neutra —
+       escurecê-la é decisão de data-viz do dono, não efeito colateral de uma
+       correção de contraste de texto. Medido sobre `--background`, tema claro:
+       chart-1 2,00 · chart-2 2,89 · chart-3 2,03 · chart-4 4,60 · chart-5 3,98
+       (três abaixo de 3:1). `contraste.test.ts` NÃO cobre estes tokens. */
     --chart-1: 198 93% 60%;
     --chart-2: 158 64% 40%;
     --chart-3: 38 92% 50%;
