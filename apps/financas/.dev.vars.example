@@ -40,3 +40,14 @@ INGEST_TOKEN=troque-por-openssl-rand-base64-32
 # o bloqueio da allowlist (camada 1/2) com um e-mail diferente do de
 # wrangler.jsonc.
 # ALLOWED_EMAIL=dono@exemplo.com
+
+# Fatia ④ (Open Finance via Pluggy). Credenciais do app no Meu Pluggy —
+# ⚠️ NUNCA em `settings`/D1: scripts/backup-d1.sh exporta o banco INTEIRO às
+# 03:00 e guarda 30 cópias em texto claro em ~/Backups/financas/, e rotacionar
+# a chave no Pluggy depois não apagaria as já gravadas. São SEGREDO (nunca
+# `vars` em wrangler.jsonc); em produção, `wrangler secret put`.
+# O host (https://api.pluggy.ai) é constante no código, não binding.
+# itemId/accountId NÃO são credencial e vão em `settings` (getSetting/setSetting).
+# Ausentes/vazios, a rota responde 503 pluggy_disabled: DESLIGADA, não quebrada.
+# PLUGGY_CLIENT_ID=id-do-app-no-meu-pluggy
+# PLUGGY_CLIENT_SECRET=secret-do-app-no-meu-pluggy

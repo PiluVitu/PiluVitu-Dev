@@ -2542,22 +2542,119 @@ Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de co
 - [ ] Confirmar que a seção **Conectar contas** mostra só a frase honesta (Open Finance ainda não existe) — **nenhum botão** nela.
 - [ ] No dashboard do D1, conferir `rows written` do dia dentro do esperado (~dezenas), não milhares.
 
-## Pendente — Open Finance / Pluggy (fatia ④)
+## Open Finance / Pluggy (fatia ④) — o cliente HTTP (`src/lib/pluggy.ts`)
 
-**Não implementado, e não deve ser prometido antes de um spike.** Fica registrado aqui porque a decisão tem restrições externas que não mudam com esforço de código.
+**Participação direta no Open Finance Brasil continua descartada:** exige **R$ 1.000.000 de capital**. Não é obstáculo técnico, é regulatório.
 
-**Participação direta no Open Finance Brasil está descartada:** exige **R$ 1.000.000 de capital**. Levantado na pesquisa da fatia ①; não é obstáculo técnico, é regulatório.
+✅ **O spike de ~1 h que esta seção exigia foi feito, e as duas incógnitas caíram.** **Meu Pluggy + Conector 200 é GRÁTIS por tempo indeterminado** para o usuário conectar as PRÓPRIAS contas (pluggy.ai/meu-pluggy): **sem cartão de crédito** (o bloqueio que tirou o Cloudflare Access deste módulo) e **sem CNPJ** no cadastro. Uso comercial é proibido pelos termos; single-user com contas próprias está dentro deles.
 
-**A alternativa é agregador** (Meu Pluggy + Conector 200), gratuito para contas próprias. Duas incógnitas antes de virar promessa:
+| Fato da API (medido, não re-pesquisar) | Valor                                     |
+| -------------------------------------- | ----------------------------------------- |
+| `POST /auth`                           | devolve `apiKey` válida **2 h**           |
+| Histórico                              | **12 meses**, páginas de 500              |
+| Rate limit                             | 360 req/min; **20/min em `PATCH /items`** |
+| `429`                                  | vem com `Retry-After: 60`                 |
+| Sync automático                        | **1×/dia** no plano free; **sem webhook** |
+| `category`                             | vem **sempre `null`** no free             |
 
-1. **Contradição não resolvida sobre o trial** — a documentação e a página de preços discordam sobre o que o plano gratuito cobre para uso pessoal.
-2. **Risco de exigir cartão de crédito verificado no cadastro** — que é exatamente o bloqueio que tirou o Cloudflare Access deste módulo e obrigou a troca para Better Auth. Se o Pluggy pedir o mesmo, a fatia morre pelo mesmo motivo.
+⚠️ **Zero migration, zero coluna nova:** `import_source IN (…,'pluggy',…)` já está no CHECK (`migrations/0001_financas_init.sql:194`) e em `IMPORT_SOURCES` (`src/domain/import.ts:50`); `uq_tx_imported` serve direto para o UUID do Pluggy como `imported_id`; e o pipeline inteiro de import (dedupe em aplicação, regras de categorização, checkbox por linha, envio em lotes) já existe. O que faltava — e é o que esta fatia entrega — era **falar com a API**.
 
-**Antes de planejar: um spike de ~1 h** que responda as duas, com evidência, e não com o que a landing page diz.
+### ⚠️⚠️ AS DUAS ARMADILHAS QUE PODEM CORROMPER 12 MESES DE DADO
 
-**Enquanto isso, o que resolve a dor original já existe:** o import de CSV/OFX (fatia ②) e o CLI de PDF com Ollama (fatia ③) cobrem "aglutinar vários cartões" sem depender de terceiro, sem cadastro e sem cartão. O Open Finance seria conveniência — trocar exportar-e-importar por sincronizar —, não capacidade nova.
+Registradas aqui porque valem para **qualquer** código futuro que toque o Pluggy, não só pro cliente. As duas estão marcadas de novo, campo a campo, no tipo `PluggyTransacao`.
 
-⚠️ O enum de `transactions.import_source` **já aceita `'pluggy'`** desde a migration `0001`. A coluna estar pronta não significa que a integração exista; não confundir preparação com entrega.
+**① SINAL INVERTIDO.** A documentação do Pluggy diz _"positive amounts indicate debits"_ — o **OPOSTO** da convenção deste schema (negativo = saída). `CHECK (amount_cents <> 0)` (`0001:145`) aceita qualquer sinal, então o banco não reclama: `accountBalances()` erraria por **2×** e `byCategory()` (que filtra `amount_cents < 0`) perderia a despesa inteira. Pior, **não dá pra reimportar por cima**: `uq_tx_imported` bloqueia, e a saída seria `DELETE … WHERE import_source='pluggy'` ou Time Travel (que restaura o banco INTEIRO).
+
+**② DATA EM UTC.** O `date` do Pluggy vem em UTC e este app é `purchase_date`-cêntrico em **GMT-3**: compra depois das 21h local cai no dia seguinte e **propaga pro `bill_competence`**, que é derivado e **não é patchável** (`PATCH /api/transactions/:id` recusa com `protected_field`). Seria a **5ª vez** que este projeto paga essa classe de bug — o precedente de conversão já tem dono: `src/domain/cashflow.ts#localCompetence`.
+
+⚠️ **O cliente NÃO converte nenhuma das duas, e isso é DECISÃO, não omissão.** A regra de sinal é **documentação, não medição contra uma resposta real** (a tabela de fatos medidos acima não a inclui). Encodar aqui uma conversão testada faria uma suposição parecer verificada, e o custo de errar é justamente o irreversível descrito em ①. As duas conversões pertencem à **fatia do mapeador**, num lugar só, escritas contra uma resposta real capturada à mão. O cliente entrega o valor do fio, intacto — travado por teste (`devolve as transações VERBATIM`).
+
+### Onde cada credencial mora — e por que `settings` está PROIBIDO pra elas
+
+| O quê                                       | Onde                                         |
+| ------------------------------------------- | -------------------------------------------- |
+| `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | **secret do Worker** (`wrangler secret put`) |
+| `apiKey` de 2 h                             | **memória do isolate** (`WeakMap`), nunca D1 |
+| `itemId` / `accountId`                      | `settings` — **não** são credencial          |
+
+⚠️ **A razão de a credencial não poder ir pra `settings` é concreta, não teórica:** `scripts/backup-d1.sh` exporta o D1 **inteiro** às 03:00 e guarda **30 cópias em texto claro** em `~/Backups/financas/` (ver _Backup do D1_ acima). Rotacionar a chave no Pluggy depois **não apagaria** as que já foram gravadas. `itemId`/`accountId` podem ir pra `settings` normalmente, reusando `getSetting`/`setSetting` — e de propósito **não** são lidos por `pluggy.ts`: são configuração, e lê-los ali faria o cliente HTTP depender de `D1Database` só pra descobrir pra quem ligar.
+
+### ① `POST /auth` — memoizado por ISOLATE, nunca persistido
+
+`WeakMap<PluggyBindings, Promise<Sessao>>` chaveado pelo objeto `env`, **mesmo padrão e mesmo motivo de `getAuth` (`src/lib/auth.ts`)**: `env` tem identidade estável entre requests do mesmo isolate, e o `WeakMap` impede que o `env` sintético de um teste envenene outro.
+
+- **Guarda a Promise, não a `Sessao` resolvida** — duas requisições concorrentes no mesmo isolate compartilham UM `POST /auth` em vez de disparar dois (provado por teste com a resposta represada). A entrada é removida quando a promise rejeita: uma falha memoizada duraria o isolate inteiro.
+- ⚠️ **A expiração é calculada AQUI (`VALIDADE_API_KEY_MS`), porque o corpo do `/auth` não a carrega.** Se esse número estiver errado, a rede de segurança é o retry de 401 (abaixo), não a constante. `MARGEM_RENOVACAO_MS = 5 min` evita a chave vencer no meio de uma paginação.
+- ⚠️ **`AMOSTRA_OMITIDA` — a amostra de corpo do `/auth` é suprimida, e essa linha não pode sumir.** `PluggyRespostaIlegivel.amostra` existe pra ir pro log (`wrangler tail`), e a resposta desse endpoint **carrega a apiKey**: sem a supressão, um `/auth` com shape inesperado gravaria a chave em texto claro — a mesma classe de vazamento que "token fora de toda mensagem de erro" existe pra impedir, entrando pela porta dos fundos. Mutação confirma (ver tabela).
+
+### ② `GET /transactions` — DECISÃO: página a página, e a ausência de um `buscarTodas()` é o ponto
+
+`paginasDeTransacoes()` é um **async generator** que rende um lote por página; `buscarPaginaDeTransacoes()` é o primitivo, e aceita `page` pra quem quiser retomar. **Não existe** função que materialize tudo. Três razões, em ordem de peso:
+
+1. ⚠️ **50 subrequests por invocação no plano free do Workers.** Uma função "busca tudo" promete o que a plataforma pode não deixar entregar: 12 meses de um cartão movimentado passam de 40 páginas e a invocação **morre no meio** — pior que devolver menos, porque não sobra nem o que já veio. Página a página, quem chama grava cada lote e retoma depois. **É esse teto que fixa `MAX_PAGINAS = 40`** (1 `/auth` + 1 `/items/:id` + 40 páginas = 42, com 8 de folga), não um número escolhido a gosto.
+2. **Teto de 10 ms de CPU por invocação** — materializar milhares de objetos concentra parse e alocação num pico só.
+3. **Quem chama já trabalha em lote e sabe parar antes:** `importTransactions` escreve 5 linhas por statement e deduplica por `(account_id, imported_id)` em aplicação — com o gerador, uma página inteiramente já conhecida encerra a varredura em vez de pagar as outras 39.
+
+⚠️ **Estourar `MAX_PAGINAS` LANÇA (`RangeError`, que a rota traduz em 422), nunca trunca.** Devolver 20 000 de 30 000 linhas em silêncio seria falha com cara de sucesso — a classe de defeito que este módulo caça em toda fatia. A mensagem diz o que fazer (buscar intervalo menor com `from`/`to`), não só que estourou.
+
+⚠️ **Um servidor que ignorasse `page` e devolvesse sempre a mesma página NÃO corrompe nada, e por isso não há checagem de eco** — o dedupe por `imported_id` do import descarta a repetição e `MAX_PAGINAS` limita o desperdício. Validar de novo aqui seria proteger o que já tem dono.
+
+`from`/`to` são validados com **`isRealCalendarDate` de `lib/dates.ts`** — a mesma função do resto do módulo, nunca um regex novo: `'2026-02-30'` passa em regex de formato e sairia como um filtro mudo.
+
+### ③ Erros — um por CAUSA, porque cada um manda o dono pra um lugar DIFERENTE
+
+| Classe                     | Gatilho                                       | O que o dono faz                   |
+| -------------------------- | --------------------------------------------- | ---------------------------------- |
+| `PluggyDesligado`          | secrets ausentes                              | nada quebrou — configure se quiser |
+| `PluggyCredencialInvalida` | `401/403` **no `/auth`**                      | corrigir os dois secrets           |
+| `PluggyTokenExpirado`      | `401/403` numa rota de dado, **após renovar** | reportar — **não** é a credencial  |
+| `PluggyRateLimitado`       | `429`                                         | esperar `retryAfterSegundos`       |
+| `PluggyInalcancavel`       | fetch caiu / timeout / `5xx`                  | tentar mais tarde                  |
+| `PluggyItemDesconectado`   | item pedindo re-autenticação                  | **reconectar no app Meu Pluggy**   |
+| `PluggyRespostaIlegivel`   | corpo que não é o shape do Pluggy             | reportar — alguém respondeu        |
+
+- ⚠️ **`PluggyDesligado` existe pra não dar a mensagem INVERTIDA.** Sem ele, um `/auth` com credencial vazia voltaria `401` e sairia como `PluggyCredencialInvalida` — mandando o dono **corrigir uma credencial que ele nunca configurou**. Além disso ele lança **antes de qualquer `fetch`** (provado contando chamadas).
+- ⚠️ **`401` numa rota de dado renova a chave e repete UMA vez.** Se a chave recém-emitida também for recusada, repetir vira laço e queima cota — a segunda recusa sai como `PluggyTokenExpirado`, cuja mensagem afirma só o que ficou **provado**: _"a credencial está boa (o /auth passou)"_. Chutar a causa mandaria o dono trocar um secret que está certo.
+- ⚠️ **`PluggyItemDesconectado` é o erro mais importante na prática e o mais fácil de achatar num "deu erro" genérico.** Nada aqui resolve — nem repetir, nem trocar secret, nem esperar: a mensagem manda **abrir o app Meu Pluggy e reconectar**, e diz que insistir não adianta. `precisaReconectar()`/`assertItemConectado()` são **puros** e separados de `buscarItem()` (mesmo precedente de `assertEmailPermitido` em `lib/auth.ts`: a busca devolve o fato, a asserção aplica a política).
+  - ⚠️ **A checagem é ALLOWLIST (`LOGIN_ERROR`/`WAITING_USER_INPUT` + os `executionStatus` de credencial), nunca "tudo que não é `UPDATED`"** — e a lista vem da **documentação do Pluggy, não de medição contra a conta do dono**. Um estado desconhecido (ou um que o Pluggy criar amanhã) NÃO vira "reconecte": mandar refazer uma conexão que está de pé é perder tempo arrumando o que já está certo, a mesma lição já paga no cliente do promeia. O estado cru viaja em `PluggyItem.status` pra quem quiser mostrá-lo. Mutação confirma (ver tabela).
+- **`PluggyInalcancavel` cobre "não respondeu" E `5xx` de propósito** — os dois mandam o dono pro MESMO lugar (esperar e tentar de novo); quebrar em duas classes multiplicaria caminhos sem mudar nenhuma ação. `status` é `null` quando ninguém respondeu.
+- ⚠️ **Timeout também é `PluggyInalcancavel` — divergência DELIBERADA do promeia**, onde `PromeiaDemorou` existe porque lá a janela curta é o desenho (estourar 8 s é o caminho normal). Aqui não há janela curta: o Pluggy é uma API HTTP comum, estourar 30 s **é falha**.
+- **`clearTimeout` fica DEPOIS de ler o corpo**, nunca logo após o fetch — mesma lição medida de `promeia.ts`/`apps/ramielle/src/lib/publishers/http.ts`: limpar o timer quando os headers chegam deixa todo `.text()` seguinte sem limite, e um timeout que o corpo pode furar não é um timeout.
+
+### ④ Sem os secrets ⇒ DESLIGADO, não quebrado
+
+`pluggyConfigurado(env): PluggyConfig | null` espelha `promeiaConfigurado()`. A rota (fatia seguinte) responde **`503 pluggy_disabled`** e nada mais no módulo muda — credencial ausente nunca é erro de execução. O código ainda **não está no catálogo do envelope** porque nenhuma rota o emite; entra junto com a rota.
+
+### Secrets novos — ⚠️ ação MANUAL do dono, nenhum agente roda
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler secret put PLUGGY_CLIENT_ID
+pnpm --filter @piluvitu/financas exec wrangler secret put PLUGGY_CLIENT_SECRET
+pnpm --filter @piluvitu/financas exec wrangler secret list   # conferir que os dois chegaram
+```
+
+Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` (mesmo critério de `INGEST_TOKEN`/`GOOGLE_CLIENT_SECRET`). O host (`https://api.pluggy.ai`) é **constante no código**, não binding: não varia por ambiente, e um secret a menos é um secret a menos pra esquecer no deploy. Sem os dois, nada quebra.
+
+### Testes e mutação
+
+`src/lib/pluggy.test.ts` — **63 casos**. ⚠️ **Nenhum toca a API do Pluggy nem a rede**: o `fetch` é sempre injetado (`opts.fetchImpl`), mesma disciplina de `promeia.test.ts`. O relógio também é injetado (`opts.agora`), nunca mock de `Date` global (que vaza entre testes). Um `describe` inteiro varre **todas** as classes de erro contra marcadores improváveis (`SEGREDO-PLUGGY-NAO-PODE-VAZAR-9f3a` / `APIKEY-PLUGGY-NAO-PODE-VAZAR-1c7d`), incluindo o caso em que o próprio `fetch` rejeita com a requisição inteira dentro da mensagem.
+
+⚠️ **Verificado por MUTAÇÃO — 8, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por CÓPIA de arquivo, nunca `git checkout`; `git status --porcelain -uall` sem resíduo em arquivo versionado depois):
+
+| Mutação                                               | Falha observada                                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| amostra do `/auth` deixa de ser sigilosa              | 1 — a apiKey aparece no que iria pro log                        |
+| memoização ignorada (`WeakMap` fora do caminho)       | 5 — incl. as duas concorrentes e as contagens da paginação      |
+| sem retry de `401` na rota de dado                    | 2 — a chave expirada nunca renova                               |
+| allowlist vira "tudo que não é `UPDATED`"             | 2 — `UPDATING` e um estado inventado passam a mandar reconectar |
+| `MAX_PAGINAS` trunca (`return` no lugar do `throw`)   | 1 — 20 000 de 30 000 linhas viram "sucesso"                     |
+| `401` de rota de dado vira `PluggyCredencialInvalida` | 1 — a mensagem manda trocar um secret que está certo            |
+| sem o guard de `PluggyDesligado`                      | 2 — credencial vazia vai pra rede e vira "corrija a credencial" |
+| sem `isRealCalendarDate` em `from`/`to`               | 2 — `2026-02-30`/`2026-13-01` viram filtro mudo                 |
+
+**Worker: 687 → 750 testes** (36 → 37 arquivos). SPA (**549**), `packages/tools`, `apps/web` e `packages/ui` **intocados** — esta fatia é 100% servidor, sem rota, sem tela, sem migration. `tsc --noEmit` e prettier limpos.
+
+**Fora de escopo, registrado explicitamente:** o **mapeador** (`PluggyTransacao` → `ImportRow`, onde as duas armadilhas acima têm que ser resolvidas num lugar só, contra uma resposta real capturada à mão); a **rota** (`503 pluggy_disabled` + o código no catálogo do envelope); e a **persistência de `itemId`/`accountId`** em `settings`. `PATCH /items` (forçar sync) também não foi implementado — o teto de **20/min** dele é o mais apertado da API e merece decisão própria.
 
 ## Acessibilidade de toque e leitura (fatia a11y — 5 defeitos MEDIDOS a 390×844)
 
