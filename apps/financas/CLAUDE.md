@@ -2654,7 +2654,107 @@ Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` (mesmo critério de `
 
 **Worker: 687 → 750 testes** (36 → 37 arquivos). SPA (**549**), `packages/tools`, `apps/web` e `packages/ui` **intocados** — esta fatia é 100% servidor, sem rota, sem tela, sem migration. `tsc --noEmit` e prettier limpos.
 
-**Fora de escopo, registrado explicitamente:** o **mapeador** (`PluggyTransacao` → `ImportRow`, onde as duas armadilhas acima têm que ser resolvidas num lugar só, contra uma resposta real capturada à mão); a **rota** (`503 pluggy_disabled` + o código no catálogo do envelope); e a **persistência de `itemId`/`accountId`** em `settings`. `PATCH /items` (forçar sync) também não foi implementado — o teto de **20/min** dele é o mais apertado da API e merece decisão própria.
+**Fora de escopo, registrado explicitamente:** ✅ o **mapeador** chegou na fatia seguinte (ver _O adaptador_ logo abaixo); a **rota** (`503 pluggy_disabled` + o código no catálogo do envelope) e a **persistência de `itemId`/`accountId`** em `settings` continuam pendentes. `PATCH /items` (forçar sync) também não foi implementado — o teto de **20/min** dele é o mais apertado da API e merece decisão própria.
+
+⚠️ **`PluggyTransacao` ganhou `status?: string` na fatia do mapeador** — o tipo do fio não o declarava, e ele é o campo que decide ④ abaixo. Aditivo, sem mudança de comportamento do cliente.
+
+## Open Finance / Pluggy — o ADAPTADOR (`src/domain/pluggy-map.ts`)
+
+Converte `PluggyTransacao` (verbatim do cliente) na `LinhaImportada` que `src/domain/import.ts` já grava. **Função PURA** — sem D1, sem HTTP, sem relógio global. Sem rota, sem tela, sem migration.
+
+⚠️ **Linha recusada é REPORTADA, nunca descartada** — `mapearTransacoes` devolve `{ linhas, rejeitadas: [{index, id, motivo}] }`, mesmo contrato de `scripts/pdf-import.mjs#validateLine`. "Sumiu" e "não importei porque X" são coisas diferentes para quem confere, e só a segunda é acionável.
+
+### ① SINAL — ⚠️ o brief (e a doc) enganam: NÃO é uma inversão
+
+⚠️⚠️ **O sinal de `amount` NÃO tem significado único — ele depende do TIPO DA CONTA.** Inverter o sinal (a leitura óbvia de _"positive amounts indicate debits"_) seria **tão errado quanto não inverter**, só que corrompendo a outra metade das contas.
+
+| Conta          | Doc                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------- |
+| Cartão         | "Positive amounts (+X) indicate debits (…) Negative amounts (–X) indicate credits/payments" |
+| Conta corrente | negativo = despesa, positivo = entrada — **o MESMO deste schema**                           |
+
+**Fonte da verdade: `type`, nunca o sinal.** Ele descreve o FLUXO, não a contabilidade da conta: _"CREDIT: money entered the account (…) DEBIT: money left the account (…, credit-card purchases)"_ ([docs](https://docs.pluggy.ai/reference/transactions-retrieve)). Isso mapeia **igual nos dois tipos de conta** — `DEBIT` → negativo, `CREDIT` → positivo — que é a propriedade inteira: uma regra só, sem precisar saber se a conta é cartão ou corrente. `Math.abs(amount)` entra só como MAGNITUDE.
+
+⚠️ **Quando "discordam", `type` vence e NÃO há aviso — porque não há discordância.** "Discordar" pressuporia que o sinal afirma uma direção, e a tabela acima mostra que não afirma: num cartão, `DEBIT` com `amount` positivo é o caso NORMAL. Sinalizar isso marcaria toda compra de cartão como problema.
+
+⚠️ **`type` ausente/desconhecido REJEITA a linha, nunca cai no sinal como plano B** — o palpite reintroduziria a ambiguidade por baixo e erraria onde ninguém olha.
+
+### ② FLOAT → INTEIRO — `Math.round(magnitude * 100)`
+
+⚠️ Arredonda a **magnitude**, nunca o valor com sinal: `Math.round(-0.5) === -0` mas `Math.round(0.5) === 1`, então arredondar com sinal faria meio centavo cair pra lados diferentes conforme a direção. Casos **MEDIDOS** (`node -e`), não deduzidos:
+
+| Entrada     | `x * 100`            | Resultado |
+| ----------- | -------------------- | --------- |
+| `0.1 + 0.2` | `30.000000000000004` | `30` ✔    |
+| `19.99`     | `1998.9999999999998` | `1999` ✔  |
+| `8.615`     | `861.4999999999999`  | `862` ✔   |
+| `1.005`     | `100.49999999999999` | `100` ⚠   |
+
+⚠️ **A última é honesta, não escondida:** `1.005` sai `R$ 1,00` porque o float real é levemente MENOR. Só alcança entrada com **3 casas decimais**, que em BRL não é dinheiro. Coberta por teste com o valor exato em vez de "corrigida" com `toFixed`, que só mudaria de que lado o meio centavo cai. `amount` que arredonda pra **zero** é recusado (o `CHECK (amount_cents <> 0)` derrubaria o lote inteiro, que é atômico).
+
+### ③ DATA UTC → GMT-3 — técnica REUSADA de `cashflow.ts#localCompetence`
+
+`todayInTeresina(new Date(x))`, **guardado por `includes('T')`** — nunca uma segunda aritmética de fuso.
+
+⚠️ **A guarda é obrigatória e o motivo é medido:** `new Date('2026-08-15')` é parseada como **meia-noite UTC** (verificado), e subtrair 3 h empurra o dia pra **TRÁS** — o mesmo bug espelhado, batendo justo no dia 1 de cada mês. Data sem hora já é local: passa direto.
+
+**Efeito no `bill_competence` PROVADO contra o D1 real** (não argumentado), num cartão que fecha dia 15: uma compra às `2026-08-16T01:00:00Z` (22h do dia 15 local) grava `purchase_date = 2026-08-15` e `bill_competence = 2026-08`. Cortar o `slice(0,10)` cru daria dia 16 ⇒ **`2026-09`**, uma fatura inteira à frente, e `bill_competence` **não é patchável** (`PATCH /api/transactions/:id` recusa com `protected_field`). Um controle positivo (compra no dia 16 de verdade ⇒ `2026-09`) impede o teste de passar por vacuidade.
+
+### ④ STATUS — ⚠️ o achado que o brief não previa
+
+`POSTED` é o valor certo ([docs](https://docs.pluggy.ai/reference/transactions-retrieve)) — **mas num CARTÃO, `PENDING` não é "a transação instável de hoje": é A FATURA ABERTA INTEIRA.**
+
+> "For transactions that are available in "Open" invoices or are future installments, the `status` will return them as `PENDING`" — [docs](https://docs.pluggy.ai/docs/transactions)
+> "PENDING: a transaction belongs to an invoice that is still open (…) All transactions will be updated to posted (…) once the bill is closed." — [docs](https://docs.pluggy.ai/docs/credit-card-installments)
+
+Ou seja: **a fatura do mês corrente não entra pelo Pluggy até fechar** — e é ela que alimenta `commitments()`, a tela que este módulo existe pra encher.
+
+**Decisão: manter só `POSTED`, e tornar a exclusão VISÍVEL e CONTÁVEL.** (1) Uma `PENDING` ainda muda de valor (pré-autorização de posto, gorjeta, conversão de moeda), e gravá-la fixa um número errado que `uq_tx_imported` impede de corrigir por reimportação. (2) É justamente enquanto está `PENDING` que **o id troca** (⑤) — importar `PENDING` é importar as linhas com mais chance de voltar com id novo e entrar DUAS vezes. Esperar o `POSTED` mata as duas armadilhas de uma vez. Cada pendente sai em `rejeitadas` com motivo, pra tela dizer _"12 lançamentos ainda na fatura aberta não foram importados"_ em vez de um sucesso mudo; a fatura aberta continua entrando por OFX/CSV/PDF.
+
+### ⑤ `imported_id` = UUID do Pluggy — ⚠️ a doc NÃO garante estabilidade
+
+> **Transaction Id can change** — "In case there are too many changes on the transaction's data such as Date, Description, or Amount (…) we **will delete the existing transaction** and create a new one." — [docs](https://docs.pluggy.ai/docs/transactions)
+
+**Dito, não assumido**, como o brief pediu. O modo de falha é exatamente o que a dedupe existe pra impedir: a mesma compra volta com id novo, `(account_id, imported_id)` não casa, e ela entra de novo. O que reduz isso a quase nada **não é uma segunda chave** — é o filtro de `POSTED` (④): o id só é recriado quando data/descrição/valor mudam demais, e isso acontece enquanto a linha está `PENDING`. As duas decisões se sustentam uma na outra. ⚠️ **Não se usa `idEstavel`** (o hash de `packages/tools`): ele colide de propósito para duas compras idênticas no mesmo dia — trocaria um risco raro por perda de linha garantida.
+
+### ⑥ Mapeamento campo a campo
+
+| `transactions`                          | Vem de                 | Observação                                                 |
+| --------------------------------------- | ---------------------- | ---------------------------------------------------------- |
+| `imported_id`                           | `id`                   | ⑤ estabilidade NÃO garantida                               |
+| `amount_cents`                          | `type` + `amount`      | ① sinal do `type`, magnitude do `amount`; ② ×100           |
+| `purchase_date`                         | `date`                 | ③ UTC → dia local                                          |
+| `description`                           | `description`          | `descriptionRaw` fica de fora (texto sujo do banco)        |
+| `bill_competence`                       | —                      | **derivado** por `importTransactions`                      |
+| `settled_at`                            | —                      | sempre `NULL` (fatura em aberto é previsão)                |
+| `currency`                              | `currencyCode`         | ⚠️ **só `BRL` passa** — ver abaixo                         |
+| `payee_id`                              | **sem correspondente** | `merchant` ≠ `payees.id` daqui → regras                    |
+| `category_id`                           | **sem correspondente** | `category` vem **sempre `null`** no free (medido) → regras |
+| `is_business`                           | **sem correspondente** | PJ/PF é decisão do dono → regras/checkbox                  |
+| `amount_original_cents` / `fx_rate_ppm` | **sem correspondente** | por isso moeda ≠ BRL é recusada                            |
+| `transfer_id` / `parent_id`             | **sem correspondente** | construções deste app                                      |
+
+⚠️ **Moeda ≠ BRL é RECUSADA, não achatada** — `LinhaImportada` não carrega moeda e `importTransactions` grava `'BRL'` fixo: aceitar gravaria o valor em dólar rotulado como real, com `amount_original_cents`/`fx_rate_ppm` (as colunas que existem exatamente pra isso) nulas e nada denunciando. Um teste trava as 4 chaves da linha (`toEqual` sobre `Object.keys`), então um palpite de payee/categoria inserido aqui derruba a suíte.
+
+### Suítes e mutação
+
+**Worker 750 → 785** (37 → 38 arquivos, +35 em `domain/pluggy-map.test.ts`); **SPA 549 intocada**; `tsc --noEmit` e prettier limpos. ⚠️ **Nenhum teste toca a rede** — a transação é montada à mão; o único `describe` com D1 é o do `bill_competence` (Miniflare local).
+
+⚠️ **Verificado por MUTAÇÃO — 9, cada uma matando só o teste certo pelo motivo certo** (revertidas por **cópia de arquivo**, nunca `git checkout`; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                   | Testes derrubados                                  |
+| ----------------------------------------- | -------------------------------------------------- |
+| ① sinal vem do `amount` (ignora `type`)   | 7                                                  |
+| ① sinal INVERTIDO (`DEBIT` vira positivo) | 13                                                 |
+| ① `type` ausente chuta em vez de rejeitar | 2                                                  |
+| ② `Math.trunc` no lugar de `Math.round`   | 3 — incl. `19.99` virando 1998                     |
+| ② arredonda o valor COM SINAL             | 1 — a assimetria de meio centavo                   |
+| ③ sem a guarda `includes('T')`            | 3 — data sem hora retrocede um dia                 |
+| ③ `slice(0,10)` cru do UTC                | 3 — **incl. o `bill_competence` indo pra 2026-09** |
+| ④ sem o filtro de `status`                | 4                                                  |
+| ⑥ sem a guarda de moeda                   | 1 — USD gravado como BRL                           |
+
+**Fora de escopo, registrado:** a rota (`503 pluggy_disabled`), a tela de conferência mostrando `rejeitadas`, e a persistência de `itemId`/`accountId` em `settings`.
 
 ## Acessibilidade de toque e leitura (fatia a11y — 5 defeitos MEDIDOS a 390×844)
 

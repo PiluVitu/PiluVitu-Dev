@@ -325,7 +325,27 @@ export type PluggyTransacao = {
   currencyCode?: string
   /** Sempre `null` no plano free (medido) — a categorização vem das `rules`. */
   category?: string | null
+
+  /**
+   * `DEBIT` (saiu dinheiro) ou `CREDIT` (entrou).
+   *
+   * ⚠️ **É ELE que resolve a armadilha ① acima, não o sinal de `amount`** — o
+   * sinal de `amount` muda de significado conforme o TIPO DA CONTA (positivo é
+   * débito no cartão, mas despesa é negativa na conta corrente), enquanto
+   * `type` descreve o FLUXO e vale igual nos dois. Ver
+   * `src/domain/pluggy-map.ts#sinalDe`, onde a conversão de fato mora.
+   */
   type?: string
+
+  /**
+   * `POSTED` (liquidada na instituição) ou `PENDING`.
+   *
+   * ⚠️ Num CARTÃO, `PENDING` é a **fatura aberta inteira**, não só a compra
+   * instável de hoje — ver `src/domain/pluggy-map.ts#STATUS_IMPORTAVEL`, que
+   * documenta a decisão de importar só `POSTED` e as citações da doc.
+   */
+  status?: string
+
   balance?: number | null
 }
 
