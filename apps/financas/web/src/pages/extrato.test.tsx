@@ -14,6 +14,7 @@ import {
   formatarData,
   mensagemDeExclusao,
   PAGINA,
+  totaisPendentes,
   type TransactionView,
 } from './extrato'
 
@@ -880,5 +881,172 @@ describe('ExtratoPage — carregar mais (keyset)', () => {
       `before=${encodeURIComponent(`2026-07-20|2026-07-20T10:00:00Z|t${PAGINA - 1}`)}`,
     )
     expect(screen.queryByTestId('carregar-mais')).not.toBeInTheDocument()
+  })
+})
+
+describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)', () => {
+  it('totaisPendentes separa saída de entrada e NUNCA neta uma contra a outra', () => {
+    // ⚠️ O caso que decide o desenho: uma receita ainda não recebida no meio
+    // de despesas ainda não pagas. Um saldo líquido (soma com sinal) daria
+    // -R$ 100,00 e a tela diria "falta pagar R$ 100,00" — a dívida real é
+    // R$ 300,00, e a receita não paga nada.
+    const linhas = [
+      tx({ id: 't1', amount_cents: -20000 }),
+      tx({ id: 't2', amount_cents: -10000 }),
+      tx({ id: 't3', amount_cents: 20000 }),
+    ]
+    expect(totaisPendentes(linhas)).toEqual({
+      falta_sair_cents: 30000,
+      falta_entrar_cents: 20000,
+    })
+    expect(totaisPendentes([])).toEqual({
+      falta_sair_cents: 0,
+      falta_entrar_cents: 0,
+    })
+  })
+
+  it('com o filtro ligado, SOMA em reais — não só conta linhas', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', amount_cents: -18900 }),
+        tx({ id: 't2', amount_cents: -120050, purchase_date: '2026-07-19' }),
+        // já paga: não pode entrar na soma do "falta pagar"
+        tx({ id: 't3', amount_cents: -500000, settled_at: '2026-07-10' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+    expect(screen.queryByTestId('total-pendente')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    // a linha já paga some — sinal observável de que a lista filtrada chegou
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t3')).not.toBeInTheDocument(),
+    )
+    // 189,00 + 1.200,50 = 1.389,50 — nunca os 5.000,00 da linha já paga
+    expect(screen.getByTestId('total-pendente')).toHaveTextContent(
+      'Falta pagar R$ 1.389,50',
+    )
+    expect(screen.getByTestId('total-pendente')).not.toHaveTextContent(
+      'R$ 6.389,50',
+    )
+  })
+
+  it('receita pendente aparece SEPARADA, nunca abatendo o que falta pagar', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', amount_cents: -30000 }),
+        tx({ id: 't2', amount_cents: 20000, purchase_date: '2026-07-19' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-pendente')).toHaveTextContent(
+        'Falta pagar R$ 300,00',
+      ),
+    )
+    expect(screen.getByTestId('total-pendente')).toHaveTextContent(
+      'falta entrar R$ 200,00',
+    )
+    // o líquido (R$ 100,00) não pode aparecer em lugar nenhum
+    expect(screen.getByTestId('total-pendente')).not.toHaveTextContent(
+      'R$ 100,00',
+    )
+  })
+
+  it('⚠️ a lista é PAGINADA: com mais páginas por vir, a soma se declara parcial', async () => {
+    const user = comRelogio()
+    // PAGINA linhas não pagas ⇒ a resposta vem cheia ⇒ `temMais` fica true
+    const linhas = Array.from({ length: PAGINA }, (_, i) =>
+      tx({
+        id: `t${i}`,
+        amount_cents: -10000,
+        purchase_date: `2026-07-${String(28 - i).padStart(2, '0')}`,
+        created_at: `2026-07-${String(28 - i).padStart(2, '0')}T10:00:00Z`,
+      }),
+    )
+    montarApi({ linhas })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t0')
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('carregar-mais')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('resumo-carregado')).toHaveTextContent(
+      /só do que carregou até aqui/i,
+    )
+    expect(screen.getByTestId('resumo-carregado')).not.toHaveTextContent(
+      /cobre tudo/i,
+    )
+  })
+
+  it('sem mais páginas, a soma diz que cobre tudo que falta marcar como pago', async () => {
+    const user = comRelogio()
+    montarApi({ linhas: [tx({ id: 't1', amount_cents: -18900 })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('resumo-carregado')).toHaveTextContent(
+        /cobre tudo que falta marcar como pago/i,
+      ),
+    )
+    expect(screen.queryByTestId('carregar-mais')).not.toBeInTheDocument()
+  })
+})
+
+describe('ExtratoPage — alvo de toque e status como badge', () => {
+  it('apagar e editar são alvos de 44px, e o destrutivo NÃO fica colado no editar', async () => {
+    comRelogio()
+    montarApi({ linhas: [tx({ id: 't1' })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    // ⚠️ jsdom não faz layout — o que dá pra afirmar aqui é a REGRA
+    // aplicada (a caixa de 44px e a separação), não o pixel. O pixel é
+    // medido em Chrome real, fora da suíte.
+    for (const id of ['apagar-t1', 'editar-t1', 'marcar-pago-t1']) {
+      expect(screen.getByTestId(id).className).toContain('min-h-11')
+    }
+    // `ml-auto` só no destrutivo: é o que empurra `apagar` pra outra ponta
+    // da linha, em vez dos 12px que o separavam de `editar`.
+    expect(screen.getByTestId('apagar-t1').className).toContain('ml-auto')
+    expect(screen.getByTestId('editar-t1').className).not.toContain('ml-auto')
+  })
+
+  it('o estado do lançamento é um badge, não texto solto', async () => {
+    comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1' }),
+        tx({
+          id: 't2',
+          settled_at: '2026-07-15',
+          purchase_date: '2026-07-15',
+          created_at: '2026-07-15T10:00:00Z',
+        }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    // `regras.tsx` é a referência: chip com borda/fundo, não um `<p>` cinza.
+    for (const id of ['estado-t1', 'estado-t2']) {
+      expect(screen.getByTestId(id).className).toMatch(/rounded-full|border/)
+    }
+    // e o texto não mudou — o contrato da tela continua o mesmo
+    expect(screen.getByTestId('estado-t1')).toHaveTextContent(
+      'falta marcar como pago',
+    )
+    expect(screen.getByTestId('estado-t2')).toHaveTextContent(
+      'pago em 15/07/2026',
+    )
   })
 })

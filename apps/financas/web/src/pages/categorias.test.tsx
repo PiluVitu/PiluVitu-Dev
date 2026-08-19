@@ -447,3 +447,30 @@ describe('CategoriasPage', () => {
     )
   })
 })
+
+describe('CategoriasPage — status como badge e alvo de toque', () => {
+  it('o tipo da categoria é um chip, não texto solto', async () => {
+    // `regras.tsx` é a referência (`<Badge>Pausada</Badge>`) e outras 5 telas
+    // já usavam badge; esta e o extrato eram as duas que ficaram para trás.
+    mockApi()
+    render(<CategoriasPage />)
+    const chip = await screen.findByTestId('tipo-c-pj')
+    expect(chip.className).toMatch(/rounded-full|border/)
+    // o texto não muda — o contrato da tela continua o mesmo
+    expect(chip).toHaveTextContent('Despesa · PJ')
+  })
+
+  it('Editar/Arquivar são alvos de 44px, com o destrutivo na outra ponta', async () => {
+    mockApi()
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+
+    const linha = within(screen.getByTestId('categoria-c-pj'))
+    const editar = linha.getByRole('button', { name: 'Editar' })
+    const arquivar = linha.getByRole('button', { name: 'Arquivar' })
+    expect(editar.className).toContain('min-h-11')
+    expect(arquivar.className).toContain('min-h-11')
+    expect(arquivar.className).toContain('ml-auto')
+    expect(editar.className).not.toContain('ml-auto')
+  })
+})

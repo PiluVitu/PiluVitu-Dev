@@ -957,3 +957,14 @@ describe('NewEntryPage', () => {
     })
   })
 })
+
+describe('NewEntryPage — alvo de toque dos checkboxes', () => {
+  it('a faixa do rótulo tem 44px — o alvo é a linha, não o quadradinho', async () => {
+    // Mesma regra já aplicada em `#/reserva` e no filtro do extrato: o
+    // `<label>` embrulha o `<input>` e é ele que recebe o toque.
+    mockRoutes()
+    render(<NewEntryPage />)
+    const entrada = await screen.findByLabelText('Entrada')
+    expect(entrada.closest('label')?.className).toContain('min-h-11')
+  })
+})

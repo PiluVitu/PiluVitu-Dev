@@ -2558,3 +2558,87 @@ Rodar na ordem, do celular Android **e** do MacBook (cobre os dois motores de co
 **Enquanto isso, o que resolve a dor original já existe:** o import de CSV/OFX (fatia ②) e o CLI de PDF com Ollama (fatia ③) cobrem "aglutinar vários cartões" sem depender de terceiro, sem cadastro e sem cartão. O Open Finance seria conveniência — trocar exportar-e-importar por sincronizar —, não capacidade nova.
 
 ⚠️ O enum de `transactions.import_source` **já aceita `'pluggy'`** desde a migration `0001`. A coluna estar pronta não significa que a integração exista; não confundir preparação com entrega.
+
+## Acessibilidade de toque e leitura (fatia a11y — 5 defeitos MEDIDOS a 390×844)
+
+Cinco defeitos de TELA, nenhum de dado: Worker intocado (**687**), nenhuma rota, nenhuma migration. Todos achados e conferidos em **Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, viewport 390×844 com `hasTouch`/`isMobile`) — instrumento ad-hoc, não commitado, mesmo padrão das fatias anteriores.
+
+### ① `#/dividas/:id` era a ÚNICA tabela fora do padrão que o próprio app criou
+
+`useMenorQueSm` (`web/src/lib/breakpoint.ts`) já era usado por `DividasPage`, `commitments`, `extrato` e `fluxo` — e **não** por `debt-detail.tsx`. Preço medido: o container da tabela de 4 colunas (Item | total | pago | falta) fica com `clientWidth 308` e `scrollWidth 316`, e o `<th>falta</th>` termina em `x=357` contra uma borda direita de `349` — a coluna **`falta`** (o saldo restante, a única pergunta que a tela responde) some atrás de um drag horizontal que nada indica. Dispara a partir de ~R$ 10.000 por item, a ordem de grandeza dos itens reais do dono.
+
+**Corrigido replicando o padrão, não inventando outro:** abaixo de `sm`, um card por item (`data-testid="itens-cards"`) com `falta` liderando em `text-lg font-semibold`, `total`/`pago` abaixo em texto menor. Depois: `temTabela: false`, `temCards: true`, página sem overflow (`scrollWidth === clientWidth === 390`). ⚠️ **Só UM dos dois markups existe por vez** (nunca `hidden`/`sm:block`) — jsdom não computa CSS e os dois no DOM duplicariam todo `getByText` das 39 asserções desta tela. Os `data-testid` de `item-<id>-total|pago|falta` e a classe `quitado` são os MESMOS nos dois markups, então nenhuma asserção pré-existente mudou de valor.
+
+### ② 44×44: `web/src/lib/touch.ts` (a regra num lugar só)
+
+⚠️ **MEDIDO: 147 de 148 alvos interativos ficavam abaixo de 44×44, e os DESTRUTIVOS eram os menores** — `apagar` do extrato a **40×16 px**, a **12 px** de `editar` (33,7×16), repetido em 30 linhas; `excluir item` da dívida idem; checkboxes de `#/reserva` a 13,6×16; o `?` do `Ajuda` a 20×20 em 10 telas; os 9 itens do menu "Mais" a 32 px com **0 px de gap**.
+
+⚠️ **O `page.tap()` do Playwright acerta esses alvos porque mira no CENTRO GEOMÉTRICO; um polegar (~34 px de contato) não.** É por isso que nenhuma fatia anterior tinha visto: o instrumento era mais preciso que o dedo.
+
+**`ALVO_MIN_PX = 44`** (Apple HIG / WCAG 2.5.5) e quatro constantes, cada uma com um caso de uso:
+
+| Constante        | Onde                                                     | Como cresce                                             |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------------------- |
+| `ALVO_LINK`      | link de texto em linha (`editar`, `excluir`, `arquivar`) | `min-h-11` + `px-2 -mx-2` (o texto NÃO se desloca)      |
+| `ALVO_LINK_FIM`  | o mesmo, para o DESTRUTIVO                               | idem + `ml-auto`                                        |
+| `ALVO_LINHA`     | `<label>` que embrulha checkbox                          | `min-h-11` na faixa (o alvo é o rótulo, não o quadrado) |
+| `ALVO_ITEM_MENU` | item de `dropdown-menu`                                  | `min-h-11 my-0.5` (altura **e** o gap que não existia)  |
+
+⚠️ **Crescer a área de toque NÃO cresceu a fonte nem o espaço visual em nenhum caso** — `text-xs`/`text-sm` intocados, e as classes de padding/margem negativa mantêm o texto no mesmo x. A ÚNICA exceção deliberada é o `<nav>`: as pílulas foram de ~30 px pra 44, e o nav inteiro de **81 px pra 105 px** — custo pago uma vez, no topo, por 6 alvos.
+
+⚠️ **`ALVO_LINK_FIM` existe porque tamanho sozinho não conserta `apagar`.** O defeito não era só ele ter 40×16: era estar a **12 px** de `editar`. `ml-auto` empurra o destrutivo pra outra ponta — medido: `apagar` 40×16 → **56×44**, e a distância de `editar` vai de **12 px → 192,2 px**.
+
+⚠️ **NÃO dá pra `cn(ALVO_LINK, 'ml-auto')`, e isso foi pego POR TESTE, não por leitura.** `tailwind-merge` não trata `mx` e `ml` como o mesmo grupo nessa ordem: as duas classes sobrevivem e quem vence passa a depender da ordem no CSS emitido, não do código (o teste falhou com `expected '…' to contain 'ml-auto'`). Invertendo a ordem, `p-0` mata o `px-2` e a área horizontal some. Por isso a variante é uma constante explícita, com `-mr-2` só de um lado.
+
+⚠️ **`Ajuda` (`packages/ui`) cresceu a ÁREA, nunca o círculo** — ele mora colado a títulos e rótulos e viraria o elemento mais pesado da linha. Pseudo-elemento absoluto centrado (`after:h-11 after:w-11`), que não ocupa espaço no fluxo: **nenhum layout mudou**. Provado por toque REAL (`page.touchscreen.tap` 18 px acima do centro, fora do círculo de 20 px ⇒ o popover abre) e por `elementFromPoint` nas 4 direções a 20 px do centro. ⚠️ Onde ele fica ao lado de um botão (`Dar baixa`, `debt-detail`), o gap foi de `gap-1` pra `gap-3`: medido, a borda esquerda da área de toque do `?` cai **exatamente** na borda direita do botão (96,3 px nos dois) — encostam, não se sobrepõem. Trocar sobreposição de alvo por outra sobreposição não seria conserto.
+
+**Censo por instrumento único, rodado nos DOIS estados** (o "antes" via `git stash` + rebuild, mesma varredura): alvo é a caixa do controle — ou do `<label>` que o embrulha —, e vale como ok se ela já tem 44×44 **ou** se a área clicável alcança 44×44 (pseudo-elemento). **147/148 abaixo de 44 → 50/148.** Por tela: home 8→1, lançar 23→11, transferir 16→8, extrato 14→3, dívida-detalhe 21→6, contas 17→5, categorias 15→6, reserva 11→3, comprometido 9→1, config 13→6.
+
+⚠️ **Os 50 que sobram estão MEDIDOS e são de outra classe: campos de formulário e botões de submit, todos entre 32 e 36 px** (`<input>`/`<select>` 308×36, `Criar conta` 105×36, `Sair` 48,5×32, as abas de `#/lancar` 34 px). Nenhum é destrutivo, nenhum está colado a um destrutivo, e todos passam com folga o piso de 24×24 de WCAG 2.5.8 (AA) — o alvo de 44 é o AAA (2.5.5). Levá-los a 44 transformaria toda tela de cadastro numa lista de blocos altos, exatamente o resultado pior que o brief desta fatia proíbe. **Registrado como decisão, não como pendência esquecida.**
+
+### ③ `transferir.tsx` — escolher a conta de origem SEM VER O SALDO
+
+Era a única operação do app em que o dono decidia um valor às cegas: `balance_cents` já vinha carregado em `AccountView`, no MESMO `GET /api/accounts` que preenche o `<select>`, e a tela não o mostrava — a pergunta "tem quanto lá?" ficava a uma tela de distância (`#/contas`). Transferir mais do que a conta tem não é recusado por ninguém: as duas pernas gravam e o saldo fica negativo.
+
+`rotuloConta(c)` (exportada, testada isolada) devolve `Nubank PJ · R$ 8.123,45`. Vale pros **DOIS** selects, não só o de origem — o destino com saldo à vista é o que deixa conferir, sem sair da tela, que o dinheiro chegou onde devia. Saldo negativo aparece como negativo (esconder o sinal seria pior que não mostrar saldo).
+
+⚠️ **Isso enfraqueceu uma asserção NEGATIVA pré-existente, e ela foi corrigida junto** — `expect(rotulos).not.toContain('Nubank cartao')` passaria por vacuidade com o rótulo novo (o cartão poderia voltar ao select e o rótulo dele também deixaria de ser exatamente `'Nubank cartao'`). Trocada por casamento de PREFIXO, que mantém a negativa com significado.
+
+### ④ `extrato.tsx` — o filtro "só o que falta pagar" respondia com CONTAGEM
+
+A tela dizia `15 lançamento(s) carregado(s).` — e a pergunta do filtro é **quanto**. Saber que faltam 15 lançamentos não diz se falta R$ 90 ou R$ 9.000, que é o número que decide se o dono tem como pagar a semana.
+
+`totaisPendentes(linhas)` (pura, exportada, testada isolada) sobre `visiveis` (o que está na tela; com busca textual ativa, somar o escondido daria um número que não corresponde a linha nenhuma). Via `sumCents` (`@piluvitu/tools/money`), centavos inteiros, nunca `reduce` com `+` solto.
+
+⚠️ **Saída e entrada ficam SEPARADAS, nunca um saldo líquido.** Uma receita ainda não recebida abateria uma despesa ainda não paga e a dívida real apareceria menor do que é — numa tela cujo rótulo é "falta pagar". Medido pelo teste: R$ 300 de despesa + R$ 200 de receita pendentes ⇒ `Falta pagar R$ 300,00 · falta entrar R$ 200,00`, e o líquido (R$ 100,00) **não aparece em lugar nenhum**.
+
+⚠️ **Como o ④ foi resolvido, já que a lista é PAGINADA:** a frase se declara. Com página por vir (`temMais`), o rodapé lê _"A soma acima é só do que carregou até aqui — há mais lançamentos, use 'carregar mais'."_; sem página por vir, _"A soma acima cobre tudo que falta marcar como pago (até o teto de 500 lançamentos)."_ — a mesma honestidade do teto de 500 da dedupe do import, que diz o número em voz alta em vez de apresentar um parcial como total. Um total com cara de mês inteiro seria um número errado com cara de certo, que é pior que número nenhum.
+
+### ⑤ Status como `badge`, não texto solto
+
+`extrato.tsx` (o estado do lançamento) e `categorias.tsx` (o tipo/escopo) eram as duas últimas telas com status em `<p>`/`<span>` cinza; outras 5 já usavam badge e **`regras.tsx` é a referência**. ⚠️ **`badgeVariants` num `<span>`, nunca o componente `Badge`** — ele renderiza um `<div>`, e nos dois pontos o pai é phrasing content; div dentro de p faz o navegador fechar o parágrafo sozinho e o layout quebra (lição já paga em `recorrentes.tsx`). O TEXTO não mudou nos dois casos — o contrato das telas continua o mesmo, e os testes pré-existentes que o afirmam continuam valendo.
+
+### Suítes, mutação e bundle
+
+**SPA: 531 → 549** (+18). **`packages/ui`: 90 → 91.** Worker **687**, `packages/tools` **147**, `apps/web` **116** — intocados. `tsc --noEmit` limpo nos dois lados, `prettier --check` limpo, os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) com exit 0 e **um** único chunk lazy.
+
+⚠️ **Verificado por MUTAÇÃO — 12, cada uma matando só o teste certo pelo motivo certo** (todas revertidas; `git status --porcelain -uall` mostrando só os arquivos da fatia depois):
+
+| Mutação                                                    | Falha observada                             |
+| ---------------------------------------------------------- | ------------------------------------------- |
+| ① ramo de cards desligado (volta a ser só tabela)          | 2                                           |
+| ④ soma vira saldo LÍQUIDO (receita abate despesa)          | 2 — incl. o caso que separa os dois números |
+| ④ a soma some (o estado anterior, só contagem)             | 2                                           |
+| ④ a frase diz "cobre tudo" mesmo com página por vir        | 1 — a declaração de parcialidade            |
+| ② `ALVO_LINK` vazio (alvos voltam a 16 px)                 | 3 — extrato, categorias e contas            |
+| ② `ALVO_LINK_FIM` sem `ml-auto` (tamanho sem separação)    | 3 — o destrutivo volta a ficar colado       |
+| ② `ALVO_ITEM_MENU` vazio (menu volta a 32 px sem gap)      | 1                                           |
+| ② `ALVO_LINHA` sem `min-h-11` (checkbox volta ao quadrado) | 1                                           |
+| ② área de toque do `Ajuda` removida (`packages/ui`)        | 1                                           |
+| ③ `rotuloConta` volta a devolver só o nome                 | 2                                           |
+| ⑤ status volta a texto solto (extrato)                     | 1                                           |
+| ⑤ status volta a texto solto (categorias)                  | 1                                           |
+
+⚠️ **Armadilha do próprio processo de mutação, registrada porque vai repetir: NUNCA reverter uma mutação com `git checkout <arquivo>`.** Ele restaura do índice, ou seja, do **HEAD** — e leva junto TODO o trabalho não commitado daquele arquivo, não só a mutação. Aconteceu aqui com `extrato.tsx` e `debt-detail.tsx` (recuperados do commit de stash ainda alcançável pelo reflog, e reconferidos pela suíte). O jeito certo é copiar o arquivo antes (`shutil.copy2`) e restaurar da cópia — foi o que o harness passou a fazer nas 12 mutações acima.
+
+**Bundle (`vite build`, antes = fatia de contraste / depois = esta):** JS principal 499,76 → 502,50 kB (**150,44 → 151,07 kB gzip, +0,63**); CSS 34,01 → 34,95 kB (**6,83 → 6,97 kB gzip**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova — o crescimento é classe utilitária e o texto novo do rodapé do extrato.

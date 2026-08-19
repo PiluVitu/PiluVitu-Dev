@@ -63,6 +63,24 @@ function categoriaOferecivel(c: CategoryView): boolean {
   return c.kind !== 'debt_settlement'
 }
 
+/**
+ * Rótulo da conta no `<select>`, com o SALDO junto.
+ *
+ * ⚠️ **Esta era a única operação do app em que o dono decidia um valor às
+ * cegas.** Escolher a conta de origem é escolher de onde o dinheiro sai — e a
+ * pergunta "tem quanto lá?" ficava a uma tela de distância (`#/contas`),
+ * enquanto `balance_cents` já vinha carregado em `AccountView`, no mesmo
+ * `GET /api/accounts` que preenche este select. Transferir mais do que a
+ * conta tem não é recusado por ninguém: as duas pernas gravam, o saldo fica
+ * negativo, e o erro só aparece depois.
+ *
+ * Vale pros DOIS selects, não só o de origem: o destino com saldo à vista é
+ * o que deixa conferir, sem sair da tela, que o dinheiro chegou onde devia.
+ */
+export function rotuloConta(c: AccountView): string {
+  return `${c.name} · ${formatBRL(c.balance_cents)}`
+}
+
 export function TransferirPage() {
   const [contas, setContas] = useState<AccountView[]>([])
   /**
@@ -275,7 +293,7 @@ export function TransferirPage() {
               >
                 {contasTransferiveis.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {rotuloConta(c)}
                   </option>
                 ))}
               </select>
@@ -293,7 +311,7 @@ export function TransferirPage() {
               >
                 {contasTransferiveis.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {rotuloConta(c)}
                   </option>
                 ))}
               </select>

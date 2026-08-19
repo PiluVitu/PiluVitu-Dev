@@ -49,3 +49,29 @@ describe('Ajuda', () => {
     expect(screen.queryByText(CONTEUDO)).not.toBeInTheDocument()
   })
 })
+
+describe('Ajuda — área de toque', () => {
+  test('o gatilho tem 44×44 de área clicável sem crescer o círculo de 20px', () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844 (o Android do dono, usado muitas
+    // vezes sob sol): o gatilho tem 20×20 px em 10 telas — menos da metade
+    // do lado recomendado (44, Apple HIG / WCAG 2.5.5).
+    //
+    // A correção NÃO cresce o círculo: ele mora colado a títulos e rótulos,
+    // e viraria o elemento mais pesado da linha. Quem cresce é um
+    // pseudo-elemento absoluto centrado — `position: absolute` não ocupa
+    // espaço no fluxo, então nenhum layout muda.
+    render(<Ajuda rotulo="Competência">{CONTEUDO}</Ajuda>)
+    const gatilho = screen.getByRole('button', { name: /competência/i })
+
+    // o círculo continua 20×20 (h-5 w-5)
+    expect(gatilho.className).toMatch(/\bh-5\b/)
+    expect(gatilho.className).toMatch(/\bw-5\b/)
+    // e a área de toque é 44×44 (h-11 w-11), centrada sobre ele
+    expect(gatilho.className).toContain('after:h-11')
+    expect(gatilho.className).toContain('after:w-11')
+    expect(gatilho.className).toContain('after:absolute')
+    // `relative` é o que ancora o pseudo-elemento no gatilho; sem ele a área
+    // se posicionaria contra um ancestral qualquer, longe do "?".
+    expect(gatilho.className).toMatch(/\brelative\b/)
+  })
+})

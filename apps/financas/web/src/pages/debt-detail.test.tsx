@@ -7,7 +7,7 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../api'
 import { DebtDetailPage, validateAllocations } from './debt-detail'
 
@@ -141,9 +141,15 @@ function mockApi(
   )
 }
 
+beforeEach(() => {
+  // Desktop por padrão: os testes pré-existentes assertam sobre a TABELA.
+  window.innerWidth = 1024
+})
+
 afterEach(() => {
   vi.clearAllMocks()
   vi.restoreAllMocks()
+  window.innerWidth = 1024
   window.location.hash = ''
 })
 
@@ -1040,6 +1046,80 @@ describe('DebtDetailPage', () => {
     expect(screen.getByTestId('item-i1-falta')).toHaveClass('tabular-nums')
     expect(screen.getByTestId('pagamento-pg1-total')).toHaveClass(
       'tabular-nums',
+    )
+  })
+})
+
+describe('DebtDetailPage — a ~390px a tabela vira card (a coluna "falta" sumia)', () => {
+  it('abaixo de sm mostra cards e NUNCA a tabela — e "falta" continua na tela', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: a tabela de 4 colunas estourava o
+    // container, e quem ficava do lado de fora era a coluna `falta` — o
+    // saldo restante, a única pergunta que esta tela responde. Era a ÚNICA
+    // tabela do app fora do padrão `useMenorQueSm` que o próprio app criou.
+    window.innerWidth = 390
+    mockApi()
+
+    render(<DebtDetailPage debtId="d1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('itens-cards')).toBeInTheDocument(),
+    )
+    // Só UM dos dois markups por vez — jsdom não computa CSS, os dois no DOM
+    // duplicariam todo `getByText` desta suíte.
+    expect(screen.queryByRole('columnheader', { name: 'falta' })).toBeNull()
+
+    const steam = within(screen.getByTestId('item-i2'))
+    expect(steam.getByTestId('item-i2-falta')).toHaveTextContent('R$ 1.360,00')
+    expect(steam.getByTestId('item-i2-total')).toHaveTextContent('R$ 2.800,00')
+    expect(steam.getByTestId('item-i2-pago')).toHaveTextContent('R$ 1.440,00')
+    // o quitado continua marcado como tal também no card
+    expect(screen.getByTestId('item-i1')).toHaveClass('quitado')
+  })
+
+  it('a ~1024px continua tabela, com a coluna "falta" no cabeçalho', async () => {
+    mockApi()
+    render(<DebtDetailPage debtId="d1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('item-i2')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('itens-cards')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('columnheader', { name: 'falta' }),
+    ).toBeInTheDocument()
+  })
+
+  it('excluir item continua funcionando no card, com alvo de 44px', async () => {
+    window.innerWidth = 390
+    const user = userEvent.setup()
+    mockApi()
+
+    render(<DebtDetailPage debtId="d1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId('itens-cards')).toBeInTheDocument(),
+    )
+
+    const botao = screen.getByTestId('excluir-item-i2')
+    expect(botao.className).toContain('min-h-11')
+    // destrutivo empurrado pra outra ponta, nunca colado no vizinho
+    expect(botao.className).toContain('ml-auto')
+
+    await user.click(botao)
+    // `Dialog` do design system, NUNCA window.confirm — um botão inerte
+    // falharia já aqui, antes de qualquer asserção sobre a API.
+    expect(
+      screen.getByRole('heading', { name: 'Excluir item' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.some(
+            ([path, init]) =>
+              path === '/api/debts/d1/items/i2' &&
+              (init as RequestInit | undefined)?.method === 'DELETE',
+          ),
+      ).toBe(true),
     )
   })
 })

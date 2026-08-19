@@ -17,6 +17,7 @@ import { api, ApiError } from '../api'
 import { formatRange } from '../lib/commitments'
 import { CHECKBOX_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINHA } from '../lib/touch'
 import {
   abaixoDaMeta,
   formatMeses,
@@ -328,7 +329,13 @@ export function ReservaPage() {
               <ul className="space-y-2">
                 {contas.map((c) => (
                   <li key={c.id}>
-                    <label className="flex items-center gap-2 text-sm">
+                    {/* ⚠️ MEDIDO em Chrome real a 390×844: o `<input>` tem
+                        13,6×16 px — o menor alvo do app inteiro. O alvo de
+                        verdade é o `<label>`, que embrulha o input e já
+                        alterna a seleção; `ALVO_LINHA` só dá a ele os 44 px
+                        de altura, sem mexer no tamanho do quadradinho nem da
+                        fonte. */}
+                    <label className={cn(ALVO_LINHA, 'gap-3 text-sm')}>
                       <input
                         type="checkbox"
                         className={CHECKBOX_CLASSNAME}

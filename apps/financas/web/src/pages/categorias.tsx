@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { badgeVariants } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import {
   Dialog,
   DialogClose,
@@ -21,6 +23,7 @@ import {
 } from '../lib/categories'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 
 /**
  * ⚠️ O PROBLEMA, medido na produção real: o dono tinha as **7** categorias
@@ -243,19 +246,35 @@ export function CategoriasPage() {
                   <div className="rounded-md border p-3">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium">{c.name}</p>
+                      {/*
+                        Status/classificação como CHIP — `regras.tsx` é a
+                        referência (`<Badge>Pausada</Badge>`), e outras 5 telas
+                        já usavam badge. `badgeVariants` num `<span>`, nunca o
+                        componente `Badge`: ele renderiza um `<div>`, e o pai
+                        aqui é um flex com `<p>` ao lado — manter o elemento em
+                        phrasing content evita a mesma quebra de layout já paga
+                        em `recorrentes.tsx` (div dentro de p faz o navegador
+                        fechar o parágrafo sozinho).
+                      */}
                       <span
                         data-testid={`tipo-${c.id}`}
-                        className="text-muted-foreground text-xs whitespace-nowrap"
+                        className={cn(
+                          badgeVariants({ variant: 'secondary' }),
+                          'shrink-0 whitespace-nowrap',
+                        )}
                       >
                         {ROTULO_KIND[c.kind]}
                         {c.default_scope ? ` · ${c.default_scope}` : ''}
                       </span>
                     </div>
+                    {/* Mesma regra do extrato: alvo de 44 px e o destrutivo
+                        empurrado pra outra ponta (`ml-auto`), em vez de colado
+                        no botão de uso rotineiro. */}
                     <div className="mt-2 flex gap-3">
                       <Button
                         type="button"
                         variant="link"
-                        className="h-auto p-0 text-xs"
+                        className={cn('h-auto p-0 text-xs', ALVO_LINK)}
                         onClick={() => editar(c)}
                       >
                         Editar
@@ -263,7 +282,10 @@ export function CategoriasPage() {
                       <Button
                         type="button"
                         variant="link"
-                        className="text-destructive h-auto p-0 text-xs"
+                        className={cn(
+                          'text-destructive h-auto p-0 text-xs',
+                          ALVO_LINK_FIM,
+                        )}
                         disabled={processando === c.id}
                         onClick={() => arquivar(c)}
                       >

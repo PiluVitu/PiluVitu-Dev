@@ -17,9 +17,11 @@ import {
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 import { NovoItemForm } from './NovoItemForm'
 
@@ -195,6 +197,23 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
     }
     return out
   }, [allocRaw])
+
+  /**
+   * ⚠️ **Esta era a ÚNICA tabela do app fora do padrão que o próprio app
+   * criou.** `useMenorQueSm` já era usado por `DividasPage`, `commitments`,
+   * `extrato` e `fluxo`; aqui não, e o preço foi MEDIDO em Chrome real a
+   * 390×844: a tabela de 4 colunas (Item | total | pago | falta) estoura o
+   * container, e quem sobra do lado de fora é a coluna **`falta`** — o
+   * saldo restante, a única pergunta que esta tela existe pra responder.
+   * Dispara a partir de ~R$ 10.000 por item, que é exatamente a ordem de
+   * grandeza dos itens reais do dono (MacBook, Steam Deck).
+   *
+   * Abaixo de `sm`, um card por item, com `falta` em destaque. **Só UM dos
+   * dois markups existe por vez** (nunca `hidden`/`sm:block`): jsdom não
+   * computa CSS, então os dois no DOM duplicariam todo `getByText` dos
+   * testes desta tela.
+   */
+  const menorQueSm = useMenorQueSm()
 
   if (loadError) return <p role="alert">{loadError}</p>
   if (!detail) return <p>Carregando…</p>
@@ -423,11 +442,19 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
             // podia render o texto de "Dar baixa" (o oposto de excluir)
             // colado mentalmente na ação irreversível. `gap-1` (menor que
             // o `gap-2` entre grupos) marca a dupla como uma unidade.
-            <div className="flex items-center gap-1">
+            // ⚠️ `gap-3` (era `gap-1`): a área de toque do `Ajuda` passou a
+            // ser 44×44 sobre um círculo de 20 px (ver `packages/ui/ajuda.tsx`),
+            // ou seja, ela avança 12 px pra cada lado do círculo. Com 4 px de
+            // gap, essa área invadiria o botão vizinho — e como o pseudo-
+            // elemento vem depois no DOM, o toque na borda do botão abriria o
+            // popover. Trocar sobreposição de alvo por outra sobreposição de
+            // alvo não seria conserto.
+            <div className="flex items-center gap-3">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="min-h-11"
                 disabled={processando === 'baixa'}
                 onClick={darBaixa}
               >
@@ -443,6 +470,7 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
             type="button"
             variant="destructive"
             size="sm"
+            className="min-h-11"
             disabled={processando === 'divida'}
             onClick={excluirDivida}
           >
@@ -467,6 +495,65 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
               O total da dívida sai da soma dos itens. Adicione o primeiro
               abaixo.
             </p>
+          ) : menorQueSm ? (
+            <ul className="space-y-3" data-testid="itens-cards">
+              {detail.items.map((i) => (
+                <li
+                  key={i.item_id}
+                  data-testid={`item-${i.item_id}`}
+                  className={cn(
+                    'rounded-md border p-3',
+                    i.is_settled && 'quitado opacity-[0.55]',
+                  )}
+                >
+                  <p
+                    className={cn(
+                      'font-medium',
+                      i.is_settled && 'line-through',
+                    )}
+                  >
+                    {i.description}
+                    {i.is_settled ? <span aria-label="quitado"> ✓</span> : null}
+                  </p>
+                  {/* `falta` LIDERA o card — é o número que a tabela
+                      escondia, e a razão desta tela existir. */}
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-muted-foreground text-xs">falta</span>
+                    <span
+                      data-testid={`item-${i.item_id}-falta`}
+                      className="text-lg font-semibold tabular-nums"
+                    >
+                      {formatBRL(Math.max(0, i.remaining_cents))}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs tabular-nums">
+                    <span data-testid={`item-${i.item_id}-total`}>
+                      total {formatBRL(i.amount_cents)}
+                    </span>
+                    <span data-testid={`item-${i.item_id}-pago`}>
+                      pago {formatBRL(i.allocated_cents)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex">
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className={cn(
+                        'text-destructive h-auto p-0 text-xs no-underline',
+                        ALVO_LINK_FIM,
+                      )}
+                      aria-label={`Excluir item ${i.description}`}
+                      data-testid={`excluir-item-${i.item_id}`}
+                      disabled={processando === `item:${i.item_id}`}
+                      onClick={() => excluirItem(i)}
+                    >
+                      excluir
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
@@ -516,7 +603,10 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                             type="button"
                             variant="link"
                             size="sm"
-                            className="text-destructive h-auto p-0 text-xs no-underline"
+                            className={cn(
+                              'text-destructive h-auto p-0 text-xs no-underline',
+                              ALVO_LINK,
+                            )}
                             aria-label={`Excluir item ${i.description}`}
                             data-testid={`excluir-item-${i.item_id}`}
                             disabled={processando === `item:${i.item_id}`}
@@ -600,11 +690,12 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1">
+                  <div className="mt-1 flex">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
+                      className={ALVO_LINK_FIM}
                       aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
                       data-testid={`excluir-pagamento-${p.id}`}
                       disabled={processando === `pagamento:${p.id}`}

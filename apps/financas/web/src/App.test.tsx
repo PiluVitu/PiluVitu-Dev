@@ -573,3 +573,28 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     )
   })
 })
+
+describe('App — alvo de toque do nav', () => {
+  test('as pílulas do nav e os itens do menu "Mais" têm 44px de altura', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: pílula ~30 px de altura, e os 9
+    // itens do menu "Mais" com 32 px e **0 px de gap** — dois destinos
+    // colados são, pra um polegar, um alvo só.
+    const user = userEvent.setup()
+    mockFetchVazio()
+    window.location.hash = '#/'
+    render(<App />)
+
+    const inicio = await screen.findByRole('link', { name: 'Início' })
+    expect(inicio.className).toContain('min-h-11')
+    expect(screen.getByTestId('nav-mais').className).toContain('min-h-11')
+
+    await user.click(screen.getByTestId('nav-mais'))
+    const itens = await screen.findAllByRole('menuitem')
+    expect(itens.length).toBeGreaterThan(0)
+    for (const item of itens) {
+      expect(item.className).toContain('min-h-11')
+      // `my-0.5`: o gap que não existia entre um item e o seguinte
+      expect(item.className).toContain('my-0.5')
+    }
+  })
+})

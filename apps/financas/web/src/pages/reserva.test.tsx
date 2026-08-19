@@ -633,3 +633,16 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     expect(texto).not.toMatch(/não compre|não financie|não vale a pena/i)
   })
 })
+
+describe('ReservaPage — alvo de toque da designação', () => {
+  it('a faixa inteira do checkbox tem 44px, não só o quadradinho', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: o `<input type="checkbox">` tem
+    // 13,6×16 px — o menor alvo do app. O alvo real é o `<label>`, que já
+    // embrulha o input e alterna a seleção; só faltava dar altura a ele.
+    mockApi()
+    render(<ReservaPage />)
+    const rotulo = (await screen.findByLabelText(/Nubank PJ/)).closest('label')
+    expect(rotulo).not.toBeNull()
+    expect(rotulo!.className).toContain('min-h-11')
+  })
+})

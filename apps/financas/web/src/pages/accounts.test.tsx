@@ -687,3 +687,14 @@ describe('AccountsPage', () => {
     })
   })
 })
+
+describe('AccountsPage — alvo de toque do arquivar', () => {
+  it('arquivar é alvo de 44px, como os outros destrutivos inline', async () => {
+    // Mesma família de `apagar` (extrato) e `Arquivar` (categorias): link
+    // destrutivo em linha, medido a 47,2×16 px em Chrome real a 390×844.
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+    const botao = await screen.findByTestId('arquivar-a1')
+    expect(botao.className).toContain('min-h-11')
+  })
+})

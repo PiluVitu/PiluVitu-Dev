@@ -24,7 +24,16 @@ function Ajuda({ rotulo, children, className }: AjudaProps) {
         type="button"
         aria-label={`Ajuda sobre ${rotulo}`}
         className={cn(
-          'border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border text-xs leading-none font-medium transition-colors focus-visible:ring-1 focus-visible:outline-hidden',
+          'border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring relative inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border text-xs leading-none font-medium transition-colors focus-visible:ring-1 focus-visible:outline-hidden',
+          // Área de toque de 44×44 (Apple HIG / WCAG 2.5.5) sobre um círculo
+          // que continua com 20×20. ⚠️ MEDIDO em Chrome real a 390×844: o
+          // gatilho é 20×20 em 10 telas — metade do lado recomendado, e o
+          // dono usa este app num Android, muitas vezes sob sol. Crescer o
+          // CÍRCULO seria pior (ele mora colado a títulos e rótulos, e viraria
+          // o elemento mais pesado da linha), então quem cresce é só a caixa
+          // clicável, via pseudo-elemento centrado — `position: absolute`
+          // não ocupa espaço no fluxo, logo NENHUM layout muda.
+          "after:absolute after:top-1/2 after:left-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']",
           className,
         )}
       >

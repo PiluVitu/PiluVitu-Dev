@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TransferirPage } from './transferir'
+import { rotuloConta, TransferirPage } from './transferir'
 
 // ⚠️ Relógio FIXO no arquivo inteiro: o campo Data nasce em
 // `todayInTeresina()`, e um teste que dependesse do dia real viraria vermelho
@@ -326,20 +326,27 @@ describe('TransferirPage — o formulário que faltava pra POST /api/transfers',
     // incoerente consigo mesmo, calado.
     await montar()
 
-    const rotulos = (sel: HTMLSelectElement) =>
-      Array.from(sel.options).map((o) => o.textContent)
+    // ⚠️ Casa por PREFIXO, não por igualdade: o rótulo passou a carregar o
+    // saldo junto (`Nubank PJ · R$ 9.000,00`). Com igualdade, a asserção
+    // NEGATIVA de baixo passaria por vacuidade — o cartão poderia voltar ao
+    // select e o teste continuaria verde, porque o rótulo dele também
+    // deixaria de ser exatamente "Nubank cartao".
+    const oferece = (sel: HTMLSelectElement, nome: string) =>
+      Array.from(sel.options).some((o) =>
+        (o.textContent ?? '').startsWith(nome),
+      )
 
     const de = screen.getByLabelText(/^De \(/) as HTMLSelectElement
     const para = screen.getByLabelText(/^Para \(/) as HTMLSelectElement
 
     // As duas contas correntes estão lá...
-    expect(rotulos(de)).toContain('Nubank PJ')
-    expect(rotulos(de)).toContain('Nubank PF')
-    expect(rotulos(para)).toContain('Nubank PJ')
-    expect(rotulos(para)).toContain('Nubank PF')
+    expect(oferece(de, 'Nubank PJ')).toBe(true)
+    expect(oferece(de, 'Nubank PF')).toBe(true)
+    expect(oferece(para, 'Nubank PJ')).toBe(true)
+    expect(oferece(para, 'Nubank PF')).toBe(true)
     // ...e o cartão NÃO, nos DOIS selects (origem e destino).
-    expect(rotulos(de)).not.toContain('Nubank cartao')
-    expect(rotulos(para)).not.toContain('Nubank cartao')
+    expect(oferece(de, 'Nubank cartao')).toBe(false)
+    expect(oferece(para, 'Nubank cartao')).toBe(false)
   })
 
   it('a mesma conta nos dois lados é recusada NO CLIENTE, sem gastar requisição', async () => {
@@ -544,5 +551,53 @@ describe('TransferirPage — o formulário que faltava pra POST /api/transfers',
     // o leitor de tela anuncia as duas como "atual".
     expect(lancamento).not.toHaveAttribute('aria-current')
     expect(lancamento).toHaveAttribute('href', '#/lancar')
+  })
+})
+
+describe('TransferirPage — o saldo da conta no próprio <option>', () => {
+  it('rotuloConta junta nome e saldo, sem tocar em float', () => {
+    // ⚠️ `balance_cents` já vinha carregado em `AccountView`, no MESMO
+    // `GET /api/accounts` que preenche o select — a informação estava a um
+    // campo de distância e a tela não a mostrava.
+    expect(
+      rotuloConta({
+        id: 'a',
+        name: 'Nubank PJ',
+        scope: 'PJ',
+        kind: 'checking',
+        closing_day: null,
+        due_day: null,
+        balance_cents: 900000,
+      }),
+    ).toBe('Nubank PJ · R$ 9.000,00')
+    // saldo negativo aparece como negativo — esconder o sinal seria pior que
+    // não mostrar saldo nenhum
+    expect(
+      rotuloConta({
+        id: 'b',
+        name: 'Inter',
+        scope: 'PF',
+        kind: 'checking',
+        closing_day: null,
+        due_day: null,
+        balance_cents: -1250,
+      }),
+    ).toBe('Inter · -R$ 12,50')
+  })
+
+  it('os DOIS selects mostram o saldo — decidir a origem às cegas era o defeito', async () => {
+    await montar()
+    const de = screen.getByLabelText(/^De \(/) as HTMLSelectElement
+    const para = screen.getByLabelText(/^Para \(/) as HTMLSelectElement
+
+    const rotuloDe = (id: string) =>
+      Array.from(de.options).find((o) => o.value === id)?.textContent
+    const rotuloPara = (id: string) =>
+      Array.from(para.options).find((o) => o.value === id)?.textContent
+
+    expect(rotuloDe('a-pj')).toBe('Nubank PJ · R$ 9.000,00')
+    expect(rotuloDe('a-pf')).toBe('Nubank PF · R$ 1.000,00')
+    expect(rotuloPara('a-pj')).toBe('Nubank PJ · R$ 9.000,00')
+    expect(rotuloPara('a-pf')).toBe('Nubank PF · R$ 1.000,00')
   })
 })

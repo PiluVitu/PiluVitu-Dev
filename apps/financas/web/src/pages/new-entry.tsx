@@ -11,6 +11,7 @@ import { ordenarPorHierarquia, type CategoryView } from '../lib/categories'
 import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
+import { ALVO_LINHA, ALVO_LINK } from '../lib/touch'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import type { AccountView } from './accounts'
 import type { PayeeOption } from './DividasPage'
@@ -412,7 +413,10 @@ export function NewEntryPage() {
               </select>
               <a
                 href="#/categorias"
-                className="text-muted-foreground text-xs underline underline-offset-4"
+                className={cn(
+                  'text-muted-foreground text-xs underline underline-offset-4',
+                  ALVO_LINK,
+                )}
               >
                 Criar ou editar categorias
               </a>
@@ -488,7 +492,7 @@ export function NewEntryPage() {
             ) : null}
 
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm">
+              <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
                 <input
                   type="checkbox"
                   className={CHECKBOX_CLASSNAME}
@@ -499,7 +503,7 @@ export function NewEntryPage() {
               </label>
 
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm">
+                <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
                   <input
                     type="checkbox"
                     className={CHECKBOX_CLASSNAME}
@@ -514,7 +518,7 @@ export function NewEntryPage() {
                 </Ajuda>
               </div>
 
-              <label className="flex items-center gap-2 text-sm">
+              <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
                 <input
                   type="checkbox"
                   className={CHECKBOX_CLASSNAME}

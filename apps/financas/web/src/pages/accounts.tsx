@@ -19,6 +19,7 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINK } from '../lib/touch'
 
 export type AccountView = {
   id: string
@@ -283,7 +284,10 @@ export function AccountsPage() {
                                 type="button"
                                 variant="link"
                                 size="sm"
-                                className="text-destructive h-auto p-0 text-xs no-underline"
+                                className={cn(
+                                  'text-destructive h-auto p-0 text-xs no-underline',
+                                  ALVO_LINK,
+                                )}
                                 aria-label={`Arquivar conta ${a.name}`}
                                 data-testid={`arquivar-${a.id}`}
                                 disabled={processando === a.id}

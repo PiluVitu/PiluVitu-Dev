@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { formatBRL, parseBRL } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { badgeVariants } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
@@ -20,6 +21,7 @@ import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINHA, ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 import type { CategoryOption } from './recorrentes'
 
@@ -77,6 +79,37 @@ const TETO_LIMITE = 500
  */
 export function cursorDe(t: TransactionView): string {
   return `${t.purchase_date}|${t.created_at}|${t.id}`
+}
+
+/**
+ * O que ainda falta sair (e entrar) nas linhas dadas.
+ *
+ * ⚠️ **A tela respondia ao filtro "só o que falta marcar como pago" com uma
+ * CONTAGEM de linhas ("15 lançamento(s) carregado(s)"), e a pergunta do
+ * filtro é *quanto*.** Saber que faltam 15 lançamentos não diz se falta R$ 90
+ * ou R$ 9.000 — e é esse número que decide se o dono tem como pagar a semana.
+ *
+ * ⚠️ **Saída e entrada ficam SEPARADAS, nunca um saldo líquido.** Somar tudo
+ * com sinal daria "R$ -1.200" pra uma tela cujo rótulo é "falta pagar":
+ * uma receita ainda não recebida abateria uma despesa ainda não paga, e a
+ * dívida real apareceria menor do que é. `falta_sair` é a soma das
+ * MAGNITUDES dos negativos; `falta_entrar`, a dos positivos.
+ *
+ * Não arredonda e não converte: centavos inteiros ponta a ponta, via
+ * `sumCents` (`@piluvitu/tools/money`) — nunca `reduce` com `+` solto.
+ */
+export function totaisPendentes(linhas: TransactionView[]): {
+  falta_sair_cents: number
+  falta_entrar_cents: number
+} {
+  return {
+    falta_sair_cents: sumCents(
+      linhas.filter((t) => t.amount_cents < 0).map((t) => -t.amount_cents),
+    ),
+    falta_entrar_cents: sumCents(
+      linhas.filter((t) => t.amount_cents > 0).map((t) => t.amount_cents),
+    ),
+  }
 }
 
 /** `2026-07-28` (ou o timestamp completo de `settled_at`) → `28/07/2026`. */
@@ -291,6 +324,8 @@ export function ExtratoPage() {
         .includes(termo),
     )
   }, [linhas, busca, nomeConta, nomeCategoria])
+
+  const pendentes = useMemo(() => totaisPendentes(visiveis), [visiveis])
 
   async function carregarMais() {
     const carregadas = linhas ?? []
@@ -623,14 +658,27 @@ export function ExtratoPage() {
           {nomeConta(t.account_id)} · {nomeCategoria(t.category_id)}
           {t.is_business === 1 ? ' · PJ' : ''}
         </p>
-        <p
-          className="text-muted-foreground text-xs"
+        {/*
+          Status como CHIP, não texto solto — `regras.tsx` já era a
+          referência (`<Badge>Pausada</Badge>`) e outras 5 telas já usavam
+          badge. `badgeVariants` num `<span>`, não o componente `Badge`:
+          ele renderiza um `<div>`, e aqui o pai é um `<p>`/`<td>` — div
+          dentro de p faz o navegador fechar o parágrafo sozinho e o layout
+          quebra (lição já paga em `recorrentes.tsx`).
+        */}
+        <span
+          className={cn(
+            badgeVariants({
+              variant: t.settled_at === null ? 'outline' : 'secondary',
+            }),
+            'mt-1',
+          )}
           data-testid={`estado-${t.id}`}
         >
           {t.settled_at === null
             ? 'falta marcar como pago'
             : `pago em ${formatarData(t.settled_at)}`}
-        </p>
+        </span>
 
         {liquidando === t.id ? (
           <div
@@ -665,13 +713,26 @@ export function ExtratoPage() {
             </div>
           </div>
         ) : (
+          // ⚠️ Duas correções na MESMA linha de ações, e as duas foram
+          // MEDIDAS em Chrome real a 390×844 (Android do dono):
+          //
+          // 1. **Tamanho.** `apagar` media 40×16 px e `editar` 33,7×16 —
+          //    contra os 44×44 recomendados —, repetidos em 30 linhas.
+          //    `ALVO_LINK` leva os dois a 44 px de altura SEM mexer na fonte
+          //    nem deslocar o texto (ver `lib/touch.ts`).
+          // 2. **Distância.** `apagar` ficava a 12 px de `editar`: o alvo
+          //    destrutivo colado no alvo de uso rotineiro. `ml-auto` empurra
+          //    `apagar` pra outra ponta da linha — a separação passa a ser o
+          //    espaço que sobrar, e errar `editar` deixa de significar
+          //    "apaguei dinheiro". `justify-start` + `ml-auto` faz isso sem
+          //    coluna nova e sem reordenar nada pro leitor de tela.
           <div className="mt-1 flex flex-wrap items-center gap-3">
             {t.settled_at === null ? (
               <Button
                 type="button"
                 variant="link"
                 size="sm"
-                className="h-auto p-0 text-xs no-underline"
+                className={cn('h-auto p-0 text-xs no-underline', ALVO_LINK)}
                 data-testid={`marcar-pago-${t.id}`}
                 onClick={() => abrirLiquidacao(t)}
               >
@@ -682,7 +743,7 @@ export function ExtratoPage() {
               type="button"
               variant="link"
               size="sm"
-              className="h-auto p-0 text-xs no-underline"
+              className={cn('h-auto p-0 text-xs no-underline', ALVO_LINK)}
               data-testid={`editar-${t.id}`}
               onClick={() => abrirEdicao(t)}
             >
@@ -692,7 +753,10 @@ export function ExtratoPage() {
               type="button"
               variant="link"
               size="sm"
-              className="text-destructive h-auto p-0 text-xs no-underline"
+              className={cn(
+                'text-destructive h-auto p-0 text-xs no-underline',
+                ALVO_LINK_FIM,
+              )}
               data-testid={`apagar-${t.id}`}
               disabled={processando === t.id}
               onClick={() => apagar(t)}
@@ -756,7 +820,10 @@ export function ExtratoPage() {
           <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex items-center gap-2 text-sm">
+          {/* O alvo real é o `<label>` inteiro (ele embrulha o input), não o
+              quadradinho de 13,6×16 px — `ALVO_LINHA` só garante que a faixa
+              tenha os 44 px de altura. */}
+          <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
             <input
               type="checkbox"
               className={CHECKBOX_CLASSNAME}
@@ -860,11 +927,55 @@ export function ExtratoPage() {
           )}
 
           {linhas !== null && linhas.length > 0 ? (
-            <p className="text-muted-foreground mt-4 text-xs">
-              {visiveis.length === linhas.length
-                ? `${linhas.length} lançamento(s) carregado(s).`
-                : `${visiveis.length} de ${linhas.length} lançamento(s) carregado(s).`}
-            </p>
+            <div className="mt-4 space-y-1">
+              {/*
+                ⚠️ A SOMA só aparece com o filtro ligado, e é sobre `visiveis`
+                (o que está na tela agora), nunca sobre `linhas`: com uma busca
+                textual ativa, somar o que está escondido daria um número que
+                não corresponde a nenhuma linha visível.
+
+                ⚠️ **A lista é PAGINADA, e a frase diz isso.** Um total
+                apresentado como se fosse o do mês inteiro seria um número
+                errado com cara de certo — a mesma desonestidade que o teto de
+                500 da dedupe do import evita dizendo o número em voz alta.
+                Quando ainda há página por vir (`temMais`), o texto afirma que
+                há mais lançamentos não carregados e aponta o "carregar mais";
+                quando não há, ele afirma que cobre tudo que bate com o filtro.
+              */}
+              {somenteNaoPagos ? (
+                <p
+                  className="text-foreground text-sm font-medium"
+                  data-testid="total-pendente"
+                >
+                  Falta pagar{' '}
+                  <span className="tabular-nums">
+                    {formatBRL(pendentes.falta_sair_cents)}
+                  </span>
+                  {pendentes.falta_entrar_cents > 0 ? (
+                    <>
+                      {' '}
+                      · falta entrar{' '}
+                      <span className="tabular-nums">
+                        {formatBRL(pendentes.falta_entrar_cents)}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+              <p
+                className="text-muted-foreground text-xs"
+                data-testid="resumo-carregado"
+              >
+                {visiveis.length === linhas.length
+                  ? `${linhas.length} lançamento(s) carregado(s).`
+                  : `${visiveis.length} de ${linhas.length} lançamento(s) carregado(s).`}
+                {somenteNaoPagos
+                  ? temMais
+                    ? ' A soma acima é só do que carregou até aqui — há mais lançamentos, use "carregar mais".'
+                    : ' A soma acima cobre tudo que falta marcar como pago (até o teto de 500 lançamentos).'
+                  : ''}
+              </p>
+            </div>
           ) : null}
 
           {/* Paginação KEYSET, e com FIM: o botão some quando a última

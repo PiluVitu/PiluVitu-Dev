@@ -10,6 +10,7 @@ import {
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { competenciaAtual } from './lib/dates'
+import { ALVO_ITEM_MENU } from './lib/touch'
 import { AccountsPage } from './pages/accounts'
 import { CategoriasPage } from './pages/categorias'
 import { CommitmentsPage } from './pages/commitments'
@@ -116,8 +117,13 @@ const NAV_SECUNDARIOS: NavItem[] = [
   { href: '#/configuracoes', label: 'Configurações', route: 'configuracoes' },
 ]
 
+// ⚠️ `inline-flex min-h-11 items-center`: a pílula media ~30 px de altura
+// (MEDIDO em Chrome real a 390×844) — abaixo dos 44 recomendados, em TODA
+// tela. A fonte não mudou (`text-sm`), nem o padding horizontal: só a caixa
+// clicável cresceu. Custo, também medido: o `<nav>` inteiro sobe de 81 px
+// pra 105 px, uma vez, no topo — ver `lib/touch.ts` pro raciocínio.
 const CLASSE_PILULA =
-  'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors'
+  'inline-flex min-h-11 items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors'
 const CLASSE_ATIVA = 'bg-primary text-primary-foreground'
 const CLASSE_INATIVA =
   'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -160,10 +166,17 @@ function NavMais({ route }: { route: RouteKey }) {
       <DropdownMenuContent align="end">
         {NAV_SECUNDARIOS.map((item) => (
           <DropdownMenuItem key={item.href} asChild>
+            {/*
+              ⚠️ `ALVO_ITEM_MENU`: MEDIDO em Chrome real a 390×844 — os 9
+              itens deste menu tinham 32 px de altura e **0 px de gap** entre
+              si. Dois destinos colados, cada um menor que a recomendação,
+              são na prática um alvo só pra um polegar: errar "Reserva" e
+              cair em "Regras" é o resultado esperado, não o acidente.
+            */}
             <a
               href={item.href}
               aria-current={item.route === route ? 'page' : undefined}
-              className="cursor-pointer"
+              className={cn('cursor-pointer', ALVO_ITEM_MENU)}
             >
               {item.label}
             </a>
