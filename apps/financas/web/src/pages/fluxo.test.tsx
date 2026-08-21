@@ -363,4 +363,35 @@ describe('FluxoPage', () => {
       expect(screen.getByTestId('total-saldo')).toBeInTheDocument()
     })
   })
+
+  describe('uma grafia só de competência na tela', () => {
+    it('a tabela rotula o mês como o gráfico (ago/26), nunca 2026-08 cru', () => {
+      // ⚠️ MEDIDO em Chrome real a 390×844, na MESMA tela: o eixo X do
+      // gráfico lia `set/26`/`nov/26`/`jan/27` (`GraficoFluxo` já passava
+      // por `rotuloCompetencia`) enquanto a tabela logo abaixo lia
+      // `2026-08`/`2026-09`/`2027-01`. Duas grafias do mesmo mês, uma acima
+      // da outra, e a que fica na tabela é a única forma ISO — a que o dono
+      // nunca vê em nenhuma outra tela do app (`#/comprometido`, `#/insight`
+      // e os blocos da home já usam `rotuloCompetencia`).
+      //
+      // Não é cosmético: ler "2026-08" ao lado de "set/26" força a
+      // conversão de cabeça pra saber se são o mesmo mês, exatamente na
+      // linha em que o dono está conferindo um número.
+      //
+      // ⚠️ O `data-testid` continua sendo a competência CRUA
+      // (`linha-2026-06`) de propósito — é identidade, não rótulo; mudá-lo
+      // quebraria as asserções desta suíte sem nada ganhar.
+      mockFetch({ ok: true, data: reportBase, notifications: [] })
+
+      render(<FluxoPage />)
+
+      return waitFor(() => {
+        const linha = screen.getByTestId('linha-2026-06')
+        expect(within(linha).getByTestId('competencia')).toHaveTextContent(
+          'jun/26',
+        )
+        expect(linha.textContent).not.toContain('2026-06')
+      })
+    })
+  })
 })

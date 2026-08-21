@@ -6,6 +6,7 @@ import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { useMenorQueSm } from '../lib/breakpoint'
 import type { CashflowReportView } from '../lib/cashflow'
+import { rotuloCompetencia } from '../lib/commitments'
 import { addMonthsToCompetence, competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 
@@ -158,8 +159,23 @@ export function FluxoPage() {
           <tbody>
             {report.linhas.map((l) => (
               <tr key={l.competence} data-testid={`linha-${l.competence}`}>
-                <td className="border-b py-1.5 pr-2 text-left">
-                  {l.competence}
+                {/*
+                  ⚠️ `rotuloCompetencia`, nunca a competência crua: MEDIDO em
+                  Chrome real, nesta MESMA tela, o eixo X do gráfico lia
+                  `set/26` (ele já passava por esta função) enquanto a tabela
+                  logo abaixo lia `2026-09`. Duas grafias do mesmo mês, uma
+                  em cima da outra — e a ISO é a única que o dono não vê em
+                  nenhuma outra tela (`#/comprometido`, `#/insight` e os
+                  blocos da home já usam esta função).
+
+                  O `data-testid` da <tr> continua sendo a competência CRUA:
+                  lá é identidade, aqui é rótulo.
+                */}
+                <td
+                  data-testid="competencia"
+                  className="border-b py-1.5 pr-2 text-left"
+                >
+                  {rotuloCompetencia(l.competence)}
                 </td>
                 {!menorQueSm && (
                   <>

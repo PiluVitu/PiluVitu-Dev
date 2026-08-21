@@ -639,3 +639,34 @@ describe('RecorrentesPage', () => {
     )
   })
 })
+
+describe('RecorrentesPage — alvos de toque de Editar/Excluir', () => {
+  it('Editar e Excluir são alvos de 44px, com o destrutivo na outra ponta', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a **34×16 px** e
+    // `Excluir` a **38,6×16 px**, separados por **12 px**. Os 16 px de
+    // altura ficam abaixo até do mínimo de 24×24 do WCAG 2.5.8 (AA) — não
+    // só do alvo de 44 do 2.5.5 (AAA) que este app adotou.
+    //
+    // É exatamente o par (alvo minúsculo + destrutivo colado no rotineiro)
+    // já medido e corrigido em `extrato` e `categorias`: com ~34 px de
+    // contato, o polegar cobre os dois, e errar aqui apaga a recorrente —
+    // que é o que alimenta o Comprometido.
+    //
+    // jsdom não tem layout: o que se trava aqui é a REGRA aplicada (a caixa
+    // de 44 px e a separação), não o pixel. O pixel foi medido no browser.
+    mockApi()
+
+    render(<RecorrentesPage />)
+
+    const editar = await screen.findByTestId('editar-r-starlink')
+    const excluir = screen.getByTestId('excluir-r-starlink')
+
+    expect(editar.className).toContain('min-h-11')
+    expect(excluir.className).toContain('min-h-11')
+
+    // `ml-auto` só no destrutivo: é ele que troca os 12 px de distância por
+    // toda a sobra da linha.
+    expect(excluir.className).toContain('ml-auto')
+    expect(editar.className).not.toContain('ml-auto')
+  })
+})

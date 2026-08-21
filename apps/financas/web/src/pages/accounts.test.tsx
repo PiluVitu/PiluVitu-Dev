@@ -698,3 +698,24 @@ describe('AccountsPage — alvo de toque do arquivar', () => {
     expect(botao.className).toContain('min-h-11')
   })
 })
+
+describe('AccountsPage — o saldo não se parte em duas linhas', () => {
+  it('a célula de saldo é whitespace-nowrap', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: `-R$ 2.345,00` quebrava em DUAS
+    // caixas de linha — `-R$` (24,6 px) numa, `2.345,00` (61,7 px) na
+    // seguinte. O sinal de menos, que é o que distingue "devo" de "tenho",
+    // ficava órfão numa linha própria, e um saldo NEGATIVO passava a ser o
+    // mais difícil de ler da coluna inteira. Contado por `Range`
+    // (`getClientRects().length`), nunca pela altura da `<td>` — a altura da
+    // célula é ditada pela linha (a célula vizinha tem o botão de 44 px) e
+    // não diz nada sobre o texto quebrar.
+    //
+    // `tabular-nums` já estava lá e não resolve isto: ele alinha a largura
+    // dos dígitos, não impede a quebra entre eles.
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+
+    const celula = await screen.findByTestId('saldo-a1')
+    expect(celula.className).toContain('whitespace-nowrap')
+  })
+})

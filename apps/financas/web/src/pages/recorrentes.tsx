@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@piluvitu/ui/dialog'
+import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -20,6 +21,7 @@ import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 
 /**
@@ -375,11 +377,27 @@ export function RecorrentesPage() {
                       })}
                     </span>
                   </div>
-                  <div className="mt-2 flex gap-3">
+                  {/*
+                    ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a **34×16 px**
+                    e `Excluir` a **38,6×16 px**, separados por **12 px**. Os
+                    16 px de altura ficam abaixo até do mínimo de 24×24 do
+                    WCAG 2.5.8 (AA), e o par (destrutivo colado no rotineiro)
+                    é o mesmo defeito já medido e corrigido em `extrato` e
+                    `categorias` — com ~34 px de contato o polegar cobre os
+                    dois, e errar aqui apaga a recorrente que alimenta o
+                    Comprometido.
+
+                    `ALVO_LINK`/`ALVO_LINK_FIM` levam os dois aos 44 px SEM
+                    mexer na fonte (`text-xs` intacto) nem no x do texto, e o
+                    `ml-auto` do destrutivo troca os 12 px por toda a sobra
+                    da linha.
+                  */}
+                  <div className="mt-2 flex items-center gap-3">
                     <Button
                       type="button"
                       variant="link"
-                      className="h-auto p-0 text-xs"
+                      data-testid={`editar-${r.id}`}
+                      className={cn('h-auto p-0 text-xs', ALVO_LINK)}
                       onClick={() => editar(r)}
                     >
                       Editar
@@ -387,7 +405,11 @@ export function RecorrentesPage() {
                     <Button
                       type="button"
                       variant="link"
-                      className="text-destructive h-auto p-0 text-xs"
+                      data-testid={`excluir-${r.id}`}
+                      className={cn(
+                        'text-destructive h-auto p-0 text-xs',
+                        ALVO_LINK_FIM,
+                      )}
                       disabled={processando === r.id}
                       onClick={() => excluir(r)}
                     >

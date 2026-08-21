@@ -3011,3 +3011,61 @@ Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` — e não podem ir p
 **Bundle (`vite build`, antes = fatia de a11y / depois = esta):** JS principal 502,50 → 510,92 kB (**151,07 → 153,85 kB gzip, +2,78**); CSS 34,95 → 35,03 kB (**6,97 → 6,99 kB gzip**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova.
 
 **Fora de escopo, registrado:** `PATCH /items` (forçar sync antes de ler — teto de 20/min, o mais apertado da API); descobrir `itemId`/`accountId` sem copiar à mão (exigiria o widget Pluggy Connect e um endpoint de connect token); e retomar a paginação entre invocações (`buscarPaginaDeTransacoes` aceita `page`, mas nada nesta fatia usa — o teto de 40 páginas por janela de um mês está muito longe de apertar).
+
+## Segunda rodada de a11y/leitura — 5 defeitos MEDIDOS a 390×844
+
+Continuação direta da fatia _Acessibilidade de toque e leitura_ acima, com o mesmo instrumento (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`) apontado pras telas que aquela varredura não cobriu. Cinco defeitos de TELA, nenhum de dado: Worker intocado (**810**), `packages/ui` (**91**) e `packages/tools` (**147**) intocados, nenhuma rota, nenhuma migration, nenhuma dependência nova.
+
+| #   | Onde                                           | Antes                                                  | Depois                          |
+| --- | ---------------------------------------------- | ------------------------------------------------------ | ------------------------------- |
+| ①   | `pages/commitments.tsx` — faixa do denominador | `scrollWidth 370` × `clientWidth 358` (**12 px fora**) | `358 × 358`, **0**              |
+| ②   | `pages/accounts.tsx` — célula de saldo         | `-R$ 2.345,00` em **2** caixas de linha                | **1** caixa                     |
+| ③   | `pages/fluxo.tsx` — coluna de competência      | tabela `2026-08` × gráfico `set/26`                    | `ago/26` nos dois               |
+| ④   | `pages/recorrentes.tsx` — Editar/Excluir       | **34×16** e **38,6×16**, 12 px entre eles              | **50×44** e **54,6×44**, 193 px |
+| ⑤   | `pages/regras.tsx` + `pages/DividasPage.tsx`   | **60×32**…**62,6×32** / **23×18**                      | **…×44** / **39×44**            |
+
+Depois: `document.documentElement.scrollWidth === clientWidth === 390` nas seis rotas, **zero elemento estourando**.
+
+### ① A faixa "Denominador:" era `flex` sem `flex-wrap`
+
+Os três filhos (o texto, o `<strong>` do valor e o gatilho da Ajuda) não cabiam numa linha só. ⚠️ **O pai tem overflow visível, então o excesso não vira scroll — o "?" da Ajuda simplesmente saía da caixa**, e o dono não tinha como abrir a explicação de por que o denominador é R$ 3.600 e não R$ 5.300, justamente na tela onde essa dúvida nasce.
+
+### ② `-R$ 2.345,00` quebrava em duas linhas, e o `-` ficava órfão
+
+MEDIDO por `Range` (`getClientRects().length`), ⚠️ **nunca pela altura da `<td>`** — a altura da célula é ditada pela linha inteira (a célula vizinha tem o botão `arquivar` de 44 px) e não diz nada sobre o texto quebrar: `-R$` (24,6 px) numa caixa, `2.345,00` (61,7 px) na seguinte.
+
+⚠️ **O sinal de menos é o que distingue "devo" de "tenho", e ele era o pedaço que ia pra linha de cima sozinho** — o saldo NEGATIVO virava o mais difícil de ler da coluna inteira. ⚠️ **`tabular-nums` já estava lá e não resolve isto**: ele iguala a largura dos dígitos, não impede a quebra entre eles. Só saldo negativo é afetado (o `-` acrescenta a largura que estoura a célula), o que torna o defeito invisível numa conta positiva.
+
+### ③ Duas grafias de competência na MESMA tela
+
+`GraficoFluxo` já passava por `rotuloCompetencia` (`set/26`); a tabela logo abaixo renderizava `l.competence` cru (`2026-09`). Uma em cima da outra, e a ISO é a única forma que o dono **não** vê em nenhuma outra tela — `#/comprometido`, `#/insight`, `BlocoComprometido` e `BlocoCategorias` já usam a mesma função. Não é cosmético: obriga a conversão de cabeça pra saber se são o mesmo mês, na linha em que ele está conferindo um número.
+
+⚠️ **O `data-testid` da `<tr>` continua sendo a competência CRUA (`linha-2026-06`)** — lá é identidade, aqui é rótulo; trocá-lo quebraria as asserções da suíte sem ganhar nada.
+
+### ④ e ⑤ Alvos de toque — três formas, duas constantes de `lib/touch.ts`
+
+- **`recorrentes`**: `Editar` a **34×16** e `Excluir` a **38,6×16**, separados por **12 px** — os 16 px de altura ficam abaixo até do mínimo de **24×24 do WCAG 2.5.8 (AA)**, não só do alvo de 44 do 2.5.5 (AAA) que este app adotou. É o par exato (destrutivo colado no rotineiro) já medido e corrigido em `extrato`/`categorias`: com ~34 px de contato o polegar cobre os dois, e errar apaga a recorrente que alimenta o Comprometido. `ALVO_LINK` + `ALVO_LINK_FIM` — o `ml-auto` troca os 12 px por **193 px**.
+- **`regras`**: os três `size="sm"` a **32 px** de altura. Passam o mínimo de AA, mas ficam 12 px abaixo do alvo que toda outra faixa de ações já adotou, e um deles apaga a regra sem desfazer. ⚠️ **`ALVO_LINHA`, nunca `ALVO_LINK`**: são botões com borda e fundo próprios, e o `-mx-2` do `ALVO_LINK` (que existe pra devolver o deslocamento de um link de TEXTO) puxaria a borda pra cima do vizinho — trocar alvo pequeno por alvos sobrepostos é o mesmo defeito com outra cara. MEDIDO: as larguras ficaram **idênticas** (60 / 65,5 / 62,6), só a altura subiu.
+- **`DividasPage`**: **23×18 px** com um título curto ("Tio", o formato real de uma dívida de pessoa) — abaixo do mínimo de AA, e ⚠️ **a largura acompanha o título, então quanto MAIS curto o nome, menor o alvo**. ⚠️ **É o ÚNICO caminho pro detalhe da dívida** — não há botão, não há linha clicável, não há rota alcançável de outro lugar: errar o toque é ficar sem como abrir a dívida, na tela em que o dono vai registrar um pagamento. `ALVO_LINK` nos **dois** markups (card < sm e tabela ≥ sm): só um existe por vez, e os 18 px eram do link, não do breakpoint.
+
+A doc de `ALVO_LINHA` (`web/src/lib/touch.ts`) foi estendida pra cobrir o segundo formato (botão pequeno com borda numa faixa de ações), com o aviso de quando NÃO usar `ALVO_LINK`.
+
+### Suítes e mutação
+
+**SPA: 607 → 614** (+7: 1 em `commitments.test.tsx`, 1 em `accounts.test.tsx`, 1 em `fluxo.test.tsx`, 1 em `recorrentes.test.tsx`, 1 em `regras.test.tsx`, 2 em `DividasPage.test.tsx`). Worker **810**, `packages/ui` **91**, `packages/tools` **147** — intocados. `tsc --noEmit` limpo nos dois lados, `prettier --check` limpo, os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) com exit 0 e **um** único chunk lazy. ⚠️ **Nenhuma asserção pré-existente mudou de valor.**
+
+⚠️ **Os cinco testes falharam ANTES do fix (RED provado, 7 falhas — ⑤ tem três sites) e passam depois.** jsdom não computa layout: o que eles travam é a REGRA aplicada (`flex-wrap`, `whitespace-nowrap`, `min-h-11`, `ml-auto`, o rótulo formatado); **o pixel foi medido em Chrome real, antes e depois** — mesmo arranjo dos testes de `min-h-11` da fatia anterior.
+
+⚠️ **Verificado por MUTAÇÃO — 6, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado; `git status --porcelain -uall` mostrando só os 13 arquivos da fatia depois):
+
+| Mutação                                                | Falha observada                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| ① `flex-wrap` removido                                 | 1 — a faixa volta a estourar                                  |
+| ② `whitespace-nowrap` removido                         | 1 — o saldo volta a poder partir                              |
+| ③ volta a competência CRUA na tabela                   | 1 — `expected 'jun/26', received '2026-06'`                   |
+| ④ `Excluir` sem `ALVO_LINK_FIM`                        | 1 — perde os 44 px                                            |
+| ④b `Excluir` com `ALVO_LINK` (tamanho SEM a separação) | 1 — `to contain 'ml-auto'`: o destrutivo volta a ficar colado |
+| ⑤a `regras` sem `ALVO_LINHA`                           | 1 — os três botões voltam a 32 px                             |
+| ⑤b `DividasPage` sem `ALVO_LINK` (os dois markups)     | 2 — o único caminho pro detalhe volta a 18 px                 |
+
+**Bundle (`vite build`, antes = fatia do Pluggy / depois = esta):** JS principal 513,98 → 514,19 kB (**154,95 → 154,99 kB gzip, +0,04**); CSS **6,99 kB gzip, intocado**; chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.

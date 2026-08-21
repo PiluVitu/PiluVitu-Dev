@@ -54,9 +54,19 @@ export const ALVO_LINK_FIM =
   'ml-auto inline-flex min-h-11 items-center px-2 -mr-2'
 
 /**
- * Linha inteira clicável (`<label>` que embrulha um checkbox): o alvo real
- * é o rótulo, não o quadradinho de 13,6×16 do `<input>`. Só garante que a
- * faixa tenha 44 px de altura.
+ * Só levanta a altura pros 44 px, sem tocar no eixo x. Dois usos:
+ *
+ * - **Linha inteira clicável** (`<label>` que embrulha um checkbox): o alvo
+ *   real é o rótulo, não o quadradinho de 13,6×16 do `<input>`.
+ * - **Botão pequeno numa faixa de ações** (`size="sm"`, com borda e fundo
+ *   próprios — os `Editar`/`Pausar`/`Excluir` de `pages/regras.tsx`, MEDIDOS
+ *   a 60×32 / 65,5×32 / 62,6×32 px em Chrome real a 390×844).
+ *
+ * ⚠️ **Num botão com borda, use ESTE e não `ALVO_LINK`.** O `-mx-2` de lá
+ * existe pra devolver o deslocamento de um link de TEXTO; num botão que
+ * desenha a própria caixa, ele puxaria a borda pra cima do vizinho —
+ * trocaria alvo pequeno por alvos sobrepostos, que é o mesmo defeito com
+ * outra cara. A separação horizontal fica por conta do `gap` do container.
  */
 export const ALVO_LINHA = 'flex min-h-11 items-center'
 

@@ -603,4 +603,27 @@ describe('RegrasPage', () => {
       await screen.findByText(/Nada é adivinhado por um modelo/i),
     ).toBeInTheDocument()
   })
+
+  test('Editar/Pausar/Excluir são alvos de 44px', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844: os três botões `size="sm"` da
+    // faixa de ações mediam **60×32, 65,5×32 e 62,6×32 px**. Passam o
+    // mínimo de 24×24 do WCAG 2.5.8 (AA), mas ficam 12 px abaixo do alvo de
+    // 44 que TODA outra faixa de ações deste app já adotou (`extrato`,
+    // `categorias`, `contas`, `dívida`) — e um deles é `Excluir`, que apaga
+    // a regra sem desfazer.
+    //
+    // `ALVO_LINHA` (e não `ALVO_LINK`) porque estes são botões com borda e
+    // fundo próprios: o `-mx-2` do `ALVO_LINK` existe pra devolver o
+    // deslocamento de um link de TEXTO, e aqui puxaria a borda pra cima do
+    // vizinho — trocar alvo pequeno por alvos sobrepostos não seria
+    // conserto. `ALVO_LINHA` só levanta a altura, sem mexer no eixo x.
+    await montar({ chamadas: [], regras: [regra()] })
+
+    for (const nome of ['Editar', 'Pausar', 'Excluir']) {
+      expect(
+        screen.getByRole('button', { name: nome }).className,
+        `botão ${nome}`,
+      ).toContain('min-h-11')
+    }
+  })
 })

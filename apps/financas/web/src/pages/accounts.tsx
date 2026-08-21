@@ -297,9 +297,19 @@ export function AccountsPage() {
                               </Button>
                             </div>
                           </td>
+                          {/*
+                            ⚠️ `whitespace-nowrap`: MEDIDO em Chrome real a
+                            390×844 — `-R$ 2.345,00` quebrava em DUAS caixas
+                            de linha, com o `-R$` (24,6 px) órfão numa e
+                            `2.345,00` na seguinte. O sinal de menos é o que
+                            distingue "devo" de "tenho", e o saldo NEGATIVO
+                            virava o mais difícil de ler da coluna.
+                            `tabular-nums` não resolve isto: ele alinha a
+                            largura dos dígitos, não impede a quebra.
+                          */}
                           <td
                             data-testid={`saldo-${a.id}`}
-                            className="border-b py-1.5 text-right font-medium tabular-nums"
+                            className="border-b py-1.5 text-right font-medium whitespace-nowrap tabular-nums"
                           >
                             {formatBRL(a.balance_cents)}
                           </td>

@@ -336,4 +336,36 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
     const falta = screen.getByText(formatBRL(136000))
     expect(falta).toHaveClass('tabular-nums')
   })
+
+  describe('o link pro detalhe é alvo de 44px nos DOIS markups', () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844, com um título curto ("Tio", o
+    // formato real de uma dívida de pessoa): o link media **23×18 px**.
+    // 18 px de altura fica abaixo do mínimo de 24×24 do WCAG 2.5.8 (AA) —
+    // e a largura acompanha o título, então quanto MAIS curto o nome, menor
+    // o alvo.
+    //
+    // ⚠️ E ele é o ÚNICO caminho pro detalhe da dívida: não há botão, não
+    // há linha clicável, não há rota alcançável de outro lugar. Errar o
+    // toque aqui não é um incômodo — é ficar sem como abrir a dívida, na
+    // tela em que o dono vai justamente registrar um pagamento.
+    //
+    // Os dois markups (card < sm e tabela ≥ sm) recebem o mesmo alvo: só um
+    // dos dois existe no DOM por vez, e o defeito de 18 px de altura é do
+    // link, não do breakpoint.
+    it('no card (< sm)', async () => {
+      setLarguraJanela(390)
+      render(<DividasPage />)
+
+      const link = await screen.findByRole('link', { name: 'Pai' })
+      expect(link.className).toContain('min-h-11')
+    })
+
+    it('na tabela (>= sm)', async () => {
+      setLarguraJanela(1024)
+      render(<DividasPage />)
+
+      const link = await screen.findByRole('link', { name: 'Pai' })
+      expect(link.className).toContain('min-h-11')
+    })
+  })
 })

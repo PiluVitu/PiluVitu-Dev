@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -9,6 +10,7 @@ import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINK } from '../lib/touch'
 
 export type DebtListRow = {
   id: string
@@ -134,9 +136,24 @@ export function DividasPage() {
             <ul className="space-y-3" data-testid="dividas-cards">
               {dividas.map((d) => (
                 <li key={d.id} className="rounded-md border p-3">
+                  {/*
+                    ⚠️ MEDIDO em Chrome real a 390×844, com um título curto
+                    ("Tio", formato real de uma dívida de pessoa): **23×18 px**
+                    — abaixo do mínimo de 24×24 do WCAG 2.5.8 (AA), e a
+                    largura acompanha o título, então quanto MAIS curto o
+                    nome, menor o alvo.
+
+                    ⚠️ E este link é o ÚNICO caminho pro detalhe da dívida:
+                    não há botão, não há linha clicável, não há rota
+                    alcançável de outro lugar. Errar o toque aqui é ficar sem
+                    como abrir a dívida.
+                  */}
                   <a
                     href={`#/dividas/${d.id}`}
-                    className="text-primary font-medium underline underline-offset-4"
+                    className={cn(
+                      'text-primary font-medium underline underline-offset-4',
+                      ALVO_LINK,
+                    )}
                   >
                     {d.title}
                   </a>
@@ -182,9 +199,15 @@ export function DividasPage() {
                   {dividas.map((d) => (
                     <tr key={d.id}>
                       <td className="border-b py-1.5 pr-2 text-left">
+                        {/* Mesmo alvo do markup de card acima: só um dos dois
+                            existe por vez, e os 18 px de altura eram do link,
+                            não do breakpoint. */}
                         <a
                           href={`#/dividas/${d.id}`}
-                          className="text-primary underline underline-offset-4"
+                          className={cn(
+                            'text-primary underline underline-offset-4',
+                            ALVO_LINK,
+                          )}
                         >
                           {d.title}
                         </a>

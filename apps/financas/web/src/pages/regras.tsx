@@ -19,6 +19,7 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ALVO_LINHA } from '../lib/touch'
 import type { AccountView } from './accounts'
 import type { CategoryOption } from './recorrentes'
 
@@ -504,11 +505,27 @@ export function RegrasPage() {
                         : `Pausada, não casa nada hoje — se reativada, casaria ${matches.counts[r.id] ?? 0} de ${matches.scanned} lançamento(s) já existentes.`
                       : 'Não consegui contar quantos lançamentos existentes ela casaria.'}
                   </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
+                  {/*
+                    ⚠️ MEDIDO em Chrome real a 390×844: os três `size="sm"`
+                    mediam **60×32, 65,5×32 e 62,6×32 px** — passam o mínimo
+                    de 24×24 do WCAG 2.5.8 (AA), mas ficam 12 px abaixo do
+                    alvo de 44 que toda outra faixa de ações deste app já
+                    adotou (`extrato`, `categorias`, `contas`, `dívida`), e
+                    um deles apaga a regra sem desfazer.
+
+                    `ALVO_LINHA` e não `ALVO_LINK`: estes são botões com
+                    borda e fundo próprios, e o `-mx-2` do `ALVO_LINK` (que
+                    existe pra devolver o deslocamento de um link de TEXTO)
+                    puxaria a borda pra cima do vizinho — trocar alvo pequeno
+                    por alvos sobrepostos não seria conserto. `ALVO_LINHA` só
+                    levanta a altura; o `gap-2` continua dando a separação.
+                  */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
+                      className={ALVO_LINHA}
                       onClick={() => editar(r)}
                     >
                       Editar
@@ -517,6 +534,7 @@ export function RegrasPage() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      className={ALVO_LINHA}
                       disabled={processando === r.id}
                       onClick={() => void alternarPausa(r)}
                     >
@@ -526,6 +544,7 @@ export function RegrasPage() {
                       type="button"
                       variant="destructive"
                       size="sm"
+                      className={ALVO_LINHA}
                       disabled={processando === r.id}
                       onClick={() => excluir(r)}
                     >

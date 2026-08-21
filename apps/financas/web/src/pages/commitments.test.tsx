@@ -440,4 +440,28 @@ describe('CommitmentsPage', () => {
       )
     })
   })
+
+  describe('a linha do denominador cabe a 390px', () => {
+    it('a faixa "Denominador:" quebra em vez de estourar a largura', async () => {
+      // ⚠️ MEDIDO em Chrome real a 390×844 (build de produção, `vite preview`,
+      // `hasTouch`/`isMobile`): o `<p>` era `flex` sem `flex-wrap`, e os três
+      // filhos (o texto, o `<strong>` do valor e o gatilho da Ajuda) não
+      // cabiam numa linha só — `scrollWidth 370` contra `clientWidth 358`,
+      // **12 px estourando**. Como o pai tem `overflow` visível, o excesso
+      // não vira scroll: o gatilho "?" da Ajuda simplesmente sai da caixa.
+      //
+      // jsdom não computa layout, então o que este teste trava é a REGRA
+      // aplicada (`flex-wrap`), não o pixel — o pixel foi medido no browser
+      // real, antes e depois. Mesmo raciocínio dos testes de `min-h-11`.
+      setLarguraJanela(390)
+      mockFetch({ ok: true, data: report, notifications: [] })
+
+      render(<CommitmentsPage from="2026-08" />)
+
+      const valor = await screen.findByTestId('denominador')
+      const faixa = valor.closest('p')
+      expect(faixa).not.toBeNull()
+      expect(faixa!.className).toContain('flex-wrap')
+    })
+  })
 })

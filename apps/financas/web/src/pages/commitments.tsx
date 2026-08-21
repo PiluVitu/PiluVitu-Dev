@@ -72,7 +72,14 @@ export function CommitmentsPage({
           dívidas em aberto.
         </Ajuda>
       </div>
-      <p className="text-muted-foreground flex items-center gap-1 text-sm">
+      {/*
+        ⚠️ `flex-wrap`: MEDIDO em Chrome real a 390×844 — sem ele, os três
+        filhos (texto, o `<strong>` do valor e o gatilho da Ajuda) não cabiam
+        numa linha só e a faixa estourava `scrollWidth 370` contra
+        `clientWidth 358`, **12 px pra fora**. Como o pai tem overflow
+        visível, o excesso não vira scroll: o "?" da Ajuda saía da caixa.
+      */}
+      <p className="text-muted-foreground flex flex-wrap items-center gap-1 text-sm">
         Denominador: líquido fixo (mês sem freela) de{' '}
         <strong
           data-testid="denominador"
