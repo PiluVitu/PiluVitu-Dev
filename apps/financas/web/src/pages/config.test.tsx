@@ -51,9 +51,7 @@ describe('ConfigPage', () => {
 
     render(<ConfigPage />)
 
-    expect(
-      screen.getByRole('heading', { name: 'Configurações' }),
-    ).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-configuracoes')).toBeInTheDocument()
 
     await waitFor(() =>
       expect(screen.getByLabelText('Novo valor')).toHaveValue('3.600,00'),

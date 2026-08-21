@@ -747,9 +747,7 @@ export function ImportarPage() {
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Importar</h1>
-
+    <section className="space-y-6" data-testid="pagina-importar">
       {regrasIndisponiveis ? (
         <p
           role="alert"

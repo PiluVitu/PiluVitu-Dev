@@ -3069,3 +3069,101 @@ A doc de `ALVO_LINHA` (`web/src/lib/touch.ts`) foi estendida pra cobrir o segund
 | ⑤b `DividasPage` sem `ALVO_LINK` (os dois markups)     | 2 — o único caminho pro detalhe volta a 18 px                 |
 
 **Bundle (`vite build`, antes = fatia do Pluggy / depois = esta):** JS principal 513,98 → 514,19 kB (**154,95 → 154,99 kB gzip, +0,04**); CSS **6,99 kB gzip, intocado**; chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
+
+## A casca (`web/src/App.tsx`) — top bar + tab bar no celular, sidebar no desktop
+
+Fatia de LEITURA/layout: Worker intocado (**810**), `packages/tools` intocado (**147**), nenhuma rota, nenhuma migration. O que muda é o primeiro segundo de uso.
+
+**O estado anterior, MEDIDO em Chrome real a 390×844** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, `hasTouch`/`isMobile`): uma barra de 13 pílulas com **105 px** de altura (81 antes de a fatia de a11y levá-las a 44 px de alvo) que **rolava pra fora da tela e nunca voltava**, mais um `<header>` de 32 px com e-mail e Sair, mais o `<h1>` de cada página. O primeiro pixel de conteúdo ficava em **y=185** de 844 — quase um quarto da tela gasto antes de qualquer número.
+
+| Medido a 390×844 (mesmo harness, mesmos mocks) | antes           | depois                                         |
+| ---------------------------------------------- | --------------- | ---------------------------------------------- |
+| topo do conteúdo (`<section>`)                 | **y=185**       | **y=72**                                       |
+| conteúdo visível na 1ª pintura                 | **659 px**      | **715 px** (+56 em TODA rota)                  |
+| altura da navegação                            | 105 px, rolável | 57 px, fixa embaixo (56 + `border-t`)          |
+| slots da barra                                 | 13 pílulas      | 5 slots de **78×56 px**                        |
+| overflow horizontal nas 16 rotas               | nenhum          | nenhum (`scrollWidth === clientWidth === 390`) |
+
+⚠️ **"Conteúdo visível" aqui é `min(bottom da <section>, fundo útil) − max(top, 0)`, com `fundo útil = 844 − altura da barra fixa`** — ou seja, já descontando o que a tab bar cobre. Sem descontar, o número seria uma promessa que a barra fixa desmente.
+
+### ① Top bar (`< 768px`): marca + título da rota + tema + conta
+
+`sticky top-0 z-40 h-14 border-b bg-background/95 backdrop-blur-sm`. A marca é o literal de `apps/web/components/admin/admin-sidebar.tsx` (`size-8 rounded-lg bg-primary text-primary-foreground grid place-items-center`).
+
+⚠️ **O `<h1>` SAIU DAS 16 PÁGINAS e virou `TITULO_DA_ROTA` em `App.tsx`.** O título é a MESMA informação que a navegação já precisa carregar ("onde estou"); renderizá-lo duas vezes, uma delas gastando uma faixa própria de altura, era o desperdício mais caro da tela. Agora ele aparece na top bar no celular e acima do conteúdo no desktop — sempre visível, nunca duplicado, e nenhuma página precisa lembrar de escrevê-lo.
+
+- ⚠️ **Consequência nos testes de PÁGINA, e ela não estava no briefing:** ~30 asserções em 6 arquivos (`home`, `config`, `importar`, `recorrentes`, `regras`, `reserva`) usavam `getByRole('heading', { name: <título> })` como sinal de "a página montou" — renderizando o componente SOZINHO, sem `App`, elas perdem o heading. Foram trocadas por `getByTestId('pagina-<rota>')`, um `data-testid` no `<section>` de cada tela: mesmo sinal ("a tela renderizou, passou do guard de carregando/erro"), sem depender de um heading que não mora mais ali. **Nenhum valor esperado mudou** — só o seletor.
+- ⚠️ **Quatro páginas tinham `<Ajuda>` como IRMÃ do `<h1>`** (`extrato`, `comprometido`, `fluxo`, `insight`, `reserva`, `regras`). O "?" não foi pro top bar (seria um 5º elemento numa faixa de 56 px, e o mapa de rota é estático — não teria como carregar conteúdo por tela): ele ficou na página, preso ao **subtítulo**, com `gap-3` (a área de toque do gatilho avança 12 px pra cada lado do círculo — ver `packages/ui/CLAUDE.md`). Custo de altura: zero, porque o subtítulo ou já existia ou substituiu o `<h1>`.
+- ⚠️ **`debt-detail.tsx` é a única exceção, e é deliberada:** `TITULO_DA_ROTA` é um mapa ESTÁTICO por rota e o nome da dívida é dado carregado dentro da tela. A top bar mostra "Dívidas" (a seção, porque `#/dividas/:id` resolve pra `dividas`); o nome específico continua sendo o primeiro texto da página, agora num `<h2>`.
+- **`BotaoTema`** cicla claro → escuro → sistema num alvo `size-11`. ⚠️ `temaSalvo()` lê `localStorage`, que **lança** (não só devolve `null`) em storage particionado/privado — mesmo achado M5 já pago em `index.html`/`main.tsx`; aqui a exceção seria no render da top bar, ou seja, app em branco por causa de um botão de tema. Envolvido em `try/catch` nas duas pontas (ler e gravar).
+
+### ② Tab bar fixa: 5 slots de 78×56, e o ativo tem DOIS canais
+
+`fixed inset-x-0 bottom-0 z-40 border-t bg-background pb-[env(safe-area-inset-bottom,0px)]`. Slots: Início · Lançar · Extrato · Dívidas · **Mais**.
+
+⚠️ **Ativo = cor E forma** (`text-primary` + trilho `border-t-2 border-primary`) — é a disciplina já paga nas barras do Comprometido: sob sol, em escala de cinza, ou para protanopia/deuteranopia, duas cores viram a mesma. Cor sozinha não é sinal, e o alvo aqui é um Android usado na rua.
+
+⚠️ **Os slots são `min-h-14` (56 px), não `min-h-11` (44)** — a barra empilha ícone + rótulo, e 44 px espremeriam os dois. Os destinos do "Mais" e os botões da top bar continuam nos 44 de sempre (`lib/touch.ts`).
+
+⚠️ **Comprometido saiu da barra e NÃO ficou mais longe**: o `BlocoComprometido` é o primeiro bloco de `#/` (`pages/home.tsx`), ou seja, continua sendo a primeira coisa que o dono vê ao abrir o app.
+
+⚠️ **O slot "Mais" NÃO assume o rótulo da seção corrente** (o gatilho do `dropdown-menu` que ele substitui fazia isso): em 78 px, "Fluxo de caixa" não caberia. Quem responde "onde estou" agora é o `<h1>` da top bar; o slot continua marcado pelos mesmos dois canais mais `data-secao-ativa`.
+
+### ③ "Mais" abre um `Sheet` de baixo
+
+`side="bottom"`, `max-h-[85vh] overflow-y-auto`. No topo o **e-mail + Sair** (foi o `<header>` de 32 px que morreu — item ④ do briefing); embaixo os **10 destinos** restantes em 4 grupos (`Dia a dia` · `Cadastro` · `Análise` · `Sistema`), cabeçalho `font-mono text-[11px] font-semibold tracking-[0.2em] uppercase text-muted-foreground`.
+
+- **O botão de conta da top bar abre o MESMO painel** — o `Sheet` embrulha a casca inteira, com `open`/`onOpenChange` num estado só; o slot "Mais" é `SheetTrigger asChild` (o Radix cuida de foco e `aria-expanded`), o botão de conta só faz `setMais(true)`.
+- ⚠️ **`Sheet` não emite `menuitem`** — os testes que contavam `menuitem` passaram a contar `dialog` + `link`. Ver `packages/ui/CLAUDE.md`.
+- Tocar um destino fecha o painel (`onNavegar`): sem isso, o painel ficaria por cima da tela recém-aberta.
+
+### ④ Desktop (`>= 768px`): a sidebar do admin, literal
+
+`w-64 shrink-0 border-r bg-card/40 px-4 py-6 sticky top-0 h-screen overflow-y-auto flex flex-col gap-6`, os mesmos 4 grupos (com os 14 destinos, não 10), rodapé com e-mail + Sair + o botão de tema. Conteúdo em `mx-auto max-w-3xl px-6 py-6`, com o `<h1>` da rota no topo.
+
+⚠️ **O `aria-label="Navegação principal"` fica no `<nav>` de dentro, nunca no `<aside>`** — `<aside>` mapeia pra `complementary`, então rotulá-lo não daria nome a `navigation` nenhuma, e é por esse nome que a suíte encontra a barra nos dois lados.
+
+### ⑤⚠️ A ARMADILHA que faria esta fatia falhar: `md:hidden` / `hidden md:flex`
+
+Com CSS, os DOIS markups de navegação ficariam no DOM ao mesmo tempo. jsdom não computa CSS, e há **20 `getByRole('link', …)`** na suíte que passariam a achar dois "Extrato" — e um leitor de tela também anunciaria os dois. `lib/breakpoint.ts` ganhou `BREAKPOINT_MD = 768` e **`useMenorQueMd()`** (mesmo padrão de `useMenorQueSm`, que ficou intacto), e `AppShell` renderiza **um só** dos dois navs. Um teste dedicado é o gate disso nos dois lados (`só UM dos dois navs existe por vez — "Extrato" nunca é ambíguo`), e a mutação que injeta a sidebar dentro da casca de celular o derruba.
+
+### ⑥ `scrollIntoView({ block: 'nearest' })` sob a barra fixa — MEDIDO, não presumido
+
+A tab bar é `position: fixed`: ela **não ocupa espaço no fluxo**, então o browser considera "visível" qualquer coisa dentro da viewport, inclusive o que está atrás dela. `#/extrato` (recusa inline por linha) e `#/lancar/transferir` (alerta do servidor) dependem dessa rolagem — e ela daria o trabalho por concluído com o elemento escondido.
+
+`html { scroll-padding-bottom: calc(3.5rem + 1px + env(safe-area-inset-bottom, 0px)) }` (`web/src/styles.css`). MEDIDO em Chrome real a 390×844, com uma sonda no fim do `<main>` e o MESMO documento nos dois estados:
+
+| `scroll-padding-bottom` | sonda depois do `scrollIntoView` | topo da barra | coberta? |
+| ----------------------- | -------------------------------- | ------------- | -------- |
+| `0px`                   | `bottom: 844`                    | 787           | **sim**  |
+| `57px` (o do CSS)       | `bottom: 787`                    | 787           | **não**  |
+
+⚠️ **O `+ 1px` não é preciosismo:** com `3.5rem` puro a sonda parava em `bottom: 788` contra um topo de barra em `787` — ainda coberta, por um pixel. A barra mede **57 px** (56 do `min-h-14` + 1 do `border-t`), não 56.
+
+⚠️ **`viewport-fit=cover` no `index.html`** é o que faz `env(safe-area-inset-bottom)` valer alguma coisa: sem ele o browser mantém a viewport dentro da área segura, os insets viram 0, e a barra fixa fica colada na barra de gestos do celular.
+
+### Suítes, mutação e bundle
+
+**SPA: 614 → 621** (+7 em `App.test.tsx`: a sidebar do desktop lista os 14, o gate do "só um nav", o alvo de toque partido em dois — 56 px da barra × 44 px do resto — e os 4 casos da top bar/painel). **`packages/ui`: 91 → 97** (+6 em `sheet.test.tsx`). Worker **810**, `packages/tools` **147**, `apps/web` intocados. `tsc --noEmit` limpo nos três pacotes tocados, `prettier --check` limpo, `eslint` de `packages/ui` limpo; os dois gates de build (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) com exit 0 e **um** único chunk lazy.
+
+⚠️ **Nenhuma asserção pré-existente mudou de VALOR** — as ~30 de `getByRole('heading', …)` das telas trocaram de SELETOR (pra `getByTestId('pagina-…')`) porque o heading mudou de dono, e as de `menuitem` viraram `dialog` + `link` porque o `Sheet` não emite `menuitem`.
+
+⚠️ **Verificado por MUTAÇÃO — 9, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado):
+
+| Mutação                                                          | Falha observada                                             |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| a sidebar renderizada JUNTO com a casca de celular (a armadilha) | 4 — incl. `expected length 1, received 2` em "Extrato"      |
+| ativo só por COR (sem o trilho `border-t-2`)                     | 2 — o canal não-cromático some                              |
+| slots da barra em `min-h-11`                                     | 1                                                           |
+| "Comprometido" removido de `GRUPOS`                              | 4 — barra, painel e sidebar, mais o `aria-current` que some |
+| painel não fecha ao navegar                                      | 1                                                           |
+| `data-secao-ativa` sempre `true`                                 | 1 — o contrapositivo                                        |
+| `TITULO_DA_ROTA` trocado por um título fixo                      | 8 — o título deixa de responder "onde estou"                |
+| `aria-current` removido do item de navegação                     | 8 — incl. `#/dividas/:id` e a sub-rota de transferência     |
+| `sheetVariants` `bottom` ancorando em cima (`packages/ui`)       | 2 — o painel deixaria de nascer perto do polegar            |
+
+**Bundle (`vite build`, antes = 2ª rodada de a11y / depois = esta):** JS principal 514,19 → 501,17 kB (**154,99 → 152,74 kB gzip, −2,25**) — o `dropdown-menu` saiu do grafo e o `Sheet` reusa o `@radix-ui/react-dialog` que já estava lá; o saldo cobre com folga os ~19 ícones do `lucide-react` (imports NOMEADOS, nunca de barrel — um barrel traria a biblioteca inteira). CSS 6,99 → 7,79 kB gzip (+0,80); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
+
+**Dependência nova:** `lucide-react@^1.33.0` em `apps/financas/web` — sem lifecycle script, então não precisou entrar em `allowBuilds` do `pnpm-workspace.yaml`.
+
+**Fora de escopo, registrado:** o `<code>` do comando de PDF em `#/importar` continua sendo o único elemento mais largo que a viewport a 390 px — contido no `overflow-x-auto` do `<pre>` que já existia, sem estourar a página (comportamento pré-existente, reconfirmado nesta medição).

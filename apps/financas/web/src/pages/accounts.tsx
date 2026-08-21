@@ -206,9 +206,7 @@ export function AccountsPage() {
   if (!accounts) return <p>Carregando…</p>
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Contas</h1>
-
+    <section className="space-y-6" data-testid="pagina-contas">
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}

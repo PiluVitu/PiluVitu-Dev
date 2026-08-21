@@ -64,9 +64,12 @@ export function CommitmentsPage({
   if (!report) return <p>Carregando…</p>
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Comprometido</h1>
+    <section className="space-y-6" data-testid="pagina-comprometido">
+      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-sm">
+          O que já está prometido dos próximos meses.
+        </p>
         <Ajuda rotulo="Comprometido">
           O que já está prometido dos próximos meses: parcelas previstas +
           dívidas em aberto.

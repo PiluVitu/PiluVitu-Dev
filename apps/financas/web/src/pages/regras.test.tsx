@@ -110,7 +110,7 @@ async function montar(opts: Parameters<typeof mockRede>[0]) {
   mockRede(opts)
   render(<RegrasPage />)
   await waitFor(() =>
-    expect(screen.getByRole('heading', { name: 'Regras' })).toBeInTheDocument(),
+    expect(screen.getByTestId('pagina-regras')).toBeInTheDocument(),
   )
   return userEvent.setup()
 }
@@ -590,7 +590,7 @@ describe('RegrasPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Referência inválida',
     )
-    expect(screen.getByRole('heading', { name: 'Regras' })).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-regras')).toBeInTheDocument()
   })
 
   test('ajuda de "Regras" abre no clique (popover, não tooltip)', async () => {

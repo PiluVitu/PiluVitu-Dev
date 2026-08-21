@@ -122,8 +122,7 @@ export function DividasPage() {
   const menorQueSm = useMenorQueSm()
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Dívidas</h1>
+    <section className="space-y-6" data-testid="pagina-dividas">
       {erro !== null && (
         <p role="alert" className="text-destructive text-sm">
           {erro}

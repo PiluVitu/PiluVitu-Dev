@@ -316,8 +316,7 @@ export function NewEntryPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Lançar</h1>
+    <section className="space-y-6" data-testid="pagina-lancar">
       <AbasLancar ativo="lancamento" />
       <Card>
         <CardHeader>

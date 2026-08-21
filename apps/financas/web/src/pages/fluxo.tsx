@@ -77,11 +77,12 @@ export function FluxoPage() {
   const totalSaldo = sumCents(report.linhas.map((l) => l.saldo_cents))
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Fluxo de caixa
-        </h1>
+    <section className="space-y-6" data-testid="pagina-fluxo">
+      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-sm">
+          Entrou, saiu, saldo e acumulado, mês a mês.
+        </p>
         <Ajuda rotulo="Fluxo de caixa">
           Entrou, saiu, saldo e acumulado, mês a mês — só o que já se moveu de
           verdade (lançamento liquidado). Parcela prevista é compromisso, não

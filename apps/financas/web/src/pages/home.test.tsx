@@ -75,7 +75,7 @@ describe('HomePage', () => {
 
     render(<HomePage />)
 
-    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
     await waitFor(() => {
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
@@ -97,10 +97,10 @@ describe('HomePage', () => {
 
     render(<HomePage />)
 
-    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(4))
     // o título continua no ar — o erro ficou contido nos cards dos blocos
-    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
   })
 
   it('um bloco em erro NÃO derruba os outros — prova real: os outros dois mostram DADO de verdade, não só o card vazio', async () => {
@@ -153,7 +153,7 @@ describe('HomePage', () => {
 
     render(<HomePage />)
 
-    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
 
     // Comprometido: erro contido dentro do próprio card
     await waitFor(() =>

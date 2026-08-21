@@ -422,9 +422,12 @@ export function RegrasPage() {
     categoriaId !== NENHUMA && !categorias.some((c) => c.id === categoriaId)
 
   return (
-    <section className="space-y-6">
-      <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-        Regras
+    <section className="space-y-6" data-testid="pagina-regras">
+      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou, agora
+          presa ao parágrafo que ela detalha. */}
+      <p className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
+        As regras são aplicadas na conferência do import, da menor para a maior
+        &quot;Ordem&quot;. Elas nunca gravam sozinhas.
         <Ajuda rotulo="Regras">
           Uma regra diz &quot;quando a linha for assim, categorize assim&quot; —
           e roda na conferência do import, antes de qualquer coisa ser gravada.
@@ -433,11 +436,6 @@ export function RegrasPage() {
           duas regras mexem no mesmo campo, vence a de MAIOR número em
           &quot;Ordem&quot; — é por isso que a ordem é editável.
         </Ajuda>
-      </h1>
-
-      <p className="text-muted-foreground text-sm">
-        As regras são aplicadas na conferência do import, da menor para a maior
-        &quot;Ordem&quot;. Elas nunca gravam sozinhas.
       </p>
 
       {acaoErro ? (

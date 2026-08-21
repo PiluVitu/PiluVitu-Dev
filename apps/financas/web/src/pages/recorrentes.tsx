@@ -314,9 +314,7 @@ export function RecorrentesPage() {
     id === null ? null : (contas.find((c) => c.id === id)?.name ?? null)
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Recorrentes</h1>
-
+    <section className="space-y-6" data-testid="pagina-recorrentes">
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}

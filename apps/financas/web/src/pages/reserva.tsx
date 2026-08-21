@@ -225,11 +225,12 @@ export function ReservaPage() {
       : false
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Reserva de emergência
-        </h1>
+    <section className="space-y-6" data-testid="pagina-reserva">
+      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-sm">
+          Quantos meses de custo fixo a reserva cobre hoje.
+        </p>
         <Ajuda rotulo="Reserva de emergência">
           Prioridade matemática absoluta, antes de qualquer ativo que deprecia
           (carro, moto, eletrônico) — é o que separa um mês ruim de um problema,

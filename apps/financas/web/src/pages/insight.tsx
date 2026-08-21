@@ -334,9 +334,12 @@ export function InsightPage() {
   const numbersCarregando = numbers === null && numbersError === null
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Insight</h1>
+    <section className="space-y-6" data-testid="pagina-insight">
+      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-sm">
+          Os números do mês, mais a leitura escrita pelo modelo local.
+        </p>
         <Ajuda rotulo="Insight">
           Os números abaixo são CALCULADOS — consulta exata contra o
           livro-caixa, disponíveis sempre, mesmo que o comando nunca tenha

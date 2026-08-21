@@ -16,14 +16,14 @@ import { BlocoSaldos } from '../blocos/BlocoSaldos'
  */
 export function HomePage() {
   return (
-    <section className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Início</h1>
-        <p className="text-muted-foreground text-sm">
-          Visão geral das suas finanças — Comprometido, saldos, dívidas em
-          aberto e pra onde foi o dinheiro este mês.
-        </p>
-      </div>
+    // ⚠️ O `<h1>Início</h1>` saiu daqui (e das outras 15 telas) — ele mora em
+    // `App.tsx`, que o renderiza na top bar fixa no celular e acima do
+    // conteúdo no desktop. Ver `TITULO_DA_ROTA` lá pro porquê.
+    <section className="space-y-6" data-testid="pagina-inicio">
+      <p className="text-muted-foreground text-sm">
+        Visão geral das suas finanças — Comprometido, saldos, dívidas em aberto
+        e pra onde foi o dinheiro este mês.
+      </p>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <BlocoComprometido />
         <BlocoSaldos />

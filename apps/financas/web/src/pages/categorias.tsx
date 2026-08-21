@@ -212,9 +212,7 @@ export function CategoriasPage() {
     editandoId !== null && categorias.some((c) => c.parent_id === editandoId)
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Categorias</h1>
-
+    <section className="space-y-6" data-testid="pagina-categorias">
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}

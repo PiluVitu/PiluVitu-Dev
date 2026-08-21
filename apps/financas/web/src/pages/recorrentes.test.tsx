@@ -133,9 +133,7 @@ describe('RecorrentesPage', () => {
     // fica atrás do gate `if (!recorrentes) return <p>Carregando…</p>` —
     // só aparece depois que a lista chega.
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Recorrentes' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-recorrentes')).toBeInTheDocument(),
     )
     expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument()
 

@@ -100,9 +100,7 @@ describe('ReservaPage', () => {
 
     render(<ReservaPage />)
 
-    expect(
-      await screen.findByRole('heading', { name: 'Reserva de emergência' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByTestId('pagina-reserva')).toBeInTheDocument()
 
     await waitFor(() =>
       expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 1.500,00'),
@@ -335,9 +333,7 @@ describe('ReservaPage', () => {
 
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const gatilho = screen.getByRole('button', {
@@ -450,9 +446,7 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     const user = userEvent.setup()
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const container = screen.getByTestId('simulador-financiado')
@@ -484,9 +478,7 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     const user = userEvent.setup()
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const container = screen.getByTestId('simulador-financiado')
@@ -555,9 +547,7 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     const user = userEvent.setup()
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const container = screen.getByTestId('simulador-a-vista')
@@ -584,9 +574,7 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     const user = userEvent.setup()
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const container = screen.getByTestId('simulador-financiado')
@@ -606,9 +594,7 @@ describe('Simulador: reserva × ativo que deprecia (Task 4)', () => {
     const user = userEvent.setup()
     render(<ReservaPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Reserva de emergência' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-reserva')).toBeInTheDocument(),
     )
 
     const aVista = screen.getByTestId('simulador-a-vista')

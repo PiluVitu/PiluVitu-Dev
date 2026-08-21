@@ -101,9 +101,7 @@ export function ConfigPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-
+    <section className="space-y-6" data-testid="pagina-configuracoes">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">

@@ -263,9 +263,7 @@ afterEach(() => {
 async function irParaConferencia(chamadas: Chamada[]) {
   render(<ImportarPage />)
   await waitFor(() =>
-    expect(
-      screen.getByRole('heading', { name: 'Importar' }),
-    ).toBeInTheDocument(),
+    expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
   )
   const usuario = userEvent.setup()
   const input = screen.getByLabelText(/Arquivo/i)
@@ -284,9 +282,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     expect(screen.getByLabelText('Conta')).toBeInTheDocument()
     expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument()
@@ -306,9 +302,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -331,9 +325,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -391,9 +383,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -416,9 +406,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -433,9 +421,7 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -735,9 +721,7 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
 
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(screen.getByLabelText(/Arquivo/i), arquivoOfx(texto))
@@ -816,9 +800,7 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
     await usuario.upload(
@@ -923,9 +905,7 @@ describe('ImportarPage — Task 5: tela de conferência', () => {
 
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
 
@@ -1134,9 +1114,7 @@ describe('ImportarPage — Task 6: ponta a ponta (spec §10)', () => {
 
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     const usuario = userEvent.setup()
 
@@ -1248,9 +1226,7 @@ describe('ImportarPage — PDF: a tela explica o caminho (Task 2, fatia ⑨)', (
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
 
     // O comando exato, citado por extenso — não só "existe um CLI".
@@ -1279,9 +1255,7 @@ describe('ImportarPage — PDF: a tela explica o caminho (Task 2, fatia ⑨)', (
     mockRede({ chamadas })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
 
     const input = screen.getByLabelText(/Arquivo/i)
@@ -1578,9 +1552,7 @@ describe('ImportarPage — regras de categorização', () => {
     })
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
 
     // A tela está de pé, MAS o arquivo não aceita nada ainda — e diz por quê.
@@ -1677,9 +1649,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
   async function abrir() {
     render(<ImportarPage />)
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Importar' }),
-      ).toBeInTheDocument(),
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
     return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
   }
@@ -2045,9 +2015,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
     await waitFor(() =>
       expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument(),
     )
-    expect(
-      screen.getByRole('heading', { name: 'Importar' }),
-    ).toBeInTheDocument()
+    expect(screen.getByTestId('pagina-importar')).toBeInTheDocument()
     expect(screen.getByLabelText(/Id da conta no Pluggy/)).toBeInTheDocument()
   })
 })

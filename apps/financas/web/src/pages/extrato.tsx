@@ -782,9 +782,17 @@ export function ExtratoPage() {
   const menorQueSm = useMenorQueSm()
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Extrato</h1>
+    <section className="space-y-6" data-testid="pagina-extrato">
+      {/*
+        O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda continua na tela,
+        agora presa ao subtítulo — é onde ela explica o que a linha de texto
+        ao lado resume. `gap-3` porque a área de toque do gatilho avança 12 px
+        pra cada lado do círculo (ver `packages/ui/CLAUDE.md`).
+      */}
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-sm">
+          Confira, corrija, marque como pago ou apague um lançamento.
+        </p>
         <Ajuda rotulo="Extrato">
           Todo lançamento, do mais recente pro mais antigo. "Falta marcar como
           pago" é o que ainda não saiu (nem entrou) de fato de uma conta:
@@ -793,9 +801,6 @@ export function ExtratoPage() {
           "carregar mais" pra alcançar mais fundo.
         </Ajuda>
       </div>
-      <p className="text-muted-foreground text-sm">
-        Confira, corrija, marque como pago ou apague um lançamento.
-      </p>
 
       {erro !== null && (
         <p role="alert" className="text-destructive text-sm">

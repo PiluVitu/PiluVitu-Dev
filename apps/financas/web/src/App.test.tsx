@@ -120,8 +120,26 @@ function mockFetchVazio() {
   )
 }
 
+const LARGURA_PADRAO = window.innerWidth
+
+/**
+ * ⚠️ **A casca é DUAS, e só uma existe no DOM por vez** (`useMenorQueMd`,
+ * `lib/breakpoint.ts`): abaixo de 768px a top bar + tab bar + `Sheet` do
+ * "Mais"; de 768 pra cima a sidebar do desktop. Nunca `md:hidden`/`hidden
+ * md:flex` — com CSS os dois markups coexistiriam e cada `getByRole('link',
+ * …)` desta suíte acharia DOIS "Extrato" (jsdom não computa CSS).
+ *
+ * O default do jsdom é 1024, ou seja, **desktop** — é a casca que a maioria
+ * dos testes deste arquivo exercita. Quem precisa da tab bar/`Sheet` chama
+ * isto ANTES de `render`.
+ */
+function emCelular() {
+  window.innerWidth = 390
+}
+
 afterEach(() => {
   window.location.hash = ''
+  window.innerWidth = LARGURA_PADRAO
   vi.unstubAllGlobals()
 })
 
@@ -417,12 +435,12 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
     )
   })
 
-  // ⚠️ "Categorias" e "Insight" deixaram de ser pílulas soltas e passaram
-  // pro menu "Mais" (o nav ocupava 153px a 390px, medido). O teste ficou
-  // MAIS forte, não mais fraco: além do `aria-current`, agora ele prova que
-  // o destino continua ALCANÇÁVEL — abre o menu de verdade, por clique, e
-  // acha o link lá dentro. Um item que sumisse do menu falharia aqui.
-  test('#/categorias marca "Categorias" como ativo (dentro do menu "Mais")', async () => {
+  // ⚠️ O painel do "Mais" virou um `Sheet` (era `dropdown-menu`), e `Sheet`
+  // **não emite `menuitem`** — o conteúdo é um `role="dialog"` com `<a>` de
+  // verdade dentro. Estes testes contavam `menuitem`; passaram a contar
+  // `dialog` + `link`, que é o que a árvore acessível de fato tem agora.
+  test('#/categorias marca "Categorias" como ativo (dentro do "Mais")', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/categorias'
     render(<App />)
@@ -430,14 +448,14 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       expect(screen.getByRole('heading', { name: 'Categorias' })).toBeDefined(),
     )
     await userEvent.click(screen.getByTestId('nav-mais'))
+    const painel = await screen.findByRole('dialog')
     expect(
-      await screen.findByRole('menuitem', { name: 'Categorias' }),
+      within(painel).getByRole('link', { name: 'Categorias' }),
     ).toHaveAttribute('aria-current', 'page')
   })
 
-  // Task 5 (fatia ⑨): nova rota, mesmo padrão das demais — o nav marca
-  // "Insight" ativo, consistente com o estado ativo que a Task 2 introduziu.
-  test('#/insight marca "Insight" como ativo (dentro do menu "Mais")', async () => {
+  test('#/insight marca "Insight" como ativo (dentro do "Mais")', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/insight'
     render(<App />)
@@ -445,17 +463,19 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       expect(screen.getByRole('heading', { name: 'Insight' })).toBeDefined(),
     )
     await userEvent.click(screen.getByTestId('nav-mais'))
+    const painel = await screen.findByRole('dialog')
     expect(
-      await screen.findByRole('menuitem', { name: 'Insight' }),
+      within(painel).getByRole('link', { name: 'Insight' }),
     ).toHaveAttribute('aria-current', 'page')
   })
 
-  // O gatilho do "Mais" ASSUME o rótulo da seção corrente quando a rota
-  // ativa mora dentro dele. Sem isso, estar numa dessas telas deixaria o nav
-  // inteiro sem NENHUMA marca de "onde estou" — o estado ativo existe
-  // justamente pra responder isso, e ele não pode se perder só porque o
-  // destino saiu da primeira fila.
-  test('o gatilho "Mais" mostra a seção corrente quando a rota ativa mora nele', async () => {
+  // ⚠️ O slot "Mais" da tab bar não pode ASSUMIR o rótulo da seção (era o que
+  // o gatilho do `dropdown-menu` fazia): num slot de 78×56px, "Fluxo de
+  // caixa" não caberia. Quem responde "onde estou" agora é o `<h1>` da top
+  // bar — e o slot continua marcado, pelos MESMOS dois canais dos outros
+  // (cor + trilho) mais o `data-secao-ativa`.
+  test('numa rota do "Mais", o slot fica marcado e o título aparece na top bar', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/fluxo'
     render(<App />)
@@ -464,48 +484,54 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
         screen.getByRole('heading', { name: 'Fluxo de caixa' }),
       ).toBeDefined(),
     )
-    const gatilho = screen.getByTestId('nav-mais')
-    expect(gatilho).toHaveTextContent('Fluxo de caixa')
-    expect(gatilho).toHaveAttribute('data-secao-ativa', 'true')
+    const slot = screen.getByTestId('nav-mais')
+    expect(slot).toHaveTextContent('Mais')
+    expect(slot).toHaveAttribute('data-secao-ativa', 'true')
+    expect(slot.className).toContain('border-primary')
   })
 
-  test('#/regras marca "Regras" ativo no menu "Mais"', async () => {
+  test('#/regras marca o slot "Mais" como seção ativa', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/regras'
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Regras' })).toBeDefined(),
     )
-    const gatilho = screen.getByTestId('nav-mais')
-    expect(gatilho).toHaveTextContent('Regras')
-    expect(gatilho).toHaveAttribute('data-secao-ativa', 'true')
+    expect(screen.getByTestId('nav-mais')).toHaveAttribute(
+      'data-secao-ativa',
+      'true',
+    )
   })
 
-  // O contrapositivo do teste acima: numa rota PRIMÁRIA o gatilho volta a
-  // ser um "Mais" neutro. Sem este caso, um gatilho marcado como ativo o
-  // TEMPO TODO passaria no teste anterior sem provar nada.
-  test('numa rota primária o gatilho "Mais" não se marca como seção ativa', async () => {
+  // O contrapositivo do teste acima: numa rota PRIMÁRIA o slot volta a ser um
+  // "Mais" neutro. Sem este caso, um slot marcado como ativo o TEMPO TODO
+  // passaria no teste anterior sem provar nada.
+  test('numa rota primária o slot "Mais" não se marca como seção ativa', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/extrato'
     render(<App />)
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
     )
-    const gatilho = screen.getByTestId('nav-mais')
-    expect(gatilho).toHaveTextContent('Mais')
-    expect(gatilho).not.toHaveAttribute('data-secao-ativa')
+    const slot = screen.getByTestId('nav-mais')
+    expect(slot).toHaveTextContent('Mais')
+    expect(slot).not.toHaveAttribute('data-secao-ativa')
+    expect(slot.className).toContain('border-transparent')
   })
 
-  // ⚠️ O ponto da fatia: a primeira fila do nav encolheu, mas NENHUM destino
-  // sumiu do app.
+  // ⚠️ O ponto da fatia: a barra encolheu de 13 pílulas pra 4 slots + "Mais",
+  // mas NENHUM destino sumiu do app.
   //
-  // ⚠️ Os 14 rótulos são LITERAIS aqui de propósito. A primeira versão deste
-  // teste somava `barra.length + menu.length` e comparava com uma constante
-  // exportada de `App.tsx` — que era derivada das MESMAS duas listas. Apagar
-  // um destino encolhia os dois lados da igualdade e o teste continuava
-  // verde: MEDIDO por mutação (removi "Reserva" e nenhum teste caiu). Uma
-  // asserção que se deriva do código sob teste não testa esse código.
-  test('nenhum destino sumiu: os 14 continuam alcançáveis (5 na barra, 9 no menu)', async () => {
+  // ⚠️ Os 14 rótulos são LITERAIS aqui de propósito. Uma versão anterior
+  // deste teste somava `barra.length + menu.length` e comparava com uma
+  // constante exportada de `App.tsx` — que era derivada das MESMAS duas
+  // listas. Apagar um destino encolhia os dois lados da igualdade e o teste
+  // continuava verde (MEDIDO por mutação). Uma asserção derivada do código
+  // sob teste não testa esse código.
+  test('nenhum destino sumiu: os 14 continuam alcançáveis (4 na barra, 10 no "Mais")', async () => {
+    emCelular()
     mockFetchVazio()
     render(<App />)
     await waitFor(() =>
@@ -516,21 +542,86 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       within(nav)
         .getAllByRole('link')
         .map((a) => a.textContent),
-    ).toEqual(['Início', 'Lançar', 'Extrato', 'Dívidas', 'Comprometido'])
+    ).toEqual(['Início', 'Lançar', 'Extrato', 'Dívidas'])
 
     await userEvent.click(screen.getByTestId('nav-mais'))
-    const noMenu = await screen.findAllByRole('menuitem')
-    expect(noMenu.map((a) => a.textContent)).toEqual([
+    const painel = await screen.findByRole('dialog')
+    expect(
+      within(painel)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual([
+      'Comprometido',
+      'Importar',
       'Contas',
       'Categorias',
       'Recorrentes',
       'Regras',
-      'Reserva',
-      'Importar',
       'Fluxo de caixa',
       'Insight',
+      'Reserva',
       'Configurações',
     ])
+  })
+
+  // A sidebar do desktop é a TERCEIRA superfície alimentada pela mesma lista
+  // — e a única que mostra os 14 de uma vez. Sem este caso, um destino que
+  // sumisse SÓ dela passaria batido (o teste acima roda a 390px).
+  test('no desktop, a sidebar lista os 14 destinos e não existe tab bar', async () => {
+    mockFetchVazio()
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+    expect(screen.queryByTestId('tab-bar')).toBeNull()
+    expect(screen.queryByTestId('nav-mais')).toBeNull()
+
+    const nav = screen.getByRole('navigation', { name: 'Navegação principal' })
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual([
+      'Início',
+      'Lançar',
+      'Extrato',
+      'Dívidas',
+      'Comprometido',
+      'Importar',
+      'Contas',
+      'Categorias',
+      'Recorrentes',
+      'Regras',
+      'Fluxo de caixa',
+      'Insight',
+      'Reserva',
+      'Configurações',
+    ])
+  })
+
+  // ⚠️ A armadilha que fazia esta fatia falhar em silêncio: com
+  // `md:hidden`/`hidden md:flex` os DOIS navs ficariam no DOM (jsdom não
+  // computa CSS) e todo `getByRole('link', { name: 'Extrato' })` desta suíte
+  // passaria a achar dois. Este caso é o gate disso, nos dois lados.
+  test('só UM dos dois navs existe por vez — "Extrato" nunca é ambíguo', async () => {
+    emCelular()
+    mockFetchVazio()
+    const { unmount } = render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    expect(screen.getByTestId('tab-bar')).toBeInTheDocument()
+    expect(screen.queryByTestId('sidebar')).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'Extrato' })).toHaveLength(1)
+    unmount()
+
+    window.innerWidth = LARGURA_PADRAO
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+    expect(screen.getAllByRole('link', { name: 'Extrato' })).toHaveLength(1)
   })
 
   // #/dividas/:id (detalhe de uma dívida) não é um link próprio no nav —
@@ -574,27 +665,108 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
   })
 })
 
-describe('App — alvo de toque do nav', () => {
-  test('as pílulas do nav e os itens do menu "Mais" têm 44px de altura', async () => {
-    // ⚠️ MEDIDO em Chrome real a 390×844: pílula ~30 px de altura, e os 9
-    // itens do menu "Mais" com 32 px e **0 px de gap** — dois destinos
-    // colados são, pra um polegar, um alvo só.
-    const user = userEvent.setup()
+describe('App — alvo de toque da casca', () => {
+  // ⚠️ Os slots da tab bar são `min-h-14` (56 px), não `min-h-11` (44) — a
+  // barra empilha ícone + rótulo, e 44 px espremeriam os dois. Os destinos do
+  // "Mais" e os botões da top bar continuam nos 44 de sempre
+  // (`lib/touch.ts`).
+  test('os 5 slots da tab bar têm 56px de altura', async () => {
+    emCelular()
     mockFetchVazio()
     window.location.hash = '#/'
     render(<App />)
 
-    const inicio = await screen.findByRole('link', { name: 'Início' })
-    expect(inicio.className).toContain('min-h-11')
-    expect(screen.getByTestId('nav-mais').className).toContain('min-h-11')
+    const nav = await screen.findByRole('navigation', {
+      name: 'Navegação principal',
+    })
+    const slots = [
+      ...within(nav).getAllByRole('link'),
+      screen.getByTestId('nav-mais'),
+    ]
+    expect(slots).toHaveLength(5)
+    for (const slot of slots) expect(slot.className).toContain('min-h-14')
+  })
+
+  test('os destinos do "Mais" e os botões da top bar têm 44px', async () => {
+    const user = userEvent.setup()
+    emCelular()
+    mockFetchVazio()
+    window.location.hash = '#/'
+    render(<App />)
+
+    expect((await screen.findByTestId('alternar-tema')).className).toContain(
+      'size-11',
+    )
+    expect(screen.getByTestId('abrir-conta').className).toContain('size-11')
 
     await user.click(screen.getByTestId('nav-mais'))
-    const itens = await screen.findAllByRole('menuitem')
-    expect(itens.length).toBeGreaterThan(0)
-    for (const item of itens) {
-      expect(item.className).toContain('min-h-11')
-      // `my-0.5`: o gap que não existia entre um item e o seguinte
-      expect(item.className).toContain('my-0.5')
-    }
+    const painel = await screen.findByRole('dialog')
+    const destinos = within(painel).getAllByRole('link')
+    expect(destinos.length).toBeGreaterThan(0)
+    for (const destino of destinos)
+      expect(destino.className).toContain('min-h-11')
+  })
+})
+
+describe('App — top bar do celular', () => {
+  test('o título é o da rota corrente e acompanha a troca de hash', async () => {
+    emCelular()
+    mockFetchVazio()
+    render(<App />)
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeDefined(),
+    )
+
+    window.location.hash = '#/extrato'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Extrato' })).toBeDefined(),
+    )
+    expect(screen.queryByRole('heading', { name: 'Início' })).toBeNull()
+  })
+
+  // O `<header>` de 32 px com e-mail e Sair morreu; os dois foram pro painel
+  // do "Mais", que o botão de conta da top bar também abre.
+  test('o botão de conta abre o painel, com e-mail e Sair', async () => {
+    const user = userEvent.setup()
+    emCelular()
+    mockFetchVazio()
+    render(<App />)
+
+    await user.click(await screen.findByTestId('abrir-conta'))
+
+    const painel = await screen.findByRole('dialog')
+    expect(within(painel).getByText('dono@exemplo.com')).toBeInTheDocument()
+    expect(
+      within(painel).getByRole('button', { name: 'Sair' }),
+    ).toBeInTheDocument()
+  })
+
+  test('o painel agrupa os destinos com os quatro cabeçalhos', async () => {
+    const user = userEvent.setup()
+    emCelular()
+    mockFetchVazio()
+    render(<App />)
+
+    await user.click(await screen.findByTestId('nav-mais'))
+    const painel = await screen.findByRole('dialog')
+
+    for (const titulo of ['Dia a dia', 'Cadastro', 'Análise', 'Sistema'])
+      expect(within(painel).getByText(titulo)).toBeInTheDocument()
+  })
+
+  test('tocar um destino do painel fecha o painel', async () => {
+    const user = userEvent.setup()
+    emCelular()
+    mockFetchVazio()
+    render(<App />)
+
+    await user.click(await screen.findByTestId('nav-mais'))
+    const painel = await screen.findByRole('dialog')
+    await user.click(within(painel).getByRole('link', { name: 'Contas' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })

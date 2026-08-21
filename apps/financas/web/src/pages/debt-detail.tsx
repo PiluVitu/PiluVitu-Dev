@@ -398,11 +398,18 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-6" data-testid="pagina-divida">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Dívida · {detail.debt.title}
-        </h1>
+        {/*
+          ⚠️ Único `<h2>` de título de tela do app, e a exceção é deliberada:
+          `TITULO_DA_ROTA` (`App.tsx`) é um mapa ESTÁTICO por rota, e o nome da
+          dívida é dado carregado aqui dentro — a top bar não tem como
+          conhecê-lo. Ela mostra "Dívidas" (a seção); o nome específico
+          continua sendo o primeiro texto da tela.
+        */}
+        <h2 className="text-xl font-semibold tracking-tight">
+          {detail.debt.title}
+        </h2>
         {detail.items.length === 0 ? (
           <p className="text-muted-foreground mt-1 text-sm">
             Sem itens ainda — nada em aberto pra cobrar.

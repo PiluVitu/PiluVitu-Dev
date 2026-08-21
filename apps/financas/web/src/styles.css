@@ -59,4 +59,29 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /*
+    ⚠️ A tab bar de `App.tsx` é `position: fixed` embaixo — ela NÃO ocupa
+    espaço no fluxo, então o browser não sabe que os últimos 56 px da
+    viewport estão cobertos. `scrollIntoView({ block: 'nearest' })` (usado
+    por `#/extrato` pra trazer a recusa de uma linha até a vista, e por
+    `#/lancar/transferir` pro alerta do servidor) considera "visível"
+    qualquer coisa dentro da viewport — inclusive o que está atrás da barra:
+    ele daria a rolagem por concluída com o elemento escondido.
+
+    `scroll-padding-bottom` no scroll container (o próprio documento) é o que
+    conta: a rolagem passa a mirar a área ÚTIL, não a viewport crua. O
+    `env(safe-area-inset-bottom)` acompanha porque a barra também o soma no
+    próprio padding.
+
+    ⚠️ O `+ 1px` é o `border-t` da barra, e ele NÃO é preciosismo: MEDIDO em
+    Chrome real a 390×844 com `3.5rem` puro, a sonda parava em
+    `bottom: 788` contra um topo de barra em `787` — ainda coberta, por um
+    pixel. A barra mede 57 px (56 do `min-h-14` + 1 da borda), não 56.
+  */
+  html {
+    scroll-padding-bottom: calc(
+      3.5rem + 1px + env(safe-area-inset-bottom, 0px)
+    );
+  }
 }

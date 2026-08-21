@@ -2,7 +2,16 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `viewport-fit=cover` é o que faz `env(safe-area-inset-bottom)` valer
+      alguma coisa: sem ele o browser mantém a viewport dentro da área
+      segura, os insets viram 0, e a tab bar fixa embaixo (`App.tsx`) ficaria
+      colada na barra de gestos do celular.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Finanças</title>
     <script>
       // Aplica o tema salvo ANTES do primeiro paint — evita flash de tema

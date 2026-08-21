@@ -248,8 +248,7 @@ export function TransferirPage() {
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
-    <section className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Lançar</h1>
+    <section className="space-y-6" data-testid="pagina-transferir">
       <AbasLancar ativo="transferencia" />
       <Card>
         <CardHeader>
