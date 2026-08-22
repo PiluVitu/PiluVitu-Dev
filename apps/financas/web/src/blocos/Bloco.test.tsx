@@ -3,6 +3,26 @@ import { describe, expect, it } from 'vitest'
 import { Bloco } from './Bloco'
 
 describe('Bloco', () => {
+  // ⚠️ jsdom não computa layout — o pixel foi medido em Chrome real a 390×844
+  // (310 → 326px de caixa útil). O que esta asserção trava é a REGRA aplicada:
+  // `p-6` cru nos dois slots comeria 48px de dentro de um card que o shell já
+  // reduziu a 358px.
+  it('padding é p-4 sm:p-6 no header E no conteúdo, nunca p-6 cru', () => {
+    const { container } = render(
+      <Bloco titulo="Comprometido">
+        <p>conteúdo real</p>
+      </Bloco>,
+    )
+    const [header, conteudo] = Array.from(
+      container.firstElementChild!.children,
+    ) as HTMLElement[]
+
+    expect(header).toHaveClass('p-4', 'sm:p-6')
+    expect(header).not.toHaveClass('p-6')
+    expect(conteudo).toHaveClass('p-4', 'pt-0', 'sm:p-6', 'sm:pt-0')
+    expect(conteudo).not.toHaveClass('p-6')
+  })
+
   it('estado carregando: mostra o título, não mostra o conteúdo', () => {
     render(
       <Bloco titulo="Comprometido" carregando>

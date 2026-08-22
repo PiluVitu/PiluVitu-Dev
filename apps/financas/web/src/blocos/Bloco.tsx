@@ -45,13 +45,27 @@ export function Bloco({
 }: BlocoProps) {
   return (
     <Card>
-      <CardHeader>
+      {/*
+       * ⚠️ `p-4 sm:p-6`, não o `p-6` que o design system traz por default.
+       * MEDIDO em Chrome real a 390×844: o shell já tira 32px, então `p-6`
+       * (24 de cada lado) deixa **308px** de caixa útil por card; `p-4` (16)
+       * deixa **324px** — **+16px por card**, exatamente onde o número
+       * aperta. De `sm` pra cima volta a 24, o respiro certo quando há espaço.
+       *
+       * Aplicado AQUI e não tela a tela: este é o wrapper dos quatro blocos da
+       * home, o único lugar do app com grid de cards. Tela a tela seriam ~16
+       * cópias do mesmo literal (a classe de cópia que diverge) por um ganho
+       * muito menor: uma tela de coluna única já cabe (`R$ 21.122,50` a 30px
+       * mede 195,3px contra 308 úteis). O `NumeroCard` carrega a mesma regra
+       * por conta própria, pelo mesmo motivo — um lugar por primitivo.
+       */}
+      <CardHeader className="p-4 sm:p-6">
         <CardTitle className="flex items-center gap-2">
           {titulo}
           {ajuda}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
         {erro ? (
           <p role="alert">{erro}</p>
         ) : carregando ? (

@@ -43,6 +43,59 @@ export function formatBRL(cents: Cents): string {
   return `${cents < 0 ? '-' : ''}R$ ${inteiro},${decimal}`
 }
 
+/**
+ * `R$ 21.123` — sem os centavos. Existe por uma medida, não por gosto:
+ * MEDIDO em Chrome real a 390×844, `R$ 21.122,50` a 24px pede **155,5px** e a
+ * caixa útil de um card num grid de 2 colunas é **137px** — a linha quebra em
+ * duas. Sem os centavos o mesmo valor mede **118,8px** e cabe numa linha só. Ver `apps/financas/web/src/blocos/NumeroCard.tsx`, que amarra "grid de
+ * 2 colunas" a "sem centavos" num prop só, pra não existir a combinação que
+ * estoura.
+ *
+ * Mora AQUI, ao lado de `formatBRL`, e não num `lib/` da SPA: dinheiro tem UM
+ * formatador neste monorepo. Uma segunda função de formatar dinheiro fora
+ * deste módulo é uma segunda separação de milhar, um segundo `R$ `, um segundo
+ * tratamento de sinal — e é a classe de cópia que já custou caro aqui
+ * (`todayInTeresina`, `normalizeName`). O Worker (`apps/financas/src`) já
+ * importa `@piluvitu/tools/money` e não alcança `web/src/lib`: local, esta
+ * função nasceria inalcançável pra ele.
+ *
+ * ⚠️ **ARREDONDA (não trunca), e arredonda a MAGNITUDE.**
+ *
+ * Truncar erraria até 99 centavos por valor; arredondar erra no máximo 50 —
+ * metade. Isso importa porque nada torna a operação aditiva: uma coluna de
+ * partes sem centavos **não** soma exatamente o total sem centavos, e o que dá
+ * pra escolher é só o TAMANHO do desencontro. Com arredondamento o erro por
+ * parcela é ≤ 50 centavos e os erros se cancelam (uns pra cima, outros pra
+ * baixo); com truncamento todo erro vai pro mesmo lado e se acumula, então uma
+ * lista de 8 contas pode divergir R$ 8 do total — visível, e sempre no mesmo
+ * sentido (o total parecendo maior que a soma do que está na tela).
+ *
+ * É também o arredondamento que este módulo já usa em todo lugar
+ * (`pct_of_fixed_net` em `domain/reports.ts`, o float→centavos de
+ * `domain/pluggy-map.ts`) — um segundo critério de arredondamento seria mais
+ * uma coisa a divergir.
+ *
+ * ⚠️ **`Math.round` na magnitude, nunca no valor com sinal**: `Math.round(-0.5)`
+ * é `-0` e `Math.round(0.5)` é `1`, então arredondar com sinal faria meio real
+ * cair pra lados diferentes conforme a direção. Mesma lição já paga em
+ * `apps/financas/src/domain/pluggy-map.ts`.
+ *
+ * ⚠️ **Nunca use isto num card de largura total** — lá cabem os centavos, e
+ * esconder centavo que cabe é perder precisão de graça.
+ */
+export function formatBRLSemCentavos(cents: Cents): string {
+  if (!Number.isSafeInteger(cents)) {
+    throw new RangeError(
+      `centavos precisam ser inteiro seguro: ${String(cents)}`,
+    )
+  }
+  const reais = Math.round(Math.abs(cents) / 100)
+  const inteiro = String(reais).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  // `-0` nunca chega à tela: 49 centavos negativos viram `R$ 0`, não `-R$ 0`.
+  const sinal = cents < 0 && reais !== 0 ? '-' : ''
+  return `${sinal}R$ ${inteiro}`
+}
+
 // O resto de (total % count) vai nas PRIMEIRAS parcelas — é o que os emissores
 // brasileiros fazem. R$ 100,00 em 3x = 3334 + 3333 + 3333.
 export function splitInstallments(total: Cents, count: number): Cents[] {

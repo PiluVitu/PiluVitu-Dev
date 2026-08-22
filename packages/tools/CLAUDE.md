@@ -22,7 +22,21 @@ Exportados via subpaths (`@piluvitu/tools/prng|entropy|roleta`). Testados em Jes
 
 ## Módulo `money` (dinheiro)
 
-`money.ts` — `parseBRL` (string BRL → centavos inteiros, aceita `'1.360,00'`/`'R$ 1.360,00'`/sinal negativo, nunca passa por float), `formatBRL` (formatação manual, byte-a-byte estável entre runtimes — não usa `Intl.NumberFormat`), `splitInstallments` (parcelamento com resto nas primeiras parcelas) e `sumCents`. Exposto via `@piluvitu/tools/money`.
+`money.ts` — `parseBRL` (string BRL → centavos inteiros, aceita `'1.360,00'`/`'R$ 1.360,00'`/sinal negativo, nunca passa por float), `formatBRL` (formatação manual, byte-a-byte estável entre runtimes — não usa `Intl.NumberFormat`), `formatBRLSemCentavos`, `splitInstallments` (parcelamento com resto nas primeiras parcelas) e `sumCents`. Exposto via `@piluvitu/tools/money`.
+
+### `formatBRLSemCentavos` — o formatador que existe por uma MEDIDA
+
+`R$ 21.123`. Nasceu pra caber num card de grid de 2 colunas a 390px (Android do dono). **MEDIDO em Chrome real a 390×844:** `R$ 21.122,50` a 24px pede **155,5px** e a caixa útil de um card ali é **137px** — a linha **quebra em duas** (confirmado com `Range.getClientRects()`, não estimado). Sem os centavos o mesmo valor mede **118,8px** e cabe numa linha só.
+
+⚠️ **Mora AQUI, não num `lib/` da SPA, e a razão não é conveniência: dinheiro tem UM formatador neste monorepo.** Uma segunda função de formatar dinheiro fora deste módulo é uma segunda separação de milhar, um segundo `R$ `, um segundo tratamento de sinal — a classe de cópia que já custou caro (`todayInTeresina`, `normalizeName`). Some-se o alcance: o Worker (`apps/financas/src`) já importa `@piluvitu/tools/money` e **não** enxerga `web/src/lib`; local, esta função nasceria inalcançável pra ele.
+
+⚠️ **ARREDONDA, não trunca — e arredonda a MAGNITUDE.** Nada torna a operação aditiva: uma coluna de partes sem centavos **não** soma exatamente o total sem centavos, e o que se escolhe é só o TAMANHO do desencontro. Arredondar erra ≤ 50 centavos por valor e os erros se **cancelam** (uns pra cima, outros pra baixo); truncar erraria até 99 e todo erro iria pro **mesmo lado**, acumulando — uma lista de 8 linhas divergiria ~R$ 7 do total, sempre com o total parecendo maior que a soma do que está na tela. É também o arredondamento que o resto do módulo já usa (`pct_of_fixed_net` em `domain/reports.ts`, o float→centavos de `domain/pluggy-map.ts`).
+
+⚠️ **`Math.round` na magnitude, nunca no valor com sinal** — `Math.round(-0.5)` é `-0` e `Math.round(0.5)` é `1`, então arredondar com sinal faria meio real cair pra lados diferentes conforme a direção (mesma lição já paga em `domain/pluggy-map.ts`). E `-0` nunca chega à tela: 49 centavos negativos viram `R$ 0`, não `-R$ 0`.
+
+**Testes:** os DOIS lados da fronteira do meio real (`,49` desce / `,50` sobe — só um deles não distingue arredondar de truncar), o espelho no negativo, o `-R$ 0`, e **dois casos que documentam a não-aditividade** em vez de escondê-la: um em que a soma das partes exibidas diverge do total exibido (com a asserção de que o erro por parte é ≤ 50 centavos) e um em que arredondar faz partes e total baterem exatamente onde truncar divergiria em R$ 7. ⚠️ **Verificado por mutação:** trocar `Math.round` por `Math.trunc` derruba **8** testes; arredondar com sinal (`Math.abs(Math.round(cents / 100))`) derruba **2**.
+
+**`packages/tools`: 147 → 158 testes.**
 
 ## Módulo `simulacao` (confronto reserva × ativo que deprecia, fatia ⑦ Task 4)
 

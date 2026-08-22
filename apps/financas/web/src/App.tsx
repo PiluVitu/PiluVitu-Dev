@@ -34,6 +34,7 @@ import { Gate } from './Gate'
 import { useMenorQueMd } from './lib/breakpoint'
 import { competenciaAtual } from './lib/dates'
 import { aplicarTema, type Tema, temaSalvo } from './lib/theme'
+import { ROTULO_SECAO } from './lib/tipografia'
 import { AccountsPage } from './pages/accounts'
 import { CategoriasPage } from './pages/categorias'
 import { CommitmentsPage } from './pages/commitments'
@@ -262,8 +263,13 @@ const GRUPOS_NO_SHEET: NavGrupo[] = GRUPOS.map((g) => ({
   itens: g.itens.filter((i) => !ROTAS_NA_BARRA.includes(i.route)),
 })).filter((g) => g.itens.length > 0)
 
-const CLASSE_CABECALHO_GRUPO =
-  'text-muted-foreground px-2 font-mono text-[11px] font-semibold tracking-[0.2em] uppercase'
+/**
+ * ⚠️ Era um literal `text-[11px]` copiado à mão da sidebar do admin — que é
+ * `text-[10px]` (`apps/web/components/admin/admin-sidebar.tsx:109`). Passou a
+ * consumir `ROTULO_SECAO` pra existir UMA grafia deste rótulo no app; o `px-2`
+ * fica aqui porque é posicional (espaçamento na sidebar), não tipográfico.
+ */
+const CLASSE_CABECALHO_GRUPO = cn(ROTULO_SECAO, 'px-2')
 
 /**
  * ⚠️ **Item ativo = `bg-primary text-primary-foreground`, nunca

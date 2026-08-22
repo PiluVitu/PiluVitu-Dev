@@ -1,4 +1,10 @@
-import { formatBRL, parseBRL, splitInstallments, sumCents } from './money'
+import {
+  formatBRL,
+  formatBRLSemCentavos,
+  parseBRL,
+  splitInstallments,
+  sumCents,
+} from './money'
 
 describe('parseBRL', () => {
   test('aceita as quatro formas de entrada', () => {
@@ -104,6 +110,95 @@ describe('splitInstallments', () => {
     expect(() => splitInstallments(10000, 0)).toThrow(RangeError)
     expect(() => splitInstallments(10000, 361)).toThrow(RangeError)
     expect(() => splitInstallments(10000, 2.5)).toThrow(RangeError)
+  })
+})
+
+describe('formatBRLSemCentavos', () => {
+  test('o caso que motivou a função: R$ 21.122,50 cabe nos 139px do grid', () => {
+    expect(formatBRL(2112250)).toBe('R$ 21.122,50')
+    expect(formatBRLSemCentavos(2112250)).toBe('R$ 21.123')
+  })
+
+  // ⚠️ ARREDONDA, não trunca — e a fronteira é o meio real. Uma implementação
+  // com Math.trunc/Math.floor passa em `,49` e falha em `,50`, então os DOIS
+  // lados precisam estar aqui: só um deles não distingue as duas regras.
+  test.each([
+    [2112249, 'R$ 21.122', 'logo abaixo do meio real: desce'],
+    [2112250, 'R$ 21.123', 'exatamente no meio real: sobe'],
+    [2112251, 'R$ 21.123', 'logo acima do meio real: sobe'],
+    [2112200, 'R$ 21.122', 'sem centavos: fica igual'],
+  ])('%i → %s (%s)', (cents, esperado) => {
+    expect(formatBRLSemCentavos(cents)).toBe(esperado)
+  })
+
+  // ⚠️ Math.round(-0.5) é -0 e Math.round(0.5) é 1 — arredondar o valor COM
+  // sinal faria meio real cair pra lados diferentes conforme a direção. A
+  // magnitude é arredondada primeiro, então negativo espelha o positivo.
+  test('o negativo espelha o positivo no meio real (arredonda a magnitude)', () => {
+    expect(formatBRLSemCentavos(-2112250)).toBe('-R$ 21.123')
+    expect(formatBRLSemCentavos(-2112249)).toBe('-R$ 21.122')
+  })
+
+  test('nunca imprime "-R$ 0": centavos negativos que somem viram R$ 0', () => {
+    expect(formatBRLSemCentavos(-49)).toBe('R$ 0')
+    expect(formatBRLSemCentavos(-50)).toBe('-R$ 1')
+    expect(formatBRLSemCentavos(0)).toBe('R$ 0')
+  })
+
+  test('separador de milhar em cada casa, igual ao formatBRL', () => {
+    expect(formatBRLSemCentavos(99900)).toBe('R$ 999')
+    expect(formatBRLSemCentavos(100000)).toBe('R$ 1.000')
+    expect(formatBRLSemCentavos(123456789)).toBe('R$ 1.234.568')
+  })
+
+  test('rejeita centavos não-inteiros, igual ao formatBRL', () => {
+    expect(() => formatBRLSemCentavos(10.5)).toThrow(RangeError)
+    expect(() => formatBRLSemCentavos(Number.NaN)).toThrow(RangeError)
+  })
+
+  // ⚠️ O ponto desta suíte inteira: a operação NÃO é aditiva, e o que se
+  // escolhe é o TAMANHO do desencontro. Estes dois casos existem pra que
+  // ninguém "conserte" a divergência achando que é bug — e pra travar o
+  // limite de 50 centavos por valor, que é o que arredondar compra sobre
+  // truncar.
+  test('a soma das partes pode não bater com o total — e o erro é ≤ 50 centavos por parte', () => {
+    const partes = [2112250, 33350, 1250] // R$ 21.122,50 + R$ 333,50 + R$ 12,50
+    const total = sumCents(partes)
+
+    expect(partes.map(formatBRLSemCentavos)).toEqual([
+      'R$ 21.123',
+      'R$ 334',
+      'R$ 13',
+    ])
+    // 21123 + 334 + 13 = 21470, mas o total real é R$ 21.468,50 → R$ 21.469.
+    expect(formatBRLSemCentavos(total)).toBe('R$ 21.469')
+
+    for (const parte of partes) {
+      const exibido = Number(
+        formatBRLSemCentavos(parte).replace(/[^\d-]/g, '') + '00',
+      )
+      expect(Math.abs(exibido - parte)).toBeLessThanOrEqual(50)
+    }
+  })
+
+  test('truncar dobraria o erro e o empurraria sempre pro mesmo lado', () => {
+    // Toda parte a R$ x,99: arredondando, cada uma erra +1 centavo de real pra
+    // cima e o total também sobe; truncando, cada uma perderia 99 centavos e o
+    // desencontro cresceria com o tamanho da lista, sempre no mesmo sentido.
+    const partes = [199, 299, 399, 499, 599, 699, 799, 899]
+    expect(partes.map(formatBRLSemCentavos)).toEqual([
+      'R$ 2',
+      'R$ 3',
+      'R$ 4',
+      'R$ 5',
+      'R$ 6',
+      'R$ 7',
+      'R$ 8',
+      'R$ 9',
+    ])
+    expect(formatBRLSemCentavos(sumCents(partes))).toBe('R$ 44')
+    // 2+3+4+5+6+7+8+9 = 44 — bate. Com truncamento seria 1+2+…+8 = 36 contra
+    // um total truncado de R$ 43: R$ 7 de diferença numa lista de 8 linhas.
   })
 })
 

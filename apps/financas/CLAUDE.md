@@ -3167,3 +3167,78 @@ A tab bar é `position: fixed`: ela **não ocupa espaço no fluxo**, então o br
 **Dependência nova:** `lucide-react@^1.33.0` em `apps/financas/web` — sem lifecycle script, então não precisou entrar em `allowBuilds` do `pnpm-workspace.yaml`.
 
 **Fora de escopo, registrado:** o `<code>` do comando de PDF em `#/importar` continua sendo o único elemento mais largo que a viewport a 390 px — contido no `overflow-x-auto` do `<pre>` que já existia, sem estourar a página (comportamento pré-existente, reconfirmado nesta medição).
+
+## A linguagem em código — `lib/tipografia.ts` + `blocos/NumeroCard.tsx`
+
+Duas peças que as telas vão consumir. Fatia de LEITURA: Worker intocado (**810**), `packages/ui` intocado (**97**), nenhuma rota, nenhuma migration, nenhuma dependência nova.
+
+### ① `web/src/lib/tipografia.ts` — a assinatura do admin, conferida contra a fonte
+
+O rótulo em versalete mono é o que faz um card daqui e um card do `/admin` (`apps/web`) parecerem o mesmo produto. As classes foram **lidas do admin, não copiadas de um briefing**:
+
+| Constante      | Fonte                                             | Resultado                                                    |
+| -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| `ROTULO`       | `apps/web/components/admin/stat-card.tsx:19`      | **bate byte a byte** (`text-xs`, `tracking-[0.18em]`)        |
+| `ROTULO_SECAO` | `apps/web/components/admin/admin-sidebar.tsx:109` | ⚠️ **divergiu — o admin é `text-[10px]`, não `text-[11px]`** |
+
+⚠️ **A divergência foi corrigida seguindo o admin, e ela tinha um segundo consumidor.** `App.tsx` (a casca, commit `9ee33eb`) já carregava esse mesmo papel como literal `text-[11px]` — uma cópia à mão da sidebar do admin que trocou o tamanho no caminho. `CLASSE_CABECALHO_GRUPO` passou a ser `cn(ROTULO_SECAO, 'px-2')`, então existe **uma** grafia deste rótulo no app. O `px-2` fica no call site de propósito: é posicional (espaçamento dentro da sidebar), não tipográfico — a constante não carrega layout.
+
+⚠️ **`shadow-ds` NÃO foi adotada, embora o `StatCard` do admin a use.** É `0 18px 40px rgb(0 0 0 / 0.45)`, desenhada pro tema escuro do site; no claro do finanças (o padrão aqui) 45% de preto a 40px de blur vira borrão cinza em volta de todo card, não profundidade. Fica o `shadow-sm` do `Card` do design system. Travado por teste.
+
+A escala de número (`NUMERO_HEROI`/`NUMERO_GRID`) mora no mesmo arquivo, junto da regra dura — ver ② logo abaixo.
+
+### ② `web/src/blocos/NumeroCard.tsx` — a regra dura embutida num prop só
+
+Anatomia do `StatCard`: **rótulo** (`ROTULO`) + **valor** + **contexto/variação** opcional. Três divergências do original, **cada uma medida em Chrome real a 390×844** (`playwright-core` + o Chrome do sistema, sobre o CSS do `vite build`):
+
+| Medida a 390×844                              | Valor       |
+| --------------------------------------------- | ----------- |
+| `R$ 21.122,50` a **36px** (`text-4xl`, admin) | **233,1px** |
+| `R$ 21.122,50` a **30px** (`text-3xl`, herói) | **195,3px** |
+| `R$ 21.122,50` a **24px** (`text-2xl`, grid)  | **155,5px** |
+| `R$ 21.123` a **24px** (sem centavos)         | **118,8px** |
+| caixa útil — card de largura total, `p-4`     | **324px**   |
+| caixa útil — card em grid de 2 colunas, `p-4` | **137px**   |
+
+⚠️ **O `text-4xl` (36px) do admin não serve**: lá os valores são contagens (`6`, `1`, `5`); aqui 233px não cabem em 137. A escala é 30px (herói) / 24px (grid), com `text-sm` (14) pro corpo e `ROTULO` (12) pro meta.
+
+⚠️ **`escala: 'heroi' | 'grid'` decide o tamanho da fonte E a presença dos centavos, num prop só — de propósito.** Com dois props existiria `{escala:'grid', centavos:true}`, que é exatamente a combinação que estoura: **MEDIDO, `R$ 21.122,50` a 24px QUEBRA EM DUAS LINHAS** dentro dos 137px (confirmado com `Range.getClientRects()`, não estimado). Um prop só torna a combinação ruim inexprimível em vez de meramente desaconselhada.
+
+- `heroi` (card de largura total, 324px úteis) → 30px, **COM** centavos — 195,3px cabem com folga; esconder centavo que cabe é perder precisão de graça.
+- `grid` (2 colunas, 137px úteis) → 24px, **SEM** centavos — 118,8px cabem.
+
+⚠️ **`tabular-nums` sempre**, nas duas escalas — é lei do app (dezenas de ocorrências): sem ela os dígitos têm larguras diferentes e uma coluna lida de cima a baixo deixa de alinhar. Travado por teste em cada escala.
+
+O valor entra **sempre como `valorCents` inteiro** (nunca float, nunca string já formatada) e sai por `formatBRL`/`formatBRLSemCentavos` de `@piluvitu/tools/money` — ver `packages/tools/CLAUDE.md` § _`formatBRLSemCentavos`_ pra onde o formatador mora, por que não é local, e por que ARREDONDA em vez de truncar.
+
+### ③ Padding de card: `p-4 sm:p-6`, aplicado em `blocos/Bloco.tsx` (não tela a tela)
+
+`CardHeader`/`CardContent` do design system são `p-6` (24px). A 390px o shell já tira 32px, e mais 48 de padding deixaria o card sem espaço justamente onde o número aperta.
+
+**Ganho MEDIDO em Chrome real, num card de largura total a 390:** caixa útil **308px → 324px**, **+16px por card**. (O brief estimava 310 → 326; a diferença de 2px é a borda de 1px de cada lado, que a conta de cabeça não incluía.)
+
+⚠️ **Onde entrou: `blocos/Bloco.tsx` (o wrapper dos quatro blocos da home) e o próprio `NumeroCard` — um lugar por primitivo, nunca tela a tela.** Tela a tela seriam ~16 cópias do mesmo literal (a classe de cópia que este módulo já pagou várias vezes) por um ganho muito menor: uma tela de coluna única já cabe (`R$ 21.122,50` a 30px mede 195,3px contra 308 úteis). O grid da home é o único lugar onde os 16px decidem se o número quebra.
+
+`CardContent` fica `p-4 pt-0 sm:p-6 sm:pt-0` (o `pt-0` do design system precisa sobreviver nos dois breakpoints, senão o conteúdo descola do título).
+
+### Suítes e mutação
+
+**SPA: 622 → 632** (+10: 9 em `blocos/NumeroCard.test.tsx`, 1 em `blocos/Bloco.test.tsx`). **`packages/tools`: 147 → 158** (+11 em `src/money.test.ts`). Worker **810**, `packages/ui` **97** — intocados. `tsc --noEmit` limpo nos dois lados, prettier limpo, `vite build` com os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) em exit 0 e **um** único chunk lazy. ⚠️ **Nenhuma asserção pré-existente mudou de valor.**
+
+⚠️ **jsdom não computa layout — nenhuma asserção de teste mede pixel.** O que os testes travam é a REGRA aplicada (a classe de escala, a presença/ausência dos centavos, o padding responsivo, a ausência de `shadow-ds`); **o pixel foi medido em Chrome real** e está na tabela acima.
+
+⚠️ **Verificado por MUTAÇÃO — 9, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>` — que restauraria do HEAD e levaria junto o trabalho não commitado; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                            | Falha observada                                       |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| `Math.trunc` no lugar de `Math.round` (`money.ts`) | **8** — os dois lados do meio real, o `-R$ 0`, a soma |
+| arredondar o valor COM sinal                       | 2 — o negativo deixa de espelhar o positivo           |
+| `grid` passa a mostrar centavos                    | 2 — o valor volta a estourar os 137px                 |
+| escala única (`grid` renderiza a 30px)             | 1                                                     |
+| `tabular-nums` fora de `NUMERO_GRID`               | 2                                                     |
+| rótulo vira texto solto (`text-sm`)                | 1 — a assinatura do admin some                        |
+| `p-6` de volta no `NumeroCard`                     | 1                                                     |
+| `p-6` de volta no `Bloco`                          | 1                                                     |
+| `shadow-ds` adotada                                | 1 — o borrão no tema claro                            |
+
+**Fora de escopo, registrado:** nenhuma tela consome `NumeroCard` ainda — as peças existem pras telas de que a próxima fatia vai precisar. O grid da home é `grid-cols-1 md:grid-cols-2`, ou seja, a 390px ele é **coluna única** hoje; a escala `grid` (137px) é a medida de um grid de 2 colunas a 390, que é o que a adoção vai introduzir.
