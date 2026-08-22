@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { formatBRL } from '@piluvitu/tools/money'
+import { formatBRL, sumCents } from '@piluvitu/tools/money'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { NumeroCard } from '../blocos/NumeroCard'
 import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ROTULO } from '../lib/tipografia'
 import { ALVO_LINK } from '../lib/touch'
 
 export type DebtListRow = {
@@ -121,6 +123,9 @@ export function DividasPage() {
 
   const menorQueSm = useMenorQueSm()
 
+  // Só o que EU devo — ver o comentário do card de total logo abaixo.
+  const euDevo = dividas.filter((d) => d.direction === 'i_owe')
+
   return (
     <section className="space-y-6" data-testid="pagina-dividas">
       {erro !== null && (
@@ -128,6 +133,34 @@ export function DividasPage() {
           {erro}
         </p>
       )}
+
+      {/*
+        ⚠️ O total devido NÃO EXISTIA em lugar nenhum desta tela — só o
+        `Falta` de CADA dívida, linha a linha. "Quanto eu devo, no total?" era
+        uma soma de cabeça, na tela cujo nome é Dívidas.
+
+        ⚠️ Só `i_owe` entra na soma. `GET /api/debts?status=open` devolve as
+        DUAS direções, e somar `owed_to_me` junto responderia a pergunta
+        errada com um número que parece certo — o que me devem não é dívida
+        minha (é a MESMA regra que `commitments()` já aplica no servidor).
+
+        ⚠️ Escala HERÓI (30px COM centavos): card de largura total. Sem
+        nenhuma dívida minha em aberto, o card não aparece — "R$ 0" ocupando
+        o topo da tela seria destaque pra ausência de assunto.
+      */}
+      {euDevo.length > 0 ? (
+        <NumeroCard
+          rotulo="Total que devo"
+          valorCents={sumCents(euDevo.map((d) => d.remaining_cents))}
+          escala="heroi"
+          data-testid="total-devido"
+          contexto={`${euDevo.length} dívida(s) em aberto${
+            dividas.length > euDevo.length
+              ? ' — o que me devem não entra nesta soma'
+              : ''
+          }`}
+        />
+      ) : null}
 
       <Card>
         <CardContent className="pt-6">
@@ -160,7 +193,7 @@ export function DividasPage() {
                     {d.payee_name}
                   </p>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground text-xs">Falta</span>
+                    <span className={ROTULO}>Falta</span>
                     <span className="text-lg font-semibold tabular-nums">
                       {formatBRL(d.remaining_cents)}
                     </span>
@@ -177,19 +210,29 @@ export function DividasPage() {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th className="border-b py-1.5 pr-2 text-left font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}
+                    >
                       Dívida
                     </th>
-                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
+                    >
                       Pessoa
                     </th>
-                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
+                    >
                       Total
                     </th>
-                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
+                    >
                       Pago
                     </th>
-                    <th className="border-b py-1.5 pl-2 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b py-1.5 pl-2 text-right')}
+                    >
                       Falta
                     </th>
                   </tr>

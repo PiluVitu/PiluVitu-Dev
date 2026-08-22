@@ -137,3 +137,27 @@ describe('NumeroCard', () => {
     expect(screen.getByTestId('n-valor').textContent).toBe('-R$ 21.122,50')
   })
 })
+
+test('valorClassName aplica SÓ no valor, sem tocar rótulo nem contexto', () => {
+  // Existe pro caso em que o próprio número muda de significado — o saldo
+  // negativo da janela em `#/fluxo`. Não serve pra trocar a escala: quem
+  // decide tamanho E centavos juntos continua sendo `escala`.
+  render(
+    <NumeroCard
+      rotulo="Saldo"
+      valorCents={-50000}
+      escala="heroi"
+      valorClassName="text-destructive"
+      contexto="entrou menos do que saiu"
+      data-testid="n"
+    />,
+  )
+
+  const valor = screen.getByTestId('n-valor')
+  expect(valor.className).toContain('text-destructive')
+  expect(valor.className).toContain('text-3xl')
+  expect(screen.getByText('Saldo').className).not.toContain('text-destructive')
+  expect(screen.getByText('entrou menos do que saiu').className).not.toContain(
+    'text-destructive',
+  )
+})

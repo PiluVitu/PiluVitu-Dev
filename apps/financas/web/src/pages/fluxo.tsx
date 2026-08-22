@@ -4,11 +4,13 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Card, CardContent } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
+import { NumeroCard } from '../blocos/NumeroCard'
 import { useMenorQueSm } from '../lib/breakpoint'
 import type { CashflowReportView } from '../lib/cashflow'
 import { rotuloCompetencia } from '../lib/commitments'
 import { addMonthsToCompetence, competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
+import { ROTULO } from '../lib/tipografia'
 
 // Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx`/
 // `blocos/BlocoCategorias.tsx` já carregam sob demanda — nunca um terceiro
@@ -105,6 +107,32 @@ export function FluxoPage() {
         </select>
       </label>
 
+      {/*
+        ⚠️ UM número em destaque, não três. Entrou/Saiu/Saldo estavam os três
+        no `<tfoot>`, no mesmo 14px de cada linha, no FIM de uma tabela que
+        pode ter 24 meses — pra saber se a janela fechou no azul o dono
+        rolava até o rodapé. Aqui em cima fica só o SALDO (a resposta);
+        entrou/saiu viram contexto, porque o saldo já os resume, e três
+        heróis lado a lado não deixariam nenhum ser herói.
+
+        ⚠️ Mesmo `totalSaldo`/`totalEntrou`/`totalSaiu` do rodapé — uma soma
+        só, nunca uma segunda. O rodapé continua existindo com outro papel
+        (total POR COLUNA, alinhado à tabela); este é a manchete.
+
+        ⚠️ Negativo em `text-destructive`, com `< 0` e nunca `<= 0`: a janela
+        ZERADA não é problema, e pintá-la seria dizer que é.
+      */}
+      <NumeroCard
+        rotulo={`Saldo dos últimos ${months} meses`}
+        valorCents={totalSaldo}
+        escala="heroi"
+        data-testid="manchete-saldo"
+        valorClassName={cn(totalSaldo < 0 && 'text-destructive')}
+        contexto={`Entrou ${formatBRL(totalEntrou)} · saiu ${formatBRL(
+          totalSaiu,
+        )}`}
+      />
+
       {vazio ? (
         <p className="text-muted-foreground text-sm">
           Nenhum lançamento liquidado nesta janela. Só entra aqui o que já saiu
@@ -136,23 +164,23 @@ export function FluxoPage() {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border-b py-1.5 pr-2 text-left font-medium">
+              <th className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}>
                 Mês
               </th>
               {!menorQueSm && (
                 <>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                  <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
                     Entrou
                   </th>
-                  <th className="border-b px-2 py-1.5 text-right font-medium">
+                  <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
                     Saiu
                   </th>
                 </>
               )}
-              <th className="border-b px-2 py-1.5 text-right font-medium">
+              <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
                 Saldo
               </th>
-              <th className="border-b px-2 py-1.5 text-right font-medium">
+              <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
                 Acumulado
               </th>
             </tr>

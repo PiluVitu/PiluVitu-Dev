@@ -719,3 +719,42 @@ describe('AccountsPage — o saldo não se parte em duas linhas', () => {
     expect(celula.className).toContain('whitespace-nowrap')
   })
 })
+
+describe('AccountsPage — a linguagem: rótulo em versalete, total como manchete', () => {
+  it('os cabeçalhos da tabela usam ROTULO (versalete mono), não um font-medium genérico', async () => {
+    // O `<th>` é o rótulo do número embaixo dele — é exatamente o papel de
+    // `ROTULO` (`lib/tipografia.ts`), a assinatura que o `/admin` já usa.
+    // Antes eram `text-left font-medium`, indistinguíveis do corpo.
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+
+    await screen.findByTestId('grupo-PJ')
+    const cabecalho = screen.getAllByRole('columnheader', { name: 'Saldo' })[0]
+    expect(cabecalho.className).toContain('font-mono')
+    expect(cabecalho.className).toContain('uppercase')
+    expect(cabecalho.className).toContain('tracking-[0.18em]')
+  })
+
+  it('o total do escopo é MANCHETE (30px), não mais uma linha de rodapé em 14px', async () => {
+    // ⚠️ O valor esperado é o MESMO de antes (a soma do escopo); o que muda
+    // é o peso: no `<tfoot>` ele saía no mesmo `text-sm` de cada conta
+    // somada pra chegar nele.
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+
+    const total = await screen.findByTestId('total-PJ')
+    expect(total).toHaveTextContent('R$ 4.120,00')
+    expect(total.className).toContain('text-3xl')
+    expect(total.className).toContain('tabular-nums')
+  })
+
+  it('PJ e PF continuam JAMAIS somados entre si', async () => {
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+    await screen.findByTestId('total-PJ')
+
+    // 234012 + (-184790) + 412000 = 461222 — o número que não pode existir.
+    expect(document.body.textContent).not.toContain('R$ 4.612,22')
+    expect(screen.getByTestId('total-PF')).toHaveTextContent('R$ 492,22')
+  })
+})

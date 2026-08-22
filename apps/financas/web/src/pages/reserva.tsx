@@ -14,7 +14,9 @@ import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { NumeroCard } from '../blocos/NumeroCard'
 import { formatRange } from '../lib/commitments'
+import { ROTULO_SECAO } from '../lib/tipografia'
 import { CHECKBOX_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINHA } from '../lib/touch'
@@ -238,67 +240,90 @@ export function ReservaPage() {
         </Ajuda>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Situação atual</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p>
-            Tenho{' '}
-            <strong data-testid="saldo" className="text-foreground">
-              {formatBRL(status.saldo_cents)}
-            </strong>{' '}
-            guardados nas contas designadas como reserva.
-          </p>
-          <p>
-            Meta ({status.goal_months} meses de custo fixo, calculada — não
-            digitada):{' '}
-            <strong data-testid="meta" className="text-foreground">
-              {formatRange(status.meta_cents)}
-            </strong>
-          </p>
+      {/*
+        ⚠️ O saldo era um `<strong>` de 14px no meio de uma frase ("Tenho X
+        guardados…") — o número que a tela inteira existe pra qualificar
+        tinha o mesmo peso das palavras em volta. Virou `NumeroCard` na
+        escala HERÓI (30px COM centavos, card de largura total).
 
-          {status.meses === null ? (
-            <p
-              data-testid="sem-custo-fixo"
-              className="text-muted-foreground text-sm"
-            >
-              Ainda não dá para calcular quantos meses a reserva sustenta —
-              nenhuma despesa recorrente em vigor está cadastrada.{' '}
-              <a
-                href="#/recorrentes"
-                className="text-primary underline underline-offset-4"
-              >
-                Cadastre as recorrentes
-              </a>{' '}
-              (Starlink, DAS, contador, INSS...) para saber o custo fixo mensal.
-            </p>
-          ) : (
-            <p>
-              Sobrevivo{' '}
-              <strong
-                data-testid="meses"
-                className={cn(alerta && 'text-destructive font-bold')}
-              >
-                {formatMeses(status.meses)}
-              </strong>{' '}
-              com o que tenho hoje — o piso é o que a reserva garante num mês
-              ruim, o teto é o cenário bom.
-            </p>
-          )}
+        ⚠️ O que vai no `contexto` é meta + meses de sobrevivência — que é
+        exatamente pra isso que o `contexto` existe ("um número absoluto sem
+        referência não responde nada"). Os meses NÃO poderiam ser o valor do
+        card: `NumeroCard` recebe `valorCents` INTEIRO, e `meses` é uma FAIXA
+        em meses, não dinheiro.
 
-          {alerta ? (
-            <p
-              role="alert"
-              data-testid="alerta-piso"
-              className="text-destructive text-sm font-medium"
-            >
-              No pior cenário (custo fixo no teto), a reserva fica abaixo da
-              meta de {status.goal_months} meses de sobrevivência.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+        ⚠️ O `data-testid` do card é `saldo` de propósito: o valor renderiza
+        dentro dele (`saldo-valor`), então quem media o saldo continua
+        medindo o saldo.
+
+        ⚠️ O alerta ficou FORA do card, e não dentro do `contexto`: aquele é
+        um `<p>`, e um `<p role="alert">` aninhado noutro `<p>` é HTML
+        inválido — o navegador fecha o parágrafo sozinho e o layout quebra
+        (lição já paga em `recorrentes.tsx`).
+      */}
+      <div className="space-y-3">
+        <NumeroCard
+          rotulo="Reserva"
+          valorCents={status.saldo_cents}
+          escala="heroi"
+          data-testid="saldo"
+          contexto={
+            <>
+              <span className="block">
+                Guardado nas contas designadas. Meta ({status.goal_months} meses
+                de custo fixo, calculada — não digitada):{' '}
+                <strong
+                  data-testid="meta"
+                  className="text-foreground tabular-nums"
+                >
+                  {formatRange(status.meta_cents)}
+                </strong>
+              </span>
+
+              {status.meses === null ? (
+                <span data-testid="sem-custo-fixo" className="mt-2 block">
+                  Ainda não dá para calcular quantos meses a reserva sustenta —
+                  nenhuma despesa recorrente em vigor está cadastrada.{' '}
+                  <a
+                    href="#/recorrentes"
+                    className="text-primary underline underline-offset-4"
+                  >
+                    Cadastre as recorrentes
+                  </a>{' '}
+                  (Starlink, DAS, contador, INSS...) para saber o custo fixo
+                  mensal.
+                </span>
+              ) : (
+                <span className="mt-2 block">
+                  Sobrevivo{' '}
+                  <strong
+                    data-testid="meses"
+                    className={cn(
+                      'text-foreground',
+                      alerta && 'text-destructive font-bold',
+                    )}
+                  >
+                    {formatMeses(status.meses)}
+                  </strong>{' '}
+                  com o que tenho hoje — o piso é o que a reserva garante num
+                  mês ruim, o teto é o cenário bom.
+                </span>
+              )}
+            </>
+          }
+        />
+
+        {alerta ? (
+          <p
+            role="alert"
+            data-testid="alerta-piso"
+            className="text-destructive text-sm font-medium"
+          >
+            No pior cenário (custo fixo no teto), a reserva fica abaixo da meta
+            de {status.goal_months} meses de sobrevivência.
+          </p>
+        ) : null}
+      </div>
 
       <Card>
         <CardHeader>
@@ -377,7 +402,7 @@ export function ReservaPage() {
               onde o layout mais difícil deste módulo precisa caber. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div data-testid="simulador-a-vista" className="space-y-2">
-              <h3 className="text-sm font-semibold">À vista</h3>
+              <h3 className={ROTULO_SECAO}>À vista</h3>
               <div className="space-y-1.5">
                 <Label htmlFor="simulador-a-vista-input">Valor à vista</Label>
                 <Input
@@ -444,7 +469,7 @@ export function ReservaPage() {
             </div>
 
             <div data-testid="simulador-financiado" className="space-y-2">
-              <h3 className="text-sm font-semibold">Financiado</h3>
+              <h3 className={ROTULO_SECAO}>Financiado</h3>
               <div className="space-y-1.5">
                 <Label htmlFor="simulador-financiado-input">
                   Valor financiado

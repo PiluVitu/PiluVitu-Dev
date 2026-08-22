@@ -1,5 +1,5 @@
 import { formatBRL } from '@piluvitu/tools/money'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DividasPage } from './DividasPage'
@@ -66,9 +66,10 @@ describe('DividasPage', () => {
       'href',
       '#/dividas/d1',
     )
-    expect(screen.getByText(formatBRL(730000))).toBeInTheDocument()
-    expect(screen.getByText(formatBRL(594000))).toBeInTheDocument()
-    expect(screen.getByText(formatBRL(136000))).toBeInTheDocument()
+    const tabela = screen.getByRole('table')
+    expect(within(tabela).getByText(formatBRL(730000))).toBeInTheDocument()
+    expect(within(tabela).getByText(formatBRL(594000))).toBeInTheDocument()
+    expect(within(tabela).getByText(formatBRL(136000))).toBeInTheDocument()
   })
 
   it('sem "Aberta em" preenchida, usa o dia de Teresina (nao UTC) como default', async () => {
@@ -273,7 +274,9 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
 
     expect(screen.getByText('PAI')).toBeInTheDocument()
     expect(screen.getByText('Falta')).toBeInTheDocument()
-    expect(screen.getByText(formatBRL(136000))).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('dividas-cards')).getByText(formatBRL(136000)),
+    ).toBeInTheDocument()
     expect(screen.getByText(`Total ${formatBRL(730000)}`)).toBeInTheDocument()
     expect(screen.getByText(`Pago ${formatBRL(594000)}`)).toBeInTheDocument()
   })
@@ -284,7 +287,9 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
 
     await screen.findByRole('link', { name: 'Pai' })
 
-    const falta = screen.getByText(formatBRL(136000))
+    const falta = within(screen.getByTestId('dividas-cards')).getByText(
+      formatBRL(136000),
+    )
     expect(falta.className).toMatch(/text-lg/)
   })
 
@@ -333,7 +338,9 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
     render(<DividasPage />)
     await screen.findByRole('link', { name: 'Pai' })
 
-    const falta = screen.getByText(formatBRL(136000))
+    const falta = within(screen.getByTestId('dividas-cards')).getByText(
+      formatBRL(136000),
+    )
     expect(falta).toHaveClass('tabular-nums')
   })
 
@@ -367,5 +374,78 @@ describe('DividasPage — abaixo de sm (Android, ~390px): cards em vez de tabela
       const link = await screen.findByRole('link', { name: 'Pai' })
       expect(link.className).toContain('min-h-11')
     })
+  })
+})
+
+describe('DividasPage — total devido (a soma que não existia)', () => {
+  it('soma o `Falta` das dívidas e mostra como manchete', async () => {
+    render(<DividasPage />)
+
+    const total = await screen.findByTestId('total-devido')
+    expect(within(total).getByTestId('total-devido-valor')).toHaveTextContent(
+      'R$ 1.360,00',
+    )
+    expect(within(total).getByTestId('total-devido-valor').className).toContain(
+      'text-3xl',
+    )
+    expect(total).toHaveTextContent('1 dívida(s) em aberto')
+  })
+
+  it('⚠️ `owed_to_me` NÃO entra na soma — é a pergunta oposta', async () => {
+    // `GET /api/debts?status=open` devolve as DUAS direções. Somar junto
+    // daria um número plausível e errado, e a tela se chama Dívidas.
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && url.startsWith('/api/debts'))
+          return json([
+            ...dividas,
+            {
+              id: 'd2',
+              title: 'Primo',
+              payee_name: 'PRIMO',
+              direction: 'owed_to_me',
+              total_cents: 900000,
+              paid_cents: 0,
+              remaining_cents: 900000,
+            },
+          ])
+        if (method === 'GET' && url.startsWith('/api/payees'))
+          return json(payees)
+        throw new Error(`url inesperada: ${method} ${url}`)
+      },
+    )
+
+    render(<DividasPage />)
+
+    const total = await screen.findByTestId('total-devido')
+    expect(within(total).getByTestId('total-devido-valor')).toHaveTextContent(
+      'R$ 1.360,00',
+    )
+    // 136000 + 900000 = 1036000 — o número que não pode aparecer.
+    expect(document.body.textContent).not.toContain('R$ 10.360,00')
+    expect(total).toHaveTextContent('o que me devem não entra nesta soma')
+  })
+
+  it('sem nenhuma dívida minha em aberto, a manchete não aparece', async () => {
+    // "R$ 0" ocupando o topo é destaque pra ausência de assunto.
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && url.startsWith('/api/debts')) return json([])
+        if (method === 'GET' && url.startsWith('/api/payees'))
+          return json(payees)
+        throw new Error(`url inesperada: ${method} ${url}`)
+      },
+    )
+
+    render(<DividasPage />)
+
+    await screen.findByTestId('pagina-dividas')
+    await waitFor(() =>
+      expect(screen.queryByTestId('total-devido')).not.toBeInTheDocument(),
+    )
   })
 })

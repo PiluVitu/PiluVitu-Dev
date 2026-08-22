@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { rotuloCompetencia } from '../lib/commitments'
+import { NUMERO_HEROI, ROTULO } from '../lib/tipografia'
 import { competenciaAtual, formatDateTimeTeresina } from '../lib/dates'
 import {
   dicaParaErroDeGeracao,
@@ -482,12 +483,25 @@ export function InsightPage() {
 function NumerosCalculados({ numbers }: { numbers: InsightNumbersView }) {
   return (
     <div className="space-y-3 text-sm">
-      <p>
-        Total gasto:{' '}
-        <strong data-testid="insight-total" className="text-foreground">
+      {/*
+        ⚠️ Era um `<strong>` de 14px no meio da frase "Total gasto: X" — o
+        número que a tela existe pra explicar com o mesmo peso do rótulo que
+        o nomeia. Virou manchete: `ROTULO` (versalete mono, a assinatura do
+        admin) + `NUMERO_HEROI` (30px).
+
+        ⚠️ NÃO virou `NumeroCard`: ele é um `Card`, e isto vive DENTRO do
+        card "Números de <mês>", cujo cabeçalho carrega o seletor que define
+        qual mês está sendo somado. Card dentro de Card aqui seria moldura
+        sobre moldura; tirar o número pra fora o colocaria ACIMA do controle
+        que o governa. O que se reusa é a tipografia — que é onde mora a
+        linguagem.
+      */}
+      <div>
+        <p className={ROTULO}>Total gasto</p>
+        <p data-testid="insight-total" className={cn('mt-1', NUMERO_HEROI)}>
           {formatBRL(Math.abs(numbers.total_cents))}
-        </strong>
-      </p>
+        </p>
+      </div>
 
       <p data-testid="insight-variacao">
         {numbers.variation_pct === null ? (

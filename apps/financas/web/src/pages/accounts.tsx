@@ -20,6 +20,7 @@ import { api, ApiError } from '../api'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINK } from '../lib/touch'
+import { NUMERO_HEROI, ROTULO } from '../lib/tipografia'
 
 export type AccountView = {
   id: string
@@ -237,6 +238,26 @@ export function AccountsPage() {
                     {scope}
                   </span>
                 </CardTitle>
+                {/*
+                  ⚠️ O total SUBIU do `<tfoot>` pro cabeçalho, e a escala é a
+                  do herói (`NUMERO_HEROI`, 30px COM centavos): o card é de
+                  largura total (324px úteis MEDIDOS a 390), então o valor
+                  cabe com folga. No rodapé ele saía no MESMO 14px de toda
+                  linha da tabela — a resposta ("quanto tenho no PJ") tinha o
+                  mesmo peso visual de cada conta somada pra chegar nela.
+
+                  ⚠️ NÃO virou `NumeroCard`: ele renderiza um `Card`, e aqui
+                  isso seria Card dentro de Card (o `<Card>` do escopo já
+                  embrulha tabela + total). O que se reusa é a TIPOGRAFIA,
+                  que é onde mora a linguagem.
+
+                  ⚠️ O rótulo é o próprio badge de escopo logo acima — um
+                  `ROTULO` "TOTAL PJ" repetiria a mesma palavra duas vezes.
+                  PJ e PF continuam JAMAIS somados entre si.
+                */}
+                <p data-testid={`total-${scope}`} className={NUMERO_HEROI}>
+                  {formatBRL(sumCents(list.map((a) => a.balance_cents)))}
+                </p>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -247,10 +268,17 @@ export function AccountsPage() {
                     */}
                     <thead>
                       <tr>
-                        <th className="border-b py-1.5 pr-2 text-left font-medium">
+                        <th
+                          className={cn(
+                            ROTULO,
+                            'border-b py-1.5 pr-2 text-left',
+                          )}
+                        >
                           Conta
                         </th>
-                        <th className="border-b py-1.5 text-right font-medium">
+                        <th
+                          className={cn(ROTULO, 'border-b py-1.5 text-right')}
+                        >
                           Saldo
                         </th>
                       </tr>
@@ -314,30 +342,6 @@ export function AccountsPage() {
                         </tr>
                       ))}
                     </tbody>
-                    {/*
-                      A home mostra o total por escopo (`BlocoSaldos`), e a
-                      tela DEDICADA a contas não mostrava — o dono somava as
-                      linhas de cabeça pra responder "quanto tenho no PJ".
-                      Mesmo `sumCents` do bloco da home, nunca uma segunda
-                      soma: PJ e PF continuam separados, jamais somados entre
-                      si (é a separação que o módulo inteiro existe pra
-                      manter).
-                    */}
-                    <tfoot>
-                      <tr>
-                        <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
-                          TOTAL {scope}
-                        </th>
-                        <td
-                          data-testid={`total-${scope}`}
-                          className="border-t-2 border-b py-1.5 text-right font-medium tabular-nums"
-                        >
-                          {formatBRL(
-                            sumCents(list.map((a) => a.balance_cents)),
-                          )}
-                        </td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
               </CardContent>

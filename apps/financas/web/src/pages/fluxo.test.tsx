@@ -395,3 +395,74 @@ describe('FluxoPage', () => {
     })
   })
 })
+
+describe('FluxoPage — a linguagem: cabeçalho em versalete e UMA manchete', () => {
+  it('os cabeçalhos da tabela usam ROTULO (versalete mono)', async () => {
+    mockFetch({ ok: true, data: reportBase, notifications: [] })
+    render(<FluxoPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('linha-2026-06')).toBeInTheDocument(),
+    )
+    const cabecalho = screen.getByRole('columnheader', { name: 'Acumulado' })
+    expect(cabecalho.className).toContain('font-mono')
+    expect(cabecalho.className).toContain('uppercase')
+    expect(cabecalho.className).toContain('tracking-[0.18em]')
+  })
+
+  it('manchete: SÓ o saldo da janela em destaque; entrou/saiu viram contexto', async () => {
+    // ⚠️ UM herói, não três. Os três totais existiam só no `<tfoot>`, no
+    // mesmo 14px de cada linha, no FIM de uma tabela de até 24 meses.
+    mockFetch({ ok: true, data: reportBase, notifications: [] })
+    render(<FluxoPage />)
+
+    const manchete = await screen.findByTestId('manchete-saldo')
+    // 300000 + 0
+    expect(
+      within(manchete).getByTestId('manchete-saldo-valor'),
+    ).toHaveTextContent('R$ 3.000,00')
+    expect(
+      within(manchete).getByTestId('manchete-saldo-valor').className,
+    ).toContain('text-3xl')
+    // entrou/saiu no contexto, nunca como um segundo e terceiro destaque
+    expect(manchete).toHaveTextContent('Entrou R$ 5.000,00')
+    expect(manchete).toHaveTextContent('saiu R$ 2.000,00')
+    expect(
+      within(manchete).queryByText('R$ 5.000,00', { selector: '.text-3xl' }),
+    ).toBeNull()
+  })
+
+  it('janela negativa: a manchete fica destructive', async () => {
+    mockFetch({ ok: true, data: reportComNegativo, notifications: [] })
+    render(<FluxoPage />)
+
+    const valor = await screen.findByTestId('manchete-saldo-valor')
+    // 300000 + 0 + (-350000)
+    expect(valor).toHaveTextContent('-R$ 500,00')
+    expect(valor.className).toContain('text-destructive')
+  })
+
+  it('janela ZERADA não é pintada como problema (`< 0`, nunca `<= 0`)', async () => {
+    mockFetch({
+      ok: true,
+      data: {
+        meses: ['2026-06'],
+        linhas: [
+          {
+            competence: '2026-06',
+            entrou_cents: 200000,
+            saiu_cents: 200000,
+            saldo_cents: 0,
+            acumulado_cents: 0,
+          },
+        ],
+      },
+      notifications: [],
+    })
+    render(<FluxoPage />)
+
+    const valor = await screen.findByTestId('manchete-saldo-valor')
+    expect(valor).toHaveTextContent('R$ 0,00')
+    expect(valor.className).not.toContain('text-destructive')
+  })
+})

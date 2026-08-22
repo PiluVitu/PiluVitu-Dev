@@ -3,6 +3,7 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
+import { NUMERO_GRID } from '../lib/tipografia'
 import {
   formatPctRange,
   formatRange,
@@ -114,19 +115,13 @@ function Manchete({ report }: { report: CommitmentReportView }) {
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span
           data-testid="manchete-pct"
-          className={cn(
-            'text-2xl font-semibold tabular-nums',
-            emAlerta && 'text-destructive',
-          )}
+          className={cn(NUMERO_GRID, emAlerta && 'text-destructive')}
         >
           {formatPctRange(pct)}
         </span>
         <span
           data-testid="manchete-total"
-          className={cn(
-            'text-2xl font-semibold tabular-nums',
-            emAlerta && 'text-destructive',
-          )}
+          className={cn(NUMERO_GRID, emAlerta && 'text-destructive')}
         >
           {formatRange(total)}
         </span>

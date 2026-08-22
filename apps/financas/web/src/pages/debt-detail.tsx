@@ -24,6 +24,7 @@ import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 import { NovoItemForm } from './NovoItemForm'
+import { ROTULO } from '../lib/tipografia'
 
 export type DebtItemBalanceView = {
   item_id: string
@@ -566,16 +567,24 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th className="border-b py-1.5 pr-2 text-left font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}
+                    >
                       Item
                     </th>
-                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
+                    >
                       total
                     </th>
-                    <th className="border-b px-2 py-1.5 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
+                    >
                       pago
                     </th>
-                    <th className="border-b py-1.5 pl-2 text-right font-medium">
+                    <th
+                      className={cn(ROTULO, 'border-b py-1.5 pl-2 text-right')}
+                    >
                       falta
                     </th>
                   </tr>

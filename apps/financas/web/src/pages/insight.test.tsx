@@ -778,3 +778,29 @@ describe('InsightPage — o botão de gerar', () => {
     expect(chamadasDeGeracao()).toBe(1)
   })
 })
+
+describe('InsightPage — o agregado virou manchete, os detalhes não', () => {
+  it('o total gasto sai em ROTULO + 30px; a variação e as categorias não', async () => {
+    // ⚠️ Um agregado em destaque, não cinco. As top categorias são uma
+    // LISTA — cinco manchetes lado a lado não deixariam nenhuma ser
+    // manchete, e a pergunta "gastei quanto?" tem uma resposta só.
+    mockApi({ latest: () => null })
+
+    render(<InsightPage />)
+
+    const total = await screen.findByTestId('insight-total')
+    expect(total).toHaveTextContent('R$ 1.230,00')
+    expect(total.className).toContain('text-3xl')
+    expect(total.className).toContain('tabular-nums')
+
+    expect(screen.getByText('Total gasto').className).toContain('font-mono')
+    expect(screen.getByText('Total gasto').className).toContain('uppercase')
+
+    expect(screen.getByTestId('insight-variacao').className).not.toContain(
+      'text-3xl',
+    )
+    expect(screen.getByTestId('insight-categoria-0').className).not.toContain(
+      'text-3xl',
+    )
+  })
+})

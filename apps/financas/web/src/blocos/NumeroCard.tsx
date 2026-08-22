@@ -35,6 +35,16 @@ export type NumeroCardProps = {
    */
   contexto?: ReactNode
   className?: string
+  /**
+   * Classe extra SÓ no valor — existe pro caso em que o próprio número muda
+   * de significado (um saldo negativo em `text-destructive`, por exemplo).
+   *
+   * ⚠️ Não serve pra trocar a ESCALA: `escala` decide tamanho e centavos
+   * juntos, e é essa amarração que impede a combinação medida como quebrada
+   * (24px COM centavos num grid de 2 colunas). Isto aqui é cor/peso, nunca
+   * `text-*` de tamanho.
+   */
+  valorClassName?: string
   'data-testid'?: string
 }
 
@@ -69,6 +79,7 @@ export function NumeroCard({
   escala,
   contexto,
   className,
+  valorClassName,
   'data-testid': testId,
 }: NumeroCardProps) {
   const valor =
@@ -80,7 +91,11 @@ export function NumeroCard({
     <Card className={cn('p-4 sm:p-6', className)} data-testid={testId}>
       <p className={ROTULO}>{rotulo}</p>
       <p
-        className={cn('mt-2', escala === 'heroi' ? NUMERO_HEROI : NUMERO_GRID)}
+        className={cn(
+          'mt-2',
+          escala === 'heroi' ? NUMERO_HEROI : NUMERO_GRID,
+          valorClassName,
+        )}
         data-testid={testId ? `${testId}-valor` : undefined}
       >
         {valor}

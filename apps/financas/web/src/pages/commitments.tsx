@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
+import { ROTULO } from '../lib/tipografia'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
@@ -160,9 +161,7 @@ export function CommitmentsPage({
                       </span>
                     </div>
                     <div className="mt-1 flex items-baseline justify-between gap-2">
-                      <span className="text-muted-foreground text-xs">
-                        TOTAL
-                      </span>
+                      <span className={ROTULO}>TOTAL</span>
                       <span
                         data-testid={`card-total-${i}`}
                         className="font-semibold tabular-nums"
@@ -192,11 +191,16 @@ export function CommitmentsPage({
               <table className="w-full border-collapse text-sm">
                 <thead data-testid="cabecalho">
                   <tr>
-                    <th className="border-b py-1.5 pr-2 text-left font-medium" />
+                    <th
+                      className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}
+                    />
                     {report.competences.map((c) => (
                       <th
                         key={c}
-                        className="border-b px-2 py-1.5 text-right font-medium"
+                        className={cn(
+                          ROTULO,
+                          'border-b px-2 py-1.5 text-right',
+                        )}
                       >
                         {rotuloCompetencia(c)}
                       </th>

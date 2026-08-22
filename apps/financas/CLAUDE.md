@@ -3242,3 +3242,106 @@ O valor entra **sempre como `valorCents` inteiro** (nunca float, nunca string j�
 | `shadow-ds` adotada                                | 1 — o borrão no tema claro                            |
 
 **Fora de escopo, registrado:** nenhuma tela consome `NumeroCard` ainda — as peças existem pras telas de que a próxima fatia vai precisar. O grid da home é `grid-cols-1 md:grid-cols-2`, ou seja, a 390px ele é **coluna única** hoje; a escala `grid` (137px) é a medida de um grid de 2 colunas a 390, que é o que a adoção vai introduzir.
+
+## A linguagem aplicada — cabeçalho em versalete, manchete onde há resposta
+
+Fatia de LEITURA sobre as peças da fatia anterior (`lib/tipografia.ts` + `blocos/NumeroCard.tsx`): Worker intocado (**810**), `packages/ui` (**97**) e `packages/tools` (**158**) intocados, nenhuma rota, nenhuma migration, nenhuma dependência nova.
+
+⚠️ **Medido antes de começar, e a base do briefing estava velha:** SPA **632** (não 622) e `packages/tools` **158** (não 147) — as duas já contavam a fatia das peças.
+
+### ① `ROTULO` em TODO cabeçalho de coluna — a mudança mais barata do pacote
+
+Os `<th>` eram `text-left font-medium`: o **rótulo do número tinha o mesmo peso do número**. Passaram a `cn(ROTULO, …)` — o versalete mono do `/admin`. **MEDIDO em Chrome real a 390×844** (`playwright-core` + o Chrome do sistema, sobre `vite build` + `vite preview`): `font-family: ui-monospace`, `12px`, `text-transform: uppercase`, `letter-spacing: 2.16px` (= `0.18em`).
+
+⚠️ **Foi além das duas tabelas nomeadas no briefing, de propósito.** Convertendo só `#/contas` e `#/fluxo`, as outras quatro tabelas (`#/dividas`, `#/comprometido`, `#/extrato`, `#/dividas/:id`) ficariam na voz antiga — e a inconsistência apareceria justo entre telas vizinhas (a manchete nova de `#/dividas` em cima de um cabeçalho velho). São **17 `<th>` em 6 arquivos**, todos com a mesma classe.
+
+⚠️ **O `<th>` de `<tfoot>` fica DE FORA, e é regra, não esquecimento** — lá ele não é cabeçalho de coluna, é o rótulo da LINHA de total ("TOTAL", "TOTAL PJ"), colado a um valor no mesmo `text-sm`; encolhê-lo pra 12px mono desalinharia a linha inteira que ele nomeia.
+
+**O gate é um teste de TEXTO, não um teste por tela** (`pages/cabecalho-de-tabela.test.ts`, no espírito de `styles.test.ts`): jsdom não computa CSS, e um teste por tela só provaria a tela que alguém lembrou de escrever. Ele lê todo `pages/*.tsx`, remove os blocos `<tfoot>…</tfoot>` e falha se sobrar um `<th` sem `ROTULO`. Uma asserção extra (`arquivos.length > 5`) impede o gate de passar por vacuidade.
+
+### ② `NumeroCard` — três manchetes, e o que decidi NÃO transformar
+
+**O levantamento, antes de mexer** (`arquivo:linha` no estado anterior):
+
+| Onde                                   | O número                          | Decisão                                                   |
+| -------------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| `pages/reserva.tsx:249`                | saldo da reserva                  | ✅ **NumeroCard herói**                                   |
+| `pages/reserva.tsx:257,283`            | meta e meses                      | → `contexto` do mesmo card                                |
+| `pages/DividasPage.tsx` (não existia)  | total devido                      | ✅ **NumeroCard herói novo**                              |
+| `pages/fluxo.tsx:233,239,250`          | entrou / saiu / saldo             | ✅ **UM** NumeroCard (saldo); os outros dois → `contexto` |
+| `pages/insight.tsx:488`                | total gasto                       | ✅ tipografia (`ROTULO` + `NUMERO_HEROI`), **não** card   |
+| `pages/accounts.tsx:335`               | total por escopo                  | ✅ tipografia (`NUMERO_HEROI`), **não** card              |
+| `blocos/BlocoComprometido.tsx:118,127` | manchete do Comprometido          | ✅ reusa a ESCALA (`NUMERO_GRID`), já era Card            |
+| `pages/insight.tsx:523,536`            | top categorias, maior crescimento | ❌ **não**                                                |
+| `pages/DividasPage.tsx:164,218-224`    | valores por dívida                | ❌ **não**                                                |
+| `pages/commitments.tsx:91,155,170`     | denominador e os 6 meses          | ❌ **não**                                                |
+| `pages/reserva.tsx:414-500`            | os dois lados do simulador        | ❌ **não**                                                |
+
+**O que decidi NÃO transformar, e por quê:**
+
+- **Listas (top categorias, dívidas linha a linha, as 6 competências).** Cinco manchetes lado a lado não deixam nenhuma ser manchete, e cada uma dessas listas responde "e cada um deles?", não "quanto?". A pergunta agregada tem UMA resposta — e ela virou manchete quando existia (dívidas) ou já era manchete (comprometido).
+- **O denominador de `#/comprometido` (`R$ 3.600`).** É a RÉGUA, não a resposta; promovê-lo faria a referência competir com o `%` que ela existe pra qualificar.
+- **Os dois lados do simulador de `#/reserva`.** São COMPARATIVOS — o valor de cada um só significa alguma coisa contra o outro; um deles em 30px decidiria a comparação pelo tamanho da fonte.
+- **Entrou/Saiu em `#/fluxo`.** O saldo já os resume; os três em destaque seriam três heróis.
+
+**As três divergências de forma, cada uma com motivo:**
+
+⚠️ **Os MESES de `#/reserva` NÃO podem ser o valor do card** — `NumeroCard` recebe `valorCents` **inteiro**, e `meses` é uma FAIXA em meses, não dinheiro. Eles são exatamente o que o `contexto` existe pra carregar ("um número absoluto sem referência não responde nada"): o card é `RESERVA` → `R$ 21.122,50` → contexto com meta e sobrevivência. O `data-testid` do card é `saldo` de propósito — o valor renderiza dentro dele (`saldo-valor`), então quem media o saldo continua medindo o saldo.
+
+⚠️ **O alerta de piso ficou FORA do card, nunca dentro do `contexto`** — aquele é um `<p>`, e um `<p role="alert">` aninhado noutro `<p>` é HTML inválido: o navegador fecha o parágrafo sozinho e o layout quebra (lição já paga em `recorrentes.tsx`).
+
+⚠️ **`#/contas` e `#/insight` NÃO viraram `NumeroCard` — seria Card dentro de Card.** Em contas o `<Card>` do escopo já embrulha badge + tabela; em insight o card "Números de \<mês\>" carrega no cabeçalho **o seletor que define qual mês está sendo somado**, então tirar o número pra fora o colocaria ACIMA do controle que o governa. O que se reusa é a TIPOGRAFIA, que é onde mora a linguagem. Em contas o total ainda **subiu do `<tfoot>` pro cabeçalho**: no rodapé ele saía no mesmo `text-sm` de cada conta somada pra chegar nele.
+
+⚠️ **`owed_to_me` não entra no "Total que devo".** `GET /api/debts?status=open` devolve as DUAS direções; somar junto daria um número plausível e errado — a mesma regra que `commitments()` já aplica no servidor. Sem nenhuma dívida minha em aberto o card **não aparece**: "R$ 0" no topo é destaque pra ausência de assunto.
+
+⚠️ **`NumeroCard` ganhou `valorClassName`** — o saldo negativo de `#/fluxo` precisa de `text-destructive` só no valor. É cor/peso, **nunca** `text-*` de tamanho: `escala` continua sendo quem decide tamanho e centavos JUNTOS, que é a amarração que torna inexprimível a combinação medida como quebrada (24px COM centavos num grid de 2 colunas). `< 0`, nunca `<= 0` — a janela ZERADA não é problema, e pintá-la seria dizer que é.
+
+⚠️ **`BlocoComprometido` tinha o literal `'text-2xl font-semibold tabular-nums'` DUAS vezes** — byte a byte o `NUMERO_GRID`. Passou a consumir a constante: há **uma** grafia da escala no app.
+
+### ③ `ROTULO_SECAO` — dois grupos, e dois "não"
+
+Aplicado nos dois cabeçalhos de grupo do simulador de `#/reserva` (`À vista` / `Financiado`): eles agrupam CAMPOS dentro de um card, que é exatamente o papel da constante. Medido: `10px`, `ui-monospace`, `uppercase`.
+
+**NÃO aplicado nos `CardTitle` de `#/configuracoes` (os 5 cards) nem de `#/importar`** — e a razão é a mesma nos dois: no admin o versalete de 10px rotula um GRUPO acima de uma lista de itens, sempre secundário ao que vem embaixo. Ali o `CardTitle` é o texto PRIMÁRIO do card (`Renda fixa de referência`, `Backup`, `Conferir importação`), e encolhê-lo pra 10px o deixaria **menor que o próprio parágrafo que ele nomeia** — o rótulo perderia pro conteúdo. Config, aliás, é uma tela cuja única estrutura são esses 5 títulos.
+
+Rótulos de NÚMERO (papel de `ROTULO`, não `ROTULO_SECAO`) ganharam a constante onde eram `text-muted-foreground text-xs` à mão: `DividasPage` (`Falta`), `commitments` (`TOTAL` do card por competência) e o `Total gasto` novo de `insight`.
+
+### Medições, suítes e mutação
+
+**MEDIDO em Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, `hasTouch`/`isMobile` a 390), nas **8** rotas tocadas (`#/`, `#/contas`, `#/fluxo`, `#/dividas`, `#/reserva`, `#/insight`, `#/comprometido`, `#/extrato`) × **390×844 e 1280×900**: `document.documentElement.scrollWidth === clientWidth` nas 16 combinações e **ZERO elemento estourando a largura da página**.
+
+⚠️ **Armadilha do instrumento, registrada porque custou uma rodada: o Playwright casa a rota registrada por ÚLTIMO primeiro.** Um `page.route('**/api/**', …)` genérico registrado DEPOIS do handler de `/api/auth/get-session` engole o handler específico — e como aquela rota responde **JSON CRU, sem envelope**, o app renderizava a tela de login com "Não consegui verificar sua sessão" e toda medição saía vazia sem erro nenhum. A saída é UM handler só, com o ramo de `/api/auth/` dentro dele.
+
+**Os números que decidem, medidos:**
+
+| Medida                                                        | Valor                                          |
+| ------------------------------------------------------------- | ---------------------------------------------- |
+| `R$ 21.122,50` a 30px (`heroi`) — uma linha, em toda manchete | **1 caixa de linha**                           |
+| `manchete-total` do Comprometido a 24px (`NUMERO_GRID`)       | **155,5px**                                    |
+| caixa útil do card de escopo em `#/contas` a 390              | **308px**                                      |
+| `<th>` depois da conversão                                    | `ui-monospace` · 12px · `uppercase` · `2.16px` |
+
+**Suítes: SPA 632 → 654** (+22: 3 em `pages/accounts.test.tsx`, 4 em `pages/fluxo.test.tsx`, 3 em `pages/DividasPage.test.tsx`, 3 em `pages/reserva.test.tsx`, 1 em `pages/insight.test.tsx`, 1 em `blocos/NumeroCard.test.tsx`, 7 no gate novo `pages/cabecalho-de-tabela.test.ts`). Worker **810**, `packages/ui` **97**, `packages/tools` **158** — intocados. `tsc --noEmit` limpo, `prettier --check` limpo, `vite build` com os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) em exit 0 e **um** único chunk lazy.
+
+⚠️ **Quatro asserções de `DividasPage.test.tsx` mudaram de SELETOR, nenhuma de VALOR** — a manchete "Total que devo" repete, na fixture de UMA dívida, o mesmo `R$ 1.360,00` do `Falta`, e o `getByText` global virou ambíguo. Escopadas com `within(getByRole('table'))` / `within(getByTestId('dividas-cards'))`, mesmos valores esperados.
+
+⚠️ **Verificado por MUTAÇÃO — 12, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado; `git status --porcelain -uall` sem resíduo depois):
+
+| Mutação                                               | Falha observada                                        |
+| ----------------------------------------------------- | ------------------------------------------------------ |
+| `<th>` de `#/contas` sem `ROTULO`                     | 2 — a tela **e** o gate de texto                       |
+| `<th>` de `#/extrato` sem `ROTULO` (só ele)           | 1 — o gate pega a tela que nenhum teste de tela cobria |
+| total do escopo de volta a 14px                       | 1                                                      |
+| manchete de `#/fluxo` removida                        | 3                                                      |
+| `<= 0` no lugar de `< 0` na manchete                  | 1 — a janela ZERADA volta a ser pintada como problema  |
+| `NumeroCard` ignora `valorClassName`                  | 2 — a unidade **e** a manchete negativa                |
+| total devido somando `owed_to_me` junto               | 1 — o número plausível e errado                        |
+| manchete de dívidas aparecendo com a lista vazia      | 1                                                      |
+| saldo da reserva na escala `grid` (perde os centavos) | 6 — incl. 5 asserções PRÉ-EXISTENTES                   |
+| grupo do simulador sem `ROTULO_SECAO`                 | 1                                                      |
+| rótulo do total de `#/insight` de volta a texto solto | 1                                                      |
+| total de `#/insight` de volta a 14px                  | 1                                                      |
+
+**Bundle (`vite build`, antes = fatia das peças / depois = esta):** JS principal 501,24 → 502,03 kB (**152,77 → 153,18 kB gzip, +0,41**); CSS **8,04 kB gzip, intocado** (as classes de `ROTULO`/`NUMERO_*` já entravam no CSS emitido pela varredura de `@source`); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
+
+**Fora de escopo, registrado:** `#/comprometido` continua com o **mesmo número em dois lugares** (a manchete do bloco na home e a matriz da tela cheia), o que é anterior a esta fatia; e `#/fluxo` agora mostra o saldo da janela na manchete **e** no `<tfoot>` — de propósito, papéis diferentes (resposta × total por coluna) e a MESMA variável (`totalSaldo`), nunca uma segunda soma.

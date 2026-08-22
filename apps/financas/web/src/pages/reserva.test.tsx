@@ -632,3 +632,62 @@ describe('ReservaPage — alvo de toque da designação', () => {
     expect(rotulo!.className).toContain('min-h-11')
   })
 })
+
+describe('ReservaPage — o saldo virou manchete, os meses viraram contexto', () => {
+  it('o saldo sai em NumeroCard herói (30px), não num <strong> no meio da frase', async () => {
+    // ⚠️ Os MESES não podem ser o valor do card: `NumeroCard` recebe
+    // `valorCents` INTEIRO, e `meses` é uma FAIXA em meses, não dinheiro.
+    // Eles são exatamente o que o `contexto` existe pra carregar — a régua
+    // que dá sentido ao número absoluto.
+    mockApi({
+      reserve: () => ({
+        ...statusVazio,
+        saldo_cents: 150000,
+        meta_cents: { min: 100000, max: 300000 },
+        meses: { min: 2.1, max: 4.8 },
+      }),
+    })
+    render(<ReservaPage />)
+
+    const card = await screen.findByTestId('saldo')
+    const valor = within(card).getByTestId('saldo-valor')
+    expect(valor).toHaveTextContent('R$ 1.500,00')
+    expect(valor.className).toContain('text-3xl')
+    expect(valor.className).toContain('tabular-nums')
+    // meta e meses continuam legíveis, agora como contexto do mesmo card
+    expect(within(card).getByTestId('meta')).toBeInTheDocument()
+    expect(within(card).getByTestId('meses')).toHaveTextContent(
+      'entre 2,1 e 4,8 meses',
+    )
+  })
+
+  it('o alerta fica FORA do card (um <p role="alert"> dentro de <p> é inválido)', async () => {
+    mockApi({
+      reserve: () => ({
+        ...statusVazio,
+        saldo_cents: 60000,
+        meta_cents: { min: 60000, max: 240000 },
+        meses: { min: 2, max: 5 },
+        goal_months: 3,
+      }),
+    })
+    render(<ReservaPage />)
+
+    const alerta = await screen.findByTestId('alerta-piso')
+    expect(alerta.tagName).toBe('P')
+    expect(
+      within(screen.getByTestId('saldo')).queryByTestId('alerta-piso'),
+    ).toBeNull()
+  })
+
+  it('os dois lados do simulador usam ROTULO_SECAO (cabeçalho de grupo)', async () => {
+    mockApi()
+    render(<ReservaPage />)
+
+    await screen.findByTestId('simulador-a-vista')
+    const titulo = screen.getByRole('heading', { name: 'À vista' })
+    expect(titulo.className).toContain('font-mono')
+    expect(titulo.className).toContain('uppercase')
+    expect(titulo.className).toContain('text-[10px]')
+  })
+})
