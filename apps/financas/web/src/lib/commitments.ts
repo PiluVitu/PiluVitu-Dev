@@ -1,4 +1,4 @@
-import { formatBRL } from '@piluvitu/tools/money'
+import { formatBRL, formatBRLSemCentavos } from '@piluvitu/tools/money'
 
 /**
  * Shape de `GET /api/reports/commitments` + o rótulo de competência
@@ -103,6 +103,31 @@ export function formatRange(range: CommitmentRange): string {
   return range.min === range.max
     ? formatBRL(range.min)
     : `${formatBRL(range.min)} a ${formatBRL(range.max)}`
+}
+
+/**
+ * Mesma regra de `formatRange`, SEM centavos — pra manchete em grid de 2
+ * colunas.
+ *
+ * ⚠️ Existe porque a regra "sem centavos em 2 colunas" foi violada
+ * exatamente no único lugar onde ela importava. MEDIDO em Chrome real com o
+ * dado REAL do dono (DAS em faixa de R$ 12 a R$ 600, que empurra o
+ * comprometido pra uma faixa): `R$ 21.122,50 a R$ 21.722,50` a 24px mede
+ * **209,6 px**, e a caixa do valor no grid de 2 é 324 px a 390 mas **174 px
+ * a 768** — quebra em duas linhas nas duas pontas.
+ *
+ * Sem centavos a mesma faixa cabe: os centavos custam ~4 caracteres × 2
+ * (são dois números na faixa), e é a faixa que estoura, não o número
+ * sozinho.
+ *
+ * ⚠️ A precisão NÃO se perde: o valor exato continua em `#/comprometido`,
+ * que é a tela dedicada e tem uma coluna inteira por competência. A
+ * manchete responde "quanto, mais ou menos"; a tabela responde "quanto".
+ */
+export function formatRangeSemCentavos(range: CommitmentRange): string {
+  return range.min === range.max
+    ? formatBRLSemCentavos(range.min)
+    : `${formatBRLSemCentavos(range.min)} a ${formatBRLSemCentavos(range.max)}`
 }
 
 /** Mesma regra de `formatRange`, pra porcentagem: "60%" ou "36% a 44%". */

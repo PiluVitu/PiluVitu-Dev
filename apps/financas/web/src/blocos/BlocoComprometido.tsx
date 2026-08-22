@@ -6,7 +6,7 @@ import { competenciaAtual } from '../lib/dates'
 import { NUMERO_GRID } from '../lib/tipografia'
 import {
   formatPctRange,
-  formatRange,
+  formatRangeSemCentavos,
   LIMIAR_ALERTA_PCT,
   rotuloCompetencia,
 } from '../lib/commitments'
@@ -123,7 +123,7 @@ function Manchete({ report }: { report: CommitmentReportView }) {
           data-testid="manchete-total"
           className={cn(NUMERO_GRID, emAlerta && 'text-destructive')}
         >
-          {formatRange(total)}
+          {formatRangeSemCentavos(total)}
         </span>
       </div>
       <p className="text-muted-foreground text-xs">

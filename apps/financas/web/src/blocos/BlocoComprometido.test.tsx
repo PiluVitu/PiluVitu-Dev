@@ -200,9 +200,13 @@ describe('BlocoComprometido', () => {
     // report[0] = 55% / R$ 2.000,00 (a competência corrente, porque a
     // busca é `?from=competenciaAtual()`)
     expect(await screen.findByTestId('manchete-pct')).toHaveTextContent('55%')
-    expect(screen.getByTestId('manchete-total')).toHaveTextContent(
-      'R$ 2.000,00',
-    )
+    // ⚠️ SEM centavos, e não é detalhe de formatação: esta manchete é a
+    // única de 24px que de fato vive num grid de 2 colunas (`home.tsx`,
+    // `md:grid-cols-2`). MEDIDO em Chrome real com o dado REAL do dono (DAS
+    // em faixa): `R$ 21.122,50 a R$ 21.722,50` mede 209,6px contra 174px de
+    // caixa a 768 — quebrava em duas linhas. O valor exato continua em
+    // `#/comprometido`, que tem uma coluna por competência.
+    expect(screen.getByTestId('manchete-total')).toHaveTextContent('R$ 2.000')
 
     // é o mês CORRENTE, não um mês qualquer da janela: 51% (a 2ª
     // competência) não pode aparecer na manchete
@@ -263,8 +267,28 @@ describe('BlocoComprometido', () => {
     expect(screen.getByTestId('manchete-alerta')).toBeInTheDocument()
     // faixa de verdade também no valor, não só na porcentagem
     expect(screen.getByTestId('manchete-total')).toHaveTextContent(
-      'R$ 2.400,00 a R$ 2.988,00',
+      'R$ 2.400 a R$ 2.988',
     )
+  })
+
+  it('⚠️ a manchete NUNCA mostra centavos — ela vive num grid de 2 colunas', async () => {
+    // O caso REAL do dono: DAS numa faixa de R$ 12 a R$ 600 empurra o
+    // comprometido pra uma faixa de ~R$ 21 mil. MEDIDO em Chrome real:
+    // `R$ 21.122,50 a R$ 21.722,50` a 24px = 209,6px, contra 174px de caixa
+    // do valor a 768. Duas linhas — e o `escala="grid"` do NumeroCard existia
+    // pra impedir exatamente isso, mas este bloco consumia `NUMERO_GRID`
+    // direto com `formatRange`, passando por fora da regra.
+    vi.mocked(api).mockResolvedValue({
+      ...report,
+      totals: [{ min: 2112250, max: 2172250 }, ...report.totals.slice(1)],
+    })
+    render(<BlocoComprometido />)
+
+    const total = await screen.findByTestId('manchete-total')
+    expect(total).toHaveTextContent('R$ 21.123 a R$ 21.723')
+    // A asserção que importa é a NEGATIVA: nenhum centavo, em nenhum dos
+    // dois lados da faixa.
+    expect(total.textContent).not.toMatch(/,\d\d/)
   })
 
   it('manchete usa tabular-nums — a coluna de números precisa alinhar', async () => {
