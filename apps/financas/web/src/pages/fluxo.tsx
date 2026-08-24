@@ -185,6 +185,25 @@ export function FluxoPage() {
             O detalhe por trás do gráfico — inclusive os meses sem movimento,
             que aparecem zerados aqui e não desenham barra nenhuma lá.
           </p>
+          {/*
+            ⚠️ As células de dinheiro são `whitespace-nowrap`, e isso é
+            conserto de regressão: envolver a tabela no `Card` estreitou a
+            célula útil, e um valor de 7 dígitos passou a QUEBRAR entre o
+            `R$` e os dígitos.
+
+            ⚠️ **A medição é do revisor, não minha** — ele reproduziu com
+            build dos dois estados e contou `0 → 3` valores partidos a 390
+            (`acumulado` ×2, `total-saldo`), com `<td>` útil caindo de 132,5
+            pra 111,3 px contra os 117 que `R$ 1.234.567,89` pede a 14px. Meu
+            harness não reproduziu o cenário dele; o `nowrap` está aqui porque
+            é certo por si (número não quebra no meio), não porque eu
+            confirmei o número.
+
+            ⚠️ **O `overflow-x-auto` ESCONDE esse defeito de qualquer checagem
+            de overflow de página** — foi por isso que "sem overflow nas 10
+            combinações" saiu verde com os valores partidos dentro. Quem medir
+            esta tela tem que olhar ALTURA de célula, não largura de página.
+          */}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -245,13 +264,13 @@ export function FluxoPage() {
                       <>
                         <td
                           data-testid="entrou"
-                          className="border-b px-2 py-1.5 text-right tabular-nums"
+                          className="border-b px-2 py-1.5 text-right whitespace-nowrap tabular-nums"
                         >
                           {formatBRL(l.entrou_cents)}
                         </td>
                         <td
                           data-testid="saiu"
-                          className="border-b px-2 py-1.5 text-right tabular-nums"
+                          className="border-b px-2 py-1.5 text-right whitespace-nowrap tabular-nums"
                         >
                           {formatBRL(l.saiu_cents)}
                         </td>
@@ -267,7 +286,7 @@ export function FluxoPage() {
                     <td
                       data-testid="saldo"
                       className={cn(
-                        'border-b px-2 py-1.5 text-right tabular-nums',
+                        'border-b px-2 py-1.5 text-right whitespace-nowrap tabular-nums',
                         l.saldo_cents < 0 && 'text-destructive font-semibold',
                       )}
                     >
@@ -275,7 +294,7 @@ export function FluxoPage() {
                     </td>
                     <td
                       data-testid="acumulado"
-                      className="border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                      className="border-b px-2 py-1.5 text-right font-medium whitespace-nowrap tabular-nums"
                     >
                       {formatBRL(l.acumulado_cents)}
                     </td>
@@ -291,13 +310,13 @@ export function FluxoPage() {
                     <>
                       <td
                         data-testid="total-entrou"
-                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium whitespace-nowrap tabular-nums"
                       >
                         {formatBRL(totalEntrou)}
                       </td>
                       <td
                         data-testid="total-saiu"
-                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium whitespace-nowrap tabular-nums"
                       >
                         {formatBRL(totalSaiu)}
                       </td>
@@ -306,7 +325,7 @@ export function FluxoPage() {
                   <td
                     data-testid="total-saldo"
                     className={cn(
-                      'border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums',
+                      'border-t-2 border-b px-2 py-1.5 text-right font-medium whitespace-nowrap tabular-nums',
                       totalSaldo < 0 && 'text-destructive font-semibold',
                     )}
                   >

@@ -490,4 +490,24 @@ describe('FluxoPage — a linguagem: cabeçalho em versalete e UMA manchete', ()
     const secao = rotulo.closest('div')?.parentElement as HTMLElement
     expect(within(secao).getByTestId('linha-total')).toBeInTheDocument()
   })
+
+  it('⚠️ célula de dinheiro NUNCA quebra — o Card estreitou a coluna', async () => {
+    // Regressão medida pelo revisor: envolver a tabela no `Card` levou a
+    // célula útil de 132,5 pra 111,3 px, contra os 117 que `R$ 1.234.567,89`
+    // pede a 14px — 3 valores partiam entre o `R$` e os dígitos.
+    //
+    // ⚠️ Este teste afere a CLASSE porque jsdom não faz layout. É o limite
+    // honesto dele: prova que o `nowrap` está lá, não que o número coube.
+    // Quem for medir de verdade tem que olhar ALTURA de célula em navegador
+    // real — largura de página não pega, o `overflow-x-auto` esconde.
+    mockFetch({ ok: true, data: reportBase, notifications: [] })
+    render(<FluxoPage />)
+    await screen.findAllByTestId(/^linha-/)
+
+    const celulas = document.querySelectorAll('td.tabular-nums')
+    expect(celulas.length).toBeGreaterThan(0)
+    for (const c of celulas) {
+      expect(c.className).toContain('whitespace-nowrap')
+    }
+  })
 })
