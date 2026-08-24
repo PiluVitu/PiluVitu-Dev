@@ -1250,8 +1250,24 @@ export function ExtratoPage() {
                 data-testid="resumo-carregado"
               >
                 {visiveis.length === linhas.length
-                  ? `${linhas.length} lançamento(s) carregado(s).`
-                  : `${visiveis.length} de ${linhas.length} lançamento(s) carregado(s).`}
+                  ? `${linhas.length} lançamento(s) carregado(s)`
+                  : `${visiveis.length} de ${linhas.length} lançamento(s) carregado(s)`}
+                {/*
+                  ⚠️ O RECORTE tem que vir aqui, e não só no chip do topo.
+                  MEDIDO: com 30 linhas e filtro de conta ativo, rolado ao fim
+                  (`scrollY 4954` de `5798`), o chip fica em `top:-4807` e o
+                  botão "Filtros" em `top:-4818` — os DOIS a **0 px
+                  visíveis**. O único texto perto do polegar era "30
+                  lançamento(s) carregado(s).", sem dizer de quê.
+
+                  É a pior leitura possível numa tela de extrato: olhar uma
+                  lista PARCIAL achando que é tudo. E os filtros que mais
+                  causam isso são justamente os de SERVIDOR (conta, período),
+                  que recortam na origem — a busca é do cliente e já se
+                  qualificava sozinha no "X de N".
+                */}
+                {resumo.length > 0 ? ` — ${resumo.join(' · ')}` : ''}
+                {'.'}
                 {somenteNaoPagos
                   ? temMais
                     ? ' A soma acima é só do que carregou até aqui — há mais lançamentos, use "carregar mais".'

@@ -1393,4 +1393,33 @@ describe('ExtratoPage — filtros no painel', () => {
       /data inicial é depois da final/,
     )
   })
+
+  it('⚠️ o RODAPÉ diz de que recorte é a contagem — o chip do topo rola pra fora', async () => {
+    // MEDIDO pelo revisor: com 30 linhas e filtro de conta ativo, rolado ao
+    // fim (`scrollY 4954` de 5798), o chip fica em `top:-4807` e o botão
+    // "Filtros" em `top:-4818` — os DOIS a **0 px visíveis**. O único texto
+    // perto do polegar dizia "30 lançamento(s) carregado(s)." sem qualificar
+    // o recorte: olhar uma lista PARCIAL achando que é tudo, que é a pior
+    // leitura possível numa tela de extrato.
+    const user = comRelogio()
+    montarApi({
+      linhas: [tx({ id: 't1' }), tx({ id: 't2', account_id: 'a2' })],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    // Sem filtro: a contagem NÃO ganha qualificação nenhuma.
+    expect(screen.getByTestId('resumo-carregado').textContent).not.toMatch(/—/)
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a1')
+    })
+
+    // Com filtro: o rodapé nomeia o recorte, sem depender do chip lá em cima.
+    await waitFor(() =>
+      expect(screen.getByTestId('resumo-carregado')).toHaveTextContent(
+        /—.*Nubank/,
+      ),
+    )
+  })
 })
