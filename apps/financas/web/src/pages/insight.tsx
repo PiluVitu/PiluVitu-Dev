@@ -336,8 +336,20 @@ export function InsightPage() {
 
   return (
     <section className="space-y-6" data-testid="pagina-insight">
-      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
-      <div className="flex items-center gap-3">
+      {/*
+        O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou.
+
+        ⚠️ `flex-wrap` — MEDIDO em Chrome real a 390×844: sem ele os dois
+        filhos (o subtítulo e o gatilho da Ajuda) não cabiam numa linha só e a
+        `<section>` inteira ficava com `scrollWidth 370` contra
+        `clientWidth 358`, ou seja, o "?" saía da caixa. Como o pai tem
+        overflow visível, isso não vira scroll: o gatilho simplesmente fica
+        fora, e o dono perde a explicação de que nenhum número desta tela vem
+        do modelo — justamente a dúvida que a Ajuda existe pra responder.
+        Mesmo defeito (e mesma correção) já pagos na faixa "Denominador:" de
+        `pages/commitments.tsx`.
+      */}
+      <div className="flex flex-wrap items-center gap-3">
         <p className="text-muted-foreground text-sm">
           Os números do mês, mais a leitura escrita pelo modelo local.
         </p>
@@ -526,18 +538,73 @@ function NumerosCalculados({ numbers }: { numbers: InsightNumbersView }) {
           Nenhum gasto em {rotuloCompetencia(numbers.competence)}.
         </p>
       ) : (
-        <ol data-testid="insight-top-categorias" className="space-y-1">
-          {numbers.top_categories.map((row, i) => (
-            <li
-              key={row.category_id ?? 'sem-categoria'}
-              data-testid={`insight-categoria-${i}`}
-            >
-              {row.category_name}:{' '}
-              <strong className="text-foreground tabular-nums">
-                {formatBRL(Math.abs(row.total_cents))}
-              </strong>
-            </li>
-          ))}
+        /*
+          ⚠️ Barra de proporção, e ela é um `<div>` com `style.width` — NUNCA
+          um gráfico. `GraficoComprometido.tsx` é o ÚNICO importador de
+          `recharts` no app, e um arquivo novo de gráfico custaria **+113 KB
+          gzip** num segundo chunk que `scripts/check-financas-lazy-chart.mjs`
+          NÃO pegaria (ele checa que o marcador está fora do chunk de entrada e
+          dentro de algum chunk lazy, não quantos existem). Aqui não há
+          biblioteca nenhuma: dois `<div>`s e uma porcentagem, custo de bundle
+          ZERO.
+
+          O problema que ela resolve: cinco valores empilhados em texto não
+          dizem PROPORÇÃO. "R$ 1.234.567,89" e "R$ 617.283,94" lado a lado
+          exigem que o dono divida de cabeça pra ver que o primeiro é o dobro
+          do segundo — que é a única pergunta que uma lista "top categorias"
+          existe pra responder.
+
+          ⚠️ A base é o TOTAL do mês (`numbers.total_cents`), não a maior
+          categoria. Com a maior como 100%, a primeira barra estaria sempre
+          cheia e a leitura viraria "DAS é o maior" (que a ordem já diz);
+          contra o total, ela diz "DAS é 55% do mês", que é informação nova. A
+          soma das barras nunca passa de 100% porque `top_categories` é um
+          subconjunto do que compõe `total_cents`.
+
+          ⚠️ Nada disto sai de `insight.texto` — a porcentagem é aritmética
+          sobre dois campos de `numbers` (`row.total_cents` e
+          `total_cents`), mesma origem do resto da tela. `Math.abs` porque os
+          dois chegam com o sinal cru de `byCategory` (negativo).
+        */
+        <ol data-testid="insight-top-categorias" className="space-y-2">
+          {numbers.top_categories.map((row, i) => {
+            const totalMes = Math.abs(numbers.total_cents)
+            const valor = Math.abs(row.total_cents)
+            // Guarda contra divisão por zero: um mês cujo total fecha em 0
+            // (estorno anulando o gasto) não tem proporção que signifique
+            // alguma coisa — a barra some, os valores ficam.
+            const pct =
+              totalMes === 0 ? null : Math.round((valor * 100) / totalMes)
+            return (
+              <li
+                key={row.category_id ?? 'sem-categoria'}
+                data-testid={`insight-categoria-${i}`}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span>{row.category_name}</span>
+                  <strong className="text-foreground whitespace-nowrap tabular-nums">
+                    {formatBRL(valor)}
+                  </strong>
+                </div>
+                {pct === null ? null : (
+                  <div
+                    className="bg-secondary mt-1 h-1.5 w-full overflow-hidden rounded-full"
+                    // A barra é decoração de um número que já está escrito ao
+                    // lado — anunciá-la de novo só repetiria a mesma
+                    // informação pra quem usa leitor de tela.
+                    aria-hidden="true"
+                    data-testid={`insight-barra-${i}`}
+                    data-pct={pct}
+                  >
+                    <div
+                      className="bg-primary h-full rounded-full"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ol>
       )}
 

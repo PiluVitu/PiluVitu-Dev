@@ -20,9 +20,11 @@ import {
   ordenarPorHierarquia,
   type CategoryKindView,
   type CategoryView,
+  type NoDeCategoria,
 } from '../lib/categories'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { ROTULO_SECAO } from '../lib/tipografia'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 
 /**
@@ -62,6 +64,58 @@ const ROTULO_KIND: Record<CategoryKindView, string> = {
   income: 'Entrada',
   transfer: 'Transferência',
   debt_settlement: 'Quitação de dívida',
+}
+
+/**
+ * A ordem dos grupos na tela. Despesa primeiro porque é o que o dono cadastra
+ * e consulta o tempo todo; as duas classes estruturais (que todo relatório de
+ * resultado exclui, e que nem podem ser criadas por aqui) ficam por último.
+ */
+const ORDEM_DOS_GRUPOS: CategoryKindView[] = [
+  'expense',
+  'income',
+  'transfer',
+  'debt_settlement',
+]
+
+/**
+ * Agrupa a lista JÁ ACHATADA por `ordenarPorHierarquia` em blocos por tipo,
+ * **sem reordenar nada dentro de uma família**.
+ *
+ * ⚠️ **A chave do grupo é o `kind` da RAIZ, nunca o da própria linha — e essa
+ * é a decisão inteira.** Nada no schema obriga a filha a ter o mesmo `kind` da
+ * mãe (`0001:81-106` não tem esse CHECK). Agrupando por `kind` de cada linha,
+ * uma filha de tipo diferente cairia num grupo OUTRO que o da mãe, carregando
+ * `nivel: 1` — ou seja, renderizaria indentada, com a barra à esquerda,
+ * pendurada em nada. É exatamente o modo de falha que `ordenarPorHierarquia`
+ * documenta e evita no seu próprio ramo de órfã ("`nivel: 1` sem a mãe acima
+ * renderizaria uma indentação pendurada em nada"); reintroduzi-lo aqui, na
+ * camada de cima, anularia a garantia dele.
+ *
+ * Como a lista de entrada já vem "raiz, filhas da raiz, próxima raiz…", basta
+ * lembrar do último `kind` de raiz visto — a família inteira segue junto,
+ * intacta, e a ordem relativa entre linhas nunca muda.
+ */
+export function agruparPorTipo(
+  nos: NoDeCategoria[],
+): { kind: CategoryKindView; nos: NoDeCategoria[] }[] {
+  const porKind = new Map<CategoryKindView, NoDeCategoria[]>()
+  let kindDaFamilia: CategoryKindView | null = null
+
+  for (const no of nos) {
+    if (no.nivel === 0) kindDaFamilia = no.categoria.kind
+    // `?? no.categoria.kind` só é alcançável se a lista começasse por uma
+    // filha, o que `ordenarPorHierarquia` nunca produz — é rede, não caminho.
+    const chave = kindDaFamilia ?? no.categoria.kind
+    const lista = porKind.get(chave) ?? []
+    lista.push(no)
+    porKind.set(chave, lista)
+  }
+
+  return ORDEM_DOS_GRUPOS.filter((k) => porKind.has(k)).map((kind) => ({
+    kind,
+    nos: porKind.get(kind) ?? [],
+  }))
 }
 
 type ConfirmacaoPendente = {
@@ -226,74 +280,110 @@ export function CategoriasPage() {
               Nenhuma categoria cadastrada.
             </p>
           ) : (
-            <ul className="space-y-2" data-testid="lista-categorias">
-              {nos.map(({ categoria: c, nivel }) => (
-                <li
-                  key={c.id}
-                  data-testid={`categoria-${c.id}`}
-                  data-nivel={nivel}
-                  // Filha indentada com barra à esquerda — a hierarquia
-                  // aparece sem tabela e sem coluna extra, então cabe nos
-                  // ~390px do Android sem nada cortado.
-                  className={
-                    nivel === 1
-                      ? 'border-muted-foreground/30 ml-4 border-l pl-3'
-                      : ''
-                  }
-                >
-                  <div className="rounded-md border p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium">{c.name}</p>
-                      {/*
-                        Status/classificação como CHIP — `regras.tsx` é a
-                        referência (`<Badge>Pausada</Badge>`), e outras 5 telas
-                        já usavam badge. `badgeVariants` num `<span>`, nunca o
-                        componente `Badge`: ele renderiza um `<div>`, e o pai
-                        aqui é um flex com `<p>` ao lado — manter o elemento em
-                        phrasing content evita a mesma quebra de layout já paga
-                        em `recorrentes.tsx` (div dentro de p faz o navegador
-                        fechar o parágrafo sozinho).
-                      */}
-                      <span
-                        data-testid={`tipo-${c.id}`}
-                        className={cn(
-                          badgeVariants({ variant: 'secondary' }),
-                          'shrink-0 whitespace-nowrap',
-                        )}
+            /*
+              ⚠️ `lista-categorias` continua sendo UM container só, e os `<li>`
+              continuam sendo os MESMOS, na MESMA ordem — o teste central da
+              tela lê `within(lista-categorias).getAllByRole('listitem')` e
+              compara a sequência inteira. O cabeçalho de grupo é um `<p>`
+              dentro de um `<div>`, nunca um `<li>`: um `<li>` de cabeçalho
+              entraria nessa contagem e quebraria a asserção que prova a
+              hierarquia.
+
+              A ordem sobrevive porque `agruparPorTipo` não reordena nada
+              dentro de uma família e os grupos saem na ordem fixa de
+              `ORDEM_DOS_GRUPOS` — a família de despesa (que já vinha primeiro
+              por ordem alfabética das raízes) continua primeiro.
+            */
+            <div className="space-y-6" data-testid="lista-categorias">
+              {agruparPorTipo(nos).map((grupo) => (
+                <div key={grupo.kind} data-testid={`grupo-${grupo.kind}`}>
+                  <p className={cn(ROTULO_SECAO, 'mb-2')}>
+                    {ROTULO_KIND[grupo.kind]} · {grupo.nos.length}
+                  </p>
+                  <ul className="space-y-2">
+                    {grupo.nos.map(({ categoria: c, nivel }) => (
+                      <li
+                        key={c.id}
+                        data-testid={`categoria-${c.id}`}
+                        data-nivel={nivel}
+                        // ⚠️ A indentação da filha NÃO muda com o
+                        // agrupamento — é ela que PROVA a hierarquia
+                        // (`Custos da PJ` é mãe de DAS/Contador/INSS desde a
+                        // migration `0001`), e há teste em cima dela. O grupo
+                        // é uma camada ACIMA da família, nunca no lugar dela.
+                        className={
+                          nivel === 1
+                            ? 'border-muted-foreground/30 ml-4 border-l pl-3'
+                            : ''
+                        }
                       >
-                        {ROTULO_KIND[c.kind]}
-                        {c.default_scope ? ` · ${c.default_scope}` : ''}
-                      </span>
-                    </div>
-                    {/* Mesma regra do extrato: alvo de 44 px e o destrutivo
-                        empurrado pra outra ponta (`ml-auto`), em vez de colado
-                        no botão de uso rotineiro. */}
-                    <div className="mt-2 flex gap-3">
-                      <Button
-                        type="button"
-                        variant="link"
-                        className={cn('h-auto p-0 text-xs', ALVO_LINK)}
-                        onClick={() => editar(c)}
-                      >
-                        Editar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="link"
-                        className={cn(
-                          'text-destructive h-auto p-0 text-xs',
-                          ALVO_LINK_FIM,
-                        )}
-                        disabled={processando === c.id}
-                        onClick={() => arquivar(c)}
-                      >
-                        {processando === c.id ? 'Arquivando…' : 'Arquivar'}
-                      </Button>
-                    </div>
-                  </div>
-                </li>
+                        <div className="rounded-md border p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-medium">{c.name}</p>
+                            {/*
+                              Status/classificação como CHIP — `regras.tsx` é
+                              a referência (`<Badge>Pausada</Badge>`), e outras
+                              5 telas já usavam badge. `badgeVariants` num
+                              `<span>`, nunca o componente `Badge`: ele
+                              renderiza um `<div>`, e o pai aqui é um flex com
+                              `<p>` ao lado — manter o elemento em phrasing
+                              content evita a mesma quebra de layout já paga em
+                              `recorrentes.tsx` (div dentro de p faz o
+                              navegador fechar o parágrafo sozinho).
+
+                              ⚠️ O badge NÃO sai por causa do cabeçalho de
+                              grupo: ele carrega também o `default_scope`
+                              (`Despesa · PJ`), que o grupo não diz, e viaja
+                              com a linha — se um dia alguém filtrar ou
+                              reordenar, a linha continua se explicando
+                              sozinha. Há teste em cima do texto dele.
+                            */}
+                            <span
+                              data-testid={`tipo-${c.id}`}
+                              className={cn(
+                                badgeVariants({ variant: 'secondary' }),
+                                'shrink-0 whitespace-nowrap',
+                              )}
+                            >
+                              {ROTULO_KIND[c.kind]}
+                              {c.default_scope ? ` · ${c.default_scope}` : ''}
+                            </span>
+                          </div>
+                          {/* Mesma regra do extrato: alvo de 44 px e o
+                              destrutivo empurrado pra outra ponta
+                              (`ml-auto`), em vez de colado no botão de uso
+                              rotineiro. */}
+                          <div className="mt-2 flex gap-3">
+                            <Button
+                              type="button"
+                              variant="link"
+                              className={cn('h-auto p-0 text-xs', ALVO_LINK)}
+                              onClick={() => editar(c)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="link"
+                              className={cn(
+                                'text-destructive h-auto p-0 text-xs',
+                                ALVO_LINK_FIM,
+                              )}
+                              disabled={processando === c.id}
+                              onClick={() => arquivar(c)}
+                            >
+                              {processando === c.id
+                                ? 'Arquivando…'
+                                : 'Arquivar'}
+                            </Button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -3345,3 +3345,78 @@ Rótulos de NÚMERO (papel de `ROTULO`, não `ROTULO_SECAO`) ganharam a constant
 **Bundle (`vite build`, antes = fatia das peças / depois = esta):** JS principal 501,24 → 502,03 kB (**152,77 → 153,18 kB gzip, +0,41**); CSS **8,04 kB gzip, intocado** (as classes de `ROTULO`/`NUMERO_*` já entravam no CSS emitido pela varredura de `@source`); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
 
 **Fora de escopo, registrado:** `#/comprometido` continua com o **mesmo número em dois lugares** (a manchete do bloco na home e a matriz da tela cheia), o que é anterior a esta fatia; e `#/fluxo` agora mostra o saldo da janela na manchete **e** no `<tfoot>` — de propósito, papéis diferentes (resposta × total por coluna) e a MESMA variável (`totalSaldo`), nunca uma segunda soma.
+
+## A linguagem nas 5 telas mais cruas — grupos, hierarquia e proporção
+
+Fatia de LEITURA: Worker intocado (**810**), `packages/ui` (**97**) e `packages/tools` (**158**) intocados, nenhuma rota, nenhuma migration, nenhuma dependência nova. Oito arquivos, todos em `apps/financas/web/src/pages/`.
+
+⚠️ **Duas das cinco já estavam prontas, e conferir isso ANTES foi metade do trabalho.** O briefing pedia `ROTULO` nos cabeçalhos de `#/fluxo` e `#/contas` e "o total por escopo como `NumeroCard`" — as duas primeiras já tinham sido feitas na fatia anterior, e a terceira tinha sido **recusada com motivo registrado** (`NumeroCard` renderiza um `Card`, e ali seria Card dentro de Card: o `<Card>` do escopo já embrulha badge + tabela + total). Reaplicar teria desfeito uma decisão documentada. **`#/contas` não recebeu nenhuma alteração nesta fatia.**
+
+### ① `#/fluxo` — a hierarquia que faltava entre o gráfico e a tabela
+
+A tabela **fica** (decisão nº 4), mas vinha NUA logo abaixo de um gráfico dentro de `Card`: dois blocos de peso visual idêntico, repetindo o mesmo dado, sem nada dizendo qual responde o quê. Agora são três degraus — manchete (`NumeroCard`, a resposta) → gráfico (a forma) → tabela (o detalhe) —, com o gráfico e a tabela como `Card`s irmãos, cada um com `ROTULO_SECAO` (`Forma da janela` / `Mês a mês`). MEDIDO em Chrome real: os dois rótulos saem em `ui-monospace`, `10px`, `uppercase`, com o gráfico em `y=347` e a tabela em `y=668`.
+
+A frase sob o rótulo da tabela diz **por que ela existe** — não é óbvio olhando a tela, e é a decisão nº 4 em texto: uma barra de valor exatamente 0 não renderiza `<path>` no recharts, então o gráfico é justamente onde um mês zerado é indistinguível de um mês ausente.
+
+### ② `#/categorias` — agrupada por tipo, com a hierarquia intacta
+
+12+ cards numa lista plana viraram 4 grupos (`Despesa · 6`, `Entrada · 2`, `Transferência · 2`, `Quitação de dívida · 1`) com `ROTULO_SECAO`.
+
+⚠️ **A chave do grupo é o `kind` da RAIZ, nunca o da própria linha — é a decisão inteira.** Nada no schema obriga a filha a ter o mesmo `kind` da mãe (`0001:81-106` não tem esse CHECK). Agrupando por linha, uma filha de tipo diferente cairia num grupo OUTRO carregando `nivel: 1` — ou seja, renderizaria indentada, com a barra à esquerda, **pendurada em nada**. É exatamente o modo de falha que `ordenarPorHierarquia` documenta e evita no próprio ramo de órfã; reintroduzi-lo na camada de cima anularia a garantia dele. `agruparPorTipo` (exportada, em `pages/categorias.tsx`) percorre a lista já achatada e lembra do último `kind` de raiz visto — a família inteira segue junto.
+
+⚠️ **`lista-categorias` continua sendo UM container e os `<li>` continuam os MESMOS, na MESMA ordem** — o teste central da tela lê `within(lista-categorias).getAllByRole('listitem')` e compara a sequência inteira. O cabeçalho de grupo é um `<p>` dentro de um `<div>`, **nunca um `<li>`**: um `<li>` de cabeçalho entraria nessa contagem e quebraria a asserção que prova a hierarquia. MEDIDO em Chrome real: mãe em `x=41`, filha em `x=57` — os 16 px de `ml-4` preservados, `data-nivel="1"` intacto.
+
+### ④ `#/insight` — barra de proporção, um `<div>`, zero kB
+
+Cinco valores empilhados em texto não dizem PROPORÇÃO: `R$ 1.234.567,89` e `R$ 617.283,94` lado a lado exigem que o dono divida de cabeça pra ver que o primeiro é o dobro — que é a única pergunta que uma lista "top categorias" existe pra responder.
+
+⚠️ **É um `<div>` com `style.width`, NUNCA um gráfico** — `GraficoComprometido.tsx` é o único importador de `recharts`, e um arquivo novo custaria **+113 KB gzip** num segundo chunk que `scripts/check-financas-lazy-chart.mjs` não pegaria (ele checa que o marcador está fora do chunk de entrada e dentro de ALGUM chunk lazy, não quantos existem). Custo real: **0 kB de dependência**.
+
+⚠️ **A base é o TOTAL do mês, não a maior categoria.** Com a maior como 100%, a primeira barra estaria sempre cheia e a leitura viraria "DAS é o maior" — que a ordem já diz. Contra o total, ela diz "DAS é 55% do mês", que é informação nova. MEDIDO em Chrome real com dado longo: `55/28/11/6/1`, larguras `169/86/34/18/3 px` numa trilha de 308 px. `aria-hidden="true"` — o valor já está escrito ao lado, anunciar de novo só repetiria.
+
+⚠️ **Decisão nº 5 preservada, e agora testada também pela barra:** a proporção é aritmética sobre dois campos de `numbers` (`row.total_cents` e `total_cents`), nunca sobre `insight.texto`. O teste dedicado põe "99%" na prosa e exige que a barra continue em 55%.
+
+Total do mês igual a **zero** (estorno anulando o gasto) não desenha barra nenhuma — a proporção não significaria nada e a divisão daria `Infinity`. Os valores ficam.
+
+**Defeito achado de brinde, MEDIDO:** a faixa do subtítulo + `Ajuda` era `flex` sem `flex-wrap` e estourava a `<section>` (`scrollWidth 370` contra `clientWidth 358`) a 390 px. Como o pai tem overflow visível, isso não vira scroll — o "?" simplesmente ficava fora da caixa, e o dono perdia justamente a explicação de que nenhum número da tela vem do modelo. Mesmo defeito (e mesma correção) já pagos na faixa "Denominador:" de `pages/commitments.tsx`. Depois: `358/358`.
+
+### ⑤ `#/recorrentes` — grupos ativa/pausada e a faixa em destaque
+
+⚠️ **Ativa × pausada MUDA O SIGNIFICADO da linha, não é ordenação cosmética:** só `active = 1` entra em `projectRecurring()`/`commitments()` (o filtro é `WHERE active = 1`, no SQL do Worker). Numa lista plana, uma pausada e uma ativa liam igual — e a pergunta que o dono faz aqui ("o que está comprometendo meu mês?") tem respostas opostas nas duas. Ativas primeiro; grupo vazio não renderiza (nada de "Pausadas · 0"). O badge "Pausada" de cada linha **continua**, redundante de propósito: ele viaja com a linha e há teste em cima dele.
+
+**A faixa saiu da ponta direita e virou LINHA PRÓPRIA em `NUMERO_GRID` (24px)** — era `text-sm` (14px) espremida contra a descrição. É a linha própria que paga o aumento: MEDIDO em Chrome real a 390, sozinha ela tem os **306 px** úteis inteiros em vez de dividi-los, e a faixa mais longa que o dado permite (`R$ 12,00 a R$ 1.234.567,89`) mede **282 px** — cabe, em **uma** caixa de linha.
+
+⚠️ **Centavos FICAM** (`formatRange`, nunca `formatRangeSemCentavos`): esta é a DEFINIÇÃO da recorrente, não uma manchete de grid apertado — Starlink é `R$ 189,00`, e `formatBRLSemCentavos` ARREDONDA (R$ 189,50 viraria "R$ 190"). Numa tela de cadastro, arredondar o que o dono cadastrou é mentir sobre o que está gravado.
+
+⚠️ **`FaixaValor` põe cada extremo num span `whitespace-nowrap`, com o " a " FORA deles** — se um dia quebrar, a quebra cai no separador, nunca dentro de um número (o `R$` órfão já pago em `pages/accounts.tsx`). Hoje não quebra; o nowrap é guarda pro dia em que a margem de 24 px acabar.
+
+⚠️ **Correção de método registrada:** uma estimativa por `canvas.measureText` dizia que o pior caso pediria **304,1 px** e QUEBRARIA. O render real desmentiu (**282 px**, uma linha). A medição no render vale, a estimativa por canvas não — o comentário do código foi reescrito pra dizer o número medido, não o estimado.
+
+### Medições, suítes e mutação
+
+**MEDIDO em Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, com dado LONGO — `R$ 1.234.567,89` e faixas), nas 5 rotas × 390×844 e 1280×900: `document.documentElement.scrollWidth === clientWidth` nas **10** combinações, antes e depois. Nenhuma rota ganhou overflow; a única mudança no inventário de elementos estourando foi a `<section>` de `#/insight`, que **deixou** de estourar.
+
+⚠️ **Armadilha do instrumento, reconfirmada:** um `page.route('**/api/**')` genérico engole `/api/auth/get-session` (que responde JSON **cru**, sem envelope) e toda medição sai vazia sem erro. UM handler só, com o ramo de `/api/auth/` dentro dele.
+
+**SPA: 655 → 670** (+15: 6 em `recorrentes.test.tsx`, 4 em `categorias.test.tsx`, 4 em `insight.test.tsx`, 1 em `fluxo.test.tsx`). Worker **810**, `packages/ui` **97**, `packages/tools` **158** — intocados. `tsc --noEmit` e `prettier --check` limpos; os dois gates de build com exit 0 e **um** único chunk lazy. ⚠️ **Nenhuma asserção pré-existente mudou de valor.**
+
+⚠️ **Verificado por MUTAÇÃO — 12, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado; `git status --porcelain -uall` mostrando só os 8 arquivos da fatia depois):
+
+| Mutação                                        | Falha observada                                    |
+| ---------------------------------------------- | -------------------------------------------------- |
+| ② agrupa pelo `kind` da LINHA, não da RAIZ     | 1 — a filha de tipo diferente sai indentada e órfã |
+| ② cabeçalho de grupo sem `ROTULO_SECAO`        | 1                                                  |
+| ② agrupamento desligado (um grupo só)          | 1                                                  |
+| ⑤ a faixa vira MÉDIA                           | **3** — incl. o teste PRÉ-EXISTENTE da faixa       |
+| ⑤ grupos ativa/pausada removidos               | 2                                                  |
+| ⑤ faixa volta a `text-sm`                      | 1                                                  |
+| ⑤ nowrap por extremo removido                  | 1                                                  |
+| ④ base da barra = maior categoria, não o total | 3 — a primeira barra volta a estar sempre cheia    |
+| ④ guarda de divisão por zero removida          | 1 — `Infinity%` no mês que fecha em zero           |
+| ④ barra removida (o estado anterior)           | 3                                                  |
+| ① rótulo de seção da tabela removido           | 1 — a tabela volta a competir com o gráfico        |
+| ① rótulo sem versalete mono                    | 1                                                  |
+
+**Bundle (`vite build`, antes = fatia da linguagem aplicada / depois = esta):** JS principal 502,10 → 503,97 kB (**153,19 → 153,84 kB gzip, +0,65**); CSS 8,04 → **8,07 kB gzip** (+0,03); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
+
+**Fora de escopo, registrado:** a soma das porcentagens das barras de `#/insight` pode dar 101% por arredondamento de cada linha (medido: `55+28+11+6+1`); é inofensivo porque nenhuma barra passa de 100% e a soma não é exibida em lugar nenhum.

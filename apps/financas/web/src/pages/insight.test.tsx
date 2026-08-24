@@ -804,3 +804,95 @@ describe('InsightPage — o agregado virou manchete, os detalhes não', () => {
     )
   })
 })
+
+// ④ Barra de proporção por categoria — um `<div>` com `style.width`, nunca
+// um gráfico (o arquivo novo de gráfico custaria +113 KB gzip num segundo
+// chunk que `check-financas-lazy-chart.mjs` não pegaria).
+describe('InsightPage — barra de proporção por categoria', () => {
+  it('a largura de cada barra é a fatia da categoria no TOTAL do mês', async () => {
+    mockApi()
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-total')).toBeInTheDocument(),
+    )
+
+    // Fixture: total -123.000, INSS -76.000, Contador -30.000.
+    // 76000/123000 = 61,8% → 62 ; 30000/123000 = 24,4% → 24.
+    const inss = screen.getByTestId('insight-barra-0')
+    const contador = screen.getByTestId('insight-barra-1')
+
+    expect(inss).toHaveAttribute('data-pct', '62')
+    expect(contador).toHaveAttribute('data-pct', '24')
+
+    // ⚠️ A base é o TOTAL, não a maior categoria: com a maior como 100%, a
+    // primeira barra estaria SEMPRE cheia e a leitura viraria "INSS é o
+    // maior" (que a ordem já diz) em vez de "INSS é 62% do mês".
+    expect(inss).not.toHaveAttribute('data-pct', '100')
+
+    // A largura de fato aplicada no `<div>` interno.
+    expect((inss.firstElementChild as HTMLElement).style.width).toBe('62%')
+    expect((contador.firstElementChild as HTMLElement).style.width).toBe('24%')
+  })
+
+  it('mês com total ZERO não desenha barra — os valores ficam', async () => {
+    // Estorno anulando o gasto: a proporção não significaria nada, e dividir
+    // por zero daria Infinity.
+    mockApi({
+      numbers: () => ({ ...numbersFixture, total_cents: 0 }),
+    })
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-categoria-0')).toBeInTheDocument(),
+    )
+
+    expect(screen.queryByTestId('insight-barra-0')).not.toBeInTheDocument()
+    // O valor da categoria continua escrito.
+    expect(screen.getByTestId('insight-categoria-0')).toHaveTextContent(
+      'R$ 760,00',
+    )
+  })
+
+  it('a barra é decorativa (aria-hidden) — o valor já está escrito ao lado', async () => {
+    mockApi()
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-total')).toBeInTheDocument(),
+    )
+
+    expect(screen.getByTestId('insight-barra-0')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
+  })
+
+  // ⚠️ Decisão nº 5 do "não mexer", aplicada à barra: nenhum número (nem a
+  // proporção que a desenha) pode sair de `insight.texto`.
+  it('a proporção sai de `numbers`, nunca do texto do modelo', async () => {
+    mockApi({
+      // O texto mente com uma proporção bem distinta da real (62%).
+      latest: () => ({
+        id: 'i1',
+        texto: 'O INSS representou 99% do mes, um recorde absoluto.',
+        modelo: 'qwen2.5:7b-instruct',
+        periodo: '2026-08',
+        generated_at: new Date().toISOString(),
+      }),
+    })
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-total')).toBeInTheDocument(),
+    )
+
+    // A barra segue os números calculados, não o texto.
+    expect(screen.getByTestId('insight-barra-0')).toHaveAttribute(
+      'data-pct',
+      '62',
+    )
+    expect(
+      (screen.getByTestId('insight-barra-0').firstElementChild as HTMLElement)
+        .style.width,
+    ).toBe('62%')
+    // E o 99% só existe dentro da prosa.
+    expect(screen.getByTestId('insight-texto')).toHaveTextContent('99%')
+  })
+})

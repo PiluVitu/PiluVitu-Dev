@@ -21,6 +21,7 @@ import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { NUMERO_GRID, ROTULO_SECAO } from '../lib/tipografia'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 
@@ -74,6 +75,52 @@ function dd(n: number): string {
 // Sem prefixo 'R$ ' no campo — mesmo padrão de pages/config.tsx#paraCampo.
 function paraCampo(cents: number): string {
   return formatBRL(cents).replace('R$ ', '')
+}
+
+/**
+ * A faixa min/max em destaque — **a razão de ser desta tela**.
+ *
+ * ⚠️ **Nunca vira média.** O Simples varia R$ 12–600 conforme o faturamento, e
+ * um número só no lugar do intervalo apagaria exatamente a informação que
+ * justifica a coluna existir (`amount_min_cents`/`amount_max_cents`, migration
+ * `0006`). `formatRange` já resolve o caso fixo (`min === max` ⇒ UM número, sem
+ * repetir), e é ele que continua ditando o texto.
+ *
+ * ⚠️ **Os dois valores são spans `whitespace-nowrap` com o " a " FORA deles —
+ * se um dia quebrar, a quebra cai no separador, nunca dentro de um número.**
+ *
+ * MEDIDO em Chrome real a 390×844, com o pior caso que o dado permite
+ * (`R$ 12,00 a R$ 1.234.567,89`): a caixa útil da linha é **306 px**, a faixa
+ * a 24px mede **282 px** e cabe em **UMA** caixa de linha — hoje ela NÃO
+ * quebra. (Uma estimativa por `canvas.measureText` tinha dito 304,1 px e
+ * "quebra"; a medição no render real desmentiu — é a segunda que vale.)
+ *
+ * Os `nowrap` ficam mesmo assim, como guarda barata pro dia em que a margem
+ * de 24 px acabar (um valor maior, uma fonte diferente, um container mais
+ * estreito): sem eles, a quebra pode cair DENTRO de um valor e deixar um `R$`
+ * órfão numa caixa de linha — exatamente o defeito já pago em
+ * `pages/accounts.tsx`, onde `-R$ 2.345,00` partia com o `-R$` sozinho (e ali
+ * o sinal é o que distingue "devo" de "tenho").
+ *
+ * ⚠️ **Centavos ficam** (`formatRange`, não `formatRangeSemCentavos`): esta é a
+ * DEFINIÇÃO da recorrente, não uma manchete de grid apertado — Starlink é
+ * `R$ 189,00`, e `formatBRLSemCentavos` ARREDONDA (R$ 189,50 viraria "R$ 190").
+ * Numa tela de cadastro, arredondar o valor que o dono cadastrou é mentir
+ * sobre o que está gravado.
+ */
+function FaixaValor({ min, max }: { min: number; max: number }) {
+  if (min === max) {
+    return (
+      <span className="whitespace-nowrap">{formatRange({ min, max })}</span>
+    )
+  }
+  return (
+    <>
+      <span className="whitespace-nowrap">{formatBRL(min)}</span>
+      {' a '}
+      <span className="whitespace-nowrap">{formatBRL(max)}</span>
+    </>
+  )
 }
 
 const FORM_INICIAL = {
@@ -313,6 +360,28 @@ export function RecorrentesPage() {
   const nomeConta = (id: string | null) =>
     id === null ? null : (contas.find((c) => c.id === id)?.name ?? null)
 
+  /*
+    ⚠️ Ativa × pausada é a divisão que MUDA O SIGNIFICADO da linha, não uma
+    ordenação cosmética: só `active = 1` entra em `projectRecurring()`/
+    `commitments()` (o filtro é `WHERE active = 1`, no SQL do Worker). Numa
+    lista plana, uma pausada e uma ativa liam igual — e a pergunta que o dono
+    faz aqui ("o que está comprometendo meu mês?") tem respostas opostas nas
+    duas.
+
+    A ordem é ativas primeiro: é o grupo que responde essa pergunta. O grupo
+    vazio simplesmente não renderiza (nada de "Pausadas · 0").
+
+    ⚠️ O badge "Pausada" de cada linha CONTINUA — o cabeçalho de grupo é
+    redundante com ele de propósito. O badge viaja com a linha; se um dia
+    alguém filtrar/reordenar, a linha continua se explicando sozinha.
+  */
+  const ativas = recorrentes.filter((r) => r.active === 1)
+  const pausadas = recorrentes.filter((r) => r.active !== 1)
+  const grupos = [
+    { chave: 'ativas', rotulo: 'Ativas', itens: ativas },
+    { chave: 'pausadas', rotulo: 'Pausadas', itens: pausadas },
+  ] as const
+
   return (
     <section className="space-y-6" data-testid="pagina-recorrentes">
       {acaoErro ? (
@@ -328,95 +397,108 @@ export function RecorrentesPage() {
               Nenhuma despesa recorrente cadastrada ainda.
             </p>
           ) : (
-            <ul className="space-y-3" data-testid="lista-recorrentes">
-              {recorrentes.map((r) => (
-                <li
-                  key={r.id}
-                  data-testid={`recorrente-${r.id}`}
-                  className="rounded-md border p-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      {/*
-                        `<div>` no lugar do `<p>`: `Badge` renderiza um
-                        `<div>`, e div dentro de p é HTML inválido (o
-                        navegador FECHA o parágrafo sozinho e o layout
-                        quebra). O texto continua idêntico — só o container
-                        virou flex.
-                      */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{r.description}</span>
-                        {r.active === 0 ? (
-                          <Badge
-                            variant="secondary"
-                            data-testid={`status-${r.id}`}
-                          >
-                            Pausada
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="text-muted-foreground text-xs">
-                        {r.scope} · dia {dd(r.day_of_month)}
-                        {nomeCategoria(r.category_id)
-                          ? ` · ${nomeCategoria(r.category_id)}`
-                          : ''}
-                        {nomeConta(r.account_id)
-                          ? ` · ${nomeConta(r.account_id)}`
-                          : ''}
-                      </p>
-                    </div>
-                    <span
-                      data-testid={`faixa-${r.id}`}
-                      className="text-right text-sm font-semibold whitespace-nowrap tabular-nums"
-                    >
-                      {formatRange({
-                        min: r.amount_min_cents,
-                        max: r.amount_max_cents,
-                      })}
-                    </span>
-                  </div>
-                  {/*
-                    ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a **34×16 px**
-                    e `Excluir` a **38,6×16 px**, separados por **12 px**. Os
-                    16 px de altura ficam abaixo até do mínimo de 24×24 do
-                    WCAG 2.5.8 (AA), e o par (destrutivo colado no rotineiro)
-                    é o mesmo defeito já medido e corrigido em `extrato` e
-                    `categorias` — com ~34 px de contato o polegar cobre os
-                    dois, e errar aqui apaga a recorrente que alimenta o
-                    Comprometido.
+            <div className="space-y-6" data-testid="lista-recorrentes">
+              {grupos.map((grupo) =>
+                grupo.itens.length === 0 ? null : (
+                  <div key={grupo.chave} data-testid={`grupo-${grupo.chave}`}>
+                    <p className={cn(ROTULO_SECAO, 'mb-2')}>
+                      {grupo.rotulo} · {grupo.itens.length}
+                    </p>
+                    <ul className="space-y-3">
+                      {grupo.itens.map((r) => (
+                        <li
+                          key={r.id}
+                          data-testid={`recorrente-${r.id}`}
+                          className="rounded-md border p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{r.description}</span>
+                            {r.active === 0 ? (
+                              <Badge
+                                variant="secondary"
+                                data-testid={`status-${r.id}`}
+                              >
+                                Pausada
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {/*
+                            ⚠️ A faixa saiu da ponta direita da linha e virou
+                            LINHA PRÓPRIA, em `NUMERO_GRID` (24px) — antes era
+                            `text-sm` (14px) espremida contra a descrição, com
+                            `whitespace-nowrap` como única defesa.
 
-                    `ALVO_LINK`/`ALVO_LINK_FIM` levam os dois aos 44 px SEM
-                    mexer na fonte (`text-xs` intacto) nem no x do texto, e o
-                    `ml-auto` do destrutivo troca os 12 px por toda a sobra
-                    da linha.
-                  */}
-                  <div className="mt-2 flex items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="link"
-                      data-testid={`editar-${r.id}`}
-                      className={cn('h-auto p-0 text-xs', ALVO_LINK)}
-                      onClick={() => editar(r)}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="link"
-                      data-testid={`excluir-${r.id}`}
-                      className={cn(
-                        'text-destructive h-auto p-0 text-xs',
-                        ALVO_LINK_FIM,
-                      )}
-                      disabled={processando === r.id}
-                      onClick={() => excluir(r)}
-                    >
-                      {processando === r.id ? 'Excluindo…' : 'Excluir'}
-                    </Button>
+                            É a linha própria que paga o aumento de escala:
+                            MEDIDO em Chrome real a 390, sozinha ela tem os
+                            **306 px** úteis inteiros em vez de dividi-los com
+                            a descrição, e a faixa mais longa que o dado
+                            permite mede **282 px** — cabe, em uma linha só.
+                          */}
+                          <p
+                            data-testid={`faixa-${r.id}`}
+                            className={cn('mt-1', NUMERO_GRID)}
+                          >
+                            <FaixaValor
+                              min={r.amount_min_cents}
+                              max={r.amount_max_cents}
+                            />
+                          </p>
+                          <p className="text-muted-foreground mt-1 text-xs">
+                            {r.scope} · dia {dd(r.day_of_month)}
+                            {nomeCategoria(r.category_id)
+                              ? ` · ${nomeCategoria(r.category_id)}`
+                              : ''}
+                            {nomeConta(r.account_id)
+                              ? ` · ${nomeConta(r.account_id)}`
+                              : ''}
+                          </p>
+                          {/*
+                            ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a
+                            **34×16 px** e `Excluir` a **38,6×16 px**,
+                            separados por **12 px**. Os 16 px de altura ficam
+                            abaixo até do mínimo de 24×24 do WCAG 2.5.8 (AA),
+                            e o par (destrutivo colado no rotineiro) é o mesmo
+                            defeito já medido e corrigido em `extrato` e
+                            `categorias` — com ~34 px de contato o polegar
+                            cobre os dois, e errar aqui apaga a recorrente que
+                            alimenta o Comprometido.
+
+                            `ALVO_LINK`/`ALVO_LINK_FIM` levam os dois aos 44 px
+                            SEM mexer na fonte (`text-xs` intacto) nem no x do
+                            texto, e o `ml-auto` do destrutivo troca os 12 px
+                            por toda a sobra da linha.
+                          */}
+                          <div className="mt-2 flex items-center gap-3">
+                            <Button
+                              type="button"
+                              variant="link"
+                              data-testid={`editar-${r.id}`}
+                              className={cn('h-auto p-0 text-xs', ALVO_LINK)}
+                              onClick={() => editar(r)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="link"
+                              data-testid={`excluir-${r.id}`}
+                              className={cn(
+                                'text-destructive h-auto p-0 text-xs',
+                                ALVO_LINK_FIM,
+                              )}
+                              disabled={processando === r.id}
+                              onClick={() => excluir(r)}
+                            >
+                              {processando === r.id ? 'Excluindo…' : 'Excluir'}
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </li>
-              ))}
-            </ul>
+                ),
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

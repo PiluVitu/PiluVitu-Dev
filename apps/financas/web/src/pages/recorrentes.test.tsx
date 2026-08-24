@@ -667,4 +667,123 @@ describe('RecorrentesPage — alvos de toque de Editar/Excluir', () => {
     expect(excluir.className).toContain('ml-auto')
     expect(editar.className).not.toContain('ml-auto')
   })
+
+  // ⑤ Agrupamento por ativa/pausada + a faixa como número destacado.
+  describe('grupos ativa/pausada e a faixa em destaque', () => {
+    it('separa em "Ativas" e "Pausadas", cada uma no seu grupo', async () => {
+      mockApi()
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+      )
+
+      // Ativa × pausada muda o SIGNIFICADO da linha: só `active = 1` entra em
+      // `commitments()`. Numa lista plana as duas liam igual.
+      const ativas = screen.getByTestId('grupo-ativas')
+      const pausadas = screen.getByTestId('grupo-pausadas')
+
+      expect(
+        within(ativas).getByTestId('recorrente-r-starlink'),
+      ).toBeInTheDocument()
+      expect(
+        within(ativas).queryByTestId('recorrente-r-das'),
+      ).not.toBeInTheDocument()
+
+      expect(
+        within(pausadas).getByTestId('recorrente-r-das'),
+      ).toBeInTheDocument()
+      expect(
+        within(pausadas).queryByTestId('recorrente-r-starlink'),
+      ).not.toBeInTheDocument()
+
+      // Ativas primeiro: é o grupo que responde "o que compromete meu mês?".
+      expect(ativas.compareDocumentPosition(pausadas)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+    })
+
+    it('o cabeçalho de grupo usa ROTULO_SECAO e conta os itens', async () => {
+      mockApi()
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+      )
+
+      const cabecalho = within(screen.getByTestId('grupo-ativas')).getByText(
+        /^Ativas/,
+      )
+      expect(cabecalho).toHaveTextContent('Ativas · 1')
+      // A assinatura em versalete mono do admin — some se virar texto solto.
+      expect(cabecalho.className).toContain('font-mono')
+      expect(cabecalho.className).toContain('uppercase')
+    })
+
+    it('grupo vazio não renderiza — nada de "Pausadas · 0"', async () => {
+      // Só ativas: o grupo de pausadas não deve existir no DOM.
+      mockApi({ recurring: () => [recorrentes[0]] })
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+      )
+
+      expect(screen.getByTestId('grupo-ativas')).toBeInTheDocument()
+      expect(screen.queryByTestId('grupo-pausadas')).not.toBeInTheDocument()
+    })
+
+    // ⚠️ O ponto da tela: a faixa é a razão de ela existir, e NUNCA vira média.
+    it('a faixa fica em destaque (NUMERO_GRID) e mostra os DOIS extremos', async () => {
+      mockApi()
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-das')).toBeInTheDocument(),
+      )
+
+      const faixa = screen.getByTestId('faixa-r-das')
+      // Destaque: 24px + tabular-nums, não mais o `text-sm` espremido na
+      // ponta direita da linha.
+      expect(faixa.className).toContain('text-2xl')
+      expect(faixa.className).toContain('tabular-nums')
+
+      // Os dois extremos, com o texto intacto.
+      expect(faixa).toHaveTextContent('R$ 12,00 a R$ 600,00')
+      // A média de 12 e 600 é 306 — se algum dia alguém "simplificar" a faixa
+      // num número só, é isto que apareceria.
+      expect(faixa).not.toHaveTextContent('R$ 306,00')
+    })
+
+    it('cada extremo é um span nowrap — a quebra cai no " a ", nunca dentro de um número', async () => {
+      mockApi()
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-das')).toBeInTheDocument(),
+      )
+
+      // MEDIDO em Chrome real: hoje a faixa mais longa (282 px) cabe nos
+      // 306 px úteis, em uma caixa de linha só. Os nowrap são a guarda pro
+      // dia em que essa margem de 24 px acabar — sem eles a quebra pode cair
+      // DENTRO de um valor e deixar um `R$` órfão, o mesmo defeito já pago
+      // em `pages/accounts.tsx`.
+      const faixa = screen.getByTestId('faixa-r-das')
+      const partes = faixa.querySelectorAll('span.whitespace-nowrap')
+      expect(partes).toHaveLength(2)
+      expect(partes[0]).toHaveTextContent('R$ 12,00')
+      expect(partes[1]).toHaveTextContent('R$ 600,00')
+    })
+
+    it('valor fixo (min === max) continua UM número só, num span nowrap', async () => {
+      mockApi()
+      render(<RecorrentesPage />)
+      await waitFor(() =>
+        expect(screen.getByTestId('recorrente-r-starlink')).toBeInTheDocument(),
+      )
+
+      const faixa = screen.getByTestId('faixa-r-starlink')
+      expect(faixa).toHaveTextContent('R$ 189,00')
+      expect(faixa).not.toHaveTextContent('R$ 189,00 a R$ 189,00')
+      // ⚠️ Centavos PRESERVADOS: `formatBRLSemCentavos` arredondaria
+      // (R$ 189,50 viraria "R$ 190"), e esta é a definição da recorrente.
+      expect(faixa).not.toHaveTextContent('R$ 189 ')
+      expect(faixa.querySelectorAll('span.whitespace-nowrap')).toHaveLength(1)
+    })
+  })
 })

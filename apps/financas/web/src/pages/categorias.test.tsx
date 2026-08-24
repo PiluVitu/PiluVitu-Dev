@@ -474,3 +474,97 @@ describe('CategoriasPage — status como badge e alvo de toque', () => {
     expect(editar.className).not.toContain('ml-auto')
   })
 })
+
+// ② Agrupamento visual por tipo — SEM perder a hierarquia, que é a prova
+// que a tela existe pra dar.
+describe('CategoriasPage — grupos por tipo', () => {
+  it('agrupa por tipo com cabeçalho em versalete e contagem', async () => {
+    mockApi()
+    render(<CategoriasPage />)
+    await esperarLista()
+
+    const despesa = screen.getByTestId('grupo-expense')
+    const quitacao = screen.getByTestId('grupo-debt_settlement')
+
+    // A família de "Custos da PJ" (mãe + 2 filhas) toda no grupo de despesa.
+    expect(within(despesa).getByTestId('categoria-c-pj')).toBeInTheDocument()
+    expect(
+      within(despesa).getByTestId('categoria-c-contador'),
+    ).toBeInTheDocument()
+    expect(within(despesa).getByTestId('categoria-c-das')).toBeInTheDocument()
+    expect(
+      within(quitacao).getByTestId('categoria-c-quitacao'),
+    ).toBeInTheDocument()
+
+    // `:scope > p` e não `getByText(/^Despesa/)`: o badge de cada linha lê
+    // "Despesa · PJ" e casaria junto.
+    const cabecalho = despesa.querySelector(':scope > p') as HTMLElement
+    expect(cabecalho).toHaveTextContent('Despesa · 3')
+    expect(cabecalho.className).toContain('font-mono')
+    expect(cabecalho.className).toContain('uppercase')
+
+    // Despesa antes das classes estruturais.
+    expect(despesa.compareDocumentPosition(quitacao)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('grupo de tipo sem nenhuma categoria não renderiza', async () => {
+    mockApi()
+    render(<CategoriasPage />)
+    await esperarLista()
+
+    // A fixture não tem nenhuma `income`/`transfer`.
+    expect(screen.queryByTestId('grupo-income')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('grupo-transfer')).not.toBeInTheDocument()
+  })
+
+  // ⚠️ O teste que trava a decisão do agrupamento: a chave é o `kind` da
+  // RAIZ, nunca o da própria linha. Nada no schema obriga a filha a ter o
+  // mesmo `kind` da mãe — agrupando por linha, esta filha cairia num grupo
+  // OUTRO carregando `nivel: 1`, ou seja, renderizaria indentada e pendurada
+  // em nada, exatamente o modo de falha que `ordenarPorHierarquia` evita.
+  it('filha de kind DIFERENTE da mãe fica no grupo da mãe, ainda indentada', async () => {
+    mockApi({
+      lista: () => [
+        cat({ id: 'c-pj', name: 'Custos da PJ' }), // expense
+        cat({
+          id: 'c-estorno',
+          name: 'Estorno',
+          parent_id: 'c-pj',
+          kind: 'income',
+        }),
+      ],
+    })
+    render(<CategoriasPage />)
+    await esperarLista()
+
+    const despesa = screen.getByTestId('grupo-expense')
+    // A filha `income` viaja com a mãe `expense`.
+    expect(
+      within(despesa).getByTestId('categoria-c-estorno'),
+    ).toBeInTheDocument()
+    // E NÃO existe um grupo de entrada só pra ela.
+    expect(screen.queryByTestId('grupo-income')).not.toBeInTheDocument()
+
+    // A indentação — a prova da hierarquia — continua intacta.
+    const filha = screen.getByTestId('categoria-c-estorno')
+    expect(filha).toHaveAttribute('data-nivel', '1')
+    expect(filha.className).toContain('ml-4')
+    expect(filha.className).toContain('border-l')
+  })
+
+  it('a indentação da filha sobrevive ao agrupamento', async () => {
+    mockApi()
+    render(<CategoriasPage />)
+    await esperarLista()
+
+    // Mãe sem indentação, filhas com — o que prova que "Custos da PJ" é mãe
+    // de DAS/Contador (migration 0001), renderizado pela primeira vez.
+    expect(screen.getByTestId('categoria-c-pj').className).not.toContain('ml-4')
+    for (const id of ['categoria-c-das', 'categoria-c-contador']) {
+      expect(screen.getByTestId(id)).toHaveAttribute('data-nivel', '1')
+      expect(screen.getByTestId(id).className).toContain('ml-4')
+    }
+  })
+})

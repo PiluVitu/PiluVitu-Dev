@@ -465,4 +465,29 @@ describe('FluxoPage — a linguagem: cabeçalho em versalete e UMA manchete', ()
     expect(valor).toHaveTextContent('R$ 0,00')
     expect(valor.className).not.toContain('text-destructive')
   })
+
+  // ① Hierarquia: manchete (resposta) → gráfico (forma) → tabela (detalhe).
+  // Antes o gráfico ficava num Card e a tabela logo abaixo, NUA — dois blocos
+  // de peso idêntico repetindo o mesmo dado, sem nada dizendo qual é qual.
+  it('a tabela ganha rótulo de seção que a nomeia e a subordina ao gráfico', async () => {
+    mockFetch({ ok: true, data: reportBase, notifications: [] })
+    render(<FluxoPage />)
+
+    const rotulo = await screen.findByText('Mês a mês')
+
+    // A assinatura em versalete mono — some se virar um título comum.
+    expect(rotulo.className).toContain('font-mono')
+    expect(rotulo.className).toContain('uppercase')
+
+    // ⚠️ A frase diz POR QUE a tabela continua existindo (decisão nº 4): uma
+    // barra de valor 0 não renderiza `<path>` no recharts, então só a tabela
+    // prova que o mês zerado aparece.
+    expect(
+      screen.getByText(/meses sem movimento, que aparecem zerados aqui/i),
+    ).toBeInTheDocument()
+
+    // E a tabela de fato vive dentro da mesma seção do rótulo.
+    const secao = rotulo.closest('div')?.parentElement as HTMLElement
+    expect(within(secao).getByTestId('linha-total')).toBeInTheDocument()
+  })
 })

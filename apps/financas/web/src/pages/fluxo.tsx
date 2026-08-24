@@ -10,7 +10,7 @@ import type { CashflowReportView } from '../lib/cashflow'
 import { rotuloCompetencia } from '../lib/commitments'
 import { addMonthsToCompetence, competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
-import { ROTULO } from '../lib/tipografia'
+import { ROTULO, ROTULO_SECAO } from '../lib/tipografia'
 
 // Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx`/
 // `blocos/BlocoCategorias.tsx` já carregam sob demanda — nunca um terceiro
@@ -142,6 +142,7 @@ export function FluxoPage() {
       ) : (
         <Card>
           <CardContent className="pt-6">
+            <p className={cn(ROTULO_SECAO, 'mb-3')}>Forma da janela</p>
             <Suspense fallback={<div aria-busy="true" />}>
               <GraficoFluxo report={report} />
             </Suspense>
@@ -160,35 +161,69 @@ export function FluxoPage() {
         pergunta (mês, saldo, acumulado) em vez de espremer 5 — Entrou/Saiu
         são o detalhe de COMO o saldo se formou, e o saldo já os resume.
       */}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}>
-                Mês
-              </th>
-              {!menorQueSm && (
-                <>
+      <Card>
+        <CardContent className="pt-6">
+          {/*
+            ⚠️ A HIERARQUIA é o que esta seção ganhou: manchete (a resposta) →
+            gráfico (a forma) → tabela (o detalhe, e a prova). Antes o gráfico
+            vinha dentro de um `Card` e a tabela logo abaixo, NUA — dois blocos
+            de peso visual idêntico repetindo o mesmo dado, sem nada dizendo
+            qual responde o quê nem por que os dois existem. Agora a tabela é
+            um `Card` irmão com rótulo de seção (`ROTULO_SECAO`, a mesma
+            assinatura em versalete mono do resto do app), o que a nomeia e a
+            subordina em vez de a deixar competindo com o gráfico.
+
+            A frase abaixo do rótulo diz POR QUE a tabela continua existindo —
+            é a decisão nº 4 do "não mexer", e ela não é óbvia olhando a tela:
+            uma barra de valor exatamente 0 não renderiza `<path>` no recharts
+            (medido), então o gráfico é justamente o lugar onde um mês zerado é
+            indistinguível de um mês ausente. A tabela é a única prova de que
+            ele aparece.
+          */}
+          <p className={cn(ROTULO_SECAO, 'mb-1')}>Mês a mês</p>
+          <p className="text-muted-foreground mb-3 text-sm">
+            O detalhe por trás do gráfico — inclusive os meses sem movimento,
+            que aparecem zerados aqui e não desenham barra nenhuma lá.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}>
+                    Mês
+                  </th>
+                  {!menorQueSm && (
+                    <>
+                      <th
+                        className={cn(
+                          ROTULO,
+                          'border-b px-2 py-1.5 text-right',
+                        )}
+                      >
+                        Entrou
+                      </th>
+                      <th
+                        className={cn(
+                          ROTULO,
+                          'border-b px-2 py-1.5 text-right',
+                        )}
+                      >
+                        Saiu
+                      </th>
+                    </>
+                  )}
                   <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
-                    Entrou
+                    Saldo
                   </th>
                   <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
-                    Saiu
+                    Acumulado
                   </th>
-                </>
-              )}
-              <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
-                Saldo
-              </th>
-              <th className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}>
-                Acumulado
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.linhas.map((l) => (
-              <tr key={l.competence} data-testid={`linha-${l.competence}`}>
-                {/*
+                </tr>
+              </thead>
+              <tbody>
+                {report.linhas.map((l) => (
+                  <tr key={l.competence} data-testid={`linha-${l.competence}`}>
+                    {/*
                   ⚠️ `rotuloCompetencia`, nunca a competência crua: MEDIDO em
                   Chrome real, nesta MESMA tela, o eixo X do gráfico lia
                   `set/26` (ele já passava por esta função) enquanto a tabela
@@ -200,100 +235,102 @@ export function FluxoPage() {
                   O `data-testid` da <tr> continua sendo a competência CRUA:
                   lá é identidade, aqui é rótulo.
                 */}
-                <td
-                  data-testid="competencia"
-                  className="border-b py-1.5 pr-2 text-left"
-                >
-                  {rotuloCompetencia(l.competence)}
-                </td>
-                {!menorQueSm && (
-                  <>
                     <td
-                      data-testid="entrou"
-                      className="border-b px-2 py-1.5 text-right tabular-nums"
+                      data-testid="competencia"
+                      className="border-b py-1.5 pr-2 text-left"
                     >
-                      {formatBRL(l.entrou_cents)}
+                      {rotuloCompetencia(l.competence)}
                     </td>
-                    <td
-                      data-testid="saiu"
-                      className="border-b px-2 py-1.5 text-right tabular-nums"
-                    >
-                      {formatBRL(l.saiu_cents)}
-                    </td>
-                  </>
-                )}
-                {/*
+                    {!menorQueSm && (
+                      <>
+                        <td
+                          data-testid="entrou"
+                          className="border-b px-2 py-1.5 text-right tabular-nums"
+                        >
+                          {formatBRL(l.entrou_cents)}
+                        </td>
+                        <td
+                          data-testid="saiu"
+                          className="border-b px-2 py-1.5 text-right tabular-nums"
+                        >
+                          {formatBRL(l.saiu_cents)}
+                        </td>
+                      </>
+                    )}
+                    {/*
                   Mês que fechou no vermelho é a única linha que pede ação, e
                   até aqui saía com exatamente o mesmo peso das outras — o
                   sinal é a COR mais o negrito, nunca a cor sozinha (o `-` do
                   próprio valor formatado continua sendo o canal não-cromático,
                   mesma disciplina do resto do app).
                 */}
-                <td
-                  data-testid="saldo"
-                  className={cn(
-                    'border-b px-2 py-1.5 text-right tabular-nums',
-                    l.saldo_cents < 0 && 'text-destructive font-semibold',
+                    <td
+                      data-testid="saldo"
+                      className={cn(
+                        'border-b px-2 py-1.5 text-right tabular-nums',
+                        l.saldo_cents < 0 && 'text-destructive font-semibold',
+                      )}
+                    >
+                      {formatBRL(l.saldo_cents)}
+                    </td>
+                    <td
+                      data-testid="acumulado"
+                      className="border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                    >
+                      {formatBRL(l.acumulado_cents)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr data-testid="linha-total">
+                  <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
+                    TOTAL
+                  </th>
+                  {!menorQueSm && (
+                    <>
+                      <td
+                        data-testid="total-entrou"
+                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                      >
+                        {formatBRL(totalEntrou)}
+                      </td>
+                      <td
+                        data-testid="total-saiu"
+                        className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                      >
+                        {formatBRL(totalSaiu)}
+                      </td>
+                    </>
                   )}
-                >
-                  {formatBRL(l.saldo_cents)}
-                </td>
-                <td
-                  data-testid="acumulado"
-                  className="border-b px-2 py-1.5 text-right font-medium tabular-nums"
-                >
-                  {formatBRL(l.acumulado_cents)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr data-testid="linha-total">
-              <th className="border-t-2 border-b py-1.5 pr-2 text-left font-medium">
-                TOTAL
-              </th>
-              {!menorQueSm && (
-                <>
                   <td
-                    data-testid="total-entrou"
-                    className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
+                    data-testid="total-saldo"
+                    className={cn(
+                      'border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums',
+                      totalSaldo < 0 && 'text-destructive font-semibold',
+                    )}
                   >
-                    {formatBRL(totalEntrou)}
+                    {formatBRL(totalSaldo)}
                   </td>
-                  <td
-                    data-testid="total-saiu"
-                    className="border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums"
-                  >
-                    {formatBRL(totalSaiu)}
-                  </td>
-                </>
-              )}
-              <td
-                data-testid="total-saldo"
-                className={cn(
-                  'border-t-2 border-b px-2 py-1.5 text-right font-medium tabular-nums',
-                  totalSaldo < 0 && 'text-destructive font-semibold',
-                )}
-              >
-                {formatBRL(totalSaldo)}
-              </td>
-              {/*
+                  {/*
                 Acumulado NÃO é somado: ele já é um saldo corrente, e somar
                 saldos correntes não significa nada (daria "o dinheiro contado
                 N vezes"). O valor final da janela já está na última linha da
                 tabela, logo acima — repeti-lo aqui como se fosse um total
                 convidaria exatamente a essa leitura errada.
               */}
-              <td
-                data-testid="total-acumulado"
-                className="text-muted-foreground border-t-2 border-b px-2 py-1.5 text-right"
-              >
-                —
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+                  <td
+                    data-testid="total-acumulado"
+                    className="text-muted-foreground border-t-2 border-b px-2 py-1.5 text-right"
+                  >
+                    —
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </section>
   )
 }
