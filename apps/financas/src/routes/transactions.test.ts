@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { createAccount } from '../domain/accounts'
 import { archiveCategory, createCategory } from '../domain/categories'
 import { createInstallmentPlan } from '../domain/installments'
@@ -11,6 +11,7 @@ import {
   createTransfer,
   type Transaction,
 } from '../domain/transactions'
+import { todayInTeresina } from '../lib/dates'
 import { transactionsRoutes } from './transactions'
 
 beforeAll(async () => {
@@ -1060,5 +1061,217 @@ describe('DELETE /api/transactions/:id', () => {
     const res = await send('/api/transactions/nao-existe', 'DELETE')
     expect(res.status).toBe(404)
     expect((await envelope<null>(res)).notifications[0].code).toBe('not_found')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/bills/pay — pagar a fatura do cartão.
+// ---------------------------------------------------------------------------
+describe('POST /api/bills/pay', () => {
+  async function cenario() {
+    const card = await createAccount(env.DB, {
+      name: 'Cartao rota fatura',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 25,
+      due_day: 5,
+    })
+    const conta = await createAccount(env.DB, {
+      name: 'Corrente rota fatura',
+      scope: 'PF',
+      kind: 'checking',
+      opening_balance_cents: 500000,
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -12000,
+      purchase_date: '2026-07-28',
+      description: 'Mercado',
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -8000,
+      purchase_date: '2026-07-29',
+      description: 'Posto',
+    })
+    return { card, conta }
+  }
+
+  const corpo = (card: { id: string }, conta: { id: string }) => ({
+    card_account_id: card.id,
+    competence: '2026-08',
+    paid_on: '2026-09-05',
+    from_account_id: conta.id,
+  })
+
+  it('201 com envelope, as duas pernas e a contagem de linhas liquidadas', async () => {
+    const { card, conta } = await cenario()
+    const res = await post('/api/bills/pay', corpo(card, conta))
+    expect(res.status).toBe(201)
+
+    const json = await res.json<{
+      ok: boolean
+      data: {
+        transfer_id: string
+        amount_cents: number
+        settled_count: number
+        competence: string
+        out: Transaction
+        inbound: Transaction
+      }
+      notifications: unknown[]
+    }>()
+    expect(json.ok).toBe(true)
+    expect(json.notifications).toEqual([])
+    expect(json.data.amount_cents).toBe(20000)
+    expect(json.data.settled_count).toBe(2)
+    expect(json.data.competence).toBe('2026-08')
+    expect(json.data.out.account_id).toBe(conta.id)
+    expect(json.data.out.amount_cents).toBe(-20000)
+    expect(json.data.inbound.account_id).toBe(card.id)
+    expect(json.data.inbound.amount_cents).toBe(20000)
+
+    // As linhas da fatura de fato ficaram liquidadas na data escolhida.
+    const abertas = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM transactions WHERE account_id = ? AND bill_competence = '2026-08' AND settled_at IS NULL",
+    )
+      .bind(card.id)
+      .first<{ n: number }>()
+    expect(abertas?.n).toBe(0)
+  })
+
+  /**
+   * ⚠️ Relógio FIXADO em 01:00 UTC = 22h do dia ANTERIOR em Teresina (UTC-3).
+   * Sem fixar, a data UTC e a de Teresina coincidem na maior parte do dia e o
+   * teste passaria com `new Date().toISOString().slice(0,10)` no lugar de
+   * `todayInTeresina()` — MEDIDO: a mutação para UTC cru não matava nada.
+   * Com o relógio fixo ela mata, que é o ponto: às 22h o UTC já virou o dia
+   * seguinte, e o pagamento cairia no mês errado do fluxo de caixa.
+   */
+  it('sem paid_on usa a data de HOJE em Teresina, nunca o UTC cru', async () => {
+    const { card, conta } = await cenario()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-06T01:00:00Z'))
+    try {
+      const res = await post('/api/bills/pay', {
+        card_account_id: card.id,
+        competence: '2026-08',
+        from_account_id: conta.id,
+      })
+      expect(res.status).toBe(201)
+      const json = await res.json<{ data: { out: Transaction } }>()
+      expect(json.data.out.settled_at).toBe('2026-09-05')
+      expect(json.data.out.settled_at).toBe(todayInTeresina())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('422 invalid_bill com o motivo em `field` quando a fatura já foi paga', async () => {
+    const { card, conta } = await cenario()
+    expect((await post('/api/bills/pay', corpo(card, conta))).status).toBe(201)
+
+    const res = await post('/api/bills/pay', corpo(card, conta))
+    expect(res.status).toBe(422)
+    const json = await res.json<{
+      notifications: Array<{ code: string; message: string; field?: string }>
+    }>()
+    expect(json.notifications[0].code).toBe('invalid_bill')
+    expect(json.notifications[0].field).toBe('already_paid')
+    expect(json.notifications[0].message).not.toMatch(/SQLITE|D1_ERROR/i)
+  })
+
+  it('422 invalid_bill / no_lines para competência sem nenhuma linha', async () => {
+    const { card, conta } = await cenario()
+    const res = await post('/api/bills/pay', {
+      ...corpo(card, conta),
+      competence: '2027-04',
+    })
+    expect(res.status).toBe(422)
+    const json = await res.json<{
+      notifications: Array<{ code: string; field?: string }>
+    }>()
+    expect(json.notifications[0].code).toBe('invalid_bill')
+    expect(json.notifications[0].field).toBe('no_lines')
+  })
+
+  it('422 invalid_account para conta que não é cartão', async () => {
+    const { conta } = await cenario()
+    const outra = await createAccount(env.DB, {
+      name: 'Outra rota',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const res = await post('/api/bills/pay', {
+      card_account_id: conta.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: outra.id,
+    })
+    expect(res.status).toBe(422)
+    const json = await res.json<{ notifications: Array<{ code: string }> }>()
+    expect(json.notifications[0].code).toBe('invalid_account')
+  })
+
+  it('422 invalid_account quando a origem é o próprio cartão', async () => {
+    const { card } = await cenario()
+    const res = await post('/api/bills/pay', {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: card.id,
+    })
+    expect(res.status).toBe(422)
+    const json = await res.json<{ notifications: Array<{ code: string }> }>()
+    expect(json.notifications[0].code).toBe('invalid_account')
+  })
+
+  it('422 invalid_bill / amount_mismatch quando o valor informado não bate', async () => {
+    const { card, conta } = await cenario()
+    const res = await post('/api/bills/pay', {
+      ...corpo(card, conta),
+      expected_amount_cents: 999,
+    })
+    expect(res.status).toBe(422)
+    const json = await res.json<{
+      notifications: Array<{ code: string; field?: string }>
+    }>()
+    expect(json.notifications[0].code).toBe('invalid_bill')
+    expect(json.notifications[0].field).toBe('amount_mismatch')
+  })
+
+  it('422 constraint_violation para competência malformada', async () => {
+    const { card, conta } = await cenario()
+    const res = await post('/api/bills/pay', {
+      ...corpo(card, conta),
+      competence: '2026-13',
+    })
+    expect(res.status).toBe(422)
+    const json = await res.json<{ notifications: Array<{ code: string }> }>()
+    expect(json.notifications[0].code).toBe('constraint_violation')
+  })
+
+  it('400 invalid_json para corpo malformado e para campo obrigatório ausente', async () => {
+    const { card } = await cenario()
+    const cru = await app().request(
+      '/api/bills/pay',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{',
+      },
+      { DB: env.DB },
+    )
+    expect(cru.status).toBe(400)
+
+    const semConta = await post('/api/bills/pay', {
+      card_account_id: card.id,
+      competence: '2026-08',
+    })
+    expect(semConta.status).toBe(400)
+    const json = await semConta.json<{
+      notifications: Array<{ code: string }>
+    }>()
+    expect(json.notifications[0].code).toBe('invalid_json')
   })
 })

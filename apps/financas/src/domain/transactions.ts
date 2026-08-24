@@ -1,4 +1,9 @@
-import { billCompetence, isRealCalendarDate, nowIsoUtc } from '../lib/dates'
+import {
+  addMonthsToCompetence,
+  billCompetence,
+  isRealCalendarDate,
+  nowIsoUtc,
+} from '../lib/dates'
 import { newId } from '../lib/ids'
 
 export type Transaction = {
@@ -778,4 +783,281 @@ export async function deleteTransaction(
     .bind(id)
     .run()
   return res.meta.changes > 0
+}
+
+// ---------------------------------------------------------------------------
+// PAGAR A FATURA DO CARTÃO
+//
+// ⚠️ Pagar fatura NÃO é marcar `settled_at`, e não é uma transferência — é as
+// DUAS COISAS, numa operação só. O motivo é medido, não teórico:
+//
+//   - `accountBalances` soma `amount_cents` SEM olhar `settled_at`, então o
+//     saldo do cartão já é negativo no instante da compra (MEDIDO: 3 compras
+//     de R$ 250 => cartão -25000). Só liquidar as linhas deixaria o cartão
+//     negativo PARA SEMPRE e o dinheiro nunca sairia da corrente.
+//   - Lançar o pagamento como despesa nova contaria o gasto DUAS vezes: uma
+//     na compra, outra no pagamento.
+//   - Só transferir (sem liquidar) é o defeito que já bloqueou cartão nos
+//     selects de `pages/transferir.tsx`: `accountBalances` leva o cartão a 0
+//     (a tela Contas diz "pago") enquanto `commitments()` continua devolvendo
+//     a competência inteira (o Comprometido diz "devendo") — a MESMA
+//     obrigação lida de dois jeitos opostos.
+//
+// A forma que fecha é a transferência (corrente -> cartão, com `transfer_id`,
+// que todo relatório de resultado exclui) MAIS a liquidação das linhas daquela
+// competência, num `db.batch()` só.
+//
+// ⚠️ `createTransfer` NÃO recusa conta `credit_card` — MEDIDO lendo a função:
+// ela só valida `amount_cents > 0` e contas diferentes, sem nenhuma checagem
+// de `kind`. O bloqueio de cartão que existe hoje é da TELA
+// (`pages/transferir.tsx`), não do domínio. Já `payDebt` (`domain/debts.ts`)
+// recusa cartão, mas por um motivo DIFERENTE e que não se aplica aqui: ela
+// grava `settled_at = paid_on` e `bill_competence = null`
+// INCONDICIONALMENTE, regra que só vale para dinheiro/conta corrente — num
+// cartão isso apagaria a obrigação futura sem o dinheiro ter saído. Aqui a
+// liquidação é justamente o ponto, e ela é explícita.
+// ---------------------------------------------------------------------------
+
+export type PayBillCode =
+  | 'invalid_account'
+  | 'no_lines'
+  | 'already_paid'
+  | 'nothing_to_pay'
+  | 'amount_mismatch'
+
+/**
+ * Recusa de regra de negócio ao pagar fatura. Mesma família de
+ * `TransactionHasOwnerError`/`DebtHasLedgerError`: a MENSAGEM mora no domínio
+ * (que é quem sabe nomear a porta certa) e a rota a repassa crua.
+ */
+export class PayBillError extends Error {
+  code: PayBillCode
+  constructor(code: PayBillCode, message: string) {
+    super(message)
+    this.name = 'PayBillError'
+    this.code = code
+  }
+}
+
+export type PayBillInput = {
+  /** Conta do cartão cuja fatura está sendo paga. */
+  card_account_id: string
+  /** Competência da fatura (`YYYY-MM`), o mês em que ela FECHA. */
+  competence: string
+  /** Data do pagamento, escolhida pelo dono (nunca o instante do clique). */
+  paid_on: string
+  /** Conta de onde o dinheiro sai (corrente/poupança/dinheiro). */
+  from_account_id: string
+  /**
+   * CONFIRMAÇÃO do valor, nunca pagamento parcial — ver a nota sobre parcial
+   * logo abaixo. Quando presente e diferente do total em aberto da
+   * competência, a operação é RECUSADA nomeando o total real: protege contra
+   * a tela mandar um número velho (uma compra importada entre a renderização
+   * e o toque mudaria o total sem o dono perceber).
+   */
+  expected_amount_cents?: number
+}
+
+export type PayBillResult = {
+  transfer_id: string
+  /** Valor de fato pago (o total em aberto da competência). */
+  amount_cents: number
+  /** Quantas linhas da fatura foram liquidadas. */
+  settled_count: number
+  competence: string
+  out: Transaction
+  inbound: Transaction
+}
+
+/**
+ * Paga a fatura de UMA competência: transfere `from_account_id -> cartão` e
+ * liquida, no MESMO batch, todas as linhas em aberto daquela competência.
+ *
+ * ⚠️ PAGAMENTO PARCIAL NÃO ENTRA NESTA FATIA, e a razão é estrutural, não
+ * falta de tempo. `settled_at` é POR LINHA e binário: não existe "meia linha
+ * liquidada". Pagar R$ 100 de uma fatura de R$ 250 não tem mapeamento
+ * principiado para um subconjunto de linhas (quais? as mais antigas? as
+ * menores? qualquer escolha é arbitrária e o dono não a controla), e a
+ * alternativa — transferir os R$ 100 sem liquidar nada — reintroduz
+ * EXATAMENTE o defeito das duas vozes que bloqueou cartão em
+ * `pages/transferir.tsx` (saldo diz que caiu, Comprometido diz que não).
+ * Suportar parcial de verdade exige a entidade Bill (uma fatura com
+ * pagamentos próprios), que o roadmap já registra como ausente. Até lá, esta
+ * operação paga a competência INTEIRA ou recusa — nunca deixa um estado
+ * intermediário que nenhuma tela sabe ler.
+ *
+ * ⚠️ IDEMPOTÊNCIA: pagar a mesma fatura duas vezes é RECUSADO
+ * (`already_paid`), nunca um no-op silencioso. A recusa acontece ANTES do
+ * batch (a checagem é uma leitura), então a segunda chamada não escreve nada
+ * — não há meia operação possível. Recusar é melhor que devolver sucesso
+ * inócuo porque o dinheiro da PRIMEIRA chamada já se moveu de verdade: um
+ * "ok" mudo no segundo toque seria indistinguível de um pagamento novo, e é
+ * justamente o duplo-toque que esta guarda existe pra tornar visível. E é
+ * seguro por construção: a liquidação é `WHERE settled_at IS NULL`, então
+ * mesmo que a checagem fosse contornada o UPDATE casaria zero linhas.
+ */
+export async function payBill(
+  db: D1Database,
+  input: PayBillInput,
+): Promise<PayBillResult> {
+  const { card_account_id, competence, paid_on, from_account_id } = input
+
+  // Valida a competência reusando a aritmética central de lib/dates
+  // (addMonthsToCompetence com n=0 lança RangeError para formato/mês
+  // inválido) — nunca uma segunda regex, mesmo padrão de byCategory.
+  addMonthsToCompetence(competence, 0)
+
+  if (!isRealCalendarDate(paid_on)) {
+    throw new RangeError(
+      `paid_on inválido: ${paid_on} (esperado data pura YYYY-MM-DD que exista no calendário, nunca timestamp)`,
+    )
+  }
+
+  if (card_account_id === from_account_id) {
+    throw new PayBillError(
+      'invalid_account',
+      'a conta de origem não pode ser o próprio cartão — o dinheiro precisa sair de outra conta (corrente, poupança ou dinheiro)',
+    )
+  }
+
+  const card = await db
+    .prepare('SELECT kind FROM accounts WHERE id = ?')
+    .bind(card_account_id)
+    .first<{ kind: string }>()
+  if (!card)
+    throw new PayBillError('invalid_account', 'conta do cartão não encontrada')
+  if (card.kind !== 'credit_card') {
+    throw new PayBillError(
+      'invalid_account',
+      'só conta de cartão de crédito tem fatura — para mover dinheiro entre outras contas use uma transferência',
+    )
+  }
+
+  // UMA leitura responde as três perguntas (existe? já foi paga? quanto?):
+  // no D1 "rows read" conta linha escaneada, e três queries custariam três
+  // varreduras da mesma competência.
+  const resumo = await db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN settled_at IS NULL THEN 1 ELSE 0 END) AS em_aberto,
+              COALESCE(SUM(CASE WHEN settled_at IS NULL THEN amount_cents ELSE 0 END), 0) AS soma_aberta
+         FROM transactions
+        WHERE account_id      = ?
+          AND bill_competence = ?
+          AND transfer_id     IS NULL
+          AND parent_id       IS NULL`,
+    )
+    .bind(card_account_id, competence)
+    .first<{ total: number; em_aberto: number; soma_aberta: number }>()
+
+  const total = resumo?.total ?? 0
+  const emAberto = resumo?.em_aberto ?? 0
+  const somaAberta = resumo?.soma_aberta ?? 0
+
+  if (total === 0) {
+    throw new PayBillError(
+      'no_lines',
+      `não há nenhum lançamento na fatura de ${competence} deste cartão — confira a competência`,
+    )
+  }
+  if (emAberto === 0) {
+    throw new PayBillError(
+      'already_paid',
+      `a fatura de ${competence} já está paga: todas as linhas dessa competência já foram liquidadas`,
+    )
+  }
+
+  // Competência que fecha em crédito (estorno maior que as compras) não é uma
+  // fatura a pagar — mesma leitura do `HAVING SUM(amount_cents) < 0` de
+  // commitments(), que já descarta essa competência do Comprometido.
+  const amount_cents = -somaAberta
+  if (amount_cents <= 0) {
+    throw new PayBillError(
+      'nothing_to_pay',
+      `a fatura de ${competence} não tem valor a pagar (os estornos cobrem as compras em aberto)`,
+    )
+  }
+
+  if (
+    input.expected_amount_cents !== undefined &&
+    input.expected_amount_cents !== amount_cents
+  ) {
+    throw new PayBillError(
+      'amount_mismatch',
+      `o valor informado não bate com a fatura de ${competence}, que está em ${amount_cents} centavos em aberto — recarregue a tela e confira antes de pagar`,
+    )
+  }
+
+  const transfer_id = newId()
+  const now = nowIsoUtc()
+  const base = {
+    purchase_date: paid_on,
+    settled_at: paid_on,
+    description: `Pagamento da fatura ${competence}`,
+  }
+
+  // ⚠️ UM batch só: liquidar N linhas e criar a transferência têm que ser
+  // atômicos. Meia operação (transferência criada, linhas não liquidadas)
+  // deixaria o dono pagando de novo — e o dinheiro já teria saído. O D1
+  // reverte a sequência inteira quando um statement aborta (precedente
+  // medido: createTransfer).
+  //
+  // ⚠️ A liquidação carrega `transfer_id IS NULL` de propósito: a perna de
+  // ENTRADA desta transferência cai no próprio cartão, e embora ela nasça com
+  // `bill_competence` NULL (createTransfer nunca preenche competência), o
+  // filtro impede que qualquer perna venha a ser liquidada por engano se essa
+  // regra mudar.
+  const res = await db.batch<Transaction>([
+    db.prepare(INSERT_TX).bind(
+      ...txBinds(
+        newId(),
+        {
+          ...base,
+          account_id: from_account_id,
+          amount_cents: -amount_cents,
+        },
+        transfer_id,
+        now,
+      ),
+    ),
+    db.prepare(INSERT_TX).bind(
+      ...txBinds(
+        newId(),
+        {
+          ...base,
+          account_id: card_account_id,
+          amount_cents,
+        },
+        transfer_id,
+        now,
+      ),
+    ),
+    db
+      .prepare(
+        `UPDATE transactions
+            SET settled_at = ?, updated_at = ?
+          WHERE account_id      = ?
+            AND bill_competence = ?
+            AND settled_at      IS NULL
+            AND transfer_id     IS NULL
+            AND parent_id       IS NULL`,
+      )
+      .bind(paid_on, now, card_account_id, competence),
+    db
+      .prepare(
+        `SELECT ${TX_COLUMNS} FROM transactions WHERE transfer_id = ? ORDER BY amount_cents`,
+      )
+      .bind(transfer_id),
+  ])
+
+  // ORDER BY amount_cents: a perna negativa (saída da corrente) vem primeiro.
+  const [out, inbound] = res[3].results
+  return {
+    transfer_id,
+    amount_cents,
+    settled_count: res[2].meta.changes,
+    competence,
+    out,
+    inbound,
+  }
 }

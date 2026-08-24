@@ -309,7 +309,7 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 - **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
 - **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
-Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente), e os oito da fatia ④ (`GET /api/pluggy/transactions`, todos com a mensagem do domínio repassada crua — ver _A ROTA e O BOTÃO_): `pluggy_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `pluggy_invalid_credentials` (503, o Pluggy recusou a credencial do APLICATIVO), `pluggy_item_disconnected` (**409**, não 503: repetir nunca resolve, o dono precisa reconectar no app Meu Pluggy), `pluggy_rate_limited` (429, com os segundos do `Retry-After` na mensagem), `pluggy_unreachable` (503, ninguém respondeu ou 5xx deles), `pluggy_token_expired` (502) e `pluggy_ilegivel` (502) — os dois de "alguém respondeu e não entendi", nunca confundidos com o anterior —, e `pluggy_janela_grande` (422, teto de 40 páginas por execução).
+Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `invalid_bill` (422, `POST /api/bills/pay` — recusa sobre a FATURA, com o motivo exato em `field`: `no_lines` | `already_paid` | `nothing_to_pay` | `amount_mismatch`; ver _Pagar a fatura do cartão_), `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente), e os oito da fatia ④ (`GET /api/pluggy/transactions`, todos com a mensagem do domínio repassada crua — ver _A ROTA e O BOTÃO_): `pluggy_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `pluggy_invalid_credentials` (503, o Pluggy recusou a credencial do APLICATIVO), `pluggy_item_disconnected` (**409**, não 503: repetir nunca resolve, o dono precisa reconectar no app Meu Pluggy), `pluggy_rate_limited` (429, com os segundos do `Retry-After` na mensagem), `pluggy_unreachable` (503, ninguém respondeu ou 5xx deles), `pluggy_token_expired` (502) e `pluggy_ilegivel` (502) — os dois de "alguém respondeu e não entendi", nunca confundidos com o anterior —, e `pluggy_janela_grande` (422, teto de 40 páginas por execução).
 
 ### `app.onError` global — todo `Error` que escapa sai no envelope
 
@@ -834,6 +834,99 @@ As **quatro** mutações desta tela (settle, PATCH, DELETE) passam por `lib/muta
 +4,64 kB gzip no principal é a tela em si: `Card`/`Button`/`Input`/`Label`/`Dialog`/`Ajuda` já estavam no bundle, nenhuma dependência nova entrou. O chunk do gráfico fica intocado (nada aqui toca `recharts`).
 
 **Fora de escopo, registrado:** `POST /:id/unsettle` tem rota e **nenhum botão** — desmarcar um pagamento é a operação inversa e menos frequente, e entraria com teste próprio numa fatia futura. ✅ **`?account_id=`/`?from=`/`?to=` viraram filtro de tela na fatia do `Sheet`** — ver _Os filtros moram num `Sheet`_ acima; a visão "todas as contas" continua sendo o default, porque é ela que responde `?settled=0`.
+
+## Pagar a fatura do cartão (`payBill` + `POST /api/bills/pay`)
+
+⚠️ **O buraco: não existia "pagar a fatura".** As compras entram com `bill_competence` derivado e `settled_at` NULL, aparecem no Comprometido como previstas (correto), e o único jeito de baixá-las era marcar **uma por uma** no `#/extrato` — uma fatura de 40 compras = 40 toques.
+
+### ① O que foi MEDIDO antes de decidir (o brief era hipótese; isto é medição)
+
+| Função                            | Achado                                                                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `createTransfer`                  | **ACEITA `credit_card`** — só valida `amount_cents > 0` e contas diferentes, **zero** checagem de `kind`                            |
+| `payDebt` (`domain/debts.ts:302`) | **RECUSA** cartão, mas por motivo que **não se aplica aqui**: grava `settled_at = paid_on` + `bill_competence = null` INCONDICIONAL |
+| `accountBalances`                 | soma `amount_cents` **sem olhar `settled_at`** ⇒ o cartão já nasce negativo                                                         |
+| `commitments`                     | `settled_at IS NULL AND transfer_id IS NULL AND bill_competence IS NOT NULL`                                                        |
+| `cashflow`                        | `settled_at IS NOT NULL AND transfer_id IS NULL`                                                                                    |
+| `byCategory`                      | `amount_cents < 0 AND transfer_id IS NULL`                                                                                          |
+
+Ou seja: o bloqueio de cartão que existe hoje é da **TELA** (`pages/transferir.tsx`), nunca do domínio. E a recusa de `payDebt` é sobre a regra de liquidação hardcoded dela, não sobre "cartão em transferência ser errado".
+
+**Cenário montado no D1 real** (cartão fecha 25, 3 compras somando R$ 250 na fatura `2026-08`; corrente com R$ 5.000 de abertura). **ANTES:**
+
+| Medida                  | Valor                                                   |
+| ----------------------- | ------------------------------------------------------- |
+| saldo cartão / corrente | **-25000** / **500000** (consolidado **475000**)        |
+| as 3 linhas             | `bill_competence = 2026-08`, `settled_at = NULL`        |
+| `commitments()` 2026-08 | 1 linha (o cartão), `totals = {min: 25000, max: 25000}` |
+| `cashflow()`            | `saiu = 0` em **todos** os meses                        |
+| `byCategory()`          | jul `-20000`, ago `-5000` (agrupa por `purchase_date`)  |
+
+### ② O desenho: transferência **+** liquidação, num `db.batch()` só
+
+Só liquidar ⇒ o cartão fica negativo pra sempre e o dinheiro nunca sai da corrente. Só transferir ⇒ é **exatamente** o defeito que bloqueou cartão em `transferir.tsx` (Contas diz "pago", Comprometido diz "devendo"). Lançar despesa nova ⇒ conta o gasto duas vezes.
+
+`payBill(db, { card_account_id, competence, paid_on, from_account_id, expected_amount_cents? })` faz, num batch: as **duas pernas** da transferência (com `transfer_id`, que todo relatório de resultado exclui) **+** `UPDATE ... SET settled_at` de todas as linhas em aberto daquela competência. Precedente de atomicidade: `createTransfer` (o D1 reverte a sequência inteira quando um statement aborta).
+
+⚠️ **PAGAMENTO PARCIAL NÃO ENTRA, e a razão é estrutural.** `settled_at` é **por linha e binário** — não existe meia linha liquidada. Pagar R$ 100 de R$ 250 não tem mapeamento principiado para um subconjunto (quais linhas? as mais antigas? as menores? qualquer escolha é arbitrária e o dono não a controla), e a alternativa — transferir sem liquidar — **reintroduz o defeito das duas vozes**. Parcial de verdade exige a entidade **Bill** (fatura com pagamentos próprios), que o roadmap já registra como ausente. Até lá: paga a competência inteira ou recusa, nunca um estado intermediário que nenhuma tela sabe ler.
+
+⚠️ **`expected_amount_cents` é CONFIRMAÇÃO, nunca valor parcial** — quando presente e diferente do total em aberto, recusa **nomeando o total real**. Protege contra a tela mandar número velho (uma compra importada entre a renderização e o toque muda o total sem o dono ver).
+
+⚠️ **IDEMPOTÊNCIA: recusa (`already_paid`), nunca no-op silencioso.** A checagem é uma LEITURA e roda **antes** do batch — a segunda chamada não escreve nada, não há meia operação. Recusar é melhor que "ok" inócuo porque o dinheiro da primeira chamada **já se moveu**: um sucesso mudo no duplo-toque seria indistinguível de um pagamento novo. E é seguro por construção — a liquidação é `WHERE settled_at IS NULL`, então mesmo contornada a checagem o UPDATE casaria zero linhas (MEDIDO por mutação: sem o guard, a segunda chamada cai em `nothing_to_pay`, ainda recusando).
+
+Recusas: `invalid_account` (não é cartão / origem == cartão), `no_lines`, `already_paid`, `nothing_to_pay` (competência que fecha em crédito — mesma leitura do `HAVING SUM < 0` de `commitments()`), `amount_mismatch`.
+
+### ③ O estado DEPOIS, medido chamando as funções de verdade
+
+| Propriedade                | Antes                  | Depois                          |
+| -------------------------- | ---------------------- | ------------------------------- |
+| saldo do cartão            | -25000                 | **0** ✅                        |
+| saldo da corrente          | 500000                 | **475000** (desce exatos 25000) |
+| **consolidado**            | 475000                 | **475000 — NÃO muda** ✅        |
+| `commitments()`            | 1 linha, 25000/25000   | **0 linhas**, tudo 0/0 ✅       |
+| `byCategory()`             | jul -20000 / ago -5000 | **idêntico** ✅                 |
+| `cashflow()` (mês do pgto) | 0                      | **25000** ⚠️ ver abaixo         |
+
+⚠️⚠️ **DIVERGÊNCIA DO BRIEF, resolvida pela medição: `cashflow()` GANHA a saída — e isso é CERTO, não dupla contagem.** O brief previa que ele não ganharia, com o argumento "a despesa já foi contada na compra". **A medição do estado ANTES desmente a premissa:** as compras nascem `settled_at NULL` e `cashflow()` exige `settled_at IS NOT NULL` — `saiu = 0` em todos os meses. Elas **nunca estiveram** no fluxo de caixa; nada tinha sido contado.
+
+O fluxo de caixa mede dinheiro que se **moveu**. Numa compra de cartão o dinheiro não se move na compra — se move quando a fatura é paga. Liquidar com `settled_at = paid_on` põe os R$ 250 no mês do **pagamento**, que é onde o caixa foi de fato afetado. A dupla contagem a impedir é outra: as duas pernas somariam os MESMOS R$ 250 de novo — elas carregam `transfer_id` e `cashflow()` filtra `transfer_id IS NULL`, por isso o total é **25000 e não 50000**. É esse número exato que o teste trava (a mutação que tira `transfer_id` das pernas falha com `expected 50000 to be 25000`).
+
+### ④ A rota — `POST /api/bills/pay`
+
+Vive em `transactionsRoutes` (já montado em `app.route('/api', ...)`, acima do catch-all), mesmo lugar de `/transfers`. Atrás da sessão por **ausência deliberada**: não está em nenhuma das exceções de `requireSession()` em `src/index.ts`.
+
+| Situação                             | Resposta                                                |
+| ------------------------------------ | ------------------------------------------------------- |
+| sucesso                              | **201** com o envelope (pernas, valor, `settled_count`) |
+| corpo malformado / campo obrigatório | 400 `invalid_json`                                      |
+| não é cartão / origem == cartão      | 422 `invalid_account`                                   |
+| fatura sem linhas / já paga / etc.   | 422 `invalid_bill`, motivo em **`field`**               |
+| competência ou `paid_on` inválidos   | 422 `constraint_violation`                              |
+
+⚠️ **UM código (`invalid_bill`) com o motivo em `field`, nunca quatro códigos novos** — precedente direto de `transaction_has_owner`, que usa um código só e põe a CLASSE em `field`. ⚠️ **422 e não 409 para `already_paid`**, apesar de repetir nunca resolver: a convenção dominante do módulo para recusa de regra de negócio é 422 (`over_allocation`, `debt_has_ledger`, `transaction_has_owner` — todas "repetir não adianta").
+
+⚠️ **`paid_on` ausente é o caso NORMAL** ("paguei hoje"), e o default é **`todayInTeresina()`**, nunca `new Date().toISOString()`.
+
+⚠️ **O bloqueio de cartão em `pages/transferir.tsx` CONTINUA CERTO e ganhou nota** apontando esta rota: pagar fatura não virou uma transferência — é transferência **+** liquidação. Transferir para o cartão por aquela tela segue sendo errado (ela não liquida nada). Não afrouxar aquele filtro.
+
+**Worker: 810 → 835** (+25: 17 em `domain/transactions.test.ts`, 8 em `routes/transactions.test.ts`). SPA **688**, `packages/ui` **97**, `packages/tools` **158** — intocados (nenhuma tela nesta fatia). `tsc --noEmit` e prettier limpos. Nenhuma migration, nenhuma coluna nova.
+
+⚠️ **Verificado por MUTAÇÃO — 8, cada uma matando só o teste certo pelo motivo certo** (revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`):
+
+| Mutação                                   | Falha observada                                                         |
+| ----------------------------------------- | ----------------------------------------------------------------------- |
+| liquidação removida (só a transferência)  | 8 — `commitments()` volta a ter 1 linha: o defeito das DUAS VOZES       |
+| transferência removida (só liquidar)      | 13 — o cartão fica negativo e o dinheiro não sai da corrente            |
+| pernas SEM `transfer_id`                  | 5 — **`expected 50000 to be 25000`**: a dupla contagem literal          |
+| guard de `already_paid` removido          | 2 — a 2ª chamada degrada pra `nothing_to_pay` (recusa, mensagem errada) |
+| liquidação sem o filtro de competência    | 1 — a fatura de JULHO é paga junto (`{min:0}` onde devia ser `{3000}`)  |
+| rota sem o discriminador em `field`       | 3 — `expected undefined to be 'already_paid'`                           |
+| guard de `expected_amount_cents` removido | 2                                                                       |
+| default de `paid_on` em UTC cru           | 1 — `expected '2026-09-06' to be '2026-09-05'`                          |
+
+⚠️ **A última mutação NÃO matava nada na primeira tentativa, e o TESTE foi corrigido em vez de aceito** — sem relógio fixo, a data UTC e a de Teresina coincidem na maior parte do dia. O teste passou a fixar `2026-09-06T01:00:00Z` (22h de 05/09 em Teresina); com isso a mutação mata.
+
+**Fora de escopo, registrado:** não há **tela** — a rota existe e nenhum `web/src` a consome ainda (o `#/extrato` segue como único caminho pela interface). Também não há **desfazer** um pagamento de fatura: seria apagar a transferência (o `DELETE` já cascateia as duas pernas) e `unsettle` linha a linha; e pagamento **parcial**, que exige a entidade Bill.
 
 ## Import de fatura e extrato (fatia ②, Task 3 — `src/domain/import.ts` + `src/routes/import.ts`)
 

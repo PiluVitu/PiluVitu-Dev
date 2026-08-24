@@ -5,6 +5,8 @@ import {
   deleteTransaction,
   inspectTransaction,
   listTransactions,
+  payBill,
+  PayBillError,
   settleTransaction,
   TransactionHasOwnerError,
   unsettleTransaction,
@@ -483,6 +485,120 @@ transactionsRoutes.post('/transfers', async (c) => {
     if (e instanceof RangeError)
       return errJson(422, 'invalid_transfer', e.message)
     if (isConstraint(e)) return constraintResponse('POST /transfers', e)
+    throw e
+  }
+})
+
+// ---------------------------------------------------------------------------
+// PAGAR A FATURA DO CARTÃO — POST /api/bills/pay
+//
+// Fica neste router (montado em `app.route('/api', ...)`, acima do catch-all)
+// pelo mesmo motivo de `/transfers`: a operação é sobre o livro-caixa, e o que
+// ela cria são duas linhas de `transactions` mais a liquidação de N outras.
+//
+// Atrás da sessão por AUSÊNCIA deliberada: `src/index.ts` aplica
+// `requireSession()` a `/api/*` e só abre exceção para `/api/health`,
+// `/api/auth/*`, `POST /api/insights` e `GET /api/insights/numbers`. Esta rota
+// não entra em nenhuma — quem paga a fatura é o dono, no navegador.
+//
+// Contrato de erro, nas convenções do módulo:
+//   400 `invalid_json`          corpo malformado ou campo obrigatório ausente
+//   422 `invalid_account`       conta que não é cartão / origem == cartão
+//                               (mesmo código que payDebt já usa pro par
+//                               conta-errada-pra-esta-operação)
+//   422 `invalid_bill`          recusa sobre a FATURA, com o motivo exato em
+//                               `field` (`no_lines` | `already_paid` |
+//                               `nothing_to_pay` | `amount_mismatch`)
+//   422 `constraint_violation`  competência/data inválida (RangeError) e
+//                               CHECK/FK do D1, sempre com mensagem cozida
+//
+// ⚠️ UM código (`invalid_bill`) com o motivo em `field`, nunca quatro códigos
+// novos — precedente direto de `transaction_has_owner` (DELETE de lançamento),
+// que usa um código só e põe a CLASSE em `field`. Quatro códigos obrigariam o
+// cliente a conhecer um catálogo que cresce a cada motivo novo; um código mais
+// discriminador deixa a tela rotear ("recarregue e confira" × "já paga") sem
+// catálogo novo.
+//
+// ⚠️ 422 e não 409 para `already_paid`, apesar de repetir nunca resolver: a
+// convenção dominante do módulo para recusa de REGRA DE NEGÓCIO é 422
+// (`over_allocation`, `debt_has_ledger`, `transaction_has_owner` — todas
+// "repetir não adianta"). O 409 aqui divergiria delas sem ganho.
+// ---------------------------------------------------------------------------
+
+type PayBillBody = {
+  card_account_id?: unknown
+  competence?: unknown
+  paid_on?: unknown
+  from_account_id?: unknown
+  expected_amount_cents?: unknown
+}
+
+transactionsRoutes.post('/bills/pay', async (c) => {
+  let body: PayBillBody
+  try {
+    body = await c.req.json<PayBillBody>()
+  } catch {
+    return errJson(400, 'invalid_json', 'corpo da requisicao nao e JSON valido')
+  }
+
+  const { card_account_id, competence, from_account_id } = body
+  if (typeof card_account_id !== 'string' || card_account_id === '')
+    return errJson(400, 'invalid_json', 'card_account_id e obrigatorio')
+  if (typeof competence !== 'string' || competence === '')
+    return errJson(400, 'invalid_json', 'competence e obrigatoria')
+  if (typeof from_account_id !== 'string' || from_account_id === '')
+    return errJson(400, 'invalid_json', 'from_account_id e obrigatorio')
+
+  // Corpo sem `paid_on` é o caso NORMAL ("paguei hoje"), não erro — mesma
+  // regra de POST /:id/settle. ⚠️ `todayInTeresina()`, NUNCA
+  // `new Date().toISOString()`: às 22h de Teresina o UTC já virou o dia
+  // seguinte, e o pagamento cairia no mês errado do fluxo de caixa.
+  const paid_on =
+    body.paid_on === undefined || body.paid_on === null
+      ? todayInTeresina()
+      : body.paid_on
+  if (typeof paid_on !== 'string')
+    return errJson(400, 'invalid_json', 'paid_on deve ser uma data YYYY-MM-DD')
+
+  let expected_amount_cents: number | undefined
+  if (
+    body.expected_amount_cents !== undefined &&
+    body.expected_amount_cents !== null
+  ) {
+    if (
+      typeof body.expected_amount_cents !== 'number' ||
+      !Number.isInteger(body.expected_amount_cents)
+    ) {
+      return errJson(
+        400,
+        'invalid_json',
+        'expected_amount_cents deve ser um inteiro em centavos',
+      )
+    }
+    expected_amount_cents = body.expected_amount_cents
+  }
+
+  try {
+    const res = await payBill(c.env.DB, {
+      card_account_id,
+      competence,
+      paid_on,
+      from_account_id,
+      expected_amount_cents,
+    })
+    return okJson(res, 201)
+  } catch (e) {
+    if (e instanceof PayBillError) {
+      // A mensagem vem CRUA do domínio — é ela que nomeia a porta certa
+      // ("recarregue a tela e confira", "escolha outra conta"). Recusa que só
+      // diz "não" deixa o dono travado.
+      if (e.code === 'invalid_account')
+        return errJson(422, 'invalid_account', e.message)
+      return errJson(422, 'invalid_bill', e.message, e.code)
+    }
+    if (e instanceof RangeError)
+      return errJson(422, 'constraint_violation', e.message)
+    if (isConstraint(e)) return constraintResponse('POST /bills/pay', e)
     throw e
   }
 })

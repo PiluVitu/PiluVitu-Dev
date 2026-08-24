@@ -98,6 +98,16 @@ export function TransferirPage() {
    * do select de conta de pagamento pelo mesmo motivo — não oferecer o que o
    * modelo não sabe fechar. Aqui o servidor nem recusa, o que é pior: ele
    * aceita e o app fica incoerente consigo mesmo, em silêncio.
+   *
+   * ⚠️ ATUALIZAÇÃO — o bloqueio CONTINUA CERTO, e agora existe o caminho que
+   * ele deixava sem nome: `POST /api/bills/pay` (domínio `payBill`,
+   * `src/domain/transactions.ts` do Worker). Pagar fatura não virou uma
+   * transferência — a operação faz a transferência E liquida as linhas
+   * daquela competência no MESMO `db.batch()`, que é justamente a metade que
+   * faltava aqui e sem a qual o defeito das duas vozes acima se repete. Ou
+   * seja: transferir para o cartão por ESTA tela continua sendo a coisa
+   * errada (ela não liquida nada); quem paga fatura é aquela rota. Não
+   * afrouxar este filtro para "resolver" pagamento de fatura.
    */
   const contasTransferiveis = useMemo(
     () => contas.filter((c) => c.kind !== 'credit_card'),

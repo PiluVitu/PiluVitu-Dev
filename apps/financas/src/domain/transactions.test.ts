@@ -14,6 +14,8 @@ import {
   deleteTransaction,
   inspectTransaction,
   listTransactions,
+  payBill,
+  PayBillError,
   settleTransaction,
   TransactionHasOwnerError,
   unsettleTransaction,
@@ -1271,5 +1273,357 @@ describe('deleteTransaction', () => {
     })
     expect(denovo.id).not.toBe(tx.id)
     expect(denovo.imported_id).toBe('FITID-42')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// payBill — pagar a fatura do cartão.
+//
+// O cenário é o mesmo dos números medidos no CLAUDE.md: cartão que fecha dia
+// 25 com três compras na fatura de 2026-08 (R$ 250 no total) e uma corrente
+// com R$ 5.000 de saldo de abertura. Cada `it` abaixo prova UMA propriedade do
+// dinheiro, sempre chamando as funções de relatório de verdade — nunca lendo
+// só a linha crua do banco.
+// ---------------------------------------------------------------------------
+describe('payBill', () => {
+  async function cenario() {
+    const card = await cartao('Nubank cartao fatura', 25)
+    const conta = await contaCorrente('Nubank PJ fatura', 500000)
+    for (const [desc, cents, dia] of [
+      ['Mercado', 12000, '2026-07-28'],
+      ['Posto', 8000, '2026-07-29'],
+      ['Farmacia', 5000, '2026-08-02'],
+    ] as const) {
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -cents,
+        purchase_date: dia,
+        description: desc,
+      })
+    }
+    return { card, conta }
+  }
+
+  const pagar = (card: { id: string }, conta: { id: string }) =>
+    payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+    })
+
+  const saldoDe = async (id: string) =>
+    (await accountBalances(env.DB)).find((s) => s.account_id === id)
+      ?.balance_cents
+
+  it('devolve as duas pernas com o mesmo transfer_id e liquida as 3 linhas', async () => {
+    const { card, conta } = await cenario()
+    const res = await pagar(card, conta)
+
+    expect(res.amount_cents).toBe(25000)
+    expect(res.settled_count).toBe(3)
+    expect(res.out.account_id).toBe(conta.id)
+    expect(res.out.amount_cents).toBe(-25000)
+    expect(res.inbound.account_id).toBe(card.id)
+    expect(res.inbound.amount_cents).toBe(25000)
+    expect(res.out.transfer_id).toBe(res.transfer_id)
+    expect(res.inbound.transfer_id).toBe(res.transfer_id)
+    // A perna que cai no cartão NÃO pode carregar competência: ela inflaria
+    // uma fatura futura do próprio cartão que acabou de ser pago.
+    expect(res.inbound.bill_competence).toBeNull()
+  })
+
+  it('o saldo do cartão ZERA e o da corrente desce exatamente o valor pago', async () => {
+    const { card, conta } = await cenario()
+    expect(await saldoDe(card.id)).toBe(-25000)
+    expect(await saldoDe(conta.id)).toBe(500000)
+
+    await pagar(card, conta)
+
+    expect(await saldoDe(card.id)).toBe(0)
+    expect(await saldoDe(conta.id)).toBe(475000)
+  })
+
+  it('o consolidado NÃO muda — o dinheiro mudou de lugar, não sumiu', async () => {
+    const { card, conta } = await cenario()
+    const consolidado = async () =>
+      (await accountBalances(env.DB)).reduce((a, s) => a + s.balance_cents, 0)
+
+    const antes = await consolidado()
+    await pagar(card, conta)
+    expect(await consolidado()).toBe(antes)
+  })
+
+  it('commitments() PERDE a competência paga do cartão', async () => {
+    const { card, conta } = await cenario()
+    const relatorio = () =>
+      commitments(env.DB, {
+        from: '2026-07',
+        months: 3,
+        fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+      })
+
+    const antes = await relatorio()
+    expect(antes.rows).toHaveLength(1)
+    expect(antes.rows[0].account_id).toBe(card.id)
+    expect(antes.totals[1]).toEqual({ min: 25000, max: 25000 })
+
+    await pagar(card, conta)
+
+    const depois = await relatorio()
+    expect(depois.rows).toHaveLength(0)
+    expect(depois.totals).toEqual([
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+      { min: 0, max: 0 },
+    ])
+  })
+
+  /**
+   * ⚠️ ACHADO MEDIDO que contradiz a expectativa mais óbvia: cashflow() GANHA
+   * uma saída — e isso é CERTO, não dupla contagem.
+   *
+   * A leitura intuitiva ("a despesa já foi contada na compra, então o
+   * pagamento não pode aparecer") é falsa, e a medição do estado ANTES é a
+   * prova: as compras nascem com `settled_at` NULL, e `cashflow()` exige
+   * `settled_at IS NOT NULL` — ou seja, elas NUNCA estiveram no fluxo de
+   * caixa. Nada foi contado ainda.
+   *
+   * O que o fluxo de caixa mede é dinheiro que se MOVEU. Numa compra de
+   * cartão o dinheiro não se move na compra; ele se move quando a fatura é
+   * paga. Liquidar as linhas com `settled_at = paid_on` põe os R$ 250 no mês
+   * do PAGAMENTO, que é exatamente onde o caixa foi afetado.
+   *
+   * A dupla contagem que precisa ser impedida é outra: as duas pernas da
+   * transferência somariam OS MESMOS R$ 250 de novo. Elas carregam
+   * `transfer_id`, e `cashflow()` filtra `transfer_id IS NULL` — por isso o
+   * total é 25000 e não 50000. É esse número exato que este teste trava.
+   */
+  it('cashflow() ganha a saída UMA vez, no mês do pagamento — nunca duas', async () => {
+    const { card, conta } = await cenario()
+
+    const antes = await cashflow(env.DB, { from: '2026-07', months: 4 })
+    // Nenhuma das compras estava no caixa: elas ainda não tinham sido pagas.
+    expect(antes.linhas.every((l) => l.saiu_cents === 0)).toBe(true)
+
+    await pagar(card, conta)
+
+    const depois = await cashflow(env.DB, { from: '2026-07', months: 4 })
+    const setembro = depois.linhas.find((l) => l.competence === '2026-09')
+    // 25000, NUNCA 50000: as duas pernas da transferência estão fora.
+    expect(setembro?.saiu_cents).toBe(25000)
+    expect(setembro?.entrou_cents).toBe(0)
+    // E nenhum outro mês ganhou nada.
+    expect(
+      depois.linhas
+        .filter((l) => l.competence !== '2026-09')
+        .every((l) => l.saiu_cents === 0 && l.entrou_cents === 0),
+    ).toBe(true)
+  })
+
+  it('byCategory() NÃO muda — as pernas da transferência ficam de fora', async () => {
+    const { card, conta } = await cenario()
+    const meses = ['2026-07', '2026-08', '2026-09']
+    const ler = async () =>
+      Promise.all(
+        meses.map(async (competence) => {
+          const r = await byCategory(env.DB, { competence })
+          return { competence, total: r.total_cents, linhas: r.rows.length }
+        }),
+      )
+
+    const antes = await ler()
+    await pagar(card, conta)
+    expect(await ler()).toEqual(antes)
+  })
+
+  it('pagar a MESMA fatura duas vezes é recusado, e nada é escrito na segunda', async () => {
+    const { card, conta } = await cenario()
+    await pagar(card, conta)
+
+    const contar = async () =>
+      (
+        await env.DB.prepare(
+          'SELECT COUNT(*) AS n FROM transactions WHERE account_id IN (?, ?)',
+        )
+          .bind(card.id, conta.id)
+          .first<{ n: number }>()
+      )?.n
+
+    const linhasDepoisDoPrimeiro = await contar()
+
+    await expect(pagar(card, conta)).rejects.toMatchObject({
+      name: 'PayBillError',
+      code: 'already_paid',
+    })
+
+    // A recusa acontece ANTES do batch: nenhuma perna nova, nenhum centavo a
+    // mais saiu da corrente.
+    expect(await contar()).toBe(linhasDepoisDoPrimeiro)
+    expect(await saldoDe(conta.id)).toBe(475000)
+    expect(await saldoDe(card.id)).toBe(0)
+  })
+
+  it('recusa competência sem nenhuma linha', async () => {
+    const { card, conta } = await cenario()
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2027-03',
+        paid_on: '2026-09-05',
+        from_account_id: conta.id,
+      }),
+    ).rejects.toMatchObject({ name: 'PayBillError', code: 'no_lines' })
+  })
+
+  it('recusa conta que não é cartão', async () => {
+    const { conta } = await cenario()
+    const outra = await contaCorrente('Outra corrente', 1000)
+    await expect(
+      payBill(env.DB, {
+        card_account_id: conta.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        from_account_id: outra.id,
+      }),
+    ).rejects.toMatchObject({ name: 'PayBillError', code: 'invalid_account' })
+  })
+
+  it('recusa conta de origem igual ao cartão', async () => {
+    const { card } = await cenario()
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        from_account_id: card.id,
+      }),
+    ).rejects.toMatchObject({ name: 'PayBillError', code: 'invalid_account' })
+  })
+
+  it('recusa quando o valor informado não bate com a fatura, e nomeia o total real', async () => {
+    const { card, conta } = await cenario()
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        from_account_id: conta.id,
+        expected_amount_cents: 20000,
+      }),
+    ).rejects.toMatchObject({ name: 'PayBillError', code: 'amount_mismatch' })
+
+    // Recusou ANTES de escrever: a fatura continua em aberto.
+    const relatorio = await commitments(env.DB, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    expect(relatorio.totals[0]).toEqual({ min: 25000, max: 25000 })
+  })
+
+  it('aceita o valor informado quando ele bate', async () => {
+    const { card, conta } = await cenario()
+    const res = await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+      expected_amount_cents: 25000,
+    })
+    expect(res.amount_cents).toBe(25000)
+  })
+
+  it('competência que fecha em crédito (estorno maior que as compras) não é fatura a pagar', async () => {
+    const card = await cartao('Cartao estornado', 25)
+    const conta = await contaCorrente('Corrente estorno', 500000)
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -5000,
+      purchase_date: '2026-07-28',
+      description: 'Compra',
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: 9000,
+      purchase_date: '2026-07-29',
+      description: 'Estorno',
+    })
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        from_account_id: conta.id,
+      }),
+    ).rejects.toMatchObject({ name: 'PayBillError', code: 'nothing_to_pay' })
+  })
+
+  it('paga SÓ a competência pedida — outra fatura do mesmo cartão fica intacta', async () => {
+    const card = await cartao('Cartao duas faturas', 25)
+    const conta = await contaCorrente('Corrente duas faturas', 500000)
+    // Fatura de julho (compra antes do fechamento) e de agosto (depois).
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -3000,
+      purchase_date: '2026-07-10',
+      description: 'Julho',
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -7000,
+      purchase_date: '2026-07-28',
+      description: 'Agosto',
+    })
+
+    await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+    })
+
+    const relatorio = await commitments(env.DB, {
+      from: '2026-07',
+      months: 2,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+    // Julho continua devendo os R$ 30; agosto foi pago.
+    expect(relatorio.totals[0]).toEqual({ min: 3000, max: 3000 })
+    expect(relatorio.totals[1]).toEqual({ min: 0, max: 0 })
+    // E o saldo do cartão reflete só a fatura ainda aberta.
+    expect(await saldoDe(card.id)).toBe(-3000)
+  })
+
+  it('recusa paid_on com timestamp e competência malformada', async () => {
+    const { card, conta } = await cenario()
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05T10:00:00Z',
+        from_account_id: conta.id,
+      }),
+    ).rejects.toBeInstanceOf(RangeError)
+
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        competence: '2026-13',
+        paid_on: '2026-09-05',
+        from_account_id: conta.id,
+      }),
+    ).rejects.toBeInstanceOf(RangeError)
+  })
+
+  it('a recusa nunca vaza SQLITE/D1_ERROR', async () => {
+    const { card, conta } = await cenario()
+    await pagar(card, conta)
+    const err = await pagar(card, conta).then(
+      () => null,
+      (e: unknown) => e as Error,
+    )
+    expect(err).toBeInstanceOf(PayBillError)
+    expect(err?.message).not.toMatch(/SQLITE|D1_ERROR|FOREIGN KEY/i)
   })
 })
