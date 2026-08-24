@@ -662,6 +662,59 @@ Consome `GET /api/transactions` (com `?limit=`, `?settled=`, `?before=`), `PATCH
 
 - ⚠️ **Conta/categoria falhando NÃO derruba a tela.** São dois `useEffect` independentes: um busca o extrato, outro busca contas/categorias. Um `Promise.all` juntaria o destino dos dois, e uma falha na busca de NOMES apagaria a lista inteira de lançamentos — mesmo raciocínio (e mesmo precedente) dos dois efeitos separados de `pages/insight.tsx`. Sem os nomes a linha lê `— · Sem categoria` e continua legível.
 
+### Os filtros moram num `Sheet`, e o estado deles fica VISÍVEL com ele fechado
+
+⚠️ **O card "Filtros" ocupava o topo da tela onde o dono passa mais tempo, e ele abria mostrando um formulário em vez do extrato.** MEDIDO em Chrome real (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 30 linhas, com **rebuild entre os dois estados** — servir o mesmo build nas duas medições dá resultado idêntico e conclusão errada, e isso já aconteceu nesta série):
+
+| Medida (mesmo build, mesma fixture)            | antes      | depois                      |
+| ---------------------------------------------- | ---------- | --------------------------- |
+| **390×844** — faixa de filtros                 | **218 px** | **44 px** (−174)            |
+| topo do card da lista                          | y=378      | **y=204**                   |
+| lista visível na 1ª pintura (acima da tab bar) | **409 px** | **583 px** (+174, **+43%**) |
+| linhas INTEIRAS visíveis                       | **1**      | **2**                       |
+| **1280×900** — lista visível na 1ª pintura     | **534 px** | **708 px** (+174, **+33%**) |
+| linhas INTEIRAS visíveis                       | 3          | **5**                       |
+
+`@piluvitu/ui/sheet` (`side="bottom"`, `max-h-[85vh] overflow-y-auto`) custa **0 kB a mais**: é o mesmo `@radix-ui/react-dialog` que o `Dialog` de confirmação desta própria tela já traz. MEDIDO a 390: o painel cabe exato (`x:0, width:390`, `top:282`, `bottom:844`), sem overflow de página.
+
+⚠️ **CONTA e PERÍODO nasceram AQUI — `?account_id=`/`?from=`/`?to=` existiam na rota desde a fatia ① e nunca tinham virado filtro de tela** (estava registrado como "fora de escopo" no fim da seção _Extrato, editar, liquidar e apagar_). Não é enfeite de layout: filtrar por conta é a pergunta que o dono faz sobre um cartão específico, e sem período o "carregar mais" era o único jeito de alcançar um mês antigo.
+
+⚠️ **O estado do filtro fica VISÍVEL com o painel FECHADO — é a metade que importa, não o painel.** Um filtro ligado que o dono não vê é pior que filtro nenhum: ele olha uma lista PARCIAL achando que é tudo e conclui coisas erradas sobre o próprio dinheiro. Com o painel fechado a tela mostra um chip (`filtros-resumo`, `badgeVariants` num `<span>` — nunca o componente `Badge`, que renderiza `<div>`) nomeando o que está ligado, e o botão mostra QUANTOS (`filtros-contador`). MEDIDO a 390: `Nubank PJ · falta pagar` com o painel fechado, contador `2`.
+
+⚠️ **Chip e contador saem da MESMA função (`resumoDosFiltros`), nunca de duas contas separadas** — o chip é `join(' · ')` dela, o contador é `length` dela. Duas contas divergiriam, e a divergência apareceria justamente quando o dono estivesse conferindo se o recorte certo está ligado ("2" ao lado de um chip que nomeia três coisas é pior que nenhum dos dois). Sem nenhum filtro, chip e contador simplesmente **não existem** — ruído zero no caso comum.
+
+⚠️ **Período conta como UMA dimensão, mesmo com as duas pontas preenchidas.** São dois `<input type="date">` de um conceito só; contar 2 faria o botão dizer "4 filtros" pra quem ligou três coisas, e o dono contaria de novo procurando o quarto que não existe.
+
+⚠️ **Altura do chip, medida no pior caso e no caso real:** com **0, 1 ou 2** filtros a faixa fica em **44 px** (uma linha) — o estado de primeira pintura e o do uso normal. Com os **quatro** ligados de uma vez, o chip quebra em 3 linhas e a faixa vai a **142 px** — ainda **abaixo** dos 218 px do card antigo, e só acontece depois de o dono ligar quatro recortes de propósito. **Truncar foi descartado**: esconder parte do filtro ativo é exatamente o defeito que o chip existe pra impedir.
+
+⚠️ **"Carregar mais" leva os filtros junto, não só o cursor.** `queryDoExtrato(filtros, …)` é a MESMA função na carga inicial e na paginação; com `?account_id=` ficando pra trás, a página 2 traria linhas de OUTRA conta pro fim de uma lista que o dono acabou de filtrar, sem nada avisando. Trocar qualquer filtro de SERVIDOR reinicia `paginasRef` (senão a primeira leitura do recorte novo pediria 3 páginas que ninguém pediu, e no D1 quem paga por linha escaneada é o dono); a **busca não reinicia nada** porque não vai ao servidor.
+
+⚠️ **Lista vazia POR FILTRO não diz mais "Nenhum lançamento ainda"** — seria a mentira mais cara desta tela: o dono concluiria que o livro-caixa está vazio quando o que está vazio é o recorte que ele mesmo ligou. O vazio filtrado nomeia o recorte e aponta o "limpar".
+
+⚠️ **`de > ate` é AVISADO no painel** (`periodo-invalido`, `role="alert"`): o servidor só compara strings, então um período impossível devolve lista vazia sem erro nenhum, e o dono leria "não tenho lançamento nesse período". Avisar custa zero requisição.
+
+**Alvos de toque, MEDIDOS a 390:** botão "Filtros" **62×44**, "limpar" **52×44**, "Limpar filtros"/"Ver lançamentos" do rodapé **44 px** de altura, e o `<label>` do checkbox em 44 (`ALVO_LINHA`). Os `<input>`/`<select>` do painel ficam em 36 px — o mesmo conjunto de todo formulário do app, já registrado como aceito na fatia de a11y (≥24 px, WCAG 2.5.8 AA) em vez de virar lista de blocos altos. O "X" de 16×16 do `SheetContent` é do componente compartilhado (`packages/ui`), pré-existente ao lado do painel "Mais" de `App.tsx`; `Esc` e o botão "Ver lançamentos" (44 px) fecham o painel.
+
+⚠️ **A recusa inline continua chegando à vista COM a tab bar fixa embaixo — reconferido, não presumido.** MEDIDO a 390×844 com 30 linhas, apagando a ÚLTIMA (`t29`) com o botão na zona do polegar (`bottom: 787`): o `erro-linha-t29` sai em `top:707 / bottom:787`, **80 px inteiramente visíveis**, contra um fundo útil de 787 (a barra fixa mede 57 px e começa em y=787). O `scroll-padding-bottom` do `html` (`calc(3.5rem + 1px + env(safe-area-inset-bottom))`) é o que segura isso, e `block: 'nearest'` continua sendo no-op quando o alerta já está visível.
+
+**`<th>` com `ROTULO`: já estava** — a fatia da linguagem aplicada converteu os 17 `<th>` de 6 telas, com o gate de texto `pages/cabecalho-de-tabela.test.ts` travando qualquer regressão. Conferido antes de mexer, nada a fazer aqui.
+
+**Suítes: SPA 671 → 687** (+16 em `pages/extrato.test.tsx`, que foi de 35 pra 51). Worker **810**, `packages/ui` **97**, `packages/tools` **158** — intocados. ⚠️ **Nenhuma asserção pré-existente mudou de VALOR** — 7 testes mudaram de SELETOR (os controles de filtro só existem com o painel aberto), via um helper único (`comFiltros`) que abre, age e **fecha**; fechar não é zelo: o painel é modal, e o Radix desliga o ponteiro fora dele, então um teste que mexe num filtro e depois numa linha falharia em `pointer-events`.
+
+⚠️ **Verificado por MUTAÇÃO — 7, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado):
+
+| Mutação                                                | Falha observada                                    |
+| ------------------------------------------------------ | -------------------------------------------------- |
+| `resumoDosFiltros` sempre vazio                        | 6 — chip, contador e o vazio filtrado somem juntos |
+| período contando DUAS dimensões                        | 2 — o contador passa a dizer 5 pra quatro recortes |
+| `queryDoExtrato` ignorando `account_id`                | 5                                                  |
+| `carregarMais` sem os filtros (só o cursor)            | 1 — a página 2 volta a trazer outra conta          |
+| vazio filtrado de volta a "Nenhum lançamento ainda"    | 1 — a mentira sobre o livro-caixa                  |
+| `periodoInvalido` nunca dispara                        | 1                                                  |
+| `recarregar` sem conta/período nas deps (estado velho) | 4 — trocar o filtro deixa de refazer a busca       |
+
+**Bundle (`vite build`, antes = fatia das telas cruas / depois = esta):** JS principal 504,09 → 507,58 kB (**153,84 → 154,74 kB gzip, +0,90** — os quatro controles novos + o `Sheet`, que reusa o `@radix-ui/react-dialog` já presente); CSS **8,07 kB gzip, intocado**; chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) com exit 0 e **um** único chunk lazy.
+
 ### Paginação: keyset com FIM, e uma recarga que preserva as páginas
 
 - **"Carregar mais" monta `?before=` a partir da ÚLTIMA linha recebida** — `cursorDe()` (exportada só pra teste) produz as **TRÊS** partes (`purchase_date|created_at|id`). ⚠️ Duas partes não bastam, e isso é MEDIDO no backend: `createInstallmentPlan` grava as N parcelas com os dois primeiros IDÊNTICOS, e paginar 6 parcelas de 2 em 2 devolveu **4** (ver _Paginação do extrato_ acima). O teste de paginação usa `PAGINA + 2` linhas com `purchase_date` **e** `created_at` iguais de propósito — é o cenário do plano de parcelas, não uma lista genérica.
@@ -780,7 +833,7 @@ As **quatro** mutações desta tela (settle, PATCH, DELETE) passam por `lib/muta
 
 +4,64 kB gzip no principal é a tela em si: `Card`/`Button`/`Input`/`Label`/`Dialog`/`Ajuda` já estavam no bundle, nenhuma dependência nova entrou. O chunk do gráfico fica intocado (nada aqui toca `recharts`).
 
-**Fora de escopo, registrado:** `POST /:id/unsettle` tem rota e **nenhum botão** — desmarcar um pagamento é a operação inversa e menos frequente, e entraria com teste próprio numa fatia futura; `?account_id=`/`?from=`/`?to=` também existem na rota e não viraram filtro de tela (a visão "todas as contas" é a que responde `?settled=0`, a pergunta que dá valor à fatia).
+**Fora de escopo, registrado:** `POST /:id/unsettle` tem rota e **nenhum botão** — desmarcar um pagamento é a operação inversa e menos frequente, e entraria com teste próprio numa fatia futura. ✅ **`?account_id=`/`?from=`/`?to=` viraram filtro de tela na fatia do `Sheet`** — ver _Os filtros moram num `Sheet`_ acima; a visão "todas as contas" continua sendo o default, porque é ela que responde `?settled=0`.
 
 ## Import de fatura e extrato (fatia ②, Task 3 — `src/domain/import.ts` + `src/routes/import.ts`)
 

@@ -11,9 +11,12 @@ import { api, ApiError } from '../api'
 import {
   cursorDe,
   ExtratoPage,
+  FILTROS_VAZIOS,
   formatarData,
   mensagemDeExclusao,
   PAGINA,
+  queryDoExtrato,
+  resumoDosFiltros,
   totaisPendentes,
   type TransactionView,
 } from './extrato'
@@ -116,6 +119,17 @@ function montarApi(estado: Estado) {
         let rows = estado.linhas
         if (qs.get('settled') === '0')
           rows = rows.filter((r) => r.settled_at === null)
+        // Mesmos filtros do `buildListTransactionsQuery` real
+        // (`src/domain/transactions.ts`): igualdade em conta, faixa fechada
+        // em `purchase_date`. Sem replicá-los aqui, um teste de filtro
+        // passaria contra uma tela que montasse a query e nunca a usasse.
+        const conta = qs.get('account_id')
+        if (conta !== null) rows = rows.filter((r) => r.account_id === conta)
+        const desde = qs.get('from')
+        if (desde !== null) rows = rows.filter((r) => r.purchase_date >= desde)
+        const ateQuando = qs.get('to')
+        if (ateQuando !== null)
+          rows = rows.filter((r) => r.purchase_date <= ateQuando)
         const before = qs.get('before')
         if (before !== null) {
           const i = rows.findIndex((r) => cursorDe(r) === before)
@@ -136,6 +150,29 @@ function comRelogio(iso = '2026-07-28T12:00:00Z') {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(new Date(iso))
   return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+}
+
+/**
+ * Os filtros moram num `Sheet` desde a fatia da reforma — abrir o painel
+ * virou pré-requisito pra alcançar qualquer controle de filtro.
+ *
+ * ⚠️ **Fechar não é zelo, é necessidade:** o painel é modal (o Radix prende
+ * o foco e desliga o ponteiro fora dele), então um teste que mexe num filtro
+ * e DEPOIS numa linha do extrato falha em `pointer-events` se o painel ficar
+ * aberto. Um helper só faz as três etapas, pra nenhum teste esquecer a
+ * terceira.
+ */
+async function comFiltros(
+  user: ReturnType<typeof comRelogio>,
+  acao: () => Promise<void>,
+) {
+  await user.click(screen.getByTestId('abrir-filtros'))
+  await screen.findByTestId('painel-filtros')
+  await acao()
+  await user.click(screen.getByTestId('ver-resultado'))
+  await waitFor(() =>
+    expect(screen.queryByTestId('painel-filtros')).not.toBeInTheDocument(),
+  )
 }
 
 beforeEach(() => {
@@ -241,22 +278,24 @@ describe('ExtratoPage — lista', () => {
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
     const antes = vi.mocked(api).mock.calls.length
-    const campo = screen.getByLabelText(/Buscar/)
 
-    await user.type(campo, 'starlink')
-    await waitFor(() =>
-      expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('linha-t1')).toBeInTheDocument()
+    await comFiltros(user, async () => {
+      const campo = screen.getByLabelText(/Buscar/)
+      await user.type(campo, 'starlink')
+      await waitFor(() =>
+        expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('linha-t1')).toBeInTheDocument()
 
-    // O termo também alcança o nome da CONTA e o da CATEGORIA, não só a
-    // descrição — nenhum dos dois aparece literalmente na linha do banco.
-    await user.clear(campo)
-    await user.type(campo, 'cofre')
-    await waitFor(() =>
-      expect(screen.queryByTestId('linha-t1')).not.toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('linha-t2')).toBeInTheDocument()
+      // O termo também alcança o nome da CONTA e o da CATEGORIA, não só a
+      // descrição — nenhum dos dois aparece literalmente na linha do banco.
+      await user.clear(campo)
+      await user.type(campo, 'cofre')
+      await waitFor(() =>
+        expect(screen.queryByTestId('linha-t1')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('linha-t2')).toBeInTheDocument()
+    })
 
     // Nenhuma das duas buscas foi ao servidor.
     expect(vi.mocked(api).mock.calls.length).toBe(antes)
@@ -275,7 +314,9 @@ describe('ExtratoPage — filtro "falta marcar como pago"', () => {
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t2')
 
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
 
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
@@ -314,7 +355,9 @@ describe('ExtratoPage — marcar como pago', () => {
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t3')
 
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t3')).not.toBeInTheDocument(),
     )
@@ -919,7 +962,9 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     await screen.findByTestId('linha-t1')
     expect(screen.queryByTestId('total-pendente')).not.toBeInTheDocument()
 
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
     // a linha já paga some — sinal observável de que a lista filtrada chegou
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t3')).not.toBeInTheDocument(),
@@ -943,7 +988,9 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
 
     await waitFor(() =>
       expect(screen.getByTestId('total-pendente')).toHaveTextContent(
@@ -973,7 +1020,9 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     montarApi({ linhas })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t0')
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
 
     await waitFor(() =>
       expect(screen.getByTestId('carregar-mais')).toBeInTheDocument(),
@@ -991,7 +1040,9 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     montarApi({ linhas: [tx({ id: 't1', amount_cents: -18900 })] })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
-    await user.click(screen.getByTestId('filtro-nao-pagos'))
+    await comFiltros(user, async () => {
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
 
     await waitFor(() =>
       expect(screen.getByTestId('resumo-carregado')).toHaveTextContent(
@@ -1047,6 +1098,299 @@ describe('ExtratoPage — alvo de toque e status como badge', () => {
     )
     expect(screen.getByTestId('estado-t2')).toHaveTextContent(
       'pago em 15/07/2026',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Filtros no `Sheet` — o card de 218 px que abria a tela saiu do caminho.
+// ---------------------------------------------------------------------------
+
+describe('resumoDosFiltros / queryDoExtrato — puros', () => {
+  const nome = (id: string) => (id === 'a1' ? 'Nubank PJ' : '—')
+
+  it('sem nenhum filtro, o resumo é VAZIO (e o contador, portanto, some)', () => {
+    expect(resumoDosFiltros(FILTROS_VAZIOS, nome)).toEqual([])
+  })
+
+  it('nomeia a conta, nunca o id', () => {
+    expect(
+      resumoDosFiltros({ ...FILTROS_VAZIOS, contaId: 'a1' }, nome),
+    ).toEqual(['Nubank PJ'])
+  })
+
+  it('conta desconhecida ainda conta como filtro ativo — some o nome, nunca o filtro', () => {
+    // A lista de contas pode ter falhado (efeito separado, ver a tela). O
+    // que não pode acontecer é o chip esconder que HÁ um recorte por conta.
+    expect(
+      resumoDosFiltros({ ...FILTROS_VAZIOS, contaId: 'sumida' }, nome),
+    ).toEqual(['—'])
+  })
+
+  it('período conta como UMA dimensão, com as duas pontas preenchidas', () => {
+    expect(
+      resumoDosFiltros(
+        { ...FILTROS_VAZIOS, de: '2026-07-01', ate: '2026-07-31' },
+        nome,
+      ),
+    ).toEqual(['01/07/2026 a 31/07/2026'])
+  })
+
+  it('uma ponta só vira "desde" ou "até"', () => {
+    expect(
+      resumoDosFiltros({ ...FILTROS_VAZIOS, de: '2026-07-01' }, nome),
+    ).toEqual(['desde 01/07/2026'])
+    expect(
+      resumoDosFiltros({ ...FILTROS_VAZIOS, ate: '2026-07-31' }, nome),
+    ).toEqual(['até 31/07/2026'])
+  })
+
+  it('os quatro juntos dão QUATRO — o número que o botão mostra', () => {
+    expect(
+      resumoDosFiltros(
+        {
+          contaId: 'a1',
+          de: '2026-07-01',
+          ate: '2026-07-31',
+          somenteNaoPagos: true,
+          busca: '  mercado  ',
+        },
+        nome,
+      ),
+    ).toEqual([
+      'Nubank PJ',
+      'falta pagar',
+      '01/07/2026 a 31/07/2026',
+      'busca "mercado"',
+    ])
+  })
+
+  it('busca só de espaço não é filtro nenhum', () => {
+    expect(resumoDosFiltros({ ...FILTROS_VAZIOS, busca: '   ' }, nome)).toEqual(
+      [],
+    )
+  })
+
+  it('queryDoExtrato manda só o que está preenchido, e a busca NUNCA', () => {
+    expect(
+      queryDoExtrato({ ...FILTROS_VAZIOS, busca: 'mercado' }, 30).toString(),
+    ).toBe('limit=30')
+    expect(
+      queryDoExtrato(
+        {
+          contaId: 'a1',
+          de: '2026-07-01',
+          ate: '2026-07-31',
+          somenteNaoPagos: true,
+          busca: 'mercado',
+        },
+        30,
+        '2026-07-01|2026-07-01T10:00:00Z|t9',
+      ).toString(),
+    ).toBe(
+      'limit=30&account_id=a1&from=2026-07-01&to=2026-07-31&settled=0&before=2026-07-01%7C2026-07-01T10%3A00%3A00Z%7Ct9',
+    )
+  })
+})
+
+describe('ExtratoPage — filtros no painel', () => {
+  it('a tela abre sem formulário de filtro: só o botão, e sem contador', async () => {
+    comRelogio()
+    montarApi({ linhas: [tx({ id: 't1' })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    expect(screen.getByTestId('abrir-filtros')).toBeInTheDocument()
+    expect(screen.queryByTestId('painel-filtros')).not.toBeInTheDocument()
+    // Nenhum controle de filtro ocupa a tela antes do dono pedir.
+    expect(screen.queryByTestId('filtro-nao-pagos')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Buscar/)).not.toBeInTheDocument()
+    // Sem filtro não há chip nem número — ruído zero no caso comum.
+    expect(screen.queryByTestId('filtros-contador')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('filtros-resumo')).not.toBeInTheDocument()
+  })
+
+  it('com o painel FECHADO, o chip diz o que está filtrado e o botão diz quantos', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', account_id: 'a1' }),
+        tx({ id: 't2', account_id: 'a2', settled_at: '2026-07-15' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t2')
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a1')
+      await user.click(screen.getByTestId('filtro-nao-pagos'))
+    })
+
+    // O painel está fechado — e o estado do filtro continua na tela.
+    expect(screen.queryByTestId('painel-filtros')).not.toBeInTheDocument()
+    expect(screen.getByTestId('filtros-resumo')).toHaveTextContent(
+      'Nubank · falta pagar',
+    )
+    expect(screen.getByTestId('filtros-contador')).toHaveTextContent('2')
+  })
+
+  it('filtrar por conta muda o que é BUSCADO (?account_id=), não só o que é exibido', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', account_id: 'a1', description: 'Starlink' }),
+        tx({ id: 't2', account_id: 'a2', description: 'Aporte' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t2')
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a2')
+    })
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t1')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('linha-t2')).toBeInTheDocument()
+    const url = vi
+      .mocked(api)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((p) => p.startsWith('/api/transactions'))
+      .at(-1)
+    expect(url).toContain('account_id=a2')
+  })
+
+  it('o período vira ?from=/?to= e recorta a lista', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', purchase_date: '2026-07-20' }),
+        tx({ id: 't2', purchase_date: '2026-06-10', description: 'Antigo' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t2')
+
+    await comFiltros(user, async () => {
+      fireEvent.change(screen.getByTestId('filtro-de'), {
+        target: { value: '2026-07-01' },
+      })
+      fireEvent.change(screen.getByTestId('filtro-ate'), {
+        target: { value: '2026-07-31' },
+      })
+    })
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('linha-t1')).toBeInTheDocument()
+    const url = vi
+      .mocked(api)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((p) => p.startsWith('/api/transactions'))
+      .at(-1)
+    expect(url).toContain('from=2026-07-01')
+    expect(url).toContain('to=2026-07-31')
+  })
+
+  it('"carregar mais" leva os filtros junto, não só o cursor', async () => {
+    // ⚠️ Sem isto, a página 2 traria linhas de OUTRA conta pro fim de uma
+    // lista que o dono acabou de filtrar — e nada na tela diria por quê.
+    const user = comRelogio()
+    montarApi({
+      linhas: Array.from({ length: PAGINA + 5 }, (_, i) =>
+        tx({
+          id: `t${i}`,
+          account_id: 'a1',
+          purchase_date: '2026-07-20',
+          created_at: `2026-07-20T10:00:${String(i).padStart(2, '0')}Z`,
+        }),
+      ),
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t0')
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a1')
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('carregar-mais')).toBeEnabled(),
+    )
+
+    await user.click(screen.getByTestId('carregar-mais'))
+    await screen.findByTestId(`linha-t${PAGINA}`)
+
+    const url = vi
+      .mocked(api)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((p) => p.includes('before='))
+      .at(-1)
+    expect(url).toContain('account_id=a1')
+  })
+
+  it('lista vazia POR FILTRO não diz "Nenhum lançamento ainda"', async () => {
+    // A mentira mais cara desta tela: o dono concluiria que o livro-caixa
+    // está vazio quando o que está vazio é o recorte que ele mesmo ligou.
+    const user = comRelogio()
+    montarApi({ linhas: [tx({ id: 't1', account_id: 'a1' })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a2')
+    })
+
+    const vazio = await screen.findByTestId('vazio')
+    expect(vazio).toHaveTextContent(/Nenhum lançamento bate com os filtros/)
+    expect(vazio).toHaveTextContent('Cofre')
+    expect(vazio.textContent).not.toMatch(/Nenhum lançamento ainda/)
+  })
+
+  it('"limpar" zera tudo: o chip some e a lista volta inteira', async () => {
+    const user = comRelogio()
+    montarApi({
+      linhas: [
+        tx({ id: 't1', account_id: 'a1' }),
+        tx({ id: 't2', account_id: 'a2', description: 'Aporte' }),
+      ],
+    })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t2')
+
+    await comFiltros(user, async () => {
+      await user.selectOptions(screen.getByTestId('filtro-conta'), 'a1')
+    })
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId('limpar-filtros'))
+
+    await screen.findByTestId('linha-t2')
+    expect(screen.queryByTestId('filtros-resumo')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('filtros-contador')).not.toBeInTheDocument()
+  })
+
+  it('data inicial depois da final é avisada — lista vazia ali não significa "não há nada"', async () => {
+    const user = comRelogio()
+    montarApi({ linhas: [tx({ id: 't1' })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await user.click(screen.getByTestId('abrir-filtros'))
+    await screen.findByTestId('painel-filtros')
+    expect(screen.queryByTestId('periodo-invalido')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('filtro-de'), {
+      target: { value: '2026-07-31' },
+    })
+    fireEvent.change(screen.getByTestId('filtro-ate'), {
+      target: { value: '2026-07-01' },
+    })
+
+    expect(await screen.findByTestId('periodo-invalido')).toHaveTextContent(
+      /data inicial é depois da final/,
     )
   })
 })

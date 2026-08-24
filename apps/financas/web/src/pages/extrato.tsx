@@ -3,7 +3,7 @@ import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { badgeVariants } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { Card, CardContent } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import {
   Dialog,
@@ -16,6 +16,16 @@ import {
 } from '@piluvitu/ui/dialog'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@piluvitu/ui/sheet'
 import { api, ApiError } from '../api'
 import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
@@ -120,6 +130,87 @@ export function formatarData(iso: string): string {
 }
 
 /**
+ * O estado dos filtros do extrato, num objeto só.
+ *
+ * ⚠️ **Quatro campos, mas só TRÊS vão ao servidor.** `contaId`, `de`/`ate` e
+ * `somenteNaoPagos` viram `?account_id=`/`?from=`/`?to=`/`?settled=0` e
+ * mudam o que é BUSCADO; `busca` é textual e roda no CLIENTE, sobre o que
+ * já foi carregado (`LIKE %x%` não é sargable — no servidor viraria
+ * varredura da tabela inteira a cada tecla, e "rows read" é o que o D1
+ * cobra). Trocar qualquer um dos três primeiros recomeça a paginação; a
+ * busca não toca a rede.
+ */
+export type FiltrosExtrato = {
+  /** `''` = todas as contas. */
+  contaId: string
+  /** `''` = sem limite inferior (`YYYY-MM-DD`). */
+  de: string
+  /** `''` = sem limite superior (`YYYY-MM-DD`). */
+  ate: string
+  somenteNaoPagos: boolean
+  /** Cliente, nunca servidor. */
+  busca: string
+}
+
+export const FILTROS_VAZIOS: FiltrosExtrato = {
+  contaId: '',
+  de: '',
+  ate: '',
+  somenteNaoPagos: false,
+  busca: '',
+}
+
+/**
+ * O que está filtrado agora, em português, uma frase por dimensão.
+ *
+ * ⚠️ **É a fonte ÚNICA do chip E do contador do botão** — o chip é
+ * `join(' · ')` disto, o número no botão é `length` disto. Duas contas
+ * separadas divergiriam (o botão dizendo "2" ao lado de um chip que nomeia
+ * três coisas é pior que nenhum dos dois), e a divergência apareceria
+ * justamente quando o dono estivesse conferindo se o filtro certo está
+ * ligado.
+ *
+ * ⚠️ **Período conta como UMA dimensão, mesmo com as duas pontas
+ * preenchidas.** São dois `<input>` de um conceito só ("de quando até
+ * quando"); contar 2 faria o botão dizer "4 filtros" pra quem ligou três
+ * coisas, e o dono contaria de novo pra achar o quarto que não existe.
+ *
+ * ⚠️ **A conta é nomeada, nunca o id.** `nomeConta` é injetado (não lido de
+ * um estado global) porque a lista de contas pode ter falhado — nesse caso
+ * ela devolve `—` e o chip continua dizendo que HÁ um filtro de conta, que
+ * é a informação que não pode sumir.
+ */
+export function resumoDosFiltros(
+  f: FiltrosExtrato,
+  nomeConta: (id: string) => string,
+): string[] {
+  const partes: string[] = []
+  if (f.contaId !== '') partes.push(nomeConta(f.contaId))
+  if (f.somenteNaoPagos) partes.push('falta pagar')
+  if (f.de !== '' && f.ate !== '')
+    partes.push(`${formatarData(f.de)} a ${formatarData(f.ate)}`)
+  else if (f.de !== '') partes.push(`desde ${formatarData(f.de)}`)
+  else if (f.ate !== '') partes.push(`até ${formatarData(f.ate)}`)
+  if (f.busca.trim() !== '') partes.push(`busca "${f.busca.trim()}"`)
+  return partes
+}
+
+/** Monta a query de `GET /api/transactions` a partir dos filtros. */
+export function queryDoExtrato(
+  f: FiltrosExtrato,
+  limite: number,
+  before?: string,
+): URLSearchParams {
+  const qs = new URLSearchParams({ limit: String(limite) })
+  if (f.contaId !== '') qs.set('account_id', f.contaId)
+  if (f.de !== '') qs.set('from', f.de)
+  if (f.ate !== '') qs.set('to', f.ate)
+  if (f.somenteNaoPagos) qs.set('settled', '0')
+  if (before !== undefined) qs.set('before', before)
+  return qs
+}
+
+/**
  * O que apagar ESTA linha faz — nunca um "tem certeza?" genérico.
  *
  * ⚠️ Só duas classes são deriváveis no cliente, e as duas vêm de coluna
@@ -195,8 +286,9 @@ export function ExtratoPage() {
   const [temMais, setTemMais] = useState(false)
   const [carregandoMais, setCarregandoMais] = useState(false)
 
-  const [somenteNaoPagos, setSomenteNaoPagos] = useState(false)
-  const [busca, setBusca] = useState('')
+  const [filtros, setFiltros] = useState<FiltrosExtrato>(FILTROS_VAZIOS)
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
+  const { contaId, de, ate, somenteNaoPagos, busca } = filtros
 
   /**
    * Erro de PÁGINA — o que não pertence a nenhuma linha: a busca de
@@ -255,14 +347,18 @@ export function ExtratoPage() {
   const recarregar = useCallback(
     async (vivo: () => boolean = () => true) => {
       const limite = Math.min(PAGINA * paginasRef.current, TETO_LIMITE)
-      const qs = new URLSearchParams({ limit: String(limite) })
-      if (somenteNaoPagos) qs.set('settled', '0')
+      // ⚠️ Só os filtros de SERVIDOR entram aqui — `busca` fica de fora de
+      // propósito (é cliente). As deps abaixo são exatamente esses três.
+      const qs = queryDoExtrato(
+        { ...FILTROS_VAZIOS, contaId, de, ate, somenteNaoPagos },
+        limite,
+      )
       const rows = await api<TransactionView[]>(`/api/transactions?${qs}`)
       if (!vivo()) return
       setLinhas(rows)
       setTemMais(rows.length === limite)
     },
-    [somenteNaoPagos],
+    [contaId, de, ate, somenteNaoPagos],
   )
 
   useEffect(() => {
@@ -328,6 +424,19 @@ export function ExtratoPage() {
 
   const pendentes = useMemo(() => totaisPendentes(visiveis), [visiveis])
 
+  // Chip e contador saem DAQUI, os dois — ver `resumoDosFiltros`.
+  const resumo = useMemo(
+    () => resumoDosFiltros(filtros, nomeConta),
+    [filtros, nomeConta],
+  )
+
+  /**
+   * ⚠️ `de > ate` devolve lista VAZIA sem erro nenhum (o servidor só compara
+   * strings), e o dono leria "não tenho lançamento nesse período" quando o
+   * que existe é um período impossível. Avisar custa zero requisição.
+   */
+  const periodoInvalido = de !== '' && ate !== '' && de > ate
+
   async function carregarMais() {
     const carregadas = linhas ?? []
     const ultima = carregadas[carregadas.length - 1]
@@ -335,11 +444,11 @@ export function ExtratoPage() {
     setAcaoErro(null)
     setCarregandoMais(true)
     try {
-      const qs = new URLSearchParams({
-        limit: String(PAGINA),
-        before: cursorDe(ultima),
-      })
-      if (somenteNaoPagos) qs.set('settled', '0')
+      // ⚠️ A página seguinte carrega os MESMOS filtros de servidor da
+      // primeira, não só o cursor: com `?account_id=` ficando pra trás, o
+      // "carregar mais" traria linhas de OUTRA conta pro fim de uma lista
+      // que o dono acabou de filtrar, sem nada avisando.
+      const qs = queryDoExtrato(filtros, PAGINA, cursorDe(ultima))
       const rows = await api<TransactionView[]>(`/api/transactions?${qs}`)
       setLinhas([...carregadas, ...rows])
       paginasRef.current += 1
@@ -350,11 +459,20 @@ export function ExtratoPage() {
     setCarregandoMais(false)
   }
 
-  function trocarFiltro(valor: boolean) {
-    paginasRef.current = 1
+  /**
+   * Aplica um pedaço dos filtros. Recomeça a paginação SEMPRE que um filtro
+   * de servidor muda — manter `paginasRef` faria a primeira leitura do filtro
+   * novo pedir 3 páginas de uma vez (o dono não pediu por elas, e no D1 quem
+   * paga por linha escaneada é ele).
+   *
+   * A busca é a única que NÃO reinicia nada: ela não vai ao servidor.
+   */
+  function aplicarFiltros(patch: Partial<FiltrosExtrato>) {
+    const soBusca = Object.keys(patch).length === 1 && 'busca' in patch
+    if (!soBusca) paginasRef.current = 1
     setAcaoErro(null)
     setErroLinha(null)
-    setSomenteNaoPagos(valor)
+    setFiltros((f) => ({ ...f, ...patch }))
   }
 
   function abrirLiquidacao(t: TransactionView) {
@@ -821,11 +939,135 @@ export function ExtratoPage() {
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filtros</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      {/*
+        ⚠️ Os filtros moram num `Sheet`, e o que fica na tela é UMA faixa.
+
+        MEDIDO em Chrome real a 390×844 (o Android do dono, com 30 linhas): o
+        card "Filtros" ocupava **218 px** no topo, o card da lista começava em
+        `y=378` e sobravam **409 px** de lista acima da tab bar — UMA linha
+        inteira visível. Esta é a tela em que ele passa mais tempo, e ela
+        abria mostrando um formulário em vez do extrato.
+
+        `@piluvitu/ui/sheet` custa **0 kB a mais**: é o mesmo
+        `@radix-ui/react-dialog` que o `Dialog` de confirmação desta própria
+        tela já traz.
+
+        ⚠️ **O estado do filtro fica VISÍVEL com o painel FECHADO — é a metade
+        que importa.** Um filtro ligado que o dono não vê é pior que filtro
+        nenhum: ele olha uma lista parcial achando que é tudo, e conclui
+        coisas erradas sobre o próprio dinheiro. O chip nomeia o que está
+        ligado, o botão diz QUANTOS estão, e os dois saem da MESMA função
+        (`resumoDosFiltros`) — nunca de duas contas que podem divergir. Sem
+        nenhum filtro, chip e contador simplesmente não existem.
+      */}
+      <Sheet open={filtrosAbertos} onOpenChange={setFiltrosAbertos}>
+        <div className="flex flex-wrap items-center gap-2">
+          <SheetTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(ALVO_LINHA, 'gap-2')}
+              data-testid="abrir-filtros"
+            >
+              Filtros
+              {resumo.length > 0 ? (
+                <span
+                  className={cn(badgeVariants({ variant: 'default' }), 'px-2')}
+                  data-testid="filtros-contador"
+                >
+                  {resumo.length}
+                </span>
+              ) : null}
+            </Button>
+          </SheetTrigger>
+
+          {resumo.length > 0 ? (
+            <>
+              <span
+                className={cn(badgeVariants({ variant: 'secondary' }))}
+                data-testid="filtros-resumo"
+              >
+                {resumo.join(' · ')}
+              </span>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className={cn('h-auto p-0 text-xs no-underline', ALVO_LINK)}
+                data-testid="limpar-filtros"
+                onClick={() => aplicarFiltros(FILTROS_VAZIOS)}
+              >
+                limpar
+              </Button>
+            </>
+          ) : null}
+        </div>
+
+        <SheetContent
+          side="bottom"
+          className="max-h-[85vh] space-y-4 overflow-y-auto"
+          data-testid="painel-filtros"
+        >
+          <SheetHeader>
+            <SheetTitle>Filtros</SheetTitle>
+            <SheetDescription>
+              Conta, período e situação decidem o que é BUSCADO no servidor. A
+              busca por texto roda só sobre o que já carregou.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="filtro-conta">Conta</Label>
+            <select
+              id="filtro-conta"
+              className={SELECT_CLASSNAME}
+              data-testid="filtro-conta"
+              value={contaId}
+              onChange={(e) => aplicarFiltros({ contaId: e.target.value })}
+            >
+              <option value="">Todas as contas</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="filtro-de">De</Label>
+              <Input
+                id="filtro-de"
+                type="date"
+                data-testid="filtro-de"
+                value={de}
+                onChange={(e) => aplicarFiltros({ de: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="filtro-ate">Até</Label>
+              <Input
+                id="filtro-ate"
+                type="date"
+                data-testid="filtro-ate"
+                value={ate}
+                onChange={(e) => aplicarFiltros({ ate: e.target.value })}
+              />
+            </div>
+          </div>
+          {periodoInvalido ? (
+            <p
+              role="alert"
+              className="text-destructive text-sm"
+              data-testid="periodo-invalido"
+            >
+              A data inicial é depois da final — assim nenhum lançamento pode
+              bater, e a lista vazia não significa que não há nada no período.
+            </p>
+          ) : null}
+
           {/* O alvo real é o `<label>` inteiro (ele embrulha o input), não o
               quadradinho de 13,6×16 px — `ALVO_LINHA` só garante que a faixa
               tenha os 44 px de altura. */}
@@ -835,21 +1077,46 @@ export function ExtratoPage() {
               className={CHECKBOX_CLASSNAME}
               data-testid="filtro-nao-pagos"
               checked={somenteNaoPagos}
-              onChange={(e) => trocarFiltro(e.target.checked)}
+              onChange={(e) =>
+                aplicarFiltros({ somenteNaoPagos: e.target.checked })
+              }
             />
             Só o que falta marcar como pago
           </label>
+
           <div className="space-y-1.5">
             <Label htmlFor="busca">Buscar (no que já carregou)</Label>
             <Input
               id="busca"
               value={busca}
               placeholder="descrição, conta ou categoria"
-              onChange={(e) => setBusca(e.target.value)}
+              onChange={(e) => aplicarFiltros({ busca: e.target.value })}
             />
           </div>
-        </CardContent>
-      </Card>
+
+          <SheetFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className={ALVO_LINHA}
+              data-testid="limpar-filtros-painel"
+              disabled={resumo.length === 0}
+              onClick={() => aplicarFiltros(FILTROS_VAZIOS)}
+            >
+              Limpar filtros
+            </Button>
+            <SheetClose asChild>
+              <Button
+                type="button"
+                className={ALVO_LINHA}
+                data-testid="ver-resultado"
+              >
+                Ver lançamentos
+              </Button>
+            </SheetClose>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Card>
         <CardContent className="pt-6">
@@ -858,11 +1125,15 @@ export function ExtratoPage() {
               Carregando…
             </p>
           ) : visiveis.length === 0 ? (
+            // ⚠️ Com filtro ligado, "Nenhum lançamento ainda" seria MENTIRA —
+            // e a mais cara desta tela, porque o dono concluiria que o
+            // livro-caixa está vazio quando o que está vazio é o recorte. O
+            // vazio filtrado nomeia o recorte e aponta o "limpar".
             <p className="text-muted-foreground text-sm" data-testid="vazio">
               {linhas.length > 0
                 ? 'Nenhum lançamento carregado bate com essa busca. Tente "carregar mais" ou outro termo.'
-                : somenteNaoPagos
-                  ? 'Nada esperando pagamento por aqui — tudo que foi carregado já está marcado como pago.'
+                : resumo.length > 0
+                  ? `Nenhum lançamento bate com os filtros ativos (${resumo.join(' · ')}). Isso não quer dizer que não há lançamentos — use "limpar" pra ver tudo.`
                   : 'Nenhum lançamento ainda. Registre o primeiro em Lançar.'}
             </p>
           ) : menorQueSm ? (
