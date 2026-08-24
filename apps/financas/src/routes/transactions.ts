@@ -4,6 +4,7 @@ import {
   createTransfer,
   deleteTransaction,
   inspectTransaction,
+  listOpenBills,
   listTransactions,
   payBill,
   PayBillError,
@@ -524,6 +525,46 @@ transactionsRoutes.post('/transfers', async (c) => {
 // (`over_allocation`, `debt_has_ledger`, `transaction_has_owner` — todas
 // "repetir não adianta"). O 409 aqui divergiria delas sem ganho.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GET /api/bills?card_account_id=<id> — as faturas EM ABERTO de um cartão.
+//
+// A leitura que faltava pra existir uma TELA de pagamento: ela precisa mostrar
+// competência, total e QUANTAS linhas serão liquidadas ANTES de qualquer
+// toque, e nenhuma rota respondia isso (ver o comentário de `listOpenBills`,
+// com o motivo medido de `GET /api/transactions` e de
+// `GET /api/reports/commitments` não servirem).
+//
+// `card_account_id` é OBRIGATÓRIO — e não "opcional, senão todas as contas".
+// Sem ele a rota varreria `transactions` inteira agrupando por conta, e no D1
+// quem paga por linha escaneada é o dono; a tela sempre sabe de qual cartão
+// está falando (ela abre A PARTIR da linha do cartão em `#/contas`).
+//
+// 400 `invalid_query` para parâmetro ausente segue `reports.ts`/`debts.ts` (a
+// convenção para query string malformada), NÃO o 422 `invalid_limit` de
+// `GET /transactions` — aquele 422 é dívida própria daquela rota, travada por
+// teste desde a fatia ①, não o padrão a propagar.
+//
+// ⚠️ Conta inexistente ou que não é cartão devolve `[]`, não erro: a lista
+// vazia é a resposta verdadeira ("não há fatura aberta") e a tela só oferece o
+// gatilho em linha de `credit_card`. Gastar um SELECT em `accounts` só pra
+// distinguir "cartão sem fatura" de "não é cartão" seria uma leitura a mais
+// por uma diferença que nenhuma tela exibe — `payBill` faz essa checagem no
+// caminho de ESCRITA, que é onde ela decide alguma coisa.
+// ---------------------------------------------------------------------------
+
+transactionsRoutes.get('/bills', async (c) => {
+  const card_account_id = c.req.query('card_account_id')
+  if (card_account_id === undefined || card_account_id === '') {
+    return errJson(
+      400,
+      'invalid_query',
+      'card_account_id e obrigatorio',
+      'card_account_id',
+    )
+  }
+  return okJson(await listOpenBills(c.env.DB, card_account_id))
+})
 
 type PayBillBody = {
   card_account_id?: unknown

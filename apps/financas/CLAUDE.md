@@ -926,7 +926,90 @@ Vive em `transactionsRoutes` (já montado em `app.route('/api', ...)`, acima do 
 
 ⚠️ **A última mutação NÃO matava nada na primeira tentativa, e o TESTE foi corrigido em vez de aceito** — sem relógio fixo, a data UTC e a de Teresina coincidem na maior parte do dia. O teste passou a fixar `2026-09-06T01:00:00Z` (22h de 05/09 em Teresina); com isso a mutação mata.
 
-**Fora de escopo, registrado:** não há **tela** — a rota existe e nenhum `web/src` a consome ainda (o `#/extrato` segue como único caminho pela interface). Também não há **desfazer** um pagamento de fatura: seria apagar a transferência (o `DELETE` já cascateia as duas pernas) e `unsettle` linha a linha; e pagamento **parcial**, que exige a entidade Bill.
+✅ **A TELA chegou na fatia seguinte** — ver _A tela de pagar fatura_ logo abaixo. Continua não havendo **desfazer** um pagamento de fatura (seria apagar a transferência — o `DELETE` já cascateia as duas pernas — e `unsettle` linha a linha), nem pagamento **parcial**, que exige a entidade Bill.
+
+## A tela de pagar fatura (`web/src/blocos/PagarFatura.tsx` + `GET /api/bills`)
+
+`payBill` existia, era testada e **inalcançável por qualquer toque** — o `#/extrato` seguia como único caminho, uma linha por vez. Fatia de LEITURA + uma rota de leitura: `packages/ui` (**97**) e `packages/tools` (**158**) intocados, **nenhuma migration**, nenhuma rota de escrita nova.
+
+### ⚠️ Onde a tela mora, e o custo medido de cada alternativa
+
+**Um `Sheet` a partir da LINHA DO CARTÃO em `#/contas` — zero destino novo no `<nav>`, zero rota nova.** Os três candidatos foram pesados:
+
+| Candidato                   | Custo                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tela própria `#/faturas`    | Seria o **15º** destino. O nav já foi reduzido a 5 primários + "Mais" porque 14 não cabem; pagar fatura é **mensal**, então pelo critério de frequência nunca seria primária — e no "Mais" seria um 15º item que só acha quem já sabe que a resposta se chama "fatura".                                                                                    |
+| `Sheet` do `#/comprometido` | É lá que a fatura aparece como compromisso, mas aquela tela responde OUTRA pergunta: mostra **faixas** (min/max) de 6 meses, misturando parcela prevista com recorrente em faixa — não é o valor pagável desta fatura. E ela não carrega `balance_cents` de conta nenhuma: o saldo da origem (requisito) exigiria um segundo fetch.                        |
+| **`#/contas` (escolhida)**  | É onde o cartão mora e onde o **saldo negativo dele está à vista** — exatamente o número que este pagamento zera. E o `GET /api/accounts` que a página já faz traz `kind` e `balance_cents` de TODAS as contas: a origem e o saldo dela já estão em memória, **sem uma requisição a mais**. O painel só pede o que a página não tem: as faturas em aberto. |
+
+`@piluvitu/ui/sheet` custa **0 kB a mais** — mesmo `@radix-ui/react-dialog` que o `Dialog` de `accounts.tsx` já traz.
+
+### `GET /api/bills?card_account_id=` — a leitura que faltava
+
+⚠️ **O número que mais importa na tela — QUANTAS linhas serão liquidadas — não era obtenível por nenhuma rota.** `GET /api/transactions` não filtra por `bill_competence` e é paginada por keyset com teto: contar no cliente daria o tamanho da PÁGINA, não o da fatura — numa fatura de 40 compras a tela diria "12 lançamentos" com a confiança de um número exato. `GET /api/reports/commitments` devolve faixas por conta/competência, sem contagem de linha nenhuma.
+
+⚠️ **O `WHERE` de `listOpenBills` é BYTE A BYTE o de `payBill`, e essa igualdade é o contrato inteiro.** Qualquer divergência faz a tela prometer um total/N que o servidor recusa ou cumpre com outro número — a classe de defeito das "duas vozes" que bloqueou cartão em `transferir.tsx`. `HAVING SUM(amount_cents) < 0` é a mesma leitura do `nothing_to_pay`: competência que fecha em crédito não é fatura a pagar, e a tela não deve oferecer um botão que o servidor vai recusar. Total sai **positivo** (`-SUM`).
+
+`card_account_id` **obrigatório** (400 `invalid_query`, a convenção de `reports.ts` — não o 422 de `GET /transactions`, que é dívida própria daquela rota): sem ele a rota varreria `transactions` inteira, e no D1 quem paga por linha escaneada é o dono. Conta inexistente ou que não é cartão devolve `[]`, não erro — a lista vazia é a resposta verdadeira, e `payBill` faz essa checagem no caminho de ESCRITA, que é onde ela decide algo.
+
+### O que a tela mostra ANTES de pagar
+
+Competência (seletor só quando há **mais de uma** aberta — um `<select>` de opção única é alvo de toque que não faz nada), o total como `NumeroCard` `escala="heroi"` (30px, COM centavos), e **o N no contexto do número**, não numa linha perdida. A origem sai de um `<select>` com `rotuloConta` (nome · saldo), e um aviso — **nunca bloqueio** — quando o saldo não cobre: gastar mais do que a conta tem é decisão do dono (o servidor aceita e o saldo fica negativo), mas ele precisa ver antes. Data default `todayInTeresina()`, **relida a cada abertura** (um painel reaberto no dia seguinte não pode oferecer a data de ontem).
+
+`rotuloConta` **mudou de casa** (`pages/transferir.tsx` → `lib/contas.ts`) ao ganhar o segundo consumidor: bloco importando de PÁGINA é seta na direção errada. `transferir.tsx` reexporta o nome, então nada que já importava de lá quebrou.
+
+⚠️ **`expected_amount_cents` vai no corpo — é CONFIRMAÇÃO, nunca valor parcial:** se uma compra for importada entre a renderização e o toque, o total muda sem o dono ver e o servidor recusa (`amount_mismatch`) em vez de pagar outro número.
+
+### ⚠️⚠️ O defeito que SÓ o navegador acusou: o diálogo fechando dentro do gesto
+
+A versão anterior fazia `setConfirmando(false)` como primeira linha de `pagar()`, ainda DENTRO do handler do toque. **MEDIDO em Chrome real a 390×844 com `page.tap`:** o React 19 aplicava a mudança na hora, o diálogo desmontava no MEIO do gesto, e o `click` que vem depois do `pointerup` caía no overlay do `Sheet` atrás — **fechando o painel inteiro**. O `POST` saía, voltava `422`, e o dono via o painel sumir **sem erro nenhum na tela**. jsdom não faz hit testing nem sequência real de ponteiro: os testes passavam com o defeito de pé.
+
+Corrigido fechando o diálogo **depois do `await`** — o desmonte cai numa tarefa posterior, o gesto já terminou. De brinde, o diálogo mostra "Pagando…" na camada que o dono está olhando. Com o envio em voo o diálogo **não se deixa fechar** (nem `Esc`, nem toque fora): quem o fecha é o fim da operação, e só ele sabe se deu certo.
+
+### Confirmação, recarga e a trava
+
+⚠️ **`Dialog` de `@piluvitu/ui/dialog`, nunca `window.confirm()`** (o Chrome Android devolve `false` em silêncio depois de "impedir caixas de diálogo adicionais"). O texto diz as **duas** metades — liquida N lançamentos **E** move o dinheiro — porque só uma seria mentira por omissão, e diz que **não há desfazer em lote**. Fica FORA do `SheetContent` (irmão): empilha por cima do painel, que continua aberto atrás.
+
+⚠️ **`mutarERecarregar` (10º call site)**, mutação e recarga em `try` separados. Aqui a regra vale mais que em qualquer outra tela: um POST 201 seguido de um GET que cai faria a tela dizer "falhou" para um pagamento que ACONTECEU — e o reenvio é a fatura paga **duas vezes**. A mensagem nomeia o estrago, e um estado `pago` **trava o botão** depois que só a recarga falhou: a mensagem avisa, a trava impede.
+
+### Mobile — MEDIDO em Chrome real a 390×844 (`hasTouch`/`isMobile`)
+
+`scrollWidth === clientWidth === 390` em `#/contas` e com o painel aberto; painel `x:0, width:390`, diálogo `x:0, width:390`. Botão "Pagar fatura" **340×44**, gatilho "pagar fatura" **86,9×44**.
+
+⚠️ **A recusa do servidor fica visível — e o que a protege NÃO é o `scroll-padding-bottom` do `html`.** MEDIDO: alerta em `top: 659,6 / bottom: 759,6` contra a tab bar em `y=787` — **27,4 px acima** dela, e `elementFromPoint` no topo e no fundo devolve o próprio alerta. Quem rola é o `SheetContent` (container de rolagem próprio, o padding do `html` não governa esta rolagem); quem protege é o **empilhamento**, painel `z-50` contra tab bar `z-40`. Não afrouxar nenhum dos dois achando que o outro cobre.
+
+⚠️ **Defeito de alvo introduzido por esta fatia e corrigido nela: `gap: 0` entre "pagar fatura" e "arquivar".** Sozinho na célula, `arquivar` não tinha vizinho; com o gatilho ao lado, o `gap-x-4` (16 px) menos o `-mx-2` dos DOIS alvos deixava as áreas de toque **encostando exatamente** (pagar terminando em x=119,9, arquivar começando em x=119,9). Com ~34 px de contato o polegar cobre os dois — e um alvo **move dinheiro** enquanto o outro é destrutivo sem desfazer pela interface. É o mesmo defeito que criou `ALVO_LINK_FIM` em `#/extrato` (`apagar` a 12 px de `editar`), aqui pior. `arquivar` passou a `ALVO_LINK_FIM`: **76 px** de separação, e de brinde ele cai no mesmo x em toda linha, com ou sem cartão.
+
+### Suítes e mutação
+
+**Worker 835 → 846** (+11: 7 em `domain/transactions.test.ts`, 4 em `routes/transactions.test.ts`). **SPA 688 → 708** (+20: 17 em `blocos/PagarFatura.test.tsx`, 3 em `pages/accounts.test.tsx`). `packages/ui` **97** e `packages/tools` **158** intocados. `tsc --noEmit` e prettier limpos nos dois lados; os dois gates de build com exit 0 e **um** único chunk lazy.
+
+⚠️ **Verificado por MUTAÇÃO — 13, cada uma matando só o teste certo pelo motivo certo** (revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`; `git status --porcelain -uall` conferido depois):
+
+| Mutação                                                 | Falha observada                                |
+| ------------------------------------------------------- | ---------------------------------------------- |
+| o N deixa de ser mostrado                               | 3 — o número que a tela existe pra expor       |
+| sem `expected_amount_cents` no POST                     | 1                                              |
+| data default em UTC cru                                 | 2                                              |
+| cartão entra na lista de origens                        | 1                                              |
+| `saldoNaoCobre` sempre `false`                          | 1                                              |
+| sem `Dialog` (o botão paga direto)                      | 6 — morrem na ABERTURA do diálogo              |
+| recarga DENTRO do `try` da mutação                      | 1 — "FOI PAGA" vira a mensagem do GET que caiu |
+| sem `scrollIntoView` no alerta                          | 1                                              |
+| `setConfirmando(false)` ANTES do `await`                | 1                                              |
+| sem a trava depois da recarga falhar                    | 1                                              |
+| mensagem de recarga genérica                            | 1 — perde o aviso de "pagaria duas vezes"      |
+| `arquivar` de volta a `ALVO_LINK` (os alvos encostam)   | 1                                              |
+| **Worker:** sem `settled_at IS NULL` em `listOpenBills` | 3 — a leitura deixa de concordar com a escrita |
+| **Worker:** sem `HAVING SUM < 0`                        | 1 — a tela ofereceria o que `payBill` recusa   |
+| **Worker:** sem o filtro `transfer_id`                  | 1                                              |
+| **Worker:** `listOpenBills` ignora o cartão pedido      | 1                                              |
+| **Worker:** `card_account_id` ausente não é recusado    | 1                                              |
+| **Worker:** total sem inverter o sinal                  | 7                                              |
+
+**Bundle (`vite build`):** JS principal **156,40 kB gzip**; CSS **8,08 kB gzip**; chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova.
+
+**Fora de escopo, registrado:** continua não havendo **desfazer** um pagamento nem pagamento **parcial** (exige a entidade Bill). A tela não oferece pagar fatura de competência FUTURA que ainda não fechou — só o que `listOpenBills` devolve.
 
 ## Import de fatura e extrato (fatia ②, Task 3 — `src/domain/import.ts` + `src/routes/import.ts`)
 

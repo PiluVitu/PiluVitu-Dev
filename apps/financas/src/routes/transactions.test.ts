@@ -1275,3 +1275,84 @@ describe('POST /api/bills/pay', () => {
     expect(json.notifications[0].code).toBe('invalid_json')
   })
 })
+
+// ---------------------------------------------------------------------------
+// GET /api/bills — as faturas em aberto que a TELA de pagamento lê.
+// ---------------------------------------------------------------------------
+describe('GET /api/bills', () => {
+  async function cartaoComFatura() {
+    const card = await createAccount(env.DB, {
+      name: 'Cartao rota bills',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 25,
+      due_day: 5,
+    })
+    for (const [desc, cents, dia] of [
+      ['Padaria', 3000, '2026-07-10'],
+      ['Mercado', 12000, '2026-07-28'],
+      ['Posto', 8000, '2026-07-29'],
+    ] as const) {
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -cents,
+        purchase_date: dia,
+        description: desc,
+      })
+    }
+    return card
+  }
+
+  it('devolve competencia, total e contagem de linhas do cartao pedido', async () => {
+    const card = await cartaoComFatura()
+    const res = await get(`/api/bills?card_account_id=${card.id}`)
+    expect(res.status).toBe(200)
+
+    const body =
+      await envelope<
+        Array<{ competence: string; amount_cents: number; line_count: number }>
+      >(res)
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual([
+      { competence: '2026-07', amount_cents: 3000, line_count: 1 },
+      { competence: '2026-08', amount_cents: 20000, line_count: 2 },
+    ])
+  })
+
+  it('so devolve as faturas do cartao pedido, nunca as de outro', async () => {
+    const card = await cartaoComFatura()
+    const outro = await createAccount(env.DB, {
+      name: 'Outro cartao bills',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 25,
+      due_day: 5,
+    })
+    await createTransaction(env.DB, {
+      account_id: outro.id,
+      amount_cents: -77700,
+      purchase_date: '2026-07-28',
+      description: 'Compra do outro',
+    })
+
+    const body = await envelope<Array<{ amount_cents: number }>>(
+      await get(`/api/bills?card_account_id=${card.id}`),
+    )
+    expect(body.data.map((b) => b.amount_cents)).toEqual([3000, 20000])
+  })
+
+  it('card_account_id ausente devolve 400 nomeando o parametro', async () => {
+    const res = await get('/api/bills')
+    expect(res.status).toBe(400)
+    const body = await envelope<null>(res)
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('invalid_query')
+    expect(body.notifications[0].field).toBe('card_account_id')
+  })
+
+  it('conta inexistente devolve lista vazia, nao erro', async () => {
+    const res = await get('/api/bills?card_account_id=nao-existe')
+    expect(res.status).toBe(200)
+    expect((await envelope<unknown[]>(res)).data).toEqual([])
+  })
+})

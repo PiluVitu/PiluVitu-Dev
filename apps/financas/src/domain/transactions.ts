@@ -1061,3 +1061,72 @@ export async function payBill(
     inbound,
   }
 }
+
+// ---------------------------------------------------------------------------
+// AS FATURAS EM ABERTO DE UM CARTÃO — a leitura que a TELA de pagar precisa.
+//
+// ⚠️ Existe porque o número que mais importa na tela de pagamento — QUANTAS
+// linhas vão ser liquidadas — não era obtenível por nenhuma rota:
+//
+//   - `GET /api/transactions` não filtra por `bill_competence` (só
+//     account_id/from/to/settled) E é paginada por KEYSET com limite. Contar
+//     no cliente daria o tamanho da PÁGINA, não o da fatura: numa fatura de
+//     40 compras a tela diria "12 lançamentos" com a confiança de um número
+//     exato. O dono está prestes a mexer em N linhas de uma vez — mostrar o N
+//     errado é pior que não mostrar nenhum.
+//   - `GET /api/reports/commitments` devolve FAIXAS (min/max) por conta e
+//     competência, misturando parcela prevista com recorrente em faixa. Não é
+//     o valor pagável desta fatura, e não tem contagem de linha nenhuma.
+//
+// ⚠️ O `WHERE` daqui é BYTE A BYTE o de `payBill` (o `resumo` e o UPDATE de
+// liquidação), e essa igualdade é o contrato inteiro desta função. Qualquer
+// divergência faz a tela prometer um total/N que o servidor então recusa ou
+// cumpre com outro número — exatamente a classe de defeito das "duas vozes"
+// que bloqueou cartão em `pages/transferir.tsx`. Ao mexer numa, mexer na
+// outra.
+//
+// `HAVING SUM(amount_cents) < 0` é a MESMA leitura do `nothing_to_pay` de
+// `payBill` (e do `HAVING` de `commitments()`): competência que fecha em
+// crédito (estorno maior que as compras) não é fatura a pagar, e a tela não
+// deve oferecer um botão que o servidor vai recusar.
+// ---------------------------------------------------------------------------
+
+export type OpenBill = {
+  /** Competência `YYYY-MM` — o mês em que a fatura FECHA. */
+  competence: string
+  /** Valor a pagar, POSITIVO (as compras são negativas no livro-caixa). */
+  amount_cents: number
+  /** ⚠️ Quantas linhas serão liquidadas. É o número que a tela precisa expor. */
+  line_count: number
+}
+
+/**
+ * Faturas EM ABERTO de um cartão, da mais antiga pra mais nova.
+ *
+ * Só devolve competência que `payBill` de fato aceitaria pagar: com linha em
+ * aberto (nunca `already_paid`) e com saldo devedor (nunca `nothing_to_pay`).
+ * Cartão sem nenhuma fatura aberta devolve `[]` — não é erro.
+ */
+export async function listOpenBills(
+  db: D1Database,
+  card_account_id: string,
+): Promise<OpenBill[]> {
+  const res = await db
+    .prepare(
+      `SELECT bill_competence          AS competence,
+              -SUM(amount_cents)       AS amount_cents,
+              COUNT(*)                 AS line_count
+         FROM transactions
+        WHERE account_id      = ?
+          AND bill_competence IS NOT NULL
+          AND settled_at      IS NULL
+          AND transfer_id     IS NULL
+          AND parent_id       IS NULL
+        GROUP BY bill_competence
+       HAVING SUM(amount_cents) < 0
+        ORDER BY bill_competence`,
+    )
+    .bind(card_account_id)
+    .all<OpenBill>()
+  return res.results
+}

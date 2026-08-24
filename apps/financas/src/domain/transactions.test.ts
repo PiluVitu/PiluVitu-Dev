@@ -13,6 +13,7 @@ import {
   createTransfer,
   deleteTransaction,
   inspectTransaction,
+  listOpenBills,
   listTransactions,
   payBill,
   PayBillError,
@@ -1625,5 +1626,165 @@ describe('payBill', () => {
     )
     expect(err).toBeInstanceOf(PayBillError)
     expect(err?.message).not.toMatch(/SQLITE|D1_ERROR|FOREIGN KEY/i)
+  })
+})
+
+describe('listOpenBills', () => {
+  // Cartão que fecha dia 25: 10/07 cai na fatura de JULHO, 28/07 e 02/08 caem
+  // na de AGOSTO — duas competências abertas no mesmo cartão, que é o caso
+  // que a tela precisa saber separar.
+  async function cartaoComDuasFaturas() {
+    const card = await cartao('Nubank duas faturas', 25)
+    for (const [desc, cents, dia] of [
+      ['Padaria', 3000, '2026-07-10'],
+      ['Mercado', 12000, '2026-07-28'],
+      ['Posto', 8000, '2026-08-02'],
+    ] as const) {
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -cents,
+        purchase_date: dia,
+        description: desc,
+      })
+    }
+    return card
+  }
+
+  it('agrupa por competencia com total POSITIVO e a contagem de linhas', async () => {
+    const card = await cartaoComDuasFaturas()
+
+    // Da mais antiga pra mais nova — a fatura vencida primeiro.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([
+      { competence: '2026-07', amount_cents: 3000, line_count: 1 },
+      { competence: '2026-08', amount_cents: 20000, line_count: 2 },
+    ])
+  })
+
+  it('nao conta linha JA liquidada, e a competencia some quando todas caem', async () => {
+    const card = await cartaoComDuasFaturas()
+    const [julho] = await listTransactions(env.DB, {
+      account_id: card.id,
+      from: '2026-07-10',
+      to: '2026-07-10',
+    })
+    await settleTransaction(env.DB, julho.id, '2026-07-20')
+
+    // Julho tinha UMA linha só: liquidada, a competência inteira sai da lista.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([
+      { competence: '2026-08', amount_cents: 20000, line_count: 2 },
+    ])
+  })
+
+  it('competencia que fecha em CREDITO nao aparece — e e a mesma que payBill recusa', async () => {
+    const card = await cartao('Cartao com estorno', 25)
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -5000,
+      purchase_date: '2026-07-28',
+      description: 'Compra',
+    })
+    await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: 9000,
+      purchase_date: '2026-07-29',
+      description: 'Estorno maior',
+    })
+
+    // A tela não pode oferecer um botão que o servidor então recusa: a lista
+    // vem vazia pelo MESMO critério (`HAVING SUM < 0`) do `nothing_to_pay`.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([])
+
+    const conta = await contaCorrente('Corrente estorno')
+    await expect(
+      payBill(env.DB, {
+        card_account_id: card.id,
+        // Fecha dia 25: as duas linhas de 28 e 29/07 caem na fatura de AGOSTO.
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        from_account_id: conta.id,
+      }),
+    ).rejects.toMatchObject({ code: 'nothing_to_pay' })
+  })
+
+  it('a fatura some da lista depois de paga — a leitura e a escrita concordam', async () => {
+    const card = await cartaoComDuasFaturas()
+    const conta = await contaCorrente('Corrente paga fatura', 500000)
+
+    const antes = await listOpenBills(env.DB, card.id)
+    const agosto = antes.find((b) => b.competence === '2026-08')!
+
+    const res = await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+      // ⚠️ O total que a TELA leu vai como confirmação: se as duas consultas
+      // discordassem, isto viraria `amount_mismatch` em vez de pagamento.
+      expected_amount_cents: agosto.amount_cents,
+    })
+
+    // O N que a tela mostrou é o N que o servidor liquidou.
+    expect(res.settled_count).toBe(agosto.line_count)
+    expect(res.amount_cents).toBe(agosto.amount_cents)
+
+    // Julho continua aberta: pagar agosto não tocou na outra competência.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([
+      { competence: '2026-07', amount_cents: 3000, line_count: 1 },
+    ])
+  })
+
+  it('a perna da transferencia que cai no cartao nao vira fatura nova', async () => {
+    const card = await cartaoComDuasFaturas()
+    const conta = await contaCorrente('Corrente perna', 500000)
+    await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+    })
+
+    // A perna de ENTRADA é +25000 no próprio cartão. Se ela contasse, a lista
+    // ganharia uma competência (ou mudaria o total de julho).
+    const abertas = await listOpenBills(env.DB, card.id)
+    expect(abertas).toEqual([
+      { competence: '2026-07', amount_cents: 3000, line_count: 1 },
+    ])
+  })
+
+  // ⚠️ Este teste existe porque a MUTAÇÃO do filtro `transfer_id IS NULL` não
+  // matava nada, e a razão é real: hoje `createTransfer`/`payBill` gravam as
+  // pernas com `bill_competence` NULL, então o filtro `bill_competence IS NOT
+  // NULL` já as descarta sozinho — o de `transfer_id` é DEFENSIVO (o mesmo
+  // raciocínio, e as mesmas palavras, do comentário de `payBill`). Um guard
+  // que nenhum teste cobre é um guard que alguém apaga por parecer redundante,
+  // e a redundância acabaria no instante em que uma perna passasse a carregar
+  // competência. O cenário é forjado com UPDATE justamente porque o domínio
+  // ainda não sabe produzi-lo.
+  it('perna de transferencia COM competencia continua fora — o guard e defensivo, nao inerte', async () => {
+    const card = await cartaoComDuasFaturas()
+
+    // Uma linha normal do cartão (nasce com bill_competence derivado) que
+    // passa a carregar `transfer_id` — a forma que uma perna teria se
+    // `createTransfer` um dia derivasse competência.
+    const [julho] = await listTransactions(env.DB, {
+      account_id: card.id,
+      from: '2026-07-10',
+      to: '2026-07-10',
+    })
+    await env.DB.prepare(
+      "UPDATE transactions SET transfer_id = 'transferencia-forjada' WHERE id = ?",
+    )
+      .bind(julho.id)
+      .run()
+
+    // Sem o filtro de `transfer_id`, julho voltaria como fatura em aberto.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([
+      { competence: '2026-08', amount_cents: 20000, line_count: 2 },
+    ])
+  })
+
+  it('cartao sem fatura aberta devolve lista vazia, nao erro', async () => {
+    const card = await cartao('Cartao zerado', 25)
+    expect(await listOpenBills(env.DB, card.id)).toEqual([])
   })
 })

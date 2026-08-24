@@ -7,6 +7,7 @@ import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { ordenarPorHierarquia, type CategoryView } from '../lib/categories'
+import { rotuloConta } from '../lib/contas'
 import { isRealCalendarDate, todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
@@ -64,22 +65,13 @@ function categoriaOferecivel(c: CategoryView): boolean {
 }
 
 /**
- * Rótulo da conta no `<select>`, com o SALDO junto.
- *
- * ⚠️ **Esta era a única operação do app em que o dono decidia um valor às
- * cegas.** Escolher a conta de origem é escolher de onde o dinheiro sai — e a
- * pergunta "tem quanto lá?" ficava a uma tela de distância (`#/contas`),
- * enquanto `balance_cents` já vinha carregado em `AccountView`, no mesmo
- * `GET /api/accounts` que preenche este select. Transferir mais do que a
- * conta tem não é recusado por ninguém: as duas pernas gravam, o saldo fica
- * negativo, e o erro só aparece depois.
- *
- * Vale pros DOIS selects, não só o de origem: o destino com saldo à vista é
- * o que deixa conferir, sem sair da tela, que o dinheiro chegou onde devia.
+ * ⚠️ `rotuloConta` MUDOU DE CASA (`lib/contas.ts`) ao ganhar o segundo
+ * consumidor, `blocos/PagarFatura.tsx` — o raciocínio inteiro (o saldo à
+ * vista como conserto de "decidir às cegas") mora lá. Continua reexportado
+ * daqui porque este arquivo é onde ele nasceu e é de onde os testes já
+ * importavam; o `export` é um alias, nunca uma segunda implementação.
  */
-export function rotuloConta(c: AccountView): string {
-  return `${c.name} · ${formatBRL(c.balance_cents)}`
-}
+export { rotuloConta }
 
 export function TransferirPage() {
   const [contas, setContas] = useState<AccountView[]>([])
@@ -108,6 +100,14 @@ export function TransferirPage() {
    * seja: transferir para o cartão por ESTA tela continua sendo a coisa
    * errada (ela não liquida nada); quem paga fatura é aquela rota. Não
    * afrouxar este filtro para "resolver" pagamento de fatura.
+   *
+   * ⚠️ E A ROTA AGORA TEM TELA, então o bloqueio deixou de ser um beco sem
+   * saída: **`#/contas` → linha do cartão → "pagar fatura"**
+   * (`blocos/PagarFatura.tsx`), o painel que mostra competência, total, N
+   * lançamentos a liquidar e o saldo da conta de onde o dinheiro sai. É pra
+   * lá que se manda quem chegou aqui querendo "transferir pro cartão" — antes
+   * desta tela a resposta honesta era "não dá pela interface", e era ela que
+   * pressionava por afrouxar este filtro.
    */
   const contasTransferiveis = useMemo(
     () => contas.filter((c) => c.kind !== 'credit_card'),

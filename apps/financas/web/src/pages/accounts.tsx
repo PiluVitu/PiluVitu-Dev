@@ -17,9 +17,10 @@ import {
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
+import { PagarFatura } from '../blocos/PagarFatura'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
-import { ALVO_LINK } from '../lib/touch'
+import { ALVO_LINK_FIM } from '../lib/touch'
 import { NUMERO_HEROI, ROTULO } from '../lib/tipografia'
 
 export type AccountView = {
@@ -305,14 +306,51 @@ export function AccountsPage() {
                                 flexível), não uma coluna "Ações" nova — a ~390px
                                 uma 3ª coluna sai cortada, achado já medido em
                                 debt-detail.tsx. */}
-                            <div>
+                            <div className="flex flex-wrap items-center gap-x-4">
+                              {/*
+                                ⚠️ "pagar fatura" só existe em linha de CARTÃO,
+                                e é aqui que ela mora porque é aqui que o saldo
+                                negativo do cartão está à vista — o número que
+                                este pagamento zera. O painel recebe `accounts`
+                                inteiro (a origem do dinheiro e o SALDO dela já
+                                vieram no mesmo GET) e `carregar` (os dois
+                                saldos mudam). Ver o cabeçalho de
+                                `blocos/PagarFatura.tsx` pros três candidatos de
+                                lugar e por que este ganhou.
+                              */}
+                              {a.kind === 'credit_card' ? (
+                                <PagarFatura
+                                  cartao={a}
+                                  contas={accounts}
+                                  recarregarContas={carregar}
+                                />
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="link"
                                 size="sm"
+                                /* ⚠️ `ALVO_LINK_FIM`, nunca `ALVO_LINK` — e a
+                                   troca é conserto de um defeito MEDIDO em
+                                   Chrome real a 390×844 NESTA fatia. Sozinho na
+                                   célula (o estado anterior) `arquivar` não
+                                   tinha vizinho; com "pagar fatura" ao lado, o
+                                   `gap-x-4` (16 px) menos o `-mx-2` dos DOIS
+                                   alvos dava **gap: 0** — as áreas de toque
+                                   encostando exatamente (pagar termina em
+                                   x=119,9 e arquivar começa em x=119,9). É o
+                                   mesmo defeito que criou esta constante em
+                                   `#/extrato` (`apagar` a 12 px de `editar`),
+                                   aqui pior: um dos alvos MOVE DINHEIRO e o
+                                   outro é destrutivo sem desfazer pela
+                                   interface. `ml-auto` empurra o destrutivo pra
+                                   outra ponta — MEDIDO depois: **76 px**
+                                   (arquivar sai de x=119,9 para x=195,9). De
+                                   brinde, `arquivar` passa a cair no MESMO x em
+                                   toda linha, com ou sem cartão: posição
+                                   previsível em vez de depender do vizinho. */
                                 className={cn(
                                   'text-destructive h-auto p-0 text-xs no-underline',
-                                  ALVO_LINK,
+                                  ALVO_LINK_FIM,
                                 )}
                                 aria-label={`Arquivar conta ${a.name}`}
                                 data-testid={`arquivar-${a.id}`}

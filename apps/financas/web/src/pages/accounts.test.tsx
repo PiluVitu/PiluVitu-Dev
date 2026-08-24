@@ -65,6 +65,7 @@ function mockRoutes(opts: {
   post?: { status: number; body: unknown }
   archive?: { status: number; body: unknown }
   getFalhaApartirDe?: number
+  bills?: unknown[]
 }) {
   let getCount = 0
   const fn = vi.fn(async (path: string, init?: RequestInit) => {
@@ -81,6 +82,19 @@ function mockRoutes(opts: {
         body: { ok: true, data: { id: 'nova' }, notifications: [] },
       }
       return { status: post.status, json: async () => post.body }
+    }
+    // `GET /api/bills` é do painel de pagar fatura (`blocos/PagarFatura.tsx`),
+    // roteado por PATH e FORA da contagem de `getCount` — ele não é uma
+    // recarga da lista de contas, e misturá-lo faria o "depois" chegar cedo.
+    if (path.startsWith('/api/bills')) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          data: opts.bills ?? [],
+          notifications: [],
+        }),
+      }
     }
     getCount++
     if (
@@ -697,6 +711,33 @@ describe('AccountsPage — alvo de toque do arquivar', () => {
     const botao = await screen.findByTestId('arquivar-a1')
     expect(botao.className).toContain('min-h-11')
   })
+
+  it('arquivar é empurrado pra outra ponta (ml-auto), longe do "pagar fatura"', async () => {
+    // ⚠️ MEDIDO em Chrome real a 390×844 nesta fatia: sozinho na célula (o
+    // estado anterior) `arquivar` não tinha vizinho. Com "pagar fatura" ao
+    // lado, o `gap-x-4` (16 px) menos o `-mx-2` dos DOIS alvos dava
+    // **gap: 0** — as áreas de toque encostando exatamente (pagar terminando
+    // em x=119,9, arquivar começando em x=119,9). Com ~34 px de contato, um
+    // polegar cobre os dois: um alvo MOVE DINHEIRO e o outro é destrutivo sem
+    // desfazer pela interface.
+    //
+    // É o mesmo defeito (e a mesma correção) já pagos em `#/extrato`, onde
+    // `apagar` a 12 px de `editar` fez nascer `ALVO_LINK_FIM`. Depois:
+    // **76 px** de separação.
+    //
+    // ⚠️ A asserção é sobre `ml-auto` E `min-h-11` juntos: `ALVO_LINK` puro
+    // também tem `min-h-11`, então checar só a altura passaria com os alvos
+    // de volta colados.
+    mockRoutes({ initial: contas })
+    render(<AccountsPage />)
+    const botao = await screen.findByTestId('arquivar-a1')
+    expect(botao.className).toContain('ml-auto')
+    expect(botao.className).toContain('min-h-11')
+    // ⚠️ E NUNCA o `-mx-2` de `ALVO_LINK`: as duas classes sobrevivendo
+    // juntas fazem quem vence depender da ordem no CSS emitido, não do
+    // código — o achado já medido em `lib/touch.ts`.
+    expect(botao.className).not.toContain('-mx-2')
+  })
 })
 
 describe('AccountsPage — o saldo não se parte em duas linhas', () => {
@@ -756,5 +797,63 @@ describe('AccountsPage — a linguagem: rótulo em versalete, total como manchet
     // 234012 + (-184790) + 412000 = 461222 — o número que não pode existir.
     expect(document.body.textContent).not.toContain('R$ 4.612,22')
     expect(screen.getByTestId('total-PF')).toHaveTextContent('R$ 492,22')
+  })
+  // -------------------------------------------------------------------------
+  // Pagar fatura — o painel mora AQUI (ver o cabeçalho de
+  // `blocos/PagarFatura.tsx` pros três candidatos de lugar). Estes testes
+  // provam o ponto de entrada; o comportamento do painel é coberto em
+  // `blocos/PagarFatura.test.tsx`.
+  // -------------------------------------------------------------------------
+
+  it('"pagar fatura" so existe na linha de CARTAO', async () => {
+    mockRoutes({ initial: contas })
+
+    render(<AccountsPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('grupo-PF')).toBeInTheDocument(),
+    )
+
+    // a2 é o cartão; a1 e a3 são contas correntes — conta corrente não tem
+    // fatura, e oferecer o link nelas seria oferecer o que não existe.
+    expect(screen.getByTestId('pagar-fatura-a2')).toBeInTheDocument()
+    expect(screen.queryByTestId('pagar-fatura-a1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pagar-fatura-a3')).not.toBeInTheDocument()
+  })
+
+  it('abrir o painel pela linha do cartao carrega a fatura daquele cartao', async () => {
+    const usuario = userEvent.setup()
+    const fetchMock = mockRoutes({
+      initial: contas,
+      bills: [{ competence: '2026-08', amount_cents: 184790, line_count: 40 }],
+    })
+
+    render(<AccountsPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('grupo-PF')).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByTestId('pagar-fatura-a2'))
+
+    // O painel recebe `accounts` e `carregar` do pai: o saldo da conta de
+    // ORIGEM (requisito da tela) já veio no MESMO GET /api/accounts, sem
+    // requisição a mais.
+    await waitFor(() =>
+      expect(screen.getByTestId('fatura-total-valor')).toHaveTextContent(
+        'R$ 1.847,90',
+      ),
+    )
+    expect(screen.getByTestId('fatura-linhas')).toHaveTextContent(
+      '40 lançamentos serão liquidados',
+    )
+    expect(
+      within(screen.getByTestId('fatura-origem')).getByRole('option', {
+        name: 'Nubank · R$ 2.340,12',
+      }),
+    ).toBeInTheDocument()
+
+    expect(
+      fetchMock.mock.calls.some(([path]) =>
+        (path as string).startsWith('/api/bills?card_account_id=a2'),
+      ),
+    ).toBe(true)
   })
 })
