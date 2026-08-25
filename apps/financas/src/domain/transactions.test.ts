@@ -1465,6 +1465,46 @@ describe('payBill', () => {
     expect(await saldoDe(card.id)).toBe(0)
   })
 
+  it('⚠️ duas chamadas CONCORRENTES não pagam a fatura duas vezes', async () => {
+    // MEDIDO pelo revisor, e é dinheiro: a checagem de `already_paid` era uma
+    // LEITURA fora do batch, então duas chamadas simultâneas passavam as
+    // duas. `Promise.allSettled` de dois `payBill` idênticos resolvia AMBAS,
+    // gravava **4 pernas**, deixava o cartão POSITIVO (+150000) e tirava
+    // R$ 1.500 da corrente **duas vezes**.
+    //
+    // ⚠️ E nenhum relatório denunciava: o consolidado continua batendo (o
+    // dinheiro "mudou de lugar" duas vezes). O erro só apareceria olhando o
+    // saldo do cartão e estranhando o sinal.
+    //
+    // O conserto põe a decisão DENTRO do batch (`INSERT ... WHERE EXISTS`),
+    // que no D1 é transação: as duas serializam e a segunda não acha linha
+    // não-liquidada.
+    const { card, conta } = await cenario()
+
+    const [a, b] = await Promise.allSettled([
+      pagar(card, conta),
+      pagar(card, conta),
+    ])
+
+    // Uma passa, a outra é recusada — nunca as duas.
+    const ok = [a, b].filter((r) => r.status === 'fulfilled')
+    expect(ok).toHaveLength(1)
+
+    // ⚠️ As asserções que importam são as de DINHEIRO, não a contagem de
+    // promessas: o cartão zera (nunca fica positivo) e a corrente perde o
+    // valor UMA vez.
+    expect(await saldoDe(card.id)).toBe(0)
+    expect(await saldoDe(conta.id)).toBe(475000)
+
+    // Duas pernas, não quatro.
+    const pernas = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id IS NOT NULL AND account_id IN (?, ?)',
+    )
+      .bind(card.id, conta.id)
+      .first<{ n: number }>()
+    expect(pernas?.n).toBe(2)
+  })
+
   it('recusa competência sem nenhuma linha', async () => {
     const { card, conta } = await cenario()
     await expect(

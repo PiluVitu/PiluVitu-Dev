@@ -77,6 +77,35 @@ const TX_VALUES = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 
 const INSERT_TX = `INSERT INTO transactions (${TX_COLUMNS}) VALUES ${TX_VALUES}`
 
+/**
+ * Mesmo INSERT, mas **condicionado a ainda existir fatura a pagar**.
+ *
+ * ⚠️ Existe por um defeito MEDIDO em `payBill`: a checagem de `already_paid`
+ * era uma LEITURA fora do batch, então duas chamadas CONCORRENTES passavam as
+ * duas. Reproduzido com `Promise.allSettled` de dois `payBill` idênticos:
+ * ambas resolveram, **4 pernas** gravadas, o cartão terminou **positivo**
+ * (+150000) e a corrente perdeu R$ 1.500 **duas vezes**.
+ *
+ * ⚠️ E nenhum relatório denunciava: o consolidado continua batendo (o dinheiro
+ * "mudou de lugar" duas vezes), então o erro só apareceria olhando o saldo do
+ * cartão e estranhando o sinal.
+ *
+ * O `WHERE EXISTS` põe a decisão DENTRO do batch, que no D1 é transação: duas
+ * chamadas serializam, e a segunda não acha linha não-liquidada — nenhuma
+ * perna nasce. O `UPDATE` seguinte já era `WHERE settled_at IS NULL`, então a
+ * liquidação sempre esteve protegida; quem não estava era o DINHEIRO.
+ */
+const INSERT_TX_SE_HA_FATURA = `INSERT INTO transactions (${TX_COLUMNS})
+  SELECT ${TX_VALUES.slice(1, -1)}
+   WHERE EXISTS (
+     SELECT 1 FROM transactions
+      WHERE account_id      = ?
+        AND bill_competence = ?
+        AND settled_at      IS NULL
+        AND transfer_id     IS NULL
+        AND parent_id       IS NULL
+   )`
+
 function txBinds(
   id: string,
   input: NewTransaction,
@@ -1008,7 +1037,7 @@ export async function payBill(
   // filtro impede que qualquer perna venha a ser liquidada por engano se essa
   // regra mudar.
   const res = await db.batch<Transaction>([
-    db.prepare(INSERT_TX).bind(
+    db.prepare(INSERT_TX_SE_HA_FATURA).bind(
       ...txBinds(
         newId(),
         {
@@ -1019,8 +1048,10 @@ export async function payBill(
         transfer_id,
         now,
       ),
+      card_account_id,
+      competence,
     ),
-    db.prepare(INSERT_TX).bind(
+    db.prepare(INSERT_TX_SE_HA_FATURA).bind(
       ...txBinds(
         newId(),
         {
@@ -1031,6 +1062,8 @@ export async function payBill(
         transfer_id,
         now,
       ),
+      card_account_id,
+      competence,
     ),
     db
       .prepare(
@@ -1049,6 +1082,19 @@ export async function payBill(
       )
       .bind(transfer_id),
   ])
+
+  // ⚠️ ZERO pernas = o `WHERE EXISTS` recusou: outra chamada pagou esta fatura
+  // entre a nossa leitura e o nosso batch. É a MESMA recusa da checagem lá em
+  // cima, só que ganha da corrida — e ela precisa existir aqui porque o
+  // `INSERT ... WHERE EXISTS` protege o DINHEIRO em silêncio: sem este guard,
+  // a 2ª chamada não grava nada e mesmo assim responde SUCESSO, e a tela diria
+  // ao dono que pagou de novo uma fatura em que não tocou.
+  if (res[3].results.length === 0) {
+    throw new PayBillError(
+      'already_paid',
+      `a fatura de ${competence} já foi paga`,
+    )
+  }
 
   // ORDER BY amount_cents: a perna negativa (saída da corrente) vem primeiro.
   const [out, inbound] = res[3].results
