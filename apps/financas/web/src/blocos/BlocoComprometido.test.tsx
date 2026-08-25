@@ -213,6 +213,40 @@ describe('BlocoComprometido', () => {
     expect(screen.getByTestId('manchete-pct')).not.toHaveTextContent('51%')
   })
 
+  it('a manchete abre pelo RÓTULO em versalete mono, como os outros três cards da home', async () => {
+    // ⚠️ Este era o último dos quatro cards da home que abria direto pelo
+    // número: escala unificada (24px nos quatro), anatomia não. Os outros
+    // três leem rótulo → número → contexto; este lia número → contexto.
+    //
+    // ⚠️ Nenhum teste cobria o texto de contexto quando ele mudou de
+    // "da renda fixa já comprometida em ago/26" para "da renda fixa em
+    // ago/26" — a suíte passou verde numa mudança de cópia visível ao dono.
+    // Estas asserções fecham as DUAS pontas (rótulo e contexto), pra que a
+    // próxima edição de texto aqui não passe em silêncio.
+    vi.mocked(api).mockResolvedValue(report)
+
+    render(<BlocoComprometido />)
+
+    const rotulo = await screen.findByText('Já comprometido')
+    // `ROTULO` de `lib/tipografia.ts` — a assinatura do /admin, byte a byte
+    // a mesma dos outros três blocos.
+    expect(rotulo).toHaveClass('font-mono', 'uppercase', 'text-xs')
+
+    // ⚠️ O rótulo vem ANTES do número no DOM (é o que "abrir pelo rótulo"
+    // significa): `compareDocumentPosition` devolve FOLLOWING pro que vem
+    // depois. Sem isto, mover o rótulo pra baixo do número passaria.
+    const numero = screen.getByTestId('manchete-pct')
+    expect(
+      rotulo.compareDocumentPosition(numero) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // e o contexto não repete o rótulo palavra por palavra
+    expect(screen.getByText(/da renda fixa em/)).toBeInTheDocument()
+    expect(
+      screen.queryByText(/renda fixa já comprometida/),
+    ).not.toBeInTheDocument()
+  })
+
   it('manchete acima de 50%: fica em --destructive E ganha uma frase que NOMEIA o limiar (cor não é o único sinal)', async () => {
     vi.mocked(api).mockResolvedValue(report) // [0] = 55%, acima do limiar
 

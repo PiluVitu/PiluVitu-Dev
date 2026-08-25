@@ -3,7 +3,7 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
-import { NUMERO_GRID } from '../lib/tipografia'
+import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
 import {
   formatPctRange,
   formatRangeSemCentavos,
@@ -112,7 +112,27 @@ function Manchete({ report }: { report: CommitmentReportView }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      {/*
+        ⚠️ **O `ROTULO` chegou DEPOIS dos outros três blocos, e o motivo de
+        ter faltado é o mesmo que quase o manteve fora:** este card já tem
+        `titulo="Comprometido"` no `Bloco`, então um rótulo repetindo a
+        palavra seria ruído. O que desempata é o PAPEL, não a palavra: o
+        título nomeia a SEÇÃO ("de que assunto é este card"), o `ROTULO`
+        nomeia o NÚMERO ("o que exatamente estes 28% medem"). É a mesma
+        relação que `BlocoDividas` já tinha resolvida — título "Dívidas",
+        rótulo "Total que devo" — e sem ele este era o único dos quatro
+        cards da home que abria pelo número, com a escala unificada e a
+        anatomia não.
+
+        ⚠️ **O texto do contexto perdeu "já comprometida" porque ele MUDOU
+        DE LUGAR, não porque encolheu** — a frase inteira era
+        "da renda fixa já comprometida em ago/26" e passaria a repetir o
+        rótulo palavra por palavra. Rótulo e contexto dizem coisas
+        diferentes de propósito: o rótulo, O QUE é; o contexto, de que
+        base e de qual mês.
+      */}
+      <p className={ROTULO}>Já comprometido</p>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span
           data-testid="manchete-pct"
           className={cn(NUMERO_GRID, emAlerta && 'text-destructive')}
@@ -127,7 +147,7 @@ function Manchete({ report }: { report: CommitmentReportView }) {
         </span>
       </div>
       <p className="text-muted-foreground text-xs">
-        da renda fixa já comprometida em {rotuloCompetencia(competencia)}
+        da renda fixa em {rotuloCompetencia(competencia)}
       </p>
       {emAlerta ? (
         <p

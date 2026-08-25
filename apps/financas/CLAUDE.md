@@ -3802,4 +3802,18 @@ Registrado porque vai voltar a acontecer e leva a conclusão errada. Durante a r
 
 ⚠️ **A primeira redação dizia "CSS 8,08 kB gzip, intocado" — FALSO, e a correção importa mais que os 0,04 kB.** O CSS **mudou** (hash `index-Bm2-rbIp` → `index-DuNFSmxf`), porque a varredura de `@source` do Tailwind v4 lê **todo arquivo alcançado, comentário e teste inclusos** — não só o JSX que renderiza. Concluir "intocado" a partir de um `dist/` que não foi reconstruído entre os dois estados é o mesmo erro já registrado nesta base ("medir sem rebuildar entre os estados serve o mesmo build duas vezes e dá resultado idêntico"). **Rebuild imediatamente antes de cada medição, sempre.**
 
+#### O quarto card — `BlocoComprometido` ganhou o `ROTULO` e a anatomia fechou
+
+Ele já estava na escala certa (24px) desde a fatia _Fazer os números falarem_, mas era **o único dos quatro que abria pelo NÚMERO**: os outros três leem rótulo → número → contexto, e ele lia número → contexto. Escala unificada, anatomia não.
+
+⚠️ **O que quase o manteve de fora, e o que desempatou:** o card já tem `titulo="Comprometido"` no `Bloco`, então um rótulo repetindo a palavra seria ruído — é literalmente o critério que manteve `ROTULO_SECAO` fora dos `CardTitle` de `#/configuracoes`. O que decide é o **papel**, não a palavra: o título nomeia a SEÇÃO ("de que assunto é este card"), o `ROTULO` nomeia o NÚMERO ("o que exatamente estes 28% medem"). `BlocoDividas` já tinha essa mesma relação resolvida — título "Dívidas", rótulo "Total que devo". Ficou **"Já comprometido"**.
+
+⚠️ **O contexto perdeu duas palavras porque elas MUDARAM DE LUGAR:** era `da renda fixa já comprometida em ago/26`, virou `da renda fixa em ago/26` — senão o contexto repetiria o rótulo palavra por palavra.
+
+⚠️ **A suíte passou VERDE nessa troca de cópia, e isso é o achado desta sub-fatia:** nenhum dos 13 testes do arquivo afirmava sobre o texto de contexto, então uma mudança visível ao dono não teve nada que a segurasse. O teste novo fecha as duas pontas — o rótulo existe com as classes de `ROTULO`, **vem ANTES do número no DOM** (`compareDocumentPosition`, senão mover o rótulo pra baixo passaria) e o contexto não repete o rótulo. Mutação: remover a linha do rótulo derruba só esse teste (`Unable to find … "Já comprometido"`).
+
+**MEDIDO em Chrome real** (390 / 768 / 1280), com o build de produção: os **quatro** cards agora abrem por rótulo em versalete mono, `overflow` de página **390/390 · 768/768 · 1280/1280**, e as manchetes em **1 caixa de linha** — exceto `manchete-total` a 768, que continua em **2 caixas** (230,1px contra 174), o achado **pré-existente** já registrado acima e não tocado aqui. O único elemento com `scrollWidth > clientWidth` é o gatilho `?` do `Ajuda` (**31/18px**), idêntico nos três viewports e anterior a esta fatia.
+
+**SPA 717 → 718.** Worker **847**, `packages/ui` **97**, `packages/tools` **158** — intocados. Bundle: JS 514,08 → 514,13 kB (**156,51 gzip, estável**), CSS **8,12 gzip, intocado**, chunk lazy **113,31 gzip, intocado**.
+
 **Fora de escopo, registrado:** os dois achados pré-existentes da tabela acima (`divida-<id>-falta` e `manchete-total` em 2 caixas de linha a 768) — os dois pedem decisão de LAYOUT (rótulo acima / número em linha própria) na linha da dívida e na manchete do Comprometido, não de escala, e nenhum dos dois estava nesta fatia.
