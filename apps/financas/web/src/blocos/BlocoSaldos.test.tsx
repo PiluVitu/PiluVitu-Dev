@@ -153,6 +153,67 @@ describe('BlocoSaldos', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  // ⚠️ O DEFEITO que a manchete conserta, fincado como asserção: o agregado
+  // saía em `text-sm font-semibold` — o MESMO tamanho de fonte de cada conta
+  // listada abaixo dele. Medido em Chrome real antes da mudança: `total-PJ`
+  // 14px/600 contra `saldo-a1` 14px/400 — diferença de ESCALA: zero.
+  it('o total do escopo é MANCHETE (24px), não mais o mesmo tamanho de cada conta da lista', async () => {
+    mockRotas({ contas })
+
+    render(<BlocoSaldos />)
+
+    await waitFor(() =>
+      // `NUMERO_GRID` = `text-2xl font-semibold tabular-nums` (24px) — a
+      // escala escolhida por MEDIÇÃO, não por gosto: a caixa útil mais
+      // apertada da home é a de 768px (o `md`), com 174px por card, onde
+      // `R$ 8.000,00` a 30px (`NUMERO_HEROI`) pede 176px e QUEBRA.
+      expect(screen.getByTestId('total-PJ')).toHaveClass('text-2xl'),
+    )
+    expect(screen.getByTestId('total-PF')).toHaveClass('text-2xl')
+
+    // …e as contas da lista continuam em `text-sm`: N manchetes não são
+    // manchete nenhuma. "Quanto tenho no PJ" é a pergunta; "e cada conta?"
+    // é secundária.
+    expect(screen.getByTestId('saldo-pj1')).not.toHaveClass('text-2xl')
+    expect(screen.getByTestId('saldo-pj2')).not.toHaveClass('text-2xl')
+  })
+
+  it('o rótulo do escopo sai em VERSALETE MONO (a assinatura do /admin), não como texto primário', async () => {
+    mockRotas({ contas })
+
+    render(<BlocoSaldos />)
+
+    // `ROTULO` (`lib/tipografia.ts`) — conferido byte a byte contra
+    // `apps/web/components/admin/stat-card.tsx`. O rótulo passou a rotular
+    // um NÚMERO; quem é o texto primário do bloco agora é o valor.
+    const rotuloPJ = await screen.findByRole('heading', {
+      name: 'PJ',
+      level: 4,
+    })
+    expect(rotuloPJ).toHaveClass('font-mono', 'uppercase', 'text-xs')
+    // o estado anterior, explicitamente morto
+    expect(rotuloPJ).not.toHaveClass('text-sm')
+  })
+
+  it('o total mantém os CENTAVOS — arredondar um saldo de conta seria mentir sobre o dinheiro que existe', async () => {
+    // R$ 189,50 é o caso que `formatBRLSemCentavos` (`Math.round`) viraria
+    // "R$ 190" — uma afirmação falsa, PRA MAIS, sobre dinheiro que existe.
+    // Diferente de uma PROJEÇÃO em faixa (`BlocoComprometido`), onde
+    // arredondar é honesto: projeção arredonda, fato arredondado mente.
+    mockRotas({
+      contas: [
+        { id: 'pf1', name: 'Nubank PF', scope: 'PF', balance_cents: 18950 },
+      ],
+    })
+
+    render(<BlocoSaldos />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('total-PF')).toHaveTextContent('R$ 189,50'),
+    )
+    expect(document.body.textContent).not.toContain('R$ 190')
+  })
+
   it('a coluna de dinheiro usa tabular-nums (senão os dígitos não alinham de cima a baixo)', async () => {
     mockRotas({ contas })
 

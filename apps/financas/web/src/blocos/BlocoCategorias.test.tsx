@@ -117,6 +117,78 @@ describe('BlocoCategorias', () => {
     )
   })
 
+  it('o total gasto é MANCHETE (24px) com rótulo em versalete mono — não mais um `text-sm` ao lado do seletor', async () => {
+    mockRotas({ categorias: reportComDados })
+
+    render(<BlocoCategorias />)
+
+    const total = await screen.findByTestId('total-gasto')
+    // `NUMERO_GRID` (24px). A escala saiu de medição: a caixa útil mais
+    // apertada da home é a de 768px (o `md`), 174px por card.
+    expect(total).toHaveClass('text-2xl')
+    expect(total).toHaveClass('tabular-nums')
+    expect(total).not.toHaveClass('text-sm')
+
+    // ⚠️ `whitespace-nowrap` SAIU: ele existia porque o número dividia a
+    // linha com o `<input type="month">`. Com a caixa inteira o valor cabe,
+    // e mantê-lo transformaria uma quebra de linha inofensiva em overflow
+    // de PÁGINA — o defeito já pago (e registrado) na `Variacao`.
+    expect(total).not.toHaveClass('whitespace-nowrap')
+
+    // `ROTULO` (`lib/tipografia.ts`) — a assinatura do /admin.
+    expect(screen.getByText('Total gasto')).toHaveClass(
+      'font-mono',
+      'uppercase',
+      'text-xs',
+    )
+  })
+
+  it('o seletor de mês tem a PRÓPRIA linha — ele e o total não dividem mais a mesma faixa', async () => {
+    // ⚠️ Medido a 768px (o `md`, 174px de caixa útil): `max-w-40` do
+    // `<input type="month">` (160px) + `gap-3` (12) = 172 dos 174 — o total
+    // de 14px JÁ saía em duas caixas de linha antes de qualquer promoção.
+    // Promover a fonte sem mexer na estrutura pioraria um defeito existente.
+    mockRotas({ categorias: reportComDados })
+
+    render(<BlocoCategorias />)
+
+    const total = await screen.findByTestId('total-gasto')
+    const seletor = screen.getByLabelText('Mês')
+
+    // ⚠️ **A versão anterior desta asserção era um PROXY, e o proxy passava
+    // com o layout quebrado — achado da revisão, reproduzido:** ela era
+    // `expect(total.parentElement).not.toContainElement(seletor)` mais
+    // `expect(seletor.closest('label')?.parentElement).not.toContainElement(total)`,
+    // o que descarta só a UMA forma anterior (o `<label>` como filho DIRETO
+    // da faixa flex). Embrulhando o `<label>` num `<div>` a mais e pondo os
+    // dois de volta num `flex … justify-between`, os 43px de overflow de
+    // PÁGINA a 768 voltavam inteiros e a suíte saía **15/15 verde**.
+    //
+    // A prova que de fato vale em jsdom (que não computa layout, mas lê
+    // className): subir de cada um até a raiz do bloco e exigir que NENHUM
+    // ancestral com classe `flex` contenha os dois. É a faixa compartilhada
+    // que causa o overflow, esteja ela a quantos wrappers de distância for.
+    const ancestraisFlex = (el: HTMLElement | null): HTMLElement[] => {
+      const acc: HTMLElement[] = []
+      for (let n = el; n; n = n.parentElement) {
+        if (n.className && /(^|\s)flex(\s|$)/.test(String(n.className))) {
+          acc.push(n)
+        }
+      }
+      return acc
+    }
+    for (const faixa of ancestraisFlex(total)) {
+      expect(faixa).not.toContainElement(seletor)
+    }
+    for (const faixa of ancestraisFlex(seletor)) {
+      expect(faixa).not.toContainElement(total)
+    }
+    // ⚠️ Sem isto a asserção passaria por VACUIDADE se um dia não houvesse
+    // nenhum ancestral `flex` (ex.: o bloco virar `grid`): zero iterações de
+    // loop é zero asserções, e o teste continuaria verde sem provar nada.
+    expect(ancestraisFlex(seletor).length).toBeGreaterThan(0)
+  })
+
   it('mês vazio (sem gasto no período): mostra a mensagem, sem gráfico — mas o seletor de mês continua disponível', async () => {
     mockRotas({ categorias: reportVazio })
 
@@ -178,7 +250,14 @@ describe('BlocoCategorias', () => {
     // Gastar menos é boa notícia, e o impulso óbvio é pintar de verde —
     // seria regressão de acessibilidade (protanopia/deuteranopia preservam
     // o azul, não o verde; --success fica pra confirmação de salvamento).
-    expect(variacao).not.toHaveClass('text-success')
+    //
+    // ⚠️ **`not.toHaveClass('text-success')` sozinho era DECORATIVO — achado
+    // da revisão, medido:** o verde real que alguém escreveria aqui é
+    // `text-green-600` (a escala do Tailwind), e uma mutação com essa classe
+    // passava por essa linha sem tocá-la; quem matava a mutação era só a
+    // asserção POSITIVA logo abaixo. Uma negativa que nomeia a regressão
+    // errada dá falsa segurança sobre exatamente a classe que ela cita.
+    expect(variacao.className).not.toMatch(/green|emerald|success|lime|teal/i)
     expect(variacao).toHaveClass('text-muted-foreground')
     // e o sinal não é a cor: é o "−" e a palavra "a menos"
     expect(variacao).not.toHaveClass('text-destructive')

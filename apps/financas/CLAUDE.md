@@ -3649,3 +3649,157 @@ Total do mês igual a **zero** (estorno anulando o gasto) não desenha barra nen
 **Bundle (`vite build`, antes = fatia da linguagem aplicada / depois = esta):** JS principal 502,10 → 503,97 kB (**153,19 → 153,84 kB gzip, +0,65**); CSS 8,04 → **8,07 kB gzip** (+0,03); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**.
 
 **Fora de escopo, registrado:** a soma das porcentagens das barras de `#/insight` pode dar 101% por arredondamento de cada linha (medido: `55+28+11+6+1`); é inofensivo porque nenhuma barra passa de 100% e a soma não é exibida em lugar nenhum.
+
+## A linguagem na HOME — os 3 cards que tinham escapado
+
+A reforma visual converteu 17 `<th>` de 6 telas e promoveu manchetes em 6 telas — e **3 dos 4 cards da home ficaram para trás**, na primeira tela do app. Fatia de LEITURA: Worker intocado (**847**), `packages/ui` (**97**) e `packages/tools` (**158**) intocados, nenhuma rota, nenhuma migration, nenhuma dependência nova. Seis arquivos, todos em `web/src/blocos/`.
+
+⚠️ **O defeito, medido no markup anterior e não deduzido:** em `BlocoSaldos`, `total-PJ` (o agregado) saía em **14px/600** e `saldo-a1` (uma conta DELE, listada logo abaixo) em **14px/400** — diferença de ESCALA entre o total e a sua própria parcela: **ZERO**. O único sinal era `font-weight`. `BlocoComprometido` já usava `NUMERO_GRID` (24px) para o mesmo papel, **dentro da MESMA home**: 1,71× a escala dos vizinhos.
+
+### ⚠️ A escala saiu de 768px, não de 390 nem de 1280 — e é isso que decide a fatia
+
+O grid da home é `grid-cols-1 md:grid-cols-2`. A intuição diz que o celular aperta; **medido em Chrome real, o pior caso é o próprio breakpoint `md`**, onde a sidebar de 256px + `max-w-3xl px-6` + `gap-4` + `sm:p-6` espremem o card:
+
+| viewport                                        | colunas | card    | padding  | **caixa útil** |
+| ----------------------------------------------- | ------- | ------- | -------- | -------------- |
+| 390 (`hasTouch`/`isMobile`)                     | 1       | 356     | `p-4`    | **324px**      |
+| **768 (o `md`: iPad retrato, janela estreita)** | **2**   | **222** | `sm:p-6` | **174px**      |
+| 1280                                            | 2       | 350     | `sm:p-6` | **302px**      |
+
+`R$ 8.000,00` (o saldo real do dono) pede **176px** a 30px (`NUMERO_HEROI`) — **QUEBRA** nos 174. A 24px (`NUMERO_GRID`) pede 140,2px, e `-R$ 21.122,50` pede 166,3px: cabem. **Veredito: `NUMERO_GRID` nos três, por medição.**
+
+⚠️ **Uma medição anterior desta mesma série concluiu "30px cabe nos quatro cards" — ela nunca mediu 768.** A conclusão saiu de 390 (324 úteis) e 1280 (302); o vale entre os dois é justamente onde o número quebra. Qualquer decisão de escala na home tem que passar por 768.
+
+### COM centavos nos três — e sem centavos seria ERRADO, não só desnecessário
+
+`NumeroCard` pareia `grid ⇒ sem centavos` internamente, mas esse pareamento vale pra caixa de 137px que **esta home não tem** (grid de 2 colunas a 390 — caso que não existe: a 390 a home é coluna única). Fora do componente, `NUMERO_GRID` é a CLASSE e `formatBRL` é o FORMATADOR, escolhidos separadamente pelo call site — precedente vivo: `BlocoComprometido` usa `NUMERO_GRID` com `formatRangeSemCentavos`, decisão dele.
+
+| bloco      | por que os centavos ficam                                                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saldos     | `formatBRLSemCentavos` faz `Math.round` (`money.ts`): R$ 189,50 viraria "R$ 190". Num SALDO DE CONTA isso é afirmação FALSA, **pra mais**, sobre dinheiro que existe |
+| Categorias | a linha imediatamente abaixo (`Variacao`) mostra `+R$ 4.691,35` COM centavos — manchete arredondada sobre delta exato não reconcilia                                 |
+| Dívidas    | é o MESMO número que `#/dividas` já mostra com centavos (`NumeroCard escala="heroi"`) — duas grafias do mesmo valor em duas telas                                    |
+
+⚠️ **A regra que separa este caso do irmão da mesma home: projeção/faixa arredonda; fato arredondado mente.** `BlocoComprometido` usa `formatRangeSemCentavos` porque ali o número é uma PROJEÇÃO em FAIXA (dois valores numa linha) — medido, `R$ 2.860 a R$ 3.454` já ocupa 230,1px a 24px, e com centavos passaria de 300. Não é uniformidade cega.
+
+⚠️ **`NumeroCard` NÃO é usado em nenhum dos três: seria Card dentro de Card** — os três já são renderizados dentro de `blocos/Bloco.tsx`, que É um `<Card>`. Mesmo precedente já registrado em `pages/accounts.tsx` e `pages/insight.tsx`: reusa-se `ROTULO` + a escala de `lib/tipografia.ts`, nunca o componente.
+
+⚠️ **O rótulo entra ACIMA do número, nunca ao lado.** Medido a 768 (174px úteis): `[PJ] … [24px valor]` na mesma linha de baseline dá 2 caixas de linha; empilhado dá 1. É a anatomia que `NumeroCard`/`pages/insight.tsx` já usam. (O único caso lado a lado do app é `DividasPage.tsx`, e lá o valor é `text-lg`, não 24.)
+
+### ⚠️ Achado não previsto: a faixa de `BlocoCategorias` JÁ estourava a PÁGINA a 768
+
+Antes desta fatia, seletor e total dividiam um `flex … justify-between gap-3`. **MEDIDO no build real a 768×1024: `scrollWidth 811` contra `clientWidth 768` — 43px de overflow HORIZONTAL DE PÁGINA**, com 3 elementos estourando: `div.text-right`, o `span.…whitespace-nowrap` do total e o `<p>` da `Variacao`. Causa: o `<input type="month">` é `max-w-40` (160px) + `gap-3` (12) = **172 dos 174 úteis**, e o `whitespace-nowrap` do total impedia a única saída que sobrava.
+
+Promover a fonte sem mexer na estrutura pioraria um defeito existente. O seletor ganhou a própria linha, o número ganhou a caixa inteira, e **`whitespace-nowrap` SAIU** — mantê-lo transformaria uma quebra de linha inofensiva em overflow de página, exatamente o defeito já pago (e registrado) na `Variacao` logo abaixo. **Depois: 768/768, zero elemento estourando.** Correção de bug de layout, não efeito colateral cosmético.
+
+### `BlocoDividas`: a manchete é a SOMA, e ela não existia
+
+O card listava dívida a dívida e **nunca respondia "quanto eu devo no total?"** — era conta de cabeça. Promover `divida-<id>-falta` seria N manchetes (N manchetes = nenhuma manchete); o precedente correto já existia em `pages/DividasPage.tsx` (`sumCents(euDevo.map(d => d.remaining_cents))`).
+
+- ⚠️ **`owed_to_me` não entra, e aqui isso é de graça:** a rota já é `?status=open&direction=i_owe`. O comentário no código diz isso explicitamente — se alguém afrouxar a query string um dia, a soma passa a mentir e o filtro por direção teria que vir pra cá (como `DividasPage` faz à mão).
+- ⚠️ **Só renderiza quando a soma é `> 0`.** Dívida recém-criada tem `remaining_cents: 0`, e "R$ 0,00" em 24px no topo seria destaque pra AUSÊNCIA de assunto — a linha já diz "Sem itens lançados ainda". Mesmo espírito do `euDevo.length > 0` de `DividasPage`.
+- ⚠️ **`data-testid="total-devido-home"`, não `total-devido`** — as duas telas nunca montam juntas, mas um testid repetido faria um `getByTestId` achar o elemento errado num teste futuro que renderizasse as duas.
+  - ⚠️ **A primeira redação desta linha justificava a escolha dizendo que "um grep por `total-devido` tem que apontar pra um lugar só" — era FALSO, e a revisão mediu.** `total-devido` é **PREFIXO** de `total-devido-home`, então `grep -rn "total-devido" web/src` devolve os **dois** (14 linhas, nas duas telas). O nome continua bom; a razão registrada é que não se sustentava. Fica como lembrete de que uma justificativa plausível sobre ferramenta de busca precisa ser **rodada** antes de virar documentação.
+- ⚠️ **A contagem sob a manchete é `dividas.filter(d => d.remaining_cents > 0).length`, NUNCA `dividas.length`** (achado da revisão). Uma dívida recém-criada é uma linha real do card (mostra "Sem itens lançados ainda") mas contribui **0** para a soma — com `dividas.length`, 3 dívidas abertas das quais 1 sem item liam _"3 dívida(s) em aberto"_ sob um número que cobre **2**, e o dono dividiria dois valores por três pra estimar quanto deve por dívida. A linha continua visível na lista; ela só não entra na soma nem na contagem que a qualifica. Coberto por teste próprio (a mutação de volta pra `dividas.length` mata só ele).
+
+### Antes → depois, MEDIDO em Chrome real
+
+Build de produção (`vite build` + `vite preview`), `playwright-core` + o Chrome do sistema, **UM** `page.route('**/api/**')` com o ramo de `/api/auth/` dentro dele. Fixture com valores realistas (PJ R$ 12.567,89; PF **negativo** −R$ 20.999,05; dívidas somando R$ 7.940,00; gasto do mês R$ 21.122,50). Zero erro de console nos três viewports.
+
+| sonda                                    | antes                                  | depois                                                |
+| ---------------------------------------- | -------------------------------------- | ----------------------------------------------------- |
+| `total-PJ`                               | **14px/600**                           | **24px/600**                                          |
+| `total-PF` (`-R$ 20.999,05`)             | 14px/600                               | 24px/600                                              |
+| `saldo-a1` / `saldo-a3` (a LISTA)        | 14px/400                               | **14px/400 — intocada**                               |
+| `total-gasto`                            | 14px/600                               | **24px/600**                                          |
+| `total-devido-home`                      | **não existia**                        | **24px/600, `R$ 7.940,00`**                           |
+| `divida-<id>-falta` (a LISTA)            | 14px/600                               | **14px/600 — intocada**                               |
+| rótulo `PJ`                              | 14px `ui-sans-serif`, sem transform    | **12px `ui-monospace`, `uppercase`, tracking 2,16px** |
+| rótulos `Total gasto` / `Total que devo` | não existiam                           | idem                                                  |
+| **overflow de página a 768**             | **811 × 768 — 3 elementos estourando** | **768 × 768 — ZERO**                                  |
+| overflow a 390 / 1280                    | 0                                      | 0                                                     |
+
+⚠️ **As três manchetes saem em UMA caixa de linha nos TRÊS viewports** (`Range.getClientRects().length`, nunca inferido por altura), inclusive nos 174px de 768 — incluindo o PF negativo, que é o mais largo. `font-variant-numeric: tabular-nums` em todas.
+
+Prints: `.../scratchpad/hb-antes-390.png`, `hb-antes-1280.png`, `hb-depois-390.png`, `hb-depois-1280.png`.
+
+⚠️⚠️ **A folga a 768 é de 7,7px, e ISSO É UMA TROCA QUE ESTA FATIA INTRODUZIU — não um detalhe.** A régua, medida com a fonte real da manchete contra a caixa útil de **174px**:
+
+| valor              | 14px (antes) | **24px (agora)** | 30px (recusado) |
+| ------------------ | ------------ | ---------------- | --------------- |
+| `R$ 8.000,00`      | 85,3         | 140,2            | **176,0** ❌    |
+| `-R$ 20.999,05`    | 100,9        | **166,3**        | 208,8           |
+| `-R$ 123.456,78`   | 110,0        | **181,7** ❌     | 228,2           |
+| `-R$ 1.234.567,89` | 123,5        | **203,1** ❌     | 255,0           |
+
+**O limiar é `-R$ 100.000,00` (ou positivo ≥ R$ 1.000.000,00): a partir dele a manchete quebra em duas caixas a 768.** A 14px não quebrava — a fatia trocou isso pelos 43px de overflow de PÁGINA que ela removeu (quebrar degrada, estourar a página não). **Nenhum teste guarda esse limite** — os 8 novos afirmam CLASSE, não largura, porque jsdom não computa layout. Um saldo PJ de seis dígitos inteiros é plausível; quando aparecer, a saída é layout (rótulo e número lado a lado, ou `md:` próprio), **nunca** encolher a escala de volta.
+
+**Achados PRÉ-EXISTENTES reconfirmados e NÃO tocados** (idênticos antes e depois, fora do escopo desta fatia): `divida-<id>-falta` sai em **2 caixas de linha a 768** (divide a linha com o título da dívida — mesma classe do `R$` órfão já pago em `pages/accounts.tsx`); e `manchete-total` de `BlocoComprometido` sai em **2 caixas** a 768 (a faixa `R$ 2.860 a R$ 3.454` pede 230,1px contra 174).
+
+⚠️ **A primeira redação afirmava que `divida-<id>-falta` quebra "a 768 **e a 1280**" — a metade de 1280 NÃO reproduz e foi removida.** Medido com a fixture descrita nesta mesma seção: a 1280 a caixa útil é 302px, título + valor somam ~225px, e o valor sai em **1 caixa** (85,3px). Só quebra a 1280 com um título de dívida bem mais longo que o da fixture — a afirmação estava registrada sem essa qualificação.
+
+### Suítes e mutação
+
+**SPA: 708 → 717** (+9: 3 em `BlocoSaldos.test.tsx`, 2 em `BlocoCategorias.test.tsx`, 4 em `BlocoDividas.test.tsx` — o último veio do fix de revisão, ver abaixo). Worker **847**, `packages/ui` **97**, `packages/tools` **158** — intocados. `tsc --noEmit` limpo nos dois lados, `prettier --check` limpo; `vite build` com os dois gates (`check-tailwind-source.mjs`, `check-financas-lazy-chart.mjs`) em exit 0 e **um** único chunk lazy (`ls dist/assets/*.js` = 2).
+
+⚠️ **NENHUMA asserção pré-existente mudou — nem de valor, nem de SELETOR.** `git diff --stat` nos `*.test.tsx` dá **199 inserções, 0 deleções**. Foi consequência direta de manter `formatBRL` (os valores esperados continuam com centavos) e de levar cada `data-testid` JUNTO com o número que ele nomeia.
+
+⚠️ **Verificado por MUTAÇÃO — 12, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`, que restauraria do HEAD e levaria junto o trabalho não commitado; `git status --porcelain -uall` mostrando só os 6 arquivos da fatia depois):
+
+| Mutação                                                      | Falha observada                                                      |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| ① Saldos: total volta a `text-sm font-semibold`              | 1 — a escala do defeito                                              |
+| ② Saldos: total SEM centavos (`formatBRLSemCentavos`)        | 4 — incl. `R$ 189,50` virando `R$ 190`                               |
+| ③ Saldos: rótulo do escopo volta a texto solto               | 1                                                                    |
+| ④ **Saldos: PJ e PF SOMADOS**                                | 6 — `expected 'Saldos PJ R$ 9.000,00…' not to contain 'R$ 9.000,00'` |
+| ⑤ Categorias: `whitespace-nowrap` de volta                   | 1                                                                    |
+| ⑥ Categorias: total volta a `text-sm`                        | 1                                                                    |
+| ⑦ Categorias: rótulo volta a texto solto                     | 1                                                                    |
+| ⑧ **Categorias: gastou menos pinta de VERDE**                | 1 — a regressão de a11y recusada                                     |
+| ⑨ **Dívidas: manchete vira a PRIMEIRA LINHA em vez da SOMA** | 1                                                                    |
+| ⑩ Dívidas: manchete renderiza mesmo com soma 0               | 1                                                                    |
+| ⑪ Dívidas: rótulo volta a texto solto                        | 1                                                                    |
+| ⑫ Dívidas: manchete sem `tabular-nums`                       | 1                                                                    |
+
+⚠️ **A mutação ② teve que ser REFEITA pra valer:** na primeira tentativa `formatBRLSemCentavos` não estava importado, então o componente lançava `ReferenceError` e derrubava 10 testes por CRASH, não por valor. Trocar a importação junto derruba **4**, e um deles é o teste dedicado com a asserção de valor (`R$ 189,50`) — que é a prova que importa. Mutação que mata por erro de execução não prova nada sobre a decisão.
+
+⚠️ **A fixture de ⑨ tem DUAS dívidas de propósito.** Com uma só, a soma e a linha coincidem: uma implementação que mostrasse `remaining_cents` da primeira linha passaria igual, e a asserção não provaria nada.
+
+#### Fix de revisão — DUAS asserções não provavam o que o nome delas dizia
+
+A tabela de 12 mutações acima está correta no que afirma; o que ela **não** cobria eram duas asserções que passavam contra o defeito. As duas foram reescritas e a mutação correspondente agora mata.
+
+⚠️ **① A prova estrutural de `BlocoCategorias` era um PROXY, e o proxy passava com o layout quebrado.** A versão original era `expect(total.parentElement).not.toContainElement(seletor)` mais `expect(seletor.closest('label')?.parentElement).not.toContainElement(total)` — isso descarta só a UMA forma anterior (o `<label>` como filho **direto** da faixa flex). **MEDIDO:** embrulhando o `<label>` num `<div>` a mais e pondo os dois de volta num `flex … justify-between`, os **43px de overflow de PÁGINA a 768** voltavam inteiros e a suíte saía **15/15 verde**. Era a única parte da fatia — justamente a que ela apresenta como seu achado principal — sem guarda de regressão funcionando. Reescrita pra subir de cada um até a raiz e exigir que **nenhum ancestral com classe `flex` contenha os dois**, com uma asserção extra de que existe ao menos um ancestral `flex` (senão zero iterações de loop = zero asserções, e o teste passaria por **vacuidade** no dia em que o bloco virasse `grid`). Com a correção, a mesma mutação **mata**.
+
+⚠️ **② A negativa de "nenhum verde" era DECORATIVA.** `expect(variacao).not.toHaveClass('text-success')` nomeia uma classe que ninguém escreveria: o verde real aqui é `text-green-600` (a escala do Tailwind), e uma mutação com essa classe **passava** por essa linha — quem matava era só a asserção POSITIVA da linha seguinte (`toHaveClass('text-muted-foreground')`). A regra sempre valeu; a negativa é que dava falsa segurança sobre exatamente a regressão que ela cita. Trocada por `expect(variacao.className).not.toMatch(/green|emerald|success|lime|teal/i)`, que agora falha com `expected 'text-xs tabular-nums text-green-600' not to match /green|…/`.
+
+⚠️ **Mais duas mutações, do fix:**
+
+| Mutação                                                    | Falha observada                                |
+| ---------------------------------------------------------- | ---------------------------------------------- |
+| ⑬ Categorias: seletor e total de volta na MESMA faixa flex | **1** (antes: **0 de 15** — era o buraco)      |
+| ⑭ Dívidas: contagem volta a `dividas.length`               | 1 — `Unable to find … "2 dívida(s) em aberto"` |
+
+#### ⚠️ Sobre a confiabilidade destes números: o runner desta máquina serviu MÓDULO OBSOLETO
+
+Registrado porque vai voltar a acontecer e leva a conclusão errada. Durante a revisão, `vitest run` em paralelo na árvore entregue falhou **4 execuções seguidas** com `total-PJ` e `total-PF` mostrando **o mesmo R$ 9.000,00** — ou seja, o runner executou a mutação ④ (PJ+PF somados) contra um disco que continha o código correto (`sumCents(list.map(…))` dentro do `SCOPES.map`, conferido byte a byte). Matriz medida: árvore entregue em paralelo → falha 4/4; com `--no-file-parallelism` → 716 verde; **reescrevendo os arquivos por `cp` (mtime novo) → 716 verde 6/6**. A única variável foi o **mtime**.
+
+**Consequências práticas, e a disciplina que elas impõem:**
+
+- **"revertei por cópia, rodei, deu verde" NÃO é prova nesta máquina** — reverter por `cp` de um backup mais antigo pode restaurar um mtime que o cache considera velho. Depois de reverter, **`touch` o arquivo** (ou reescreva-o) antes de confiar na execução seguinte.
+- **Imprima a linha mutada do FONTE na MESMA invocação de shell que roda o teste** — foi o que tornou cada resultado desta seção atribuível.
+- **Isto não afeta o CI** (checkout limpo, sem cache), e não é o `rtk` mentindo — é cache de módulo do Vitest reagindo a mtime. O `rtk` mente à parte: `pnpm --filter … exec vitest` devolveu 2 falhas fantasma que **não** reproduzem com `./node_modules/.bin/vitest`. **Use o binário direto.**
+
+⚠️ **Um `console.error('DBGSALDOS', …)` de depuração chegou a entrar num build de produção local** durante a rodada (medido: `grep -c DBGSALDOS dist/assets/index-*.js` = 1, com o fonte já limpo). Nada disso ficou na árvore final — mas é o lembrete de que `dist/` pode estar mais velho (ou mais sujo) que o fonte, e medição de bundle exige rebuild imediatamente antes.
+
+**Bundle** — medido construindo os DOIS estados na mesma sessão (`git show HEAD:` nos 6 arquivos → build → restaurar por cópia → build), porque a primeira medição desta fatia comparou contra um `dist/` velho:
+
+|                                  | antes (HEAD)                | depois                      |
+| -------------------------------- | --------------------------- | --------------------------- |
+| JS principal                     | 513,90 kB / **156,40** gzip | 514,08 kB / **156,51** gzip |
+| CSS                              | 41,94 kB / **8,08** gzip    | 42,03 kB / **8,12** gzip    |
+| chunk lazy `GraficoComprometido` | 113,31 gzip                 | **113,31 gzip — intocado**  |
+
+⚠️ **A primeira redação dizia "CSS 8,08 kB gzip, intocado" — FALSO, e a correção importa mais que os 0,04 kB.** O CSS **mudou** (hash `index-Bm2-rbIp` → `index-DuNFSmxf`), porque a varredura de `@source` do Tailwind v4 lê **todo arquivo alcançado, comentário e teste inclusos** — não só o JSX que renderiza. Concluir "intocado" a partir de um `dist/` que não foi reconstruído entre os dois estados é o mesmo erro já registrado nesta base ("medir sem rebuildar entre os estados serve o mesmo build duas vezes e dá resultado idêntico"). **Rebuild imediatamente antes de cada medição, sempre.**
+
+**Fora de escopo, registrado:** os dois achados pré-existentes da tabela acima (`divida-<id>-falta` e `manchete-total` em 2 caixas de linha a 768) — os dois pedem decisão de LAYOUT (rótulo acima / número em linha própria) na linha da dívida e na manchete do Comprometido, não de escala, e nenhum dos dois estava nesta fatia.

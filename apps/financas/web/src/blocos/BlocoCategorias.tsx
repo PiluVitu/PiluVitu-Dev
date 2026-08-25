@@ -3,6 +3,7 @@ import { formatBRL } from '@piluvitu/tools/money'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { competenciaAtual } from '../lib/dates'
+import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
 import { rotuloCompetencia } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
 import type { InsightNumbersView } from '../lib/insight'
@@ -132,7 +133,21 @@ export function BlocoCategorias() {
     >
       {report ? (
         <div className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
+          {/*
+            ⚠️ **A estrutura MUDOU, e não foi por gosto: a faixa antiga já
+            estava quebrada antes de qualquer promoção.** Seletor e total
+            dividiam um `flex … justify-between gap-3`; medido a 768px (o
+            `md`, onde a caixa útil do card é de **174px** — ver o ⚠️ de
+            escala em `BlocoSaldos.tsx`), o `<input type="month">` sozinho
+            é `max-w-40` (160px) + `gap-3` (12) = 172 dos 174, e o total de
+            14px já saía em DUAS caixas de linha. Promover a fonte sem
+            mexer na estrutura pioraria um defeito existente.
+
+            Agora o seletor tem a própria linha e o número tem a caixa
+            inteira — que é também a anatomia do rótulo ACIMA do valor
+            (`NumeroCard`, `pages/insight.tsx`).
+          */}
+          <div>
             {/* `<label>` nativo (nesting, sem `htmlFor`/`id`) — mesmo padrão
                 de `new-entry.tsx`/`NovoItemForm.tsx`/`DividasPage.tsx` pros
                 campos de data. O `<input>` recebe as classes do componente
@@ -154,15 +169,34 @@ export function BlocoCategorias() {
                 className="border-input focus-visible:ring-ring mt-1 flex h-9 w-full max-w-40 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
               />
             </label>
-            <div className="text-right">
-              <span
-                data-testid="total-gasto"
-                className="text-sm font-semibold whitespace-nowrap tabular-nums"
-              >
-                {formatBRL(Math.abs(report.total_cents))}
-              </span>
-              <Variacao numeros={numeros} />
-            </div>
+          </div>
+
+          {/*
+            ⚠️ **A manchete é o TOTAL GASTO DO MÊS — a resposta da pergunta
+            que dá título ao card.** Antes saía em `text-sm font-semibold`
+            (14px), o mesmo peso do rótulo do campo ao lado.
+
+            ⚠️ `NUMERO_GRID` (24px) COM centavos, pelo mesmo par de razões
+            de `BlocoSaldos` (a caixa de 174px a 768 decide a escala; e a
+            linha imediatamente abaixo — a `Variacao` — mostra o delta COM
+            centavos, então um total arredondado em cima dela não
+            reconciliaria: "R$ 900" − "R$ 350,00").
+
+            ⚠️ **`whitespace-nowrap` SAIU.** Ele existia porque o número
+            dividia a linha com o seletor; com a caixa inteira o valor
+            cabe, e mantê-lo transformaria uma quebra de linha inofensiva
+            em overflow de PÁGINA — exatamente o defeito já pago (e
+            registrado) na `Variacao` logo abaixo.
+
+            ⚠️ Nada de `NumeroCard`: seria Card dentro de Card (`Bloco` já
+            é um `<Card>`). Reusa-se a tipografia, nunca o componente.
+          */}
+          <div>
+            <p className={ROTULO}>Total gasto</p>
+            <p data-testid="total-gasto" className={cn('mt-1', NUMERO_GRID)}>
+              {formatBRL(Math.abs(report.total_cents))}
+            </p>
+            <Variacao numeros={numeros} />
           </div>
           {erroRefetch ? (
             <p role="alert" className="text-destructive text-sm">

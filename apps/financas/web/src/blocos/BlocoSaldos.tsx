@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { formatBRL, sumCents } from '@piluvitu/tools/money'
+import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
+import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
 import {
   custoFixoMensal,
   formatMeses,
@@ -119,24 +121,74 @@ export function BlocoSaldos() {
             const meses = mesesDeSobrevivencia(total, custo)
             return (
               <div key={scope}>
-                <div className="flex items-baseline justify-between">
-                  <h4 className="text-sm font-semibold">{scope}</h4>
-                  <span
-                    data-testid={`total-${scope}`}
-                    className="text-sm font-semibold tabular-nums"
-                  >
-                    {formatBRL(total)}
-                  </span>
-                </div>
+                {/*
+                  ⚠️ **O defeito que esta manchete conserta, medido no
+                  markup anterior: "Total PJ" saía em `text-sm
+                  font-semibold` — EXATAMENTE o mesmo tamanho de fonte de
+                  cada conta listada logo abaixo dele** (`text-sm`, na
+                  `<ul>`). O agregado lia igual às suas próprias parcelas;
+                  o único sinal que os separava era `font-weight` 600 × 400,
+                  nenhuma diferença de ESCALA. Confirmado em Chrome real:
+                  `total-PJ` 14px/600 contra `saldo-a1` 14px/400.
+
+                  ⚠️ **`NUMERO_GRID` (24px), nunca `NUMERO_HEROI` (30px) —
+                  a escolha é por MEDIÇÃO, e o viewport que decide não é o
+                  celular.** O grid da home é `grid-cols-1 md:grid-cols-2`,
+                  então a caixa útil mais APERTADA é a de **768px** (o
+                  próprio `md`: iPad retrato, janela estreita de desktop),
+                  onde a sidebar de 256px + `max-w-3xl px-6` + `gap-4` +
+                  `sm:p-6` deixam **174px** por card — menos que os 324
+                  de 390px (coluna única) e que os 302 de 1280. Medido a
+                  30px, `R$ 8.000,00` (o saldo real do dono) pede **176px**
+                  e QUEBRA EM DUAS LINHAS ali; a 24px pede 140,2px e cabe,
+                  com `-R$ 21.122,50` (166,3px) ainda dentro.
+
+                  ⚠️ **COM centavos (`formatBRL`), nunca
+                  `formatBRLSemCentavos`.** O pareamento "grid ⇒ sem
+                  centavos" é interno do componente `NumeroCard` e vale
+                  pra caixa de 137px que ESTA home não tem (ver
+                  `blocos/NumeroCard.tsx`); aqui reusa-se só a
+                  TIPOGRAFIA, e o formatador é escolha deste call site —
+                  mesmo precedente de `BlocoComprometido`. E num SALDO de
+                  conta arredondar seria MENTIR: `formatBRLSemCentavos`
+                  faz `Math.round` (`money.ts`), então R$ 189,50 viraria
+                  "R$ 190" — uma afirmação falsa, pra mais, sobre dinheiro
+                  que existe.
+
+                  ⚠️ **`NumeroCard` NÃO é usado aqui: seria Card dentro de
+                  Card** — este bloco já é renderizado dentro de
+                  `blocos/Bloco.tsx`, que É um `<Card>`. Mesmo precedente
+                  registrado em `pages/accounts.tsx` e `pages/insight.tsx`:
+                  reusa-se `ROTULO` + a escala de `lib/tipografia.ts`,
+                  nunca o componente.
+
+                  ⚠️ **O rótulo entra ACIMA do número, não ao lado.**
+                  Medido a 768 (174px úteis): `[PJ] … [24px valor]` na
+                  mesma linha de baseline dá 2 caixas de linha; empilhado
+                  dá 1. É a anatomia que `NumeroCard`/`insight.tsx` já
+                  usam.
+                */}
+                <h4 className={ROTULO}>{scope}</h4>
+                <p
+                  data-testid={`total-${scope}`}
+                  className={cn('mt-1', NUMERO_GRID)}
+                >
+                  {formatBRL(total)}
+                </p>
+                {/*
+                  `text-right` SAIU: com o número alinhado à esquerda, uma
+                  referência à direita quebraria a coluna óptica
+                  rótulo → número → régua. O texto é o mesmo de antes.
+                */}
                 {meses ? (
                   <p
                     data-testid={`meses-${scope}`}
-                    className="text-muted-foreground text-right text-xs"
+                    className="text-muted-foreground text-xs"
                   >
                     ≈ {formatMeses(meses)} de custo fixo
                   </p>
                 ) : null}
-                <ul className="mt-1 space-y-1">
+                <ul className="mt-2 space-y-1">
                   {list.map((a) => (
                     <li
                       key={a.id}
