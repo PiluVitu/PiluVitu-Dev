@@ -93,6 +93,22 @@ Resolvido extraindo `web/src/lib/mutar-e-recarregar.ts`, com mensagem específic
 
 ---
 
+## 6. Pagamento PARCIAL de fatura — registrado em 2026-08-24
+
+`POST /api/bills/pay` (`domain/transactions.ts#payBill`) paga a competência **inteira ou recusa**. Pagar parte da fatura — caso real, e comum quando o mês aperta — **não entra hoje**, e a razão é de modelo, não de esforço.
+
+⚠️ **`settled_at` é por LINHA e é binário.** Não existe mapeamento principiado de "paguei R$ 800 de uma fatura de R$ 1.500" para um subconjunto de lançamentos: qual das 40 compras foi paga? A escolha seria arbitrária, e arbitrária num campo que o Comprometido e o Fluxo de caixa leem.
+
+⚠️ **E transferir sem liquidar recria o defeito das duas vozes** — o mesmo que fez o cartão ser bloqueado nos selects de `pages/transferir.tsx`: a tela Contas diria "pago" (o saldo caiu) enquanto o Comprometido diria "devendo" (as linhas seguem `settled_at NULL`). A mesma obrigação lida de dois jeitos, sem erro nenhum.
+
+**O que destrava:** a entidade **Bill** de verdade — uma fatura como registro próprio, com `paid_cents` acumulado e pagamentos como filhos, no mesmo desenho de `debts`/`debt_payments`/`debt_payment_allocations`, que já existe e já resolve exatamente esse problema para dívida com pessoa física. Com ela, `settled_at` das linhas deixa de ser o registro do pagamento e passa a ser consequência de a fatura estar quitada.
+
+**Enquanto não existir**, o caminho honesto para um pagamento parcial é lançar a transferência à mão (`#/lancar` → Transferir) e **não** liquidar as linhas — o Comprometido segue mostrando a obrigação inteira, que é a leitura correta enquanto ela não foi paga inteira.
+
+⚠️ **Também registrado junto:** não há **desfazer** um pagamento de fatura. Pagar errado exige apagar as duas pernas no `#/extrato` e desmarcar as linhas uma a uma.
+
+---
+
 ## 5. Modelos locais (promeia) — medido em 2026-08-14
 
 O dono perguntou por `deepseek-v4-flash`, `deepseek-v4-pro` e `kimi-k3`. **Os três estão no `ollama.com/library`, mas só como tags `:cloud`** — não baixam, rodam nos servidores da Ollama, e o `kimi-k3` exige assinatura Pro/Max. Isso quebra as duas premissas de uma vez: **custo zero** e a razão de o `apps/promeia` existir (se o modelo está na nuvem, o Mac vira um salto sem função — o Worker chamaria direto).
