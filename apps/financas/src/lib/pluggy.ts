@@ -568,6 +568,148 @@ export function assertItemConectado(item: PluggyItem): void {
 }
 
 // ---------------------------------------------------------------------------
+// ②-bis Conectar — o APP cria a conexão; o dono não digita UUID nenhum
+// ---------------------------------------------------------------------------
+
+/**
+ * O conector "Meu Pluggy" — um **proxy** sobre as conexões que o dono já tem
+ * em `meu.pluggy.ai`, atualizadas por lá 1×/dia.
+ *
+ * ⚠️ **Não é um banco.** Criar um item com ele não abre conexão nova com
+ * instituição nenhuma: reaproveita os consentimentos que já existem. É
+ * exatamente por isso que o dono não reautoriza banco a banco — e por isso
+ * que `itemId`/`accountId` deixam de ser dado de ENTRADA (o que a fatia ④
+ * pedia, colado à mão) e viram CONSEQUÊNCIA de uma ação do app.
+ *
+ * ⚠️ **Items do Meu Pluggy não podem ser atualizados pela API** — quem é dono
+ * da conexão é o Meu Pluggy, e `PATCH /items` responde
+ * `400 MeuPluggy item cant be updated`. Não existe, e não adianta tentar
+ * construir, um botão de "forçar atualização" aqui.
+ */
+export const CONNECTOR_MEU_PLUGGY = 200
+
+/**
+ * O que o Pluggy devolve enquanto o item depende de uma ação do dono. No
+ * fluxo OAuth, `data` é a **URL de autorização** — e ela é de **uso único**.
+ */
+export type PluggyParametro = {
+  name?: string
+  type?: string
+  label?: string
+  instructions?: string
+  /** A URL a abrir, quando `type === 'oauth'`. */
+  data?: string
+  expiresAt?: string
+}
+
+/** `PluggyItem` + o `parameter` que só existe enquanto o item espera o dono. */
+export type PluggyItemCriado = PluggyItem & {
+  parameter?: PluggyParametro | null
+}
+
+/**
+ * Uma conta DENTRO de um item — o que o dono escolhe num select, em vez de
+ * colar um UUID que nenhuma tela do Pluggy mostra.
+ *
+ * ⚠️ `type` fica `string`, não união fechada, pelo MESMO motivo da allowlist
+ * de `STATUS_PRECISA_RECONECTAR`: um tipo de conta novo do Pluggy não pode
+ * virar erro de parse aqui. Hoje interessa `BANK` × `CREDIT`, e quem rotula
+ * é a tela.
+ */
+export type PluggyConta = {
+  id: string
+  type: string
+  subtype?: string | null
+  name?: string | null
+  number?: string | null
+}
+
+/**
+ * `POST /items` com o conector 200. Devolve o item recém-criado, que vem
+ * `WAITING_USER_INPUT` com a URL de autorização em `parameter.data`.
+ *
+ * ⚠️⚠️ **NUNCA passe o resultado disto por `assertItemConectado`.**
+ * `WAITING_USER_INPUT` está na allowlist de `STATUS_PRECISA_RECONECTAR`, então
+ * a asserção lançaria `PluggyItemDesconectado` — mandando o dono "abrir o app
+ * Meu Pluggy e reconectar" no exato instante em que ele acabou de pedir pra
+ * conectar, e escondendo a URL que é a única saída. Item recém-criado
+ * esperando o dono é o caminho **FELIZ**; `assertItemConectado` só descreve
+ * item que já esteve de pé e caiu.
+ */
+export async function criarItem(
+  env: PluggyBindings,
+  opts: PluggyOpts = {},
+): Promise<PluggyItemCriado> {
+  const lida = await pedirAutenticado(`${PLUGGY_BASE_URL}/items`, env, opts, {
+    method: 'POST',
+    body: { connectorId: CONNECTOR_MEU_PLUGGY, parameters: {} },
+  })
+  garantirOk(lida)
+
+  const json = lida.json as Record<string, unknown>
+  if (typeof json.id !== 'string' || typeof json.status !== 'string') {
+    throw new PluggyRespostaIlegivel(lida.status, lida.amostra)
+  }
+  return json as unknown as PluggyItemCriado
+}
+
+/**
+ * A URL que o dono precisa abrir, ou `null` quando o item não espera nada.
+ *
+ * **Pura**, mesmo precedente de `precisaReconectar`: a busca devolve o fato, a
+ * leitura da política fica separada e testável sozinha.
+ */
+export function urlDeAutorizacao(item: PluggyItemCriado): string | null {
+  const p = item.parameter
+  if (!p || p.type !== 'oauth') return null
+  const url = typeof p.data === 'string' ? p.data.trim() : ''
+  return url === '' ? null : url
+}
+
+/**
+ * `GET /accounts?itemId=` — as contas de uma conexão.
+ *
+ * ⚠️ Sem paginação, de propósito: um item do Meu Pluggy tem unidades de
+ * contas, não centenas. `paginasDeTransacoes` existe porque transação tem
+ * volume; replicar o mecanismo aqui seria custo sem caso.
+ */
+export async function listarContas(
+  env: PluggyBindings,
+  itemId: string,
+  opts: PluggyOpts = {},
+): Promise<PluggyConta[]> {
+  const id = itemId.trim()
+  if (id === '') throw new RangeError('itemId é obrigatório')
+
+  const lida = await pedirAutenticado(
+    `${PLUGGY_BASE_URL}/accounts?itemId=${encodeURIComponent(id)}`,
+    env,
+    opts,
+  )
+  garantirOk(lida)
+
+  const json = lida.json as Record<string, unknown>
+  const results = json.results
+  if (!Array.isArray(results)) {
+    throw new PluggyRespostaIlegivel(lida.status, lida.amostra)
+  }
+  // ⚠️ Valida ANTES de devolver: `id`/`type` ausentes virariam `undefined` no
+  // value do <option>, e o dono salvaria uma conexão que nunca sincroniza.
+  for (const c of results) {
+    const conta = c as Record<string, unknown> | null
+    if (
+      typeof conta !== 'object' ||
+      conta === null ||
+      typeof conta.id !== 'string' ||
+      typeof conta.type !== 'string'
+    ) {
+      throw new PluggyRespostaIlegivel(lida.status, lida.amostra)
+    }
+  }
+  return results as PluggyConta[]
+}
+
+// ---------------------------------------------------------------------------
 // ③ Transações — PÁGINA A PÁGINA, nunca "busca tudo"
 // ---------------------------------------------------------------------------
 
@@ -718,25 +860,41 @@ type Lida = {
  * `PluggyTokenExpirado`, que afirma exatamente o que ficou provado (a
  * credencial está boa — o `/auth` acabou de passar).
  */
+type Envio = {
+  method?: string
+  /** Serializado como JSON. Presente ⇒ manda `content-type`. */
+  body?: unknown
+}
+
 async function pedirAutenticado(
   url: string,
   env: PluggyBindings,
   opts: PluggyOpts,
+  envio: Envio = {},
   jaRenovou = false,
 ): Promise<Lida> {
   const apiKey = await autenticar(env, opts)
+  const temCorpo = envio.body !== undefined
   const lida = await pedir(
     url,
     {
-      method: 'GET',
-      headers: { 'X-API-KEY': apiKey, accept: 'application/json' },
+      method: envio.method ?? 'GET',
+      headers: {
+        'X-API-KEY': apiKey,
+        accept: 'application/json',
+        ...(temCorpo ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(temCorpo ? { body: JSON.stringify(envio.body) } : {}),
     },
     opts,
   )
 
   if ((lida.status === 401 || lida.status === 403) && !jaRenovou) {
     esquecerApiKey(env)
-    return pedirAutenticado(url, env, opts, true)
+    // ⚠️ `envio` REPASSADO: sem ele o retry de 401 reenviaria um POST como
+    // GET — a conexão silenciosamente não seria criada e a resposta seria
+    // uma lista, não um item.
+    return pedirAutenticado(url, env, opts, envio, true)
   }
   return lida
 }

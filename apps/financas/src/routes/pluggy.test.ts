@@ -2,7 +2,11 @@ import { Hono } from 'hono'
 import { afterEach, describe, expect, it } from 'vitest'
 import { errJson } from '../lib/envelope'
 import { MAX_PAGINAS, PAGE_SIZE } from '../lib/pluggy'
-import { pluggyRoutes } from './pluggy'
+import {
+  CHAVE_ITEM_PLUGGY,
+  MSG_AGUARDANDO_AUTORIZACAO,
+  pluggyRoutes,
+} from './pluggy'
 
 /**
  * ⚠️ **NENHUM teste deste arquivo chama a API do Pluggy nem toca a rede.**
@@ -582,5 +586,354 @@ describe('pluggyRoutes — montagem', () => {
 
     expect(res.status).toBe(200)
     expect((await corpo(res)).notifications).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Conectar — POST /api/pluggy/connect e GET /api/pluggy/accounts
+// ---------------------------------------------------------------------------
+
+/**
+ * D1 de mentira, só o suficiente pra `getSetting`/`setSetting`. `store` fica
+ * exposto porque várias asserções aqui são sobre O QUE FOI GRAVADO, não sobre
+ * a resposta — é o gravar que impede o dono de perder a autorização que
+ * acabou de dar.
+ */
+function fakeDB(inicial: Record<string, string> = {}) {
+  const store = new Map<string, string>(Object.entries(inicial))
+  const db = {
+    prepare(sql: string) {
+      return {
+        bind(...args: unknown[]) {
+          return {
+            async first<T>(): Promise<T | null> {
+              if (!sql.includes('SELECT value FROM settings')) return null
+              const v = store.get(String(args[0]))
+              return v === undefined ? null : ({ value: v } as T)
+            },
+            async run() {
+              if (sql.includes('INSERT INTO settings')) {
+                store.set(String(args[0]), String(args[1]))
+              }
+              return { success: true }
+            },
+          }
+        },
+      }
+    },
+  }
+  return { db, store }
+}
+
+const ITEM_OAUTH_URL = 'https://connect.pluggy.ai/oauth/xyz789'
+
+function itemCriado(over: Record<string, unknown> = {}) {
+  return {
+    id: 'item-novo-789',
+    status: 'WAITING_USER_INPUT',
+    executionStatus: null,
+    connector: { id: 200, name: 'Meu Pluggy' },
+    parameter: { name: 'oauthCode', type: 'oauth', data: ITEM_OAUTH_URL },
+    ...over,
+  }
+}
+
+/** Stub roteado por URL+método, cobrindo POST /items e GET /accounts. */
+function mockConectar(opts: {
+  chamadas: Chamada[]
+  criar?: Record<string, unknown>
+  criarStatus?: number
+  criarHeaders?: Record<string, string>
+  item?: Record<string, unknown>
+  contas?: Array<Record<string, unknown>>
+}) {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const method = init?.method ?? 'GET'
+    opts.chamadas.push({ url, method })
+
+    if (url.endsWith('/auth')) return jsonResponse({ apiKey: API_KEY })
+
+    if (url.endsWith('/items') && method === 'POST') {
+      if (opts.criarStatus !== undefined && opts.criarStatus !== 200) {
+        return jsonResponse(
+          { message: 'nope' },
+          opts.criarStatus,
+          opts.criarHeaders ?? {},
+        )
+      }
+      return jsonResponse(opts.criar ?? itemCriado())
+    }
+
+    if (url.includes('/items/')) {
+      return jsonResponse(
+        opts.item ?? { id: ITEM_ID, status: 'UPDATED', executionStatus: null },
+      )
+    }
+
+    if (url.includes('/accounts')) {
+      return jsonResponse({
+        results: opts.contas ?? [
+          { id: 'acc-banco', type: 'BANK', name: 'Conta Corrente' },
+          { id: 'acc-cartao', type: 'CREDIT', name: 'Cartão' },
+        ],
+      })
+    }
+
+    throw new Error(`URL inesperada em teste: ${url}`)
+  }) as typeof fetch
+}
+
+function envCom(db: unknown, extra: Record<string, unknown> = {}) {
+  return { ...criarEnv(), DB: db, ...extra }
+}
+
+describe('POST /api/pluggy/connect', () => {
+  it('sem os dois secrets: 503 pluggy_disabled e NENHUMA chamada de rede', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      { DB: db },
+    )
+
+    expect(res.status).toBe(503)
+    expect((await corpo(res)).notifications[0].code).toBe('pluggy_disabled')
+    expect(chamadas).toHaveLength(0)
+  })
+
+  it('cria o item com o conector 200 e devolve a URL de autorização', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await corpo(res)
+    expect(body.data).toEqual({
+      item_id: 'item-novo-789',
+      status: 'WAITING_USER_INPUT',
+      execution_status: null,
+      authorize_url: ITEM_OAUTH_URL,
+    })
+    const criacao = chamadas.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/items'),
+    )
+    expect(criacao).toBeDefined()
+  })
+
+  it('⚠️ grava o item_id em settings — sem isso a autorização é dada e perdida', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db, store } = fakeDB()
+
+    await app().request('/api/pluggy/connect', { method: 'POST' }, envCom(db))
+
+    expect(store.get(CHAVE_ITEM_PLUGGY)).toBe('item-novo-789')
+  })
+
+  it('⚠️ item recém-criado NÃO vira pluggy_item_disconnected', async () => {
+    // `WAITING_USER_INPUT` está na allowlist de "precisa reconectar". Se esta
+    // rota passasse o item por `assertItemConectado`, o dono leria "abra o app
+    // Meu Pluggy e reconecte" no instante em que clicou em "Conectar banco" —
+    // e a URL, única saída, sumiria da resposta.
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+
+    expect(res.status).toBe(200)
+    const body = await corpo(res)
+    expect(body.notifications).toEqual([])
+    expect((body.data as { authorize_url: string }).authorize_url).toBe(
+      ITEM_OAUTH_URL,
+    )
+  })
+
+  it('item que já volta autorizado tem authorize_url null', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({
+      chamadas,
+      criar: itemCriado({ status: 'UPDATED', parameter: null }),
+    })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+
+    expect((await corpo(res)).data).toMatchObject({ authorize_url: null })
+  })
+
+  it('429 do Pluggy vira 429 pluggy_rate_limited', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({
+      chamadas,
+      criarStatus: 429,
+      criarHeaders: { 'retry-after': '45' },
+    })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+
+    expect(res.status).toBe(429)
+    expect((await corpo(res)).notifications[0].code).toBe('pluggy_rate_limited')
+  })
+
+  it('nem o secret nem a apiKey aparecem na resposta', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas, criarStatus: 500 })
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+    const texto = JSON.stringify(await corpo(res))
+
+    expect(texto).not.toContain(CLIENT_SECRET)
+    expect(texto).not.toContain(API_KEY)
+  })
+})
+
+describe('GET /api/pluggy/accounts', () => {
+  function pegarContas(
+    query = '',
+    bindings?: Record<string, unknown>,
+  ): Promise<Response> {
+    return Promise.resolve(
+      app().request(`/api/pluggy/accounts${query}`, {}, bindings),
+    )
+  }
+
+  it('sem os dois secrets: 503 pluggy_disabled e NENHUMA chamada de rede', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB()
+
+    const res = await pegarContas('', { DB: db })
+
+    expect(res.status).toBe(503)
+    expect(chamadas).toHaveLength(0)
+  })
+
+  it('sem item_id e sem conexão salva: 400 invalid_query apontando o campo', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB()
+
+    const res = await pegarContas('', envCom(db))
+
+    expect(res.status).toBe(400)
+    const n = (await corpo(res)).notifications[0]
+    expect(n.code).toBe('invalid_query')
+    expect(n.field).toBe('item_id')
+    expect(chamadas).toHaveLength(0)
+  })
+
+  it('usa o item_id salvo por POST /connect quando a query não traz um', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB({ [CHAVE_ITEM_PLUGGY]: 'item-salvo-1' })
+
+    const res = await pegarContas('', envCom(db))
+
+    expect(res.status).toBe(200)
+    expect((await corpo(res)).data).toMatchObject({ item_id: 'item-salvo-1' })
+    expect(chamadas.some((c) => c.url.includes('/items/item-salvo-1'))).toBe(
+      true,
+    )
+  })
+
+  it('o item_id da query tem precedência sobre o salvo', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB({ [CHAVE_ITEM_PLUGGY]: 'item-salvo-1' })
+
+    await pegarContas('?item_id=item-da-query', envCom(db))
+
+    expect(chamadas.some((c) => c.url.includes('/items/item-da-query'))).toBe(
+      true,
+    )
+    expect(chamadas.some((c) => c.url.includes('item-salvo-1'))).toBe(false)
+  })
+
+  it('devolve as contas — o que vira o select da tela', async () => {
+    const chamadas: Chamada[] = []
+    mockConectar({ chamadas })
+    const { db } = fakeDB({ [CHAVE_ITEM_PLUGGY]: ITEM_ID })
+
+    const res = await pegarContas('', envCom(db))
+
+    expect(res.status).toBe(200)
+    const data = (await corpo(res)).data as { contas: Array<{ id: string }> }
+    expect(data.contas.map((c) => c.id)).toEqual(['acc-banco', 'acc-cartao'])
+  })
+
+  it('⚠️ item não autorizado: 409 aguardando_autorizacao, SEM listar contas', async () => {
+    // Sem este guard, `GET /accounts` responderia 200 com lista VAZIA — o
+    // dono leria "conectei e não apareceu conta nenhuma", sem nada dizendo
+    // que falta autorizar. Mesma classe de falha que tornou `item_id`
+    // obrigatório em /transactions.
+    const chamadas: Chamada[] = []
+    mockConectar({
+      chamadas,
+      item: {
+        id: ITEM_ID,
+        status: 'WAITING_USER_INPUT',
+        executionStatus: null,
+      },
+    })
+    const { db } = fakeDB({ [CHAVE_ITEM_PLUGGY]: ITEM_ID })
+
+    const res = await pegarContas('', envCom(db))
+
+    expect(res.status).toBe(409)
+    const n = (await corpo(res)).notifications[0]
+    expect(n.code).toBe('pluggy_aguardando_autorizacao')
+    expect(n.message).toBe(MSG_AGUARDANDO_AUTORIZACAO)
+    expect(chamadas.some((c) => c.url.includes('/accounts'))).toBe(false)
+  })
+
+  it('⚠️ conexão CAÍDA é outro erro, com outra instrução', async () => {
+    // Asserção negativa cruzada: achatar os dois num só daria a instrução
+    // errada — "termine a autorização" para quem precisa REFAZER a conexão.
+    const chamadas: Chamada[] = []
+    mockConectar({
+      chamadas,
+      item: {
+        id: ITEM_ID,
+        status: 'LOGIN_ERROR',
+        executionStatus: 'LOGIN_ERROR',
+      },
+    })
+    const { db } = fakeDB({ [CHAVE_ITEM_PLUGGY]: ITEM_ID })
+
+    const res = await pegarContas('', envCom(db))
+
+    expect(res.status).toBe(409)
+    const n = (await corpo(res)).notifications[0]
+    expect(n.code).toBe('pluggy_item_disconnected')
+    expect(n.message).not.toBe(MSG_AGUARDANDO_AUTORIZACAO)
   })
 })

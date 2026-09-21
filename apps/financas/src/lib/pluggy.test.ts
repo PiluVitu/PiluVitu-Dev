@@ -25,12 +25,17 @@ import {
   autenticar,
   buscarItem,
   buscarPaginaDeTransacoes,
+  CONNECTOR_MEU_PLUGGY,
+  criarItem,
   esquecerApiKey,
+  listarContas,
   paginasDeTransacoes,
   pluggyConfigurado,
   precisaReconectar,
+  urlDeAutorizacao,
   type PluggyBindings,
   type PluggyItem,
+  type PluggyItemCriado,
 } from './pluggy'
 
 // ⚠️ Marcadores IMPROVÁVEIS: `not.toContain('secret')` casaria com qualquer
@@ -696,4 +701,250 @@ describe('⚠️ credencial e apiKey fora de TODA mensagem de erro', () => {
       expect(erro!.message).not.toContain(API_KEY)
     },
   )
+})
+
+// ---------------------------------------------------------------------------
+// ②-bis Conectar — `criarItem` / `urlDeAutorizacao` / `listarContas`
+// ---------------------------------------------------------------------------
+
+const ITEM_NOVO = {
+  id: 'item-recem-criado',
+  status: 'WAITING_USER_INPUT',
+  executionStatus: null,
+  connector: { id: CONNECTOR_MEU_PLUGGY, name: 'Meu Pluggy' },
+  parameter: {
+    name: 'oauthCode',
+    type: 'oauth',
+    label: 'Oauth Code',
+    instructions: 'Log into Meu Pluggy to continue',
+    data: 'https://connect.pluggy.ai/oauth/abc123',
+    expiresAt: '2026-09-21T23:59:59.000Z',
+  },
+}
+
+describe('criarItem', () => {
+  it('faz POST /items com o conector 200 e `parameters` vazio', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, ITEM_NOVO))
+
+    await criarItem(env(), { fetchImpl: f })
+
+    const [url, init] = chamadas(f)[1]
+    expect(url).toBe(`${PLUGGY_BASE_URL}/items`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({
+      connectorId: 200,
+      parameters: {},
+    })
+    expect((init.headers as Record<string, string>)['content-type']).toBe(
+      'application/json',
+    )
+  })
+
+  it('devolve o item com o `parameter` que carrega a URL', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, ITEM_NOVO))
+
+    const item = await criarItem(env(), { fetchImpl: f })
+
+    expect(item.id).toBe('item-recem-criado')
+    expect(item.status).toBe('WAITING_USER_INPUT')
+    expect(item.parameter?.data).toBe('https://connect.pluggy.ai/oauth/abc123')
+  })
+
+  it('⚠️ o retry de 401 REENVIA como POST, não como GET', async () => {
+    // Sem repassar o `envio` na recursão, a segunda tentativa viraria um
+    // `GET /items` — que não cria conexão nenhuma e ainda responde 200 com
+    // outro shape. Falha silenciosa, o pior tipo.
+    const f = fetchEmSequencia(
+      AUTH_OK,
+      () => json(401, { message: 'expired' }),
+      AUTH_OK,
+      () => json(200, ITEM_NOVO),
+    )
+
+    await criarItem(env(), { fetchImpl: f })
+
+    const [, reenvio] = chamadas(f)[3]
+    expect(reenvio.method).toBe('POST')
+    expect(JSON.parse(reenvio.body as string).connectorId).toBe(200)
+  })
+
+  it('corpo sem `id`/`status` vira PluggyRespostaIlegivel', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, { foo: 'bar' }))
+
+    await expect(criarItem(env(), { fetchImpl: f })).rejects.toBeInstanceOf(
+      PluggyRespostaIlegivel,
+    )
+  })
+
+  it('429 vira PluggyRateLimitado', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () =>
+      json(429, { message: 'slow down' }, { 'retry-after': '30' }),
+    )
+
+    await expect(criarItem(env(), { fetchImpl: f })).rejects.toBeInstanceOf(
+      PluggyRateLimitado,
+    )
+  })
+
+  it('sem secrets lança PluggyDesligado ANTES de qualquer fetch', async () => {
+    const f = fetchEmSequencia(AUTH_OK)
+
+    await expect(
+      criarItem(env({ PLUGGY_CLIENT_SECRET: '' }), { fetchImpl: f }),
+    ).rejects.toBeInstanceOf(PluggyDesligado)
+    expect(chamadas(f)).toHaveLength(0)
+  })
+
+  it('nem o secret nem a apiKey vazam na mensagem de erro', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, { nada: true }))
+
+    const erro = await criarItem(env(), { fetchImpl: f }).catch((e) => e)
+
+    expect(String(erro)).not.toContain(SECRET)
+    expect(String(erro)).not.toContain(API_KEY)
+  })
+})
+
+describe('⚠️ a armadilha: item recém-criado × assertItemConectado', () => {
+  it('assertItemConectado LANÇA num item recém-criado — por isso criarItem nunca passa por ela', () => {
+    // Caracterização, não bug: `WAITING_USER_INPUT` está na allowlist de
+    // "precisa reconectar" porque, num item que JÁ ESTEVE DE PÉ, é o que
+    // significa. Num item recém-nascido é o caminho feliz. Se alguém um dia
+    // encadear criarItem → assertItemConectado, este teste explica o estrago:
+    // o dono lê "abra o app Meu Pluggy e reconecte" logo depois de clicar em
+    // "Conectar banco", e a URL de autorização some.
+    expect(() => assertItemConectado(ITEM_NOVO as PluggyItem)).toThrow(
+      PluggyItemDesconectado,
+    )
+    expect(urlDeAutorizacao(ITEM_NOVO as PluggyItemCriado)).not.toBeNull()
+  })
+})
+
+describe('urlDeAutorizacao', () => {
+  it('devolve a URL quando o parâmetro é oauth', () => {
+    expect(urlDeAutorizacao(ITEM_NOVO as PluggyItemCriado)).toBe(
+      'https://connect.pluggy.ai/oauth/abc123',
+    )
+  })
+
+  it('devolve null quando não há parameter (item já autorizado)', () => {
+    const pronto = { id: 'i', status: 'UPDATED', parameter: null }
+    expect(urlDeAutorizacao(pronto as PluggyItemCriado)).toBeNull()
+  })
+
+  it('devolve null quando o parâmetro NÃO é oauth', () => {
+    // MFA por SMS, por exemplo: tem `parameter`, mas não há URL pra abrir —
+    // devolver `data` aqui mandaria o navegador pra um lugar que não existe.
+    const mfa = {
+      id: 'i',
+      status: 'WAITING_USER_INPUT',
+      parameter: { name: 'token', type: 'number', data: '123456' },
+    }
+    expect(urlDeAutorizacao(mfa as PluggyItemCriado)).toBeNull()
+  })
+
+  it('devolve null quando `data` vem vazio ou só espaço', () => {
+    const vazio = {
+      id: 'i',
+      status: 'WAITING_USER_INPUT',
+      parameter: { type: 'oauth', data: '   ' },
+    }
+    expect(urlDeAutorizacao(vazio as PluggyItemCriado)).toBeNull()
+  })
+})
+
+describe('listarContas', () => {
+  const CONTAS = {
+    results: [
+      {
+        id: 'conta-corrente-uuid',
+        type: 'BANK',
+        subtype: 'CHECKING_ACCOUNT',
+        name: 'Conta Corrente',
+        number: '1234',
+      },
+      {
+        id: 'cartao-uuid',
+        type: 'CREDIT',
+        subtype: 'CREDIT_CARD',
+        name: 'Cartão Platinum',
+        number: '5678',
+      },
+    ],
+  }
+
+  it('monta GET /accounts?itemId= com o id escapado', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, CONTAS))
+
+    await listarContas(env(), 'item/com barra', { fetchImpl: f })
+
+    const [url, init] = chamadas(f)[1]
+    expect(url).toBe(
+      `${PLUGGY_BASE_URL}/accounts?itemId=${encodeURIComponent('item/com barra')}`,
+    )
+    expect(init.method).toBe('GET')
+    expect(init.body).toBeUndefined()
+  })
+
+  it('devolve as contas com id e type — o que vira o select', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, CONTAS))
+
+    const contas = await listarContas(env(), 'item-1', { fetchImpl: f })
+
+    expect(contas).toHaveLength(2)
+    expect(contas.map((c) => c.id)).toEqual([
+      'conta-corrente-uuid',
+      'cartao-uuid',
+    ])
+    expect(contas.map((c) => c.type)).toEqual(['BANK', 'CREDIT'])
+  })
+
+  it('itemId vazio é RangeError, sem tocar a rede', async () => {
+    const f = fetchEmSequencia(AUTH_OK)
+
+    await expect(
+      listarContas(env(), '   ', { fetchImpl: f }),
+    ).rejects.toBeInstanceOf(RangeError)
+    expect(chamadas(f)).toHaveLength(0)
+  })
+
+  it('`results` que não é lista vira PluggyRespostaIlegivel', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () =>
+      json(200, { results: 'nao-lista' }),
+    )
+
+    await expect(
+      listarContas(env(), 'item-1', { fetchImpl: f }),
+    ).rejects.toBeInstanceOf(PluggyRespostaIlegivel)
+  })
+
+  it('conta sem `id` derruba a lista inteira em vez de virar undefined no select', async () => {
+    // Deixar passar poria `value={undefined}` no <option>, e o dono salvaria
+    // uma conexão que nunca sincroniza — erro que só aparece muito depois.
+    const f = fetchEmSequencia(AUTH_OK, () =>
+      json(200, { results: [{ type: 'BANK', name: 'sem id' }] }),
+    )
+
+    await expect(
+      listarContas(env(), 'item-1', { fetchImpl: f }),
+    ).rejects.toBeInstanceOf(PluggyRespostaIlegivel)
+  })
+
+  it('conta sem `type` também', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () =>
+      json(200, { results: [{ id: 'x', name: 'sem type' }] }),
+    )
+
+    await expect(
+      listarContas(env(), 'item-1', { fetchImpl: f }),
+    ).rejects.toBeInstanceOf(PluggyRespostaIlegivel)
+  })
+
+  it('lista vazia é resposta legítima, não erro', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, { results: [] }))
+
+    await expect(
+      listarContas(env(), 'item-1', { fetchImpl: f }),
+    ).resolves.toEqual([])
+  })
 })
