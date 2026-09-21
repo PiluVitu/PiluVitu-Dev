@@ -2949,3 +2949,80 @@ describe('ImportarPage — "puxar o máximo" é atalho, não default', () => {
     )
   })
 })
+
+describe('ImportarPage — a conferência de 530 linhas tem que ser usável', () => {
+  async function conferenciaCom(n: number) {
+    mockRede({
+      chamadas: [],
+      conexaoPluggySalva: JSON.stringify({
+        item_id: 'it-1',
+        account_id: 'pg-a',
+      }),
+      pluggyResposta: {
+        linhas: Array.from({ length: n }, (_, i) => ({
+          imported_id: `tx-${i}`,
+          purchase_date: '2026-08-15',
+          amount_cents: -1000 - i,
+          description: `Compra ${i}`,
+        })),
+      },
+    })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+    await usuario.click(
+      await screen.findByRole('button', { name: 'Sincronizar com o banco' }),
+    )
+    await screen.findByTestId('conferencia-acoes')
+    return usuario
+  }
+
+  test('⚠️ o botão de confirmar vive numa barra FIXA, não no fim da lista', async () => {
+    // Com 530 linhas o botão ficava depois de ~37.000px de rolagem: pra
+    // confirmar era preciso percorrer a lista inteira. A barra é `sticky`,
+    // então está no DOM junto do botão e visível o tempo todo.
+    await conferenciaCom(30)
+
+    const barra = screen.getByTestId('conferencia-acoes')
+
+    expect(barra.className).toContain('sticky')
+    expect(
+      within(barra).getByRole('button', { name: /Confirmar importação/ }),
+    ).toBeInTheDocument()
+    expect(barra).toHaveTextContent('30 de 30 marcadas')
+  })
+
+  test('"marcar todas" alterna as duas direções, e o total acompanha', async () => {
+    const usuario = await conferenciaCom(5)
+    const barra = screen.getByTestId('conferencia-acoes')
+
+    // Numa conta vazia tudo nasce marcado, então a primeira ação é desmarcar.
+    expect(barra).toHaveTextContent('5 de 5 marcadas')
+    await usuario.click(screen.getByTestId('conferencia-alternar-todas'))
+    expect(screen.getByTestId('conferencia-acoes')).toHaveTextContent(
+      '0 de 5 marcadas',
+    )
+
+    // Com zero marcadas, confirmar não faz sentido e fica bloqueado.
+    expect(
+      within(screen.getByTestId('conferencia-acoes')).getByRole('button', {
+        name: /Confirmar importação/,
+      }),
+    ).toBeDisabled()
+
+    await usuario.click(screen.getByTestId('conferencia-alternar-todas'))
+    expect(screen.getByTestId('conferencia-acoes')).toHaveTextContent(
+      '5 de 5 marcadas',
+    )
+  })
+
+  test('payee e categoria ficam lado a lado — é o que corta a altura da lista', async () => {
+    await conferenciaCom(3)
+
+    const grade = screen.getByTestId('payee-0').closest('div')?.parentElement
+
+    expect(grade?.className).toContain('sm:grid-cols-2')
+  })
+})

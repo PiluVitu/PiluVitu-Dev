@@ -1001,6 +1001,11 @@ export function ImportarPage() {
       ? avisoDeTipoDeConta(contaAtual.kind, contaDoBancoEscolhida.type)
       : null
 
+  // Contado UMA vez: era recalculado no rótulo do botão e de novo no
+  // `disabled`, e a barra fixa acrescentaria um terceiro `filter` por render
+  // sobre uma lista de 530.
+  const marcadas = linhas.filter((l) => l.marcada).length
+
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
@@ -1812,7 +1817,11 @@ export function ImportarPage() {
                       descartada. Escolha abaixo.
                     </p>
                   ) : null}
-                  <div className="grid grid-cols-1 gap-2">
+                  {/* ⚠️ `sm:grid-cols-2` em vez de empilhado: com 530
+                      linhas, cada campo a mais é ~70px × 530 = 37.000px de
+                      rolagem. Lado a lado corta a altura da linha quase pela
+                      metade sem esconder nada. */}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label htmlFor={`payee-${i}`}>Payee sugerido</Label>
                       <select
@@ -1891,14 +1900,45 @@ export function ImportarPage() {
               </p>
             ) : null}
 
-            <Button
-              onClick={enviarConfirmadas}
-              disabled={passo === 'enviando' || linhas.every((l) => !l.marcada)}
+            {/* ⚠️ BARRA FIXA, e a fixação é a correção. Com 530 linhas o
+                botão ficava no fim de ~37.000px de rolagem: para confirmar,
+                o dono tinha que percorrer a lista inteira — ou, pior,
+                desistir no meio sem saber que o botão existia. Fica colada
+                embaixo, sempre alcançável, com o total ao lado pra a
+                contagem não exigir voltar ao topo. */}
+            <div
+              data-testid="conferencia-acoes"
+              className="bg-background/95 sticky bottom-0 -mx-6 flex flex-wrap items-center gap-3 border-t px-6 py-3 backdrop-blur"
             >
-              {passo === 'enviando'
-                ? 'Enviando…'
-                : `Confirmar importação (${linhas.filter((l) => l.marcada).length})`}
-            </Button>
+              <Button
+                onClick={enviarConfirmadas}
+                disabled={
+                  passo === 'enviando' || linhas.every((l) => !l.marcada)
+                }
+              >
+                {passo === 'enviando'
+                  ? 'Enviando…'
+                  : `Confirmar importação (${marcadas})`}
+              </Button>
+              <button
+                type="button"
+                data-testid="conferencia-alternar-todas"
+                disabled={passo === 'enviando'}
+                className={`text-muted-foreground text-xs underline ${ALVO_LINK}`}
+                onClick={() =>
+                  setLinhas((ls) =>
+                    ls.map((l) => ({ ...l, marcada: marcadas !== ls.length })),
+                  )
+                }
+              >
+                {marcadas === linhas.length
+                  ? 'desmarcar todas'
+                  : 'marcar todas'}
+              </button>
+              <span className="text-muted-foreground text-xs">
+                {marcadas} de {linhas.length} marcadas
+              </span>
+            </div>
           </CardContent>
         </Card>
       ) : null}
