@@ -347,12 +347,14 @@ describe('GET /api/pluggy/transactions — caminho feliz', () => {
         purchase_date: '2026-07-15',
         amount_cents: -18990,
         description: 'Mercado',
+        external_category_id: null,
       },
       {
         imported_id: 'tx-estorno',
         purchase_date: '2026-07-20',
         amount_cents: 5025,
         description: 'Estorno',
+        external_category_id: null,
       },
     ])
     expect(data.rejeitadas).toEqual([])

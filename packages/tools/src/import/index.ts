@@ -13,4 +13,7 @@ export type LinhaImportada = {
   // Centavos, INTEGER. Negativo = despesa, positivo = crédito/estorno.
   amount_cents: number
   description: string
+  // Id da categoria NA ORIGEM (hoje só o Pluggy preenche). Opcional: OFX, CSV
+  // e lançamento manual não têm. Não é gravado — vira sugestão na conferência.
+  external_category_id?: string | null
 }

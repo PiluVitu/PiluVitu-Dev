@@ -321,6 +321,10 @@ export function mapearTransacao(tx: PluggyTransacao): Mapeamento {
       purchase_date,
       amount_cents: sinal * magnitude,
       description,
+      external_category_id:
+        typeof tx.categoryId === 'string' && tx.categoryId !== ''
+          ? tx.categoryId
+          : null,
     },
   }
 }

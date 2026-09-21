@@ -3367,6 +3367,48 @@ O consumidor que faltava pras duas rotas acima. **Zero Worker, zero rota, zero m
 | `rotuloDeConta` trocado por um rótulo achatado            | 2 — o `type` desconhecido some do `<select>`               |
 | `contasPluggy()` chamada DENTRO do efeito por `accountId` | 2 — **mais 5 unhandled rejections** (a armadilha, literal) |
 
+## Open Finance / Pluggy (fatia ⑦) — a categoria do banco vira sugestão
+
+`GET /categories` do Pluggy devolve **130 categorias em 22 famílias**, com `descriptionTranslated` já em português. E `category`/`categoryId` **vêm preenchidos**: medido nas duas contas do dono, **925 de 938 (98,6%)**.
+
+⚠️ **Isto corrige um fato ERRADO que estava registrado aqui.** A tabela da fatia ④ dizia "`category` vem **sempre `null`** no free". Não vem — ou mudou, ou a medição original olhou o lugar errado. Um fato desatualizado no `CLAUDE.md` custa mais que fato nenhum: ele desencoraja quem ia usar o dado.
+
+### O mapeamento é por FAMÍLIA, e é isso que o deixa auto-atualizável
+
+`categoryId` é hierárquico: os **2 primeiros dígitos são a família** (`10000000` Supermercado, `05070000` → família `05`, Transferências). A migration `0010` semeia uma categoria por família com **`slug = 'pluggy-NN'`**, e `categoriaDoPluggy` (`web/src/lib/categorias-pluggy.ts`) resolve por esse slug.
+
+**Consequência prática:** categoria-folha nova do Pluggy dentro de uma família que já existe passa a funcionar **sem código e sem migration**. Só família nova exige ação — e `apps/financas/scripts/pluggy-categorias.mjs` roda contra a API real, compara com os slugs do seed e imprime as linhas de `INSERT` que faltam.
+
+```
+node scripts/pluggy-categorias.mjs
+# famílias no Pluggy: 22 | já mapeadas: 21
+# ✓ nenhuma família nova — nada a fazer
+```
+
+⚠️ **A família 05 (Transferências) vira DUAS categorias e escolhe pelo SINAL.** No Pluggy ela só diz que o meio foi transferência, **não quem pagou quem**: um PIX recebido de terceiro é receita, um enviado é despesa. Como `kind` é do registro e o sinal é da transação, achatar as duas num registro só erraria o fluxo de caixa — e são **184 lançamentos** na base do dono, o maior grupo depois de Supermercado. A `04` (mesma titularidade) é a única transferência interna que o Pluggy afirma, e essa **não** depende do sinal.
+
+⚠️ **A família 99 ("Outros") NÃO é semeada, de propósito.** É o balde de "não sei" do Pluggy; criar uma categoria pra ela daria ares de classificação ao que não tem nenhuma. Sem correspondência, a linha chega na conferência sem sugestão — que é a verdade.
+
+⚠️ **Família desconhecida devolve `null`, nunca um chute.** Mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`.
+
+### Precedência: regra › favorecido › banco
+
+`sugerirParaLinha` (`web/src/lib/regras-import.ts`) ganhou a categoria do Pluggy como **último** recurso: `daRegra.category_id ?? doPayee?.default_category_id ?? categoriaDoPluggy(...)`. O palpite de terceiro nunca passa por cima de uma decisão do dono.
+
+`LinhaImportada` (`packages/tools`) ganhou **`external_category_id?: string | null`** — opcional porque OFX, CSV e lançamento manual não têm. **Não é gravado**: vira sugestão na conferência e morre ali.
+
+### Migration (⚠️ ação MANUAL do dono)
+
+```bash
+pnpm --filter @piluvitu/financas db:migrate:remote
+```
+
+`INSERT OR IGNORE` + slug: rodar de novo não duplica. ⚠️ Duas famílias são `transfer` (Investimentos e mesma titularidade), o que quebrou a asserção de seed em `schema.test.ts` — ela agora filtra `slug NOT LIKE 'pluggy-%'` para continuar falando só da `0001`.
+
+### Suítes
+
+`web/src/lib/categorias-pluggy.test.ts` **9 casos** (novo), `domain/pluggy-map.test.ts` 35 → 38. Worker 887 → 890, SPA 766 → 775. A asserção "a linha tem EXATAMENTE as N chaves" virou 5 — é ela que impede alguém acrescentar palpite ao shape sem perceber.
+
 ## ⚠️⚠️ Open Finance / Pluggy — o `/transactions` v1 MORREU (migração para `/v2`)
 
 **Incidente de produção, 2026-09-21.** `GET /api/pluggy/transactions` passou a responder `502 pluggy_ilegivel`. Causa: o Pluggy **descontinuou** o endpoint que o cliente usava.

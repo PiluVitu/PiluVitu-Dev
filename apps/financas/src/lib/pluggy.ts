@@ -259,6 +259,8 @@ export type PluggyTransacao = {
   currencyCode?: string
   /** Sempre `null` no plano free (medido) — a categorização vem das `rules`. */
   category?: string | null
+  /** Id hierárquico da categoria: os 2 primeiros dígitos são a família. */
+  categoryId?: string | null
 
   /**
    * `DEBIT` (saiu dinheiro) ou `CREDIT` (entrou).

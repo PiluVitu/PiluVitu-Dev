@@ -17,7 +17,7 @@ import { sugerirPayee, type PayeeParaSugestao } from './payee-suggest'
  * não é reimplementado.
  */
 
-export type CategoriaCarregada = { id: string }
+export type CategoriaCarregada = { id: string; slug?: string | null }
 
 export type SugestaoLinha = {
   payee_id: string
@@ -72,8 +72,14 @@ export type SugestaoLinha = {
  * defeito corrigido em `6ba822c`, e o caminho NOVO (regras) não pode
  * reintroduzi-lo. Mesma checagem pro favorecido, pelo mesmo motivo.
  */
+import { categoriaDoPluggy } from './categorias-pluggy'
+
 export function sugerirParaLinha(
-  linha: { description: string; amount_cents: number },
+  linha: {
+    description: string
+    amount_cents: number
+    external_category_id?: string | null
+  },
   ctx: {
     accountId: string
     payees: PayeeParaSugestao[]
@@ -92,9 +98,18 @@ export function sugerirParaLinha(
     ctx.regras,
   )
 
-  // A regra vence; o default do favorecido preenche o que ela não disse.
+  // A regra vence; o favorecido preenche o que ela não disse; a categoria que
+  // veio do banco é o último recurso — é palpite de terceiro, nunca decisão do
+  // dono.
   const categoriaBruta =
-    daRegra.category_id ?? doPayee?.default_category_id ?? null
+    daRegra.category_id ??
+    doPayee?.default_category_id ??
+    categoriaDoPluggy(
+      linha.external_category_id,
+      linha.amount_cents,
+      ctx.categories,
+    ) ??
+    null
   const payeeBruto = daRegra.payee_id ?? doPayee?.id ?? null
 
   const categoriaValida =

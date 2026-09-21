@@ -666,9 +666,13 @@ describe('migration 0001 — seed de categorias', () => {
   })
 
   it('semeia as categorias de transfer e debt_settlement', async () => {
+    // `slug NOT LIKE 'pluggy-%'` isola o seed da 0001: a 0010 semeia as
+    // famílias do Open Finance, e duas delas (Investimentos e Transferência
+    // mesma titularidade) também são `transfer`.
     const { results } = await DB.prepare(
       `SELECT slug FROM categories
         WHERE kind IN ('transfer','debt_settlement')
+          AND slug NOT LIKE 'pluggy-%'
         ORDER BY slug`,
     ).all()
 
