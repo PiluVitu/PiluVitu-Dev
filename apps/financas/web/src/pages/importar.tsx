@@ -30,6 +30,7 @@ import { type PayeeParaSugestao } from '../lib/payee-suggest'
 import {
   conectarPluggy,
   conexaoPluggy,
+  conexoesPluggy,
   contasPluggy,
   dicaParaErroPluggy,
   janelaPadrao,
@@ -37,6 +38,7 @@ import {
   rotuloDeConta,
   salvarConexaoPluggy,
   type ConexaoPluggy,
+  type ContaConectada,
   type LinhaRejeitadaView,
   type PluggyContaView,
   type PluggyTransactionsView,
@@ -267,6 +269,24 @@ export function ImportarPage() {
 
   const [accountId, setAccountId] = useState('')
   const [passo, setPasso] = useState<Passo>('selecionar')
+  /**
+   * A FILA do lote: as contas conectadas, percorridas uma a uma.
+   *
+   * ⚠️ **Fila, e não uma conferência única com todas as contas juntas — e a
+   * escolha é de SEGURANÇA, não de esforço.** Uma tela só exigiria que o
+   * envio agrupasse por conta, reescrevendo o único caminho de ESCRITA
+   * irreversível que existe aqui (`uq_tx_imported` impede reimportar por
+   * cima). A fila reusa o caminho já testado N vezes, sem tocar nele: cada
+   * conta mantém a sua dedupe, o seu aviso de primeiro import e as suas
+   * rejeitadas.
+   *
+   * ⚠️ O avanço é por BOTÃO, nunca automático. Encadear sozinho esconderia
+   * o resultado de cada conta atrás da próxima tela — e o resumo ("importei
+   * 12, pulei 3") é a única confirmação que o dono recebe.
+   */
+  const [fila, setFila] = useState<ContaConectada[]>([])
+  const [filaIndice, setFilaIndice] = useState(0)
+  const [montandoFila, setMontandoFila] = useState(false)
   const [origem, setOrigem] = useState<Origem>('ofx')
   const [arquivoErro, setArquivoErro] = useState<string | null>(null)
 
@@ -432,9 +452,17 @@ export function ImportarPage() {
     }
   }, [accountId])
 
+  /**
+   * ⚠️ `contaId` é PARÂMETRO, com default no estado — e a mudança existe
+   * pela fila do lote. `setAccountId` é assíncrono: no lote, a conferência
+   * da conta 2 começaria lendo o `accountId` da conta 1 e deduplicaria
+   * contra o extrato errado. Passar explicitamente elimina a corrida em vez
+   * de torcer contra ela.
+   */
   async function prepararConferencia(
     linhasBrutas: LinhaImportada[],
     fonte: Origem,
+    contaId: string = accountId,
   ) {
     let existentes: Set<string>
     let existentesCompletos: TxExistente[]
@@ -454,7 +482,7 @@ export function ImportarPage() {
             imported_id: string | null
           }
         >
-      >(`/api/transactions?account_id=${accountId}&limit=500`)
+      >(`/api/transactions?account_id=${contaId}&limit=500`)
       existentes = new Set(
         txs.map((t) => t.imported_id).filter((id): id is string => id !== null),
       )
@@ -540,7 +568,7 @@ export function ImportarPage() {
       // testada, e o sintoma seria a tela sugerindo diferente do que a tela
       // de regras promete.
       const sugestao = sugerirParaLinha(l, {
-        accountId,
+        accountId: contaId,
         payees,
         categories,
         // Não pode ser `null` aqui: o input de arquivo fica desabilitado
@@ -716,7 +744,20 @@ export function ImportarPage() {
    */
   async function sincronizarPluggy() {
     if (conexao === null) return
+    await sincronizarConta(conexao, accountId)
+  }
 
+  /**
+   * Puxa a janela de UMA conta e entra na conferência dela.
+   *
+   * ⚠️ Recebe conexão e conta como PARÂMETRO porque a fila do lote chama
+   * isto para contas que ainda não são a do estado — e `setAccountId` não
+   * teria surtido efeito ainda quando a chamada acontece.
+   */
+  async function sincronizarConta(
+    conexaoDaConta: ConexaoPluggy,
+    contaId: string,
+  ) {
     if (!isRealCalendarDate(pluggyDe) || !isRealCalendarDate(pluggyAte)) {
       // Validado no cliente antes de gastar requisição — um
       // `<input type="date">` não produz data inexistente sozinho, mas
@@ -741,8 +782,8 @@ export function ImportarPage() {
     setSincronizando(true)
     try {
       const params = new URLSearchParams({
-        account_id: conexao.account_id,
-        item_id: conexao.item_id,
+        account_id: conexaoDaConta.account_id,
+        item_id: conexaoDaConta.item_id,
         from: pluggyDe,
         to: pluggyAte,
       })
@@ -760,7 +801,7 @@ export function ImportarPage() {
         })
         return
       }
-      await prepararConferencia(resposta.linhas, 'pluggy')
+      await prepararConferencia(resposta.linhas, 'pluggy', contaId)
     } catch (err) {
       setPluggyErro(erroPluggy(err))
     } finally {
@@ -885,7 +926,52 @@ export function ImportarPage() {
     setPasso('concluido')
   }
 
+  /** Dispara o lote: monta a fila e já entra na conferência da primeira. */
+  async function sincronizarTodas() {
+    setPluggyErro(null)
+    setMontandoFila(true)
+    try {
+      const contas = await conexoesPluggy(accounts)
+      if (contas.length === 0) {
+        setPluggyErro({
+          code: 'sem_conexao',
+          message:
+            'Nenhuma conta tem conexão salva ainda. Conecte o banco em pelo menos uma conta antes de sincronizar em lote.',
+        })
+        return
+      }
+      setFila(contas)
+      setFilaIndice(0)
+      setAccountId(contas[0].accountId)
+      await sincronizarConta(contas[0].conexao, contas[0].accountId)
+    } finally {
+      setMontandoFila(false)
+    }
+  }
+
+  /** Avança para a próxima conta da fila, do passo `concluido`. */
+  async function proximaDaFila() {
+    const proximo = filaIndice + 1
+    if (proximo >= fila.length) return
+    const alvo = fila[proximo]
+    setFilaIndice(proximo)
+    setAccountId(alvo.accountId)
+    setResultado(null)
+    setEnvioErro(null)
+    setProgresso(null)
+    setRejeitadas([])
+    setPrimeiroPluggy(false)
+    setPluggyErro(null)
+    setPasso('selecionar')
+    await sincronizarConta(alvo.conexao, alvo.accountId)
+  }
+
   function novaImportacao() {
+    // ⚠️ Zera a fila: "nova importação" é recomeço, e deixar a fila de pé
+    // faria o botão de continuar reaparecer apontando pra uma sequência que
+    // o dono abandonou.
+    setFila([])
+    setFilaIndice(0)
     setPasso('selecionar')
     setLinhas([])
     setResultado(null)
@@ -1361,6 +1447,31 @@ export function ImportarPage() {
                 ) : null}
               </div>
             ) : null}
+
+            {/* ⚠️ Separado por borda e com texto próprio porque este
+                botão é o ÚNICO do card que NÃO obedece ao seletor de
+                conta da página — ele percorre todas as conectadas. Deixá-lo
+                junto do resto recriaria, invertida, a ambiguidade de
+                escopo que a fatia anterior acabou de matar. */}
+            <div className="space-y-2 border-t pt-4">
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="pluggy-sincronizar-todas"
+                disabled={montandoFila || sincronizando}
+                onClick={sincronizarTodas}
+              >
+                {montandoFila
+                  ? 'Procurando contas conectadas…'
+                  : 'Sincronizar todas as contas conectadas'}
+              </Button>
+              <p className="text-muted-foreground text-xs">
+                Percorre <strong>todas</strong> as contas que já têm conexão
+                salva, uma de cada vez, com o mesmo período acima. Você confere
+                e confirma cada conta antes de passar pra próxima — nada é
+                gravado em bloco.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -1499,6 +1610,15 @@ export function ImportarPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               Conferir importação
+              {fila.length > 1 ? (
+                <span
+                  data-testid="fila-progresso"
+                  className="text-muted-foreground text-xs font-normal"
+                >
+                  conta {filaIndice + 1} de {fila.length} ·{' '}
+                  {fila[filaIndice]?.nome}
+                </span>
+              ) : null}
               <Ajuda rotulo="Duplicata">
                 São duas checagens diferentes. A primeira é exata: o id da linha
                 já existe nesta conta. Ela só funciona dentro da MESMA origem —
@@ -1775,7 +1895,30 @@ export function ImportarPage() {
               {resultado.imported} importadas, {resultado.skipped} já existiam
               (puladas).
             </p>
-            <Button onClick={novaImportacao}>Nova importação</Button>
+            {filaIndice + 1 < fila.length ? (
+              <div className="space-y-2">
+                <Button
+                  data-testid="fila-continuar"
+                  disabled={sincronizando}
+                  onClick={proximaDaFila}
+                >
+                  {sincronizando
+                    ? 'Buscando…'
+                    : `Continuar: ${fila[filaIndice + 1].nome} (${filaIndice + 2} de ${fila.length})`}
+                </Button>
+                <p className="text-muted-foreground text-xs">
+                  Faltam {fila.length - filaIndice - 1} conta(s) na fila.
+                </p>
+              </div>
+            ) : null}
+            <Button
+              variant={filaIndice + 1 < fila.length ? 'outline' : 'default'}
+              onClick={novaImportacao}
+            >
+              {filaIndice + 1 < fila.length
+                ? 'Parar por aqui'
+                : 'Nova importação'}
+            </Button>
           </CardContent>
         </Card>
       ) : null}

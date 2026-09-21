@@ -320,3 +320,32 @@ export function avisoDeTipoDeConta(
   }
   return null
 }
+
+/** Uma conta do app que já tem conexão salva — um item da fila do lote. */
+export type ContaConectada = {
+  accountId: string
+  nome: string
+  conexao: ConexaoPluggy
+}
+
+/**
+ * Quais das contas do app já têm conexão salva, na ordem recebida.
+ *
+ * ⚠️ **Uma leitura POR CONTA, e não existe atalho** — nenhuma rota lista
+ * `settings` por prefixo, e inventar uma só pra isto seria backend novo pra
+ * economizar 3 requisições num app de usuário único. `conexaoPluggy`
+ * degrada pra `null` em falha, então uma conta que não responde só fica de
+ * fora da fila: nunca derruba as outras.
+ */
+export async function conexoesPluggy(
+  contas: Array<{ id: string; name: string }>,
+): Promise<ContaConectada[]> {
+  const pares = await Promise.all(
+    contas.map(async (c) => ({
+      accountId: c.id,
+      nome: c.name,
+      conexao: await conexaoPluggy(c.id),
+    })),
+  )
+  return pares.filter((p): p is ContaConectada => p.conexao !== null)
+}

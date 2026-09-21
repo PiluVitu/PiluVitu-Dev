@@ -3367,6 +3367,49 @@ O consumidor que faltava pras duas rotas acima. **Zero Worker, zero rota, zero m
 | `rotuloDeConta` trocado por um rótulo achatado            | 2 — o `type` desconhecido some do `<select>`               |
 | `contasPluggy()` chamada DENTRO do efeito por `accountId` | 2 — **mais 5 unhandled rejections** (a armadilha, literal) |
 
+## Open Finance / Pluggy (fatia ⑥) — escopo VISÍVEL e o LOTE de contas
+
+Duas correções nascidas do uso real em produção, não de revisão de código.
+
+### ⚠️ O escopo da conta era invisível — e custou um mapeamento errado DE VERDADE
+
+**MEDIDO no D1 de produção:** `settings['pluggy:554e13a8…']` apontava para o `accountId` `84ef7b0a…`, que `GET /accounts?itemId=` identifica como **`BANK · BANCO INTER`** — ou seja, a conta corrente do Inter ficou ligada a uma conta do app chamada **"Bradesco Cartões"**.
+
+⚠️ **A causa era de TELA, não desatenção do dono.** O `<select>` de conta morava DENTRO do card "Ler extrato ou fatura", cujo título o reivindicava para o import por arquivo. O card "Sincronizar com o banco" dependia dele **em silêncio** — não nomeava a conta em lugar nenhum. Na hora de escolher, a única coisa rotulada era "Conta no banco", que se lê como a escolha INTEIRA, não como um dos dois lados de um par.
+
+E o estrago não tem desfazer barato: `uq_tx_imported` impede reimportar por cima, então corrigir seria `DELETE … WHERE import_source='pluggy'` ou Time Travel. **Erro que só aparece depois de importar precisa ser impedido ANTES do clique.**
+
+As quatro mudanças, todas dentro do design system (nenhuma estética nova — trocar a linguagem visual só deste card o deixaria estrangeiro na tela):
+
+1. **O select subiu pro nível da PÁGINA** (`escopo-conta`), acima dos dois cards, rotulado "Conta do app que vai receber", dizendo que vale para a página inteira. O escopo deixa de ser convenção implícita e vira **estrutura**.
+2. **O card do Pluggy NOMEIA a conta em TODOS os estados** (`pluggy-escopo`), não só na hora de escolher — é o único elemento que liga o card ao seletor.
+3. **Os dois lados juntos:** o rótulo virou "Conta no banco a ligar em `<conta>`", e antes do botão há `pluggy-confirmacao-par` nomeando app **e** banco.
+4. **`avisoDeTipoDeConta(kindDoApp, typeDoPluggy)`** — pura, na lib, com teste próprio.
+
+⚠️ **O aviso de tipo é AVISO, NUNCA bloqueio.** `kind` e `type` não descrevem a intenção do dono, e travar o salvamento seria impedi-lo de usar o próprio dado. Type desconhecido do Pluggy **não vira aviso** (mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`). O caso que dói: `CREDIT` numa conta que não é `credit_card` — só `credit_card` preenche `bill_competence`, que é derivado e **não é patchável** (`protected_field`), então a fatura entraria sem competência e não teria conserto.
+
+⚠️ Os derivados (`nomeDaContaAtual`, `rotuloDaContaEscolhida`, `avisoDeTipo`) saem todos do **mesmo `accountId`** do seletor, nunca de um segundo estado — duas fontes para "qual conta" recriaria por dentro a ambiguidade que a fatia mata.
+
+### O LOTE — `conexoesPluggy` + a fila de contas
+
+`GET /api/pluggy/accounts` já devolve todas as contas do item; faltava tela. `sincronizarTodas()` monta a fila com `conexoesPluggy(accounts)` e percorre uma a uma.
+
+⚠️ **FILA, e não uma conferência única com todas as contas juntas — e a escolha é de SEGURANÇA.** Uma tela só exigiria que o envio agrupasse por conta, reescrevendo o único caminho de **escrita irreversível** que existe aqui. A fila reusa o caminho já testado N vezes sem tocar nele: cada conta mantém sua dedupe, seu aviso de primeiro import e suas rejeitadas.
+
+⚠️ **Uma requisição HTTP POR CONTA, nunca todas numa invocação.** `/transactions` gasta até **42 dos 50** subrequests por invocação do Worker (1 auth + 1 item + 40 páginas); duas contas juntas estourariam. Cada conta é uma invocação com seu próprio orçamento.
+
+⚠️ **O avanço é por BOTÃO (`fila-continuar`), nunca automático.** Encadear sozinho esconderia o resumo de cada conta atrás da próxima tela — e o resumo ("importei 12, pulei 3") é a única confirmação que o dono recebe.
+
+⚠️ **`prepararConferencia` ganhou `contaId` como PARÂMETRO** (default no estado). `setAccountId` é assíncrono: no lote, a conferência da conta 2 começaria lendo o `accountId` da conta 1 e **deduplicaria contra o extrato errado**. Travado por teste que inspeciona o `account_id` da última chamada de dedupe.
+
+⚠️ **`conexoesPluggy` faz uma leitura POR CONTA** — nenhuma rota lista `settings` por prefixo, e criar uma só pra isso seria backend novo pra economizar 3 requisições num app de usuário único. Conta que falha fica de fora da fila sem derrubar as outras (`conexaoPluggy` degrada pra `null`).
+
+O botão do lote fica **FORA** do condicional de "tem conexão?", no fim do card: é o único botão que não obedece ao seletor de conta, e escondê-lo quando a conta atual já está conectada o tornaria inalcançável justamente para quem tem várias.
+
+### Suítes
+
+`lib/pluggy.test.ts` 31 → 39 (+8: `avisoDeTipoDeConta` e `conexoesPluggy`), `pages/importar.test.tsx` 64 → 73 (+9). **SPA 742 → 759**, Worker 885 intocado. `mockRede` ganhou `contasDoApp` e `conexoesPorConta` (sem o segundo, todas as contas leriam a MESMA conexão e a fila não distinguiria uma da outra). `tsc`, `vitest` e `prettier` limpos pelo binário direto; `vite build` passa com o gate do `@source`.
+
 ## Segunda rodada de a11y/leitura — 5 defeitos MEDIDOS a 390×844
 
 Continuação direta da fatia _Acessibilidade de toque e leitura_ acima, com o mesmo instrumento (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`) apontado pras telas que aquela varredura não cobriu. Cinco defeitos de TELA, nenhum de dado: Worker intocado (**810**), `packages/ui` (**91**) e `packages/tools` (**147**) intocados, nenhuma rota, nenhuma migration, nenhuma dependência nova.

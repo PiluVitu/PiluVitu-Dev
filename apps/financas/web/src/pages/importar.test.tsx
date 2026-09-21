@@ -193,6 +193,13 @@ function mockRede(opts: {
   // chegando DEPOIS de o dono escolher o arquivo — a janela silenciosa que
   // o `disabled` do input existe pra fechar.
   regrasAtraso?: Promise<void>
+  // Contas do APP que `GET /api/accounts` devolve. Default: a fixture de uma
+  // conta só. A fila do lote precisa de mais de uma pra existir.
+  contasDoApp?: Array<Record<string, unknown>>
+  // Conexões já salvas, POR conta do app: `GET /api/settings/pluggy:<id>`
+  // devolve a daquela chave. Sem isto, todas as contas leem a MESMA conexão
+  // (`conexaoPluggySalva`) e a fila não distinguiria uma da outra.
+  conexoesPorConta?: Record<string, string>
 }) {
   vi.stubGlobal(
     'fetch',
@@ -204,7 +211,8 @@ function mockRede(opts: {
         const body = init?.body as string | undefined
         opts.chamadas.push({ url, method, body })
 
-        if (url.includes('/api/accounts')) return respondJson(accounts)
+        if (url.includes('/api/accounts'))
+          return respondJson(opts.contasDoApp ?? accounts)
         if (url.includes('/api/payees')) return respondJson(payees)
         if (url.includes('/api/rules')) {
           if (opts.regrasFalha)
@@ -305,6 +313,9 @@ function mockRede(opts: {
             return respondJson({ key, value: parsed.value })
           }
           if (key.startsWith('pluggy:')) {
+            const porConta = opts.conexoesPorConta?.[key]
+            if (porConta !== undefined)
+              return respondJson({ key, value: porConta })
             return respondJson({ key, value: opts.conexaoPluggySalva ?? null })
           }
           return respondJson({ key, value: opts.mapaImportSalvo ?? null })
@@ -2759,4 +2770,140 @@ describe('ImportarPage — o escopo da conta é VISÍVEL (fatia ⑥)', () => {
     await screen.findByLabelText(/^Conta no banco/)
     return usuario
   }
+})
+
+describe('ImportarPage — lote: a FILA de contas conectadas', () => {
+  const CONEXAO_A = JSON.stringify({ item_id: 'it-1', account_id: 'pg-a' })
+  const CONEXAO_B = JSON.stringify({ item_id: 'it-1', account_id: 'pg-b' })
+
+  const DUAS_CONTAS = [
+    { ...accounts[0], id: 'a1', name: 'Nubank cartão' },
+    { ...accounts[0], id: 'a2', name: 'Inter' },
+  ]
+
+  const LINHA = {
+    imported_id: 'pluggy-tx-lote',
+    purchase_date: '2026-08-15',
+    amount_cents: -1000,
+    description: 'Compra',
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => null),
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function abrir() {
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
+    )
+    return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  }
+
+  test('sem nenhuma conta conectada, o lote explica em vez de abrir tela vazia', async () => {
+    mockRede({ chamadas: [], contasDoApp: DUAS_CONTAS })
+    const usuario = await abrir()
+
+    await usuario.click(await screen.findByTestId('pluggy-sincronizar-todas'))
+
+    expect(await screen.findByTestId('pluggy-erro')).toHaveTextContent(
+      /Nenhuma conta tem conexão salva/i,
+    )
+  })
+
+  test('duas conectadas: entra na conferência da PRIMEIRA e diz onde está', async () => {
+    mockRede({
+      chamadas: [],
+      contasDoApp: DUAS_CONTAS,
+      conexoesPorConta: { 'pluggy:a1': CONEXAO_A, 'pluggy:a2': CONEXAO_B },
+      pluggyResposta: { linhas: [LINHA] },
+    })
+    const usuario = await abrir()
+
+    await usuario.click(await screen.findByTestId('pluggy-sincronizar-todas'))
+
+    expect(await screen.findByTestId('fila-progresso')).toHaveTextContent(
+      'conta 1 de 2 · Nubank cartão',
+    )
+  })
+
+  test('⚠️ a segunda conta deduplica contra o extrato DELA, não o da primeira', async () => {
+    // `setAccountId` é assíncrono: sem passar a conta por PARÂMETRO, a
+    // conferência da conta 2 leria `/api/transactions?account_id=` ainda com
+    // o id da conta 1 — e a dedupe olharia o extrato errado.
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      contasDoApp: DUAS_CONTAS,
+      conexoesPorConta: { 'pluggy:a1': CONEXAO_A, 'pluggy:a2': CONEXAO_B },
+      pluggyResposta: { linhas: [LINHA] },
+    })
+    const usuario = await abrir()
+
+    await usuario.click(await screen.findByTestId('pluggy-sincronizar-todas'))
+    await screen.findByTestId('fila-progresso')
+
+    const dedupe = chamadas.filter(
+      (c) =>
+        c.url.includes('/api/transactions?') && c.url.includes('limit=500'),
+    )
+    expect(dedupe.at(-1)?.url).toContain('account_id=a1')
+  })
+
+  test('terminada a primeira, o botão nomeia a PRÓXIMA e conta quantas faltam', async () => {
+    mockRede({
+      chamadas: [],
+      contasDoApp: DUAS_CONTAS,
+      conexoesPorConta: { 'pluggy:a1': CONEXAO_A, 'pluggy:a2': CONEXAO_B },
+      pluggyResposta: { linhas: [LINHA] },
+    })
+    const usuario = await abrir()
+
+    await usuario.click(await screen.findByTestId('pluggy-sincronizar-todas'))
+    await screen.findByTestId('fila-progresso')
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/ }),
+    )
+
+    const continuar = await screen.findByTestId('fila-continuar')
+    expect(continuar).toHaveTextContent('Continuar: Inter (2 de 2)')
+
+    // ⚠️ O avanço é por BOTÃO. Encadear sozinho esconderia o resumo de cada
+    // conta atrás da próxima tela — e o resumo é a única confirmação que o
+    // dono recebe de que a importação fez o que ele esperava.
+    expect(screen.getByTestId('resultado-resumo')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Parar por aqui' }),
+    ).toBeInTheDocument()
+  })
+
+  test('"Parar por aqui" abandona a fila — o botão de continuar não volta', async () => {
+    mockRede({
+      chamadas: [],
+      contasDoApp: DUAS_CONTAS,
+      conexoesPorConta: { 'pluggy:a1': CONEXAO_A, 'pluggy:a2': CONEXAO_B },
+      pluggyResposta: { linhas: [LINHA] },
+    })
+    const usuario = await abrir()
+
+    await usuario.click(await screen.findByTestId('pluggy-sincronizar-todas'))
+    await screen.findByTestId('fila-progresso')
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/ }),
+    )
+    await screen.findByTestId('fila-continuar')
+    await usuario.click(screen.getByRole('button', { name: 'Parar por aqui' }))
+
+    expect(screen.queryByTestId('fila-continuar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('fila-progresso')).not.toBeInTheDocument()
+  })
 })

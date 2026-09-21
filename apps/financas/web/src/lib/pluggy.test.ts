@@ -8,6 +8,7 @@ import {
   rotuloDeConta,
   salvarConexaoPluggy,
   avisoDeTipoDeConta,
+  conexoesPluggy,
 } from './pluggy'
 
 afterEach(() => {
@@ -418,5 +419,88 @@ describe('avisoDeTipoDeConta — avisa, nunca bloqueia', () => {
     expect(avisoDeTipoDeConta('checking', 'INVESTMENT')).toBeNull()
     expect(avisoDeTipoDeConta('credit_card', 'LOAN')).toBeNull()
     expect(avisoDeTipoDeConta('checking', '')).toBeNull()
+  })
+})
+
+describe('conexoesPluggy — quem entra na fila do lote', () => {
+  const CONEXAO = { item_id: 'it-1', account_id: 'ac-1' }
+
+  function respondePorChave(mapa: Record<string, string | null>) {
+    return vi.fn(async (url: string) => {
+      const key = decodeURIComponent(String(url).split('/api/settings/')[1])
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: { key, value: mapa[key] ?? null },
+          notifications: [],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+  }
+
+  test('devolve só as contas conectadas, na ordem recebida', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondePorChave({
+        'pluggy:a': JSON.stringify(CONEXAO),
+        'pluggy:c': JSON.stringify(CONEXAO),
+      }),
+    )
+
+    const r = await conexoesPluggy([
+      { id: 'a', name: 'Inter' },
+      { id: 'b', name: 'Sem conexão' },
+      { id: 'c', name: 'Nubank' },
+    ])
+
+    expect(r.map((x) => x.accountId)).toEqual(['a', 'c'])
+    expect(r.map((x) => x.nome)).toEqual(['Inter', 'Nubank'])
+    expect(r[0].conexao).toEqual(CONEXAO)
+  })
+
+  test('⚠️ conta que FALHA fica de fora sem derrubar as outras', async () => {
+    // `conexaoPluggy` degrada pra null em erro. Se uma conta indisponível
+    // derrubasse a lista inteira, um 500 numa chave tiraria o lote do ar
+    // para todas — capacidade opcional não pode quebrar o resto.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const key = decodeURIComponent(String(url).split('/api/settings/')[1])
+        if (key === 'pluggy:b') return new Response('boom', { status: 500 })
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: { key, value: JSON.stringify(CONEXAO) },
+            notifications: [],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+
+    const r = await conexoesPluggy([
+      { id: 'a', name: 'Inter' },
+      { id: 'b', name: 'Quebrada' },
+      { id: 'c', name: 'Nubank' },
+    ])
+
+    expect(r.map((x) => x.accountId)).toEqual(['a', 'c'])
+  })
+
+  test('nenhuma conectada devolve lista vazia, nunca erro', async () => {
+    vi.stubGlobal('fetch', respondePorChave({}))
+
+    await expect(conexoesPluggy([{ id: 'a', name: 'Inter' }])).resolves.toEqual(
+      [],
+    )
+  })
+
+  test('valor salvo com shape errado não entra na fila', async () => {
+    vi.stubGlobal('fetch', respondePorChave({ 'pluggy:a': '{"lixo":1}' }))
+
+    await expect(conexoesPluggy([{ id: 'a', name: 'Inter' }])).resolves.toEqual(
+      [],
+    )
   })
 })
