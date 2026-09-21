@@ -937,3 +937,52 @@ describe('GET /api/pluggy/accounts', () => {
     expect(n.message).not.toBe(MSG_AGUARDANDO_AUTORIZACAO)
   })
 })
+
+describe('POST /connect — a espera pela URL (o bug que o spike achou)', () => {
+  it('⚠️ item criado SEM parameter ainda devolve a authorize_url', async () => {
+    // Custa ~1s de suíte de propósito: é a rota de verdade, sem injeção, e a
+    // espera é justamente o que esta asserção existe pra provar. Sem ela o
+    // corpo sai com authorize_url: null e a tela dá beco sem saída.
+    const chamadas: Chamada[] = []
+    let primeira = true
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      chamadas.push({ url, method })
+      if (url.endsWith('/auth')) return jsonResponse({ apiKey: API_KEY })
+      if (url.endsWith('/items') && method === 'POST') {
+        // Como a API real responde: sem parameter, ainda em UPDATING.
+        return jsonResponse(
+          itemCriado({
+            status: 'UPDATING',
+            executionStatus: 'CREATED',
+            parameter: null,
+          }),
+        )
+      }
+      if (url.includes('/items/')) {
+        if (primeira) {
+          primeira = false
+          return jsonResponse(itemCriado())
+        }
+        return jsonResponse(itemCriado())
+      }
+      throw new Error(`URL inesperada em teste: ${url}`)
+    }) as typeof fetch
+    const { db } = fakeDB()
+
+    const res = await app().request(
+      '/api/pluggy/connect',
+      { method: 'POST' },
+      envCom(db),
+    )
+
+    expect(res.status).toBe(200)
+    const data = (await corpo(res)).data as { authorize_url: string | null }
+    expect(data.authorize_url).toBe(ITEM_OAUTH_URL)
+    expect(chamadas.some((c) => c.url.includes('/items/'))).toBe(true)
+  })
+})

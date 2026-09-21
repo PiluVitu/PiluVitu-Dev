@@ -25,8 +25,10 @@ import {
   autenticar,
   buscarItem,
   buscarPaginaDeTransacoes,
+  aguardarAutorizacao,
   CONNECTOR_MEU_PLUGGY,
   criarItem,
+  MAX_SONDAGENS_AUTORIZACAO,
   esquecerApiKey,
   listarContas,
   paginasDeTransacoes,
@@ -946,5 +948,78 @@ describe('listarContas', () => {
     await expect(
       listarContas(env(), 'item-1', { fetchImpl: f }),
     ).resolves.toEqual([])
+  })
+})
+
+describe('aguardarAutorizacao — a doc do Pluggy está ERRADA e isto prova', () => {
+  /** ⚠️ Nenhum teste aqui dorme de verdade: `dormir` é sempre injetado. */
+  const naoDorme = async () => {}
+
+  const CRIADO_SEM_URL = {
+    id: 'item-novo-789',
+    status: 'UPDATING',
+    executionStatus: 'CREATED',
+    parameter: null,
+  }
+
+  it('item que JÁ tem URL volta na hora, sem sondar nada', async () => {
+    const f = fetchEmSequencia(AUTH_OK)
+
+    const r = await aguardarAutorizacao(env(), ITEM_NOVO as PluggyItemCriado, {
+      fetchImpl: f,
+      dormir: naoDorme,
+    })
+
+    expect(r).toBe(ITEM_NOVO)
+    expect(chamadas(f)).toHaveLength(0)
+  })
+
+  it('⚠️ MEDIDO: POST /items devolve parameter null, e a URL só aparece depois', async () => {
+    // Este é o caso REAL, medido contra api.pluggy.ai em 2026-09-21. A doc
+    // afirma que a criação já devolve WAITING_USER_INPUT + parameter.data;
+    // ela devolve UPDATING/CREATED/null. Sem esta espera, a rota responderia
+    // authorize_url: null e a tela diria "já está autorizado" — o dono nunca
+    // receberia o link e ficaria com uma conexão que não lista conta nenhuma.
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, ITEM_NOVO))
+
+    const r = await aguardarAutorizacao(
+      env(),
+      CRIADO_SEM_URL as PluggyItemCriado,
+      { fetchImpl: f, dormir: naoDorme },
+    )
+
+    expect(r.parameter?.data).toBe('https://connect.pluggy.ai/oauth/abc123')
+  })
+
+  it('desiste depois de MAX_SONDAGENS e devolve o último item, sem lançar', async () => {
+    const f = fetchEmSequencia(AUTH_OK, () => json(200, CRIADO_SEM_URL))
+
+    const r = await aguardarAutorizacao(
+      env(),
+      CRIADO_SEM_URL as PluggyItemCriado,
+      { fetchImpl: f, dormir: naoDorme },
+    )
+
+    expect(r.status).toBe('UPDATING')
+    // 1 auth + exatamente MAX_SONDAGENS buscas: não sonda a mais (queimaria
+    // subrequest do orçamento de 50) nem a menos.
+    expect(chamadas(f)).toHaveLength(1 + MAX_SONDAGENS_AUTORIZACAO)
+  })
+
+  it('para cedo quando o item sai do limbo já autorizado', async () => {
+    // Não pede nada ao dono e não está mais criando: continuar sondando só
+    // gastaria subrequest sem chance de mudar a resposta.
+    const f = fetchEmSequencia(AUTH_OK, () =>
+      json(200, { id: 'item-novo-789', status: 'UPDATED', parameter: null }),
+    )
+
+    const r = await aguardarAutorizacao(
+      env(),
+      CRIADO_SEM_URL as PluggyItemCriado,
+      { fetchImpl: f, dormir: naoDorme },
+    )
+
+    expect(r.status).toBe('UPDATED')
+    expect(chamadas(f)).toHaveLength(2)
   })
 })

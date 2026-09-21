@@ -391,6 +391,12 @@ export type PluggyOpts = {
   timeoutMs?: number
   /** Relógio injetável (mesma disciplina de `todayInTeresina(now?)`): mock de `Date` global vaza entre testes. */
   agora?: () => number
+  /**
+   * Espera injetável, usada só por `aguardarAutorizacao`. ⚠️ Existe pelo
+   * MESMO motivo de `agora`: um teste que dormisse de verdade levaria
+   * segundos por caso e tornaria a suíte refém do relógio da máquina.
+   */
+  dormir?: (ms: number) => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -664,6 +670,61 @@ export function urlDeAutorizacao(item: PluggyItemCriado): string | null {
   if (!p || p.type !== 'oauth') return null
   const url = typeof p.data === 'string' ? p.data.trim() : ''
   return url === '' ? null : url
+}
+
+/**
+ * ⚠️ **MEDIDO contra a API real, não suposto** (spike de 2026-09-21): a URL
+ * de autorização apareceu na PRIMEIRA sondagem, ~1,2-1,5 s depois do
+ * `POST /items`. Seis tentativas de 1 s dão folga de sobra sem custar o
+ * orçamento: `POST /connect` gasta 1 (`/auth`) + 1 (`/items`) + no MÁXIMO 6
+ * = 8 dos 50 subrequests por invocação do Worker.
+ */
+export const INTERVALO_AUTORIZACAO_MS = 1_000
+export const MAX_SONDAGENS_AUTORIZACAO = 6
+
+/**
+ * Espera a URL de autorização nascer, sondando `GET /items/:id`.
+ *
+ * ⚠️⚠️ **ESTA FUNÇÃO EXISTE PORQUE A DOCUMENTAÇÃO DO PLUGGY ESTÁ ERRADA — e
+ * o erro é do tipo que vira beco sem saída silencioso.** A doc afirma que
+ * `POST /items` já devolve `status: WAITING_USER_INPUT` com
+ * `parameter.data`. **MEDIDO: não devolve.** A resposta da criação vem
+ * `status: UPDATING`, `executionStatus: CREATED`, `parameter: null`, e só
+ * segundos depois o item transiciona para `WAITING_USER_INPUT` com a URL.
+ *
+ * Sem esta espera, `urlDeAutorizacao` lê `null` no item recém-criado e a
+ * tela conclui "a conexão já veio autorizada — não há nada a autorizar":
+ * o dono NUNCA recebe o link, e fica olhando para uma conexão que jamais
+ * vai listar conta nenhuma. Nada dá erro; simplesmente não funciona.
+ *
+ * ⚠️ Devolve o ÚLTIMO item visto quando a URL não aparece, em vez de lançar.
+ * Um item que já nasce autorizado (`parameter` nulo de verdade) é caminho
+ * legítimo, e é a rota — não esta função — quem decide o que dizer ao dono.
+ */
+export async function aguardarAutorizacao(
+  env: PluggyBindings,
+  item: PluggyItemCriado,
+  opts: PluggyOpts = {},
+): Promise<PluggyItemCriado> {
+  if (urlDeAutorizacao(item) !== null) return item
+
+  const dormir = opts.dormir ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+  let ultimo = item
+
+  for (let i = 0; i < MAX_SONDAGENS_AUTORIZACAO; i++) {
+    await dormir(INTERVALO_AUTORIZACAO_MS)
+    ultimo = (await buscarItem(env, item.id, opts)) as PluggyItemCriado
+    if (urlDeAutorizacao(ultimo) !== null) return ultimo
+    // Já saiu do limbo de criação sem pedir nada: item autorizado de cara.
+    // Continuar sondando só queimaria subrequest.
+    if (
+      ultimo.status !== 'UPDATING' &&
+      ultimo.status !== 'WAITING_USER_INPUT'
+    ) {
+      return ultimo
+    }
+  }
+  return ultimo
 }
 
 /**

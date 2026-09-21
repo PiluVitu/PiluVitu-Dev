@@ -4,6 +4,7 @@ import { mapearTransacoes, type LinhaRejeitada } from '../domain/pluggy-map'
 import { isRealCalendarDate } from '../lib/dates'
 import { errJson, okJson } from '../lib/envelope'
 import {
+  aguardarAutorizacao,
   assertItemConectado,
   buscarItem,
   criarItem,
@@ -333,7 +334,11 @@ pluggyRoutes.post('/connect', async (c) => {
   }
 
   try {
-    const item = await criarItem(c.env)
+    // ⚠️ A espera NÃO é opcional: `POST /items` devolve `parameter: null`
+    // (medido — a doc do Pluggy afirma o contrário), e sem sondar a rota
+    // responderia `authorize_url: null`, que a tela lê como "já autorizado".
+    // O dono nunca veria o link. Ver `aguardarAutorizacao`.
+    const item = await aguardarAutorizacao(c.env, await criarItem(c.env))
 
     // ⚠️ Grava ANTES de responder. Se o dono fechar a aba logo depois de
     // autorizar, o `item_id` já está salvo e `GET /accounts` funciona sem ele
