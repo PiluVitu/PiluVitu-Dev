@@ -124,22 +124,24 @@ function mockRede(opts: {
           opts.transacoesHeaders ?? {},
         )
       }
-      const page = Number(new URL(url).searchParams.get('page') ?? '1')
+      // ⚠️ v2: cursor, não número de página. O `after` é a posição, e o
+      // `next` devolvido é a query string PRONTA da próxima requisição —
+      // exatamente como a API real responde (medido em 2026-09-21).
+      const after = new URL(url).searchParams.get('after')
+      const indice = after === null ? 0 : Number(after)
+      const proximo = (i: number) => `?accountId=${ACCOUNT_ID}&after=${i + 1}`
+
       if (opts.paginasInfinitas) {
         return jsonResponse({
-          results: [transacao({ id: `tx-p${page}` })],
-          page,
-          total: PAGE_SIZE * (MAX_PAGINAS + 5),
-          totalPages: MAX_PAGINAS + 5,
+          results: [transacao({ id: `tx-p${indice + 1}` })],
+          next: proximo(indice),
         })
       }
       const paginas = opts.paginas ?? [[transacao()]]
-      const results = paginas[page - 1] ?? []
+      const results = paginas[indice] ?? []
       return jsonResponse({
         results,
-        page,
-        total: paginas.flat().length,
-        totalPages: paginas.length,
+        next: indice + 1 < paginas.length ? proximo(indice) : null,
       })
     }
 
@@ -366,12 +368,15 @@ describe('GET /api/pluggy/transactions — caminho feliz', () => {
 
     await get(urlPadrao())
 
-    const chamadaTx = chamadas.find((ch) => ch.url.includes('/transactions'))
+    const chamadaTx = chamadas.find((ch) => ch.url.includes('/v2/transactions'))
     const params = new URL(chamadaTx?.url ?? '').searchParams
     expect(params.get('accountId')).toBe(ACCOUNT_ID)
-    expect(params.get('from')).toBe('2026-07-01')
-    expect(params.get('to')).toBe('2026-07-31')
-    expect(params.get('pageSize')).toBe(String(PAGE_SIZE))
+    // ⚠️ v2: `dateFrom`/`dateTo`. Os nomes do v1 (`from`/`to`) são recusados
+    // com `400 property from should not exist` — e o endpoint v1 inteiro
+    // responde `410 ENDPOINT_DEPRECATED`. Ver `lib/pluggy.ts`.
+    expect(params.get('dateFrom')).toBe('2026-07-01')
+    expect(params.get('dateTo')).toBe('2026-07-31')
+    expect(params.get('pageSize')).toBeNull()
   })
 
   it('a fatura ABERTA (PENDING) sai em rejeitadas COM MOTIVO, nunca sumindo', async () => {

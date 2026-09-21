@@ -454,36 +454,59 @@ describe('③ erros de rota autenticada — token expirado × credencial', () =>
   })
 })
 
-describe('② GET /transactions — página a página', () => {
-  const pagina = (page: number, totalPages: number, n = 2) =>
+describe('② GET /v2/transactions — cursor a cursor', () => {
+  // ⚠️ v2: a resposta é `{results, next}`. `next` é a query string PRONTA da
+  // próxima requisição, já URL-encoded — MEDIDO contra a API real:
+  // "?accountId=…&after=MjAyNS0xMC0xOFQxNzoyMDo1Ni4wMDBafDNiNzE3…%3D%3D".
+  const pagina = (marca: number, next: string | null, n = 2) =>
     json(200, {
       results: Array.from({ length: n }, (_, i) => ({
-        id: `tx-${page}-${i}`,
+        id: `tx-${marca}-${i}`,
         description: 'compra',
         amount: 10,
         date: '2026-08-01T03:00:00.000Z',
       })),
-      page,
-      total: totalPages * n,
-      totalPages,
+      next,
     })
 
-  it('monta a query com accountId, pageSize=500 e a página pedida', async () => {
-    const f = fetchEmSequencia(AUTH_OK, () => pagina(1, 1))
+  const CURSOR = '?accountId=acc-1&after=Y3Vyc29yLWRlLXRlc3Rl%3D%3D'
+
+  it('⚠️ bate em /v2/transactions com dateFrom/dateTo, NUNCA no v1', async () => {
+    // O v1 (`/transactions` com page/pageSize) foi DESCONTINUADO e responde
+    // `410 ENDPOINT_DEPRECATED`. Se alguém voltar o path ou os nomes dos
+    // parâmetros, a sincronização inteira morre em produção de novo.
+    const f = fetchEmSequencia(AUTH_OK, () => pagina(1, null))
     await buscarPaginaDeTransacoes(
       env(),
-      { accountId: 'acc-1', from: '2025-08-01', to: '2026-08-01', page: 3 },
+      { accountId: 'acc-1', from: '2025-08-01', to: '2026-08-01' },
       { fetchImpl: f },
     )
 
     const url = new URL(chamadas(f)[1][0])
-    expect(url.pathname).toBe('/transactions')
+    expect(url.pathname).toBe('/v2/transactions')
     expect(url.searchParams.get('accountId')).toBe('acc-1')
-    expect(url.searchParams.get('pageSize')).toBe(String(PAGE_SIZE))
-    expect(PAGE_SIZE).toBe(500)
-    expect(url.searchParams.get('page')).toBe('3')
-    expect(url.searchParams.get('from')).toBe('2025-08-01')
-    expect(url.searchParams.get('to')).toBe('2026-08-01')
+    expect(url.searchParams.get('dateFrom')).toBe('2025-08-01')
+    expect(url.searchParams.get('dateTo')).toBe('2026-08-01')
+    // Os nomes do v1 são recusados com `400 property X should not exist`.
+    expect(url.searchParams.get('from')).toBeNull()
+    expect(url.searchParams.get('to')).toBeNull()
+    expect(url.searchParams.get('pageSize')).toBeNull()
+    expect(url.searchParams.get('page')).toBeNull()
+  })
+
+  it('⚠️ o cursor é usado VERBATIM — reencodar dá 400 Invalid cursor', async () => {
+    // O `after` é base64 e termina em `%3D%3D`. Remontar via URLSearchParams
+    // reencodaria o `%` e o Pluggy recusaria. Concatenar é o contrato.
+    const f = fetchEmSequencia(AUTH_OK, () => pagina(2, null))
+    await buscarPaginaDeTransacoes(
+      env(),
+      { accountId: 'acc-1', cursor: CURSOR },
+      { fetchImpl: f },
+    )
+
+    expect(chamadas(f)[1][0]).toBe(
+      `${PLUGGY_BASE_URL}/v2/transactions${CURSOR}`,
+    )
   })
 
   it.each([
@@ -501,13 +524,13 @@ describe('② GET /transactions — página a página', () => {
     },
   )
 
-  it('o gerador percorre as páginas e PARA em totalPages', async () => {
+  it('o gerador segue o cursor e PARA quando next é null', async () => {
     const f = fetchEmSequencia(
       AUTH_OK,
-      () => pagina(1, 3),
-      () => pagina(2, 3),
-      () => pagina(3, 3),
-      () => pagina(4, 3), // não deve ser pedida
+      () => pagina(1, CURSOR),
+      () => pagina(2, CURSOR),
+      () => pagina(3, null),
+      () => pagina(4, CURSOR), // não deve ser pedida
     )
 
     const lotes: string[][] = []
@@ -528,12 +551,33 @@ describe('② GET /transactions — página a página', () => {
     expect(chamadas(f)).toHaveLength(4)
   })
 
-  it('página vazia encerra mesmo se totalPages prometer mais (o servidor se contradisse)', async () => {
+  it('a 2ª requisição usa o cursor devolvido pela 1ª', async () => {
     const f = fetchEmSequencia(
       AUTH_OK,
-      () => pagina(1, 9),
-      () => json(200, { results: [], page: 2, total: 18, totalPages: 9 }),
-      () => pagina(3, 9),
+      () => pagina(1, CURSOR),
+      () => pagina(2, null),
+    )
+
+    for await (const _ of paginasDeTransacoes(
+      env(),
+      { accountId: 'acc-1', from: '2026-08-01' },
+      { fetchImpl: f },
+    )) {
+      // percorre
+    }
+
+    expect(chamadas(f)[1][0]).toContain('dateFrom=2026-08-01')
+    expect(chamadas(f)[2][0]).toBe(
+      `${PLUGGY_BASE_URL}/v2/transactions${CURSOR}`,
+    )
+  })
+
+  it('página vazia encerra mesmo com cursor prometendo mais (servidor se contradisse)', async () => {
+    const f = fetchEmSequencia(
+      AUTH_OK,
+      () => pagina(1, CURSOR),
+      () => json(200, { results: [], next: CURSOR }),
+      () => pagina(3, null),
     )
 
     const lotes: unknown[][] = []
@@ -551,7 +595,7 @@ describe('② GET /transactions — página a página', () => {
 
   it('mês sem nada: nenhuma página é rendida (nunca um lote vazio)', async () => {
     const f = fetchEmSequencia(AUTH_OK, () =>
-      json(200, { results: [], page: 1, total: 0, totalPages: 0 }),
+      json(200, { results: [], next: null }),
     )
     const lotes: unknown[] = []
     for await (const lote of paginasDeTransacoes(
@@ -565,7 +609,9 @@ describe('② GET /transactions — página a página', () => {
   })
 
   it('⚠️ estourar MAX_PAGINAS LANÇA — truncar em silêncio seria falha com cara de sucesso', async () => {
-    const f = fetchEmSequencia(AUTH_OK, () => pagina(1, 9999))
+    // Cursor que nunca acaba: o v2 não promete total nenhum, então o teto é
+    // a única defesa contra varrer para sempre.
+    const f = fetchEmSequencia(AUTH_OK, () => pagina(1, CURSOR))
 
     const percorrer = async () => {
       const lotes: unknown[] = []

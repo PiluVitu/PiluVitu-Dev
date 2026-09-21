@@ -350,11 +350,14 @@ export type PluggyTransacao = {
 }
 
 /** Envelope de paginação do Pluggy, verbatim. */
+/**
+ * ⚠️ **v2: cursor, não número de página.** `next` é a query string PRONTA
+ * da próxima requisição (`?accountId=…&after=<base64>`), já URL-encoded —
+ * concatenar, NUNCA reencodar. `null` quando acabou.
+ */
 export type PaginaDeTransacoes = {
   results: PluggyTransacao[]
-  page: number
-  total: number
-  totalPages: number
+  next: string | null
 }
 
 export type PluggyItem = {
@@ -786,51 +789,65 @@ export type FiltroTransacoes = {
  * dele, e quem precisar de controle fino (retomar da página 7 numa segunda
  * invocação do Worker) chama esta aqui direto.
  */
+/**
+ * Uma página do **`/v2/transactions`**.
+ *
+ * ⚠️⚠️ **MIGRADO SOB FOGO: o `/transactions` v1 foi DESCONTINUADO pelo
+ * Pluggy e responde `410 ENDPOINT_DEPRECATED`** ("This endpoint is
+ * deprecated. Use GET /v2/transactions with cursor pagination instead").
+ * Quebrou a sincronização inteira em produção, não só uma conta. O contrato
+ * do v2 foi MEDIDO contra a API real (2026-09-21), não lido em doc:
+ *
+ * | v1 (morto)                              | v2                        |
+ * | --------------------------------------- | ------------------------- |
+ * | `from` / `to`                           | **`dateFrom` / `dateTo`** |
+ * | `page` / `pageSize`                     | cursor **`after`**        |
+ * | `{results, page, total, totalPages}`    | **`{results, next}`**     |
+ *
+ * ⚠️ `pageSize`, `limit`, `take`, `size`, `perPage`, `cursor` e `itemId` são
+ * TODOS recusados com `400 property X should not exist` — medido um a um.
+ * Não há como escolher o tamanho da página: são 500, fixos.
+ */
 export async function buscarPaginaDeTransacoes(
   env: PluggyBindings,
-  filtro: FiltroTransacoes & { page?: number },
+  filtro: FiltroTransacoes & { cursor?: string | null },
   opts: PluggyOpts = {},
 ): Promise<PaginaDeTransacoes> {
   const accountId = filtro.accountId.trim()
   if (accountId === '') throw new RangeError('accountId é obrigatório')
 
-  const page = filtro.page ?? 1
-  if (!Number.isInteger(page) || page < 1) {
-    throw new RangeError(
-      `page inválida: ${String(filtro.page)} (esperado inteiro >= 1)`,
-    )
+  // ⚠️ O cursor JÁ VEM como query string completa e encodada (o `next` da
+  // resposta anterior, com `accountId` dentro). Remontar os parâmetros a
+  // partir dele reencodaria o `%3D%3D` do base64 e o Pluggy responderia
+  // `400 Invalid cursor`. Usar verbatim é o contrato.
+  let url: string
+  if (filtro.cursor) {
+    url = `${PLUGGY_BASE_URL}/v2/transactions${filtro.cursor}`
+  } else {
+    const params = new URLSearchParams({ accountId })
+    // Validação de calendário ANTES de gastar um subrequest, com a MESMA
+    // função do resto do módulo (`lib/dates.ts`) — nunca uma segunda regra:
+    // um regex de formato aceitaria '2026-02-30', e o filtro sairia mudo.
+    if (filtro.from !== undefined) {
+      if (!isRealCalendarDate(filtro.from)) {
+        throw new RangeError(
+          `from inválido: ${filtro.from} (esperado YYYY-MM-DD real)`,
+        )
+      }
+      params.set('dateFrom', filtro.from)
+    }
+    if (filtro.to !== undefined) {
+      if (!isRealCalendarDate(filtro.to)) {
+        throw new RangeError(
+          `to inválido: ${filtro.to} (esperado YYYY-MM-DD real)`,
+        )
+      }
+      params.set('dateTo', filtro.to)
+    }
+    url = `${PLUGGY_BASE_URL}/v2/transactions?${params.toString()}`
   }
 
-  // Validação de calendário ANTES de gastar um subrequest, com a MESMA
-  // função do resto do módulo (`lib/dates.ts`) — nunca uma segunda regra:
-  // um regex de formato aceitaria '2026-02-30', e o filtro sairia mudo.
-  const params = new URLSearchParams({
-    accountId,
-    page: String(page),
-    pageSize: String(PAGE_SIZE),
-  })
-  if (filtro.from !== undefined) {
-    if (!isRealCalendarDate(filtro.from)) {
-      throw new RangeError(
-        `from inválido: ${filtro.from} (esperado YYYY-MM-DD real)`,
-      )
-    }
-    params.set('from', filtro.from)
-  }
-  if (filtro.to !== undefined) {
-    if (!isRealCalendarDate(filtro.to)) {
-      throw new RangeError(
-        `to inválido: ${filtro.to} (esperado YYYY-MM-DD real)`,
-      )
-    }
-    params.set('to', filtro.to)
-  }
-
-  const lida = await pedirAutenticado(
-    `${PLUGGY_BASE_URL}/transactions?${params.toString()}`,
-    env,
-    opts,
-  )
+  const lida = await pedirAutenticado(url, env, opts)
   garantirOk(lida)
 
   const json = lida.json as Record<string, unknown>
@@ -840,9 +857,7 @@ export async function buscarPaginaDeTransacoes(
 
   return {
     results: json.results as PluggyTransacao[],
-    page: numero(json.page, page),
-    total: numero(json.total, (json.results as unknown[]).length),
-    totalPages: numero(json.totalPages, 1),
+    next: typeof json.next === 'string' && json.next !== '' ? json.next : null,
   }
 }
 
@@ -875,27 +890,32 @@ export async function* paginasDeTransacoes(
   filtro: FiltroTransacoes,
   opts: PluggyOpts = {},
 ): AsyncGenerator<PluggyTransacao[], void, undefined> {
-  for (let page = 1; page <= MAX_PAGINAS; page++) {
-    const pagina = await buscarPaginaDeTransacoes(
+  let cursor: string | null = null
+
+  for (let i = 0; i < MAX_PAGINAS; i++) {
+    const pagina: PaginaDeTransacoes = await buscarPaginaDeTransacoes(
       env,
-      { ...filtro, page },
+      { ...filtro, cursor },
       opts,
     )
 
     if (pagina.results.length > 0) yield pagina.results
 
-    if (page >= pagina.totalPages) return
-    // Página vazia com `totalPages` prometendo mais: o servidor se
-    // contradisse. Parar é o certo — insistir só gastaria subrequest.
+    // Fim do cursor é o fim da varredura — o v2 não promete um total, então
+    // `next: null` é a ÚNICA condição de parada honesta que existe.
+    if (pagina.next === null) return
+    // Página vazia ainda prometendo cursor: o servidor se contradisse.
+    // Parar é o certo — insistir só gastaria subrequest.
     if (pagina.results.length === 0) return
 
-    if (page === MAX_PAGINAS) {
-      throw new RangeError(
-        `o Pluggy reportou ${pagina.totalPages} páginas e o teto por execução é ${MAX_PAGINAS} ` +
-          `(${MAX_PAGINAS * PAGE_SIZE} lançamentos) — busque um intervalo menor com from/to`,
-      )
-    }
+    cursor = pagina.next
   }
+
+  // Saiu do laço com cursor de pé: estourou o teto.
+  throw new RangeError(
+    `o Pluggy ainda tinha mais páginas depois do teto de ${MAX_PAGINAS} por execução ` +
+      `(${MAX_PAGINAS * PAGE_SIZE} lançamentos) — busque um intervalo menor com from/to`,
+  )
 }
 
 // ---------------------------------------------------------------------------

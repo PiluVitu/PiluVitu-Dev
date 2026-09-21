@@ -3367,6 +3367,47 @@ O consumidor que faltava pras duas rotas acima. **Zero Worker, zero rota, zero m
 | `rotuloDeConta` trocado por um rótulo achatado            | 2 — o `type` desconhecido some do `<select>`               |
 | `contasPluggy()` chamada DENTRO do efeito por `accountId` | 2 — **mais 5 unhandled rejections** (a armadilha, literal) |
 
+## ⚠️⚠️ Open Finance / Pluggy — o `/transactions` v1 MORREU (migração para `/v2`)
+
+**Incidente de produção, 2026-09-21.** `GET /api/pluggy/transactions` passou a responder `502 pluggy_ilegivel`. Causa: o Pluggy **descontinuou** o endpoint que o cliente usava.
+
+```
+HTTP 410 Gone
+{"message":"This endpoint is deprecated. Use GET /v2/transactions with cursor
+  pagination instead.","code":410,"codeDescription":"ENDPOINT_DEPRECATED"}
+```
+
+⚠️ **Não era a conexão do dono nem a conta** — foi verificado antes de mexer em código: os dois items respondiam `UPDATED/SUCCESS`, `GET /accounts/<id>` devolvia `200`, e o conector 200 mantém os **mesmos `accountId` entre items diferentes** (fato novo, medido: reconectar NÃO invalida as conexões salvas em `settings`). A quebra era do endpoint, e derrubava toda conta.
+
+### O contrato do v2 — MEDIDO um parâmetro por vez, não lido em doc
+
+| v1 (morto)                           | v2                         |
+| ------------------------------------ | -------------------------- |
+| `GET /transactions`                  | **`GET /v2/transactions`** |
+| `from` / `to`                        | **`dateFrom` / `dateTo`**  |
+| `page` / `pageSize`                  | cursor **`after`**         |
+| `{results, page, total, totalPages}` | **`{results, next}`**      |
+
+⚠️ **`pageSize`, `limit`, `take`, `size`, `perPage`, `cursor`, `itemId`, `fromDate` e `startDate` são TODOS recusados** com `400 property X should not exist` — sondados um a um. Não há como escolher o tamanho da página: são **500**, fixos. `after=x` responde `400 Invalid cursor`, que foi como o nome do parâmetro foi descoberto.
+
+⚠️ **`next` é a query string PRONTA da próxima requisição**, já URL-encoded — medido: `?accountId=84ef7b0a…&after=MjAyNS0xMC0xOFQxNzoyMDo1Ni4wMDBafDNiNzE3…%3D%3D`. **Concatenar ao host, NUNCA remontar via `URLSearchParams`**: reencodar o `%3D%3D` do base64 devolve `400 Invalid cursor`. Travado por teste que compara a URL inteira, caractere a caractere.
+
+⚠️ **`next: null` é a ÚNICA condição de parada honesta.** O v2 não devolve `total` nem `totalPages`, então a lógica antiga (`page >= totalPages`) não tem equivalente. `MAX_PAGINAS` deixa de ser "quantas páginas existem" e vira **teto de iterações**: sair do laço com cursor de pé LANÇA `RangeError` → `422 pluggy_janela_grande`.
+
+### Verificado contra a API REAL, não só com `fetch` injetado
+
+A suíte inteira usa `fetchImpl` injetado — ela teria passado verde com o v1 morto, porque nenhum teste toca a rede (é a disciplina do módulo, e continua certa). A prova de que a migração funciona veio de rodar a lógica nova contra `api.pluggy.ai` com credencial real:
+
+| conta             | janela   | páginas                | lançamentos |
+| ----------------- | -------- | ---------------------- | ----------- |
+| GOLD (cartão)     | 12 meses | 1                      | 408         |
+| BANCO INTER (c/c) | 12 meses | **2** (cursor seguido) | 530         |
+| BANCO INTER (c/c) | 1 mês    | 1                      | 92          |
+
+O contraste 530 × 92 prova que `dateFrom`/`dateTo` filtram de verdade; as 2 páginas provam que o cursor é seguido.
+
+⚠️ **Lição que vale além desta fatia:** uma suíte 100% offline não detecta quebra de contrato do fornecedor. O sinal foi o `410` na mensagem de erro do envelope — e foi ela que apontou o caminho, o que justifica a regra de **nunca achatar erro de terceiro num "deu erro" genérico** (ver `PluggyRespostaIlegivel`, que carrega o status na mensagem).
+
 ## Open Finance / Pluggy (fatia ⑥) — escopo VISÍVEL e o LOTE de contas
 
 Duas correções nascidas do uso real em produção, não de revisão de código.
