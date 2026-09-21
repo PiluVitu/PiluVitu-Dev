@@ -349,3 +349,35 @@ export async function conexoesPluggy(
   )
   return pares.filter((p): p is ContaConectada => p.conexao !== null)
 }
+
+/**
+ * A janela MÁXIMA que o Pluggy tem: **12 meses** (medido, ver a tabela de
+ * fatos da fatia ④ no `CLAUDE.md`). Pedir mais não traz mais nada.
+ *
+ * ⚠️ **NÃO é o default, e a distinção é a guarda inteira.** `janelaPadrao`
+ * segue valendo um mês, e o servidor continua sem default nenhum
+ * (`routes/pluggy.ts` recusa sem `from`/`to`). Isto aqui é uma escolha
+ * EXPLÍCITA do dono, num botão separado, para o caso em que ela é a certa:
+ * a **carga inicial de uma conta vazia**.
+ *
+ * ⚠️ A guarda de um mês existe contra um cenário específico — importar por
+ * cima de histórico que já existe, onde `uq_tx_imported` impede corrigir e
+ * o desfazer vira `DELETE … WHERE import_source='pluggy'` ou Time Travel.
+ * Numa conta SEM lançamento nenhum esse risco não existe: o mesmo `DELETE`
+ * é trivial, e trazer 12 meses de uma vez é exatamente o que se quer. A
+ * fricção só protege quem tem o que perder.
+ */
+export function janelaMaxima(hoje: string): { de: string; ate: string } {
+  const ano = Number(hoje.slice(0, 4))
+  const mes = Number(hoje.slice(5, 7))
+  const dia = Number(hoje.slice(8, 10))
+
+  // Mesmo aparo de `janelaPadrao`: dia 0 do mês seguinte = último dia do mês
+  // pedido, então 29/02 num ano bissexto vira 28/02 no ano anterior.
+  const ultimoDia = new Date(Date.UTC(ano - 1, mes, 0)).getUTCDate()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    de: `${ano - 1}-${pad(mes)}-${pad(Math.min(dia, ultimoDia))}`,
+    ate: hoje,
+  }
+}

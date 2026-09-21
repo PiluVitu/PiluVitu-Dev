@@ -9,6 +9,7 @@ import {
   salvarConexaoPluggy,
   avisoDeTipoDeConta,
   conexoesPluggy,
+  janelaMaxima,
 } from './pluggy'
 
 afterEach(() => {
@@ -502,5 +503,32 @@ describe('conexoesPluggy — quem entra na fila do lote', () => {
     await expect(conexoesPluggy([{ id: 'a', name: 'Inter' }])).resolves.toEqual(
       [],
     )
+  })
+})
+
+describe('janelaMaxima — os 12 meses, e só por escolha explícita', () => {
+  test('volta exatamente um ano e termina hoje', () => {
+    expect(janelaMaxima('2026-09-21')).toEqual({
+      de: '2025-09-21',
+      ate: '2026-09-21',
+    })
+  })
+
+  test('29/02 de ano bissexto apara para 28/02 no ano anterior', () => {
+    // Mesmo aparo de `janelaPadrao`: uma data inexistente seria recusada
+    // pelo servidor (`isRealCalendarDate`) e o dono veria um erro de
+    // calendário num botão que só deveria preencher dois campos.
+    expect(janelaMaxima('2028-02-29').de).toBe('2027-02-28')
+  })
+
+  test('⚠️ NÃO é o default — janelaPadrao continua sendo um mês', () => {
+    // A guarda inteira mora nesta diferença. Se um dia alguém apontar o
+    // default para cá, este teste cai e explica o porquê: a fricção protege
+    // quem importa POR CIMA de histórico, onde uq_tx_imported impede
+    // corrigir. Só vira escolha certa em conta vazia, e só o dono sabe.
+    const hoje = '2026-09-21'
+    expect(janelaPadrao(hoje).de).toBe('2026-08-21')
+    expect(janelaMaxima(hoje).de).toBe('2025-09-21')
+    expect(janelaPadrao(hoje).de).not.toBe(janelaMaxima(hoje).de)
   })
 })

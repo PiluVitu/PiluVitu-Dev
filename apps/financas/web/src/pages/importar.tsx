@@ -33,6 +33,7 @@ import {
   conexoesPluggy,
   contasPluggy,
   dicaParaErroPluggy,
+  janelaMaxima,
   janelaPadrao,
   avisoDeTipoDeConta,
   rotuloDeConta,
@@ -1397,6 +1398,23 @@ export function ImportarPage() {
                     primeiro import é explicada ANTES do toque. O default de
                     um mês está em `lib/pluggy.ts#janelaPadrao`, e o servidor
                     não tem default nenhum. */}
+                {/* ⚠️ Atalho EXPLÍCITO, nunca o default. Ver `janelaMaxima`:
+                    a guarda de um mês protege quem importa POR CIMA de
+                    histórico existente; numa conta vazia ela só cobra
+                    fricção sem comprar nada. O botão deixa a escolha com o
+                    dono em vez de decidir por ele nos dois sentidos. */}
+                <button
+                  type="button"
+                  data-testid="pluggy-janela-maxima"
+                  className={`text-xs underline ${ALVO_LINK}`}
+                  onClick={() => {
+                    const j = janelaMaxima(todayInTeresina())
+                    setPluggyDe(j.de)
+                    setPluggyAte(j.ate)
+                  }}
+                >
+                  puxar o máximo (12 meses)
+                </button>
                 <p className="text-muted-foreground text-xs">
                   O período já vem com <strong>um mês</strong>, não com os 12
                   que o banco guarda. Traga aos poucos: uma dezena de linhas dá

@@ -3406,9 +3406,23 @@ As quatro mudanças, todas dentro do design system (nenhuma estética nova — t
 
 O botão do lote fica **FORA** do condicional de "tem conexão?", no fim do card: é o único botão que não obedece ao seletor de conta, e escondê-lo quando a conta atual já está conectada o tornaria inalcançável justamente para quem tem várias.
 
+### `janelaMaxima` — os 12 meses, por ESCOLHA e nunca por default
+
+Pedido do dono: "puxar o máximo pra alimentar a base". O botão _"puxar o máximo (12 meses)"_ preenche os dois campos de data com a janela inteira que o Pluggy guarda.
+
+⚠️ **`janelaPadrao` continua sendo UM MÊS, e o servidor continua sem default nenhum** (`routes/pluggy.ts` recusa sem `from`/`to`). A guarda não foi removida — ganhou um atalho explícito ao lado. Travado por teste que falha se o default apontar para `janelaMaxima`.
+
+⚠️ **A decisão foi tomada por MEDIÇÃO, não por princípio.** A fricção de um mês existe contra importar POR CIMA de histórico existente, onde `uq_tx_imported` impede corrigir e o desfazer vira `DELETE … WHERE import_source='pluggy'` ou Time Travel. Medido no D1 de produção no dia do pedido: **`transactions` estava VAZIA** — zero linha em todas as contas. Numa base vazia o risco que justifica a fricção não existe (o mesmo `DELETE` é trivial), e carga inicial de 12 meses é exatamente o certo. A guarda protege quem tem o que perder; cobrar dela de quem não tem é fricção sem contrapartida.
+
+Numa base vazia **nada é duplicata**, então `marcada: !duplicada && …` faz todas as linhas nascerem marcadas: a conferência de 12 meses é um clique por conta, não um por linha. Por isso nenhum "marcar todas" foi adicionado — ele resolveria um problema que o default já não cria.
+
+⚠️ **Teto de páginas não muda:** `MAX_PAGINAS = 40` × 500 = 20.000 lançamentos por conta, muito acima de um ano pessoal. Estourar continua saindo como `422 pluggy_janela_grande`, com a mensagem mandando pedir um intervalo menor.
+
+⚠️ **O teste do botão NÃO usa `useFakeTimers`, e a ausência é cicatriz medida.** A primeira versão fixava o relógio pra assertar datas absolutas e deixou a suíte INSTÁVEL — rodadas seguidas derrubavam testes diferentes de OUTROS arquivos (`transferir`, `new-entry`) por timeout. Provado por bissecção: `git stash` do diff devolvia 759/759 verdes. Assertar a RELAÇÃO entre as duas datas (1 mês antes, 12 depois do clique) não precisa de relógio e ainda elimina a bomba de calendário. Duas rodadas limpas confirmaram.
+
 ### Suítes
 
-`lib/pluggy.test.ts` 31 → 39 (+8: `avisoDeTipoDeConta` e `conexoesPluggy`), `pages/importar.test.tsx` 64 → 73 (+9). **SPA 742 → 759**, Worker 885 intocado. `mockRede` ganhou `contasDoApp` e `conexoesPorConta` (sem o segundo, todas as contas leriam a MESMA conexão e a fila não distinguiria uma da outra). `tsc`, `vitest` e `prettier` limpos pelo binário direto; `vite build` passa com o gate do `@source`.
+`lib/pluggy.test.ts` 31 → 42 (+11: `avisoDeTipoDeConta`, `conexoesPluggy`, `janelaMaxima`), `pages/importar.test.tsx` 64 → 74 (+10). **SPA 742 → 763**, Worker 885 intocado. `mockRede` ganhou `contasDoApp` e `conexoesPorConta` (sem o segundo, todas as contas leriam a MESMA conexão e a fila não distinguiria uma da outra). `tsc`, `vitest` e `prettier` limpos pelo binário direto; `vite build` passa com o gate do `@source`.
 
 ## Segunda rodada de a11y/leitura — 5 defeitos MEDIDOS a 390×844
 

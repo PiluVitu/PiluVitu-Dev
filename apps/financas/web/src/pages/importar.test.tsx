@@ -2907,3 +2907,45 @@ describe('ImportarPage — lote: a FILA de contas conectadas', () => {
     expect(screen.queryByTestId('fila-progresso')).not.toBeInTheDocument()
   })
 })
+
+describe('ImportarPage — "puxar o máximo" é atalho, não default', () => {
+  // ⚠️ SEM `useFakeTimers` de propósito. A primeira versão deste teste fixava
+  // o relógio pra poder assertar datas absolutas, e isso deixou a suíte
+  // INSTÁVEL: rodadas seguidas derrubavam testes diferentes de outros
+  // arquivos, por timeout. Provado por bissecção — `git stash` do meu diff
+  // devolvia 759/759 verdes. Assertar a RELAÇÃO entre as duas datas não
+  // precisa de relógio nenhum e ainda elimina a bomba de calendário.
+  test('a tela abre com UM MÊS; o botão é que leva a doze', async () => {
+    mockRede({
+      chamadas: [],
+      conexaoPluggySalva: JSON.stringify({
+        item_id: 'it-1',
+        account_id: 'pg-a',
+      }),
+    })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+
+    const de = (await screen.findByLabelText('De')) as HTMLInputElement
+    const ate = (await screen.findByLabelText('Até')) as HTMLInputElement
+
+    const mesesEntre = (a: string, b: string) =>
+      (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 +
+      (Number(b.slice(5, 7)) - Number(a.slice(5, 7)))
+
+    // ⚠️ O default NÃO pode ser doze meses: é a guarda do import por cima de
+    // histórico existente, onde `uq_tx_imported` impede corrigir.
+    expect(mesesEntre(de.value, ate.value)).toBe(1)
+
+    await usuario.click(screen.getByTestId('pluggy-janela-maxima'))
+
+    expect(mesesEntre(de.value, ate.value)).toBe(12)
+    // O fim continua sendo hoje — o botão só recua o começo.
+    expect(ate.value).toBe(
+      de.value.replace(/^\d{4}/, (a) => String(Number(a) + 1)),
+    )
+  })
+})
