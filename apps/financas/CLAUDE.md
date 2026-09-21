@@ -309,7 +309,7 @@ Toda rota JSON responde no formato único `{ "ok": bool, "data": <payload>|null,
 - **`field` existe.** As Tasks 6, 7, 9 e 14 têm formulários com validação real — conta `credit_card` sem `closing_day`, alocação acima do teto do item, `amount_cents` zero, parcelas fora de 1..360. Poder dizer _qual_ campo ofendeu é diferença de UI de verdade, e o tipo `Notification` é importado por várias tasks: alargar agora é barato, alargar no meio da execução do plano é mudança quebrando contrato.
 - **`'success'` NÃO entra em `NotificationKind`.** É especulativo: a SPA decide o toast de sucesso pelo `ok: true` da própria resposta, sem precisar de uma notification carregando isso. Se algum dia fizer falta de verdade, entra com motivo concreto — não antes.
 
-Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `invalid_bill` (422, `POST /api/bills/pay` — recusa sobre a FATURA, com o motivo exato em `field`: `no_lines` | `already_paid` | `nothing_to_pay` | `amount_mismatch`; ver _Pagar a fatura do cartão_), `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente), e os oito da fatia ④ (`GET /api/pluggy/transactions`, todos com a mensagem do domínio repassada crua — ver _A ROTA e O BOTÃO_): `pluggy_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `pluggy_invalid_credentials` (503, o Pluggy recusou a credencial do APLICATIVO), `pluggy_item_disconnected` (**409**, não 503: repetir nunca resolve, o dono precisa reconectar no app Meu Pluggy), `pluggy_rate_limited` (429, com os segundos do `Retry-After` na mensagem), `pluggy_unreachable` (503, ninguém respondeu ou 5xx deles), `pluggy_token_expired` (502) e `pluggy_ilegivel` (502) — os dois de "alguém respondeu e não entendi", nunca confundidos com o anterior —, e `pluggy_janela_grande` (422, teto de 40 páginas por execução).
+Códigos em uso: `not_authenticated`, `email_not_allowed`, `auth_unavailable`, `not_found`, `invalid_json`, `invalid_scope`, `invalid_account`, `constraint_violation`, `invalid_transfer`, `invalid_entry`, `invalid_limit`, `invalid_query`, `over_allocation`, `invalid_setting` (Task 10, `PUT /api/settings` — `fixed_net_cents` não numérico, ≤ 0, não inteiro ou acima do teto de sanidade; sempre com `field: 'fixed_net_cents'`; reusado por `PUT /api/settings/:key` com `field: 'value'` quando `value` não é string), `reserved_setting_key` (fatia ②, `GET|PUT /api/settings/:key` — chave reservada como `fixed_net_cents` tentada pelo caminho genérico, `field: 'key'`), `debt_has_ledger` (Task 3 da fatia de exclusão — ver seção _Dívidas_ § _Rotas de exclusão e baixa_), `invalid_ingest_token` (401, só `POST /api/insights` e `GET /api/insights/numbers` — ver _Insight de IA — backend_), `invalid_insight` (422, mesmo lugar), e os quatro do botão de gerar insight — `promeia_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `promeia_unreachable` (503, ninguém respondeu), `promeia_ilegivel` (502, **alguém respondeu e o corpo não deu pra ler** — nunca confundir com o anterior, ver _O botão de gerar insight_) e o `code` REPASSADO pelo promeia (`ollama_unreachable`, `ollama_model_missing`, `publish_failed`, …, nunca reescrito aqui) —, `invalid_bill` (422, `POST /api/bills/pay` — recusa sobre a FATURA, com o motivo exato em `field`: `no_lines` | `already_paid` | `nothing_to_pay` | `amount_mismatch`; ver _Pagar a fatura do cartão_), `protected_field` (422, `PATCH /api/transactions/:id` — campo derivado/com rota própria, ou campo estrutural numa linha que tem dono; sempre com `field` nomeando o campo), `transaction_has_owner` (422, `DELETE /api/transactions/:id` — a linha tem dono; `field` carrega a CLASSE, ver _Extrato, editar, liquidar e apagar_), `invalid_settled` e `invalid_cursor` (422, `GET /api/transactions` — `?settled=`/`?before=` malformados, com `field`), `internal_error` e `http_error` (os dois só do `app.onError` global — ver seção logo abaixo; nenhuma rota os emite diretamente), e os oito da fatia ④ (`GET /api/pluggy/transactions`, todos com a mensagem do domínio repassada crua — ver _A ROTA e O BOTÃO_): `pluggy_disabled` (503, os dois secrets ausentes: DESLIGADA, não quebrada), `pluggy_invalid_credentials` (503, o Pluggy recusou a credencial do APLICATIVO), `pluggy_item_disconnected` (**409**, não 503: repetir nunca resolve, o dono precisa reconectar no app Meu Pluggy), `pluggy_rate_limited` (429, com os segundos do `Retry-After` na mensagem), `pluggy_unreachable` (503, ninguém respondeu ou 5xx deles), `pluggy_token_expired` (502) e `pluggy_ilegivel` (502) — os dois de "alguém respondeu e não entendi", nunca confundidos com o anterior —, e `pluggy_janela_grande` (422, teto de 40 páginas por execução) — mais, da fatia ⑤ (conectar sozinho), `pluggy_aguardando_autorizacao` (**409**, só `GET /api/pluggy/accounts`: o item existe mas o dono ainda não concluiu a autorização — ⚠️ **NUNCA confundir com `pluggy_item_disconnected`**, que manda REFAZER no app Meu Pluggy uma conexão que caiu; este manda TERMINAR uma que está em curso, e trocar as duas mensagens é mandar o dono desfazer o que está certo).
 
 ### `app.onError` global — todo `Error` que escapa sai no envelope
 
@@ -3240,6 +3240,272 @@ Os dois são **segredo**, nunca `vars` em `wrangler.jsonc` — e não podem ir p
 **Bundle (`vite build`, antes = fatia de a11y / depois = esta):** JS principal 502,50 → 510,92 kB (**151,07 → 153,85 kB gzip, +2,78**); CSS 34,95 → 35,03 kB (**6,97 → 6,99 kB gzip**); chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova.
 
 **Fora de escopo, registrado:** `PATCH /items` (forçar sync antes de ler — teto de 20/min, o mais apertado da API); descobrir `itemId`/`accountId` sem copiar à mão (exigiria o widget Pluggy Connect e um endpoint de connect token); e retomar a paginação entre invocações (`buscarPaginaDeTransacoes` aceita `page`, mas nada nesta fatia usa — o teto de 40 páginas por janela de um mês está muito longe de apertar).
+
+## Open Finance / Pluggy (fatia ⑤) — o app CONECTA sozinho (`criarItem` + `POST /connect`)
+
+Fecha o buraco que a fatia ④ deixou: a tela pedia que o dono colasse `item_id` e `account_id` à mão. **Os dois eram impossíveis de obter pela interface do Pluggy** — o `item_id` só aparece no `dashboard.pluggy.ai` (dentro do app de Demo, menu de três pontos → "Copiar Item ID"), e o `account_id` **não aparece em tela nenhuma**: a única forma de obtê-lo é `GET /accounts?itemId=`, ou seja, `curl`. A tela pedia um dado que só existia via API.
+
+⚠️ **A causa raiz não era de UX, era de desenho:** `itemId`/`accountId` foram tratados como dado de ENTRADA quando são **CONSEQUÊNCIA** de uma ação que o app pode fazer sozinho. Quem cria o item conhece o id dele; quem conhece o id lista as contas. O dono nunca precisou saber que esses identificadores existem.
+
+### O conector 200 ("Meu Pluggy") — a peça que faltava
+
+`CONNECTOR_MEU_PLUGGY = 200` é um **proxy sobre as conexões que o dono já tem em `meu.pluggy.ai`**, não um banco. Criar um item com ele **não abre conexão nova com instituição nenhuma**: reaproveita os consentimentos já dados, que é a razão de não haver reautorização banco a banco.
+
+| Fato (documentação, ainda **não medido** contra a conta do dono) | Valor                                                                             |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `POST /items` com conector OAuth                                 | devolve `status: WAITING_USER_INPUT` + `parameter.data` = URL de autorização      |
+| A URL de autorização                                             | **uso único**, com `expiresAt`                                                    |
+| Depois do callback                                               | `executionStatus: SUCCESS`, `parameter: null`                                     |
+| Listar items                                                     | **não existe** — bloqueado por segurança; só `GET /items/:id`                     |
+| `PATCH /items` num item do Meu Pluggy                            | **`400 MeuPluggy item cant be updated`** — quem sincroniza é o Meu Pluggy, 1×/dia |
+
+⚠️ **Não existe, e não adianta construir, um botão de "forçar atualização"** — a última linha da tabela é definitiva. E como listar items é impossível, **o `item_id` precisa ser PERSISTIDO na hora em que nasce**: se ele se perder, não há como recuperá-lo pela API, só criando outro.
+
+⚠️ **A tabela acima é DOCUMENTAÇÃO, não medição** — a distinção que este módulo já paga caro em outros lugares (ver as duas armadilhas da fatia ④). O spike contra a API real (`scratchpad/spike-pluggy-connector200.mjs`) existe justamente pra confirmá-la, e **ainda não rodou**: falta o `PLUGGY_CLIENT_SECRET`. Enquanto não rodar, o que está escrito abaixo é o desenho, não o comportamento verificado ponta a ponta.
+
+### ⚠️⚠️ A ARMADILHA: `criarItem` × `assertItemConectado`
+
+**Um item recém-criado vem `WAITING_USER_INPUT` — que está na allowlist de `STATUS_PRECISA_RECONECTAR`.** Passar o resultado de `criarItem` por `assertItemConectado` lançaria `PluggyItemDesconectado`, cuja mensagem manda **"abrir o app Meu Pluggy e reconectar"** — no exato instante em que o dono acabou de clicar em "Conectar banco", e escondendo a URL de autorização que é a única saída.
+
+**Item recém-nascido esperando o dono é o caminho FELIZ.** `assertItemConectado` descreve item que **já esteve de pé e caiu** — nunca um que ainda não nasceu. Travado por dois testes: um de caracterização em `lib/pluggy.test.ts` (que afirma que a asserção LANÇA ali, e que `urlDeAutorizacao` devolve a URL no mesmo objeto) e um de rota que exige `200` + `notifications: []` no `POST /connect`.
+
+### As duas rotas novas
+
+| Rota                                | O quê                                                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/pluggy/connect`          | cria o item via conector 200, **grava `item_id` em `settings`** e devolve `{item_id, status, execution_status, authorize_url}` |
+| `GET /api/pluggy/accounts?item_id=` | as contas da conexão (`{item_id, contas[]}`); sem `item_id`, usa o salvo                                                       |
+
+**`CHAVE_ITEM_PLUGGY = 'pluggy:item_id'` é GLOBAL, não por conta** — diferente de `pluggy:<account_id>`, que guarda o par escolhido. O conector 200 é proxy de TODAS as conexões do dono, então um item cobre banco e cartão juntos; uma chave por conta gravaria o mesmo valor N vezes e criaria N verdades pra divergirem depois.
+
+⚠️ **`POST /connect` grava ANTES de responder.** Se o dono fechar a aba logo depois de autorizar, o `item_id` já está salvo e `GET /accounts` funciona sem ele repetir nada — sem isso, a autorização seria dada e perdida, e (ver acima) não há como reencontrar o item pela API.
+
+⚠️ **`GET /accounts` checa o estado do item ANTES de listar, e esse gasto de 1 subrequest é o ponto.** Um item ainda não autorizado responde `GET /accounts` com **`200` e lista vazia** — "conectei e não apareceu conta nenhuma", sem nada dizendo que falta autorizar. É a MESMA classe de falha que tornou `item_id` obrigatório em `/transactions` na fatia ④, e a resposta é a mesma: pagar uma requisição pra poder dizer a verdade. Travado por teste que exige **zero** chamada a `/accounts` nesse caminho.
+
+⚠️ **`Env` da rota ganhou `DB`** (era só `PluggyBindings`). Continua **sem gravar transação nenhuma**: a conferência em `#/importar` segue sendo a única porta de escrita do extrato, e `POST /connect` só toca `settings`.
+
+### `pedirAutenticado` agora aceita `POST`
+
+Ganhou um parâmetro `envio: Envio = {}` (method + body JSON), inserido **antes** de `jaRenovou`. ⚠️ **O `envio` é REPASSADO na recursão do retry de 401** — sem isso, a segunda tentativa reenviaria o `POST /items` como `GET /items`, que não cria conexão nenhuma e ainda responde `200` com outro shape: falha silenciosa, o pior tipo. Teste próprio (`o retry de 401 REENVIA como POST, não como GET`) inspeciona o método da 4ª chamada.
+
+### O que o dono ainda faz à mão (e não dá pra automatizar)
+
+1. Criar conta no `meu.pluggy.ai` e conectar os bancos por lá.
+2. No `dashboard.pluggy.ai`: criar a Application (dá o `clientId`/`clientSecret`) e **adicionar o conector "Meu Pluggy"** a ela.
+3. `wrangler secret put PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET`.
+
+Os três são fora do Worker. Do passo 4 em diante (`item_id`, `account_id`, autorização) o app resolve sozinho.
+
+### Suítes
+
+**`lib/pluggy.test.ts` 63 → 82** (+19: `criarItem`, `urlDeAutorizacao`, `listarContas`, a caracterização da armadilha e as asserções negativas de vazamento de secret/apiKey). **`routes/pluggy.test.ts` 23 → 37** (+14, incl. a asserção negativa cruzada entre `pluggy_aguardando_autorizacao` e `pluggy_item_disconnected`). Worker inteiro: **880 passando, 0 falhas**; `tsc --noEmit` e prettier limpos. ⚠️ **Nenhum teste toca a rede** — `fetchImpl` injetado no lib, `globalThis.fetch` substituído e restaurado na rota, com contagem de chamadas como detector.
+
+✅ **A TELA chegou** — ver _O cliente da SPA_ e _A tela da fatia ⑤_ logo abaixo. O card "Sincronizar com o banco" de `#/importar` não pede mais `item_id`/`account_id` colados à mão.
+
+### O cliente da SPA (`web/src/lib/pluggy.ts`) — 3 funções novas, nenhuma linha antiga reescrita
+
+O consumidor das duas rotas acima começa aqui, fora do componente (mesmo arranjo da fatia ④: tipo/regra no lib, com teste próprio, e a página só orquestra). **Só ACRÉSCIMOS** — a única alteração dentro de código que já existia é um ramo novo em `dicaParaErroPluggy`; `conexaoPluggy`, `salvarConexaoPluggy`, `janelaPadrao`, `sincronizarPluggy` e `mapearParaLinhas` continuam como estavam.
+
+| Função                  | Contrato                                                                   | Quando o servidor recusa |
+| ----------------------- | -------------------------------------------------------------------------- | ------------------------ |
+| `conectarPluggy()`      | `POST /api/pluggy/connect`, **sem corpo**                                  | **LANÇA**                |
+| `contasPluggy(itemId?)` | `GET /api/pluggy/accounts`, com `?item_id=` **só quando o argumento vier** | **LANÇA**                |
+| `rotuloDeConta(conta)`  | pura — sem rede, sem estado                                                | **nunca lança**          |
+
+⚠️ **As duas que falam com a rede LANÇAM, e isso é o OPOSTO de `conexaoPluggy` (que degrada pra `null`) — a divergência é desenho, não descuido.** `conexaoPluggy` responde a pergunta "já tem conexão salva?", e "não tem" é uma resposta legítima que cai no formulário. Estas duas são AÇÃO PRÓPRIA do dono, com botão: um "conectei" mudo o deixa esperando uma aba de autorização que nunca vai abrir. Em `contasPluggy` é pior ainda — engolir o erro e devolver lista vazia diria **"você não tem conta nenhuma"**, que é falso tanto em `pluggy_aguardando_autorizacao` quanto em `pluggy_item_disconnected`, e as duas causas exigem ações opostas. ⚠️ **É exatamente por LANÇAREM que nenhuma das duas pode ser chamada num `useEffect`** — ver a armadilha na seção da tela, logo abaixo, medida em 5 unhandled rejections.
+
+⚠️ **`PluggyContaView.type` é `string`, NÃO `'BANK' | 'CREDIT'`.** A união fechada mentiria sobre o contrato: o Pluggy devolve tipos que este app não mapeia (`INVESTMENT` já apareceu), e um tipo desconhecido tem que ser EXIBIDO, nunca sumir do `<select>` nem quebrar a tela. Por isso `rotuloDeConta` devolve o `type` **CRU** no `else` — nunca `'Desconhecido'`, nunca exceção. É a mesma disciplina de allowlist que o Worker aplica em `STATUS_PRECISA_RECONECTAR` (estado desconhecido não vira "reconecte"), aqui do lado do rótulo. `name`/`number` entram só quando existem, com o separador `·` de `rotuloConta` (`lib/contas.ts`) — nunca um `undefined` no meio do texto.
+
+⚠️ **`contasPluggy()` sem argumento manda a URL LIMPA (`/api/pluggy/accounts`), jamais `?item_id=undefined`** — sem argumento o servidor usa o `item_id` que `POST /connect` já gravou em `settings`, e esse é o caminho NORMAL; uma query com o literal `undefined` seria lida como id inválido e transformaria o caminho feliz em erro. Com argumento, `encodeURIComponent` — a fixture do teste usa `it/1` **de propósito** (`'/api/pluggy/accounts?item_id=it%2F1'`), porque uma `/` crua abriria um segmento de caminho e bateria em outra rota.
+
+⚠️ **O ramo novo de `dicaParaErroPluggy` fica IMEDIATAMENTE ACIMA do de `pluggy_item_disconnected`, e a posição é deliberada:** os dois são `409`, os dois aparecem no MESMO botão, e mandam pra lados opostos — quem for editar um vê o outro na linha seguinte. `pluggy_aguardando_autorizacao` diz **TERMINE o que já começou** (abre negando a outra: _"Não é conexão caída: ela existe e está esperando VOCÊ terminar de autorizar"_) e explica que o link é de uso único, então reconectar gera outro. `pluggy_item_disconnected` diz **REFAÇA no app Meu Pluggy o que caiu**. ⚠️ **A dica nova não contém "Meu Pluggy", nem "reconect", nem "refazer"** — mandar o dono refazer no Meu Pluggy uma autorização que só falta ele concluir é fazê-lo desfazer o que está certo, e o pior é que soa plausível. Travado por asserção NEGATIVA cruzada **nas duas direções**, não só numa.
+
+**Suítes: `lib/pluggy.test.ts` (SPA) 18 → 31** (+13); SPA **718 → 731**. No estilo do arquivo (`respondJson`/`respondErro`, `vi.stubGlobal('fetch', …)`): URLs e métodos coletados num array e ⚠️ **a CONTAGEM de chamadas como prova de "nem chegou a tentar"** — nenhum teste toca a rede. Cobre também que `authorize_url: null` **não é erro** (item que já veio autorizado não tem nada a abrir).
+
+⚠️ **Verificado por MUTAÇÃO — 2** (revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`):
+
+| Mutação                                                                | Falha observada                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------- |
+| `rotuloDeConta` devolve `'Desconhecido'` no `type` desconhecido        | 1 — `expected 'Desconhecido' to be 'INVESTMENT'`          |
+| a dica nova copiada da de `pluggy_item_disconnected` (o defeito grave) | 2 — incl. `not to be 'Só o app Meu Pluggy refazer essa…'` |
+
+### A tela da fatia ⑤ — o card "Sincronizar com o banco" (`web/src/pages/importar.tsx`)
+
+O consumidor que faltava pras duas rotas acima. **Zero Worker, zero rota, zero migration** — só a tela. Os dois campos de texto continuam existindo: foram **rebaixados a fallback**, nunca apagados.
+
+⚠️ **O defeito que isto conserta não era de UX, era de contrato: a tela pedia um dado que só existia via `curl`.** O `item_id` só aparece no `dashboard.pluggy.ai`; o `account_id` **não aparece em TELA NENHUMA** do Pluggy (só em `GET /accounts?itemId=`). E o texto de ajuda mandava "conectar esta conta no app Meu Pluggy e colar aqui os dois identificadores que ele mostra" — **factualmente errado**, o Meu Pluggy não mostra nenhum dos dois. O texto foi reescrito: o dono conecta os bancos em `meu.pluggy.ai`, cria uma Application em `dashboard.pluggy.ai` e adiciona o conector **Meu Pluggy** a ela; daí em diante o app resolve sozinho.
+
+**O fluxo, quando NÃO há conexão salva pra conta selecionada:** `Conectar banco` (`POST /connect`) → autorizar → `Já autorizei — listar minhas contas` (`GET /accounts`) → `<select>` das contas → `Salvar conexão`.
+
+⚠️ **A aba nova é CONVENIÊNCIA; o link na tela é o caminho.** `window.open(url, '_blank', 'noopener,noreferrer')` roda dentro de `try/catch` e o bloco do link é renderizado **de qualquer forma** — bloqueador de pop-up devolve `null` em silêncio, e um botão que "não fez nada" é inaceitável. O texto diz que o link é de **uso único** e que repetir o `Conectar banco` gera outro (é a saída documentada quando ele expira). A URL some da tela assim que as contas são listadas: uma URL de uso único guardada é uma URL que não funciona mais.
+
+⚠️ **`conectarBanco` NÃO usa `mutarERecarregar`, apesar de `POST /connect` GRAVAR o `item_id` em `settings`.** Duas razões, as duas fatais pro helper: (a) **não existe recarga que faça sentido** — a releitura natural seria `contasPluggy()`, e ela FALHA de propósito neste instante (`409 pluggy_aguardando_autorizacao`, o dono ainda não autorizou), então o helper reportaria o caminho FELIZ como recarga falhada; (b) **o payload é de uso único** — descartar `authorize_url` pra "recarregar" jogaria fora a única coisa que torna o clique útil. `gravarConexao` (o `PUT` do par) continua sendo o 10º call site do helper, sem mudança.
+
+⚠️ **`conectarPluggy`/`contasPluggy` LANÇAM (de propósito — recusa é a informação mais importante das duas) e por isso NUNCA são chamadas no efeito por `accountId`.** Só `conexaoPluggy` roda lá, e ela degrada pra `null`. Chamar qualquer uma das outras naquele efeito viraria unhandled rejection e derrubaria o import por ARQUIVO, que é a capacidade principal da tela — a mesma lição que `/api/rules` já custou aqui. **MEDIDO por mutação:** um `void contasPluggy()` dentro do efeito derruba 2 testes **e** produz 5 unhandled rejections.
+
+⚠️ **Os dois 409 mandam pra lados OPOSTOS, e a tela separa os dois** — `pluggy_aguardando_autorizacao` ("TERMINE a autorização em curso") × `pluggy_item_disconnected` ("REFAÇA no app Meu Pluggy a conexão que caiu"). A mensagem do servidor é repassada crua (`pluggy-conexao-erro`) e `dicaParaErroPluggy` acrescenta o SEGUNDO parágrafo (`pluggy-conexao-dica`); cada teste tem asserção NEGATIVA contra a dica do outro. Trocar as duas é mandar o dono desfazer o que está certo.
+
+⚠️ **`type` desconhecido é EXIBIDO CRU no `<select>`, nunca some** — `rotuloDeConta` (`lib/pluggy.ts`) mapeia `BANK`/`CREDIT` e devolve o `type` do fio pra qualquer outro. MEDIDO em Chrome real: `INVESTMENT · Tesouro Direto` aparece ao lado de `Cartão · …` e `Conta corrente · …`. Escolher a conta errada aqui importa um extrato inteiro na conta errada, então achatar dois tipos diferentes num rótulo genérico é pior que mostrar a string do fio.
+
+⚠️ **O `<Label>` do select é "Conta no banco", nunca "Conta"** — o card de arquivo, na mesma tela, já usa o rótulo EXATO `Conta`; dois iguais tornam `getByLabelText('Conta')` ambíguo (quebrando um teste que nem é de Pluggy) e deixam o leitor de tela sem como distinguir os dois.
+
+⚠️ **A saída de emergência (`pluggy-modo-manual`) NÃO é legado esquecido.** Se o conector "Meu Pluggy" não estiver acoplado à Application no dashboard, `POST /connect` falha — e sem ela o dono fica sem NENHUM caminho. O modo manual substitui o fluxo guiado enquanto aberto (nada de dois "Salvar conexão" na mesma tela) e volta por um segundo toque.
+
+⚠️ **COMPATIBILIDADE: o armazenamento não mudou um byte** — mesma chave `pluggy:<account_id>`, mesmo shape `{item_id, account_id}`, então `GET /api/pluggy/transactions` continua funcionando sem nenhuma mudança e quem já tinha salvo o par à mão cai direto no estado de sincronizar. Travado por teste (`COMPATIBILIDADE: conta com conexão já salva cai direto no sincronizar`), que também afirma **zero** chamada a `/api/pluggy/` só por abrir a tela.
+
+**Mobile MEDIDO em Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`), nos QUATRO estados (inicial, com link de autorização, com o select, modo manual): `scrollWidth === clientWidth === 390` nos quatro. Os únicos elementos com overflow interno são os dois **pré-existentes** já registrados (o gatilho `?` do `Ajuda`, 31/18, e o `<pre>` do comando de PDF, `overflow-x-auto`). Alvos novos: `colar os identificadores à mão` **185,8×44**, `voltar ao modo guiado` **142,1×44** e `Autorizar no Pluggy` **142,6×44** (os três com `ALVO_LINK`); o `<select>` em 308×36, o mesmo de todo formulário do app (conjunto já registrado como aceito — ≥24 px, WCAG 2.5.8 AA).
+
+**Suítes: `pages/importar.test.tsx` 53 → 64** (+11); SPA **731 → 742**. Worker, `packages/ui` e `packages/tools` intocados. ⚠️ **Nenhuma asserção pré-existente mudou de VALOR** — 2 testes do card mudaram de SELETOR (os dois campos colados à mão não são mais a primeira coisa da tela) e 1 passou a afirmar o botão `Conectar banco` no lugar deles.
+
+⚠️ **Verificado por MUTAÇÃO — 5, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`):
+
+| Mutação                                                   | Falha observada                                            |
+| --------------------------------------------------------- | ---------------------------------------------------------- |
+| a dica do 409 vira SEMPRE a de "conexão caída"            | 2 — a mensagem que manda desfazer o que está certo         |
+| o link de autorização some (só a aba nova)                | 3 — o botão que "não fez nada"                             |
+| saída de emergência removida                              | 2 — o dono sem caminho quando `POST /connect` falha        |
+| `rotuloDeConta` trocado por um rótulo achatado            | 2 — o `type` desconhecido some do `<select>`               |
+| `contasPluggy()` chamada DENTRO do efeito por `accountId` | 2 — **mais 5 unhandled rejections** (a armadilha, literal) |
+
+## Open Finance / Pluggy (fatia ⑦) — a categoria do banco vira sugestão
+
+`GET /categories` do Pluggy devolve **130 categorias em 22 famílias**, com `descriptionTranslated` já em português. E `category`/`categoryId` **vêm preenchidos**: medido nas duas contas do dono, **925 de 938 (98,6%)**.
+
+⚠️ **Isto corrige um fato ERRADO que estava registrado aqui.** A tabela da fatia ④ dizia "`category` vem **sempre `null`** no free". Não vem — ou mudou, ou a medição original olhou o lugar errado. Um fato desatualizado no `CLAUDE.md` custa mais que fato nenhum: ele desencoraja quem ia usar o dado.
+
+### O mapeamento é por FAMÍLIA, e é isso que o deixa auto-atualizável
+
+`categoryId` é hierárquico: os **2 primeiros dígitos são a família** (`10000000` Supermercado, `05070000` → família `05`, Transferências). A migration `0010` semeia uma categoria por família com **`slug = 'pluggy-NN'`**, e `categoriaDoPluggy` (`web/src/lib/categorias-pluggy.ts`) resolve por esse slug.
+
+**Consequência prática:** categoria-folha nova do Pluggy dentro de uma família que já existe passa a funcionar **sem código e sem migration**. Só família nova exige ação — e `apps/financas/scripts/pluggy-categorias.mjs` roda contra a API real, compara com os slugs do seed e imprime as linhas de `INSERT` que faltam.
+
+```
+node scripts/pluggy-categorias.mjs
+# famílias no Pluggy: 22 | já mapeadas: 21
+# ✓ nenhuma família nova — nada a fazer
+```
+
+⚠️ **A família 05 (Transferências) vira DUAS categorias e escolhe pelo SINAL.** No Pluggy ela só diz que o meio foi transferência, **não quem pagou quem**: um PIX recebido de terceiro é receita, um enviado é despesa. Como `kind` é do registro e o sinal é da transação, achatar as duas num registro só erraria o fluxo de caixa — e são **184 lançamentos** na base do dono, o maior grupo depois de Supermercado. A `04` (mesma titularidade) é a única transferência interna que o Pluggy afirma, e essa **não** depende do sinal.
+
+⚠️ **A família 99 ("Outros") NÃO é semeada, de propósito.** É o balde de "não sei" do Pluggy; criar uma categoria pra ela daria ares de classificação ao que não tem nenhuma. Sem correspondência, a linha chega na conferência sem sugestão — que é a verdade.
+
+⚠️ **Família desconhecida devolve `null`, nunca um chute.** Mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`.
+
+### Precedência: regra › favorecido › banco
+
+`sugerirParaLinha` (`web/src/lib/regras-import.ts`) ganhou a categoria do Pluggy como **último** recurso: `daRegra.category_id ?? doPayee?.default_category_id ?? categoriaDoPluggy(...)`. O palpite de terceiro nunca passa por cima de uma decisão do dono.
+
+`LinhaImportada` (`packages/tools`) ganhou **`external_category_id?: string | null`** — opcional porque OFX, CSV e lançamento manual não têm. **Não é gravado**: vira sugestão na conferência e morre ali.
+
+### Migration (⚠️ ação MANUAL do dono)
+
+```bash
+pnpm --filter @piluvitu/financas db:migrate:remote
+```
+
+`INSERT OR IGNORE` + slug: rodar de novo não duplica. ⚠️ Duas famílias são `transfer` (Investimentos e mesma titularidade), o que quebrou a asserção de seed em `schema.test.ts` — ela agora filtra `slug NOT LIKE 'pluggy-%'` para continuar falando só da `0001`.
+
+### Suítes
+
+`web/src/lib/categorias-pluggy.test.ts` **9 casos** (novo), `domain/pluggy-map.test.ts` 35 → 38. Worker 887 → 890, SPA 766 → 775. A asserção "a linha tem EXATAMENTE as N chaves" virou 5 — é ela que impede alguém acrescentar palpite ao shape sem perceber.
+
+## ⚠️⚠️ Open Finance / Pluggy — o `/transactions` v1 MORREU (migração para `/v2`)
+
+**Incidente de produção, 2026-09-21.** `GET /api/pluggy/transactions` passou a responder `502 pluggy_ilegivel`. Causa: o Pluggy **descontinuou** o endpoint que o cliente usava.
+
+```
+HTTP 410 Gone
+{"message":"This endpoint is deprecated. Use GET /v2/transactions with cursor
+  pagination instead.","code":410,"codeDescription":"ENDPOINT_DEPRECATED"}
+```
+
+⚠️ **Não era a conexão do dono nem a conta** — foi verificado antes de mexer em código: os dois items respondiam `UPDATED/SUCCESS`, `GET /accounts/<id>` devolvia `200`, e o conector 200 mantém os **mesmos `accountId` entre items diferentes** (fato novo, medido: reconectar NÃO invalida as conexões salvas em `settings`). A quebra era do endpoint, e derrubava toda conta.
+
+### O contrato do v2 — MEDIDO um parâmetro por vez, não lido em doc
+
+| v1 (morto)                           | v2                         |
+| ------------------------------------ | -------------------------- |
+| `GET /transactions`                  | **`GET /v2/transactions`** |
+| `from` / `to`                        | **`dateFrom` / `dateTo`**  |
+| `page` / `pageSize`                  | cursor **`after`**         |
+| `{results, page, total, totalPages}` | **`{results, next}`**      |
+
+⚠️ **`pageSize`, `limit`, `take`, `size`, `perPage`, `cursor`, `itemId`, `fromDate` e `startDate` são TODOS recusados** com `400 property X should not exist` — sondados um a um. Não há como escolher o tamanho da página: são **500**, fixos. `after=x` responde `400 Invalid cursor`, que foi como o nome do parâmetro foi descoberto.
+
+⚠️ **`next` é a query string PRONTA da próxima requisição**, já URL-encoded — medido: `?accountId=84ef7b0a…&after=MjAyNS0xMC0xOFQxNzoyMDo1Ni4wMDBafDNiNzE3…%3D%3D`. **Concatenar ao host, NUNCA remontar via `URLSearchParams`**: reencodar o `%3D%3D` do base64 devolve `400 Invalid cursor`. Travado por teste que compara a URL inteira, caractere a caractere.
+
+⚠️ **`next: null` é a ÚNICA condição de parada honesta.** O v2 não devolve `total` nem `totalPages`, então a lógica antiga (`page >= totalPages`) não tem equivalente. `MAX_PAGINAS` deixa de ser "quantas páginas existem" e vira **teto de iterações**: sair do laço com cursor de pé LANÇA `RangeError` → `422 pluggy_janela_grande`.
+
+### Verificado contra a API REAL, não só com `fetch` injetado
+
+A suíte inteira usa `fetchImpl` injetado — ela teria passado verde com o v1 morto, porque nenhum teste toca a rede (é a disciplina do módulo, e continua certa). A prova de que a migração funciona veio de rodar a lógica nova contra `api.pluggy.ai` com credencial real:
+
+| conta             | janela   | páginas                | lançamentos |
+| ----------------- | -------- | ---------------------- | ----------- |
+| GOLD (cartão)     | 12 meses | 1                      | 408         |
+| BANCO INTER (c/c) | 12 meses | **2** (cursor seguido) | 530         |
+| BANCO INTER (c/c) | 1 mês    | 1                      | 92          |
+
+O contraste 530 × 92 prova que `dateFrom`/`dateTo` filtram de verdade; as 2 páginas provam que o cursor é seguido.
+
+⚠️ **Lição que vale além desta fatia:** uma suíte 100% offline não detecta quebra de contrato do fornecedor. O sinal foi o `410` na mensagem de erro do envelope — e foi ela que apontou o caminho, o que justifica a regra de **nunca achatar erro de terceiro num "deu erro" genérico** (ver `PluggyRespostaIlegivel`, que carrega o status na mensagem).
+
+## Open Finance / Pluggy (fatia ⑥) — escopo VISÍVEL e o LOTE de contas
+
+Duas correções nascidas do uso real em produção, não de revisão de código.
+
+### ⚠️ O escopo da conta era invisível — e custou um mapeamento errado DE VERDADE
+
+**MEDIDO no D1 de produção:** `settings['pluggy:554e13a8…']` apontava para o `accountId` `84ef7b0a…`, que `GET /accounts?itemId=` identifica como **`BANK · BANCO INTER`** — ou seja, a conta corrente do Inter ficou ligada a uma conta do app chamada **"Bradesco Cartões"**.
+
+⚠️ **A causa era de TELA, não desatenção do dono.** O `<select>` de conta morava DENTRO do card "Ler extrato ou fatura", cujo título o reivindicava para o import por arquivo. O card "Sincronizar com o banco" dependia dele **em silêncio** — não nomeava a conta em lugar nenhum. Na hora de escolher, a única coisa rotulada era "Conta no banco", que se lê como a escolha INTEIRA, não como um dos dois lados de um par.
+
+E o estrago não tem desfazer barato: `uq_tx_imported` impede reimportar por cima, então corrigir seria `DELETE … WHERE import_source='pluggy'` ou Time Travel. **Erro que só aparece depois de importar precisa ser impedido ANTES do clique.**
+
+As quatro mudanças, todas dentro do design system (nenhuma estética nova — trocar a linguagem visual só deste card o deixaria estrangeiro na tela):
+
+1. **O select subiu pro nível da PÁGINA** (`escopo-conta`), acima dos dois cards, rotulado "Conta do app que vai receber", dizendo que vale para a página inteira. O escopo deixa de ser convenção implícita e vira **estrutura**.
+2. **O card do Pluggy NOMEIA a conta em TODOS os estados** (`pluggy-escopo`), não só na hora de escolher — é o único elemento que liga o card ao seletor.
+3. **Os dois lados juntos:** o rótulo virou "Conta no banco a ligar em `<conta>`", e antes do botão há `pluggy-confirmacao-par` nomeando app **e** banco.
+4. **`avisoDeTipoDeConta(kindDoApp, typeDoPluggy)`** — pura, na lib, com teste próprio.
+
+⚠️ **O aviso de tipo é AVISO, NUNCA bloqueio.** `kind` e `type` não descrevem a intenção do dono, e travar o salvamento seria impedi-lo de usar o próprio dado. Type desconhecido do Pluggy **não vira aviso** (mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`). O caso que dói: `CREDIT` numa conta que não é `credit_card` — só `credit_card` preenche `bill_competence`, que é derivado e **não é patchável** (`protected_field`), então a fatura entraria sem competência e não teria conserto.
+
+⚠️ Os derivados (`nomeDaContaAtual`, `rotuloDaContaEscolhida`, `avisoDeTipo`) saem todos do **mesmo `accountId`** do seletor, nunca de um segundo estado — duas fontes para "qual conta" recriaria por dentro a ambiguidade que a fatia mata.
+
+### O LOTE — `conexoesPluggy` + a fila de contas
+
+`GET /api/pluggy/accounts` já devolve todas as contas do item; faltava tela. `sincronizarTodas()` monta a fila com `conexoesPluggy(accounts)` e percorre uma a uma.
+
+⚠️ **FILA, e não uma conferência única com todas as contas juntas — e a escolha é de SEGURANÇA.** Uma tela só exigiria que o envio agrupasse por conta, reescrevendo o único caminho de **escrita irreversível** que existe aqui. A fila reusa o caminho já testado N vezes sem tocar nele: cada conta mantém sua dedupe, seu aviso de primeiro import e suas rejeitadas.
+
+⚠️ **Uma requisição HTTP POR CONTA, nunca todas numa invocação.** `/transactions` gasta até **42 dos 50** subrequests por invocação do Worker (1 auth + 1 item + 40 páginas); duas contas juntas estourariam. Cada conta é uma invocação com seu próprio orçamento.
+
+⚠️ **O avanço é por BOTÃO (`fila-continuar`), nunca automático.** Encadear sozinho esconderia o resumo de cada conta atrás da próxima tela — e o resumo ("importei 12, pulei 3") é a única confirmação que o dono recebe.
+
+⚠️ **`prepararConferencia` ganhou `contaId` como PARÂMETRO** (default no estado). `setAccountId` é assíncrono: no lote, a conferência da conta 2 começaria lendo o `accountId` da conta 1 e **deduplicaria contra o extrato errado**. Travado por teste que inspeciona o `account_id` da última chamada de dedupe.
+
+⚠️ **`conexoesPluggy` faz uma leitura POR CONTA** — nenhuma rota lista `settings` por prefixo, e criar uma só pra isso seria backend novo pra economizar 3 requisições num app de usuário único. Conta que falha fica de fora da fila sem derrubar as outras (`conexaoPluggy` degrada pra `null`).
+
+O botão do lote fica **FORA** do condicional de "tem conexão?", no fim do card: é o único botão que não obedece ao seletor de conta, e escondê-lo quando a conta atual já está conectada o tornaria inalcançável justamente para quem tem várias.
+
+### `janelaMaxima` — os 12 meses, por ESCOLHA e nunca por default
+
+Pedido do dono: "puxar o máximo pra alimentar a base". O botão _"puxar o máximo (12 meses)"_ preenche os dois campos de data com a janela inteira que o Pluggy guarda.
+
+⚠️ **`janelaPadrao` continua sendo UM MÊS, e o servidor continua sem default nenhum** (`routes/pluggy.ts` recusa sem `from`/`to`). A guarda não foi removida — ganhou um atalho explícito ao lado. Travado por teste que falha se o default apontar para `janelaMaxima`.
+
+⚠️ **A decisão foi tomada por MEDIÇÃO, não por princípio.** A fricção de um mês existe contra importar POR CIMA de histórico existente, onde `uq_tx_imported` impede corrigir e o desfazer vira `DELETE … WHERE import_source='pluggy'` ou Time Travel. Medido no D1 de produção no dia do pedido: **`transactions` estava VAZIA** — zero linha em todas as contas. Numa base vazia o risco que justifica a fricção não existe (o mesmo `DELETE` é trivial), e carga inicial de 12 meses é exatamente o certo. A guarda protege quem tem o que perder; cobrar dela de quem não tem é fricção sem contrapartida.
+
+Numa base vazia **nada é duplicata**, então `marcada: !duplicada && …` faz todas as linhas nascerem marcadas: a conferência de 12 meses é um clique por conta, não um por linha. Por isso nenhum "marcar todas" foi adicionado — ele resolveria um problema que o default já não cria.
+
+⚠️ **Teto de páginas não muda:** `MAX_PAGINAS = 40` × 500 = 20.000 lançamentos por conta, muito acima de um ano pessoal. Estourar continua saindo como `422 pluggy_janela_grande`, com a mensagem mandando pedir um intervalo menor.
+
+⚠️ **O teste do botão NÃO usa `useFakeTimers`, e a ausência é cicatriz medida.** A primeira versão fixava o relógio pra assertar datas absolutas e deixou a suíte INSTÁVEL — rodadas seguidas derrubavam testes diferentes de OUTROS arquivos (`transferir`, `new-entry`) por timeout. Provado por bissecção: `git stash` do diff devolvia 759/759 verdes. Assertar a RELAÇÃO entre as duas datas (1 mês antes, 12 depois do clique) não precisa de relógio e ainda elimina a bomba de calendário. Duas rodadas limpas confirmaram.
+
+### Suítes
+
+`lib/pluggy.test.ts` 31 → 42 (+11: `avisoDeTipoDeConta`, `conexoesPluggy`, `janelaMaxima`), `pages/importar.test.tsx` 64 → 74 (+10). **SPA 742 → 763**, Worker 885 intocado. `mockRede` ganhou `contasDoApp` e `conexoesPorConta` (sem o segundo, todas as contas leriam a MESMA conexão e a fila não distinguiria uma da outra). `tsc`, `vitest` e `prettier` limpos pelo binário direto; `vite build` passa com o gate do `@source`.
 
 ## Segunda rodada de a11y/leitura — 5 defeitos MEDIDOS a 390×844
 

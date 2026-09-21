@@ -102,6 +102,24 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 
 Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e CI).
 
+## Comentários: raros, e só onde o código não alcança (lei do projeto)
+
+**Comentário em código de PRODUÇÃO é exceção.** O teste é o lugar de explicar intenção e travar comportamento; produção é o lugar de o código falar por si. Nome bom, função pequena e teste com nome descritivo substituem quase todo comentário.
+
+Escreva um comentário só quando as **três** forem verdadeiras:
+
+1. registra um **porquê** que o código não consegue mostrar — uma armadilha medida, uma divergência deliberada de um padrão vizinho, um limite externo imposto por terceiro;
+2. **sua ausência levaria alguém a "consertar" o código e quebrá-lo**;
+3. não cabe melhor num nome, num teste, neste arquivo ou na mensagem do commit.
+
+**Não escreva:** o que o código já diz; narrativa da sessão ("antes era X, aí medi Y"); tabelas e números medidos (vão para o `CLAUDE.md` do workspace); aviso decorativo; repetição do que já está no commit.
+
+**Tamanho:** uma a três linhas. Se virou parágrafo, o fato pertence ao `CLAUDE.md` — o código no máximo aponta para a seção (`ver "Nome da seção" no CLAUDE.md`).
+
+⚠️ é reservado para **a armadilha que corrompe dado sem dar erro**. Usado em tudo, para de significar qualquer coisa — que foi exatamente o que aconteceu com o módulo do Pluggy antes desta regra existir (43–49% de linhas de comentário em `lib/pluggy.ts`, `routes/pluggy.ts` e `web/src/lib/pluggy.ts`; 116 marcadores ⚠️).
+
+O teste segue livre: lá o comentário explica o cenário e por que a asserção existe, e isso é desejável.
+
 ## Colocation rules (lei do projeto)
 
 Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories/` ou `e2e/` separados.

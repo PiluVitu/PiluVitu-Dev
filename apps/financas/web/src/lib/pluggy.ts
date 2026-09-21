@@ -10,16 +10,7 @@ import { api } from '../api'
  * teste próprio.
  */
 
-/**
- * Espelha `LinhaRejeitada` de `src/domain/pluggy-map.ts` (Worker) — a SPA
- * não importa através da fronteira Worker/bundle (mesma razão de
- * `lib/dates.ts` duplicar `todayInTeresina`).
- *
- * ⚠️ Existe porque linha recusada é **reportada, nunca descartada**: sem
- * mostrar isto, o dono veria "importei 30" sem saber que 12 ficaram de
- * fora — e as que mais ficam de fora são as `PENDING`, que num cartão são
- * a FATURA ABERTA INTEIRA.
- */
+/** Espelha `LinhaRejeitada` do Worker. Linha recusada é reportada, nunca descartada. */
 export type LinhaRejeitadaView = {
   index: number
   id: string
@@ -93,13 +84,8 @@ export async function conexaoPluggy(
 }
 
 /**
- * ⚠️ **LANÇA quando falha — ao contrário de `salvarMapa`, e a divergência
- * é deliberada.** Lá o salvamento é um efeito colateral no MEIO de uma
- * importação em curso (engolir a falha é melhor que travar o que o dono
- * está fazendo). Aqui é uma AÇÃO PRÓPRIA dele, com botão e formulário: um
- * "salvei" mudo que não salvou faria ele voltar amanhã e reencontrar o
- * formulário vazio, sem nunca ter sido avisado. Quem chama trata com
- * `mutarERecarregar`.
+ * ⚠️ LANÇA quando falha, ao contrário de `salvarMapa`: aqui é ação própria do
+ * dono, com botão — um "salvei" mudo o faria voltar amanhã ao formulário vazio.
  */
 export async function salvarConexaoPluggy(
   accountId: string,
@@ -112,19 +98,10 @@ export async function salvarConexaoPluggy(
 }
 
 /**
- * ⚠️ **A janela default é de UM MÊS, nunca dos 12 que o Pluggy guarda — é
- * a guarda do primeiro import, e ela é estrutural, não um aviso.**
+ * Janela default de UM MÊS, nunca os 12 que o Pluggy guarda.
  *
- * O dono vai importar histórico. Se o sinal estiver invertido, não há
- * desfazer barato: `uq_tx_imported` impede reimportar por cima, e a saída
- * seria `DELETE ... WHERE import_source='pluggy'` ou Time Travel (que
- * restaura o banco INTEIRO). Um default de 12 meses transformaria o
- * primeiro toque no maior estrago possível; com um mês, o pior caso é uma
- * dezena de linhas conferíveis a olho.
- *
- * O servidor **não tem default nenhum** (`routes/pluggy.ts` recusa sem
- * `from`/`to`), então esta é a única janela que existe — não dá pra
- * "esquecer" de passar e cair no ano inteiro.
+ * ⚠️ É a guarda do primeiro import: sem desfazer barato, um default de 12 meses
+ * transformaria o primeiro toque no maior estrago possível. Ver `janelaMaxima`.
  */
 export function janelaPadrao(hoje: string): { de: string; ate: string } {
   const ano = Number(hoje.slice(0, 4))
@@ -146,20 +123,11 @@ export function janelaPadrao(hoje: string): { de: string; ate: string } {
 }
 
 /**
- * A dica que traduz o `code` em AÇÃO — e ela existe porque erros de MESMO
- * status mandam o dono pra lados OPOSTOS (mesma disciplina de
- * `dicaParaErroDeGeracao`, `lib/insight.ts`).
+ * Traduz o `code` em AÇÃO, como segundo parágrafo — nunca reescreve a mensagem
+ * do servidor. `null` para código sem ação conhecida: não inventar conselho.
  *
- * ⚠️ **`pluggy_item_disconnected` é a mais importante das sete**: é a que
- * o dono mais vai ver com o tempo (conexão bancária cai sozinha, por
- * expiração de consentimento ou senha trocada) e a que mais parece "erro
- * genérico" se mal escrita. Nada nesta tela resolve — nem repetir, nem
- * trocar secret, nem esperar —, e a dica diz isso com todas as letras,
- * nomeando o app onde a ação existe.
- *
- * A mensagem do servidor continua sendo mostrada como está: esta dica é um
- * SEGUNDO parágrafo, nunca uma reescrita. `null` pra todo código sem ação
- * específica conhecida — não inventar conselho pra erro não mapeado.
+ * ⚠️ `pluggy_item_disconnected` é a mais importante: nada nesta tela resolve,
+ * só o app Meu Pluggy.
  */
 export function dicaParaErroPluggy(code: string): string | null {
   if (code === 'pluggy_disabled') {
@@ -167,6 +135,9 @@ export function dicaParaErroPluggy(code: string): string | null {
   }
   if (code === 'pluggy_invalid_credentials') {
     return 'O Pluggy recusou as credenciais DESTE APLICATIVO — não tem a ver com a sua conexão bancária, e repetir não resolve. Confira PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET.'
+  }
+  if (code === 'pluggy_aguardando_autorizacao') {
+    return 'Não é conexão caída: ela existe e está esperando VOCÊ terminar de autorizar. Volte na aba que abriu e conclua o acesso. Se ela já fechou ou expirou, toque em conectar de novo para gerar um link novo — o anterior é de uso único e não funciona duas vezes.'
   }
   if (code === 'pluggy_item_disconnected') {
     return 'Só o app Meu Pluggy pode refazer essa conexão: abra o app, reconecte esta conta e volte aqui. Tentar de novo agora dá exatamente o mesmo resultado. Enquanto isso, dá pra importar o extrato por arquivo (.ofx/.csv).'
@@ -184,4 +155,150 @@ export function dicaParaErroPluggy(code: string): string | null {
     return 'Escolha um intervalo menor (um mês por vez) e sincronize em partes — conferir em pedaços também é mais seguro que conferir tudo de uma vez.'
   }
   return null
+}
+
+/**
+ * Fatia ⑤ (o app conecta sozinho) — o que a tela precisa saber sobre
+ * CRIAR a conexão e LISTAR as contas dela, agora que o dono não cola mais
+ * `item_id`/`account_id` à mão (os dois eram impossíveis de obter pela
+ * interface do Pluggy: o primeiro só no dashboard, o segundo só por `curl`).
+ */
+
+/**
+ * Espelha `POST /api/pluggy/connect`.
+ *
+ * ⚠️ `authorize_url` é de uso único e expira — a tela não pode guardá-la.
+ */
+export type PluggyConectarView = {
+  item_id: string
+  status: string
+  execution_status: string
+  authorize_url: string | null
+}
+
+/**
+ * Uma conta dentro da conexão.
+ *
+ * ⚠️ `type` não é união fechada: tipo desconhecido tem que ser EXIBIDO, nunca
+ * sumir do `<select>` nem quebrar a tela.
+ */
+export type PluggyContaView = {
+  id: string
+  type: string
+  subtype?: string
+  name?: string
+  number?: string
+}
+
+/** Espelha a resposta de `GET /api/pluggy/accounts`. */
+export type PluggyContasView = {
+  item_id: string
+  contas: PluggyContaView[]
+}
+
+/**
+ * Cria a conexão (conector 200) e devolve o item com a URL a autorizar.
+ *
+ * ⚠️ LANÇA quando falha: um "conectei" mudo deixaria o dono esperando uma aba
+ * que nunca abre.
+ */
+export async function conectarPluggy(): Promise<PluggyConectarView> {
+  return api<PluggyConectarView>('/api/pluggy/connect', { method: 'POST' })
+}
+
+/**
+ * As contas da conexão. Sem `itemId`, o servidor usa o salvo em `settings`.
+ *
+ * ⚠️ LANÇA quando falha: `pluggy_aguardando_autorizacao` e
+ * `pluggy_item_disconnected` mandam o dono a lados opostos, e devolver lista
+ * vazia diria "não tenho conta nenhuma" — falso nos dois casos.
+ */
+export async function contasPluggy(itemId?: string): Promise<PluggyContasView> {
+  const query = itemId ? `?item_id=${encodeURIComponent(itemId)}` : ''
+  return api<PluggyContasView>(`/api/pluggy/accounts${query}`)
+}
+
+/**
+ * Rótulo da conta no `<option>`. Pura.
+ *
+ * ⚠️ Tipo desconhecido devolve o `type` CRU: achatar num rótulo genérico
+ * tornaria duas contas indistinguíveis no mesmo `<select>`.
+ */
+export function rotuloDeConta(conta: PluggyContaView): string {
+  const tipo =
+    conta.type === 'BANK'
+      ? 'Conta corrente'
+      : conta.type === 'CREDIT'
+        ? 'Cartão'
+        : conta.type
+
+  return [tipo, conta.name, conta.number].filter(Boolean).join(' · ')
+}
+
+/**
+ * Avisa quando a conta do app e a do banco têm naturezas incompatíveis.
+ *
+ * ⚠️ AVISO, nunca bloqueio: `kind` e `type` não descrevem a intenção do dono.
+ * O caso que dói é `CREDIT` fora de `credit_card` — só ela preenche
+ * `bill_competence`, que é derivado e não é patchável.
+ */
+export function avisoDeTipoDeConta(
+  kindDoApp: string,
+  typeDoPluggy: string,
+): string | null {
+  if (typeDoPluggy === 'CREDIT' && kindDoApp !== 'credit_card') {
+    return 'Atenção: no banco isto é um CARTÃO DE CRÉDITO, mas a conta do app que vai receber não é do tipo cartão. A fatura entraria sem competência, e competência não dá pra corrigir depois — só apagando e reimportando. Se for mesmo um cartão, crie uma conta de cartão no app antes.'
+  }
+  if (typeDoPluggy === 'BANK' && kindDoApp === 'credit_card') {
+    return 'Atenção: no banco isto é uma CONTA CORRENTE, mas a conta do app que vai receber é um cartão de crédito. O extrato entraria como se fossem compras de fatura.'
+  }
+  return null
+}
+
+/** Uma conta do app que já tem conexão salva — um item da fila do lote. */
+export type ContaConectada = {
+  accountId: string
+  nome: string
+  conexao: ConexaoPluggy
+}
+
+/**
+ * Quais contas do app já têm conexão salva, na ordem recebida.
+ *
+ * Uma leitura por conta: nenhuma rota lista `settings` por prefixo. Conta que
+ * falha fica de fora da fila sem derrubar as outras.
+ */
+export async function conexoesPluggy(
+  contas: Array<{ id: string; name: string }>,
+): Promise<ContaConectada[]> {
+  const pares = await Promise.all(
+    contas.map(async (c) => ({
+      accountId: c.id,
+      nome: c.name,
+      conexao: await conexaoPluggy(c.id),
+    })),
+  )
+  return pares.filter((p): p is ContaConectada => p.conexao !== null)
+}
+
+/**
+ * A janela máxima que o Pluggy guarda: 12 meses.
+ *
+ * ⚠️ NÃO é o default — `janelaPadrao` segue em um mês e o servidor não tem
+ * default nenhum. É escolha explícita do dono, certa na carga inicial de conta
+ * vazia. Ver "janelaMaxima" no CLAUDE.md.
+ */
+export function janelaMaxima(hoje: string): { de: string; ate: string } {
+  const ano = Number(hoje.slice(0, 4))
+  const mes = Number(hoje.slice(5, 7))
+  const dia = Number(hoje.slice(8, 10))
+
+  // Mesmo aparo de `janelaPadrao`: dia 0 do mês seguinte = último dia do mês
+  // pedido, então 29/02 num ano bissexto vira 28/02 no ano anterior.
+  const ultimoDia = new Date(Date.UTC(ano - 1, mes, 0)).getUTCDate()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    de: `${ano - 1}-${pad(mes)}-${pad(Math.min(dia, ultimoDia))}`,
+    ate: hoje,
+  }
 }

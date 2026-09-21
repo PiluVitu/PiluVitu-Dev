@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  conectarPluggy,
   conexaoPluggy,
+  contasPluggy,
   dicaParaErroPluggy,
   janelaPadrao,
+  rotuloDeConta,
   salvarConexaoPluggy,
+  avisoDeTipoDeConta,
+  conexoesPluggy,
+  janelaMaxima,
 } from './pluggy'
 
 afterEach(() => {
@@ -196,5 +202,333 @@ describe('conexaoPluggy / salvarConexaoPluggy', () => {
     await expect(
       salvarConexaoPluggy('a1', { item_id: 'it-1', account_id: 'ac-1' }),
     ).rejects.toThrow()
+  })
+})
+
+describe('dicaParaErroPluggy — aguardando autorização ≠ conexão caída', () => {
+  test('manda TERMINAR a autorização em curso, e diz que o link é de uso único', () => {
+    const dica = dicaParaErroPluggy('pluggy_aguardando_autorizacao')
+    expect(dica).toMatch(/autorizar/i)
+    expect(dica).toMatch(/aba/i)
+    expect(dica).toMatch(/uso único/i)
+  })
+
+  // ⚠️ A asserção NEGATIVA é o ponto: as duas são 409 e as duas falam de
+  // "conexão", mas uma manda TERMINAR o que está em curso e a outra manda
+  // REFAZER no app Meu Pluggy o que caiu. Trocar as mensagens é mandar o dono
+  // desfazer exatamente o que está certo.
+  test('NÃO se parece com a de item_disconnected — nem a recíproca', () => {
+    const aguardando = dicaParaErroPluggy('pluggy_aguardando_autorizacao')
+    const desconectado = dicaParaErroPluggy('pluggy_item_disconnected')
+
+    expect(aguardando).not.toBe(desconectado)
+    // A de espera nunca manda abrir o app nem refazer a conexão.
+    expect(aguardando).not.toMatch(/Meu Pluggy/)
+    expect(aguardando).not.toMatch(/reconect/i)
+    expect(aguardando).not.toMatch(/refazer/i)
+    // E a de conexão caída nunca fala do link de autorização.
+    expect(desconectado).not.toMatch(/uso único/i)
+    expect(desconectado).not.toMatch(/autorizar/i)
+  })
+})
+
+describe('conectarPluggy', () => {
+  test('POSTa em /api/pluggy/connect e devolve o shape da conexão', async () => {
+    const chamadas: Array<{ url: string; method: string | undefined }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        chamadas.push({ url: String(url), method: init?.method })
+        return respondJson({
+          item_id: 'it-1',
+          status: 'WAITING_USER_INPUT',
+          execution_status: 'USER_INPUT_TIMEOUT',
+          authorize_url: 'https://meu.pluggy.ai/auth/abc',
+        })
+      }),
+    )
+
+    expect(await conectarPluggy()).toEqual({
+      item_id: 'it-1',
+      status: 'WAITING_USER_INPUT',
+      execution_status: 'USER_INPUT_TIMEOUT',
+      authorize_url: 'https://meu.pluggy.ai/auth/abc',
+    })
+    expect(chamadas).toHaveLength(1)
+    expect(chamadas[0].url).toBe('/api/pluggy/connect')
+    expect(chamadas[0].method).toBe('POST')
+  })
+
+  test('item que já veio autorizado ⇒ authorize_url null (não é erro)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() =>
+        respondJson({
+          item_id: 'it-1',
+          status: 'UPDATED',
+          execution_status: 'SUCCESS',
+          authorize_url: null,
+        }),
+      ),
+    )
+
+    const conexao = await conectarPluggy()
+    expect(conexao.authorize_url).toBeNull()
+    expect(conexao.status).toBe('UPDATED')
+  })
+
+  test('LANÇA em erro — um "conectei" mudo deixaria o dono esperando uma aba que nunca abre', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(() =>
+          respondErro(503, 'pluggy_disabled', 'Pluggy não configurado'),
+        ),
+    )
+
+    await expect(conectarPluggy()).rejects.toThrow('Pluggy não configurado')
+  })
+})
+
+describe('contasPluggy', () => {
+  test('sem itemId NÃO manda query nenhuma — o servidor usa o item salvo', async () => {
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        urls.push(String(url))
+        return respondJson({ item_id: 'it-salvo', contas: [] })
+      }),
+    )
+
+    expect(await contasPluggy()).toEqual({ item_id: 'it-salvo', contas: [] })
+    expect(urls).toEqual(['/api/pluggy/accounts'])
+  })
+
+  test('com itemId monta ?item_id= (encodado) e devolve as contas', async () => {
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        urls.push(String(url))
+        return respondJson({
+          item_id: 'it/1',
+          contas: [
+            { id: 'ac-1', type: 'BANK', name: 'Nubank', number: '1234' },
+            { id: 'ac-2', type: 'CREDIT', name: 'Nubank Cartão' },
+          ],
+        })
+      }),
+    )
+
+    const contas = await contasPluggy('it/1')
+    expect(contas.contas).toHaveLength(2)
+    expect(contas.contas[0].id).toBe('ac-1')
+    expect(urls).toEqual(['/api/pluggy/accounts?item_id=it%2F1'])
+  })
+
+  test('LANÇA em erro — "aguardando autorização" não pode virar lista vazia', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(() =>
+          respondErro(
+            409,
+            'pluggy_aguardando_autorizacao',
+            'A conexão ainda não foi autorizada.',
+          ),
+        ),
+    )
+
+    await expect(contasPluggy()).rejects.toThrow(
+      'A conexão ainda não foi autorizada.',
+    )
+  })
+})
+
+describe('rotuloDeConta — o type desconhecido é EXIBIDO, nunca achatado', () => {
+  test('BANK vira "Conta corrente"', () => {
+    expect(rotuloDeConta({ id: 'a', type: 'BANK' })).toBe('Conta corrente')
+  })
+
+  test('CREDIT vira "Cartão"', () => {
+    expect(rotuloDeConta({ id: 'a', type: 'CREDIT' })).toBe('Cartão')
+  })
+
+  test('type desconhecido sai CRU — nunca "Desconhecido", nunca lança', () => {
+    expect(rotuloDeConta({ id: 'a', type: 'INVESTMENT' })).toBe('INVESTMENT')
+    expect(rotuloDeConta({ id: 'a', type: 'LOAN', name: 'Consignado' })).toBe(
+      'LOAN · Consignado',
+    )
+    expect(rotuloDeConta({ id: 'a', type: '' })).toBe('')
+  })
+
+  test('concatena name e number quando existem', () => {
+    expect(
+      rotuloDeConta({
+        id: 'a',
+        type: 'BANK',
+        name: 'Nubank',
+        number: '1234-5',
+      }),
+    ).toBe('Conta corrente · Nubank · 1234-5')
+  })
+
+  test('sem name/number devolve só o tipo; só number também funciona', () => {
+    expect(
+      rotuloDeConta({ id: 'a', type: 'CREDIT', number: '**** 4242' }),
+    ).toBe('Cartão · **** 4242')
+    expect(rotuloDeConta({ id: 'a', type: 'CREDIT', name: 'Nubank' })).toBe(
+      'Cartão · Nubank',
+    )
+  })
+})
+
+describe('avisoDeTipoDeConta — avisa, nunca bloqueia', () => {
+  test('CARTÃO do banco numa conta que não é cartão: avisa, e diz o porquê', () => {
+    // O caso caro: só `credit_card` preenche `bill_competence`, que é
+    // derivado e NÃO é patchável. A fatura entraria sem competência e não
+    // teria conserto — só apagar e reimportar.
+    const aviso = avisoDeTipoDeConta('checking', 'CREDIT')
+
+    expect(aviso).not.toBeNull()
+    expect(aviso).toContain('CARTÃO DE CRÉDITO')
+    expect(aviso).toContain('competência')
+  })
+
+  test('CONTA CORRENTE do banco numa conta de cartão: avisa o inverso', () => {
+    const aviso = avisoDeTipoDeConta('credit_card', 'BANK')
+
+    expect(aviso).not.toBeNull()
+    expect(aviso).toContain('CONTA CORRENTE')
+    // Asserção NEGATIVA cruzada: as duas mensagens não podem se confundir.
+    expect(aviso).not.toContain('CARTÃO DE CRÉDITO')
+  })
+
+  test('pares plausíveis não avisam nada', () => {
+    expect(avisoDeTipoDeConta('credit_card', 'CREDIT')).toBeNull()
+    expect(avisoDeTipoDeConta('checking', 'BANK')).toBeNull()
+    expect(avisoDeTipoDeConta('savings', 'BANK')).toBeNull()
+  })
+
+  test('⚠️ type desconhecido do Pluggy NUNCA vira aviso', () => {
+    // Mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`: inventar
+    // alerta para um tipo que o Pluggy criar amanhã é mandar o dono
+    // desconfiar de um par que está certo.
+    expect(avisoDeTipoDeConta('checking', 'INVESTMENT')).toBeNull()
+    expect(avisoDeTipoDeConta('credit_card', 'LOAN')).toBeNull()
+    expect(avisoDeTipoDeConta('checking', '')).toBeNull()
+  })
+})
+
+describe('conexoesPluggy — quem entra na fila do lote', () => {
+  const CONEXAO = { item_id: 'it-1', account_id: 'ac-1' }
+
+  function respondePorChave(mapa: Record<string, string | null>) {
+    return vi.fn(async (url: string) => {
+      const key = decodeURIComponent(String(url).split('/api/settings/')[1])
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          data: { key, value: mapa[key] ?? null },
+          notifications: [],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+  }
+
+  test('devolve só as contas conectadas, na ordem recebida', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respondePorChave({
+        'pluggy:a': JSON.stringify(CONEXAO),
+        'pluggy:c': JSON.stringify(CONEXAO),
+      }),
+    )
+
+    const r = await conexoesPluggy([
+      { id: 'a', name: 'Inter' },
+      { id: 'b', name: 'Sem conexão' },
+      { id: 'c', name: 'Nubank' },
+    ])
+
+    expect(r.map((x) => x.accountId)).toEqual(['a', 'c'])
+    expect(r.map((x) => x.nome)).toEqual(['Inter', 'Nubank'])
+    expect(r[0].conexao).toEqual(CONEXAO)
+  })
+
+  test('⚠️ conta que FALHA fica de fora sem derrubar as outras', async () => {
+    // `conexaoPluggy` degrada pra null em erro. Se uma conta indisponível
+    // derrubasse a lista inteira, um 500 numa chave tiraria o lote do ar
+    // para todas — capacidade opcional não pode quebrar o resto.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const key = decodeURIComponent(String(url).split('/api/settings/')[1])
+        if (key === 'pluggy:b') return new Response('boom', { status: 500 })
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            data: { key, value: JSON.stringify(CONEXAO) },
+            notifications: [],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+
+    const r = await conexoesPluggy([
+      { id: 'a', name: 'Inter' },
+      { id: 'b', name: 'Quebrada' },
+      { id: 'c', name: 'Nubank' },
+    ])
+
+    expect(r.map((x) => x.accountId)).toEqual(['a', 'c'])
+  })
+
+  test('nenhuma conectada devolve lista vazia, nunca erro', async () => {
+    vi.stubGlobal('fetch', respondePorChave({}))
+
+    await expect(conexoesPluggy([{ id: 'a', name: 'Inter' }])).resolves.toEqual(
+      [],
+    )
+  })
+
+  test('valor salvo com shape errado não entra na fila', async () => {
+    vi.stubGlobal('fetch', respondePorChave({ 'pluggy:a': '{"lixo":1}' }))
+
+    await expect(conexoesPluggy([{ id: 'a', name: 'Inter' }])).resolves.toEqual(
+      [],
+    )
+  })
+})
+
+describe('janelaMaxima — os 12 meses, e só por escolha explícita', () => {
+  test('volta exatamente um ano e termina hoje', () => {
+    expect(janelaMaxima('2026-09-21')).toEqual({
+      de: '2025-09-21',
+      ate: '2026-09-21',
+    })
+  })
+
+  test('29/02 de ano bissexto apara para 28/02 no ano anterior', () => {
+    // Mesmo aparo de `janelaPadrao`: uma data inexistente seria recusada
+    // pelo servidor (`isRealCalendarDate`) e o dono veria um erro de
+    // calendário num botão que só deveria preencher dois campos.
+    expect(janelaMaxima('2028-02-29').de).toBe('2027-02-28')
+  })
+
+  test('⚠️ NÃO é o default — janelaPadrao continua sendo um mês', () => {
+    // A guarda inteira mora nesta diferença. Se um dia alguém apontar o
+    // default para cá, este teste cai e explica o porquê: a fricção protege
+    // quem importa POR CIMA de histórico, onde uq_tx_imported impede
+    // corrigir. Só vira escolha certa em conta vazia, e só o dono sabe.
+    const hoje = '2026-09-21'
+    expect(janelaPadrao(hoje).de).toBe('2026-08-21')
+    expect(janelaMaxima(hoje).de).toBe('2025-09-21')
+    expect(janelaPadrao(hoje).de).not.toBe(janelaMaxima(hoje).de)
   })
 })

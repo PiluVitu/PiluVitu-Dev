@@ -333,13 +333,14 @@ describe('⑤ imported_id é o UUID do Pluggy', () => {
 })
 
 describe('⑥ mapeamento campo a campo', () => {
-  it('a linha tem EXATAMENTE as 4 chaves de LinhaImportada', () => {
+  it('a linha tem EXATAMENTE as 5 chaves de LinhaImportada', () => {
     // O que não tem correspondente (payee_id, category_id, is_business) fica
     // FORA — as regras de categorização resolvem depois. Se alguém inventar
     // um palpite aqui, esta asserção cai.
     expect(Object.keys(linhaDe(tx())).sort()).toEqual([
       'amount_cents',
       'description',
+      'external_category_id',
       'imported_id',
       'purchase_date',
     ])
@@ -378,5 +379,21 @@ describe('⑥ mapeamento campo a campo', () => {
 
   it('lista vazia devolve resultado vazio, sem lançar', () => {
     expect(mapearTransacoes([])).toEqual({ linhas: [], rejeitadas: [] })
+  })
+})
+
+describe('external_category_id — a categoria do banco chega à conferência', () => {
+  it('repassa o categoryId do Pluggy', () => {
+    expect(linhaDe(tx({ categoryId: '10000000' })).external_category_id).toBe(
+      '10000000',
+    )
+  })
+
+  it('sem categoryId vira null, nunca undefined solto', () => {
+    expect(linhaDe(tx()).external_category_id).toBeNull()
+  })
+
+  it('categoryId vazio também é null', () => {
+    expect(linhaDe(tx({ categoryId: '' })).external_category_id).toBeNull()
   })
 })
