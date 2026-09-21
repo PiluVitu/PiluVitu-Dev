@@ -3300,7 +3300,72 @@ Os três são fora do Worker. Do passo 4 em diante (`item_id`, `account_id`, aut
 
 **`lib/pluggy.test.ts` 63 → 82** (+19: `criarItem`, `urlDeAutorizacao`, `listarContas`, a caracterização da armadilha e as asserções negativas de vazamento de secret/apiKey). **`routes/pluggy.test.ts` 23 → 37** (+14, incl. a asserção negativa cruzada entre `pluggy_aguardando_autorizacao` e `pluggy_item_disconnected`). Worker inteiro: **880 passando, 0 falhas**; `tsc --noEmit` e prettier limpos. ⚠️ **Nenhum teste toca a rede** — `fetchImpl` injetado no lib, `globalThis.fetch` substituído e restaurado na rota, com contagem de chamadas como detector.
 
-⚠️ **A SPA ainda não usa nada disto.** `#/importar` segue com os dois campos de texto colados à mão — a troca pelo botão "Conectar banco" + select de conta é a próxima fatia, deliberadamente represada até o spike confirmar o shape do conector 200 contra a API real.
+✅ **A TELA chegou** — ver _O cliente da SPA_ e _A tela da fatia ⑤_ logo abaixo. O card "Sincronizar com o banco" de `#/importar` não pede mais `item_id`/`account_id` colados à mão.
+
+### O cliente da SPA (`web/src/lib/pluggy.ts`) — 3 funções novas, nenhuma linha antiga reescrita
+
+O consumidor das duas rotas acima começa aqui, fora do componente (mesmo arranjo da fatia ④: tipo/regra no lib, com teste próprio, e a página só orquestra). **Só ACRÉSCIMOS** — a única alteração dentro de código que já existia é um ramo novo em `dicaParaErroPluggy`; `conexaoPluggy`, `salvarConexaoPluggy`, `janelaPadrao`, `sincronizarPluggy` e `mapearParaLinhas` continuam como estavam.
+
+| Função                  | Contrato                                                                   | Quando o servidor recusa |
+| ----------------------- | -------------------------------------------------------------------------- | ------------------------ |
+| `conectarPluggy()`      | `POST /api/pluggy/connect`, **sem corpo**                                  | **LANÇA**                |
+| `contasPluggy(itemId?)` | `GET /api/pluggy/accounts`, com `?item_id=` **só quando o argumento vier** | **LANÇA**                |
+| `rotuloDeConta(conta)`  | pura — sem rede, sem estado                                                | **nunca lança**          |
+
+⚠️ **As duas que falam com a rede LANÇAM, e isso é o OPOSTO de `conexaoPluggy` (que degrada pra `null`) — a divergência é desenho, não descuido.** `conexaoPluggy` responde a pergunta "já tem conexão salva?", e "não tem" é uma resposta legítima que cai no formulário. Estas duas são AÇÃO PRÓPRIA do dono, com botão: um "conectei" mudo o deixa esperando uma aba de autorização que nunca vai abrir. Em `contasPluggy` é pior ainda — engolir o erro e devolver lista vazia diria **"você não tem conta nenhuma"**, que é falso tanto em `pluggy_aguardando_autorizacao` quanto em `pluggy_item_disconnected`, e as duas causas exigem ações opostas. ⚠️ **É exatamente por LANÇAREM que nenhuma das duas pode ser chamada num `useEffect`** — ver a armadilha na seção da tela, logo abaixo, medida em 5 unhandled rejections.
+
+⚠️ **`PluggyContaView.type` é `string`, NÃO `'BANK' | 'CREDIT'`.** A união fechada mentiria sobre o contrato: o Pluggy devolve tipos que este app não mapeia (`INVESTMENT` já apareceu), e um tipo desconhecido tem que ser EXIBIDO, nunca sumir do `<select>` nem quebrar a tela. Por isso `rotuloDeConta` devolve o `type` **CRU** no `else` — nunca `'Desconhecido'`, nunca exceção. É a mesma disciplina de allowlist que o Worker aplica em `STATUS_PRECISA_RECONECTAR` (estado desconhecido não vira "reconecte"), aqui do lado do rótulo. `name`/`number` entram só quando existem, com o separador `·` de `rotuloConta` (`lib/contas.ts`) — nunca um `undefined` no meio do texto.
+
+⚠️ **`contasPluggy()` sem argumento manda a URL LIMPA (`/api/pluggy/accounts`), jamais `?item_id=undefined`** — sem argumento o servidor usa o `item_id` que `POST /connect` já gravou em `settings`, e esse é o caminho NORMAL; uma query com o literal `undefined` seria lida como id inválido e transformaria o caminho feliz em erro. Com argumento, `encodeURIComponent` — a fixture do teste usa `it/1` **de propósito** (`'/api/pluggy/accounts?item_id=it%2F1'`), porque uma `/` crua abriria um segmento de caminho e bateria em outra rota.
+
+⚠️ **O ramo novo de `dicaParaErroPluggy` fica IMEDIATAMENTE ACIMA do de `pluggy_item_disconnected`, e a posição é deliberada:** os dois são `409`, os dois aparecem no MESMO botão, e mandam pra lados opostos — quem for editar um vê o outro na linha seguinte. `pluggy_aguardando_autorizacao` diz **TERMINE o que já começou** (abre negando a outra: _"Não é conexão caída: ela existe e está esperando VOCÊ terminar de autorizar"_) e explica que o link é de uso único, então reconectar gera outro. `pluggy_item_disconnected` diz **REFAÇA no app Meu Pluggy o que caiu**. ⚠️ **A dica nova não contém "Meu Pluggy", nem "reconect", nem "refazer"** — mandar o dono refazer no Meu Pluggy uma autorização que só falta ele concluir é fazê-lo desfazer o que está certo, e o pior é que soa plausível. Travado por asserção NEGATIVA cruzada **nas duas direções**, não só numa.
+
+**Suítes: `lib/pluggy.test.ts` (SPA) 18 → 31** (+13); SPA **718 → 731**. No estilo do arquivo (`respondJson`/`respondErro`, `vi.stubGlobal('fetch', …)`): URLs e métodos coletados num array e ⚠️ **a CONTAGEM de chamadas como prova de "nem chegou a tentar"** — nenhum teste toca a rede. Cobre também que `authorize_url: null` **não é erro** (item que já veio autorizado não tem nada a abrir).
+
+⚠️ **Verificado por MUTAÇÃO — 2** (revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`):
+
+| Mutação                                                                | Falha observada                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------- |
+| `rotuloDeConta` devolve `'Desconhecido'` no `type` desconhecido        | 1 — `expected 'Desconhecido' to be 'INVESTMENT'`          |
+| a dica nova copiada da de `pluggy_item_disconnected` (o defeito grave) | 2 — incl. `not to be 'Só o app Meu Pluggy refazer essa…'` |
+
+### A tela da fatia ⑤ — o card "Sincronizar com o banco" (`web/src/pages/importar.tsx`)
+
+O consumidor que faltava pras duas rotas acima. **Zero Worker, zero rota, zero migration** — só a tela. Os dois campos de texto continuam existindo: foram **rebaixados a fallback**, nunca apagados.
+
+⚠️ **O defeito que isto conserta não era de UX, era de contrato: a tela pedia um dado que só existia via `curl`.** O `item_id` só aparece no `dashboard.pluggy.ai`; o `account_id` **não aparece em TELA NENHUMA** do Pluggy (só em `GET /accounts?itemId=`). E o texto de ajuda mandava "conectar esta conta no app Meu Pluggy e colar aqui os dois identificadores que ele mostra" — **factualmente errado**, o Meu Pluggy não mostra nenhum dos dois. O texto foi reescrito: o dono conecta os bancos em `meu.pluggy.ai`, cria uma Application em `dashboard.pluggy.ai` e adiciona o conector **Meu Pluggy** a ela; daí em diante o app resolve sozinho.
+
+**O fluxo, quando NÃO há conexão salva pra conta selecionada:** `Conectar banco` (`POST /connect`) → autorizar → `Já autorizei — listar minhas contas` (`GET /accounts`) → `<select>` das contas → `Salvar conexão`.
+
+⚠️ **A aba nova é CONVENIÊNCIA; o link na tela é o caminho.** `window.open(url, '_blank', 'noopener,noreferrer')` roda dentro de `try/catch` e o bloco do link é renderizado **de qualquer forma** — bloqueador de pop-up devolve `null` em silêncio, e um botão que "não fez nada" é inaceitável. O texto diz que o link é de **uso único** e que repetir o `Conectar banco` gera outro (é a saída documentada quando ele expira). A URL some da tela assim que as contas são listadas: uma URL de uso único guardada é uma URL que não funciona mais.
+
+⚠️ **`conectarBanco` NÃO usa `mutarERecarregar`, apesar de `POST /connect` GRAVAR o `item_id` em `settings`.** Duas razões, as duas fatais pro helper: (a) **não existe recarga que faça sentido** — a releitura natural seria `contasPluggy()`, e ela FALHA de propósito neste instante (`409 pluggy_aguardando_autorizacao`, o dono ainda não autorizou), então o helper reportaria o caminho FELIZ como recarga falhada; (b) **o payload é de uso único** — descartar `authorize_url` pra "recarregar" jogaria fora a única coisa que torna o clique útil. `gravarConexao` (o `PUT` do par) continua sendo o 10º call site do helper, sem mudança.
+
+⚠️ **`conectarPluggy`/`contasPluggy` LANÇAM (de propósito — recusa é a informação mais importante das duas) e por isso NUNCA são chamadas no efeito por `accountId`.** Só `conexaoPluggy` roda lá, e ela degrada pra `null`. Chamar qualquer uma das outras naquele efeito viraria unhandled rejection e derrubaria o import por ARQUIVO, que é a capacidade principal da tela — a mesma lição que `/api/rules` já custou aqui. **MEDIDO por mutação:** um `void contasPluggy()` dentro do efeito derruba 2 testes **e** produz 5 unhandled rejections.
+
+⚠️ **Os dois 409 mandam pra lados OPOSTOS, e a tela separa os dois** — `pluggy_aguardando_autorizacao` ("TERMINE a autorização em curso") × `pluggy_item_disconnected` ("REFAÇA no app Meu Pluggy a conexão que caiu"). A mensagem do servidor é repassada crua (`pluggy-conexao-erro`) e `dicaParaErroPluggy` acrescenta o SEGUNDO parágrafo (`pluggy-conexao-dica`); cada teste tem asserção NEGATIVA contra a dica do outro. Trocar as duas é mandar o dono desfazer o que está certo.
+
+⚠️ **`type` desconhecido é EXIBIDO CRU no `<select>`, nunca some** — `rotuloDeConta` (`lib/pluggy.ts`) mapeia `BANK`/`CREDIT` e devolve o `type` do fio pra qualquer outro. MEDIDO em Chrome real: `INVESTMENT · Tesouro Direto` aparece ao lado de `Cartão · …` e `Conta corrente · …`. Escolher a conta errada aqui importa um extrato inteiro na conta errada, então achatar dois tipos diferentes num rótulo genérico é pior que mostrar a string do fio.
+
+⚠️ **O `<Label>` do select é "Conta no banco", nunca "Conta"** — o card de arquivo, na mesma tela, já usa o rótulo EXATO `Conta`; dois iguais tornam `getByLabelText('Conta')` ambíguo (quebrando um teste que nem é de Pluggy) e deixam o leitor de tela sem como distinguir os dois.
+
+⚠️ **A saída de emergência (`pluggy-modo-manual`) NÃO é legado esquecido.** Se o conector "Meu Pluggy" não estiver acoplado à Application no dashboard, `POST /connect` falha — e sem ela o dono fica sem NENHUM caminho. O modo manual substitui o fluxo guiado enquanto aberto (nada de dois "Salvar conexão" na mesma tela) e volta por um segundo toque.
+
+⚠️ **COMPATIBILIDADE: o armazenamento não mudou um byte** — mesma chave `pluggy:<account_id>`, mesmo shape `{item_id, account_id}`, então `GET /api/pluggy/transactions` continua funcionando sem nenhuma mudança e quem já tinha salvo o par à mão cai direto no estado de sincronizar. Travado por teste (`COMPATIBILIDADE: conta com conexão já salva cai direto no sincronizar`), que também afirma **zero** chamada a `/api/pluggy/` só por abrir a tela.
+
+**Mobile MEDIDO em Chrome real** (`playwright-core` + o Chrome do sistema, `vite build` + `vite preview`, 390×844 com `hasTouch`/`isMobile`), nos QUATRO estados (inicial, com link de autorização, com o select, modo manual): `scrollWidth === clientWidth === 390` nos quatro. Os únicos elementos com overflow interno são os dois **pré-existentes** já registrados (o gatilho `?` do `Ajuda`, 31/18, e o `<pre>` do comando de PDF, `overflow-x-auto`). Alvos novos: `colar os identificadores à mão` **185,8×44**, `voltar ao modo guiado` **142,1×44** e `Autorizar no Pluggy` **142,6×44** (os três com `ALVO_LINK`); o `<select>` em 308×36, o mesmo de todo formulário do app (conjunto já registrado como aceito — ≥24 px, WCAG 2.5.8 AA).
+
+**Suítes: `pages/importar.test.tsx` 53 → 64** (+11); SPA **731 → 742**. Worker, `packages/ui` e `packages/tools` intocados. ⚠️ **Nenhuma asserção pré-existente mudou de VALOR** — 2 testes do card mudaram de SELETOR (os dois campos colados à mão não são mais a primeira coisa da tela) e 1 passou a afirmar o botão `Conectar banco` no lugar deles.
+
+⚠️ **Verificado por MUTAÇÃO — 5, cada uma matando só o teste certo pelo motivo certo** (todas revertidas por **cópia de arquivo**, nunca `git checkout <arquivo>`):
+
+| Mutação                                                   | Falha observada                                            |
+| --------------------------------------------------------- | ---------------------------------------------------------- |
+| a dica do 409 vira SEMPRE a de "conexão caída"            | 2 — a mensagem que manda desfazer o que está certo         |
+| o link de autorização some (só a aba nova)                | 3 — o botão que "não fez nada"                             |
+| saída de emergência removida                              | 2 — o dono sem caminho quando `POST /connect` falha        |
+| `rotuloDeConta` trocado por um rótulo achatado            | 2 — o `type` desconhecido some do `<select>`               |
+| `contasPluggy()` chamada DENTRO do efeito por `accountId` | 2 — **mais 5 unhandled rejections** (a armadilha, literal) |
 
 ## Segunda rodada de a11y/leitura — 5 defeitos MEDIDOS a 390×844
 

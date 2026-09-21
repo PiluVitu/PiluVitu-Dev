@@ -28,12 +28,16 @@ import { mapaSalvo, salvarMapa } from '../lib/import-settings'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { type PayeeParaSugestao } from '../lib/payee-suggest'
 import {
+  conectarPluggy,
   conexaoPluggy,
+  contasPluggy,
   dicaParaErroPluggy,
   janelaPadrao,
+  rotuloDeConta,
   salvarConexaoPluggy,
   type ConexaoPluggy,
   type LinhaRejeitadaView,
+  type PluggyContaView,
   type PluggyTransactionsView,
 } from '../lib/pluggy'
 import { explicarRegras, sugerirParaLinha } from '../lib/regras-import'
@@ -123,6 +127,20 @@ type Passo = 'selecionar' | 'mapear' | 'conferencia' | 'enviando' | 'concluido'
 type Origem = 'ofx' | 'csv' | 'pluggy'
 
 type ErroPluggy = { code: string; message: string }
+
+/**
+ * Recusa do servidor virando o par `{code, message}` que a tela mostra.
+ *
+ * ⚠️ A `message` é REPASSADA CRUA, nunca reescrita — é ela que distingue
+ * "abra o Ollama" de "rode `ollama pull X`" nos códigos que o Worker
+ * repassa, e "corrija os secrets" de "reconecte no app". O `code` só
+ * escolhe o SEGUNDO parágrafo (`dicaParaErroPluggy`).
+ */
+function erroPluggy(err: unknown): ErroPluggy {
+  return err instanceof ApiError
+    ? { code: err.code, message: err.message }
+    : { code: 'desconhecido', message: String(err) }
+}
 
 /** Um lugar só pro "hoje" local (Teresina, UTC−3), nunca `toISOString()` cru. */
 function hoje(): string {
@@ -258,8 +276,34 @@ export function ImportarPage() {
   const [editandoConexao, setEditandoConexao] = useState(false)
   const [formItemId, setFormItemId] = useState('')
   const [formAccountId, setFormAccountId] = useState('')
-  const [conexaoErro, setConexaoErro] = useState<string | null>(null)
+  // ⚠️ Carrega o `code` junto com a mensagem porque as causas mandam o dono
+  // pra lados OPOSTOS — `pluggy_aguardando_autorizacao` diz "TERMINE a
+  // autorização que já está em curso" e `pluggy_item_disconnected` diz
+  // "REFAÇA no app Meu Pluggy a conexão que caiu". É `dicaParaErroPluggy`
+  // (`lib/pluggy.ts`) quem traduz; sem o código, o segundo parágrafo teria
+  // que ser genérico — e genérico aqui é mandar desfazer o que está certo.
+  const [conexaoErro, setConexaoErro] = useState<ErroPluggy | null>(null)
   const [salvandoConexao, setSalvandoConexao] = useState(false)
+  // ── Fatia ⑤: o app conecta sozinho ────────────────────────────────────
+  // O dono não tem como obter `item_id`/`account_id` pela interface do
+  // Pluggy — o primeiro só aparece no dashboard e o segundo NÃO aparece em
+  // tela nenhuma (só via `GET /accounts`). Os dois campos de texto viraram
+  // FALLBACK (`modoManual`); o caminho normal é este fluxo guiado.
+  const [modoManual, setModoManual] = useState(false)
+  const [conectando, setConectando] = useState(false)
+  /** Item criado (ou relido) nesta sessão — `null` = ainda não conectou aqui. */
+  const [itemConectado, setItemConectado] = useState<string | null>(null)
+  /**
+   * ⚠️ USO ÚNICO e EXPIRA — por isso ela NÃO é relida nem guardada em
+   * `settings`: uma URL guardada é uma URL que não funciona mais. Some
+   * assim que as contas são listadas (a autorização terminou).
+   */
+  const [urlAutorizacao, setUrlAutorizacao] = useState<string | null>(null)
+  const [contasDoItem, setContasDoItem] = useState<PluggyContaView[] | null>(
+    null,
+  )
+  const [listandoContas, setListandoContas] = useState(false)
+  const [contaEscolhida, setContaEscolhida] = useState('')
   const [pluggyDe, setPluggyDe] = useState(() => janelaPadrao(hoje()).de)
   const [pluggyAte, setPluggyAte] = useState(() => janelaPadrao(hoje()).ate)
   const [sincronizando, setSincronizando] = useState(false)
@@ -361,6 +405,20 @@ export function ImportarPage() {
     setConexaoCarregada(false)
     setEditandoConexao(false)
     setPluggyErro(null)
+    // Trocar de conta zera o fluxo guiado: a URL de autorização é de uso
+    // único e a lista de contas pertence ao item que acabou de sair de cena.
+    setModoManual(false)
+    setConexaoErro(null)
+    setUrlAutorizacao(null)
+    setContasDoItem(null)
+    setContaEscolhida('')
+    setItemConectado(null)
+    // ⚠️ Só `conexaoPluggy` roda aqui, e é o que salva este efeito:
+    // `conectarPluggy`/`contasPluggy` LANÇAM (está documentado na lib, de
+    // propósito — recusa é a informação mais importante das duas). Chamar
+    // qualquer uma delas neste efeito viraria unhandled rejection e
+    // derrubaria o import por ARQUIVO, que é a capacidade principal da
+    // tela. As duas só rodam a partir de um botão, com `try/catch`.
     conexaoPluggy(accountId).then((c) => {
       if (!vivo) return
       setConexao(c)
@@ -520,15 +578,82 @@ export function ImportarPage() {
     setPasso('conferencia')
   }
 
-  async function salvarConexao(e: FormEvent) {
-    e.preventDefault()
-    const item_id = formItemId.trim()
-    const account_id = formAccountId.trim()
-    if (item_id === '' || account_id === '') {
-      setConexaoErro('Informe os dois: o id da conexão (item) e o da conta.')
-      return
+  /**
+   * ⚠️ **Cria a conexão no Pluggy e ABRE a autorização — e NÃO usa
+   * `mutarERecarregar`, apesar de ser um POST que grava (a rota guarda o
+   * `item_id` em `settings` antes de responder).** A ausência é decisão:
+   *
+   *  - **não há recarga que faça sentido.** A "releitura" natural seria
+   *    `contasPluggy()`, e ela FALHA de propósito neste instante (`409
+   *    pluggy_aguardando_autorizacao` — o dono ainda não autorizou). Um
+   *    helper cujo contrato é "a ação aconteceu, o recarregamento é que
+   *    não" reportaria o caminho FELIZ como recarga falhada.
+   *  - **o payload é de uso único.** `authorize_url` não se relê: descartá-la
+   *    pra "recarregar" jogaria fora a única coisa que torna o clique útil,
+   *    e o dono ficaria esperando uma aba que nunca abre.
+   *
+   * Repetir é seguro e é a saída documentada quando o link expira: nasce um
+   * item novo, e é o `item_id` mais recente que fica salvo.
+   */
+  async function conectarBanco() {
+    setConexaoErro(null)
+    setConectando(true)
+    try {
+      const r = await conectarPluggy()
+      setItemConectado(r.item_id)
+      setUrlAutorizacao(r.authorize_url)
+      setContasDoItem(null)
+      setContaEscolhida('')
+      if (r.authorize_url !== null) {
+        // ⚠️ A aba nova é CONVENIÊNCIA, nunca o caminho: bloqueador de
+        // pop-up a mata em silêncio, e um botão que "não fez nada" é
+        // inaceitável. O link fica na tela de qualquer forma — é ele o
+        // caminho garantido. `noopener` porque a aba aberta não pode ter
+        // referência de volta a esta janela.
+        try {
+          window.open(r.authorize_url, '_blank', 'noopener,noreferrer')
+        } catch {
+          /* bloqueada ou indisponível: o link na tela resolve */
+        }
+      }
+    } catch (err) {
+      setConexaoErro(erroPluggy(err))
+    } finally {
+      setConectando(false)
     }
+  }
 
+  /**
+   * As contas DENTRO da conexão. Sem `itemConectado` (aba fechada, celular
+   * diferente), vai sem `item_id` e o servidor usa o que `POST /connect`
+   * salvou — é por isso que a rota grava antes de responder: listar items é
+   * impossível na API do Pluggy, então um `item_id` perdido não se recupera.
+   */
+  async function listarContas() {
+    setConexaoErro(null)
+    setListandoContas(true)
+    try {
+      const r = await contasPluggy(itemConectado ?? undefined)
+      setItemConectado(r.item_id)
+      setContasDoItem(r.contas)
+      setContaEscolhida((atual) => atual || r.contas[0]?.id || '')
+      // A autorização terminou — a URL de uso único não serve mais pra nada
+      // e some da tela em vez de convidar a um clique que dá erro.
+      setUrlAutorizacao(null)
+    } catch (err) {
+      setConexaoErro(erroPluggy(err))
+    } finally {
+      setListandoContas(false)
+    }
+  }
+
+  /**
+   * ⚠️ **O armazenamento é EXATAMENTE o mesmo de antes** (`pluggy:<conta>`,
+   * o par `{item_id, account_id}`) — quem já tinha salvo à mão continua
+   * funcionando sem tocar em nada, e `GET /api/pluggy/transactions` não
+   * mudou uma linha. O que mudou foi só COMO o par é descoberto.
+   */
+  async function gravarConexao(item_id: string, account_id: string) {
     setConexaoErro(null)
     setSalvandoConexao(true)
     // `mutarERecarregar` (o 10º call site): a mutação é o `PUT` e a recarga
@@ -542,11 +667,42 @@ export function ImportarPage() {
         const salva = await conexaoPluggy(accountId)
         setConexao(salva)
         setEditandoConexao(false)
+        setModoManual(false)
+        setUrlAutorizacao(null)
+        setContasDoItem(null)
       },
       'A conexão foi salva, mas não consegui reler pra confirmar — atualize a página. Não salve de novo por precaução: o valor já está gravado.',
     )
     setSalvandoConexao(false)
-    if (!r.ok) setConexaoErro(r.mensagem)
+    if (!r.ok) setConexaoErro({ code: '', message: r.mensagem })
+  }
+
+  /** Fluxo guiado: a conta escolhida no `<select>` das contas do item. */
+  async function salvarConexaoEscolhida(e: FormEvent) {
+    e.preventDefault()
+    if (itemConectado === null || contaEscolhida === '') {
+      setConexaoErro({
+        code: '',
+        message: 'Escolha a conta do banco antes de salvar.',
+      })
+      return
+    }
+    await gravarConexao(itemConectado, contaEscolhida)
+  }
+
+  /** Saída de emergência: o par colado à mão (ver `modoManual`). */
+  async function salvarConexaoManual(e: FormEvent) {
+    e.preventDefault()
+    const item_id = formItemId.trim()
+    const account_id = formAccountId.trim()
+    if (item_id === '' || account_id === '') {
+      setConexaoErro({
+        code: '',
+        message: 'Informe os dois: o id da conexão (item) e o da conta.',
+      })
+      return
+    }
+    await gravarConexao(item_id, account_id)
   }
 
   /**
@@ -605,11 +761,7 @@ export function ImportarPage() {
       }
       await prepararConferencia(resposta.linhas, 'pluggy')
     } catch (err) {
-      setPluggyErro(
-        err instanceof ApiError
-          ? { code: err.code, message: err.message }
-          : { code: 'desconhecido', message: String(err) },
-      )
+      setPluggyErro(erroPluggy(err))
     } finally {
       setSincronizando(false)
     }
@@ -848,45 +1000,213 @@ export function ImportarPage() {
                 Verificando a conexão desta conta…
               </p>
             ) : conexao === null || editandoConexao ? (
-              <form onSubmit={salvarConexao} className="space-y-4">
+              <div className="space-y-4">
+                {/* ⚠️ O texto ANTERIOR mandava "conectar esta conta no app Meu
+                    Pluggy e colar aqui os dois identificadores que ele
+                    mostra" — factualmente ERRADO, e parte do bug: o Meu
+                    Pluggy não mostra nenhum dos dois. O `item_id` só aparece
+                    no dashboard, e o `account_id` NÃO aparece em tela
+                    nenhuma (só via `GET /accounts`, ou seja, curl). */}
                 <p className="text-muted-foreground text-sm">
-                  Conecte esta conta no app <strong>Meu Pluggy</strong> e cole
-                  aqui os dois identificadores que ele mostra: o da conexão
-                  (item) e o da conta/cartão dentro dela. Ficam salvos nesta
-                  conta, não no aparelho — conectar no computador e sincronizar
-                  pelo celular funciona.
+                  Conecte seus bancos uma vez em <strong>meu.pluggy.ai</strong>,
+                  crie uma Application em <strong>dashboard.pluggy.ai</strong> e
+                  adicione o conector <strong>Meu Pluggy</strong> a ela. Daí em
+                  diante o app resolve sozinho: cria a conexão, abre a
+                  autorização e lista suas contas — você não precisa copiar
+                  identificador nenhum.
                 </p>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pluggy-item">
-                    Id da conexão (item) no Pluggy
-                  </Label>
-                  <Input
-                    id="pluggy-item"
-                    value={formItemId}
-                    onChange={(e) => setFormItemId(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pluggy-conta">Id da conta no Pluggy</Label>
-                  <Input
-                    id="pluggy-conta"
-                    value={formAccountId}
-                    onChange={(e) => setFormAccountId(e.target.value)}
-                  />
-                </div>
+
+                {modoManual ? (
+                  <form onSubmit={salvarConexaoManual} className="space-y-4">
+                    <p className="text-muted-foreground text-xs">
+                      Modo manual: só faz falta se o conector{' '}
+                      <strong>Meu Pluggy</strong> não estiver acoplado à sua
+                      Application — aí o botão de conectar falha e este é o
+                      único caminho. O <strong>account_id</strong> não aparece
+                      em tela nenhuma do Pluggy: ele sai de{' '}
+                      <code>GET /accounts?itemId=…</code>.
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pluggy-item">
+                        Id da conexão (item) no Pluggy
+                      </Label>
+                      <Input
+                        id="pluggy-item"
+                        value={formItemId}
+                        onChange={(e) => setFormItemId(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pluggy-conta">
+                        Id da conta no Pluggy
+                      </Label>
+                      <Input
+                        id="pluggy-conta"
+                        value={formAccountId}
+                        onChange={(e) => setFormAccountId(e.target.value)}
+                      />
+                    </div>
+                    <Button type="submit" disabled={salvandoConexao}>
+                      {salvandoConexao ? 'Salvando…' : 'Salvar conexão'}
+                    </Button>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <Button onClick={conectarBanco} disabled={conectando}>
+                      {conectando ? 'Conectando…' : 'Conectar banco'}
+                    </Button>
+
+                    {urlAutorizacao !== null ? (
+                      <div
+                        data-testid="pluggy-autorizacao"
+                        className="space-y-1"
+                      >
+                        <p className="text-sm">
+                          Abri a autorização numa aba nova. Se ela não abriu
+                          (bloqueador de pop-up), use este link:
+                        </p>
+                        <a
+                          href={urlAutorizacao}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="pluggy-autorizacao-link"
+                          className={`text-primary text-sm underline ${ALVO_LINK}`}
+                        >
+                          Autorizar no Pluggy
+                        </a>
+                        <p className="text-muted-foreground text-xs">
+                          O link é de <strong>uso único</strong> e expira. Se
+                          ele não funcionar mais, toque em{' '}
+                          <strong>Conectar banco</strong> de novo pra gerar
+                          outro — repetir é seguro.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {itemConectado !== null &&
+                    urlAutorizacao === null &&
+                    contasDoItem === null ? (
+                      <p
+                        data-testid="pluggy-ja-autorizado"
+                        className="text-muted-foreground text-sm"
+                      >
+                        A conexão já veio autorizada — não há nada a autorizar.
+                        Liste suas contas abaixo.
+                      </p>
+                    ) : null}
+
+                    <div>
+                      <Button
+                        variant="outline"
+                        onClick={listarContas}
+                        disabled={listandoContas}
+                      >
+                        {listandoContas
+                          ? 'Buscando…'
+                          : 'Já autorizei — listar minhas contas'}
+                      </Button>
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        Funciona mesmo que você tenha fechado a aba: a conexão
+                        fica guardada no servidor assim que nasce.
+                      </p>
+                    </div>
+
+                    {contasDoItem !== null ? (
+                      contasDoItem.length === 0 ? (
+                        <p
+                          role="status"
+                          data-testid="pluggy-sem-contas"
+                          className="text-muted-foreground text-sm"
+                        >
+                          A conexão respondeu, mas não trouxe nenhuma conta.
+                          Confira em meu.pluggy.ai se os bancos estão conectados
+                          por lá.
+                        </p>
+                      ) : (
+                        <form
+                          onSubmit={salvarConexaoEscolhida}
+                          className="space-y-4"
+                        >
+                          <div className="space-y-1.5">
+                            {/* ⚠️ "Conta no banco", nunca só "Conta" — o
+                                `<select>` do card de arquivo já usa o rótulo
+                                exato "Conta", e dois iguais na mesma tela
+                                tornam a query ambígua (e o leitor de tela,
+                                incapaz de distinguir os dois). */}
+                            <Label htmlFor="pluggy-conta-escolhida">
+                              Conta no banco
+                            </Label>
+                            <select
+                              id="pluggy-conta-escolhida"
+                              className={SELECT_CLASSNAME}
+                              value={contaEscolhida}
+                              onChange={(e) =>
+                                setContaEscolhida(e.target.value)
+                              }
+                            >
+                              {contasDoItem.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {rotuloDeConta(c)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <Button type="submit" disabled={salvandoConexao}>
+                            {salvandoConexao ? 'Salvando…' : 'Salvar conexão'}
+                          </Button>
+                        </form>
+                      )
+                    ) : null}
+                  </div>
+                )}
+
                 {conexaoErro ? (
-                  <p
-                    role="alert"
-                    data-testid="pluggy-conexao-erro"
-                    className="text-destructive text-sm"
-                  >
-                    {conexaoErro}
-                  </p>
+                  <div className="space-y-1">
+                    <p
+                      role="alert"
+                      data-testid="pluggy-conexao-erro"
+                      className="text-destructive text-sm"
+                    >
+                      {conexaoErro.message}
+                    </p>
+                    {/* ⚠️ `pluggy_aguardando_autorizacao` e
+                        `pluggy_item_disconnected` são os dois 409 desta
+                        tela e mandam pra lados OPOSTOS: um diz pra TERMINAR
+                        a autorização em curso, o outro pra REFAZER no app
+                        Meu Pluggy uma conexão que caiu. Quem sabe a
+                        diferença é `dicaParaErroPluggy`; aqui a mensagem do
+                        servidor nunca é reescrita, isto é um segundo
+                        parágrafo. */}
+                    {dicaParaErroPluggy(conexaoErro.code) !== null ? (
+                      <p
+                        data-testid="pluggy-conexao-dica"
+                        className="text-muted-foreground text-xs"
+                      >
+                        {dicaParaErroPluggy(conexaoErro.code)}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
-                <Button type="submit" disabled={salvandoConexao}>
-                  {salvandoConexao ? 'Salvando…' : 'Salvar conexão'}
-                </Button>
-              </form>
+
+                {/* ⚠️ SAÍDA DE EMERGÊNCIA, não legado esquecido: se o
+                    conector "Meu Pluggy" não estiver acoplado à Application
+                    no dashboard, `POST /connect` falha e sem isto o dono
+                    fica sem NENHUM caminho. O formulário antigo continua
+                    inteiro — só foi rebaixado a fallback. */}
+                <button
+                  type="button"
+                  data-testid="pluggy-modo-manual"
+                  className={`text-muted-foreground text-xs underline ${ALVO_LINK}`}
+                  onClick={() => {
+                    setModoManual((m) => !m)
+                    setConexaoErro(null)
+                  }}
+                >
+                  {modoManual
+                    ? 'voltar ao modo guiado'
+                    : 'colar os identificadores à mão'}
+                </button>
+              </div>
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

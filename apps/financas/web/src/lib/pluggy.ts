@@ -168,6 +168,9 @@ export function dicaParaErroPluggy(code: string): string | null {
   if (code === 'pluggy_invalid_credentials') {
     return 'O Pluggy recusou as credenciais DESTE APLICATIVO — não tem a ver com a sua conexão bancária, e repetir não resolve. Confira PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET.'
   }
+  if (code === 'pluggy_aguardando_autorizacao') {
+    return 'Não é conexão caída: ela existe e está esperando VOCÊ terminar de autorizar. Volte na aba que abriu e conclua o acesso. Se ela já fechou ou expirou, toque em conectar de novo para gerar um link novo — o anterior é de uso único e não funciona duas vezes.'
+  }
   if (code === 'pluggy_item_disconnected') {
     return 'Só o app Meu Pluggy pode refazer essa conexão: abra o app, reconecte esta conta e volte aqui. Tentar de novo agora dá exatamente o mesmo resultado. Enquanto isso, dá pra importar o extrato por arquivo (.ofx/.csv).'
   }
@@ -184,4 +187,105 @@ export function dicaParaErroPluggy(code: string): string | null {
     return 'Escolha um intervalo menor (um mês por vez) e sincronize em partes — conferir em pedaços também é mais seguro que conferir tudo de uma vez.'
   }
   return null
+}
+
+/**
+ * Fatia ⑤ (o app conecta sozinho) — o que a tela precisa saber sobre
+ * CRIAR a conexão e LISTAR as contas dela, agora que o dono não cola mais
+ * `item_id`/`account_id` à mão (os dois eram impossíveis de obter pela
+ * interface do Pluggy: o primeiro só no dashboard, o segundo só por `curl`).
+ */
+
+/**
+ * Espelha a resposta de `POST /api/pluggy/connect`.
+ *
+ * ⚠️ **`authorize_url` é de USO ÚNICO e EXPIRA** — não é um link que a tela
+ * possa guardar e reabrir amanhã. É `null` quando o item já veio autorizado
+ * (nada a fazer). A rota JÁ gravou o `item_id` em `settings` antes de
+ * responder: se o dono fechar a aba logo depois de autorizar, `contasPluggy`
+ * funciona sem ele repetir nada — e isso importa porque **listar items é
+ * impossível na API do Pluggy**, então um `item_id` perdido não se recupera,
+ * só se cria outro.
+ */
+export type PluggyConectarView = {
+  item_id: string
+  status: string
+  execution_status: string
+  authorize_url: string | null
+}
+
+/**
+ * Uma conta DENTRO da conexão (o `account` do Pluggy).
+ *
+ * ⚠️ **`type` NÃO é união fechada** (`'BANK' | 'CREDIT'` seria mentira sobre
+ * o contrato): o Pluggy pode devolver um tipo que este app não conhece, e
+ * um tipo desconhecido tem que ser EXIBIDO, nunca quebrar a tela nem sumir
+ * do `<select>` — mesma disciplina de allowlist que o Worker usa em
+ * `STATUS_PRECISA_RECONECTAR` (estado desconhecido não vira "reconecte").
+ */
+export type PluggyContaView = {
+  id: string
+  type: string
+  subtype?: string
+  name?: string
+  number?: string
+}
+
+/** Espelha a resposta de `GET /api/pluggy/accounts`. */
+export type PluggyContasView = {
+  item_id: string
+  contas: PluggyContaView[]
+}
+
+/**
+ * Cria a conexão no Pluggy (conector 200, "Meu Pluggy") e devolve o item
+ * recém-nascido, com a URL que o dono precisa ABRIR pra autorizar.
+ *
+ * ⚠️ **LANÇA quando falha — mesma disciplina de `salvarConexaoPluggy`, e
+ * pelo mesmo motivo.** É uma AÇÃO PRÓPRIA do dono, com botão: um "conectei"
+ * mudo o deixaria esperando uma aba de autorização que nunca vai abrir, sem
+ * nada na tela dizendo por quê. Quem chama trata a mensagem do servidor com
+ * `dicaParaErroPluggy` (cada causa manda pra um lugar diferente).
+ */
+export async function conectarPluggy(): Promise<PluggyConectarView> {
+  return api<PluggyConectarView>('/api/pluggy/connect', { method: 'POST' })
+}
+
+/**
+ * As contas da conexão. Sem `itemId`, o servidor usa o `item_id` salvo em
+ * `settings` pela própria `POST /connect` — é o caminho normal.
+ *
+ * ⚠️ **LANÇA quando falha, e aqui a recusa é a informação mais importante
+ * da tela:** `409 pluggy_aguardando_autorizacao` (o dono não concluiu a
+ * autorização) e `409 pluggy_item_disconnected` (a conexão CAIU) mandam ele
+ * pra lados OPOSTOS. Engolir o erro e devolver lista vazia diria "não tenho
+ * conta nenhuma", que é falso nos dois casos.
+ */
+export async function contasPluggy(itemId?: string): Promise<PluggyContasView> {
+  const query = itemId ? `?item_id=${encodeURIComponent(itemId)}` : ''
+  return api<PluggyContasView>(`/api/pluggy/accounts${query}`)
+}
+
+/**
+ * O rótulo da conta no `<option>` — PURA, sem rede e sem estado.
+ *
+ * ⚠️ **Tipo desconhecido devolve o `type` CRU, nunca "Desconhecido" e nunca
+ * uma exceção.** Um `type` novo do Pluggy (ou um que este app ainda não
+ * mapeou) continua escolhível: o dono vê a string do fio e decide. Achatar
+ * tudo que não é `BANK`/`CREDIT` num rótulo genérico tornaria duas contas
+ * diferentes indistinguíveis no mesmo `<select>` — e escolher a errada aqui
+ * importa um extrato inteiro na conta errada.
+ *
+ * `name` e `number` entram quando existem, nunca como `undefined` no texto.
+ * Separador ` · `, o mesmo de `rotuloConta` (`lib/contas.ts`).
+ */
+export function rotuloDeConta(conta: PluggyContaView): string {
+  const tipo =
+    conta.type === 'BANK'
+      ? 'Conta corrente'
+      : conta.type === 'CREDIT'
+        ? 'Cartão'
+        : conta.type
+
+  return [tipo, conta.name, conta.number].filter(Boolean).join(' · ')
 }

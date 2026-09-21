@@ -146,6 +146,25 @@ function mockRede(opts: {
     rejeitadas?: Array<{ index: number; id: string; motivo: string }>
   }
   pluggyErro?: { status: number; code: string; message: string }
+  // Fatia ⑤ — `POST /api/pluggy/connect`. O default é o caminho feliz de
+  // um conector OAuth: item novo, esperando o dono autorizar.
+  connectResposta?: {
+    item_id: string
+    status: string
+    execution_status: string
+    authorize_url: string | null
+  }
+  connectErro?: { status: number; code: string; message: string }
+  // `GET /api/pluggy/accounts`. `contas` default cobre os dois `type` que o
+  // app rotula (BANK/CREDIT) mais um desconhecido, que precisa APARECER.
+  contas?: Array<{
+    id: string
+    type: string
+    subtype?: string
+    name?: string
+    number?: string
+  }>
+  contasErro?: { status: number; code: string; message: string }
   // `GET /api/settings/:key` caindo — a conexão do Pluggy é capacidade
   // OPCIONAL e não pode derrubar o import por arquivo.
   settingsFalha?: boolean
@@ -208,6 +227,48 @@ function mockRede(opts: {
         // Mapa de colunas — GET|PUT /api/settings/:key (backend genérico,
         // não localStorage). PUT ecoa o value enviado; GET devolve o mapa
         // pré-semeado pra este teste (ou null, se nenhum foi passado).
+        // ⚠️ `/api/pluggy/accounts` NÃO contém a substring `/api/accounts`,
+        // e `/api/pluggy/connect` não casa com nada acima — sem estes dois
+        // branches o mock LANÇA ("rota inesperada em teste") assim que a
+        // tela chamar `conectarPluggy`/`contasPluggy`.
+        if (url.includes('/api/pluggy/connect')) {
+          if (opts.connectErro) {
+            return respondErro(
+              opts.connectErro.status,
+              opts.connectErro.code,
+              opts.connectErro.message,
+            )
+          }
+          return respondJson(
+            opts.connectResposta ?? {
+              item_id: 'item-novo',
+              status: 'UPDATING',
+              execution_status: 'WAITING_USER_INPUT',
+              authorize_url: 'https://connect.pluggy.ai/aut/tok-de-uso-unico',
+            },
+          )
+        }
+        if (url.includes('/api/pluggy/accounts')) {
+          if (opts.contasErro) {
+            return respondErro(
+              opts.contasErro.status,
+              opts.contasErro.code,
+              opts.contasErro.message,
+            )
+          }
+          return respondJson({
+            item_id: 'item-novo',
+            contas: opts.contas ?? [
+              {
+                id: 'acc-cc',
+                type: 'CREDIT',
+                name: 'Nubank',
+                number: '**** 1234',
+              },
+              { id: 'acc-cor', type: 'BANK', name: 'Nubank' },
+            ],
+          })
+        }
         if (url.includes('/api/pluggy/transactions')) {
           if (opts.pluggyErro) {
             return respondErro(
@@ -1628,6 +1689,15 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    // jsdom não implementa `window.open` (ele emite "Not implemented" no
+    // console virtual). Stub default: devolve `null`, que é EXATAMENTE o
+    // que um bloqueador de pop-up devolve — ou seja, o caminho testado por
+    // default aqui é o pessimista. `vi.unstubAllGlobals()` no afterEach
+    // global restaura.
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => null),
+    )
   })
 
   afterEach(() => {
@@ -1654,31 +1724,352 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
     return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
   }
 
-  test('sem conexão salva mostra o formulário, não o botão de sincronizar', async () => {
+  test('sem conexão salva o app OFERECE CONECTAR — não pede identificador nenhum', async () => {
     const chamadas: Chamada[] = []
     mockRede({ chamadas })
     await abrir()
 
     await waitFor(() =>
       expect(
-        screen.getByLabelText(/Id da conta no Pluggy/),
+        screen.getByRole('button', { name: 'Conectar banco' }),
       ).toBeInTheDocument(),
     )
+    // ⚠️ O DEFEITO que esta fatia conserta: os dois campos colados à mão
+    // eram a PRIMEIRA coisa da tela, e o dono não tem como obter nenhum dos
+    // dois pela interface do Pluggy (o account_id não aparece em tela
+    // nenhuma). Eles continuam existindo — atrás da saída de emergência.
+    expect(
+      screen.queryByLabelText(/Id da conta no Pluggy/),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(/Id da conexão \(item\)/),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Sincronizar com o banco' }),
     ).not.toBeInTheDocument()
+    // E o texto de ajuda não manda mais procurar identificador no app.
+    expect(screen.getByText(/meu\.pluggy\.ai/)).toBeInTheDocument()
+    expect(screen.getByText(/dashboard\.pluggy\.ai/)).toBeInTheDocument()
   })
 
-  test('salvar a conexão grava na chave da conta e libera o botão', async () => {
+  test('conectar → autorizar → listar → escolher → salvar libera o botão, e o par salvo é o MESMO de antes', async () => {
     const chamadas: Chamada[] = []
     mockRede({ chamadas })
     const usuario = await abrir()
 
     await waitFor(() =>
       expect(
-        screen.getByLabelText(/Id da conta no Pluggy/),
+        screen.getByRole('button', { name: 'Conectar banco' }),
       ).toBeInTheDocument(),
     )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+
+    // A URL de autorização abre numa aba E aparece na tela (ver o teste do
+    // pop-up bloqueado logo abaixo).
+    const link = await screen.findByTestId('pluggy-autorizacao-link')
+    expect(link).toHaveAttribute(
+      'href',
+      'https://connect.pluggy.ai/aut/tok-de-uso-unico',
+    )
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+
+    await usuario.click(
+      screen.getByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+
+    // ⚠️ Rotulado por TIPO, e o `<select>` é "Conta no banco" — nunca
+    // "Conta" exato, que já é o rótulo do select do card de arquivo.
+    const select = await screen.findByLabelText('Conta no banco')
+    expect(
+      within(select).getByRole('option', { name: /Cartão/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(select).getByRole('option', { name: /Conta corrente/ }),
+    ).toBeInTheDocument()
+    // A URL de uso único some depois que a autorização terminou.
+    expect(screen.queryByTestId('pluggy-autorizacao')).not.toBeInTheDocument()
+
+    await usuario.selectOptions(select, 'acc-cor')
+    await usuario.click(screen.getByRole('button', { name: 'Salvar conexão' }))
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+
+    // ⚠️ COMPATIBILIDADE: mesma chave, mesmo shape `{item_id, account_id}`
+    // — `GET /api/pluggy/transactions` não mudou uma linha, e quem já tinha
+    // salvo à mão continua funcionando.
+    const put = chamadas.find(
+      (c) => c.method === 'PUT' && c.url.includes('pluggy'),
+    )
+    expect(put?.url).toContain('/api/settings/pluggy%3Aa1')
+    expect(JSON.parse(put?.body ?? '{}')).toEqual({
+      value: JSON.stringify({ item_id: 'item-novo', account_id: 'acc-cor' }),
+    })
+  })
+
+  test('nenhuma requisição ao Pluggy acontece antes do toque — conectar é AÇÃO do dono', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    expect(chamadas.filter((c) => c.url.includes('/api/pluggy/'))).toHaveLength(
+      0,
+    )
+  })
+
+  test('pop-up bloqueado: o link fica na tela e diz que é de uso único', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    // O que um bloqueador de pop-up faz: devolve `null` sem erro nenhum.
+    const abrirAba = vi.fn(() => null)
+    vi.stubGlobal('open', abrirAba)
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+
+    // Tentou abrir a aba…
+    await waitFor(() => expect(abrirAba).toHaveBeenCalledTimes(1))
+    expect(abrirAba).toHaveBeenCalledWith(
+      'https://connect.pluggy.ai/aut/tok-de-uso-unico',
+      '_blank',
+      expect.stringContaining('noopener'),
+    )
+    // …e, tendo ela aberto ou não, o link está na tela. Um botão que "não
+    // fez nada" é inaceitável.
+    const bloco = screen.getByTestId('pluggy-autorizacao')
+    expect(
+      within(bloco).getByTestId('pluggy-autorizacao-link'),
+    ).toHaveAttribute('href', 'https://connect.pluggy.ai/aut/tok-de-uso-unico')
+    expect(bloco).toHaveTextContent(/uso único/i)
+    expect(bloco).toHaveTextContent(/de novo/i)
+  })
+
+  test('window.open LANÇANDO também não engole o link', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => {
+        throw new Error('Not implemented: window.open')
+      }),
+    )
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+
+    expect(
+      await screen.findByTestId('pluggy-autorizacao-link'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('pluggy-conexao-erro')).not.toBeInTheDocument()
+  })
+
+  test('item que já veio autorizado (authorize_url null) não inventa link nenhum', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      connectResposta: {
+        item_id: 'item-pronto',
+        status: 'UPDATED',
+        execution_status: 'SUCCESS',
+        authorize_url: null,
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+
+    expect(await screen.findByTestId('pluggy-ja-autorizado')).toHaveTextContent(
+      /já veio autorizada/,
+    )
+    expect(screen.queryByTestId('pluggy-autorizacao')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pluggy-conexao-erro')).not.toBeInTheDocument()
+  })
+
+  test('listar contas sem ter conectado nesta aba vai SEM item_id — o servidor usa o salvo', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: 'Já autorizei — listar minhas contas',
+        }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+
+    await screen.findByLabelText('Conta no banco')
+    const url =
+      chamadas.find((c) => c.url.includes('/api/pluggy/accounts'))?.url ?? ''
+    expect(url).not.toContain('item_id')
+  })
+
+  test('type desconhecido do Pluggy é EXIBIDO cru, nunca some do select', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      contas: [{ id: 'acc-inv', type: 'INVESTMENT', name: 'Tesouro' }],
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: 'Já autorizei — listar minhas contas',
+        }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+
+    const select = await screen.findByLabelText('Conta no banco')
+    expect(
+      within(select).getByRole('option', { name: 'INVESTMENT · Tesouro' }),
+    ).toBeInTheDocument()
+  })
+
+  test('409 aguardando autorização: a dica manda TERMINAR, nunca refazer no Meu Pluggy', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      contasErro: {
+        status: 409,
+        code: 'pluggy_aguardando_autorizacao',
+        message: 'o item existe mas a autorização ainda não foi concluída.',
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: 'Já autorizei — listar minhas contas',
+        }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+
+    // A mensagem do servidor chega crua…
+    expect(await screen.findByTestId('pluggy-conexao-erro')).toHaveTextContent(
+      /autorização ainda não foi concluída/,
+    )
+    // …e a dica é a CERTA. ⚠️ Asserção negativa: trocar esta dica pela de
+    // `pluggy_item_disconnected` é mandar o dono DESFAZER o que está certo.
+    const dica = screen.getByTestId('pluggy-conexao-dica')
+    expect(dica).toHaveTextContent(/esperando VOCÊ terminar de autorizar/)
+    expect(dica).not.toHaveTextContent(/Meu Pluggy/)
+    expect(dica).not.toHaveTextContent(/reconect/i)
+    // E o select de contas NÃO aparece: lista vazia diria "não tenho conta
+    // nenhuma", que é falso.
+    expect(screen.queryByLabelText('Conta no banco')).not.toBeInTheDocument()
+  })
+
+  test('409 conexão CAÍDA continua mandando refazer no Meu Pluggy — as duas não se confundem', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      contasErro: {
+        status: 409,
+        code: 'pluggy_item_disconnected',
+        message: 'a conexão com o banco caiu.',
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: 'Já autorizei — listar minhas contas',
+        }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(
+      screen.getByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+
+    const dica = await screen.findByTestId('pluggy-conexao-dica')
+    expect(dica).toHaveTextContent(/Meu Pluggy/)
+    expect(dica).not.toHaveTextContent(/esperando VOCÊ terminar/)
+  })
+
+  test('conectar DESLIGADO não derruba a tela e a dica fala dos secrets', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      connectErro: {
+        status: 503,
+        code: 'pluggy_disabled',
+        message: 'A sincronização com o Pluggy está desligada.',
+      },
+    })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+
+    expect(await screen.findByTestId('pluggy-conexao-dica')).toHaveTextContent(
+      /PLUGGY_CLIENT_ID/,
+    )
+    // O import por ARQUIVO continua inteiro — é a capacidade principal.
+    expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument()
+    // E a saída de emergência está ali, que é o caso de uso dela.
+    expect(screen.getByTestId('pluggy-modo-manual')).toBeInTheDocument()
+  })
+
+  test('saída de emergência: o formulário dos dois campos ainda salva, com o MESMO par', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('pluggy-modo-manual')).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByTestId('pluggy-modo-manual'))
+
     await usuario.type(
       screen.getByLabelText(/Id da conexão \(item\)/),
       'item-do-nubank',
@@ -1687,6 +2078,11 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
       screen.getByLabelText(/Id da conta no Pluggy/),
       'conta-do-nubank',
     )
+    // Com o modo manual aberto, o fluxo guiado sai de cena — nada de dois
+    // "Salvar conexão" na mesma tela.
+    expect(
+      screen.queryByRole('button', { name: 'Conectar banco' }),
+    ).not.toBeInTheDocument()
     await usuario.click(screen.getByRole('button', { name: 'Salvar conexão' }))
 
     await waitFor(() =>
@@ -1699,6 +2095,28 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
     )
     expect(put?.url).toContain('/api/settings/pluggy%3Aa1')
     expect(JSON.parse(put?.body ?? '{}')).toEqual({ value: CONEXAO })
+  })
+
+  test('COMPATIBILIDADE: conta com conexão já salva cai direto no sincronizar', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas, conexaoPluggySalva: CONEXAO })
+    await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sincronizar com o banco' }),
+      ).toBeInTheDocument(),
+    )
+    // Quem já tinha o par salvo à mão NÃO passa pelo fluxo novo.
+    expect(
+      screen.queryByRole('button', { name: 'Conectar banco' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Conta no banco')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pluggy-trocar-conexao')).toBeInTheDocument()
+    // E nada do Pluggy foi chamado só por abrir a tela.
+    expect(chamadas.filter((c) => c.url.includes('/api/pluggy/'))).toHaveLength(
+      0,
+    )
   })
 
   test('o período nasce com UM MÊS, nunca com os 12 que o banco guarda', async () => {
@@ -2016,7 +2434,12 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
       expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument(),
     )
     expect(screen.getByTestId('pagina-importar')).toBeInTheDocument()
-    expect(screen.getByLabelText(/Id da conta no Pluggy/)).toBeInTheDocument()
+    // O card do Pluggy degrada pro estado "ainda não conectada" (que é o
+    // certo: `conexaoPluggy` devolve `null` em qualquer falha) — e NÃO
+    // dispara `conectarPluggy`/`contasPluggy`, que LANÇAM.
+    expect(
+      screen.getByRole('button', { name: 'Conectar banco' }),
+    ).toBeInTheDocument()
   })
 })
 
