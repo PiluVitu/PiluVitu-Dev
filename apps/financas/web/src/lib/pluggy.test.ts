@@ -7,6 +7,7 @@ import {
   janelaPadrao,
   rotuloDeConta,
   salvarConexaoPluggy,
+  avisoDeTipoDeConta,
 } from './pluggy'
 
 afterEach(() => {
@@ -380,5 +381,42 @@ describe('rotuloDeConta — o type desconhecido é EXIBIDO, nunca achatado', () 
     expect(rotuloDeConta({ id: 'a', type: 'CREDIT', name: 'Nubank' })).toBe(
       'Cartão · Nubank',
     )
+  })
+})
+
+describe('avisoDeTipoDeConta — avisa, nunca bloqueia', () => {
+  test('CARTÃO do banco numa conta que não é cartão: avisa, e diz o porquê', () => {
+    // O caso caro: só `credit_card` preenche `bill_competence`, que é
+    // derivado e NÃO é patchável. A fatura entraria sem competência e não
+    // teria conserto — só apagar e reimportar.
+    const aviso = avisoDeTipoDeConta('checking', 'CREDIT')
+
+    expect(aviso).not.toBeNull()
+    expect(aviso).toContain('CARTÃO DE CRÉDITO')
+    expect(aviso).toContain('competência')
+  })
+
+  test('CONTA CORRENTE do banco numa conta de cartão: avisa o inverso', () => {
+    const aviso = avisoDeTipoDeConta('credit_card', 'BANK')
+
+    expect(aviso).not.toBeNull()
+    expect(aviso).toContain('CONTA CORRENTE')
+    // Asserção NEGATIVA cruzada: as duas mensagens não podem se confundir.
+    expect(aviso).not.toContain('CARTÃO DE CRÉDITO')
+  })
+
+  test('pares plausíveis não avisam nada', () => {
+    expect(avisoDeTipoDeConta('credit_card', 'CREDIT')).toBeNull()
+    expect(avisoDeTipoDeConta('checking', 'BANK')).toBeNull()
+    expect(avisoDeTipoDeConta('savings', 'BANK')).toBeNull()
+  })
+
+  test('⚠️ type desconhecido do Pluggy NUNCA vira aviso', () => {
+    // Mesma disciplina de allowlist de `STATUS_PRECISA_RECONECTAR`: inventar
+    // alerta para um tipo que o Pluggy criar amanhã é mandar o dono
+    // desconfiar de um par que está certo.
+    expect(avisoDeTipoDeConta('checking', 'INVESTMENT')).toBeNull()
+    expect(avisoDeTipoDeConta('credit_card', 'LOAN')).toBeNull()
+    expect(avisoDeTipoDeConta('checking', '')).toBeNull()
   })
 })

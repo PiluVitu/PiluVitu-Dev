@@ -345,7 +345,9 @@ describe('ImportarPage — Task 4: leitura e mapeamento', () => {
     await waitFor(() =>
       expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
     )
-    expect(screen.getByLabelText('Conta')).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('Conta do app que vai receber'),
+    ).toBeInTheDocument()
     expect(screen.getByLabelText(/Arquivo/i)).toBeInTheDocument()
   })
 
@@ -1782,7 +1784,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
 
     // ⚠️ Rotulado por TIPO, e o `<select>` é "Conta no banco" — nunca
     // "Conta" exato, que já é o rótulo do select do card de arquivo.
-    const select = await screen.findByLabelText('Conta no banco')
+    const select = await screen.findByLabelText(/^Conta no banco/)
     expect(
       within(select).getByRole('option', { name: /Cartão/ }),
     ).toBeInTheDocument()
@@ -1929,7 +1931,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
       }),
     )
 
-    await screen.findByLabelText('Conta no banco')
+    await screen.findByLabelText(/^Conta no banco/)
     const url =
       chamadas.find((c) => c.url.includes('/api/pluggy/accounts'))?.url ?? ''
     expect(url).not.toContain('item_id')
@@ -1956,7 +1958,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
       }),
     )
 
-    const select = await screen.findByLabelText('Conta no banco')
+    const select = await screen.findByLabelText(/^Conta no banco/)
     expect(
       within(select).getByRole('option', { name: 'INVESTMENT · Tesouro' }),
     ).toBeInTheDocument()
@@ -1999,7 +2001,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
     expect(dica).not.toHaveTextContent(/reconect/i)
     // E o select de contas NÃO aparece: lista vazia diria "não tenho conta
     // nenhuma", que é falso.
-    expect(screen.queryByLabelText('Conta no banco')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Conta no banco/)).not.toBeInTheDocument()
   })
 
   test('409 conexão CAÍDA continua mandando refazer no Meu Pluggy — as duas não se confundem', async () => {
@@ -2111,7 +2113,7 @@ describe('ImportarPage — Pluggy (fatia ④)', () => {
     expect(
       screen.queryByRole('button', { name: 'Conectar banco' }),
     ).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Conta no banco')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Conta no banco/)).not.toBeInTheDocument()
     expect(screen.getByTestId('pluggy-trocar-conexao')).toBeInTheDocument()
     // E nada do Pluggy foi chamado só por abrir a tela.
     expect(chamadas.filter((c) => c.url.includes('/api/pluggy/'))).toHaveLength(
@@ -2647,4 +2649,114 @@ describe('ImportarPage — dedupe entre origens', () => {
       within(linha0).queryByTestId('provavel-duplicata-0'),
     ).not.toBeInTheDocument()
   })
+})
+
+describe('ImportarPage — o escopo da conta é VISÍVEL (fatia ⑥)', () => {
+  // Mesmo preparo do describe da fatia ④: relógio fixo (a janela default sai
+  // de HOJE) e `window.open` stubado devolvendo null — jsdom não o
+  // implementa, e null é o que um bloqueador de pop-up devolve.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => null),
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function abrir() {
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
+    )
+    return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  }
+
+  test('o seletor de conta governa a página, não só o card de arquivo', async () => {
+    // ⚠️ Regressão de um erro REAL: o select morava dentro de "Ler extrato ou
+    // fatura" e o card do Pluggy dependia dele em silêncio. O dono ligou a
+    // conta corrente do Inter numa conta do app chamada "Bradesco Cartões"
+    // porque nunca viu os dois lados juntos.
+    mockRede({ chamadas: [] })
+    await abrir()
+
+    const escopo = await screen.findByTestId('escopo-conta')
+
+    expect(within(escopo).getByLabelText('Conta do app que vai receber')).toBe(
+      screen.getByRole('combobox', { name: /Conta do app/ }),
+    )
+    expect(escopo).toHaveTextContent(/página inteira/i)
+    expect(escopo).toHaveTextContent(/sincronização com o banco/i)
+  })
+
+  test('o card do Pluggy NOMEIA a conta do app, em todo estado', async () => {
+    mockRede({ chamadas: [] })
+    await abrir()
+
+    const escopo = await screen.findByTestId('pluggy-escopo')
+
+    expect(escopo).toHaveTextContent('Nubank cartão')
+  })
+
+  test('a confirmação nomeia OS DOIS lados antes de salvar', async () => {
+    const usuario = await chegarNaEscolhaDeConta()
+
+    const par = await screen.findByTestId('pluggy-confirmacao-par')
+
+    // lado do app
+    expect(par).toHaveTextContent('Nubank cartão')
+    // lado do banco — o default é a conta CREDIT da fixture
+    expect(par).toHaveTextContent(/Cartão/)
+
+    await usuario.selectOptions(
+      screen.getByLabelText(/^Conta no banco/),
+      'acc-cor',
+    )
+    expect(screen.getByTestId('pluggy-confirmacao-par')).toHaveTextContent(
+      /Conta corrente/,
+    )
+  })
+
+  test('par incompatível avisa — e o compatível não', async () => {
+    const usuario = await chegarNaEscolhaDeConta()
+    const select = await screen.findByLabelText(/^Conta no banco/)
+
+    // app = credit_card, banco = CREDIT -> plausível, sem alarde
+    await usuario.selectOptions(select, 'acc-cc')
+    expect(screen.queryByTestId('pluggy-aviso-tipo')).not.toBeInTheDocument()
+
+    // app = credit_card, banco = BANK -> avisa
+    await usuario.selectOptions(select, 'acc-cor')
+    expect(screen.getByTestId('pluggy-aviso-tipo')).toHaveTextContent(
+      /CONTA CORRENTE/,
+    )
+
+    // ⚠️ AVISO, não bloqueio: salvar continua possível. O par pode ser
+    // intencional, e travar seria impedir o dono de usar o próprio dado.
+    expect(screen.getByRole('button', { name: 'Salvar conexão' })).toBeEnabled()
+  })
+
+  /** Leva até o estado "escolher a conta do banco". */
+  async function chegarNaEscolhaDeConta() {
+    mockRede({ chamadas: [] })
+    const usuario = await abrir()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Conectar banco' }),
+      ).toBeInTheDocument(),
+    )
+    await usuario.click(screen.getByRole('button', { name: 'Conectar banco' }))
+    await usuario.click(
+      await screen.findByRole('button', {
+        name: 'Já autorizei — listar minhas contas',
+      }),
+    )
+    await screen.findByLabelText(/^Conta no banco/)
+    return usuario
+  }
 })

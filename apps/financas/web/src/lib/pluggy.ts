@@ -289,3 +289,34 @@ export function rotuloDeConta(conta: PluggyContaView): string {
 
   return [tipo, conta.name, conta.number].filter(Boolean).join(' · ')
 }
+
+/**
+ * Avisa quando a conta do app e a conta do banco têm naturezas incompatíveis,
+ * ou `null` quando o par é plausível.
+ *
+ * ⚠️ **É AVISO, nunca bloqueio** — e a distinção é deliberada. A checagem só
+ * compara `kind` (app) com `type` (Pluggy), e nenhum dos dois descreve a
+ * intenção do dono: ele pode ter uma conta `checking` que usa pra acompanhar
+ * um cartão, e travar o salvamento seria impedi-lo de fazer o que quer com o
+ * próprio dado. Mesma disciplina de allowlist do Worker: tipo desconhecido
+ * não vira erro.
+ *
+ * ⚠️ O caso que dói de verdade é `CREDIT` caindo numa conta que não é
+ * `credit_card`: só `credit_card` preenche `bill_competence` (o `CHECK` da
+ * migration `0001`), então a fatura entraria sem competência — e
+ * `bill_competence` é derivado e NÃO é patchável (`PATCH
+ * /api/transactions/:id` recusa com `protected_field`). Não haveria conserto
+ * depois, só apagar e reimportar.
+ */
+export function avisoDeTipoDeConta(
+  kindDoApp: string,
+  typeDoPluggy: string,
+): string | null {
+  if (typeDoPluggy === 'CREDIT' && kindDoApp !== 'credit_card') {
+    return 'Atenção: no banco isto é um CARTÃO DE CRÉDITO, mas a conta do app que vai receber não é do tipo cartão. A fatura entraria sem competência, e competência não dá pra corrigir depois — só apagando e reimportando. Se for mesmo um cartão, crie uma conta de cartão no app antes.'
+  }
+  if (typeDoPluggy === 'BANK' && kindDoApp === 'credit_card') {
+    return 'Atenção: no banco isto é uma CONTA CORRENTE, mas a conta do app que vai receber é um cartão de crédito. O extrato entraria como se fossem compras de fatura.'
+  }
+  return null
+}

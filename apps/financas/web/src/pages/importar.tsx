@@ -33,6 +33,7 @@ import {
   contasPluggy,
   dicaParaErroPluggy,
   janelaPadrao,
+  avisoDeTipoDeConta,
   rotuloDeConta,
   salvarConexaoPluggy,
   type ConexaoPluggy,
@@ -896,6 +897,23 @@ export function ImportarPage() {
     setPluggyErro(null)
   }
 
+  // ⚠️ Derivados do MESMO `accountId` que o seletor da página controla —
+  // nunca de um segundo estado. Duas fontes pra "qual conta" seria recriar,
+  // por dentro, exatamente a ambiguidade que esta fatia existe pra matar.
+  const contaAtual = accounts.find((a) => a.id === accountId) ?? null
+  const nomeDaContaAtual = contaAtual?.name ?? 'esta conta'
+  // `contasDoItem` é null até "Já autorizei — listar minhas contas" responder.
+  const contaDoBancoEscolhida =
+    contasDoItem?.find((c) => c.id === contaEscolhida) ?? null
+  const rotuloDaContaEscolhida =
+    contaDoBancoEscolhida !== null
+      ? rotuloDeConta(contaDoBancoEscolhida)
+      : 'a conta escolhida'
+  const avisoDeTipo =
+    contaAtual !== null && contaDoBancoEscolhida !== null
+      ? avisoDeTipoDeConta(contaAtual.kind, contaDoBancoEscolhida.type)
+      : null
+
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
@@ -912,27 +930,47 @@ export function ImportarPage() {
         </p>
       ) : null}
 
+      {/* ⚠️ O SELECT SAIU DO CARD DE ARQUIVO E SUBIU PRA PÁGINA — e a mudança
+          é corretiva, não cosmética. Ele morava dentro de "Ler extrato ou
+          fatura", cujo título o reivindicava; o card do Pluggy dependia dele
+          EM SILÊNCIO, sem nunca nomear a conta. MEDIDO no uso real: o dono
+          ligou a conta corrente do Inter numa conta do app chamada "Bradesco
+          Cartões" porque leu o select de baixo ("Conta no banco") como o
+          único lado da escolha. Dado importado na conta errada não tem
+          desfazer barato — `uq_tx_imported` impede reimportar por cima. Aqui
+          o escopo vira ESTRUTURAL: um seletor acima dos dois cards, com o
+          texto dizendo que governa a página inteira. */}
+      {passo === 'selecionar' ? (
+        <div
+          data-testid="escopo-conta"
+          className="bg-muted/40 space-y-1.5 rounded-lg border p-4"
+        >
+          <Label htmlFor="importar-conta">Conta do app que vai receber</Label>
+          <select
+            id="importar-conta"
+            className={SELECT_CLASSNAME}
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-muted-foreground text-xs">
+            Vale para a página inteira: tanto o arquivo quanto a sincronização
+            com o banco entram <strong>nesta</strong> conta.
+          </p>
+        </div>
+      ) : null}
+
       {passo === 'selecionar' ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Ler extrato ou fatura</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="importar-conta">Conta</Label>
-              <select
-                id="importar-conta"
-                className={SELECT_CLASSNAME}
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="space-y-1.5">
               <Label htmlFor="importar-arquivo">
                 Arquivo (.ofx, .qfx ou .csv)
@@ -990,6 +1028,17 @@ export function ImportarPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* ⚠️ O eco da conta é PERMANENTE, em todos os estados do card —
+                não só na hora de escolher. É a única coisa na tela que liga
+                este card ao seletor lá de cima, e a ausência dele foi o que
+                deixou o mapeamento errado passar. */}
+            <p
+              data-testid="pluggy-escopo"
+              className="text-muted-foreground text-sm"
+            >
+              Ligando o banco à conta{' '}
+              <strong className="text-foreground">{nomeDaContaAtual}</strong>.
+            </p>
             {!conexaoCarregada ? (
               <p
                 role="status"
@@ -1134,7 +1183,7 @@ export function ImportarPage() {
                                 tornam a query ambígua (e o leitor de tela,
                                 incapaz de distinguir os dois). */}
                             <Label htmlFor="pluggy-conta-escolhida">
-                              Conta no banco
+                              Conta no banco a ligar em {nomeDaContaAtual}
                             </Label>
                             <select
                               id="pluggy-conta-escolhida"
@@ -1151,6 +1200,35 @@ export function ImportarPage() {
                               ))}
                             </select>
                           </div>
+                          {/* ⚠️ A confirmação nomeia OS DOIS LADOS, com saldo.
+                              O erro real que motivou isto (Inter ligado em
+                              "Bradesco Cartões") passaria batido por qualquer
+                              texto que mostrasse só um lado: os dois nomes
+                              lado a lado é o que torna a troca visível ANTES
+                              do clique, que é o único momento barato. */}
+                          <p
+                            data-testid="pluggy-confirmacao-par"
+                            className="text-muted-foreground text-sm"
+                          >
+                            Vai ligar{' '}
+                            <strong className="text-foreground">
+                              {nomeDaContaAtual}
+                            </strong>{' '}
+                            (app) a{' '}
+                            <strong className="text-foreground">
+                              {rotuloDaContaEscolhida}
+                            </strong>{' '}
+                            (banco).
+                          </p>
+                          {avisoDeTipo !== null ? (
+                            <p
+                              role="alert"
+                              data-testid="pluggy-aviso-tipo"
+                              className="text-destructive text-sm"
+                            >
+                              {avisoDeTipo}
+                            </p>
+                          ) : null}
                           <Button type="submit" disabled={salvandoConexao}>
                             {salvandoConexao ? 'Salvando…' : 'Salvar conexão'}
                           </Button>
