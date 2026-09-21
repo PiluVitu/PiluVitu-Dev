@@ -27,35 +27,13 @@ import {
 import { getSetting, setSetting } from '../domain/settings'
 
 /**
- * Fatia ④ (Open Finance via Pluggy) — a PORTA HTTP do cliente
- * (`src/lib/pluggy.ts`) e do adaptador (`src/domain/pluggy-map.ts`), que
- * até aqui existiam testados e **inalcançáveis por qualquer requisição
- * real**.
+ * A porta HTTP do cliente (`lib/pluggy.ts`) e do adaptador (`domain/pluggy-map.ts`).
  *
- * ⚠️ **Esta rota LÊ do Pluggy e não grava NADA.** Ela devolve as linhas já
- * mapeadas pro shape de `LinhaImportada` — as MESMAS que o parse de
- * OFX/CSV produz — e quem grava continua sendo `POST
- * /api/transactions/import` (`routes/import.ts`), depois de o dono
- * confirmar linha a linha na tela de conferência. **O Pluggy entra como
- * TERCEIRA ORIGEM do pipeline que já existe, nunca como um caminho
- * paralelo**: dedup por `imported_id`, sugestão por regra, checkbox por
- * linha e envio em lotes continuam sendo os mesmos, sem uma segunda cópia.
+ * ⚠️ LÊ do Pluggy e não grava NADA: quem grava é `POST /api/transactions/import`,
+ * depois da conferência linha a linha. Não existe sync automático, de propósito.
  *
- * ⚠️ **Não existe sincronização automática, e a ausência é o desenho.** Com
- * as duas armadilhas do sinal (① de `pluggy-map.ts`) e da data (②), a
- * conferência é a ÚNICA rede entre "importei" e "importei errado e não tem
- * volta" — `uq_tx_imported` impede reimportar por cima, então o desfazer
- * seria `DELETE ... WHERE import_source='pluggy'` ou Time Travel (que
- * restaura o banco INTEIRO). Um cron que gravasse sozinho tiraria a única
- * chance de olhar antes.
- *
- * ⚠️ **Fica atrás da SESSÃO, e isso é por AUSÊNCIA deliberada, não por um
- * guard local** — `src/index.ts` aplica `requireSession()` a `/api/*` e
- * abre exceção só pra `/api/health`, `/api/auth/*`, `POST /api/insights`
- * (path exato) e `GET /api/insights/numbers`. Esta rota **não entra em
- * nenhuma delas**, nem deve: o `INGEST_TOKEN` é do comando que roda no Mac
- * do dono, e quem toca "Sincronizar com o banco" é o dono no navegador.
- * Provado contra o app montado de verdade em `src/index.test.ts`.
+ * Fica atrás da sessão por AUSÊNCIA de exceção em `src/index.ts` — não adicione
+ * um guard local aqui. Ver a fatia ④ no CLAUDE.md.
  */
 
 // ⚠️ Ganhou `DB` nesta fatia: `POST /connect` grava o `item_id` recém-criado
@@ -88,40 +66,12 @@ export type PluggyTransactionsResponse = {
 }
 
 /**
- * Traduz cada classe de erro do cliente no par (status, code) próprio.
+ * Uma classe por CAUSA: cada erro manda o dono para um lugar diferente, e a
+ * `message` é repassada crua do domínio, nunca reescrita aqui.
  *
- * ⚠️ **Uma classe por CAUSA porque cada uma manda o dono para um lugar
- * DIFERENTE** — achatar tudo num "não consegui sincronizar" faria o dono
- * corrigir um secret que está certo, ou esperar por um problema que nunca
- * passa sozinho. A `message` é **repassada crua do domínio**, nunca
- * reescrita aqui: é ela que diz "abra o app Meu Pluggy e reconecte" em vez
- * de "erro". As mensagens já são varridas contra vazamento de credencial
- * em `lib/pluggy.test.ts` (nenhuma é montada a partir da URL, do `init` ou
- * do erro cru).
- *
- * | Classe                     | HTTP | code                        |
- * | -------------------------- | ---- | --------------------------- |
- * | `PluggyDesligado`          | 503  | `pluggy_disabled`           |
- * | `PluggyCredencialInvalida` | 503  | `pluggy_invalid_credentials`|
- * | `PluggyItemDesconectado`   | 409  | `pluggy_item_disconnected`  |
- * | `PluggyRateLimitado`       | 429  | `pluggy_rate_limited`       |
- * | `PluggyInalcancavel`       | 503  | `pluggy_unreachable`        |
- * | `PluggyTokenExpirado`      | 502  | `pluggy_token_expired`      |
- * | `PluggyRespostaIlegivel`   | 502  | `pluggy_ilegivel`           |
- * | `RangeError` (teto de 40)  | 422  | `pluggy_janela_grande`      |
- *
- * ⚠️ **`409` no item desconectado, e não mais um `503`** — os três `503`
- * acima significam "indisponível, tente de novo mais tarde", e este é o
- * ÚNICO em que tentar de novo **nunca** resolve: alguma coisa precisa mudar
- * de estado antes (o dono reconectar no app Meu Pluggy). Dar o mesmo
- * número dos outros convidaria um retry automático futuro a bater nele
- * para sempre.
- *
- * ⚠️ **`502` (não `503`) em `token_expired`/`ilegivel`, pelo mesmo motivo
- * medido em `promeia.ts`: "ninguém respondeu" ≠ "alguém respondeu e eu não
- * entendi".** As duas mandam o dono para lados opostos — uma manda esperar,
- * a outra manda reportar/olhar o log —, e colapsá-las num número só é o
- * próprio bug que a separação de classes existe pra impedir.
+ * ⚠️ `409` no item desconectado (não `503`): é o único em que repetir nunca
+ * resolve. `502` em `token_expired`/`ilegivel`: "alguém respondeu e não entendi"
+ * ≠ "ninguém respondeu". Tabela completa no CLAUDE.md.
  */
 function traduzirFalhaPluggy(err: unknown): Response {
   if (err instanceof PluggyDesligado) {
@@ -145,13 +95,8 @@ function traduzirFalhaPluggy(err: unknown): Response {
   if (err instanceof PluggyRespostaIlegivel) {
     return errJson(502, 'pluggy_ilegivel', err.message)
   }
-  // Único `RangeError` alcançável aqui: o teto de MAX_PAGINAS de
-  // `paginasDeTransacoes`. Os outros (`from`/`to` fora do calendário,
-  // `accountId` vazio, `page` inválida) são impossíveis — a rota valida os
-  // três ANTES de chamar o cliente, com a mesma `isRealCalendarDate`. Não é
-  // query malformada (o intervalo é real, só cabe demais nele), então não
-  // vira `400 invalid_query`: é conteúdo, 422, com a mensagem do cliente
-  // dizendo o que fazer (pedir um intervalo menor).
+  // Único RangeError alcançável: o teto de MAX_PAGINAS. Não é query malformada
+  // (o intervalo é real, só cabe demais nele), então 422 e não 400.
   if (err instanceof RangeError) {
     return errJson(422, 'pluggy_janela_grande', err.message)
   }

@@ -271,19 +271,10 @@ export function ImportarPage() {
   const [accountId, setAccountId] = useState('')
   const [passo, setPasso] = useState<Passo>('selecionar')
   /**
-   * A FILA do lote: as contas conectadas, percorridas uma a uma.
+   * A fila do lote: as contas conectadas, percorridas uma a uma.
    *
-   * ⚠️ **Fila, e não uma conferência única com todas as contas juntas — e a
-   * escolha é de SEGURANÇA, não de esforço.** Uma tela só exigiria que o
-   * envio agrupasse por conta, reescrevendo o único caminho de ESCRITA
-   * irreversível que existe aqui (`uq_tx_imported` impede reimportar por
-   * cima). A fila reusa o caminho já testado N vezes, sem tocar nele: cada
-   * conta mantém a sua dedupe, o seu aviso de primeiro import e as suas
-   * rejeitadas.
-   *
-   * ⚠️ O avanço é por BOTÃO, nunca automático. Encadear sozinho esconderia
-   * o resultado de cada conta atrás da próxima tela — e o resumo ("importei
-   * 12, pulei 3") é a única confirmação que o dono recebe.
+   * Fila em vez de conferência única porque reusa o caminho de escrita já
+   * testado, sem tocar nele. O avanço é por botão — ver a fatia ⑥ no CLAUDE.md.
    */
   const [fila, setFila] = useState<ContaConectada[]>([])
   const [filaIndice, setFilaIndice] = useState(0)
@@ -454,11 +445,8 @@ export function ImportarPage() {
   }, [accountId])
 
   /**
-   * ⚠️ `contaId` é PARÂMETRO, com default no estado — e a mudança existe
-   * pela fila do lote. `setAccountId` é assíncrono: no lote, a conferência
-   * da conta 2 começaria lendo o `accountId` da conta 1 e deduplicaria
-   * contra o extrato errado. Passar explicitamente elimina a corrida em vez
-   * de torcer contra ela.
+   * ⚠️ `contaId` é parâmetro: `setAccountId` é assíncrono, e no lote a conta 2
+   * deduplicaria contra o extrato da conta 1.
    */
   async function prepararConferencia(
     linhasBrutas: LinhaImportada[],
@@ -749,11 +737,8 @@ export function ImportarPage() {
   }
 
   /**
-   * Puxa a janela de UMA conta e entra na conferência dela.
-   *
-   * ⚠️ Recebe conexão e conta como PARÂMETRO porque a fila do lote chama
-   * isto para contas que ainda não são a do estado — e `setAccountId` não
-   * teria surtido efeito ainda quando a chamada acontece.
+   * Puxa a janela de UMA conta e entra na conferência dela. Recebe conexão e
+   * conta como parâmetro porque a fila as chama antes do estado atualizar.
    */
   async function sincronizarConta(
     conexaoDaConta: ConexaoPluggy,
@@ -968,9 +953,8 @@ export function ImportarPage() {
   }
 
   function novaImportacao() {
-    // ⚠️ Zera a fila: "nova importação" é recomeço, e deixar a fila de pé
-    // faria o botão de continuar reaparecer apontando pra uma sequência que
-    // o dono abandonou.
+    // "Nova importação" é recomeço: fila de pé faria o botão de continuar
+    // reaparecer apontando pra uma sequência abandonada.
     setFila([])
     setFilaIndice(0)
     setPasso('selecionar')
@@ -984,9 +968,7 @@ export function ImportarPage() {
     setPluggyErro(null)
   }
 
-  // ⚠️ Derivados do MESMO `accountId` que o seletor da página controla —
-  // nunca de um segundo estado. Duas fontes pra "qual conta" seria recriar,
-  // por dentro, exatamente a ambiguidade que esta fatia existe pra matar.
+  // Derivados do MESMO `accountId` do seletor — nunca de um segundo estado.
   const contaAtual = accounts.find((a) => a.id === accountId) ?? null
   const nomeDaContaAtual = contaAtual?.name ?? 'esta conta'
   // `contasDoItem` é null até "Já autorizei — listar minhas contas" responder.
@@ -1001,9 +983,6 @@ export function ImportarPage() {
       ? avisoDeTipoDeConta(contaAtual.kind, contaDoBancoEscolhida.type)
       : null
 
-  // Contado UMA vez: era recalculado no rótulo do botão e de novo no
-  // `disabled`, e a barra fixa acrescentaria um terceiro `filter` por render
-  // sobre uma lista de 530.
   const marcadas = linhas.filter((l) => l.marcada).length
 
   if (loadError) return <p role="alert">{loadError}</p>
@@ -1022,16 +1001,8 @@ export function ImportarPage() {
         </p>
       ) : null}
 
-      {/* ⚠️ O SELECT SAIU DO CARD DE ARQUIVO E SUBIU PRA PÁGINA — e a mudança
-          é corretiva, não cosmética. Ele morava dentro de "Ler extrato ou
-          fatura", cujo título o reivindicava; o card do Pluggy dependia dele
-          EM SILÊNCIO, sem nunca nomear a conta. MEDIDO no uso real: o dono
-          ligou a conta corrente do Inter numa conta do app chamada "Bradesco
-          Cartões" porque leu o select de baixo ("Conta no banco") como o
-          único lado da escolha. Dado importado na conta errada não tem
-          desfazer barato — `uq_tx_imported` impede reimportar por cima. Aqui
-          o escopo vira ESTRUTURAL: um seletor acima dos dois cards, com o
-          texto dizendo que governa a página inteira. */}
+      {/* Seletor no nível da PÁGINA: dentro do card de arquivo ele parecia
+          pertencer só a ele, e o card do Pluggy dependia dele em silêncio. */}
       {passo === 'selecionar' ? (
         <div
           data-testid="escopo-conta"
@@ -1120,10 +1091,7 @@ export function ImportarPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* ⚠️ O eco da conta é PERMANENTE, em todos os estados do card —
-                não só na hora de escolher. É a única coisa na tela que liga
-                este card ao seletor lá de cima, e a ausência dele foi o que
-                deixou o mapeamento errado passar. */}
+            {/* Eco permanente: é o único elo visível com o seletor da página. */}
             <p
               data-testid="pluggy-escopo"
               className="text-muted-foreground text-sm"
@@ -1292,12 +1260,8 @@ export function ImportarPage() {
                               ))}
                             </select>
                           </div>
-                          {/* ⚠️ A confirmação nomeia OS DOIS LADOS, com saldo.
-                              O erro real que motivou isto (Inter ligado em
-                              "Bradesco Cartões") passaria batido por qualquer
-                              texto que mostrasse só um lado: os dois nomes
-                              lado a lado é o que torna a troca visível ANTES
-                              do clique, que é o único momento barato. */}
+                          {/* Os dois lados juntos: é o que torna a troca
+                              visível antes do clique. */}
                           <p
                             data-testid="pluggy-confirmacao-par"
                             className="text-muted-foreground text-sm"
@@ -1403,11 +1367,7 @@ export function ImportarPage() {
                     primeiro import é explicada ANTES do toque. O default de
                     um mês está em `lib/pluggy.ts#janelaPadrao`, e o servidor
                     não tem default nenhum. */}
-                {/* ⚠️ Atalho EXPLÍCITO, nunca o default. Ver `janelaMaxima`:
-                    a guarda de um mês protege quem importa POR CIMA de
-                    histórico existente; numa conta vazia ela só cobra
-                    fricção sem comprar nada. O botão deixa a escolha com o
-                    dono em vez de decidir por ele nos dois sentidos. */}
+                {/* Atalho explícito, nunca o default. Ver `janelaMaxima`. */}
                 <button
                   type="button"
                   data-testid="pluggy-janela-maxima"
@@ -1817,10 +1777,7 @@ export function ImportarPage() {
                       descartada. Escolha abaixo.
                     </p>
                   ) : null}
-                  {/* ⚠️ `sm:grid-cols-2` em vez de empilhado: com 530
-                      linhas, cada campo a mais é ~70px × 530 = 37.000px de
-                      rolagem. Lado a lado corta a altura da linha quase pela
-                      metade sem esconder nada. */}
+                  {/* Lado a lado corta a altura da linha quase pela metade. */}
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label htmlFor={`payee-${i}`}>Payee sugerido</Label>
@@ -1900,12 +1857,8 @@ export function ImportarPage() {
               </p>
             ) : null}
 
-            {/* ⚠️ BARRA FIXA, e a fixação é a correção. Com 530 linhas o
-                botão ficava no fim de ~37.000px de rolagem: para confirmar,
-                o dono tinha que percorrer a lista inteira — ou, pior,
-                desistir no meio sem saber que o botão existia. Fica colada
-                embaixo, sempre alcançável, com o total ao lado pra a
-                contagem não exigir voltar ao topo. */}
+            {/* Barra fixa: com 530 linhas o botão ficava depois de ~37.000px
+                de rolagem. */}
             <div
               data-testid="conferencia-acoes"
               className="bg-background/95 sticky bottom-0 -mx-6 flex flex-wrap items-center gap-3 border-t px-6 py-3 backdrop-blur"

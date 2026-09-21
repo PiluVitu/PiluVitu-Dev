@@ -1,39 +1,13 @@
 /**
- * Cliente HTTP do Pluggy — a camada que fala com `api.pluggy.ai` e mais
- * nada. Não escreve no D1, não mapeia pro schema, não decide política de
- * import.
+ * Cliente HTTP do Pluggy: fala com `api.pluggy.ai` e mais nada — não escreve no
+ * D1, não mapeia pro schema, não decide política de import.
  *
- * ⚠️ **Cópia do DESENHO de `src/lib/promeia.ts`**, não do código: `fetch`
- * injetado, timeout, classes de erro separadas **por CAUSA** (nunca por
- * status), e credencial fora de toda mensagem de erro. As divergências em
- * relação ao promeia estão marcadas uma a uma abaixo — cada uma tem motivo,
- * nenhuma é descuido.
+ * ⚠️ A CREDENCIAL NÃO PODE ENCOSTAR NO D1: `scripts/backup-d1.sh` guarda 30
+ * cópias do banco em texto claro. Secrets no Worker; `itemId`/`accountId`, que
+ * não são credencial, podem ir pra `settings`.
  *
- * ⚠️ **A CREDENCIAL NÃO PODE ENCOSTAR NO D1, e a razão é concreta:**
- * `scripts/backup-d1.sh` exporta o banco INTEIRO às 03:00 e guarda **30
- * cópias em texto claro** em `~/Backups/financas/` (ver CLAUDE.md § _Backup
- * do D1_). Rotacionar a chave no Pluggy depois não apagaria as que já foram
- * gravadas. Por isso:
- *
- * | O quê                                    | Onde mora                                    |
- * | ---------------------------------------- | -------------------------------------------- |
- * | `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | **secret do Worker** (`wrangler secret put`) |
- * | `apiKey` de 2 h (`POST /auth`)           | **memória do isolate**, `WeakMap` (①)        |
- * | `itemId` / `accountId`                   | `settings` — NÃO são credencial              |
- *
- * `itemId`/`accountId` de propósito **não** são lidos aqui: são dado de
- * configuração (`getSetting`/`setSetting`, `src/domain/settings.ts`), e
- * misturá-los faria este arquivo depender de `D1Database` só pra descobrir
- * pra quem ligar. Quem chama passa os ids; este módulo só fala HTTP.
- *
- * ⚠️ **DUAS ARMADILHAS que este arquivo DELIBERADAMENTE não resolve** — ver
- * `PluggyTransacao` abaixo, onde os dois campos perigosos estão marcados. O
- * resumo: `amount` tem a convenção de sinal OPOSTA à deste schema, e `date`
- * vem em UTC num app que é `purchase_date`-cêntrico em GMT-3. As duas
- * conversões pertencem à fatia do MAPEADOR, com uma resposta real capturada
- * na mão — encodar aqui uma regra que só li na documentação faria uma
- * suposição parecer medida, e o custo de errar é 12 meses de dado com sinal
- * ou mês trocado, que `uq_tx_imported` impede de reimportar por cima.
+ * Desenho copiado de `lib/promeia.ts` (fetch injetado, erro por CAUSA). Detalhes
+ * e divergências: ver "Open Finance / Pluggy" no CLAUDE.md.
  */
 import { isRealCalendarDate } from './dates'
 
@@ -81,16 +55,9 @@ export const MARGEM_RENOVACAO_MS = 5 * 60 * 1000
 export const PAGE_SIZE = 500
 
 /**
- * ⚠️ **Teto de páginas por INVOCAÇÃO, e o número sai de uma restrição da
- * plataforma, não de gosto: o plano free do Workers permite 50 subrequests
- * por invocação.** 1 `POST /auth` + 1 `GET /items/:id` + N páginas precisa
- * caber nos 50. 40 páginas = 20 000 lançamentos, muito além de 12 meses de
- * uso pessoal, e ainda deixa 8 subrequests de folga.
- *
- * Estourar o teto **lança** (`RangeError`, que a rota já traduz em 422 com
- * mensagem legível) em vez de truncar em silêncio: devolver 20 000 de 30 000
- * linhas sem avisar seria uma falha com cara de sucesso — exatamente a
- * classe de defeito que este módulo caça em toda fatia.
+ * Teto de páginas por invocação: o free tier do Workers dá 50 subrequests, e
+ * 1 auth + 1 item + 40 páginas cabe com folga. Estourar LANÇA em vez de truncar
+ * em silêncio — truncar seria falha com cara de sucesso.
  */
 export const MAX_PAGINAS = 40
 
@@ -110,19 +77,8 @@ const AMOSTRA_MAX = 200
  */
 export const AMOSTRA_OMITIDA = '<corpo do /auth omitido: carrega a apiKey>'
 
-// ---------------------------------------------------------------------------
-// Erros — um por CAUSA, porque cada um manda o dono para um lugar DIFERENTE.
-//
-// | Classe                    | O que o dono tem que fazer                        |
-// | ------------------------- | ------------------------------------------------- |
-// | PluggyDesligado           | nada quebrou — configure os secrets se quiser usar |
-// | PluggyCredencialInvalida  | corrigir PLUGGY_CLIENT_ID / PLUGGY_CLIENT_SECRET   |
-// | PluggyTokenExpirado       | (raro) reportar — NÃO é a credencial               |
-// | PluggyRateLimitado        | esperar N segundos e tentar de novo                |
-// | PluggyInalcancavel        | tentar mais tarde — o problema é do outro lado     |
-// | PluggyItemDesconectado    | **reconectar a conta no app Meu Pluggy**           |
-// | PluggyRespostaIlegivel    | (raro) reportar — alguém respondeu e não entendi   |
-// ---------------------------------------------------------------------------
+// Erros: um por CAUSA, porque cada um manda o dono para um lugar diferente.
+// Tabela completa em "Open Finance / Pluggy" no CLAUDE.md.
 
 /**
  * Os secrets não estão configurados. **Não é falha** — espelha
@@ -287,38 +243,16 @@ export type PluggyTransacao = {
   descriptionRaw?: string | null
 
   /**
-   * ⚠️⚠️ **ARMADILHA ①, SINAL INVERTIDO — não converter sem medir.** A
-   * documentação do Pluggy diz *"positive amounts indicate debits"*, ou
-   * seja, o OPOSTO da convenção deste schema (negativo = saída). Consequência
-   * se alguém fizer `Math.round(amount * 100)` direto: `accountBalances()`
-   * erra por **2×**, `byCategory()` (que filtra `amount_cents < 0`) perde a
-   * despesa inteira, e `CHECK (amount_cents <> 0)` aceita numa boa — o banco
-   * não tem como reclamar de um sinal.
-   *
-   * **Este cliente NÃO converte, e isso é decisão, não omissão:** a regra
-   * acima é DOCUMENTAÇÃO, não medição contra uma resposta real (a tabela de
-   * fatos medidos deste projeto não a inclui). Encodar aqui uma conversão
-   * testada faria uma suposição parecer verificada — e o desfazer, se
-   * estiver errada, não é reimportar por cima: `uq_tx_imported` bloqueia, e
-   * a saída seria `DELETE ... WHERE import_source='pluggy'` ou Time Travel
-   * (que restaura o banco INTEIRO).
-   *
-   * A conversão pertence ao mapeador, num lugar só, escrita contra uma
-   * resposta real capturada à mão.
+   * ⚠️ ARMADILHA ①: no Pluggy, `amount` POSITIVO é DÉBITO — o oposto deste
+   * schema. Converter aqui erraria `accountBalances()` por 2× sem o banco
+   * reclamar. O cliente entrega o valor do fio; quem converte é o mapeador.
    */
   amount: number
 
   /**
-   * ⚠️⚠️ **ARMADILHA ②, DATA EM UTC — não cortar `slice(0, 10)`.** Este app é
-   * `purchase_date`-cêntrico em **GMT-3**: uma compra depois das 21h local
-   * cai no dia seguinte em UTC e **propaga pro `bill_competence`**, que é
-   * campo derivado e **não é patchável** (`PATCH /api/transactions/:id`
-   * recusa com `protected_field`). Seria a **5ª vez** que este projeto paga
-   * essa classe de bug. O precedente de conversão já existe e tem dono:
-   * `src/domain/cashflow.ts#localCompetence` (que reusa `todayInTeresina`).
-   *
-   * Mesma decisão da armadilha ①: o cliente entrega o valor do fio, o
-   * mapeador converte.
+   * ⚠️ ARMADILHA ②: `date` vem em UTC e este app é `purchase_date`-cêntrico em
+   * GMT-3 — cortar `slice(0, 10)` empurra compra noturna pro dia seguinte e
+   * propaga pro `bill_competence`, que não é patchável. Converte o mapeador.
    */
   date: string
 
@@ -370,13 +304,8 @@ export type PluggyItem = {
 /**
  * Estados que significam "o banco quer que o dono autentique de novo".
  *
- * ⚠️ **Vêm da documentação do Pluggy, NÃO de medição contra a conta do
- * dono** — e é por isso que a checagem é uma ALLOWLIST em vez de "tudo que
- * não é UPDATED". Um estado desconhecido (ou um estado novo que o Pluggy
- * criar amanhã) NÃO vira "reconecte": mandar o dono refazer uma conexão que
- * está de pé desperdiça o tempo dele arrumando o que já está certo — a mesma
- * regra que o cliente do promeia aprendeu na marra. O estado cru fica
- * disponível em `PluggyItem.status` pra quem quiser mostrá-lo.
+ * ⚠️ ALLOWLIST, nunca "tudo que não é UPDATED": estado desconhecido não pode
+ * virar "reconecte" e mandar o dono refazer uma conexão que está de pé.
  */
 const STATUS_PRECISA_RECONECTAR = new Set(['LOGIN_ERROR', 'WAITING_USER_INPUT'])
 
@@ -394,11 +323,7 @@ export type PluggyOpts = {
   timeoutMs?: number
   /** Relógio injetável (mesma disciplina de `todayInTeresina(now?)`): mock de `Date` global vaza entre testes. */
   agora?: () => number
-  /**
-   * Espera injetável, usada só por `aguardarAutorizacao`. ⚠️ Existe pelo
-   * MESMO motivo de `agora`: um teste que dormisse de verdade levaria
-   * segundos por caso e tornaria a suíte refém do relógio da máquina.
-   */
+  /** Espera injetável: nenhum teste dorme de verdade. */
   dormir?: (ms: number) => Promise<void>
 }
 
@@ -409,17 +334,11 @@ export type PluggyOpts = {
 type Sessao = { apiKey: string; expiraEm: number }
 
 /**
- * ⚠️ **`WeakMap` chaveado pelo objeto `env`, nunca uma variável solta** —
- * mesmo padrão (e mesmo motivo) de `getAuth` em `src/lib/auth.ts`: o `env`
- * tem identidade estável entre requests do mesmo isolate, e um `WeakMap`
- * impede que o `env` sintético de um teste envenene a instância de outro.
+ * `WeakMap` chaveado pelo `env` (mesmo padrão de `getAuth`): impede que o `env`
+ * sintético de um teste envenene outro.
  *
- * ⚠️ Guarda a **Promise**, não a `Sessao` resolvida: duas requisições
- * concorrentes no mesmo isolate compartilham UM `POST /auth` em vez de
- * disparar dois (o teto de `PATCH /items` é 20/min — desperdiçar chamada de
- * auth por corrida é gastar cota à toa). A entrada é removida quando a
- * promise rejeita, senão o isolate ficaria com uma falha memoizada para
- * sempre.
+ * Guarda a Promise, não a `Sessao`: duas requisições concorrentes no mesmo
+ * isolate compartilham um `POST /auth`. A entrada sai quando a promise rejeita.
  */
 const sessoes = new WeakMap<PluggyBindings, Promise<Sessao>>()
 
@@ -581,26 +500,14 @@ export function assertItemConectado(item: PluggyItem): void {
 // ---------------------------------------------------------------------------
 
 /**
- * O conector "Meu Pluggy" — um **proxy** sobre as conexões que o dono já tem
- * em `meu.pluggy.ai`, atualizadas por lá 1×/dia.
+ * O conector "Meu Pluggy": proxy sobre as conexões que o dono já tem lá.
  *
- * ⚠️ **Não é um banco.** Criar um item com ele não abre conexão nova com
- * instituição nenhuma: reaproveita os consentimentos que já existem. É
- * exatamente por isso que o dono não reautoriza banco a banco — e por isso
- * que `itemId`/`accountId` deixam de ser dado de ENTRADA (o que a fatia ④
- * pedia, colado à mão) e viram CONSEQUÊNCIA de uma ação do app.
- *
- * ⚠️ **Items do Meu Pluggy não podem ser atualizados pela API** — quem é dono
- * da conexão é o Meu Pluggy, e `PATCH /items` responde
- * `400 MeuPluggy item cant be updated`. Não existe, e não adianta tentar
- * construir, um botão de "forçar atualização" aqui.
+ * `PATCH /items` responde `400 MeuPluggy item cant be updated` — não existe
+ * botão de "forçar atualização". Ver a fatia ⑤ no CLAUDE.md.
  */
 export const CONNECTOR_MEU_PLUGGY = 200
 
-/**
- * O que o Pluggy devolve enquanto o item depende de uma ação do dono. No
- * fluxo OAuth, `data` é a **URL de autorização** — e ela é de **uso único**.
- */
+/** `data` é a URL de autorização, de uso único, quando `type === 'oauth'`. */
 export type PluggyParametro = {
   name?: string
   type?: string
@@ -616,15 +523,7 @@ export type PluggyItemCriado = PluggyItem & {
   parameter?: PluggyParametro | null
 }
 
-/**
- * Uma conta DENTRO de um item — o que o dono escolhe num select, em vez de
- * colar um UUID que nenhuma tela do Pluggy mostra.
- *
- * ⚠️ `type` fica `string`, não união fechada, pelo MESMO motivo da allowlist
- * de `STATUS_PRECISA_RECONECTAR`: um tipo de conta novo do Pluggy não pode
- * virar erro de parse aqui. Hoje interessa `BANK` × `CREDIT`, e quem rotula
- * é a tela.
- */
+/** `type` é `string`, não união fechada: tipo novo do Pluggy não pode virar erro de parse. */
 export type PluggyConta = {
   id: string
   type: string
@@ -634,16 +533,10 @@ export type PluggyConta = {
 }
 
 /**
- * `POST /items` com o conector 200. Devolve o item recém-criado, que vem
- * `WAITING_USER_INPUT` com a URL de autorização em `parameter.data`.
+ * `POST /items` com o conector 200.
  *
- * ⚠️⚠️ **NUNCA passe o resultado disto por `assertItemConectado`.**
- * `WAITING_USER_INPUT` está na allowlist de `STATUS_PRECISA_RECONECTAR`, então
- * a asserção lançaria `PluggyItemDesconectado` — mandando o dono "abrir o app
- * Meu Pluggy e reconectar" no exato instante em que ele acabou de pedir pra
- * conectar, e escondendo a URL que é a única saída. Item recém-criado
- * esperando o dono é o caminho **FELIZ**; `assertItemConectado` só descreve
- * item que já esteve de pé e caiu.
+ * ⚠️ NUNCA passe o resultado por `assertItemConectado`: `WAITING_USER_INPUT`
+ * está na allowlist de "precisa reconectar", e aqui é o caminho feliz.
  */
 export async function criarItem(
   env: PluggyBindings,
@@ -662,12 +555,7 @@ export async function criarItem(
   return json as unknown as PluggyItemCriado
 }
 
-/**
- * A URL que o dono precisa abrir, ou `null` quando o item não espera nada.
- *
- * **Pura**, mesmo precedente de `precisaReconectar`: a busca devolve o fato, a
- * leitura da política fica separada e testável sozinha.
- */
+/** A URL a abrir, ou `null` quando o item não espera nada. Pura. */
 export function urlDeAutorizacao(item: PluggyItemCriado): string | null {
   const p = item.parameter
   if (!p || p.type !== 'oauth') return null
@@ -675,34 +563,17 @@ export function urlDeAutorizacao(item: PluggyItemCriado): string | null {
   return url === '' ? null : url
 }
 
-/**
- * ⚠️ **MEDIDO contra a API real, não suposto** (spike de 2026-09-21): a URL
- * de autorização apareceu na PRIMEIRA sondagem, ~1,2-1,5 s depois do
- * `POST /items`. Seis tentativas de 1 s dão folga de sobra sem custar o
- * orçamento: `POST /connect` gasta 1 (`/auth`) + 1 (`/items`) + no MÁXIMO 6
- * = 8 dos 50 subrequests por invocação do Worker.
- */
+/** Medido: a URL nasce na 1ª sondagem (~1,5 s). Seis é folga, e cabe no teto de 50 subrequests. */
 export const INTERVALO_AUTORIZACAO_MS = 1_000
 export const MAX_SONDAGENS_AUTORIZACAO = 6
 
 /**
  * Espera a URL de autorização nascer, sondando `GET /items/:id`.
  *
- * ⚠️⚠️ **ESTA FUNÇÃO EXISTE PORQUE A DOCUMENTAÇÃO DO PLUGGY ESTÁ ERRADA — e
- * o erro é do tipo que vira beco sem saída silencioso.** A doc afirma que
- * `POST /items` já devolve `status: WAITING_USER_INPUT` com
- * `parameter.data`. **MEDIDO: não devolve.** A resposta da criação vem
- * `status: UPDATING`, `executionStatus: CREATED`, `parameter: null`, e só
- * segundos depois o item transiciona para `WAITING_USER_INPUT` com a URL.
+ * ⚠️ `POST /items` devolve `parameter: null` (a doc do Pluggy diz o contrário).
+ * Sem esta espera a tela conclui "já autorizado" e o dono nunca recebe o link.
  *
- * Sem esta espera, `urlDeAutorizacao` lê `null` no item recém-criado e a
- * tela conclui "a conexão já veio autorizada — não há nada a autorizar":
- * o dono NUNCA recebe o link, e fica olhando para uma conexão que jamais
- * vai listar conta nenhuma. Nada dá erro; simplesmente não funciona.
- *
- * ⚠️ Devolve o ÚLTIMO item visto quando a URL não aparece, em vez de lançar.
- * Um item que já nasce autorizado (`parameter` nulo de verdade) é caminho
- * legítimo, e é a rota — não esta função — quem decide o que dizer ao dono.
+ * Devolve o último item visto em vez de lançar: quem decide a mensagem é a rota.
  */
 export async function aguardarAutorizacao(
   env: PluggyBindings,
@@ -730,13 +601,7 @@ export async function aguardarAutorizacao(
   return ultimo
 }
 
-/**
- * `GET /accounts?itemId=` — as contas de uma conexão.
- *
- * ⚠️ Sem paginação, de propósito: um item do Meu Pluggy tem unidades de
- * contas, não centenas. `paginasDeTransacoes` existe porque transação tem
- * volume; replicar o mecanismo aqui seria custo sem caso.
- */
+/** `GET /accounts?itemId=`. Sem paginação: um item tem unidades de contas, não centenas. */
 export async function listarContas(
   env: PluggyBindings,
   itemId: string,
@@ -757,8 +622,7 @@ export async function listarContas(
   if (!Array.isArray(results)) {
     throw new PluggyRespostaIlegivel(lida.status, lida.amostra)
   }
-  // ⚠️ Valida ANTES de devolver: `id`/`type` ausentes virariam `undefined` no
-  // value do <option>, e o dono salvaria uma conexão que nunca sincroniza.
+  // `id`/`type` ausentes virariam `undefined` no <option> e uma conexão morta.
   for (const c of results) {
     const conta = c as Record<string, unknown> | null
     if (
@@ -790,23 +654,8 @@ export type FiltroTransacoes = {
  * invocação do Worker) chama esta aqui direto.
  */
 /**
- * Uma página do **`/v2/transactions`**.
- *
- * ⚠️⚠️ **MIGRADO SOB FOGO: o `/transactions` v1 foi DESCONTINUADO pelo
- * Pluggy e responde `410 ENDPOINT_DEPRECATED`** ("This endpoint is
- * deprecated. Use GET /v2/transactions with cursor pagination instead").
- * Quebrou a sincronização inteira em produção, não só uma conta. O contrato
- * do v2 foi MEDIDO contra a API real (2026-09-21), não lido em doc:
- *
- * | v1 (morto)                              | v2                        |
- * | --------------------------------------- | ------------------------- |
- * | `from` / `to`                           | **`dateFrom` / `dateTo`** |
- * | `page` / `pageSize`                     | cursor **`after`**        |
- * | `{results, page, total, totalPages}`    | **`{results, next}`**     |
- *
- * ⚠️ `pageSize`, `limit`, `take`, `size`, `perPage`, `cursor` e `itemId` são
- * TODOS recusados com `400 property X should not exist` — medido um a um.
- * Não há como escolher o tamanho da página: são 500, fixos.
+ * Uma página do `/v2/transactions`. O v1 responde `410 ENDPOINT_DEPRECATED`.
+ * Contrato e parâmetros recusados: ver "o `/transactions` v1 MORREU" no CLAUDE.md.
  */
 export async function buscarPaginaDeTransacoes(
   env: PluggyBindings,
@@ -816,18 +665,12 @@ export async function buscarPaginaDeTransacoes(
   const accountId = filtro.accountId.trim()
   if (accountId === '') throw new RangeError('accountId é obrigatório')
 
-  // ⚠️ O cursor JÁ VEM como query string completa e encodada (o `next` da
-  // resposta anterior, com `accountId` dentro). Remontar os parâmetros a
-  // partir dele reencodaria o `%3D%3D` do base64 e o Pluggy responderia
-  // `400 Invalid cursor`. Usar verbatim é o contrato.
+  // Verbatim: remontar o cursor reencoda o base64 e dá `400 Invalid cursor`.
   let url: string
   if (filtro.cursor) {
     url = `${PLUGGY_BASE_URL}/v2/transactions${filtro.cursor}`
   } else {
     const params = new URLSearchParams({ accountId })
-    // Validação de calendário ANTES de gastar um subrequest, com a MESMA
-    // função do resto do módulo (`lib/dates.ts`) — nunca uma segunda regra:
-    // um regex de formato aceitaria '2026-02-30', e o filtro sairia mudo.
     if (filtro.from !== undefined) {
       if (!isRealCalendarDate(filtro.from)) {
         throw new RangeError(
@@ -862,28 +705,9 @@ export async function buscarPaginaDeTransacoes(
 }
 
 /**
- * ⚠️ **DECISÃO (②): página a página, e NÃO existe um `buscarTodas()` — a
- * ausência é o ponto.** Três razões, nesta ordem de peso:
- *
- * 1. **50 subrequests por invocação no plano free do Workers.** Uma função
- *    "busca tudo" promete algo que a plataforma pode não deixar entregar: 12
- *    meses de um cartão movimentado passam de 40 páginas e a invocação MORRE
- *    no meio — pior que devolver menos, porque não sobra nem o que já veio.
- *    Página a página, quem chama grava cada lote e retoma numa invocação
- *    seguinte (`buscarPaginaDeTransacoes` aceita `page`).
- * 2. **Teto de 10 ms de CPU por invocação no free tier.** Materializar
- *    milhares de objetos e só então entregá-los concentra parse e alocação
- *    num pico; consumir lote a lote intercala com a espera de rede.
- * 3. **Quem chama já trabalha em lote e sabe parar antes.** `importTransactions`
- *    (`src/domain/import.ts`) escreve 5 linhas por statement e faz dedupe por
- *    `(account_id, imported_id)` em aplicação — com o gerador, uma página
- *    inteira já conhecida encerra a varredura em vez de pagar as outras 39.
- *
- * ⚠️ **Um servidor que ignorasse `page` e devolvesse sempre a mesma página
- * NÃO corrompe nada** e por isso não há checagem de eco: o dedupe por
- * `imported_id` do import descarta a repetição, e o `MAX_PAGINAS` limita o
- * desperdício. Inventar aqui uma segunda validação seria proteger contra o
- * que já tem dono.
+ * Página a página, e NÃO existe `buscarTodas()` — a ausência é o ponto: 50
+ * subrequests por invocação significam que "busca tudo" pode morrer no meio e
+ * não sobrar nem o que já veio. Quem chama grava cada lote e retoma.
  */
 export async function* paginasDeTransacoes(
   env: PluggyBindings,
@@ -901,17 +725,13 @@ export async function* paginasDeTransacoes(
 
     if (pagina.results.length > 0) yield pagina.results
 
-    // Fim do cursor é o fim da varredura — o v2 não promete um total, então
-    // `next: null` é a ÚNICA condição de parada honesta que existe.
+    // O v2 não promete total: `next: null` é a única parada honesta.
     if (pagina.next === null) return
-    // Página vazia ainda prometendo cursor: o servidor se contradisse.
-    // Parar é o certo — insistir só gastaria subrequest.
     if (pagina.results.length === 0) return
 
     cursor = pagina.next
   }
 
-  // Saiu do laço com cursor de pé: estourou o teto.
   throw new RangeError(
     `o Pluggy ainda tinha mais páginas depois do teto de ${MAX_PAGINAS} por execução ` +
       `(${MAX_PAGINAS * PAGE_SIZE} lançamentos) — busque um intervalo menor com from/to`,
@@ -931,15 +751,9 @@ type Lida = {
 }
 
 /**
- * `GET` autenticado, com **UMA** renovação automática quando o Pluggy recusa
- * a chave.
- *
- * ⚠️ O retry existe porque a expiração de 2 h é calculada localmente (ver
- * `VALIDADE_API_KEY_MS`) — se essa conta estiver errada, o 401 é o único
- * sinal verdadeiro. **Uma vez só**: se a chave RECÉM-EMITIDA também for
- * recusada, repetir vira laço e queima cota; a segunda recusa sai como
- * `PluggyTokenExpirado`, que afirma exatamente o que ficou provado (a
- * credencial está boa — o `/auth` acabou de passar).
+ * Pedido autenticado, com UMA renovação automática quando o Pluggy recusa a
+ * chave (a expiração de 2 h é calculada localmente, então o 401 é o único sinal
+ * verdadeiro). Uma vez só: repetir viraria laço e queima cota.
  */
 type Envio = {
   method?: string
@@ -972,9 +786,7 @@ async function pedirAutenticado(
 
   if ((lida.status === 401 || lida.status === 403) && !jaRenovou) {
     esquecerApiKey(env)
-    // ⚠️ `envio` REPASSADO: sem ele o retry de 401 reenviaria um POST como
-    // GET — a conexão silenciosamente não seria criada e a resposta seria
-    // uma lista, não um item.
+    // `envio` repassado: sem ele o retry de 401 reenviaria um POST como GET.
     return pedirAutenticado(url, env, opts, envio, true)
   }
   return lida
