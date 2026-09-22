@@ -5,6 +5,7 @@ import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import {
   Dialog,
   DialogClose,
@@ -20,6 +21,8 @@ import { api, ApiError } from '../api'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINHA } from '../lib/touch'
+import { CARTAO_SECAO, CHIP_MONO, PAINEL_SUNKEN } from '../lib/superficie'
+import { ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import type { AccountView } from './accounts'
 import type { CategoryOption } from './recorrentes'
 
@@ -422,12 +425,17 @@ export function RegrasPage() {
     categoriaId !== NENHUMA && !categorias.some((c) => c.id === categoriaId)
 
   return (
-    <section className="space-y-6" data-testid="pagina-regras">
+    <section className="space-y-5" data-testid="pagina-regras">
       {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou, agora
           presa ao parágrafo que ela detalha. */}
-      <p className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
-        As regras são aplicadas na conferência do import, da menor para a maior
-        &quot;Ordem&quot;. Elas nunca gravam sozinhas.
+      {/* ⚠️ A `Ajuda` fica FORA do `<p>`: `SUBTITULO_PAGINA` tem
+          `max-w-[62ch]`, e dentro dele o gatilho "?" era empurrado pra uma
+          linha só dele, solto, longe da frase que explica. */}
+      <div className="flex items-start gap-2">
+        <p className={SUBTITULO_PAGINA}>
+          As regras são aplicadas na conferência do import, da menor para a
+          maior &quot;Ordem&quot;. Elas nunca gravam sozinhas.
+        </p>
         <Ajuda rotulo="Regras">
           Uma regra diz &quot;quando a linha for assim, categorize assim&quot; —
           e roda na conferência do import, antes de qualquer coisa ser gravada.
@@ -436,7 +444,7 @@ export function RegrasPage() {
           duas regras mexem no mesmo campo, vence a de MAIOR número em
           &quot;Ordem&quot; — é por isso que a ordem é editável.
         </Ajuda>
-      </p>
+      </div>
 
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
@@ -444,9 +452,9 @@ export function RegrasPage() {
         </p>
       ) : null}
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
             {regras.length} regra(s)
             {matches
               ? ` · contagem sobre os ${matches.scanned} lançamento(s) mais recentes`
@@ -465,21 +473,56 @@ export function RegrasPage() {
                 <div
                   key={r.id}
                   data-testid={`regra-${r.id}`}
-                  className="space-y-1 py-3"
+                  className={cn(
+                    'space-y-2 py-3',
+                    r.active === 0 && 'text-muted-foreground',
+                  )}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{r.name}</span>
+                    <span className="text-sm font-semibold">{r.name}</span>
                     {r.active === 0 ? <Badge>Pausada</Badge> : null}
-                    <span className="text-muted-foreground text-xs tabular-nums">
+                    <span className="text-muted-foreground ml-auto font-mono text-[10px] tracking-[0.12em] uppercase tabular-nums">
                       Ordem {r.priority}
                     </span>
                   </div>
-                  <p className="text-muted-foreground text-sm">
-                    Se {descreverCondicoes(r, nomeConta)}
-                  </p>
-                  <p className="text-sm">
-                    Então {descreverAcoes(r, nomeCategoria, nomePayee)}
-                  </p>
+                  {/*
+                    ⚠️ A palavra "Se"/"Então" vira chip mas continua sendo o
+                    PRIMEIRO nó de texto do mesmo `<p>`, com o espaço
+                    explícito depois: `regras.test.tsx` afere
+                    `toHaveTextContent('Se descrição contém "UBER"')` no
+                    container, e dois elementos irmãos sem nó de espaço entre
+                    eles concatenariam como `Sedescrição`.
+                  */}
+                  <div
+                    className={cn(
+                      PAINEL_SUNKEN,
+                      'space-y-2 p-3',
+                      r.active === 0 && 'border-dashed',
+                    )}
+                  >
+                    <p className="text-sm leading-relaxed">
+                      <span
+                        className={cn(
+                          CHIP_MONO,
+                          'bg-secondary text-secondary-foreground mr-1.5 border-transparent align-middle',
+                        )}
+                      >
+                        Se
+                      </span>{' '}
+                      {descreverCondicoes(r, nomeConta)}
+                    </p>
+                    <p className="text-sm leading-relaxed">
+                      <span
+                        className={cn(
+                          CHIP_MONO,
+                          'border-primary/30 bg-primary/10 text-primary mr-1.5 align-middle',
+                        )}
+                      >
+                        Então
+                      </span>{' '}
+                      {descreverAcoes(r, nomeCategoria, nomePayee)}
+                    </p>
+                  </div>
                   {/* ⚠️ O número que faz o dono confiar (ou desconfiar) da
                       regra ANTES de rodar um import com ela ligada.
 
@@ -558,7 +601,7 @@ export function RegrasPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
             {editandoId ? 'Editar regra' : 'Nova regra'}
           </CardTitle>
         </CardHeader>

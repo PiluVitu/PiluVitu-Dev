@@ -44,9 +44,13 @@ const numeros = {
   previous_competence: '2026-06',
   top_categories: [],
   total_cents: -70000,
+  total_pf_cents: -70000,
+  total_pj_cents: 0,
   previous_total_cents: -35000,
   variation_cents: 35000,
   variation_pct: 100,
+  variation_pf_cents: 35000,
+  variation_pf_pct: 100,
   biggest_increase: null,
 }
 

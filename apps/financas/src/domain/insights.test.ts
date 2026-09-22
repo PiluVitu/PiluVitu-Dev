@@ -260,3 +260,86 @@ describe('insightNumbers', () => {
     )
   })
 })
+
+describe('insightNumbers separa PJ de PF', () => {
+  it('devolve o total quebrado por escopo sem perder o total geral', async () => {
+    const pf = await createAccount(db, {
+      name: 'Inter',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const pj = await createAccount(db, {
+      name: 'Inter Empresa',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    await createTransaction(db, {
+      account_id: pf.id,
+      amount_cents: -10000,
+      purchase_date: '2026-09-05',
+      description: 'Mercado',
+    })
+    await createTransaction(db, {
+      account_id: pj.id,
+      amount_cents: -25000,
+      purchase_date: '2026-09-06',
+      description: 'Contador',
+      is_business: 1,
+    })
+
+    const r = await insightNumbers(db, { competence: '2026-09' })
+
+    expect(Math.abs(r.total_cents)).toBe(35000)
+    expect(Math.abs(r.total_pf_cents)).toBe(10000)
+    expect(Math.abs(r.total_pj_cents)).toBe(25000)
+  })
+
+  it('mes sem gasto nenhum devolve zero nos dois escopos', async () => {
+    const r = await insightNumbers(db, { competence: '2026-09' })
+    expect(r.total_pf_cents).toBe(0)
+    expect(r.total_pj_cents).toBe(0)
+  })
+})
+
+describe('variacao por escopo', () => {
+  it('variacao PF ignora o que aconteceu na PJ', async () => {
+    const pf = await createAccount(db, {
+      name: 'Inter',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const pj = await createAccount(db, {
+      name: 'Inter Empresa',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    // PF: 100 em agosto -> 150 em setembro (+50%)
+    await createTransaction(db, {
+      account_id: pf.id,
+      amount_cents: -10000,
+      purchase_date: '2026-08-05',
+      description: 'Mercado',
+    })
+    await createTransaction(db, {
+      account_id: pf.id,
+      amount_cents: -15000,
+      purchase_date: '2026-09-05',
+      description: 'Mercado',
+    })
+    // PJ: explode de 0 para 5000 — nao pode contaminar a variacao PF.
+    await createTransaction(db, {
+      account_id: pj.id,
+      amount_cents: -500000,
+      purchase_date: '2026-09-06',
+      description: 'Contador',
+      is_business: 1,
+    })
+
+    const r = await insightNumbers(db, { competence: '2026-09' })
+
+    expect(r.variation_pf_cents).toBe(5000)
+    expect(r.variation_pf_pct).toBe(50)
+    // a combinada continua existindo, e continua contaminada de proposito
+    expect(r.variation_cents).toBe(505000)
+  })
+})

@@ -24,7 +24,8 @@ import {
 } from '../lib/categories'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
-import { ROTULO_SECAO } from '../lib/tipografia'
+import { CARTAO_SECAO } from '../lib/superficie'
+import { ROTULO, ROTULO_SECAO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 
 /**
@@ -71,6 +72,12 @@ const ROTULO_KIND: Record<CategoryKindView, string> = {
  * e consulta o tempo todo; as duas classes estruturais (que todo relatório de
  * resultado exclui, e que nem podem ser criadas por aqui) ficam por último.
  */
+/**
+ * Os tipos que a migration semeia e que ninguém cria à mão — a tela os
+ * marca com borda tracejada em vez de um rótulo a mais.
+ */
+const ESTRUTURAIS: CategoryKindView[] = ['transfer', 'debt_settlement']
+
 const ORDEM_DOS_GRUPOS: CategoryKindView[] = [
   'expense',
   'income',
@@ -266,14 +273,18 @@ export function CategoriasPage() {
     editandoId !== null && categorias.some((c) => c.parent_id === editandoId)
 
   return (
-    <section className="space-y-6" data-testid="pagina-categorias">
+    <section className="space-y-5" data-testid="pagina-categorias">
+      <p className={SUBTITULO_PAGINA}>
+        Como o gasto é classificado. Duas camadas no máximo: uma raiz e suas
+        filhas.
+      </p>
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}
         </p>
       ) : null}
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardContent className="pt-6">
           {nos.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -317,9 +328,26 @@ export function CategoriasPage() {
                             : ''
                         }
                       >
-                        <div className="rounded-md border p-3">
+                        {/*
+                          ⚠️ Borda TRACEJADA em `transfer`/`debt_settlement`:
+                          são as categorias ESTRUTURAIS, semeadas pela
+                          migration e nunca criadas à mão. O tracejado diz
+                          "isto não é do mesmo tipo que você cadastra" sem
+                          depender de ler o chip — e sem tirar as ações, que
+                          continuam sendo do servidor a palavra final.
+                        */}
+                        <div
+                          className={cn(
+                            'rounded-xl border p-3',
+                            ESTRUTURAIS.includes(c.kind) &&
+                              'bg-background border-dashed',
+                          )}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <p className="font-medium">{c.name}</p>
+                            <p className="text-sm leading-tight font-semibold">
+                              {nivel === 1 ? '↳ ' : ''}
+                              {c.name}
+                            </p>
                             {/*
                               Status/classificação como CHIP — `regras.tsx` é
                               a referência (`<Badge>Pausada</Badge>`), e outras
@@ -388,9 +416,9 @@ export function CategoriasPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
             {editandoId ? 'Editar categoria' : 'Nova categoria'}
           </CardTitle>
         </CardHeader>

@@ -1563,6 +1563,53 @@ Conta sem nenhuma célula na janela **não aparece** na lista de `rows` (nem com
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/reports.test.ts` cobre liquidação (`settled_at` preenchido não conta), virada de ano (`from: '2026-11'` cruzando pra `2027-01`), separação de transferência/rateio, e o cálculo do `%` batendo contra `360000` (nunca contra o líquido com freela). `src/routes/reports.test.ts` monta só `reportsRoutes` (sem Access, padrão das Tasks 6-9) e cobre o contrato HTTP: 200 com envelope, `fixed_net_cents` customizável via query, e os três casos de `400 invalid_query` (`from` ausente, `from` malformado, `months=0`/não numérico).
 
+## Transferência vinda do import (`src/domain/transfer-pairing.ts`)
+
+O anti-dupla-contagem do módulo inteiro (`cashflow()`, `commitments()`, `byCategory()`) é o filtro `transfer_id IS NULL`. Até aqui, **só `createTransfer()` — a tela "Transferir" — preenchia esse campo.** Extrato importado não tem o conceito: o Pluggy entrega as duas pernas como lançamentos independentes, e o `pluggy-map.ts` já registrava `transfer_id` como "sem correspondente" no mapeamento.
+
+**Consequência MEDIDA em produção (2026-09-22):** o pró-labore mensal Inter Empresa (PJ) → Inter (PF) entrava como despesa comum. O "Gasto em setembro" mostrava **R$ 11.234,69**, dos quais **R$ 4.300,00 eram a transferência** — o único lançamento PJ do mês. O gasto real era R$ 6.934,69. Não era caso isolado:
+
+| mês          |  pares | inflando o "Gasto" em |
+| ------------ | -----: | --------------------: |
+| 2026-09      |      1 |           R$ 4.300,00 |
+| 2026-08      |      2 |           R$ 5.300,00 |
+| 2026-07      |      3 |           R$ 4.965,00 |
+| 2026-06      |      5 |           R$ 4.861,64 |
+| 2026-05      |      1 |           R$ 4.288,04 |
+| 2026-04      |      8 |           R$ 4.058,48 |
+| 2026-03      |      5 |           R$ 3.593,58 |
+| 2026-02      |      3 |           R$ 3.730,30 |
+| 2026-01      |      5 |           R$ 3.678,91 |
+| 2025-12      |      3 |           R$ 4.763,28 |
+| 2025-11      |      3 |           R$ 3.872,17 |
+| 2025-10      |      7 |           R$ 4.830,21 |
+| **12 meses** | **46** |      **R$ 52.241,61** |
+
+O critério de pareamento é **valor oposto + mesma data + contas diferentes + contraparte própria nas DUAS pernas**.
+
+⚠️ **A contraparte não é enfeite do critério — sem ela o pareamento APAGA despesa real.** Nos dados do dono, valor+data sozinhos casam uma saída de R$ 50 do Nubank (2026-06-25) com um `Pix recebido - Livia R P Oliveira` no Inter: duas movimentações distintas que coincidiram. Parear esse "par" esconderia um gasto de verdade do relatório, em silêncio. Os nomes próprios ficam em `settings` (chave `transfer:self_names`, JSON de strings), editáveis em `#/config` → "Transferências entre as suas contas". **Lista vazia não pareia nada** — fail closed de propósito: errar pra menos deixa o número inflado e visível, errar pra mais some com despesa.
+
+**Quem dispara:** `importTransactions()` roda o pareamento no fim de cada import, restrito à janela de datas da remessa (no D1 "rows read" cobra linha ESCANEADA — varrer o ledger inteiro a cada import sairia da cota). Como cada chamada recebe UMA `account_id`, quem fecha o par é sempre a segunda perna a ser importada. `POST /api/transfers/pair` passa no ledger inteiro — existe pro backfill de quem já tinha extrato importado antes deste módulo, e pra quando um nome próprio novo é cadastrado; aceita `?dry_run=1` e `?from=`/`?to=`.
+
+## PJ/PF: a conta é o default, a linha é a verdade
+
+O schema `0001` define `transactions.is_business` como a etiqueta final de PJ/PF, com `accounts.scope` valendo só como default ("na prática gasto de PJ cai em cartão PF"). **Esse default nunca era aplicado no import:** `importTransactions()` gravava `row.is_business ?? 0` — um zero fixo.
+
+**MEDIDO em produção (2026-09-22): as 697 transações do ledger tinham `is_business = 0`, inclusive as 93 da conta PJ.** O campo era uniformemente zero, ou seja, sem informação nenhuma — qualquer relatório por escopo responderia "tudo PF". O ledger inteiro veio do Pluggy, então não havia uma única linha correta para o caso contrário.
+
+Corrigido em duas metades, que só funcionam juntas:
+
+- **Código:** `importTransactions()` herda `accounts.scope` (`is_business ?? (scope === 'PJ' ? 1 : 0)`). Um `is_business` explícito na linha continua vencendo — o override do schema segue vivo.
+- **Dado:** `migrations/0011_is_business_from_account_scope.sql` acerta o histórico. Sem ela, o filtro por escopo responderia certo pro import novo e errado pra todo o passado.
+
+`byCategory(db, { competence, scope? })` filtra por `t.is_business`, **nunca por `accounts.scope`** — é a linha que manda. Sem `scope`, soma os dois (comportamento histórico, preservado pros consumidores antigos).
+
+`insightNumbers()` devolve `total_pf_cents`/`total_pj_cents` e `variation_pf_cents`/`variation_pf_pct` no MESMO payload — não uma rota nova nem um parâmetro novo. Motivo: três telas (`FaixaKpiInicio`, `BlocoCategorias`, `#/insight`) compartilham `GET /api/insights/numbers?competence=…`, e o `buscarUmaVez` (`web/src/lib/requisicao-unica.ts`) junta as chamadas concorrentes **pelo `path` exato** — um `?scope=PF` só no KPI viraria uma segunda requisição, quebrando a promessa de "nenhuma requisição nova" da régua.
+
+⚠️ **O KPI "Gasto em <mês>" mostra PF, e a variação ao lado também é PF.** Mostrar valor de PF com variação calculada sobre PJ+PF seriam duas respostas para perguntas diferentes coladas no mesmo card — exatamente a classe de erro que esta fatia existe pra matar. A PJ aparece declarada (`+ R$ X na PJ`), nunca somada por baixo, e some do card quando é zero.
+
+⚠️ **`formatBRL` LANÇA `RangeError` em `NaN`** (`packages/tools/src/money.ts`), e a régua vive dentro da árvore do `App`: um payload sem o campo derrubava a tela INTEIRA em branco, não só o card — medido quando `total_pf_cents` entrou e as fixtures de `App.test.tsx`/`home.test.tsx` ainda não tinham o campo. Por isso o valor passa por `valorOuTraco()`, que devolve `'—'`. Cair pra zero seria pior que a tela branca: um gasto de verdade apareceria como "não gastei nada".
+
 ## Relatório por categoria (`GET /api/reports/by-category`, Task 5)
 
 `GET /api/reports/by-category?competence=YYYY-MM` alimenta o bloco "para onde foi o dinheiro" da home (Task 8). `byCategory(db, { competence })` devolve `{ competence, rows: { category_id, category_name, category_slug, total_cents }[], total_cents }` — uma lista, não a matriz de `commitments()`.
@@ -2738,15 +2785,20 @@ Migrations to be applied:
 
 Depois do `apply`, um `list --remote` novo devolve **✅ No migrations to apply!** (mesmo texto que o `--local` já devolve hoje, verificado nesta task). Sem down migration — se o schema sair errado, a correção é uma migration nova, nunca editar uma já rodada com `--remote`. Índice no D1 também não é alterável, só dropado (irreversível) e recriado — `0003` e `0004` já são essa decisão tomada conscientemente (ver seção _Migrations_ acima).
 
-⚠️ **`0009_rules.sql` (regras de categorização) e `0008_tx_purchase_date_idx.sql` (extrato paginado) também estão pendentes em produção** — escritas, aplicadas só localmente pela suíte, NUNCA rodadas contra o D1 remoto por um agente. O comando é o mesmo do topo desta seção:
+**Correção de fato (2026-09-21): não há mais migration pendente em produção.** As versões anteriores desta seção listavam `0006_recurring_expenses.sql`, `0008_tx_purchase_date_idx.sql` e `0009_rules.sql` como pendentes, com "ação manual do dono" — desde então foram aplicadas. MEDIDO no deploy do redesign da SPA:
+
+```
+$ wrangler d1 migrations list piluvitu-financas --remote
+✅ No migrations to apply!
+```
+
+O comando de aplicar continua sendo o do topo desta seção, e continua manual — ele aplica todas as pendentes na ordem numérica, numa tacada só:
 
 ```bash
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote
 ```
 
-Ele aplica todas as pendentes na ordem numérica, numa tacada só. Ação manual do dono.
-
-⚠️ **`0006_recurring_expenses.sql` (Task 1 da fatia ⑥) se junta à lista de pendentes em produção** — aplicada só `--local` nesta task (ver seção _Migrations_ → `0006_recurring_expenses.sql` acima); o mesmo `wrangler d1 migrations apply piluvitu-financas --remote` do topo desta seção aplica ela junto com qualquer outra migration anterior que ainda esteja pendente, na ordem numérica, numa tacada só. Não rodado por mim — ação manual do dono.
+⚠️ **Rodar `list --remote` antes de acreditar nesta seção.** Toda migration nova nasce pendente em produção, e o texto acima só vale até a próxima — é o `list` que é a verdade, não o parágrafo.
 
 ### 3. Secrets em produção (`wrangler secret put`, rodar manualmente)
 
@@ -4083,3 +4135,79 @@ Ele já estava na escala certa (24px) desde a fatia _Fazer os números falarem_,
 **SPA 717 → 718.** Worker **847**, `packages/ui` **97**, `packages/tools` **158** — intocados. Bundle: JS 514,08 → 514,13 kB (**156,51 gzip, estável**), CSS **8,12 gzip, intocado**, chunk lazy **113,31 gzip, intocado**.
 
 **Fora de escopo, registrado:** os dois achados pré-existentes da tabela acima (`divida-<id>-falta` e `manchete-total` em 2 caixas de linha a 768) — os dois pedem decisão de LAYOUT (rótulo acima / número em linha própria) na linha da dívida e na manchete do Comprometido, não de escala, e nenhum dos dois estava nesta fatia.
+
+## Redesenho das 14 telas (handoff `docs/design_handoff_financas_redesign/`)
+
+Redesenho **visual** de `web/` inteiro: hierarquia tipográfica, anatomia de card, densidade e um cabeçalho de página igual em toda tela. **Nenhuma rota nova, nenhuma tela nova, nenhum `data-testid` renomeado** — os 794 testes da SPA são o contrato, e passaram sem nenhuma asserção reescrita.
+
+### Os primitivos novos (é onde a linguagem mora)
+
+| Arquivo                         | O que resolve                                                                                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web/src/lib/superficie.ts`     | A anatomia das superfícies: `CARTAO_SECAO`, `CARTAO_KPI`, `PAINEL_SUNKEN`, `SUBCARTAO`, `LINHA_LISTA`, `CHIP_MONO`, `FAIXA_ALERTA`, `GRID_KPI`, `GRID_BLOCOS`, `TRILHO_BARRA` |
+| `web/src/lib/tipografia.ts`     | Ganhou `OVERLINE`, `SUBTITULO_PAGINA`, `META_MONO`, `VALOR_LINHA`, `TITULO_LINHA` — ao lado dos já existentes `ROTULO`/`ROTULO_SECAO`/`NUMERO_*`                              |
+| `web/src/blocos/KpiCard.tsx`    | `KpiCard` + `FaixaKpi` — a régua de 2–4 números que abre cada tela                                                                                                            |
+| `web/src/blocos/ChipEscopo.tsx` | A pílula PJ × PF, usada por Saldos e Contas                                                                                                                                   |
+| `web/src/lib/paleta.ts`         | `LEGENDA_CORES` — a paleta NEUTRA (`--chart-1..5` + `--primary`) das legendas de série                                                                                        |
+
+⚠️ **Os nomes de raio do Tailwind não batem com os px do design, e isso já mordeu.** `packages/ui/src/styles.css` reaponta `--radius-lg` pra `--radius` (18px) e deixa `--radius-xl` no default (12px) — ou seja, **`rounded-lg` é MAIOR que `rounded-xl` neste design system**. Escrever o raio à mão em cada call site é como a divergência entra; `CARTAO_SECAO`/`CARTAO_KPI`/`PAINEL_SUNKEN` já carregam o certo.
+
+⚠️ **"Sunken" é `bg-background`, nunca `bg-muted`.** `--background` fica dos DOIS lados de `--card` (mais escuro que o branco do card no claro, mais escuro que o cinza do card no escuro), então a mesma classe funciona nos dois temas sem uma segunda declaração. `--muted` tem o mesmo valor de `--secondary`, já gasto em chip.
+
+### `KpiCard` × `NumeroCard` — os dois continuam existindo, e o motivo
+
+`NumeroCard` recebe `valorCents` e decide escala/centavos por conta própria (a regra medida de quantos dígitos cabem num grid de 2 colunas). `KpiCard` recebe o valor **já formatado**, porque metade das faixas de KPI do módulo mostra FAIXA (`52% a 68%`, `entre 2,6 e 3,3 meses`) ou contagem, não centavos. Onde os dois aparecem lado a lado (`#/dividas`), o `NumeroCard` é o herói (30px) e os `KpiCard` são a régua (28px) — de propósito.
+
+### O cabeçalho de página mora em `App.tsx`, junto do `<h1>`
+
+`CabecalhoDaPagina` = overline do grupo + `<h1>` + chip de competência. O **overline é derivado de `GRUPOS`** (`GRUPO_DA_ROTA`), nunca um segundo mapa: um grupo renomeado no nav renomeia o overline junto.
+
+⚠️ **`comTitulo={false}` no celular, e não é cosmético:** lá o `<h1>` já mora na top bar fixa. Renderizar os dois faria todo `getByRole('heading', { name: 'Extrato' })` da suíte achar DOIS — o mesmo defeito que `useMenorQueMd` evita do lado do nav.
+
+⚠️ **O SUBTÍTULO não subiu pro shell.** Ele continua sendo a primeira linha de cada página (`SUBTITULO_PAGINA`), porque metade dos testes renderiza a PÁGINA sozinha (`render(<ExtratoPage />)`) e afere esse texto — movê-lo pro `App.tsx` o tiraria da árvore desses testes.
+
+### `lib/requisicao-unica.ts` + `lib/em-voo.ts` — a faixa de KPIs da home sai de graça
+
+`buscarUmaVez(path)` junta chamadas **concorrentes** ao mesmo path numa requisição só. Sem isso, `FaixaKpiInicio` somaria 4 requisições à primeira tela do app (ela lê as MESMAS rotas que os 4 blocos abaixo já buscam).
+
+⚠️ **Não é cache — a entrada morre quando a promessa assenta.** Um cache de verdade faria a home mostrar número velho depois de um lançamento novo. Há teste explícito do contrapositivo (`NÃO é cache: depois de assentar, a próxima chamada busca de novo`).
+
+⚠️ **O registro (`emVoo`) mora num módulo PRÓPRIO por causa do `vi.mock`.** `web/src/test/setup.ts` zera o registro entre casos; importá-lo de `requisicao-unica.ts` arrastaria `api.ts` junto, e o setup roda ANTES da hoisting do `vi.mock('../api')` de cada arquivo — o módulo ficaria instanciado com o `api` REAL em cache e todo `vi.mock` dele deixaria de valer. **MEDIDO:** os 4 casos de `requisicao-unica.test.ts` caíam em `fetch` de verdade (`TypeError: Failed to parse URL from /api/debts`).
+
+### `composition` em `GET /api/reports/commitments` — o único ajuste de backend
+
+`commitments()` passou a devolver, por competência, `composition: { parcelas_cents, dividas_cents, recorrentes_cents: {min,max} }`. **Nenhuma query nova:** as três origens já eram consultadas separadamente dentro da função e depois somadas numa coisa só; `rows` mistura parcela e dívida de propósito (a dívida entra como conta pseudo `debt:<id>` pra aparecer na matriz), então decompor no cliente exigiria adivinhar pelo prefixo do `account_id`.
+
+⚠️ **Só `recorrentes` é faixa.** Parcela prevista e dívida aberta são valores EXATOS; a incerteza do comprometido vem unicamente da projeção de recorrente (o DAS de R$ 12 a R$ 600). Dar faixa aos três esconderia qual parte é incerta. Invariante coberto por teste: `parcelas + dividas + recorrentes === totals`, em toda competência — sem ele, a legenda de origem poderia não fechar com a manchete do mesmo card.
+
+⚠️ **No cliente o campo é OPCIONAL** (`CommitmentReportView.composition?`): é informação ADICIONAL sobre o mesmo total, e um payload sem ela tem que continuar desenhando manchete e gráfico normalmente. Tratar como obrigatório trocaria "falta um detalhe" por "o card inteiro quebra".
+
+### O que o handoff pediu e NÃO foi feito — com o motivo
+
+| Pedido do handoff                                              | O que foi entregue                                                                                               | Por quê                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Comprometido: barra EMPILHADA por parcelas/dívidas/recorrentes | Barra continua empilhando **piso/teto** (a faixa); a composição virou **legenda de texto** com os valores        | 26 casos de `GraficoComprometido.test.tsx` travam contagem de retângulos, `fill` por índice, `fill-opacity` do segmento de incerteza e o contorno tracejado do risco — a redundância NÃO-CROMÁTICA medida (`--primary` × `--destructive` a 1,80:1 claro / 1,31:1 escuro). Reempilhar por origem tiraria da barra o único sinal de incerteza que ela tem |
+| Categorias: rosca de 134px                                     | Barras horizontais (como já era) + **legenda nova** com bolinha, nome, valor e % do total                        | `GraficoCategorias` tem contrato próprio (uma barra por linha, cor distinta pro bucket `category_id === null`, valor em BRL ao lado de CADA barra)                                                                                                                                                                                                      |
+| Escala 34px herói / 28px KPI / 25px sub-bloco                  | 30px (`text-3xl`) herói e 24px (`text-2xl`) sub-bloco; **28px só nos `KpiCard`** (elementos novos, sem contrato) | `reserva`/`accounts`/`insight`/`NumeroCard`/`BlocoSaldos`/`BlocoDividas`/`BlocoCategorias` aferem `text-3xl`/`text-2xl` literalmente. `cn()` deixa só uma classe de tamanho sobreviver, então não dá pra ter as duas                                                                                                                                    |
+| Extrato: busca com ícone na faixa de filtro                    | Busca continua DENTRO do `Sheet`                                                                                 | `extrato.test.tsx` afere `queryByLabelText(/Buscar/)` **ausente** com o painel fechado ("nenhum controle de filtro ocupa a tela antes do dono pedir")                                                                                                                                                                                                   |
+| Dívidas/Contas: lista no lugar da tabela                       | **Extrato** virou lista única (sem `overflow-x-auto`, sem markup duplicado); Dívidas e Contas mantêm tabela      | `DividasPage.test.tsx` afere `getByRole('table')` em ≥sm E a troca por cards em resize runtime; `accounts.test.tsx` afere um `columnheader` chamado "Saldo" com as classes de `ROTULO`                                                                                                                                                                  |
+| Dívida/detalhe: meta mono "ABERTA EM … · PAI"                  | `% quitado · N pagamento(s) · situação`                                                                          | `DebtDetailView` não traz `payee_name` nem `opened_at` — seria campo novo, e o handoff proíbe                                                                                                                                                                                                                                                           |
+| Categorias estruturais "sem ações"                             | Borda **tracejada**, ações mantidas                                                                              | Esconder ação é mudança de COMPORTAMENTO, não de estilo; quem recusa arquivar categoria estrutural é o servidor                                                                                                                                                                                                                                         |
+
+### Fontes e fundo (`web/index.html` + `web/src/styles.css`)
+
+`--font-sans`/`--font-mono` de `@piluvitu/ui` resolvem `var(--font-plus-jakarta, …)` / `var(--font-jetbrains, …)`. No `apps/web` quem define essas duas é o `next/font`; **esta SPA não tinha nenhuma das duas** e caía inteira no fallback `ui-sans-serif`/`ui-monospace` — o rótulo em versalete mono, que é a assinatura do design system, saía na monoespaçada do sistema. Resolvido com `<link>` pro Google Fonts em `index.html` (com `preconnect` + `display=swap`) e as duas custom properties em `:root`.
+
+O fundo da página ganhou `radial-gradient(70% 45% at 50% 0%, var(--color-accent-soft), transparent 70%)` — o mesmo brilho do topo do `apps/web`. `--accent-soft` já é translúcido, então funciona nos dois temas sem uma segunda declaração; **sem `background-attachment: fixed`** de propósito (o gradiente é do TOPO da página, não da viewport — rolando, sai de cena junto com o cabeçalho).
+
+### Dois defeitos que só apareceram RENDERIZANDO — nenhum teste os pegava
+
+⚠️ **`CommitmentsPage` lançava no render com `competences: []`.** A faixa de KPIs indexava `pct_of_fixed_net[0]`/`totals[0]` sem checar — e esse é o payload real de um banco recém-criado. Um throw no render **não fica contido no card**: o React desmonta a árvore inteira, e a CASCA (sidebar, tab bar, título) vai junto. O sintoma medido foi um `getByRole('link', { name: 'Comprometido' })` falhando em `App.test.tsx` — o nav sumindo por causa do conteúdo. Coberto agora por `CommitmentsPage — janela vazia não pode derrubar a tela`.
+
+⚠️ **A coluna de data do extrato transbordava POR CIMA da descrição.** O desenho pede 46px; `formatarData` devolve `28/09/2026` — dez caracteres em mono. Corrigido pra `w-[68px]` + `whitespace-nowrap`. Na mesma linha, `classeValor` perdeu o `whitespace-nowrap` que vinha da `<td>` da tabela antiga e precisou recuperá-lo explicitamente (`VALOR_LINHA`).
+
+⚠️ **O medidor da Reserva mentia sobre posição.** As marcas `2,6 / 3,3 / 6,0` saíam com `justify-between` (0% / 50% / 100%) enquanto as posições reais no trilho eram 39% / 50% / 91%. Viraram uma linha mono única (`piso 2,6 · teto 3,3 · meta 6,0 meses`) — número sob uma escala, no lugar errado, é pior que número nenhum: parece medição e não é.
+
+### Flakiness PRÉ-EXISTENTE da suíte da SPA (não é do redesenho)
+
+Rodando `vitest run` completo (46 arquivos em paralelo), 1–3 casos falham intermitentemente **por timeout de 5000ms**, nunca por asserção — e variam de arquivo a arquivo (`importar`, `transferir`, `extrato`). **CONFIRMADO pré-existente:** com `pages/importar.tsx` revertido pro estado anterior ao redesenho, 4 execuções deram 3 / 2 / 1 / 0 falhas, nas mesmas condições. Rodando arquivo a arquivo, 5/5 execuções verdes. Se um CI vermelho apontar pra um desses casos, **re-rodar antes de investigar** — e a correção de verdade é `testTimeout`/concorrência em `vite.config.ts`, não o código de tela.

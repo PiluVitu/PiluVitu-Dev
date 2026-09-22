@@ -15,10 +15,33 @@ export type CommitmentCell = {
  */
 export type CommitmentRange = { min: number; max: number }
 
+/**
+ * De ONDE vem o comprometido de uma competencia — as tres origens que
+ * `commitments()` ja consulta separadamente e depois somava numa coisa so.
+ *
+ * ⚠️ **Nenhuma query nova: os tres numeros ja existiam dentro da funcao.**
+ * `rows` mistura parcela e divida de proposito (a divida entra como conta
+ * pseudo `debt:<id>` pra aparecer na matriz por conta), entao decompor a
+ * partir de `rows` no cliente exigiria adivinhar pelo prefixo do
+ * `account_id` — frageis os dois lados. Aqui a separacao e a original.
+ *
+ * ⚠️ **So `recorrentes` e faixa.** Parcela prevista e divida aberta sao
+ * valores EXATOS (ja lancados/ja contraidos); a incerteza do comprometido
+ * vem unicamente da projecao de recorrente em faixa (o DAS de R$ 12 a
+ * R$ 600). Dar faixa aos tres esconderia justamente qual parte e incerta.
+ */
+export type CommitmentComposition = {
+  parcelas_cents: number
+  dividas_cents: number
+  recorrentes_cents: CommitmentRange
+}
+
 export type CommitmentReport = {
   competences: string[]
   rows: Array<{ account_id: string; account_name: string; cells: number[] }>
   totals: CommitmentRange[]
+  /** Por competencia, alinhado com `competences`/`totals`. */
+  composition: CommitmentComposition[]
   fixed_net_cents: number
   pct_of_fixed_net: CommitmentRange[]
 }
@@ -107,15 +130,26 @@ export async function commitments(
     return row
   }
 
+  // As duas origens EXATAS somadas em paralelo a `rows`, por competencia —
+  // e o que sustenta `composition` sem nenhuma query a mais. `rows` continua
+  // misturando as duas (a matriz por conta precisa disso); estes dois
+  // acumuladores guardam a separacao que `rows` perde.
+  const parcelas = competences.map(() => 0)
+  const dividasPorCompetencia = competences.map(() => 0)
+
   for (const cell of previstas.results) {
     const i = slot.get(cell.competence)
     if (i === undefined) continue
     ensure(cell.account_id, cell.account_name).cells[i] += cell.committed_cents
+    parcelas[i] += cell.committed_cents
   }
 
   for (const d of dividas.results) {
     ensure(`debt:${d.debt_id}`, `Divida — ${d.title}`).cells[0] +=
       d.remaining_cents
+    // Slot 0 pelo mesmo motivo da linha acima: sem cronograma, o saldo
+    // inteiro cai na competencia mais proxima (leitura conservadora).
+    dividasPorCompetencia[0] += d.remaining_cents
   }
 
   const rows = [...byId.values()].sort((a, b) =>
@@ -140,8 +174,20 @@ export async function commitments(
     min: fixed_net_cents > 0 ? Math.round((t.min * 100) / fixed_net_cents) : 0,
     max: fixed_net_cents > 0 ? Math.round((t.max * 100) / fixed_net_cents) : 0,
   }))
+  const composition: CommitmentComposition[] = competences.map((c, i) => ({
+    parcelas_cents: parcelas[i],
+    dividas_cents: dividasPorCompetencia[i],
+    recorrentes_cents: recurring.get(c) ?? { min: 0, max: 0 },
+  }))
 
-  return { competences, rows, totals, fixed_net_cents, pct_of_fixed_net }
+  return {
+    competences,
+    rows,
+    totals,
+    composition,
+    fixed_net_cents,
+    pct_of_fixed_net,
+  }
 }
 
 export type CategoryRow = {
@@ -190,7 +236,7 @@ const BY_CATEGORY_LIMIT = 500
  */
 export async function byCategory(
   db: D1Database,
-  opts: { competence: string },
+  opts: { competence: string; scope?: 'PJ' | 'PF' },
 ): Promise<ByCategoryReport> {
   // addMonthsToCompetence(x, 0) valida o formato 'YYYY-MM' (lanca RangeError
   // se ausente/malformado) e devolve a mesma competencia — reusa a mesma
@@ -224,6 +270,16 @@ export async function byCategory(
   // perna de transferencia e filha de rateio repetem o valor da outra
   // perna/do pai. GROUP BY t.category_id agrupa sozinho todo NULL na mesma
   // linha (regra padrao do SQL), o que da o bucket "Sem categoria" de graca.
+  // is_business (do LANCAMENTO), nunca accounts.scope: o schema define a
+  // conta como DEFAULT e a linha como verdade final, justamente porque gasto
+  // de PJ cai em cartao PF. Ver "PJ/PF: a conta e o default, a linha e a
+  // verdade" no CLAUDE.md.
+  const filtroEscopo = opts.scope === undefined ? '' : 'AND t.is_business = ?'
+  const bindsEscopo =
+    opts.scope === undefined
+      ? [from, to, BY_CATEGORY_LIMIT]
+      : [from, to, opts.scope === 'PJ' ? 1 : 0, BY_CATEGORY_LIMIT]
+
   const res = await db
     .prepare(
       `SELECT c.id                             AS category_id,
@@ -237,11 +293,12 @@ export async function byCategory(
           AND t.amount_cents  <  0
           AND t.transfer_id   IS NULL
           AND t.parent_id     IS NULL
+          ${filtroEscopo}
         GROUP BY t.category_id
         ORDER BY total_cents ASC
         LIMIT ?`,
     )
-    .bind(from, to, BY_CATEGORY_LIMIT)
+    .bind(...bindsEscopo)
     .all<CategoryRow>()
 
   const rows = res.results

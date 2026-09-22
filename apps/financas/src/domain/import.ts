@@ -1,6 +1,7 @@
 import type { LinhaImportada } from '@piluvitu/tools/import'
 import { billCompetence, isRealCalendarDate, nowIsoUtc } from '../lib/dates'
 import { newId } from '../lib/ids'
+import { parearTransferencias } from './transfer-pairing'
 
 /**
  * Fatia ② (docs/superpowers/specs/2026-07-27-financas-import-design.md).
@@ -127,6 +128,14 @@ function insertStatements(
  * que esta fatia existe pra capturar. Conta que não é cartão grava NULL —
  * só cartão tem fatura.
  */
+// `to` da janela de pareamento e EXCLUSIVO; sem somar um dia, a remessa de
+// um unico dia consultaria um intervalo vazio.
+function diaSeguinte(dia: string): string {
+  const d = new Date(`${dia}T00:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 export async function importTransactions(
   db: D1Database,
   input: ImportRequest,
@@ -147,9 +156,14 @@ export async function importTransactions(
   // importado hoje entraria no livro-caixa mas NUNCA apareceria no
   // Comprometido, a tela que este módulo existe pra alimentar.
   const account = await db
-    .prepare('SELECT id, kind, closing_day FROM accounts WHERE id = ?')
+    .prepare('SELECT id, kind, closing_day, scope FROM accounts WHERE id = ?')
     .bind(input.account_id)
-    .first<{ id: string; kind: string; closing_day: number | null }>()
+    .first<{
+      id: string
+      kind: string
+      closing_day: number | null
+      scope: string
+    }>()
   if (!account) {
     throw new ImportError('invalid_account', 'conta não encontrada')
   }
@@ -238,7 +252,7 @@ export async function importTransactions(
       row.description,
       row.payee_id ?? null,
       row.category_id ?? null,
-      row.is_business ?? 0,
+      row.is_business ?? (account.scope === 'PJ' ? 1 : 0),
       null, // transfer_id
       null, // parent_id
       row.imported_id,
@@ -250,6 +264,16 @@ export async function importTransactions(
 
   if (txRows.length > 0) {
     await db.batch(insertStatements(db, txRows))
+    // A perna que fecha a transferencia chega em OUTRA chamada (uma
+    // account_id por requisicao), entao quem pareia e sempre a segunda a
+    // ser importada. Janela restrita as datas desta remessa: no D1 "rows
+    // read" cobra linha ESCANEADA, e uma varredura do ledger inteiro a
+    // cada import sairia da cota. Ver domain/transfer-pairing.ts.
+    const datas = txRows.map((r) => r[6] as string).sort()
+    await parearTransferencias(db, {
+      from: datas[0],
+      to: diaSeguinte(datas[datas.length - 1]),
+    })
   }
 
   return { total, imported: txRows.length, skipped }

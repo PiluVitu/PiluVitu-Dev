@@ -117,11 +117,19 @@ export type InsightNumbers = {
   /** Maiores despesas do período — os N primeiros de byCategory(), sem reordenar. */
   top_categories: CategoryRow[]
   total_cents: number
+  /** Só `is_business = 0` — o gasto pessoal. Mesmo sinal cru de `total_cents`. */
+  total_pf_cents: number
+  /** Só `is_business = 1` — o gasto da empresa. Mesmo sinal cru. */
+  total_pj_cents: number
   previous_total_cents: number
   /** |current| - |previous|. Positivo = gastou mais que no período anterior. */
   variation_cents: number
   /** null quando o período anterior não teve gasto nenhum (divisão por zero evitada). */
   variation_pct: number | null
+  /** Mesma conta de `variation_cents`, só sobre `is_business = 0`. */
+  variation_pf_cents: number
+  /** Mesma conta de `variation_pct`, só sobre `is_business = 0`. */
+  variation_pf_pct: number | null
   biggest_increase: {
     category_id: string | null
     category_name: string
@@ -141,6 +149,58 @@ export type InsightNumbers = {
  * tabela `insights`: funciona igual, com o mesmo resultado, quer o comando
  * do Mac já tenha rodado alguma vez ou não.
  */
+// UMA query agregada em vez de duas chamadas extras a byCategory(): o mesmo
+// predicado (despesa, sem perna de transferencia, sem filha de rateio), so
+// que quebrado por is_business. byCategory corta em BY_CATEGORY_LIMIT (500)
+// e este SUM nao — divergiriam se um mes tivesse mais de 500 categorias,
+// cenario que este livro-caixa nao alcanca.
+async function totaisPorEscopo(
+  db: D1Database,
+  competence: string,
+): Promise<{ total_pf_cents: number; total_pj_cents: number }> {
+  const from = `${competence}-01`
+  const to = `${addMonthsToCompetence(competence, 1)}-01`
+  const res = await db
+    .prepare(
+      `SELECT t.is_business AS escopo, SUM(t.amount_cents) AS total_cents
+         FROM transactions t
+        WHERE t.purchase_date >= ?
+          AND t.purchase_date <  ?
+          AND t.amount_cents  <  0
+          AND t.transfer_id   IS NULL
+          AND t.parent_id     IS NULL
+        GROUP BY t.is_business`,
+    )
+    .bind(from, to)
+    .all<{ escopo: number; total_cents: number }>()
+
+  let total_pf_cents = 0
+  let total_pj_cents = 0
+  for (const linha of res.results) {
+    if (linha.escopo === 1) total_pj_cents = linha.total_cents
+    else total_pf_cents = linha.total_cents
+  }
+  return { total_pf_cents, total_pj_cents }
+}
+
+// "Quanto subiu contra o periodo anterior" e pergunta sobre MAGNITUDE de
+// gasto: os dois lados chegam negativos, e usar o valor cru inverteria o
+// sinal (gastar mais viraria variacao negativa). Extraida pra que a versao
+// combinada e a de PF nao possam divergir.
+function variacao(
+  atual_cents: number,
+  anterior_cents: number,
+): { variation_cents: number; variation_pct: number | null } {
+  const atual = Math.abs(atual_cents)
+  const anterior = Math.abs(anterior_cents)
+  const variation_cents = atual - anterior
+  return {
+    variation_cents,
+    variation_pct:
+      anterior !== 0 ? Math.round((variation_cents * 100) / anterior) : null,
+  }
+}
+
 export async function insightNumbers(
   db: D1Database,
   opts: { competence: string },
@@ -163,14 +223,22 @@ export async function insightNumbers(
   // gasto, e usar o total_cents cru (negativo) inverteria o sinal do
   // resultado (gastar MAIS viraria uma variação NEGATIVA).
   const total_cents = current.total_cents
+  const [
+    { total_pf_cents, total_pj_cents },
+    { total_pf_cents: previous_pf_cents },
+  ] = await Promise.all([
+    totaisPorEscopo(db, competence),
+    totaisPorEscopo(db, previous_competence),
+  ])
   const previous_total_cents = previous.total_cents
-  const currentMagnitude = Math.abs(total_cents)
-  const previousMagnitude = Math.abs(previous_total_cents)
-  const variation_cents = currentMagnitude - previousMagnitude
-  const variation_pct =
-    previousMagnitude !== 0
-      ? Math.round((variation_cents * 100) / previousMagnitude)
-      : null
+  const { variation_cents, variation_pct } = variacao(
+    total_cents,
+    previous_total_cents,
+  )
+  const {
+    variation_cents: variation_pf_cents,
+    variation_pct: variation_pf_pct,
+  } = variacao(total_pf_cents, previous_pf_cents)
 
   // "O que mais cresceu": maior aumento de MAGNITUDE de gasto por
   // categoria (positivo = cresceu, mesma convenção de variation_cents
@@ -206,9 +274,13 @@ export async function insightNumbers(
     previous_competence,
     top_categories,
     total_cents,
+    total_pf_cents,
+    total_pj_cents,
     previous_total_cents,
     variation_cents,
     variation_pct,
+    variation_pf_cents,
+    variation_pf_pct,
     biggest_increase,
   }
 }

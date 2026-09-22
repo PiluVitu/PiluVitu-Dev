@@ -1,13 +1,16 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { cn } from '@piluvitu/ui/cn'
-import { api, ApiError } from '../api'
+import { ApiError } from '../api'
+import { buscarUmaVez } from '../lib/requisicao-unica'
 import { competenciaAtual } from '../lib/dates'
-import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
+import { FAIXA_ALERTA } from '../lib/superficie'
+import { META_MONO, NUMERO_GRID, ROTULO } from '../lib/tipografia'
 import {
   formatPctRange,
   formatRangeSemCentavos,
   LIMIAR_ALERTA_PCT,
+  origensDaCompetencia,
   rotuloCompetencia,
 } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
@@ -29,7 +32,7 @@ export function BlocoComprometido() {
 
   useEffect(() => {
     let vivo = true
-    api<CommitmentReportView>(
+    buscarUmaVez<CommitmentReportView>(
       `/api/reports/commitments?from=${competenciaAtual()}&months=${MESES}`,
     )
       .then((data) => {
@@ -68,6 +71,7 @@ export function BlocoComprometido() {
           <Suspense fallback={<div aria-busy="true" />}>
             <GraficoComprometido report={report} />
           </Suspense>
+          <Legenda report={report} />
         </div>
       ) : null}
     </Bloco>
@@ -153,11 +157,62 @@ function Manchete({ report }: { report: CommitmentReportView }) {
         <p
           role="alert"
           data-testid="manchete-alerta"
-          className="text-destructive text-xs font-medium"
+          className={cn(FAIXA_ALERTA, 'mt-2 text-xs font-medium')}
         >
           acima de {LIMIAR_ALERTA_PCT}% — mais da metade da renda fixa já está
           prometida antes de qualquer gasto novo
         </p>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * O que a barra empilhada significa (piso × teto) e DE ONDE vem o
+ * comprometido do mês corrente.
+ *
+ * ⚠️ **A composição é texto, não um segundo empilhamento na barra.** A
+ * barra já empilha piso/teto pra representar a FAIXA, e sobrepor a isso um
+ * empilhamento por origem tiraria da barra o único sinal de incerteza que
+ * ela tem. Num card de ~262px (medido), três segmentos a mais também
+ * ficariam finos demais pra distinguir — como texto, cada origem carrega o
+ * valor junto, que a cor nunca diria.
+ */
+function Legenda({ report }: { report: CommitmentReportView }) {
+  const origens = origensDaCompetencia(report.composition?.[0])
+
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="bg-primary size-2.5 shrink-0 rounded-[3px]"
+          />
+          piso (mês bom)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="bg-primary/45 size-2.5 shrink-0 rounded-[3px]"
+          />
+          teto (pior mês)
+        </span>
+      </div>
+      {origens.length > 0 ? (
+        <ul
+          data-testid="origens-comprometido"
+          className="flex flex-wrap gap-x-4 gap-y-1"
+        >
+          {origens.map((o) => (
+            <li key={o.chave} className="flex items-baseline gap-1.5">
+              <span className={META_MONO}>{o.rotulo}</span>
+              <span className="text-xs font-semibold tabular-nums">
+                {o.texto}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   )

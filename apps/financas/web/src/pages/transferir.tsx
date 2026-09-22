@@ -3,6 +3,7 @@ import { formatBRL, parseBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
+import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
@@ -12,6 +13,8 @@ import { isRealCalendarDate, todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import type { AccountView } from './accounts'
+import { CARTAO_SECAO } from '../lib/superficie'
+import { ROTULO } from '../lib/tipografia'
 import { AbasLancar } from './new-entry'
 
 /**
@@ -258,11 +261,11 @@ export function TransferirPage() {
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
-    <section className="space-y-6" data-testid="pagina-transferir">
+    <section className="space-y-5" data-testid="pagina-transferir">
       <AbasLancar ativo="transferencia" />
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
             Transferência entre contas
             <Ajuda rotulo="Transferência">
               <p>
@@ -457,7 +460,11 @@ export function TransferirPage() {
               </p>
             ) : null}
 
-            <Button type="submit" disabled={enviando}>
+            <Button
+              type="submit"
+              className="min-h-11 rounded-xl"
+              disabled={enviando}
+            >
               {enviando ? 'Transferindo…' : 'Transferir'}
             </Button>
           </form>

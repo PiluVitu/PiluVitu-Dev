@@ -16,7 +16,13 @@ import { Label } from '@piluvitu/ui/label'
 import { api, ApiError } from '../api'
 import { NumeroCard } from '../blocos/NumeroCard'
 import { formatRange } from '../lib/commitments'
-import { ROTULO_SECAO } from '../lib/tipografia'
+import { CARTAO_SECAO, FAIXA_ALERTA } from '../lib/superficie'
+import {
+  META_MONO,
+  ROTULO,
+  ROTULO_SECAO,
+  SUBTITULO_PAGINA,
+} from '../lib/tipografia'
 import { CHECKBOX_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINHA } from '../lib/touch'
@@ -227,10 +233,10 @@ export function ReservaPage() {
       : false
 
   return (
-    <section className="space-y-6" data-testid="pagina-reserva">
+    <section className="space-y-5" data-testid="pagina-reserva">
       {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
-      <div className="flex items-center gap-3">
-        <p className="text-muted-foreground text-sm">
+      <div className="flex items-start gap-2">
+        <p className={SUBTITULO_PAGINA}>
           Quantos meses de custo fixo a reserva cobre hoje.
         </p>
         <Ajuda rotulo="Reserva de emergência">
@@ -313,11 +319,15 @@ export function ReservaPage() {
           }
         />
 
+        {status.meses !== null ? (
+          <MedidorReserva meses={status.meses} meta={status.goal_months} />
+        ) : null}
+
         {alerta ? (
           <p
             role="alert"
             data-testid="alerta-piso"
-            className="text-destructive text-sm font-medium"
+            className={cn(FAIXA_ALERTA, 'font-medium')}
           >
             No pior cenário (custo fixo no teto), a reserva fica abaixo da meta
             de {status.goal_months} meses de sobrevivência.
@@ -325,9 +335,11 @@ export function ReservaPage() {
         ) : null}
       </div>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">Contas designadas</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
+            Contas designadas
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {contas.length === 0 ? (
@@ -386,9 +398,9 @@ export function ReservaPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
             Simulador: à vista × financiado
           </CardTitle>
         </CardHeader>
@@ -532,5 +544,70 @@ export function ReservaPage() {
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+/**
+ * O medidor: a faixa piso→teto de sobrevivência contra a meta.
+ *
+ * ⚠️ **O sinal é o PISO, não o teto** — a inversão que esta tela inteira
+ * carrega em relação ao Comprometido (lá o teto é o perigo, aqui é o piso).
+ * O segmento sólido vai de 0 ao piso: é o que a reserva GARANTE num mês
+ * ruim. O translúcido segue até o teto: é o cenário bom, e ele nunca é o
+ * que decide alerta.
+ *
+ * ⚠️ `--warn`, nunca `--destructive` nem `--success`: a reserva abaixo da
+ * meta não é um erro a corrigir agora (vermelho) nem uma conquista (verde),
+ * é uma situação a acompanhar — e o alerta em texto, logo abaixo, é quem
+ * carrega o significado de verdade.
+ */
+function MedidorReserva({
+  meses,
+  meta,
+}: {
+  meses: { min: number; max: number }
+  meta: number
+}) {
+  // A escala precisa caber a meta E o teto — com escala só até a meta, uma
+  // reserva acima dela sairia grudada no fim do trilho sem mostrar quanto
+  // passou.
+  const escala = Math.max(meta, meses.max) * 1.1 || 1
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / escala) * 100))
+  const n = (v: number) =>
+    v.toLocaleString('pt-BR', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })
+
+  return (
+    <div data-testid="medidor-reserva">
+      <div className="bg-secondary relative h-4 w-full overflow-hidden rounded-full">
+        <div
+          className="bg-warn/35 absolute inset-y-0 left-0 rounded-full"
+          style={{ width: `${pct(meses.max)}%` }}
+        />
+        <div
+          className="bg-warn absolute inset-y-0 left-0 rounded-full"
+          style={{ width: `${pct(meses.min)}%` }}
+        />
+        {/* A meta é uma MARCA no trilho, não um preenchimento: ela é o
+            destino, não parte do que já existe. */}
+        <div
+          aria-hidden="true"
+          className="bg-foreground absolute inset-y-0 w-0.5"
+          style={{ left: `${pct(meta)}%` }}
+        />
+      </div>
+      {/*
+        ⚠️ **Os três números numa linha só, cada um colado ao seu rótulo — e
+        NÃO espalhados por baixo do trilho.** Espalhados com
+        `justify-between` eles caíam em 0%/50%/100% enquanto as posições
+        reais eram 39%/50%/91%: um número sob uma escala, no lugar errado,
+        é pior que número nenhum — parece medição e não é.
+      */}
+      <p className={cn(META_MONO, 'mt-2')}>
+        piso {n(meses.min)} · teto {n(meses.max)} · meta {n(meta)} meses
+      </p>
+    </div>
   )
 }

@@ -101,9 +101,13 @@ function mockFetchVazio() {
           previous_competence: '',
           top_categories: [],
           total_cents: 0,
+          total_pf_cents: 0,
+          total_pj_cents: 0,
           previous_total_cents: 0,
           variation_cents: 0,
           variation_pct: null,
+          variation_pf_cents: 0,
+          variation_pf_pct: null,
           biggest_increase: null,
         })
       }

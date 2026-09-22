@@ -1,0 +1,88 @@
+/* PiluVitu DS — color tokens. HSL triplets (no hsl() wrapper) so consumers can
+   do hsl(var(--x) / <alpha>). Ground truth: packages/ui/src/styles.css in
+   PiluVitu/PiluVitu-Dev. Light-theme luminosity is WCAG-measured — do not
+   lighten --primary/--destructive/--success/--warn back down. */
+:root {
+  --background: 220 50% 98%; /* @kind color */
+  --foreground: 222 36% 9%; /* @kind color */
+  --card: 0 0% 100%; /* @kind color */
+  --card-foreground: 222 36% 9%; /* @kind color */
+  --popover: 0 0% 100%; /* @kind color */
+  --popover-foreground: 222 36% 9%; /* @kind color */
+  --primary: 198 93% 26%; /* @kind color */
+  --primary-foreground: 0 0% 100%; /* @kind color */
+  --secondary: 216 42% 95%; /* @kind color */
+  --secondary-foreground: 222 36% 9%; /* @kind color */
+  --muted: 216 42% 95%; /* @kind color */
+  --muted-foreground: 215 18% 35%; /* @kind color */
+  --accent: 216 43% 93%; /* @kind color */
+  --accent-foreground: 222 36% 9%; /* @kind color */
+  --destructive: 0 84% 47%; /* @kind color */
+  --destructive-foreground: 0 0% 100%; /* @kind color */
+  --border: 216 30% 88%; /* @kind color */
+  --input: 216 30% 88%; /* @kind color */
+  --ring: 198 93% 26%; /* @kind color */
+  --success: 158 64% 29%; /* @kind color */
+  --success-foreground: 0 0% 100%; /* @kind color */
+  --ok: 158 64% 29%; /* @kind color */
+  --ok-foreground: 0 0% 100%; /* @kind color */
+  --warn: 38 92% 31%; /* @kind color */
+  --warn-foreground: 0 0% 100%; /* @kind color */
+  --win: 255 60% 60%; /* @kind color */
+  --win-foreground: 0 0% 100%; /* @kind color */
+  --chart-1: 198 93% 60%; /* @kind color */
+  --chart-2: 158 64% 40%; /* @kind color */
+  --chart-3: 38 92% 50%; /* @kind color */
+  --chart-4: 255 60% 60%; /* @kind color */
+  --chart-5: 340 75% 55%; /* @kind color */
+  /* Brand translucent overlays — static (sky-400), not derived from --primary */
+  --accent-soft: rgb(56 189 248 / 0.13); /* @kind color */
+  --accent-line: rgb(56 189 248 / 0.32); /* @kind color */
+}
+.dark {
+  --background: 220 33% 5%; /* @kind color */
+  --foreground: 215 33% 93%; /* @kind color */
+  --card: 222 36% 9%; /* @kind color */
+  --card-foreground: 215 33% 93%; /* @kind color */
+  --popover: 222 36% 9%; /* @kind color */
+  --popover-foreground: 215 33% 93%; /* @kind color */
+  --primary: 198 93% 60%; /* @kind color */
+  --primary-foreground: 200 75% 6%; /* @kind color */
+  --secondary: 221 35% 12%; /* @kind color */
+  --secondary-foreground: 215 33% 93%; /* @kind color */
+  --muted: 221 35% 12%; /* @kind color */
+  --muted-foreground: 216 17% 64%; /* @kind color */
+  --accent: 217 32% 14%; /* @kind color */
+  --accent-foreground: 215 33% 93%; /* @kind color */
+  --destructive: 0 91% 71%; /* @kind color */
+  --destructive-foreground: 200 75% 6%; /* @kind color */
+  --border: 205 40% 18%; /* @kind color */
+  --input: 205 40% 18%; /* @kind color */
+  --ring: 198 93% 60%; /* @kind color */
+  --success: 158 64% 52%; /* @kind color */
+  --success-foreground: 200 75% 6%; /* @kind color */
+  --ok: 158 64% 52%; /* @kind color */
+  --ok-foreground: 200 75% 6%; /* @kind color */
+  --warn: 43 96% 56%; /* @kind color */
+  --warn-foreground: 200 75% 6%; /* @kind color */
+  --win: 255 92% 76%; /* @kind color */
+  --win-foreground: 200 75% 6%; /* @kind color */
+  --chart-1: 198 93% 60%; /* @kind color */
+  --chart-2: 158 64% 52%; /* @kind color */
+  --chart-3: 43 96% 56%; /* @kind color */
+  --chart-4: 255 92% 76%; /* @kind color */
+  --chart-5: 340 82% 65%; /* @kind color */
+}
+/* Semantic aliases — convenience wrappers over the tokens above. Prefer these
+   in new UI copy; the raw tokens stay for parity with the source repo. */
+:root {
+  --surface-page: hsl(var(--background)); /* @kind color */
+  --surface-card: hsl(var(--card)); /* @kind color */
+  --surface-hover: hsl(var(--accent)); /* @kind color */
+  --text-heading: hsl(var(--foreground)); /* @kind color */
+  --text-body: hsl(var(--foreground)); /* @kind color */
+  --text-muted: hsl(var(--muted-foreground)); /* @kind color */
+  --text-link: hsl(var(--primary)); /* @kind color */
+  --border-default: hsl(var(--border)); /* @kind color */
+  --focus-ring: hsl(var(--ring)); /* @kind color */
+}

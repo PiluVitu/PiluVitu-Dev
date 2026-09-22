@@ -27,14 +27,21 @@ import {
   SheetTrigger,
 } from '@piluvitu/ui/sheet'
 import { api, ApiError } from '../api'
-import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINHA, ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 import type { CategoryOption } from './recorrentes'
-import { ROTULO } from '../lib/tipografia'
+import { FaixaKpi } from '../blocos/KpiCard'
+import { CARTAO_KPI, CARTAO_SECAO, CHIP_MONO } from '../lib/superficie'
+import {
+  META_MONO,
+  OVERLINE,
+  SUBTITULO_PAGINA,
+  TITULO_LINHA,
+  VALOR_LINHA,
+} from '../lib/tipografia'
 
 /**
  * O que `GET /api/transactions` devolve por linha (espelho de
@@ -652,7 +659,7 @@ export function ExtratoPage() {
       return (
         <form
           data-testid={`form-edicao-${t.id}`}
-          className="space-y-3"
+          className="bg-background -mx-1 space-y-3 rounded-[14px] border p-3"
           onSubmit={(e) => {
             e.preventDefault()
             void salvarEdicao(t)
@@ -772,8 +779,8 @@ export function ExtratoPage() {
 
     return (
       <>
-        <p className="font-medium">{t.description}</p>
-        <p className="text-muted-foreground text-xs">
+        <p className={TITULO_LINHA}>{t.description}</p>
+        <p className={cn(META_MONO, 'mt-1')}>
           {nomeConta(t.account_id)} · {nomeCategoria(t.category_id)}
           {t.is_business === 1 ? ' · PJ' : ''}
         </p>
@@ -790,7 +797,11 @@ export function ExtratoPage() {
             badgeVariants({
               variant: t.settled_at === null ? 'outline' : 'secondary',
             }),
-            'mt-1',
+            CHIP_MONO,
+            t.settled_at === null
+              ? 'border-border text-muted-foreground'
+              : 'border-transparent',
+            'mt-2',
           )}
           data-testid={`estado-${t.id}`}
         >
@@ -894,22 +905,24 @@ export function ExtratoPage() {
   // pra ser lida de cima a baixo.
   const classeValor = (t: TransactionView) =>
     cn(
-      'font-medium tabular-nums',
+      // ⚠️ `whitespace-nowrap` explícito: ele vinha da `<td>` da tabela
+      // antiga (`whitespace-nowrap` na célula), e a lista não o herdou de
+      // lugar nenhum — sem ele `R$ 1.234,56` quebra entre o símbolo e os
+      // dígitos assim que a linha aperta.
+      VALOR_LINHA,
       t.amount_cents < 0 ? 'text-foreground' : 'text-primary',
     )
 
-  const menorQueSm = useMenorQueSm()
-
   return (
-    <section className="space-y-6" data-testid="pagina-extrato">
+    <section className="space-y-5" data-testid="pagina-extrato">
       {/*
         O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda continua na tela,
         agora presa ao subtítulo — é onde ela explica o que a linha de texto
         ao lado resume. `gap-3` porque a área de toque do gatilho avança 12 px
         pra cada lado do círculo (ver `packages/ui/CLAUDE.md`).
       */}
-      <div className="flex items-center gap-3">
-        <p className="text-muted-foreground text-sm">
+      <div className="flex items-start gap-2">
+        <p className={SUBTITULO_PAGINA}>
           Confira, corrija, marque como pago ou apague um lançamento.
         </p>
         <Ajuda rotulo="Extrato">
@@ -1118,8 +1131,59 @@ export function ExtratoPage() {
         </SheetContent>
       </Sheet>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardContent className="pt-6">
+          {/*
+            A régua antes do detalhe: "quanto falta" e "quanto disso já
+            carregou". Antes os dois viviam só no RODAPÉ — e num extrato de
+            30 linhas o rodapé é um lugar a que só se chega rolando.
+
+            ⚠️ `total-pendente` continua sendo UM elemento com as duas somas
+            dentro ("Falta pagar X · falta entrar Y"), e não dois cartões:
+            `extrato.test.tsx` afere o texto inteiro nesse `data-testid`, e
+            separar em dois quebraria o casamento do texto sem ganhar nada.
+          */}
+          {linhas !== null && linhas.length > 0 ? (
+            <FaixaKpi className="mb-4 sm:grid-cols-3">
+              {somenteNaoPagos ? (
+                <div className={CARTAO_KPI}>
+                  <p className={OVERLINE}>Pendente</p>
+                  <p
+                    className="text-foreground mt-1.5 text-sm font-semibold"
+                    data-testid="total-pendente"
+                  >
+                    Falta pagar{' '}
+                    <span className="tabular-nums">
+                      {formatBRL(pendentes.falta_sair_cents)}
+                    </span>
+                    {pendentes.falta_entrar_cents > 0 ? (
+                      <>
+                        {' '}
+                        · falta entrar{' '}
+                        <span className="tabular-nums">
+                          {formatBRL(pendentes.falta_entrar_cents)}
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+                </div>
+              ) : null}
+              <div className={CARTAO_KPI}>
+                <p className={OVERLINE}>Carregados</p>
+                <p className="mt-1.5 text-[28px] leading-none font-bold tracking-[-0.02em] tabular-nums">
+                  {visiveis.length === linhas.length
+                    ? linhas.length
+                    : `${visiveis.length} de ${linhas.length}`}
+                </p>
+                <p className="text-muted-foreground mt-2 text-xs leading-snug">
+                  {temMais
+                    ? 'há mais lançamentos — use "carregar mais"'
+                    : 'tudo que bate com o recorte atual'}
+                </p>
+              </div>
+            </FaixaKpi>
+          ) : null}
+
           {linhas === null ? (
             <p aria-busy="true" className="text-muted-foreground text-sm">
               Carregando…
@@ -1136,77 +1200,55 @@ export function ExtratoPage() {
                   ? `Nenhum lançamento bate com os filtros ativos (${resumo.join(' · ')}). Isso não quer dizer que não há lançamentos — use "limpar" pra ver tudo.`
                   : 'Nenhum lançamento ainda. Registre o primeiro em Lançar.'}
             </p>
-          ) : menorQueSm ? (
-            <ul className="space-y-3" data-testid="extrato-cards">
+          ) : (
+            /*
+              ⚠️ **UM markup só, não mais card × tabela por breakpoint.** A
+              tabela de 3 colunas existia só pra o desktop, e com ela vinham
+              o `overflow-x-auto` (que a 390px escondia metade da linha atrás
+              de um drag sem indicação) e dois caminhos de render pra manter
+              em sincronia. Linha de lista resolve as duas larguras: data
+              fixa à esquerda, conteúdo no meio, valor à direita — e o que
+              não cabe quebra pra linha de baixo em vez de sair da tela.
+
+              O `data-testid` continua `extrato-cards` — `extrato.test.tsx`
+              afere a 390px que é ELE que aparece, e nunca uma tabela.
+            */
+            <ul className="divide-y" data-testid="extrato-cards">
               {visiveis.map((t) => (
                 <li
                   key={t.id}
                   data-testid={`linha-${t.id}`}
-                  className="rounded-md border p-3"
+                  className="flex flex-wrap items-start gap-x-3 gap-y-1 py-3 first:pt-0 last:pb-0"
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {formatarData(t.purchase_date)}
-                    </span>
-                    <span
-                      data-testid={`valor-${t.id}`}
-                      className={classeValor(t)}
-                    >
-                      {formatBRL(t.amount_cents)}
-                    </span>
+                  {/*
+                    ⚠️ **`w-[68px]`, não os 46 do desenho** — e a diferença foi
+                    vista renderizando: `formatarData` devolve `28/09/2026`
+                    (dia, mês E ano), dez caracteres em mono, que a 46px
+                    transbordavam POR CIMA da descrição. `shrink-0` +
+                    `whitespace-nowrap` porque a largura fixa é o que alinha a
+                    coluna de datas de cima a baixo; sem eles a data quebra em
+                    duas linhas assim que a linha aperta.
+                  */}
+                  <span
+                    className={cn(
+                      META_MONO,
+                      'w-[68px] shrink-0 pt-0.5 whitespace-nowrap tabular-nums',
+                    )}
+                  >
+                    {formatarData(t.purchase_date)}
+                  </span>
+                  <div className="min-w-0 flex-1 basis-40">
+                    {corpoDaLinha(t)}
                   </div>
-                  <div className="mt-1">{corpoDaLinha(t)}</div>
+                  <span
+                    data-testid={`valor-${t.id}`}
+                    className={classeValor(t)}
+                  >
+                    {formatBRL(t.amount_cents)}
+                  </span>
                 </li>
               ))}
             </ul>
-          ) : (
-            <div className="overflow-x-auto">
-              <table
-                className="w-full border-collapse text-sm"
-                data-testid="extrato-tabela"
-              >
-                <thead>
-                  <tr>
-                    <th
-                      className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}
-                    >
-                      Data
-                    </th>
-                    <th
-                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-left')}
-                    >
-                      Lançamento
-                    </th>
-                    <th
-                      className={cn(ROTULO, 'border-b py-1.5 pl-2 text-right')}
-                    >
-                      Valor
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visiveis.map((t) => (
-                    <tr key={t.id} data-testid={`linha-${t.id}`}>
-                      <td className="border-b py-1.5 pr-2 align-top whitespace-nowrap tabular-nums">
-                        {formatarData(t.purchase_date)}
-                      </td>
-                      <td className="border-b px-2 py-1.5 align-top">
-                        {corpoDaLinha(t)}
-                      </td>
-                      <td
-                        data-testid={`valor-${t.id}`}
-                        className={cn(
-                          'border-b py-1.5 pl-2 text-right align-top whitespace-nowrap',
-                          classeValor(t),
-                        )}
-                      >
-                        {formatBRL(t.amount_cents)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           )}
 
           {linhas !== null && linhas.length > 0 ? (
@@ -1225,26 +1267,6 @@ export function ExtratoPage() {
                 há mais lançamentos não carregados e aponta o "carregar mais";
                 quando não há, ele afirma que cobre tudo que bate com o filtro.
               */}
-              {somenteNaoPagos ? (
-                <p
-                  className="text-foreground text-sm font-medium"
-                  data-testid="total-pendente"
-                >
-                  Falta pagar{' '}
-                  <span className="tabular-nums">
-                    {formatBRL(pendentes.falta_sair_cents)}
-                  </span>
-                  {pendentes.falta_entrar_cents > 0 ? (
-                    <>
-                      {' '}
-                      · falta entrar{' '}
-                      <span className="tabular-nums">
-                        {formatBRL(pendentes.falta_entrar_cents)}
-                      </span>
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
               <p
                 className="text-muted-foreground text-xs"
                 data-testid="resumo-carregado"

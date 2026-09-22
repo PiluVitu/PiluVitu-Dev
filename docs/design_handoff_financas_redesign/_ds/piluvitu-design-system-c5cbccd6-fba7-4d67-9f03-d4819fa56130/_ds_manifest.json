@@ -1,0 +1,1099 @@
+{
+  "namespace": "PiluVituDesignSystem_c5cbcc",
+  "components": [
+    { "name": "AspectRatio", "sourcePath": "components/core/AspectRatio.jsx" },
+    { "name": "Badge", "sourcePath": "components/core/Badge.jsx" },
+    { "name": "Button", "sourcePath": "components/core/Button.jsx" },
+    { "name": "Card", "sourcePath": "components/core/Card.jsx" },
+    { "name": "CardHeader", "sourcePath": "components/core/Card.jsx" },
+    { "name": "CardTitle", "sourcePath": "components/core/Card.jsx" },
+    { "name": "CardDescription", "sourcePath": "components/core/Card.jsx" },
+    { "name": "CardContent", "sourcePath": "components/core/Card.jsx" },
+    { "name": "CardFooter", "sourcePath": "components/core/Card.jsx" },
+    { "name": "Separator", "sourcePath": "components/core/Separator.jsx" },
+    { "name": "Skeleton", "sourcePath": "components/core/Skeleton.jsx" },
+    { "name": "Avatar", "sourcePath": "components/data/Avatar.jsx" },
+    { "name": "AvatarImage", "sourcePath": "components/data/Avatar.jsx" },
+    { "name": "AvatarFallback", "sourcePath": "components/data/Avatar.jsx" },
+    { "name": "Chart", "sourcePath": "components/data/Chart.jsx" },
+    { "name": "Form", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "FormItem", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "FormLabel", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "FormControl", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "FormDescription", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "FormMessage", "sourcePath": "components/forms/Form.jsx" },
+    { "name": "Input", "sourcePath": "components/forms/Input.jsx" },
+    { "name": "Label", "sourcePath": "components/forms/Label.jsx" },
+    { "name": "Textarea", "sourcePath": "components/forms/Textarea.jsx" },
+    { "name": "Ajuda", "sourcePath": "components/overlay/Ajuda.jsx" },
+    { "name": "Command", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "CommandInput", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "CommandList", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "CommandEmpty", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "CommandGroup", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "CommandItem", "sourcePath": "components/overlay/Command.jsx" },
+    { "name": "Dialog", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogTrigger", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogClose", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogContent", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogHeader", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogFooter", "sourcePath": "components/overlay/Dialog.jsx" },
+    { "name": "DialogTitle", "sourcePath": "components/overlay/Dialog.jsx" },
+    {
+      "name": "DialogDescription",
+      "sourcePath": "components/overlay/Dialog.jsx"
+    },
+    {
+      "name": "DropdownMenu",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    {
+      "name": "DropdownMenuTrigger",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    {
+      "name": "DropdownMenuContent",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    {
+      "name": "DropdownMenuItem",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    {
+      "name": "DropdownMenuSeparator",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    {
+      "name": "DropdownMenuLabel",
+      "sourcePath": "components/overlay/DropdownMenu.jsx"
+    },
+    { "name": "Sheet", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetTrigger", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetClose", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetContent", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetHeader", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetTitle", "sourcePath": "components/overlay/Sheet.jsx" },
+    { "name": "SheetDescription", "sourcePath": "components/overlay/Sheet.jsx" }
+  ],
+  "startingPoints": [],
+  "cards": [
+    {
+      "path": "guidelines/avatar.html",
+      "group": "Brand",
+      "viewport": "700x150",
+      "subtitle": "rounded-xl in the bio header, rounded-full inside the 3D visit card",
+      "name": "Avatar treatment"
+    },
+    {
+      "path": "guidelines/brand-mark.html",
+      "group": "Brand",
+      "viewport": "700x150",
+      "subtitle": "No logo file exists upstream — this coded L-tromino mark is the only brand glyph found in-repo",
+      "name": "Mark & wordmark"
+    },
+    {
+      "path": "guidelines/iconography.html",
+      "group": "Brand",
+      "viewport": "700x160",
+      "subtitle": "Font Awesome (brands + solid) inside rounded 'squircle' tiles — no custom icon set",
+      "name": "Iconography"
+    },
+    {
+      "path": "guidelines/radius-shadow.html",
+      "group": "Brand",
+      "viewport": "700x190",
+      "subtitle": "18px base radius, pill for chips, shadow-ds for the 3D visit card",
+      "name": "Radius & shadow"
+    },
+    {
+      "path": "guidelines/states.html",
+      "group": "Brand",
+      "viewport": "700x150",
+      "subtitle": "Background tints to accent on hover; 2px ring + offset on focus. No scale/shrink press states.",
+      "name": "Hover & focus states"
+    },
+    {
+      "path": "guidelines/colors-chart.html",
+      "group": "Colors",
+      "viewport": "700x150",
+      "subtitle": "Neutral data-viz palette — deliberately not brand colors",
+      "name": "Chart series"
+    },
+    {
+      "path": "guidelines/colors-dark-mode.html",
+      "group": "Colors",
+      "viewport": "700x220",
+      "subtitle": "Same card, both themes — dark is the more polished default",
+      "name": "Light vs dark"
+    },
+    {
+      "path": "guidelines/colors-neutral.html",
+      "group": "Colors",
+      "viewport": "700x180",
+      "subtitle": "secondary / muted / accent (hover) / border",
+      "name": "Neutrals"
+    },
+    {
+      "path": "guidelines/colors-primary.html",
+      "group": "Colors",
+      "viewport": "700x180",
+      "subtitle": "Deep sky-blue primary; cool near-white page background",
+      "name": "Primary & Background"
+    },
+    {
+      "path": "guidelines/colors-semantic.html",
+      "group": "Colors",
+      "viewport": "700x180",
+      "subtitle": "ok / warn / win / destructive — status colors, not decoration",
+      "name": "Semantic status"
+    },
+    {
+      "path": "components/core/core.card.html",
+      "group": "Components",
+      "viewport": "700x420",
+      "subtitle": "Button, Badge, Card, Separator, Skeleton, AspectRatio",
+      "name": "Core"
+    },
+    {
+      "path": "components/data/data.card.html",
+      "group": "Components",
+      "viewport": "700x300",
+      "subtitle": "Avatar, Chart",
+      "name": "Data"
+    },
+    {
+      "path": "components/forms/forms.card.html",
+      "group": "Components",
+      "viewport": "700x360",
+      "subtitle": "Input, Textarea, Label, Form field group",
+      "name": "Forms"
+    },
+    {
+      "path": "components/overlay/overlay.card.html",
+      "group": "Components",
+      "viewport": "700x480",
+      "subtitle": "Dialog, Sheet, DropdownMenu, Command, Ajuda",
+      "name": "Overlay"
+    },
+    {
+      "path": "ui_kits/portfolio/index.html",
+      "group": "Portfolio",
+      "viewport": "1180x760",
+      "subtitle": "Click-through recreation of the apps/web personal site (bio, career, projects, articles)",
+      "name": "Homepage"
+    },
+    {
+      "path": "guidelines/spacing-in-use.html",
+      "group": "Spacing",
+      "viewport": "700x160",
+      "subtitle": "gap-3.5 grid, p-5 card padding — how the scale reads at real size",
+      "name": "Spacing in use"
+    },
+    {
+      "path": "guidelines/spacing-scale.html",
+      "group": "Spacing",
+      "viewport": "700x230",
+      "subtitle": "1 through 16 — the values actually used, not a generic ramp",
+      "name": "Spacing scale"
+    },
+    {
+      "path": "guidelines/type-body.html",
+      "group": "Type",
+      "viewport": "700x170",
+      "subtitle": "16px body, muted-foreground for secondary text, text-pretty wrapping",
+      "name": "Body copy"
+    },
+    {
+      "path": "guidelines/type-display.html",
+      "group": "Type",
+      "viewport": "700x190",
+      "subtitle": "Bold, tight tracking, used for the h1 name and card titles",
+      "name": "Display — Plus Jakarta Sans"
+    },
+    {
+      "path": "guidelines/type-mono.html",
+      "group": "Type",
+      "viewport": "700x170",
+      "subtitle": "Labels, timestamps, kbd chips, section overlines — always uppercase + tracked",
+      "name": "Mono — JetBrains Mono"
+    }
+  ],
+  "templates": [],
+  "hasThumbnailHtml": true,
+  "globalCssPaths": [
+    "tokens/colors.css",
+    "tokens/typography.css",
+    "tokens/spacing.css",
+    "tokens/shape.css",
+    "tokens/motion.css",
+    "styles.css"
+  ],
+  "tokens": [
+    {
+      "name": "--background",
+      "value": "220 50% 98%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--foreground",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--card",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--card-foreground",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--popover",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--popover-foreground",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--primary",
+      "value": "198 93% 26%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--primary-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--secondary",
+      "value": "216 42% 95%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--secondary-foreground",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--muted",
+      "value": "216 42% 95%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--muted-foreground",
+      "value": "215 18% 35%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent",
+      "value": "216 43% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent-foreground",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--destructive",
+      "value": "0 84% 47%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--destructive-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--border",
+      "value": "216 30% 88%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--input",
+      "value": "216 30% 88%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--ring",
+      "value": "198 93% 26%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--success",
+      "value": "158 64% 29%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--success-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--ok",
+      "value": "158 64% 29%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--ok-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--warn",
+      "value": "38 92% 31%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--warn-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--win",
+      "value": "255 60% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--win-foreground",
+      "value": "0 0% 100%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-1",
+      "value": "198 93% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-2",
+      "value": "158 64% 40%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-3",
+      "value": "38 92% 50%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-4",
+      "value": "255 60% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-5",
+      "value": "340 75% 55%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent-soft",
+      "value": "rgb(56 189 248 / 0.13)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent-line",
+      "value": "rgb(56 189 248 / 0.32)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--background",
+      "value": "220 33% 5%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--foreground",
+      "value": "215 33% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--card",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--card-foreground",
+      "value": "215 33% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--popover",
+      "value": "222 36% 9%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--popover-foreground",
+      "value": "215 33% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--primary",
+      "value": "198 93% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--primary-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--secondary",
+      "value": "221 35% 12%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--secondary-foreground",
+      "value": "215 33% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--muted",
+      "value": "221 35% 12%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--muted-foreground",
+      "value": "216 17% 64%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent",
+      "value": "217 32% 14%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--accent-foreground",
+      "value": "215 33% 93%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--destructive",
+      "value": "0 91% 71%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--destructive-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--border",
+      "value": "205 40% 18%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--input",
+      "value": "205 40% 18%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--ring",
+      "value": "198 93% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--success",
+      "value": "158 64% 52%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--success-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--ok",
+      "value": "158 64% 52%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--ok-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--warn",
+      "value": "43 96% 56%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--warn-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--win",
+      "value": "255 92% 76%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--win-foreground",
+      "value": "200 75% 6%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-1",
+      "value": "198 93% 60%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-2",
+      "value": "158 64% 52%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-3",
+      "value": "43 96% 56%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-4",
+      "value": "255 92% 76%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--chart-5",
+      "value": "340 82% 65%",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark",
+      "annotation": "color"
+    },
+    {
+      "name": "--surface-page",
+      "value": "hsl(var(--background))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--surface-card",
+      "value": "hsl(var(--card))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--surface-hover",
+      "value": "hsl(var(--accent))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--text-heading",
+      "value": "hsl(var(--foreground))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--text-body",
+      "value": "hsl(var(--foreground))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--text-muted",
+      "value": "hsl(var(--muted-foreground))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--text-link",
+      "value": "hsl(var(--primary))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--border-default",
+      "value": "hsl(var(--border))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--focus-ring",
+      "value": "hsl(var(--ring))",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "annotation": "color"
+    },
+    {
+      "name": "--font-sans",
+      "value": "'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--font-mono",
+      "value": "'JetBrains Mono',ui-monospace,'SFMono-Regular',monospace",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-xs",
+      "value": "0.75rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-sm",
+      "value": "0.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-base",
+      "value": "1rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-lg",
+      "value": "1.125rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-xl",
+      "value": "1.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-2xl",
+      "value": "1.5rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-3xl",
+      "value": "1.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-4xl",
+      "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-5xl",
+      "value": "3rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--leading-tight",
+      "value": "1.1",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--leading-snug",
+      "value": "1.35",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--leading-normal",
+      "value": "1.55",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--tracking-label",
+      "value": "0.2em",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--space-1",
+      "value": "0.25rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-1_5",
+      "value": "0.375rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-2",
+      "value": "0.5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-3",
+      "value": "0.75rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-3_5",
+      "value": "0.875rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-4",
+      "value": "1rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-5",
+      "value": "1.25rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-6",
+      "value": "1.5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-8",
+      "value": "2rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-10",
+      "value": "2.5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-12",
+      "value": "3rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-16",
+      "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--card-padding",
+      "value": "var(--space-6)",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--card-padding-sm",
+      "value": "var(--space-5)",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--page-gutter",
+      "value": "var(--space-6)",
+      "kind": "color",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--page-gutter-xl",
+      "value": "3.5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--content-max-width",
+      "value": "1400px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--home-max-width",
+      "value": "1180px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--radius",
+      "value": "1.125rem",
+      "kind": "radius",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--radius-lg",
+      "value": "var(--radius)",
+      "kind": "radius",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--radius-md",
+      "value": "calc(var(--radius) - 2px)",
+      "kind": "radius",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--radius-sm",
+      "value": "calc(var(--radius) - 4px)",
+      "kind": "radius",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--radius-pill",
+      "value": "999px",
+      "kind": "radius",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--border-width",
+      "value": "1px",
+      "kind": "spacing",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--shadow-xs",
+      "value": "0 1px 2px rgb(0 0 0 / 0.05)",
+      "kind": "shadow",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--shadow-sm",
+      "value": "0 1px 3px rgb(0 0 0 / 0.08)",
+      "kind": "shadow",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--shadow-md",
+      "value": "0 4px 10px rgb(0 0 0 / 0.10)",
+      "kind": "shadow",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--shadow-lg",
+      "value": "0 12px 24px rgb(0 0 0 / 0.14)",
+      "kind": "shadow",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--shadow-ds",
+      "value": "0 18px 40px rgb(0 0 0 / 0.45)",
+      "kind": "shadow",
+      "definedIn": "tokens/shape.css"
+    },
+    {
+      "name": "--duration-fast",
+      "value": "150ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--duration-base",
+      "value": "200ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--duration-slow",
+      "value": "500ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--ease-standard",
+      "value": "ease-in-out",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    }
+  ],
+  "themes": [{ "selector": ".dark", "label": "Dark" }],
+  "fonts": [],
+  "brandFonts": [
+    {
+      "family": "Plus Jakarta Sans",
+      "status": "ok",
+      "tokens": ["--font-sans"],
+      "path": "tokens/typography.css"
+    },
+    {
+      "family": "JetBrains Mono",
+      "status": "ok",
+      "tokens": ["--font-mono"],
+      "path": "tokens/typography.css"
+    }
+  ],
+  "source": "spa"
+}

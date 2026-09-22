@@ -54,3 +54,40 @@ export const ROTULO_SECAO =
  */
 export const NUMERO_HEROI = 'text-3xl font-semibold tabular-nums'
 export const NUMERO_GRID = 'text-2xl font-semibold tabular-nums'
+
+/**
+ * Overline de um bloco de conteúdo — mesmo papel de `ROTULO_SECAO` (10px
+ * mono), com um alias próprio porque os dois vivem em superfícies
+ * diferentes: `ROTULO_SECAO` agrupa itens de NAVEGAÇÃO, este nomeia uma
+ * SEÇÃO de conteúdo (cabeçalho de página, cabeçalho de card, faixa de KPI).
+ */
+export const OVERLINE = ROTULO_SECAO
+
+/**
+ * Subtítulo do cabeçalho de página. `max-w-[62ch]` porque linha de prosa
+ * acima de ~65 caracteres perde o retorno de linha — e a coluna de conteúdo
+ * do desktop é bem mais larga que isso.
+ */
+export const SUBTITULO_PAGINA =
+  'text-muted-foreground max-w-[62ch] text-sm leading-relaxed'
+
+/**
+ * Rótulo mono de meta numa linha de lista ("60% PAGO · R$ 2.700 DE R$ 4.500",
+ * "CARTÃO · FECHA 25 · VENCE 02"). Menor e com menos tracking que `ROTULO`,
+ * que nomeia um número; este acompanha um.
+ */
+export const META_MONO =
+  'text-muted-foreground font-mono text-[10px] font-medium tracking-[0.12em] uppercase'
+
+/**
+ * Valor de dinheiro numa linha de lista.
+ *
+ * ⚠️ `whitespace-nowrap` junto de propósito: sem ele `R$ 1.234,56` quebra
+ * entre o símbolo e o número quando a linha aperta, e a coluna de valores
+ * deixa de alinhar de cima a baixo — o mesmo motivo do `tabular-nums`.
+ */
+export const VALOR_LINHA =
+  'text-sm font-semibold tabular-nums whitespace-nowrap'
+
+/** Título de uma linha de lista (descrição do lançamento, nome da conta). */
+export const TITULO_LINHA = 'text-sm font-semibold leading-tight'

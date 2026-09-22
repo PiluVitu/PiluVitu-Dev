@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ImportError, importTransactions } from './import'
 import { commitments } from './reports'
+import { setNomesProprios } from './transfer-pairing'
 
 async function seedAccount(
   id: string,
@@ -296,5 +297,153 @@ describe('importTransactions', () => {
       // -SUM(amount_cents) das duas linhas: 100000 + 50000 = 150000.
       expect(linhaConta?.cells).toEqual([150000])
     })
+  })
+})
+
+// ---------------------------------------------------------------------
+// Escopo PJ/PF e pareamento de transferencia — fatia "gasto inflado".
+// ---------------------------------------------------------------------
+
+async function seedAccountScope(id: string, scope: 'PJ' | 'PF') {
+  await env.DB.prepare(
+    `INSERT INTO accounts (id, name, scope, kind, institution, currency, closing_day, due_day,
+       credit_limit_cents, opening_balance_cents, opening_date, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, 'checking', 'Inter', 'BRL', NULL, NULL, NULL, 0, NULL, NULL,
+       '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')`,
+  )
+    .bind(id, `conta ${id}`, scope)
+    .run()
+  return id
+}
+
+async function isBusinessDe(imported_id: string): Promise<number> {
+  const row = await env.DB.prepare(
+    'SELECT is_business FROM transactions WHERE imported_id = ?',
+  )
+    .bind(imported_id)
+    .first<{ is_business: number }>()
+  return row!.is_business
+}
+
+describe('is_business herdado da conta', () => {
+  it('linha importada em conta PJ nasce is_business = 1', async () => {
+    const acc = await seedAccountScope('acc-pj', 'PJ')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [linha({ imported_id: 'pj-1' })],
+    })
+    expect(await isBusinessDe('pj-1')).toBe(1)
+  })
+
+  it('linha importada em conta PF nasce is_business = 0', async () => {
+    const acc = await seedAccountScope('acc-pf', 'PF')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [linha({ imported_id: 'pf-1' })],
+    })
+    expect(await isBusinessDe('pf-1')).toBe(0)
+  })
+
+  // A conta da o DEFAULT, nao a verdade final (schema 0001: "aqui e
+  // sobrescrivivel porque na pratica gasto de PJ cai em cartao PF").
+  it('is_business explicito na linha vence o escopo da conta', async () => {
+    const acc = await seedAccountScope('acc-pj2', 'PJ')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [{ ...linha({ imported_id: 'pj-2' }), is_business: 0 }],
+    })
+    expect(await isBusinessDe('pj-2')).toBe(0)
+  })
+})
+
+describe('pareamento automatico no import', () => {
+  beforeEach(async () => {
+    await setNomesProprios(env.DB, ['Paulo Victor Torres Silva', 'Pilu Tech'])
+  })
+
+  it('pareia as duas pernas quando a segunda perna e importada', async () => {
+    const pj = await seedAccountScope('acc-pj3', 'PJ')
+    const pf = await seedAccountScope('acc-pf3', 'PF')
+
+    await importTransactions(env.DB, {
+      account_id: pj,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'saida-1',
+          amount_cents: -430000,
+          purchase_date: '2026-09-02',
+          description: 'Pix enviado  - Paulo Victor Torres Silva',
+        }),
+      ],
+    })
+
+    const soUmaPerna = await env.DB.prepare(
+      'SELECT transfer_id FROM transactions WHERE imported_id = ?',
+    )
+      .bind('saida-1')
+      .first<{ transfer_id: string | null }>()
+    expect(soUmaPerna?.transfer_id).toBeNull()
+
+    await importTransactions(env.DB, {
+      account_id: pf,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'entrada-1',
+          amount_cents: 430000,
+          purchase_date: '2026-09-02',
+          description: 'Pix recebido - Pilu Tech',
+        }),
+      ],
+    })
+
+    const rows = await env.DB.prepare(
+      'SELECT imported_id, transfer_id FROM transactions WHERE imported_id IN (?, ?)',
+    )
+      .bind('saida-1', 'entrada-1')
+      .all<{ imported_id: string; transfer_id: string | null }>()
+    const ids = rows.results.map((r) => r.transfer_id)
+    expect(ids[0]).not.toBeNull()
+    expect(ids[0]).toBe(ids[1])
+  })
+
+  it('nao pareia entrada de terceiro que so coincide em valor e data', async () => {
+    const a = await seedAccountScope('acc-a', 'PF')
+    const b = await seedAccountScope('acc-b', 'PF')
+    await importTransactions(env.DB, {
+      account_id: a,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 's-50',
+          amount_cents: -5000,
+          purchase_date: '2026-06-25',
+          description: 'Transferencia enviada|Paulo Victor Torres Silva',
+        }),
+      ],
+    })
+    await importTransactions(env.DB, {
+      account_id: b,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'e-50',
+          amount_cents: 5000,
+          purchase_date: '2026-06-25',
+          description: 'Pix recebido - Livia R P Oliveira',
+        }),
+      ],
+    })
+
+    const row = await env.DB.prepare(
+      'SELECT transfer_id FROM transactions WHERE imported_id = ?',
+    )
+      .bind('s-50')
+      .first<{ transfer_id: string | null }>()
+    expect(row?.transfer_id).toBeNull()
   })
 })

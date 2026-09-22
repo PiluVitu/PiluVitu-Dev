@@ -5,11 +5,24 @@ import { Button } from '@piluvitu/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
+import { Textarea } from '@piluvitu/ui/textarea'
 import { api, ApiError } from '../api'
 import { signOut, useSession } from '../auth-client'
+import { cn } from '@piluvitu/ui/cn'
+import { CARTAO_SECAO, GRID_BLOCOS } from '../lib/superficie'
+import { ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import { aplicarTema, temaSalvo, type Tema } from '../lib/theme'
 
 type SettingsView = { fixed_net_cents: number }
+type SelfNamesView = { names: string[] }
+type PairView = { pares: number; total_cents: number }
+
+function linhasParaNomes(texto: string): string[] {
+  return texto
+    .split('\n')
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0)
+}
 
 const OPCOES_TEMA: Array<{ valor: Tema; rotulo: string }> = [
   { valor: 'claro', rotulo: 'Claro' },
@@ -44,6 +57,12 @@ export function ConfigPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
 
+  const [nomes, setNomes] = useState('')
+  const [salvandoNomes, setSalvandoNomes] = useState(false)
+  const [nomesMsg, setNomesMsg] = useState<string | null>(null)
+  const [pareando, setPareando] = useState(false)
+  const [pares, setPares] = useState<PairView | null>(null)
+
   const [tema, setTema] = useState<Tema>(() => temaSalvo())
 
   useEffect(() => {
@@ -57,10 +76,49 @@ export function ConfigPage() {
       .catch((e: unknown) => {
         if (vivo) setLoadError(e instanceof ApiError ? e.message : String(e))
       })
+    api<SelfNamesView>('/api/transfers/self-names')
+      .then((data) => {
+        if (vivo) setNomes(data.names.join('\n'))
+      })
+      .catch(() => {
+        // Silencioso de proposito: a renda acima ja mostra o erro de carga
+        // desta tela, e dois alertas sobre a mesma falha e a mesma noticia
+        // duas vezes (mesma regra da FaixaKpiInicio).
+      })
     return () => {
       vivo = false
     }
   }, [])
+
+  async function salvarNomes(e: React.FormEvent) {
+    e.preventDefault()
+    setNomesMsg(null)
+    setSalvandoNomes(true)
+    try {
+      const data = await api<SelfNamesView>('/api/transfers/self-names', {
+        method: 'PUT',
+        body: JSON.stringify({ names: linhasParaNomes(nomes) }),
+      })
+      setNomes(data.names.join('\n'))
+      setNomesMsg('Nomes salvos.')
+    } catch (err: unknown) {
+      setNomesMsg(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setSalvandoNomes(false)
+    }
+  }
+
+  async function pareaTransferencias() {
+    setPares(null)
+    setPareando(true)
+    try {
+      setPares(await api<PairView>('/api/transfers/pair', { method: 'POST' }))
+    } catch (err: unknown) {
+      setNomesMsg(err instanceof ApiError ? err.message : String(err))
+    } finally {
+      setPareando(false)
+    }
+  }
 
   async function salvarRenda(e: React.FormEvent) {
     e.preventDefault()
@@ -101,120 +159,192 @@ export function ConfigPage() {
   }
 
   return (
-    <section className="space-y-6" data-testid="pagina-configuracoes">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            Renda fixa de referência
-            <Ajuda rotulo="Renda de referência">
-              Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é
-              volátil, e medir contra o mês bom esconde o risco.
-            </Ajuda>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground text-sm">
-            Denominador do % em Comprometido — o líquido fixo{' '}
-            <strong className="text-foreground">sem freela</strong>. Medir
-            contra o mês bom esconderia o risco que aquela tela existe pra
-            mostrar.
-          </p>
-          {loadError ? <p role="alert">{loadError}</p> : null}
-          <form
-            onSubmit={salvarRenda}
-            data-testid="form-renda"
-            className="space-y-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="config-renda">Novo valor</Label>
-              <Input
-                id="config-renda"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                placeholder="3.600,00"
-              />
-              {rendaAtual !== null ? (
-                <p className="text-muted-foreground text-xs">
-                  Valor salvo hoje: {formatBRL(rendaAtual)}
+    <section className="space-y-5" data-testid="pagina-configuracoes">
+      <p className={SUBTITULO_PAGINA}>
+        Os ajustes que mudam como o resto do app lê os seus números.
+      </p>
+
+      {/* Cartões de ajuste em grade: cada um é um assunto fechado, e
+          empilhados eles viravam uma coluna de rolagem sem hierarquia. */}
+      <div className={GRID_BLOCOS}>
+        <Card className={cn(CARTAO_SECAO, 'col-span-full')}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
+              Renda fixa de referência
+              <Ajuda rotulo="Renda de referência">
+                Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é
+                volátil, e medir contra o mês bom esconde o risco.
+              </Ajuda>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-muted-foreground text-sm">
+              Denominador do % em Comprometido — o líquido fixo{' '}
+              <strong className="text-foreground">sem freela</strong>. Medir
+              contra o mês bom esconderia o risco que aquela tela existe pra
+              mostrar.
+            </p>
+            {loadError ? <p role="alert">{loadError}</p> : null}
+            <form
+              onSubmit={salvarRenda}
+              data-testid="form-renda"
+              className="space-y-4"
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="config-renda">Novo valor</Label>
+                <Input
+                  id="config-renda"
+                  value={valor}
+                  onChange={(e) => setValor(e.target.value)}
+                  placeholder="3.600,00"
+                  className="font-mono text-base"
+                />
+                {rendaAtual !== null ? (
+                  <p className="text-muted-foreground text-xs">
+                    Valor salvo hoje: {formatBRL(rendaAtual)}
+                  </p>
+                ) : null}
+              </div>
+              {formError ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {formError}
                 </p>
               ) : null}
-            </div>
-            {formError ? (
-              <p role="alert" className="text-destructive text-sm">
-                {formError}
-              </p>
-            ) : null}
-            {okMsg ? (
-              <p role="status" className="text-success text-sm">
-                {okMsg}
-              </p>
-            ) : null}
-            <Button type="submit" disabled={salvando}>
-              {salvando ? 'Salvando…' : 'Salvar'}
+              {okMsg ? (
+                <p role="status" className="text-success text-sm">
+                  {okMsg}
+                </p>
+              ) : null}
+              <Button type="submit" disabled={salvando}>
+                {salvando ? 'Salvando…' : 'Salvar'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className={CARTAO_SECAO}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>Tema</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {OPCOES_TEMA.map((o) => (
+              <Button
+                key={o.valor}
+                type="button"
+                variant={tema === o.valor ? 'default' : 'outline'}
+                aria-pressed={tema === o.valor}
+                className="min-h-11 flex-1 rounded-xl"
+                onClick={() => trocarTema(o.valor)}
+              >
+                {o.rotulo}
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className={CARTAO_SECAO}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>Conta</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground text-sm">
+              {sessao?.user.email}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => signOut()}>
+              Sair
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Tema</CardTitle>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          {OPCOES_TEMA.map((o) => (
-            <Button
-              key={o.valor}
-              type="button"
-              variant={tema === o.valor ? 'default' : 'outline'}
-              aria-pressed={tema === o.valor}
-              onClick={() => trocarTema(o.valor)}
-            >
-              {o.rotulo}
-            </Button>
-          ))}
-        </CardContent>
-      </Card>
+        <Card className={cn(CARTAO_SECAO, 'col-span-full')}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
+              Transferências entre as suas contas
+              <Ajuda rotulo="Transferências entre contas próprias">
+                Por que o app precisa saber os seus nomes: o Open Finance
+                entrega as duas pernas de um pró-labore como lançamentos soltos,
+                e sem reconhecer a contraparte a saída viraria gasto.
+              </Ajuda>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-muted-foreground text-sm">
+              Um nome por linha — o seu e o da sua PJ, como aparecem na
+              descrição do extrato. O import usa isso pra reconhecer que uma
+              saída e uma entrada de mesmo valor e data são{' '}
+              <strong className="text-foreground">a mesma movimentação</strong>,
+              e não gasto. Sem nome cadastrado, nada é pareado.
+            </p>
+            <form onSubmit={salvarNomes} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="config-nomes">Nomes próprios</Label>
+                <Textarea
+                  id="config-nomes"
+                  data-testid="campo-nomes-proprios"
+                  rows={3}
+                  value={nomes}
+                  onChange={(e) => setNomes(e.target.value)}
+                  placeholder={'Seu Nome Completo\nSua Empresa LTDA'}
+                />
+              </div>
+              {nomesMsg ? (
+                <p className="text-muted-foreground text-sm">{nomesMsg}</p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={salvandoNomes}>
+                  {salvandoNomes ? 'Salvando…' : 'Salvar nomes'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pareando}
+                  onClick={pareaTransferencias}
+                >
+                  {pareando ? 'Pareando…' : 'Parear transferências antigas'}
+                </Button>
+              </div>
+              {pares ? (
+                <p data-testid="resultado-pareamento" className="text-sm">
+                  {pares.pares} par(es) pareado(s) —{' '}
+                  {formatBRL(pares.total_cents)} que deixam de contar como
+                  gasto.
+                </p>
+              ) : null}
+            </form>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Conta</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground text-sm">
-            {sessao?.user.email}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => signOut()}>
-            Sair
-          </Button>
-        </CardContent>
-      </Card>
+        <Card className={CARTAO_SECAO}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>Backup</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-sm">
+              <code className="text-foreground">make backup-financas</code>{' '}
+              exporta o banco de produção, comprime e mantém as últimas cópias
+              em disco local — não substitui o Time Travel nativo do D1 (janela
+              curta, restaura o banco inteiro de uma vez), e restaurar é sempre
+              um passo manual (reimportar o dump num banco vazio).
+            </p>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Backup</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">
-            <code className="text-foreground">make backup-financas</code>{' '}
-            exporta o banco de produção, comprime e mantém as últimas cópias em
-            disco local — não substitui o Time Travel nativo do D1 (janela
-            curta, restaura o banco inteiro de uma vez), e restaurar é sempre um
-            passo manual (reimportar o dump num banco vazio).
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Conectar contas</CardTitle>
-        </CardHeader>
-        <CardContent data-testid="conectar-contas">
-          <p className="text-muted-foreground text-sm">
-            Conectar contas bancárias (Open Finance) ainda não existe. Antes
-            dela vem a importação de fatura (fatia ②).
-          </p>
-        </CardContent>
-      </Card>
+        {/* Borda tracejada: a ausência é honesta, e a superfície diz isso —
+          não é um recurso desligado, é um que ainda não existe. */}
+        <Card className={cn(CARTAO_SECAO, 'border-dashed shadow-none')}>
+          <CardHeader>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>
+              Conectar contas
+            </CardTitle>
+          </CardHeader>
+          <CardContent data-testid="conectar-contas">
+            <p className="text-muted-foreground text-sm">
+              Conectar contas bancárias (Open Finance) ainda não existe. Antes
+              dela vem a importação de fatura (fatia ②).
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </section>
   )
 }

@@ -85,3 +85,37 @@
     );
   }
 }
+
+/*
+  ⚠️ `--font-sans`/`--font-mono` de `@piluvitu/ui` resolvem
+  `var(--font-plus-jakarta, …)` / `var(--font-jetbrains, …)`: no `apps/web`
+  quem define essas duas é o `next/font`, que esta SPA não tem. Sem as linhas
+  abaixo o app inteiro cai no fallback `ui-sans-serif`/`ui-monospace` — o
+  rótulo em versalete mono, que é a assinatura do design system, fica com a
+  monoespaçada do sistema em vez da fonte do produto.
+*/
+@layer base {
+  :root {
+    --font-plus-jakarta: 'Plus Jakarta Sans';
+    --font-jetbrains: 'JetBrains Mono';
+  }
+}
+
+/*
+  O mesmo brilho suave do topo do `apps/web`. `--accent-soft` já é
+  translúcido (sky-400 a 13%), então funciona sobre `--background` nos dois
+  temas sem uma segunda declaração.
+
+  `background-attachment: fixed` NÃO entra: o gradiente é do TOPO da página,
+  não da viewport — rolando, ele sai de cena junto com o cabeçalho.
+*/
+@layer base {
+  body {
+    background-image: radial-gradient(
+      70% 45% at 50% 0%,
+      var(--color-accent-soft),
+      transparent 70%
+    );
+    background-repeat: no-repeat;
+  }
+}

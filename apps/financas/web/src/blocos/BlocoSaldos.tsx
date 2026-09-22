@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { formatBRL, sumCents } from '@piluvitu/tools/money'
 import { cn } from '@piluvitu/ui/cn'
-import { api, ApiError } from '../api'
-import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
+import { ApiError } from '../api'
+import { buscarUmaVez } from '../lib/requisicao-unica'
+import { SUBCARTAO } from '../lib/superficie'
+import { NUMERO_GRID, VALOR_LINHA } from '../lib/tipografia'
 import {
   custoFixoMensal,
   formatMeses,
@@ -10,6 +12,7 @@ import {
 } from '../lib/reserve'
 import type { EmergencyStatusView, FixedCostRangeView } from '../lib/reserve'
 import { Bloco } from './Bloco'
+import { ChipEscopo } from './ChipEscopo'
 
 export type AccountBalanceView = {
   id: string
@@ -42,7 +45,7 @@ export function BlocoSaldos() {
 
   useEffect(() => {
     let vivo = true
-    api<AccountBalanceView[]>('/api/accounts')
+    buscarUmaVez<AccountBalanceView[]>('/api/accounts')
       .then((data) => {
         if (vivo) setAccounts(data)
       })
@@ -70,7 +73,7 @@ export function BlocoSaldos() {
   // pode resolver a partir DESTE card.
   useEffect(() => {
     let vivo = true
-    api<EmergencyStatusView>('/api/reserve')
+    buscarUmaVez<EmergencyStatusView>('/api/reserve')
       .then((status) => {
         if (vivo) setCusto(custoFixoMensal(status))
       })
@@ -100,13 +103,15 @@ export function BlocoSaldos() {
           </p>
           <a
             href="#/contas"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium shadow-sm transition-colors"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold shadow-sm transition-colors"
           >
             Criar conta
           </a>
         </div>
       ) : accounts ? (
-        <div className="space-y-4">
+        // PJ e PF em sub-cartões lado a lado — nunca somados, nunca uma
+        // lista contínua que sugira um total único (ver o ⚠️ do topo).
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
           {SCOPES.map((scope) => {
             const list = accounts.filter((a) => a.scope === scope)
             if (list.length === 0) return null
@@ -120,7 +125,7 @@ export function BlocoSaldos() {
             // do mês também não é.
             const meses = mesesDeSobrevivencia(total, custo)
             return (
-              <div key={scope}>
+              <div key={scope} className={SUBCARTAO}>
                 {/*
                   ⚠️ **O defeito que esta manchete conserta, medido no
                   markup anterior: "Total PJ" saía em `text-sm
@@ -168,10 +173,10 @@ export function BlocoSaldos() {
                   dá 1. É a anatomia que `NumeroCard`/`insight.tsx` já
                   usam.
                 */}
-                <h4 className={ROTULO}>{scope}</h4>
+                <ChipEscopo as="h4" escopo={scope} />
                 <p
                   data-testid={`total-${scope}`}
-                  className={cn('mt-1', NUMERO_GRID)}
+                  className={cn('mt-2', NUMERO_GRID)}
                 >
                   {formatBRL(total)}
                 </p>
@@ -188,16 +193,20 @@ export function BlocoSaldos() {
                     ≈ {formatMeses(meses)} de custo fixo
                   </p>
                 ) : null}
-                <ul className="mt-2 space-y-1">
+                <ul className="mt-3 space-y-1.5 border-t pt-3">
                   {list.map((a) => (
                     <li
                       key={a.id}
-                      className="text-muted-foreground flex justify-between text-sm"
+                      className="text-muted-foreground flex items-baseline justify-between gap-3 text-[12.5px]"
                     >
-                      <span>{a.name}</span>
+                      <span className="truncate">{a.name}</span>
                       <span
                         data-testid={`saldo-${a.id}`}
-                        className="tabular-nums"
+                        className={cn(
+                          VALOR_LINHA,
+                          'text-[12.5px]',
+                          a.balance_cents < 0 && 'text-destructive',
+                        )}
                       >
                         {formatBRL(a.balance_cents)}
                       </span>

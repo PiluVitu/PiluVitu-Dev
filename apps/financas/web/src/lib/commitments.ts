@@ -27,10 +27,32 @@ import { formatBRL, formatBRLSemCentavos } from '@piluvitu/tools/money'
  */
 export type CommitmentRange = { min: number; max: number }
 
+/**
+ * De onde vem o comprometido de uma competência — espelha
+ * `CommitmentComposition` de `src/domain/reports.ts` (Worker).
+ *
+ * ⚠️ Só `recorrentes_cents` é faixa: parcela prevista e dívida aberta são
+ * valores exatos, e a incerteza vem unicamente da projeção de recorrente.
+ */
+export type CommitmentCompositionView = {
+  parcelas_cents: number
+  dividas_cents: number
+  recorrentes_cents: CommitmentRange
+}
+
 export type CommitmentReportView = {
   competences: string[]
   rows: Array<{ account_id: string; account_name: string; cells: number[] }>
   totals: CommitmentRange[]
+  /**
+   * ⚠️ **Opcional porque a tela não pode depender dela pra existir.** A
+   * decomposição é informação ADICIONAL sobre o mesmo total; um payload sem
+   * ela (Worker antigo, ou um mock de teste anterior a este campo) tem que
+   * continuar desenhando a manchete e o gráfico normalmente, só sem a
+   * linha de origem. Tratar como obrigatório trocaria "falta um detalhe"
+   * por "o card inteiro quebra".
+   */
+  composition?: CommitmentCompositionView[]
   fixed_net_cents: number
   pct_of_fixed_net: CommitmentRange[]
 }
@@ -135,4 +157,49 @@ export function formatPctRange(range: CommitmentRange): string {
   return range.min === range.max
     ? `${range.min}%`
     : `${range.min}% a ${range.max}%`
+}
+
+/**
+ * As três origens de uma competência, já formatadas e na ordem em que a
+ * legenda as mostra — maior primeiro nunca, ordem FIXA sempre: parcelas,
+ * dívidas, recorrentes. Ordenar por valor faria a legenda trocar de ordem
+ * a cada mês, e a cor de cada origem deixaria de ser aprendível.
+ *
+ * Lista vazia quando o payload não traz `composition` (ver o ⚠️ do tipo) ou
+ * quando a competência não tem origem nenhuma com valor — nada de três
+ * zeros ocupando linha.
+ */
+export function origensDaCompetencia(
+  composicao: CommitmentCompositionView | undefined,
+): Array<{ chave: string; rotulo: string; texto: string }> {
+  if (!composicao) return []
+
+  const origens = [
+    {
+      chave: 'parcelas',
+      rotulo: 'parcelas',
+      cents: composicao.parcelas_cents,
+      faixa: null as CommitmentRange | null,
+    },
+    {
+      chave: 'dividas',
+      rotulo: 'dívidas',
+      cents: composicao.dividas_cents,
+      faixa: null as CommitmentRange | null,
+    },
+    {
+      chave: 'recorrentes',
+      rotulo: 'recorrentes',
+      cents: composicao.recorrentes_cents.max,
+      faixa: composicao.recorrentes_cents,
+    },
+  ]
+
+  return origens
+    .filter((o) => o.cents > 0)
+    .map((o) => ({
+      chave: o.chave,
+      rotulo: o.rotulo,
+      texto: o.faixa ? formatRange(o.faixa) : formatBRL(o.cents),
+    }))
 }

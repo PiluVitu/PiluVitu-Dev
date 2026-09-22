@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react'
 import { formatBRL, sumCents } from '@piluvitu/tools/money'
 import { cn } from '@piluvitu/ui/cn'
-import { api, ApiError } from '../api'
-import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
+import { ApiError } from '../api'
+import { buscarUmaVez } from '../lib/requisicao-unica'
+import { TRILHO_BARRA } from '../lib/superficie'
+import {
+  META_MONO,
+  NUMERO_GRID,
+  ROTULO,
+  TITULO_LINHA,
+  VALOR_LINHA,
+} from '../lib/tipografia'
 import { Bloco } from './Bloco'
 
 export type DebtProgressView = {
@@ -26,7 +34,7 @@ export function BlocoDividas() {
 
   useEffect(() => {
     let vivo = true
-    api<DebtProgressView[]>('/api/debts?status=open&direction=i_owe')
+    buscarUmaVez<DebtProgressView[]>('/api/debts?status=open&direction=i_owe')
       .then((data) => {
         if (vivo) setDividas(data)
       })
@@ -129,7 +137,7 @@ export function BlocoDividas() {
             `pages/DividasPage.tsx` mantém "Falta" por linha, com a
             manchete separada acima.
           */}
-          <ul className="space-y-3">
+          <ul className="divide-y">
             {dividas.map((d) => {
               // Dívida sem item ainda: total_cents = 0. Dividir por zero daria
               // NaN — em vez de uma barra quebrada, mostra um aviso.
@@ -138,32 +146,50 @@ export function BlocoDividas() {
                 ? Math.round((d.paid_cents / d.total_cents) * 100)
                 : 0
               return (
-                <li key={d.id} data-testid={`divida-${d.id}`}>
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span>
+                <li
+                  key={d.id}
+                  data-testid={`divida-${d.id}`}
+                  className="py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    {/* ⚠️ UM nó de texto só — `{d.title} · {d.payee_name}`
+                        sem span aninhado na pessoa. Aninhar faz
+                        `getByText(/pai/i)` achar DOIS elementos (o de fora
+                        e o de dentro), e `BlocoDividas.test.tsx` procura a
+                        dívida exatamente assim. */}
+                    <span className={TITULO_LINHA}>
                       {d.title} · {d.payee_name}
                     </span>
                     <span
                       data-testid={`divida-${d.id}-falta`}
-                      className="font-semibold tabular-nums"
+                      className={VALOR_LINHA}
                     >
                       {formatBRL(d.remaining_cents)}
                     </span>
                   </div>
                   {temItens ? (
-                    <div
-                      role="progressbar"
-                      aria-label={d.title}
-                      aria-valuenow={pct}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      className="bg-secondary mt-1 h-2 w-full overflow-hidden rounded-full"
-                    >
+                    <>
                       <div
-                        className="bg-primary h-full rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                        role="progressbar"
+                        aria-label={d.title}
+                        aria-valuenow={pct}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        className={cn(TRILHO_BARRA, 'mt-2 h-2')}
+                      >
+                        <div
+                          className="bg-primary h-full rounded-full"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      {/* A régua da barra em texto: sem ela, a proporção só
+                          existe como comprimento, e "quanto falta em reais"
+                          fica de fora. */}
+                      <p className={cn(META_MONO, 'mt-1.5')}>
+                        {pct}% pago · {formatBRL(d.paid_cents)} de{' '}
+                        {formatBRL(d.total_cents)}
+                      </p>
+                    </>
                   ) : (
                     <p className="text-muted-foreground mt-1 text-xs">
                       Sem itens lançados ainda.
@@ -173,6 +199,12 @@ export function BlocoDividas() {
               )
             })}
           </ul>
+          <a
+            href="#/dividas"
+            className="text-primary inline-flex min-h-11 items-center text-sm font-semibold hover:underline"
+          >
+            ver todas →
+          </a>
         </div>
       ) : null}
     </Bloco>

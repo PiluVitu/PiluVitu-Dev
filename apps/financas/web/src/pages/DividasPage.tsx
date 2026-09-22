@@ -11,6 +11,8 @@ import { useMenorQueSm } from '../lib/breakpoint'
 import { todayInTeresina } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
+import { FaixaKpi, KpiCard } from '../blocos/KpiCard'
+import { CARTAO_SECAO, TRILHO_BARRA } from '../lib/superficie'
 import { ROTULO } from '../lib/tipografia'
 import { ALVO_LINK } from '../lib/touch'
 
@@ -125,9 +127,12 @@ export function DividasPage() {
 
   // Só o que EU devo — ver o comentário do card de total logo abaixo.
   const euDevo = dividas.filter((d) => d.direction === 'i_owe')
+  const meDevem = dividas.filter((d) => d.direction !== 'i_owe')
+  const jaPago = sumCents(euDevo.map((d) => d.paid_cents))
+  const contraido = sumCents(euDevo.map((d) => d.total_cents))
 
   return (
-    <section className="space-y-6" data-testid="pagina-dividas">
+    <section className="space-y-5" data-testid="pagina-dividas">
       {erro !== null && (
         <p role="alert" className="text-destructive text-sm">
           {erro}
@@ -149,20 +154,47 @@ export function DividasPage() {
         o topo da tela seria destaque pra ausência de assunto.
       */}
       {euDevo.length > 0 ? (
-        <NumeroCard
-          rotulo="Total que devo"
-          valorCents={sumCents(euDevo.map((d) => d.remaining_cents))}
-          escala="heroi"
-          data-testid="total-devido"
-          contexto={`${euDevo.length} dívida(s) em aberto${
-            dividas.length > euDevo.length
-              ? ' — o que me devem não entra nesta soma'
-              : ''
-          }`}
-        />
+        <FaixaKpi>
+          {/*
+            ⚠️ `NumeroCard` (30px) aqui e `KpiCard` (28px) ao lado, de
+            propósito: este é o herói da tela, os outros dois são régua. A
+            escala do herói é a mesma de `#/reserva`/`#/insight`, e
+            `DividasPage.test.tsx` a afere.
+          */}
+          <NumeroCard
+            rotulo="Total que devo"
+            valorCents={sumCents(euDevo.map((d) => d.remaining_cents))}
+            escala="heroi"
+            className="rounded-2xl"
+            data-testid="total-devido"
+            contexto={`${euDevo.length} dívida(s) em aberto${
+              dividas.length > euDevo.length
+                ? ' — o que me devem não entra nesta soma'
+                : ''
+            }`}
+          />
+          <KpiCard
+            data-testid="kpi-ja-pago"
+            rotulo="Já pago"
+            valor={formatBRL(jaPago)}
+            contexto={
+              contraido > 0
+                ? `${Math.round((jaPago / contraido) * 100)}% do total contraído`
+                : 'nenhum item lançado ainda'
+            }
+          />
+          {meDevem.length > 0 ? (
+            <KpiCard
+              data-testid="kpi-me-devem"
+              rotulo="Me devem"
+              valor={formatBRL(sumCents(meDevem.map((d) => d.remaining_cents)))}
+              contexto="não entra na soma acima — é a pergunta oposta"
+            />
+          ) : null}
+        </FaixaKpi>
       ) : null}
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardContent className="pt-6">
           {menorQueSm ? (
             <ul className="space-y-3" data-testid="dividas-cards">
@@ -198,7 +230,26 @@ export function DividasPage() {
                       {formatBRL(d.remaining_cents)}
                     </span>
                   </div>
-                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs tabular-nums">
+                  {d.total_cents > 0 ? (
+                    <div
+                      role="progressbar"
+                      aria-label={`${d.title} — progresso`}
+                      aria-valuenow={Math.round(
+                        (d.paid_cents / d.total_cents) * 100,
+                      )}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      className={cn(TRILHO_BARRA, 'mt-2 h-2.5')}
+                    >
+                      <div
+                        className="bg-primary h-full rounded-full"
+                        style={{
+                          width: `${Math.round((d.paid_cents / d.total_cents) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="text-muted-foreground mt-1.5 flex justify-between gap-2 text-xs tabular-nums">
                     <span>Total {formatBRL(d.total_cents)}</span>
                     <span>Pago {formatBRL(d.paid_cents)}</span>
                   </div>
@@ -275,9 +326,11 @@ export function DividasPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">Nova dívida</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
+            Nova dívida
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={enviar} className="space-y-4">

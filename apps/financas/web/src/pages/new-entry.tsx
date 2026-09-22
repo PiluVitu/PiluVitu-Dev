@@ -12,6 +12,8 @@ import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { ALVO_LINHA, ALVO_LINK } from '../lib/touch'
+import { CARTAO_SECAO, PAINEL_SUNKEN } from '../lib/superficie'
+import { ROTULO } from '../lib/tipografia'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import type { AccountView } from './accounts'
 import type { PayeeOption } from './DividasPage'
@@ -80,7 +82,7 @@ export function AbasLancar({ ativo }: { ativo: ModoLancar }) {
       role="group"
       aria-label="Tipo de movimentação"
       data-testid="abas-lancar"
-      className="flex flex-wrap gap-1"
+      className="bg-background inline-flex flex-wrap gap-1 rounded-full border p-1"
     >
       {ABAS.map((aba) => {
         const atual = aba.modo === ativo
@@ -90,7 +92,7 @@ export function AbasLancar({ ativo }: { ativo: ModoLancar }) {
             href={aba.href}
             aria-current={atual ? 'true' : undefined}
             className={cn(
-              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              'inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold transition-colors',
               atual
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground border-input border',
@@ -316,11 +318,13 @@ export function NewEntryPage() {
   }
 
   return (
-    <section className="space-y-6" data-testid="pagina-lancar">
+    <section className="space-y-5" data-testid="pagina-lancar">
       <AbasLancar ativo="lancamento" />
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">Novo lançamento</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
+            Novo lançamento
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -490,7 +494,20 @@ export function NewEntryPage() {
               </div>
             ) : null}
 
-            <div className="space-y-2">
+            {/*
+              As três chaves do lançamento numa faixa só: elas mudam o
+              SIGNIFICADO do que está sendo gravado (entrada × saída, PJ × PF,
+              à vista × parcelado), e espalhadas entre os campos liam como
+              mais três campos.
+
+              ⚠️ Os `<label>` continuam embrulhando o `<input>` e continuam
+              com `ALVO_LINHA` — o alvo real é o rótulo inteiro, não o
+              quadradinho de 13,6×16, e `new-entry.test.tsx` afere o
+              `min-h-11` nesse `<label>`.
+            */}
+            <div
+              className={cn(PAINEL_SUNKEN, 'flex flex-wrap gap-x-5 gap-y-1')}
+            >
               <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
                 <input
                   type="checkbox"
@@ -542,7 +559,7 @@ export function NewEntryPage() {
                 {previa ? (
                   <p
                     data-testid="previa-parcelas"
-                    className="text-muted-foreground text-sm"
+                    className="text-muted-foreground text-sm tabular-nums"
                   >
                     {parcelas}× de{' '}
                     {previa
@@ -565,7 +582,11 @@ export function NewEntryPage() {
                 {okMsg}
               </p>
             ) : null}
-            <Button type="submit" disabled={enviando}>
+            <Button
+              type="submit"
+              className="min-h-11 rounded-xl"
+              disabled={enviando}
+            >
               {enviando ? 'Salvando…' : 'Gravar'}
             </Button>
           </form>

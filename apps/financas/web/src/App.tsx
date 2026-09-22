@@ -32,9 +32,11 @@ import {
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { useMenorQueMd } from './lib/breakpoint'
+import { rotuloCompetencia } from './lib/commitments'
 import { competenciaAtual } from './lib/dates'
+import { CHIP_MONO } from './lib/superficie'
 import { aplicarTema, type Tema, temaSalvo } from './lib/theme'
-import { ROTULO_SECAO } from './lib/tipografia'
+import { OVERLINE, ROTULO_SECAO } from './lib/tipografia'
 import { AccountsPage } from './pages/accounts'
 import { CategoriasPage } from './pages/categorias'
 import { CommitmentsPage } from './pages/commitments'
@@ -249,6 +251,15 @@ const ROTAS_NA_BARRA: RouteKey[] = ['home', 'lancar', 'extrato', 'dividas']
 
 const TODOS_OS_ITENS: NavItem[] = GRUPOS.flatMap((g) => g.itens)
 
+/**
+ * O overline do cabeçalho de página — o grupo em que a rota corrente vive.
+ * Derivado de `GRUPOS`, nunca um segundo mapa: um grupo renomeado no nav
+ * renomearia o overline junto, e um mapa à parte ficaria mentindo.
+ */
+const GRUPO_DA_ROTA: Record<string, string> = Object.fromEntries(
+  GRUPOS.flatMap((g) => g.itens.map((i) => [i.route, g.titulo])),
+)
+
 const ITENS_DA_BARRA: NavItem[] = ROTAS_NA_BARRA.map((r) => {
   const item = TODOS_OS_ITENS.find((i) => i.route === r)
   // Nunca acontece com a lista acima — existe pra um rename de rota falhar
@@ -278,14 +289,14 @@ const CLASSE_CABECALHO_GRUPO = cn(ROTULO_SECAO, 'px-2')
  * ficaria fora de qualquer medição. O par `primary`/`primary-foreground` é
  * medido e passa AA com folga (7,47:1).
  */
-const CLASSE_ITEM_ATIVO = 'bg-primary text-primary-foreground'
+const CLASSE_ITEM_ATIVO = 'bg-primary text-primary-foreground font-bold'
 const CLASSE_ITEM_INATIVO =
   'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 
 /** A marca — literal de `apps/web/components/admin/admin-sidebar.tsx`. */
 function Marca() {
   return (
-    <span className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg font-bold">
+    <span className="bg-primary text-primary-foreground grid size-[34px] shrink-0 place-items-center rounded-xl text-sm font-bold">
       P
     </span>
   )
@@ -343,13 +354,22 @@ function BotaoTema() {
   )
 }
 
+/**
+ * ⚠️ **`altura` existe porque as duas superfícies têm alvos diferentes, e
+ * as duas estão certas.** Na sidebar do desktop o alvo é um ponteiro de
+ * mouse, e o design pede 40px pra caber os 14 destinos sem rolagem; no
+ * `Sheet` do celular vale a lei de `lib/touch.ts` (44px, medida) — e
+ * `App.test.tsx` afere exatamente isso nos destinos do painel.
+ */
 function ItemDeLista({
   item,
   ativo,
+  altura = 'min-h-11',
   onNavegar,
 }: {
   item: NavItem
   ativo: boolean
+  altura?: string
   onNavegar?: () => void
 }) {
   const Icone = item.icon
@@ -359,7 +379,8 @@ function ItemDeLista({
       aria-current={ativo ? 'page' : undefined}
       onClick={onNavegar}
       className={cn(
-        'flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm transition-colors',
+        'flex items-center gap-3 rounded-xl px-2.5 text-[13.5px] transition-colors',
+        altura,
         ativo ? CLASSE_ITEM_ATIVO : CLASSE_ITEM_INATIVO,
       )}
     >
@@ -439,7 +460,7 @@ function TabBar({ route }: { route: RouteKey }) {
 
   const classeSlot = (ativo: boolean) =>
     cn(
-      'flex min-h-14 flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 border-t-2 text-[10px] font-medium transition-colors',
+      'flex min-h-14 flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-t-2 text-[10px] font-semibold tracking-tight transition-colors',
       ativo
         ? 'border-primary text-primary'
         : 'text-muted-foreground border-transparent',
@@ -449,7 +470,7 @@ function TabBar({ route }: { route: RouteKey }) {
     <nav
       aria-label="Navegação principal"
       data-testid="tab-bar"
-      className="bg-background fixed inset-x-0 bottom-0 z-40 flex border-t pb-[env(safe-area-inset-bottom,0px)]"
+      className="bg-background/95 fixed inset-x-0 bottom-0 z-40 flex border-t pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-sm"
     >
       {ITENS_DA_BARRA.map((item) => {
         const ativo = item.route === route
@@ -497,7 +518,7 @@ function TopBar({
   return (
     <header className="bg-background/95 sticky top-0 z-40 flex h-14 items-center gap-2 border-b px-4 backdrop-blur-sm">
       <Marca />
-      <h1 className="truncate text-base font-semibold tracking-tight">
+      <h1 className="truncate text-[17px] font-bold tracking-[-0.02em]">
         {TITULO_DA_ROTA[route]}
       </h1>
       <div className="ml-auto flex shrink-0 items-center">
@@ -521,11 +542,11 @@ function Sidebar({ route, email }: { route: RouteKey; email?: string }) {
   return (
     <aside
       data-testid="sidebar"
-      className="bg-card/40 sticky top-0 flex h-screen w-64 shrink-0 flex-col gap-6 overflow-y-auto border-r px-4 py-6"
+      className="bg-card/40 sticky top-0 flex h-screen w-[248px] shrink-0 flex-col gap-6 overflow-y-auto border-r px-4 py-6"
     >
-      <a href="#/" className="flex items-center gap-2 px-2">
+      <a href="#/" className="flex items-center gap-2.5 px-2">
         <Marca />
-        <span className="text-lg font-semibold">finanças</span>
+        <span className="text-[17px] font-bold tracking-tight">finanças</span>
       </a>
 
       {/*
@@ -545,6 +566,7 @@ function Sidebar({ route, email }: { route: RouteKey; email?: string }) {
                 key={item.href}
                 item={item}
                 ativo={item.route === route}
+                altura="min-h-10"
               />
             ))}
           </div>
@@ -568,6 +590,58 @@ function Sidebar({ route, email }: { route: RouteKey; email?: string }) {
         </div>
       </div>
     </aside>
+  )
+}
+
+/**
+ * Qual mês o app está olhando. Fica no cabeçalho de TODA tela porque quase
+ * todo número do módulo é de uma competência — e antes disso o mês só
+ * aparecia dentro de alguns blocos, o que deixava o resto da tela sem data.
+ */
+function ChipCompetencia() {
+  return (
+    <span
+      data-testid="chip-competencia"
+      className={cn(CHIP_MONO, 'text-muted-foreground gap-1.5 py-1')}
+    >
+      <span
+        aria-hidden="true"
+        className="bg-success size-[7px] shrink-0 rounded-full"
+      />
+      competência {rotuloCompetencia(competenciaAtual())}
+    </span>
+  )
+}
+
+/**
+ * O bloco que abre toda tela: overline do grupo + `<h1>` + chip de
+ * competência. O SUBTÍTULO não mora aqui — ele continua sendo a primeira
+ * linha de cada página, que é quem sabe o que a tela faz.
+ *
+ * ⚠️ **`comTitulo={false}` no celular, e não é cosmético:** lá o `<h1>` já
+ * mora na top bar fixa. Renderizar os dois faria todo
+ * `getByRole('heading', { name: 'Extrato' })` da suíte achar DOIS — o mesmo
+ * defeito que `useMenorQueMd` existe pra evitar do lado do nav.
+ */
+function CabecalhoDaPagina({
+  route,
+  comTitulo,
+}: {
+  route: RouteKey
+  comTitulo: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div className="min-w-0 space-y-1">
+        <p className={OVERLINE}>{GRUPO_DA_ROTA[route]}</p>
+        {comTitulo ? (
+          <h1 className="text-[26px] leading-[1.15] font-bold tracking-[-0.02em]">
+            {TITULO_DA_ROTA[route]}
+          </h1>
+        ) : null}
+      </div>
+      <ChipCompetencia />
+    </div>
   )
 }
 
@@ -639,10 +713,8 @@ function AppShell() {
     return (
       <div className="flex min-h-screen">
         <Sidebar route={route} email={sessao?.user.email} />
-        <main className="mx-auto max-w-3xl flex-1 space-y-6 px-6 py-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {TITULO_DA_ROTA[route]}
-          </h1>
+        <main className="mx-auto w-full max-w-[940px] flex-1 space-y-5 px-7 pt-[26px] pb-[34px]">
+          <CabecalhoDaPagina route={route} comTitulo />
           {tela}
         </main>
       </div>
@@ -655,7 +727,8 @@ function AppShell() {
     // Sair passaram a morar, depois que o `<header>` de 32px morreu.
     <Sheet open={mais} onOpenChange={setMais}>
       <TopBar route={route} onAbrirConta={() => setMais(true)} />
-      <main className="space-y-6 px-4 pt-4 pb-[calc(3.5rem+1.5rem+env(safe-area-inset-bottom,0px))]">
+      <main className="space-y-4 px-[14px] pt-[18px] pb-[calc(3.5rem+1.625rem+env(safe-area-inset-bottom,0px))]">
+        <CabecalhoDaPagina route={route} comTitulo={false} />
         {tela}
       </main>
       <TabBar route={route} />

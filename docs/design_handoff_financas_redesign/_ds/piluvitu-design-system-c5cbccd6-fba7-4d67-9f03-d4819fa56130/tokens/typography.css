@@ -1,0 +1,29 @@
+/* Google Fonts — same two families the source loads via next/font/google
+   (Plus Jakarta Sans + JetBrains Mono). No local font files exist upstream,
+   so consumers link the same hosted files the product uses in production. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Type scale in use across the site (Tailwind text-* sizes actually
+     applied in apps/web components — not a generic ramp). */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+
+  --leading-tight: 1.1;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+
+  /* Overline/mono label treatment used for section headers, timestamps,
+     kbd-style chips ("~/dev", "~/blog") throughout the site. */
+  --tracking-label: 0.2em;
+}

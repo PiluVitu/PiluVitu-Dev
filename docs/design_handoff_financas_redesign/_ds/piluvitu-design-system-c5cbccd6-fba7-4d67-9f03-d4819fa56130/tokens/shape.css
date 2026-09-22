@@ -1,0 +1,20 @@
+/* Radius + shadow + border tokens. --radius is the one dial the source
+   turns (1.125rem) — lg/md/sm all derive from it. */
+:root {
+  --radius: 1.125rem;
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-pill: 999px;
+
+  --border-width: 1px;
+
+  /* shadow-sm / shadow-md / shadow-lg are plain Tailwind defaults — the one
+     bespoke shadow the brand defines is --shadow-ds, used on the 3D visit
+     card surface. */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08);
+  --shadow-md: 0 4px 10px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 12px 24px rgb(0 0 0 / 0.14);
+  --shadow-ds: 0 18px 40px rgb(0 0 0 / 0.45);
+}

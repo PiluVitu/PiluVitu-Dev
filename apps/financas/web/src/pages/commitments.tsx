@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
-import { ROTULO } from '../lib/tipografia'
+import { FaixaKpi, KpiCard } from '../blocos/KpiCard'
+import { CARTAO_KPI, CARTAO_SECAO } from '../lib/superficie'
+import { OVERLINE, ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
@@ -10,6 +12,7 @@ import {
   formatPctRange,
   formatRange,
   LIMIAR_ALERTA_PCT,
+  origensDaCompetencia,
   rotuloCompetencia,
 } from '../lib/commitments'
 import type { CommitmentReportView } from '../lib/commitments'
@@ -64,11 +67,29 @@ export function CommitmentsPage({
   if (error) return <p role="alert">{error}</p>
   if (!report) return <p>Carregando…</p>
 
+  // ⚠️ O "pior mês" é decidido pelo TETO (`max`), o mesmo critério que pinta
+  // a barra e a célula de `%` — um segundo critério aqui faria a faixa de
+  // KPIs e a tabela do mesmo card apontarem meses diferentes.
+  //
+  // ⚠️ `null` numa janela SEM competência nenhuma, e isso não é hipótese: o
+  // relatório vazio (`competences: []`) é o que a rota devolve num banco
+  // recém-criado, e indexar `[0]` ali lançaria no RENDER — o que derruba a
+  // árvore React inteira, não só este card (a casca e a navegação iam
+  // junto). Achado rodando a suíte completa.
+  const pior = piorMes(report)
+  // O melhor caso do PIOR mês: o que sobra do líquido fixo se toda recorrente
+  // em faixa vier no piso. Nunca `max` — ali o número seria o pior caso do
+  // pior mês, que a tela já mostra como `%`.
+  const livreNoMelhorCaso =
+    pior === null
+      ? 0
+      : Math.max(0, report.fixed_net_cents - report.totals[pior.indice].min)
+
   return (
-    <section className="space-y-6" data-testid="pagina-comprometido">
-      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
-      <div className="flex items-center gap-3">
-        <p className="text-muted-foreground text-sm">
+    <section className="space-y-5" data-testid="pagina-comprometido">
+      {/* O `<h1>` saiu daqui pra casca (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-start gap-2">
+        <p className={SUBTITULO_PAGINA}>
           O que já está prometido dos próximos meses.
         </p>
         <Ajuda rotulo="Comprometido">
@@ -76,45 +97,52 @@ export function CommitmentsPage({
           dívidas em aberto.
         </Ajuda>
       </div>
-      {/*
-        ⚠️ `flex-wrap`: MEDIDO em Chrome real a 390×844 — sem ele, os três
-        filhos (texto, o `<strong>` do valor e o gatilho da Ajuda) não cabiam
-        numa linha só e a faixa estourava `scrollWidth 370` contra
-        `clientWidth 358`, **12 px pra fora**. Como o pai tem overflow
-        visível, o excesso não vira scroll: o "?" da Ajuda saía da caixa.
-      */}
-      <p className="text-muted-foreground flex flex-wrap items-center gap-1 text-sm">
-        Denominador: líquido fixo (mês sem freela) de{' '}
-        <strong
-          data-testid="denominador"
-          className="text-foreground tabular-nums"
-        >
-          {formatBRL(report.fixed_net_cents)}
-        </strong>
-        .
-        <Ajuda rotulo="Renda de referência">
-          Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é volátil,
-          e medir contra o mês bom esconde o risco.
-        </Ajuda>
-      </p>
+
+      <FaixaKpi>
+        {pior !== null ? (
+          <KpiCard
+            data-testid="kpi-pior-mes"
+            rotulo="Pior mês da janela"
+            valor={`${formatPctRange(pior.pct)} · ${rotuloCompetencia(pior.competencia)}`}
+            alerta={pior.emAlerta}
+            contexto={
+              pior.emAlerta
+                ? `acima de ${LIMIAR_ALERTA_PCT}% do líquido fixo`
+                : `dentro do limiar de ${LIMIAR_ALERTA_PCT}%`
+            }
+          />
+        ) : null}
+        <Denominador cents={report.fixed_net_cents} />
+        {pior !== null ? (
+          <KpiCard
+            data-testid="kpi-livre"
+            rotulo="Livre no melhor caso"
+            valor={formatBRL(livreNoMelhorCaso)}
+            contexto={`o que sobra do líquido fixo no pior mês da janela (${rotuloCompetencia(pior.competencia)}), se as recorrentes vierem no piso`}
+          />
+        ) : null}
+      </FaixaKpi>
 
       {report.rows.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           Nenhuma parcela ou dívida em aberto na janela.
         </p>
       ) : (
-        <Card>
-          <CardContent className="pt-6">
+        <Card className={CARTAO_SECAO}>
+          <CardContent className="space-y-3 pt-6">
             <Suspense fallback={<div aria-busy="true" />}>
               <GraficoComprometido report={report} />
             </Suspense>
+            <Legenda report={report} />
           </CardContent>
         </Card>
       )}
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">Por conta</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
+            Por conta
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {menorQueSm ? (
@@ -283,5 +311,90 @@ export function CommitmentsPage({
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+/**
+ * A competência de maior risco da janela — decidida pelo TETO da faixa,
+ * nunca pelo piso (a tela existe pra mostrar risco, e o pior mês é o risco).
+ * Empate resolve pela PRIMEIRA competência: a mais próxima é a que o dono
+ * encara antes.
+ */
+function piorMes(report: CommitmentReportView) {
+  if (report.pct_of_fixed_net.length === 0) return null
+
+  let indice = 0
+  report.pct_of_fixed_net.forEach((pct, i) => {
+    if (pct.max > report.pct_of_fixed_net[indice].max) indice = i
+  })
+  const pct = report.pct_of_fixed_net[indice]
+  return {
+    indice,
+    pct,
+    competencia: report.competences[indice],
+    emAlerta: pct.max > LIMIAR_ALERTA_PCT,
+  }
+}
+
+/**
+ * ⚠️ **Cartão próprio em vez de `KpiCard`, e não é preferência:** o valor
+ * mora num `<p className="flex flex-wrap">` junto do gatilho da Ajuda —
+ * `flex-wrap` é o conserto de um estouro de 12px MEDIDO a 390px, e
+ * `commitments.test.tsx` sobe do `data-testid="denominador"` até o `<p>`
+ * pra aferir exatamente essa classe. O `contexto` de `KpiCard` já é um
+ * `<p>`, e `<p>` dentro de `<p>` é markup inválido.
+ */
+function Denominador({ cents }: { cents: number }) {
+  return (
+    <div className={CARTAO_KPI} data-testid="kpi-denominador">
+      <p className={OVERLINE}>Denominador</p>
+      <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <strong
+          data-testid="denominador"
+          className="text-[28px] leading-none font-bold tracking-[-0.02em] tabular-nums"
+        >
+          {formatBRL(cents)}
+        </strong>
+        <Ajuda rotulo="Renda de referência">
+          Por que o denominador é R$ 3.600 e não R$ 5.300 — o freela é volátil,
+          e medir contra o mês bom esconde o risco.
+        </Ajuda>
+      </p>
+      <p className="text-muted-foreground mt-2 text-xs leading-snug">
+        líquido fixo, mês sem freela
+      </p>
+    </div>
+  )
+}
+
+/** Piso × teto, e de onde vem o comprometido do mês mais próximo. */
+function Legenda({ report }: { report: CommitmentReportView }) {
+  const origens = origensDaCompetencia(report.composition?.[0])
+
+  return (
+    <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-xs">
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="bg-primary size-2.5 shrink-0 rounded-[3px]"
+        />
+        piso (mês bom)
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="bg-primary/45 size-2.5 shrink-0 rounded-[3px]"
+        />
+        teto (pior mês)
+      </span>
+      {origens.map((o) => (
+        <span key={o.chave} className="inline-flex items-baseline gap-1.5">
+          <span className={OVERLINE}>{o.rotulo}</span>
+          <span className="text-foreground font-semibold tabular-nums">
+            {o.texto}
+          </span>
+        </span>
+      ))}
+    </div>
   )
 }

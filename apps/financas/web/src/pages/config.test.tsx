@@ -257,3 +257,74 @@ describe('ConfigPage', () => {
     expect(within(secao).queryByRole('button')).not.toBeInTheDocument()
   })
 })
+
+// ---------------------------------------------------------------------
+// Nomes proprios + backfill de transferencia. Ver CLAUDE.md,
+// "Transferencia vinda do import".
+// ---------------------------------------------------------------------
+
+describe('nomes proprios de transferencia', () => {
+  function mockApi(over: { names?: string[]; pares?: number } = {}) {
+    vi.mocked(api).mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/settings')
+        return Promise.resolve({ fixed_net_cents: 360000 } as never)
+      if (path === '/api/transfers/self-names') {
+        if (init?.method === 'PUT') {
+          const body = JSON.parse(String(init.body)) as { names: string[] }
+          return Promise.resolve({ names: body.names } as never)
+        }
+        return Promise.resolve({ names: over.names ?? [] } as never)
+      }
+      if (path.startsWith('/api/transfers/pair'))
+        return Promise.resolve({
+          dry_run: false,
+          pares: over.pares ?? 0,
+          total_cents: 430000,
+          detalhes: [],
+        } as never)
+      return Promise.reject(new Error(`rota inesperada: ${path}`))
+    })
+  }
+
+  it('mostra os nomes ja cadastrados, um por linha', async () => {
+    mockApi({ names: ['Paulo Victor Torres Silva', 'Pilu Tech'] })
+    render(<ConfigPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('campo-nomes-proprios')).toHaveValue(
+        'Paulo Victor Torres Silva\nPilu Tech',
+      ),
+    )
+  })
+
+  it('salva a lista quebrando por linha e descartando vazio', async () => {
+    mockApi({ names: [] })
+    render(<ConfigPage />)
+    const campo = await screen.findByTestId('campo-nomes-proprios')
+    await userEvent.type(campo, 'Pilu Tech\n\nPaulo Victor')
+    await userEvent.click(screen.getByRole('button', { name: /salvar nomes/i }))
+
+    await waitFor(() =>
+      expect(vi.mocked(api)).toHaveBeenCalledWith(
+        '/api/transfers/self-names',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ names: ['Pilu Tech', 'Paulo Victor'] }),
+        }),
+      ),
+    )
+  })
+
+  it('o botao de parear relata quantos pares achou', async () => {
+    mockApi({ names: ['Pilu Tech'], pares: 46 })
+    render(<ConfigPage />)
+    await screen.findByTestId('campo-nomes-proprios')
+    await userEvent.click(
+      screen.getByRole('button', { name: /parear transferências/i }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('resultado-pareamento')).toHaveTextContent(
+        '46',
+      ),
+    )
+  })
+})

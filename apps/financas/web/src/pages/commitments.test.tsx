@@ -465,3 +465,37 @@ describe('CommitmentsPage', () => {
     })
   })
 })
+
+// ⚠️ Achado rodando a SUÍTE COMPLETA, não esta tela isolada: a faixa de KPIs
+// indexava `pct_of_fixed_net[0]`/`totals[0]` sem checar se existe, e o
+// relatório com `competences: []` — o que a rota devolve num banco
+// recém-criado, e exatamente o que `App.test.tsx#mockFetchVazio` simula —
+// lançava DENTRO do render. Um throw no render não fica contido no card: o
+// React desmonta a árvore inteira, e a CASCA (sidebar, tab bar, título) vai
+// junto. O sintoma medido foi um `getByRole('link', { name: 'Comprometido' })`
+// falhando em `App.test.tsx` — o nav sumindo por causa do conteúdo.
+describe('CommitmentsPage — janela vazia não pode derrubar a tela', () => {
+  it('relatório sem competência nenhuma renderiza sem lançar, e a tela continua de pé', async () => {
+    mockFetch({
+      ok: true,
+      data: {
+        competences: [],
+        rows: [],
+        totals: [],
+        fixed_net_cents: 0,
+        pct_of_fixed_net: [],
+      },
+      notifications: [],
+    })
+
+    render(<CommitmentsPage from="2026-08" />)
+
+    // a tela existe (não desmontou) e o denominador continua sendo mostrado
+    expect(await screen.findByTestId('pagina-comprometido')).toBeInTheDocument()
+    expect(screen.getByTestId('denominador')).toHaveTextContent('R$ 0,00')
+    // os dois KPIs que dependem de uma competência simplesmente não saem —
+    // nunca um "—" inventado nem um NaN
+    expect(screen.queryByTestId('kpi-pior-mes')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kpi-livre')).not.toBeInTheDocument()
+  })
+})

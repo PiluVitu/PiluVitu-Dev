@@ -19,6 +19,7 @@ import { reserveRoutes } from './routes/reserve'
 import { rulesRoutes } from './routes/rules'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
+import { transfersRoutes } from './routes/transfers'
 
 // INGEST_TOKEN (fatia ⑨, Task 3): segredo dedicado pro comando que roda no
 // Mac do dono, checado SÓ por POST /api/insights (routes/insights.ts#
@@ -95,6 +96,7 @@ app.route('/api', accountsRoutes)
 app.route('/api', transactionsRoutes)
 app.route('/api', importRoutes)
 app.route('/api', settingsRoutes)
+app.route('/api', transfersRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
 app.route('/api/reports', reportsRoutes)

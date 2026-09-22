@@ -13,6 +13,20 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Finanças</title>
+
+    <!--
+      Plus Jakarta Sans + JetBrains Mono são as duas fontes do design system
+      (`packages/ui`). O `apps/web` as serve pelo `next/font`; numa SPA Vite
+      o equivalente é este par de links. `display=swap` pra o texto aparecer
+      na fonte de sistema enquanto a real baixa, em vez de a tela ficar em
+      branco — este app abre num Android, muitas vezes em rede ruim.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400..800&display=swap"
+    />
     <script>
       // Aplica o tema salvo ANTES do primeiro paint — evita flash de tema
       // errado enquanto o bundle React (deferido, type="module") carrega.

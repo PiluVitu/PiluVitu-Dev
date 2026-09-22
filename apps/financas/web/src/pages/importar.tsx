@@ -46,6 +46,9 @@ import {
 } from '../lib/pluggy'
 import { explicarRegras, sugerirParaLinha } from '../lib/regras-import'
 import { ALVO_LINK } from '../lib/touch'
+import { cn } from '@piluvitu/ui/cn'
+import { CARTAO_SECAO, PAINEL_SUNKEN } from '../lib/superficie'
+import { OVERLINE, ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import type { AccountView } from './accounts'
 
 /**
@@ -121,6 +124,70 @@ type LinhaRevisao = {
 }
 
 type Passo = 'selecionar' | 'mapear' | 'conferencia' | 'enviando' | 'concluido'
+
+/**
+ * Os três estágios visíveis do import. `enviando` e `concluido` NÃO viram
+ * degraus próprios: o primeiro é o mesmo degrau da conferência com o botão
+ * ocupado, e o segundo é o fim — um quarto degrau "pronto" seria um passo
+ * que o dono nunca precisa dar.
+ */
+const DEGRAUS: Array<{ passos: Passo[]; titulo: string; detalhe: string }> = [
+  {
+    passos: ['selecionar'],
+    titulo: 'Origem',
+    detalhe: 'arquivo ou conexão',
+  },
+  {
+    passos: ['mapear'],
+    titulo: 'Colunas',
+    detalhe: 'qual coluna é o quê',
+  },
+  {
+    passos: ['conferencia', 'enviando'],
+    titulo: 'Conferência',
+    detalhe: 'linha a linha, antes de gravar',
+  },
+]
+
+/**
+ * A régua do processo. Nada aqui é clicável de propósito: pular pra frente
+ * sem ter lido o arquivo não é um estado que exista, e um degrau que parece
+ * botão e não age é pior que um degrau que só informa.
+ */
+function Stepper({ passo }: { passo: Passo }) {
+  const atual = DEGRAUS.findIndex((d) => d.passos.includes(passo))
+
+  return (
+    <ol
+      data-testid="stepper-import"
+      className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3"
+    >
+      {DEGRAUS.map((degrau, i) => {
+        const ativo = i === atual
+        const concluido = atual === -1 ? true : i < atual
+        return (
+          <li
+            key={degrau.titulo}
+            aria-current={ativo ? 'step' : undefined}
+            className={cn(
+              'rounded-2xl border px-4 py-3',
+              ativo && 'border-primary bg-primary/5',
+              concluido && 'text-muted-foreground',
+            )}
+          >
+            <p className={cn(OVERLINE, ativo && 'text-primary')}>
+              Passo {i + 1}
+            </p>
+            <p className="mt-1 text-sm font-semibold">{degrau.titulo}</p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {degrau.detalhe}
+            </p>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
 
 /**
  * As TRÊS origens do mesmo pipeline. `'pluggy'` já era aceito pelo CHECK
@@ -988,7 +1055,12 @@ export function ImportarPage() {
   if (loadError) return <p role="alert">{loadError}</p>
 
   return (
-    <section className="space-y-6" data-testid="pagina-importar">
+    <section className="space-y-5" data-testid="pagina-importar">
+      <p className={SUBTITULO_PAGINA}>
+        Traga extrato ou fatura para dentro do app. Nada é gravado antes da sua
+        conferência, linha a linha.
+      </p>
+      <Stepper passo={passo} />
       {regrasIndisponiveis ? (
         <p
           role="alert"
@@ -1006,7 +1078,7 @@ export function ImportarPage() {
       {passo === 'selecionar' ? (
         <div
           data-testid="escopo-conta"
-          className="bg-muted/40 space-y-1.5 rounded-lg border p-4"
+          className={cn(PAINEL_SUNKEN, 'space-y-1.5')}
         >
           <Label htmlFor="importar-conta">Conta do app que vai receber</Label>
           <select
@@ -1029,9 +1101,11 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'selecionar' ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="text-base">Ler extrato ou fatura</CardTitle>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>
+              Ler extrato ou fatura
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
@@ -1076,9 +1150,9 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'selecionar' ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
               Sincronizar com o banco
               <Ajuda rotulo="Sincronizar com o banco">
                 Puxa os lançamentos direto do banco pelo Pluggy, em vez de
@@ -1460,9 +1534,11 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'selecionar' ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="text-base">Fatura em PDF?</CardTitle>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>
+              Fatura em PDF?
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm">
@@ -1488,9 +1564,9 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'mapear' ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
               Mapear colunas do CSV
               <Ajuda rotulo="Mapeamento de colunas">
                 Não adivinhamos qual coluna é qual — bancos mudam de layout, e
@@ -1589,9 +1665,9 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'conferencia' || passo === 'enviando' ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
               Conferir importação
               {fila.length > 1 ? (
                 <span
@@ -1897,9 +1973,11 @@ export function ImportarPage() {
       ) : null}
 
       {passo === 'concluido' && resultado ? (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardHeader>
-            <CardTitle className="text-base">Importação concluída</CardTitle>
+            <CardTitle className={cn(ROTULO, 'leading-none')}>
+              Importação concluída
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p data-testid="resultado-resumo" className="text-sm">

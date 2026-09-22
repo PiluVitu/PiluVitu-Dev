@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { cn } from '@piluvitu/ui/cn'
 import { api, ApiError } from '../api'
 import { rotuloCompetencia } from '../lib/commitments'
-import { NUMERO_HEROI, ROTULO } from '../lib/tipografia'
+import { CARTAO_SECAO, PAINEL_SUNKEN } from '../lib/superficie'
+import { NUMERO_HEROI, ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import { competenciaAtual, formatDateTimeTeresina } from '../lib/dates'
 import {
   dicaParaErroDeGeracao,
@@ -335,7 +336,7 @@ export function InsightPage() {
   const numbersCarregando = numbers === null && numbersError === null
 
   return (
-    <section className="space-y-6" data-testid="pagina-insight">
+    <section className="space-y-5" data-testid="pagina-insight">
       {/*
         O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou.
 
@@ -350,7 +351,7 @@ export function InsightPage() {
         `pages/commitments.tsx`.
       */}
       <div className="flex flex-wrap items-center gap-3">
-        <p className="text-muted-foreground text-sm">
+        <p className={SUBTITULO_PAGINA}>
           Os números do mês, mais a leitura escrita pelo modelo local.
         </p>
         <Ajuda rotulo="Insight">
@@ -362,9 +363,14 @@ export function InsightPage() {
         </Ajuda>
       </div>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-base">
+          <CardTitle
+            className={cn(
+              ROTULO,
+              'flex flex-wrap items-center justify-between gap-3',
+            )}
+          >
             <span>Números de {rotuloCompetencia(mes)}</span>
             <label className="flex items-center gap-2 text-sm font-normal">
               <span className="text-muted-foreground">Mês</span>
@@ -372,7 +378,7 @@ export function InsightPage() {
                 type="month"
                 value={mes}
                 onChange={(e) => setMes(e.target.value)}
-                className="border-input focus-visible:ring-ring flex h-9 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
+                className="border-input focus-visible:ring-ring flex h-[34px] rounded-[10px] border bg-transparent px-2.5 text-xs shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
               />
             </label>
           </CardTitle>
@@ -392,9 +398,9 @@ export function InsightPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">Leitura</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>Leitura</CardTitle>
         </CardHeader>
         <CardContent>
           {insightError ? (
@@ -588,7 +594,7 @@ function NumerosCalculados({ numbers }: { numbers: InsightNumbersView }) {
                 </div>
                 {pct === null ? null : (
                   <div
-                    className="bg-secondary mt-1 h-1.5 w-full overflow-hidden rounded-full"
+                    className="bg-secondary mt-1.5 h-[7px] w-full overflow-hidden rounded-full"
                     // A barra é decoração de um número que já está escrito ao
                     // lado — anunciá-la de novo só repetiria a mesma
                     // informação pra quem usa leitor de tela.
@@ -658,9 +664,14 @@ function LeituraGerada({ insight }: { insight: InsightView }) {
         </p>
       ) : null}
 
+      {/* O texto do modelo num painel rebaixado: a superfície diz "isto veio
+          de fora do livro-caixa" sem precisar de mais uma frase de aviso. */}
       <p
         data-testid="insight-texto"
-        className="text-foreground text-sm whitespace-pre-wrap"
+        className={cn(
+          PAINEL_SUNKEN,
+          'text-foreground text-sm leading-relaxed whitespace-pre-wrap',
+        )}
       >
         {insight.texto}
       </p>

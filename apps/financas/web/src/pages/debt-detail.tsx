@@ -24,7 +24,8 @@ import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 import { NovoItemForm } from './NovoItemForm'
-import { ROTULO } from '../lib/tipografia'
+import { CARTAO_SECAO, GRID_BLOCOS, TRILHO_BARRA } from '../lib/superficie'
+import { META_MONO, NUMERO_HEROI, ROTULO } from '../lib/tipografia'
 
 export type DebtItemBalanceView = {
   item_id: string
@@ -223,6 +224,9 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   const emAberto = sumCents(
     detail.items.map((i) => Math.max(0, i.remaining_cents)),
   )
+  const pagoDivida = Math.max(0, totalDivida - emAberto)
+  const pctQuitado =
+    totalDivida > 0 ? Math.round((pagoDivida / totalDivida) * 100) : 0
   const descricaoItem = (id: string) =>
     detail.items.find((i) => i.item_id === id)?.description ?? id
 
@@ -399,8 +403,16 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
   }
 
   return (
-    <section className="space-y-6" data-testid="pagina-divida">
+    <section className="space-y-5" data-testid="pagina-divida">
       <div>
+        {/* A saída da tela. Era o botão "voltar" do navegador e nada mais —
+            e num app instalado na tela inicial o dono nem sempre o tem. */}
+        <a
+          href="#/dividas"
+          className="text-muted-foreground hover:text-foreground inline-flex min-h-11 items-center text-sm transition-colors"
+        >
+          ← todas as dívidas
+        </a>
         {/*
           ⚠️ Único `<h2>` de título de tela do app, e a exceção é deliberada:
           `TITULO_DA_ROTA` (`App.tsx`) é um mapa ESTÁTICO por rota, e o nome da
@@ -416,11 +428,60 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
             Sem itens ainda — nada em aberto pra cobrar.
           </p>
         ) : (
-          <p className="text-muted-foreground mt-1 text-sm">
-            {detail.debt.direction === 'i_owe' ? 'devo' : 'me devem'}{' '}
-            <strong className="text-foreground">{formatBRL(emAberto)}</strong>{' '}
-            de {formatBRL(totalDivida)}
-          </p>
+          <div className="mt-3">
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+              <div>
+                <p className={ROTULO}>
+                  {detail.debt.direction === 'i_owe'
+                    ? 'Falta pagar'
+                    : 'Falta receber'}
+                </p>
+                <p
+                  data-testid="divida-em-aberto"
+                  className={cn('mt-1', NUMERO_HEROI)}
+                >
+                  {formatBRL(emAberto)}
+                </p>
+              </div>
+              <dl className="flex flex-wrap gap-x-6 gap-y-2">
+                <div>
+                  <dt className={ROTULO}>Total</dt>
+                  <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {formatBRL(totalDivida)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={ROTULO}>Pago</dt>
+                  <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {formatBRL(pagoDivida)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className={ROTULO}>Itens</dt>
+                  <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {detail.items.length}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${detail.debt.title} — progresso`}
+              aria-valuenow={pctQuitado}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className={cn(TRILHO_BARRA, 'mt-3 h-3')}
+            >
+              <div
+                className="bg-primary h-full rounded-full"
+                style={{ width: `${pctQuitado}%` }}
+              />
+            </div>
+            <p className={cn(META_MONO, 'mt-2')}>
+              {pctQuitado}% quitado · {detail.payments.length} pagamento(s) ·{' '}
+              {STATUS_LABEL[detail.debt.status]}
+            </p>
+          </div>
         )}
         {detail.debt.status !== 'open' ? (
           <div className="mt-2">
@@ -487,117 +548,143 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            Itens
-            <Ajuda rotulo="Itens">
-              Itens são o que compõe a dívida (estoque). Não geram lançamento no
-              caixa — só pagamentos geram.
-            </Ajuda>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {detail.items.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              O total da dívida sai da soma dos itens. Adicione o primeiro
-              abaixo.
-            </p>
-          ) : menorQueSm ? (
-            <ul className="space-y-3" data-testid="itens-cards">
-              {detail.items.map((i) => (
-                <li
-                  key={i.item_id}
-                  data-testid={`item-${i.item_id}`}
-                  className={cn(
-                    'rounded-md border p-3',
-                    i.is_settled && 'quitado opacity-[0.55]',
-                  )}
-                >
-                  <p
-                    className={cn(
-                      'font-medium',
-                      i.is_settled && 'line-through',
-                    )}
-                  >
-                    {i.description}
-                    {i.is_settled ? <span aria-label="quitado"> ✓</span> : null}
-                  </p>
-                  {/* `falta` LIDERA o card — é o número que a tabela
-                      escondia, e a razão desta tela existir. */}
-                  <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-muted-foreground text-xs">falta</span>
-                    <span
-                      data-testid={`item-${i.item_id}-falta`}
-                      className="text-lg font-semibold tabular-nums"
-                    >
-                      {formatBRL(Math.max(0, i.remaining_cents))}
-                    </span>
-                  </div>
-                  <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs tabular-nums">
-                    <span data-testid={`item-${i.item_id}-total`}>
-                      total {formatBRL(i.amount_cents)}
-                    </span>
-                    <span data-testid={`item-${i.item_id}-pago`}>
-                      pago {formatBRL(i.allocated_cents)}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex">
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className={cn(
-                        'text-destructive h-auto p-0 text-xs no-underline',
-                        ALVO_LINK_FIM,
-                      )}
-                      aria-label={`Excluir item ${i.description}`}
-                      data-testid={`excluir-item-${i.item_id}`}
-                      disabled={processando === `item:${i.item_id}`}
-                      onClick={() => excluirItem(i)}
-                    >
-                      excluir
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th
-                      className={cn(ROTULO, 'border-b py-1.5 pr-2 text-left')}
-                    >
-                      Item
-                    </th>
-                    <th
-                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
-                    >
-                      total
-                    </th>
-                    <th
-                      className={cn(ROTULO, 'border-b px-2 py-1.5 text-right')}
-                    >
-                      pago
-                    </th>
-                    <th
-                      className={cn(ROTULO, 'border-b py-1.5 pl-2 text-right')}
-                    >
-                      falta
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+      {/*
+        Itens e Pagamentos lado a lado: são as duas metades da MESMA conta
+        (o que compõe a dívida × o que já saiu pra quitá-la), e lê-las em
+        sequência obrigava a rolar entre uma e outra pra conferir. Abaixo de
+        ~320px de coluna o grid cai pra uma só, sozinho.
+      */}
+      <div className={GRID_BLOCOS}>
+        <div className="space-y-5">
+          <Card className={CARTAO_SECAO}>
+            <CardHeader>
+              <CardTitle className={cn(ROTULO, 'flex items-center gap-2')}>
+                Itens
+                <Ajuda rotulo="Itens">
+                  Itens são o que compõe a dívida (estoque). Não geram
+                  lançamento no caixa — só pagamentos geram.
+                </Ajuda>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {detail.items.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  O total da dívida sai da soma dos itens. Adicione o primeiro
+                  abaixo.
+                </p>
+              ) : menorQueSm ? (
+                <ul className="space-y-3" data-testid="itens-cards">
                   {detail.items.map((i) => (
-                    <tr
+                    <li
                       key={i.item_id}
                       data-testid={`item-${i.item_id}`}
-                      className={cn(i.is_settled && 'quitado opacity-[0.55]')}
+                      className={cn(
+                        'rounded-md border p-3',
+                        i.is_settled && 'quitado opacity-[0.55]',
+                      )}
                     >
-                      <td className="border-b py-1.5 pr-2 text-left">
-                        {/* Excluir mora DENTRO da célula do Item, não numa
+                      <p
+                        className={cn(
+                          'font-medium',
+                          i.is_settled && 'line-through',
+                        )}
+                      >
+                        {i.description}
+                        {i.is_settled ? (
+                          <span aria-label="quitado"> ✓</span>
+                        ) : null}
+                      </p>
+                      {/* `falta` LIDERA o card — é o número que a tabela
+                      escondia, e a razão desta tela existir. */}
+                      <div className="mt-2 flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground text-xs">
+                          falta
+                        </span>
+                        <span
+                          data-testid={`item-${i.item_id}-falta`}
+                          className="text-lg font-semibold tabular-nums"
+                        >
+                          {formatBRL(Math.max(0, i.remaining_cents))}
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground mt-1 flex justify-between gap-2 text-xs tabular-nums">
+                        <span data-testid={`item-${i.item_id}-total`}>
+                          total {formatBRL(i.amount_cents)}
+                        </span>
+                        <span data-testid={`item-${i.item_id}-pago`}>
+                          pago {formatBRL(i.allocated_cents)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex">
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className={cn(
+                            'text-destructive h-auto p-0 text-xs no-underline',
+                            ALVO_LINK_FIM,
+                          )}
+                          aria-label={`Excluir item ${i.description}`}
+                          data-testid={`excluir-item-${i.item_id}`}
+                          disabled={processando === `item:${i.item_id}`}
+                          onClick={() => excluirItem(i)}
+                        >
+                          excluir
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th
+                          className={cn(
+                            ROTULO,
+                            'border-b py-1.5 pr-2 text-left',
+                          )}
+                        >
+                          Item
+                        </th>
+                        <th
+                          className={cn(
+                            ROTULO,
+                            'border-b px-2 py-1.5 text-right',
+                          )}
+                        >
+                          total
+                        </th>
+                        <th
+                          className={cn(
+                            ROTULO,
+                            'border-b px-2 py-1.5 text-right',
+                          )}
+                        >
+                          pago
+                        </th>
+                        <th
+                          className={cn(
+                            ROTULO,
+                            'border-b py-1.5 pl-2 text-right',
+                          )}
+                        >
+                          falta
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.items.map((i) => (
+                        <tr
+                          key={i.item_id}
+                          data-testid={`item-${i.item_id}`}
+                          className={cn(
+                            i.is_settled && 'quitado opacity-[0.55]',
+                          )}
+                        >
+                          <td className="border-b py-1.5 pr-2 text-left">
+                            {/* Excluir mora DENTRO da célula do Item, não numa
                             5ª coluna: MEDIDO a 390px (o alvo desta task) —
                             uma coluna "Ações" extra ficava cortada dentro
                             do overflow-x-auto da tabela (chegava a
@@ -608,215 +695,230 @@ export function DebtDetailPage({ debtId }: { debtId: string }) {
                             tabela. `line-through` fica só no `<span>` do
                             texto, não na célula inteira — senão o link
                             "excluir" também saía riscado. */}
-                        <span className={cn(i.is_settled && 'line-through')}>
-                          {i.description}
-                          {i.is_settled ? (
-                            <span aria-label="quitado"> ✓</span>
-                          ) : null}
-                        </span>
-                        <div>
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="sm"
-                            className={cn(
-                              'text-destructive h-auto p-0 text-xs no-underline',
-                              ALVO_LINK,
-                            )}
-                            aria-label={`Excluir item ${i.description}`}
-                            data-testid={`excluir-item-${i.item_id}`}
-                            disabled={processando === `item:${i.item_id}`}
-                            onClick={() => excluirItem(i)}
+                            <span
+                              className={cn(i.is_settled && 'line-through')}
+                            >
+                              {i.description}
+                              {i.is_settled ? (
+                                <span aria-label="quitado"> ✓</span>
+                              ) : null}
+                            </span>
+                            <div>
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="sm"
+                                className={cn(
+                                  'text-destructive h-auto p-0 text-xs no-underline',
+                                  ALVO_LINK,
+                                )}
+                                aria-label={`Excluir item ${i.description}`}
+                                data-testid={`excluir-item-${i.item_id}`}
+                                disabled={processando === `item:${i.item_id}`}
+                                onClick={() => excluirItem(i)}
+                              >
+                                excluir
+                              </Button>
+                            </div>
+                          </td>
+                          <td
+                            data-testid={`item-${i.item_id}-total`}
+                            className="border-b px-2 py-1.5 text-right tabular-nums"
                           >
-                            excluir
-                          </Button>
-                        </div>
-                      </td>
-                      <td
-                        data-testid={`item-${i.item_id}-total`}
-                        className="border-b px-2 py-1.5 text-right tabular-nums"
-                      >
-                        {formatBRL(i.amount_cents)}
-                      </td>
-                      <td
-                        data-testid={`item-${i.item_id}-pago`}
-                        className="border-b px-2 py-1.5 text-right tabular-nums"
-                      >
-                        {formatBRL(i.allocated_cents)}
-                      </td>
-                      <td
-                        data-testid={`item-${i.item_id}-falta`}
-                        className="border-b py-1.5 pl-2 text-right font-medium tabular-nums"
-                      >
-                        {formatBRL(Math.max(0, i.remaining_cents))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                            {formatBRL(i.amount_cents)}
+                          </td>
+                          <td
+                            data-testid={`item-${i.item_id}-pago`}
+                            className="border-b px-2 py-1.5 text-right tabular-nums"
+                          >
+                            {formatBRL(i.allocated_cents)}
+                          </td>
+                          <td
+                            data-testid={`item-${i.item_id}-falta`}
+                            className="border-b py-1.5 pl-2 text-right font-medium tabular-nums"
+                          >
+                            {formatBRL(Math.max(0, i.remaining_cents))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-          <div className="mt-6 border-t pt-6">
-            <NovoItemForm debtId={debtId} onCreated={carregar} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pagamentos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {detail.payments.length === 0 ? (
-            // Fix de revisão: mesma tela do próprio screenshot do dono —
-            // §3.3 do spec cobriu os dois vazios de Itens, mas deixou este
-            // card sempre em branco quando não há pagamento nenhum ainda
-            // (o caso comum de uma dívida recém-criada). Aponta pro
-            // formulário logo abaixo, em vez de só um espaço vazio.
-            <p className="text-muted-foreground text-sm">
-              Nenhum pagamento ainda — registre o primeiro no formulário abaixo.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {detail.payments.map((p) => (
-                <li
-                  key={p.id}
-                  data-testid={`pagamento-${p.id}`}
-                  className="text-sm"
-                >
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-muted-foreground">
-                      {dataBR(p.paid_on)}
-                    </span>{' '}
-                    <strong
-                      data-testid={`pagamento-${p.id}-total`}
-                      className="tabular-nums"
-                    >
-                      {formatBRL(p.amount_cents)}
-                    </strong>
-                  </div>
-                  <ul className="text-muted-foreground mt-1 space-y-0.5 pl-4">
-                    {p.allocations.map((a) => (
-                      <li
-                        key={a.item_id}
-                        data-testid={`alloc-${p.id}-${a.item_id}`}
-                      >
-                        {descricaoItem(a.item_id)} · {formatBRL(a.amount_cents)}
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mt-1 flex">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={ALVO_LINK_FIM}
-                      aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
-                      data-testid={`excluir-pagamento-${p.id}`}
-                      disabled={processando === `pagamento:${p.id}`}
-                      onClick={() => excluirPagamento(p)}
-                    >
-                      {processando === `pagamento:${p.id}` ? '…' : 'Excluir'}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Novo pagamento</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={enviar}
-            data-testid="form-pagamento"
-            className="space-y-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="pagamento-valor">Valor</Label>
-              <Input
-                id="pagamento-valor"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                placeholder="1.360,00"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pagamento-data">Data</Label>
-              <Input
-                id="pagamento-data"
-                type="date"
-                value={paidOn}
-                onChange={(e) => setPaidOn(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pagamento-conta">Conta</Label>
-              <select
-                id="pagamento-conta"
-                className={SELECT_CLASSNAME}
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <fieldset className="space-y-2 border-t pt-4">
-              <legend className="flex items-center gap-2 text-sm font-medium">
-                Dividir entre itens
-                <Ajuda rotulo="Dividir entre itens">
-                  Um pagamento pode cobrir vários itens. É isso que responde
-                  &quot;o Steam Deck já está quitado?&quot;.
-                </Ajuda>
-              </legend>
-              {detail.items.length === 0 ? (
+              <div className="mt-6 border-t pt-6">
+                <NovoItemForm debtId={debtId} onCreated={carregar} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="space-y-5">
+          <Card className={CARTAO_SECAO}>
+            <CardHeader>
+              <CardTitle className={cn(ROTULO, 'leading-none')}>
+                Pagamentos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {detail.payments.length === 0 ? (
+                // Fix de revisão: mesma tela do próprio screenshot do dono —
+                // §3.3 do spec cobriu os dois vazios de Itens, mas deixou este
+                // card sempre em branco quando não há pagamento nenhum ainda
+                // (o caso comum de uma dívida recém-criada). Aponta pro
+                // formulário logo abaixo, em vez de só um espaço vazio.
                 <p className="text-muted-foreground text-sm">
-                  A divisão aparece depois que existir pelo menos um item.
+                  Nenhum pagamento ainda — registre o primeiro no formulário
+                  abaixo.
                 </p>
               ) : (
-                detail.items.map((i) => (
-                  <div key={i.item_id} className="space-y-1.5">
-                    <Label htmlFor={`alocacao-${i.item_id}`}>
-                      {i.description}
-                    </Label>
-                    <Input
-                      id={`alocacao-${i.item_id}`}
-                      value={allocRaw[i.item_id] ?? ''}
-                      disabled={i.is_settled === 1}
-                      onChange={(e) =>
-                        setAllocRaw((prev) => ({
-                          ...prev,
-                          [i.item_id]: e.target.value,
-                        }))
-                      }
-                      placeholder={formatBRL(Math.max(0, i.remaining_cents))}
-                    />
-                  </div>
-                ))
+                <ul className="space-y-3">
+                  {detail.payments.map((p) => (
+                    <li
+                      key={p.id}
+                      data-testid={`pagamento-${p.id}`}
+                      className="text-sm"
+                    >
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-muted-foreground">
+                          {dataBR(p.paid_on)}
+                        </span>{' '}
+                        <strong
+                          data-testid={`pagamento-${p.id}-total`}
+                          className="tabular-nums"
+                        >
+                          {formatBRL(p.amount_cents)}
+                        </strong>
+                      </div>
+                      <ul className="text-muted-foreground mt-1 space-y-0.5 pl-4">
+                        {p.allocations.map((a) => (
+                          <li
+                            key={a.item_id}
+                            data-testid={`alloc-${p.id}-${a.item_id}`}
+                          >
+                            {descricaoItem(a.item_id)} ·{' '}
+                            {formatBRL(a.amount_cents)}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-1 flex">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className={ALVO_LINK_FIM}
+                          aria-label={`Excluir pagamento de ${formatBRL(p.amount_cents)} em ${dataBR(p.paid_on)}`}
+                          data-testid={`excluir-pagamento-${p.id}`}
+                          disabled={processando === `pagamento:${p.id}`}
+                          onClick={() => excluirPagamento(p)}
+                        >
+                          {processando === `pagamento:${p.id}`
+                            ? '…'
+                            : 'Excluir'}
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </fieldset>
+            </CardContent>
+          </Card>
 
-            {formError ? (
-              <p role="alert" className="text-destructive text-sm">
-                {formError}
-              </p>
-            ) : null}
-            <Button type="submit" disabled={enviando}>
-              {enviando ? 'Salvando…' : 'Registrar pagamento'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          <Card className={CARTAO_SECAO}>
+            <CardHeader>
+              <CardTitle className={cn(ROTULO, 'leading-none')}>
+                Novo pagamento
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={enviar}
+                data-testid="form-pagamento"
+                className="space-y-4"
+              >
+                <div className="space-y-1.5">
+                  <Label htmlFor="pagamento-valor">Valor</Label>
+                  <Input
+                    id="pagamento-valor"
+                    value={valor}
+                    onChange={(e) => setValor(e.target.value)}
+                    placeholder="1.360,00"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pagamento-data">Data</Label>
+                  <Input
+                    id="pagamento-data"
+                    type="date"
+                    value={paidOn}
+                    onChange={(e) => setPaidOn(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pagamento-conta">Conta</Label>
+                  <select
+                    id="pagamento-conta"
+                    className={SELECT_CLASSNAME}
+                    value={accountId}
+                    onChange={(e) => setAccountId(e.target.value)}
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <fieldset className="space-y-2 border-t pt-4">
+                  <legend className="flex items-center gap-2 text-sm font-medium">
+                    Dividir entre itens
+                    <Ajuda rotulo="Dividir entre itens">
+                      Um pagamento pode cobrir vários itens. É isso que responde
+                      &quot;o Steam Deck já está quitado?&quot;.
+                    </Ajuda>
+                  </legend>
+                  {detail.items.length === 0 ? (
+                    <p className="text-muted-foreground text-sm">
+                      A divisão aparece depois que existir pelo menos um item.
+                    </p>
+                  ) : (
+                    detail.items.map((i) => (
+                      <div key={i.item_id} className="space-y-1.5">
+                        <Label htmlFor={`alocacao-${i.item_id}`}>
+                          {i.description}
+                        </Label>
+                        <Input
+                          id={`alocacao-${i.item_id}`}
+                          value={allocRaw[i.item_id] ?? ''}
+                          disabled={i.is_settled === 1}
+                          onChange={(e) =>
+                            setAllocRaw((prev) => ({
+                              ...prev,
+                              [i.item_id]: e.target.value,
+                            }))
+                          }
+                          placeholder={formatBRL(
+                            Math.max(0, i.remaining_cents),
+                          )}
+                        />
+                      </div>
+                    ))
+                  )}
+                </fieldset>
+
+                {formError ? (
+                  <p role="alert" className="text-destructive text-sm">
+                    {formError}
+                  </p>
+                ) : null}
+                <Button type="submit" disabled={enviando}>
+                  {enviando ? 'Salvando…' : 'Registrar pagamento'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       <Dialog
         open={confirmacao !== null}

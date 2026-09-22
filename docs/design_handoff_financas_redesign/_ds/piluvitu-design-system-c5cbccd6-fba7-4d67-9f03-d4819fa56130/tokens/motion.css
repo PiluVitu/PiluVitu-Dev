@@ -1,0 +1,43 @@
+/* Motion tokens. The brand is deliberately restrained: colour/background
+   transitions on hover, no entrance animation on static content. The one
+   showcase animation (3D visit card) is an easter egg behind a triple-click. */
+:root {
+  --duration-fast: 150ms; /* @kind other */
+  --duration-base: 200ms; /* @kind other */
+  --duration-slow: 500ms; /* @kind other */
+  --ease-standard: ease-in-out; /* @kind other */
+}
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+@keyframes visit-card-3d-wobble {
+  0%,
+  100% {
+    transform: rotateY(-16deg) rotateX(5deg);
+  }
+  50% {
+    transform: rotateY(16deg) rotateX(-5deg);
+  }
+}
+@keyframes ds-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

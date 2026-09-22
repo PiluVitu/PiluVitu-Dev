@@ -21,7 +21,8 @@ import { PagarFatura } from '../blocos/PagarFatura'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
 import { ALVO_LINK_FIM } from '../lib/touch'
-import { NUMERO_HEROI, ROTULO } from '../lib/tipografia'
+import { CARTAO_SECAO } from '../lib/superficie'
+import { NUMERO_HEROI, ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
 
 export type AccountView = {
   id: string
@@ -208,20 +209,30 @@ export function AccountsPage() {
   if (!accounts) return <p>Carregando…</p>
 
   return (
-    <section className="space-y-6" data-testid="pagina-contas">
+    <section className="space-y-5" data-testid="pagina-contas">
+      <p className={SUBTITULO_PAGINA}>
+        Onde o dinheiro está, separado por escopo — PJ e PF nunca somados entre
+        si.
+      </p>
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}
         </p>
       ) : null}
 
-      <div className="space-y-4">
+      {/* PF e PJ lado a lado quando há largura — a comparação entre as duas
+          pilhas é a leitura da tela, e empilhadas ela vira rolagem. */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
         {SCOPES.map((scope) => {
           const list = accounts.filter((a) => a.scope === scope)
           if (list.length === 0) return null
           return (
-            <Card key={scope} data-testid={`grupo-${scope}`}>
-              <CardHeader>
+            <Card
+              key={scope}
+              data-testid={`grupo-${scope}`}
+              className={CARTAO_SECAO}
+            >
+              <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
                 {/*
                   `badgeVariants` num `<span>`, não o componente `Badge` (que
                   é um `<div>`): `CardTitle` é um `<h3>`, cujo conteúdo é
@@ -229,7 +240,7 @@ export function AccountsPage() {
                   escopo vira um chip de verdade sem quebrar a semântica do
                   cabeçalho.
                 */}
-                <CardTitle className="text-base">
+                <CardTitle>
                   <span
                     data-testid={`escopo-${scope}`}
                     className={badgeVariants({
@@ -256,7 +267,10 @@ export function AccountsPage() {
                   `ROTULO` "TOTAL PJ" repetiria a mesma palavra duas vezes.
                   PJ e PF continuam JAMAIS somados entre si.
                 */}
-                <p data-testid={`total-${scope}`} className={NUMERO_HEROI}>
+                <p
+                  data-testid={`total-${scope}`}
+                  className={cn(NUMERO_HEROI, 'text-right')}
+                >
                   {formatBRL(sumCents(list.map((a) => a.balance_cents)))}
                 </p>
               </CardHeader>
@@ -390,7 +404,9 @@ export function AccountsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Nova conta</CardTitle>
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
+            Nova conta
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form

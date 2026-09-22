@@ -1,10 +1,15 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeAll, vi } from 'vitest'
+import { limparRequisicoesEmVoo } from '../lib/em-voo'
 
 // Sem `globals: true` o auto-cleanup da Testing Library não se registra.
 afterEach(() => {
   cleanup()
+  // Um caso que desmonta antes de a busca assentar deixaria a promessa em
+  // voo — e o caso seguinte, ao pedir o mesmo path, receberia a resposta
+  // (ou a rejeição) do anterior. Ver `lib/requisicao-unica.ts`.
+  limparRequisicoesEmVoo()
 })
 
 /**

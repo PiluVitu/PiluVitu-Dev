@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { cn } from '@piluvitu/ui/cn'
-import { api, ApiError } from '../api'
+import { ApiError } from '../api'
+import { buscarUmaVez } from '../lib/requisicao-unica'
 import { competenciaAtual } from '../lib/dates'
 import { NUMERO_GRID, ROTULO } from '../lib/tipografia'
+import { LEGENDA_CORES } from '../lib/paleta'
 import { rotuloCompetencia } from '../lib/commitments'
 import type { ByCategoryReportView } from '../lib/categories'
 import type { InsightNumbersView } from '../lib/insight'
@@ -67,7 +69,9 @@ export function BlocoCategorias() {
 
   useEffect(() => {
     let vivo = true
-    api<ByCategoryReportView>(`/api/reports/by-category?competence=${mes}`)
+    buscarUmaVez<ByCategoryReportView>(
+      `/api/reports/by-category?competence=${mes}`,
+    )
       .then((data) => {
         if (vivo) {
           setReport(data)
@@ -104,7 +108,7 @@ export function BlocoCategorias() {
   useEffect(() => {
     let vivo = true
     setNumeros(null)
-    api<InsightNumbersView>(`/api/insights/numbers?competence=${mes}`)
+    buscarUmaVez<InsightNumbersView>(`/api/insights/numbers?competence=${mes}`)
       .then((data) => {
         if (vivo) setNumeros(data)
       })
@@ -128,8 +132,10 @@ export function BlocoCategorias() {
   return (
     <Bloco
       titulo="Para onde foi o dinheiro"
+      descricao={rotuloCompetencia(mes)}
       carregando={carregando}
       erro={erroInicial}
+      acao={<SeletorDeMes mes={mes} onMes={setMes} />}
     >
       {report ? (
         <div className="space-y-3">
@@ -147,30 +153,6 @@ export function BlocoCategorias() {
             inteira — que é também a anatomia do rótulo ACIMA do valor
             (`NumeroCard`, `pages/insight.tsx`).
           */}
-          <div>
-            {/* `<label>` nativo (nesting, sem `htmlFor`/`id`) — mesmo padrão
-                de `new-entry.tsx`/`NovoItemForm.tsx`/`DividasPage.tsx` pros
-                campos de data. O `<input>` recebe as classes do componente
-                `Input` de `@piluvitu/ui` (Tailwind, tokens do design
-                system) copiadas à mão em vez de importar o componente:
-                `Input`/`Label` reais puxariam `@radix-ui/react-label` pro
-                bundle PRINCIPAL (este bloco não é lazy, só o gráfico é) por
-                um wrapper decorativo — peso novo sem ganho real, quando um
-                `<label>` nativo já é o padrão usado pelos OUTROS blocos e
-                telas deste app (ver BlocoSaldos.tsx, que fez a mesma
-                escolha pro link "Criar conta": Tailwind direto, não um
-                componente novo de `@piluvitu/ui`). */}
-            <label className="text-sm font-medium">
-              Mês
-              <input
-                type="month"
-                value={mes}
-                onChange={(e) => setMes(e.target.value)}
-                className="border-input focus-visible:ring-ring mt-1 flex h-9 w-full max-w-40 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
-              />
-            </label>
-          </div>
-
           {/*
             ⚠️ **A manchete é o TOTAL GASTO DO MÊS — a resposta da pergunta
             que dá título ao card.** Antes saía em `text-sm font-semibold`
@@ -208,9 +190,12 @@ export function BlocoCategorias() {
               Nenhum gasto em {rotuloCompetencia(mes)}.
             </p>
           ) : (
-            <Suspense fallback={<div aria-busy="true" />}>
-              <GraficoCategorias report={report} />
-            </Suspense>
+            <div className="space-y-3">
+              <Suspense fallback={<div aria-busy="true" />}>
+                <GraficoCategorias report={report} />
+              </Suspense>
+              <LegendaCategorias report={report} />
+            </div>
           )}
         </div>
       ) : null}
@@ -279,5 +264,83 @@ function Variacao({ numeros }: { numeros: InsightNumbersView | null }) {
       {pct} {gastouMais ? 'a mais' : 'a menos'} que{' '}
       {rotuloCompetencia(numeros.previous_competence)}
     </p>
+  )
+}
+
+/**
+ * O seletor de mês, no canto superior direito do card.
+ *
+ * ⚠️ **Não pode dividir nenhuma faixa `flex` com o total** — a faixa
+ * compartilhada era o overflow de PÁGINA medido a 768px, e
+ * `BlocoCategorias.test.tsx` sobe de cada um até a raiz exigindo que nenhum
+ * ancestral `flex` contenha os dois. No cabeçalho do `Bloco` isso vale de
+ * graça: o total mora no corpo do card, o seletor no cabeçalho.
+ */
+function SeletorDeMes({
+  mes,
+  onMes,
+}: {
+  mes: string
+  onMes: (m: string) => void
+}) {
+  return (
+    <label className="text-muted-foreground flex items-center gap-2 text-xs">
+      Mês
+      <input
+        type="month"
+        value={mes}
+        onChange={(e) => onMes(e.target.value)}
+        className="border-input focus-visible:ring-ring h-[34px] rounded-[10px] border bg-transparent px-2.5 text-xs shadow-xs transition-colors focus-visible:ring-1 focus-visible:outline-hidden"
+      />
+    </label>
+  )
+}
+
+/**
+ * A legenda do gráfico: bolinha, nome, valor e o % do total do mês.
+ *
+ * ⚠️ **O % é contra o TOTAL do mês, nunca contra a maior categoria.** Contra
+ * a maior, a primeira linha seria sempre 100% e o número deixaria de
+ * responder "quanto do meu mês isto comeu" — que é a pergunta do card.
+ *
+ * ⚠️ As cores espelham as do gráfico por POSIÇÃO (mesma ordem de `rows`,
+ * que o Worker já devolve por maior gasto). "Sem categoria" fica no cinza
+ * neutro, o mesmo que o gráfico usa — ver `lib/paleta.ts`.
+ */
+function LegendaCategorias({ report }: { report: ByCategoryReportView }) {
+  const total = Math.abs(report.total_cents)
+  if (total === 0) return null
+
+  return (
+    <ul data-testid="legenda-categorias" className="space-y-1.5">
+      {report.rows.map((r, i) => {
+        const valor = Math.abs(r.total_cents)
+        const pct = Math.round((valor / total) * 100)
+        return (
+          <li
+            key={r.category_id ?? 'sem-categoria'}
+            className="flex items-center gap-2 text-xs"
+          >
+            <span
+              aria-hidden="true"
+              className="size-[9px] shrink-0 rounded-full"
+              style={{
+                backgroundColor:
+                  r.category_id === null
+                    ? 'hsl(var(--muted-foreground))'
+                    : LEGENDA_CORES[i % LEGENDA_CORES.length],
+              }}
+            />
+            <span className="truncate">{r.category_name}</span>
+            <span className="ml-auto shrink-0 font-semibold tabular-nums">
+              {formatBRL(valor)}
+            </span>
+            <span className="text-muted-foreground w-9 shrink-0 text-right font-mono text-[11px] tabular-nums">
+              {pct}%
+            </span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }

@@ -10,7 +10,13 @@ import type { CashflowReportView } from '../lib/cashflow'
 import { rotuloCompetencia } from '../lib/commitments'
 import { addMonthsToCompetence, competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
-import { ROTULO, ROTULO_SECAO } from '../lib/tipografia'
+import { CARTAO_KPI, CARTAO_SECAO } from '../lib/superficie'
+import {
+  OVERLINE,
+  ROTULO,
+  ROTULO_SECAO,
+  SUBTITULO_PAGINA,
+} from '../lib/tipografia'
 
 // Reusa o MESMO módulo lazy que `blocos/BlocoComprometido.tsx`/
 // `blocos/BlocoCategorias.tsx` já carregam sob demanda — nunca um terceiro
@@ -79,10 +85,10 @@ export function FluxoPage() {
   const totalSaldo = sumCents(report.linhas.map((l) => l.saldo_cents))
 
   return (
-    <section className="space-y-6" data-testid="pagina-fluxo">
-      {/* O `<h1>` saiu daqui pra top bar (`App.tsx`); a Ajuda ficou. */}
-      <div className="flex items-center gap-3">
-        <p className="text-muted-foreground text-sm">
+    <section className="space-y-5" data-testid="pagina-fluxo">
+      {/* O `<h1>` saiu daqui pra casca (`App.tsx`); a Ajuda ficou. */}
+      <div className="flex items-start gap-2">
+        <p className={SUBTITULO_PAGINA}>
           Entrou, saiu, saldo e acumulado, mês a mês.
         </p>
         <Ajuda rotulo="Fluxo de caixa">
@@ -91,21 +97,6 @@ export function FluxoPage() {
           caixa; ela é assunto do Comprometido, não desta tela.
         </Ajuda>
       </div>
-
-      <label className="flex items-center gap-2 text-sm font-medium">
-        Janela
-        <select
-          value={months}
-          onChange={(e) => setMonths(Number(e.target.value))}
-          className={`${SELECT_CLASSNAME} w-auto`}
-        >
-          {JANELAS.map((m) => (
-            <option key={m} value={m}>
-              {m} meses
-            </option>
-          ))}
-        </select>
-      </label>
 
       {/*
         ⚠️ UM número em destaque, não três. Entrou/Saiu/Saldo estavam os três
@@ -122,16 +113,42 @@ export function FluxoPage() {
         ⚠️ Negativo em `text-destructive`, com `< 0` e nunca `<= 0`: a janela
         ZERADA não é problema, e pintá-la seria dizer que é.
       */}
-      <NumeroCard
-        rotulo={`Saldo dos últimos ${months} meses`}
-        valorCents={totalSaldo}
-        escala="heroi"
-        data-testid="manchete-saldo"
-        valorClassName={cn(totalSaldo < 0 && 'text-destructive')}
-        contexto={`Entrou ${formatBRL(totalEntrou)} · saiu ${formatBRL(
-          totalSaiu,
-        )}`}
-      />
+      {/*
+        O herói e o controle que o define ficam lado a lado — trocar a janela
+        e ler o resultado passam a ser o mesmo gesto, sem rolar.
+      */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
+        <NumeroCard
+          rotulo={`Saldo dos últimos ${months} meses`}
+          valorCents={totalSaldo}
+          escala="heroi"
+          data-testid="manchete-saldo"
+          valorClassName={cn(totalSaldo < 0 && 'text-destructive')}
+          contexto={`Entrou ${formatBRL(totalEntrou)} · saiu ${formatBRL(
+            totalSaiu,
+          )}`}
+        />
+        <div className={CARTAO_KPI}>
+          <label className="block">
+            <span className={OVERLINE}>Janela</span>
+            <select
+              value={months}
+              onChange={(e) => setMonths(Number(e.target.value))}
+              className={cn(SELECT_CLASSNAME, 'mt-2 h-10 rounded-xl')}
+            >
+              {JANELAS.map((m) => (
+                <option key={m} value={m}>
+                  {m} meses
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-muted-foreground mt-2 text-xs leading-snug">
+            Só entra o que já se moveu de verdade — parcela prevista é
+            compromisso, não caixa.
+          </p>
+        </div>
+      </div>
 
       {vazio ? (
         <p className="text-muted-foreground text-sm">
@@ -140,7 +157,7 @@ export function FluxoPage() {
           caixa, é compromisso (veja em Comprometido).
         </p>
       ) : (
-        <Card>
+        <Card className={CARTAO_SECAO}>
           <CardContent className="pt-6">
             <p className={cn(ROTULO_SECAO, 'mb-3')}>Forma da janela</p>
             <Suspense fallback={<div aria-busy="true" />}>
@@ -161,7 +178,7 @@ export function FluxoPage() {
         pergunta (mês, saldo, acumulado) em vez de espremer 5 — Entrou/Saiu
         são o detalhe de COMO o saldo se formou, e o saldo já os resume.
       */}
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardContent className="pt-6">
           {/*
             ⚠️ A HIERARQUIA é o que esta seção ganhou: manchete (a resposta) →

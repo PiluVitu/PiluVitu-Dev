@@ -544,6 +544,145 @@ describe('commitments — faixa com recorrentes (Task 3)', () => {
   })
 })
 
+// Redesenho (fatia do handoff de design): o grafico do Comprometido passou a
+// ser EMPILHADO por origem — parcelas / dividas / recorrentes. Os tres
+// numeros ja existiam dentro de `commitments()`; `composition` so para de
+// joga-los fora. Sem query nova, sem coluna nova.
+describe('commitments — composition por origem', () => {
+  it('separa parcela, divida e recorrente na competencia certa', async () => {
+    const nubank = await cartao('Nubank cartao')
+    await parcela(nubank.id, '2026-08', 100000)
+
+    const payeeId = crypto.randomUUID()
+    await db
+      .prepare(
+        `INSERT INTO payees (id, name, norm_name, kind, created_at)
+         VALUES (?, 'Pai', 'PAI', 'person', ?)`,
+      )
+      .bind(payeeId, '2026-01-01T00:00:00Z')
+      .run()
+    const divida = await createDebt(db, {
+      payee_id: payeeId,
+      direction: 'i_owe',
+      title: 'Pai',
+      opened_at: '2026-03-01',
+    })
+    await addDebtItem(db, {
+      debt_id: divida.id,
+      description: 'Emprestimo',
+      amount_cents: 50000,
+      incurred_on: '2026-03-01',
+    })
+
+    await createRecurring(db, {
+      description: 'DAS',
+      scope: 'PJ',
+      day_of_month: 20,
+      amount_min_cents: 1200,
+      amount_max_cents: 60000,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 1,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.composition).toEqual([
+      {
+        parcelas_cents: 100000,
+        dividas_cents: 50000,
+        recorrentes_cents: { min: 1200, max: 60000 },
+      },
+    ])
+  })
+
+  // ⚠️ O INVARIANTE que impede o grafico empilhado de mentir: a soma dos
+  // tres segmentos TEM que dar o mesmo `totals` que a manchete mostra. Sem
+  // isto, uma barra empilhada poderia ficar mais alta (ou mais baixa) que o
+  // numero escrito ao lado dela, no mesmo card.
+  it('INVARIANTE: parcelas + dividas + recorrentes === totals, em toda competencia', async () => {
+    const nubank = await cartao('Nubank cartao')
+    await parcela(nubank.id, '2026-08', 124000)
+    await parcela(nubank.id, '2026-10', 31000)
+
+    const payeeId = crypto.randomUUID()
+    await db
+      .prepare(
+        `INSERT INTO payees (id, name, norm_name, kind, created_at)
+         VALUES (?, 'Tio', 'TIO', 'person', ?)`,
+      )
+      .bind(payeeId, '2026-01-01T00:00:00Z')
+      .run()
+    const divida = await createDebt(db, {
+      payee_id: payeeId,
+      direction: 'i_owe',
+      title: 'Tio',
+      opened_at: '2026-03-01',
+    })
+    await addDebtItem(db, {
+      debt_id: divida.id,
+      description: 'Emprestimo',
+      amount_cents: 45000,
+      incurred_on: '2026-03-01',
+    })
+
+    await createRecurring(db, {
+      description: 'Starlink',
+      scope: 'PJ',
+      day_of_month: 10,
+      amount_min_cents: 18900,
+      amount_max_cents: 18900,
+      starts_on: '2026-01-01',
+    })
+
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 6,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.composition).toHaveLength(report.competences.length)
+    report.composition.forEach((c, i) => {
+      expect(c.parcelas_cents + c.dividas_cents + c.recorrentes_cents.min).toBe(
+        report.totals[i].min,
+      )
+      expect(c.parcelas_cents + c.dividas_cents + c.recorrentes_cents.max).toBe(
+        report.totals[i].max,
+      )
+    })
+  })
+
+  // O contrapositivo: sem nada cadastrado, os tres sao zero — e nao um
+  // `composition: []` que faria o grafico sumir em vez de mostrar zero.
+  it('janela sem nada cadastrado devolve tres zeros por competencia, nunca lista vazia', async () => {
+    const report = await commitments(db, {
+      from: '2026-08',
+      months: 3,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    })
+
+    expect(report.composition).toEqual([
+      {
+        parcelas_cents: 0,
+        dividas_cents: 0,
+        recorrentes_cents: { min: 0, max: 0 },
+      },
+      {
+        parcelas_cents: 0,
+        dividas_cents: 0,
+        recorrentes_cents: { min: 0, max: 0 },
+      },
+      {
+        parcelas_cents: 0,
+        dividas_cents: 0,
+        recorrentes_cents: { min: 0, max: 0 },
+      },
+    ])
+  })
+})
+
 // Task 7 da fatia ⑥ (docs/superpowers/specs/2026-07-27-financas-recorrentes-design.md
 // §3.1): O TESTE QUE FECHA O CICLO DA FATIA INTEIRA. Ate a Task 6, o
 // vinculo (`transactions.recurring_expense_id`) so existia gravavel via
@@ -975,5 +1114,55 @@ describe('byCategory', () => {
     await expect(byCategory(db, { competence: '2026-7' })).rejects.toThrow(
       RangeError,
     )
+  })
+})
+
+// ---------------------------------------------------------------------
+// Escopo PJ/PF — byCategory somava os dois no mesmo numero.
+// ---------------------------------------------------------------------
+
+describe('byCategory por escopo', () => {
+  async function cenarioMisto() {
+    const pf = await createAccount(db, {
+      name: 'Inter',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    const pj = await createAccount(db, {
+      name: 'Inter Empresa',
+      scope: 'PJ',
+      kind: 'checking',
+    })
+    await createTransaction(db, {
+      account_id: pf.id,
+      amount_cents: -10000,
+      purchase_date: '2026-09-05',
+      description: 'Mercado',
+    })
+    await createTransaction(db, {
+      account_id: pj.id,
+      amount_cents: -25000,
+      purchase_date: '2026-09-06',
+      description: 'Contador',
+      is_business: 1,
+    })
+  }
+
+  it('sem escopo soma PJ e PF (comportamento historico)', async () => {
+    await cenarioMisto()
+    const r = await byCategory(db, { competence: '2026-09' })
+    expect(Math.abs(r.total_cents)).toBe(35000)
+  })
+
+  it('escopo PF devolve so o gasto pessoal', async () => {
+    await cenarioMisto()
+    const r = await byCategory(db, { competence: '2026-09', scope: 'PF' })
+    expect(Math.abs(r.total_cents)).toBe(10000)
+  })
+
+  it('escopo PJ devolve so o gasto da empresa', async () => {
+    await cenarioMisto()
+    const r = await byCategory(db, { competence: '2026-09', scope: 'PJ' })
+    expect(Math.abs(r.total_cents)).toBe(25000)
   })
 })

@@ -27,11 +27,19 @@ export type InsightNumbersView = {
   /** Os `TOP_CATEGORIES_LIMIT` (5) primeiros de `byCategory`, sem reordenar. */
   top_categories: CategoryRowView[]
   total_cents: number
+  /** Só `is_business = 0` — o gasto pessoal. Mesmo sinal cru de `total_cents`. */
+  total_pf_cents: number
+  /** Só `is_business = 1` — o gasto da empresa. Mesmo sinal cru. */
+  total_pj_cents: number
   previous_total_cents: number
   /** |atual| - |anterior|. Positivo = gastou mais que no período anterior. */
   variation_cents: number
   /** `null` quando o período anterior não teve gasto nenhum (divisão por zero evitada). */
   variation_pct: number | null
+  /** Mesma conta de `variation_cents`, só sobre `is_business = 0`. */
+  variation_pf_cents: number
+  /** Mesma conta de `variation_pct`, só sobre `is_business = 0`. */
+  variation_pf_pct: number | null
   biggest_increase: {
     category_id: string | null
     category_name: string

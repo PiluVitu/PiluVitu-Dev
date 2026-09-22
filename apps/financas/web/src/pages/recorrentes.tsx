@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { formatBRL, parseBRL } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
@@ -21,7 +21,15 @@ import { formatRange } from '../lib/commitments'
 import { todayInTeresina } from '../lib/dates'
 import { CHECKBOX_CLASSNAME, SELECT_CLASSNAME } from '../lib/form-classes'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
-import { NUMERO_GRID, ROTULO_SECAO } from '../lib/tipografia'
+import { FaixaKpi, KpiCard } from '../blocos/KpiCard'
+import { CARTAO_SECAO } from '../lib/superficie'
+import {
+  META_MONO,
+  NUMERO_GRID,
+  ROTULO,
+  ROTULO_SECAO,
+  SUBTITULO_PAGINA,
+} from '../lib/tipografia'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 import type { AccountView } from './accounts'
 
@@ -382,15 +390,57 @@ export function RecorrentesPage() {
     { chave: 'pausadas', rotulo: 'Pausadas', itens: pausadas },
   ] as const
 
+  // O custo fixo do mês é a FAIXA das ativas somadas, nunca uma média: o DAS
+  // varia de R$ 12 a R$ 600, e a média (R$ 306) é o número que nunca
+  // acontece — a mesma regra que o resto do módulo já aplica.
+  const custoMin = sumCents(ativas.map((r) => r.amount_min_cents))
+  const custoMax = sumCents(ativas.map((r) => r.amount_max_cents))
+  // O próximo dia de vencimento a partir de hoje; se todos já passaram no
+  // mês corrente, o menor dia volta (é o primeiro do mês que vem).
+  const hoje = Number(todayInTeresina().slice(8, 10))
+  const dias = ativas.map((r) => r.day_of_month).sort((a, b) => a - b)
+  const proximoDia = dias.find((d) => d >= hoje) ?? dias[0]
+
   return (
-    <section className="space-y-6" data-testid="pagina-recorrentes">
+    <section className="space-y-5" data-testid="pagina-recorrentes">
+      <p className={SUBTITULO_PAGINA}>
+        O que se repete todo mês. É daqui que sai o custo fixo usado no
+        Comprometido e na Reserva.
+      </p>
+
+      {recorrentes.length > 0 ? (
+        <FaixaKpi>
+          <KpiCard
+            data-testid="kpi-custo-fixo"
+            rotulo="Custo fixo mensal"
+            valor={<FaixaValor min={custoMin} max={custoMax} />}
+            contexto={`${ativas.length} recorrente(s) ativa(s)`}
+          />
+          <KpiCard
+            data-testid="kpi-proximo"
+            rotulo="Próximo vencimento"
+            valor={proximoDia === undefined ? '—' : `dia ${dd(proximoDia)}`}
+            contexto={
+              proximoDia === undefined
+                ? 'nenhuma recorrente ativa'
+                : 'o dia do mês mais próximo entre as ativas'
+            }
+          />
+          <KpiCard
+            data-testid="kpi-pausadas"
+            rotulo="Pausadas"
+            valor={pausadas.length}
+            contexto="não entra no Comprometido nem no custo fixo"
+          />
+        </FaixaKpi>
+      ) : null}
       {acaoErro ? (
         <p role="alert" className="text-destructive text-sm">
           {acaoErro}
         </p>
       ) : null}
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardContent className="pt-6">
           {recorrentes.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -409,20 +459,41 @@ export function RecorrentesPage() {
                         <li
                           key={r.id}
                           data-testid={`recorrente-${r.id}`}
-                          className="rounded-md border p-3"
+                          className={cn(
+                            'flex gap-3 rounded-xl border p-3',
+                            r.active !== 1 && 'bg-background',
+                          )}
                         >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">{r.description}</span>
-                            {r.active === 0 ? (
-                              <Badge
-                                variant="secondary"
-                                data-testid={`status-${r.id}`}
-                              >
-                                Pausada
-                              </Badge>
-                            ) : null}
-                          </div>
-                          {/*
+                          {/* O dia do mês vira um bloco próprio à esquerda —
+                              é a informação que organiza a leitura ("o que
+                              cai quando"), e antes vivia no meio da linha de
+                              meta, indistinguível do resto. */}
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'grid size-11 shrink-0 place-items-center rounded-[14px] border font-mono text-sm font-semibold tabular-nums',
+                              r.active === 1
+                                ? 'text-foreground'
+                                : 'text-muted-foreground border-dashed',
+                            )}
+                          >
+                            {dd(r.day_of_month)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold">
+                                {r.description}
+                              </span>
+                              {r.active === 0 ? (
+                                <Badge
+                                  variant="secondary"
+                                  data-testid={`status-${r.id}`}
+                                >
+                                  Pausada
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {/*
                             ⚠️ A faixa saiu da ponta direita da linha e virou
                             LINHA PRÓPRIA, em `NUMERO_GRID` (24px) — antes era
                             `text-sm` (14px) espremida contra a descrição, com
@@ -434,25 +505,25 @@ export function RecorrentesPage() {
                             a descrição, e a faixa mais longa que o dado
                             permite mede **282 px** — cabe, em uma linha só.
                           */}
-                          <p
-                            data-testid={`faixa-${r.id}`}
-                            className={cn('mt-1', NUMERO_GRID)}
-                          >
-                            <FaixaValor
-                              min={r.amount_min_cents}
-                              max={r.amount_max_cents}
-                            />
-                          </p>
-                          <p className="text-muted-foreground mt-1 text-xs">
-                            {r.scope} · dia {dd(r.day_of_month)}
-                            {nomeCategoria(r.category_id)
-                              ? ` · ${nomeCategoria(r.category_id)}`
-                              : ''}
-                            {nomeConta(r.account_id)
-                              ? ` · ${nomeConta(r.account_id)}`
-                              : ''}
-                          </p>
-                          {/*
+                            <p
+                              data-testid={`faixa-${r.id}`}
+                              className={cn('mt-1', NUMERO_GRID)}
+                            >
+                              <FaixaValor
+                                min={r.amount_min_cents}
+                                max={r.amount_max_cents}
+                              />
+                            </p>
+                            <p className={cn(META_MONO, 'mt-1')}>
+                              {r.scope} · dia {dd(r.day_of_month)}
+                              {nomeCategoria(r.category_id)
+                                ? ` · ${nomeCategoria(r.category_id)}`
+                                : ''}
+                              {nomeConta(r.account_id)
+                                ? ` · ${nomeConta(r.account_id)}`
+                                : ''}
+                            </p>
+                            {/*
                             ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a
                             **34×16 px** e `Excluir` a **38,6×16 px**,
                             separados por **12 px**. Os 16 px de altura ficam
@@ -468,29 +539,32 @@ export function RecorrentesPage() {
                             texto, e o `ml-auto` do destrutivo troca os 12 px
                             por toda a sobra da linha.
                           */}
-                          <div className="mt-2 flex items-center gap-3">
-                            <Button
-                              type="button"
-                              variant="link"
-                              data-testid={`editar-${r.id}`}
-                              className={cn('h-auto p-0 text-xs', ALVO_LINK)}
-                              onClick={() => editar(r)}
-                            >
-                              Editar
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="link"
-                              data-testid={`excluir-${r.id}`}
-                              className={cn(
-                                'text-destructive h-auto p-0 text-xs',
-                                ALVO_LINK_FIM,
-                              )}
-                              disabled={processando === r.id}
-                              onClick={() => excluir(r)}
-                            >
-                              {processando === r.id ? 'Excluindo…' : 'Excluir'}
-                            </Button>
+                            <div className="mt-2 flex items-center gap-3">
+                              <Button
+                                type="button"
+                                variant="link"
+                                data-testid={`editar-${r.id}`}
+                                className={cn('h-auto p-0 text-xs', ALVO_LINK)}
+                                onClick={() => editar(r)}
+                              >
+                                Editar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="link"
+                                data-testid={`excluir-${r.id}`}
+                                className={cn(
+                                  'text-destructive h-auto p-0 text-xs',
+                                  ALVO_LINK_FIM,
+                                )}
+                                disabled={processando === r.id}
+                                onClick={() => excluir(r)}
+                              >
+                                {processando === r.id
+                                  ? 'Excluindo…'
+                                  : 'Excluir'}
+                              </Button>
+                            </div>
                           </div>
                         </li>
                       ))}
@@ -503,9 +577,9 @@ export function RecorrentesPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={CARTAO_SECAO}>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle className={cn(ROTULO, 'leading-none')}>
             {editandoId ? 'Editar recorrente' : 'Nova recorrente'}
           </CardTitle>
         </CardHeader>
