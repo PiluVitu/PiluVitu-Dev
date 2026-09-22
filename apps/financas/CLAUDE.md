@@ -1563,6 +1563,23 @@ Conta sem nenhuma célula na janela **não aparece** na lista de `rows` (nem com
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/domain/reports.test.ts` cobre liquidação (`settled_at` preenchido não conta), virada de ano (`from: '2026-11'` cruzando pra `2027-01`), separação de transferência/rateio, e o cálculo do `%` batendo contra `360000` (nunca contra o líquido com freela). `src/routes/reports.test.ts` monta só `reportsRoutes` (sem Access, padrão das Tasks 6-9) e cobre o contrato HTTP: 200 com envelope, `fixed_net_cents` customizável via query, e os três casos de `400 invalid_query` (`from` ausente, `from` malformado, `months=0`/não numérico).
 
+## `settled_at`: extrato bancário já aconteceu, fatura de cartão não
+
+`settled_at IS NULL` significa **previsto** — dinheiro que ainda não se moveu. `importTransactions()` gravava `NULL` fixo para toda linha importada, justificado por um comentário que dizia _"extrato importado é fatura ainda em aberto, não dinheiro já liquidado"_.
+
+**Isso é verdade para fatura de cartão e falso para extrato bancário.** No extrato, o dinheiro já se moveu por definição — e o adaptador do Pluggy só aceita `status === 'POSTED'` (`pluggy-map.ts#STATUS_IMPORTAVEL`), nunca `PENDING`. Não existe linha importada de conta corrente que esteja "pendente".
+
+**MEDIDO em produção (2026-09-22): as 697 transações do ledger estavam com `settled_at NULL` — todas, em conta `checking`, todas do Pluggy.** Nenhuma liquidada. Dois efeitos visíveis:
+
+1. **A tela de extrato marca `settled_at === null` como "falta marcar como pago"** (`web/src/pages/extrato.tsx`). Com 697/697 em NULL, todo lançamento pedia ação — inclusive **Pix recebido**, que não é conta a pagar nenhuma. Foi assim que o defeito apareceu: "por que preciso marcar como pago um Pix que eu recebi?"
+2. **`cashflow()` — a tela Fluxo, regime de caixa — exige `settled_at IS NOT NULL`.** Com nenhuma linha liquidada, ela não tinha uma única linha para somar.
+
+⚠️ **O discriminador é o TIPO DA CONTA, nunca o sinal do valor.** "Pix enviado vs. recebido" é a leitura intuitiva e está errada: numa conta corrente as duas pernas já aconteceram, e num cartão tanto a compra (negativa) quanto o estorno (positivo) ficam pendurados na fatura até ela ser paga. `settled_at = kind === 'credit_card' ? null : purchase_date`.
+
+Valor gravado é a data pura `'YYYY-MM-DD'`, mesma convenção de `createTransfer()`/`payDebt()` — e é justamente o caso que `localCompetence()` (`domain/cashflow.ts`) trata **sem** deslocamento de fuso.
+
+O histórico foi acertado por `migrations/0012_settled_at_extrato_bancario.sql`, que só toca linha **importada** de conta que **não é cartão**: um lançamento manual com `settled_at NULL` é um "previsto" que o dono escreveu de propósito (parcela futura, conta a pagar), e atropelar isso apagaria intenção.
+
 ## Transferência vinda do import (`src/domain/transfer-pairing.ts`)
 
 O anti-dupla-contagem do módulo inteiro (`cashflow()`, `commitments()`, `byCategory()`) é o filtro `transfer_id IS NULL`. Até aqui, **só `createTransfer()` — a tela "Transferir" — preenchia esse campo.** Extrato importado não tem o conceito: o Pluggy entrega as duas pernas como lançamentos independentes, e o `pluggy-map.ts` já registrava `transfer_id` como "sem correspondente" no mapeamento.

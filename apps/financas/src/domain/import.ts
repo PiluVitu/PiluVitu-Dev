@@ -56,9 +56,9 @@ export const IMPORT_SOURCES = [
 // domain/installments.ts): 100 params por statement no D1. 19 colunas bound
 // (recurring_expense_id fica de fora — import não vincula a recorrente
 // nesta fatia, cai no DEFAULT NULL da coluna) => floor(100/19) = 5 linhas
-// por statement. settled_at sai sempre NULL — mesmo default de um
-// lançamento manual sem o campo informado (extrato importado é fatura
-// ainda em aberto, não dinheiro já liquidado).
+// por statement. settled_at é derivado do TIPO DA CONTA (ver
+// `settledAtValue` abaixo): extrato bancário já aconteceu, fatura de
+// cartão não.
 const TX_COLUMNS = [
   'id',
   'account_id',
@@ -239,6 +239,13 @@ export async function importTransactions(
       account.kind === 'credit_card' && account.closing_day !== null
         ? billCompetence(row.purchase_date, account.closing_day)
         : null
+    // Só cartão nasce previsto. Em conta corrente/poupança/dinheiro o
+    // extrato É o registro de que o dinheiro já se moveu — e o Pluggy só
+    // importa `POSTED` (pluggy-map.ts#STATUS_IMPORTAVEL), nunca `PENDING`.
+    // Data pura 'YYYY-MM-DD', mesma convenção de createTransfer()/payDebt()
+    // (ver o ⚠️ de localCompetence em domain/cashflow.ts).
+    const settledAtValue =
+      account.kind === 'credit_card' ? null : row.purchase_date
     txRows.push([
       newId(),
       input.account_id,
@@ -248,7 +255,7 @@ export async function importTransactions(
       null, // fx_rate_ppm
       row.purchase_date,
       billCompetenceValue,
-      null, // settled_at
+      settledAtValue,
       row.description,
       row.payee_id ?? null,
       row.category_id ?? null,

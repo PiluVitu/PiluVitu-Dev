@@ -447,3 +447,90 @@ describe('pareamento automatico no import', () => {
     expect(row?.transfer_id).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------
+// settled_at: extrato bancario ja acontenceu; fatura de cartao nao.
+// ---------------------------------------------------------------------
+
+async function seedAccountKind(id: string, kind: 'checking' | 'credit_card') {
+  await env.DB.prepare(
+    `INSERT INTO accounts (id, name, scope, kind, institution, currency, closing_day, due_day,
+       credit_limit_cents, opening_balance_cents, opening_date, archived_at, created_at, updated_at)
+     VALUES (?, ?, 'PF', ?, 'Inter', 'BRL', ?, ?, NULL, 0, NULL, NULL,
+       '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')`,
+  )
+    .bind(
+      id,
+      `conta ${id}`,
+      kind,
+      kind === 'credit_card' ? 25 : null,
+      kind === 'credit_card' ? 5 : null,
+    )
+    .run()
+  return id
+}
+
+async function settledDe(imported_id: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    'SELECT settled_at FROM transactions WHERE imported_id = ?',
+  )
+    .bind(imported_id)
+    .first<{ settled_at: string | null }>()
+  return row!.settled_at
+}
+
+describe('settled_at no import', () => {
+  // O Pluggy so importa status POSTED (pluggy-map.ts#STATUS_IMPORTAVEL):
+  // o dinheiro JA se moveu. Nascer previsto punha "falta marcar como pago"
+  // em todo lancamento de conta corrente — inclusive num Pix RECEBIDO.
+  it('conta corrente: despesa importada nasce liquidada na data do fato', async () => {
+    const acc = await seedAccountKind('acc-cc', 'checking')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'saida',
+          amount_cents: -5990,
+          purchase_date: '2026-09-18',
+        }),
+      ],
+    })
+    expect(await settledDe('saida')).toBe('2026-09-18')
+  })
+
+  it('conta corrente: Pix RECEBIDO tambem nasce liquidado', async () => {
+    const acc = await seedAccountKind('acc-cc2', 'checking')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'entrada',
+          amount_cents: 21000,
+          purchase_date: '2026-09-20',
+          description: 'Pix recebido - Maria Lacilene',
+        }),
+      ],
+    })
+    expect(await settledDe('entrada')).toBe('2026-09-20')
+  })
+
+  // A justificativa original do NULL ("extrato importado e fatura ainda em
+  // aberto") vale SO aqui — e continua valendo.
+  it('cartao de credito: compra importada continua prevista (fatura em aberto)', async () => {
+    const acc = await seedAccountKind('acc-cartao', 'credit_card')
+    await importTransactions(env.DB, {
+      account_id: acc,
+      import_source: 'pluggy',
+      rows: [
+        linha({
+          imported_id: 'compra',
+          amount_cents: -9900,
+          purchase_date: '2026-09-18',
+        }),
+      ],
+    })
+    expect(await settledDe('compra')).toBeNull()
+  })
+})
