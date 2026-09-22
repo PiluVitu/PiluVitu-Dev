@@ -1608,6 +1608,20 @@ O critério de pareamento é **valor oposto + mesma data + contas diferentes + c
 
 **Quem dispara:** `importTransactions()` roda o pareamento no fim de cada import, restrito à janela de datas da remessa (no D1 "rows read" cobra linha ESCANEADA — varrer o ledger inteiro a cada import sairia da cota). Como cada chamada recebe UMA `account_id`, quem fecha o par é sempre a segunda perna a ser importada. `POST /api/transfers/pair` passa no ledger inteiro — existe pro backfill de quem já tinha extrato importado antes deste módulo, e pra quando um nome próprio novo é cadastrado; aceita `?dry_run=1` e `?from=`/`?to=`.
 
+## Aplicação e resgate de investimento (`migrations/0013`)
+
+Guardar dinheiro aparecia como **gastar**, e resgatar aparecia como **ganhar** — porque a conta de investimento não existia no ledger e as duas operações entravam como despesa/receita comuns. **Medido em produção (2026-09-22):** 8 lançamentos, todos de out/2025, R$ 114,31 em `Aplicação RDB` contados como gasto e R$ 270,07 em `Resgate` contados como receita. Sem recorrência depois disso.
+
+⚠️ **Não é o mesmo defeito de `transfer-pairing`, e nenhuma heurística de descrição resolveria.** Ali existiam duas pernas no banco esperando ser reconhecidas; aqui a contraparte simplesmente **não estava gravada** — a perna faltante precisava ser CRIADA. A corrente de 2025-10-14 mostra a diferença bem: resgate no Inter → Pix Inter→Nubank → aplicação no Nubank. O **miolo** (o Pix) o `transfer-pairing` já pareou sozinho; sobraram as duas **pontas**, cada uma encarando um investimento ausente.
+
+Isso também é o contraexemplo do critério "mesmo valor + mesma data": as duas pontas (−50,37 no Nubank, +50,37 no Inter) casam por valor e data e **não** são par — casá-las teria contado a mesma movimentação duas vezes, já que o Pix entre elas já estava registrado em outras duas linhas. A regra de contraparte (`transfer-pairing.ts`) recusou as duas, corretamente.
+
+A correção usa o que o schema já previa (`accounts.kind` aceita `'investment'`): cria `Nubank RDB` e `Inter CDB` e gera a perna oposta de cada lançamento, pareada por `transfer_id`. A partir daí o filtro `transfer_id IS NULL` tira os dois lados do relatório — mesmo mecanismo de qualquer transferência entre contas próprias.
+
+⚠️ **As duas contas nascem com saldo NEGATIVO (Nubank RDB −105,39, Inter CDB −50,37), de propósito.** `opening_balance_cents = 0` e havia dinheiro aplicado antes de out/2025, então resgatou-se mais do que se aplicou na janela conhecida. Chutar um valor que zerasse a conta seria fabricar dado com cara de verdade; o negativo é visível e diz exatamente o que falta — ajustar o saldo de abertura em `#/contas`, campo já existente, sem migration.
+
+⚠️ **A migration é INERTE em banco vazio, e precisa continuar sendo.** `applyD1Migrations()` roda toda migration no `beforeEach` de cada teste (`src/test-setup.ts`): um `INSERT` incondicional poluiria as 41 suítes com contas e lançamentos fantasmas. Por isso tudo nela é `INSERT ... SELECT ... FROM transactions WHERE id = …` ancorado nas linhas reais. Verificado dos dois lados: suíte inteira verde (929) com o banco vazio, e simulação num SQLite descartável com as 8 linhas semeadas levando o gasto de out/2025 de R$ 114,31 para R$ 0,00, com 16 pernas e **zero** `transfer_id` órfão.
+
 ## PJ/PF: a conta é o default, a linha é a verdade
 
 O schema `0001` define `transactions.is_business` como a etiqueta final de PJ/PF, com `accounts.scope` valendo só como default ("na prática gasto de PJ cai em cartão PF"). **Esse default nunca era aplicado no import:** `importTransactions()` gravava `row.is_business ?? 0` — um zero fixo.
@@ -2751,13 +2765,26 @@ signOut }`, únicos pontos de entrada pro resto da SPA.
 3. **Build do SPA ANTES dos testes do Worker.** O binding `ASSETS` do `wrangler.jsonc` (`directory: './web/dist'`) precisa que `web/dist` exista com um `index.html` — Miniflare lê esse binding ao subir o Worker sob teste, e `web/dist` é gerado e está no `.gitignore`. Em clone limpo (CI é sempre clone limpo), rodar os testes do Worker antes do build do SPA quebra com o diretório ausente. Na prática o `package.json` de `@piluvitu/financas` já tem um `pretest` que builda o SPA (`pnpm --filter @piluvitu/financas-web build`) antes de `vitest run` — o que faz esse passo funcionar mesmo isolado — mas o step explícito no CI documenta a dependência e builda o SPA também para o próprio `Typecheck (spa)`/`Test (spa)` rodarem sobre um `dist/` fresco, sem depender do efeito colateral do `pretest` de outro pacote.
 4. Testes do Worker (`pnpm --filter @piluvitu/financas run test` — Miniflare + D1 local via `@cloudflare/vitest-pool-workers`, sem secret, sem `wrangler login`) e do SPA (`pnpm --filter @piluvitu/financas-web run test`).
 
-Não há job de deploy no CI: a fatia ① publica manualmente (`wrangler deploy`) e a migration em produção é ato deliberado — ver _Deploy_ abaixo.
+O deploy NÃO mora aqui, mas existe: `.github/workflows/deploy-financas.yml` roda depois deste workflow, via `workflow_run` — ver _Deploy_ abaixo.
 
 `pnpm -r lint` e `pnpm -r test`, rodados da raiz, já cobrem as duas frentes novas automaticamente — `apps/financas/package.json` e `apps/financas/web/package.json` declaram `lint`/`test` desde as Tasks 2/11. **Lembrete que já rendeu bug noutra ocasião: `pnpm -r <script>` pula em silêncio um workspace que não declara o script** (`@piluvitu/tools` não declara `lint`, por exemplo — `pnpm -r lint` roda em "4 of 5 workspace projects" de propósito). Ao adicionar comando novo num workflow, confirme que o `package.json` do pacote-alvo realmente tem esse script antes de assumir que o CI vai executá-lo.
 
 ## Deploy
 
-Não há job de deploy automatizado — publicar é ato manual (`wrangler deploy`), e a migration em produção idem: **forward-only, sem down migration, então quem decide quando rodar é uma pessoa, não um workflow.**
+⚠️ **Esta seção afirmava "não há job de deploy automatizado — publicar é ato manual" até 2026-09-22. Era falso, e custou caro:** `.github/workflows/deploy-financas.yml` existe, roda `Backup + migrations + deploy` e dispara sozinho (`workflow_run` sobre o `CI`, branch `main`, mais `workflow_dispatch`). Um agente que leu a frase antiga afirmou ao dono que push na `main` não publicava nada — errado.
+
+**O workflow está VERMELHO desde que existe, e não é regressão de código: falta o secret `CLOUDFLARE_API_TOKEN` no GitHub.** Medido nos runs `35658183462` (21/09), `35684385534` e `35686199237` (22/09) — os três morrem no MESMO passo, o primeiro do job:
+
+```
+Backup antes de migrar
+✘ [ERROR] In a non-interactive environment, it's necessary to set a
+  CLOUDFLARE_API_TOKEN environment variable for wrangler to work.
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] wrangler d1 export piluvitu-financas --remote
+```
+
+`CLOUDFLARE_ACCOUNT_ID` **está** cadastrado (como Variable, não secret) — é por isso que o `if` do job passa e ele roda em vez de ficar skipado, indo a vermelho a cada push na `main` em vez de silenciosamente não existir. Cadastrar o token é ação do dono: Settings → Secrets and variables → Actions.
+
+✅ **Falhar no backup é o comportamento desejado, não um agravante.** O passo é o primeiro do job, antes de migration e antes de `wrangler deploy` — então o workflow quebrado nunca deixou produção num estado parcial. Enquanto o token não existir, publicar é `pnpm --filter @piluvitu/financas run deploy` na mão, e **esse comando NÃO roda migration** (só o workflow roda): a migration em produção segue ato deliberado, **forward-only, sem down migration, quem decide quando rodar é uma pessoa.**
 
 ### 1. Google OAuth Client (uma vez — reaproveita o client da área de admin)
 
