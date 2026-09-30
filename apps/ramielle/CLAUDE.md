@@ -555,3 +555,16 @@ O achado do `main.go` acima **foi confirmado pelo revisor, medindo do zero, mais
 - **M4 — registrado (não corrigido), comentário em `traduzirSelected`**: a coerção do porte é FROUXA onde o decode do Go é ESTRITO, em duas direções opostas. `{"title":123}` (tipo errado dentro de um alvo) — Go `400` (decode falha, nada publicado); porte coerce pra `undefined` e PUBLICA com o metadado faltando, mesmo modo de falha que a tradução `canonical_url→canonicalUrl` existe pra evitar, só que por coerção em vez de campo omitido (inalcançável pelo `apps/web` tipado de hoje). `{"targets":null}` (corpo inteiro) — Go `200` (nil slice, ninguém publicado); porte `400 invalid_json`, mais estrito, direção SEGURA. Nenhuma mudança de comportamento — só o comentário.
 
 **Contagem de testes depois do fix round 1: 559** (Worker) + **116** (scripts, inalterado) — eram 553 antes desta rodada. **+6**: 1 teste de emoji (`firstRunes`, I1), 2 testes de ordem (`M2`, um por rota), e o describe de M5 saindo de 1 teste pra 4 (`test.each`, +3) — nenhum teste de M1/M3/M4 é novo (M1 é rename, M3 é uma asserção a mais dentro de um teste já existente, M4 é só comentário).
+
+## Transcrição de áudio — `POST /admin/transcrever`
+
+`src/routes/transcricao.ts`: recebe N áudios por **multipart** (`audios`, na ordem), mais `termos`/`idioma`/`modo` opcionais, e repassa ao `POST /transcrever` do promeia (Whisper local — ver `apps/promeia/CLAUDE.md` § _Transcrição de áudio_). Devolve `{partes, texto, modelo}` no envelope. Consumida por `/admin/transcricao` no `apps/web`.
+
+- **`requireAdmin`**, mesmo motivo do Atelier: é a GPU do dono e a votação é livre.
+- **`MAX_AUDIOS` (10) e `MAX_BYTES_TOTAL` (40 MB) são checados AQUI também**, espelhando o promeia — barrar no Worker evita subir o áudio inteiro pelo túnel só pra ouvir `413` do outro lado. Mudou lá, muda aqui (e em `apps/web/lib/admin/transcricao/fila.ts`).
+- **`chamarPromeia` aceita `FormData`**: nesse caso não seta `content-type` (o runtime gera o boundary). Forçar `application/json` faz o FastAPI não achar arquivo nenhum e responder `invalid_body`.
+- Campo ausente no form **não** é repassado como `''` — o promeia aplica o próprio default (`idioma=pt`, `modo=preciso`).
+- Falhas traduzidas por `traduzirFalhaPromeia` (`lib/promeia.ts`, extraída do `atelier.ts`, que agora a importa): Mac inalcançável ⇒ `503 promeia_unreachable`; `whisper_indisponivel` (503) passa com a mensagem do promeia; `transcricao_vazia`/`transcricao_falhou` (502) idem.
+- ⚠️ O teto real é **tempo**, não bytes: `TIMEOUT_MS` (120 s) e o corte de ~100 s da Cloudflare. Ver a tabela de medição no CLAUDE.md do promeia.
+
+Erros próprios da rota: `400 invalid_body` (sem áudio ou corpo não-multipart), `400 too_many_files`, `413 audio_too_large`, `503 promeia_disabled`.

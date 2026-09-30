@@ -92,6 +92,31 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   aparece em casos adversariais (muito caractere multi-byte concentrado perto
   da metade do limite), não em texto normal.
 
+## Transcrição de áudio — `POST /transcrever`
+
+Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. Chamada pelo ramielle (`POST /admin/transcrever`, ver `apps/ramielle/CLAUDE.md`), nunca pelo navegador — mesma regra de `revisao_rotas.py`. A tela é `/admin/transcricao` no `apps/web`.
+
+⚠️ **`mlx-whisper` NÃO está em `pyproject.toml`, de propósito.** Ele depende do `mlx`, que só existe em macOS/arm64; declará-lo quebraria o `uv sync --locked` do CI, que roda em Ubuntu — o serviço inteiro deixaria de instalar num runner Linux por causa de UMA rota. Por isso `transcricao.py` chama o **binário** por subprocess: a dependência vira requisito de _ambiente_ (a máquina do dono, a única onde a rota faz sentido) e não de pacote. Instalar: `uv tool install mlx-whisper`. `WHISPER_BIN` sobrescreve o caminho.
+
+⚠️ **O executor é injetado (`executar=`) e buscado no MÓDULO pela rota** (`transcricao.executar_mlx_whisper`, não importado direto). É o que deixa o teste trocar o executor sem tocar no binário — e é por isso que a suíte roda no CI Linux sem `mlx`. O caminho real do subprocess **não** é coberto por teste automatizado; foi verificado à mão com áudio de verdade (dois trechos, termos `ramielle, promeia`, ambos grafados corretamente).
+
+**O encadeamento de contexto é o produto do módulo.** Áudios que se complementam precisam grafar o mesmo nome próprio igual nos três: a cauda de cada transcrição vira o `initial_prompt` do seguinte. O `initial_prompt` do Whisper cabe em **224 tokens**, então só entram as últimas `PALAVRAS_DE_CONTEXTO` (120) — passar mais faz a janela cortar em silêncio.
+
+⚠️ **O teto real NÃO é tamanho de arquivo, é TEMPO.** A Cloudflare corta a requisição do navegador em ~100 s (524) e o ramielle desiste em 120 s (`TIMEOUT_MS`). MEDIDO num M4: `large-v3` roda a **4,4x** tempo real e o `turbo` a **13,1x** — ou seja ~7 min e ~20 min de áudio dentro do orçamento, respectivamente. Daí o campo `modo` (`preciso` default, `rapido`). `MAX_AUDIOS`/`MAX_BYTES_TOTAL` são um proxy grosseiro disso: medir duração exigiria ffprobe, uma segunda dependência de ambiente, e o proxy já barra o caso absurdo.
+
+| erro                   | status | quando                                    |
+| ---------------------- | ------ | ----------------------------------------- |
+| `invalid_body`         | 400    | nenhum áudio enviado                      |
+| `too_many_files`       | 400    | acima de `MAX_AUDIOS`                     |
+| `audio_too_large`      | 413    | soma acima de `MAX_BYTES_TOTAL`           |
+| `whisper_indisponivel` | 503    | binário ausente — instale no Mac          |
+| `transcricao_vazia`    | 502    | rodou, saiu vazio (espelha `OllamaVazio`) |
+| `transcricao_falhou`   | 502    | rodou e falhou                            |
+
+503 vs 502 é a mesma distinção do Ollama: 503 = falta subir/instalar algo no Mac; 502 = rodou e falhou.
+
+⚠️ **O nome do arquivo vem do cliente e é sanitizado** (`_nome_seguro`): só o basename, só `[A-Za-z0-9._-]`. Sem isso um `../../etc/x.ogg` escaparia do diretório temporário.
+
 ## Modelos de 2026: `"think": false` é obrigatório, não otimização
 
 ⚠️ **A geração 2026 é thinking-by-default, e no `/api/chat` isso não deixa a

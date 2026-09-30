@@ -21,6 +21,7 @@ const CRUMB: Record<string, string[]> = {
   '/admin/perfil': ['Site', 'Perfil & bio'],
   '/admin/midia': ['Site', 'Mídia'],
   '/admin/sessoes': ['Votação', 'Sessões'],
+  '/admin/transcricao': ['Ferramentas', 'Transcrição'],
 }
 
 export default function AdminShellLayout({

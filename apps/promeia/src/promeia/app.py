@@ -8,6 +8,7 @@ from promeia.auth import TokenMiddleware
 from promeia.config import Settings, load_settings
 from promeia.insight import router as insight_router
 from promeia.revisao_rotas import router as revisao_router
+from promeia.transcricao_rotas import router as transcricao_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -28,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # TokenMiddleware acima envolve o app ASGI inteiro, e
     # `test_TODA_rota_registrada_recusa_sem_token` cobre rota nova sozinha.
     app.include_router(revisao_router)
+    app.include_router(transcricao_router)
 
     @app.get("/health")
     def health() -> dict:

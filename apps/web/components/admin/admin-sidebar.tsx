@@ -11,6 +11,7 @@ import {
   faUser,
   faImage,
   faSquareCheck,
+  faMicrophone,
   faCubes,
   faUpRightFromSquare,
   faRightFromBracket,
@@ -82,6 +83,12 @@ const GROUPS: NavGroup[] = [
         icon: faSquareCheck,
         countKey: 'sessions',
       },
+    ],
+  },
+  {
+    title: 'Ferramentas',
+    items: [
+      { label: 'Transcrição', href: '/admin/transcricao', icon: faMicrophone },
     ],
   },
 ]

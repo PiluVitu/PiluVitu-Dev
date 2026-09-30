@@ -1,5 +1,11 @@
-import { ApiError, type ApiEnvelope } from '@/lib/votacao/api-client'
-import type { DistributionTarget, ProposalsBody, SelectedTarget } from './types'
+import { apiBase, ApiError, type ApiEnvelope } from '@/lib/votacao/api-client'
+import type {
+  DistributionTarget,
+  ModoTranscricao,
+  ProposalsBody,
+  SelectedTarget,
+  Transcricao,
+} from './types'
 
 /**
  * Base do Atelier — DELIBERADAMENTE separada do `apiBase` da votação.
@@ -19,10 +25,19 @@ import type { DistributionTarget, ProposalsBody, SelectedTarget } from './types'
 export const atelierBase =
   process.env.NEXT_PUBLIC_ATELIER_URL ?? 'http://localhost:8080'
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${atelierBase}${path}`, {
+async function call<T>(
+  path: string,
+  init?: RequestInit,
+  base = atelierBase,
+): Promise<T> {
+  // Com FormData o navegador gera o Content-Type com o boundary; forçar JSON
+  // faria o servidor não achar arquivo nenhum.
+  const multipart = init?.body instanceof FormData
+  const res = await fetch(`${base}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: multipart
+      ? init?.headers
+      : { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     ...init,
   })
   let env: ApiEnvelope<T> | null = null
@@ -63,4 +78,19 @@ export const atelierApi = {
       `/admin/distribution/${encodeURIComponent(slug)}/publish`,
       { method: 'POST', body: JSON.stringify({ targets }) },
     ),
+  transcrever: (
+    audios: File[],
+    opts: { termos: string; modo: ModoTranscricao },
+  ) => {
+    const form = new FormData()
+    for (const a of audios) form.append('audios', a, a.name)
+    if (opts.termos.trim()) form.append('termos', opts.termos.trim())
+    form.append('modo', opts.modo)
+    // Só existe no ramielle; `atelierBase` segue na Go até o cutover do Atelier.
+    return call<Transcricao>(
+      '/admin/transcrever',
+      { method: 'POST', body: form },
+      apiBase,
+    )
+  },
 }

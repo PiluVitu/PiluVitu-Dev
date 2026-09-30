@@ -6,6 +6,7 @@ import adminRoutes from './routes/admin'
 import atelierRoutes from './routes/atelier'
 import authRoutes from './routes/auth'
 import distributionRoutes from './routes/distribution'
+import transcricaoRoutes from './routes/transcricao'
 import votacaoRoutes from './routes/votacao'
 
 // `CORS_ALLOWED_ORIGINS` mora no tipo `AuthBindings` (`lib/auth.ts`), não
@@ -88,6 +89,10 @@ app.route('/admin', atelierRoutes)
 // acima: é onde o `apps/web` já as chama (`lib/admin/atelier/api.ts`), hoje
 // contra a Go.
 app.route('/admin', distributionRoutes)
+
+// Transcrição de áudio pelo Whisper do promeia — ACIMA do catch-all, mesma
+// prova por execução em `index.test.ts`.
+app.route('/admin', transcricaoRoutes)
 
 // Rede de segurança GLOBAL (T6) — pega qualquer exceção que uma rota deixe
 // escapar sem `try/catch` próprio. SEM isto, o handler default do Hono
