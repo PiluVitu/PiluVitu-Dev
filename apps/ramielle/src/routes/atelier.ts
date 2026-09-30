@@ -25,9 +25,8 @@ import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
 import {
   chamarPromeia,
-  PromeiaInalcancavel,
-  PromeiaRecusou,
   promeiaConfigurado,
+  traduzirFalhaPromeia,
 } from '../lib/promeia'
 import { requireAdmin, type SessionVariables } from '../lib/session'
 
@@ -44,32 +43,6 @@ const MSG_CORPO_INVALIDO = "Corpo inválido: 'text' é obrigatório."
 /** Feature desligada (sem `PROMEIA_URL`/`PROMEIA_TOKEN`), não quebrada. */
 const MSG_DESLIGADO =
   'A revisão por IA está desligada — configure PROMEIA_URL e PROMEIA_TOKEN.'
-
-function traduzirFalha(err: unknown) {
-  if (err instanceof PromeiaInalcancavel) {
-    // 503 e a frase da §5: o Mac está desligado, e a ação é ligá-lo.
-    return errJson(503, 'promeia_unreachable', err.message)
-  }
-  if (err instanceof PromeiaRecusou) {
-    // O promeia está de pé e recusou. Repassa o código E a mensagem dele —
-    // é o que distingue "abra o Ollama" de "rode ollama pull X".
-    // 4xx do promeia vira 502 pro navegador (foi o upstream que recusou,
-    // não o cliente que errou), exceto o 400 de corpo, que já foi barrado
-    // aqui em cima e não chega neste ponto.
-    //
-    // ⚠️ M3 (revisão): a condição antiga (`err.status >= 500 || err.status
-    // === 503`) tinha um segundo operando INALCANÇÁVEL — 503 já é >= 500,
-    // então o `||` nunca acrescentava nada. E o `as 502 | 503` era um cast
-    // MENTIROSO: `errJson` recebe `status: number` (não uma união), então o
-    // cast nunca protegia nada — um status como 500/524/530 atravessava pro
-    // navegador sem o TypeScript acusar. Removido: a condição agora só tem
-    // um operando (o que ela sempre precisou), e o valor segue como
-    // `number` puro, sem cast nenhum.
-    const status = err.status >= 500 ? err.status : 502
-    return errJson(status, err.code, err.message)
-  }
-  return errJson(502, 'promeia_failed', 'Falha ao falar com o promeia.')
-}
 
 atelierRoutes.post(
   '/llm/proofread',
@@ -96,7 +69,7 @@ atelierRoutes.post(
       )
       return okJson({ corrected: data.corrected })
     } catch (err) {
-      return traduzirFalha(err)
+      return traduzirFalhaPromeia(err)
     }
   },
 )
@@ -128,7 +101,7 @@ atelierRoutes.post('/llm/refine', requireAdmin<AuthBindings>(), async (c) => {
     )
     return okJson({ refined: data.refined })
   } catch (err) {
-    return traduzirFalha(err)
+    return traduzirFalhaPromeia(err)
   }
 })
 

@@ -28,3 +28,12 @@ export interface ProposalsBody {
   body: string
   tags: string[]
 }
+
+/** `preciso` = whisper large-v3; `rapido` = turbo, ~3x mais rápido e menos fiel. */
+export type ModoTranscricao = 'preciso' | 'rapido'
+
+export interface Transcricao {
+  partes: { nome: string; texto: string }[]
+  texto: string
+  modelo: string
+}

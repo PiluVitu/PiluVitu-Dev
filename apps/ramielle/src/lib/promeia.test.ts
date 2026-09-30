@@ -52,6 +52,26 @@ describe('chamarPromeia — caminho feliz', () => {
     expect(JSON.parse(init.body as string)).toEqual({ text: 'x' })
   })
 
+  // Áudio vai por multipart: o `content-type` com o boundary tem que ser o
+  // que o runtime gera a partir do FormData. Forçar `application/json` (ou
+  // um `multipart/form-data` sem boundary) faz o FastAPI não achar arquivo
+  // nenhum e responder `invalid_body` — com o áudio lá dentro.
+  it('FormData segue como multipart, sem content-type forçado', async () => {
+    const fetchImpl = vi.fn(async () =>
+      respostaJson(200, { ok: true, data: {} }),
+    )
+    const form = new FormData()
+    form.append('termos', 'ramielle')
+    await chamarPromeia('/transcrever', form, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(init.body).toBe(form)
+    expect(headers['content-type']).toBeUndefined()
+    expect(headers.authorization).toBe(`Bearer ${TOKEN_MARCADOR}`)
+  })
+
   it('não duplica a barra quando a baseUrl termina em /', async () => {
     const fetchImpl = vi.fn(async () =>
       respostaJson(200, { ok: true, data: {} }),

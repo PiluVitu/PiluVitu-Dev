@@ -16,6 +16,8 @@
  * seguem (`ECONNREFUSED` ≠ "a API me recusou").
  */
 
+import { errJson } from './envelope'
+
 export type PromeiaConfig = {
   baseUrl: string
   token: string
@@ -93,13 +95,18 @@ export async function chamarPromeia<T>(
 
   let resposta: Response
   try {
+    const multipart = corpo instanceof FormData
     resposta = await f(url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${cfg.token}`,
-      },
-      body: JSON.stringify(corpo),
+      // Com FormData o runtime gera o `content-type` com o boundary; forçar
+      // qualquer valor aqui faz o promeia não achar o arquivo.
+      headers: multipart
+        ? { authorization: `Bearer ${cfg.token}` }
+        : {
+            'content-type': 'application/json',
+            authorization: `Bearer ${cfg.token}`,
+          },
+      body: multipart ? corpo : JSON.stringify(corpo),
       signal: controller.signal,
     })
   } catch {
@@ -188,4 +195,21 @@ export function promeiaConfigurado(env: {
   const token = env.PROMEIA_TOKEN ?? ''
   if (baseUrl === '' || token === '') return null
   return { baseUrl, token }
+}
+
+/**
+ * Falha do promeia → envelope do navegador. Inalcançável vira 503 com a frase
+ * de subir o Mac; recusa repassa `code` e `message` do promeia, porque é a
+ * mensagem dele que distingue "abra o Ollama" de "instale o Whisper". Um 4xx
+ * do promeia vira 502: foi o upstream que recusou, não o navegador que errou.
+ */
+export function traduzirFalhaPromeia(err: unknown) {
+  if (err instanceof PromeiaInalcancavel) {
+    return errJson(503, 'promeia_unreachable', err.message)
+  }
+  if (err instanceof PromeiaRecusou) {
+    const status = err.status >= 500 ? err.status : 502
+    return errJson(status, err.code, err.message)
+  }
+  return errJson(502, 'promeia_failed', 'Falha ao falar com o promeia.')
 }

@@ -230,6 +230,7 @@ describe('rotas de votação/admin — todas montadas ACIMA do catch-all', () =>
     ['POST', '/admin/distribution/proposals'],
     ['GET', '/admin/distribution/algum-slug'],
     ['POST', '/admin/distribution/algum-slug/publish'],
+    ['POST', '/admin/transcrever'],
   ])(
     '%s %s responde 401 not_authenticated (da rota) — nunca 404 not_found (do catch-all)',
     async (method, path) => {
