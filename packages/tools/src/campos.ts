@@ -147,7 +147,10 @@ interface Rule {
   re: RegExp
   not?: RegExp
   score: number
+  soCampoCurto?: boolean
 }
+const DDD = /^ddd\b|\bddd$/
+const COM_DDD = /\b(com|c|incluindo|mais)( o)? ddd\b/
 const CONFIRM =
   /\b(confirm\w*|conf|repet\w*|redigit\w*|novamente|again|verif\w*|re ?type|re ?enter|repeat)\b/
 
@@ -248,10 +251,11 @@ const RULES: Rule[] = [
 
   {
     kind: 'ddd',
-    re: /^\(?ddd\)?$|\bddd\b$|area code|codigo de area/,
-    not: /\b(cel\w*|tel\w*|fone|phone|whats\w*|numero)\b/,
+    re: /^ddd\b|\bddd$|area code|codigo de area/,
+    not: /\b(com|c|incluindo|mais)( o)? ddd\b|\b(cel\w*|tel\w*|fone|phone|whats\w*|numero)\b/,
     score: 0.95,
   },
+  { kind: 'ddd', re: DDD, not: COM_DDD, score: 0.95, soCampoCurto: true },
   {
     kind: 'celular',
     re: /\b(cel|celular|mobile|whats ?app|whats|zap|telefone|tel|fone|phone)\b|telemovel/,
@@ -272,7 +276,7 @@ const RULES: Rule[] = [
   },
   {
     kind: 'numeroEndereco',
-    re: /^(n|no|nro|nr)$|numero (da |do )?(casa|residencia|endereco|imovel)|(house|street|address) ?(number|no)|^end(ereco)? (numero|num|n)$/,
+    re: /^(n|no|nro|nr)$|numero (da |do )?(casa|residencia|endereco|imovel)\b|(house|street|address) ?(number|no)|^end(ereco)? (numero|num|n)$/,
     score: 0.93,
   },
   {
@@ -300,7 +304,7 @@ const RULES: Rule[] = [
   {
     kind: 'uf',
     re: /\buf\b|\bestado\b|\bstate\b|\bprovince\b|\bregion\b/,
-    not: /\bcivil\b|emissor|expedi|emissao|identidade|\brg\b|status|inscricao/,
+    not: /\bcivil\b|emissor|expedi|\bexp\b|emissao|orgao|identidade|\brg\b|document\w*|status|inscricao/,
     score: 0.9,
   },
   {
@@ -494,8 +498,15 @@ const NAO_PREENCHE = new Set([
 
 const DATA_NAO_NASC =
   /entrega|agend|inicio|fim|termino|evento|reserva|check|\bida\b|volta|partida|chegada|admiss|validade|vencimento|emissao|expedi|pagamento|consulta/
-const TELEFONE_FIXO = /\b(fixo|residencial|comercial)\b/
+const TELEFONE_FIXO = /\b(fixo|residencial|comercial|res|resid)\b/
 const AC_TELEFONE_FIXO = new Set(['home', 'work', 'fax', 'pager'])
+
+function textoDeDdd(d: FieldDescriptor): boolean {
+  return [d.label, d.ariaLabel, d.name, d.id].some((s) => {
+    const n = normalizar(s)
+    return DDD.test(n) && !COM_DDD.test(n)
+  })
+}
 
 function ehTelefoneFixo(d: FieldDescriptor): boolean {
   const tokens = (d.autocomplete || '').toLowerCase().split(/\s+/)
@@ -570,6 +581,7 @@ function pontuar(d: FieldDescriptor): Scored[] {
     return [{ kind: 'ignorar', score: 1, via: 'tipo', fontes: 1 }]
 
   const fixo = ehTelefoneFixo(d)
+  const curto = d.tag === 'select' || (d.maxLength !== null && d.maxLength <= 4)
   const ac = campoAutocomplete(d.autocomplete)
   if (ac && AC[ac]) {
     const k = AC[ac]
@@ -605,7 +617,7 @@ function pontuar(d: FieldDescriptor): Scored[] {
     const confirm = CONFIRM.test(txt)
     const matchedHere = new Set<Kind>()
     for (const r of RULES) {
-      if (matchedHere.has(r.kind)) continue
+      if (matchedHere.has(r.kind) || (r.soCampoCurto && !curto)) continue
       if (!r.re.test(txt) || (r.not && r.not.test(txt))) continue
       if (
         (r.kind === 'emailConfirmacao' || r.kind === 'senhaConfirmacao') !==
@@ -745,6 +757,12 @@ function resolver(
   const ctxRG = (i: number) => /\b(rg|identidade)\b/.test(secao(i))
   const ctxTelefone = (i: number) =>
     /\b(tel\w*|fone|cel|celular|whats\w*|phone|mobile)\b/.test(secao(i))
+  const ehDdd = (j: number) =>
+    kinds[j] === 'ddd' ||
+    (kinds[j] === 'celular' &&
+      (kinds[j + 1] === '_numero' || kinds[j + 1] === 'celular') &&
+      (ds[j].maxLength ?? 0) <= 4 &&
+      textoDeDdd(ds[j]))
   const hasCpfNear = (i: number) =>
     [i - 1, i + 1].some((j) => kinds[j] === 'cpf' || kinds[j] === 'nascimento')
 
@@ -772,7 +790,7 @@ function resolver(
         break
       case '_numero':
         if (ctxRG(i)) return null
-        if (kinds[i - 1] === 'ddd') {
+        if (ehDdd(i - 1)) {
           if (
             TELEFONE_FIXO.test(secao(i)) ||
             ehTelefoneFixo(d) ||
@@ -826,6 +844,9 @@ function resolver(
         else return null
         break
       }
+      case 'celular':
+        if (ehDdd(i)) ctx('ddd', 0.75)
+        break
       case 'uf':
         if (ctxRG(i)) return null
         break
@@ -855,8 +876,7 @@ function resolver(
       confianca: Math.round(conf * 100) / 100,
       via,
     } as Classificacao
-    if (kind === 'celular' && kinds[i - 1] === 'ddd')
-      out.dicas = { semDdd: true }
+    if (kind === 'celular' && ehDdd(i - 1)) out.dicas = { semDdd: true }
     if (
       kind === 'logradouro' &&
       !kinds.includes('_numero') &&
