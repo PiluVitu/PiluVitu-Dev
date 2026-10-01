@@ -1,11 +1,14 @@
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from promeia.transcricao import (
     PALAVRAS_DE_CONTEXTO,
+    TranscricaoFalhou,
     TranscricaoVazia,
     cauda,
+    executar_mlx_whisper,
     montar_prompt,
     transcrever,
 )
@@ -114,3 +117,75 @@ class TestTranscrever:
         executar, _ = executor_espiao([])
         with pytest.raises(ValueError):
             transcrever([], executar=executar)
+
+
+def rodar_como_mlx_whisper(texto="transcrito", *, stderr=""):
+    """Imita o `mlx_whisper` de verdade: grava `(dir / nome).with_suffix(".txt")`,
+    com `nome` = `--output-name` ou o stem do áudio. É o `with_suffix` que
+    come o último trecho de um nome com pontos (`..._22.15.03` → `..._22.15.txt`).
+    """
+
+    def rodar(args, **_):
+        audio = Path(args[1])
+        nome = (
+            args[args.index("--output-name") + 1]
+            if "--output-name" in args
+            else audio.stem
+        )
+        saida_dir = Path(args[args.index("--output-dir") + 1])
+        if texto is not None:
+            (saida_dir / nome).with_suffix(".txt").write_text(texto, encoding="utf-8")
+        # O mlx_whisper sai 0 mesmo quando pula o áudio por erro.
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr=stderr)
+
+    return rodar
+
+
+class TestExecutarMlxWhisper:
+    def test_le_a_saida_de_audio_com_nome_simples(self, tmp_path):
+        audio = tmp_path / "nota.ogg"
+        audio.write_bytes(b"x")
+        texto = executar_mlx_whisper(
+            audio, "m", "pt", "p", binario="mlx", rodar=rodar_como_mlx_whisper("oi")
+        )
+        assert texto == "oi"
+
+    # Nome padrão do WhatsApp: a hora vem com pontos. Era o defeito em produção
+    # — todo áudio do WhatsApp voltava "terminou sem gerar texto".
+    def test_le_a_saida_de_audio_com_pontos_no_nome(self, tmp_path):
+        audio = tmp_path / "WhatsApp_Ptt_2026-09-30_at_22.15.03.ogg"
+        audio.write_bytes(b"x")
+        texto = executar_mlx_whisper(
+            audio, "m", "pt", "p", binario="mlx", rodar=rodar_como_mlx_whisper("oi")
+        )
+        assert texto == "oi"
+
+    def test_saida_ausente_traz_o_erro_que_o_whisper_imprimiu(self, tmp_path):
+        audio = tmp_path / "quebrado.ogg"
+        audio.write_bytes(b"x")
+        rodar = rodar_como_mlx_whisper(
+            None,
+            stderr="Skipping quebrado.ogg due to RuntimeError: Failed to load audio",
+        )
+        with pytest.raises(TranscricaoFalhou, match="Failed to load audio"):
+            executar_mlx_whisper(audio, "m", "pt", "p", binario="mlx", rodar=rodar)
+
+    # O que vira toast no admin: a linha de erro do ffmpeg, não o banner dele.
+    def test_mensagem_de_falha_e_a_ultima_linha_de_erro_sem_o_banner(self, tmp_path):
+        audio = tmp_path / "quebrado.ogg"
+        audio.write_bytes(b"x")
+        stderr = (
+            "Skipping quebrado.ogg due to RuntimeError: Failed to load audio: "
+            "ffmpeg version 8.1.1\n"
+            "  libavutil      60. 26.101 / 60. 26.101\n"
+            "[in#0 @ 0x80301c000] Error opening input: Invalid data found\n"
+            "Error opening input files: Invalid data found when processing input\n"
+        )
+        rodar = rodar_como_mlx_whisper(None, stderr=stderr)
+        with pytest.raises(TranscricaoFalhou) as erro:
+            executar_mlx_whisper(audio, "m", "pt", "p", binario="mlx", rodar=rodar)
+        mensagem = str(erro.value)
+        assert mensagem.endswith(
+            "Error opening input files: Invalid data found when processing input"
+        )
+        assert "libavutil" not in mensagem

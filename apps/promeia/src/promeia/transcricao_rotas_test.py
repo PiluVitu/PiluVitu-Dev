@@ -114,8 +114,10 @@ class TestSucesso:
 
 
 class TestFalhas:
-    # 503 vs 502 é a mesma distinção do Ollama: 503 = falta instalar/subir
-    # algo no Mac; 502 = rodou e falhou.
+    # Nenhum erro desta rota sai como 502: o túnel da Cloudflare troca o corpo
+    # de um 502 por "error code: 502", o ramielle não acha `code` e diz "Suba o
+    # promeia no Mac" com o Mac de pé (ver "O túnel COME o corpo do 502" no
+    # CLAUDE.md). A distinção mora no `code`, que só sobrevive num 503.
     def test_binario_ausente_e_503(self, cliente, monkeypatch):
         falso_executor(
             monkeypatch, erro=transcricao.WhisperIndisponivel("instale o mlx-whisper")
@@ -125,14 +127,15 @@ class TestFalhas:
         assert r.json()["code"] == "whisper_indisponivel"
         assert "mlx-whisper" in r.json()["message"]
 
-    def test_whisper_falhou_e_502(self, cliente, monkeypatch):
+    def test_whisper_falhou_e_503(self, cliente, monkeypatch):
         falso_executor(monkeypatch, erro=transcricao.TranscricaoFalhou("deu ruim"))
         r = cliente.post("/transcrever", headers=AUTH, files=[audio()])
-        assert r.status_code == 502
+        assert r.status_code == 503
         assert r.json()["code"] == "transcricao_falhou"
+        assert r.json()["message"] == "deu ruim"
 
-    def test_saida_vazia_e_502(self, cliente, monkeypatch):
+    def test_saida_vazia_e_503(self, cliente, monkeypatch):
         falso_executor(monkeypatch, respostas=["   "])
         r = cliente.post("/transcrever", headers=AUTH, files=[audio()])
-        assert r.status_code == 502
+        assert r.status_code == 503
         assert r.json()["code"] == "transcricao_vazia"

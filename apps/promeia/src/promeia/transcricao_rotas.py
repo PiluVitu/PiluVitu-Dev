@@ -97,10 +97,12 @@ async def rota_transcrever(
             )
         except transcricao.WhisperIndisponivel as err:
             return _erro(503, "whisper_indisponivel", str(err))
+        # 503, nunca 502: o túnel troca o corpo de um 502 e a mensagem some
+        # (ver "O túnel COME o corpo do 502" no CLAUDE.md).
         except transcricao.TranscricaoVazia as err:
-            return _erro(502, "transcricao_vazia", str(err))
+            return _erro(503, "transcricao_vazia", str(err))
         except transcricao.TranscricaoFalhou as err:
-            return _erro(502, "transcricao_falhou", str(err))
+            return _erro(503, "transcricao_falhou", str(err))
 
     partes = [
         {"nome": c.name, "texto": t} for c, t in zip(caminhos, textos, strict=True)

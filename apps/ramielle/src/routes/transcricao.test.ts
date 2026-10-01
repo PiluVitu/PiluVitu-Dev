@@ -241,6 +241,26 @@ describe('POST /admin/transcrever', () => {
     expect(body.notifications[0]?.message).toContain('mlx-whisper')
   })
 
+  // O promeia responde 503 (nunca 502, que o túnel engole) quando o Whisper
+  // roda e falha; a mensagem dele é o que o dono lê no toast.
+  test('Whisper falhou no áudio: repassa 503 transcricao_falhou com a mensagem', async () => {
+    const cookie = await cookieDe(ADMIN)
+    mockarPromeia(() =>
+      json(503, {
+        ok: false,
+        code: 'transcricao_falhou',
+        message: "O Whisper terminou sem gerar texto para 'a.ogg': End of file",
+      }),
+    )
+    const form = new FormData()
+    form.append('audios', audio('a.ogg'))
+    const res = await enviar(form, cookie)
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('transcricao_falhou')
+    expect(body.notifications[0]?.message).toContain('End of file')
+  })
+
   test('Mac desligado (túnel 530) vira 503 promeia_unreachable, sem vazar o token', async () => {
     const cookie = await cookieDe(ADMIN)
     mockarPromeia(() => new Response('<html>530</html>', { status: 530 }))

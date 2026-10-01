@@ -41,6 +41,8 @@ MAX_BYTES_TOTAL = 40 * 1024 * 1024
 # cortar em silêncio. 120 palavras deixa folga para a base e os termos.
 PALAVRAS_DE_CONTEXTO = 120
 
+NOME_SAIDA = "transcricao"
+
 BASE_PROMPT = (
     "Transcrição em português do Brasil, com pontuação correta, "
     "acentuação completa e uso normal de maiúsculas."
@@ -105,6 +107,14 @@ def transcrever(
     return textos
 
 
+def _linha_de_erro(saida: str) -> str:
+    """A última linha com "Error" — o resto é o banner de versão do ffmpeg."""
+    linhas = [linha.strip() for linha in saida.splitlines() if linha.strip()]
+    erros = [linha for linha in linhas if "Error" in linha]
+    escolhida = erros[-1] if erros else (linhas[-1] if linhas else "")
+    return escolhida[-300:]
+
+
 def executar_mlx_whisper(
     caminho: Path,
     modelo: str,
@@ -139,6 +149,10 @@ def executar_mlx_whisper(
             tmp,
             "--output-format",
             "txt",
+            # Nome fixo: o mlx_whisper usa `with_suffix`, que corta o último
+            # trecho de um nome com pontos (áudio do WhatsApp: `..._22.15.03`).
+            "--output-name",
+            NOME_SAIDA,
             "--verbose",
             "False",
         ]
@@ -156,9 +170,13 @@ def executar_mlx_whisper(
                 f"O Whisper falhou em '{caminho.name}': {cauda_erro or 'sem detalhe'}"
             )
 
-        saida = Path(tmp) / f"{caminho.stem}.txt"
+        saida = Path(tmp) / f"{NOME_SAIDA}.txt"
         if not saida.exists():
+            # O mlx_whisper sai 0 quando pula um áudio por erro; a causa só
+            # aparece no que ele imprimiu.
+            detalhe = _linha_de_erro((proc.stderr or "") + (proc.stdout or ""))
             raise TranscricaoFalhou(
-                f"O Whisper terminou sem gerar texto para '{caminho.name}'."
+                f"O Whisper terminou sem gerar texto para '{caminho.name}': "
+                f"{detalhe or 'sem detalhe'}"
             )
         return saida.read_text(encoding="utf-8")
