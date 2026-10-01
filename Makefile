@@ -5,7 +5,7 @@
         dev-promeia test-promeia lint-promeia insight \
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
-        dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai
+        dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai versao-botai release-botai
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -93,6 +93,15 @@ storybook-botai:
 # Os 3 pacotes (Chrome e Edge, Firefox, Opera sem minificar) + o zip de fontes da AMO em apps/botai/.output/.
 zip-botai:
 	pnpm --filter @pilutech/botai zip
+
+# Versão e release do Botaí (ver "Publicação" em apps/botai/CLAUDE.md). O repo só
+# aceita squash: o bump vai num PR e a tag sai na main depois do merge.
+versao-botai:
+	@test -n "$(V)" || { echo "uso: make versao-botai V=x.y.z" >&2; exit 1; }
+	bash apps/botai/scripts/versao.sh $(V)
+
+release-botai:
+	bash apps/botai/scripts/release.sh
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,
