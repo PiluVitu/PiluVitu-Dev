@@ -53,10 +53,11 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 - `content/socials/*/` — social links with order, icon mode, FA icon or image
 - `content/carreiras/*/` — career history entries
 - `content/projects/*/` — project showcase entries
+- `content/produtos/*/` — catálogo PiluLabs (`produtos`): visibilidade e lojas de cada produto PiluTech. A página do produto é TSX (ver _PiluLabs_)
 
 ### Data flow
 
-1. Server components call readers in `lib/site-content.ts` (`getSiteProfile()`, `getSocials()`, `getCarreiras()`, `getProjects()`, `getVisitCard()`) — these read Keystatic YAML at build/request time.
+1. Server components call readers in `lib/site-content.ts` (`getSiteProfile()`, `getSocials()`, `getCarreiras()`, `getProjects()`, `getVisitCard()`, `getProdutos()`) — these read Keystatic YAML at build/request time.
 2. `lib/blog-posts.ts` (`getBlogPosts()`, `getBlogPost()`) fetches MDX posts from the private `PiluVitu/piluvitu-blog` repo at build/ISR time via `@octokit/rest` using `BLOG_REPO_TOKEN`. Posts are cached 30 min (ISR tag `blog-posts`).
 3. `lib/article-feed.ts` provides `ArticleCardView` — a unified type for both dev.to and blog posts. `devToToView()` and `blogPostToView()` convert each source. `mergeFeed()` merges and sorts by date.
 4. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; merged with server-fetched blog posts in `ArticleSection`.
@@ -178,6 +179,106 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **Lógica pura:** vive em `@piluvitu/tools` (`packages/tools/src`) — ver `packages/tools/CLAUDE.md`.
 - **UI (`apps/web`):** `hooks/use-camera-entropy.ts` captura alguns frames da webcam, hasheia localmente com `crypto.getRandomValues` num digest de 32 bytes e **descarta a imagem** — só o hash sai do hook; sem câmera/permissão cai no fallback crypto-only (ainda seguro). `components/entropy/roulette-wheel.tsx` (roda conic-gradient que pousa no vencedor passado pelo caller) e `components/entropy/camera-entropy-capture.tsx` (UI de consentimento + botão `data-testid="capture-entropy"`). `lib/log.ts` é um logger client leve (nunca recebe imagem crua, só hash/metadata).
 - **Tool `/tools/roleta`:** `components/tools/roleta-tool.tsx` (textarea de opções → gira com entropia da câmera ou só com aleatório do browser) + entrada `roleta` em `lib/tools-registry.ts` (ícone `faDharmachakra`). E2E em `tools.e2e.ts` usa o caminho crypto-only (sem câmera no CI).
+
+### PiluLabs (`/pilulabs`): vitrine dos produtos PiluTech
+
+Vitrine dos produtos que o autor publica pela PiluTech. O primeiro é o Botaí, a extensão de `apps/botai`.
+
+- **Spec:** `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6.
+- **Contrato entre as fases:** `docs/superpowers/plans/2026-10-01-botai-multinavegador-interfaces.md`.
+- **Plano:** `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md`.
+
+**Rotas:**
+
+| Rota                          | O que é                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `/pilulabs`                   | Vitrine. Sem produto listado, mostra "PiluLabs: produtos da PiluTech. Em breve."         |
+| `/pilulabs/botai`             | Página do produto. É também a `homepage_url` da extensão e a página de suporte nas lojas |
+| `/pilulabs/botai/privacidade` | A URL de política que vai para as 4 lojas. O mesmo texto é colado na AMO                 |
+
+As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para elas.
+
+- **Modelo híbrido:**
+  - A collection Keystatic `produtos` (`content/produtos/<slug>/index.yaml`) guarda só catálogo, visibilidade e lojas: `produtoSlug`, `order`, `nome`, `tipo`, `listado`, `resumo`, `icone`, `tags`, `chromeUrl`, `firefoxUrl`, `edgeUrl`, `operaUrl` e `repoLink`.
+  - Não tem `versao`, porque ninguém a atualizaria a cada release.
+  - O texto da página e o da política são TSX versionado, uma rota por produto.
+  - A leitura é `getProdutos()` em `lib/site-content.ts`.
+  - Ainda não há CRUD no `/admin`: URLs de loja e `listado` mudam por PR, no YAML.
+- **Trava do modelo híbrido (`lib/pilulabs-conteudo.test.ts`):**
+  - lê o YAML direto, pelo `lib/pilulabs-conteudo.ts` e sem o Keystatic, cujo reader exige `server-only` e `draftMode`;
+  - exige `app/(site)/pilulabs/<slug>/page.tsx` e `privacidade/page.tsx` para todo produto com `listado: true`;
+  - exige também o ícone em `public/`.
+- **Visibilidade, que sai dos dados (sem flag manual):**
+  - `listado: false`: a página e a política respondem por link, com `robots: { index: false }`. O produto fica fora de `/pilulabs`, do card em Projetos e do link `/pilulabs` no rodapé da home. Campo omitido no YAML conta como `false`.
+  - `listado: true` sem loja: "● Em breve".
+  - Ao menos uma loja publicada: "● Disponível" e o botão de cada loja publicada.
+- **`lib/pilulabs.ts` (lógica pura, testada no Jest):**
+  - `Loja` e `lojasPublicadas`: só aceita URL `https:` com o host exato da loja (`chromewebstore.google.com`, `addons.mozilla.org`, `microsoftedge.microsoft.com`, `addons.opera.com`), sempre na ordem chrome, firefox, edge, opera;
+  - `fase` e `listarCapturas`;
+  - `ATALHOS`, que espelha o `wxt.config.ts` do Botaí. O `apps/web` não importa nada de `apps/botai`: se o atalho mudar lá, muda aqui no mesmo PR;
+  - `metadataDaPagina`/`metadataDoProduto` e `produtoParaProject`.
+
+  O JSON-LD fica em `lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`.
+
+- ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
+  - **Por quê:** `listarCapturas` lê `public/pilulabs/<slug>/capturas/*.png` com `fs`, no build, e `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: as capturas somem da página, e o ícone some da imagem OG, sem erro nenhum.
+  - **Como conferir, depois do `next build`, em `apps/web`:**
+
+    ```bash
+    node -e 'const { routes } = require("./.next/prerender-manifest.json"); const ks = Object.keys(routes); for (const s of ["/pilulabs", "/pilulabs/botai", "/pilulabs/botai/privacidade"]) for (const r of [s, ...["opengraph-image", "twitter-image"].map((t) => ks.find((k) => new RegExp(`^${s}/${t}(-[a-z0-9]+)?$`).test(k)) || `${s}/${t}`)]) console.log(r, routes[r] ? routes[r].initialRevalidateSeconds : "NÃO ESTÁTICA")'
+    ```
+
+    As nove linhas têm de terminar em `false`. A chave das imagens tem sufixo de hash (`/pilulabs/opengraph-image-<hash>`), porque o segmento está dentro do grupo `(site)`.
+
+- **Ícone e capturas, que vêm do `apps/botai` (fase 3 da spec):**
+  - `public/pilulabs/botai/icone-128.png` e `public/pilulabs/botai/capturas/<NN>-<nome>.png` são gerados por `make capturas-botai`, no `apps/botai`, e versionados. Não edite esses PNG à mão;
+  - enquanto a fase 3 não chega à `main`, o ícone é uma cópia do `apps/botai/public/icon/128.png` e não há capturas. No conflito add/add do ícone, fica o da fase 3 (contrato, "Integração na `main`");
+  - a página as descobre no build, em ordem natural do `NN`, e só PNG;
+  - o `alt` sai do nome do arquivo: o mapa `ROTULOS_CAPTURA` devolve o acento (`pagina` → `página`) e o tema (`-claro`/`-escuro`).
+
+  PNG novo na `main` aparece na página sem mudar código. Nome com palavra acentuada nova pede uma entrada no mapa.
+
+- ⚠️ **SEO: `openGraph` é substituído inteiro, e a imagem é por segmento.**
+  - **A armadilha:** no Next 16 a mesclagem é rasa. A página que declara `openGraph` perde `locale` e `siteName` do layout, por isso `metadataDaPagina` repete tudo. Ela também só ganha a imagem do `opengraph-image.tsx` do próprio segmento.
+  - **Por isso:** cada uma das 3 rotas tem `opengraph-image.tsx` e `twitter-image.tsx` (o módulo é `lib/og-pilulabs-image.tsx`). Isso vale inclusive para a política, que é filha da página do produto.
+  - **O que o E2E confere:** o `og:title` e que cada `og:image`/`twitter:image` responde PNG.
+- **JSON-LD:**
+  - `SoftwareApplication`, com `BrowserApplication`, `price: 0` e `installUrl` só das lojas publicadas;
+  - sem `aggregateRating`, porque o Google proíbe copiar nota das lojas, e sem `softwareVersion`;
+  - `BreadcrumbList`;
+  - `CollectionPage` em `/pilulabs`;
+  - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
+- **Componentes (`components/pilulabs/`, todos com story e teste):**
+  - `StatusProduto`;
+  - `BotoesLoja`: botões do DS com ícone Font Awesome, nunca os badges oficiais;
+  - `ProdutoCard`;
+  - `Vitrine`, que agrupa por `tipo`;
+  - `CapturasGaleria`;
+  - `AtalhosTabela`.
+
+  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime, como `ATALHOS`, chega por prop, vindo da página.
+
+- **Home:**
+  - os produtos listados viram cards em Projetos, via `produtoParaProject`;
+  - o botão é "Ver no PiluLabs", na mesma aba: o `ProjectCard` trata um `deployLink` que começa com `/` como link interno, e `deployLabel` troca o "Demo";
+  - o `HomeFooter` recebe `mostrarPiluLabs`.
+- **Testes:**
+  - **Jest de componente:** usa `renderToStaticMarkup`, via `lib/render-estatico.ts`, sem Testing Library e sem dependência nova. Componente com TanStack Query vai embrulhado num `QueryClientProvider` (ver `home-footer.test.tsx`).
+  - ⚠️ **O `ts-jest` daqui só transpila:** um teste com tipo errado ou com export inexistente roda e falha em runtime (`… is not a function`), sem erro de TypeScript. O tipo só é checado pelo `tsc --noEmit`.
+  - ⚠️ **O filtro do Playwright é uma regex:** `playwright test "app/(site)/pilulabs/pilulabs.e2e.ts"` não casa nada (os parênteses viram grupo) e sai com `No tests found` e `exit=1`, o que parece um vermelho de TDD. Use `playwright test pilulabs/pilulabs.e2e.ts`. O `prettier --check` tem a mesma armadilha com glob: passe a pasta `"app/(site)/pilulabs"`.
+  - **E2E (`app/(site)/pilulabs/pilulabs.e2e.ts` e `home.e2e.ts`):** deriva o esperado do YAML com `lerProdutosDoConteudo`, e por isso continua valendo quando o dono muda `listado` ou uma URL de loja.
+  - ⚠️ **Porta 3333:** antes do Playwright, ela tem de estar livre (`make stop`). Com `reuseExistingServer`, um `next dev` de outro worktree responderia no lugar, e o teste rodaria contra o código errado. Rode com `CI=1`, que faz o Playwright subir o próprio servidor e falhar se a porta estiver ocupada.
+- **Novo produto:**
+  1. `content/produtos/<slug>/index.yaml` com `listado: false`;
+  2. o ícone em `public/pilulabs/<slug>/`;
+  3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/`;
+  4. `listado: true` só depois de a página estar pronta.
+- **Lançar:**
+  - preencher as URLs das lojas aprovadas e `listado: true` no YAML, por PR;
+  - Edge e Opera entram quando aprovarem.
+- **Fora desta fatia:**
+  - `sitemap.ts`/`robots.ts` do site inteiro, que vão para a fatia de SEO global;
+  - o CRUD de `produtos` no `/admin`.
 
 ### Admin unificado (`/admin`)
 
