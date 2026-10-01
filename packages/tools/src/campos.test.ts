@@ -365,6 +365,78 @@ describe('classificarFormulario', () => {
     },
   )
 
+  // Regressão do d2ea349: um telefone inteiro sem maxLength, com "(DDD)" ou
+  // "- DDD" no rótulo, seguido de outro telefone, virava o DDD do par. O 1º
+  // recebia só 2 dígitos e o 2º, 9 dígitos sem o DDD que o rótulo pede.
+  test.each([
+    ['Telefone (DDD)', 'Celular (DDD)'],
+    ['Celular (DDD)', 'Telefone (DDD)'],
+    ['Celular - DDD', 'Telefone - DDD'],
+    ['Celular/DDD', 'Telefone'],
+    ['Fone DDD', 'Celular DDD'],
+    ['DDD + Telefone', 'DDD + Celular'],
+    ['DDD + Telefone', 'Celular'],
+  ])(
+    'form F9g "%s" + "%s" sem maxLength são dois telefones inteiros, não um par DDD',
+    (a, b) => {
+      const r = classificarFormulario([f({ label: a }), f({ label: b })], HOJE)
+      expect(r.map((x) => x?.kind)).toEqual(['celular', 'celular'])
+      expect(r[1]?.dicas).toBeUndefined()
+    },
+  )
+
+  test('form F9g type=tel com placeholder de telefone inteiro não vira DDD', () => {
+    const r = classificarFormulario(
+      [
+        f({
+          type: 'tel',
+          label: 'Telefone (DDD)',
+          placeholder: '(00) 0000-0000',
+        }),
+        f({
+          type: 'tel',
+          label: 'Celular (DDD)',
+          placeholder: '(00) 00000-0000',
+        }),
+      ],
+      HOJE,
+    )
+    expect(r.map((x) => x?.kind)).toEqual(['celular', 'celular'])
+    expect(r[1]?.dicas).toBeUndefined()
+  })
+
+  test('form F9g "DDD do celular" com placeholder de telefone inteiro + Número não forma par', () => {
+    expect(
+      kindsOf([
+        f({ label: 'DDD do celular', placeholder: '(00) 00000-0000' }),
+        f({ label: 'Número' }),
+      ]),
+    ).toEqual(['celular', null])
+  })
+
+  test('form F9g endereço + "Telefone (DDD)" + "Celular (DDD)" → dois celulares', () => {
+    const r = classificarFormulario(
+      [
+        f({ label: 'CEP' }),
+        f({ label: 'Rua' }),
+        f({ label: 'Número' }),
+        f({ label: 'Cidade' }),
+        f({ label: 'Telefone (DDD)' }),
+        f({ label: 'Celular (DDD)' }),
+      ],
+      HOJE,
+    )
+    expect(r.map((x) => x?.kind)).toEqual([
+      'cep',
+      'logradouro',
+      'numeroEndereco',
+      'cidade',
+      'celular',
+      'celular',
+    ])
+    expect(r[5]?.dicas).toBeUndefined()
+  })
+
   test.each(['Telefone', 'Celular', 'WhatsApp'])(
     'form F9c Número solto num fieldset "%s" depois do endereço fica não reconhecido',
     (section) => {
@@ -500,6 +572,9 @@ describe('telefone fixo nunca recebe o celular', () => {
     ['label Tel. Res.', f({ label: 'Tel. Res.' })],
     ['label Fone Resid.', f({ label: 'Fone Resid.' })],
     ['name tel_res', f({ name: 'tel_res' })],
+    ['label Tel. Com.', f({ label: 'Tel. Com.' })],
+    ['name tel_com', f({ name: 'tel_com' })],
+    ['id txtFoneCom', f({ id: 'txtFoneCom' })],
   ])('%s → não reconhecido', (_, d) => {
     expect(classificarCampo(d)).toBeNull()
   })
@@ -508,6 +583,13 @@ describe('telefone fixo nunca recebe o celular', () => {
     expect(
       classificarCampo(f({ type: 'tel', autocomplete: 'mobile tel' }))?.kind,
     ).toBe('celular')
+    // "com" só no fim da fonte é comercial; "com DDD" segue sendo o celular inteiro.
+    expect(classificarCampo(f({ label: 'Telefone com DDD' }))?.kind).toBe(
+      'celular',
+    )
+    expect(classificarCampo(f({ name: 'celular_com_ddd' }))?.kind).toBe(
+      'celular',
+    )
     expect(
       classificarCampo(f({ autocomplete: 'home tel-area-code' }))?.kind,
     ).toBe('ddd')
@@ -573,6 +655,16 @@ describe('telefone fixo nunca recebe o celular', () => {
         f({ name: 'dddComercial', maxLength: 2 }),
         f({ name: 'numeroComercial', maxLength: 9 }),
       ],
+      [
+        'names ddd_com + num_com',
+        f({ name: 'ddd_com', maxLength: 2 }),
+        f({ name: 'num_com', maxLength: 9 }),
+      ],
+      [
+        'DDD Com. + Número',
+        f({ label: 'DDD Com.', maxLength: 2 }),
+        f({ label: 'Número', maxLength: 9 }),
+      ],
     ])('%s', (_, ddd, numero) => {
       expect(kindsOf([...endereco, ddd, numero])).toEqual([
         'cep',
@@ -581,6 +673,85 @@ describe('telefone fixo nunca recebe o celular', () => {
         'ddd',
         null,
       ])
+    })
+
+    test.each([
+      [
+        'names ddd_com + num_com',
+        f({ name: 'ddd_com', maxLength: 2 }),
+        f({ name: 'num_com', maxLength: 9 }),
+      ],
+      [
+        'DDD Com. + Número',
+        f({ label: 'DDD Com.', maxLength: 2 }),
+        f({ label: 'Número', maxLength: 9 }),
+      ],
+    ])('%s sem endereço → ddd e null', (_, ddd, numero) => {
+      expect(kindsOf([ddd, numero])).toEqual(['ddd', null])
+    })
+  })
+
+  // O veto pelo DDD do fixo só existia quando o parceiro era o "Número". Com
+  // "Telefone", "Fone" ou name tel, o telefone fixo recebia o celular sem DDD.
+  describe('o telefone depois do DDD de um fixo não recebe o celular', () => {
+    test.each([
+      [
+        'DDD Fixo + Telefone',
+        f({ label: 'DDD Fixo', maxLength: 2 }),
+        f({ label: 'Telefone', maxLength: 9 }),
+      ],
+      [
+        'DDD Residencial + Fone',
+        f({ label: 'DDD Residencial', maxLength: 2 }),
+        f({ label: 'Fone', maxLength: 9 }),
+      ],
+      [
+        'names ddd_res + tel',
+        f({ name: 'ddd_res', maxLength: 2 }),
+        f({ name: 'tel', maxLength: 9 }),
+      ],
+      [
+        'DDD com autocomplete home + Telefone',
+        f({ autocomplete: 'home tel-area-code', maxLength: 2 }),
+        f({ label: 'Telefone', maxLength: 9 }),
+      ],
+      [
+        'DDD + Telefone num fieldset Telefone fixo',
+        f({ label: 'DDD', maxLength: 2, section: 'Telefone fixo' }),
+        f({ label: 'Telefone', maxLength: 9, section: 'Telefone fixo' }),
+      ],
+    ])('%s → ddd e null', (_, ddd, tel) => {
+      expect(kindsOf([ddd, tel])).toEqual(['ddd', null])
+    })
+
+    test('Telefone solto num fieldset "Telefone fixo" fica não reconhecido', () => {
+      expect(
+        kindsOf([
+          f({ label: 'Nome' }),
+          f({ label: 'Telefone', section: 'Telefone fixo' }),
+        ]),
+      ).toEqual(['nomeCompleto', null])
+    })
+
+    test('Celular num fieldset "Dados comerciais", sem palavra de telefone na seção, segue celular', () => {
+      expect(
+        kindsOf([
+          f({ label: 'Razão social', section: 'Dados comerciais' }),
+          f({ label: 'Celular', section: 'Dados comerciais' }),
+        ]),
+      ).toEqual(['razaoSocial', 'celular'])
+    })
+
+    test('DDD Celular + Telefone continua par de celular', () => {
+      const r = classificarFormulario(
+        [
+          f({ label: 'DDD Celular', maxLength: 2 }),
+          f({ label: 'Telefone', maxLength: 9 }),
+        ],
+        HOJE,
+      )
+      expect(r.map((x) => x?.kind)).toEqual(['ddd', 'celular'])
+      expect(r[1]?.dicas).toEqual({ semDdd: true })
     })
   })
 })

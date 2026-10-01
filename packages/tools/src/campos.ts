@@ -499,24 +499,37 @@ const NAO_PREENCHE = new Set([
 const DATA_NAO_NASC =
   /entrega|agend|inicio|fim|termino|evento|reserva|check|\bida\b|volta|partida|chegada|admiss|validade|vencimento|emissao|expedi|pagamento|consulta/
 const TELEFONE_FIXO = /\b(fixo|residencial|comercial|res|resid)\b/
+// "com" no fim da fonte é comercial abreviado ("Tel. Com.", ddd_com); no meio é "com DDD".
+const COMERCIAL_ABREVIADO = /\bcom$/
 const AC_TELEFONE_FIXO = new Set(['home', 'work', 'fax', 'pager'])
+const DDD_MAIS = /ddd\s*\+|\+\s*ddd/i
 
-function textoDeDdd(d: FieldDescriptor): boolean {
+function textoDeDdd(d: FieldDescriptor, noInicio = false): boolean {
   return [d.label, d.ariaLabel, d.name, d.id].some((s) => {
     const n = normalizar(s)
-    return DDD.test(n) && !COM_DDD.test(n)
+    return (
+      (noInicio ? /^ddd\b/ : DDD).test(n) &&
+      !COM_DDD.test(n) &&
+      !DDD_MAIS.test(s)
+    )
   })
+}
+
+function mencionaDdd(d: FieldDescriptor): boolean {
+  return [d.label, d.ariaLabel, d.name, d.id].some((s) =>
+    /\bddd\b/.test(normalizar(s)),
+  )
 }
 
 function ehTelefoneFixo(d: FieldDescriptor): boolean {
   const tokens = (d.autocomplete || '').toLowerCase().split(/\s+/)
+  const fontes = [d.label, d.ariaLabel, d.name, d.id, d.placeholder].map(
+    normalizar,
+  )
   return (
     tokens.some((t) => AC_TELEFONE_FIXO.has(t)) ||
-    TELEFONE_FIXO.test(
-      normalizar(
-        `${d.label} ${d.ariaLabel} ${d.name} ${d.id} ${d.placeholder}`,
-      ),
-    )
+    TELEFONE_FIXO.test(fontes.join(' ')) ||
+    fontes.some((s) => COMERCIAL_ABREVIADO.test(s))
   )
 }
 
@@ -760,9 +773,12 @@ function resolver(
   const ehDdd = (j: number) =>
     kinds[j] === 'ddd' ||
     (kinds[j] === 'celular' &&
-      (kinds[j + 1] === '_numero' || kinds[j + 1] === 'celular') &&
       (ds[j].maxLength ?? 0) <= 4 &&
-      textoDeDdd(ds[j]))
+      formatoPlaceholder(ds[j].placeholder)?.[0] !== 'celular' &&
+      ((kinds[j + 1] === '_numero' && textoDeDdd(ds[j])) ||
+        (kinds[j + 1] === 'celular' &&
+          textoDeDdd(ds[j], true) &&
+          !mencionaDdd(ds[j + 1]))))
   const hasCpfNear = (i: number) =>
     [i - 1, i + 1].some((j) => kinds[j] === 'cpf' || kinds[j] === 'nascimento')
 
@@ -846,6 +862,11 @@ function resolver(
       }
       case 'celular':
         if (ehDdd(i)) ctx('ddd', 0.75)
+        else if (
+          (TELEFONE_FIXO.test(secao(i)) && (ctxTelefone(i) || ehDdd(i - 1))) ||
+          (ehDdd(i - 1) && ehTelefoneFixo(ds[i - 1]))
+        )
+          return null
         break
       case 'uf':
         if (ctxRG(i)) return null
