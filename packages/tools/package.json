@@ -24,7 +24,10 @@
     "./import/csv": "./src/import/csv.ts",
     "./import/id": "./src/import/id.ts",
     "./aleatorio": "./src/aleatorio.ts",
-    "./uf": "./src/uf.ts"
+    "./uf": "./src/uf.ts",
+    "./rg": "./src/rg.ts",
+    "./pis": "./src/pis.ts",
+    "./titulo-eleitor": "./src/titulo-eleitor.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

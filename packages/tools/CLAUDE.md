@@ -84,12 +84,15 @@ Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-
 - **`gerarCPF()` e `gerarCNPJ()` sem argumento continuam iguais** para o `apps/web` (`cpf-tool.tsx`, `cnpj-tool.tsx`, `tools.e2e.ts`). Não passe um gerador direto como handler (`onClick={gerarCPF}`): o evento viraria o `rng`.
 - Os testes sorteiam com `src/rng-teste.ts` (`sementes(n)`, `sequencia([...])`, `minimo`, `maximo`), que não tem subpath e não é código de produção.
 
-| Subpath     | O que tem                                                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `aleatorio` | `Rng`, `rngPadrao`, `escolher`, `embaralhar`, `digitosAleatorios`, `somenteDigitos`                                        |
-| `uf`        | `UFS`, `UF`, `CODIGO_UF_TITULO` (tabela do TSE; exterior `ZZ` = `28`), `REGIAO_FISCAL_CPF` (folheto da Receita), `UF_NOME` |
-| `cpf`       | `gerarCPF(rng?, uf?)`: com `uf`, o 9º dígito é a região fiscal; base com os 9 dígitos iguais é sorteada de novo            |
-| `cnpj`      | `gerarCNPJ(rng?)`, filial `0001`, só dígitos. O CNPJ alfanumérico (jul/2026) fica fora: `validarCNPJ` ainda o recusa       |
+| Subpath          | O que tem                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aleatorio`      | `Rng`, `rngPadrao`, `escolher`, `embaralhar`, `digitosAleatorios`, `somenteDigitos`                                                                                                                     |
+| `uf`             | `UFS`, `UF`, `CODIGO_UF_TITULO` (tabela do TSE; exterior `ZZ` = `28`), `REGIAO_FISCAL_CPF` (folheto da Receita), `UF_NOME`                                                                              |
+| `cpf`            | `gerarCPF(rng?, uf?)`: com `uf`, o 9º dígito é a região fiscal; base com os 9 dígitos iguais é sorteada de novo                                                                                         |
+| `cnpj`           | `gerarCNPJ(rng?)`, filial `0001`, só dígitos. O CNPJ alfanumérico (jul/2026) fica fora: `validarCNPJ` ainda o recusa                                                                                    |
+| `rg`             | `gerarRG(rng?, {permitirX?})` no modelo da SSP-SP (`NN.NNN.NNN-D`, pesos 2..9, DV = 11 − resto, 10 → X, 11 → 0), porque o RG não tem padrão nacional. Por padrão não gera X. `validarRG`, `dvRGSP`      |
+| `pis`            | `gerarPIS`, `validarPIS`, `dvPIS` (`000.00000.00-0`)                                                                                                                                                    |
+| `titulo-eleitor` | `gerarTituloEleitor(rng, uf \| 'ZZ')`, `validarTituloEleitor(v, regra)`. Em SP e MG só sai número válido **com e sem** a exceção disputada (resto 0 → 1), porque os validadores populares divergem nela |
 
 ## Dependency policy
 
