@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { lerSecoes, permissoesJustificadas } from './loja/textos'
 
 const ler = (...partes: string[]) =>
   readFileSync(path.resolve(import.meta.dirname, ...partes), 'utf8')
@@ -102,4 +103,15 @@ test('o build e2e é o único com host_permissions, e só para teste.local', () 
   expect(manifesto('chrome-mv3-e2e').host_permissions).toEqual([
     'http://teste.local/*',
   ])
+})
+
+test('toda permissão dos manifestos de Chrome e Firefox tem justificativa em loja/textos.md', () => {
+  const permissoes = new Set<string>([
+    ...manifesto('chrome-mv3').permissions,
+    ...manifesto('firefox-mv3').permissions,
+  ])
+  const textos = lerSecoes(
+    readFileSync(path.resolve(import.meta.dirname, 'loja/textos.md'), 'utf8'),
+  )
+  expect(permissoesJustificadas(textos).sort()).toEqual([...permissoes].sort())
 })
