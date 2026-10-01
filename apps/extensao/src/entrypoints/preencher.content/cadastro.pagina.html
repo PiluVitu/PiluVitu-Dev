@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Criar conta</title>
+    <style>
+      label {
+        display: block;
+        margin: 6px 0;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+      }
+    </style>
+  </head>
+  <body>
+    <form id="cad">
+      <fieldset>
+        <legend>Seus dados</legend>
+        <label>Nome completo <input name="nome" required /></label>
+        <label
+          >Nascimento
+          <input name="nascimento" placeholder="dd/mm/aaaa" maxlength="10"
+        /></label>
+        <label>E-mail <input type="email" name="email" /></label>
+        <label>Confirme o e-mail <input type="email" name="email2" /></label>
+        <label for="cpf">CPF</label
+        ><input id="cpf" name="cpf" inputmode="numeric" />
+        <label
+          >Celular <input type="tel" name="cel" placeholder="(00) 00000-0000"
+        /></label>
+        <label
+          >Senha
+          <input type="password" name="senha" autocomplete="new-password"
+        /></label>
+        <label
+          >Repita a senha
+          <input type="password" name="senha2" autocomplete="new-password"
+        /></label>
+        <label
+          >Sexo
+          <select name="sexo">
+            <option value="">Selecione</option>
+            <option value="M">Masculino</option>
+            <option value="F">Feminino</option>
+          </select></label
+        >
+      </fieldset>
+      <fieldset>
+        <legend>Endereço</legend>
+        <label>CEP <input name="cep" id="cep" maxlength="9" /></label>
+        <label>Rua <input name="logradouro" /></label>
+        <label>Número <input name="numero" maxlength="6" /></label>
+        <label>Complemento <input name="complemento" /></label>
+        <label>Bairro <input name="bairro" /></label>
+        <label>Cidade <input name="cidade" /></label>
+        <label
+          >Estado
+          <select name="estado">
+            <option value="">--</option>
+            <option value="12" data-uf="AC">Acre</option>
+            <option value="27" data-uf="AL">Alagoas</option>
+            <option value="16" data-uf="AP">Amapá</option>
+            <option value="13" data-uf="AM">Amazonas</option>
+            <option value="29" data-uf="BA">Bahia</option>
+            <option value="23" data-uf="CE">Ceará</option>
+            <option value="53" data-uf="DF">Distrito Federal</option>
+            <option value="32" data-uf="ES">Espírito Santo</option>
+            <option value="52" data-uf="GO">Goiás</option>
+            <option value="21" data-uf="MA">Maranhão</option>
+            <option value="51" data-uf="MT">Mato Grosso</option>
+            <option value="50" data-uf="MS">Mato Grosso do Sul</option>
+            <option value="31" data-uf="MG">Minas Gerais</option>
+            <option value="15" data-uf="PA">Pará</option>
+            <option value="25" data-uf="PB">Paraíba</option>
+            <option value="41" data-uf="PR">Paraná</option>
+            <option value="26" data-uf="PE">Pernambuco</option>
+            <option value="22" data-uf="PI">Piauí</option>
+            <option value="33" data-uf="RJ">Rio de Janeiro</option>
+            <option value="24" data-uf="RN">Rio Grande do Norte</option>
+            <option value="43" data-uf="RS">Rio Grande do Sul</option>
+            <option value="11" data-uf="RO">Rondônia</option>
+            <option value="14" data-uf="RR">Roraima</option>
+            <option value="42" data-uf="SC">Santa Catarina</option>
+            <option value="35" data-uf="SP">São Paulo</option>
+            <option value="28" data-uf="SE">Sergipe</option>
+            <option value="17" data-uf="TO">Tocantins</option>
+          </select></label
+        >
+      </fieldset>
+      <fieldset>
+        <legend>Cartão de crédito</legend>
+        <label
+          >Número <input name="cc" maxlength="19" autocomplete="off"
+        /></label>
+        <label>Nome impresso <input name="ccname" /></label>
+        <label
+          >Validade
+          <select name="mes">
+            <option value="">Mês</option>
+            <option>01</option>
+            <option>02</option>
+            <option>03</option>
+            <option>04</option>
+            <option>05</option>
+            <option>06</option>
+            <option>07</option>
+            <option>08</option>
+            <option>09</option>
+            <option>10</option>
+            <option>11</option>
+            <option>12</option>
+          </select>
+          <select name="ano">
+            <option value="">Ano</option>
+          </select></label
+        >
+        <label>CVV <input name="cvv" maxlength="4" /></label>
+      </fieldset>
+      <label
+        >Código de indicação <input name="ref_code" placeholder="opcional"
+      /></label>
+      <label
+        >Como nos conheceu?
+        <select id="origem">
+          <option value="">Selecione</option>
+          <option>Google</option>
+          <option>Amigo</option>
+        </select></label
+      >
+      <div style="position: absolute; left: -5000px" aria-hidden="true">
+        <input type="text" name="b_7f3e_honeypot" tabindex="-1" value="" />
+      </div>
+      <input type="hidden" name="csrf" value="x" />
+      <label><input type="checkbox" name="termos" /> Aceito os termos</label>
+      <input type="search" name="q" placeholder="Buscar" />
+    </form>
+    <pre id="out"></pre>
+    <script>
+      function mascarar(campo, formato) {
+        campo.addEventListener('input', () => {
+          const digitos = campo.value.replace(/\D/g, '')
+          let i = 0
+          campo.value = formato
+            .replace(/0/g, () => digitos[i++] ?? '')
+            .replace(/\D+$/, '')
+        })
+      }
+      mascarar(document.getElementById('cpf'), '000.000.000-00')
+      mascarar(document.getElementById('cep'), '00000-000')
+      const ano = document.querySelector('select[name="ano"]')
+      const atual = new Date().getFullYear()
+      for (let a = atual; a <= atual + 10; a++) ano.add(new Option(String(a)))
+    </script>
+  </body>
+</html>
