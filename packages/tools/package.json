@@ -27,7 +27,11 @@
     "./uf": "./src/uf.ts",
     "./rg": "./src/rg.ts",
     "./pis": "./src/pis.ts",
-    "./titulo-eleitor": "./src/titulo-eleitor.ts"
+    "./titulo-eleitor": "./src/titulo-eleitor.ts",
+    "./celular": "./src/celular.ts",
+    "./nascimento": "./src/nascimento.ts",
+    "./senha": "./src/senha.ts",
+    "./nome": "./src/nome.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -93,6 +93,10 @@ Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-
 | `rg`             | `gerarRG(rng?, {permitirX?})` no modelo da SSP-SP (`NN.NNN.NNN-D`, pesos 2..9, DV = 11 − resto, 10 → X, 11 → 0), porque o RG não tem padrão nacional. Por padrão não gera X. `validarRG`, `dvRGSP`      |
 | `pis`            | `gerarPIS`, `validarPIS`, `dvPIS` (`000.00000.00-0`)                                                                                                                                                    |
 | `titulo-eleitor` | `gerarTituloEleitor(rng, uf \| 'ZZ')`, `validarTituloEleitor(v, regra)`. Em SP e MG só sai número válido **com e sem** a exceção disputada (resto 0 → 1), porque os validadores populares divergem nela |
+| `celular`        | `gerarCelular(rng, ddd)` → `{ddd, numero, formatado, digitos, e164}`, no formato `(DD) 9XXXX-XXXX`                                                                                                      |
+| `nascimento`     | `gerarNascimento(rng, hojeISO)`: idade de 18 a 65 no `hojeISO`, só calendário (`Date.UTC`, sem fuso). `lerDataISO` lança em data inexistente                                                            |
+| `senha`          | `gerarSenha(rng, tamanho = 12)`: maiúscula, minúscula, dígito e um de `!@#$%&*`, começa por letra, sem caractere ambíguo nem tecla morta do ABNT2                                                       |
+| `nome`           | `gerarNome` (prenome + 2 sobrenomes distintos, `sexo`, `noCartao` com até 26 caracteres) e `gerarEmail` (`usuario@tuamaeaquelaursa.com`, caixa **pública**)                                             |
 
 ## Dependency policy
 
