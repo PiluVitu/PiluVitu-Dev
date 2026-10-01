@@ -107,6 +107,25 @@ describe('preenchivel', () => {
       ),
     ).toEqual([false, false, false, true, true, false])
   })
+
+  it('campo dentro de fieldset disabled fica de fora, mesmo sem o atributo próprio', () => {
+    // el.disabled só reflete o atributo do próprio campo; o fieldset desabilita sem tocá-lo.
+    montar(
+      '<fieldset disabled><input id="i"><select id="s"></select><textarea id="t"></textarea></fieldset>',
+    )
+    expect(
+      ['i', 's', 't'].map((id) => preenchivel(q<Campo>(`#${id}`))),
+    ).toEqual([false, false, false])
+  })
+
+  it('campo na legend do fieldset disabled continua habilitado', () => {
+    // Regra do HTML: o primeiro <legend> do fieldset não herda o disabled.
+    montar(
+      '<fieldset disabled><legend><input id="na-legenda"></legend><input id="fora"></fieldset>',
+    )
+    expect(preenchivel(q('#na-legenda'))).toBe(true)
+    expect(preenchivel(q('#fora'))).toBe(false)
+  })
 })
 
 describe('visivel', () => {
@@ -157,6 +176,32 @@ describe('visivel', () => {
       value: () => retangulo(0, 0, 1, 1),
     })
     expect(visivel(el)).toBe(true)
+  })
+
+  it('aria-hidden acima do host esconde o campo de dentro da shadow root', () => {
+    // closest() para na fronteira da shadow root: a isca embrulhada num web component passaria.
+    montar(
+      '<div aria-hidden="true"><x-isca id="a"></x-isca><x-isca id="f"></x-isca></div>',
+    )
+    const aberta = q<HTMLElement>('#a').attachShadow({ mode: 'open' })
+    aberta.innerHTML = '<input name="aberta">'
+    const fechada = sombraFechada(
+      q<HTMLElement>('#f'),
+      '<input name="fechada">',
+    )
+    expect(visivel(q('input', aberta))).toBe(false)
+    expect(visivel(q('input', fechada))).toBe(false)
+  })
+
+  it('shadow root aninhada sem aria-hidden acima segue visível', () => {
+    montar('<x-fora></x-fora>')
+    const fora = q<HTMLElement>('x-fora').attachShadow({ mode: 'open' })
+    fora.innerHTML = '<div aria-hidden="false"><x-dentro></x-dentro></div>'
+    const dentro = q<HTMLElement>('x-dentro', fora).attachShadow({
+      mode: 'open',
+    })
+    dentro.innerHTML = '<input>'
+    expect(visivel(q('input', dentro))).toBe(true)
   })
 
   it('elemento fora da árvore não é visível', () => {
@@ -254,6 +299,14 @@ describe('seletor', () => {
       'input:nth-of-type(2)',
       'input:nth-of-type(3)',
     ])
+  })
+
+  it('nth-of-type conta só os irmãos do mesmo pai, não a raiz inteira', () => {
+    // :nth-of-type é relativo ao pai; contar na raiz daria input:nth-of-type(3), que não casa com nada.
+    montar('<form><input name="d"><input name="d"><div><input></div></form>')
+    const aninhado = q('div > input')
+    expect(seletor(aninhado)).toBe('input:nth-of-type(1)')
+    expect(aninhado.matches('input:nth-of-type(1)')).toBe(true)
   })
 
   it('dentro de shadow root ganha o prefixo do host', () => {

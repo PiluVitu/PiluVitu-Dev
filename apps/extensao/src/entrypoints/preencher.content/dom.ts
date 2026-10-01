@@ -29,9 +29,18 @@ export function tipoNaoPreenchivel(el: Campo): boolean {
 }
 
 export function preenchivel(el: Campo): boolean {
-  if (tipoNaoPreenchivel(el) || el.disabled) return false
+  if (tipoNaoPreenchivel(el) || el.matches(':disabled')) return false
   if (el instanceof HTMLSelectElement) return !el.multiple
   return !el.readOnly
+}
+
+function sobAriaHidden(el: Element): boolean {
+  for (let atual: Element | null = el; atual; ) {
+    if (atual.closest('[aria-hidden="true"]')) return true
+    const raiz = atual.getRootNode()
+    atual = raiz instanceof ShadowRoot ? raiz.host : null
+  }
+  return false
 }
 
 export function visivel(el: Campo): boolean {
@@ -44,7 +53,7 @@ export function visivel(el: Campo): boolean {
     })
   )
     return false
-  if (el.closest('[aria-hidden="true"]')) return false
+  if (sobAriaHidden(el)) return false
   // select2 e afins escondem o <select> nativo, mas continuam escutando o change dele.
   if (el instanceof HTMLSelectElement) return true
   const r = el.getBoundingClientRect()
