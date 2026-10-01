@@ -3,6 +3,7 @@ packages:
   - 'apps/financas'
   - 'apps/financas/web'
   - 'apps/ramielle'
+  - 'apps/extensao'
   - 'packages/tools'
   - 'packages/ui'
 
