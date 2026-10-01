@@ -381,7 +381,7 @@ Abrir caixa de entrada              ['page', 'editable']
 - **Manifesto:**
   - `name`: `piluvitu · dados de teste`;
   - `version`: vem do `package.json`;
-  - `minimum_chrome_version`: `"121"`;
+  - `minimum_chrome_version`: `"123"` (era `"121"`, o piso do `checkVisibility` com `opacityProperty`; subiu porque `contextMenus.removeAll`/`update` só devolvem Promise a partir do 123);
   - `permissions`: `activeTab`, `scripting`, `contextMenus`, `storage`;
   - **nenhum** `host_permissions` e nenhum `content_scripts`;
   - `commands.preencher-pagina`: `suggested_key` `Alt+Shift+P`, `description` "Preencher esta página".

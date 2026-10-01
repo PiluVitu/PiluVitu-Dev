@@ -9,7 +9,7 @@ export default defineConfig({
   dev: { server: { port: 3018 }, reloadCommand: false },
   manifest: ({ mode }) => ({
     name: 'piluvitu · dados de teste',
-    minimum_chrome_version: '121',
+    minimum_chrome_version: '123',
     permissions: ['activeTab', 'scripting', 'contextMenus', 'storage'],
     commands: {
       'preencher-pagina': {

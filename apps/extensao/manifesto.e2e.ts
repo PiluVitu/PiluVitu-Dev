@@ -25,7 +25,7 @@ test('manifesto de produção: só activeTab, sem host_permissions nem content_s
     manifest_version: 3,
     name: 'piluvitu · dados de teste',
     version: '0.1.0',
-    minimum_chrome_version: '121',
+    minimum_chrome_version: '123',
     commands: {
       'preencher-pagina': {
         suggested_key: { default: 'Alt+Shift+P' },

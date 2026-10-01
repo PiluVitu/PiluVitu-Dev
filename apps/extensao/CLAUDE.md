@@ -67,6 +67,7 @@ CSS próprio em px (`preencher.content/aviso.css`, variáveis `--pv-*` com os va
 ## Stack e configuração (armadilhas medidas)
 
 - **`@vitejs/plugin-react` 5 direto, sem `@wxt-dev/module-react`**: o módulo puxa o plugin 6, que exige Vite 8, e o build quebra com `ERR_PACKAGE_PATH_NOT_EXPORTED './internal'` no Vite 7 do repo.
+- **`minimum_chrome_version: '123'`**: o piso é o da API mais nova usada. `contextMenus.removeAll`/`update` só devolvem Promise a partir do 123 (no 121–122 devolvem `undefined` e o `.catch` de `atualizarTitulosMenu` lança); o `checkVisibility` com `opacityProperty`/`visibilityProperty`/`contentVisibilityAuto` pede 121. Ao usar API nova do `browser.*`, confira o "since Chrome N" nos tipos de `@wxt-dev/browser` e suba o piso (e o `manifesto.e2e.ts`).
 - **`imports: false`**: tudo é importado explicitamente (`wxt/browser`, `wxt/utils/storage`, `wxt/utils/define-*`).
 - **`wxt prepare &&` na frente de `lint`, `test` e `storybook`, nunca `postinstall`**: um `postinstall` que falhe derruba o `pnpm install` de **todos** os jobs do CI (e o deploy do finanças espera o CI).
 - **`tsconfig.json`**: `jsx: react-jsx` (o gerado não traz) e `noUncheckedIndexedAccess: false` (o código cru de `@piluvitu/tools` não passa com essa flag, que o tsconfig gerado liga).
