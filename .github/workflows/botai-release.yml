@@ -3,6 +3,8 @@ name: Botaí Release
 # Fora do `CI` de propósito: o deploy do finanças espera o `CI` inteiro passar,
 # e a reprodução das fontes não pode segurá-lo.
 on:
+  push:
+    tags: ['botai-v*']
   pull_request:
     branches: [main]
     paths:
@@ -16,6 +18,16 @@ on:
       - 'scripts/check-tailwind-source.mjs'
       - '.github/workflows/botai-release.yml'
   workflow_dispatch:
+    inputs:
+      lojas:
+        description: 'Job lojas: só imprimir (nenhuma), validar as credenciais (dry-run) ou submeter'
+        type: choice
+        options: [nenhuma, dry-run, submeter]
+        default: nenhuma
+      adiar_chrome:
+        description: 'Chrome Web Store: publicação adiada (STAGED_PUBLISH), liberada depois no painel'
+        type: boolean
+        default: false
 
 concurrency:
   group: botai-release-${{ github.ref }}
@@ -29,8 +41,12 @@ jobs:
     name: Botaí (verificação + 3 pacotes + reprodução das fontes)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -45,6 +61,10 @@ jobs:
       - name: Versão (apps/botai/package.json)
         id: versao
         run: echo "versao=$(node -p "require('./apps/botai/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Tag = botai-v<versão do package.json>, num commit da main
+        if: github.event_name == 'push'
+        run: bash apps/botai/scripts/conferir-tag.sh "$GITHUB_REF_NAME" "$GITHUB_SHA"
 
       - name: Lint (wxt prepare + tsc + eslint)
         run: pnpm --filter @pilutech/botai run lint
@@ -83,3 +103,105 @@ jobs:
           path: botai-zips/
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: GitHub Release
+    needs: pacotes
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: botai-zips
+          path: botai-zips
+
+      - name: Notas (commits do Botaí desde a tag anterior)
+        env:
+          VERSAO: ${{ needs.pacotes.outputs.versao }}
+        run: |
+          set -euo pipefail
+          anterior=$(git describe --tags --abbrev=0 --match 'botai-v*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          {
+            echo "## Botaí $VERSAO"
+            echo
+            git log --no-merges --format='- %s (%h)' "${anterior:+$anterior..}$GITHUB_REF_NAME" -- apps/botai packages/tools packages/ui
+          } > notas.md
+          cat notas.md
+
+      # --latest=false: num monorepo, o release do Botaí não pode virar o "Latest" do repositório.
+      - name: Criar o release com os zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSAO: ${{ needs.pacotes.outputs.versao }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" botai-zips/*.zip
+          --verify-tag
+          --title "Botaí $VERSAO"
+          --notes-file notas.md
+          --latest=false
+
+  lojas:
+    name: Lojas (wxt submit)
+    needs: pacotes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Vazio no PR e no dispatch "nenhuma": sem environment não há secrets, e nada é enviado.
+    environment: ${{ (github.event_name != 'pull_request' && inputs.lojas != 'nenhuma') && 'lojas-botai' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: botai-zips
+          path: botai-zips
+
+      - name: actionlint deste workflow
+        if: github.event_name == 'pull_request'
+        run: >-
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" --workdir /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -color .github/workflows/botai-release.yml
+
+      - uses: pnpm/action-setup@v4
+        if: github.event_name != 'pull_request'
+
+      - uses: actions/setup-node@v4
+        if: github.event_name != 'pull_request'
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        if: github.event_name != 'pull_request'
+        run: pnpm install --frozen-lockfile
+
+      - name: wxt submit (só as lojas com secrets)
+        working-directory: apps/botai
+        env:
+          EVENTO: ${{ github.event_name }}
+          ENTRADA_LOJAS: ${{ inputs.lojas }}
+          ADIAR_CHROME: ${{ inputs.adiar_chrome }}
+          ORIGEM_REF: ${{ github.ref }}
+          VERSAO: ${{ needs.pacotes.outputs.versao }}
+          PASTA_ZIPS: ${{ github.workspace }}/botai-zips
+          CHROME_API_VERSION: v2
+          CHROME_EXTENSION_ID: ${{ vars.BOTAI_CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          FIREFOX_EXTENSION_ID: botai@pilutech.com.br
+          FIREFOX_CHANNEL: listed
+          FIREFOX_COMPATIBILITY: firefox
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+          EDGE_PRODUCT_ID: ${{ vars.BOTAI_EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: bash scripts/submeter-lojas.sh
