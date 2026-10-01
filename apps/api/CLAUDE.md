@@ -4,7 +4,7 @@ Guidance for the **Go API** (`github.com/PiluVitu/api`). O Claude Code carrega e
 
 ## Tech Stack (API)
 
-- **Go 1.23**, módulo `github.com/PiluVitu/api`
+- **Go 1.25** (`go 1.25.0` no `go.mod`, `golang:1.25-alpine` no `Dockerfile`), módulo `github.com/PiluVitu/api`
 - **chi v5** — HTTP router
 - **SQLite** via `modernc.org/sqlite` (puro Go, sem CGo)
 - **cobra** — CLI (`piluvitu <tool> <subcommand>`)
@@ -21,9 +21,13 @@ Canônicos (`make dev-api`, `make build-api`, `make build-cli`) na raiz. Especí
 
 `make dev-api` roda a Go API via [air](https://github.com/air-verse/air) (config em `apps/api/.air.toml`), que recompila a cada `.go` salvo e — diferente do `go run` — é dono do ciclo de vida do binário: manda SIGINT + kill no processo a cada rebuild e na saída, liberando a `:8081` limpinha no Ctrl+C. air roda via `go run github.com/air-verse/air@latest` (sem instalar nada global, fora do `go.mod` da API). O binário compilado e o SQLite de dev ficam em `apps/api/tmp/` (gitignored); por isso `clean_on_exit = false` (não apagar o `votacao.db`). Editar o `.env` ainda exige restart (ele é carregado no launch). Hot reload é só dev nativo no host — em Docker a API roda o binário do `Dockerfile`. Se uma porta ficar presa após um crash, `make stop` mata o que estiver escutando em 8081/3333 (macOS/BSD-safe).
 
+### Atualizar módulos (Trivy) sem subir o Go
+
+Rodar `GOTOOLCHAIN=local go get <mod>@<versão> && GOTOOLCHAIN=local go mod tidy`. Com o default `GOTOOLCHAIN=auto`, um módulo que declara um Go mais novo sobe sozinho a diretiva `go` do `go.mod`, e o `Dockerfile` (`golang:1.25-alpine`) para de compilar. Com `local`, o `go get` falha. Teto medido em 2026-10: `golang.org/x/crypto` ≥ v0.56.0, `x/net` ≥ v0.59.0, `x/text` ≥ v0.42.0 e `x/sys` ≥ v0.48.0 declaram `go 1.26.0`. Por isso o `x/crypto` ficou em v0.55.0, e seguem abertos 2 MEDIUM em `x/crypto/ssh` (CVE-2026-56855, CVE-2026-78662), que não está no grafo de build (`go list -deps -test ./...`). Para subir para Go 1.26, mude o `go.mod` e o `Dockerfile` juntos.
+
 ## Go API overview
 
-- **Module:** `github.com/PiluVitu/api`, Go 1.23
+- **Module:** `github.com/PiluVitu/api`, Go 1.25
 - **HTTP router:** chi v5 — `/health` (DB-aware) + `/auth/*`, `/votacao/*`, `/admin/*`. **As 13 rotas `/tools/*` foram apagadas** (fatia ④, cutover Task 5, 2026-08-12): eram código morto sem autenticação — zero chamador HTTP no repo (`apps/web` sempre consumiu `@piluvitu/tools` local, nunca esta API), confirmado por busca de chamador em todo o monorepo antes da remoção. `internal/handlers/tools.go` (os handlers HTTP) e o teste correspondente saíram junto. ⚠️ Não é possível provar ausência de consumidor **externo**: o Cloudflare Tunnel expõe `promeia.piluvitu.com.br/*` publicamente sem credencial — decisão de apagar assim mesmo já tomada no spec da migração (`docs/superpowers/specs/2026-07-28-ramielle-promeia-design.md` §8).
 - **Router DI:** `router.New(router.Deps{DB: store.DB()})` — `Deps` injeta o `*sql.DB` usado pelo health check; testes podem passar `Deps{}` para subir sem DB.
 - **CORS:** `github.com/go-chi/cors` middleware. Origins permitidos lidos de `CORS_ALLOWED_ORIGINS` (csv) ou caem no default (`http://localhost:3333,https://piluvitu.com.br`). Defaults definidos em `internal/router/router.go`.

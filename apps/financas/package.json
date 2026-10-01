@@ -25,13 +25,13 @@
   "dependencies": {
     "@piluvitu/tools": "workspace:*",
     "better-auth": "1.6.25",
-    "hono": "^4.12.32",
-    "pdfjs-dist": "6.1.200"
+    "hono": "^4.13.12",
+    "pdfjs-dist": "6.3.289"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.8",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wrangler": "^4.114.0"
   }
 }
