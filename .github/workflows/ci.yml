@@ -193,3 +193,31 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+  extensao:
+    name: Extensão (lint + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `wxt prepare` vem dentro dos scripts (nunca como postinstall: um
+      # postinstall quebrado derrubaria o `pnpm install` de todos os jobs).
+      - name: Lint (wxt prepare + tsc + eslint)
+        run: pnpm --filter @piluvitu/extensao run lint
+
+      - name: Test (vitest)
+        run: pnpm --filter @piluvitu/extensao run test
+
+      - name: Build (+ gate do @source em .output/chrome-mv3)
+        run: pnpm --filter @piluvitu/extensao run build
