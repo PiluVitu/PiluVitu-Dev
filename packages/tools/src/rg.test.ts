@@ -15,6 +15,11 @@ describe('RG (modelo SSP-SP)', () => {
     expect(dvRGSP([3, 8, 4, 5, 2, 9, 1, 7])).toBe('3')
   })
 
+  test('rejeita base de dígitos repetidos mesmo com o DV batendo', () => {
+    expect(dvRGSP([1, 1, 1, 1, 1, 1, 1, 1])).toBe('0')
+    expect(validarRG('11.111.111-0')).toBe(false)
+  })
+
   test('por padrão nunca gera DV X; com permitirX gera', () => {
     const gerados = sementes(1000).map((r) => gerarRG(r))
     expect(gerados.every((rg) => validarRG(rg) && !rg.endsWith('X'))).toBe(true)

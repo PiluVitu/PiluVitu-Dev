@@ -1,5 +1,9 @@
 import { sfc32 } from './prng'
-import { gerarTituloEleitor, validarTituloEleitor } from './titulo-eleitor'
+import {
+  dvsTitulo,
+  gerarTituloEleitor,
+  validarTituloEleitor,
+} from './titulo-eleitor'
 import { UFS, CODIGO_UF_TITULO } from './uf'
 import { sementes } from './rng-teste'
 
@@ -40,8 +44,23 @@ describe('Título de eleitor', () => {
     }
   })
 
-  test('rejeita código de UF fora de 01..28', () => {
-    expect(validarTituloEleitor('0043 5687 2906')).toBe(false)
-    expect(validarTituloEleitor('0043 5687 0006')).toBe(false)
+  test('caso MG em que as duas leituras da regra divergem', () => {
+    expect(validarTituloEleitor('0000 0014 0205', 'sem-excecao')).toBe(true)
+    expect(validarTituloEleitor('0000 0014 0205', 'com-excecao-sp-mg')).toBe(
+      false,
+    )
+    expect(validarTituloEleitor('0000 0014 0213', 'com-excecao-sp-mg')).toBe(
+      true,
+    )
+    expect(validarTituloEleitor('0000 0014 0213', 'sem-excecao')).toBe(false)
+  })
+
+  test('rejeita código de UF fora de 01..28 mesmo com os DVs batendo', () => {
+    // Os DVs batem de propósito: assim só a checagem de faixa pode recusar.
+    const seq = [0, 0, 4, 3, 5, 6, 8, 7]
+    expect(dvsTitulo(seq, '29', 'com-excecao-sp-mg')).toEqual([0, 9])
+    expect(dvsTitulo(seq, '00', 'com-excecao-sp-mg')).toEqual([0, 0])
+    expect(validarTituloEleitor('0043 5687 2909')).toBe(false)
+    expect(validarTituloEleitor('0043 5687 0000')).toBe(false)
   })
 })
