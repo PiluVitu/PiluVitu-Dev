@@ -33,6 +33,15 @@ describe('buscarAbaAlvo', () => {
     })
   })
 
+  it('a URL é julgada pelo navegador atual: addons.mozilla.org só é proibida no Firefox', async () => {
+    abaAtiva('https://addons.mozilla.org/pt-BR/firefox/')
+    await expect(buscarAbaAlvo('')).resolves.toMatchObject({ situacao: 'ok' })
+    vi.stubEnv('FIREFOX', 'true')
+    await expect(buscarAbaAlvo('')).resolves.toMatchObject({
+      situacao: 'proibida',
+    })
+  })
+
   it('file: pergunta ao Chrome se o acesso a arquivos está liberado', async () => {
     abaAtiva('file:///Users/eu/form.html')
     Object.assign(fakeBrowser.extension, {

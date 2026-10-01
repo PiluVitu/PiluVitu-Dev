@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { browser } from 'wxt/browser'
+import { detectarNavegador } from '../../lib/navegador'
 import { situacaoDaUrl, type SituacaoPagina } from '../../lib/paginas'
 
 export interface AbaAlvo {
@@ -24,7 +25,7 @@ export async function buscarAbaAlvo(busca: string): Promise<AbaAlvo | null> {
   return {
     id: aba.id,
     url: aba.url,
-    situacao: situacaoDaUrl(aba.url, acessoArquivo),
+    situacao: situacaoDaUrl(aba.url, acessoArquivo, detectarNavegador()),
   }
 }
 

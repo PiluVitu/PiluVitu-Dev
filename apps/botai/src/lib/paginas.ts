@@ -1,15 +1,38 @@
+import type { Navegador } from './navegador'
+
 export type SituacaoPagina = 'ok' | 'proibida' | 'arquivo-sem-acesso'
 
 const ESQUEMAS_PROIBIDOS = [
   'chrome:',
   'chrome-extension:',
   'edge:',
+  'opera:',
   'about:',
   'view-source:',
   'devtools:',
   'data:',
+  'moz-extension:',
+  'resource:',
 ]
-const RECUSAS_DO_CHROME = [/^Cannot access /, /cannot be scripted/]
+const RECUSAS_DO_NAVEGADOR = [
+  /^Cannot access /,
+  /cannot be scripted/,
+  /^Missing host permission for the tab/,
+]
+// A pref extensions.webextensions.restrictedDomains do Firefox (modules/libpref/init/all.js); ele compara o host exato.
+const DOMINIOS_RESTRITOS_DO_FIREFOX = new Set([
+  'accounts-static.cdn.mozilla.net',
+  'accounts.firefox.com',
+  'addons.cdn.mozilla.net',
+  'addons.mozilla.org',
+  'api.accounts.firefox.com',
+  'content.cdn.mozilla.net',
+  'discovery.addons.mozilla.org',
+  'oauth.accounts.firefox.com',
+  'profile.accounts.firefox.com',
+  'support.mozilla.org',
+  'sync.services.mozilla.com',
+])
 
 function lerUrl(url: string): URL | null {
   try {
@@ -26,9 +49,18 @@ function lojaDoChrome(url: URL): boolean {
   )
 }
 
+const SITE_PROIBIDO: Record<Navegador, (url: URL) => boolean> = {
+  chrome: lojaDoChrome,
+  edge: (url) =>
+    lojaDoChrome(url) || url.hostname === 'microsoftedge.microsoft.com',
+  opera: (url) => lojaDoChrome(url) || url.hostname === 'addons.opera.com',
+  firefox: (url) => DOMINIOS_RESTRITOS_DO_FIREFOX.has(url.hostname),
+}
+
 export function situacaoDaUrl(
   url: string | undefined,
   acessoArquivo: boolean,
+  navegador: Navegador,
 ): SituacaoPagina {
   if (!url) return 'ok'
   if (ESQUEMAS_PROIBIDOS.some((esquema) => url.startsWith(esquema)))
@@ -36,11 +68,11 @@ export function situacaoDaUrl(
   if (url.startsWith('file:'))
     return acessoArquivo ? 'ok' : 'arquivo-sem-acesso'
   const lida = lerUrl(url)
-  return lida && lojaDoChrome(lida) ? 'proibida' : 'ok'
+  return lida && SITE_PROIBIDO[navegador](lida) ? 'proibida' : 'ok'
 }
 
 export function erroEhPaginaProibida(mensagem: string): boolean {
-  return RECUSAS_DO_CHROME.some((padrao) => padrao.test(mensagem))
+  return RECUSAS_DO_NAVEGADOR.some((padrao) => padrao.test(mensagem))
 }
 
 export function rotuloDoHost(url: string | undefined): string {
