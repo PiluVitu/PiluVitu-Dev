@@ -176,6 +176,79 @@ describe('preencherPagina', () => {
   })
 })
 
+describe('preencherPagina: InjectionResult.error (o Firefox resolve com o erro em vez de rejeitar)', () => {
+  // No Chrome, uma exceção dentro da func rejeita o executeScript; no Firefox ela volta no resultado.
+  const comResultadoDaFunc = (injetados: unknown[]) =>
+    executar.mockImplementation(async (injecao) =>
+      injecao.files ? [{ documentId: 'doc-0', frameId: 0 }] : injetados,
+    )
+
+  it('erro no frame 0 que não é recusa sobe, em vez de virar "Nenhum campo"', async () => {
+    comResultadoDaFunc([
+      {
+        documentId: 'doc-0',
+        frameId: 0,
+        error: new TypeError(
+          'can\'t access property "openOrClosedShadowRoot", T.dom is undefined',
+        ),
+      },
+    ])
+    await expect(preencherPagina(7)).rejects.toThrow('T.dom is undefined')
+    expect(executar).toHaveBeenCalledTimes(2)
+  })
+
+  it('recusa entregue como objeto com message vira 1e', async () => {
+    const aba = await fakeBrowser.tabs.create({
+      url: 'https://addons.mozilla.org/pt-BR/firefox/',
+    })
+    comResultadoDaFunc([
+      {
+        documentId: 'doc-0',
+        frameId: 0,
+        error: { message: 'Missing host permission for the tab' },
+      },
+    ])
+    await expect(preencherPagina(aba.id as number)).resolves.toEqual({
+      ok: false,
+      motivo: 'proibida',
+    })
+  })
+
+  it('erro como string vira Error com a mesma mensagem', async () => {
+    comResultadoDaFunc([
+      { documentId: 'doc-0', frameId: 0, error: 'TypeError: boom' },
+    ])
+    await expect(preencherPagina(7)).rejects.toThrow('TypeError: boom')
+  })
+
+  it('erro num frame filho conta como frame sem resultado, e o topo é somado', async () => {
+    comResultadoDaFunc([
+      { documentId: 'doc-0', frameId: 0, result: RESULTADO },
+      {
+        documentId: 'doc-5',
+        frameId: 5,
+        error: 'TypeError: quebrou no iframe',
+      },
+    ])
+    await expect(preencherPagina(7)).resolves.toMatchObject({
+      ok: true,
+      resumo: { x: 1, y: 2, k: 1 },
+    })
+  })
+
+  it('erro na injeção do arquivo no frame 0 também sobe', async () => {
+    executar.mockImplementation(async () => [
+      {
+        documentId: 'doc-0',
+        frameId: 0,
+        error: new Error('SyntaxError: Unexpected token'),
+      },
+    ])
+    await expect(preencherPagina(7)).rejects.toThrow('SyntaxError')
+    expect(executar).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('inserirNoCampo', () => {
   it('injeta só no frame do clique e chama __botai.inserir com a pessoa e o kind', async () => {
     simularPagina(null)
@@ -316,5 +389,48 @@ describe('inserirNoCampo: avisos de falha', () => {
     await expect(inserirNoCampo(7, 0, 'cpf')).rejects.toThrow(
       'No tab with id: 7.',
     )
+  })
+
+  it('Firefox: erro que não é recusa, entregue no resultado do frame do clique, sobe', async () => {
+    executar.mockImplementation(async (injecao) =>
+      injecao.files
+        ? [{ documentId: 'doc-3', frameId: 3 }]
+        : [
+            {
+              documentId: 'doc-3',
+              frameId: 3,
+              error: 'TypeError: x is undefined',
+            },
+          ],
+    )
+    await expect(inserirNoCampo(7, 3, 'cpf')).rejects.toThrow(
+      'TypeError: x is undefined',
+    )
+    expect(avisos()).toEqual([])
+  })
+
+  it('Firefox: recusa entregue no resultado do frame do clique vira o aviso de iframe no topo', async () => {
+    executar.mockImplementation(async (injecao) => {
+      const frames = (injecao.target.frameIds as number[] | undefined) ?? []
+      if (frames[0] === 3 && !injecao.files)
+        return [
+          {
+            documentId: 'doc-3',
+            frameId: 3,
+            error: { message: 'Missing host permission for the tab or frames' },
+          },
+        ]
+      return [{ documentId: 'doc', frameId: frames[0] }]
+    })
+    await inserirNoCampo(7, 3, 'cpf')
+    expect(avisos()[0]).toMatchObject({
+      target: { tabId: 7, frameIds: [0] },
+      args: [
+        {
+          titulo: 'Não deu para inserir aqui: iframe de outro domínio',
+          erro: true,
+        },
+      ],
+    })
   })
 })

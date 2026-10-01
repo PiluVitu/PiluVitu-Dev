@@ -24,8 +24,33 @@ interface Aviso {
   erro?: boolean
 }
 
-const mensagemDo = (erro: unknown) =>
-  erro instanceof Error ? erro.message : String(erro)
+interface Injetado<T> {
+  documentId: string
+  frameId: number
+  result?: T
+}
+
+function comoErro(valor: unknown): Error {
+  if (valor instanceof Error) return valor
+  if (typeof valor === 'object' && valor !== null && 'message' in valor)
+    return new Error(String(valor.message))
+  return new Error(String(valor))
+}
+
+const mensagemDo = (erro: unknown) => comoErro(erro).message
+
+// Só o Firefox entrega a exceção da func em InjectionResult.error, e resolve em vez de rejeitar.
+function exigirSemErro<T>(
+  injetados: Injetado<T>[],
+  frameQueLanca: number,
+): Injetado<T | null>[] {
+  return injetados.map((injetado) => {
+    const { error } = injetado as Injetado<T> & { error?: unknown }
+    if (error === undefined) return injetado
+    if (injetado.frameId === frameQueLanca) throw comoErro(error)
+    return { ...injetado, result: null }
+  })
+}
 
 export async function avisar(tabId: number, aviso: Aviso): Promise<void> {
   await browser.scripting.executeScript({
@@ -49,16 +74,22 @@ export async function preencherPagina(
 ): Promise<RespostaPreencher> {
   const pessoa = await obterOuGerarPessoa()
   try {
-    await browser.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      files: [ARQUIVO_CONTENT],
-    })
-    const resultados = await browser.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: (p: Pessoa, hoje: string) =>
-        (globalThis as ComBotai).__botai?.preencher(p, hoje) ?? null,
-      args: [pessoa, hojeISO()],
-    })
+    exigirSemErro(
+      await browser.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: [ARQUIVO_CONTENT],
+      }),
+      0,
+    )
+    const resultados = exigirSemErro(
+      await browser.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: (p: Pessoa, hoje: string) =>
+          (globalThis as ComBotai).__botai?.preencher(p, hoje) ?? null,
+        args: [pessoa, hojeISO()],
+      }),
+      0,
+    )
     const resumo = somarFrames(
       resultados.map(({ documentId, frameId, result }) => ({
         documentId,
@@ -110,16 +141,22 @@ export async function inserirNoCampo(
   const pessoa = await obterOuGerarPessoa()
   let resultado: ResultadoInsercao | null | undefined
   try {
-    await browser.scripting.executeScript({
-      target: { tabId, frameIds: [frameId] },
-      files: [ARQUIVO_CONTENT],
-    })
-    const [injecao] = await browser.scripting.executeScript({
-      target: { tabId, frameIds: [frameId] },
-      func: (p: Pessoa, k: FieldKind) =>
-        (globalThis as ComBotai).__botai?.inserir(p, k) ?? null,
-      args: [pessoa, kind],
-    })
+    exigirSemErro(
+      await browser.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        files: [ARQUIVO_CONTENT],
+      }),
+      frameId,
+    )
+    const [injecao] = exigirSemErro(
+      await browser.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        func: (p: Pessoa, k: FieldKind) =>
+          (globalThis as ComBotai).__botai?.inserir(p, k) ?? null,
+        args: [pessoa, kind],
+      }),
+      frameId,
+    )
     resultado = injecao?.result
   } catch (erro) {
     if (!erroEhPaginaProibida(mensagemDo(erro))) throw erro
