@@ -34,7 +34,8 @@
     "./nome": "./src/nome.ts",
     "./endereco": "./src/endereco.ts",
     "./empresa": "./src/empresa.ts",
-    "./cartao": "./src/cartao.ts"
+    "./cartao": "./src/cartao.ts",
+    "./pessoa": "./src/pessoa.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

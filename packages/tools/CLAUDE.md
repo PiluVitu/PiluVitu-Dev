@@ -101,6 +101,13 @@ Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-
 | `empresa`        | `gerarEmpresa(rng, sobrenomes)` → razão social `{S1} & {S2} {ramo} Ltda`, fantasia `{S2} {sufixo}` e CNPJ                                                                                                                                                |
 | `cartao`         | **Só os números de teste da Stripe** (Visa `4242 4242 4242 4242`, Mastercard `5555 5555 5555 4444`); validade entre hoje + 12 e hoje + 59 meses, CVV de 3 dígitos. Número aleatório que passa no Luhn não aprova em sandbox e pode ser de um cartão real |
 
+### `gerarPessoa(rng, hojeISO)` (`pessoa`)
+
+- **Coerência:** a região do CPF e o código do título são os da UF do endereço; o DDD do celular é o do CEP; o e-mail sai do nome; a empresa, dos sobrenomes; o nome impresso no cartão, da pessoa. O RG é sempre `SSP/SP`, o modelo do gerador.
+- **A ordem das chamadas a `rng` é contrato:** trocá-la muda a pessoa de toda semente.
+- **Pessoa dourada** (`sfc32(1,2,3,4)`, `'2026-10-01'`) em `pessoa.test.ts`: é um snapshot de propósito. Quando um gerador muda, ela muda; a mudança é revista e o teste atualizado na mesma tarefa.
+- Não tem campo `versao`: quem versiona a pessoa guardada é a extensão (`storage.defineItem(…, { version })`).
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.
