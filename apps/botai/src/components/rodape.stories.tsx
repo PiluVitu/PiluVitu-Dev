@@ -6,7 +6,7 @@ const meta = {
   title: 'Popup/Rodapé',
   component: Rodape,
   args: {
-    atalho: 'Alt+Shift+P',
+    atalho: 'Ctrl+Shift+Y',
     texto: 'preenche sem abrir',
     comAlterar: true,
     onAlterarAtalho: fn(),

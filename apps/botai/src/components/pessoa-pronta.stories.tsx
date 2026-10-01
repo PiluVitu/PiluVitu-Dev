@@ -11,7 +11,7 @@ const meta = {
   args: {
     pessoa: PESSOA_DOURADA,
     idade: PESSOA_DOURADA.nascimento.idade,
-    atalho: 'Alt+Shift+P',
+    atalho: 'Ctrl+Shift+Y',
     preencherDesabilitado: false,
     onPreencher: fn(),
     onNovaPessoa: fn(),

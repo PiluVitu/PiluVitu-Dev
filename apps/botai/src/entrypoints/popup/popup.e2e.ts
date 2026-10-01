@@ -1,5 +1,6 @@
 import {
   abrirPopup,
+  ATALHO_ESPERADO,
   expect,
   idDaAba,
   ORIGEM,
@@ -43,7 +44,7 @@ test('popup: gera a pessoa no 1a e o Preencher do 1b preenche a aba-alvo', async
   await expect(
     popup.getByRole('heading', { level: 1, name: pessoa.nome.completo }),
   ).toBeVisible()
-  await expect(popup.locator('kbd').first()).toHaveText(/⌥⇧P|Alt\+Shift\+P/)
+  await expect(popup.locator('kbd').first()).toHaveText(ATALHO_ESPERADO)
 
   await popup.getByRole('button', { name: /Preencher esta página/ }).click()
   await expect(aba.locator('input[name="cpf"]')).toHaveValue(pessoa.cpf)

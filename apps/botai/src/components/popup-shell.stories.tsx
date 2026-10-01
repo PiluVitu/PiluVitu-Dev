@@ -17,7 +17,7 @@ const meta = {
     ),
     rodape: (
       <Rodape
-        atalho="Alt+Shift+P"
+        atalho="Ctrl+Shift+Y"
         texto="preenche sem abrir"
         comAlterar
         onAlterarAtalho={fn()}

@@ -17,7 +17,7 @@ const meta = {
     onAbrirCaixa: fn(),
     onVerDados: fn(),
   },
-  parameters: { atalho: 'Alt+Shift+P' },
+  parameters: { atalho: 'Ctrl+Shift+Y' },
   render: (args, { parameters }) => (
     <PopupShell
       host="localhost:3000"

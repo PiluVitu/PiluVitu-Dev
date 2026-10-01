@@ -8,7 +8,7 @@ const meta = {
   title: 'Popup/1d · Nenhum campo',
   component: NenhumCampo,
   args: { y: 3, onTentarDeNovo: fn(), onVerDados: fn() },
-  parameters: { atalho: 'Alt+Shift+P' },
+  parameters: { atalho: 'Ctrl+Shift+Y' },
   render: (args, { parameters }) => (
     <PopupShell
       host="staging.app.dev"

@@ -10,11 +10,11 @@ import { PESSOA_DOURADA as P } from '../../test/pessoa-dourada'
 import { LINHAS_DO_DESIGN, resumoDe } from '../../test/resumos'
 import { App } from './App'
 
-let atalho = 'Alt+Shift+P'
+let atalho = 'Ctrl+Shift+Y'
 let urlDaAba = 'http://localhost:3000/cadastro'
 
 beforeEach(() => {
-  atalho = 'Alt+Shift+P'
+  atalho = 'Ctrl+Shift+Y'
   urlDaAba = 'http://localhost:3000/cadastro'
   Object.assign(fakeBrowser.commands, {
     getAll: vi.fn(async () => [

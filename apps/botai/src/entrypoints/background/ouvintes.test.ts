@@ -52,7 +52,7 @@ const clique = (menuItemId: string, frameId = 0) =>
 const chamada = (n: number) => executar.mock.calls[n][0]
 
 describe('aoComando', () => {
-  it('Alt+Shift+P (botai-preencher) preenche a aba do comando', async () => {
+  it('o atalho (botai-preencher) preenche a aba do comando', async () => {
     await aoComando('botai-preencher', ABA)
     expect(chamada(0).target).toEqual({ tabId: 7, allFrames: true })
   })

@@ -50,7 +50,7 @@ describe('criarApi', () => {
     expect(outlineDoNome()).toBe('2px solid #38bdf8')
   })
 
-  it('reinjetar (Alt+Shift+P de novo) invalida a instância antiga e devolve o outline do site', () => {
+  it('reinjetar (o atalho de novo) invalida a instância antiga e devolve o outline do site', () => {
     criarApi(new ContentScriptContext('preencher')).preencher(P, HOJE)
     expect(outlineDoNome()).toBe('2px solid #38bdf8')
     const nova = new ContentScriptContext('preencher')

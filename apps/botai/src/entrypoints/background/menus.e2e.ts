@@ -1,5 +1,5 @@
 import type { browser } from 'wxt/browser'
-import { expect, test } from '../../test/extensao.fixture'
+import { ATALHO_ESPERADO, expect, test } from '../../test/extensao.fixture'
 
 declare const chrome: typeof browser
 
@@ -30,6 +30,6 @@ test('a instalação cria o menu completo e registra o atalho', async ({
   const comandos = await sw.evaluate(() => chrome.commands.getAll())
   expect(comandos.find((c) => c.name === 'botai-preencher')).toMatchObject({
     description: 'Preencher esta página',
-    shortcut: expect.stringMatching(/⌥⇧P|Alt\+Shift\+P/),
+    shortcut: expect.stringMatching(ATALHO_ESPERADO),
   })
 })

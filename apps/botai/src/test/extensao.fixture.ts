@@ -18,6 +18,11 @@ const EXTENSAO = path.resolve(
 )
 export const ORIGEM = 'http://teste.local'
 
+// O atalho padrão muda por sistema (ver o suggested_key no wxt.config.ts),
+// e o Chrome o exibe no formato de cada um.
+export const ATALHO_ESPERADO =
+  process.platform === 'darwin' ? /⌥⇧P/ : /Ctrl\+Shift\+Y/
+
 export interface Rota {
   corpo: string
   tipo?: string

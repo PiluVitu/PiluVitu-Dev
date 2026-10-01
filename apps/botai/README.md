@@ -22,7 +22,7 @@ Uma pessoa de teste falsa e coerente, que fica guardada até você pedir outra:
 
 ## Como usar
 
-- **A página inteira:** `Alt+Shift+P` (`⌥⇧P` no Mac), ou clique no ícone do Botaí e em "Preencher esta página".
+- **A página inteira:** `⌥⇧P` no Mac ou `Ctrl+Shift+Y` no Windows e no Linux, ou clique no ícone do Botaí e em "Preencher esta página".
 - **Um campo só:** botão direito no campo › `Botaí › Inserir › CPF` (ou E-mail, CEP…), para o que a detecção automática errar.
 - **Ver e copiar os dados:** o popup mostra a pessoa inteira; "Nova pessoa" gera outra.
 

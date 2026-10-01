@@ -8,7 +8,7 @@ const meta = {
   title: 'Popup/1a · Primeiro uso',
   component: PrimeiroUso,
   args: { onGerar: fn() },
-  parameters: { atalho: 'Alt+Shift+P' },
+  parameters: { atalho: 'Ctrl+Shift+Y' },
   render: (args, { parameters }) => (
     <PopupShell
       host="localhost:3000"

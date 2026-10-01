@@ -30,7 +30,10 @@ test('manifesto de produção: só activeTab, sem host_permissions nem content_s
     minimum_chrome_version: '123',
     commands: {
       'botai-preencher': {
-        suggested_key: { default: 'Alt+Shift+P' },
+        // Alt+Shift+P é atalho do próprio Chrome no Windows e no Linux
+        // ("criar novo grupo de abas", kTabGroupAcceleratorMap) e o Chrome
+        // não o cede à extensão: lá o padrão é Ctrl+Shift+Y.
+        suggested_key: { default: 'Ctrl+Shift+Y', mac: 'Alt+Shift+P' },
         description: 'Preencher esta página',
       },
     },

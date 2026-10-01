@@ -15,7 +15,9 @@ export default defineConfig({
     permissions: ['activeTab', 'scripting', 'contextMenus', 'storage'],
     commands: {
       'botai-preencher': {
-        suggested_key: { default: 'Alt+Shift+P' },
+        // No Windows e no Linux o Chrome reserva Alt+Shift+P para "criar novo grupo
+        // de abas" e não o cede à extensão (o atalho ficaria vazio).
+        suggested_key: { default: 'Ctrl+Shift+Y', mac: 'Alt+Shift+P' },
         description: 'Preencher esta página',
       },
     },
