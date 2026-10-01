@@ -108,6 +108,14 @@ Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-
 - **Pessoa dourada** (`sfc32(1,2,3,4)`, `'2026-10-01'`) em `pessoa.test.ts`: é um snapshot de propósito. Quando um gerador muda, ela muda; a mudança é revista e o teste atualizado na mesma tarefa.
 - Não tem campo `versao`: quem versiona a pessoa guardada é a extensão (`storage.defineItem(…, { version })`).
 
+### Classificador (`campos`)
+
+- `classificarFormulario(ds, hojeISO)` faz duas passadas. A 1ª pontua cada campo: token de `autocomplete` (gramática WHATWG) com confiança 1; regras regex pt-BR/en sobre label, aria-label, name, id e placeholder, com pesos 1 / 1 / 0,95 / 0,9 / 0,8 e bônus de 0,03 por fonte que concorda; formato do placeholder; e o `type` só como pista fraca (`type=tel` **não** quer dizer telefone: no Brasil ele abre o teclado numérico em CPF e CEP). A 2ª resolve os genéricos (`_nome`, `_numero`, `_documento`, dia/mês/ano, 2º e-mail, 2ª senha) pela seção, pelos vizinhos (±2), pelo `maxLength` e pelas opções do select. Devolve `{kind, confianca, via, dicas?}`, ou `null` abaixo de `LIMIAR = 0.5`.
+- **Sem ano fixo:** os anos das opções de select são lidos contra o ano de `hojeISO`. `classificarCampo(d)` (um campo, sem formulário) roda sem ano, com essas pistas desligadas.
+- **`FieldDescriptor`** é montado pela extensão: `label` junta `el.labels`, o `<label>` que envolve o campo (sem o texto das `<option>`) e `aria-labelledby`; `maxLength` vai `null` quando o atributo falta (o DOM dá `-1`); `section` é a `legend` do `fieldset` mais próximo.
+- **Nunca dado errado.** O veto de telefone fixo, residencial ou comercial vale para **toda** fonte de celular: a regra, o formato `(00) 0000-0000`, o `type=tel` e o `autocomplete` com `home`, `work`, `fax` ou `pager`. UF ou estado "emissor", "de expedição" ou "do RG" ficam de fora, e também um `UF` ou `Número` soltos numa seção "RG"/"Identidade" (senão o "Número" virava o número do endereço).
+- Kind composto `cidadeUf`, para "Cidade / UF".
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.
