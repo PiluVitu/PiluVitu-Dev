@@ -164,3 +164,73 @@ test.describe('/pilulabs/botai', () => {
     await esperarPng(page, twitter)
   })
 })
+
+test.describe('/pilulabs/botai/privacidade', () => {
+  const botai = produtoBotai()
+
+  test('responde com h1, data, contato e a tabela de permissões', async ({
+    page,
+  }) => {
+    const resposta = await page.goto('/pilulabs/botai/privacidade')
+    expect(resposta?.status()).toBe(200)
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: `Política de privacidade do ${botai.nome}`,
+      }),
+    ).toBeVisible()
+    await expect(page.locator('time[datetime="2026-10-01"]')).toBeVisible()
+    await expect(
+      page.locator('a[href="mailto:pilutechinformatica@gmail.com"]').first(),
+    ).toBeVisible()
+    await expect(page.getByRole('row', { name: /^menus\b/ })).toContainText(
+      'Só no Firefox',
+    )
+  })
+
+  test('noindex igual ao da página do produto', async ({ page }) => {
+    await page.goto('/pilulabs/botai/privacidade')
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
+      'content',
+      `Política de privacidade do ${botai.nome} | PiluLabs`,
+    )
+    await expect(
+      page.locator('meta[name="robots"][content*="noindex"]'),
+    ).toHaveCount(botai.listado ? 0 : 1)
+  })
+
+  test('a página do produto leva até aqui', async ({ page }) => {
+    await page.goto('/pilulabs/botai')
+    await page.getByRole('link', { name: 'Política de privacidade' }).click()
+    await expect(page).toHaveURL('/pilulabs/botai/privacidade')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      'Política de privacidade',
+    )
+  })
+
+  test('JSON-LD com a trilha PiluLabs › produto › política', async ({
+    page,
+  }) => {
+    await page.goto('/pilulabs/botai/privacidade')
+    const [dados] = await lerJsonLd(page)
+    expect(dados['@type']).toBe('BreadcrumbList')
+    const itens = dados.itemListElement as { name: string }[]
+    expect(itens.map((i) => i.name)).toEqual([
+      'PiluLabs',
+      botai.nome,
+      'Política de privacidade',
+    ])
+  })
+
+  // A política é filha da página do produto e declara openGraph: sem arquivo
+  // próprio, ela perderia a imagem (mesclagem do Next 16).
+  test('imagens OG do próprio segmento', async ({ page }) => {
+    await page.goto('/pilulabs/botai/privacidade')
+    const og = await caminhoDaMeta(page, 'meta[property="og:image"]')
+    expect(og).toContain('/pilulabs/botai/privacidade/opengraph-image')
+    await esperarPng(page, og)
+    const twitter = await caminhoDaMeta(page, 'meta[name="twitter:image"]')
+    expect(twitter).toContain('/pilulabs/botai/privacidade/twitter-image')
+    await esperarPng(page, twitter)
+  })
+})
