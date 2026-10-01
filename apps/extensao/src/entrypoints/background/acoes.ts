@@ -6,8 +6,15 @@ import { hojeISO } from '../../lib/hoje'
 import type { RespostaPreencher } from '../../lib/mensagens'
 import { erroEhPaginaProibida } from '../../lib/paginas'
 import { somarFrames } from '../../lib/resultado'
-import { linhaNaoReconhecidos, tituloPreenchimento } from '../../lib/textos'
+import {
+  AVISO_SEM_CAMPOS,
+  avisoFalhaInserir,
+  linhaNaoReconhecidos,
+  tituloPreenchimento,
+  type MotivoFalhaInserir,
+} from '../../lib/textos'
 import type { ComPv } from '../preencher.content/api'
+import type { ResultadoInsercao } from '../preencher.content/inserir'
 
 export const ARQUIVO_CONTENT = '/content-scripts/preencher.js'
 
@@ -16,6 +23,9 @@ interface Aviso {
   linha2?: string
   erro?: boolean
 }
+
+const mensagemDo = (erro: unknown) =>
+  erro instanceof Error ? erro.message : String(erro)
 
 export async function avisar(tabId: number, aviso: Aviso): Promise<void> {
   await browser.scripting.executeScript({
@@ -58,19 +68,37 @@ export async function preencherPagina(
     )
     if (resumo.contentType === 'application/pdf')
       return { ok: false, motivo: 'proibida' }
-    if (resumo.y > 0) {
-      await avisar(tabId, {
-        titulo: tituloPreenchimento(resumo.x, resumo.y),
-        linha2: resumo.k > 0 ? linhaNaoReconhecidos(resumo.k) : undefined,
-      })
-    }
+    await avisar(
+      tabId,
+      resumo.y === 0
+        ? { titulo: AVISO_SEM_CAMPOS, erro: true }
+        : {
+            titulo: tituloPreenchimento(resumo.x, resumo.y),
+            linha2: resumo.k > 0 ? linhaNaoReconhecidos(resumo.k) : undefined,
+          },
+    )
     return { ok: true, resumo }
   } catch (erro) {
-    if (
-      !erroEhPaginaProibida(erro instanceof Error ? erro.message : String(erro))
-    )
-      throw erro
+    if (!erroEhPaginaProibida(mensagemDo(erro))) throw erro
     return { ok: false, motivo: await motivoDaRecusa(tabId) }
+  }
+}
+
+async function avisarFalhaAoInserir(
+  tabId: number,
+  frameIdDoClique: number,
+  motivo: MotivoFalhaInserir,
+): Promise<void> {
+  try {
+    if (frameIdDoClique !== 0) {
+      await browser.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
+        files: [ARQUIVO_CONTENT],
+      })
+    }
+    await avisar(tabId, { titulo: avisoFalhaInserir(motivo), erro: true })
+  } catch (erro) {
+    if (!erroEhPaginaProibida(mensagemDo(erro))) throw erro
   }
 }
 
@@ -80,16 +108,26 @@ export async function inserirNoCampo(
   kind: FieldKind,
 ): Promise<void> {
   const pessoa = await obterOuGerarPessoa()
-  await browser.scripting.executeScript({
-    target: { tabId, frameIds: [frameId] },
-    files: [ARQUIVO_CONTENT],
-  })
-  await browser.scripting.executeScript({
-    target: { tabId, frameIds: [frameId] },
-    func: (p: Pessoa, k: FieldKind) =>
-      (globalThis as ComPv).__pv?.inserir(p, k) ?? null,
-    args: [pessoa, kind],
-  })
+  let resultado: ResultadoInsercao | null | undefined
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      files: [ARQUIVO_CONTENT],
+    })
+    const [injecao] = await browser.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      func: (p: Pessoa, k: FieldKind) =>
+        (globalThis as ComPv).__pv?.inserir(p, k) ?? null,
+      args: [pessoa, kind],
+    })
+    resultado = injecao?.result
+  } catch (erro) {
+    if (!erroEhPaginaProibida(mensagemDo(erro))) throw erro
+    if (frameId !== 0) await avisarFalhaAoInserir(tabId, frameId, 'iframe')
+    return
+  }
+  if (resultado && !resultado.ok)
+    await avisarFalhaAoInserir(tabId, frameId, resultado.motivo)
 }
 
 export async function mostrarCampo(
@@ -97,10 +135,14 @@ export async function mostrarCampo(
   documentId: string,
   idx: number,
 ): Promise<boolean> {
-  const [resultado] = await browser.scripting.executeScript({
-    target: { tabId, documentIds: [documentId] },
-    func: (i: number) => (globalThis as ComPv).__pv?.mostrar(i) ?? false,
-    args: [idx],
-  })
-  return resultado?.result === true
+  try {
+    const [resultado] = await browser.scripting.executeScript({
+      target: { tabId, documentIds: [documentId] },
+      func: (i: number) => (globalThis as ComPv).__pv?.mostrar(i) ?? false,
+      args: [idx],
+    })
+    return resultado?.result === true
+  } catch {
+    return false
+  }
 }

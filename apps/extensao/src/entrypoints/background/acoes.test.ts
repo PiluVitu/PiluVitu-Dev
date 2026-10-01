@@ -111,10 +111,14 @@ describe('preencherPagina', () => {
     expect(chamada(2).args).toEqual([{ titulo: '1 de 1 campo preenchido' }])
   })
 
-  it('com Y = 0 não mostra aviso nesta fase', async () => {
+  it('com Y = 0 avisa "Nenhum campo nesta página" numa linha só, no frame 0', async () => {
     simularPagina({ ...RESULTADO, preenchidos: [], naoReconhecidos: [] })
     const resposta = await preencherPagina(7)
-    expect(executar).toHaveBeenCalledTimes(2)
+    expect(executar).toHaveBeenCalledTimes(3)
+    expect(chamada(2)).toMatchObject({
+      target: { tabId: 7, frameIds: [0] },
+      args: [{ titulo: 'Nenhum campo nesta página', erro: true }],
+    })
     expect(resposta).toMatchObject({ ok: true, resumo: { x: 0, y: 0, k: 0 } })
   })
 
@@ -205,5 +209,112 @@ describe('mostrarCampo', () => {
       { documentId: 'doc-9', frameId: 4, result: false },
     ])
     await expect(mostrarCampo(7, 'doc-9', 12)).resolves.toBe(false)
+  })
+
+  it('documento que já não existe (a página navegou) devolve false sem lançar', async () => {
+    executar.mockRejectedValue(
+      new Error('No document with id doc-9 in tab with id 7'),
+    )
+    await expect(mostrarCampo(7, 'doc-9', 12)).resolves.toBe(false)
+  })
+})
+
+describe('inserirNoCampo: avisos de falha', () => {
+  const RECUSA_DO_CHROME =
+    'Cannot access contents of url "http://outro.local/quadro". Extension manifest must request permission to access this host.'
+
+  // frames recusados lançam como o Chrome; a chamada do Inserir (args [pessoa, kind]) devolve `resultado`.
+  function simularInsercao({
+    resultado,
+    recusados = [],
+  }: {
+    resultado?: unknown
+    recusados?: number[]
+  }) {
+    executar.mockImplementation(async (injecao) => {
+      const frames = (injecao.target.frameIds as number[] | undefined) ?? []
+      if (frames.some((frame) => recusados.includes(frame)))
+        throw new Error(RECUSA_DO_CHROME)
+      const resposta = injecao.args?.length === 2 ? resultado : undefined
+      return [{ documentId: 'doc', frameId: frames[0], result: resposta }]
+    })
+  }
+
+  const injecoes = () =>
+    executar.mock.calls.map(([i]) => i).filter((i) => i.files)
+  const avisos = () =>
+    executar.mock.calls
+      .map(([i]) => i)
+      .filter((i) => !i.files && i.args?.length === 1)
+
+  it('campo que aceitou o valor: nenhum aviso', async () => {
+    simularInsercao({ resultado: { ok: true } })
+    await inserirNoCampo(7, 0, 'cpf')
+    expect(avisos()).toEqual([])
+  })
+
+  it('sem campo em foco no topo: avisa no frame 0, sem injetar de novo', async () => {
+    simularInsercao({ resultado: { ok: false, motivo: 'sem-foco' } })
+    await inserirNoCampo(7, 0, 'cpf')
+    expect(injecoes().map((i) => i.target)).toEqual([
+      { tabId: 7, frameIds: [0] },
+    ])
+    expect(avisos()).toEqual([
+      expect.objectContaining({
+        target: { tabId: 7, frameIds: [0] },
+        args: [
+          {
+            titulo: 'Não deu para inserir aqui: nenhum campo em foco',
+            erro: true,
+          },
+        ],
+      }),
+    ])
+  })
+
+  it('campo de um iframe da mesma origem recusou o valor: injeta no frame 0 e avisa lá', async () => {
+    simularInsercao({ resultado: { ok: false, motivo: 'recusado' } })
+    await inserirNoCampo(7, 3, 'senha')
+    expect(injecoes().map((i) => i.target)).toEqual([
+      { tabId: 7, frameIds: [3] },
+      { tabId: 7, frameIds: [0] },
+    ])
+    expect(avisos()[0]).toMatchObject({
+      target: { tabId: 7, frameIds: [0] },
+      args: [
+        {
+          titulo: 'Não deu para inserir aqui: o campo recusou o valor',
+          erro: true,
+        },
+      ],
+    })
+  })
+
+  it('iframe de outro domínio: o Chrome recusa o frame, e o aviso sai no topo', async () => {
+    simularInsercao({ recusados: [3] })
+    await inserirNoCampo(7, 3, 'cpf')
+    expect(avisos()[0]).toMatchObject({
+      target: { tabId: 7, frameIds: [0] },
+      args: [
+        {
+          titulo: 'Não deu para inserir aqui: iframe de outro domínio',
+          erro: true,
+        },
+      ],
+    })
+  })
+
+  it('página proibida (o topo também recusa): não avisa nada e não lança', async () => {
+    simularInsercao({ recusados: [0, 3] })
+    await expect(inserirNoCampo(7, 3, 'cpf')).resolves.toBeUndefined()
+    await expect(inserirNoCampo(7, 0, 'cpf')).resolves.toBeUndefined()
+    expect(avisos()).toEqual([])
+  })
+
+  it('erro que não é recusa do Chrome sobe, como antes', async () => {
+    executar.mockRejectedValue(new Error('No tab with id: 7.'))
+    await expect(inserirNoCampo(7, 0, 'cpf')).rejects.toThrow(
+      'No tab with id: 7.',
+    )
   })
 })
