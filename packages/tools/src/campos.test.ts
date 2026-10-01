@@ -275,6 +275,44 @@ describe('classificarFormulario', () => {
     expect(r[1]?.dicas).toEqual({ semDdd: true })
   })
 
+  test('form F9b endereço + DDD + Número → o Número do telefone é celular semDdd, não o número da casa', () => {
+    const r = classificarFormulario(
+      [
+        f({ label: 'CEP' }),
+        f({ label: 'Rua' }),
+        f({ label: 'Número' }),
+        f({ label: 'Cidade' }),
+        f({ label: 'DDD', maxLength: 2 }),
+        f({ label: 'Número', maxLength: 9 }),
+      ],
+      HOJE,
+    )
+    expect(r.map((x) => x?.kind)).toEqual([
+      'cep',
+      'logradouro',
+      'numeroEndereco',
+      'cidade',
+      'ddd',
+      'celular',
+    ])
+    expect(r[5]?.dicas).toEqual({ semDdd: true })
+  })
+
+  test.each(['Telefone', 'Celular', 'WhatsApp'])(
+    'form F9c Número solto num fieldset "%s" depois do endereço fica não reconhecido',
+    (section) => {
+      expect(
+        kindsOf([
+          f({ label: 'CEP' }),
+          f({ label: 'Rua' }),
+          f({ label: 'Número' }),
+          f({ label: 'Cidade' }),
+          f({ label: 'Número', maxLength: 11, section }),
+        ]),
+      ).toEqual(['cep', 'logradouro', 'numeroEndereco', 'cidade', null])
+    },
+  )
+
   test('form F10 PJ section: Nome → razaoSocial', () => {
     expect(
       kindsOf([
@@ -407,6 +445,39 @@ describe('telefone fixo nunca recebe o celular', () => {
       'logradouro',
     )
   })
+
+  describe('o Número depois do DDD de um fixo não vira celular', () => {
+    const endereco = [
+      f({ label: 'CEP' }),
+      f({ label: 'Rua' }),
+      f({ label: 'Número' }),
+    ]
+    test.each([
+      [
+        'fieldset Telefone residencial',
+        f({ label: 'DDD', maxLength: 2, section: 'Telefone residencial' }),
+        f({ label: 'Número', maxLength: 8, section: 'Telefone residencial' }),
+      ],
+      [
+        'DDD com autocomplete home',
+        f({ autocomplete: 'home tel-area-code', maxLength: 2 }),
+        f({ label: 'Número', maxLength: 8 }),
+      ],
+      [
+        'Número com label fixo',
+        f({ label: 'DDD', maxLength: 2 }),
+        f({ label: 'Número fixo', maxLength: 8 }),
+      ],
+    ])('%s', (_, ddd, numero) => {
+      expect(kindsOf([...endereco, ddd, numero])).toEqual([
+        'cep',
+        'logradouro',
+        'numeroEndereco',
+        'ddd',
+        null,
+      ])
+    })
+  })
 })
 
 describe('UF e número do RG nunca recebem o endereço', () => {
@@ -423,6 +494,19 @@ describe('UF e número do RG nunca recebem o endereço', () => {
       }),
     ],
     ['Estado emissor', f({ label: 'Estado emissor' })],
+    ['UF de emissão', f({ label: 'UF de emissão' })],
+    [
+      'UF Emissão (select)',
+      f({
+        tag: 'select',
+        type: 'select-one',
+        label: 'UF Emissão',
+        options: UFS,
+      }),
+    ],
+    ['Estado de emissão', f({ label: 'Estado de emissão' })],
+    ['name ufEmissao', f({ name: 'ufEmissao', maxLength: 2 })],
+    ['UF da Identidade', f({ label: 'UF da Identidade' })],
   ])('%s → não reconhecido', (_, d) => {
     expect(classificarCampo(d)).toBeNull()
   })

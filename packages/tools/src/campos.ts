@@ -300,7 +300,7 @@ const RULES: Rule[] = [
   {
     kind: 'uf',
     re: /\buf\b|\bestado\b|\bstate\b|\bprovince\b|\bregion\b/,
-    not: /\bcivil\b|emissor|expedi|\brg\b|status|inscricao/,
+    not: /\bcivil\b|emissor|expedi|emissao|identidade|\brg\b|status|inscricao/,
     score: 0.9,
   },
   {
@@ -743,6 +743,8 @@ function resolver(
         ].includes(kinds[j] as string) && !ctxCartaoRaw(j),
     )
   const ctxRG = (i: number) => /\b(rg|identidade)\b/.test(secao(i))
+  const ctxTelefone = (i: number) =>
+    /\b(tel\w*|fone|cel|celular|whats\w*|phone|mobile)\b/.test(secao(i))
   const hasCpfNear = (i: number) =>
     [i - 1, i + 1].some((j) => kinds[j] === 'cpf' || kinds[j] === 'nascimento')
 
@@ -770,6 +772,17 @@ function resolver(
         break
       case '_numero':
         if (ctxRG(i)) return null
+        if (kinds[i - 1] === 'ddd') {
+          if (
+            TELEFONE_FIXO.test(secao(i)) ||
+            ehTelefoneFixo(d) ||
+            ehTelefoneFixo(ds[i - 1])
+          )
+            return null
+          ctx('celular', 0.75)
+          break
+        }
+        if (ctxTelefone(i)) return null
         if ((d.maxLength ?? 0) >= 16 || ctxCartao(i)) ctx('cartaoNumero', 0.75)
         else if (
           vizinho(i, ENDERECO) ||
