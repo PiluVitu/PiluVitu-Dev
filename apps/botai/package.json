@@ -10,6 +10,7 @@
     "build:opera": "wxt build -b opera && node ../../scripts/check-tailwind-source.mjs .output/opera-mv3",
     "build:e2e": "wxt build --mode e2e",
     "lint": "wxt prepare && tsc --noEmit && eslint .",
+    "lint:firefox": "web-ext lint --source-dir .output/firefox-mv3 --no-config-discovery",
     "test": "wxt prepare && vitest run",
     "test:watch": "wxt prepare && vitest",
     "test:e2e": "pnpm run build && pnpm run build:firefox && pnpm run build:opera && pnpm run build:e2e && playwright test",
@@ -59,6 +60,7 @@
     "typescript-eslint": "^8.57.1",
     "vite": "^7.2.0",
     "vitest": "^4.1.10",
+    "web-ext": "10.7.0",
     "wxt": "0.21.4"
   }
 }
