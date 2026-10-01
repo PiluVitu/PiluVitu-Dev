@@ -369,3 +369,80 @@ describe('App do popup: retorno do Preencher', () => {
     expect(within(cabecalho()).getByText('arquivo local')).toBeInTheDocument()
   })
 })
+
+describe('App do popup: crédito da PiluTech', () => {
+  const chegarEm: [string, () => Promise<void>][] = [
+    [
+      '1a',
+      async () => {
+        render(<App />)
+        await screen.findByRole('heading', {
+          name: 'Ainda não há pessoa de teste',
+        })
+      },
+    ],
+    [
+      '1b',
+      async () => {
+        await pessoaItem.setValue(P)
+        render(<App />)
+        await screen.findByRole('heading', {
+          level: 1,
+          name: P.nome.completo,
+        })
+      },
+    ],
+    [
+      '1c',
+      async () => {
+        simularBackground({ ok: true, resumo: resumoDe(12, LINHAS_DO_DESIGN) })
+        await pessoaItem.setValue(P)
+        render(<App />)
+        await userEvent.setup().click(await botaoPreencher())
+        await screen.findByRole('heading', {
+          level: 1,
+          name: '12 de 14 campos preenchidos',
+        })
+      },
+    ],
+    [
+      '1d',
+      async () => {
+        simularBackground({ ok: true, resumo: resumoDe(0, LINHAS_DO_DESIGN) })
+        await pessoaItem.setValue(P)
+        render(<App />)
+        await userEvent.setup().click(await botaoPreencher())
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'Nenhum campo reconhecido nesta página',
+        })
+      },
+    ],
+    [
+      '1e',
+      async () => {
+        urlDaAba = 'chrome://settings'
+        await pessoaItem.setValue(P)
+        render(<App />)
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'O Chrome não deixa extensões mexerem nesta página',
+        })
+      },
+    ],
+  ]
+
+  it.each(chegarEm)(
+    'no %s, "Powered by PiluTech" é o último botão do popup e abre pilutech.com.br numa aba nova',
+    async (_estado, chegar) => {
+      const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
+      await chegar()
+      const credito = screen.getByRole('button', {
+        name: 'Powered by PiluTech (abre pilutech.com.br)',
+      })
+      expect(screen.getAllByRole('button').at(-1)).toBe(credito)
+      await userEvent.setup().click(credito)
+      expect(abrir).toHaveBeenCalledWith({ url: 'https://pilutech.com.br' })
+    },
+  )
+})

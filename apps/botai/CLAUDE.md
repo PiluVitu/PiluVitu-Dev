@@ -1,12 +1,22 @@
 # CLAUDE.md — `apps/botai` (`@pilutech/botai`)
 
-Extensão Chrome MV3 **Botaí**: "Gerador de dados fake para formulários (CPF, CNPJ, CEP)". O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz. Spec: `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`. Contrato de nomes entre as fases: `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`. Pesquisa (protótipos, medições e relatórios): `docs/superpowers/research/2026-10-01-extensao-dados-teste/`.
+## Identidade: Botaí
 
-## Identidade
+Regras de nome e grafia definidas pelo dono. Valem para código, textos de UI, documentação e mensagens de commit.
 
-- **Botaí**, de "bota aí" (expressão piauiense: bota dados nos campos). Nome de exibição sempre com acento: manifest `name` e `short_name`, `action.default_title` (o WXT tira do `<title>` de `popup/index.html`), cabeçalho do popup e todo texto de UI. Nunca "BotAi", "Bota Aí", "BOTAI" ou "Botai" em texto visível.
-- Grafia técnica `botai`, sem acento e minúscula: pasta `apps/botai`, pacote `@pilutech/botai` e o prefixo de tudo que a extensão põe num espaço de nomes: `botai-` nos IDs do menu, no comando (`botai-preencher`), no host do shadow root (`botai-aviso`) e nas classes, variáveis e keyframes do `aviso.css`; `botai_` nas chaves de storage (`local:botai_pessoa`); `globalThis.__botai` no mundo isolado. `@piluvitu/tools` e `@piluvitu/ui` são pacotes do monorepo e não mudam.
-- Produto da **PiluTech**; onde houver créditos, "Powered by PiluTech" com link para https://pilutech.com.br. Todo produto PiluTech tem no nome uma referência ao Piauí, e nomes novos de feature ou comando seguem esse padrão.
+- **Produto: Botaí**, de "bota aí" (expressão nordestina/piauiense): é literalmente o que a extensão faz, bota dados nos campos do formulário. O tom da marca é descontraído e regional; o produto é uma ferramenta séria para devs.
+- **Empresa e assinatura: PiluTech**, a marca que assina todos os produtos do autor. Os produtos aparecem no portfólio do autor, na página **PiluLabs**.
+- **Descrição curta oficial:** "Gerador de dados fake para formulários (CPF, CNPJ, CEP)" (manifest `description` e README).
+- **Grafia de exibição, sempre com acento: "Botaí".** Manifest `name` e `short_name`, `action.default_title` (o WXT tira do `<title>` de `popup/index.html`), cabeçalho do popup, menu de contexto (`Botaí ›`, que o Chrome tira do `name`), README e todo texto de UI. **Nunca** "BotAi", "Bota Aí", "BOTAI" ou "Botai" em texto visível ao usuário.
+- **Grafia técnica, sem acento e minúscula: `botai`.** Pasta `apps/botai`, pacote `@pilutech/botai` e o prefixo de tudo que a extensão põe num espaço de nomes compartilhado:
+  - `botai-`: o comando `botai-preencher`; os IDs do menu `botai-preencher`, `botai-inserir`, `botai-inserir:<kind>`, `botai-nova-pessoa`, `botai-abrir-caixa` e os separadores `botai-sep-…`; o host do shadow root `botai-aviso`; as classes `botai-*`, as variáveis `--botai-*` e os keyframes `botai-tempo` do `aviso.css`.
+  - `botai_`: as chaves de storage (`local:botai_pessoa`).
+  - `globalThis.__botai`: a API do content script no mundo isolado.
+  - `@piluvitu/tools` e `@piluvitu/ui` são pacotes do monorepo e não mudam.
+- **Créditos: "Powered by PiluTech"** com link para https://pilutech.com.br (o site ainda não está no ar; o link é esse mesmo), onde houver créditos ou rodapé: a faixa no fim do popup (ver "Popup"), o README e, quando existirem, a página de opções e a da loja.
+- **Nome novo segue a convenção PiluTech:** todo produto PiluTech tem no nome uma referência ao Piauí (expressões e linguajar piauiense). Ao sugerir nome de feature, comando ou produto relacionado, siga esse padrão.
+
+Extensão Chrome MV3 **Botaí**: "Gerador de dados fake para formulários (CPF, CNPJ, CEP)". O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz. Spec: `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`. Contrato de nomes entre as fases: `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`. Pesquisa (protótipos, medições e relatórios): `docs/superpowers/research/2026-10-01-extensao-dados-teste/`. Para quem usa (o que é, instalar, usar): `README.md`; o detalhe técnico mora aqui.
 
 ## O que faz
 
@@ -73,6 +83,7 @@ CSS próprio em px (`preencher.content/aviso.css`, classes `botai-*` e variávei
 - O `Button` do `@piluvitu/ui` não tem `gap`: toda chamada com ícone leva `gap-2`; no `sm`, `rounded-[14px] text-[13px]`.
 - Fontes empacotadas por fontsource (`--font-plus-jakarta`/`--font-jetbrains` apontando para as famílias "Variable"); Font Awesome com `config.autoAddCss = false` e o CSS importado no `styles.css`.
 - O atalho exibido vem de `commands.getAll()`; vazio (tecla tomada por outro app) ⇒ o rodapé vira "definir atalho" e o chip do botão some.
+- **Crédito "Powered by PiluTech"**: `CreditoPiluTech` é a última faixa do `PopupShell`, abaixo do rodapé quando ele existe, em todos os estados (1a–1e, inclusive o 1e, que não tem rodapé). O componente só recebe `onAbrirPiluTech`; quem abre `https://pilutech.com.br` numa aba nova (`browser.tabs.create`) é o `App.tsx`, como na caixa de entrada. Nome acessível "Powered by PiluTech (abre pilutech.com.br)". É `<div>` + `<button>`, **não** `<footer>`: um segundo `contentinfo` duplicaria o landmark do rodapé, e os testes usam "nenhum `contentinfo`" para dizer "estado sem rodapé".
 
 ## Stack e configuração (armadilhas medidas)
 

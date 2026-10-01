@@ -20,6 +20,7 @@ const meta = {
           onAlterarAtalho={fn()}
         />
       }
+      onAbrirPiluTech={fn()}
     >
       <NenhumCampo {...args} />
     </PopupShell>

@@ -24,6 +24,7 @@ import type { LinhaCampo } from '../../lib/resultado'
 import { useAbaAlvo, type AbaAlvo } from './use-aba-alvo'
 
 const PAGINA_DE_ATALHOS = 'chrome://extensions/shortcuts'
+const SITE_PILUTECH = 'https://pilutech.com.br'
 const COMANDO_PREENCHER = 'botai-preencher'
 
 function usePessoa(): Pessoa | null | undefined {
@@ -82,6 +83,7 @@ function TelaDoPopup({
   )
   const abrirAtalhos = () =>
     void browser.tabs.create({ url: PAGINA_DE_ATALHOS })
+  const abrirPiluTech = () => void browser.tabs.create({ url: SITE_PILUTECH })
   const abrirCaixa = (dono: Pessoa) =>
     void browser.tabs.create({ url: dono.email.caixaUrl })
   const irParaOsDados = () => setEstado(verDados)
@@ -159,6 +161,7 @@ function TelaDoPopup({
     <PopupShell
       host={rotuloDoHost(aba?.url)}
       status={statusDoHost(estado)}
+      onAbrirPiluTech={abrirPiluTech}
       rodape={
         rodape && (
           <Rodape

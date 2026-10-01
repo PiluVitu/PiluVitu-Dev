@@ -9,6 +9,7 @@ const meta = {
   args: {
     host: 'localhost:3000',
     status: 'ok',
+    onAbrirPiluTech: fn(),
     children: (
       <p className="text-muted-foreground m-0 p-4 text-sm">
         conteúdo do estado

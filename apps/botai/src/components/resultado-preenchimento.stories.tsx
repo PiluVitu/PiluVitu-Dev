@@ -29,6 +29,7 @@ const meta = {
           onAlterarAtalho={fn()}
         />
       }
+      onAbrirPiluTech={fn()}
     >
       <ResultadoPreenchimento {...args} />
     </PopupShell>

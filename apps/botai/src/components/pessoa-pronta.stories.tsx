@@ -30,6 +30,7 @@ const meta = {
           onAlterarAtalho={fn()}
         />
       }
+      onAbrirPiluTech={fn()}
     >
       <PessoaPronta {...args} />
     </PopupShell>

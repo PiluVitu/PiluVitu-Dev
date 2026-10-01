@@ -21,6 +21,7 @@ const meta = {
           : 'chrome://settings'
       }
       status="lock"
+      onAbrirPiluTech={fn()}
     >
       <PaginaProibida {...args} />
     </PopupShell>

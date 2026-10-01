@@ -28,6 +28,11 @@ test('popup: gera a pessoa no 1a e o Preencher do 1b preenche a aba-alvo', async
     popup.getByRole('heading', { name: 'Ainda não há pessoa de teste' }),
   ).toBeVisible()
   await expect(popup.getByText('teste.local', { exact: true })).toBeVisible()
+  const credito = popup.getByRole('button', {
+    name: 'Powered by PiluTech (abre pilutech.com.br)',
+  })
+  await expect(credito).toBeVisible()
+  await expect(credito).toHaveText('Powered by PiluTech')
   await popup.getByRole('button', { name: 'Gerar pessoa' }).click()
   await expect(
     popup.getByRole('heading', { name: 'Ainda não há pessoa de teste' }),
@@ -48,4 +53,5 @@ test('popup: gera a pessoa no 1a e o Preencher do 1b preenche a aba-alvo', async
   await expect(
     popup.getByRole('heading', { level: 1, name: '1 de 1 campo preenchido' }),
   ).toBeVisible()
+  await expect(credito).toBeVisible()
 })

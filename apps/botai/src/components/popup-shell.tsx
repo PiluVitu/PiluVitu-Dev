@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { CreditoPiluTech } from './credito-pilutech'
 import { Marca } from './marca'
 import { PilulaHost, type StatusHost } from './pilula-host'
 
@@ -6,11 +7,13 @@ export function PopupShell({
   host,
   status,
   rodape,
+  onAbrirPiluTech,
   children,
 }: {
   host: string
   status: StatusHost
   rodape?: ReactNode
+  onAbrirPiluTech: () => void
   children: ReactNode
 }) {
   return (
@@ -29,6 +32,7 @@ export function PopupShell({
         {children}
       </main>
       {rodape}
+      <CreditoPiluTech onAbrir={onAbrirPiluTech} />
     </div>
   )
 }
