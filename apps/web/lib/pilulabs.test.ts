@@ -1,9 +1,18 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
+  altDaCaptura,
+  ATALHOS,
   fase,
+  listarCapturas,
   LOJAS,
   lojasPublicadas,
+  metadataDaPagina,
+  metadataDoProduto,
   normalizarProduto,
   produtosListados,
+  ROTULOS_CAPTURA,
   type Produto,
 } from './pilulabs'
 
@@ -176,5 +185,160 @@ describe('produtosListados', () => {
     const b = produto({ slug: 'b', listado: false })
     const c = produto({ slug: 'c', listado: true })
     expect(produtosListados([a, b, c]).map((p) => p.slug)).toEqual(['a', 'c'])
+  })
+})
+
+describe('listarCapturas', () => {
+  let raiz: string
+
+  beforeEach(() => {
+    raiz = mkdtempSync(join(tmpdir(), 'pilulabs-'))
+  })
+  afterEach(() => {
+    rmSync(raiz, { recursive: true, force: true })
+  })
+
+  function criarCapturas(...arquivos: string[]): string {
+    const pasta = join(raiz, 'pilulabs', 'botai', 'capturas')
+    mkdirSync(pasta, { recursive: true })
+    for (const arquivo of arquivos) writeFileSync(join(pasta, arquivo), '')
+    return pasta
+  }
+
+  // Na fase 2 as capturas ainda não existem: a página tem de nascer sem elas.
+  it('devolve [] quando a pasta não existe', () => {
+    expect(listarCapturas('botai', raiz)).toEqual([])
+  })
+
+  it('lista só arquivos PNG, em ordem natural do prefixo NN', () => {
+    const pasta = criarCapturas(
+      '10-c.png',
+      '2-b.png',
+      '01-a.png',
+      '03-d.PNG',
+      '.DS_Store',
+      'notas.txt',
+    )
+    mkdirSync(join(pasta, '04-pasta.png'))
+    expect(listarCapturas('botai', raiz).map((c) => c.arquivo)).toEqual([
+      '01-a.png',
+      '2-b.png',
+      '03-d.PNG',
+      '10-c.png',
+    ])
+  })
+
+  it('monta o src público a partir do slug', () => {
+    criarCapturas('01-popup-escuro.png')
+    expect(listarCapturas('botai', raiz)).toEqual([
+      {
+        arquivo: '01-popup-escuro.png',
+        src: '/pilulabs/botai/capturas/01-popup-escuro.png',
+        alt: 'Captura de tela: popup (tema escuro)',
+      },
+    ])
+  })
+})
+
+describe('altDaCaptura', () => {
+  it('tira o NN e a extensão, devolve o acento e o tema pelo mapa de rótulos', () => {
+    expect(altDaCaptura('01-pagina-preenchida-escuro.png')).toBe(
+      'Captura de tela: página preenchida (tema escuro)',
+    )
+  })
+
+  it('palavra fora do mapa entra como está, em minúscula', () => {
+    expect(altDaCaptura('02-Popup-pessoa-pronta-claro.png')).toBe(
+      'Captura de tela: popup pessoa pronta (tema claro)',
+    )
+  })
+
+  // Com um objeto comum, "constructor" acharia Object.prototype.constructor.
+  it('palavra com nome de propriedade de Object não vira lixo', () => {
+    expect(altDaCaptura('03-constructor.png')).toBe(
+      'Captura de tela: constructor',
+    )
+  })
+
+  it('o mapa cobre os temas claro e escuro', () => {
+    expect(ROTULOS_CAPTURA.get('claro')).toBe('(tema claro)')
+    expect(ROTULOS_CAPTURA.get('escuro')).toBe('(tema escuro)')
+  })
+})
+
+describe('ATALHOS', () => {
+  it('Chromium: Ctrl+Shift+Y no Windows e no Linux, ⌥⇧P no Mac', () => {
+    for (const navegador of ['chrome', 'edge', 'opera'] as const) {
+      expect(ATALHOS[navegador]).toEqual({
+        windows: 'Ctrl+Shift+Y',
+        mac: '⌥⇧P',
+        linux: 'Ctrl+Shift+Y',
+      })
+    }
+  })
+
+  // No Firefox para Linux, Ctrl+Shift+Y abre os Downloads e não é cedido.
+  it('Firefox: igual, mas Alt+Shift+P no Linux', () => {
+    expect(ATALHOS.firefox).toEqual({
+      windows: 'Ctrl+Shift+Y',
+      mac: '⌥⇧P',
+      linux: 'Alt+Shift+P',
+    })
+  })
+
+  it('cobre as 4 lojas', () => {
+    expect(Object.keys(ATALHOS).sort()).toEqual([...LOJAS].sort())
+  })
+})
+
+const PAGINA = {
+  caminho: '/pilulabs/botai',
+  titulo: 'Botaí | PiluLabs',
+  descricao: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
+}
+
+describe('metadataDaPagina', () => {
+  // O Next substitui o openGraph do layout inteiro: locale e siteName têm de
+  // vir de novo, senão a página perde os dois.
+  it('declara título absoluto, canonical, openGraph e twitter completos', () => {
+    expect(metadataDaPagina(PAGINA)).toEqual({
+      title: { absolute: 'Botaí | PiluLabs' },
+      description: PAGINA.descricao,
+      alternates: { canonical: '/pilulabs/botai' },
+      openGraph: {
+        type: 'website',
+        locale: 'pt_BR',
+        siteName: 'piluvitu.com.br',
+        url: '/pilulabs/botai',
+        title: 'Botaí | PiluLabs',
+        description: PAGINA.descricao,
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: 'Botaí | PiluLabs',
+        description: PAGINA.descricao,
+      },
+    })
+  })
+
+  // Declarar images aqui desligaria o opengraph-image.tsx do segmento.
+  it('não declara imagens', () => {
+    const metadata = metadataDaPagina(PAGINA)
+    expect(metadata.openGraph).not.toHaveProperty('images')
+    expect(metadata.twitter).not.toHaveProperty('images')
+  })
+})
+
+describe('metadataDoProduto', () => {
+  it('produto não listado: noindex', () => {
+    expect(metadataDoProduto({ listado: false }, PAGINA).robots).toEqual({
+      index: false,
+    })
+  })
+
+  it('produto listado: sem robots, igual à metadata da página', () => {
+    expect(metadataDoProduto({ listado: true }, PAGINA)).toEqual(
+      metadataDaPagina(PAGINA),
+    )
   })
 })
