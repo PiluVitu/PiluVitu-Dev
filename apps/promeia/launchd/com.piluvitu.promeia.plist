@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key><string>com.piluvitu.promeia</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/piluvitu/WWW/PiluVitu-Dev/apps/promeia/scripts/servir.sh</string>
+    </array>
+
+    <!-- O launchd roda com PATH mínimo: sem ~/.local/bin o subprocess do
+         mlx_whisper some e a transcrição responde 503 whisper_indisponivel. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>/Users/piluvitu/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>10</integer>
+
+    <key>StandardOutPath</key><string>/Users/piluvitu/Library/Logs/promeia.log</string>
+    <key>StandardErrorPath</key><string>/Users/piluvitu/Library/Logs/promeia.log</string>
+  </dict>
+</plist>

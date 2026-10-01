@@ -409,12 +409,14 @@ test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
 
 ## Comandos
 
-| Comando             | Propósito                                                  |
-| ------------------- | ---------------------------------------------------------- |
-| `make dev-promeia`  | `uvicorn` com `--reload` na porta **8082**                 |
-| `make test-promeia` | `cd apps/promeia && uv run pytest`                         |
-| `make lint-promeia` | `uv run ruff check .` + `uv run ruff format --check .`     |
-| `make insight`      | `uv run promeia-insight` — gera e publica o insight do mês |
+| Comando                        | Propósito                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `make dev-promeia`             | `uvicorn` com `--reload` na porta **8082**                                               |
+| `make test-promeia`            | `cd apps/promeia && uv run pytest`                                                       |
+| `make lint-promeia`            | `uv run ruff check .` + `uv run ruff format --check .`                                   |
+| `make insight`                 | `uv run promeia-insight` — gera e publica o insight do mês                               |
+| `make promeia-servico`         | instala o LaunchAgent: promeia sobe no login e reinicia se cair (ver _Serviço no login_) |
+| `make promeia-servico-remover` | desinstala o LaunchAgent                                                                 |
 
 De dentro de `apps/promeia`, sem o `make`: `uv run pytest` / `uv run ruff
 check .` / `uv run ruff format --check .` / `uv run promeia-insight`.
@@ -605,6 +607,20 @@ problema de rede: o serviço está de pé, falta configuração"_ e cita o
 `wrangler secret put INGEST_TOKEN`. Verificado pelo túnel: 578 bytes idênticos
 local e remoto. Um erro só é de transporte se uma requisição chegou a ser
 tentada.
+
+## Serviço no login (LaunchAgent)
+
+`make promeia-servico` deixa o Mac servindo sozinho depois de reiniciar:
+
+- **promeia** — `launchd/com.piluvitu.promeia.plist` → `scripts/servir.sh` (carrega `.env`, `uvicorn` sem `--reload`, `127.0.0.1:8082`). `RunAtLoad` + `KeepAlive`: sobe no login e volta se morrer. Log em `~/Library/Logs/promeia.log`.
+- **túnel** — o alvo liga `orbctl config set app.start_at_login true`; o container `cloudflared` tem `restart: unless-stopped`, então volta junto com o OrbStack.
+- **Ollama** — já sobe sozinho (LaunchAgent do próprio app, `com.ollama.ollama`).
+
+⚠️ **O plist fixa o `PATH`** (`~/.local/bin` incluso): o `launchd` roda com PATH mínimo e sem isso o subprocess do `mlx_whisper` não é achado — a transcrição responde `503 whisper_indisponivel` com o serviço "de pé".
+
+Verificado sob o `launchd`, não só "carregou": transcrição real pelo túnel (200), e `kill -9` no processo → o `launchd` subiu outro em ~10 s, sem uvicorn órfão segurando a porta.
+
+O plist aponta pro script **dentro do repo**: renomear/mover `apps/promeia` exige reinstalar. Para `make dev-promeia` (com `--reload`), desligue o serviço antes — os dois disputam a 8082: `launchctl bootout gui/$(id -u)/com.piluvitu.promeia`.
 
 ## Pendências do dono, sem rodeio
 
