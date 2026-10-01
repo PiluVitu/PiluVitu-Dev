@@ -31,7 +31,10 @@
     "./celular": "./src/celular.ts",
     "./nascimento": "./src/nascimento.ts",
     "./senha": "./src/senha.ts",
-    "./nome": "./src/nome.ts"
+    "./nome": "./src/nome.ts",
+    "./endereco": "./src/endereco.ts",
+    "./empresa": "./src/empresa.ts",
+    "./cartao": "./src/cartao.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
