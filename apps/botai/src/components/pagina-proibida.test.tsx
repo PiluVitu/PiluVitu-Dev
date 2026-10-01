@@ -6,6 +6,7 @@ import { PaginaProibida, type PaginaProibidaProps } from './pagina-proibida'
 function props(extra: Partial<PaginaProibidaProps> = {}): PaginaProibidaProps {
   return {
     motivo: 'proibida',
+    navegador: 'chrome',
     nome: 'Maria Eduarda Souza',
     onVerDados: vi.fn(),
     onGerarPessoa: vi.fn(),
@@ -83,4 +84,58 @@ describe('PaginaProibida (1e)', () => {
         .querySelector('kbd'),
     ).toBeNull()
   })
+
+  it.each([
+    [
+      'edge',
+      'O Edge não deixa extensões mexerem nesta página',
+      'Vale para páginas edge://, a loja de complementos do Edge e o leitor de PDF, e para qualquer extensão. Abra o formulário numa aba comum e tente de novo.',
+    ],
+    [
+      'opera',
+      'O Opera não deixa extensões mexerem nesta página',
+      'Vale para páginas opera://, a loja de extensões do Opera e o leitor de PDF, e para qualquer extensão. Abra o formulário numa aba comum e tente de novo.',
+    ],
+    [
+      'firefox',
+      'O Firefox não deixa extensões mexerem nesta página',
+      'Vale para páginas about:, os sites da Mozilla (como addons.mozilla.org) e o leitor de PDF, e para qualquer extensão. Abra o formulário numa aba comum e tente de novo.',
+    ],
+  ] as const)(
+    'no %s, o 1e fala do próprio navegador',
+    (navegador, titulo, corpo) => {
+      render(<PaginaProibida {...props({ navegador })} />)
+      expect(
+        screen.getByRole('heading', { level: 1, name: titulo }),
+      ).toBeInTheDocument()
+      expect(screen.getByText(/e o leitor de PDF/)).toHaveTextContent(corpo)
+    },
+  )
+
+  it.each([
+    [
+      'edge',
+      "Em edge://extensions, nos detalhes da extensão, ative 'Permitir acesso a URLs de arquivo' e tente de novo.",
+    ],
+    [
+      'opera',
+      "Em opera://extensions, nos detalhes da extensão, ative 'Permitir acesso a URLs de arquivo' e tente de novo.",
+    ],
+    [
+      'firefox',
+      "Em about:addons, nos detalhes da extensão, ative 'Acessar arquivos locais no seu computador' e tente de novo.",
+    ],
+  ] as const)(
+    'no %s, o file: sem acesso ensina o caminho do próprio navegador',
+    (navegador, corpo) => {
+      render(
+        <PaginaProibida
+          {...props({ navegador, motivo: 'arquivo-sem-acesso' })}
+        />,
+      )
+      expect(screen.getByText(/nos detalhes da extensão/)).toHaveTextContent(
+        corpo,
+      )
+    },
+  )
 })

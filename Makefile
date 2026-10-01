@@ -5,7 +5,7 @@
         dev-promeia test-promeia lint-promeia insight \
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
-        dev-botai build-botai test-botai test-e2e-botai storybook-botai
+        dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai versao-botai release-botai capturas-botai
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -71,7 +71,7 @@ dev-ramielle:
 test-ramielle:
 	pnpm --filter @piluvitu/ramielle test
 
-# --- botai (extensão Chrome MV3, WXT) ---
+# --- botai (extensão MV3 para Chrome, Edge, Opera e Firefox, WXT) ---
 # Dev em 3018 (o padrão do WXT, 3000, colide com app em teste) e Storybook em
 # 6018. Carregar .output/chrome-mv3-dev sem empacotar; o dev acrescenta `tabs` e
 # host de localhost ao manifesto, então bug de activeTab só aparece no build.
@@ -89,6 +89,24 @@ test-e2e-botai:
 
 storybook-botai:
 	pnpm --filter @pilutech/botai storybook
+
+# Os 3 pacotes (Chrome e Edge, Firefox, Opera sem minificar) + o zip de fontes da AMO em apps/botai/.output/.
+zip-botai:
+	pnpm --filter @pilutech/botai zip
+
+# Versão e release do Botaí (ver "Publicação" em apps/botai/CLAUDE.md). O repo só
+# aceita squash: o bump vai num PR e a tag sai na main depois do merge.
+versao-botai:
+	@test -n "$(V)" || { echo "uso: make versao-botai V=x.y.z" >&2; exit 1; }
+	bash apps/botai/scripts/versao.sh $(V)
+
+release-botai:
+	bash apps/botai/scripts/release.sh
+
+# Imagens das lojas em apps/botai/loja/imagens/ e cópias em apps/web/public/pilulabs/botai/.
+# Rode no Mac: a vitrine usa as fontes do sistema.
+capturas-botai:
+	pnpm --filter @pilutech/botai capturas
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,

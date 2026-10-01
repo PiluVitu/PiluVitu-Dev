@@ -29,14 +29,24 @@ export interface Rota {
   cabecalhos?: Record<string, string>
 }
 
+export interface Aparencia {
+  tema: 'claro' | 'escuro'
+  escala: number
+}
+
 export const test = base.extend<{
+  aparencia: Aparencia
   context: BrowserContext
   sw: Worker
   extensionId: string
 }>({
-  context: async ({}, use) => {
+  // O contexto é persistente (montado aqui), então o test.use({ colorScheme }) do Playwright não chega a ele.
+  aparencia: [{ tema: 'claro', escala: 1 }, { option: true }],
+  context: async ({ aparencia }, use) => {
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
+      colorScheme: aparencia.tema === 'escuro' ? 'dark' : 'light',
+      deviceScaleFactor: aparencia.escala,
       args: [
         `--disable-extensions-except=${EXTENSAO}`,
         `--load-extension=${EXTENSAO}`,

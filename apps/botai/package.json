@@ -1,19 +1,27 @@
 {
   "name": "@pilutech/botai",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build && node ../../scripts/check-tailwind-source.mjs .output/chrome-mv3",
+    "build:firefox": "wxt build -b firefox && node ../../scripts/check-tailwind-source.mjs .output/firefox-mv3",
+    "build:opera": "wxt build -b opera && node ../../scripts/check-tailwind-source.mjs .output/opera-mv3",
     "build:e2e": "wxt build --mode e2e",
+    "zip": "wxt zip && node ../../scripts/check-tailwind-source.mjs .output/chrome-mv3 && pnpm run zip:firefox && pnpm run zip:opera",
+    "zip:firefox": "wxt zip -b firefox && node ../../scripts/check-tailwind-source.mjs .output/firefox-mv3",
+    "zip:opera": "wxt zip -b opera && node ../../scripts/check-tailwind-source.mjs .output/opera-mv3",
     "lint": "wxt prepare && tsc --noEmit && eslint .",
+    "lint:firefox": "web-ext lint --source-dir .output/firefox-mv3 --no-config-discovery",
     "test": "wxt prepare && vitest run",
     "test:watch": "wxt prepare && vitest",
-    "test:e2e": "pnpm run build && pnpm run build:e2e && playwright test",
+    "test:e2e": "pnpm run build && pnpm run build:firefox && pnpm run build:opera && pnpm run build:e2e && playwright test",
     "storybook": "wxt prepare && storybook dev -p 6018",
     "build-storybook": "wxt prepare && storybook build",
-    "prettier:fix": "prettier --write \"{src,.storybook}/**/*.{ts,tsx,css,html}\" \"*.{ts,mjs,json,md}\""
+    "capturas": "pnpm run build-storybook && pnpm run build:e2e && playwright test -c playwright.capturas.config.ts",
+    "prettier:fix": "prettier --write \"{src,.storybook,loja,scripts}/**/*.{ts,tsx,css,html,md}\" \"*.{ts,mjs,json,md}\""
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -57,6 +65,7 @@
     "typescript-eslint": "^8.57.1",
     "vite": "^7.2.0",
     "vitest": "^4.1.10",
+    "web-ext": "10.7.0",
     "wxt": "0.21.4"
   }
 }

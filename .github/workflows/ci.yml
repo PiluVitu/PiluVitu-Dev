@@ -195,9 +195,9 @@ jobs:
         run: uv run pytest
 
   botai:
-    name: Botaí (lint + test + build)
+    name: Botaí (lint + test + builds de Chrome, Firefox e Opera + web-ext lint)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -221,3 +221,13 @@ jobs:
 
       - name: Build (+ gate do @source em .output/chrome-mv3)
         run: pnpm --filter @pilutech/botai run build
+
+      - name: Build do Firefox (+ gate do @source em .output/firefox-mv3)
+        run: pnpm --filter @pilutech/botai run build:firefox
+
+      - name: Build do Opera, sem minificar (+ gate do @source em .output/opera-mv3)
+        run: pnpm --filter @pilutech/botai run build:opera
+
+      # O addons-linter é o validador da AMO; falha só em erro (os avisos vêm do react-dom e do Font Awesome).
+      - name: web-ext lint no build do Firefox
+        run: pnpm --filter @pilutech/botai run lint:firefox

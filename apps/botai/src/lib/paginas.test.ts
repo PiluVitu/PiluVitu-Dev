@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import type { Navegador } from './navegador'
 import {
   caminhoDaUrl,
   erroEhPaginaProibida,
   rotuloDoHost,
   situacaoDaUrl,
 } from './paginas'
+
+const TODOS: readonly Navegador[] = ['chrome', 'edge', 'opera', 'firefox']
 
 describe('situacaoDaUrl', () => {
   it.each([
@@ -17,8 +20,8 @@ describe('situacaoDaUrl', () => {
     'data:text/html,<input>',
     'https://chromewebstore.google.com/detail/xyz',
     'https://chrome.google.com/webstore/detail/xyz',
-  ])('%s é proibida pela própria URL, sem injetar nada', (url) => {
-    expect(situacaoDaUrl(url, true)).toBe('proibida')
+  ])('%s é proibida no Chrome pela própria URL, sem injetar nada', (url) => {
+    expect(situacaoDaUrl(url, true, 'chrome')).toBe('proibida')
   })
 
   it.each([
@@ -26,18 +29,76 @@ describe('situacaoDaUrl', () => {
     'https://staging.app.dev/conta',
     'https://chrome.google.com/search',
   ])('%s é uma página comum', (url) => {
-    expect(situacaoDaUrl(url, false)).toBe('ok')
+    expect(situacaoDaUrl(url, false, 'chrome')).toBe('ok')
   })
 
-  it('file: depende do "Permitir acesso a URLs de arquivo"', () => {
-    expect(situacaoDaUrl('file:///Users/eu/form.html', false)).toBe(
+  it('file: depende do acesso a arquivos liberado', () => {
+    expect(situacaoDaUrl('file:///Users/eu/form.html', false, 'chrome')).toBe(
       'arquivo-sem-acesso',
     )
-    expect(situacaoDaUrl('file:///Users/eu/form.html', true)).toBe('ok')
+    expect(situacaoDaUrl('file:///Users/eu/form.html', true, 'chrome')).toBe(
+      'ok',
+    )
+    expect(situacaoDaUrl('file:///Users/eu/form.html', false, 'firefox')).toBe(
+      'arquivo-sem-acesso',
+    )
   })
 
   it('sem URL (aba sem permissão concedida) deixa tentar', () => {
-    expect(situacaoDaUrl(undefined, false)).toBe('ok')
+    expect(situacaoDaUrl(undefined, false, 'chrome')).toBe('ok')
+  })
+})
+
+describe('situacaoDaUrl por navegador', () => {
+  it.each([
+    'about:addons',
+    'moz-extension://0d1e2f3a/popup.html',
+    'resource://pdf.js/web/viewer.html',
+    'opera://settings',
+  ])(
+    '%s é proibida em todo navegador (o esquema só existe no próprio)',
+    (url) => {
+      for (const navegador of TODOS)
+        expect(situacaoDaUrl(url, true, navegador)).toBe('proibida')
+    },
+  )
+
+  it.each([
+    ['https://addons.mozilla.org/pt-BR/firefox/addon/x/', 'firefox'],
+    ['https://support.mozilla.org/pt-BR/', 'firefox'],
+    ['https://accounts.firefox.com/', 'firefox'],
+    ['https://microsoftedge.microsoft.com/addons/detail/x', 'edge'],
+    ['https://addons.opera.com/pt-br/extensions/', 'opera'],
+    ['https://chromewebstore.google.com/detail/xyz', 'chrome'],
+    ['https://chromewebstore.google.com/detail/xyz', 'edge'],
+    ['https://chromewebstore.google.com/detail/xyz', 'opera'],
+  ] as const)('%s é proibida no %s', (url, navegador) => {
+    expect(situacaoDaUrl(url, true, navegador)).toBe('proibida')
+  })
+
+  it.each([
+    ['https://addons.mozilla.org/pt-BR/firefox/', 'chrome'],
+    ['https://addons.mozilla.org/pt-BR/firefox/', 'edge'],
+    ['https://microsoftedge.microsoft.com/addons/', 'chrome'],
+    ['https://addons.opera.com/', 'firefox'],
+    ['https://chromewebstore.google.com/detail/xyz', 'firefox'],
+  ] as const)(
+    '%s é página comum no %s: um site só é protegido pelo próprio navegador',
+    (url, navegador) => {
+      expect(situacaoDaUrl(url, true, navegador)).toBe('ok')
+    },
+  )
+
+  it('no Firefox, a lista é de hosts exatos: subdomínio fora dela é página comum; maiúsculas e porta não escapam', () => {
+    expect(
+      situacaoDaUrl('https://blog.addons.mozilla.org/', true, 'firefox'),
+    ).toBe('ok')
+    expect(situacaoDaUrl('https://ADDONS.mozilla.org/', true, 'firefox')).toBe(
+      'proibida',
+    )
+    expect(
+      situacaoDaUrl('https://addons.mozilla.org:8443/pt-BR/', true, 'firefox'),
+    ).toBe('proibida')
   })
 })
 
@@ -48,7 +109,9 @@ describe('erroEhPaginaProibida', () => {
     'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
     'Cannot access contents of url "file:///tmp/a.html". Extension manifest must request permission to access this host.',
     'Cannot access a chrome-extension:// URL of different extension',
-  ])('reconhece a recusa do Chrome: %s', (mensagem) => {
+    'Missing host permission for the tab',
+    'Missing host permission for the tab or frames',
+  ])('reconhece a recusa do navegador: %s', (mensagem) => {
     expect(erroEhPaginaProibida(mensagem)).toBe(true)
   })
 
@@ -56,6 +119,7 @@ describe('erroEhPaginaProibida', () => {
     'No tab with id: 7.',
     'Frame with ID 0 was removed.',
     'Could not establish connection.',
+    'TypeError: can\'t access property "openOrClosedShadowRoot", T.dom is undefined',
   ])('não confunde outros erros com página proibida: %s', (mensagem) => {
     expect(erroEhPaginaProibida(mensagem)).toBe(false)
   })

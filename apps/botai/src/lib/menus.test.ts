@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { PESSOA_DOURADA } from '../test/pessoa-dourada'
 import { atualizarTitulosMenu, criarMenus, ITENS_INSERIR, MENU } from './menus'
@@ -180,5 +180,29 @@ describe('atualizarTitulosMenu', () => {
       new Error('Cannot find menu item with id botai-inserir:cpf'),
     )
     await expect(atualizarTitulosMenu(null)).resolves.toBeUndefined()
+  })
+})
+
+describe('criarMenus por navegador', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it("no Chrome, nenhum item leva 'password' (o Chrome recusaria o contexto)", async () => {
+    await criarMenus(null)
+    expect(criados().some((c) => c.contexts.includes('password'))).toBe(false)
+  })
+
+  it("no Firefox, todo item soma 'password', porque lá 'editable' não inclui senha", async () => {
+    vi.stubEnv('FIREFOX', 'true')
+    await criarMenus(null)
+    const contextosDe = (id: string) =>
+      criados().find((c) => c.id === id)?.contexts
+    expect(contextosDe('botai-preencher')).toEqual([
+      'page',
+      'editable',
+      'password',
+    ])
+    expect(contextosDe('botai-inserir')).toEqual(['editable', 'password'])
+    expect(contextosDe('botai-inserir:senha')).toEqual(['editable', 'password'])
+    expect(criados().every((c) => c.contexts.includes('password'))).toBe(true)
   })
 })

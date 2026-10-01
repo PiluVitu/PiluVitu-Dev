@@ -446,3 +446,71 @@ describe('App do popup: crédito da PiluTech', () => {
     },
   )
 })
+
+describe('App do popup: por navegador', () => {
+  // O App.test precisa do navigator real (o user-event pendura nele o clipboard):
+  // o Edge entra só pela propriedade que o detector lê.
+  const comMarcasDoEdge = () =>
+    Object.defineProperty(navigator, 'userAgentData', {
+      value: { brands: [{ brand: 'Microsoft Edge', version: '141' }] },
+      configurable: true,
+    })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    Reflect.deleteProperty(navigator, 'userAgentData')
+  })
+
+  it('no Firefox, "alterar" abre a tela de atalhos do próprio Firefox, sem criar aba', async () => {
+    vi.stubEnv('FIREFOX', 'true')
+    const abrirAtalhos = vi.fn(async () => undefined)
+    Object.assign(fakeBrowser.commands, { openShortcutSettings: abrirAtalhos })
+    const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
+    await pessoaItem.setValue(P)
+    render(<App />)
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'alterar' }))
+    expect(abrirAtalhos).toHaveBeenCalledTimes(1)
+    expect(abrir).not.toHaveBeenCalled()
+  })
+
+  it('no Firefox, o 1e fala do Firefox', async () => {
+    vi.stubEnv('FIREFOX', 'true')
+    urlDaAba = 'about:addons'
+    await pessoaItem.setValue(P)
+    render(<App />)
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'O Firefox não deixa extensões mexerem nesta página',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('no Edge (o zip do Chrome), o 1e fala do Edge', async () => {
+    comMarcasDoEdge()
+    urlDaAba = 'edge://settings'
+    await pessoaItem.setValue(P)
+    render(<App />)
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'O Edge não deixa extensões mexerem nesta página',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('no Edge, "alterar" abre a página de atalhos do Chromium', async () => {
+    comMarcasDoEdge()
+    const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
+    await pessoaItem.setValue(P)
+    render(<App />)
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'alterar' }))
+    expect(abrir).toHaveBeenCalledWith({
+      url: 'chrome://extensions/shortcuts',
+    })
+  })
+})

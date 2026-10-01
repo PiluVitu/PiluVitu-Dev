@@ -427,3 +427,56 @@ describe('elementoEmFoco', () => {
     expect(elementoEmFoco(document)).toBe(q('input', fechada))
   })
 })
+
+describe('campos e elementoEmFoco no Firefox (sem browser.dom)', () => {
+  function raizFechadaPeloAtributo(
+    host: HTMLElement,
+    html: string,
+  ): ShadowRoot {
+    const raiz = host.attachShadow({ mode: 'closed' })
+    raiz.innerHTML = html
+    // No Firefox, o content script enxerga a raiz fechada por este atributo do elemento (não é método).
+    Object.defineProperty(host, 'openOrClosedShadowRoot', { get: () => raiz })
+    return raiz
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('FIREFOX', 'true')
+    Object.assign(fakeBrowser.dom, {
+      openOrClosedShadowRoot: () => {
+        throw new Error('browser.dom não existe no Firefox')
+      },
+    })
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('campos entra na raiz fechada pelo atributo, sem chamar browser.dom', () => {
+    montar('<input name="a"><div id="h"></div><input name="c">')
+    raizFechadaPeloAtributo(
+      q<HTMLElement>('#h'),
+      '<input name="dentro-fechada">',
+    )
+    expect(
+      Array.from(campos(document), (el) => el.getAttribute('name')),
+    ).toEqual(['a', 'dentro-fechada', 'c'])
+  })
+
+  it('elemento sem o atributo (a página comum) segue sem raiz', () => {
+    montar('<input name="a"><div><input name="b"></div>')
+    expect(
+      Array.from(campos(document), (el) => el.getAttribute('name')),
+    ).toEqual(['a', 'b'])
+  })
+
+  it('elementoEmFoco atravessa a raiz fechada pelo atributo', () => {
+    montar('<div id="h"></div>')
+    const raiz = raizFechadaPeloAtributo(
+      q<HTMLElement>('#h'),
+      '<input name="dentro">',
+    )
+    const dentro = q('input', raiz)
+    dentro.focus()
+    expect(elementoEmFoco(document)).toBe(dentro)
+  })
+})

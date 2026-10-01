@@ -79,14 +79,14 @@
 - **Git:** sempre com `-C` e caminhos a partir da raiz do repo, como em `/usr/bin/git -C /Users/piluvitu/WWW/PiluVitu-Dev-site add "apps/web/…"`.
 - **Pre-commit:** o `lint-staged` roda `eslint --fix` e `prettier --write` nos arquivos staged. Se ele reformatar, o commit já sai com a versão formatada.
 
-| O quê              | Comando (a partir de `apps/web`)                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Jest de um arquivo | `node_modules/.bin/jest lib/pilulabs.test.ts; echo "exit=$?"`                                                                                                 |
-| Jest inteiro       | `node_modules/.bin/jest; echo "exit=$?"`                                                                                                                      |
-| ESLint             | `node_modules/.bin/eslint .; echo "exit=$?"`                                                                                                                  |
-| Tipos              | `node_modules/.bin/tsc --noEmit; echo "exit=$?"`                                                                                                              |
-| Build + gate       | `node_modules/.bin/next build; echo "exit=$?"`, depois `node ../../scripts/check-tailwind-source.mjs .next; echo "exit=$?"` (é o `build:ci`)                  |
-| E2E                | `/usr/sbin/lsof -nP -iTCP:3333 -sTCP:LISTEN; CI=1 node_modules/.bin/playwright test --retries=0 pilulabs/pilulabs.e2e.ts; echo "exit=$?"` |
+| O quê              | Comando (a partir de `apps/web`)                                                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jest de um arquivo | `node_modules/.bin/jest lib/pilulabs.test.ts; echo "exit=$?"`                                                                                |
+| Jest inteiro       | `node_modules/.bin/jest; echo "exit=$?"`                                                                                                     |
+| ESLint             | `node_modules/.bin/eslint .; echo "exit=$?"`                                                                                                 |
+| Tipos              | `node_modules/.bin/tsc --noEmit; echo "exit=$?"`                                                                                             |
+| Build + gate       | `node_modules/.bin/next build; echo "exit=$?"`, depois `node ../../scripts/check-tailwind-source.mjs .next; echo "exit=$?"` (é o `build:ci`) |
+| E2E                | `/usr/sbin/lsof -nP -iTCP:3333 -sTCP:LISTEN; CI=1 node_modules/.bin/playwright test --retries=0 pilulabs/pilulabs.e2e.ts; echo "exit=$?"`    |
 
 ⚠️ **O filtro do Playwright é uma regex, não um caminho.** Com `"app/(site)/…"`, os parênteses viram um grupo que casa `site` sem parênteses, e o Playwright sai com `No tests found` e `exit=1`. Isso parece o vermelho esperado e não é. Use sempre o filtro sem parênteses: `pilulabs/pilulabs.e2e.ts` ou `home.e2e.ts`. Pelo mesmo motivo, o `prettier --check` recebe a pasta `"app/(site)/pilulabs"`, e nunca um glob com `(site)`.
 
@@ -102,29 +102,29 @@
 
 ## Mapa de arquivos (todos em `apps/web/`)
 
-| Arquivo                                                                     | Responsabilidade                                                                                                                                                                         | Task    |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `keystatic.config.ts`                                                       | Collection `produtos`                                                                                                                                                                    | 1       |
-| `content/produtos/botai/index.yaml`                                         | O Botaí, `listado: false`                                                                                                                                                                | 1       |
-| `public/pilulabs/botai/icone-128.png`                                       | Cópia do `apps/botai/public/icon/128.png`. A fase 3 troca pela versão com margem                                                                                                         | 1       |
-| `lib/pilulabs.ts` (+ `.test.ts`)                                            | Tipos, `normalizarProduto`, `lojasPublicadas`, `fase`, `produtosListados`, `listarCapturas`, `altDaCaptura`, `ATALHOS`, `metadataDaPagina`/`metadataDoProduto` e `produtoParaProject` | 1, 2, 8 |
-| `lib/pilulabs-conteudo.ts` (+ `.test.ts`)                                   | Lê o YAML direto, sem Keystatic, para o Jest e o Playwright. Trava do modelo híbrido                                                                                                    | 1       |
-| `lib/site-content.ts`                                                       | `getProdutos()`                                                                                                                                                                          | 1       |
-| `lib/render-estatico.ts`                                                    | Helper de teste: `renderToStaticMarkup` num `div`                                                                                                                                        | 2       |
-| `lib/json-ld.ts` (+ `.test.ts`), `components/json-ld.tsx` (+ `.test.tsx`)   | Serializa e renderiza o `<script type="application/ld+json">`                                                                                                                            | 2       |
-| `lib/pilulabs-json-ld.ts` (+ `.test.ts`)                                    | `SoftwareApplication`, `BreadcrumbList` e `CollectionPage`                                                                                                                               | 2       |
-| `components/pilulabs/lojas-ui.ts`                                           | Rótulo e ícone Font Awesome de cada loja                                                                                                                                                 | 3       |
-| `components/pilulabs/{status-produto,botoes-loja,produto-card,vitrine}.tsx` | Pílula de fase, botões de loja, card e vitrine, cada um com `.test.tsx` e `.stories.tsx`                                                                                                 | 3       |
-| `components/pilulabs/{capturas-galeria,atalhos-tabela}.tsx`                 | Galeria de capturas e tabela de atalhos, cada uma com `.test.tsx` e `.stories.tsx`                                                                                                       | 4       |
-| `lib/og-pilulabs-image.tsx`                                                 | `ImageResponse` 1200×630 compartilhado pelas 3 rotas                                                                                                                                     | 5       |
-| `app/(site)/pilulabs/{layout,page,opengraph-image,twitter-image}.tsx`       | Vitrine                                                                                                                                                                                  | 5       |
-| `app/(site)/pilulabs/pilulabs.e2e.ts`                                       | E2E das 3 rotas                                                                                                                                                                          | 5, 6, 7 |
-| `app/(site)/pilulabs/botai/{page,opengraph-image,twitter-image}.tsx`        | Página do Botaí                                                                                                                                                                          | 6       |
-| `app/(site)/pilulabs/botai/privacidade/{page,opengraph-image,twitter-image}.tsx` | Política de privacidade                                                                                                                                                             | 7       |
-| `mocks/projects.ts`, `components/project-card.tsx` (+ test, story)          | `deployLabel` opcional e link interno na mesma aba                                                                                                                                       | 8       |
-| `components/home-footer.tsx` (+ test, story)                                | Prop `mostrarPiluLabs`                                                                                                                                                                   | 8       |
-| `app/(site)/page.tsx`, `app/(site)/home.e2e.ts`                             | Card em Projetos e link no rodapé, vindos de `produtos`                                                                                                                                  | 8       |
-| `CLAUDE.md` (do `apps/web` e da raiz)                                       | Seção PiluLabs                                                                                                                                                                           | 9       |
+| Arquivo                                                                          | Responsabilidade                                                                                                                                                                      | Task    |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `keystatic.config.ts`                                                            | Collection `produtos`                                                                                                                                                                 | 1       |
+| `content/produtos/botai/index.yaml`                                              | O Botaí, `listado: false`                                                                                                                                                             | 1       |
+| `public/pilulabs/botai/icone-128.png`                                            | Cópia do `apps/botai/public/icon/128.png`. A fase 3 troca pela versão com margem                                                                                                      | 1       |
+| `lib/pilulabs.ts` (+ `.test.ts`)                                                 | Tipos, `normalizarProduto`, `lojasPublicadas`, `fase`, `produtosListados`, `listarCapturas`, `altDaCaptura`, `ATALHOS`, `metadataDaPagina`/`metadataDoProduto` e `produtoParaProject` | 1, 2, 8 |
+| `lib/pilulabs-conteudo.ts` (+ `.test.ts`)                                        | Lê o YAML direto, sem Keystatic, para o Jest e o Playwright. Trava do modelo híbrido                                                                                                  | 1       |
+| `lib/site-content.ts`                                                            | `getProdutos()`                                                                                                                                                                       | 1       |
+| `lib/render-estatico.ts`                                                         | Helper de teste: `renderToStaticMarkup` num `div`                                                                                                                                     | 2       |
+| `lib/json-ld.ts` (+ `.test.ts`), `components/json-ld.tsx` (+ `.test.tsx`)        | Serializa e renderiza o `<script type="application/ld+json">`                                                                                                                         | 2       |
+| `lib/pilulabs-json-ld.ts` (+ `.test.ts`)                                         | `SoftwareApplication`, `BreadcrumbList` e `CollectionPage`                                                                                                                            | 2       |
+| `components/pilulabs/lojas-ui.ts`                                                | Rótulo e ícone Font Awesome de cada loja                                                                                                                                              | 3       |
+| `components/pilulabs/{status-produto,botoes-loja,produto-card,vitrine}.tsx`      | Pílula de fase, botões de loja, card e vitrine, cada um com `.test.tsx` e `.stories.tsx`                                                                                              | 3       |
+| `components/pilulabs/{capturas-galeria,atalhos-tabela}.tsx`                      | Galeria de capturas e tabela de atalhos, cada uma com `.test.tsx` e `.stories.tsx`                                                                                                    | 4       |
+| `lib/og-pilulabs-image.tsx`                                                      | `ImageResponse` 1200×630 compartilhado pelas 3 rotas                                                                                                                                  | 5       |
+| `app/(site)/pilulabs/{layout,page,opengraph-image,twitter-image}.tsx`            | Vitrine                                                                                                                                                                               | 5       |
+| `app/(site)/pilulabs/pilulabs.e2e.ts`                                            | E2E das 3 rotas                                                                                                                                                                       | 5, 6, 7 |
+| `app/(site)/pilulabs/botai/{page,opengraph-image,twitter-image}.tsx`             | Página do Botaí                                                                                                                                                                       | 6       |
+| `app/(site)/pilulabs/botai/privacidade/{page,opengraph-image,twitter-image}.tsx` | Política de privacidade                                                                                                                                                               | 7       |
+| `mocks/projects.ts`, `components/project-card.tsx` (+ test, story)               | `deployLabel` opcional e link interno na mesma aba                                                                                                                                    | 8       |
+| `components/home-footer.tsx` (+ test, story)                                     | Prop `mostrarPiluLabs`                                                                                                                                                                | 8       |
+| `app/(site)/page.tsx`, `app/(site)/home.e2e.ts`                                  | Card em Projetos e link no rodapé, vindos de `produtos`                                                                                                                               | 8       |
+| `CLAUDE.md` (do `apps/web` e da raiz)                                            | Seção PiluLabs                                                                                                                                                                        | 9       |
 
 ---
 
@@ -328,8 +328,14 @@ describe('lojasPublicadas', () => {
   })
 
   it.each([
-    ['http em vez de https', 'http://chromewebstore.google.com/detail/botai/abc'],
-    ['host com sufixo', 'https://chromewebstore.google.com.evil.io/detail/botai/abc'],
+    [
+      'http em vez de https',
+      'http://chromewebstore.google.com/detail/botai/abc',
+    ],
+    [
+      'host com sufixo',
+      'https://chromewebstore.google.com.evil.io/detail/botai/abc',
+    ],
     ['subdomínio', 'https://www.chromewebstore.google.com/detail/botai/abc'],
     ['host de outra loja', URL_FIREFOX],
     ['sem esquema', 'chromewebstore.google.com/detail/botai/abc'],
@@ -539,9 +545,9 @@ describe('rotasFaltando', () => {
   })
 
   it('acusa as duas rotas que faltam a um produto listado', () => {
-    expect(rotasFaltando([{ slug: 'novo', listado: true }], () => false)).toEqual(
-      rotasObrigatorias('novo'),
-    )
+    expect(
+      rotasFaltando([{ slug: 'novo', listado: true }], () => false),
+    ).toEqual(rotasObrigatorias('novo'))
   })
 
   it('ignora o produto não listado, que pode existir antes da página', () => {
@@ -565,7 +571,11 @@ Crie `apps/web/lib/pilulabs-conteudo.ts`:
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
-import { normalizarProduto, type EntradaProduto, type Produto } from './pilulabs'
+import {
+  normalizarProduto,
+  type EntradaProduto,
+  type Produto,
+} from './pilulabs'
 
 // Lê o YAML sem o Keystatic, cujo reader exige `server-only` e `draftMode`.
 // É assim que o Jest e o Playwright derivam o esperado do mesmo catálogo.
@@ -575,7 +585,10 @@ export function lerProdutosDoConteudo(raizWeb: string): Produto[] {
   return readdirSync(pasta, { withFileTypes: true })
     .filter((entrada) => entrada.isDirectory())
     .map((entrada) => {
-      const bruto = readFileSync(join(pasta, entrada.name, 'index.yaml'), 'utf8')
+      const bruto = readFileSync(
+        join(pasta, entrada.name, 'index.yaml'),
+        'utf8',
+      )
       return normalizarProduto(
         entrada.name,
         (parse(bruto) ?? {}) as EntradaProduto,
@@ -1562,7 +1575,10 @@ describe('BotoesLoja', () => {
     const raiz = renderEstatico(
       <BotoesLoja
         lojas={[
-          { loja: 'chrome', url: 'https://chromewebstore.google.com/detail/b/a' },
+          {
+            loja: 'chrome',
+            url: 'https://chromewebstore.google.com/detail/b/a',
+          },
           { loja: 'firefox', url: FIREFOX },
           {
             loja: 'edge',
@@ -1604,7 +1620,9 @@ describe('ProdutoCard', () => {
     const raiz = renderEstatico(
       <ProdutoCard produto={BOTAI} fase="em-breve" lojas={[]} />,
     )
-    expect(raiz.querySelector('a')?.getAttribute('href')).toBe('/pilulabs/botai')
+    expect(raiz.querySelector('a')?.getAttribute('href')).toBe(
+      '/pilulabs/botai',
+    )
     expect(raiz.querySelector('h3')?.textContent).toBe('Botaí')
     expect(raiz.textContent).toContain(BOTAI.resumo)
     expect(
@@ -1624,7 +1642,11 @@ describe('ProdutoCard', () => {
 
   it('lista só as lojas recebidas, pelo nome', () => {
     const raiz = renderEstatico(
-      <ProdutoCard produto={BOTAI} fase="disponivel" lojas={['chrome', 'opera']} />,
+      <ProdutoCard
+        produto={BOTAI}
+        fase="disponivel"
+        lojas={['chrome', 'opera']}
+      />,
     )
     expect(
       [...raiz.querySelectorAll('[aria-label="Lojas"] li')].map(
@@ -1635,7 +1657,11 @@ describe('ProdutoCard', () => {
 
   it('sem ícone, sem img', () => {
     const raiz = renderEstatico(
-      <ProdutoCard produto={{ ...BOTAI, icone: '' }} fase="em-breve" lojas={[]} />,
+      <ProdutoCard
+        produto={{ ...BOTAI, icone: '' }}
+        fase="em-breve"
+        lojas={[]}
+      />,
     )
     expect(raiz.querySelector('img')).toBeNull()
   })
@@ -1654,7 +1680,14 @@ function item(
   nome: string,
 ): ItemVitrine {
   return {
-    produto: { slug, tipo, nome, resumo: `Resumo de ${nome}`, icone: '', tags: [] },
+    produto: {
+      slug,
+      tipo,
+      nome,
+      resumo: `Resumo de ${nome}`,
+      icone: '',
+      tags: [],
+    },
     fase: 'em-breve',
     lojas: [],
   }
@@ -1664,14 +1697,18 @@ describe('Vitrine', () => {
   it('sem produto listado, mostra o estado vazio com link para o autor', () => {
     const raiz = renderEstatico(<Vitrine itens={[]} />)
     const vazio = raiz.querySelector('[data-testid="pilulabs-vazio"]')
-    expect(vazio?.textContent).toContain('PiluLabs: produtos da PiluTech. Em breve.')
+    expect(vazio?.textContent).toContain(
+      'PiluLabs: produtos da PiluTech. Em breve.',
+    )
     expect(vazio?.querySelector('a')?.getAttribute('href')).toBe('/')
     expect(raiz.querySelector('h2')).toBeNull()
   })
 
   it('agrupa por tipo, na ordem extensões, apps web e CLIs, e pula grupo vazio', () => {
     const raiz = renderEstatico(
-      <Vitrine itens={[item('zap', 'cli', 'Zap'), item('botai', 'extensao', 'Botaí')]} />,
+      <Vitrine
+        itens={[item('zap', 'cli', 'Zap'), item('botai', 'extensao', 'Botaí')]}
+      />,
     )
     expect([...raiz.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
       'Extensões',
@@ -1682,13 +1719,15 @@ describe('Vitrine', () => {
   it('um card por produto, levando à página dele, sem o estado vazio', () => {
     const raiz = renderEstatico(
       <Vitrine
-        itens={[item('botai', 'extensao', 'Botaí'), item('outro', 'extensao', 'Outro')]}
+        itens={[
+          item('botai', 'extensao', 'Botaí'),
+          item('outro', 'extensao', 'Outro'),
+        ]}
       />,
     )
-    expect([...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
-      '/pilulabs/botai',
-      '/pilulabs/outro',
-    ])
+    expect(
+      [...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+    ).toEqual(['/pilulabs/botai', '/pilulabs/outro'])
     expect(raiz.querySelector('[data-testid="pilulabs-vazio"]')).toBeNull()
   })
 })
@@ -1713,12 +1752,13 @@ import {
 } from '@fortawesome/free-brands-svg-icons'
 import type { Loja } from '@/lib/pilulabs'
 
-export const LOJA_UI: Record<Loja, { rotulo: string; icone: IconDefinition }> = {
-  chrome: { rotulo: 'Chrome Web Store', icone: faChrome },
-  firefox: { rotulo: 'Firefox Add-ons', icone: faFirefoxBrowser },
-  edge: { rotulo: 'Microsoft Edge Add-ons', icone: faEdge },
-  opera: { rotulo: 'Opera add-ons', icone: faOpera },
-}
+export const LOJA_UI: Record<Loja, { rotulo: string; icone: IconDefinition }> =
+  {
+    chrome: { rotulo: 'Chrome Web Store', icone: faChrome },
+    firefox: { rotulo: 'Firefox Add-ons', icone: faFirefoxBrowser },
+    edge: { rotulo: 'Microsoft Edge Add-ons', icone: faEdge },
+    opera: { rotulo: 'Opera add-ons', icone: faOpera },
+  }
 ```
 
 Crie `apps/web/components/pilulabs/status-produto.tsx`:
@@ -1878,7 +1918,9 @@ export function Vitrine({ itens }: { itens: ItemVitrine[] }) {
         data-testid="pilulabs-vazio"
         className="border-border flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center"
       >
-        <p className="font-semibold">PiluLabs: produtos da PiluTech. Em breve.</p>
+        <p className="font-semibold">
+          PiluLabs: produtos da PiluTech. Em breve.
+        </p>
         <p className="text-muted-foreground text-sm">
           Enquanto isso, conheça{' '}
           <Link href="/" className="text-primary hover:underline">
@@ -1975,10 +2017,22 @@ export const UmaLoja: Story = {
 export const AsQuatro: Story = {
   args: {
     lojas: [
-      { loja: 'chrome', url: 'https://chromewebstore.google.com/detail/botai/abc' },
-      { loja: 'firefox', url: 'https://addons.mozilla.org/pt-BR/firefox/addon/botai/' },
-      { loja: 'edge', url: 'https://microsoftedge.microsoft.com/addons/detail/botai/xyz' },
-      { loja: 'opera', url: 'https://addons.opera.com/pt-br/extensions/details/botai/' },
+      {
+        loja: 'chrome',
+        url: 'https://chromewebstore.google.com/detail/botai/abc',
+      },
+      {
+        loja: 'firefox',
+        url: 'https://addons.mozilla.org/pt-BR/firefox/addon/botai/',
+      },
+      {
+        loja: 'edge',
+        url: 'https://microsoftedge.microsoft.com/addons/detail/botai/xyz',
+      },
+      {
+        loja: 'opera',
+        url: 'https://addons.opera.com/pt-br/extensions/details/botai/',
+      },
     ],
   },
 }
@@ -2145,12 +2199,12 @@ describe('CapturasGaleria', () => {
 
   it('uma imagem por captura, com o alt, e o link para o PNG inteiro', () => {
     const raiz = renderEstatico(<CapturasGaleria capturas={CAPTURAS} />)
-    expect([...raiz.querySelectorAll('img')].map((i) => i.getAttribute('alt'))).toEqual(
-      CAPTURAS.map((c) => c.alt),
-    )
-    expect([...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(
-      CAPTURAS.map((c) => c.src),
-    )
+    expect(
+      [...raiz.querySelectorAll('img')].map((i) => i.getAttribute('alt')),
+    ).toEqual(CAPTURAS.map((c) => c.alt))
+    expect(
+      [...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+    ).toEqual(CAPTURAS.map((c) => c.src))
   })
 })
 ```
@@ -2519,7 +2573,9 @@ export type DadosOgPiluLabs = {
 
 async function pngComoDataUrl(caminhoPublico: string): Promise<string | null> {
   try {
-    const arquivo = await readFile(join(process.cwd(), 'public', caminhoPublico))
+    const arquivo = await readFile(
+      join(process.cwd(), 'public', caminhoPublico),
+    )
     return `data:image/png;base64,${arquivo.toString('base64')}`
   } catch {
     return null
@@ -2534,62 +2590,60 @@ export async function imagemOgPiluLabs({
 }: DadosOgPiluLabs): Promise<ImageResponse> {
   const iconeSrc = icone ? await pngComoDataUrl(icone) : null
   return new ImageResponse(
-    (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: 72,
-          background: '#0b1220',
-        }}
-      >
-        <div style={{ display: 'flex', fontSize: 30, color: '#38bdf8' }}>
-          {rotulo}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 48 }}>
-          {iconeSrc ? (
-            <img
-              src={iconeSrc}
-              width={168}
-              height={168}
-              alt=""
-              style={{ borderRadius: 36 }}
-            />
-          ) : null}
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        padding: 72,
+        background: '#0b1220',
+      }}
+    >
+      <div style={{ display: 'flex', fontSize: 30, color: '#38bdf8' }}>
+        {rotulo}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 48 }}>
+        {iconeSrc ? (
+          <img
+            src={iconeSrc}
+            width={168}
+            height={168}
+            alt=""
+            style={{ borderRadius: 36 }}
+          />
+        ) : null}
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: 18, flex: 1 }}
+        >
           <div
-            style={{ display: 'flex', flexDirection: 'column', gap: 18, flex: 1 }}
+            style={{
+              display: 'flex',
+              fontSize: titulo.length > 14 ? 72 : 92,
+              fontWeight: 700,
+              color: '#f8fafc',
+              letterSpacing: -2,
+            }}
           >
-            <div
-              style={{
-                display: 'flex',
-                fontSize: titulo.length > 14 ? 72 : 92,
-                fontWeight: 700,
-                color: '#f8fafc',
-                letterSpacing: -2,
-              }}
-            >
-              {titulo}
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                fontSize: 38,
-                color: '#94a3b8',
-                lineHeight: 1.3,
-              }}
-            >
-              {subtitulo}
-            </div>
+            {titulo}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 38,
+              color: '#94a3b8',
+              lineHeight: 1.3,
+            }}
+          >
+            {subtitulo}
           </div>
         </div>
-        <div style={{ display: 'flex', fontSize: 28, color: '#64748b' }}>
-          PiluLabs · Powered by PiluTech
-        </div>
       </div>
-    ),
+      <div style={{ display: 'flex', fontSize: 28, color: '#64748b' }}>
+        PiluLabs · Powered by PiluTech
+      </div>
+    </div>,
     { ...size },
   )
 }
@@ -3119,7 +3173,11 @@ export default async function BotaiPage() {
         <div className="flex flex-wrap gap-3">
           {produto.repoLink ? (
             <Button asChild variant="outline" className="gap-2">
-              <a href={produto.repoLink} target="_blank" rel="noopener noreferrer">
+              <a
+                href={produto.repoLink}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <FontAwesomeIcon icon={faCode} className="size-3.5" />
                 Código-fonte
               </a>
@@ -3829,22 +3887,24 @@ Em `apps/web/components/project-card.tsx`:
 3. Troque o bloco `{project.deployLink ? ( … ) : null}`, o do botão "Demo", por:
 
 ```tsx
-        {project.deployLink ? (
-          <Button asChild>
-            <Link
-              href={project.deployLink}
-              {...(linkInterno
-                ? {}
-                : { rel: 'noopener noreferrer', target: '_blank' })}
-            >
-              <FontAwesomeIcon
-                icon={linkInterno ? faArrowRight : faArrowUpRightFromSquare}
-                className="size-3.5"
-              />
-              {project.deployLabel ?? 'Demo'}
-            </Link>
-          </Button>
-        ) : null}
+{
+  project.deployLink ? (
+    <Button asChild>
+      <Link
+        href={project.deployLink}
+        {...(linkInterno
+          ? {}
+          : { rel: 'noopener noreferrer', target: '_blank' })}
+      >
+        <FontAwesomeIcon
+          icon={linkInterno ? faArrowRight : faArrowUpRightFromSquare}
+          className="size-3.5"
+        />
+        {project.deployLabel ?? 'Demo'}
+      </Link>
+    </Button>
+  ) : null
+}
 ```
 
 Em `apps/web/components/home-footer.tsx`:
@@ -3860,14 +3920,16 @@ Em `apps/web/components/home-footer.tsx`:
 3. Logo depois do `<Link href="/tasks" …>/tasks</Link>`, e antes do comentário `{/* /votação precisa do back …`, acrescente:
 
 ```tsx
-        {mostrarPiluLabs ? (
-          <>
-            <span aria-hidden>·</span>
-            <Link href="/pilulabs" className={linkCls}>
-              /pilulabs
-            </Link>
-          </>
-        ) : null}
+{
+  mostrarPiluLabs ? (
+    <>
+      <span aria-hidden>·</span>
+      <Link href="/pilulabs" className={linkCls}>
+        /pilulabs
+      </Link>
+    </>
+  ) : null
+}
 ```
 
 Em `apps/web/lib/pilulabs.ts`:
@@ -3917,20 +3979,20 @@ Em `apps/web/app/(site)/page.tsx`:
 3. Troque `  const projectList: Project[] = projects` por:
 
    ```tsx
-     const listados = produtosListados(produtos)
-     const projectList: Project[] = [
-       ...projects,
-       ...listados.map(produtoParaProject),
-     ]
+   const listados = produtosListados(produtos)
+   const projectList: Project[] = [
+     ...projects,
+     ...listados.map(produtoParaProject),
+   ]
    ```
 
 4. Troque `<HomeFooter name={siteProfile.displayName} />` por:
 
    ```tsx
-           <HomeFooter
-             name={siteProfile.displayName}
-             mostrarPiluLabs={listados.length > 0}
-           />
+   <HomeFooter
+     name={siteProfile.displayName}
+     mostrarPiluLabs={listados.length > 0}
+   />
    ```
 
 - [ ] **Step 6: Stories**
@@ -3959,7 +4021,11 @@ Em `apps/web/components/home-footer.stories.tsx`, acrescente ao fim:
 
 ```tsx
 export const ComPiluLabs: Story = {
-  args: { name: 'Paulo Victor Torres Silva', year: 2026, mostrarPiluLabs: true },
+  args: {
+    name: 'Paulo Victor Torres Silva',
+    year: 2026,
+    mostrarPiluLabs: true,
+  },
 }
 ```
 
@@ -4033,11 +4099,11 @@ Vitrine dos produtos que o autor publica pela PiluTech. O primeiro é o Botaí, 
 
 **Rotas:**
 
-| Rota                          | O que é                                                                                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/pilulabs`                   | Vitrine. Sem produto listado, mostra "PiluLabs: produtos da PiluTech. Em breve."                                                             |
-| `/pilulabs/botai`             | Página do produto. É também a `homepage_url` da extensão e a página de suporte nas lojas                                                     |
-| `/pilulabs/botai/privacidade` | A URL de política que vai para as 4 lojas. O mesmo texto é colado na AMO                                                                     |
+| Rota                          | O que é                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `/pilulabs`                   | Vitrine. Sem produto listado, mostra "PiluLabs: produtos da PiluTech. Em breve."         |
+| `/pilulabs/botai`             | Página do produto. É também a `homepage_url` da extensão e a página de suporte nas lojas |
+| `/pilulabs/botai/privacidade` | A URL de política que vai para as 4 lojas. O mesmo texto é colado na AMO                 |
 
 As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para elas.
 

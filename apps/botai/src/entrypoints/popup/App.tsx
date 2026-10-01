@@ -19,13 +19,32 @@ import {
 } from '../../lib/estado-popup'
 import { hojeISO, idadeEm } from '../../lib/hoje'
 import { enviar, type RespostaPreencher } from '../../lib/mensagens'
+import {
+  detectarNavegador,
+  PAGINA_DE_ATALHOS,
+  type Navegador,
+} from '../../lib/navegador'
 import { caminhoDaUrl, rotuloDoHost } from '../../lib/paginas'
 import type { LinhaCampo } from '../../lib/resultado'
 import { useAbaAlvo, type AbaAlvo } from './use-aba-alvo'
 
-const PAGINA_DE_ATALHOS = 'chrome://extensions/shortcuts'
 const SITE_PILUTECH = 'https://pilutech.com.br'
 const COMANDO_PREENCHER = 'botai-preencher'
+
+interface ComandosDoFirefox {
+  openShortcutSettings(): Promise<void>
+}
+
+function abrirPaginaDeAtalhos(navegador: Navegador): void {
+  if (navegador === 'firefox') {
+    // No Firefox, tabs.create com chrome:// ou about:addons dá "Illegal URL".
+    void (
+      browser.commands as unknown as ComandosDoFirefox
+    ).openShortcutSettings()
+    return
+  }
+  void browser.tabs.create({ url: PAGINA_DE_ATALHOS[navegador] })
+}
 
 function usePessoa(): Pessoa | null | undefined {
   const [pessoa, setPessoa] = useState<Pessoa | null | undefined>(undefined)
@@ -81,8 +100,8 @@ function TelaDoPopup({
   const [estado, setEstado] = useState<EstadoPopup>(() =>
     estadoAoAbrir(aba?.situacao ?? 'ok'),
   )
-  const abrirAtalhos = () =>
-    void browser.tabs.create({ url: PAGINA_DE_ATALHOS })
+  const [navegador] = useState(detectarNavegador)
+  const abrirAtalhos = () => abrirPaginaDeAtalhos(navegador)
   const abrirPiluTech = () => void browser.tabs.create({ url: SITE_PILUTECH })
   const abrirCaixa = (dono: Pessoa) =>
     void browser.tabs.create({ url: dono.email.caixaUrl })
@@ -115,6 +134,7 @@ function TelaDoPopup({
             ? 'arquivo-sem-acesso'
             : 'proibida'
         }
+        navegador={navegador}
         nome={pessoa?.nome.completo ?? null}
         onVerDados={irParaOsDados}
         onGerarPessoa={() => void gerarPessoaNova()}

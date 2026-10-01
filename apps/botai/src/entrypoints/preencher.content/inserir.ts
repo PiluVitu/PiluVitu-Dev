@@ -1,6 +1,7 @@
 import type { FieldDescriptor, FieldKind } from '@piluvitu/tools/campos'
 import { valorPara } from '@piluvitu/tools/campos-formatar'
 import type { Pessoa } from '@piluvitu/tools/pessoa'
+import { browser } from 'wxt/browser'
 import {
   cabe,
   descrever,
@@ -29,11 +30,25 @@ const TEXTO_LIVRE: FieldDescriptor = {
   section: '',
 }
 
+interface MenusDoFirefox {
+  getTargetElement(alvoId: number): Element | null
+}
+
+// O Chrome não diz qual elemento recebeu o clique do menu (o foco resolve); o Firefox diz.
+function alvoDoClique(alvoId: number | null): Element | null {
+  if (!import.meta.env.FIREFOX || alvoId === null) return null
+  const alvo = (
+    browser as unknown as { menus: MenusDoFirefox }
+  ).menus.getTargetElement(alvoId)
+  return alvo?.isConnected ? alvo : null
+}
+
 export function inserirNoFoco(
   pessoa: Pessoa,
   kind: FieldKind,
+  alvoId: number | null = null,
 ): ResultadoInsercao {
-  const alvo = elementoEmFoco(document)
+  const alvo = alvoDoClique(alvoId) ?? elementoEmFoco(document)
   if (alvo && ehCampo(alvo) && !tipoNaoPreenchivel(alvo)) {
     if (!preenchivel(alvo)) return { ok: false, motivo: 'recusado' }
     const descritor = descrever(alvo)

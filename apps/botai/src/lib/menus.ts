@@ -42,10 +42,15 @@ export const ITENS_INSERIR: readonly {
 ]
 
 type Propriedades = Browser.contextMenus.CreateProperties
+type Contextos = NonNullable<Propriedades['contexts']>
 type ItemInserir = (typeof ITENS_INSERIR)[number]
 
-const PAGINA_E_CAMPO: Propriedades['contexts'] = ['page', 'editable']
-const CAMPO: Propriedades['contexts'] = ['editable']
+function contextos(...base: Contextos): Contextos {
+  // No Firefox 'editable' não inclui campo de senha; o Chrome recusaria o contexto 'password'.
+  return import.meta.env.FIREFOX
+    ? ([...base, 'password'] as unknown as Contextos)
+    : base
+}
 
 function tituloDoItem(item: ItemInserir, pessoa: Pessoa | null): string {
   if (pessoa && item.kind === 'cpf') return `CPF · ${pessoa.cpf}`
@@ -55,37 +60,39 @@ function tituloDoItem(item: ItemInserir, pessoa: Pessoa | null): string {
 
 export async function criarMenus(pessoa: Pessoa | null): Promise<void> {
   await browser.contextMenus.removeAll()
+  const paginaECampo = contextos('page', 'editable')
+  const campo = contextos('editable')
   const criar = (propriedades: Propriedades) =>
     browser.contextMenus.create(propriedades)
   criar({
     id: MENU.preencher,
     title: 'Preencher esta página',
-    contexts: PAGINA_E_CAMPO,
+    contexts: paginaECampo,
   })
-  criar({ id: 'botai-sep-1', type: 'separator', contexts: PAGINA_E_CAMPO })
-  criar({ id: MENU.inserir, title: 'Inserir', contexts: CAMPO })
+  criar({ id: 'botai-sep-1', type: 'separator', contexts: paginaECampo })
+  criar({ id: MENU.inserir, title: 'Inserir', contexts: campo })
   ITENS_INSERIR.forEach((item, i) => {
     if (i > 0 && ITENS_INSERIR[i - 1].grupo !== item.grupo) {
       criar({
         id: `botai-sep-inserir-${item.grupo}`,
         parentId: MENU.inserir,
         type: 'separator',
-        contexts: CAMPO,
+        contexts: campo,
       })
     }
     criar({
       id: `${PREFIXO_INSERIR}${item.kind}`,
       parentId: MENU.inserir,
       title: tituloDoItem(item, pessoa),
-      contexts: CAMPO,
+      contexts: campo,
     })
   })
-  criar({ id: 'botai-sep-2', type: 'separator', contexts: PAGINA_E_CAMPO })
-  criar({ id: MENU.novaPessoa, title: 'Nova pessoa', contexts: PAGINA_E_CAMPO })
+  criar({ id: 'botai-sep-2', type: 'separator', contexts: paginaECampo })
+  criar({ id: MENU.novaPessoa, title: 'Nova pessoa', contexts: paginaECampo })
   criar({
     id: MENU.abrirCaixa,
     title: 'Abrir caixa de entrada',
-    contexts: PAGINA_E_CAMPO,
+    contexts: paginaECampo,
   })
 }
 

@@ -11,6 +11,11 @@ import { inserirNoCampo, mostrarCampo, preencherPagina } from './acoes'
 
 export const COMANDO_PREENCHER = 'botai-preencher'
 
+// Os tipos do @wxt-dev/browser não têm o targetElementId, que só o Firefox manda.
+type CliqueNoMenu = Browser.contextMenus.OnClickData & {
+  targetElementId?: number
+}
+
 export async function recriarMenus(): Promise<void> {
   await criarMenus(await pessoaItem.getValue())
 }
@@ -44,6 +49,7 @@ export async function aoClicarMenu(
       aba.id,
       info.frameId ?? 0,
       id.slice(PREFIXO_INSERIR.length) as FieldKind,
+      (info as CliqueNoMenu).targetElementId ?? null,
     )
   }
 }
@@ -56,7 +62,12 @@ function executar(mensagem: Mensagem): Promise<unknown> | undefined {
       return mostrarCampo(mensagem.tabId, mensagem.documentId, mensagem.idx)
     case 'inserir':
       return import.meta.env.MODE === 'e2e'
-        ? inserirNoCampo(mensagem.tabId, mensagem.frameId, mensagem.kind)
+        ? inserirNoCampo(
+            mensagem.tabId,
+            mensagem.frameId,
+            mensagem.kind,
+            mensagem.alvoId ?? null,
+          )
         : undefined
     default:
       return undefined
