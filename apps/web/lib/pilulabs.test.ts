@@ -11,6 +11,7 @@ import {
   metadataDaPagina,
   metadataDoProduto,
   normalizarProduto,
+  produtoParaProject,
   produtosListados,
   ROTULOS_CAPTURA,
   type Produto,
@@ -340,5 +341,34 @@ describe('metadataDoProduto', () => {
     expect(metadataDoProduto({ listado: true }, PAGINA)).toEqual(
       metadataDaPagina(PAGINA),
     )
+  })
+})
+
+describe('produtoParaProject', () => {
+  it('vira um card de Projetos que leva à página do produto', () => {
+    expect(
+      produtoParaProject(
+        produto({
+          repoLink:
+            'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
+        }),
+      ),
+    ).toEqual({
+      id: 'pilulabs-botai',
+      projectName: 'Botaí',
+      subtitle: 'PiluLabs · Powered by PiluTech',
+      projectLogo: '/pilulabs/botai/icone-128.png',
+      description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
+      tags: ['QA'],
+      deployLink: '/pilulabs/botai',
+      deployLabel: 'Ver no PiluLabs',
+      repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
+      image: '/pilulabs/botai/icone-128.png',
+      altImage: 'BO',
+    })
+  })
+
+  it('sem ícone, sem imagem', () => {
+    expect(produtoParaProject(produto({ icone: '' })).image).toBeUndefined()
   })
 })

@@ -4,6 +4,7 @@ import { HomeFooter } from '@/components/home-footer'
 import { getLatestDevToArticleUrl } from '@/lib/dev-to'
 import {
   getCarreiras,
+  getProdutos,
   getProjects,
   getSiteProfile,
   getSocials,
@@ -11,6 +12,7 @@ import {
   VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
+import { produtoParaProject, produtosListados } from '@/lib/pilulabs'
 import { getBlogPosts } from '@/lib/blog-posts'
 import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
@@ -41,6 +43,7 @@ export default async function Home() {
     latestDevArticleUrl,
     visitCardRaw,
     blogPosts,
+    produtos,
   ] = await Promise.all([
     getSiteProfile(),
     getSocials(),
@@ -49,13 +52,18 @@ export default async function Home() {
     getLatestDevToArticleUrl(),
     getVisitCard(),
     getBlogPosts(),
+    getProdutos(),
   ])
 
   const siteProfile = profile ?? fallbackProfile
   const visitCard = visitCardRaw ?? VISIT_CARD_FALLBACK
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
-  const projectList: Project[] = projects
+  const listados = produtosListados(produtos)
+  const projectList: Project[] = [
+    ...projects,
+    ...listados.map(produtoParaProject),
+  ]
   const initialBlogPosts = blogPosts.map(blogPostToView)
 
   return (
@@ -98,7 +106,10 @@ export default async function Home() {
 
       {/* Footer full-width (cobre as duas colunas), no fim do scroll */}
       <div className="mx-auto w-full max-w-md xl:max-w-none">
-        <HomeFooter name={siteProfile.displayName} />
+        <HomeFooter
+          name={siteProfile.displayName}
+          mostrarPiluLabs={listados.length > 0}
+        />
       </div>
     </div>
   )

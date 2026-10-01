@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Metadata } from 'next'
+import type { Project } from '@/mocks/projects'
 
 export type Loja = 'chrome' | 'firefox' | 'edge' | 'opera'
 export type Fase = 'em-breve' | 'disponivel'
@@ -213,4 +214,20 @@ export function metadataDoProduto(
 ): Metadata {
   const metadata = metadataDaPagina(pagina)
   return produto.listado ? metadata : { ...metadata, robots: { index: false } }
+}
+
+export function produtoParaProject(produto: Produto): Project {
+  return {
+    id: `pilulabs-${produto.slug}`,
+    projectName: produto.nome,
+    subtitle: 'PiluLabs · Powered by PiluTech',
+    projectLogo: produto.icone,
+    description: produto.resumo,
+    tags: produto.tags,
+    deployLink: `/pilulabs/${produto.slug}`,
+    deployLabel: 'Ver no PiluLabs',
+    repoLink: produto.repoLink,
+    image: produto.icone || undefined,
+    altImage: produto.nome.slice(0, 2).toUpperCase(),
+  }
 }
