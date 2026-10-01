@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/plus-jakarta-sans/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+@import '@fortawesome/fontawesome-svg-core/styles.css';
+@import '../../../../../../../../../../../Users/piluvitu/WWW/PiluVitu-Dev/packages/ui/src/styles.css';
+@source '../../../../../../../../../../../Users/piluvitu/WWW/PiluVitu-Dev/packages/ui/src';
+
+@layer base {
+  :root {
+    --font-plus-jakarta: 'Plus Jakarta Sans Variable';
+    --font-jetbrains: 'JetBrains Mono Variable';
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: hsl(var(--border));
+  }
+  html,
+  body {
+    width: 380px;
+  }
+  body {
+    margin: 0;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: normal;
+}

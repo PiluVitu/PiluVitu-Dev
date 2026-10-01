@@ -1,0 +1,44 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Criar conta</title>
+<style>label{display:block;margin:6px 0}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}</style></head>
+<body><form id="cad">
+<fieldset><legend>Seus dados</legend>
+<label>Nome completo <input name="nome" required></label>
+<label>Nascimento <input name="nascimento" placeholder="dd/mm/aaaa" maxlength="10"></label>
+<label>E-mail <input type="email" name="email"></label>
+<label>Confirme o e-mail <input type="email" name="email2"></label>
+<label for="cpf">CPF</label><input id="cpf" name="cpf" inputmode="numeric">
+<label>Celular <input type="tel" name="cel" placeholder="(00) 00000-0000"></label>
+<label>Senha <input type="password" name="senha" autocomplete="new-password"></label>
+<label>Repita a senha <input type="password" name="senha2" autocomplete="new-password"></label>
+<label>Sexo <select name="sexo"><option value="">Selecione</option><option value="M">Masculino</option><option value="F">Feminino</option></select></label>
+</fieldset>
+<fieldset><legend>Endereço</legend>
+<label>CEP <input name="cep" id="cep" maxlength="9"></label>
+<label>Rua <input name="logradouro"></label>
+<label>Número <input name="numero" maxlength="6"></label>
+<label>Complemento <input name="complemento"></label>
+<label>Bairro <input name="bairro"></label>
+<label>Cidade <input name="cidade"></label>
+<label>Estado <select name="estado"><option value="">--</option><option value="25">São Paulo</option><option value="19">Rio de Janeiro</option></select></label>
+</fieldset>
+<fieldset><legend>Cartão de crédito</legend>
+<label>Número <input name="cc" maxlength="19" autocomplete="off"></label>
+<label>Nome impresso <input name="ccname"></label>
+<label>Validade <select name="mes"><option value="">Mês</option><option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option><option>07</option><option>08</option><option>09</option><option>10</option><option>11</option><option>12</option></select>
+<select name="ano"><option value="">Ano</option><option>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option></select></label>
+<label>CVV <input name="cvv" maxlength="4"></label>
+</fieldset>
+<label>Código de indicação <input name="ref_code" placeholder="opcional"></label>
+<label>Como nos conheceu? <select id="origem"><option value="">Selecione</option><option>Google</option><option>Amigo</option></select></label>
+<div style="position:absolute;left:-5000px" aria-hidden="true"><input type="text" name="b_7f3e_honeypot" tabindex="-1" value=""></div>
+<input type="hidden" name="csrf" value="x">
+<label><input type="checkbox" name="termos"> Aceito os termos</label>
+<input type="search" name="q" placeholder="Buscar">
+</form>
+<pre id="out"></pre>
+<script type="module">
+import IMask from '/vue/imask-entry.js'
+IMask(document.getElementById('cpf'), { mask: '000.000.000-00' })
+IMask(document.getElementById('cep'), { mask: '00000-000' })
+</script>
+</body></html>

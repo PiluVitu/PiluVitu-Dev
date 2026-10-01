@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/colors.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/typography.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/shape.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/motion.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/_ds_bundle.js"></script>
+<script>document.documentElement.classList.add('dark')</script>
+<style>
+html,body{background:hsl(var(--muted));min-height:100%}body{margin:0;color:hsl(var(--foreground));font-family:var(--font-sans);-webkit-font-smoothing:antialiased}
+a{color:hsl(var(--primary));text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:3px}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid hsl(var(--border));scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px var(--font-mono);padding:3px 7px;background:hsl(var(--foreground));color:hsl(var(--background));border-radius:4px;text-decoration:none}
+.dv-tname{font:700 15px/1.2 var(--font-sans);color:hsl(var(--foreground))}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px var(--font-mono);padding:3px 7px;background:hsl(var(--accent));color:hsl(var(--foreground));border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:500 12px/1.3 var(--font-sans);color:hsl(var(--muted-foreground))}
+.dv-card{max-width:100%;overflow:hidden}
+.dv-opt:target .dv-oid{background:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+.dv-next{margin:24px 0 0;font:12px/1.5 var(--font-sans);color:hsl(var(--muted-foreground))}
+.dv-sub{font:600 10.5px var(--font-mono);letter-spacing:.2em;text-transform:uppercase;color:hsl(var(--muted-foreground));margin:36px 0 16px;display:flex;align-items:center;gap:10px}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t1">
+  <div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">piluvitu · dados de teste: popup, feedback na página, menu e ícone</span></div>
+
+  <div style="max-width:880px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 32px;font-size:13px;line-height:1.55;color:hsl(var(--muted-foreground));margin-bottom:8px">
+    <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Popup a 380 px, altura máx. 600.</strong> Cabeçalho e rodapé fixos; o meio rola. A pílula no canto mostra em qual página a extensão vai agir.</p>
+    <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Pessoa sempre à vista.</strong> Os dados ficam no próprio popup, abaixo das ações, com filtro por grupo. Copiar troca o rótulo por "copiado" por 1,4 s, sem mexer no layout.</p>
+    <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Caixa pública sem drama.</strong> Um aviso âmbar curto fica colado no e-mail, o único lugar onde importa.</p>
+    <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Atalho proposto: Alt+Shift+P.</strong> Troque pelo painel Tweaks para ver alternativas. <a href="#1b">1b</a> é interativo: copiar, filtrar, nova pessoa.</p>
+  </div>
+
+  <div class="dv-sub"><span>Popup · estados</span><span style="flex:1;height:1px;background:hsl(var(--border))"></span></div>
+  <div class="dv-opts">
+
+    <div class="dv-opt" id="1a">
+      <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Primeiro uso</div>
+      <div class="dv-card" style="width:380px;background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:10px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 12px 14px;border-bottom:1px solid hsl(var(--border))">
+          <svg width="18" height="18" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+          <div style="display:flex;align-items:baseline;gap:8px;flex:none;white-space:nowrap"><span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">piluvitu</span><span style="font:500 9.5px var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:hsl(var(--muted-foreground))">dados de teste</span></div>
+          <div style="margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:5px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground));padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px"><span style="width:6px;height:6px;border-radius:50%;background:hsl(var(--ok))"></span>localhost:3000</div>
+        </div>
+        <div style="padding:28px 20px 20px;display:flex;flex-direction:column;gap:14px">
+          <span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--primary))">Primeiro uso</span>
+          <h2 style="margin:0;font-size:20px;line-height:1.2;font-weight:700;letter-spacing:-0.02em">Ainda não há pessoa de teste</h2>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:hsl(var(--muted-foreground));text-wrap:pretty">Gere uma pessoa brasileira falsa e coerente. CPF, CNPJ, CEP e cartão passam na validação. Ela fica guardada até você pedir outra.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid hsl(var(--border));border-radius:14px;background:hsl(var(--card))">
+            <div style="display:grid;grid-template-columns:72px 1fr;gap:10px;font-size:12px;line-height:1.4"><span style="font-family:var(--font-mono);color:hsl(var(--primary))">CPF/CNPJ</span><span style="color:hsl(var(--muted-foreground))">dígito verificador correto</span></div>
+            <div style="display:grid;grid-template-columns:72px 1fr;gap:10px;font-size:12px;line-height:1.4"><span style="font-family:var(--font-mono);color:hsl(var(--primary))">CEP</span><span style="color:hsl(var(--muted-foreground))">existe, e rua, bairro e cidade batem</span></div>
+            <div style="display:grid;grid-template-columns:72px 1fr;gap:10px;font-size:12px;line-height:1.4"><span style="font-family:var(--font-mono);color:hsl(var(--primary))">cartão</span><span style="color:hsl(var(--muted-foreground))">faixa de sandbox, Luhn válido</span></div>
+          </div>
+          <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" size="lg" dc-props="{{ full }}" onClick="{{ noop }}" hint-size="100%,40px"><i class="fa-solid fa-user-plus" style="font-size:13px"></i>Gerar pessoa</x-import>
+        </div>
+        <div style="margin-top:auto;padding:10px 16px;border-top:1px solid hsl(var(--border));display:flex;align-items:center;gap:8px;font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="padding:2px 6px;border:1px solid hsl(var(--border));border-radius:6px;color:hsl(var(--foreground))">{{ kbd }}</span><span>preenche sem abrir o popup</span></div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1b">
+      <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Pessoa pronta · interativo</div>
+      <div class="dv-card" style="width:380px;height:600px;background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:10px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column">
+        <div style="flex:none;display:flex;align-items:center;gap:8px;padding:12px 12px 12px 14px;border-bottom:1px solid hsl(var(--border))">
+          <svg width="18" height="18" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+          <div style="display:flex;align-items:baseline;gap:8px;flex:none;white-space:nowrap"><span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">piluvitu</span><span style="font:500 9.5px var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:hsl(var(--muted-foreground))">dados de teste</span></div>
+          <div style="margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:5px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground));padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px"><span style="width:6px;height:6px;border-radius:50%;background:hsl(var(--ok))"></span>localhost:3000</div>
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+          <div style="display:flex;gap:12px;align-items:center;padding:16px 16px 14px">
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Avatar" hint-size="40px,40px"><x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.AvatarFallback" dc-props="{{ avatarFb }}" hint-size="40px,40px">{{ initials }}</x-import></x-import>
+            <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:16px;font-weight:700;letter-spacing:-0.01em">{{ p.nome }}</div>
+              <div style="font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))">{{ p.idade }} anos · {{ p.cidade }}, {{ p.uf }}</div>
+            </div>
+          </div>
+          <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px">
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" size="lg" dc-props="{{ full }}" onClick="{{ noop }}" hint-size="100%,40px"><i class="fa-solid fa-bolt" style="font-size:13px"></i>Preencher esta página<span style="font:500 10.5px var(--font-mono);padding:2px 6px;border-radius:6px;background:hsl(var(--primary-foreground) / 0.14);margin-left:4px">{{ kbd }}</span></x-import>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="outline" size="sm" dc-props="{{ full }}" onClick="{{ newPerson }}" hint-size="100%,32px"><i class="fa-solid fa-shuffle" style="font-size:12px"></i>Nova pessoa</x-import>
+              <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="outline" size="sm" dc-props="{{ full }}" onClick="{{ openInbox }}" hint-size="100%,32px"><i class="fa-solid fa-inbox" style="font-size:12px"></i>Caixa de entrada<i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;color:hsl(var(--muted-foreground))"></i></x-import>
+            </div>
+          </div>
+          <div style="position:sticky;top:0;z-index:1;background:hsl(var(--background));border-top:1px solid hsl(var(--border));padding:12px 16px 10px;display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ filters }}" as="f" hint-placeholder-count="7">
+              <button onClick="{{ f.onClick }}" style="font:500 11px/1 var(--font-mono);padding:6px 10px;border-radius:999px;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.fg }};cursor:pointer;transition:background-color .2s">{{ f.label }}</button>
+            </sc-for>
+          </div>
+          <div style="padding:0 8px 12px">
+            <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+              <div>
+                <div style="display:flex;align-items:center;gap:10px;padding:14px 8px 6px"><span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--muted-foreground))">{{ g.label }}</span><span style="font:500 10.5px var(--font-mono);color:hsl(var(--primary))">{{ g.count }}</span><span style="flex:1;height:1px;background:hsl(var(--border))"></span></div>
+                <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="4">
+                  <div style="display:grid;grid-template-columns:92px minmax(0,1fr) 28px;gap:10px;align-items:center;padding:5px 4px 5px 8px;border-radius:10px;background:{{ r.bg }};transition:background-color .2s">
+                    <span style="font-size:12px;color:hsl(var(--muted-foreground))"><sc-if value="{{ r.copied }}" hint-placeholder-val="{{ false }}"><span style="font:600 11px var(--font-mono);color:hsl(var(--ok))">copiado</span></sc-if><sc-if value="{{ r.notCopied }}" hint-placeholder-val="{{ true }}">{{ r.label }}</sc-if></span>
+                    <span style="font:500 12.5px/1.4 var(--font-mono);overflow-wrap:anywhere">{{ r.value }}</span>
+                    <button onClick="{{ r.onCopy }}" title="Copiar" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:{{ r.iconColor }};cursor:pointer;transition:background-color .2s" style-hover="background:hsl(var(--accent))"><i class="fa-solid {{ r.icon }}" style="font-size:12px"></i></button>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ g.isEmail }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin:6px 8px 2px;padding:10px 12px;border:1px solid hsl(var(--warn) / 0.35);background:hsl(var(--warn) / 0.08);border-radius:12px;display:flex;gap:10px;font-size:12px;line-height:1.5">
+                    <i class="fa-solid fa-eye" style="color:hsl(var(--warn));font-size:11px;margin-top:4px"></i>
+                    <span style="text-wrap:pretty"><strong style="color:hsl(var(--warn));font-weight:600">Caixa pública.</strong> Quem souber o endereço lê os e-mails. Só para teste, nunca para conta real. <a href="#" onClick="{{ openInbox }}">abrir caixa →</a></span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ g.isCard }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin:6px 8px 2px;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));text-wrap:pretty">Número de sandbox: passa no Luhn e é recusado por qualquer adquirente real.</div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:none;padding:10px 16px;border-top:1px solid hsl(var(--border));display:flex;align-items:center;gap:8px;font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="padding:2px 6px;border:1px solid hsl(var(--border));border-radius:6px;color:hsl(var(--foreground))">{{ kbd }}</span><span>preenche sem abrir</span><a href="#" style="margin-left:auto">alterar</a></div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1c">
+      <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Logo após preencher</div>
+      <div class="dv-card" style="width:380px;background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:10px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 12px 14px;border-bottom:1px solid hsl(var(--border))">
+          <svg width="18" height="18" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+          <div style="display:flex;align-items:baseline;gap:8px;flex:none;white-space:nowrap"><span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">piluvitu</span><span style="font:500 9.5px var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:hsl(var(--muted-foreground))">dados de teste</span></div>
+          <div style="margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:5px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground));padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px"><span style="width:6px;height:6px;border-radius:50%;background:hsl(var(--ok))"></span>localhost:3000</div>
+        </div>
+        <div style="padding:18px 16px 16px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="width:40px;height:40px;flex:none;border-radius:14px;border:1px solid hsl(var(--ok) / 0.4);background:hsl(var(--ok) / 0.12);display:flex;align-items:center;justify-content:center;color:hsl(var(--ok))"><i class="fa-solid fa-check"></i></div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:16px;font-weight:700;letter-spacing:-0.01em">12 de 14 campos preenchidos</div>
+              <div style="font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))">/cadastro · com {{ p.nome }}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:3px">
+            <span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;background:hsl(var(--ok))"></span><span style="flex:1;height:6px;border-radius:3px;border:1px dashed hsl(var(--warn))"></span><span style="flex:1;height:6px;border-radius:3px;border:1px dashed hsl(var(--warn))"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:4px"><span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--muted-foreground))">Não reconhecidos</span><span style="font:500 10.5px var(--font-mono);color:hsl(var(--warn))">02</span><span style="flex:1;height:1px;background:hsl(var(--border))"></span></div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed hsl(var(--warn) / 0.5);border-radius:12px">
+              <div style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">Código de indicação</span><span style="font:500 11px var(--font-mono);color:hsl(var(--muted-foreground));overflow-wrap:anywhere">input[name="ref_code"]</span></div>
+              <i class="fa-solid fa-crosshairs" title="Mostrar na página" style="margin-left:auto;font-size:12px;color:hsl(var(--muted-foreground));cursor:pointer"></i>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed hsl(var(--warn) / 0.5);border-radius:12px">
+              <div style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">Como nos conheceu?</span><span style="font:500 11px var(--font-mono);color:hsl(var(--muted-foreground));overflow-wrap:anywhere">select#origem</span></div>
+              <i class="fa-solid fa-crosshairs" title="Mostrar na página" style="margin-left:auto;font-size:12px;color:hsl(var(--muted-foreground));cursor:pointer"></i>
+            </div>
+          </div>
+          <p style="margin:0;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));text-wrap:pretty">Para esses, clique com o botão direito no campo e use <span style="font-family:var(--font-mono);color:hsl(var(--foreground))">piluvitu › Inserir</span>.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" size="sm" dc-props="{{ full }}" onClick="{{ openInbox }}" hint-size="100%,32px"><i class="fa-solid fa-inbox" style="font-size:12px"></i>Caixa de entrada</x-import>
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="outline" size="sm" dc-props="{{ full }}" onClick="{{ noop }}" hint-size="100%,32px">Ver os dados</x-import>
+          </div>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid hsl(var(--border));display:flex;align-items:center;gap:8px;font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="padding:2px 6px;border:1px solid hsl(var(--border));border-radius:6px;color:hsl(var(--foreground))">{{ kbd }}</span><span>preenche de novo</span></div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1d">
+      <div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Nenhum campo reconhecido</div>
+      <div class="dv-card" style="width:380px;background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:10px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 12px 14px;border-bottom:1px solid hsl(var(--border))">
+          <svg width="18" height="18" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+          <div style="display:flex;align-items:baseline;gap:8px;flex:none;white-space:nowrap"><span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">piluvitu</span><span style="font:500 9.5px var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:hsl(var(--muted-foreground))">dados de teste</span></div>
+          <div style="margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:5px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground));padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px"><span style="width:6px;height:6px;border-radius:50%;background:hsl(var(--warn))"></span>staging.app.dev</div>
+        </div>
+        <div style="padding:20px 16px 16px;display:flex;flex-direction:column;gap:14px">
+          <div style="width:40px;height:40px;border-radius:14px;border:1px solid hsl(var(--border));background:hsl(var(--card));display:flex;align-items:center;justify-content:center;color:hsl(var(--muted-foreground))"><i class="fa-solid fa-magnifying-glass"></i></div>
+          <h2 style="margin:0;font-size:17px;line-height:1.25;font-weight:700;letter-spacing:-0.01em">Nenhum campo reconhecido nesta página</h2>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:hsl(var(--muted-foreground));text-wrap:pretty">Encontrei 3 campos, mas nenhum com <span style="font-family:var(--font-mono);font-size:12px">name</span>, <span style="font-family:var(--font-mono);font-size:12px">id</span>, label ou <span style="font-family:var(--font-mono);font-size:12px">autocomplete</span> que eu conheça. Formulários dentro de iframe de outro domínio também ficam de fora.</p>
+          <div style="padding:12px 14px;border:1px solid hsl(var(--border));border-radius:14px;background:hsl(var(--card));display:flex;flex-direction:column;gap:10px">
+            <span style="font-size:12px;color:hsl(var(--muted-foreground))">Dá para inserir campo a campo:</span>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font:500 11px var(--font-mono)">
+              <span style="padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px">botão direito</span><span style="color:hsl(var(--muted-foreground))">›</span><span style="padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px">piluvitu</span><span style="color:hsl(var(--muted-foreground))">›</span><span style="padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px">Inserir</span><span style="color:hsl(var(--muted-foreground))">›</span><span style="padding:3px 8px;border:1px solid var(--accent-line);background:var(--accent-soft);color:hsl(var(--primary));border-radius:999px">CPF</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="outline" size="sm" dc-props="{{ full }}" onClick="{{ noop }}" hint-size="100%,32px"><i class="fa-solid fa-rotate-right" style="font-size:12px"></i>Tentar de novo</x-import>
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="ghost" size="sm" dc-props="{{ full }}" onClick="{{ noop }}" hint-size="100%,32px">Ver os dados</x-import>
+          </div>
+        </div>
+        <div style="padding:10px 16px;border-top:1px solid hsl(var(--border));display:flex;align-items:center;gap:8px;font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="padding:2px 6px;border:1px solid hsl(var(--border));border-radius:6px;color:hsl(var(--foreground))">{{ kbd }}</span><span>preenche sem abrir</span></div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1e">
+      <div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Página proibida</div>
+      <div class="dv-card" style="width:380px;background:hsl(var(--background));border:1px solid hsl(var(--border));border-radius:10px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 12px 14px;border-bottom:1px solid hsl(var(--border))">
+          <svg width="18" height="18" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+          <div style="display:flex;align-items:baseline;gap:8px;flex:none;white-space:nowrap"><span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">piluvitu</span><span style="font:500 9.5px var(--font-mono);letter-spacing:0.12em;text-transform:uppercase;color:hsl(var(--muted-foreground))">dados de teste</span></div>
+          <div style="margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:5px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground));padding:3px 8px;border:1px solid hsl(var(--border));border-radius:999px"><i class="fa-solid fa-lock" style="font-size:9px"></i>chrome://settings</div>
+        </div>
+        <div style="padding:20px 16px 16px;display:flex;flex-direction:column;gap:14px">
+          <div style="width:40px;height:40px;border-radius:14px;border:1px solid hsl(var(--border));background:hsl(var(--card));display:flex;align-items:center;justify-content:center;color:hsl(var(--muted-foreground))"><i class="fa-solid fa-lock"></i></div>
+          <h2 style="margin:0;font-size:17px;line-height:1.25;font-weight:700;letter-spacing:-0.01em">O Chrome não deixa extensões mexerem nesta página</h2>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:hsl(var(--muted-foreground));text-wrap:pretty">Vale para páginas <span style="font-family:var(--font-mono);font-size:12px">chrome://</span>, a Chrome Web Store e o leitor de PDF, e para qualquer extensão. Abra o formulário numa aba comum e tente de novo.</p>
+          <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" size="lg" disabled="{{ true }}" dc-props="{{ full }}" hint-size="100%,40px"><i class="fa-solid fa-bolt" style="font-size:13px"></i>Preencher esta página</x-import>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid hsl(var(--border));border-radius:14px;background:hsl(var(--card))">
+            <div style="min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:13px;font-weight:600">{{ p.nome }}</span>
+              <span style="font-size:12px;color:hsl(var(--muted-foreground))">Os dados continuam aqui para copiar.</span>
+            </div>
+            <x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" variant="outline" size="sm" onClick="{{ noop }}" style="margin-left:auto" hint-size="auto,32px">Ver os dados</x-import>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-sub"><span>Na página · menu · ícone · atalho</span><span style="flex:1;height:1px;background:hsl(var(--border))"></span></div>
+  <div class="dv-opts">
+
+    <div class="dv-opt" id="1f">
+      <div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Feedback na página após preencher</div>
+      <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
+        <div class="dv-card" style="width:720px;border-radius:10px;border:1px solid hsl(var(--border));box-shadow:var(--shadow-lg);background:#ffffff;position:relative">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#e9ebee;border-bottom:1px solid #d6d9de">
+            <span style="width:10px;height:10px;border-radius:50%;background:#c9cdd3"></span><span style="width:10px;height:10px;border-radius:50%;background:#c9cdd3"></span><span style="width:10px;height:10px;border-radius:50%;background:#c9cdd3"></span>
+            <div style="margin-left:10px;flex:1;max-width:360px;padding:4px 12px;border-radius:999px;background:#ffffff;font:12px system-ui,sans-serif;color:#444">localhost:3000/cadastro</div>
+          </div>
+          <div style="padding:28px 32px 96px;font-family:system-ui,-apple-system,sans-serif;color:#1d1d1f">
+            <div style="font-size:20px;font-weight:700;margin-bottom:4px">Criar conta</div>
+            <div style="font-size:13px;color:#666;margin-bottom:20px">Site sendo testado. Nada aqui é do design system.</div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 16px;font-size:12px">
+              <label style="display:flex;flex-direction:column;gap:5px;grid-column:span 2">Nome completo<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.nome }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Nascimento<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.nasc }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px;grid-column:span 2">E-mail<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.email }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">CPF<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.cpf }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Celular<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.cel }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Senha<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">••••••••••••••</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">CEP<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.cep }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px;grid-column:span 2">Rua<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.rua }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Número<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.num }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Bairro<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.bairro }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Cidade / UF<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px solid #38bdf8;outline-offset:1px;font-size:13px">{{ p.cidade }} / {{ p.uf }}</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px">Código de indicação<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px dashed #f5b82e;outline-offset:1px;font-size:13px;color:#999">opcional</span></label>
+              <label style="display:flex;flex-direction:column;gap:5px;grid-column:span 2">Como nos conheceu?<span style="padding:8px 10px;border:1px solid #c8c8c8;border-radius:6px;outline:2px dashed #f5b82e;outline-offset:1px;font-size:13px;color:#999;display:flex;justify-content:space-between">Selecione<span>▾</span></span></label>
+            </div>
+          </div>
+          <div style="position:absolute;right:16px;bottom:16px;width:300px;background:hsl(var(--card));color:hsl(var(--card-foreground));border:1px solid hsl(var(--border));border-radius:14px;box-shadow:var(--shadow-lg);font-family:var(--font-sans);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 12px 8px 14px">
+              <svg width="14" height="14" viewBox="0 0 22 22" style="color:hsl(var(--primary));flex:none"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>
+              <span style="font-size:13px;font-weight:600">12 de 14 campos preenchidos</span>
+              <i class="fa-solid fa-xmark" style="margin-left:auto;font-size:12px;color:hsl(var(--muted-foreground));cursor:pointer;padding:4px"></i>
+            </div>
+            <div style="padding:0 14px 12px 38px;font:500 11px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="color:hsl(var(--warn))">2 não reconhecidos</span> · contorno tracejado</div>
+            <div style="height:2px;background:hsl(var(--border))"><div style="width:62%;height:2px;background:hsl(var(--primary))"></div></div>
+          </div>
+        </div>
+        <div style="width:300px;display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.55;color:hsl(var(--muted-foreground))">
+          <span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--foreground))">Regras</span>
+          <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Contorno, não borda.</strong> <span style="font-family:var(--font-mono);font-size:12px">outline</span> não ocupa espaço, então nada no site se mexe. Ciano sólido = preenchido; âmbar tracejado = não reconhecido.</p>
+          <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Some sozinho.</strong> O aviso fica 4 s (a barra fina mostra o tempo) e pausa com o mouse em cima. Os contornos saem junto, ou no primeiro clique dentro de um campo.</p>
+          <p style="margin:0;text-wrap:pretty"><strong style="color:hsl(var(--foreground))">Isolado.</strong> O aviso vive num Shadow DOM com <span style="font-family:var(--font-mono);font-size:12px">position: fixed</span>, então o CSS do site não o afeta nem é afetado.</p>
+          <p style="margin:0;text-wrap:pretty">Clicar no texto âmbar rola até o primeiro campo não reconhecido.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1g">
+      <div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Menu do botão direito num campo (nativo do Chrome)</div>
+      <div style="display:flex;align-items:flex-start;font:13px/1 system-ui,-apple-system,'Segoe UI',sans-serif;color:#1f1f1f">
+        <div style="width:236px;padding:4px 0;background:#ffffff;border:1px solid #cfd2d6;border-radius:8px;box-shadow:0 6px 18px rgb(0 0 0 / 0.25)">
+          <div style="padding:7px 16px 7px 28px;color:#9a9a9a">Desfazer</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:7px 16px 7px 28px">Recortar</div><div style="padding:7px 16px 7px 28px">Copiar</div><div style="padding:7px 16px 7px 28px">Colar</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:7px 16px 7px 10px;background:#e4e6e9;display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 22 22" style="color:#0284c7"><rect x="1" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="9" width="7" height="7" rx="1" fill="currentColor"></rect><rect x="9" y="1" width="7" height="7" rx="1" fill="currentColor"></rect></svg>piluvitu · dados de teste<span style="margin-left:auto">›</span></div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:7px 16px 7px 28px">Inspecionar</div>
+        </div>
+        <div style="width:210px;margin-top:150px;margin-left:-4px;padding:4px 0;background:#ffffff;border:1px solid #cfd2d6;border-radius:8px;box-shadow:0 6px 18px rgb(0 0 0 / 0.25)">
+          <div style="padding:7px 16px">Preencher esta página</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:7px 16px;background:#e4e6e9;display:flex">Inserir<span style="margin-left:auto">›</span></div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:7px 16px">Nova pessoa</div>
+          <div style="padding:7px 16px">Abrir caixa de entrada</div>
+        </div>
+        <div style="width:268px;margin-top:150px;margin-left:-4px;padding:4px 0;background:#ffffff;border:1px solid #cfd2d6;border-radius:8px;box-shadow:0 6px 18px rgb(0 0 0 / 0.25)">
+          <div style="padding:6px 16px">Nome completo</div><div style="padding:6px 16px">Data de nascimento</div><div style="padding:6px 16px;background:#e4e6e9">CPF · {{ p.cpf }}</div><div style="padding:6px 16px">RG</div><div style="padding:6px 16px">Celular</div><div style="padding:6px 16px">E-mail</div><div style="padding:6px 16px">Senha</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:6px 16px">CEP · {{ p.cep }}</div><div style="padding:6px 16px">Rua</div><div style="padding:6px 16px">Número</div><div style="padding:6px 16px">Complemento</div><div style="padding:6px 16px">Bairro</div><div style="padding:6px 16px">Cidade</div><div style="padding:6px 16px">UF</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:6px 16px">Razão social</div><div style="padding:6px 16px">Nome fantasia</div><div style="padding:6px 16px">CNPJ</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:6px 16px">Cartão: número</div><div style="padding:6px 16px">Cartão: nome impresso</div><div style="padding:6px 16px">Cartão: validade</div><div style="padding:6px 16px">Cartão: CVV</div>
+          <div style="height:1px;background:#e2e2e2;margin:4px 0"></div>
+          <div style="padding:6px 16px">PIS/NIS</div><div style="padding:6px 16px">Título de eleitor</div>
+        </div>
+        <div style="width:260px;margin-left:28px;display:flex;flex-direction:column;gap:12px;font:13px/1.55 var(--font-sans);color:hsl(var(--muted-foreground))">
+          <span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--foreground))">Notas</span>
+          <p style="margin:0;text-wrap:pretty">Com mais de um item, o Chrome agrupa tudo sob o nome da extensão sozinho. As cores aqui são aproximadas; o menu real segue o sistema.</p>
+          <p style="margin:0;text-wrap:pretty">"Inserir" só aparece em campos editáveis. Itens sem rótulo usam o valor da pessoa atual.</p>
+          <p style="margin:0;text-wrap:pretty">CPF e CEP mostram o valor no próprio item, que é atualizado a cada nova pessoa. Dá para estender aos outros, mas valores longos (e-mail, razão social) ficariam cortados.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1h">
+      <div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Ícone · marca em tile escuro</div>
+      <div class="dv-card" style="width:340px;padding:24px;background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:var(--radius);display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:flex-end;gap:20px">
+          <svg width="128" height="128" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#0a0f1a"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect></svg>
+          <svg width="48" height="48" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#0a0f1a"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect></svg>
+          <svg width="32" height="32" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#0a0f1a"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#38bdf8"></rect></svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#0a0f1a"></rect><rect x="3" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="2" width="5" height="5" fill="#38bdf8"></rect></svg>
+        </div>
+        <div style="display:flex;gap:16px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="width:128px">128</span><span style="width:48px">48</span><span style="width:32px">32</span><span>16</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 14px;background:#f1f3f4;border-radius:999px"><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#0a0f1a"></rect><rect x="3" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="2" width="5" height="5" fill="#38bdf8"></rect></svg><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><span style="margin-left:auto;font:11px system-ui;color:#5f6368">barra clara</span></div>
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 14px;background:#35363a;border-radius:999px"><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#0a0f1a"></rect><rect x="3" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="8" width="5" height="5" fill="#38bdf8"></rect><rect x="9" y="2" width="5" height="5" fill="#38bdf8"></rect></svg><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><span style="margin-left:auto;font:11px system-ui;color:#bdc1c6">barra escura</span></div>
+        </div>
+        <p style="margin:0;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));text-wrap:pretty">A marca do site, sem mudança. Em 16 px os quadrados ficam em 5 px inteiros, sem cantos, para não borrar.</p>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1i">
+      <div class="dv-olabel"><a class="dv-oid" href="#1i">1i</a>Ícone · marca + cursor no quarto quadrado</div>
+      <div class="dv-card" style="width:340px;padding:24px;background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:var(--radius);display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:flex-end;gap:20px">
+          <svg width="128" height="128" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#38bdf8"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="4.6" y="3" width="1.3" height="4.5" rx="0.3" fill="#0a0f1a"></rect></svg>
+          <svg width="48" height="48" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#38bdf8"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="4.6" y="3" width="1.3" height="4.5" rx="0.3" fill="#0a0f1a"></rect></svg>
+          <svg width="32" height="32" viewBox="0 0 16 16"><rect width="16" height="16" rx="3.5" fill="#38bdf8"></rect><rect x="3" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="8.5" y="3" width="4.5" height="4.5" rx="0.9" fill="#0a0f1a"></rect><rect x="4.6" y="3" width="1.3" height="4.5" rx="0.3" fill="#0a0f1a"></rect></svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#38bdf8"></rect><rect x="3" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="2" width="5" height="5" fill="#0a0f1a"></rect><rect x="5" y="2" width="1" height="5" fill="#0a0f1a"></rect></svg>
+        </div>
+        <div style="display:flex;gap:16px;font:500 10.5px var(--font-mono);color:hsl(var(--muted-foreground))"><span style="width:128px">128</span><span style="width:48px">48</span><span style="width:32px">32</span><span>16</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 14px;background:#f1f3f4;border-radius:999px"><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#38bdf8"></rect><rect x="3" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="2" width="5" height="5" fill="#0a0f1a"></rect><rect x="5" y="2" width="1" height="5" fill="#0a0f1a"></rect></svg><span style="width:16px;height:16px;border-radius:50%;background:#c4c7cb"></span><span style="margin-left:auto;font:11px system-ui;color:#5f6368">barra clara</span></div>
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 14px;background:#35363a;border-radius:999px"><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect width="16" height="16" fill="#38bdf8"></rect><rect x="3" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="8" width="5" height="5" fill="#0a0f1a"></rect><rect x="9" y="2" width="5" height="5" fill="#0a0f1a"></rect><rect x="5" y="2" width="1" height="5" fill="#0a0f1a"></rect></svg><span style="width:16px;height:16px;border-radius:50%;background:#5f6368"></span><span style="margin-left:auto;font:11px system-ui;color:#bdc1c6">barra escura</span></div>
+        </div>
+        <p style="margin:0;font-size:12px;line-height:1.5;color:hsl(var(--muted-foreground));text-wrap:pretty">O espaço vazio da marca vira um cursor de texto: o campo sendo preenchido. Tile ciano se destaca mais na barra e diferencia do site.</p>
+      </div>
+    </div>
+
+    <div class="dv-opt" id="1j">
+      <div class="dv-olabel"><a class="dv-oid" href="#1j">1j</a>Atalho de teclado</div>
+      <div class="dv-card" style="width:320px;padding:24px;background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:var(--radius);display:flex;flex-direction:column;gap:14px">
+        <span style="font:500 10.5px var(--font-mono);letter-spacing:0.2em;text-transform:uppercase;color:hsl(var(--muted-foreground))">Preencher esta página</span>
+        <div style="font:600 26px var(--font-mono);letter-spacing:-0.01em;color:hsl(var(--primary))">{{ kbd }}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;line-height:1.5;color:hsl(var(--muted-foreground))">
+          <p style="margin:0;text-wrap:pretty"><span style="font-family:var(--font-mono);color:hsl(var(--foreground))">Alt+Shift+P</span>: P de preencher. Não colide com atalhos do Chrome; no Mac aparece como ⌥⇧P.</p>
+          <p style="margin:0;text-wrap:pretty"><span style="font-family:var(--font-mono);color:hsl(var(--foreground))">Ctrl+Shift+Y</span>: livre em todos os sistemas, mas sem mnemônico.</p>
+          <p style="margin:0;text-wrap:pretty"><span style="font-family:var(--font-mono);color:hsl(var(--foreground))">Alt+Shift+F</span>: F de fill. Alguns editores web usam para formatar.</p>
+          <p style="margin:0;text-wrap:pretty">Qualquer um pode ser trocado em <span style="font-family:var(--font-mono);color:hsl(var(--foreground))">chrome://extensions/shortcuts</span>; o link "alterar" do rodapé abre essa página.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="dv-next">Próximos passos: "escolha o ícone <a class="dv-oid" href="#1i">1i</a>" · "mostre <a class="dv-oid" href="#1b">1b</a> no tema claro" · "aviso na página só com contorno, sem toast"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;tema&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;escuro&quot;, &quot;claro&quot;], &quot;default&quot;: &quot;escuro&quot;, &quot;tsType&quot;: &quot;'escuro' | 'claro'&quot;}, &quot;atalho&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;Alt+Shift+P&quot;, &quot;Ctrl+Shift+Y&quot;, &quot;Alt+Shift+F&quot;], &quot;default&quot;: &quot;Alt+Shift+P&quot;, &quot;tsType&quot;: &quot;string&quot;}}">
+const P0 = {
+  nome: 'Maria Eduarda Souza', nasc: '14/03/1991', idade: 35, cpf: '384.529.176-19', rg: '38.452.917-8',
+  cel: '(11) 98734-2156', senha: 'Ur$a-7kQ!pm2Lx', user: 'maria.souza.4821', email: 'maria.souza.4821@tuamaeaquelaursa.com',
+  cep: '01310-100', rua: 'Avenida Paulista', num: '402', compl: 'Apto 81', bairro: 'Bela Vista', cidade: 'São Paulo', uf: 'SP',
+  razao: 'Souza & Ribeiro Tecnologia Ltda', fantasia: 'Ribeiro Dev', cnpj: '47.508.213/0001-92',
+  bandeira: 'Visa', cartao: '4000 0000 0000 3188', nomeCartao: 'MARIA E SOUZA', validade: '08/29', cvv: '731',
+  pis: '127.48391.05-7', titulo: '1047 3826 0108'
+};
+const FIRST = ['Maria Eduarda', 'Ana Clara', 'João Pedro', 'Lucas Gabriel', 'Beatriz', 'Rafael', 'Juliana', 'Thiago', 'Camila', 'Gustavo', 'Larissa', 'Felipe'];
+const LAST = ['Souza', 'Oliveira', 'Santos', 'Ferreira', 'Almeida', 'Ribeiro', 'Carvalho', 'Lima', 'Costa', 'Rocha', 'Barbosa', 'Pereira'];
+const ADDR = [
+  { cep: '01310-100', rua: 'Avenida Paulista', bairro: 'Bela Vista', cidade: 'São Paulo', uf: 'SP', ddd: '11', tit: [0, 1] },
+  { cep: '04538-133', rua: 'Avenida Brigadeiro Faria Lima', bairro: 'Itaim Bibi', cidade: 'São Paulo', uf: 'SP', ddd: '11', tit: [0, 1] },
+  { cep: '22021-001', rua: 'Avenida Atlântica', bairro: 'Copacabana', cidade: 'Rio de Janeiro', uf: 'RJ', ddd: '21', tit: [0, 3] }
+];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const digits = k => Array.from({ length: k }, () => Math.floor(Math.random() * 10));
+const mod11 = (d, w) => { const s = d.reduce((a, x, i) => a + x * w[i], 0) % 11; return s < 2 ? 0 : 11 - s; };
+const deaccent = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const pad = n => String(n).padStart(2, '0');
+
+function gen() {
+  const first = pick(FIRST), l1 = pick(LAST), l2 = pick(LAST.filter(x => x !== l1)), a = pick(ADDR);
+  const nome = `${first} ${l1}`;
+  const c = digits(9); c.push(mod11(c, [10, 9, 8, 7, 6, 5, 4, 3, 2])); c.push(mod11(c, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]));
+  const cs = c.join(''); const cpf = `${cs.slice(0, 3)}.${cs.slice(3, 6)}.${cs.slice(6, 9)}-${cs.slice(9)}`;
+  const n = digits(8).concat([0, 0, 0, 1]); n.push(mod11(n, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])); n.push(mod11(n, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]));
+  const ns = n.join(''); const cnpj = `${ns.slice(0, 2)}.${ns.slice(2, 5)}.${ns.slice(5, 8)}/${ns.slice(8, 12)}-${ns.slice(12)}`;
+  const p = digits(10); p.push(mod11(p, [3, 2, 9, 8, 7, 6, 5, 4, 3, 2])); const ps = p.join('');
+  const t = digits(8); let t1 = t.reduce((s, x, i) => s + x * (i + 2), 0) % 11; t1 = t1 === 10 ? 0 : t1;
+  let t2 = (a.tit[0] * 7 + a.tit[1] * 8 + t1 * 9) % 11; t2 = t2 === 10 ? 0 : t2;
+  const ts = t.join('') + a.tit.join('') + t1 + t2;
+  const r = digits(8); const rr = r.reduce((s, x, i) => s + x * (i + 2), 0) % 11; const rs = r.join('');
+  const cardBase = '400000' + digits(9).join('');
+  let sum = 0; cardBase.split('').reverse().forEach((ch, i) => { let d = +ch; if (i % 2 === 0) { d *= 2; if (d > 9) d -= 9; } sum += d; });
+  const card = cardBase + ((10 - sum % 10) % 10);
+  const y = 1972 + Math.floor(Math.random() * 35), m = 1 + Math.floor(Math.random() * 12), d = 1 + Math.floor(Math.random() * 28);
+  const idade = 2026 - y - (m > 10 || (m === 10 && d > 1) ? 1 : 0);
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*-';
+  const senha = Array.from({ length: 14 }, () => pick(chars.split(''))).join('');
+  const user = `${deaccent(first.split(' ')[0])}.${deaccent(l1)}.${digits(4).join('')}`;
+  return {
+    nome, nasc: `${pad(d)}/${pad(m)}/${y}`, idade, cpf, rg: `${rs.slice(0, 2)}.${rs.slice(2, 5)}.${rs.slice(5, 8)}-${rr === 10 ? 'X' : rr}`,
+    cel: `(${a.ddd}) 9${digits(4).join('')}-${digits(4).join('')}`, senha, user, email: `${user}@tuamaeaquelaursa.com`,
+    cep: a.cep, rua: a.rua, num: String(100 + Math.floor(Math.random() * 1900)), compl: pick(['Apto 42', 'Sala 1203', 'Bloco B, apto 81', 'Casa 2']),
+    bairro: a.bairro, cidade: a.cidade, uf: a.uf,
+    razao: `${l1} & ${l2} ${pick(['Tecnologia', 'Comércio', 'Serviços Digitais', 'Soluções'])} Ltda`, fantasia: `${l2} ${pick(['Dev', 'Labs', 'Store', 'Digital'])}`, cnpj,
+    bandeira: 'Visa', cartao: card.match(/.{4}/g).join(' '), nomeCartao: deaccent(`${first.split(' ')[0]} ${first.split(' ')[1] ? first.split(' ')[1][0] + ' ' : ''}${l1}`).toUpperCase(),
+    validade: `${pad(1 + Math.floor(Math.random() * 12))}/${28 + Math.floor(Math.random() * 4)}`, cvv: digits(3).join(''),
+    pis: `${ps.slice(0, 3)}.${ps.slice(3, 8)}.${ps.slice(8, 10)}-${ps.slice(10)}`, titulo: ts.match(/.{4}/g).join(' ')
+  };
+}
+
+class Component extends DCLogic {
+  state = { p: P0, filter: 'tudo', copied: null };
+  componentDidMount() { this.applyTheme(); }
+  componentDidUpdate() { this.applyTheme(); }
+  componentWillUnmount() { clearTimeout(this.t); }
+  applyTheme() { document.documentElement.classList.toggle('dark', (this.props.tema ?? 'escuro') === 'escuro'); }
+  copy(key, value) {
+    try { navigator.clipboard && navigator.clipboard.writeText(value).catch(() => {}); } catch (e) {}
+    clearTimeout(this.t);
+    this.setState({ copied: key });
+    this.t = setTimeout(() => this.setState({ copied: null }), 1400);
+  }
+  renderVals() {
+    const { p, filter, copied } = this.state;
+    const G = [
+      { id: 'pessoais', label: 'Pessoais', rows: [['Nome', p.nome], ['Nascimento', p.nasc], ['CPF', p.cpf], ['RG', p.rg], ['Celular', p.cel], ['Senha', p.senha]] },
+      { id: 'email', label: 'E-mail', rows: [['E-mail', p.email]] },
+      { id: 'endereco', label: 'Endereço', rows: [['CEP', p.cep], ['Rua', p.rua], ['Número', p.num], ['Complemento', p.compl], ['Bairro', p.bairro], ['Cidade', p.cidade], ['UF', p.uf]] },
+      { id: 'empresa', label: 'Empresa', rows: [['Razão social', p.razao], ['Fantasia', p.fantasia], ['CNPJ', p.cnpj]] },
+      { id: 'cartao', label: 'Cartão', rows: [['Bandeira', p.bandeira], ['Número', p.cartao], ['Nome impresso', p.nomeCartao], ['Validade', p.validade], ['CVV', p.cvv]] },
+      { id: 'docs', label: 'Documentos', rows: [['PIS/NIS', p.pis], ['Título', p.titulo]] }
+    ];
+    const filters = [['tudo', 'Tudo']].concat(G.map(g => [g.id, g.label])).map(([id, label]) => {
+      const on = filter === id;
+      return { label, onClick: () => this.setState({ filter: id }), bg: on ? 'var(--accent-soft)' : 'transparent', fg: on ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))', bd: on ? 'var(--accent-line)' : 'hsl(var(--border))' };
+    });
+    const groups = G.filter(g => filter === 'tudo' || filter === g.id).map(g => ({
+      label: g.label, count: pad(g.rows.length), isEmail: g.id === 'email', isCard: g.id === 'cartao',
+      rows: g.rows.map(([label, value]) => {
+        const key = g.id + label, c = copied === key;
+        return { label, value, copied: c, notCopied: !c, icon: c ? 'fa-check' : 'fa-copy', iconColor: c ? 'hsl(var(--ok))' : 'hsl(var(--muted-foreground))', bg: c ? 'hsl(var(--ok) / 0.10)' : 'transparent', onCopy: () => this.copy(key, value) };
+      })
+    }));
+    const parts = p.nome.split(' ');
+    return {
+      p, filters, groups,
+      initials: (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(),
+      kbd: this.props.atalho ?? 'Alt+Shift+P',
+      full: { style: { width: '100%' } },
+      avatarFb: { style: { background: 'var(--accent-soft)', color: 'hsl(var(--primary))', fontFamily: 'var(--font-sans)', fontWeight: 700 } },
+      noop: () => {},
+      newPerson: () => this.setState({ p: gen(), copied: null }),
+      openInbox: e => { if (e && e.preventDefault) e.preventDefault(); window.open('https://tuamaeaquelaursa.com/' + p.user, '_blank'); }
+    };
+  }
+}
+</script>
+</body>
+</html>
+
