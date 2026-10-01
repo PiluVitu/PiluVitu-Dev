@@ -1,0 +1,85 @@
+name: Botaí Release
+
+# Fora do `CI` de propósito: o deploy do finanças espera o `CI` inteiro passar,
+# e a reprodução das fontes não pode segurá-lo.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/botai/**'
+      - 'packages/tools/**'
+      - 'packages/ui/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'scripts/check-tailwind-source.mjs'
+      - '.github/workflows/botai-release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: botai-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  pacotes:
+    name: Botaí (verificação + 3 pacotes + reprodução das fontes)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Versão (apps/botai/package.json)
+        id: versao
+        run: echo "versao=$(node -p "require('./apps/botai/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Lint (wxt prepare + tsc + eslint)
+        run: pnpm --filter @pilutech/botai run lint
+
+      - name: Test (vitest)
+        run: pnpm --filter @pilutech/botai run test
+
+      - name: Pacotes de Chrome e Edge, Firefox e Opera + zip de fontes (gates do @source inclusos)
+        run: pnpm --filter @pilutech/botai run zip
+
+      - name: web-ext lint no build do Firefox
+        run: pnpm --filter @pilutech/botai run lint:firefox
+
+      # O ambiente do revisor da AMO: o pacote acima sai do Node 22; a reprodução roda no 24.14.0.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Reprodução das fontes (pasta limpa, cmp byte a byte)
+        env:
+          VERSAO: ${{ steps.versao.outputs.versao }}
+        run: >-
+          bash apps/botai/scripts/reproduzir-fontes.sh
+          "apps/botai/.output/botai-$VERSAO-sources.zip"
+          "apps/botai/.output/botai-$VERSAO-firefox.zip"
+
+      # `.output` começa com ponto, e o upload-artifact ignora pasta oculta.
+      - name: Separar os pacotes
+        run: |
+          mkdir -p botai-zips
+          cp apps/botai/.output/*.zip botai-zips/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: botai-zips
+          path: botai-zips/
+          if-no-files-found: error
+          retention-days: 30
