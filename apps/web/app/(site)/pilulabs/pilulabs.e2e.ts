@@ -234,3 +234,26 @@ test.describe('/pilulabs/botai/privacidade', () => {
     await esperarPng(page, twitter)
   })
 })
+
+// A política é o link que vai para as lojas, e o revisor abre no celular também.
+// Uma URL longa em <code> (a caixa do tuamaeaquelaursa.com) não quebrava e
+// empurrava a página 16 px para fora da tela a 375 px.
+test.describe('cabe na largura de um celular, sem rolagem horizontal', () => {
+  test.use({ viewport: { width: 320, height: 800 } })
+
+  for (const rota of [
+    '/pilulabs',
+    '/pilulabs/botai',
+    '/pilulabs/botai/privacidade',
+  ]) {
+    test(rota, async ({ page }) => {
+      await page.goto(rota)
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+      const largura = await page.evaluate(() => ({
+        rolavel: document.documentElement.scrollWidth,
+        visivel: document.documentElement.clientWidth,
+      }))
+      expect(largura.rolavel).toBeLessThanOrEqual(largura.visivel)
+    })
+  }
+})

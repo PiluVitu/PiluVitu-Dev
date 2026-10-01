@@ -152,10 +152,12 @@ export default async function PrivacidadeBotaiPage() {
           <ul>
             <li>
               <strong>Abrir caixa de entrada</strong> abre{' '}
-              <code>{'https://tuamaeaquelaursa.com/<usuário>'}</code>, a caixa
-              pública do e-mail fictício gerado. É um serviço de terceiro, e
-              qualquer pessoa que souber o endereço lê as mensagens. O{' '}
-              {produto.nome} só abre a página e não chama a API do serviço.
+              <code className="wrap-anywhere">
+                {'https://tuamaeaquelaursa.com/<usuário>'}
+              </code>
+              , a caixa pública do e-mail fictício gerado. É um serviço de
+              terceiro, e qualquer pessoa que souber o endereço lê as mensagens.
+              O {produto.nome} só abre a página e não chama a API do serviço.
             </li>
             <li>
               <strong>Powered by PiluTech</strong> abre{' '}
