@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test'
+import { join } from 'node:path'
+import { lerProdutosDoConteudo } from '../../lib/pilulabs-conteudo'
+
+const produtos = lerProdutosDoConteudo(join(__dirname, '..', '..'))
+const listados = produtos.filter((p) => p.listado)
 
 test.describe('Home V2', () => {
   test('mostra perfil, seções e abre o modal de carreira', async ({ page }) => {
@@ -71,5 +76,25 @@ test.describe('Footer — links gateados por auth', () => {
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toBeVisible()
+  })
+})
+
+test.describe('PiluLabs na home (segue content/produtos)', () => {
+  test('o rodapé só mostra /pilulabs com produto listado', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('link', { name: '/tools' })).toBeVisible()
+    await expect(
+      page.getByRole('link', { name: '/pilulabs', exact: true }),
+    ).toHaveCount(listados.length > 0 ? 1 : 0)
+  })
+
+  test('Projetos só tem card de produto listado', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Projetos' })).toBeVisible()
+    for (const p of produtos) {
+      await expect(
+        page.getByRole('heading', { level: 3, name: p.nome, exact: true }),
+      ).toHaveCount(p.listado ? 1 : 0)
+    }
   })
 })

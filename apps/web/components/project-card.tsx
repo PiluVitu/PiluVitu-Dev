@@ -4,6 +4,7 @@ import { Card } from '@piluvitu/ui/card'
 import { cn } from '@/lib/utils'
 import { Project } from '@/mocks/projects'
 import {
+  faArrowRight,
   faArrowUpRightFromSquare,
   faCode,
 } from '@fortawesome/free-solid-svg-icons'
@@ -16,6 +17,7 @@ type ProjectCardProps = Project & {
 
 export function ProjectCard(props: ProjectCardProps) {
   const { className, ...project } = props
+  const linkInterno = project.deployLink.startsWith('/')
 
   return (
     <Card
@@ -64,14 +66,15 @@ export function ProjectCard(props: ProjectCardProps) {
           <Button asChild>
             <Link
               href={project.deployLink}
-              rel="noopener noreferrer"
-              target="_blank"
+              {...(linkInterno
+                ? {}
+                : { rel: 'noopener noreferrer', target: '_blank' })}
             >
               <FontAwesomeIcon
-                icon={faArrowUpRightFromSquare}
+                icon={linkInterno ? faArrowRight : faArrowUpRightFromSquare}
                 className="size-3.5"
               />
-              Demo
+              {project.deployLabel ?? 'Demo'}
             </Link>
           </Button>
         ) : null}

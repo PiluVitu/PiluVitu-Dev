@@ -13,3 +13,11 @@ type Story = StoryObj<typeof HomeFooter>
 export const Default: Story = {
   args: { name: 'Paulo Victor Torres Silva', year: 2026 },
 }
+
+export const ComPiluLabs: Story = {
+  args: {
+    name: 'Paulo Victor Torres Silva',
+    year: 2026,
+    mostrarPiluLabs: true,
+  },
+}
