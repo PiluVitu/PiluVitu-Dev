@@ -15,7 +15,8 @@ export function detectarNavegador(): Navegador {
   return 'chrome'
 }
 
-// Edge e Opera: a confirmar no checklist manual do CLAUDE.md (plano B: edge:// e opera://extensions/shortcuts).
+// No Edge, chrome://extensions/shortcuts abre edge://extensions/shortcuts (conferido no Edge 150).
+// No Opera, a confirmar no checklist manual do CLAUDE.md (plano B: opera://extensions/shortcuts).
 export const PAGINA_DE_ATALHOS: Record<
   Exclude<Navegador, 'firefox'>,
   string

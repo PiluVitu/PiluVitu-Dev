@@ -31,6 +31,8 @@ Output:
 
 Both are identical to the submitted package.
 
+While zipping, WXT 0.21.4 prints `WARN Could not get stats of '<file>'` once for each file of the sources archive. It resolves those paths against `apps/botai` instead of the archive root only to print their sizes; the archives are not affected.
+
 The Opera package is built the same way with `-b opera` instead of `-b firefox` (`apps/botai/.output/opera-mv3/`). Its own code is not minified.
 
 ## Third-party code

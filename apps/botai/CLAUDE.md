@@ -119,7 +119,7 @@ CSS próprio em px (`preencher.content/aviso.css`, classes `botai-*` e variávei
 | Recusa da página    | `Cannot access …` / `cannot be scripted` | igual                  | igual                                              | `Missing host permission for the tab`       |
 | Inserir             | foco                                     | foco                   | foco                                               | `menus.getTargetElement`, foco como reserva |
 | Menu em senha       | `editable` inclui                        | igual                  | igual                                              | contexto `'password'`                       |
-| "alterar" atalho    | `chrome://extensions/shortcuts`          | idem (conferir)        | idem (conferir)                                    | `commands.openShortcutSettings()`           |
+| "alterar" atalho    | `chrome://extensions/shortcuts`          | idem (abre `edge://…`) | idem (conferir)                                    | `commands.openShortcutSettings()`           |
 
 O E2E funcional roda só no Chromium do Playwright (que cobre o código de Chrome, Edge e Opera, idêntico salvo a minificação); Firefox, Edge e Opera reais ficam nos checklists manuais abaixo. Um teste de fumaça no Firefox com Puppeteer + WebDriver BiDi foi provado na pesquisa (`firefox-opera.md` §5), mas fica fora, sem dependência nova, até provar que roda em Linux.
 
@@ -127,6 +127,7 @@ O E2E funcional roda só no Chromium do Playwright (que cobre o código de Chrom
 
 - **`make zip-botai`** (`pnpm --filter @pilutech/botai zip`): `wxt zip` dos 3 navegadores, cada um com o gate, em `.output/`: `botai-<versão>-chrome.zip` (Chrome **e** Edge), `-firefox.zip`, `-opera.zip` e `-sources.zip` (o WXT o gera no zip do Firefox e de novo no do Opera, com o mesmo conteúdo). `zip.name: 'botai'` porque o padrão vira `pilutechbotai-…`.
 - **Zip de fontes:** `sourcesRoot` na raiz do monorepo, com `includeSources` (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc` — arquivo oculto só entra citado pelo nome —, `scripts/check-tailwind-source.mjs`, `apps/botai/**`, `packages/tools/**`, `packages/ui/**`) e `excludeSources` (`apps/botai/.output/**` e `apps/botai/.wxt/**`, que a exclusão automática do outDir não pega com `sourcesRoot` na raiz, mais `storybook-static`, `test-results` e `playwright-report`). O zip padrão (só `apps/botai`) não reconstrói nada: falta o lockfile, o `packageManager` e os `packages/*`.
+- **`WARN Could not get stats of '…'`** no `wxt zip` do Firefox e do Opera, um por arquivo do zip de fontes (também no build do revisor): o `printFileList` do WXT 0.21.4 faz `lstat` do caminho relativo ao `sourcesRoot` com o cwd em `apps/botai`, só para imprimir o tamanho. O zip sai completo (a listagem e o `cmp` da reprodução conferem); o `SOURCE-CODE-REVIEW.md` avisa o revisor.
 - **Reprodução:** `apps/botai/scripts/reproduzir-fontes.sh <sources.zip> <firefox.zip>` faz o que o revisor faz (pasta limpa, `corepack enable`, `pnpm install --frozen-lockfile`, `wxt zip -b firefox`, `diff -r` + `cmp`). Local, no ambiente do revisor (Linux arm64, Node 24.14.0), depois do `make zip-botai`:
   `V=$(node -p "require('./apps/botai/package.json').version") && docker run --rm -v "$PWD:/repo:ro" node:24.14.0 bash /repo/apps/botai/scripts/reproduzir-fontes.sh "/repo/apps/botai/.output/botai-$V-sources.zip" "/repo/apps/botai/.output/botai-$V-firefox.zip"` (da raiz). Mudou um comando do build? Mude no script **e** no `SOURCE-CODE-REVIEW.md`, que o revisor segue.
 - **`SOURCE-CODE-REVIEW.md`** (em inglês, exceção à regra pt-BR): as instruções para o revisor da AMO e do Opera; entra no zip de fontes por `apps/botai/**`.
@@ -207,6 +208,8 @@ O Playwright não carrega extensão no Firefox: tudo aqui é à mão. Precisa de
 
 ## Checklist manual: Edge (o zip do Chrome)
 
+**Já conferido** em 2026-10-01 no Edge 150 (macOS), headless pelo Playwright (`channel: 'msedge'`, perfil temporário, `--load-extension`), sem o gesto real: a marca "Microsoft Edge" no `userAgentData.brands`; "21 de 23 campos preenchidos" e o 1e "O Edge não deixa…" pela costura `?aba=` do build e2e; `tabs.create('chrome://extensions/shortcuts')` abre `edge://extensions/shortcuts` (item 4); a loja do Edge e a Chrome Web Store recusam o `executeScript` com "The extensions gallery cannot be scripted." mesmo com `<all_urls>` (itens 6 e 7); `commands.getAll()` com `⌥⇧P`. Falta o que só o gesto real prova (popup pelo ícone, atalho, Inserir pelo menu) e o rótulo pt-BR do item 8 (o headless mostrou a UI em inglês, "Allow access to file URLs").
+
 1. `make build-botai` e, em `edge://extensions`, ligar o "Modo de desenvolvedor" e "Carregar sem pacote" apontando para `apps/botai/.output/chrome-mv3` (o conteúdo do zip do Chrome, que é o que vai à loja do Edge).
 2. A página de teste e os três gestos do checklist do Chrome: "21 de 23 campos preenchidos", o atalho (`Ctrl+Shift+Y` no Windows, `⌥⇧P` no Mac) e o Inserir pelo menu.
 3. `edge://extensions/shortcuts` mostra "Preencher esta página" com o atalho; se o Edge tomou a tecla, o rodapé do popup mostra "definir atalho".
@@ -233,5 +236,5 @@ O Playwright não carrega extensão no Firefox: tudo aqui é à mão. Precisa de
 - **iframe de outro domínio** (Stripe Elements, Pagar.me) fica de fora: o activeTab só concede a origem do frame de cima.
 - **O `suggested_key` só vale na primeira instalação**: mudar o padrão depois não chega a quem já instalou.
 - **Fora da v1**: checkbox e radio (inclusive "aceito os termos"), combobox sem `<select>` nativo, telefone fixo, nome da mãe, nome social, órgão emissor e UF do RG, CNPJ alfanumérico, campos que só habilitam depois da busca de CEP do site.
-- **Firefox, Edge e Opera sem E2E funcional:** o Playwright só carrega a extensão no Chromium; o comportamento real nos outros fica nos checklists manuais. A página de atalhos e a detecção no Edge e no Opera, e as lojas do Edge e do Opera como páginas proibidas, são SUPOSTAS até o checklist passar.
+- **Firefox, Edge e Opera sem E2E funcional:** o Playwright só carrega a extensão no Chromium; o comportamento real nos outros fica nos checklists manuais. No Edge, a página de atalhos, a detecção e as lojas como páginas proibidas já foram conferidas sem o gesto real (ver o início do checklist do Edge); no Opera, são SUPOSTAS até o checklist passar.
 - **Opera pela Chrome Web Store:** quem instala o zip do Chrome no Opera roda o código minificado e se identifica pela marca "Opera" do `userAgentData`; só a loja do Opera exige o build sem minificar.
