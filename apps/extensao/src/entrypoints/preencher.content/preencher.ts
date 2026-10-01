@@ -47,7 +47,7 @@ export function preencherDocumento(
     const d = descritores[i]
     const linha = {
       idx: registro.guardar(el),
-      rotulo: d.label || d.placeholder || d.name,
+      rotulo: d.label || d.ariaLabel || d.placeholder || d.name,
       seletor: seletor(el),
     }
     if (kind === undefined) {

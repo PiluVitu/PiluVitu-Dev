@@ -109,6 +109,42 @@ describe('preencherDocumento', () => {
     )
   })
 
+  it('select reconhecido sem a opção da pessoa vai para recusados, sem escolher outra nem disparar change', () => {
+    // Mudança deliberada em relação ao protótipo, que mandava o valorPara nulo para "não reconhecido".
+    document.body.innerHTML = `
+      <label>Estado <select name="uf">
+        <option value="">Selecione</option>
+        <option value="ZZ">Zzzlândia</option>
+      </select></label>`
+    const uf = document.querySelector('select') as HTMLSelectElement
+    const ouvinte = vi.fn()
+    uf.addEventListener('change', ouvinte)
+    const { resultado } = preencher()
+    expect(semIdx(resultado.recusados)).toEqual([
+      { rotulo: 'Estado', seletor: 'select[name="uf"]' },
+    ])
+    expect(resultado.naoReconhecidos).toEqual([])
+    expect(resultado.preenchidos).toEqual([])
+    expect(uf.value).toBe('')
+    expect(ouvinte).not.toHaveBeenCalled()
+    expect(uf.style.getPropertyValue('outline')).toBe('2px dashed #f5b82e')
+  })
+
+  it('campo sem label usa o aria-label como rótulo, e o label visível vence o aria-label', () => {
+    document.body.innerHTML = `
+      <input aria-label="Cupom de desconto" name="c1" placeholder="ABC123">
+      <label>Apelido <input aria-label="ap-x" name="ap"></label>`
+    const { resultado } = preencher()
+    const rotulos = [
+      ...resultado.preenchidos,
+      ...resultado.naoReconhecidos,
+      ...resultado.recusados,
+    ]
+      .sort((a, b) => a.idx - b.idx)
+      .map((l) => l.rotulo)
+    expect(rotulos).toEqual(['Cupom de desconto', 'Apelido'])
+  })
+
   it('campo cuja página desfaz o valor vai para recusados', () => {
     campo('email').addEventListener('input', () => {
       campo('email').value = ''

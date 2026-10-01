@@ -36,6 +36,22 @@ describe('criarContornos', () => {
     expect(outline('b')).toBe('')
   })
 
+  it('outline do site só em longhands, com prioridades mistas, volta igual', () => {
+    // O jsdom não expande o shorthand `outline`, então aqui o defeito não aparece; no Chrome,
+    // ler `outline` com só longhands dá '' e restaurar pelo shorthand apagava o outline do site.
+    const b = el('b')
+    b.style.setProperty('outline-color', 'red', 'important')
+    b.style.setProperty('outline-width', '3px')
+    const contornos = novos()
+    contornos.marcar(b, 'preenchido')
+    contornos.limpar()
+    expect(b.style.getPropertyValue('outline-color')).toBe('red')
+    expect(b.style.getPropertyPriority('outline-color')).toBe('important')
+    expect(b.style.getPropertyValue('outline-width')).toBe('3px')
+    expect(b.style.getPropertyPriority('outline-width')).toBe('')
+    expect(b.style.getPropertyValue('outline-offset')).toBe('')
+  })
+
   it('destacar pisca (âmbar, apagado, âmbar, apagado, âmbar) e termina no contorno do campo', () => {
     const contornos = novos()
     contornos.marcar(el('a'), 'preenchido')
@@ -87,6 +103,37 @@ describe('criarContornos', () => {
     timers.forEach(clearTimeout)
     contornos.limpar()
     expect(outline('a')).toBe('1px dotted red')
+  })
+
+  it('Mostrar clicado duas vezes seguidas e reinjeção no meio do 2º pisca ainda devolve o outline do site', () => {
+    // O fim do 1º pisca (aos 1000 ms) não pode tirar o campo do conjunto enquanto o 2º
+    // (que começou aos 500 ms) ainda está agendado: senão o limpar() da reinjeção o esquece
+    // e o campo fica com o apagado/âmbar do pisca para sempre.
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const contornos = criarContornos((acao, ms) => {
+      timers.push(setTimeout(acao, ms))
+    })
+    contornos.marcar(el('a'), 'preenchido')
+    contornos.limpar()
+    contornos.destacar(el('a'))
+    vi.advanceTimersByTime(500)
+    contornos.destacar(el('a'))
+    vi.advanceTimersByTime(700)
+    timers.forEach(clearTimeout)
+    contornos.limpar()
+    expect(outline('a')).toBe('1px dotted red')
+  })
+
+  it('Mostrar clicado duas vezes seguidas termina no contorno do campo, sem passo velho do 1º pisca por cima', () => {
+    const contornos = novos()
+    contornos.marcar(el('a'), 'preenchido')
+    contornos.destacar(el('a'))
+    vi.advanceTimersByTime(500)
+    contornos.destacar(el('a'))
+    vi.advanceTimersByTime(500)
+    expect(outline('a')).toBe('2px dashed #f5b82e')
+    vi.advanceTimersByTime(500)
+    expect(outline('a')).toBe('2px solid #38bdf8')
   })
 })
 

@@ -22,30 +22,35 @@ const PISCA = [
 ]
 const PISCA_MS = 200
 
-interface Original {
-  outline: [string, string]
-  deslocamento: [string, string]
-}
+// Longhands também: com só `outline-color` inline o shorthand lê '' e removê-lo apaga os longhands.
+const PROPRIEDADES = [
+  'outline',
+  'outline-color',
+  'outline-style',
+  'outline-width',
+  'outline-offset',
+] as const
+
+type Original = [propriedade: string, valor: string, prioridade: string][]
 
 export function criarContornos(
   agendar: (acao: () => void, ms: number) => void,
 ): Contornos {
   const originais = new WeakMap<HTMLElement, Original>()
   const marcados = new Map<HTMLElement, TipoContorno>()
-  const piscando = new Set<HTMLElement>()
+  const piscando = new Map<HTMLElement, number>()
+  let geracao = 0
 
   function guardarOriginal(el: HTMLElement) {
     if (originais.has(el)) return
-    originais.set(el, {
-      outline: [
-        el.style.getPropertyValue('outline'),
-        el.style.getPropertyPriority('outline'),
-      ],
-      deslocamento: [
-        el.style.getPropertyValue('outline-offset'),
-        el.style.getPropertyPriority('outline-offset'),
-      ],
-    })
+    originais.set(
+      el,
+      PROPRIEDADES.map((propriedade) => [
+        propriedade,
+        el.style.getPropertyValue(propriedade),
+        el.style.getPropertyPriority(propriedade),
+      ]),
+    )
   }
 
   function pintar(el: HTMLElement, outline: string) {
@@ -56,8 +61,10 @@ export function criarContornos(
   function restaurar(el: HTMLElement) {
     const original = originais.get(el)
     if (!original) return
-    el.style.setProperty('outline', ...original.outline)
-    el.style.setProperty('outline-offset', ...original.deslocamento)
+    el.style.removeProperty('outline')
+    el.style.removeProperty('outline-offset')
+    for (const [propriedade, valor, prioridade] of original)
+      if (valor) el.style.setProperty(propriedade, valor, prioridade)
   }
 
   return {
@@ -68,12 +75,18 @@ export function criarContornos(
     },
     destacar(el) {
       guardarOriginal(el)
-      piscando.add(el)
+      const minha = ++geracao
+      piscando.set(el, minha)
+      const atual = () => piscando.get(el) === minha
       PISCA.forEach((outline, passo) => {
         if (passo === 0) pintar(el, outline)
-        else agendar(() => pintar(el, outline), passo * PISCA_MS)
+        else
+          agendar(() => {
+            if (atual()) pintar(el, outline)
+          }, passo * PISCA_MS)
       })
       agendar(() => {
+        if (!atual()) return
         piscando.delete(el)
         const tipo = marcados.get(el)
         if (tipo) pintar(el, OUTLINE[tipo])
@@ -81,7 +94,8 @@ export function criarContornos(
       }, PISCA.length * PISCA_MS)
     },
     limpar() {
-      for (const el of new Set([...marcados.keys(), ...piscando])) restaurar(el)
+      for (const el of new Set([...marcados.keys(), ...piscando.keys()]))
+        restaurar(el)
       marcados.clear()
     },
   }
