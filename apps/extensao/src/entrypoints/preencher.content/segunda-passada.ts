@@ -1,4 +1,4 @@
-import { escrever, type Campo } from './dom'
+import { escrever, preenchivel, type Campo } from './dom'
 
 export interface Escrito {
   el: Campo
@@ -10,7 +10,8 @@ export const SEGUNDA_PASSADA_MS = 1000
 
 export function regravarAlterados(escritos: readonly Escrito[]): void {
   for (const { el, valor, lido } of escritos) {
-    if (el.isConnected && !el.disabled && el.value !== lido) escrever(el, valor)
+    if (el.isConnected && preenchivel(el) && el.value !== lido)
+      escrever(el, valor)
   }
 }
 

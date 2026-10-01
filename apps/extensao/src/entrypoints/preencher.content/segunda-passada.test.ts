@@ -70,6 +70,26 @@ describe('regravarAlterados', () => {
     expect(ruaSolta.value).toBe('outra')
     expect(campo('complemento').value).toBe('outro')
   })
+
+  it('ignora campo que o site travou depois da busca: fieldset desabilitado ou readonly', () => {
+    // el.disabled só reflete o atributo do próprio campo; o <fieldset disabled> desabilita sem tocá-lo
+    // (a mesma armadilha do preenchivel). Readonly também fica de fora: a 1ª passada nem escreveria ali.
+    const complemento = escrito('complemento', 'Apto 81')
+    const rua = escrito('rua', 'Avenida Paulista')
+    const fieldset = document.createElement('fieldset')
+    document.body.append(fieldset)
+    fieldset.append(campo('complemento'))
+    campo('complemento').value = 'de 612 a 1510 - lado par'
+    fieldset.disabled = true
+    campo('rua').value = 'Av. Paulista'
+    campo('rua').readOnly = true
+    const ouvinte = vi.fn()
+    document.body.addEventListener('input', ouvinte)
+    regravarAlterados([complemento, rua])
+    expect(campo('complemento').value).toBe('de 612 a 1510 - lado par')
+    expect(campo('rua').value).toBe('Av. Paulista')
+    expect(ouvinte).not.toHaveBeenCalled()
+  })
 })
 
 describe('agendarSegundaPassada', () => {
