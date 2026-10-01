@@ -14,6 +14,7 @@ import {
   visivel,
 } from './dom'
 import type { Registro } from './registro'
+import type { Escrito } from './segunda-passada'
 
 export function contarIframesDeFora(doc: Document): number {
   return Array.from(
@@ -26,6 +27,7 @@ export function preencherDocumento(
   hojeISO: string,
   registro: Registro,
   contornos: Contornos,
+  aoEscrever?: (escrito: Escrito) => void,
 ): ResultadoFrame {
   const elementos = Array.from(campos(document)).filter(
     (el) => preenchivel(el) && visivel(el),
@@ -57,8 +59,10 @@ export function preencherDocumento(
     }
     const valor = valorPara(kind, pessoa, d, classe?.dicas)
     if (valor !== null && cabe(valor, d)) {
-      if (el.value !== valor) escrever(el, valor)
+      const escreveu = el.value !== valor
+      if (escreveu) escrever(el, valor)
       if (leuDeVolta(el, valor)) {
+        if (escreveu) aoEscrever?.({ el, valor, lido: el.value })
         resultado.preenchidos.push(linha)
         contornos.marcar(el, 'preenchido')
         return

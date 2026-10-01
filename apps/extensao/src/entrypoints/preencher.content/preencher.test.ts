@@ -200,6 +200,23 @@ describe('preencherDocumento', () => {
     ])
     expect((raiz.querySelector('input') as HTMLInputElement).value).toBe(P.cpf)
   })
+
+  it('avisa cada campo que escreveu, com o valor lido logo depois; não avisa o que já estava certo nem o recusado', () => {
+    campo('nome').value = P.nome.completo
+    const escritos: { nome: string; valor: string; lido: string }[] = []
+    preencherDocumento(
+      P,
+      HOJE,
+      criarRegistro(),
+      criarContornos((acao, ms) => setTimeout(acao, ms)),
+      (e) => escritos.push({ nome: e.el.name, valor: e.valor, lido: e.lido }),
+    )
+    const cpfSoDigitos = P.cpf.replace(/\D/g, '')
+    expect(escritos).toEqual([
+      { nome: 'email', valor: P.email.endereco, lido: P.email.endereco },
+      { nome: 'cpf', valor: cpfSoDigitos, lido: cpfSoDigitos },
+    ])
+  })
 })
 
 describe('contarIframesDeFora', () => {

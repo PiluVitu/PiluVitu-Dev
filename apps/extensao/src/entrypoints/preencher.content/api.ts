@@ -10,6 +10,7 @@ import { cliqueDoUsuarioEmCampo, criarContornos } from './contornos'
 import { inserirNoFoco, type ResultadoInsercao } from './inserir'
 import { preencherDocumento } from './preencher'
 import { criarRegistro } from './registro'
+import { agendarSegundaPassada, type Escrito } from './segunda-passada'
 
 export interface ApiPv {
   preencher(pessoa: Pessoa, hojeISO: string): ResultadoFrame
@@ -50,7 +51,11 @@ export function criarApi(ctx: ContentScriptContext): ApiPv {
   return {
     preencher(pessoa, hojeISO) {
       contornos.limpar()
-      ultimo = preencherDocumento(pessoa, hojeISO, registro, contornos)
+      const escritos: Escrito[] = []
+      ultimo = preencherDocumento(pessoa, hojeISO, registro, contornos, (e) =>
+        escritos.push(e),
+      )
+      agendarSegundaPassada(escritos, (acao, ms) => ctx.setTimeout(acao, ms))
       if (window !== window.top)
         ctx.setTimeout(() => contornos.limpar(), LIMPEZA_NOS_FRAMES_FILHOS_MS)
       return ultimo

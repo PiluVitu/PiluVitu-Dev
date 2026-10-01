@@ -108,3 +108,55 @@ describe('content script preencher', () => {
     ])
   })
 })
+
+describe('2ª passada do CEP', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    document.body.innerHTML =
+      '<label>CEP <input name="cep"></label><label>Rua <input name="rua"></label><label>Complemento <input name="complemento"></label>'
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  // Como um formulário que chama o ViaCEP no input do CEP e sobrescreve o complemento 200 ms depois.
+  function simularBuscaDeCep() {
+    const buscas = vi.fn()
+    const cep = document.querySelector('[name="cep"]') as HTMLInputElement
+    cep.addEventListener('input', () => {
+      buscas()
+      setTimeout(() => {
+        ;(
+          document.querySelector('[name="complemento"]') as HTMLInputElement
+        ).value = 'de 612 a 1510 - lado par'
+      }, 200)
+    })
+    return buscas
+  }
+
+  const complemento = () =>
+    (document.querySelector('[name="complemento"]') as HTMLInputElement).value
+
+  it('a busca do site troca o complemento e, ~1 s depois, a mesma instância devolve o da pessoa', () => {
+    const buscas = simularBuscaDeCep()
+    const resultado = criarApi(new ContentScriptContext('preencher')).preencher(
+      P,
+      HOJE,
+    )
+    const devolvido = structuredClone(resultado)
+    vi.advanceTimersByTime(200)
+    expect(complemento()).toBe('de 612 a 1510 - lado par')
+    vi.advanceTimersByTime(800)
+    expect(complemento()).toBe(P.endereco.complemento)
+    expect(buscas).toHaveBeenCalledTimes(1)
+    expect(resultado).toEqual(devolvido)
+  })
+
+  it('reinjetar antes de 1 s cancela a 2ª passada da instância antiga', () => {
+    simularBuscaDeCep()
+    criarApi(new ContentScriptContext('preencher')).preencher(P, HOJE)
+    vi.advanceTimersByTime(200)
+    new ContentScriptContext('preencher')
+    vi.advanceTimersByTime(800)
+    expect(complemento()).toBe('de 612 a 1510 - lado par')
+  })
+})
