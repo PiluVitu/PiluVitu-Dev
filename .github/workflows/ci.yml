@@ -43,6 +43,9 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @piluvitu/web exec tsc --noEmit
 
+      - name: Lint (tools package)
+        run: pnpm --filter @piluvitu/tools lint
+
       - name: Test (tools package)
         run: pnpm --filter @piluvitu/tools test
 

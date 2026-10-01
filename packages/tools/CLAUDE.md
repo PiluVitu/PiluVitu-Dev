@@ -9,6 +9,7 @@ Guidance for the **pure-logic package**. O Claude Code carrega este arquivo **ju
 - **Fonte:** `packages/tools/src/*` — `cpf`, `cnpj`, `base64`, `json-format`, `jwt-decode`, `uuid`, `qr-encode`, `qr-decode`, e o módulo de entropia/roleta (`prng`, `entropy`, `roleta`). Barrel em `index.ts`; alguns expostos por subpaths.
 - **Testes colocated:** `*.test.ts` ao lado do fonte (lei de colocation na raiz). `jest.config.ts` + `jest.setup.ts` (jsdom; `jest.setup.ts` injeta `webcrypto` pra `crypto.subtle`).
 - **Rodar:** `pnpm --filter @piluvitu/tools test` ou `pnpm -r test` / `make test` na raiz.
+- **Tipos:** `pnpm --filter @piluvitu/tools lint` (`tsc --noEmit`), que também roda no job `web` do CI. Até 2026-10 o pacote não tinha `lint`: só era checado pelos apps que o importam, e o `pnpm -r lint` o pulava em silêncio.
 
 ## Módulo de entropia + roleta (lógica pura)
 
@@ -72,6 +73,23 @@ O porquê de cada coluna, a precedência contra `payees.default_category_id` e a
   - **A disambiguação NÃO mora aqui — é responsabilidade do consumidor** (`apps/financas/web/src/pages/importar.tsx#prepararConferencia`/`idParaEnvio`, documentado em `apps/financas/CLAUDE.md` § _Tela de import_). `idEstavel` permanece puro (só a função hash, sem noção de posição no arquivo nem de "forçado"); é a SPA quem, ao montar a conferência, dá a cada colisão DENTRO do mesmo arquivo um sufixo `:occ:N` por posição de parse (1ª ocorrência mantém o id cru), e quem, ao forçar uma duplicata, envia o id com um sufixo **literal** `:forcado` — nunca `Date.now()`/contador em memória. O motivo do sufixo ser literal: se fosse variável, cada reimportação do mesmo arquivo geraria um id de força NOVO, criando uma linha fantasma a cada repetição — duplicação silenciosa no único fluxo cujo propósito é impedir exatamente isso. `idEstavel` continua sendo o único lugar de onde o id-base sai; os dois sufixos só existem depois, no consumidor.
 
 Exposto via subpaths próprios no `exports` do `package.json` (`@piluvitu/tools/import`, `/import/ofx`, `/import/csv`, `/import/id`). `import`/`import/ofx` também passam pelo barrel `src/index.ts` (`export *`, mesmo padrão do resto do pacote); `csv.ts`/`id.ts` ficam **só** no subpath — decisão deliberada da task 2, pra manter o import granular por consumidor em vez de crescer o barrel indefinidamente.
+
+## Pessoa de teste e classificador de campos (extensão de dados de teste)
+
+Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`; nomes e tipos fixados em `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`), portada dos protótipos verificados em `docs/superpowers/research/2026-10-01-extensao-dados-teste/`. Cada módulo é exportado **só por subpath**, com o nome do arquivo (`@piluvitu/tools/rg` → `src/rg.ts`). Nada entra no barrel.
+
+### Aleatoriedade injetável
+
+- `aleatorio`: `type Rng = Pick<Prng, 'int'>` (o `Prng` de `prng.ts` serve direto) e `rngPadrao` (`Math.random`). Todo gerador recebe `rng: Rng = rngPadrao` como 1º argumento; a extensão sorteia com `seedFromBytes(cryptoRandomBytes(16))`.
+- **`gerarCPF()` e `gerarCNPJ()` sem argumento continuam iguais** para o `apps/web` (`cpf-tool.tsx`, `cnpj-tool.tsx`, `tools.e2e.ts`). Não passe um gerador direto como handler (`onClick={gerarCPF}`): o evento viraria o `rng`.
+- Os testes sorteiam com `src/rng-teste.ts` (`sementes(n)`, `sequencia([...])`, `minimo`, `maximo`), que não tem subpath e não é código de produção.
+
+| Subpath     | O que tem                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `aleatorio` | `Rng`, `rngPadrao`, `escolher`, `embaralhar`, `digitosAleatorios`, `somenteDigitos`                                        |
+| `uf`        | `UFS`, `UF`, `CODIGO_UF_TITULO` (tabela do TSE; exterior `ZZ` = `28`), `REGIAO_FISCAL_CPF` (folheto da Receita), `UF_NOME` |
+| `cpf`       | `gerarCPF(rng?, uf?)`: com `uf`, o 9º dígito é a região fiscal; base com os 9 dígitos iguais é sorteada de novo            |
+| `cnpj`      | `gerarCNPJ(rng?)`, filial `0001`, só dígitos. O CNPJ alfanumérico (jul/2026) fica fora: `validarCNPJ` ainda o recusa       |
 
 ## Dependency policy
 

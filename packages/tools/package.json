@@ -22,7 +22,9 @@
     "./import": "./src/import/index.ts",
     "./import/ofx": "./src/import/ofx.ts",
     "./import/csv": "./src/import/csv.ts",
-    "./import/id": "./src/import/id.ts"
+    "./import/id": "./src/import/id.ts",
+    "./aleatorio": "./src/aleatorio.ts",
+    "./uf": "./src/uf.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
@@ -37,6 +39,7 @@
     "qrcode": "^1.5.4"
   },
   "scripts": {
+    "lint": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch"
   }
