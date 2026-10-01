@@ -1,5 +1,7 @@
 # Extensão Chrome "piluvitu · dados de teste": design
 
+> **Atualização 2026-10-01:** o produto se chama Botaí (`apps/botai`, `@pilutech/botai`); ver `apps/botai/CLAUDE.md`.
+
 - **Data:** 2026-10-01 · **Branch:** `feat/extensao-dados-teste`
 - **Design visual:** projeto "Chrome extension test data" no Claude Design (`Popup Dados de Teste.dc.html`). Há uma cópia versionada e capturas de todos os estados em `docs/superpowers/design/2026-10-01-extensao-dados-teste/` (`1a…1j.png`, `1a…1f-claro.png`, `popup-dados-de-teste.dc.html`).
 - **Pesquisa e protótipos:** `docs/superpowers/research/2026-10-01-extensao-dados-teste/`. Os geradores, o classificador, o `valorPara`, a camada DOM, os componentes do popup e o CSS do aviso já foram verificados lá. **O plano porta esse código, não reescreve.** Quando esta spec diz "verificado", a evidência está nos relatórios dessa pasta.

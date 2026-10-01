@@ -105,9 +105,9 @@ import.sql
 *.db-wal
 *.db-shm
 
-# extensão (WXT): sem isto o Tailwind varre builds antigos e o gate do @source passa sem medir nada
-apps/extensao/.output/
-apps/extensao/.wxt/
-apps/extensao/storybook-static/
-apps/extensao/playwright-report/
-apps/extensao/web-ext.config.ts
+# Botaí (extensão WXT): sem isto o Tailwind varre builds antigos e o gate do @source passa sem medir nada
+apps/botai/.output/
+apps/botai/.wxt/
+apps/botai/storybook-static/
+apps/botai/playwright-report/
+apps/botai/web-ext.config.ts

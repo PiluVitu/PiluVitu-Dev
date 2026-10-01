@@ -5,7 +5,7 @@
         dev-promeia test-promeia lint-promeia insight \
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
-        dev-extensao build-extensao test-extensao test-e2e-extensao storybook-extensao
+        dev-botai build-botai test-botai test-e2e-botai storybook-botai
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -71,24 +71,24 @@ dev-ramielle:
 test-ramielle:
 	pnpm --filter @piluvitu/ramielle test
 
-# --- extensao (Chrome MV3, WXT) ---
+# --- botai (extensão Chrome MV3, WXT) ---
 # Dev em 3018 (o padrão do WXT, 3000, colide com app em teste) e Storybook em
 # 6018. Carregar .output/chrome-mv3-dev sem empacotar; o dev acrescenta `tabs` e
 # host de localhost ao manifesto, então bug de activeTab só aparece no build.
-dev-extensao:
-	pnpm --filter @piluvitu/extensao dev
+dev-botai:
+	pnpm --filter @pilutech/botai dev
 
-build-extensao:
-	pnpm --filter @piluvitu/extensao build
+build-botai:
+	pnpm --filter @pilutech/botai build
 
-test-extensao:
-	pnpm --filter @piluvitu/extensao test
+test-botai:
+	pnpm --filter @pilutech/botai test
 
-test-e2e-extensao:
-	pnpm --filter @piluvitu/extensao test:e2e
+test-e2e-botai:
+	pnpm --filter @pilutech/botai test:e2e
 
-storybook-extensao:
-	pnpm --filter @piluvitu/extensao storybook
+storybook-botai:
+	pnpm --filter @pilutech/botai storybook
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,

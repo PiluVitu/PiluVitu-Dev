@@ -1,22 +1,22 @@
-name: Extensão E2E
+name: Botaí E2E
 
 on:
   push:
     branches: [main]
     paths:
-      - 'apps/extensao/**'
+      - 'apps/botai/**'
       - 'packages/tools/**'
-      - '.github/workflows/extensao-e2e.yml'
+      - '.github/workflows/botai-e2e.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'apps/extensao/**'
+      - 'apps/botai/**'
       - 'packages/tools/**'
-      - '.github/workflows/extensao-e2e.yml'
+      - '.github/workflows/botai-e2e.yml'
   workflow_dispatch:
 
 concurrency:
-  group: extensao-e2e-${{ github.ref }}
+  group: botai-e2e-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -27,7 +27,7 @@ permissions:
 # segurar esse deploy.
 jobs:
   e2e:
-    name: Extensão (Playwright, extensão desempacotada)
+    name: Botaí (Playwright, extensão desempacotada)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -45,16 +45,16 @@ jobs:
 
       # Sem o headless shell: ele não carrega extensão (o teste usa channel: 'chromium').
       - name: Chromium do Playwright
-        run: pnpm --filter @piluvitu/extensao exec playwright install --with-deps --no-shell chromium
+        run: pnpm --filter @pilutech/botai exec playwright install --with-deps --no-shell chromium
 
       - name: E2E (build de produção + build e2e + Playwright)
-        run: pnpm --filter @piluvitu/extensao run test:e2e
+        run: pnpm --filter @pilutech/botai run test:e2e
 
       - name: Rastros do Playwright
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-extensao
-          path: apps/extensao/test-results/
+          name: playwright-botai
+          path: apps/botai/test-results/
           if-no-files-found: ignore
           retention-days: 7

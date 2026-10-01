@@ -76,7 +76,7 @@ Exposto via subpaths próprios no `exports` do `package.json` (`@piluvitu/tools/
 
 ## Pessoa de teste e classificador de campos (extensão de dados de teste)
 
-Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`; nomes e tipos fixados em `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`), portada dos protótipos verificados em `docs/superpowers/research/2026-10-01-extensao-dados-teste/`. Cada módulo é exportado **só por subpath**, com o nome do arquivo (`@piluvitu/tools/rg` → `src/rg.ts`). Nada entra no barrel.
+Lógica pura da extensão Botaí (`apps/botai`) (spec `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`; nomes e tipos fixados em `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`), portada dos protótipos verificados em `docs/superpowers/research/2026-10-01-extensao-dados-teste/`. Cada módulo é exportado **só por subpath**, com o nome do arquivo (`@piluvitu/tools/rg` → `src/rg.ts`). Nada entra no barrel.
 
 ### Aleatoriedade injetável
 

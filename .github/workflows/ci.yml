@@ -194,8 +194,8 @@ jobs:
       - name: Test
         run: uv run pytest
 
-  extensao:
-    name: Extensão (lint + test + build)
+  botai:
+    name: Botaí (lint + test + build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -214,10 +214,10 @@ jobs:
       # `wxt prepare` vem dentro dos scripts (nunca como postinstall: um
       # postinstall quebrado derrubaria o `pnpm install` de todos os jobs).
       - name: Lint (wxt prepare + tsc + eslint)
-        run: pnpm --filter @piluvitu/extensao run lint
+        run: pnpm --filter @pilutech/botai run lint
 
       - name: Test (vitest)
-        run: pnpm --filter @piluvitu/extensao run test
+        run: pnpm --filter @pilutech/botai run test
 
       - name: Build (+ gate do @source em .output/chrome-mv3)
-        run: pnpm --filter @piluvitu/extensao run build
+        run: pnpm --filter @pilutech/botai run build

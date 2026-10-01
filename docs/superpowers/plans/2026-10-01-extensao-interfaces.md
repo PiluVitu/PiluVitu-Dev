@@ -1,5 +1,7 @@
 # Extensão de dados de teste: contrato de interfaces entre as fases
 
+> **Atualização 2026-10-01:** o produto se chama Botaí (`apps/botai`, `@pilutech/botai`); ver `apps/botai/CLAUDE.md`.
+
 **Spec:** `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`.
 
 **Planos:**

@@ -1,4 +1,4 @@
-# CLAUDE.md — `apps/extensao` (`@piluvitu/extensao`)
+# CLAUDE.md — `apps/botai` (`@pilutech/botai`)
 
 Extensão Chrome MV3 **"piluvitu · dados de teste"**. O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz. Spec: `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md`. Contrato de nomes entre as fases: `docs/superpowers/plans/2026-10-01-extensao-interfaces.md`. Pesquisa (protótipos, medições e relatórios): `docs/superpowers/research/2026-10-01-extensao-dados-teste/`.
 
@@ -78,37 +78,37 @@ CSS próprio em px (`preencher.content/aviso.css`, variáveis `--pv-*` com os va
 - **Content script**: `registration: 'runtime'` (nunca vai para `content_scripts`; sem `matches`, porque em runtime o WXT copiaria os `matches` para `host_permissions`); `cssInjectionMode: 'manual'` (com `'ui'` e sem `matches` o WXT declara o CSS em `web_accessible_resources` com `matches: []` e o Chrome recusa carregá-lo); `noScriptStartedPostMessage: true` (nenhum `postMessage` chega ao site em teste).
 - **Gate do design system**: o `build` roda `check-tailwind-source.mjs` contra a pasta exata `.output/chrome-mv3`, nunca `.output` inteira (um `chrome-mv3-e2e` antigo tem o CSS de outro build e dá falso positivo). `@source not '../.output'` no `styles.css` **e** as linhas do `.gitignore` da raiz: sem elas o Tailwind colhe classes de builds antigos e o gate aprova `@source` quebrado. Não escreva o nome da classe sentinela em nenhum arquivo deste app; referencie `SENTINEL_SELECTOR` do script.
 - **Modo e2e**: `wxt build --mode e2e` gera `.output/chrome-mv3-e2e` com `host_permissions: ['http://teste.local/*']`; o manifesto de produção nem tem a chave (o E2E `manifesto.e2e.ts` garante).
-- **Dev**: `make dev-extensao` (porta 3018; `dev.reloadCommand: false` libera um dos 4 atalhos). O `wxt dev` acrescenta a permissão `tabs` e `host_permissions` de localhost: injeção funciona sem gesto em dev e esconde bug de activeTab. Comportamento real só com `make build-extensao` + carregar sem empacotar.
+- **Dev**: `make dev-botai` (porta 3018; `dev.reloadCommand: false` libera um dos 4 atalhos). O `wxt dev` acrescenta a permissão `tabs` e `host_permissions` de localhost: injeção funciona sem gesto em dev e esconde bug de activeTab. Comportamento real só com `make build-botai` + carregar sem empacotar.
 
 ## Testes
 
-| Camada                                                             | Ferramenta                                       | Onde                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------------ | ----------------------------------------------------- |
-| Lógica da extensão, background, componentes, DOM do content script | **Vitest** + `WxtVitest` + `fakeBrowser` + jsdom | `*.test.ts(x)` ao lado do fonte; `make test-extensao` |
-| Estados visuais                                                    | **Storybook react-vite** próprio, porta 6018     | `*.stories.tsx` ao lado; `make storybook-extensao`    |
-| Fluxos críticos                                                    | **Playwright** com a extensão desempacotada      | `*.e2e.ts` ao lado; `make test-e2e-extensao`          |
+| Camada                                                             | Ferramenta                                       | Onde                                               |
+| ------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------- |
+| Lógica da extensão, background, componentes, DOM do content script | **Vitest** + `WxtVitest` + `fakeBrowser` + jsdom | `*.test.ts(x)` ao lado do fonte; `make test-botai` |
+| Estados visuais                                                    | **Storybook react-vite** próprio, porta 6018     | `*.stories.tsx` ao lado; `make storybook-botai`    |
+| Fluxos críticos                                                    | **Playwright** com a extensão desempacotada      | `*.e2e.ts` ao lado; `make test-e2e-botai`          |
 
 - **Vitest, e não Jest**, como no finanças: o WXT é Vite e o `fakeBrowser` vem pronto. Ele não implementa `contextMenus`, `commands`, `scripting`, `dom` nem `extension.isAllowedFileSchemeAccess`: os testes trocam essas funções por stubs com `Object.assign(fakeBrowser.<api>, …)`. O jsdom não tem layout, `checkVisibility`, `CSS.escape`, `isContentEditable` nem `execCommand`: `src/test/layout.ts` simula o layout, `src/test/setup.ts` dá o `CSS.escape`, e contenteditable fica no E2E.
 - **Um segundo Storybook**: o do `apps/web` é webpack/Next e não enxerga o Tailwind deste app. As stories são só de props (sem `browser.*`), nos temas claro e escuro (barra "Tema" ou `globals: { tema: 'claro' }`). A story do aviso o monta numa página hostil.
 - **Playwright**: `channel: 'chromium'` (sem ele o headless não carrega extensão; Chrome e Edge de marca removeram o `--load-extension`); páginas servidas por `context.route` em `http://teste.local`; a página React é empacotada pelo Vite em memória dentro do teste (o React 19 não publica UMD). Costuras só do build e2e: o popup aceita `?aba=<tabId>` (aberto como aba ele se enxerga como a aba ativa) e o background aceita a mensagem `{tipo: 'inserir'}`. Atalho e menu nativo não dá para acionar pelo Playwright: ficam nos testes Vitest dos handlers (`ouvintes.test.ts`).
-- **No GitHub**, o E2E roda no workflow próprio `.github/workflows/extensao-e2e.yml` (paths `apps/extensao/**`, `packages/tools/**` e o próprio workflow), fora do `CI`, que só tem lint + Vitest + build da extensão. O que o Playwright não alcança fica no checklist manual: a URL de `chrome://`, `file:` e do leitor de PDF (o popup só a enxerga com o gesto real do activeTab) e o Inserir num iframe de outro domínio (o Playwright não sabe o `frameId` de um frame que a extensão não vê).
+- **No GitHub**, o E2E roda no workflow próprio `.github/workflows/botai-e2e.yml` (paths `apps/botai/**`, `packages/tools/**` e o próprio workflow), fora do `CI`, que só tem lint + Vitest + build da extensão. O que o Playwright não alcança fica no checklist manual: a URL de `chrome://`, `file:` e do leitor de PDF (o popup só a enxerga com o gesto real do activeTab) e o Inserir num iframe de outro domínio (o Playwright não sabe o `frameId` de um frame que a extensão não vê).
 - Os testes rodam no host, como nos outros workspaces: o repo não tem devcontainer.
 
 ## Comandos
 
-| Comando                                 | O quê                                                 |
-| --------------------------------------- | ----------------------------------------------------- |
-| `make dev-extensao`                     | `wxt dev` na 3018 (carregar `.output/chrome-mv3-dev`) |
-| `make build-extensao`                   | `wxt build` + gate em `.output/chrome-mv3`            |
-| `make test-extensao`                    | Vitest                                                |
-| `make test-e2e-extensao`                | build + build e2e + Playwright                        |
-| `make storybook-extensao`               | Storybook na 6018                                     |
-| `pnpm --filter @piluvitu/extensao lint` | `wxt prepare` + `tsc --noEmit` + `eslint .`           |
+| Comando                              | O quê                                                 |
+| ------------------------------------ | ----------------------------------------------------- |
+| `make dev-botai`                     | `wxt dev` na 3018 (carregar `.output/chrome-mv3-dev`) |
+| `make build-botai`                   | `wxt build` + gate em `.output/chrome-mv3`            |
+| `make test-botai`                    | Vitest                                                |
+| `make test-e2e-botai`                | build + build e2e + Playwright                        |
+| `make storybook-botai`               | Storybook na 6018                                     |
+| `pnpm --filter @pilutech/botai lint` | `wxt prepare` + `tsc --noEmit` + `eslint .`           |
 
 ## Checklist manual (primeira carga sem empacotar, e a cada mudança em injeção, menu ou atalho)
 
-1. `make build-extensao` e, em `chrome://extensions` (modo do desenvolvedor), "Carregar sem compactação" apontando para `apps/extensao/.output/chrome-mv3`.
-2. Página de teste: `cd apps/extensao/src/entrypoints/preencher.content && python3 -m http.server 8019` e abrir `http://localhost:8019/cadastro.pagina.html`.
+1. `make build-botai` e, em `chrome://extensions` (modo do desenvolvedor), "Carregar sem compactação" apontando para `apps/botai/.output/chrome-mv3`.
+2. Página de teste: `cd apps/botai/src/entrypoints/preencher.content && python3 -m http.server 8019` e abrir `http://localhost:8019/cadastro.pagina.html`.
 3. O gesto real que concede o activeTab, um de cada vez, recarregando a página entre eles:
    - clique no ícone → "Gerar pessoa" (se for a primeira vez) → "Preencher esta página": o aviso mostra "21 de 23 campos preenchidos";
    - `Alt+Shift+P` (`⌥⇧P` no Mac) **sem** abrir o popup: mesmo resultado;
@@ -119,7 +119,7 @@ CSS próprio em px (`preencher.content/aviso.css`, variáveis `--pv-*` com os va
 7. **1c e a mira:** na página do item 2, preencher pelo popup → "21 de 23 campos preenchidos" e a lista com `input[name="ref_code"]` e `select#origem`; a mira de "Código de indicação" rola a página até o campo e o contorno âmbar pisca.
 8. **1d:** abrir `http://localhost:8019/` (a listagem do `http.server`, sem formulário) → pelo popup, "Nenhum formulário nesta página" com a pílula em warn; pelo `Alt+Shift+P`, o aviso de uma linha "Nenhum campo nesta página".
 9. **1e:** abrir o popup em `chrome://settings` → 1e com cadeado, sem rodapé e com "Preencher" desabilitado; "Ver os dados" → 1b com "Preencher" desabilitado e o cadeado. Num PDF aberto no leitor do Chrome, o "Preencher" leva ao 1e. Em `chrome://settings`, o `Alt+Shift+P` não faz nada (nem aviso, nem badge).
-10. **`file:`:** abrir `apps/extensao/src/entrypoints/preencher.content/cadastro.pagina.html` direto do disco com "Permitir acesso a URLs de arquivo" desligado → popup no 1e "Falta liberar o acesso a arquivos"; ligar a opção nos detalhes da extensão em `chrome://extensions`, reabrir o popup → 1b, e o "Preencher" funciona.
+10. **`file:`:** abrir `apps/botai/src/entrypoints/preencher.content/cadastro.pagina.html` direto do disco com "Permitir acesso a URLs de arquivo" desligado → popup no 1e "Falta liberar o acesso a arquivos"; ligar a opção nos detalhes da extensão em `chrome://extensions`, reabrir o popup → 1b, e o "Preencher" funciona.
 11. **Inserir em iframe de outro domínio:** na página do item 2, rodar no console `document.body.prepend(Object.assign(document.createElement('iframe'), { src: 'http://127.0.0.1:8019/cadastro.pagina.html', style: 'width: 600px; height: 300px' }))`, clicar com o botão direito num campo dentro do iframe → `Inserir › CPF` → aviso "Não deu para inserir aqui: iframe de outro domínio" no topo da página.
 12. **Busca de CEP de verdade:** num formulário que consulta o ViaCEP (o de staging de um projeto, por exemplo), preencher e conferir, 1 s depois, que o complemento é o "Apto …" da pessoa, e não o texto do ViaCEP.
 
