@@ -98,3 +98,19 @@ export async function pessoaGuardada(sw: Worker): Promise<Pessoa | undefined> {
   const { pessoa } = await sw.evaluate(() => chrome.storage.local.get('pessoa'))
   return pessoa as Pessoa | undefined
 }
+
+export async function idDaAbaAtiva(sw: Worker): Promise<number> {
+  const id = await sw.evaluate(
+    async () =>
+      (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]
+        ?.id,
+  )
+  if (id === undefined) throw new Error('nenhuma aba ativa')
+  return id
+}
+
+export async function exigirPessoa(sw: Worker): Promise<Pessoa> {
+  const pessoa = await pessoaGuardada(sw)
+  if (!pessoa) throw new Error('a extensão não guardou nenhuma pessoa')
+  return pessoa
+}
