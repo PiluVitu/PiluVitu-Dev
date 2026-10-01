@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'wxt'
@@ -6,6 +8,7 @@ import { defineConfig } from 'wxt'
 const ATALHO_CHROMIUM = { default: 'Ctrl+Shift+Y', mac: 'Alt+Shift+P' }
 // No Linux o Firefox usa Ctrl+Shift+Y para os Downloads e também não cede a tecla.
 const ATALHO_FIREFOX = { ...ATALHO_CHROMIUM, linux: 'Alt+Shift+P' }
+const raizDoMonorepo = fileURLToPath(new URL('../..', import.meta.url))
 
 export default defineConfig({
   srcDir: 'src',
@@ -15,6 +18,29 @@ export default defineConfig({
   targetBrowsers: ['chrome', 'firefox', 'opera'],
   webExt: { disabled: true },
   dev: { server: { port: 3018 }, reloadCommand: false },
+  zip: {
+    name: 'botai',
+    sourcesRoot: raizDoMonorepo,
+    // Arquivo oculto só entra citado pelo nome (.npmrc).
+    includeSources: [
+      'package.json',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      '.npmrc',
+      'scripts/check-tailwind-source.mjs',
+      'apps/botai/**',
+      'packages/tools/**',
+      'packages/ui/**',
+    ],
+    // Com sourcesRoot na raiz, a exclusão automática do outDir do WXT não pega estas pastas.
+    excludeSources: [
+      'apps/botai/.output/**',
+      'apps/botai/.wxt/**',
+      '**/storybook-static/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+    ],
+  },
   manifest: ({ browser, mode }) => {
     const firefox = browser === 'firefox'
     return {

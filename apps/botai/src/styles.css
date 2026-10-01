@@ -5,6 +5,9 @@
 @import '@piluvitu/ui/styles.css';
 @source '../../../packages/ui/src';
 @source not '../.output';
+/* O zip de fontes do WXT sempre exclui *.test.*: sem estas linhas, o CSS que o revisor da AMO reconstrói sai diferente. */
+@source not './**/*.test.*';
+@source not '../../../packages/ui/src/**/*.test.*';
 
 @layer base {
   :root {
