@@ -25,9 +25,9 @@ const P: Pessoa = {
     e164: '+5584991148037',
   },
   email: {
-    usuario: 'vinicius.costa.6607',
-    endereco: 'vinicius.costa.6607@tuamaeaquelaursa.com',
-    caixaUrl: 'https://tuamaeaquelaursa.com/vinicius.costa.6607',
+    usuario: 'vinicius-costa-6607',
+    endereco: 'vinicius-costa-6607@tuamaeaquelaursa.com',
+    caixaUrl: 'https://tuamaeaquelaursa.com/vinicius-costa-6607',
   },
   senha: 's7YZgw&$iLak',
   endereco: {
@@ -140,14 +140,14 @@ describe('valorPara: formato por maxLength, pattern e type', () => {
   test('kinds automáticos com o valor do contrato', () => {
     expect(V('primeiroNome', {})).toBe('Vinícius')
     expect(V('sobrenome', {})).toBe('Oliveira Costa')
-    expect(V('usuario', {})).toBe('vinicius.costa.6607')
+    expect(V('usuario', {})).toBe('vinicius-costa-6607')
     expect(V('enderecoCompleto', {})).toBe(
       'Avenida Engenheiro Roberto Freire, 3360, Apto 74 - Ponta Negra, Natal - RN, 59090-000',
     )
     expect(V('cidadeUf', {})).toBe('Natal / RN')
     expect(V('sexo', {})).toBe('M')
     expect(V('emailConfirmacao', {})).toBe(
-      'vinicius.costa.6607@tuamaeaquelaursa.com',
+      'vinicius-costa-6607@tuamaeaquelaursa.com',
     )
     expect(V('senhaConfirmacao', {})).toBe('s7YZgw&$iLak')
   })

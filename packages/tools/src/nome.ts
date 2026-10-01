@@ -137,7 +137,7 @@ export interface Email {
 export function gerarEmail(rng: Rng, nome: Nome): Email {
   const primeiro = slugNome(nome.prenome.split(' ')[0])
   const ultimo = slugNome(nome.sobrenomes[1])
-  const usuario = `${primeiro}.${ultimo}.${digitosAleatorios(rng, 4).join('')}`
+  const usuario = `${primeiro}-${ultimo}-${digitosAleatorios(rng, 4).join('')}`
   return {
     usuario,
     endereco: `${usuario}@${DOMINIO_EMAIL}`,

@@ -36,15 +36,35 @@ describe('nome', () => {
     }
   })
 
-  test('e-mail: usuario = 1ª palavra do prenome . S2 . 4 dígitos, na caixa pública', () => {
+  test('e-mail: usuario = 1ª palavra do prenome - S2 - 4 dígitos, na caixa pública', () => {
     const nome = gerarNome(sfc32(1, 2, 3, 4))
     const e = gerarEmail(sfc32(5, 5, 5, 5), nome)
     expect(e.usuario).toMatch(
       new RegExp(
-        `^${slugNome(nome.prenome.split(' ')[0])}\\.${slugNome(nome.sobrenomes[1])}\\.\\d{4}$`,
+        `^${slugNome(nome.prenome.split(' ')[0])}-${slugNome(nome.sobrenomes[1])}-\\d{4}$`,
       ),
     )
     expect(e.endereco).toBe(`${e.usuario}@${DOMINIO_EMAIL}`)
     expect(e.caixaUrl).toBe(`https://tuamaeaquelaursa.com/${e.usuario}`)
+  })
+
+  // O tuamaeaquelaursa.com normaliza o nome da caixa (cópia da função do bundle
+  // do site): sem acento, minúsculas, e tudo que não é [a-z0-9] vira um traço.
+  // Com ponto, a URL `/maria.ribeiro.4821` abria outra caixa, e o e-mail
+  // gerado nunca chegava onde o popup mandava olhar.
+  const normalizaComoOSite = (s: string) =>
+    s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+
+  test('o usuario já sai no formato que o site aceita (a normalização dele não muda nada)', () => {
+    for (const r of sementes(2000)) {
+      const e = gerarEmail(r, gerarNome(r))
+      expect(e.usuario).toBe(normalizaComoOSite(e.usuario))
+      expect(e.usuario).not.toContain('.')
+    }
   })
 })

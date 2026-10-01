@@ -36,9 +36,9 @@ describe('gerarPessoa', () => {
         e164: '+5584991148037',
       },
       email: {
-        usuario: 'vinicius.costa.6607',
-        endereco: 'vinicius.costa.6607@tuamaeaquelaursa.com',
-        caixaUrl: 'https://tuamaeaquelaursa.com/vinicius.costa.6607',
+        usuario: 'vinicius-costa-6607',
+        endereco: 'vinicius-costa-6607@tuamaeaquelaursa.com',
+        caixaUrl: 'https://tuamaeaquelaursa.com/vinicius-costa-6607',
       },
       senha: 's7YZgw&$iLak',
       endereco: {
@@ -101,9 +101,9 @@ describe('gerarPessoa', () => {
       if (faixa.lado !== 'ambos')
         expect(numero % 2).toBe(faixa.lado === 'par' ? 0 : 1)
       expect(p.email.usuario).toBe(
-        `${slugNome(p.nome.prenome.split(' ')[0])}.${slugNome(p.nome.sobrenomes[1])}.${p.email.usuario.slice(-4)}`,
+        `${slugNome(p.nome.prenome.split(' ')[0])}-${slugNome(p.nome.sobrenomes[1])}-${p.email.usuario.slice(-4)}`,
       )
-      expect(p.email.usuario).toMatch(/^[a-z]+\.[a-z]+\.\d{4}$/)
+      expect(p.email.usuario).toMatch(/^[a-z]+-[a-z]+-\d{4}$/)
       expect(p.email.caixaUrl).toBe(
         `https://tuamaeaquelaursa.com/${p.email.usuario}`,
       )

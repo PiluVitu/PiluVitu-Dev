@@ -48,7 +48,7 @@ export interface Pessoa {
   pis: string // '000.00000.00-0'
   tituloEleitor: string // '0000 0000 0000'
   celular: Celular // formatado '(11) 98734-2156'
-  email: Email // usuario 'maria.ribeiro.4821', endereco '…@tuamaeaquelaursa.com', caixaUrl
+  email: Email // usuario 'maria-ribeiro-4821', endereco '…@tuamaeaquelaursa.com', caixaUrl
   senha: string // 12 caracteres
   endereco: Endereco // cep '01310-100', logradouro, numero (string), complemento, bairro, cidade, uf, ddd
   empresa: Empresa // razaoSocial, nomeFantasia, cnpj

@@ -29,6 +29,6 @@ export const Copiado: Story = { args: { copiado: true } }
 export const ValorLongo: Story = {
   args: {
     rotulo: 'E-mail',
-    valor: 'maria.eduarda.ribeiro.4821@tuamaeaquelaursa.com',
+    valor: 'maria-ribeiro-4821@tuamaeaquelaursa.com',
   },
 }
