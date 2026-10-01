@@ -259,8 +259,20 @@ describe('inserirNoCampo', () => {
     })
     expect(chamada(1)).toMatchObject({
       target: { tabId: 7, frameIds: [3] },
-      args: [P, 'cpf'],
+      args: [P, 'cpf', null],
     })
+  })
+
+  it('repassa o alvo do clique à função injetada, que o entrega ao __botai.inserir', async () => {
+    simularPagina(null)
+    await inserirNoCampo(7, 3, 'cpf', 42)
+    const { func, args = [] } = chamada(1)
+    expect(args).toEqual([P, 'cpf', 42])
+    const inserir = vi.fn(() => ({ ok: true }))
+    Object.assign(globalThis, { __botai: { inserir } })
+    expect(func?.(...args)).toEqual({ ok: true })
+    expect(inserir).toHaveBeenCalledWith(P, 'cpf', 42)
+    Reflect.deleteProperty(globalThis, '__botai')
   })
 })
 
@@ -308,7 +320,7 @@ describe('inserirNoCampo: avisos de falha', () => {
       const frames = (injecao.target.frameIds as number[] | undefined) ?? []
       if (frames.some((frame) => recusados.includes(frame)))
         throw new Error(RECUSA_DO_CHROME)
-      const resposta = injecao.args?.length === 2 ? resultado : undefined
+      const resposta = injecao.args?.length === 3 ? resultado : undefined
       return [{ documentId: 'doc', frameId: frames[0], result: resposta }]
     })
   }

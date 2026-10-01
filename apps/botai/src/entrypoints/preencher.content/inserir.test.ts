@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { PESSOA_DOURADA as P } from '../../test/pessoa-dourada'
 import { inserirNoFoco } from './inserir'
@@ -79,5 +79,67 @@ describe('inserirNoFoco', () => {
     dentroDaFechada.focus()
     expect(inserirNoFoco(P, 'cep')).toEqual({ ok: true })
     expect(dentroDaFechada.value).toBe(P.endereco.cep)
+  })
+})
+
+describe('inserirNoFoco com o alvo do menu (Firefox)', () => {
+  const getTargetElement = vi.fn<(alvoId: number) => Element | null>()
+
+  beforeEach(() => {
+    getTargetElement.mockReset()
+    Object.assign(fakeBrowser, { menus: { getTargetElement } })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    Reflect.deleteProperty(fakeBrowser, 'menus')
+  })
+
+  function doisCampos(htmlDoClicado = '<input name="clicado">') {
+    document.body.innerHTML = `<input name="focado">${htmlDoClicado}`
+    const focado = document.querySelector('[name="focado"]') as HTMLInputElement
+    const clicado = document.querySelector(
+      '[name="clicado"]',
+    ) as HTMLInputElement
+    focado.focus()
+    return { focado, clicado }
+  }
+
+  it('no Firefox, escreve no campo do clique, mesmo com outro campo em foco', () => {
+    vi.stubEnv('FIREFOX', 'true')
+    const { focado, clicado } = doisCampos()
+    getTargetElement.mockImplementation((id) => (id === 42 ? clicado : null))
+    expect(inserirNoFoco(P, 'cpf', 42)).toEqual({ ok: true })
+    expect(clicado.value).toBe(P.cpf)
+    expect(focado.value).toBe('')
+  })
+
+  it('no Firefox, o campo de senha clicado recebe a senha', () => {
+    vi.stubEnv('FIREFOX', 'true')
+    const { clicado } = doisCampos('<input type="password" name="clicado">')
+    getTargetElement.mockReturnValue(clicado)
+    expect(inserirNoFoco(P, 'senha', 7)).toEqual({ ok: true })
+    expect(clicado.value).toBe(P.senha)
+  })
+
+  it('no Firefox, id expirado (null) ou elemento que saiu da página caem no campo em foco', () => {
+    vi.stubEnv('FIREFOX', 'true')
+    const { focado } = doisCampos()
+    getTargetElement.mockReturnValue(null)
+    expect(inserirNoFoco(P, 'cpf', 42)).toEqual({ ok: true })
+    expect(focado.value).toBe(P.cpf)
+
+    focado.value = ''
+    getTargetElement.mockReturnValue(document.createElement('input'))
+    expect(inserirNoFoco(P, 'cep', 42)).toEqual({ ok: true })
+    expect(focado.value).toBe(P.endereco.cep)
+  })
+
+  it('no Chrome, um alvoId que chegue é ignorado: vale o foco', () => {
+    const { focado, clicado } = doisCampos()
+    expect(inserirNoFoco(P, 'cpf', 42)).toEqual({ ok: true })
+    expect(focado.value).toBe(P.cpf)
+    expect(clicado.value).toBe('')
+    expect(getTargetElement).not.toHaveBeenCalled()
   })
 })

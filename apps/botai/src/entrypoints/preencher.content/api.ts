@@ -14,7 +14,11 @@ import { agendarSegundaPassada, type Escrito } from './segunda-passada'
 
 export interface ApiBotai {
   preencher(pessoa: Pessoa, hojeISO: string): ResultadoFrame
-  inserir(pessoa: Pessoa, kind: FieldKind): ResultadoInsercao
+  inserir(
+    pessoa: Pessoa,
+    kind: FieldKind,
+    alvoId?: number | null,
+  ): ResultadoInsercao
   mostrar(idx: number): boolean
   aviso(a: { titulo: string; linha2?: string; erro?: boolean }): void
 }

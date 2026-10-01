@@ -80,7 +80,18 @@ describe('aoClicarMenu', () => {
   it('Inserir › CPF injeta no frame do clique com o kind', async () => {
     await aoClicarMenu(clique('botai-inserir:cpf', 3), ABA)
     expect(chamada(0).target).toEqual({ tabId: 7, frameIds: [3] })
-    expect(chamada(1).args).toEqual([P, 'cpf'])
+    expect(chamada(1).args).toEqual([P, 'cpf', null])
+  })
+
+  it('no Firefox, o Inserir leva o targetElementId do clique até o content script', async () => {
+    await aoClicarMenu(
+      {
+        ...clique('botai-inserir:cpf', 3),
+        targetElementId: 42,
+      } as Browser.contextMenus.OnClickData,
+      ABA,
+    )
+    expect(chamada(1).args).toEqual([P, 'cpf', 42])
   })
 
   it('"Nova pessoa" troca a pessoa guardada', async () => {
@@ -145,7 +156,7 @@ describe('aoReceberMensagem', () => {
     vi.stubEnv('MODE', 'e2e')
     expect(aoReceberMensagem(inserir, {}, responder)).toBe(true)
     await vi.waitFor(() => expect(responder).toHaveBeenCalledTimes(1))
-    expect(chamada(1).args).toEqual([P, 'cpf'])
+    expect(chamada(1).args).toEqual([P, 'cpf', null])
   })
 
   it('mensagem desconhecida não segura o canal', () => {

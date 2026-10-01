@@ -5,7 +5,13 @@ import type { ResumoPreenchimento } from './resultado'
 export type Mensagem =
   | { tipo: 'preencher'; tabId: number }
   | { tipo: 'mostrar'; tabId: number; documentId: string; idx: number }
-  | { tipo: 'inserir'; tabId: number; frameId: number; kind: FieldKind }
+  | {
+      tipo: 'inserir'
+      tabId: number
+      frameId: number
+      kind: FieldKind
+      alvoId?: number
+    }
 
 export type RespostaPreencher =
   | { ok: true; resumo: ResumoPreenchimento }

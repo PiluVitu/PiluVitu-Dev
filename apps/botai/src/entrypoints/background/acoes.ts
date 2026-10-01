@@ -137,6 +137,7 @@ export async function inserirNoCampo(
   tabId: number,
   frameId: number,
   kind: FieldKind,
+  alvoId: number | null = null,
 ): Promise<void> {
   const pessoa = await obterOuGerarPessoa()
   let resultado: ResultadoInsercao | null | undefined
@@ -151,9 +152,9 @@ export async function inserirNoCampo(
     const [injecao] = exigirSemErro(
       await browser.scripting.executeScript({
         target: { tabId, frameIds: [frameId] },
-        func: (p: Pessoa, k: FieldKind) =>
-          (globalThis as ComBotai).__botai?.inserir(p, k) ?? null,
-        args: [pessoa, kind],
+        func: (p: Pessoa, k: FieldKind, alvo: number | null) =>
+          (globalThis as ComBotai).__botai?.inserir(p, k, alvo) ?? null,
+        args: [pessoa, kind, alvoId],
       }),
       frameId,
     )
