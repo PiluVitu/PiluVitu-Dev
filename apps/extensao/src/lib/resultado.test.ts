@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  contarRecusados,
   primeiroNaoReconhecido,
   somarFrames,
   type ResultadoFrame,
@@ -97,5 +98,15 @@ describe('primeiroNaoReconhecido', () => {
     expect(
       primeiroNaoReconhecido({ ...TOPO, naoReconhecidos: [], recusados: [] }),
     ).toBeUndefined()
+  })
+})
+
+describe('contarRecusados', () => {
+  it('conta só as linhas marcadas como recusadas', () => {
+    const resumo = somarFrames([
+      { documentId: 'topo', frameId: 0, result: TOPO },
+    ])
+    expect(contarRecusados(resumo)).toBe(1)
+    expect(contarRecusados({ naoReconhecidos: [] })).toBe(0)
   })
 })

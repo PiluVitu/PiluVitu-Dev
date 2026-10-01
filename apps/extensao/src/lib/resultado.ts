@@ -28,7 +28,7 @@ interface ResultadoDoFrame {
   result: ResultadoFrame | null | undefined
 }
 
-const SUFIXO_RECUSADO = ' (recusou o valor)'
+export const SUFIXO_RECUSADO = ' (recusou o valor)'
 
 export function somarFrames(
   resultados: ResultadoDoFrame[],
@@ -68,4 +68,12 @@ export function somarFrames(
 export function primeiroNaoReconhecido(r: ResultadoFrame): number | undefined {
   const idxs = [...r.naoReconhecidos, ...r.recusados].map((l) => l.idx)
   return idxs.length > 0 ? Math.min(...idxs) : undefined
+}
+
+export function contarRecusados(
+  resumo: Pick<ResumoPreenchimento, 'naoReconhecidos'>,
+): number {
+  return resumo.naoReconhecidos.filter((linha) =>
+    linha.rotulo.endsWith(SUFIXO_RECUSADO),
+  ).length
 }

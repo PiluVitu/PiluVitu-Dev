@@ -54,3 +54,7 @@ export function rotuloDoHost(url: string | undefined): string {
     ? `${lida.protocol}//${lida.host}`
     : `${lida.protocol}${lida.pathname}`
 }
+
+export function caminhoDaUrl(url: string | undefined): string {
+  return (url && lerUrl(url)?.pathname) || '/'
+}

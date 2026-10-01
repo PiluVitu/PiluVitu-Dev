@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { erroEhPaginaProibida, rotuloDoHost, situacaoDaUrl } from './paginas'
+import {
+  caminhoDaUrl,
+  erroEhPaginaProibida,
+  rotuloDoHost,
+  situacaoDaUrl,
+} from './paginas'
 
 describe('situacaoDaUrl', () => {
   it.each([
@@ -67,5 +72,16 @@ describe('rotuloDoHost', () => {
     [undefined, 'página atual'],
   ])('%s vira %s', (url, rotulo) => {
     expect(rotuloDoHost(url)).toBe(rotulo)
+  })
+})
+
+describe('caminhoDaUrl', () => {
+  it.each([
+    ['http://localhost:3000/cadastro?x=1#topo', '/cadastro'],
+    ['https://staging.app.dev/', '/'],
+    [undefined, '/'],
+    ['não é url', '/'],
+  ])('%s vira %s', (url, caminho) => {
+    expect(caminhoDaUrl(url)).toBe(caminho)
   })
 })
