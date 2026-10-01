@@ -110,10 +110,12 @@ Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. C
 | `too_many_files`       | 400    | acima de `MAX_AUDIOS`                     |
 | `audio_too_large`      | 413    | soma acima de `MAX_BYTES_TOTAL`           |
 | `whisper_indisponivel` | 503    | binário ausente — instale no Mac          |
-| `transcricao_vazia`    | 502    | rodou, saiu vazio (espelha `OllamaVazio`) |
-| `transcricao_falhou`   | 502    | rodou e falhou                            |
+| `transcricao_vazia`    | 503    | rodou, saiu vazio (espelha `OllamaVazio`) |
+| `transcricao_falhou`   | 503    | rodou e falhou                            |
 
-503 vs 502 é a mesma distinção do Ollama: 503 = falta subir/instalar algo no Mac; 502 = rodou e falhou.
+⚠️ **Nenhum erro desta rota sai como 502** — o túnel troca o corpo de um 502 por `error code: 502`, o ramielle não acha `code` e o admin lia "Suba o promeia no Mac" com o Mac de pé (aconteceu em produção, 2026-09-30; ver _O túnel COME o corpo do 502_). A distinção entre "falta instalar" e "rodou e falhou" mora no `code`, não no status. Travado em `transcricao_rotas_test.py` (`TestFalhas`).
+
+⚠️ **`--output-name` fixo (`NOME_SAIDA`) é obrigatório.** O `mlx_whisper` grava a saída com `Path(nome).with_suffix(".txt")`, que troca só o **último** trecho depois do ponto: `WhatsApp_Ptt_2026-09-30_at_22.15.03` vira `…_22.15.txt`. Procurar `{stem}.txt` falhava em **todo** áudio do WhatsApp (a hora vem com pontos no nome). E o `mlx_whisper` **sai 0 mesmo quando pula o áudio por erro** — por isso a falha volta com a última linha de `Error` que ele imprimiu (`_linha_de_erro`), sem o banner do ffmpeg.
 
 ⚠️ **O nome do arquivo vem do cliente e é sanitizado** (`_nome_seguro`): só o basename, só `[A-Za-z0-9._-]`. Sem isso um `../../etc/x.ogg` escaparia do diretório temporário.
 
