@@ -13,7 +13,7 @@ Regras de nome e grafia definidas pelo dono. Valem para código, textos de UI, d
   - `botai_`: as chaves de storage (`local:botai_pessoa`).
   - `globalThis.__botai`: a API do content script no mundo isolado.
   - `@piluvitu/tools` e `@piluvitu/ui` são pacotes do monorepo e não mudam.
-- **Créditos: "Powered by PiluTech"** com link para https://pilutech.com.br (o site ainda não está no ar; o link é esse mesmo), onde houver créditos ou rodapé: a faixa no fim do popup (ver "Popup"), o README e, quando existirem, a página de opções e a da loja.
+- **Créditos: "Powered by PiluTech"** com link para https://pilutech.com.br (o domínio redireciona com 308 para `https://piluvitu.com.br/pilulabs` a partir do passo 2 da "Publicação" do `README.md`), onde houver créditos ou rodapé: a faixa no fim do popup (ver "Popup"), o README e, quando existirem, a página de opções e a da loja.
 - **Nome novo segue a convenção PiluTech:** todo produto PiluTech tem no nome uma referência ao Piauí (expressões e linguajar piauiense). Ao sugerir nome de feature, comando ou produto relacionado, siga esse padrão.
 
 Extensão MV3 **Botaí** para Chrome, Edge, Opera e Firefox, com o mesmo código: "Gerador de dados fake para formulários (CPF, CNPJ, CEP)". O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz. Specs: `docs/superpowers/specs/2026-10-01-extensao-dados-teste-design.md` (a extensão) e `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` (navegadores, lojas e release). Contratos de nomes entre as fases: `docs/superpowers/plans/2026-10-01-extensao-interfaces.md` e `docs/superpowers/plans/2026-10-01-botai-multinavegador-interfaces.md`. Pesquisa (protótipos, medições e relatórios): `docs/superpowers/research/2026-10-01-extensao-dados-teste/` e `docs/superpowers/research/2026-10-01-botai-multinavegador/`. Para quem usa (o que é, instalar, usar): `README.md`; o detalhe técnico mora aqui.
@@ -25,7 +25,7 @@ Gera uma pessoa brasileira de teste (falsa, coerente, documentos com dígito ver
 - **Modo A, a página inteira:** o atalho (comando `botai-preencher`: `⌥⇧P` no Mac, `Ctrl+Shift+Y` no Windows e no Linux, `Alt+Shift+P` no Firefox para Linux), o botão "Preencher esta página" do popup ou o item "Preencher esta página" do menu de contexto.
 - **Modo B, um campo:** botão direito no campo → `Botaí › Inserir › CPF / E-mail / CEP…`, para o que a detecção errar.
 
-Distribuição: as 4 lojas (Chrome Web Store, Firefox Add-ons em canal listed, Microsoft Edge Add-ons e Opera Add-ons) a partir da versão 1.0.0, com a publicação da fase 3 da spec multinavegador; até lá, carregada sem empacotar (ver "Navegadores"). Fora: Safari, Firefox para Android e listagem em inglês (`_locales`).
+Distribuição: Chrome Web Store, Firefox Add-ons (canal listed), Microsoft Edge Add-ons e Opera Add-ons, publicadas pela PiluTech a partir da 1.0.0 (ver "Publicação"); em desenvolvimento, carregada sem empacotar (ver "Navegadores"). Fora: Safari, Firefox para Android e listagem em inglês (`_locales`).
 
 ## Fronteira
 
@@ -40,7 +40,9 @@ src/entrypoints/preencher.content/ registration 'runtime': instala a API __botai
 src/components/                   componentes de apresentação do popup (+ .stories.tsx + .test.tsx)
 src/lib/                          armazenamento, menus, mensagens, navegador (detector e página de atalhos), páginas proibidas, soma dos frames, textos, data de hoje
 src/test/                         setup do Vitest, pessoa dourada, layout falso do jsdom, fixture do Playwright
-scripts/reproduzir-fontes.sh      reconstrói o pacote do Firefox a partir do zip de fontes e compara byte a byte (CI e Docker)
+scripts/                          release: reproduzir-fontes.sh (fase 1), submeter-lojas.sh (job lojas), conferir-tag.sh, versao.sh e release.sh (make versao-botai/release-botai); testes Vitest ao lado
+loja/                             material das lojas: textos.md, notas-revisores.md, o gerador das imagens (pecas.ts, quadros.ts, capturas.captura.ts) e imagens/ (gerado)
+playwright.capturas.config.ts     Playwright só das capturas (make capturas-botai), fora do test:e2e e do CI
 ```
 
 **Todo entrypoint é pasta** (`background/index.ts`, `popup/index.html`, `preencher.content/index.ts`). O WXT trata qualquer arquivo solto em `src/entrypoints/` como entrypoint: um `background.test.ts` ali quebra o build ("Multiple entrypoints with the same name"). Dentro da pasta, só `index.*` é entrypoint; testes, stories, E2E e as páginas de teste (`*.pagina.html`) moram ao lado.
@@ -132,9 +134,44 @@ O E2E funcional roda só no Chromium do Playwright (que cobre o código de Chrom
   `V=$(node -p "require('./apps/botai/package.json').version") && docker run --rm -v "$PWD:/repo:ro" node:24.14.0 bash /repo/apps/botai/scripts/reproduzir-fontes.sh "/repo/apps/botai/.output/botai-$V-sources.zip" "/repo/apps/botai/.output/botai-$V-firefox.zip"` (da raiz). Mudou um comando do build? Mude no script **e** no `SOURCE-CODE-REVIEW.md`, que o revisor segue.
 - **`SOURCE-CODE-REVIEW.md`** (em inglês, exceção à regra pt-BR): as instruções para o revisor da AMO e do Opera; entra no zip de fontes por `apps/botai/**`.
 - **`lint:firefox`** (`web-ext lint`, web-ext **10.7.0 fixado**, o mesmo addons-linter da AMO; rode o `build:firefox` antes): falha só em erro. Hoje dá 0 erros e 6 avisos `UNSAFE_VAR_ASSIGNMENT`, todos do react-dom e do Font Awesome no chunk do popup; por eles, `--warnings-as-errors` não dá. A árvore do web-ext (328 pacotes) não tem script de instalação: nada no `allowBuilds`.
-- **CI:** o job `botai` do `ci.yml` builda Chrome, Firefox e Opera (com os gates) e roda o `lint:firefox`; o `botai-e2e.yml` roda o `test:e2e`, que builda os três antes do Playwright. O `botai-release.yml` tem, nesta fase, só o job `pacotes` (em PR que toca `apps/botai/**`, `packages/tools/**`, `packages/ui/**`, os arquivos da raiz que entram no zip de fontes ou o próprio workflow, e à mão): lint, Vitest, `zip`, `lint:firefox`, troca para o Node 24.14.0, reprodução das fontes e o artifact `botai-zips` (copiado para fora de `.output`, que o `upload-artifact` ignora por ser pasta oculta). A tag `botai-v*`, o GitHub Release e o job `lojas` entram na fase 3.
+- **CI:** o job `botai` do `ci.yml` builda Chrome, Firefox e Opera (com os gates) e roda o `lint:firefox`; o `botai-e2e.yml` roda o `test:e2e`, que builda os três antes do Playwright. O job `pacotes` do `botai-release.yml` (em PR que toca `apps/botai/**`, `packages/tools/**`, `packages/ui/**`, os arquivos da raiz que entram no zip de fontes ou o próprio workflow, na tag e à mão): lint, Vitest, `zip`, `lint:firefox`, troca para o Node 24.14.0, reprodução das fontes e o artifact `botai-zips` (copiado para fora de `.output`, que o `upload-artifact` ignora por ser pasta oculta). Na tag `botai-v*`, o mesmo workflow cria o GitHub Release e roda o job `lojas` (ver "Publicação").
 - **`.env.submit`** está no `.gitignore` da raiz: o `wxt submit` lê esse arquivo sozinho.
 - **Licença:** MIT (© PiluTech) em `apps/botai`, `packages/tools` e `packages/ui` (este com o aviso do shadcn), e `"license": "MIT"` nos três `package.json`. Não vale para o resto do monorepo.
+
+## Publicação
+
+Quatro lojas, o mesmo código: Chrome Web Store e Edge Add-ons com `botai-<versão>-chrome.zip`, Firefox Add-ons (AMO, canal listed) com `-firefox.zip` + `-sources.zip`, Opera Add-ons com `-opera.zip` (sem minificar, envio sempre manual). Publicador: PiluTech. O passo a passo do dono (contas, credenciais, primeiro envio e lançamento) está no `README.md`, seção "Publicação (para quem mantém)"; o que vai em cada campo das lojas, em `loja/README.md`.
+
+### Versão
+
+- A `version` do `package.json` vale para as quatro lojas, é sempre `x.y.z` e sempre sobe: as lojas recusam versão repetida ou menor, e o WXT tira o sufixo no Firefox. A primeira pública é a 1.0.0.
+- O repo só aceita squash, então o bump e a tag são dois passos:
+  - `make versao-botai V=x.y.z` (`scripts/versao.sh`): a partir da `origin/main`, cria `chore/botai-v<x.y.z>`, roda `pnpm version --no-git-tag-version`, commita `chore(botai): versão x.y.z`, dá push e abre o PR. Recusa árvore suja, versão fora de `x.y.z` e versão que não sobe em relação à `origin/main`.
+  - Depois do merge, na `main` atualizada: `make release-botai` (`scripts/release.sh`). Exige árvore limpa e `HEAD` igual à `origin/main`, aborta se a tag existe, cria a tag anotada `botai-v<versão>` e dá push.
+
+### `botai-release.yml`
+
+- **Gatilhos:** PR que toca o Botaí, os pacotes que ele empacota, os arquivos da raiz do zip de fontes ou o workflow; push de tag `botai-v*`; `workflow_dispatch` com `lojas` (`nenhuma` | `dry-run` | `submeter`, padrão `nenhuma`) e `adiar_chrome` (padrão `false`).
+- **`pacotes`:** o da fase 1 (ver "Pacotes, fontes da AMO e CI"), com o checkout completo (`fetch-depth: 0`) e, só no push de tag, o `scripts/conferir-tag.sh` antes do build: a tag tem de ser `botai-v` + a versão do `package.json` e o commit tem de estar na `origin/main` (o script descasca `^{commit}`, então aceita o commit ou o objeto da tag anotada). Expõe `outputs.versao`.
+- **`release`:** só no push de tag, e é o único job com `contents: write`. `gh release create --verify-tag --latest=false` (num monorepo, o Botaí não pode virar o "Latest" do repositório) com os 4 zips do artifact `botai-zips` e as notas dos commits que tocam `apps/botai`, `packages/tools` e `packages/ui` desde a tag anterior.
+- **`lojas`:** roda `scripts/submeter-lojas.sh`, que decide o modo pelo `github.event_name`: PR → `nenhuma`; push de tag → `submeter`; dispatch → o input `lojas` (um dispatch disparado de uma tag com `dry-run` continua dry-run). Em `nenhuma`, confere que os 4 zips estão no artifact e imprime em `::notice::` o `wxt submit` de cada loja; no PR também roda o actionlint deste workflow (imagem `rhysd/actionlint:1.7.12` fixada por digest).
+  - O `environment` vem de uma expressão: `lojas-botai` (aprovação manual do dono) fora do PR e do dispatch `nenhuma`, vazio no resto. Os secrets só existem no environment: um caminho sem aprovação não tem como publicar. Atenção à ordem na expressão: `cond && 'lojas-botai' || ''`; invertida, daria sempre `lojas-botai`, porque `''` é falso no Actions.
+  - Cada loja só entra com **todos** os seus secrets (Chrome: `CHROME_SERVICE_ACCOUNT_PRIVATE_KEY`; Firefox: `FIREFOX_JWT_ISSUER` + `FIREFOX_JWT_SECRET`; Edge: `EDGE_CLIENT_ID` + `EDGE_API_KEY`). Nenhum → `::notice::` e exit 0 (a 1.0.0 sai assim); metade → `::error::`, porque cadastro errado não pode virar loja pulada em silêncio. As variables de uma loja sem secret saem do ambiente antes do `wxt submit`: o publicador valida valor vazio.
+  - O script só aceita `submeter` a partir da `main` ou de uma tag `botai-v*`, e o `dry-run` de qualquer ref; na prática, a regra "Deployment branches and tags" do environment (`main` e `botai-v*`) barra os dois em outra branch antes do script. O `--dry-run` do publicador autentica de verdade: só serve depois das credenciais.
+  - Chrome: `CHROME_API_VERSION=v2` sempre (sem ela o `publish-browser-extension` 6.1.1 usa a v1.1, desligada em 15/10/2026); `CHROME_EXTENSION_ID` ← `vars.BOTAI_CHROME_EXTENSION_ID`, `CHROME_PUBLISHER_ID` e `CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL` ← as variables de mesmo nome. `CHROME_PUBLISH_TYPE=STAGED_PUBLISH` só com `adiar_chrome: true`, e só exportado nesse caso (vazio, o publicador recusa); o padrão publica, senão toda atualização fica esperando um clique no painel.
+  - Firefox: `FIREFOX_EXTENSION_ID=botai@pilutech.com.br`, `FIREFOX_CHANNEL=listed`, `FIREFOX_COMPATIBILITY=firefox` e `--firefox-sources-zip`. Edge: `--edge-zip` com o zip da Chrome, `EDGE_PRODUCT_ID` ← `vars.BOTAI_EDGE_PRODUCT_ID`. Opera: fora (o publicador usaria o cookie de sessão do painel, que expira).
+- O `wxt submit` lê sozinho o `.env.submit` do diretório atual (ignorado pelo git): nunca versione credencial.
+
+### Imagens das lojas (`make capturas-botai`)
+
+- `pnpm --filter @pilutech/botai capturas`: `build-storybook` + `build:e2e` + `playwright test -c playwright.capturas.config.ts`.
+- O popup sai das stories (o `storybook-static` servido por `context.route` em `http://storybook.local`), com o atalho `Ctrl+Shift+Y` das stories e o tema pelo global, a 2×: não depende do sistema (a extensão real mostraria `⌥⇧P` num Mac). O `body { padding: 0 }` desfaz o layout "padded" do Storybook, que encolheria o popup para 348 px (o gerador exige 380).
+- A página preenchida sai da extensão real (build e2e, `aparencia` escuro/claro a 2×) sobre `loja/vitrine.pagina.html`: 12 campos reconhecidos + "Código de indicação" e "Como nos conheceu?", o mesmo "12 de 14" da story do 1c que vai por cima (o gerador exige). A barra de tempo do aviso fica parada no início, e duas execuções seguidas geram os mesmos bytes.
+- `loja/pecas.ts` é a lista de peças (nomes e tamanhos), `loja/quadros.ts` monta o HTML de cada quadro, e o ícone 128 sai de `loja/icone-1i.svg` com arte de 96 px e margem transparente de 16 px (o gerador mede a caixa da arte).
+- Grava em `loja/imagens/` e copia o ícone e as 6 capturas de 1280×800 para `apps/web/public/pilulabs/botai/` (`icone-128.png` e `capturas/<NN>-<cena>-<tema>.png`), que o site descobre no build. `loja/imagens.test.ts` confere os tamanhos e que as cópias do site são idênticas às da loja.
+- Rode no Mac (a vitrine usa `system-ui`) e regere quando o popup, o aviso ou os textos das cenas mudarem: as capturas das lojas mostram a UI atual.
+- **Conflito esperado com a fase 2 do site:** ela versiona `apps/web/public/pilulabs/botai/icone-128.png` como cópia do ícone do manifesto. Se ela chegar à `main` antes, o rebase desta branch para em add/add nesse arquivo: fique com o desta branch (durante o rebase, o "theirs" é o commit desta branch sendo reaplicado: `git checkout --theirs apps/web/public/pilulabs/botai/icone-128.png`, `git add` e `git rebase --continue`) e confirme com `cd apps/botai && ./node_modules/.bin/vitest run loja/imagens.test.ts`.
+- `@source not '../loja'` e `@source not '../scripts'` no `styles.css`: o Tailwind varre os `.md`, `.html` e scripts da pasta do app (medido com `skew-x-12` num `.md` de `loja/`), e um texto das lojas não pode mudar o CSS da extensão.
 
 ## Testes
 
@@ -150,22 +187,27 @@ O E2E funcional roda só no Chromium do Playwright (que cobre o código de Chrom
 - **No GitHub**, o E2E roda no workflow próprio `.github/workflows/botai-e2e.yml` (paths `apps/botai/**`, `packages/tools/**` e o próprio workflow), fora do `CI`, que tem lint + Vitest + os builds de Chrome, Firefox e Opera + `web-ext lint`. O que o Playwright não alcança fica no checklist manual: a URL de `chrome://`, `file:` e do leitor de PDF (o popup só a enxerga com o gesto real do activeTab) e o Inserir num iframe de outro domínio (o Playwright não sabe o `frameId` de um frame que a extensão não vê).
 - **Ramos do Firefox e do Opera no Vitest:** `import.meta.env.FIREFOX`/`OPERA` ficam `undefined` no Vitest (inclusive com `WxtVitest({ browser: 'firefox' })`), então o padrão é o ramo Chromium. Para o Firefox: `vi.stubEnv('FIREFOX', 'true')` e `vi.unstubAllEnvs()` no `afterEach`; o código precisa ler a constante **dentro** da função (uma constante de módulo é avaliada no import, antes do stub). O detector usa `vi.stubGlobal('navigator', …)`; o `App.test.tsx`, que precisa do `navigator` real (o user-event pendura o clipboard nele), simula o Edge com `Object.defineProperty(navigator, 'userAgentData', …)`. O `fakeBrowser` não tem `menus`: os testes do Inserir o penduram com `Object.assign(fakeBrowser, { menus: … })` e o tiram no `afterEach`.
 - **Manifestos no Playwright:** o `manifesto.e2e.ts` cobre os três builds (Chrome, Firefox com `gecko`/`menus`/atalho do Linux, Opera com o manifesto do Chrome e o código legível) e lê a versão do `package.json`.
+- **Vitest fora do `src/`:** o `include` cobre também `scripts/**/*.test.ts` (os scripts do release, rodados de verdade num repositório git temporário com origem bare e `pnpm`/`gh` falsos; `scripts/repo-de-teste.ts`) e `loja/**/*.test.ts` (limites dos textos das lojas, peças, quadros e o tamanho das imagens geradas).
+- **Capturas** não são teste: `playwright.capturas.config.ts` só roda `loja/*.captura.ts`, pelo `make capturas-botai`, fora do `test:e2e` e do CI. O fixture da extensão tem a opção `aparencia` (`{ tema: 'claro' | 'escuro', escala }`, padrão claro a 1×), porque o contexto persistente ignora o `test.use({ colorScheme })` do Playwright (`src/test/aparencia.e2e.ts`).
 - Os testes rodam no host, como nos outros workspaces: o repo não tem devcontainer.
 
 ## Comandos
 
-| Comando                                       | O quê                                                                  |
-| --------------------------------------------- | ---------------------------------------------------------------------- |
-| `make dev-botai`                              | `wxt dev` na 3018 (carregar `.output/chrome-mv3-dev`)                  |
-| `make build-botai`                            | `wxt build` + gate em `.output/chrome-mv3`                             |
-| `make test-botai`                             | Vitest                                                                 |
-| `make test-e2e-botai`                         | builds de Chrome, Firefox e Opera + build e2e + Playwright             |
-| `make storybook-botai`                        | Storybook na 6018                                                      |
-| `pnpm --filter @pilutech/botai lint`          | `wxt prepare` + `tsc --noEmit` + `eslint .`                            |
-| `make zip-botai`                              | os 3 pacotes + o zip de fontes em `.output/` (gates inclusos)          |
-| `pnpm --filter @pilutech/botai build:firefox` | build do Firefox + gate em `.output/firefox-mv3`                       |
-| `pnpm --filter @pilutech/botai build:opera`   | build do Opera sem minificar + gate em `.output/opera-mv3`             |
-| `pnpm --filter @pilutech/botai lint:firefox`  | `web-ext lint` em `.output/firefox-mv3` (rode o `build:firefox` antes) |
+| Comando                                       | O quê                                                                                                     |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `make dev-botai`                              | `wxt dev` na 3018 (carregar `.output/chrome-mv3-dev`)                                                     |
+| `make build-botai`                            | `wxt build` + gate em `.output/chrome-mv3`                                                                |
+| `make test-botai`                             | Vitest                                                                                                    |
+| `make test-e2e-botai`                         | builds de Chrome, Firefox e Opera + build e2e + Playwright                                                |
+| `make storybook-botai`                        | Storybook na 6018                                                                                         |
+| `pnpm --filter @pilutech/botai lint`          | `wxt prepare` + `tsc --noEmit` + `eslint .`                                                               |
+| `make zip-botai`                              | os 3 pacotes + o zip de fontes em `.output/` (gates inclusos)                                             |
+| `pnpm --filter @pilutech/botai build:firefox` | build do Firefox + gate em `.output/firefox-mv3`                                                          |
+| `pnpm --filter @pilutech/botai build:opera`   | build do Opera sem minificar + gate em `.output/opera-mv3`                                                |
+| `pnpm --filter @pilutech/botai lint:firefox`  | `web-ext lint` em `.output/firefox-mv3` (rode o `build:firefox` antes)                                    |
+| `make versao-botai V=x.y.z`                   | PR de versão: branch da `origin/main`, `pnpm version --no-git-tag-version`, commit, push e `gh pr create` |
+| `make release-botai`                          | na `main` depois do merge: tag anotada `botai-v<versão>` e push (dispara o `botai-release.yml`)           |
+| `make capturas-botai`                         | imagens das lojas em `loja/imagens/` e cópias em `apps/web/public/pilulabs/botai/` (rode no Mac)          |
 
 ## Checklist manual: Chrome (primeira carga sem empacotar, e a cada mudança em injeção, menu ou atalho)
 
