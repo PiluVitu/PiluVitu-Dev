@@ -5,7 +5,7 @@
         dev-promeia test-promeia lint-promeia insight \
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
-        dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai versao-botai release-botai
+        dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai versao-botai release-botai capturas-botai
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -102,6 +102,11 @@ versao-botai:
 
 release-botai:
 	bash apps/botai/scripts/release.sh
+
+# Imagens das lojas em apps/botai/loja/imagens/ e cópias em apps/web/public/pilulabs/botai/.
+# Rode no Mac: a vitrine usa as fontes do sistema.
+capturas-botai:
+	pnpm --filter @pilutech/botai capturas
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,
