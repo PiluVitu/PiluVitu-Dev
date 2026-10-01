@@ -1,3 +1,5 @@
+import { type Rng, rngPadrao, digitosAleatorios } from './aleatorio'
+
 const WEIGHTS_1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
 const WEIGHTS_2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
 
@@ -7,8 +9,8 @@ function calcDigit(digits: number[], weights: number[]): number {
   return rem < 2 ? 0 : 11 - rem
 }
 
-export function gerarCNPJ(): string {
-  const base = Array.from({ length: 8 }, () => Math.floor(Math.random() * 10))
+export function gerarCNPJ(rng: Rng = rngPadrao): string {
+  const base = digitosAleatorios(rng, 8)
   const branch = [0, 0, 0, 1]
   const all = [...base, ...branch]
   all.push(calcDigit(all, WEIGHTS_1))

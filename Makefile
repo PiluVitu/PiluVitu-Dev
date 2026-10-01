@@ -4,7 +4,8 @@
         backup-ramielle backup-ramielle-test \
         dev-promeia test-promeia lint-promeia insight \
         promeia-servico promeia-servico-remover \
-        dev-ramielle test-ramielle
+        dev-ramielle test-ramielle \
+        dev-botai build-botai test-botai test-e2e-botai storybook-botai
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -32,7 +33,7 @@ dev:
 # Escape hatch: free the dev ports if a process got stuck (rare with air,
 # handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
 stop:
-	@for p in 8081 8082 3333 6017; do \
+	@for p in 8081 8082 3333 6017 3018 6018; do \
 		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done
@@ -69,6 +70,25 @@ dev-ramielle:
 
 test-ramielle:
 	pnpm --filter @piluvitu/ramielle test
+
+# --- botai (extensão Chrome MV3, WXT) ---
+# Dev em 3018 (o padrão do WXT, 3000, colide com app em teste) e Storybook em
+# 6018. Carregar .output/chrome-mv3-dev sem empacotar; o dev acrescenta `tabs` e
+# host de localhost ao manifesto, então bug de activeTab só aparece no build.
+dev-botai:
+	pnpm --filter @pilutech/botai dev
+
+build-botai:
+	pnpm --filter @pilutech/botai build
+
+test-botai:
+	pnpm --filter @pilutech/botai test
+
+test-e2e-botai:
+	pnpm --filter @pilutech/botai test:e2e
+
+storybook-botai:
+	pnpm --filter @pilutech/botai storybook
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,
@@ -117,7 +137,7 @@ test-e2e:
 	pnpm --filter @piluvitu/web test:e2e
 
 lint:
-	pnpm -r lint && cd ../promeia && uv run ruff check . && uv run ruff format --check .
+	pnpm -r lint && cd apps/promeia && uv run ruff check . && uv run ruff format --check .
 
 clean:
 	rm -rf bin/ apps/api/api apps/api/piluvitu

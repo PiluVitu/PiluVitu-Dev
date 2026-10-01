@@ -43,6 +43,9 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @piluvitu/web exec tsc --noEmit
 
+      - name: Lint (tools package)
+        run: pnpm --filter @piluvitu/tools lint
+
       - name: Test (tools package)
         run: pnpm --filter @piluvitu/tools test
 
@@ -190,3 +193,31 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+  botai:
+    name: Botaí (lint + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `wxt prepare` vem dentro dos scripts (nunca como postinstall: um
+      # postinstall quebrado derrubaria o `pnpm install` de todos os jobs).
+      - name: Lint (wxt prepare + tsc + eslint)
+        run: pnpm --filter @pilutech/botai run lint
+
+      - name: Test (vitest)
+        run: pnpm --filter @pilutech/botai run test
+
+      - name: Build (+ gate do @source em .output/chrome-mv3)
+        run: pnpm --filter @pilutech/botai run build

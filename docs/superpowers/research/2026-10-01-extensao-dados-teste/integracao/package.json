@@ -1,0 +1,50 @@
+{
+  "name": "@piluvitu/extensao",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build && node ../../scripts/check-tailwind-source.mjs .output/chrome-mv3",
+    "build:e2e": "wxt build --mode e2e",
+    "zip": "wxt zip",
+    "lint": "wxt prepare && tsc --noEmit && eslint .",
+    "test": "wxt prepare && vitest run",
+    "test:watch": "wxt prepare && vitest",
+    "test:e2e": "pnpm run build:e2e && playwright test",
+    "storybook": "wxt prepare && storybook dev -p 6018",
+    "build-storybook": "wxt prepare && storybook build",
+    "prettier:fix": "prettier --write \"**/*.{js,ts,tsx,json,md,css}\""
+  },
+  "dependencies": {
+    "@piluvitu/tools": "workspace:*",
+    "@piluvitu/ui": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@storybook/react-vite": "10.3.1",
+    "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^27.0.0",
+    "storybook": "10.3.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.0",
+    "vitest": "^4.1.10",
+    "wxt": "0.21.4",
+    "@vitejs/plugin-react": "^5.1.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.4.0",
+    "typescript-eslint": "^8.57.1"
+  }
+}

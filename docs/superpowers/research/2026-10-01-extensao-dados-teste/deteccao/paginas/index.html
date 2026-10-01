@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><title>lab</title>
+<style>.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style></head>
+<body>
+<div id="react-root"></div>
+<div id="vue-root"></div>
+<input id="van-imask"><pre id="van-imask-state"></pre>
+<input id="jq-cpf"><input id="jq-tel"><pre id="jq-state"></pre>
+
+<label for="lbl-for">Seu CPF <span>*</span></label><input id="lbl-for" name="doc">
+<label>Data de nascimento <input id="lbl-wrap" name="dn"></label>
+<span id="ab1">Endereço</span><span id="ab2">Número</span><input id="lbl-aria" aria-labelledby="ab1 ab2">
+<input id="ro" readonly value="x"><input id="dis" disabled>
+
+<div id="hp">
+<input id="hp-display" style="display:none" name="website">
+<input id="hp-visibility" style="visibility:hidden" name="url">
+<input id="hp-offscreen" style="position:absolute;left:-9999px;top:0" name="fax">
+<input id="hp-opacity" style="opacity:0" name="company2">
+<input id="hp-zero" style="width:0;height:0;border:0;padding:0" name="hp0">
+<input id="hp-aria" aria-hidden="true" tabindex="-1" name="hpaux">
+<div style="display:none"><input id="hp-parent" name="phone2"></div>
+<input id="hp-sronly" class="sr-only" name="sr">
+<div style="content-visibility:hidden"><input id="hp-cv" name="cv"></div>
+<input id="ok-visible" name="ok">
+</div>
+
+<x-open></x-open><x-closed></x-closed>
+<iframe id="same" src="/frame.html" width="300" height="120"></iframe>
+<iframe id="cross" src="http://127.0.0.1:3102/frame.html" width="300" height="120"></iframe>
+<script>
+customElements.define('x-open', class extends HTMLElement { constructor(){ super(); this.attachShadow({mode:'open'}).innerHTML = '<label>CEP <input id="sh-open" name="cep"></label>' } })
+customElements.define('x-closed', class extends HTMLElement { constructor(){ super(); this.attachShadow({mode:'closed'}).innerHTML = '<label>CPF <input id="sh-closed" name="cpf"></label>' } })
+</script>
+<script src="/react.js"></script>
+<script type="module" src="/vue/vue-app.js"></script>
+</body></html>

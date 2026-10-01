@@ -1,4 +1,6 @@
+import { sfc32 } from './prng'
 import { gerarCNPJ, validarCNPJ } from './cnpj'
+import { sementes } from './rng-teste'
 
 describe('CNPJ', () => {
   test('gerarCNPJ retorna formato 00.000.000/0000-00', () => {
@@ -32,5 +34,16 @@ describe('CNPJ', () => {
     const formatted = gerarCNPJ()
     const raw = formatted.replace(/\D/g, '')
     expect(validarCNPJ(raw)).toBe(true)
+  })
+})
+
+describe('CNPJ com Rng injetado', () => {
+  test('é determinístico e válido', () => {
+    expect(gerarCNPJ(sfc32(1, 1, 1, 1))).toBe('85.555.633/0001-19')
+    for (const r of sementes(1000)) expect(validarCNPJ(gerarCNPJ(r))).toBe(true)
+  })
+
+  test('aceita o exemplo numérico clássico 11.222.333/0001-81', () => {
+    expect(validarCNPJ('11.222.333/0001-81')).toBe(true)
   })
 })

@@ -22,7 +22,22 @@
     "./import": "./src/import/index.ts",
     "./import/ofx": "./src/import/ofx.ts",
     "./import/csv": "./src/import/csv.ts",
-    "./import/id": "./src/import/id.ts"
+    "./import/id": "./src/import/id.ts",
+    "./aleatorio": "./src/aleatorio.ts",
+    "./uf": "./src/uf.ts",
+    "./rg": "./src/rg.ts",
+    "./pis": "./src/pis.ts",
+    "./titulo-eleitor": "./src/titulo-eleitor.ts",
+    "./celular": "./src/celular.ts",
+    "./nascimento": "./src/nascimento.ts",
+    "./senha": "./src/senha.ts",
+    "./nome": "./src/nome.ts",
+    "./endereco": "./src/endereco.ts",
+    "./empresa": "./src/empresa.ts",
+    "./cartao": "./src/cartao.ts",
+    "./pessoa": "./src/pessoa.ts",
+    "./campos": "./src/campos.ts",
+    "./campos-formatar": "./src/campos-formatar.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
@@ -37,6 +52,7 @@
     "qrcode": "^1.5.4"
   },
   "scripts": {
+    "lint": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch"
   }
