@@ -8,6 +8,9 @@
 /* O zip de fontes do WXT sempre exclui *.test.*: sem estas linhas, o CSS que o revisor da AMO reconstrói sai diferente. */
 @source not './**/*.test.*';
 @source not '../../../packages/ui/src/**/*.test.*';
+/* O material das lojas e os scripts do app não podem mudar o CSS da extensão. */
+@source not '../loja';
+@source not '../scripts';
 
 @layer base {
   :root {

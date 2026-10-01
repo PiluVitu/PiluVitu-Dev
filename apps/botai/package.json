@@ -20,7 +20,7 @@
     "test:e2e": "pnpm run build && pnpm run build:firefox && pnpm run build:opera && pnpm run build:e2e && playwright test",
     "storybook": "wxt prepare && storybook dev -p 6018",
     "build-storybook": "wxt prepare && storybook build",
-    "prettier:fix": "prettier --write \"{src,.storybook}/**/*.{ts,tsx,css,html}\" \"*.{ts,mjs,json,md}\""
+    "prettier:fix": "prettier --write \"{src,.storybook,loja,scripts}/**/*.{ts,tsx,css,html,md}\" \"*.{ts,mjs,json,md}\""
   },
   "lint-staged": {
     "*.{ts,tsx}": [
