@@ -1,16 +1,27 @@
 import type { Pessoa } from '@piluvitu/tools/pessoa'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { browser } from 'wxt/browser'
+import { NenhumCampo } from '../../components/nenhum-campo'
+import { PaginaProibida } from '../../components/pagina-proibida'
 import { PessoaPronta } from '../../components/pessoa-pronta'
-import type { StatusHost } from '../../components/pilula-host'
 import { PopupShell } from '../../components/popup-shell'
 import { PrimeiroUso } from '../../components/primeiro-uso'
+import { ResultadoPreenchimento } from '../../components/resultado-preenchimento'
 import { Rodape } from '../../components/rodape'
 import { gerarPessoaNova, pessoaItem } from '../../lib/armazenamento'
+import {
+  aposPreencher,
+  estadoAoAbrir,
+  rodapeDaTela,
+  statusDoHost,
+  verDados,
+  type EstadoPopup,
+} from '../../lib/estado-popup'
 import { hojeISO, idadeEm } from '../../lib/hoje'
-import { enviar } from '../../lib/mensagens'
-import { rotuloDoHost } from '../../lib/paginas'
-import { useAbaAlvo } from './use-aba-alvo'
+import { enviar, type RespostaPreencher } from '../../lib/mensagens'
+import { caminhoDaUrl, rotuloDoHost } from '../../lib/paginas'
+import type { LinhaCampo } from '../../lib/resultado'
+import { useAbaAlvo, type AbaAlvo } from './use-aba-alvo'
 
 const PAGINA_DE_ATALHOS = 'chrome://extensions/shortcuts'
 const COMANDO_PREENCHER = 'preencher-pagina'
@@ -54,59 +65,112 @@ export function App() {
   const atalho = useAtalho()
   if (pessoa === undefined || aba === undefined || atalho === undefined)
     return null
+  return <TelaDoPopup pessoa={pessoa} aba={aba} atalho={atalho} />
+}
 
-  const podePreencher = aba !== null && aba.situacao === 'ok'
-  const status: StatusHost =
-    aba === null || aba.situacao === 'ok' ? 'ok' : 'lock'
-  const host = rotuloDoHost(aba?.url)
+function TelaDoPopup({
+  pessoa,
+  aba,
+  atalho,
+}: {
+  pessoa: Pessoa | null
+  aba: AbaAlvo | null
+  atalho: string
+}) {
+  const [estado, setEstado] = useState<EstadoPopup>(() =>
+    estadoAoAbrir(aba?.situacao ?? 'ok'),
+  )
   const abrirAtalhos = () =>
     void browser.tabs.create({ url: PAGINA_DE_ATALHOS })
+  const abrirCaixa = (dono: Pessoa) =>
+    void browser.tabs.create({ url: dono.email.caixaUrl })
+  const irParaOsDados = () => setEstado(verDados)
 
-  if (pessoa === null) {
-    return (
-      <PopupShell
-        host={host}
-        status={status}
-        rodape={
-          <Rodape
-            atalho={atalho}
-            texto="preenche sem abrir o popup"
-            onAlterarAtalho={abrirAtalhos}
-          />
-        }
-      >
-        <PrimeiroUso onGerar={() => void gerarPessoaNova()} />
-      </PopupShell>
-    )
+  async function preencher() {
+    if (!aba) return
+    const resposta = (await enviar({ tipo: 'preencher', tabId: aba.id })) as
+      | RespostaPreencher
+      | undefined
+    if (resposta) setEstado(aposPreencher(resposta))
   }
 
-  return (
-    <PopupShell
-      host={host}
-      status={status}
-      rodape={
-        <Rodape
-          atalho={atalho}
-          texto="preenche sem abrir"
-          comAlterar
-          onAlterarAtalho={abrirAtalhos}
-        />
-      }
-    >
+  function mostrar(linha: LinhaCampo) {
+    if (aba)
+      void enviar({
+        tipo: 'mostrar',
+        tabId: aba.id,
+        documentId: linha.documentId,
+        idx: linha.idx,
+      })
+  }
+
+  let conteudo: ReactNode
+  if (estado.tela === 'proibida') {
+    conteudo = (
+      <PaginaProibida
+        motivo={
+          estado.situacao === 'arquivo-sem-acesso'
+            ? 'arquivo-sem-acesso'
+            : 'proibida'
+        }
+        nome={pessoa?.nome.completo ?? null}
+        onVerDados={irParaOsDados}
+        onGerarPessoa={() => void gerarPessoaNova()}
+      />
+    )
+  } else if (estado.tela === 'resultado' && estado.resumo && pessoa) {
+    conteudo = (
+      <ResultadoPreenchimento
+        resumo={estado.resumo}
+        caminho={caminhoDaUrl(aba?.url)}
+        nome={pessoa.nome.completo}
+        onMostrar={mostrar}
+        onAbrirCaixa={() => abrirCaixa(pessoa)}
+        onVerDados={irParaOsDados}
+      />
+    )
+  } else if (estado.tela === 'nenhum-campo' && estado.resumo) {
+    conteudo = (
+      <NenhumCampo
+        y={estado.resumo.y}
+        onTentarDeNovo={() => void preencher()}
+        onVerDados={irParaOsDados}
+      />
+    )
+  } else if (pessoa === null) {
+    conteudo = <PrimeiroUso onGerar={() => void gerarPessoaNova()} />
+  } else {
+    conteudo = (
       <PessoaPronta
         pessoa={pessoa}
         idade={idadeEm(pessoa.nascimento.iso, hojeISO())}
         atalho={atalho}
-        preencherDesabilitado={!podePreencher}
-        onPreencher={() => {
-          if (aba) void enviar({ tipo: 'preencher', tabId: aba.id })
-        }}
+        preencherDesabilitado={aba === null || estado.situacao !== 'ok'}
+        onPreencher={() => void preencher()}
         onNovaPessoa={() => void gerarPessoaNova()}
-        onAbrirCaixa={() =>
-          void browser.tabs.create({ url: pessoa.email.caixaUrl })
-        }
+        onAbrirCaixa={() => abrirCaixa(pessoa)}
         onCopiar={(valor) => navigator.clipboard.writeText(valor)}
       />
+    )
+  }
+
+  const rodape = rodapeDaTela(estado.tela, pessoa !== null)
+  return (
+    <PopupShell
+      host={rotuloDoHost(aba?.url)}
+      status={statusDoHost(estado)}
+      rodape={
+        rodape && (
+          <Rodape
+            atalho={atalho}
+            texto={rodape.texto}
+            comAlterar={rodape.comAlterar}
+            onAlterarAtalho={abrirAtalhos}
+          />
+        )
+      }
+    >
+      {conteudo}
     </PopupShell>
   )
 }

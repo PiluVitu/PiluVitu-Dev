@@ -5,7 +5,9 @@ import type { Browser } from 'wxt/browser'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { pessoaItem } from '../../lib/armazenamento'
 import { hojeISO, idadeEm } from '../../lib/hoje'
+import type { RespostaPreencher } from '../../lib/mensagens'
 import { PESSOA_DOURADA as P } from '../../test/pessoa-dourada'
+import { LINHAS_DO_DESIGN, resumoDe } from '../../test/resumos'
 import { App } from './App'
 
 let atalho = 'Alt+Shift+P'
@@ -75,7 +77,7 @@ describe('App do popup', () => {
     expect(screen.getByRole('button', { name: 'alterar' })).toBeInTheDocument()
   })
 
-  it('"Preencher esta página" manda a mensagem para a aba-alvo e o popup continua no 1b', async () => {
+  it('sem resposta do background (erro inesperado), o Preencher deixa o popup no 1b', async () => {
     const recebidas: unknown[] = []
     fakeBrowser.runtime.onMessage.addListener(
       (mensagem, _remetente, responder) => {
@@ -156,5 +158,214 @@ describe('App do popup', () => {
     )
     await user.click(pessoais.getByRole('button', { name: 'Copiar CPF' }))
     expect(escrever).toHaveBeenCalledWith(P.cpf)
+  })
+})
+
+function simularBackground(resposta: RespostaPreencher | undefined) {
+  const recebidas: { tipo: string }[] = []
+  fakeBrowser.runtime.onMessage.addListener(
+    (mensagem, _remetente, responder) => {
+      recebidas.push(mensagem as { tipo: string })
+      responder(
+        (mensagem as { tipo: string }).tipo === 'preencher' ? resposta : true,
+      )
+      return true
+    },
+  )
+  return recebidas
+}
+
+const cabecalho = () => screen.getByRole('banner')
+const temCadeado = () =>
+  cabecalho().querySelector('svg[data-icon="lock"]') !== null
+
+describe('App do popup: retorno do Preencher', () => {
+  it('com campos preenchidos mostra o 1c com o caminho, a lista e o rodapé "preenche de novo"', async () => {
+    simularBackground({ ok: true, resumo: resumoDe(12, LINHAS_DO_DESIGN) })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    await userEvent.setup().click(await botaoPreencher())
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: '12 de 14 campos preenchidos',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(`/cadastro · com ${P.nome.completo}`),
+    ).toBeInTheDocument()
+    expect(screen.getByText('preenche de novo')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'alterar' })).toBeNull()
+    expect(cabecalho().querySelector('.bg-ok')).not.toBeNull()
+  })
+
+  it('a mira do 1c pede ao background para mostrar aquele campo, naquele documento', async () => {
+    const recebidas = simularBackground({
+      ok: true,
+      resumo: resumoDe(12, LINHAS_DO_DESIGN),
+    })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    const user = userEvent.setup()
+    await user.click(await botaoPreencher())
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Mostrar na página: Código de indicação',
+      }),
+    )
+    await vi.waitFor(() =>
+      expect(recebidas).toContainEqual({
+        tipo: 'mostrar',
+        tabId: 7,
+        documentId: 'doc-0',
+        idx: 13,
+      }),
+    )
+  })
+
+  it('"Ver os dados" do 1c volta ao 1b, e "Caixa de entrada" abre a caixa da pessoa', async () => {
+    simularBackground({ ok: true, resumo: resumoDe(12, LINHAS_DO_DESIGN) })
+    const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
+    await pessoaItem.setValue(P)
+    render(<App />)
+    const user = userEvent.setup()
+    await user.click(await botaoPreencher())
+    await user.click(
+      await screen.findByRole('button', { name: 'Caixa de entrada' }),
+    )
+    expect(abrir).toHaveBeenCalledWith({ url: P.email.caixaUrl })
+    await user.click(screen.getByRole('button', { name: 'Ver os dados' }))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: P.nome.completo }),
+    ).toBeInTheDocument()
+  })
+
+  it('nenhum campo reconhecido: 1d com pílula warn; "Tentar de novo" preenche outra vez; o warn fica no 1b', async () => {
+    const recebidas = simularBackground({
+      ok: true,
+      resumo: resumoDe(0, LINHAS_DO_DESIGN),
+    })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    const user = userEvent.setup()
+    await user.click(await botaoPreencher())
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Nenhum campo reconhecido nesta página',
+      }),
+    ).toBeInTheDocument()
+    expect(cabecalho().querySelector('.bg-warn')).not.toBeNull()
+    expect(screen.getByText('preenche sem abrir')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'alterar' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await vi.waitFor(() =>
+      expect(recebidas.filter((m) => m.tipo === 'preencher')).toHaveLength(2),
+    )
+    await user.click(screen.getByRole('button', { name: 'Ver os dados' }))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: P.nome.completo }),
+    ).toBeInTheDocument()
+    expect(cabecalho().querySelector('.bg-warn')).not.toBeNull()
+  })
+
+  it('página sem formulário (Y = 0): 1d "Nenhum formulário nesta página"', async () => {
+    simularBackground({ ok: true, resumo: resumoDe(0) })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    await userEvent.setup().click(await botaoPreencher())
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Nenhum formulário nesta página',
+      }),
+    ).toBeInTheDocument()
+    expect(cabecalho().querySelector('.bg-warn')).not.toBeNull()
+  })
+
+  it('Preencher recusado pelo Chrome: 1e sem rodapé; "Ver os dados" leva ao 1b com Preencher desabilitado e cadeado', async () => {
+    simularBackground({ ok: false, motivo: 'proibida' })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    const user = userEvent.setup()
+    await user.click(await botaoPreencher())
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'O Chrome não deixa extensões mexerem nesta página',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).toBeNull()
+    expect(temCadeado()).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Ver os dados' }))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: P.nome.completo }),
+    ).toBeInTheDocument()
+    expect(await botaoPreencher()).toBeDisabled()
+    expect(temCadeado()).toBe(true)
+  })
+
+  it('Preencher em file: sem acesso vira o 1e de arquivo', async () => {
+    simularBackground({ ok: false, motivo: 'arquivo-sem-acesso' })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    await userEvent.setup().click(await botaoPreencher())
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Falta liberar o acesso a arquivos',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('aberto numa página proibida pela URL, vai direto ao 1e, sem rodapé e com cadeado', async () => {
+    urlDaAba = 'chrome://settings'
+    await pessoaItem.setValue(P)
+    render(<App />)
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'O Chrome não deixa extensões mexerem nesta página',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(P.nome.completo)).toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).toBeNull()
+    expect(temCadeado()).toBe(true)
+  })
+
+  it('1e sem pessoa: "Gerar pessoa" guarda uma e o cartão passa a mostrar o nome', async () => {
+    urlDaAba = 'chrome://settings'
+    render(<App />)
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Gerar pessoa' }))
+    const gerada = await vi.waitFor(async () => {
+      const pessoa = await pessoaItem.getValue()
+      if (!pessoa) throw new Error('ainda sem pessoa')
+      return pessoa
+    })
+    expect(await screen.findByText(gerada.nome.completo)).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'O Chrome não deixa extensões mexerem nesta página',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('aberto num file: sem acesso liberado, mostra o 1e de arquivo', async () => {
+    urlDaAba = 'file:///Users/eu/form.html'
+    Object.assign(fakeBrowser.extension, {
+      isAllowedFileSchemeAccess: vi.fn(async () => false),
+    })
+    await pessoaItem.setValue(P)
+    render(<App />)
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Falta liberar o acesso a arquivos',
+      }),
+    ).toBeInTheDocument()
+    expect(within(cabecalho()).getByText('arquivo local')).toBeInTheDocument()
   })
 })

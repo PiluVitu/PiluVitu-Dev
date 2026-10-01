@@ -46,6 +46,6 @@ test('popup: gera a pessoa no 1a e o Preencher do 1b preenche a aba-alvo', async
     '1 de 1 campo preenchido',
   )
   await expect(
-    popup.getByRole('heading', { level: 1, name: pessoa.nome.completo }),
+    popup.getByRole('heading', { level: 1, name: '1 de 1 campo preenchido' }),
   ).toBeVisible()
 })
