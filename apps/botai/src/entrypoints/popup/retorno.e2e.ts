@@ -47,7 +47,7 @@ const SEM_RECONHECER = `<!doctype html>
     new MutationObserver((mudancas) => {
       for (const mudanca of mudancas)
         for (const no of mudanca.addedNodes)
-          if (no instanceof Element && (no.matches('piluvitu-aviso') || no.querySelector('piluvitu-aviso')))
+          if (no instanceof Element && (no.matches('botai-aviso') || no.querySelector('botai-aviso')))
             window.avisosMontados += 1
     }).observe(document.documentElement, { childList: true, subtree: true })
   </script>
@@ -154,7 +154,7 @@ test('nenhum campo reconhecido → 1d com pílula warn; "Tentar de novo" preench
 
   await popup.getByRole('button', { name: 'Tentar de novo' }).click()
   await expect.poll(avisosMontados).toBe(2)
-  await expect(aba.locator('piluvitu-aviso')).toHaveCount(1)
+  await expect(aba.locator('botai-aviso')).toHaveCount(1)
   await expect(
     popup.getByRole('heading', {
       level: 1,
@@ -229,7 +229,7 @@ test('Preencher numa página que o Chrome recusa → 1e sem rodapé; "Ver os dad
   await expect(popup.locator('header svg[data-icon="lock"]')).toHaveCount(1)
   await expect(popup.getByText(pessoa.nome.completo)).toBeVisible()
   await expect(aba.locator('input[name="cpf"]')).toHaveValue('')
-  await expect(aba.locator('piluvitu-aviso')).toHaveCount(0)
+  await expect(aba.locator('botai-aviso')).toHaveCount(0)
 
   await popup.getByRole('button', { name: 'Ver os dados' }).click()
   await expect(

@@ -9,7 +9,7 @@ import type { Mensagem } from '../../lib/mensagens'
 import { criarMenus, MENU, PREFIXO_INSERIR } from '../../lib/menus'
 import { inserirNoCampo, mostrarCampo, preencherPagina } from './acoes'
 
-export const COMANDO_PREENCHER = 'preencher-pagina'
+export const COMANDO_PREENCHER = 'botai-preencher'
 
 export async function recriarMenus(): Promise<void> {
   await criarMenus(await pessoaItem.getValue())

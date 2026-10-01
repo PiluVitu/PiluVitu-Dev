@@ -95,8 +95,10 @@ export function enviarMensagem(
 }
 
 export async function pessoaGuardada(sw: Worker): Promise<Pessoa | undefined> {
-  const { pessoa } = await sw.evaluate(() => chrome.storage.local.get('pessoa'))
-  return pessoa as Pessoa | undefined
+  const { botai_pessoa } = await sw.evaluate(() =>
+    chrome.storage.local.get('botai_pessoa'),
+  )
+  return botai_pessoa as Pessoa | undefined
 }
 
 export async function idDaAbaAtiva(sw: Worker): Promise<number> {

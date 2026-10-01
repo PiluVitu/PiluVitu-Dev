@@ -36,7 +36,7 @@ function svg(doc: Document, viewBox: string, classe?: string): SVGSVGElement {
 }
 
 function marca(doc: Document): SVGSVGElement {
-  const el = svg(doc, '0 0 22 22', 'marca')
+  const el = svg(doc, '0 0 22 22', 'botai-marca')
   for (const [x, y] of QUADRADOS_DA_MARCA) {
     const quadrado = doc.createElementNS(SVG, 'rect')
     for (const [nome, valor] of Object.entries({
@@ -68,39 +68,47 @@ function linhaDois(
   texto: string,
   ir?: () => void,
 ): HTMLDivElement {
-  const linha = elemento(doc, 'div', 'linha2')
+  const linha = elemento(doc, 'div', 'botai-linha2')
   if (ir) {
-    const botao = elemento(doc, 'button', 'warn', texto)
+    const botao = elemento(doc, 'button', 'botai-warn', texto)
     botao.type = 'button'
     botao.addEventListener('click', ir)
     linha.append(botao)
   } else {
-    linha.append(elemento(doc, 'span', 'warn', texto))
+    linha.append(elemento(doc, 'span', 'botai-warn', texto))
   }
   linha.append(doc.createTextNode(' · contorno tracejado'))
   return linha
 }
 
 export function construirAviso(doc: Document, o: OpcoesAviso): HTMLDivElement {
-  const aviso = elemento(doc, 'div', o.erro ? 'toast erro' : 'toast')
+  const aviso = elemento(
+    doc,
+    'div',
+    o.erro ? 'botai-toast botai-erro' : 'botai-toast',
+  )
   aviso.setAttribute('role', o.erro ? 'alert' : 'status')
 
-  const fechar = elemento(doc, 'button', 'fechar')
+  const fechar = elemento(doc, 'button', 'botai-fechar')
   fechar.type = 'button'
   fechar.setAttribute('aria-label', 'Fechar')
   fechar.append(iconeFechar(doc))
   fechar.addEventListener('click', o.onFechar)
 
-  const linha1 = elemento(doc, 'div', 'linha1')
-  linha1.append(marca(doc), elemento(doc, 'span', 'titulo', o.titulo), fechar)
+  const linha1 = elemento(doc, 'div', 'botai-linha1')
+  linha1.append(
+    marca(doc),
+    elemento(doc, 'span', 'botai-titulo', o.titulo),
+    fechar,
+  )
   aviso.append(linha1)
 
   if (o.linha2 && !o.erro)
     aviso.append(linhaDois(doc, o.linha2, o.onIrParaNaoReconhecido))
 
-  const barra = elemento(doc, 'div', 'barra')
+  const barra = elemento(doc, 'div', 'botai-barra')
   barra.addEventListener('animationend', o.onFechar)
-  const trilho = elemento(doc, 'div', 'trilho')
+  const trilho = elemento(doc, 'div', 'botai-trilho')
   trilho.append(barra)
   aviso.append(trilho)
   return aviso

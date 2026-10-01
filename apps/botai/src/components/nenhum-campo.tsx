@@ -10,7 +10,7 @@ import { encontreiCampos } from '../lib/textos'
 import { IconeTile } from './icone-tile'
 import { BOTAO_SM, CODIGO, CORPO, H1_ESTADO, PAINEL } from './tipografia'
 
-const CAMINHO_DO_INSERIR = ['botão direito', 'piluvitu', 'Inserir'] as const
+const CAMINHO_DO_INSERIR = ['botão direito', 'Botaí', 'Inserir'] as const
 
 export interface NenhumCampoProps {
   y: number

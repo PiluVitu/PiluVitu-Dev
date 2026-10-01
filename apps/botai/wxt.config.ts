@@ -8,11 +8,13 @@ export default defineConfig({
   webExt: { disabled: true },
   dev: { server: { port: 3018 }, reloadCommand: false },
   manifest: ({ mode }) => ({
-    name: 'piluvitu · dados de teste',
+    name: 'Botaí',
+    short_name: 'Botaí',
+    description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
     minimum_chrome_version: '123',
     permissions: ['activeTab', 'scripting', 'contextMenus', 'storage'],
     commands: {
-      'preencher-pagina': {
+      'botai-preencher': {
         suggested_key: { default: 'Alt+Shift+P' },
         description: 'Preencher esta página',
       },

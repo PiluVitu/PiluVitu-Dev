@@ -3,13 +3,13 @@ import type { Pessoa } from '@piluvitu/tools/pessoa'
 import { browser, type Browser } from 'wxt/browser'
 
 export const MENU = {
-  preencher: 'preencher',
-  inserir: 'inserir',
-  novaPessoa: 'nova-pessoa',
-  abrirCaixa: 'abrir-caixa',
+  preencher: 'botai-preencher',
+  inserir: 'botai-inserir',
+  novaPessoa: 'botai-nova-pessoa',
+  abrirCaixa: 'botai-abrir-caixa',
 } as const
 
-export const PREFIXO_INSERIR = 'inserir:'
+export const PREFIXO_INSERIR = 'botai-inserir:'
 
 export const ITENS_INSERIR: readonly {
   kind: FieldKind
@@ -62,12 +62,12 @@ export async function criarMenus(pessoa: Pessoa | null): Promise<void> {
     title: 'Preencher esta página',
     contexts: PAGINA_E_CAMPO,
   })
-  criar({ id: 'separador-1', type: 'separator', contexts: PAGINA_E_CAMPO })
+  criar({ id: 'botai-sep-1', type: 'separator', contexts: PAGINA_E_CAMPO })
   criar({ id: MENU.inserir, title: 'Inserir', contexts: CAMPO })
   ITENS_INSERIR.forEach((item, i) => {
     if (i > 0 && ITENS_INSERIR[i - 1].grupo !== item.grupo) {
       criar({
-        id: `inserir-separador-${item.grupo}`,
+        id: `botai-sep-inserir-${item.grupo}`,
         parentId: MENU.inserir,
         type: 'separator',
         contexts: CAMPO,
@@ -80,7 +80,7 @@ export async function criarMenus(pessoa: Pessoa | null): Promise<void> {
       contexts: CAMPO,
     })
   })
-  criar({ id: 'separador-2', type: 'separator', contexts: PAGINA_E_CAMPO })
+  criar({ id: 'botai-sep-2', type: 'separator', contexts: PAGINA_E_CAMPO })
   criar({ id: MENU.novaPessoa, title: 'Nova pessoa', contexts: PAGINA_E_CAMPO })
   criar({
     id: MENU.abrirCaixa,

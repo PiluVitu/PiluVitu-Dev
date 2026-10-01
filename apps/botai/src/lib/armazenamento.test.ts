@@ -23,11 +23,16 @@ describe('armazenamento da pessoa', () => {
     expect(await pessoaItem.getValue()).toBeNull()
   })
 
-  it('guarda a pessoa inteira em local:pessoa, não a semente', async () => {
+  it('guarda a pessoa inteira em local:botai_pessoa, não a semente', async () => {
     await pessoaItem.setValue(PESSOA_DOURADA)
-    expect(await fakeBrowser.storage.local.get('pessoa')).toEqual({
-      pessoa: PESSOA_DOURADA,
+    expect(await fakeBrowser.storage.local.get('botai_pessoa')).toEqual({
+      botai_pessoa: PESSOA_DOURADA,
     })
+  })
+
+  it('ignora a pessoa guardada na chave provisória local:pessoa', async () => {
+    await fakeBrowser.storage.local.set({ pessoa: PESSOA_DOURADA })
+    expect(await pessoaItem.getValue()).toBeNull()
   })
 
   it('obterOuGerarPessoa gera uma pessoa válida, guarda e devolve', async () => {

@@ -79,10 +79,10 @@ test('cadastro realista: 21 de 23, aviso, contornos, valores da pessoa e honeypo
   })) as RespostaPreencher
 
   // Aviso e contornos primeiro: os dois somem sozinhos depois de 4 s.
-  await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+  await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
     '21 de 23 campos preenchidos',
   )
-  await expect(aba.locator('piluvitu-aviso .linha2 .warn')).toHaveText(
+  await expect(aba.locator('botai-aviso .botai-linha2 .botai-warn')).toHaveText(
     '2 não reconhecidos',
   )
   await expect(aba.locator('input[name="nome"]')).toHaveCSS(
@@ -213,7 +213,7 @@ test('dois preenchimentos seguidos deixam um aviso só e devolvem o outline orig
 
   await enviarMensagem(popup, { tipo: 'preencher', tabId })
   await enviarMensagem(popup, { tipo: 'preencher', tabId })
-  await expect(aba.locator('piluvitu-aviso')).toHaveCount(1)
+  await expect(aba.locator('botai-aviso')).toHaveCount(1)
   await expect(aba.locator('input[name="cpf"]')).toHaveCSS(
     'outline-style',
     'solid',
@@ -251,7 +251,7 @@ test('em site com CSP estrita o aviso continua com o próprio estilo', async ({
   const popup = await abrirPopup(context, extensionId)
 
   await enviarMensagem(popup, { tipo: 'preencher', tabId })
-  const aviso = aba.locator('piluvitu-aviso .toast')
+  const aviso = aba.locator('botai-aviso .botai-toast')
   await expect(aviso).toHaveCSS('width', '300px')
   await expect(aviso).toHaveCSS('border-top-left-radius', '14px')
   await expect(aba.locator('input[name="cpf"]')).toHaveCSS(
@@ -297,13 +297,11 @@ test('iframe da mesma origem: campos somados e aviso só no topo', async ({
   await expect(
     aba.frameLocator('iframe').locator('input[name="cpf"]'),
   ).toHaveValue(p.cpf)
-  await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+  await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
     '2 de 2 campos preenchidos',
   )
-  await expect(aba.locator('piluvitu-aviso .linha2')).toHaveCount(0)
-  await expect(
-    aba.frameLocator('iframe').locator('piluvitu-aviso'),
-  ).toHaveCount(0)
+  await expect(aba.locator('botai-aviso .botai-linha2')).toHaveCount(0)
+  await expect(aba.frameLocator('iframe').locator('botai-aviso')).toHaveCount(0)
 })
 
 // spec §6.3: o executeScript com allFrames pula em silêncio o frame sem permissão, e o topo conta quantos ficaram.

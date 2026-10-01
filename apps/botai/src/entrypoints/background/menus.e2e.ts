@@ -16,19 +16,19 @@ test('a instalação cria o menu completo e registra o atalho', async ({
       }
     }, id)
   // Os menus nascem de forma assíncrona depois da instalação: espera o primeiro aparecer.
-  await expect.poll(() => existe('inserir:cpf')).toBe(true)
+  await expect.poll(() => existe('botai-inserir:cpf')).toBe(true)
   for (const id of [
-    'preencher',
-    'inserir',
-    'inserir:tituloEleitor',
-    'nova-pessoa',
-    'abrir-caixa',
+    'botai-preencher',
+    'botai-inserir',
+    'botai-inserir:tituloEleitor',
+    'botai-nova-pessoa',
+    'botai-abrir-caixa',
   ]) {
     expect(await existe(id)).toBe(true)
   }
   expect(await existe('nao-existe')).toBe(false)
   const comandos = await sw.evaluate(() => chrome.commands.getAll())
-  expect(comandos.find((c) => c.name === 'preencher-pagina')).toMatchObject({
+  expect(comandos.find((c) => c.name === 'botai-preencher')).toMatchObject({
     description: 'Preencher esta página',
     shortcut: expect.stringMatching(/⌥⇧P|Alt\+Shift\+P/),
   })

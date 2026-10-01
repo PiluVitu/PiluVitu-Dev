@@ -104,24 +104,30 @@ describe('criarMenus', () => {
     const topo = criados().filter((c) => c.parentId === undefined)
     expect(topo).toEqual([
       {
-        id: MENU.preencher,
+        id: 'botai-preencher',
         title: 'Preencher esta página',
         contexts: ['page', 'editable'],
       },
-      { id: 'separador-1', type: 'separator', contexts: ['page', 'editable'] },
-      { id: MENU.inserir, title: 'Inserir', contexts: ['editable'] },
-      { id: 'separador-2', type: 'separator', contexts: ['page', 'editable'] },
+      { id: 'botai-sep-1', type: 'separator', contexts: ['page', 'editable'] },
+      { id: 'botai-inserir', title: 'Inserir', contexts: ['editable'] },
+      { id: 'botai-sep-2', type: 'separator', contexts: ['page', 'editable'] },
       {
-        id: MENU.novaPessoa,
+        id: 'botai-nova-pessoa',
         title: 'Nova pessoa',
         contexts: ['page', 'editable'],
       },
       {
-        id: MENU.abrirCaixa,
+        id: 'botai-abrir-caixa',
         title: 'Abrir caixa de entrada',
         contexts: ['page', 'editable'],
       },
     ])
+  })
+
+  it('todo item e todo separador tem o prefixo botai-', async () => {
+    await criarMenus(null)
+    expect(criados()).toHaveLength(33)
+    expect(criados().filter((c) => !c.id.startsWith('botai-'))).toEqual([])
   })
 
   it('põe os 23 itens e 4 separadores dentro de Inserir, só em campos editáveis', async () => {
@@ -136,7 +142,7 @@ describe('criarMenus', () => {
     expect(
       filhos
         .map((c) =>
-          c.type === 'separator' ? '|' : c.id.replace('inserir:', ''),
+          c.type === 'separator' ? '|' : c.id.replace('botai-inserir:', ''),
         )
         .join(' '),
     ).toBe(
@@ -147,14 +153,16 @@ describe('criarMenus', () => {
   it('mostra o CPF e o CEP da pessoa no título; sem pessoa, só o rótulo', async () => {
     await criarMenus(PESSOA_DOURADA)
     const titulo = (id: string) => criados().find((c) => c.id === id)?.title
-    expect(titulo('inserir:cpf')).toBe(`CPF · ${PESSOA_DOURADA.cpf}`)
-    expect(titulo('inserir:cep')).toBe(`CEP · ${PESSOA_DOURADA.endereco.cep}`)
-    expect(titulo('inserir:email')).toBe('E-mail')
+    expect(titulo('botai-inserir:cpf')).toBe(`CPF · ${PESSOA_DOURADA.cpf}`)
+    expect(titulo('botai-inserir:cep')).toBe(
+      `CEP · ${PESSOA_DOURADA.endereco.cep}`,
+    )
+    expect(titulo('botai-inserir:email')).toBe('E-mail')
 
     criar.mockReset()
     await criarMenus(null)
-    expect(titulo('inserir:cpf')).toBe('CPF')
-    expect(titulo('inserir:cep')).toBe('CEP')
+    expect(titulo('botai-inserir:cpf')).toBe('CPF')
+    expect(titulo('botai-inserir:cep')).toBe('CEP')
   })
 })
 
@@ -162,14 +170,14 @@ describe('atualizarTitulosMenu', () => {
   it('atualiza só os títulos de CPF e CEP', async () => {
     await atualizarTitulosMenu(PESSOA_DOURADA)
     expect(atualizar.mock.calls).toEqual([
-      ['inserir:cpf', { title: `CPF · ${PESSOA_DOURADA.cpf}` }],
-      ['inserir:cep', { title: `CEP · ${PESSOA_DOURADA.endereco.cep}` }],
+      ['botai-inserir:cpf', { title: `CPF · ${PESSOA_DOURADA.cpf}` }],
+      ['botai-inserir:cep', { title: `CEP · ${PESSOA_DOURADA.endereco.cep}` }],
     ])
   })
 
   it('não quebra quando o menu ainda não existe', async () => {
     atualizar.mockRejectedValue(
-      new Error('Cannot find menu item with id inserir:cpf'),
+      new Error('Cannot find menu item with id botai-inserir:cpf'),
     )
     await expect(atualizarTitulosMenu(null)).resolves.toBeUndefined()
   })

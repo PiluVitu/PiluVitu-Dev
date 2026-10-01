@@ -24,7 +24,7 @@ import type { LinhaCampo } from '../../lib/resultado'
 import { useAbaAlvo, type AbaAlvo } from './use-aba-alvo'
 
 const PAGINA_DE_ATALHOS = 'chrome://extensions/shortcuts'
-const COMANDO_PREENCHER = 'preencher-pagina'
+const COMANDO_PREENCHER = 'botai-preencher'
 
 function usePessoa(): Pessoa | null | undefined {
   const [pessoa, setPessoa] = useState<Pessoa | null | undefined>(undefined)

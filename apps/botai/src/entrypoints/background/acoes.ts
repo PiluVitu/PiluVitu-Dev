@@ -13,7 +13,7 @@ import {
   tituloPreenchimento,
   type MotivoFalhaInserir,
 } from '../../lib/textos'
-import type { ComPv } from '../preencher.content/api'
+import type { ComBotai } from '../preencher.content/api'
 import type { ResultadoInsercao } from '../preencher.content/inserir'
 
 export const ARQUIVO_CONTENT = '/content-scripts/preencher.js'
@@ -31,7 +31,7 @@ export async function avisar(tabId: number, aviso: Aviso): Promise<void> {
   await browser.scripting.executeScript({
     target: { tabId, frameIds: [0] },
     func: (a: Aviso) => {
-      ;(globalThis as ComPv).__pv?.aviso(a)
+      ;(globalThis as ComBotai).__botai?.aviso(a)
     },
     args: [aviso],
   })
@@ -56,7 +56,7 @@ export async function preencherPagina(
     const resultados = await browser.scripting.executeScript({
       target: { tabId, allFrames: true },
       func: (p: Pessoa, hoje: string) =>
-        (globalThis as ComPv).__pv?.preencher(p, hoje) ?? null,
+        (globalThis as ComBotai).__botai?.preencher(p, hoje) ?? null,
       args: [pessoa, hojeISO()],
     })
     const resumo = somarFrames(
@@ -117,7 +117,7 @@ export async function inserirNoCampo(
     const [injecao] = await browser.scripting.executeScript({
       target: { tabId, frameIds: [frameId] },
       func: (p: Pessoa, k: FieldKind) =>
-        (globalThis as ComPv).__pv?.inserir(p, k) ?? null,
+        (globalThis as ComBotai).__botai?.inserir(p, k) ?? null,
       args: [pessoa, kind],
     })
     resultado = injecao?.result
@@ -138,7 +138,8 @@ export async function mostrarCampo(
   try {
     const [resultado] = await browser.scripting.executeScript({
       target: { tabId, documentIds: [documentId] },
-      func: (i: number) => (globalThis as ComPv).__pv?.mostrar(i) ?? false,
+      func: (i: number) =>
+        (globalThis as ComBotai).__botai?.mostrar(i) ?? false,
       args: [idx],
     })
     return resultado?.result === true

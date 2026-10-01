@@ -9,7 +9,7 @@ describe('PopupShell', () => {
         <p>conteúdo do estado</p>
       </PopupShell>,
     )
-    expect(screen.getByText('piluvitu')).toBeInTheDocument()
+    expect(screen.getByText('Botaí')).toBeInTheDocument()
     expect(screen.getByText('dados de teste')).toBeInTheDocument()
     expect(screen.getByText('localhost:3000')).toBeInTheDocument()
     expect(screen.getByRole('main')).toHaveTextContent('conteúdo do estado')

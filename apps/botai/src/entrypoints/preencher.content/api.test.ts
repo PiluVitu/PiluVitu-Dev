@@ -3,7 +3,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { ContentScriptContext } from 'wxt/utils/content-script-context'
 import { simularLayout } from '../../test/layout'
 import { PESSOA_DOURADA as P } from '../../test/pessoa-dourada'
-import { criarApi, type ComPv } from './api'
+import { criarApi, type ComBotai } from './api'
 import conteudo from './index'
 
 const HOJE = '2026-10-01'
@@ -28,7 +28,7 @@ beforeEach(() => {
 afterEach(() => {
   desfazerLayout()
   Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
-  Reflect.deleteProperty(globalThis, '__pv')
+  Reflect.deleteProperty(globalThis, '__botai')
   document.body.innerHTML = ''
 })
 
@@ -92,15 +92,15 @@ describe('criarApi', () => {
 })
 
 describe('content script preencher', () => {
-  it('é registrado em runtime, sem CSS automático nem postMessage, e o main instala __pv', () => {
+  it('é registrado em runtime, sem CSS automático nem postMessage, e o main instala __botai', () => {
     expect(conteudo).toMatchObject({
       registration: 'runtime',
       cssInjectionMode: 'manual',
       noScriptStartedPostMessage: true,
     })
     void conteudo.main(new ContentScriptContext('preencher'))
-    const pv = (globalThis as ComPv).__pv
-    expect(pv && Object.keys(pv).sort()).toEqual([
+    const api = (globalThis as ComBotai).__botai
+    expect(api && Object.keys(api).sort()).toEqual([
       'aviso',
       'inserir',
       'mostrar',

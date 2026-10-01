@@ -9,7 +9,7 @@ export async function montarAviso(
 ): Promise<void> {
   const { aoSair, ...aviso } = opcoes
   const ui = await createShadowRootUi(ctx, {
-    name: 'piluvitu-aviso',
+    name: 'botai-aviso',
     position: 'inline',
     anchor: 'html',
     css,

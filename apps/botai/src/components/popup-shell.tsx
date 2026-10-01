@@ -18,7 +18,7 @@ export function PopupShell({
       <header className="flex flex-none items-center gap-2 border-b py-3 pr-3 pl-3.5 leading-[normal]">
         <Marca className="text-primary size-[18px] flex-none" />
         <div className="flex flex-none items-baseline gap-2 whitespace-nowrap">
-          <span className="text-sm font-bold tracking-[-0.01em]">piluvitu</span>
+          <span className="text-sm font-bold tracking-[-0.01em]">Botaí</span>
           <span className="text-muted-foreground font-mono text-[9.5px] font-medium tracking-[0.12em] uppercase">
             dados de teste
           </span>

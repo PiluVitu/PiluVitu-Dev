@@ -58,14 +58,14 @@ describe('background', () => {
     await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install' })
     await vi.waitFor(() =>
       expect(criar).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'preencher' }),
+        expect.objectContaining({ id: 'botai-preencher' }),
       ),
     )
     criar.mockClear()
     await fakeBrowser.runtime.onStartup.trigger()
     await vi.waitFor(() =>
       expect(criar).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'abrir-caixa' }),
+        expect.objectContaining({ id: 'botai-abrir-caixa' }),
       ),
     )
   })
@@ -73,17 +73,17 @@ describe('background', () => {
   it('pessoa nova atualiza os títulos de CPF e CEP do menu', async () => {
     await pessoaItem.setValue(P)
     await vi.waitFor(() =>
-      expect(atualizar).toHaveBeenCalledWith('inserir:cpf', {
+      expect(atualizar).toHaveBeenCalledWith('botai-inserir:cpf', {
         title: `CPF · ${P.cpf}`,
       }),
     )
-    expect(atualizar).toHaveBeenCalledWith('inserir:cep', {
+    expect(atualizar).toHaveBeenCalledWith('botai-inserir:cep', {
       title: `CEP · ${P.endereco.cep}`,
     })
   })
 
-  it('o atalho preencher-pagina injeta o content script na aba do comando', async () => {
-    await onCommand.disparar('preencher-pagina', { id: 7 })
+  it('o atalho botai-preencher injeta o content script na aba do comando', async () => {
+    await onCommand.disparar('botai-preencher', { id: 7 })
     await vi.waitFor(() =>
       expect(executar).toHaveBeenCalledWith({
         target: { tabId: 7, allFrames: true },
@@ -93,7 +93,7 @@ describe('background', () => {
   })
 
   it('o clique no menu chega ao handler', async () => {
-    await onClicked.disparar({ menuItemId: 'preencher' }, { id: 9 })
+    await onClicked.disparar({ menuItemId: 'botai-preencher' }, { id: 9 })
     await vi.waitFor(() =>
       expect(executar).toHaveBeenCalledWith(
         expect.objectContaining({ target: { tabId: 9, allFrames: true } }),

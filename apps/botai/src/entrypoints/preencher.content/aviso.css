@@ -5,19 +5,19 @@
   bottom: 16px !important;
   z-index: 2147483647 !important;
 }
-.toast {
-  --pv-card: hsl(0 0% 100%);
-  --pv-fg: hsl(222 36% 9%);
-  --pv-muted: hsl(215 18% 35%);
-  --pv-border: hsl(216 30% 88%);
-  --pv-primary: hsl(198 93% 26%);
-  --pv-warn: hsl(38 92% 31%);
+.botai-toast {
+  --botai-card: hsl(0 0% 100%);
+  --botai-fg: hsl(222 36% 9%);
+  --botai-muted: hsl(215 18% 35%);
+  --botai-border: hsl(216 30% 88%);
+  --botai-primary: hsl(198 93% 26%);
+  --botai-warn: hsl(38 92% 31%);
   box-sizing: border-box;
   width: 300px;
   overflow: hidden;
-  background: var(--pv-card);
-  color: var(--pv-fg);
-  border: 1px solid var(--pv-border);
+  background: var(--botai-card);
+  color: var(--botai-fg);
+  border: 1px solid var(--botai-border);
   border-radius: 14px;
   box-shadow: 0 12px 24px rgb(0 0 0 / 0.14);
   font:
@@ -32,52 +32,52 @@
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
-  .toast {
-    --pv-card: hsl(222 36% 9%);
-    --pv-fg: hsl(215 33% 93%);
-    --pv-muted: hsl(216 17% 64%);
-    --pv-border: hsl(205 40% 18%);
-    --pv-primary: hsl(198 93% 60%);
-    --pv-warn: hsl(43 96% 56%);
+  .botai-toast {
+    --botai-card: hsl(222 36% 9%);
+    --botai-fg: hsl(215 33% 93%);
+    --botai-muted: hsl(216 17% 64%);
+    --botai-border: hsl(205 40% 18%);
+    --botai-primary: hsl(198 93% 60%);
+    --botai-warn: hsl(43 96% 56%);
   }
 }
-.toast *,
-.toast *::before,
-.toast *::after {
+.botai-toast *,
+.botai-toast *::before,
+.botai-toast *::after {
   box-sizing: border-box;
   margin: 0;
 }
-.linha1 {
+.botai-linha1 {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 12px 8px 14px;
 }
-.marca {
+.botai-marca {
   width: 14px;
   height: 14px;
   flex: none;
-  color: var(--pv-primary);
+  color: var(--botai-primary);
 }
-.titulo {
+.botai-titulo {
   font-size: 13px;
   font-weight: 600;
 }
-.fechar {
+.botai-fechar {
   margin-left: auto;
   display: flex;
   padding: 4px;
   border: 0;
   background: none;
-  color: var(--pv-muted);
+  color: var(--botai-muted);
   cursor: pointer;
   border-radius: 6px;
 }
-.fechar svg {
+.botai-fechar svg {
   width: 12px;
   height: 12px;
 }
-.linha2 {
+.botai-linha2 {
   padding: 0 14px 12px 38px;
   font:
     500 11px/1.4 ui-monospace,
@@ -85,31 +85,31 @@
     Menlo,
     Consolas,
     monospace;
-  color: var(--pv-muted);
+  color: var(--botai-muted);
 }
-.warn {
+.botai-warn {
   all: unset;
-  color: var(--pv-warn);
+  color: var(--botai-warn);
   cursor: pointer;
 }
-.warn:hover {
+.botai-warn:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.trilho {
+.botai-trilho {
   height: 2px;
-  background: var(--pv-border);
+  background: var(--botai-border);
 }
-.barra {
+.botai-barra {
   height: 2px;
-  background: var(--pv-primary);
+  background: var(--botai-primary);
   transform-origin: left;
-  animation: pv-tempo 4s linear forwards;
+  animation: botai-tempo 4s linear forwards;
 }
-.toast:hover .barra {
+.botai-toast:hover .botai-barra {
   animation-play-state: paused;
 }
-@keyframes pv-tempo {
+@keyframes botai-tempo {
   from {
     transform: scaleX(1);
   }
@@ -118,16 +118,16 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .barra {
+  .botai-barra {
     animation-timing-function: steps(1, end);
   }
 }
-span.warn {
+span.botai-warn {
   cursor: default;
 }
-span.warn:hover {
+span.botai-warn:hover {
   text-decoration: none;
 }
-.toast.erro .marca {
-  color: var(--pv-warn);
+.botai-toast.botai-erro .botai-marca {
+  color: var(--botai-warn);
 }

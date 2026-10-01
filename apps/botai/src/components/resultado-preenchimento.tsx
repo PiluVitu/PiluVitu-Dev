@@ -133,10 +133,7 @@ export function ResultadoPreenchimento({
           </ul>
           <p className="text-muted-foreground m-0 text-xs leading-normal text-pretty">
             Para esses, clique com o botão direito no campo e use{' '}
-            <span className="text-foreground font-mono">
-              piluvitu › Inserir
-            </span>
-            .
+            <span className="text-foreground font-mono">Botaí › Inserir</span>.
           </p>
         </>
       )}

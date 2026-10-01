@@ -19,7 +19,7 @@ beforeEach(() => {
   Object.assign(fakeBrowser.commands, {
     getAll: vi.fn(async () => [
       {
-        name: 'preencher-pagina',
+        name: 'botai-preencher',
         shortcut: atalho,
         description: 'Preencher esta página',
       },

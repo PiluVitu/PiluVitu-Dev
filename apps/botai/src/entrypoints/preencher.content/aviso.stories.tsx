@@ -14,7 +14,7 @@ function AvisoEmPaginaHostil(props: OpcoesAviso) {
     const hostil = document.createElement('style')
     hostil.textContent = PAGINA_HOSTIL
     document.head.append(hostil)
-    const host = document.createElement('piluvitu-aviso')
+    const host = document.createElement('botai-aviso')
     const sombra = host.attachShadow({ mode: 'open' })
     const estilo = document.createElement('style')
     estilo.textContent = css

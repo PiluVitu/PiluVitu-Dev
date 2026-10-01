@@ -44,14 +44,14 @@ test.describe('avisos de falha, sem popup', () => {
       kind: 'cpf',
     })
 
-    await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+    await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
       'Não deu para inserir aqui: nenhum campo em foco',
     )
-    await expect(aba.locator('piluvitu-aviso .toast')).toHaveAttribute(
+    await expect(aba.locator('botai-aviso .botai-toast')).toHaveAttribute(
       'role',
       'alert',
     )
-    await expect(aba.locator('piluvitu-aviso .linha2')).toHaveCount(0)
+    await expect(aba.locator('botai-aviso .botai-linha2')).toHaveCount(0)
     await expect(aba.locator('input[name="cpf"]')).toHaveValue('')
   })
 
@@ -75,7 +75,7 @@ test.describe('avisos de falha, sem popup', () => {
       kind: 'nomeCompleto',
     })
 
-    await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+    await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
       'Não deu para inserir aqui: o campo recusou o valor',
     )
     await expect(aba.locator('input[name="codigo"]')).toHaveValue('')
@@ -99,14 +99,14 @@ test.describe('avisos de falha, sem popup', () => {
     })) as RespostaPreencher
 
     expect(resposta).toMatchObject({ ok: true, resumo: { x: 0, y: 0, k: 0 } })
-    await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+    await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
       'Nenhum campo nesta página',
     )
-    await expect(aba.locator('piluvitu-aviso .toast')).toHaveAttribute(
+    await expect(aba.locator('botai-aviso .botai-toast')).toHaveAttribute(
       'role',
       'alert',
     )
-    await expect(aba.locator('piluvitu-aviso .linha2')).toHaveCount(0)
+    await expect(aba.locator('botai-aviso .botai-linha2')).toHaveCount(0)
   })
 
   test('página que o Chrome recusa: nem Inserir nem Preencher deixam aviso, e o background responde', async ({
@@ -139,7 +139,7 @@ test.describe('avisos de falha, sem popup', () => {
     })) as RespostaPreencher
 
     expect(resposta).toEqual({ ok: false, motivo: 'proibida' })
-    await expect(aba.locator('piluvitu-aviso')).toHaveCount(0)
+    await expect(aba.locator('botai-aviso')).toHaveCount(0)
     await expect(aba.locator('input[name="cpf"]')).toHaveValue('')
   })
 })

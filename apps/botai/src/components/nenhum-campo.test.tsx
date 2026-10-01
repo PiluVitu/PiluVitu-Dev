@@ -48,7 +48,7 @@ describe('NenhumCampo (1d)', () => {
     expect(
       screen.getByText('Dá para inserir campo a campo:'),
     ).toBeInTheDocument()
-    for (const passo of ['botão direito', 'piluvitu', 'Inserir', 'CPF']) {
+    for (const passo of ['botão direito', 'Botaí', 'Inserir', 'CPF']) {
       expect(screen.getByText(passo)).toBeInTheDocument()
     }
   })

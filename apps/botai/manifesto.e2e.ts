@@ -23,21 +23,24 @@ test('manifesto de produção: só activeTab, sem host_permissions nem content_s
   ])
   expect(m).toMatchObject({
     manifest_version: 3,
-    name: 'piluvitu · dados de teste',
+    name: 'Botaí',
+    short_name: 'Botaí',
+    description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
     version: '0.1.0',
     minimum_chrome_version: '123',
     commands: {
-      'preencher-pagina': {
+      'botai-preencher': {
         suggested_key: { default: 'Alt+Shift+P' },
         description: 'Preencher esta página',
       },
     },
     action: {
-      default_title: 'piluvitu · dados de teste',
+      default_title: 'Botaí',
       default_popup: 'popup.html',
     },
     background: { service_worker: 'background.js' },
   })
+  expect(Object.keys(m.commands)).toEqual(['botai-preencher'])
   expect(Object.keys(m.icons).sort()).toEqual(['128', '16', '32', '48'])
 })
 

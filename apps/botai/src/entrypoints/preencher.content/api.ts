@@ -12,18 +12,18 @@ import { preencherDocumento } from './preencher'
 import { criarRegistro } from './registro'
 import { agendarSegundaPassada, type Escrito } from './segunda-passada'
 
-export interface ApiPv {
+export interface ApiBotai {
   preencher(pessoa: Pessoa, hojeISO: string): ResultadoFrame
   inserir(pessoa: Pessoa, kind: FieldKind): ResultadoInsercao
   mostrar(idx: number): boolean
   aviso(a: { titulo: string; linha2?: string; erro?: boolean }): void
 }
 
-export type ComPv = typeof globalThis & { __pv?: ApiPv }
+export type ComBotai = typeof globalThis & { __botai?: ApiBotai }
 
 const LIMPEZA_NOS_FRAMES_FILHOS_MS = 4000
 
-export function criarApi(ctx: ContentScriptContext): ApiPv {
+export function criarApi(ctx: ContentScriptContext): ApiBotai {
   const registro = criarRegistro()
   const contornos = criarContornos((acao, ms) => ctx.setTimeout(acao, ms))
   let ultimo: ResultadoFrame | null = null

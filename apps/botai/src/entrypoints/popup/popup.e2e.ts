@@ -42,7 +42,7 @@ test('popup: gera a pessoa no 1a e o Preencher do 1b preenche a aba-alvo', async
 
   await popup.getByRole('button', { name: /Preencher esta página/ }).click()
   await expect(aba.locator('input[name="cpf"]')).toHaveValue(pessoa.cpf)
-  await expect(aba.locator('piluvitu-aviso .titulo')).toHaveText(
+  await expect(aba.locator('botai-aviso .botai-titulo')).toHaveText(
     '1 de 1 campo preenchido',
   )
   await expect(

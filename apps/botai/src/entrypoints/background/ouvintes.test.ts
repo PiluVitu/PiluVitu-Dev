@@ -52,51 +52,52 @@ const clique = (menuItemId: string, frameId = 0) =>
 const chamada = (n: number) => executar.mock.calls[n][0]
 
 describe('aoComando', () => {
-  it('Alt+Shift+P (preencher-pagina) preenche a aba do comando', async () => {
-    await aoComando('preencher-pagina', ABA)
+  it('Alt+Shift+P (botai-preencher) preenche a aba do comando', async () => {
+    await aoComando('botai-preencher', ABA)
     expect(chamada(0).target).toEqual({ tabId: 7, allFrames: true })
   })
 
-  it('ignora outro comando e comando sem aba', async () => {
+  it('ignora outro comando (inclusive o antigo preencher-pagina) e comando sem aba', async () => {
     await aoComando('outro', ABA)
-    await aoComando('preencher-pagina', undefined)
+    await aoComando('preencher-pagina', ABA)
+    await aoComando('botai-preencher', undefined)
     expect(executar).not.toHaveBeenCalled()
   })
 
   it('sem pessoa guardada, o atalho gera uma antes de preencher', async () => {
     await pessoaItem.setValue(null)
-    await aoComando('preencher-pagina', ABA)
+    await aoComando('botai-preencher', ABA)
     expect(await pessoaItem.getValue()).not.toBeNull()
   })
 })
 
 describe('aoClicarMenu', () => {
   it('"Preencher esta página" preenche a aba do clique', async () => {
-    await aoClicarMenu(clique('preencher'), ABA)
+    await aoClicarMenu(clique('botai-preencher'), ABA)
     expect(chamada(0).target).toEqual({ tabId: 7, allFrames: true })
   })
 
   it('Inserir › CPF injeta no frame do clique com o kind', async () => {
-    await aoClicarMenu(clique('inserir:cpf', 3), ABA)
+    await aoClicarMenu(clique('botai-inserir:cpf', 3), ABA)
     expect(chamada(0).target).toEqual({ tabId: 7, frameIds: [3] })
     expect(chamada(1).args).toEqual([P, 'cpf'])
   })
 
   it('"Nova pessoa" troca a pessoa guardada', async () => {
-    await aoClicarMenu(clique('nova-pessoa'), ABA)
+    await aoClicarMenu(clique('botai-nova-pessoa'), ABA)
     expect(await pessoaItem.getValue()).not.toEqual(P)
   })
 
   it('"Abrir caixa de entrada" abre a caixa pública da pessoa numa aba nova', async () => {
     const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
-    await aoClicarMenu(clique('abrir-caixa'), ABA)
+    await aoClicarMenu(clique('botai-abrir-caixa'), ABA)
     expect(abrir).toHaveBeenCalledWith({ url: P.email.caixaUrl })
   })
 
   it('"Abrir caixa de entrada" sem pessoa gera uma antes', async () => {
     await pessoaItem.setValue(null)
     const abrir = vi.spyOn(fakeBrowser.tabs, 'create')
-    await aoClicarMenu(clique('abrir-caixa'), undefined)
+    await aoClicarMenu(clique('botai-abrir-caixa'), undefined)
     const gerada = await pessoaItem.getValue()
     expect(abrir).toHaveBeenCalledWith({ url: gerada?.email.caixaUrl })
   })
@@ -116,7 +117,7 @@ describe('aoReceberMensagem', () => {
     )
   })
 
-  it('mostrar responde com o que __pv.mostrar devolveu', async () => {
+  it('mostrar responde com o que __botai.mostrar devolveu', async () => {
     executar.mockResolvedValue([
       { documentId: 'doc-1', frameId: 2, result: true },
     ])
@@ -169,7 +170,10 @@ describe('recriarMenus', () => {
   it('recria os menus com o CPF da pessoa guardada no título', async () => {
     await recriarMenus()
     expect(criar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'inserir:cpf', title: `CPF · ${P.cpf}` }),
+      expect.objectContaining({
+        id: 'botai-inserir:cpf',
+        title: `CPF · ${P.cpf}`,
+      }),
     )
   })
 })

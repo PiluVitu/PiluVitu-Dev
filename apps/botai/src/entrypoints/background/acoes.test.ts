@@ -55,7 +55,7 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers())
 
 describe('preencherPagina', () => {
-  it('injeta em todos os frames, chama __pv.preencher com a pessoa e hoje, avisa no frame 0 e devolve a soma', async () => {
+  it('injeta em todos os frames, chama __botai.preencher com a pessoa e hoje, avisa no frame 0 e devolve a soma', async () => {
     simularPagina(RESULTADO)
     const resposta = await preencherPagina(7)
     expect(executar).toHaveBeenCalledTimes(3)
@@ -98,10 +98,10 @@ describe('preencherPagina', () => {
     await preencherPagina(7)
     const { func, args = [] } = chamada(1)
     const preencher = vi.fn(() => RESULTADO)
-    Object.assign(globalThis, { __pv: { preencher } })
+    Object.assign(globalThis, { __botai: { preencher } })
     expect(func?.(...args)).toBe(RESULTADO)
     expect(preencher).toHaveBeenCalledWith(P, '2026-10-01')
-    Reflect.deleteProperty(globalThis, '__pv')
+    Reflect.deleteProperty(globalThis, '__botai')
     expect(func?.(...args)).toBeNull()
   })
 
@@ -177,7 +177,7 @@ describe('preencherPagina', () => {
 })
 
 describe('inserirNoCampo', () => {
-  it('injeta só no frame do clique e chama __pv.inserir com a pessoa e o kind', async () => {
+  it('injeta só no frame do clique e chama __botai.inserir com a pessoa e o kind', async () => {
     simularPagina(null)
     await inserirNoCampo(7, 3, 'cpf')
     expect(chamada(0)).toEqual({
@@ -192,7 +192,7 @@ describe('inserirNoCampo', () => {
 })
 
 describe('mostrarCampo', () => {
-  it('chama __pv.mostrar no documento da linha, sem reinjetar', async () => {
+  it('chama __botai.mostrar no documento da linha, sem reinjetar', async () => {
     executar.mockResolvedValue([
       { documentId: 'doc-9', frameId: 4, result: true },
     ])

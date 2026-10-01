@@ -92,7 +92,7 @@ describe('ResultadoPreenchimento (1c)', () => {
     expect(
       screen.getByText(/Para esses, clique com o botão direito no campo e use/),
     ).toHaveTextContent(
-      'Para esses, clique com o botão direito no campo e use piluvitu › Inserir.',
+      'Para esses, clique com o botão direito no campo e use Botaí › Inserir.',
     )
   })
 
