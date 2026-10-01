@@ -3,6 +3,7 @@
         backup-financas backup-financas-test \
         backup-ramielle backup-ramielle-test \
         dev-promeia test-promeia lint-promeia insight \
+        promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle
 
 dev-web:
@@ -81,6 +82,21 @@ test-ramielle:
 # que só uma rota usa, sim.
 dev-promeia:
 	cd apps/promeia && set -a && [ -f .env ] && . ./.env; set +a && uv run uvicorn promeia.app:create_app --factory --reload --port 8082
+
+# Promeia + túnel no login do Mac: LaunchAgent do promeia (sobe e reinicia
+# sozinho) e OrbStack no login (traz o container `cloudflared`, que tem
+# `restart: unless-stopped`). Ver "Serviço no login" em apps/promeia/CLAUDE.md.
+PROMEIA_PLIST := $(HOME)/Library/LaunchAgents/com.piluvitu.promeia.plist
+
+promeia-servico:
+	cp apps/promeia/launchd/com.piluvitu.promeia.plist $(PROMEIA_PLIST)
+	-launchctl bootout gui/$$(id -u)/com.piluvitu.promeia 2>/dev/null
+	launchctl bootstrap gui/$$(id -u) $(PROMEIA_PLIST)
+	orbctl config set app.start_at_login true
+
+promeia-servico-remover:
+	-launchctl bootout gui/$$(id -u)/com.piluvitu.promeia
+	rm -f $(PROMEIA_PLIST)
 
 test-promeia:
 	cd apps/promeia && uv run pytest

@@ -59,6 +59,7 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `make dev-ramielle`                     | Worker ramielle (Hono + D1) via `wrangler dev` em http://localhost:8788              |
 | `make test-ramielle`                    | `pnpm --filter @piluvitu/ramielle test`                                              |
 | `make dev-promeia`                      | Serviço Python (FastAPI) local com `--reload` em http://localhost:8082               |
+| `make promeia-servico`                  | LaunchAgent: promeia sobe no login e reinicia se cair (+ OrbStack/túnel no login)    |
 | `make test-promeia`                     | `cd apps/promeia && uv run pytest`                                                   |
 | `make lint-promeia`                     | `uv run ruff check .` + `uv run ruff format --check .` (apps/promeia)                |
 | `make insight`                          | Gera e publica o insight financeiro (`promeia-insight`) — exige Ollama + tokens      |
