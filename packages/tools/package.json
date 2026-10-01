@@ -36,7 +36,8 @@
     "./empresa": "./src/empresa.ts",
     "./cartao": "./src/cartao.ts",
     "./pessoa": "./src/pessoa.ts",
-    "./campos": "./src/campos.ts"
+    "./campos": "./src/campos.ts",
+    "./campos-formatar": "./src/campos-formatar.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

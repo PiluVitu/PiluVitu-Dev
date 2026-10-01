@@ -119,6 +119,15 @@ Lógica pura da extensão `apps/extensao` (spec `docs/superpowers/specs/2026-10-
 - **Limites conhecidos (não bloqueiam):** "Tel. Com." e `tel_com` ainda viram celular, porque "Celular com DDD" impede tratar `com` sozinho como comercial; e um `UF` solto logo depois de "RG"/"Órgão emissor", fora de fieldset, ainda vira `uf`.
 - Kind composto `cidadeUf`, para "Cidade / UF".
 
+### Valor de cada campo (`campos-formatar`)
+
+- `valorPara(kind, pessoa, descriptor, dicas?)` escolhe o valor **antes** de escrever, porque uma escrita por script ignora `maxlength`: a versão com máscara quando cabe em `maxLength` e em `pattern` (flag `v`), senão só os dígitos; `type=date` → `aaaa-mm-dd`, `type=month` → `aaaa-mm`, `type=number` → dígitos.
+- **Senha maior que `maxLength` vai inteira:** o campo recusa e a extensão conta como "recusado". Truncar quebraria o login seguinte.
+- **`<select>`** (`escolherOpcao`): valor ou texto normalizados, depois igualdade numérica (`03` = `3`), depois token do texto (`SP - São Paulo`). Pula a opção de placeholder, e sem a opção da pessoa devolve `null`. UF tenta a sigla e o nome; país tenta `BR`, `BRA`, `076`, `Brasil`, `Brazil`. No `sexo` a sigla vai **por último**: num select `h`/`m`, o `m` é Mulher.
+- **Valores compostos:** `sobrenome` = os dois sobrenomes; `usuario` = `email.usuario`; `cidadeUf` = `"{cidade} / {uf}"`; `enderecoCompleto` = `"{logradouro}, {numero}, {complemento} - {bairro}, {cidade} - {uf}, {cep}"`.
+
+**`packages/tools`: 158 → 506 testes** (149 dos 172 testes dos geradores da pesquisa, os 103 do classificador e os de borda).
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.
