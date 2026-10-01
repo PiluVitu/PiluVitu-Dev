@@ -61,11 +61,17 @@ export function visivel(el: Campo): boolean {
   return r.right + window.scrollX > 0 && r.bottom + window.scrollY > 0
 }
 
+type ComRaizFechada = Element & {
+  readonly openOrClosedShadowRoot?: ShadowRoot | null
+}
+
 function raizSombra(el: Element): ShadowRoot | null {
   if (el.shadowRoot) return el.shadowRoot
-  return el instanceof HTMLElement
-    ? (browser.dom.openOrClosedShadowRoot(el) ?? null)
-    : null
+  if (!(el instanceof HTMLElement)) return null
+  // O Firefox não tem browser.dom: o equivalente é um atributo do elemento (não método), só em content scripts.
+  return import.meta.env.FIREFOX
+    ? ((el as ComRaizFechada).openOrClosedShadowRoot ?? null)
+    : (browser.dom.openOrClosedShadowRoot(el) ?? null)
 }
 
 export function* campos(raiz: Document | ShadowRoot): Generator<Campo> {
