@@ -267,6 +267,60 @@ export default config({
         altImage: fields.text({ label: 'Abrev. / alt' }),
       },
     }),
+    produtos: collection({
+      label: 'Produtos (PiluLabs)',
+      slugField: 'produtoSlug',
+      path: 'content/produtos/*/',
+      schema: {
+        produtoSlug: fields.slug({
+          name: { label: 'Slug técnico (sem acento, igual à pasta da rota)' },
+        }),
+        order: fields.integer({ label: 'Ordem (menor primeiro)' }),
+        nome: fields.text({ label: 'Nome de exibição (com acento)' }),
+        tipo: fields.select({
+          label: 'Tipo',
+          defaultValue: 'extensao',
+          options: [
+            { label: 'Extensão de navegador', value: 'extensao' },
+            { label: 'App web', value: 'web' },
+            { label: 'CLI', value: 'cli' },
+          ],
+        }),
+        listado: fields.checkbox({
+          label: 'Listado',
+          description:
+            'Aparece em /pilulabs e na home e pode ser indexado. Desmarcado: só por link, com noindex.',
+          defaultValue: false,
+        }),
+        resumo: fields.text({ label: 'Descrição curta oficial' }),
+        icone: fields.text({
+          label: 'Ícone (path em public/)',
+          description: 'Ex.: /pilulabs/botai/icone-128.png',
+        }),
+        tags: fields.array(fields.text({ label: 'Tag' }), { label: 'Tags' }),
+        chromeUrl: fields.text({
+          label: 'Chrome Web Store',
+          description:
+            'Vazio = não publicado. Só vale https://chromewebstore.google.com/…',
+        }),
+        firefoxUrl: fields.text({
+          label: 'Firefox Add-ons',
+          description:
+            'Vazio = não publicado. Só vale https://addons.mozilla.org/…',
+        }),
+        edgeUrl: fields.text({
+          label: 'Microsoft Edge Add-ons',
+          description:
+            'Vazio = não publicado. Só vale https://microsoftedge.microsoft.com/…',
+        }),
+        operaUrl: fields.text({
+          label: 'Opera add-ons',
+          description:
+            'Vazio = não publicado. Só vale https://addons.opera.com/…',
+        }),
+        repoLink: fields.text({ label: 'Código-fonte (URL)' }),
+      },
+    }),
     feeds: collection({
       label: 'Feeds RSS',
       slugField: 'name',

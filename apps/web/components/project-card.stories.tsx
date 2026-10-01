@@ -28,3 +28,19 @@ export const Default: Story = { args: base }
 export const SemSubtitulo: Story = {
   args: { ...base, subtitle: '', repoLink: '' },
 }
+
+export const ProdutoPiluLabs: Story = {
+  args: {
+    id: 'pilulabs-botai',
+    projectName: 'Botaí',
+    subtitle: 'PiluLabs · Powered by PiluTech',
+    projectLogo: '/pilulabs/botai/icone-128.png',
+    image: '/pilulabs/botai/icone-128.png',
+    description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
+    tags: ['Extensão', 'Formulários', 'QA', 'CPF', 'CEP'],
+    deployLink: '/pilulabs/botai',
+    deployLabel: 'Ver no PiluLabs',
+    repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
+    altImage: 'BO',
+  },
+}
