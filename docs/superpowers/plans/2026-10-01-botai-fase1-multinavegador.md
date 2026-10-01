@@ -14,7 +14,7 @@
 
 ## Pré-requisitos e convenções de execução
 
-- **Branch e worktree:** `feat/botai-multinavegador` em `/Users/piluvitu/WWW/PiluVitu-Dev`, empilhada sobre a `feat/extensao-dados-teste` (PR #45). Confira antes da Task 1:
+- **Branch e worktree:** `feat/botai-multinavegador` em `/Users/piluvitu/WWW/PiluVitu-Dev`, sobre a `origin/main`, que já tem o squash do #45 (`4caeca8`). Confira antes da Task 1:
 
   ```bash
   cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git branch --show-current && /usr/bin/git status --short -- . ':(exclude)docs/superpowers/plans' | /usr/bin/wc -l && /bin/ls apps/botai/wxt.config.ts apps/botai/src/lib/paginas.ts apps/botai/src/components/pagina-proibida.tsx; echo "exit=$?"
@@ -37,7 +37,7 @@
 
 ## Global Constraints
 
-- **Nomes do contrato, sem renomear:** `src/lib/navegador.ts` com `export type Navegador = 'chrome' | 'edge' | 'firefox' | 'opera'` e `export function detectarNavegador(): Navegador` (o Firefox e o Opera por `import.meta.env.FIREFOX`/`OPERA` no build; Edge e Opera da CWS por `navigator.userAgentData.brands` em runtime). Scripts do `apps/botai/package.json`: `zip`, `zip:firefox`, `zip:opera`, `lint:firefox`, `build:firefox`, `build:opera`. Makefile: `zip-botai`. Workflow `.github/workflows/botai-release.yml` com o job `pacotes`. Documentos `apps/botai/SOURCE-CODE-REVIEW.md` (inglês) e `apps/botai/LICENSE` (MIT, © PiluTech).
+- **Nomes do contrato, sem renomear:** `src/lib/navegador.ts` com `export type Navegador = 'chrome' | 'edge' | 'firefox' | 'opera'` e `export function detectarNavegador(): Navegador` (o Firefox e o Opera por `import.meta.env.FIREFOX`/`OPERA` no build; Edge e Opera da CWS por `navigator.userAgentData.brands` em runtime). Scripts do `apps/botai/package.json`: `zip`, `zip:firefox`, `zip:opera`, `lint:firefox`, `build:firefox`, `build:opera`. Makefile: `zip-botai`. Workflow `.github/workflows/botai-release.yml` com o job `pacotes`, que sobe o artifact `botai-zips`. Script `apps/botai/scripts/reproduzir-fontes.sh`. `.env.submit` no `.gitignore` da raiz. Documentos `apps/botai/SOURCE-CODE-REVIEW.md` (inglês) e `apps/botai/LICENSE` (MIT, © PiluTech).
 - **Saídas do WXT:** pastas `.output/chrome-mv3`, `.output/firefox-mv3`, `.output/opera-mv3`; zips `.output/botai-<versão>-chrome.zip`, `-firefox.zip`, `-opera.zip` e `-sources.zip` (`zip.name: 'botai'`).
 - **Manifesto:** `manifestVersion: 3` ("sem isso o `-b firefox` gera MV2"); `targetBrowsers: ['chrome', 'firefox', 'opera']` (o Edge usa o build do Chrome); `homepage_url: 'https://piluvitu.com.br/pilulabs/botai'`; no Firefox, `browser_specific_settings.gecko` com `id: 'botai@pilutech.com.br'`, `strict_min_version: '153.0'`, `data_collection_permissions: { required: ['none'] }`, sem `gecko_android`, e a permissão extra `menus`; nos demais, `minimum_chrome_version: '123'`.
 - **Atalho:** Chromium `{ default: 'Ctrl+Shift+Y', mac: 'Alt+Shift+P' }`; Firefox o mesmo mais `linux: 'Alt+Shift+P'`.
@@ -2882,7 +2882,7 @@ Na resposta final, cole a saída real (com os `exit=`) dos Steps 1–4 e liste o
 1. **Checklist manual do Firefox** (`apps/botai/CLAUDE.md`, "Checklist manual: Firefox"): instalar um Firefox 153+ e confirmar ao menos o "21 de 23" pelo popup e pelo atalho, o Inserir sem clicar antes no campo, o menu na senha, o 1e em `about:addons`, o `file:` com o rótulo real da opção e o "alterar" atalho.
 2. **Checklist manual do Edge** (instalado na máquina): "21 de 23", o "alterar" atalho (`chrome://extensions/shortcuts` abre ou não), o 1e com "O Edge…", as lojas do Edge e do Chrome como proibidas e o rótulo do `file:`. Cada item que falhar tem a correção de uma linha descrita no próprio checklist.
 3. **Opera** (opcional, sem Opera na máquina): o checklist do Opera, quando houver um.
-4. **Push e PR** da `feat/botai-multinavegador` quando quiser: no PR, o job `pacotes` do `botai-release.yml` faz a reprodução no `ubuntu-24.04` e o `botai` do `ci.yml` faz os 3 builds e o `web-ext lint`. Depois do squash do #45: `git rebase --onto origin/main feat/extensao-dados-teste feat/botai-multinavegador` (contrato).
+4. **Push e PR** da `feat/botai-multinavegador` quando quiser: no PR, o job `pacotes` do `botai-release.yml` faz a reprodução no `ubuntu-24.04` e o `botai` do `ci.yml` faz os 3 builds e o `web-ext lint`. A branch já está sobre o squash do #45 (`4caeca8`): se a `main` andou, `/usr/bin/git fetch origin && /usr/bin/git rebase origin/main`, nunca o `rebase --onto … feat/extensao-dados-teste`, que reaplicaria o #45. O conflito esperado com a fase 2 (a tabela de workspaces do `CLAUDE.md` da raiz, que a Task 13 realinha inteira; com a fase 3, também o `icone-128.png` do site) e como resolvê-lo estão em "Integração na `main`" do contrato.
 
 ---
 
