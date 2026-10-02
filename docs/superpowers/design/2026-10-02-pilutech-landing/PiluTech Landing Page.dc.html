@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>PiluTech · Aplicativos, infraestrutura e desenvolvimento fullstack</title>
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/colors.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/typography.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/shape.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/motion.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/_ds_bundle.js"></script>
+<style>html{scroll-behavior:smooth;scroll-padding-top:72px}body{margin:0;background:hsl(220 33% 5%);font-family:var(--font-sans);-webkit-font-smoothing:antialiased}a{color:hsl(198 93% 60%);text-decoration:none}a:hover{color:hsl(215 33% 93%)}h1,h2,h3,p,ul,ol{margin:0}</style>
+</helmet>
+<div style="font-family:var(--font-sans);color:hsl(215 33% 93%)">
+
+<nav style="position:sticky;top:0;z-index:20;background:hsl(220 33% 5% / 0.94);border-bottom:1px solid hsl(205 40% 18%)">
+<div style="max-width:1180px;margin:0 auto;padding:0 clamp(20px,5vw,48px);height:68px;display:flex;align-items:center;justify-content:space-between;gap:24px">
+<a href="#inicio" style="display:flex"><dc-import name="PiluTechMark" variant="1a" size="{{ 30 }}" lockup="{{ true }}" fg="hsl(215 33% 93%)" accent="hsl(198 93% 60%)" hint-size="140px,30px"></dc-import></a>
+<div style="display:flex;align-items:center;gap:28px">
+<sc-if value="{{showLinks}}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;gap:24px;font-size:15px">
+<a href="#servicos" style="color:hsl(216 17% 64%)">Serviços</a>
+<a href="#como-funciona" style="color:hsl(216 17% 64%)">Como funciona</a>
+<a href="#projetos" style="color:hsl(216 17% 64%)">Projetos</a>
+<a href="#planos" style="color:hsl(216 17% 64%)">Planos</a>
+<a href="#duvidas" style="color:hsl(216 17% 64%)">Dúvidas</a>
+</div>
+</sc-if>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{wa}}" target="_blank" rel="noopener" dc-props="{{btnNav}}" hint-size="150px,38px"><i class="fa-brands fa-whatsapp"></i> WhatsApp</x-import>
+</div>
+</div>
+</nav>
+
+<header id="inicio" data-screen-label="Hero" style="background:hsl(220 33% 5%);background-image:radial-gradient(60% 60% at 50% 0%, rgb(56 189 248 / 0.13), transparent)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(64px,10vw,128px) clamp(20px,5vw,48px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:56px;align-items:center">
+<div style="display:flex;flex-direction:column;gap:28px">
+<span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(198 93% 60%)">~/pilutech · Teresina, PI · atendimento remoto</span>
+<h1 style="font-size:clamp(40px,5.6vw,68px);line-height:1.04;font-weight:800;letter-spacing:-0.035em;text-wrap:balance">Aplicativos, infraestrutura e desenvolvimento fullstack.</h1>
+<p style="font-size:clamp(17px,1.6vw,20px);line-height:1.6;color:hsl(216 17% 64%);max-width:560px;text-wrap:pretty">A PiluTech cria e mantém aplicativos, provisiona infraestrutura em nuvem e entrega o orçamento de cada item antes de você contratar. Você fala direto com quem desenvolve.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{wa}}" target="_blank" rel="noopener" dc-props="{{btnPrimary}}" hint-size="210px,50px"><i class="fa-brands fa-whatsapp"></i> Falar no WhatsApp</x-import>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="#servicos" dc-props="{{btnOutlineDark}}" hint-size="150px,50px">Ver serviços</x-import>
+</div>
+</div>
+<sc-if value="{{showTerminal}}" hint-placeholder-val="{{ true }}">
+<div style="border-radius:24px;background:hsl(222 36% 9%);border:1px solid hsl(205 40% 18%);overflow:hidden">
+<div style="padding:16px 22px;border-bottom:1px solid hsl(205 40% 18%);display:flex;align-items:center;justify-content:space-between;font-family:var(--font-mono);font-size:13px;letter-spacing:0.12em;color:hsl(216 17% 64%)"><span>~/pilutech</span><span style="display:flex;gap:6px"><span style="width:9px;height:9px;border-radius:3px;background:hsl(205 40% 18%)"></span><span style="width:9px;height:9px;border-radius:3px;background:hsl(205 40% 18%)"></span><span style="width:9px;height:9px;border-radius:3px;background:hsl(198 93% 60%)"></span></span></div>
+<div style="padding:26px 24px;display:flex;flex-direction:column;gap:14px;font-family:var(--font-mono);font-size:clamp(14px,1.4vw,17px);line-height:1.4">
+<span><span style="color:hsl(198 93% 60%)">$</span> pilutech servicos</span>
+<span><span style="color:hsl(158 64% 52%)">✓</span> criação de aplicativos</span>
+<span><span style="color:hsl(158 64% 52%)">✓</span> manutenção de aplicativos</span>
+<span><span style="color:hsl(158 64% 52%)">✓</span> provisionamento de infraestrutura</span>
+<span><span style="color:hsl(158 64% 52%)">✓</span> orçamento de infraestrutura</span>
+<span><span style="color:hsl(158 64% 52%)">✓</span> desenvolvimento fullstack</span>
+<span style="color:hsl(216 17% 64%)"><span style="color:hsl(198 93% 60%)">●</span> agenda aberta para novos projetos</span>
+</div>
+</div>
+</sc-if>
+</div>
+</header>
+
+<section id="servicos" data-screen-label="Serviços" style="background:hsl(220 50% 98%);color:hsl(222 36% 9%)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600;color:hsl(198 93% 26%)">Serviços</span><span style="font-family:var(--font-mono);font-size:13px;color:hsl(215 18% 35%)">03</span><div style="flex:1;height:1px;background:hsl(216 30% 88%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em;max-width:760px;text-wrap:balance">Do primeiro protótipo ao servidor em produção.</h2>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
+<div style="background:hsl(0 0% 100%);border:1px solid hsl(216 30% 88%);border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:18px">
+<div style="width:48px;height:48px;border-radius:16px;border:1px solid hsl(216 30% 88%);display:flex;align-items:center;justify-content:center;color:hsl(198 93% 26%);font-size:19px"><i class="fa-solid fa-mobile-screen"></i></div>
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(215 18% 35%)">01 · Aplicativos</span><h3 style="font-size:23px;font-weight:700;letter-spacing:-0.02em">Criação e manutenção</h3></div>
+<p style="font-size:16px;line-height:1.6;color:hsl(215 18% 35%);text-wrap:pretty">Aplicativos web e mobile do protótipo à publicação, e manutenção contínua depois do lançamento.</p>
+<ul style="list-style:none;padding:16px 0 0;border-top:1px solid hsl(216 30% 88%);display:flex;flex-direction:column;gap:10px;font-size:15px"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Web e mobile</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Publicação nas lojas</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Correções e atualizações</li></ul>
+</div>
+<div style="background:hsl(0 0% 100%);border:1px solid hsl(216 30% 88%);border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:18px">
+<div style="width:48px;height:48px;border-radius:16px;border:1px solid hsl(216 30% 88%);display:flex;align-items:center;justify-content:center;color:hsl(198 93% 26%);font-size:19px"><i class="fa-solid fa-server"></i></div>
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(215 18% 35%)">02 · Infraestrutura</span><h3 style="font-size:23px;font-weight:700;letter-spacing:-0.02em">Provisionamento e orçamento</h3></div>
+<p style="font-size:16px;line-height:1.6;color:hsl(215 18% 35%);text-wrap:pretty">Servidores, banco de dados, rede e monitoramento configurados como código, com o custo mensal estimado antes de contratar.</p>
+<ul style="list-style:none;padding:16px 0 0;border-top:1px solid hsl(216 30% 88%);display:flex;flex-direction:column;gap:10px;font-size:15px"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Infraestrutura como código</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Custo estimado por item</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Monitoramento e alertas</li></ul>
+</div>
+<div style="background:hsl(0 0% 100%);border:1px solid hsl(216 30% 88%);border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:18px">
+<div style="width:48px;height:48px;border-radius:16px;border:1px solid hsl(216 30% 88%);display:flex;align-items:center;justify-content:center;color:hsl(198 93% 26%);font-size:19px"><i class="fa-solid fa-layer-group"></i></div>
+<div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(215 18% 35%)">03 · Fullstack</span><h3 style="font-size:23px;font-weight:700;letter-spacing:-0.02em">Desenvolvimento sob medida</h3></div>
+<p style="font-size:16px;line-height:1.6;color:hsl(215 18% 35%);text-wrap:pretty">Front-end, back-end e integrações para sistemas internos, painéis e APIs.</p>
+<ul style="list-style:none;padding:16px 0 0;border-top:1px solid hsl(216 30% 88%);display:flex;flex-direction:column;gap:10px;font-size:15px"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>APIs e integrações</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Painéis e sistemas internos</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 26%)">→</span>Modelagem de banco de dados</li></ul>
+</div>
+</div>
+</div>
+</section>
+
+<section id="como-funciona" data-screen-label="Como funciona" style="background:hsl(220 33% 5%)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600;color:hsl(198 93% 60%)">Como funciona</span><span style="font-family:var(--font-mono);font-size:13px;color:hsl(216 17% 64%)">04</span><div style="flex:1;height:1px;background:hsl(205 40% 18%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em;max-width:760px;text-wrap:balance">Quatro etapas, com escopo e valor por escrito.</h2>
+</div>
+<ol style="list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:20px">
+<li style="border-radius:24px;background:hsl(222 36% 9%);border:1px solid hsl(205 40% 18%);padding:28px;display:flex;flex-direction:column;gap:14px"><span style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:hsl(198 93% 60%)">01</span><h3 style="font-size:20px;font-weight:700;letter-spacing:-0.02em">Conversa</h3><p style="font-size:15px;line-height:1.6;color:hsl(216 17% 64%)">Você explica pelo WhatsApp o que precisa. Sem formulário longo.</p></li>
+<li style="border-radius:24px;background:hsl(222 36% 9%);border:1px solid hsl(205 40% 18%);padding:28px;display:flex;flex-direction:column;gap:14px"><span style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:hsl(198 93% 60%)">02</span><h3 style="font-size:20px;font-weight:700;letter-spacing:-0.02em">Proposta</h3><p style="font-size:15px;line-height:1.6;color:hsl(216 17% 64%)">Escopo, prazo e valor por escrito, com o custo mensal estimado da infraestrutura.</p></li>
+<li style="border-radius:24px;background:hsl(222 36% 9%);border:1px solid hsl(205 40% 18%);padding:28px;display:flex;flex-direction:column;gap:14px"><span style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:hsl(198 93% 60%)">03</span><h3 style="font-size:20px;font-weight:700;letter-spacing:-0.02em">Desenvolvimento</h3><p style="font-size:15px;line-height:1.6;color:hsl(216 17% 64%)">Entregas por etapa, com um ambiente de teste para você acompanhar.</p></li>
+<li style="border-radius:24px;background:hsl(222 36% 9%);border:1px solid hsl(205 40% 18%);padding:28px;display:flex;flex-direction:column;gap:14px"><span style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:hsl(198 93% 60%)">04</span><h3 style="font-size:20px;font-weight:700;letter-spacing:-0.02em">Entrega e acompanhamento</h3><p style="font-size:15px;line-height:1.6;color:hsl(216 17% 64%)">Publicação em produção, documentação e, se quiser, um plano de manutenção.</p></li>
+</ol>
+</div>
+</section>
+
+<section id="projetos" data-screen-label="Projetos" style="background:hsl(220 50% 98%);color:hsl(222 36% 9%)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600;color:hsl(198 93% 26%)">Projetos</span><span style="font-family:var(--font-mono);font-size:13px;color:hsl(215 18% 35%)">02</span><div style="flex:1;height:1px;background:hsl(216 30% 88%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em;max-width:760px;text-wrap:balance">Produtos próprios da PiluTech.</h2>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:24px">
+<a href="https://botai.pilutech.com.br/" target="_blank" rel="noopener" style="background:hsl(0 0% 100%);border:1px solid hsl(216 30% 88%);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;color:hsl(222 36% 9%)" style-hover="border-color:hsl(198 93% 26%)">
+<img src="https://botai.pilutech.com.br/opengraph-image?c38af07e9157d6d9" alt="Botaí: gerador de dados fake para formulários" style="width:100%;aspect-ratio:1200/630;object-fit:cover;display:block;background:hsl(222 36% 9%);border-bottom:1px solid hsl(216 30% 88%)">
+<div style="padding:28px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h3 style="font-size:26px;font-weight:800;letter-spacing:-0.03em">Botaí</h3><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border-radius:10px;border:1px solid hsl(216 30% 88%);color:hsl(215 18% 35%)">Extensão de navegador · em breve</span></div>
+<p style="font-size:16px;line-height:1.6;color:hsl(215 18% 35%);text-wrap:pretty">Gera uma pessoa brasileira de teste com CPF e CNPJ válidos e CEP real com endereço, e preenche o formulário com um atalho. Para Chrome, Firefox, Edge e Opera.</p>
+<span style="font-family:var(--font-mono);font-size:14px;color:hsl(198 93% 26%)">botai.pilutech.com.br →</span>
+</div>
+</a>
+<a href="https://sombrai.pilutech.com.br/" target="_blank" rel="noopener" style="background:hsl(0 0% 100%);border:1px solid hsl(216 30% 88%);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;color:hsl(222 36% 9%)" style-hover="border-color:hsl(198 93% 26%)">
+<img src="https://sombrai.pilutech.com.br/opengraph-image.png?opengraph-image.032v6p0-_odhc.png" alt="O ícone do Sombraí e a tela Início do app" style="width:100%;aspect-ratio:1200/630;object-fit:cover;display:block;background:hsl(222 36% 9%);border-bottom:1px solid hsl(216 30% 88%)">
+<div style="padding:28px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h3 style="font-size:26px;font-weight:800;letter-spacing:-0.03em">Sombraí</h3><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;border-radius:10px;border:1px solid hsl(216 30% 88%);color:hsl(215 18% 35%)">App Android e iPhone · em breve</span></div>
+<p style="font-size:16px;line-height:1.6;color:hsl(215 18% 35%);text-wrap:pretty">Mostra quais árvores e plantas nativas do Piauí cabem no quintal, na calçada, na varanda ou no vaso em Teresina, e como cuidar delas no clima daqui.</p>
+<span style="font-family:var(--font-mono);font-size:14px;color:hsl(198 93% 26%)">sombrai.pilutech.com.br →</span>
+</div>
+</a>
+</div>
+</div>
+</section>
+
+<section id="tecnologias" data-screen-label="Tecnologias" style="background:hsl(220 33% 5%)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600;color:hsl(198 93% 60%)">Tecnologias</span><span style="font-family:var(--font-mono);font-size:13px;color:hsl(216 17% 64%)">03</span><div style="flex:1;height:1px;background:hsl(205 40% 18%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em;max-width:760px;text-wrap:balance">Ferramentas usadas no dia a dia.</h2>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
+<div style="display:flex;flex-direction:column;gap:16px;padding-top:20px;border-top:1px solid hsl(205 40% 18%)"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(216 17% 64%)">Front-end</span><div style="display:flex;flex-wrap:wrap;gap:8px;font-family:var(--font-mono);font-size:15px"><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">React</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Next.js</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">TypeScript</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Tailwind CSS</span></div></div>
+<div style="display:flex;flex-direction:column;gap:16px;padding-top:20px;border-top:1px solid hsl(205 40% 18%)"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(216 17% 64%)">Back-end</span><div style="display:flex;flex-wrap:wrap;gap:8px;font-family:var(--font-mono);font-size:15px"><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Go</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Node.js</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Python</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">PostgreSQL</span></div></div>
+<div style="display:flex;flex-direction:column;gap:16px;padding-top:20px;border-top:1px solid hsl(205 40% 18%)"><span style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(216 17% 64%)">Infraestrutura</span><div style="display:flex;flex-wrap:wrap;gap:8px;font-family:var(--font-mono);font-size:15px"><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Docker</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Kubernetes</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Terraform</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">AWS</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">Cloudflare</span><span style="padding:8px 14px;border-radius:12px;border:1px solid hsl(205 40% 18%)">GitHub Actions</span></div></div>
+</div>
+</div>
+</section>
+
+<section id="planos" data-screen-label="Planos" style="background:hsl(198 93% 26%);color:hsl(0 0% 100%)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:48px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600">Planos de manutenção</span><span style="font-family:var(--font-mono);font-size:13px">03</span><div style="flex:1;height:1px;background:hsl(198 60% 45%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em;max-width:760px;text-wrap:balance">Seu aplicativo atualizado, monitorado e no ar.</h2>
+<p style="font-size:17px;line-height:1.6;max-width:640px">Planos mensais. O valor depende do tamanho do aplicativo e da infraestrutura, e vem na proposta.</p>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
+<div style="border-radius:24px;background:hsl(198 93% 20%);border:1px solid hsl(198 60% 40%);padding:32px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:24px;font-weight:800;letter-spacing:-0.02em">Essencial</h3><p style="font-size:15px;line-height:1.5">Para manter o app no ar e seguro.</p></div>
+<ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:12px;font-size:15px;flex:1"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Correção de bugs</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Atualização de dependências e segurança</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Monitoramento de disponibilidade</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Backup verificado</li></ul>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{waEssencial}}" target="_blank" rel="noopener" dc-props="{{btnPlan}}" hint-size="100%,46px">Pedir proposta</x-import>
+</div>
+<div style="border-radius:24px;background:hsl(198 93% 20%);border:1px solid hsl(198 60% 40%);padding:32px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:24px;font-weight:800;letter-spacing:-0.02em">Evolução</h3><p style="font-size:15px;line-height:1.5">Para quem continua lançando funcionalidades.</p></div>
+<ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:12px;font-size:15px;flex:1"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Tudo do Essencial</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Horas mensais para novas funcionalidades</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Relatório mensal do que foi feito</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Prioridade no atendimento</li></ul>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{waEvolucao}}" target="_blank" rel="noopener" dc-props="{{btnPlan}}" hint-size="100%,46px">Pedir proposta</x-import>
+</div>
+<div style="border-radius:24px;background:hsl(198 93% 20%);border:1px solid hsl(198 60% 40%);padding:32px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;flex-direction:column;gap:8px"><h3 style="font-size:24px;font-weight:800;letter-spacing:-0.02em">Infraestrutura</h3><p style="font-size:15px;line-height:1.5">Para quem quer alguém cuidando da nuvem.</p></div>
+<ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:12px;font-size:15px;flex:1"><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Revisão mensal de custos</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Ajuste de capacidade</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Alertas e resposta a incidentes</li><li style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:hsl(198 93% 60%)">✓</span>Atualização dos servidores</li></ul>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{waInfra}}" target="_blank" rel="noopener" dc-props="{{btnPlan}}" hint-size="100%,46px">Pedir proposta</x-import>
+</div>
+</div>
+</div>
+</section>
+
+<section id="duvidas" data-screen-label="Dúvidas" style="background:hsl(220 50% 98%);color:hsl(222 36% 9%)">
+<div style="max-width:860px;margin:0 auto;padding:clamp(72px,9vw,112px) clamp(20px,5vw,48px);display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:center;gap:14px"><span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;font-weight:600;color:hsl(198 93% 26%)">Perguntas frequentes</span><span style="font-family:var(--font-mono);font-size:13px;color:hsl(215 18% 35%)">{{faqCount}}</span><div style="flex:1;height:1px;background:hsl(216 30% 88%)"></div></div>
+<h2 style="font-size:clamp(30px,3.6vw,44px);line-height:1.1;font-weight:800;letter-spacing:-0.03em">Dúvidas comuns</h2>
+</div>
+<div style="display:flex;flex-direction:column;border-top:1px solid hsl(216 30% 88%)">
+<sc-for list="{{faq}}" as="item" hint-placeholder-count="5">
+<div style="border-bottom:1px solid hsl(216 30% 88%)">
+<button type="button" onClick="{{item.toggle}}" style="all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 0;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:hsl(222 36% 9%)">{{item.q}}<span style="font-family:var(--font-mono);font-size:20px;color:hsl(198 93% 26%);flex:none;width:32px;height:32px;border-radius:10px;border:1px solid hsl(216 30% 88%);display:flex;align-items:center;justify-content:center">{{item.sign}}</span></button>
+<sc-if value="{{item.open}}" hint-placeholder-val="{{ false }}"><p style="font-size:16px;line-height:1.65;color:hsl(215 18% 35%);padding:0 52px 24px 0;text-wrap:pretty">{{item.a}}</p></sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<section id="contato" data-screen-label="Contato" style="background:hsl(220 33% 5%);background-image:radial-gradient(60% 70% at 50% 100%, rgb(56 189 248 / 0.12), transparent)">
+<div style="max-width:1180px;margin:0 auto;padding:clamp(80px,10vw,128px) clamp(20px,5vw,48px);display:flex;flex-direction:column;align-items:center;text-align:center;gap:28px">
+<span style="font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:hsl(198 93% 60%)">contato</span>
+<h2 style="font-size:clamp(34px,4.6vw,56px);line-height:1.06;font-weight:800;letter-spacing:-0.035em;max-width:760px;text-wrap:balance">Conte o que você precisa.</h2>
+<p style="font-size:18px;line-height:1.6;color:hsl(216 17% 64%);max-width:560px">A conversa é direta com quem vai desenvolver. Pelo WhatsApp ou por e-mail.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{wa}}" target="_blank" rel="noopener" dc-props="{{btnPrimary}}" hint-size="250px,50px"><i class="fa-brands fa-whatsapp"></i> {{phoneLabel}}</x-import>
+<x-import component-from-global-scope="PiluVituDesignSystem_c5cbcc.Button" as="a" href="{{mailto}}" dc-props="{{btnOutlineDark}}" hint-size="320px,50px"><i class="fa-regular fa-envelope"></i> {{email}}</x-import>
+</div>
+</div>
+</section>
+
+<footer style="background:hsl(220 33% 5%);border-top:1px solid hsl(205 40% 18%)">
+<div style="max-width:1180px;margin:0 auto;padding:32px clamp(20px,5vw,48px);display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap">
+<dc-import name="PiluTechMark" variant="1a" size="{{ 28 }}" lockup="{{ true }}" fg="hsl(215 33% 93%)" accent="hsl(198 93% 60%)" hint-size="130px,28px"></dc-import>
+<span style="font-family:var(--font-mono);font-size:13px;color:hsl(216 17% 64%)">© 2026 PiluTech · Paulo Victor T S · {{email}}</span>
+</div>
+</footer>
+
+<sc-if value="{{showFloat}}" hint-placeholder-val="{{ true }}">
+<a href="{{wa}}" target="_blank" rel="noopener" aria-label="Falar no WhatsApp" style="position:fixed;right:20px;bottom:20px;z-index:30;width:56px;height:56px;border-radius:18px;background:hsl(198 93% 60%);color:hsl(220 33% 5%);display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:0 8px 24px rgb(0 0 0 / 0.35)" style-hover="color:hsl(220 33% 5%);background:hsl(198 93% 68%)"><i class="fa-brands fa-whatsapp"></i></a>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;whatsapp&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;86981737625&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Contato&quot;},&quot;email&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;pilutechinformatica@gmail.com&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Contato&quot;},&quot;showTerminal&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;floatingWhatsapp&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  state = { open: 0, w: typeof window !== 'undefined' ? window.innerWidth : 1200 };
+  componentDidMount() {
+    this.onResize = () => this.setState({ w: window.innerWidth });
+    window.addEventListener('resize', this.onResize);
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this.onResize); }
+  renderVals() {
+    const digits = String(this.props.whatsapp ?? '86981737625').replace(/\D/g, '');
+    const full = digits.startsWith('55') ? digits : '55' + digits;
+    const local = full.slice(2);
+    const phoneLabel = local.length === 11 ? `(${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}` : local;
+    const link = (t) => `https://wa.me/${full}?text=${encodeURIComponent(t)}`;
+    const email = this.props.email ?? 'pilutechinformatica@gmail.com';
+    const faqData = [
+      ['Quanto custa um aplicativo?', 'Depende do escopo. Depois da conversa inicial você recebe uma proposta por escrito com o que será feito, o prazo e o valor, além do custo mensal estimado da infraestrutura.'],
+      ['Você assume um aplicativo que outra pessoa fez?', 'Sim. O trabalho começa com uma análise do código e da infraestrutura atuais, e a proposta lista o que precisa ser corrigido antes de seguir.'],
+      ['Como funciona o orçamento de infraestrutura?', 'É feito um levantamento do uso esperado e cada item recebe uma estimativa de custo: servidores, banco de dados, armazenamento, rede e monitoramento. Quando faz sentido, a comparação inclui mais de um provedor.'],
+      ['O atendimento é só em Teresina?', 'Não. O atendimento é remoto e vale para todo o Brasil.'],
+      ['A PiluTech ainda faz manutenção de computadores e impressoras?', 'Não. A PiluTech atende apenas aplicativos, infraestrutura e desenvolvimento de software.']
+    ];
+    const btn = (extra) => ({ style: Object.assign({ height: 50, padding: '0 22px', fontSize: 16, fontWeight: 600, borderRadius: 14, textDecoration: 'none' }, extra) });
+    return {
+      showLinks: this.state.w >= 900,
+      showTerminal: this.props.showTerminal ?? true,
+      showFloat: this.props.floatingWhatsapp ?? true,
+      wa: link('Olá! Vim pelo site da PiluTech e quero falar sobre um projeto.'),
+      waEssencial: link('Olá! Quero uma proposta do plano Essencial de manutenção.'),
+      waEvolucao: link('Olá! Quero uma proposta do plano Evolução de manutenção.'),
+      waInfra: link('Olá! Quero uma proposta do plano de Infraestrutura.'),
+      phoneLabel, email, mailto: 'mailto:' + email,
+      btnNav: { style: { height: 38, padding: '0 14px', fontSize: 14, fontWeight: 600, borderRadius: 12, background: 'hsl(198 93% 60%)', color: 'hsl(220 33% 5%)', textDecoration: 'none' } },
+      btnPrimary: btn({ background: 'hsl(198 93% 60%)', color: 'hsl(220 33% 5%)' }),
+      btnOutlineDark: btn({ background: 'transparent', color: 'hsl(215 33% 93%)', border: '1px solid hsl(205 40% 18%)' }),
+      btnPlan: btn({ width: '100%', boxSizing: 'border-box', height: 46, background: 'hsl(0 0% 100%)', color: 'hsl(198 93% 20%)' }),
+      faqCount: String(faqData.length).padStart(2, '0'),
+      faq: faqData.map(([q, a], i) => ({
+        q, a, open: this.state.open === i, sign: this.state.open === i ? '−' : '+',
+        toggle: () => this.setState(s => ({ open: s.open === i ? -1 : i }))
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>
