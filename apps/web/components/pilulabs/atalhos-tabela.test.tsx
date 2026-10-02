@@ -1,4 +1,4 @@
-import { ATALHOS } from '@/lib/pilulabs'
+import { ATALHOS } from '@piluvitu/tools/pilulabs'
 import { renderEstatico } from '@/lib/render-estatico'
 import { AtalhosTabela } from './atalhos-tabela'
 

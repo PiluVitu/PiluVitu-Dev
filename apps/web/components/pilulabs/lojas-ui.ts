@@ -5,7 +5,7 @@ import {
   faFirefoxBrowser,
   faOpera,
 } from '@fortawesome/free-brands-svg-icons'
-import type { Loja } from '@/lib/pilulabs'
+import type { Loja } from '@piluvitu/tools/pilulabs'
 
 export const LOJA_UI: Record<Loja, { rotulo: string; icone: IconDefinition }> =
   {

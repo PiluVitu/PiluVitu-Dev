@@ -1,4 +1,4 @@
-import type { Loja, Sistema } from '@/lib/pilulabs'
+import type { Loja, Sistema } from '@piluvitu/tools/pilulabs'
 
 const NAVEGADORES: { loja: Loja; nome: string }[] = [
   { loja: 'chrome', nome: 'Chrome' },

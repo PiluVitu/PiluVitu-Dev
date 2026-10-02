@@ -1,4 +1,4 @@
-import type { Fase } from '@/lib/pilulabs'
+import type { Fase } from '@piluvitu/tools/pilulabs'
 import { cn } from '@/lib/utils'
 
 const ROTULO: Record<Fase, string> = {

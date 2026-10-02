@@ -219,11 +219,10 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
     - o registry do admin tem `omitirSeVazio: ['data']`, e o `serializeEntry` apaga a chave vazia;
     - o `lib/pilulabs-conteudo.test.ts` reprova o YAML que o reader recusa (`camposInvalidosNoYaml`, que espelha o parse de cada campo do `keystatic.config.ts`) e o que o `pilulabsSchema` recusa. Os dois leitores precisam das travas porque o Jest e os E2E leem pelo `yaml` + `normalizarItem`, tolerantes, e ficariam verdes.
 - **Regras (lógica pura, testada no Jest):**
-  - `lib/pilulabs-regras.ts`, sem `node:fs` e importável no cliente:
+  - `@piluvitu/tools/pilulabs` (`packages/tools/src/pilulabs.ts`), sem `node:fs`, importável no cliente e compartilhado com o `apps/botai-site`:
     - `Loja`, `LOJAS` e `ehUrlDaLoja`: só aceita `https:` no host exato da loja;
-    - `ehHttps`;
-    - `TipoItem` e `TIPOS`, na ordem da vitrine;
-    - `ehDataValida`.
+    - `lojasPublicadas`, `fase` e `ATALHOS` (derivado de `TECLAS_DO_MANIFESTO`, o `suggested_key` do Botaí);
+    - `ehHttps`, `TipoItem` e `TIPOS` (na ordem da vitrine) e `ehDataValida`.
   - `lib/pilulabs.ts`:
     - `normalizarItem`;
     - `itensListados`: só `listado: true`, por `order` e depois `slug`;
@@ -231,7 +230,7 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
     - `linkDoItem(item, subdominios)`: a página própria, com a chave desligada, é `/pilulabs/<slug>`. Senão vale o `site`, depois a página própria no subdomínio, depois o `repo`. Sem nenhum, o card fica sem botão;
     - `siglaDoItem`;
     - `itemParaProject`: o card da home. "Acessar" leva ao `linkDoItem`, e some quando seria o próprio `repo`; "Código" leva ao `repo`;
-    - `lojasPublicadas`, `fase`, `listarCapturas`, `ATALHOS` e `metadataDaPagina`/`metadataDoItem`.
+    - `listarCapturas` e `metadataDaPagina`/`metadataDoItem`.
   - `lib/pilutech-dominios.ts`, sem `node:fs` (o `proxy.ts` só importa este): `subdominiosAtivos()`, `urlPublica(caminho, ativos)`, `destinoDoHost`, `ehCaminhoIntocavel`, `rotearPorHost` e `SITE_DO_AUTOR`.
   - Status "● Em breve"/"● Disponível" e ícones de loja aparecem só em `tipo: extensao`.
 - **Home:**
@@ -329,7 +328,7 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
   - `AtalhosTabela`;
   - `SecaoPiluLabs`.
 
-  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@/lib/pilulabs-regras`, como os `TIPOS` do formulário do admin.
+  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@piluvitu/tools/pilulabs`, como os `TIPOS` do formulário do admin.
 
 - **Testes:**
   - **Jest de componente:** usa `renderToStaticMarkup`, via `lib/render-estatico.ts`, sem Testing Library e sem dependência nova. Componente com TanStack Query vai embrulhado num `QueryClientProvider` (ver `home-footer.test.tsx`).

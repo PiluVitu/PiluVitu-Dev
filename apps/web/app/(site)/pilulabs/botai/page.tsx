@@ -22,13 +22,8 @@ import { BotoesLoja } from '@/components/pilulabs/botoes-loja'
 import { CapturasGaleria } from '@/components/pilulabs/capturas-galeria'
 import { StatusProduto } from '@/components/pilulabs/status-produto'
 import { SectionHeader } from '@/components/section-header'
-import {
-  ATALHOS,
-  fase,
-  listarCapturas,
-  lojasPublicadas,
-  metadataDoItem,
-} from '@/lib/pilulabs'
+import { ATALHOS, fase, lojasPublicadas } from '@piluvitu/tools/pilulabs'
+import { listarCapturas, metadataDoItem } from '@/lib/pilulabs'
 import { jsonLdDoItem } from '@/lib/pilulabs-json-ld'
 import { subdominiosAtivos, urlPublica } from '@/lib/pilutech-dominios'
 import { getPiluLabs } from '@/lib/site-content'

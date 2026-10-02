@@ -1,13 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
 import { LOJA_UI } from '../../../components/pilulabs/lojas-ui'
-import {
-  itensListados,
-  linkDoItem,
-  LOJAS,
-  lojasPublicadas,
-  TIPOS,
-} from '../../../lib/pilulabs'
+import { LOJAS, lojasPublicadas, TIPOS } from '@piluvitu/tools/pilulabs'
+import { itensListados, linkDoItem } from '../../../lib/pilulabs'
 import { lerItensDoConteudo } from '../../../lib/pilulabs-conteudo'
 
 // O esperado sai do mesmo YAML que as páginas leem: o teste continua valendo

@@ -128,6 +128,14 @@ Lógica pura da extensão Botaí (`apps/botai`) (spec `docs/superpowers/specs/20
 
 **`packages/tools`: 158 → 531 testes** (149 dos 172 testes dos geradores da pesquisa, os 103 do classificador e os de borda).
 
+## Módulo `pilulabs` (regras do catálogo PiluLabs e do Botaí)
+
+`pilulabs.ts`, exposto só por `@piluvitu/tools/pilulabs`, sem `node:fs` e importável no cliente. Saiu do `apps/web/lib` (era o `pilulabs-regras.ts` mais `lojasPublicadas`, `fase` e `ATALHOS`) porque dois apps decidem a mesma coisa: o `apps/web` (card da PiluLabs, formulário do admin) e o `apps/botai-site` (botões de loja, selo de fase, atalho de quem visita).
+
+- `Loja`, `LOJAS` (ordem fixa) e `ehUrlDaLoja`: só `https:` no host exato da loja; `lojasPublicadas(urls)` e `fase(urls)` recebem as 4 URLs (`UrlsDasLojas`), e só URL válida conta.
+- `TipoItem`, `TIPOS` (ordem da vitrine), `TIPO_PADRAO`, `ehHttps` e `ehDataValida`.
+- `TECLAS_DO_MANIFESTO` é o `suggested_key` do Botaí (Chromium e Firefox) e `ATALHOS` sai dele (`teclaNoMac` troca `Alt`/`Shift`/`Ctrl` por `⌥`/`⇧`/`⌘`, como o Chrome mostra no Mac). Mudou a tecla da extensão? Mude aqui: os testes fixam os dois formatos.
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.

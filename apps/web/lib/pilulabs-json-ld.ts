@@ -1,4 +1,5 @@
-import { lojasPublicadas, type Captura, type ItemPiluLabs } from './pilulabs'
+import { lojasPublicadas } from '@piluvitu/tools/pilulabs'
+import type { Captura, ItemPiluLabs } from './pilulabs'
 import { urlPublica } from './pilutech-dominios'
 
 export const CONTEXTO_SCHEMA = 'https://schema.org'

@@ -38,7 +38,8 @@
     "./cartao": "./src/cartao.ts",
     "./pessoa": "./src/pessoa.ts",
     "./campos": "./src/campos.ts",
-    "./campos-formatar": "./src/campos-formatar.ts"
+    "./campos-formatar": "./src/campos-formatar.ts",
+    "./pilulabs": "./src/pilulabs.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

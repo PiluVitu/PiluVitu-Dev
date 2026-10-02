@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { SectionHeader } from '@/components/section-header'
-import type { Fase, Loja, TipoItem } from '@/lib/pilulabs'
+import type { Fase, Loja, TipoItem } from '@piluvitu/tools/pilulabs'
 import { ProdutoCard, type ItemDoCard } from './produto-card'
 
 export type ItemVitrine = {

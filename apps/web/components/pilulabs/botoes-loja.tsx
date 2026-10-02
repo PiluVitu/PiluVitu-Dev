@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
-import type { LojaPublicada } from '@/lib/pilulabs'
+import type { LojaPublicada } from '@piluvitu/tools/pilulabs'
 import { LOJA_UI } from './lojas-ui'
 
 export function BotoesLoja({ lojas }: { lojas: LojaPublicada[] }) {

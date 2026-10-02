@@ -3,14 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   altDaCaptura,
-  ATALHOS,
-  fase,
   itemParaProject,
   itensListados,
   linkDoItem,
   listarCapturas,
-  LOJAS,
-  lojasPublicadas,
   metadataDaPagina,
   metadataDoItem,
   normalizarItem,
@@ -23,81 +19,6 @@ import {
 const SEM_LOJA = { chromeUrl: '', firefoxUrl: '', edgeUrl: '', operaUrl: '' }
 
 const URL_CHROME = 'https://chromewebstore.google.com/detail/botai/abc'
-const URL_FIREFOX = 'https://addons.mozilla.org/pt-BR/firefox/addon/botai/'
-const URL_EDGE = 'https://microsoftedge.microsoft.com/addons/detail/botai/xyz'
-const URL_OPERA = 'https://addons.opera.com/pt-br/extensions/details/botai/'
-
-describe('lojasPublicadas', () => {
-  it('a ordem fixa das lojas é chrome, firefox, edge, opera', () => {
-    expect(LOJAS).toEqual(['chrome', 'firefox', 'edge', 'opera'])
-  })
-
-  it('sem URL nenhuma, nenhuma loja', () => {
-    expect(lojasPublicadas(SEM_LOJA)).toEqual([])
-  })
-
-  it('aceita cada loja no host dela, na ordem fixa, seja qual for a ordem do YAML', () => {
-    expect(
-      lojasPublicadas({
-        operaUrl: URL_OPERA,
-        edgeUrl: URL_EDGE,
-        firefoxUrl: URL_FIREFOX,
-        chromeUrl: URL_CHROME,
-      }),
-    ).toEqual([
-      { loja: 'chrome', url: URL_CHROME },
-      { loja: 'firefox', url: URL_FIREFOX },
-      { loja: 'edge', url: URL_EDGE },
-      { loja: 'opera', url: URL_OPERA },
-    ])
-  })
-
-  // As aprovações chegam em datas diferentes (o Opera pode levar meses).
-  it('publica loja por loja', () => {
-    expect(lojasPublicadas({ ...SEM_LOJA, firefoxUrl: URL_FIREFOX })).toEqual([
-      { loja: 'firefox', url: URL_FIREFOX },
-    ])
-  })
-
-  it('apara espaços antes de validar', () => {
-    expect(
-      lojasPublicadas({ ...SEM_LOJA, chromeUrl: `  ${URL_CHROME}\n` }),
-    ).toEqual([{ loja: 'chrome', url: URL_CHROME }])
-  })
-
-  it.each([
-    [
-      'http em vez de https',
-      'http://chromewebstore.google.com/detail/botai/abc',
-    ],
-    [
-      'host com sufixo',
-      'https://chromewebstore.google.com.evil.io/detail/botai/abc',
-    ],
-    ['subdomínio', 'https://www.chromewebstore.google.com/detail/botai/abc'],
-    ['host de outra loja', URL_FIREFOX],
-    ['sem esquema', 'chromewebstore.google.com/detail/botai/abc'],
-    ['javascript:', 'javascript:alert(1)'],
-  ])('recusa na Chrome Web Store: %s', (_caso, url) => {
-    expect(lojasPublicadas({ ...SEM_LOJA, chromeUrl: url })).toEqual([])
-  })
-})
-
-describe('fase', () => {
-  it('em-breve sem loja publicada', () => {
-    expect(fase(item())).toBe('em-breve')
-  })
-
-  it('disponivel com uma loja publicada', () => {
-    expect(fase(item({ edgeUrl: URL_EDGE }))).toBe('disponivel')
-  })
-
-  it('URL de host errado não conta como publicada', () => {
-    expect(fase(item({ chromeUrl: 'https://example.com/botai' }))).toBe(
-      'em-breve',
-    )
-  })
-})
 
 describe('listarCapturas', () => {
   let raiz: string
@@ -174,31 +95,6 @@ describe('altDaCaptura', () => {
   it('o mapa cobre os temas claro e escuro', () => {
     expect(ROTULOS_CAPTURA.get('claro')).toBe('(tema claro)')
     expect(ROTULOS_CAPTURA.get('escuro')).toBe('(tema escuro)')
-  })
-})
-
-describe('ATALHOS', () => {
-  it('Chromium: Ctrl+Shift+Y no Windows e no Linux, ⌥⇧P no Mac', () => {
-    for (const navegador of ['chrome', 'edge', 'opera'] as const) {
-      expect(ATALHOS[navegador]).toEqual({
-        windows: 'Ctrl+Shift+Y',
-        mac: '⌥⇧P',
-        linux: 'Ctrl+Shift+Y',
-      })
-    }
-  })
-
-  // No Firefox para Linux, Ctrl+Shift+Y abre os Downloads e não é cedido.
-  it('Firefox: igual, mas Alt+Shift+P no Linux', () => {
-    expect(ATALHOS.firefox).toEqual({
-      windows: 'Ctrl+Shift+Y',
-      mac: '⌥⇧P',
-      linux: 'Alt+Shift+P',
-    })
-  })
-
-  it('cobre as 4 lojas', () => {
-    expect(Object.keys(ATALHOS).sort()).toEqual([...LOJAS].sort())
   })
 })
 
