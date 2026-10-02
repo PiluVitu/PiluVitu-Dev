@@ -3,6 +3,7 @@ import { NOME } from '@/lib/conteudo'
 import { Rodape } from './rodape'
 import { Topo } from './topo'
 
+// Data em texto pronto: formatar o ISO em BRT mostraria o dia anterior.
 export type Vigencia = { iso: string; texto: string }
 
 type DocumentoProps = {

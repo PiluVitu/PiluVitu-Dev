@@ -8,6 +8,9 @@ export const DESCRICAO_DA_HOME =
 export const TITULO_DA_PRIVACIDADE = 'Política de privacidade do Botaí'
 export const DESCRICAO_DA_PRIVACIDADE =
   'Como o Botaí trata os dados: nada sai do seu navegador. O que a extensão acessa, o que guarda, as permissões de cada navegador e como apagar a pessoa gerada.'
+export const TITULO_DOS_TERMOS = 'Termos de uso do Botaí'
+export const DESCRICAO_DOS_TERMOS =
+  'Termos de uso do Botaí: dados fictícios só para teste, o que é proibido (fraude, cadastro real, burlar verificação), a licença MIT, garantias e o foro.'
 
 export const COR_DO_TEMA_CLARO = '#f7f9fc'
 export const COR_DO_TEMA_ESCURO = '#090b11'

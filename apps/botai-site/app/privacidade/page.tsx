@@ -10,7 +10,6 @@ import {
 } from '@/lib/seo'
 import { urlDoSite } from '@/lib/site'
 
-// Data em texto pronto: formatar "2026-10-01" em BRT mostraria 30 de setembro.
 const ATUALIZADA_EM = { iso: '2026-10-01', texto: '1 de outubro de 2026' }
 
 const PERMISSOES = [

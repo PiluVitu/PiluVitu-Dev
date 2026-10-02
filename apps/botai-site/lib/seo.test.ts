@@ -3,10 +3,12 @@ import { join } from 'node:path'
 import {
   DESCRICAO_DA_HOME,
   DESCRICAO_DA_PRIVACIDADE,
+  DESCRICAO_DOS_TERMOS,
   metadataDaPagina,
   metadataDoSite,
   TITULO_DA_HOME,
   TITULO_DA_PRIVACIDADE,
+  TITULO_DOS_TERMOS,
   VIEWPORT,
 } from './seo'
 
@@ -39,6 +41,12 @@ describe('textos de busca', () => {
     expect(DESCRICAO_DA_PRIVACIDADE.length).toBeLessThanOrEqual(160)
   })
 
+  it('os termos têm título e descrição próprios', () => {
+    expect(TITULO_DOS_TERMOS).toBe('Termos de uso do Botaí')
+    expect(DESCRICAO_DOS_TERMOS.length).toBeGreaterThanOrEqual(140)
+    expect(DESCRICAO_DOS_TERMOS.length).toBeLessThanOrEqual(160)
+  })
+
   // Texto honesto: antes das lojas, nada de "disponível".
   it('nenhum texto de busca diz que já está disponível', () => {
     for (const texto of [
@@ -46,6 +54,8 @@ describe('textos de busca', () => {
       DESCRICAO_DA_HOME,
       TITULO_DA_PRIVACIDADE,
       DESCRICAO_DA_PRIVACIDADE,
+      TITULO_DOS_TERMOS,
+      DESCRICAO_DOS_TERMOS,
     ])
       expect(texto).not.toMatch(/dispon[ií]vel/i)
   })
