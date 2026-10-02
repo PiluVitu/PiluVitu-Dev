@@ -2,31 +2,40 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderEstatico } from '@/lib/render-estatico'
 import { HomeFooter } from './home-footer'
 
-function rodape(mostrarPiluLabs?: boolean) {
+function rodape(piluLabsHref?: string) {
   return renderEstatico(
     <QueryClientProvider client={new QueryClient()}>
       <HomeFooter
         name="Paulo Victor Torres Silva"
         year={2026}
-        mostrarPiluLabs={mostrarPiluLabs}
+        piluLabsHref={piluLabsHref}
       />
     </QueryClientProvider>,
   )
 }
 
+const hrefs = (raiz: HTMLElement) =>
+  [...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href'))
+
 describe('HomeFooter', () => {
-  it('por padrão não mostra /pilulabs', () => {
-    expect(rodape().querySelector('a[href="/pilulabs"]')).toBeNull()
+  it('sem item listado (sem href), sem /pilulabs', () => {
+    expect(hrefs(rodape())).not.toContain('/pilulabs')
+    expect(rodape().textContent).not.toContain('/pilulabs')
   })
 
-  it('sem produto listado, sem /pilulabs', () => {
-    expect(rodape(false).querySelector('a[href="/pilulabs"]')).toBeNull()
+  it('com item listado, mostra /pilulabs depois de /tools e /tasks', () => {
+    expect(hrefs(rodape('/pilulabs')).slice(0, 3)).toEqual([
+      '/tools',
+      '/tasks',
+      '/pilulabs',
+    ])
   })
 
-  it('com produto listado, mostra /pilulabs depois de /tools e /tasks', () => {
-    const hrefs = [...rodape(true).querySelectorAll('a')].map((a) =>
-      a.getAttribute('href'),
-    )
-    expect(hrefs.slice(0, 3)).toEqual(['/tools', '/tasks', '/pilulabs'])
+  it('com os subdomínios ligados, /pilulabs leva a pilutech.com.br', () => {
+    const link = [
+      ...rodape('https://pilutech.com.br/').querySelectorAll('a'),
+    ][2]
+    expect(link?.textContent).toBe('/pilulabs')
+    expect(link?.getAttribute('href')).toBe('https://pilutech.com.br/')
   })
 })

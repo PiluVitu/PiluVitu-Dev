@@ -1,15 +1,15 @@
 import type { ZodType } from 'zod'
 import { sitePath } from './site-paths'
 import {
-  projectSchema,
   carreiraSchema,
   socialSchema,
-  type ProjectEntry,
+  pilulabsSchema,
   type CarreiraEntry,
   type SocialEntry,
+  type PiluLabsEntry,
 } from './content-schemas'
 
-export type CollectionKey = 'projects' | 'carreiras' | 'socials'
+export type CollectionKey = 'pilulabs' | 'carreiras' | 'socials'
 
 export interface CollectionDef<T extends Record<string, unknown>> {
   key: CollectionKey
@@ -19,30 +19,42 @@ export interface CollectionDef<T extends Record<string, unknown>> {
   schema: ZodType<T>
   keyOrder: (keyof T & string)[]
   multiline: (keyof T & string)[]
+  omitirSeVazio?: (keyof T & string)[]
 }
 
 export const COLLECTIONS = {
-  projects: {
-    key: 'projects',
-    label: 'Projetos',
-    dir: sitePath('content/projects'),
-    slugField: 'projectSlug',
-    schema: projectSchema,
+  pilulabs: {
+    key: 'pilulabs',
+    label: 'PiluLabs',
+    dir: sitePath('content/pilulabs'),
+    slugField: 'slug',
+    schema: pilulabsSchema,
     keyOrder: [
-      'projectSlug',
+      'slug',
       'order',
-      'projectName',
-      'subtitle',
-      'projectLogo',
-      'description',
+      'nome',
+      'subtitulo',
+      'descricao',
+      'tipo',
       'tags',
-      'deployLink',
-      'repoLink',
-      'image',
-      'altImage',
+      'logo',
+      'sigla',
+      'site',
+      'repo',
+      'chromeUrl',
+      'firefoxUrl',
+      'edgeUrl',
+      'operaUrl',
+      'destaque',
+      'data',
+      'listado',
+      'paginaPropria',
     ],
-    multiline: ['description'],
-  } as CollectionDef<ProjectEntry>,
+    multiline: ['descricao'],
+    // O fields.date do Keystatic recusa `data: ''`, e um item que não abre
+    // derruba o build do site: vazia, a chave sai do YAML.
+    omitirSeVazio: ['data'],
+  } as CollectionDef<PiluLabsEntry>,
   carreiras: {
     key: 'carreiras',
     label: 'Carreira',

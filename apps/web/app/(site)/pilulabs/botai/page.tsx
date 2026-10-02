@@ -27,10 +27,11 @@ import {
   fase,
   listarCapturas,
   lojasPublicadas,
-  metadataDoProduto,
+  metadataDoItem,
 } from '@/lib/pilulabs'
-import { jsonLdDoProduto } from '@/lib/pilulabs-json-ld'
-import { getProdutos } from '@/lib/site-content'
+import { jsonLdDoItem } from '@/lib/pilulabs-json-ld'
+import { subdominiosAtivos, urlPublica } from '@/lib/pilutech-dominios'
+import { getPiluLabs } from '@/lib/site-content'
 import { getCanonicalSiteUrl } from '@/lib/site-url'
 
 const SLUG = 'botai'
@@ -75,28 +76,34 @@ const CUIDADOS = [
 ]
 
 async function lerProduto() {
-  const produtos = await getProdutos()
-  return produtos.find((p) => p.slug === SLUG)
+  const itens = await getPiluLabs()
+  return itens.find((item) => item.slug === SLUG)
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const produto = await lerProduto()
   if (!produto) return {}
-  return metadataDoProduto(produto, {
-    caminho: CAMINHO,
-    titulo: `${produto.nome} | PiluLabs`,
-    descricao: produto.resumo,
-  })
+  return metadataDoItem(
+    produto,
+    {
+      caminho: CAMINHO,
+      titulo: `${produto.nome} | PiluLabs`,
+      descricao: produto.subtitulo,
+    },
+    subdominiosAtivos(),
+  )
 }
 
 export default async function BotaiPage() {
   const produto = await lerProduto()
   if (!produto) notFound()
+  const subdominios = subdominiosAtivos()
+  const hrefPiluLabs = urlPublica('/pilulabs', subdominios)
 
   const lojas = lojasPublicadas(produto)
   const capturas = listarCapturas(SLUG)
-  const jsonLd = jsonLdDoProduto({
-    produto,
+  const jsonLd = jsonLdDoItem({
+    item: produto,
     siteUrl: getCanonicalSiteUrl(),
     caminho: CAMINHO,
     capturas,
@@ -107,19 +114,20 @@ export default async function BotaiPage() {
         'Chrome, Edge ou Opera com Chromium 123 ou superior, ou Firefox 153 ou superior',
       featureList: RECURSOS.map((r) => `${r.titulo}: ${r.texto}`),
     },
+    subdominios,
   })
 
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
       <JsonLd dados={jsonLd} />
-      <PageTopBar backHref="/pilulabs" backLabel="PiluLabs" />
+      <PageTopBar backHref={hrefPiluLabs} backLabel="PiluLabs" />
 
       <header className="border-border mt-10 flex flex-col gap-5 border-b pb-10">
         <p className="text-primary font-mono text-sm">~/pilulabs/{SLUG}</p>
         <div className="flex flex-wrap items-center gap-5">
-          {produto.icone ? (
+          {produto.logo ? (
             <Image
-              src={produto.icone}
+              src={produto.logo}
               alt={`Ícone do ${produto.nome}`}
               width={64}
               height={64}
@@ -135,7 +143,7 @@ export default async function BotaiPage() {
               <StatusProduto fase={fase(produto)} />
             </div>
             <p className="text-muted-foreground text-lg text-pretty">
-              {produto.resumo}
+              {produto.subtitulo}
             </p>
           </div>
         </div>
@@ -240,7 +248,7 @@ export default async function BotaiPage() {
           </p>
           <p>
             <Link
-              href={`${CAMINHO}/privacidade`}
+              href={urlPublica(`${CAMINHO}/privacidade`, subdominios)}
               className="text-primary inline-flex items-center gap-2 hover:underline"
             >
               Política de privacidade
@@ -268,20 +276,16 @@ export default async function BotaiPage() {
             Feito por Paulo Victor Torres Silva
           </span>
           <Link
-            href="/pilulabs"
+            href={hrefPiluLabs}
             className="text-muted-foreground hover:text-foreground font-mono text-xs"
           >
             Powered by PiluTech
           </Link>
         </div>
         <div className="flex flex-wrap gap-3">
-          {produto.repoLink ? (
+          {produto.repo ? (
             <Button asChild variant="outline" className="gap-2">
-              <a
-                href={produto.repoLink}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={produto.repo} target="_blank" rel="noopener noreferrer">
                 <FontAwesomeIcon icon={faCode} className="size-3.5" />
                 Código-fonte
               </a>

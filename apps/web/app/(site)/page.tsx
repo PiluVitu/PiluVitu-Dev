@@ -4,19 +4,22 @@ import { HomeFooter } from '@/components/home-footer'
 import { getLatestDevToArticleUrl } from '@/lib/dev-to'
 import {
   getCarreiras,
-  getProdutos,
-  getProjects,
+  getPiluLabs,
   getSiteProfile,
   getSocials,
   getVisitCard,
   VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
-import { produtoParaProject, produtosListados } from '@/lib/pilulabs'
+import {
+  itemParaProject,
+  itensListados,
+  selecionarParaHome,
+} from '@/lib/pilulabs'
+import { subdominiosAtivos, urlPublica } from '@/lib/pilutech-dominios'
 import { getBlogPosts } from '@/lib/blog-posts'
 import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
-import type { Project } from '@/mocks/projects'
 import type { Social } from '@/mocks/social'
 
 const fallbackProfile: SiteProfileContent = {
@@ -39,32 +42,31 @@ export default async function Home() {
     profile,
     socials,
     carreiras,
-    projects,
     latestDevArticleUrl,
     visitCardRaw,
     blogPosts,
-    produtos,
+    piluLabs,
   ] = await Promise.all([
     getSiteProfile(),
     getSocials(),
     getCarreiras(),
-    getProjects(),
     getLatestDevToArticleUrl(),
     getVisitCard(),
     getBlogPosts(),
-    getProdutos(),
+    getPiluLabs(),
   ])
 
   const siteProfile = profile ?? fallbackProfile
   const visitCard = visitCardRaw ?? VISIT_CARD_FALLBACK
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
-  const listados = produtosListados(produtos)
-  const projectList: Project[] = [
-    ...projects,
-    ...listados.map(produtoParaProject),
-  ]
   const initialBlogPosts = blogPosts.map(blogPostToView)
+  const subdominios = subdominiosAtivos()
+  const hrefPiluLabs = urlPublica('/pilulabs', subdominios)
+  const totalPiluLabs = itensListados(piluLabs).length
+  const naHome = selecionarParaHome(piluLabs).map((item) =>
+    itemParaProject(item, subdominios),
+  )
 
   return (
     <div className="min-h-screen px-6 pt-2 pb-4 sm:px-8 xl:px-14 xl:pt-10 xl:pb-4 2xl:mx-auto 2xl:max-w-[1180px]">
@@ -98,7 +100,11 @@ export default async function Home() {
         >
           <HomeBentoLayout
             carreiraList={carreiraList}
-            projectList={projectList}
+            piluLabs={{
+              itens: naHome,
+              total: totalPiluLabs,
+              hrefVitrine: hrefPiluLabs,
+            }}
             initialBlogPosts={initialBlogPosts}
           />
         </aside>
@@ -108,7 +114,7 @@ export default async function Home() {
       <div className="mx-auto w-full max-w-md xl:max-w-none">
         <HomeFooter
           name={siteProfile.displayName}
-          mostrarPiluLabs={listados.length > 0}
+          piluLabsHref={totalPiluLabs > 0 ? hrefPiluLabs : undefined}
         />
       </div>
     </div>

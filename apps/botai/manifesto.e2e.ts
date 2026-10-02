@@ -11,7 +11,7 @@ const background = (pasta: string) => ler('.output', pasta, 'background.js')
 
 // Lida do package.json: com a versão fixa aqui, todo PR que só sobe a versão ficaria vermelho.
 const VERSAO: string = JSON.parse(ler('package.json')).version
-const PAGINA_DO_BOTAI = 'https://piluvitu.com.br/pilulabs/botai'
+const PAGINA_DO_BOTAI = 'https://botai.pilutech.com.br'
 // Alt+Shift+P é atalho do próprio Chrome no Windows e no Linux ("criar novo grupo
 // de abas", kTabGroupAcceleratorMap) e o Chrome não o cede à extensão: lá o padrão
 // é Ctrl+Shift+Y.

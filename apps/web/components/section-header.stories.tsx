@@ -11,5 +11,5 @@ export default meta
 type Story = StoryObj<typeof SectionHeader>
 
 export const Carreira: Story = { args: { label: 'Carreira', count: 5 } }
-export const Projetos: Story = { args: { label: 'Projetos', count: 1 } }
+export const PiluLabs: Story = { args: { label: 'PiluLabs', count: 3 } }
 export const SemContador: Story = { args: { label: 'Artigos' } }

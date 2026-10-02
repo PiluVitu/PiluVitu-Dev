@@ -1,8 +1,8 @@
-import type { Captura, Produto } from './pilulabs'
+import type { Captura, ItemPiluLabs } from './pilulabs'
 import {
   CONTEXTO_SCHEMA,
   jsonLdBreadcrumb,
-  jsonLdDoProduto,
+  jsonLdDoItem,
   jsonLdVitrine,
 } from './pilulabs-json-ld'
 
@@ -16,20 +16,26 @@ const DETALHES = {
   featureList: ['Documentos: CPF e CNPJ com dígito verificador'],
 }
 
-const BOTAI: Produto = {
+const BOTAI: ItemPiluLabs = {
   slug: 'botai',
   order: 0,
   nome: 'Botaí',
+  subtitulo: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
+  descricao: 'Extensão que preenche formulários.',
   tipo: 'extensao',
-  listado: false,
-  resumo: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
-  icone: '/pilulabs/botai/icone-128.png',
   tags: [],
+  logo: '/pilulabs/botai/icone-128.png',
+  sigla: '',
+  site: 'https://botai.pilutech.com.br',
+  repo: '',
   chromeUrl: '',
   firefoxUrl: '',
   edgeUrl: '',
   operaUrl: '',
-  repoLink: '',
+  destaque: true,
+  data: '2026-10-01',
+  listado: false,
+  paginaPropria: true,
 }
 
 const CAPTURAS: Captura[] = [
@@ -40,26 +46,35 @@ const CAPTURAS: Captura[] = [
   },
 ]
 
-function montar(produto: Produto, capturas: Captura[] = []) {
-  return jsonLdDoProduto({
-    produto,
+function montar(
+  item: ItemPiluLabs,
+  capturas: Captura[] = [],
+  subdominios = false,
+) {
+  return jsonLdDoItem({
+    item,
     siteUrl: SITE,
     caminho: '/pilulabs/botai',
     capturas,
     detalhes: DETALHES,
+    subdominios,
   })
 }
 
-function aplicacao(produto: Produto, capturas: Captura[] = []) {
-  return montar(produto, capturas)['@graph'][0]
+function aplicacao(
+  item: ItemPiluLabs,
+  capturas: Captura[] = [],
+  subdominios = false,
+) {
+  return montar(item, capturas, subdominios)['@graph'][0]
 }
 
-describe('jsonLdDoProduto', () => {
+describe('jsonLdDoItem', () => {
   it('descreve um SoftwareApplication gratuito, com URLs absolutas', () => {
     expect(aplicacao(BOTAI)).toMatchObject({
       '@type': 'SoftwareApplication',
       name: 'Botaí',
-      description: BOTAI.resumo,
+      description: BOTAI.subtitulo,
       applicationCategory: 'BrowserApplication',
       ...DETALHES,
       inLanguage: 'pt-BR',
@@ -112,30 +127,47 @@ describe('jsonLdDoProduto', () => {
     expect(aplicacao(BOTAI)).not.toHaveProperty('screenshot')
   })
 
-  it('sem ícone, sem image', () => {
-    expect(aplicacao({ ...BOTAI, icone: '' })).not.toHaveProperty('image')
+  it('sem logo, sem image', () => {
+    expect(aplicacao({ ...BOTAI, logo: '' })).not.toHaveProperty('image')
   })
 
   it('traz o contexto e a trilha PiluLabs › Botaí', () => {
     const dados = montar(BOTAI)
     expect(dados['@context']).toBe(CONTEXTO_SCHEMA)
     expect(dados['@graph'][1]).toEqual(
-      jsonLdBreadcrumb(SITE, [
-        { nome: 'PiluLabs', caminho: '/pilulabs' },
-        { nome: 'Botaí', caminho: '/pilulabs/botai' },
-      ]),
+      jsonLdBreadcrumb(
+        SITE,
+        [
+          { nome: 'PiluLabs', caminho: '/pilulabs' },
+          { nome: 'Botaí', caminho: '/pilulabs/botai' },
+        ],
+        false,
+      ),
     )
+  })
+
+  // Com a chave ligada as páginas moram nos subdomínios, mas os arquivos
+  // continuam no piluvitu.com.br: no subdomínio, /icone-128.png não existe.
+  it('chave ligada: página e PiluTech nos subdomínios; imagem, capturas e autor no piluvitu.com.br', () => {
+    expect(aplicacao(BOTAI, CAPTURAS, true)).toMatchObject({
+      url: 'https://botai.pilutech.com.br/',
+      image: 'https://piluvitu.com.br/pilulabs/botai/icone-128.png',
+      screenshot: ['https://piluvitu.com.br/pilulabs/botai/capturas/01-a.png'],
+      publisher: { url: 'https://pilutech.com.br/' },
+      author: { url: 'https://piluvitu.com.br/' },
+    })
   })
 })
 
 describe('jsonLdBreadcrumb', () => {
+  const trilha = [
+    { nome: 'PiluLabs', caminho: '/pilulabs' },
+    { nome: 'Botaí', caminho: '/pilulabs/botai' },
+    { nome: 'Política de privacidade', caminho: '/pilulabs/botai/privacidade' },
+  ]
+
   it('numera a partir de 1, com URL absoluta', () => {
-    expect(
-      jsonLdBreadcrumb(SITE, [
-        { nome: 'PiluLabs', caminho: '/pilulabs' },
-        { nome: 'Botaí', caminho: '/pilulabs/botai' },
-      ]),
-    ).toEqual({
+    expect(jsonLdBreadcrumb(SITE, trilha.slice(0, 2), false)).toEqual({
       '@type': 'BreadcrumbList',
       itemListElement: [
         {
@@ -153,11 +185,21 @@ describe('jsonLdBreadcrumb', () => {
       ],
     })
   })
+
+  it('chave ligada: cada passo no seu host PiluTech', () => {
+    expect(
+      jsonLdBreadcrumb(SITE, trilha, true).itemListElement.map((i) => i.item),
+    ).toEqual([
+      'https://pilutech.com.br/',
+      'https://botai.pilutech.com.br/',
+      'https://botai.pilutech.com.br/privacidade',
+    ])
+  })
 })
 
 describe('jsonLdVitrine', () => {
   it('é uma CollectionPage da PiluTech', () => {
-    expect(jsonLdVitrine(SITE, [])).toEqual({
+    expect(jsonLdVitrine(SITE, [], false)).toEqual({
       '@context': CONTEXTO_SCHEMA,
       '@type': 'CollectionPage',
       name: 'PiluLabs',
@@ -172,15 +214,38 @@ describe('jsonLdVitrine', () => {
     })
   })
 
-  it('lista os produtos em hasPart', () => {
-    expect(jsonLdVitrine(SITE, [BOTAI])).toMatchObject({
+  it('lista em hasPart o link de cada item; sem link, sem url', () => {
+    expect(
+      jsonLdVitrine(
+        SITE,
+        [
+          { nome: 'Botaí', href: '/pilulabs/botai' },
+          { nome: 'Sombraí', href: 'https://sombrai.pilutech.com.br' },
+          { nome: 'Sem link', href: null },
+        ],
+        false,
+      ),
+    ).toMatchObject({
       hasPart: [
         {
           '@type': 'SoftwareApplication',
           name: 'Botaí',
           url: 'https://piluvitu.com.br/pilulabs/botai',
         },
+        {
+          '@type': 'SoftwareApplication',
+          name: 'Sombraí',
+          url: 'https://sombrai.pilutech.com.br/',
+        },
+        { '@type': 'SoftwareApplication', name: 'Sem link' },
       ],
+    })
+  })
+
+  it('chave ligada: a vitrine e a PiluTech em pilutech.com.br', () => {
+    expect(jsonLdVitrine(SITE, [], true)).toMatchObject({
+      url: 'https://pilutech.com.br/',
+      publisher: { url: 'https://pilutech.com.br/' },
     })
   })
 })

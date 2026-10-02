@@ -1,20 +1,22 @@
 import { ArticleSection } from '@/components/article-section'
 import { JobCard } from '@/components/job-card'
-import { ProjectCard } from '@/components/project-card'
+import {
+  SecaoPiluLabs,
+  type SecaoPiluLabsProps,
+} from '@/components/secao-pilulabs'
 import { SectionHeader } from '@/components/section-header'
 import type { ArticleCardView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
-import type { Project } from '@/mocks/projects'
 
 type HomeBentoLayoutProps = {
   carreiraList: Carreira[]
-  projectList: Project[]
+  piluLabs: SecaoPiluLabsProps
   initialBlogPosts: ArticleCardView[]
 }
 
 export function HomeBentoLayout({
   carreiraList,
-  projectList,
+  piluLabs,
   initialBlogPosts,
 }: HomeBentoLayoutProps) {
   return (
@@ -36,22 +38,7 @@ export function HomeBentoLayout({
         </div>
       </section>
 
-      <section
-        aria-labelledby="projetos-heading"
-        className="flex flex-col gap-5"
-        suppressHydrationWarning
-      >
-        <SectionHeader
-          id="projetos-heading"
-          label="Projetos"
-          count={projectList.length}
-        />
-        <div className="grid grid-cols-1 gap-6">
-          {projectList.map((project) => (
-            <ProjectCard key={project.id} {...project} />
-          ))}
-        </div>
-      </section>
+      <SecaoPiluLabs {...piluLabs} />
 
       <section
         aria-labelledby="artigos-heading"

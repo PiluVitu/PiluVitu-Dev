@@ -1,0 +1,25 @@
+slug: botai
+order: 0
+nome: Botaí
+subtitulo: Gerador de dados fake para formulários (CPF, CNPJ, CEP)
+descricao: |-
+  Extensão para Chrome, Edge, Opera e Firefox que gera uma pessoa brasileira de teste, com CPF, CNPJ, RG e CEP válidos, e preenche o formulário da página com um atalho.
+tipo: extensao
+tags:
+  - Extensão
+  - Formulários
+  - QA
+  - CPF
+  - CEP
+logo: /pilulabs/botai/icone-128.png
+sigla: ''
+site: https://botai.pilutech.com.br
+repo: https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai
+chromeUrl: ''
+firefoxUrl: ''
+edgeUrl: ''
+operaUrl: ''
+destaque: true
+data: 2026-10-01
+listado: true
+paginaPropria: true

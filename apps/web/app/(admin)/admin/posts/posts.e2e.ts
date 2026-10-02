@@ -46,7 +46,7 @@ async function baseMocks(page: Page) {
         posts: 2,
         drafts: 1,
         published: 1,
-        projects: 0,
+        pilulabs: 0,
         careers: 0,
         careersCurrent: 0,
         recentPosts: [],

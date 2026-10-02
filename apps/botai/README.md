@@ -51,11 +51,8 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 
 **Uma vez, antes do primeiro envio:**
 
-1. **Site no ar:** `https://piluvitu.com.br/pilulabs/botai` (com `listado: false`) e `https://piluvitu.com.br/pilulabs/botai/privacidade` respondem 200.
-2. **`pilutech.com.br` redireciona** (o "Powered by PiluTech" do popup aponta para lá). Na Cloudflare:
-   1. um registro `A @ 192.0.2.1` **proxiado** (nuvem laranja) e o mesmo para `www`: o Single Redirect só age sobre tráfego proxiado;
-   2. em Rules, um Single Redirect 308 de `pilutech.com.br` e `www.pilutech.com.br` para `https://piluvitu.com.br/pilulabs`;
-   3. `curl -I https://pilutech.com.br` responde `308` com `location: https://piluvitu.com.br/pilulabs`.
+1. **Domínios na Vercel**, no projeto do `apps/web` (Settings → Domains): `pilutech.com.br`, `www.pilutech.com.br` (redirecionando para o apex) e `botai.pilutech.com.br`. Antes, confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` em Production (passo 0 da seção PiluLabs do `apps/web/CLAUDE.md`).
+2. **DNS na Cloudflare**, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, `CNAME botai`). Não crie Single Redirect; se houver um de antes, apague. Com `curl -sI https://botai.pilutech.com.br` e `curl -sI https://botai.pilutech.com.br/privacidade` respondendo 200, ligue `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e faça o redeploy. O "Powered by PiluTech" do popup abre `https://pilutech.com.br`, que passa a ser a vitrine PiluLabs.
 3. **Contas:**
    - Chrome Web Store: taxa única de US$ 5, verificação em duas etapas obrigatória e e-mail de login **imutável** (use um dedicado da PiluTech). Declare-se Trader com os dados da PiluTech, depois de confirmar com o contador.
    - Firefox Add-ons: conta Mozilla com 2FA.
@@ -80,7 +77,7 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 9. **Lançamento**, com a Chrome e a AMO aprovadas:
    - publique o item adiado no painel da Chrome Web Store (há 30 dias a partir da aprovação);
    - AMO e Edge ficam públicos assim que aprovam;
-   - por PR no site, as URLs das lojas aprovadas em `apps/web/content/produtos/botai/index.yaml` e `listado: true` (Edge e Opera entram quando aprovarem);
+   - no `/admin/pilulabs` (item `botai`, que é o `apps/web/content/pilulabs/botai/index.yaml`), as URLs das lojas aprovadas; o Botaí já está listado, e Edge e Opera entram quando aprovarem;
    - neste README, "Como instalar" ganha os links das lojas.
 
 **Versões seguintes:** `make versao-botai V=x.y.z` (abre o PR), merge, `git switch main && git pull`, `make release-botai` e aprove o job `lojas`. Para publicar adiado na Chrome, rejeite a aprovação da tag e rode `gh workflow run botai-release.yml --ref botai-v<versão> -f lojas=submeter -f adiar_chrome=true`. O Opera é sempre à mão, com o `botai-<versão>-opera.zip` do Release e a nota Opera.

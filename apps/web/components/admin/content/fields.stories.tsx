@@ -16,9 +16,16 @@ export const AllFields: Story = {
     const [a, setA] = useState('desc')
     const [s, setS] = useState('#14b8a6')
     const [on, setOn] = useState(true)
+    const [lancamento, setLancamento] = useState('2026-10-01')
     return (
       <div className="flex max-w-md flex-col gap-4">
         <TextField label="Nome" value={t} onChange={setT} />
+        <TextField
+          label="Lançamento"
+          type="date"
+          value={lancamento}
+          onChange={setLancamento}
+        />
         <TextareaField label="Descrição" value={a} onChange={setA} />
         <SelectField
           label="Cor"

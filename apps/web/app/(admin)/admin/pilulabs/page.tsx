@@ -13,17 +13,17 @@ import { Skeleton } from '@piluvitu/ui/skeleton'
 import { SectionHeader } from '@/components/section-header'
 import { useContentList } from '@/hooks/admin/content/use-content-list'
 import { useContentMutations } from '@/hooks/admin/content/use-content-mutations'
-import { ProjectForm } from '@/components/admin/content/project-form'
-import { ProjectList } from '@/components/admin/content/project-list'
+import { PiluLabsForm } from '@/components/admin/content/pilulabs-form'
+import { PiluLabsList } from '@/components/admin/content/pilulabs-list'
 import { DeleteConfirmDialog } from '@/components/admin/content/delete-confirm-dialog'
-import type { ProjectEntry } from '@/lib/admin/content-schemas'
+import type { PiluLabsEntry } from '@/lib/admin/content-schemas'
 
-export default function ProjetosPage() {
-  const list = useContentList<ProjectEntry>('projects')
-  const { create, update, remove, reorder } = useContentMutations('projects')
+export default function PiluLabsAdminPage() {
+  const list = useContentList<PiluLabsEntry>('pilulabs')
+  const { create, update, remove, reorder } = useContentMutations('pilulabs')
   const [editing, setEditing] = useState<{
     slug: string
-    data: ProjectEntry
+    data: PiluLabsEntry
   } | null>(null)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -32,8 +32,8 @@ export default function ProjetosPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <SectionHeader label="Projetos" count={entries.length} />
-        <Button onClick={() => setCreating(true)}>+ Novo projeto</Button>
+        <SectionHeader label="PiluLabs" count={entries.length} />
+        <Button onClick={() => setCreating(true)}>+ Novo item</Button>
       </div>
 
       {list.isLoading ? (
@@ -41,7 +41,7 @@ export default function ProjetosPage() {
       ) : list.isError ? (
         <p className="text-warn text-sm">{(list.error as Error).message}</p>
       ) : (
-        <ProjectList
+        <PiluLabsList
           entries={entries}
           onReorder={(slugs) =>
             reorder.mutate(slugs, {
@@ -67,11 +67,9 @@ export default function ProjetosPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {editing ? 'Editar projeto' : 'Novo projeto'}
-            </DialogTitle>
+            <DialogTitle>{editing ? 'Editar item' : 'Novo item'}</DialogTitle>
           </DialogHeader>
-          <ProjectForm
+          <PiluLabsForm
             initial={editing?.data}
             nextOrder={entries.length}
             pending={create.isPending || update.isPending}
@@ -97,9 +95,7 @@ export default function ProjetosPage() {
           if (!o) setDeleting(null)
         }}
         itemLabel={
-          entries.find((e) => e.slug === deleting)?.data.projectName ??
-          deleting ??
-          ''
+          entries.find((e) => e.slug === deleting)?.data.nome ?? deleting ?? ''
         }
         pending={remove.isPending}
         onConfirm={() => {

@@ -1,60 +1,83 @@
 import { renderEstatico } from '@/lib/render-estatico'
+import type { TipoItem } from '@/lib/pilulabs'
 import { Vitrine, type ItemVitrine } from './vitrine'
 
-function item(
+function itemVitrine(
   slug: string,
-  tipo: ItemVitrine['produto']['tipo'],
+  tipo: TipoItem,
   nome: string,
+  href: string | null = `/pilulabs/${slug}`,
 ): ItemVitrine {
   return {
-    produto: {
+    item: {
       slug,
       tipo,
       nome,
-      resumo: `Resumo de ${nome}`,
-      icone: '',
+      subtitulo: '',
+      descricao: `Descrição de ${nome}`,
+      logo: '',
+      sigla: nome.slice(0, 2).toUpperCase(),
       tags: [],
     },
+    href,
     fase: 'em-breve',
     lojas: [],
   }
 }
 
 describe('Vitrine', () => {
-  it('sem produto listado, mostra o estado vazio com link para o autor', () => {
-    const raiz = renderEstatico(<Vitrine itens={[]} />)
+  it('sem item listado, mostra o estado vazio com link para o autor', () => {
+    const raiz = renderEstatico(
+      <Vitrine itens={[]} hrefAutor="https://piluvitu.com.br/" />,
+    )
     const vazio = raiz.querySelector('[data-testid="pilulabs-vazio"]')
     expect(vazio?.textContent).toContain(
       'PiluLabs: produtos da PiluTech. Em breve.',
     )
-    expect(vazio?.querySelector('a')?.getAttribute('href')).toBe('/')
+    expect(vazio?.querySelector('a')?.getAttribute('href')).toBe(
+      'https://piluvitu.com.br/',
+    )
     expect(raiz.querySelector('h2')).toBeNull()
   })
 
-  it('agrupa por tipo, na ordem extensões, apps web e CLIs, e pula grupo vazio', () => {
+  it('agrupa nos 4 tipos, na ordem extensões, apps mobile, apps web e CLIs, e pula grupo vazio', () => {
     const raiz = renderEstatico(
       <Vitrine
-        itens={[item('zap', 'cli', 'Zap'), item('botai', 'extensao', 'Botaí')]}
+        hrefAutor="/"
+        itens={[
+          itemVitrine('zap', 'cli', 'Zap'),
+          itemVitrine('sombrai', 'mobile', 'Sombraí'),
+          itemVitrine('botai', 'extensao', 'Botaí'),
+        ]}
       />,
     )
     expect([...raiz.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
       'Extensões',
+      'Apps mobile',
       'CLIs',
     ])
   })
 
-  it('um card por produto, levando à página dele, sem o estado vazio', () => {
+  it('um card por item, com o link de cada um; sem link, sem <a>', () => {
     const raiz = renderEstatico(
       <Vitrine
+        hrefAutor="/"
         itens={[
-          item('botai', 'extensao', 'Botaí'),
-          item('outro', 'extensao', 'Outro'),
+          itemVitrine('botai', 'extensao', 'Botaí'),
+          itemVitrine(
+            'sombrai',
+            'mobile',
+            'Sombraí',
+            'https://sombrai.pilutech.com.br',
+          ),
+          itemVitrine('sem-link', 'web', 'Sem link', null),
         ]}
       />,
     )
     expect(
       [...raiz.querySelectorAll('a')].map((a) => a.getAttribute('href')),
-    ).toEqual(['/pilulabs/botai', '/pilulabs/outro'])
+    ).toEqual(['/pilulabs/botai', 'https://sombrai.pilutech.com.br'])
+    expect(raiz.querySelectorAll('h3')).toHaveLength(3)
     expect(raiz.querySelector('[data-testid="pilulabs-vazio"]')).toBeNull()
   })
 })

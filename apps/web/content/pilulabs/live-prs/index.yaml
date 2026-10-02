@@ -1,0 +1,30 @@
+slug: live-prs
+order: 2
+nome: Live PRs
+subtitulo: agregador de pull requests
+descricao: |-
+  Live PRs é um agregador de pull request onde foi solicitada a sua revisão, de acordo com o repositorio que você seleciona, podendo ser de colaboração ou de organização, ele reune todos os PRs em cards, mostrando estado do pr e checks de CI, assignees e outras informações.
+tipo: web
+tags:
+  - React
+  - Next
+  - Go
+  - Tailwind
+  - GitHub Actions
+  - Docker
+  - Aws
+  - Grafana
+  - Prometheus
+  - Sentry
+logo: /pr-live-dark.svg
+sigla: LPR
+site: https://pr-live-folder-front.vercel.app/
+repo: ''
+chromeUrl: ''
+firefoxUrl: ''
+edgeUrl: ''
+operaUrl: ''
+destaque: false
+data: 2024-08-28
+listado: true
+paginaPropria: false

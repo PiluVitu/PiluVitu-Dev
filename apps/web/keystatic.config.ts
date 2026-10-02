@@ -235,69 +235,44 @@ export default config({
         }),
       },
     }),
-    projects: collection({
-      label: 'Projetos',
-      slugField: 'projectSlug',
-      path: 'content/projects/*/',
-      previewUrl: '/preview/start?branch={branch}&to=/',
+    pilulabs: collection({
+      label: 'PiluLabs',
+      slugField: 'slug',
+      path: 'content/pilulabs/*/',
       schema: {
-        projectSlug: fields.slug({ name: { label: 'Slug do projeto' } }),
-        order: fields.integer({ label: 'Ordem (menor primeiro)' }),
-        projectName: fields.text({ label: 'Nome' }),
-        subtitle: fields.text({
-          label: 'Subtítulo',
-          description: 'Ex.: agregador de pull requests',
-          defaultValue: '',
-        }),
-        projectLogo: fields.text({
-          label: 'Logo (path ou URL)',
-        }),
-        description: fields.text({
-          label: 'Descrição',
-          multiline: true,
-        }),
-        tags: fields.array(fields.text({ label: 'Tag' }), {
-          label: 'Tags',
-        }),
-        deployLink: fields.text({ label: 'URL demo (opcional)' }),
-        repoLink: fields.text({ label: 'URL repositório (opcional)' }),
-        image: fields.text({
-          label: 'Imagem de capa (path em public/)',
-        }),
-        altImage: fields.text({ label: 'Abrev. / alt' }),
-      },
-    }),
-    produtos: collection({
-      label: 'Produtos (PiluLabs)',
-      slugField: 'produtoSlug',
-      path: 'content/produtos/*/',
-      schema: {
-        produtoSlug: fields.slug({
-          name: { label: 'Slug técnico (sem acento, igual à pasta da rota)' },
+        slug: fields.slug({
+          name: {
+            label: 'Slug (sem acento; é o subdomínio e a pasta da rota)',
+          },
         }),
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),
         nome: fields.text({ label: 'Nome de exibição (com acento)' }),
+        subtitulo: fields.text({ label: 'Subtítulo' }),
+        descricao: fields.text({ label: 'Descrição', multiline: true }),
         tipo: fields.select({
           label: 'Tipo',
-          defaultValue: 'extensao',
+          defaultValue: 'web',
           options: [
             { label: 'Extensão de navegador', value: 'extensao' },
+            { label: 'App mobile', value: 'mobile' },
             { label: 'App web', value: 'web' },
             { label: 'CLI', value: 'cli' },
           ],
         }),
-        listado: fields.checkbox({
-          label: 'Listado',
-          description:
-            'Aparece em /pilulabs e na home e pode ser indexado. Desmarcado: só por link, com noindex.',
-          defaultValue: false,
-        }),
-        resumo: fields.text({ label: 'Descrição curta oficial' }),
-        icone: fields.text({
-          label: 'Ícone (path em public/)',
-          description: 'Ex.: /pilulabs/botai/icone-128.png',
-        }),
         tags: fields.array(fields.text({ label: 'Tag' }), { label: 'Tags' }),
+        logo: fields.text({
+          label: 'Logo (path em public/ ou URL)',
+          description: 'Imagem quadrada. Ex.: /pilulabs/botai/icone-128.png',
+        }),
+        sigla: fields.text({
+          label: 'Sigla',
+          description: 'Vazio = as 2 primeiras letras do nome',
+        }),
+        site: fields.text({
+          label: 'Site (https://)',
+          description: 'O padrão é https://<slug>.pilutech.com.br',
+        }),
+        repo: fields.text({ label: 'Código-fonte (https://)' }),
         chromeUrl: fields.text({
           label: 'Chrome Web Store',
           description:
@@ -318,7 +293,24 @@ export default config({
           description:
             'Vazio = não publicado. Só vale https://addons.opera.com/…',
         }),
-        repoLink: fields.text({ label: 'Código-fonte (URL)' }),
+        destaque: fields.checkbox({
+          label: 'Destaque na home',
+          defaultValue: false,
+        }),
+        // fields.date e não text: o js-yaml do reader lê `data: 2026-10-01`
+        // (como o admin grava) como Date, e o text recusaria.
+        data: fields.date({ label: 'Lançamento' }),
+        listado: fields.checkbox({
+          label: 'Listado',
+          description:
+            'Aparece na home e em /pilulabs e pode ser indexado. Desmarcado: só por link, com noindex.',
+          defaultValue: false,
+        }),
+        paginaPropria: fields.checkbox({
+          label: 'Página própria no site',
+          description: 'Existe app/(site)/pilulabs/<slug>/page.tsx no apps/web',
+          defaultValue: false,
+        }),
       },
     }),
     feeds: collection({

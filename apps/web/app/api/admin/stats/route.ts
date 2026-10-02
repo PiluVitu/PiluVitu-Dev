@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getAllBlogPosts } from '@/lib/blog-posts'
-import { getProjects, getCarreiras } from '@/lib/site-content'
+import { getPiluLabs, getCarreiras } from '@/lib/site-content'
 import { openToken, ADMIN_GH_COOKIE } from '@/lib/admin/token-cookie'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,7 @@ export interface AdminStats {
   posts: number
   drafts: number
   published: number
-  projects: number
+  pilulabs: number
   careers: number
   careersCurrent: number
   recentPosts: Array<{
@@ -29,9 +29,9 @@ export async function GET() {
   const sealed = jar.get(ADMIN_GH_COOKIE)?.value
   const linked = sealed ? openToken(sealed) !== null : false
 
-  const [posts, projects, careers] = await Promise.all([
+  const [posts, pilulabs, careers] = await Promise.all([
     getAllBlogPosts(),
-    getProjects(),
+    getPiluLabs(),
     getCarreiras(),
   ])
   const drafts = posts.filter((p) => p.draft).length
@@ -40,7 +40,7 @@ export async function GET() {
     posts: posts.length,
     drafts,
     published: posts.length - drafts,
-    projects: projects.length,
+    pilulabs: pilulabs.length,
     careers: careers.length,
     careersCurrent: careers.filter((c) => c.current).length,
     recentPosts: visiblePosts.slice(0, 8).map((p) => ({

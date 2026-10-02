@@ -2,112 +2,190 @@ import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Metadata } from 'next'
 import type { Project } from '@/mocks/projects'
+import {
+  ehDataValida,
+  ehHttps,
+  ehUrlDaLoja,
+  LOJAS,
+  TIPO_PADRAO,
+  TIPOS,
+  type Loja,
+  type TipoItem,
+} from './pilulabs-regras'
+import { DOMINIO_PILUTECH, urlPublica } from './pilutech-dominios'
 
-export type Loja = 'chrome' | 'firefox' | 'edge' | 'opera'
+export { LOJAS, TIPOS } from './pilulabs-regras'
+export type { Loja, TipoItem } from './pilulabs-regras'
+
 export type Fase = 'em-breve' | 'disponivel'
-export type TipoProduto = 'extensao' | 'web' | 'cli'
 
-export type Produto = {
+export type ItemPiluLabs = {
   slug: string
   order: number
   nome: string
-  tipo: TipoProduto
-  listado: boolean
-  resumo: string
-  icone: string
+  subtitulo: string
+  descricao: string
+  tipo: TipoItem
   tags: string[]
+  logo: string
+  sigla: string
+  site: string
+  repo: string
   chromeUrl: string
   firefoxUrl: string
   edgeUrl: string
   operaUrl: string
-  repoLink: string
+  destaque: boolean
+  data: string
+  listado: boolean
+  paginaPropria: boolean
 }
 
-export type EntradaProduto = {
+export type EntradaItem = {
   order?: number | null
   nome?: string | null
+  subtitulo?: string | null
+  descricao?: string | null
   tipo?: string | null
-  listado?: boolean | null
-  resumo?: string | null
-  icone?: string | null
   tags?: readonly string[] | null
+  logo?: string | null
+  sigla?: string | null
+  site?: string | null
+  repo?: string | null
   chromeUrl?: string | null
   firefoxUrl?: string | null
   edgeUrl?: string | null
   operaUrl?: string | null
-  repoLink?: string | null
+  destaque?: boolean | null
+  data?: string | null
+  listado?: boolean | null
+  paginaPropria?: boolean | null
 }
 
 export type LojaPublicada = { loja: Loja; url: string }
-
-export const LOJAS: readonly Loja[] = ['chrome', 'firefox', 'edge', 'opera']
-
-const TIPOS: readonly TipoProduto[] = ['extensao', 'web', 'cli']
-
-const HOST_DA_LOJA: Record<Loja, string> = {
-  chrome: 'chromewebstore.google.com',
-  firefox: 'addons.mozilla.org',
-  edge: 'microsoftedge.microsoft.com',
-  opera: 'addons.opera.com',
-}
 
 const CAMPO_DA_LOJA = {
   chrome: 'chromeUrl',
   firefox: 'firefoxUrl',
   edge: 'edgeUrl',
   opera: 'operaUrl',
-} as const satisfies Record<Loja, keyof Produto>
+} as const satisfies Record<Loja, keyof ItemPiluLabs>
 
-type UrlsDasLojas = Pick<Produto, (typeof CAMPO_DA_LOJA)[Loja]>
+type UrlsDasLojas = Pick<ItemPiluLabs, (typeof CAMPO_DA_LOJA)[Loja]>
+type Ordenavel = Pick<ItemPiluLabs, 'order' | 'slug'>
 
-function texto(valor: string | null | undefined): string {
+function texto(valor: unknown): string {
   return typeof valor === 'string' ? valor.trim() : ''
 }
 
-export function normalizarProduto(
+function https(valor: unknown): string {
+  const url = texto(valor)
+  return ehHttps(url) ? url : ''
+}
+
+export function normalizarItem(
   slug: string,
-  entrada: EntradaProduto,
-): Produto {
+  entrada: EntradaItem,
+): ItemPiluLabs {
+  const data = texto(entrada.data)
   return {
     slug,
     order: typeof entrada.order === 'number' ? entrada.order : 0,
     nome: texto(entrada.nome) || slug,
-    tipo: TIPOS.find((t) => t === entrada.tipo) ?? 'extensao',
-    listado: entrada.listado === true,
-    resumo: texto(entrada.resumo),
-    icone: texto(entrada.icone),
-    tags: (entrada.tags ?? []).map((tag) => texto(tag)).filter(Boolean),
+    subtitulo: texto(entrada.subtitulo),
+    descricao: texto(entrada.descricao),
+    tipo: TIPOS.find((t) => t === entrada.tipo) ?? TIPO_PADRAO,
+    tags: (entrada.tags ?? []).map(texto).filter(Boolean),
+    logo: texto(entrada.logo),
+    sigla: texto(entrada.sigla),
+    site: https(entrada.site),
+    repo: https(entrada.repo),
     chromeUrl: texto(entrada.chromeUrl),
     firefoxUrl: texto(entrada.firefoxUrl),
     edgeUrl: texto(entrada.edgeUrl),
     operaUrl: texto(entrada.operaUrl),
-    repoLink: texto(entrada.repoLink),
+    destaque: entrada.destaque === true,
+    data: ehDataValida(data) ? data : '',
+    listado: entrada.listado === true,
+    paginaPropria: entrada.paginaPropria === true,
   }
 }
 
-function ehUrlDaLoja(loja: Loja, url: string): boolean {
-  if (!url) return false
-  try {
-    const { protocol, hostname } = new URL(url)
-    return protocol === 'https:' && hostname === HOST_DA_LOJA[loja]
-  } catch {
-    return false
-  }
-}
-
-export function lojasPublicadas(produto: UrlsDasLojas): LojaPublicada[] {
+export function lojasPublicadas(item: UrlsDasLojas): LojaPublicada[] {
   return LOJAS.flatMap((loja) => {
-    const url = produto[CAMPO_DA_LOJA[loja]].trim()
+    const url = item[CAMPO_DA_LOJA[loja]].trim()
     return ehUrlDaLoja(loja, url) ? [{ loja, url }] : []
   })
 }
 
-export function fase(produto: UrlsDasLojas): Fase {
-  return lojasPublicadas(produto).length > 0 ? 'disponivel' : 'em-breve'
+export function fase(item: UrlsDasLojas): Fase {
+  return lojasPublicadas(item).length > 0 ? 'disponivel' : 'em-breve'
 }
 
-export function produtosListados(produtos: Produto[]): Produto[] {
-  return produtos.filter((p) => p.listado)
+function porOrdem(a: Ordenavel, b: Ordenavel): number {
+  if (a.order !== b.order) return a.order - b.order
+  return a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0
+}
+
+function maisNovoPrimeiro(a: string, b: string): number {
+  if (a === b) return 0
+  if (a === '') return 1
+  if (b === '') return -1
+  return a < b ? 1 : -1
+}
+
+export function itensListados<
+  T extends Ordenavel & Pick<ItemPiluLabs, 'listado'>,
+>(itens: readonly T[]): T[] {
+  return itens.filter((item) => item.listado).sort(porOrdem)
+}
+
+export function selecionarParaHome<
+  T extends Ordenavel & Pick<ItemPiluLabs, 'listado' | 'destaque' | 'data'>,
+>(itens: readonly T[], max = 4): T[] {
+  const listados = itensListados(itens)
+  const destaques = listados.filter((item) => item.destaque)
+  const demais = listados
+    .filter((item) => !item.destaque)
+    .sort((a, b) => maisNovoPrimeiro(a.data, b.data) || porOrdem(a, b))
+  return [...destaques, ...demais].slice(0, max)
+}
+
+export function linkDoItem(
+  item: Pick<ItemPiluLabs, 'slug' | 'paginaPropria' | 'site' | 'repo'>,
+  subdominiosAtivos: boolean,
+): string | null {
+  const pagina = `/pilulabs/${item.slug}`
+  if (item.paginaPropria && !subdominiosAtivos) return pagina
+  if (item.site) return item.site
+  if (item.paginaPropria) return urlPublica(pagina, subdominiosAtivos)
+  return item.repo || null
+}
+
+export function siglaDoItem(
+  item: Pick<ItemPiluLabs, 'sigla' | 'nome'>,
+): string {
+  return item.sigla || item.nome.slice(0, 2).toUpperCase()
+}
+
+export function itemParaProject(
+  item: ItemPiluLabs,
+  subdominiosAtivos: boolean,
+): Project {
+  const link = linkDoItem(item, subdominiosAtivos)
+  return {
+    id: `pilulabs-${item.slug}`,
+    projectName: item.nome,
+    subtitle: item.subtitulo,
+    projectLogo: item.logo,
+    description: item.descricao,
+    tags: item.tags,
+    deployLink: link && link !== item.repo ? link : '',
+    deployLabel: 'Acessar',
+    repoLink: item.repo,
+    image: item.logo || undefined,
+    altImage: siglaDoItem(item),
+  }
 }
 
 export type Sistema = 'windows' | 'mac' | 'linux'
@@ -183,20 +261,20 @@ export function listarCapturas(
 
 // O Next substitui o openGraph do layout inteiro, e a imagem só vem do
 // opengraph-image.tsx do próprio segmento: por isso tudo de novo e sem images.
-export function metadataDaPagina({
-  caminho,
-  titulo,
-  descricao,
-}: PaginaPiluLabs): Metadata {
+export function metadataDaPagina(
+  { caminho, titulo, descricao }: PaginaPiluLabs,
+  subdominiosAtivos: boolean,
+): Metadata {
+  const url = urlPublica(caminho, subdominiosAtivos)
   return {
     title: { absolute: titulo },
     description: descricao,
-    alternates: { canonical: caminho },
+    alternates: { canonical: url },
     openGraph: {
       type: 'website',
       locale: 'pt_BR',
-      siteName: 'piluvitu.com.br',
-      url: caminho,
+      siteName: subdominiosAtivos ? DOMINIO_PILUTECH : 'piluvitu.com.br',
+      url,
       title: titulo,
       description: descricao,
     },
@@ -208,26 +286,11 @@ export function metadataDaPagina({
   }
 }
 
-export function metadataDoProduto(
-  produto: Pick<Produto, 'listado'>,
+export function metadataDoItem(
+  item: Pick<ItemPiluLabs, 'listado'>,
   pagina: PaginaPiluLabs,
+  subdominiosAtivos: boolean,
 ): Metadata {
-  const metadata = metadataDaPagina(pagina)
-  return produto.listado ? metadata : { ...metadata, robots: { index: false } }
-}
-
-export function produtoParaProject(produto: Produto): Project {
-  return {
-    id: `pilulabs-${produto.slug}`,
-    projectName: produto.nome,
-    subtitle: 'PiluLabs · Powered by PiluTech',
-    projectLogo: produto.icone,
-    description: produto.resumo,
-    tags: produto.tags,
-    deployLink: `/pilulabs/${produto.slug}`,
-    deployLabel: 'Ver no PiluLabs',
-    repoLink: produto.repoLink,
-    image: produto.icone || undefined,
-    altImage: produto.nome.slice(0, 2).toUpperCase(),
-  }
+  const metadata = metadataDaPagina(pagina, subdominiosAtivos)
+  return item.listado ? metadata : { ...metadata, robots: { index: false } }
 }

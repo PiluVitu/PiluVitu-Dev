@@ -1,0 +1,25 @@
+slug: sombrai
+order: 1
+nome: Sombraí
+subtitulo: Plante sombra em Teresina
+descricao: |-
+  App para iPhone e Android que mostra quais árvores e plantas nativas do Piauí cabem no seu quintal, na calçada, na varanda ou no vaso, como cuidar delas no calor de Teresina e quais são seguras para cães e gatos.
+tipo: mobile
+tags:
+  - Swift
+  - SwiftUI
+  - Kotlin
+  - Jetpack Compose
+  - Next.js
+logo: /pilulabs/sombrai/icone.png
+sigla: ''
+site: https://sombrai.pilutech.com.br
+repo: ''
+chromeUrl: ''
+firefoxUrl: ''
+edgeUrl: ''
+operaUrl: ''
+destaque: true
+data: 2026-09-23
+listado: true
+paginaPropria: false

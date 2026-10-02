@@ -1,21 +1,29 @@
 import Link from 'next/link'
 import { SectionHeader } from '@/components/section-header'
-import type { Fase, Loja, Produto, TipoProduto } from '@/lib/pilulabs'
-import { ProdutoCard } from './produto-card'
+import type { Fase, Loja, TipoItem } from '@/lib/pilulabs'
+import { ProdutoCard, type ItemDoCard } from './produto-card'
 
 export type ItemVitrine = {
-  produto: Pick<Produto, 'slug' | 'nome' | 'resumo' | 'icone' | 'tags' | 'tipo'>
+  item: ItemDoCard
+  href: string | null
   fase: Fase
   lojas: Loja[]
 }
 
-const GRUPOS: { tipo: TipoProduto; rotulo: string }[] = [
+const GRUPOS: { tipo: TipoItem; rotulo: string }[] = [
   { tipo: 'extensao', rotulo: 'Extensões' },
+  { tipo: 'mobile', rotulo: 'Apps mobile' },
   { tipo: 'web', rotulo: 'Apps web' },
   { tipo: 'cli', rotulo: 'CLIs' },
 ]
 
-export function Vitrine({ itens }: { itens: ItemVitrine[] }) {
+export function Vitrine({
+  itens,
+  hrefAutor,
+}: {
+  itens: ItemVitrine[]
+  hrefAutor: string
+}) {
   if (itens.length === 0) {
     return (
       <div
@@ -27,7 +35,7 @@ export function Vitrine({ itens }: { itens: ItemVitrine[] }) {
         </p>
         <p className="text-muted-foreground text-sm">
           Enquanto isso, conheça{' '}
-          <Link href="/" className="text-primary hover:underline">
+          <Link href={hrefAutor} className="text-primary hover:underline">
             o autor
           </Link>
           .
@@ -39,19 +47,14 @@ export function Vitrine({ itens }: { itens: ItemVitrine[] }) {
   return (
     <div className="flex flex-col gap-12">
       {GRUPOS.map(({ tipo, rotulo }) => {
-        const doGrupo = itens.filter((item) => item.produto.tipo === tipo)
+        const doGrupo = itens.filter((entrada) => entrada.item.tipo === tipo)
         if (doGrupo.length === 0) return null
         return (
           <section key={tipo} className="flex flex-col gap-5">
             <SectionHeader label={rotulo} count={doGrupo.length} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {doGrupo.map((item) => (
-                <ProdutoCard
-                  key={item.produto.slug}
-                  produto={item.produto}
-                  fase={item.fase}
-                  lojas={item.lojas}
-                />
+              {doGrupo.map((entrada) => (
+                <ProdutoCard key={entrada.item.slug} {...entrada} />
               ))}
             </div>
           </section>

@@ -46,7 +46,7 @@ export default function AdminDashboardPage() {
       <header className="space-y-1">
         <h1 className="text-3xl font-bold">Bem-vindo de volta, {firstName}</h1>
         <p className="text-muted-foreground">
-          Tudo que alimenta o piluvitu.com.br — posts, projetos, carreira e
+          Tudo que alimenta o piluvitu.com.br — posts, PiluLabs, carreira e
           votações — em um só lugar.
         </p>
       </header>
@@ -78,9 +78,9 @@ export default function AdminDashboardPage() {
             }
           />
           <StatCard
-            label="Projetos"
-            value={s?.projects ?? 0}
-            hint="publicados"
+            label="PiluLabs"
+            value={s?.pilulabs ?? 0}
+            hint="no catálogo"
           />
           <StatCard
             label="Experiências"

@@ -1,6 +1,11 @@
 import { Document, Scalar, parse as yamlParse } from 'yaml'
 import type { CollectionDef } from './content-registry'
 
+// O reader do Keystatic (js-yaml, YAML 1.1) lê isto sem aspas como Date, e um
+// Date num campo de texto derruba a coleção inteira.
+const TIMESTAMP_YAML_1_1 =
+  /^\d{4}-\d\d?-\d\d?(?:(?:[Tt]|[ \t]+)\d\d?:\d\d:\d\d(?:\.\d*)?(?:[ \t]*(?:Z|[-+]\d\d?(?::\d\d)?))?)?$/
+
 export function serializeEntry<T extends Record<string, unknown>>(
   def: CollectionDef<T>,
   data: T,
@@ -9,6 +14,7 @@ export function serializeEntry<T extends Record<string, unknown>>(
   doc.contents = doc.createNode({}) as never
   for (const key of def.keyOrder) {
     const value = data[key]
+    if (value === '' && def.omitirSeVazio?.includes(key)) continue
     const node = doc.createNode(value)
     if (
       def.multiline.includes(key) &&
@@ -16,6 +22,8 @@ export function serializeEntry<T extends Record<string, unknown>>(
       value.length > 0
     ) {
       ;(node as Scalar).type = Scalar.BLOCK_LITERAL
+    } else if (typeof value === 'string' && TIMESTAMP_YAML_1_1.test(value)) {
+      ;(node as Scalar).type = Scalar.QUOTE_DOUBLE
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(doc.contents as any).set(key, node)

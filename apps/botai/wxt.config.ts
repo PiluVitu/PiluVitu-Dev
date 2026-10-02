@@ -47,7 +47,7 @@ export default defineConfig({
       name: 'Botaí',
       short_name: 'Botaí',
       description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
-      homepage_url: 'https://piluvitu.com.br/pilulabs/botai',
+      homepage_url: 'https://botai.pilutech.com.br',
       ...(firefox
         ? {
             browser_specific_settings: {
