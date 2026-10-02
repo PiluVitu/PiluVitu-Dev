@@ -4,7 +4,7 @@
 
 **Goal:** Um app Next 16 só com a landing da PiluTech (`/`), fiel ao design do Claude Design, estático e com SEO completo, servido por um projeto Vercel próprio em `https://pilutech.com.br`; a vitrine PiluLabs volta a morar em `piluvitu.com.br/pilulabs` (sai o proxy dos subdomínios do `apps/web`), e todo e-mail de projeto vai para `pilutechinformatica@gmail.com` com o projeto entre colchetes no assunto.
 
-**Architecture:** `apps/pilutech-site` (`@pilutech/site`) copia o molde do `apps/botai-site`: Next 16 App Router, Tailwind 4 + `@piluvitu/ui` com `@source` e gate, `next/font`, Font Awesome por npm, Jest + Testing Library, Storybook próprio (6020), Playwright no build de produção (3021), conferência de rotas estáticas e `vercel.json` com `ignoreCommand`. A página alterna seções escuras e claras usando os tokens do design system: cada seção escura leva a classe `dark` (o `.dark` do `@piluvitu/ui` redefine as variáveis só dentro dela) e as claras herdam o `:root`. O símbolo `PiluTechMark` (variante 1a) é um SVG com os 5 blocos; dele saem o favicon, o `apple-icon` e a imagem OG (Satori, com a Plus Jakarta Sans 800 do `@fontsource`). O selo do Botaí sai do CMS do `apps/web` pelas regras de `@piluvitu/tools/pilulabs`; o `mailto` com assunto vira lógica pura compartilhada em `@piluvitu/tools/contato`, usada pela landing da PiluTech e pela do Botaí. No `apps/web`, com `pilutech.com.br` fora do projeto, tudo o que o proxy fazia fica morto, e ele sai inteiro junto com a chave `PILUTECH_SUBDOMINIOS`.
+**Architecture:** `apps/pilutech-site` (`@pilutech/site`) copia o molde do `apps/botai-site`: Next 16 App Router, Tailwind 4 + `@piluvitu/ui` com `@source` e gate, `next/font`, Font Awesome por npm, Jest + Testing Library, Storybook próprio (6020), Playwright no build de produção (3021), conferência de rotas estáticas e `vercel.json` com `ignoreCommand`. A página alterna seções escuras e claras usando os tokens do design system: cada seção escura leva a classe `dark` (o `.dark` do `@piluvitu/ui` redefine as variáveis só dentro dela) e as claras herdam o `:root`. Isso só funciona porque o `app/globals.css` redeclara as cores do design system em `@theme inline`: o `@theme` do pacote não é `inline`, e sem isso a cor sairia resolvida no `:root` e o `dark` de uma seção não mudaria nada (ver "Decisões"). O símbolo `PiluTechMark` (variante 1a) é um SVG com os 5 blocos; dele saem o favicon, o `apple-icon` e a imagem OG (Satori, com a Plus Jakarta Sans 800 do `@fontsource`). O selo do Botaí sai do CMS do `apps/web` pelas regras de `@piluvitu/tools/pilulabs`; o `mailto` com assunto vira lógica pura compartilhada em `@piluvitu/tools/contato`, usada pela landing da PiluTech e pela do Botaí. No `apps/web`, com `pilutech.com.br` fora do projeto, tudo o que o proxy fazia fica morto, e ele sai inteiro junto com a chave `PILUTECH_SUBDOMINIOS`.
 
 **Tech Stack:** Next.js 16.3.8 (App Router, `next/font`, `next/image` com `remotePatterns`, metadata files, `next/og`), React 19.2, TypeScript 5.9 strict, Tailwind CSS 4.3 + `@piluvitu/ui`, Font Awesome 7.2 (svg-core, solid, regular, brands), `@fontsource/plus-jakarta-sans` 5.3.0 (só para a imagem OG), `yaml` 2.9, Jest 30 + ts-jest + Testing Library + user-event, Storybook 10.3.1 (`@storybook/nextjs`), Playwright 1.59.1, `axe-core` 4.11.1, `node --test`.
 
@@ -26,12 +26,12 @@
 - **Projetos (spec §3):** imagens `https://botai.pilutech.com.br/opengraph-image` e `https://sombrai.pilutech.com.br/opengraph-image.png`, "sem o parâmetro de hash", por `next/image` com `remotePatterns` dos dois domínios; o selo do Botaí sai do CMS (`apps/web/content/pilulabs/botai/index.yaml`, por `@piluvitu/tools/pilulabs`); "nenhum selo diz 'disponível' sem fonte".
 - **Dúvidas (spec §3):** "botão com `aria-expanded` e `aria-controls`, e o primeiro item aberto; todas as respostas no HTML do servidor, as fechadas com `hidden`".
 - **E-mail (spec §6):** tudo para `pilutechinformatica@gmail.com`; assunto começa por `[Projeto]`: `[PiluTech] Contato pelo site`, `[Botaí] Suporte`, `[Botaí] Privacidade`, `[Botaí] Termos de uso`. "O assunto sempre vai codificado (RFC 6068, UTF-8)." Texto público que cita o e-mail (política, termos, `loja/textos.md`) continua com o endereço puro.
-- **SEO (spec §4):** `metadataBase` = `https://pilutech.com.br`, override por `SITE_URL`; canonical; `lang="pt-BR"`; title com até 60 caracteres; description de 140–160; OG e Twitter com imagem própria 1200×630; JSON-LD `Organization` + `ProfessionalService` (endereço só cidade, UF e país; serviços sem preço) + `WebSite`; **sem `FAQPage` e sem nota**; sitemap, robots, manifest, ícones, `theme-color`, `verification.google` opcional (`GOOGLE_SITE_VERIFICATION`); um `h1`, níveis em ordem, `alt` em toda imagem; axe a 1280 e 320 px (não há Lighthouse no PATH nem no repo).
+- **SEO (spec §4):** `metadataBase` = `https://pilutech.com.br`, override por `SITE_URL`; canonical; `lang="pt-BR"`; title com até 60 caracteres; description de 140–160; OG e Twitter com imagem própria 1200×630; JSON-LD com a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']` (ver "Decisões"; endereço só cidade, UF e país; serviços sem preço) + `WebSite`; **sem `FAQPage` e sem nota**; sitemap, robots, manifest, ícones, `theme-color`, `verification.google` opcional (`GOOGLE_SITE_VERIFICATION`); um `h1`, níveis em ordem, `alt` em toda imagem; axe a 1280 e 320 px (não há Lighthouse no PATH nem no repo).
 - **Lei de comentários (`CLAUDE.md` raiz):** comentário em produção só com as três condições (porquê invisível, a ausência levaria a "consertar" e quebrar, não cabe em nome/teste/doc), 1 a 3 linhas. Teste é livre para explicar.
 - **Colocation:** teste e story ao lado do fonte; E2E `.e2e.ts` ao lado da rota que testa.
 - **Sentinela do gate:** nunca escreva o nome da classe sentinela por extenso em `apps/*` (nem em `.md`); cite `SENTINEL_SELECTOR` do script.
 - **`next dev`/`next build` reescrevem `CLAUDE.md`/`AGENTS.md`:** quando detecta agente, o Next anexa um bloco `nextjs-agent-rules` ao `CLAUDE.md` do app ou cria um `AGENTS.md`. Depois de rodar o Next (inclusive pelo servidor do E2E), confira `/usr/bin/git status` e descarte o que ele gerou antes de commitar.
-- **Deploy (spec §7) não é tarefa de código:** a Tarefa 10 documenta os passos no `apps/pilutech-site/CLAUDE.md`; criar o projeto Vercel, promover a primeira produção e mover os domínios é feito depois, por quem orquestra, e o merge só vem depois de mover os domínios.
+- **Deploy (spec §7) não é tarefa de código:** a Tarefa 10 documenta os passos no `apps/pilutech-site/CLAUDE.md`; criar o projeto Vercel, promover a primeira produção, apagar a variável `PILUTECH_SUBDOMINIOS` da Production do `pilu-vitu-dev` (com o redeploy da produção atual) e mover os domínios é feito depois, por quem orquestra, nessa ordem. O merge só vem depois de mover os domínios.
 - **Fora (spec §9):** política de privacidade da landing da PiluTech, inglês, analytics (nada de `@vercel/analytics`/`speed-insights` neste app).
 - **`$SCRATCH`:** onde um passo usa `$SCRATCH`, é a pasta de rascunho da sessão (a que o sistema indica). Cada chamada do Bash é um shell novo: declare `SCRATCH=<caminho>` no mesmo comando que a usa.
 - **Commits:** mensagens no padrão do repo (`tipo(escopo): descrição em pt-BR`), um por tarefa, cada um com lint, tsc, testes e build verdes. O pre-commit roda o `lint-staged` (pode reformatar; confira `git status` depois).
@@ -39,10 +39,13 @@
 ## Review Focus
 
 1. **Celular de 320 px:** a palavra "infraestrutura" do `h1` (40 px) e o botão do e-mail (`pilutechinformatica@gmail.com`, sem espaço para quebrar) podem vazar da caixa para o gutter sem aumentar o `scrollWidth` da página, e o teste de rolagem não acusaria. Quem visita no celular espera tudo dentro da tela. Testes: as classes `wrap-break-word`/`wrap-anywhere` travadas no Jest (`hero.test.tsx` na Tarefa 4, `contato.test.tsx` na Tarefa 6) e o E2E "nenhum elemento passa da área de conteúdo da própria seção", a 320 px (`app/pagina.e2e.ts`, Tarefas 4 e 6).
-2. **A variável `PILUTECH_SUBDOMINIOS=1` continua na Vercel até o dono apagá-la:** depois do merge, `piluvitu.com.br/pilulabs` tem de responder 200 (sem 308) e os links da home têm de seguir em `/pilulabs`, com ou sem a variável. Teste: o E2E da vitrine e da home do `apps/web` roda duas vezes, a segunda com `PILUTECH_SUBDOMINIOS=1` no ambiente, e `pilulabs.e2e.ts` ganha "/pilulabs responde 200, sem 308" (Tarefa 8).
+2. **A variável `PILUTECH_SUBDOMINIOS=1` está ligada hoje na Production do `pilu-vitu-dev`:** `curl -sI https://piluvitu.com.br/pilulabs` responde 308 para `https://pilutech.com.br/`. Se os domínios mudassem de projeto com ela ligada, esse 308 levaria à landing nova, e a vitrine ficaria inacessível (o "Saiba mais" e o rodapé da home e o "← PiluLabs" do Botaí também) até o deploy da `main`. Por isso o deploy apaga a variável e redeploya a produção atual **antes** de mover os domínios, e só segue com `/pilulabs` respondendo 200 (passo 5 do Deploy no `apps/pilutech-site/CLAUDE.md`, Tarefa 10). Depois do merge, `/pilulabs` tem de continuar 200 e os links da home em `/pilulabs`, mesmo que a variável volte por engano. Teste: o E2E da vitrine e da home do `apps/web` roda duas vezes, a segunda com `PILUTECH_SUBDOMINIOS=1` no ambiente, e `pilulabs.e2e.ts` ganha "/pilulabs responde 200, sem 308" (Tarefa 8).
 3. **Imagem OG remota fora do ar, ou com outra query:** o `next/image` só aceita os dois caminhos exatos, sem query (`search: ''`), e o cartão do projeto continua com link, nome, selo e `alt` quando a imagem falha. Testes: `next.config.test.ts` com o `hasRemoteMatch` do próprio Next e o E2E com `/_next/image` respondendo 502 (Tarefa 4).
 4. **Sem JavaScript (ou antes de hidratar):** abaixo de 900 px os links da barra já vêm escondidos e acima já vêm visíveis; as cinco respostas das dúvidas estão no HTML, a primeira aberta e as outras com `hidden`. Testes: E2E com `javaScriptEnabled: false` (Tarefas 5 e 6) e `renderToStaticMarkup` no `acordeao.test.tsx` (Tarefa 5).
 5. **Assunto com acento e caracteres reservados:** `[Botaí] Termos de uso` vai como UTF-8 percent-encoded, espaço nunca vira `+` (o Gmail mostraria o `+`), e um `&`, `?` ou `#` no assunto não corta o link; assim o filtro `subject:Botaí` do Gmail pega. Testes: `packages/tools/src/contato.test.ts` (Tarefa 3) e os testes de link do `apps/botai-site` (Tarefa 9).
+6. **Seção escura com as cores escuras:** o `@theme` do `@piluvitu/ui` não é `inline`. Sem o `@theme inline` do `app/globals.css`, barra, hero, Como funciona, Tecnologias, Contato, rodapé, botão flutuante e `PiluTechMark` sairiam com as cores do tema claro, e nenhum teste de classe (`toHaveClass('dark')`), nem o axe (claro sobre claro tem contraste), acusaria. Testes: `app/globals.test.ts` (toda cor do design system que depende de variável está no bloco `inline`, Tarefa 1) e os E2E que leem a cor computada (`getComputedStyle`) de cada seção (`app/pagina.e2e.ts`, Tarefas 1, 4 e 6).
+7. **Foco visível nos botões (WCAG 2.4.7):** o `Button` do design system troca o outline por um anel de 1 px na cor do `ring`, que no escuro é o próprio Ciano do botão, e nos Planos é Petróleo sobre o cartão Petróleo. Testes: o `ANEL_DE_FOCO` (anel de 2 px com folga do fundo) travado por `toHaveClass` nos testes do hero, dos planos, da barra e do contato, e o E2E que dá Tab até o "Falar no WhatsApp" do hero e lê o `boxShadow` (Tarefas 4 e 6).
+8. **Selo "disponível" pelo caminho real:** o `page.tsx` lê o YAML e passa a fase à `Landing`; com o CMS de hoje (as 4 lojas vazias), um `page.tsx` com a fase fixa passaria em tudo. Teste: a primeira passada do `test:e2e` (`playwright.lojas.config.ts`) builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` e confere "Extensão de navegador · disponível" no cartão do Botaí e "em breve" no do Sombraí (Tarefa 4), como o `apps/botai-site` já faz.
 
 ---
 
@@ -50,8 +53,12 @@
 
 - **O proxy do `apps/web` sai inteiro.** Com `pilutech.com.br` e `www` no projeto novo, nenhum host `*.pilutech.com.br` chega ao `apps/web`: o `botai.` e o `sombrai.` já são de projetos próprios, nenhum item do CMS tem `paginaPropria: true` e não existe rota `/pilulabs/<slug>`. A reescrita do apex, o 308 do apex para `piluvitu.com.br`, a reescrita dos subdomínios e o 308 de `/pilulabs*` ficam todos sem uso. Saem `proxy.ts`, `proxy.test.ts`, `lib/pilutech-dominios.ts` (+ teste), os E2E `subdominios.e2e.ts` e `chave-ligada.e2e.ts`, o parâmetro `subdominiosAtivos` de `linkDoItem`/`itemParaProject`/`metadataDaPagina`/`jsonLdVitrine` e a chave do `.env.example` e das docs. Os 308 de `/pilulabs/botai*` ficam: são `redirects` do `next.config.mjs`, não do proxy.
 - **`paginaPropria` continua valendo**, agora só como `/pilulabs/<slug>` no `piluvitu.com.br` (o comportamento de hoje com a chave desligada).
-- **O `publisher` do JSON-LD da vitrine passa a ser a PiluTech no site dela** (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo `@id` que o `apps/botai-site` já usa). A `CollectionPage` em si fica em `piluvitu.com.br/pilulabs`, como a spec §5 pede.
+- **O `publisher` do JSON-LD da vitrine passa a ser a PiluTech no site dela** (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo `@id` que o `apps/botai-site` já usa). A `CollectionPage` em si fica em `piluvitu.com.br/pilulabs`, como a spec §5 pede. A `Organization` do `apps/botai-site` ganha o `logo` `https://pilutech.com.br/icon` (o 192 px que este branch cria), e a nota "sai sem `logo`" do `apps/botai-site/CLAUDE.md` muda junto (Tarefa 9).
 - **Cores por contexto, sem copiar o design system:** as seções escuras levam a classe `dark` e usam `bg-background`, `text-foreground`, `text-primary`, `text-muted-foreground`, `border-border`, `bg-card` e `text-ok` (no `.dark` do `@piluvitu/ui`, esses tokens são exatamente a Noite, o texto claro, o Ciano, o Aço, a borda escura, o Grafite e o verde do design). As claras não levam classe e caem no `:root` (Névoa, Grafite, Petróleo, cartão branco). O `<html>` **não** leva `dark`: se levasse, as seções claras herdariam os tokens escuros. Ficam no `@theme` do app só as cores sem token: `noite` (fundo do `body`), `grafite` (fundo das imagens dos projetos, numa seção clara), `ciano` e `ciano-claro` (o ✓ dos planos e o hover do botão flutuante) e as três do Petróleo dos planos.
+- **As cores do design system redeclaradas em `@theme inline` no `app/globals.css` (sem isso, nenhuma seção escura funciona).** O `@theme` de `packages/ui/src/styles.css` não é `inline`: o Tailwind emite `:root { --color-background: hsl(var(--background)) }` e `.bg-background { background-color: var(--color-background) }`. O `var()` é resolvido no `:root`, e os filhos herdam a cor já resolvida (a clara): uma `<section class="dark bg-background">` troca o `--background` e continua Névoa. Medido com o Tailwind 4.3.3 do repo e o Chromium do Playwright 1.59.1: fundo `rgb(247, 249, 252)`, texto `rgb(15, 20, 31)` e o `text-primary` dentro dela `rgb(5, 91, 128)` (Petróleo em vez de Ciano). Com o bloco `inline`, a utility vira `background-color: hsl(var(--background))`, resolvida em cada elemento: fundo `rgb(9, 11, 17)`, texto `rgb(231, 236, 243)`, primary `rgb(58, 191, 248)`. O bloco repete toda cor do design system que depende de variável (as 32 `--color-x: hsl(var(--x))`, não só as que a página usa: o `Button` traz outras, e um token que faltasse quebraria em silêncio); o `app/globals.test.ts` compara com o `styles.css` do pacote, e os E2E leem a cor computada. O decorador `dark` do `apps/web/.storybook/preview.tsx` tem o mesmo defeito; fica fora deste branch.
+- **Anel de foco próprio nos botões (`ANEL_DE_FOCO` em `components/classes.ts`):** a base do `Button` (`packages/ui/src/button.tsx`) tem `focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring`, e no `.dark` o `--ring` é igual ao `--primary` (`198 93% 60%`): o anel Ciano em volta do botão Ciano não aparece. Os botões da landing somam `focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background` (folga Noite e anel Ciano; medido no Chromium: `rgb(9, 11, 17) 0px 0px 0px 2px, rgb(58, 191, 248) 0px 0px 0px 4px` no `boxShadow`), e os dos Planos, `focus-visible:ring-white focus-visible:ring-offset-petroleo-cartao`. O `cn` (tailwind-merge 3.5) tira o `ring-1` e o `ring-ring` da base.
+- **A PiluTech é um nó só no JSON-LD**, `@type` `['Organization', 'ProfessionalService']`, com o `@id` `https://pilutech.com.br/#organizacao` (o mesmo do `apps/botai-site`) e todas as propriedades que a spec §4 pede às duas (logo, e-mail, telefone, `contactPoint`, endereço só com cidade, UF e país, `areaServed` Brasil e os serviços em `hasOfferCatalog`), mais o `WebSite`. Dois nós (um `Organization` e um `ProfessionalService` com `parentOrganization` apontando para ele) diriam que a PiluTech é filha de si mesma; o Google pede o subtipo mais específico de `Organization` para descrever a empresa, e o schema.org marca o `ProfessionalService` genérico como descontinuado ("deprecated due to confusion with Service"). O nó com os dois tipos mantém os nomes da spec; trocar por `LocalBusiness` é decisão do dono.
+- **O contato do portfólio (`piluvitu.com.br`) fica fora do §6, de propósito.** O `mailto:` do `apps/web/components/profile-social-strip.tsx` e o formulário do `components/email-contact-dialog.tsx` (POST ao FormSubmit) também chegam em `pilutechinformatica@gmail.com`, sem `[Projeto]` no assunto. A spec §6 lista os projetos (PiluTech, Botaí, Sombraí), e o portfólio é o site pessoal do dono, não um projeto. Se o dono quiser filtrar também esse contato, é um PR à parte: `mailtoDaPilutech('PiluVitu', 'Contato pelo site')` no strip e um `_subject` com o mesmo prefixo no POST do FormSubmit.
 - **Duas dependências novas:** `@fortawesome/free-regular-svg-icons` (o envelope do design é `fa-regular`), fixado em `7.2.0`, a mesma versão dos outros três pacotes do Font Awesome no lock, para o `fontawesome-common-types` continuar único; e `@fontsource/plus-jakarta-sans@5.3.0` (o pacote estático, com `.woff`: o `ImageResponse` não lê `woff2`, e o `@fontsource-variable` que o Botaí já usa só tem `woff2`).
 - **Lógica pura compartilhada vai para `@piluvitu/tools`:** `contato.ts` novo (`EMAIL_DA_PILUTECH`, `mailtoDaPilutech`) e `urlsDasLojas` em `pilulabs.ts` (a normalização das 4 URLs que o `apps/botai-site/lib/cms.ts` fazia à mão; ele passa a usar a do pacote). Ficam no app, como no molde, o que é cola de app: `lib/site.ts`, `components/json-ld.tsx` e `scripts/conferir-rotas-estaticas.mjs`.
 
@@ -63,10 +70,11 @@
 
 ```
 package.json  tsconfig.json  next.config.ts (+ .test.ts)  postcss.config.mjs  eslint.config.mjs
-jest.config.ts  jest.setup.ts  playwright.config.ts  vercel.json  vercel.test.ts  .env.example  .prettierignore  CLAUDE.md
+jest.config.ts  jest.setup.ts  playwright.config.ts  playwright.lojas.config.ts  vercel.json  vercel.test.ts  .env.example  .prettierignore  CLAUDE.md
 .storybook/main.ts  .storybook/preview.tsx
 scripts/conferir-rotas-estaticas.mjs (+ .test.mjs)
 app/globals.css (+ globals.test.ts)  app/layout.tsx  app/page.tsx  app/pagina.e2e.ts  app/seo.e2e.ts
+app/lojas-publicadas.yaml  app/lojas-publicadas.e2e.ts
 app/icon.tsx  app/apple-icon.tsx  app/opengraph-image.tsx  app/twitter-image.tsx
 app/sitemap.ts  app/robots.ts  app/manifest.ts (+ .test.ts de cada um)
 lib/tokens-do-ds.ts  lib/font-awesome.ts  lib/marca.ts  lib/imagem-do-icone.tsx  lib/imagem-og.tsx
@@ -77,7 +85,7 @@ components/acordeao  duvidas  barra  contato  rodape  whatsapp-flutuante  landin
 components/json-ld.tsx (+ .test.tsx)
 ```
 
-**Alterados:** `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`, `Makefile`, `.github/workflows/ci.yml`, `CLAUDE.md` (raiz), `packages/tools/{package.json,src/pilulabs.ts,src/pilulabs.test.ts,CLAUDE.md}`, `packages/ui/CLAUDE.md`, `apps/botai-site/{lib/cms.ts,lib/conteudo.ts,lib/conteudo.test.ts,components/landing.tsx,components/landing.test.tsx,components/rodape.tsx,components/rodape.test.tsx,components/topo.test.tsx,components/topo.stories.tsx,app/privacidade/page.tsx,app/privacidade/page.test.tsx,app/privacidade/privacidade.e2e.ts,app/termos/page.tsx,app/termos/page.test.tsx,app/pagina.e2e.ts,CLAUDE.md}`, `apps/botai/{README.md,CLAUDE.md}`, `apps/web/**` (Tarefa 8).
+**Alterados:** `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`, `Makefile`, `.github/workflows/ci.yml`, `CLAUDE.md` (raiz), `packages/tools/{package.json,src/pilulabs.ts,src/pilulabs.test.ts,CLAUDE.md}`, `packages/ui/CLAUDE.md`, `apps/botai-site/{lib/cms.ts,lib/conteudo.ts,lib/conteudo.test.ts,lib/json-ld.ts,lib/json-ld.test.ts,components/landing.tsx,components/landing.test.tsx,components/rodape.tsx,components/rodape.test.tsx,components/topo.test.tsx,components/topo.stories.tsx,app/privacidade/page.tsx,app/privacidade/page.test.tsx,app/privacidade/privacidade.e2e.ts,app/termos/page.tsx,app/termos/page.test.tsx,app/pagina.e2e.ts,CLAUDE.md}`, `apps/botai/{README.md,CLAUDE.md}`, `apps/web/**` (Tarefa 8).
 
 **Removidos (`apps/web`):** `proxy.ts`, `proxy.test.ts`, `lib/pilutech-dominios.ts`, `lib/pilutech-dominios.test.ts`, `app/(site)/pilulabs/subdominios.e2e.ts`, `app/(site)/pilulabs/chave-ligada.e2e.ts`.
 
@@ -97,15 +105,24 @@ App Next 16 mínimo no padrão do `apps/botai-site`: Tailwind 4 + `@piluvitu/ui`
 - Consumes: `@piluvitu/ui/styles.css`, `@piluvitu/ui/cn`, `scripts/check-tailwind-source.mjs` (raiz).
 - Produces:
   - `CabecalhoSecao({ id, rotulo, contagem, titulo, tom, children }: { id: string; rotulo: string; contagem: number; titulo: string; tom?: 'padrao' | 'petroleo'; children?: ReactNode })`: rótulo mono em caixa alta, contagem com 2 dígitos (`aria-hidden`), linha, e o `h2` com o `id` (a seção aponta para ele com `aria-labelledby`); `children` entra depois do título.
-  - `lib/tokens-do-ds.ts`: `type Tema = 'claro' | 'escuro'`; `lerCssDoDs(): string`; `tokenDoDs(tema: Tema, nome: string, css?: string): string` (o triplo HSL, ex. `'220 33% 5%'`); `hslParaHex(triplo: string): string` (ex. `'#090b11'`). Só os testes importam.
-  - Cores do app no `@theme` (`app/globals.css`): `noite`, `grafite`, `ciano`, `ciano-claro`, `petroleo-cartao`, `petroleo-borda`, `petroleo-linha` (classes `bg-noite`, `text-ciano` etc.).
+  - `lib/tokens-do-ds.ts`: `type Tema = 'claro' | 'escuro'`; `lerCssDoDs(): string`; `tokenDoDs(tema: Tema, nome: string, css?: string): string` (o triplo HSL, ex. `'220 33% 5%'`); `hslParaHex(triplo: string): string` (ex. `'#090b11'`); `rgbDoToken(tema: Tema, nome: string, css?: string): string` (como o `getComputedStyle` devolve, ex. `'rgb(9, 11, 17)'`). Só os testes (Jest e E2E) importam.
+  - Cores do app no `@theme` (`app/globals.css`): `noite`, `grafite`, `ciano`, `ciano-claro`, `petroleo-cartao`, `petroleo-borda`, `petroleo-linha` (classes `bg-noite`, `text-ciano` etc.). E, num `@theme inline`, as 32 cores do `@piluvitu/ui` que dependem de variável, para o `dark` de uma seção valer (ver "Decisões").
   - `scripts/conferir-rotas-estaticas.mjs`: `export const ROTAS: string[]`; `export function rotasNaoEstaticas(rotasDoManifesto, rotas): string[]`. As Tarefas 2 e 7 acrescentam rotas em `ROTAS`.
   - Scripts do pacote: `dev`, `build`, `start`, `lint`, `typecheck`, `test`, `test:e2e`, `storybook`, `build-storybook`, `prettier:check`, `prettier:fix`.
   - Storybook: global `fundo` (`'claro' | 'escuro'`, padrão escuro); `parameters.layout: 'fullscreen'` tira o `p-6` do decorador.
 
-- [ ] **Step 1: Workspace, `package.json` e install**
+- [ ] **Step 1: Workspace, `.gitignore`, `package.json` e install**
 
 Em `pnpm-workspace.yaml`, depois de `  - 'apps/botai-site'`, acrescente `  - 'apps/pilutech-site'`.
+
+`.gitignore`: depois de `apps/botai-site/playwright-report/`, acrescente o bloco abaixo. Ele entra antes de qualquer build: o Tailwind não varre o que o `.gitignore` ignora, e o bundle do Storybook traz o nome da classe sentinela (está em `apps/botai-site/storybook-static/main.*.iframe.bundle.js`). Com o `storybook-static/` fora do `.gitignore`, a prova do gate do Step 7 sairia `exit=0` com o `@source` comentado.
+
+```gitignore
+
+# Landing da PiluTech: mesmo motivo
+apps/pilutech-site/storybook-static/
+apps/pilutech-site/playwright-report/
+```
 
 `apps/pilutech-site/package.json` (os ranges são os do `apps/botai-site`, para o pnpm reaproveitar as versões do lock; o `free-regular` vai fixo em `7.2.0`, a versão dos outros pacotes do Font Awesome no lock, para o `fontawesome-common-types` continuar único):
 
@@ -512,7 +529,7 @@ test('a rota não é confundida com uma filha', () => {
 `apps/pilutech-site/lib/tokens-do-ds.test.ts`:
 
 ```ts
-import { hslParaHex, tokenDoDs } from './tokens-do-ds'
+import { hslParaHex, rgbDoToken, tokenDoDs } from './tokens-do-ds'
 
 describe('tokenDoDs', () => {
   // As cores do design (marca-CLAUDE.md) são estes tokens do @piluvitu/ui.
@@ -542,6 +559,18 @@ describe('hslParaHex', () => {
     expect(hslParaHex(triplo)).toBe(hex)
   })
 })
+
+// Os E2E comparam com o getComputedStyle do Chromium, que devolve rgb(r, g, b).
+describe('rgbDoToken', () => {
+  it.each([
+    ['escuro', 'background', 'rgb(9, 11, 17)'],
+    ['escuro', 'primary', 'rgb(58, 191, 248)'],
+    ['claro', 'background', 'rgb(247, 249, 252)'],
+    ['claro', 'primary', 'rgb(5, 91, 128)'],
+  ] as const)('%s/%s → %s', (tema, nome, rgb) => {
+    expect(rgbDoToken(tema, nome)).toBe(rgb)
+  })
+})
 ```
 
 `apps/pilutech-site/app/globals.test.ts`:
@@ -549,7 +578,7 @@ describe('hslParaHex', () => {
 ```ts
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { tokenDoDs } from '@/lib/tokens-do-ds'
+import { lerCssDoDs, tokenDoDs } from '@/lib/tokens-do-ds'
 
 const CSS = readFileSync(join(__dirname, 'globals.css'), 'utf8')
 
@@ -558,6 +587,41 @@ function corDoApp(nome: string): string {
   if (!achado) throw new Error(`--color-${nome} não está no @theme`)
   return achado[1].trim()
 }
+
+function blocoInline(): string {
+  const inicio = CSS.indexOf('@theme inline {')
+  if (inicio < 0) throw new Error('o globals.css não tem @theme inline')
+  return CSS.slice(inicio, CSS.indexOf('}', inicio))
+}
+
+// As cores do @piluvitu/ui que dependem de uma variável (--color-x: hsl(var(--x))), com o valor.
+function coresComVariavelDoDs(): [string, string][] {
+  return [
+    ...lerCssDoDs().matchAll(/--color-([a-z0-9-]+):\s*([^;]*var\(--[^;]+);/g),
+  ].map((achado) => [achado[1], achado[2].trim()])
+}
+
+// Decisões do plano: o @theme do pacote não é inline, o Tailwind resolve a cor no :root e os
+// filhos herdam a clara. Sem este bloco, o `dark` de uma seção não muda cor nenhuma, e só a cor
+// computada (E2E) mostraria.
+it('o @theme inline redeclara toda cor do design system que depende de variável', () => {
+  const cores = coresComVariavelDoDs()
+  expect(cores.map(([nome]) => nome)).toEqual(
+    expect.arrayContaining([
+      'background',
+      'foreground',
+      'primary',
+      'ring',
+      'ok',
+    ]),
+  )
+  const bloco = blocoInline()
+  expect(
+    cores
+      .filter(([nome, valor]) => !bloco.includes(`--color-${nome}: ${valor};`))
+      .map(([nome]) => nome),
+  ).toEqual([])
+})
 
 // Estas cores do app repetem o .dark do @piluvitu/ui: se o design system mudar a Noite, o teste avisa.
 it.each([
@@ -688,7 +752,7 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/je
 node --test scripts/*.test.mjs; echo "node-test exit=$?"
 ```
 
-Expected: `jest exit=1` (`Cannot find module './tokens-do-ds'`, `'./font-awesome'`, `'./cabecalho-secao'`, `ENOENT … globals.css`; o `vercel.test.ts` já passa) e `node-test exit=1` (`Cannot find module … conferir-rotas-estaticas.mjs`).
+Expected: `jest exit=1`, com 4 suítes falhando e 1 passando. Falham `Cannot find module './tokens-do-ds'`, `'./font-awesome'` e `'./cabecalho-secao'`, e o `globals.test.ts` com `Could not locate module @/lib/tokens-do-ds mapped as: …` (o import vem antes do `readFileSync`, e é a mensagem do Jest para caminho do `moduleNameMapper` que não existe). O `vercel.test.ts` já passa. `node-test exit=1` (`Cannot find module … conferir-rotas-estaticas.mjs`).
 
 - [ ] **Step 5: Implemente o mínimo**
 
@@ -737,6 +801,12 @@ export function hslParaHex(triplo: string): string {
     )
     .join('')}`
 }
+
+export function rgbDoToken(tema: Tema, nome: string, css?: string): string {
+  const hex = hslParaHex(tokenDoDs(tema, nome, css))
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  return `rgb(${r}, ${g}, ${b})`
+}
 ```
 
 `apps/pilutech-site/lib/font-awesome.ts`:
@@ -766,6 +836,42 @@ config.autoAddCss = false
   --color-petroleo-cartao: hsl(198 93% 20%);
   --color-petroleo-borda: hsl(198 60% 40%);
   --color-petroleo-linha: hsl(198 60% 45%);
+}
+
+/* O @theme do @piluvitu/ui não é inline: a cor sairia resolvida no :root, e o `dark` de uma seção não mudaria nada. */
+@theme inline {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-ok: hsl(var(--ok));
+  --color-ok-foreground: hsl(var(--ok-foreground));
+  --color-warn: hsl(var(--warn));
+  --color-warn-foreground: hsl(var(--warn-foreground));
+  --color-win: hsl(var(--win));
+  --color-win-foreground: hsl(var(--win-foreground));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
 }
 
 @layer base {
@@ -1004,12 +1110,26 @@ export default function Home() {
 
 ```ts
 import { expect, test } from '@playwright/test'
+import { rgbDoToken } from '../lib/tokens-do-ds'
 
 test('/ responde com o h1', async ({ page }) => {
   const resposta = await page.goto('/')
   expect(resposta?.status()).toBe(200)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('PiluTech')
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR')
+})
+
+// Review Focus 6: sem o @theme inline do globals.css, o `dark` do <main> não muda a cor (sai Névoa).
+test('o elemento com `dark` pega as cores do tema escuro', async ({ page }) => {
+  await page.goto('/')
+  const cores = await page.locator('main').evaluate((el) => {
+    const estilo = getComputedStyle(el)
+    return { fundo: estilo.backgroundColor, texto: estilo.color }
+  })
+  expect(cores).toEqual({
+    fundo: rgbDoToken('escuro', 'background'),
+    texto: rgbDoToken('escuro', 'foreground'),
+  })
 })
 ```
 
@@ -1019,7 +1139,7 @@ test('/ responde com o h1', async ({ page }) => {
 cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && pnpm run test; echo "test exit=$?"
 ```
 
-Expected: Jest (6 suítes) e `node --test` (4 testes) verdes, `test exit=0`.
+Expected: Jest (5 suítes: `vercel`, `tokens-do-ds`, `globals`, `font-awesome` e `cabecalho-secao`) e `node --test` (4 testes) verdes, `test exit=0`.
 
 - [ ] **Step 7: Lint, tsc, build (gate + rotas), Storybook e E2E de fumaça**
 
@@ -1031,9 +1151,9 @@ pnpm run build; echo "build exit=$?"
 lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
-Expected: tudo `exit=0`; o build termina com `Rotas estáticas: /` depois da linha de sucesso do gate. **Prova do gate (uma vez):** comente o `@source '../../../packages/ui/src';` do `globals.css`, rode `pnpm run build; echo "exit=$?"` → `exit=1` com a mensagem do gate; restaure a linha (o `globals.test.ts` também acusaria) e rode de novo → `exit=0`. Depois do Next, confira `/usr/bin/git status` (Global Constraints: arquivos que o Next gera para agentes).
+Expected: tudo `exit=0`; o build termina com `Rotas estáticas: /` depois da linha de sucesso do gate. **Prova do gate (uma vez):** confira antes que o `storybook-static/` está ignorado (`/usr/bin/git check-ignore apps/pilutech-site/storybook-static; echo "exit=$?"` → `exit=0`, do Step 1): sem isso, o Tailwind varre o bundle do Storybook, acha a sentinela e a prova dá falso positivo. Comente o `@source '../../../packages/ui/src';` do `globals.css`, rode `pnpm run build; echo "exit=$?"` → `exit=1` com a mensagem do gate; restaure a linha (o `globals.test.ts` também acusaria) e rode de novo → `exit=0`. **Prova do `@theme inline` (uma vez):** comente o bloco `@theme inline` do `globals.css` e rode `CI=1 ./node_modules/.bin/playwright test --retries=0; echo "exit=$?"` → `exit=1` em "o elemento com `dark` pega as cores do tema escuro" (fundo `rgb(247, 249, 252)`); restaure e rode de novo → `exit=0`. Depois do Next, confira `/usr/bin/git status` (Global Constraints: arquivos que o Next gera para agentes).
 
-- [ ] **Step 8: `Makefile`, CI, `.gitignore` e `CLAUDE.md` do app**
+- [ ] **Step 8: `Makefile`, CI e `CLAUDE.md` do app**
 
 `Makefile`: acrescente `\` ao fim da linha `        dev-botai-site build-botai-site test-botai-site test-e2e-botai-site storybook-botai-site` e, abaixo dela, `        dev-pilutech-site build-pilutech-site test-pilutech-site test-e2e-pilutech-site storybook-pilutech-site` (fecha o `.PHONY`); no alvo `stop`, troque `for p in 8081 8082 3333 6017 3018 6018 3020 6019; do` por `for p in 8081 8082 3333 6017 3018 6018 3020 6019 3021 6020; do`; e, depois do alvo `storybook-botai-site`, acrescente:
 
@@ -1092,15 +1212,6 @@ pilutech-site:
     # O build lê apps/web/content/pilulabs/botai/index.yaml, que o checkout traz inteiro.
     - name: Build (+ gate do @source + rotas estáticas)
       run: pnpm --filter @pilutech/site run build
-```
-
-`.gitignore`: depois de `apps/botai-site/playwright-report/`, acrescente:
-
-```gitignore
-
-# Landing da PiluTech: mesmo motivo
-apps/pilutech-site/storybook-static/
-apps/pilutech-site/playwright-report/
 ```
 
 `apps/pilutech-site/CLAUDE.md` (inicial; a Tarefa 10 escreve a versão completa):
@@ -1587,7 +1698,7 @@ A lógica pura que dois sites usam vai para `@piluvitu/tools`: `contato.ts` (o e
   - `@piluvitu/tools/contato`: `EMAIL_DA_PILUTECH = 'pilutechinformatica@gmail.com'`; `mailtoDaPilutech(projeto: string, assunto: string): string`.
   - `@piluvitu/tools/pilulabs`: `urlsDasLojas(item: unknown): UrlsDasLojas`.
   - `apps/pilutech-site/lib/contato.ts`: `WHATSAPP_NUMERO`, `TELEFONE_VISIVEL`, `TELEFONE_INTERNACIONAL`, `linkDoWhatsApp(mensagem: string): string`, `MENSAGENS_DO_WHATSAPP: { geral; essencial; evolucao; infraestrutura }`, `WHATSAPP: Record<keyof typeof MENSAGENS_DO_WHATSAPP, string>`, `MAILTO_DO_SITE`, `ABRE_EM_ABA_NOVA = { target: '_blank', rel: 'noopener noreferrer' }`, e o reexport `EMAIL_DA_PILUTECH`.
-  - `apps/pilutech-site/lib/cms.ts`: `ITEM_DO_BOTAI: string`; `lerFaseDoBotai(caminho?: string): Fase` (arquivo ausente lança).
+  - `apps/pilutech-site/lib/cms.ts`: `ITEM_DO_BOTAI: string`; `lerFaseDoBotai(caminho?: string): Fase` (sem `caminho`, lê `process.env.BOTAI_CMS_ITEM || ITEM_DO_BOTAI`, como o `apps/botai-site`; arquivo ausente lança).
   - `apps/pilutech-site/lib/conteudo.ts`: `SECOES_DA_BARRA` (`{ id; rotulo }[]`), `LINHAS_DO_TERMINAL`, `type Servico = { area; titulo; nome; texto; itens; icone }` e `SERVICOS`, `type Etapa` e `ETAPAS`, `type Projeto = { nome; url; endereco; tipo; texto; imagem: { src; alt } }`, `BOTAI`, `SOMBRAI`, `seloDoProjeto(projeto: Pick<Projeto, 'tipo'>, fase: Fase): string`, `type CartaoDeProjeto = Projeto & { selo: string }`, `cartoesDosProjetos(faseDoBotai: Fase): CartaoDeProjeto[]`, `TECNOLOGIAS` (`{ grupo; itens }[]`), `type Plano = { nome; para; itens; whatsapp }` e `PLANOS`, `type Duvida = { pergunta; resposta }` e `DUVIDAS`.
 
 - [ ] **Step 1: Escreva os testes que falham (pacote)**
@@ -1894,6 +2005,18 @@ describe('lerFaseDoBotai', () => {
       /ENOENT/,
     )
   })
+
+  // Só o playwright.lojas.config.ts define a variável: builda a landing com um YAML de teste.
+  it('BOTAI_CMS_ITEM troca o arquivo lido por padrão', () => {
+    process.env.BOTAI_CMS_ITEM = yaml(
+      "firefoxUrl: 'https://addons.mozilla.org/pt-BR/firefox/addon/botai/'\n",
+    )
+    try {
+      expect(lerFaseDoBotai()).toBe('disponivel')
+    } finally {
+      delete process.env.BOTAI_CMS_ITEM
+    }
+  })
 })
 ```
 
@@ -2066,7 +2189,7 @@ describe('projetos', () => {
 cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/jest lib/contato.test.ts lib/cms.test.ts lib/conteudo.test.ts; echo "exit=$?"
 ```
 
-Expected: `exit=1`, `Cannot find module './contato'`, `'./cms'` e `'./conteudo'`.
+Expected: `exit=1`, com `Cannot find module './contato'` (no `contato.test.ts` e no `conteudo.test.ts`, que importa `./contato` antes de `./conteudo`) e `Cannot find module './cms'`.
 
 - [ ] **Step 6: Implemente no app**
 
@@ -2126,7 +2249,9 @@ export const ITEM_DO_BOTAI = join(
   'index.yaml',
 )
 
-export function lerFaseDoBotai(caminho: string = ITEM_DO_BOTAI): Fase {
+export function lerFaseDoBotai(
+  caminho: string = process.env.BOTAI_CMS_ITEM || ITEM_DO_BOTAI,
+): Fase {
   return fase(urlsDasLojas(parse(readFileSync(caminho, 'utf8'))))
 }
 ```
@@ -2426,18 +2551,19 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add packages/tools apps/bota
 
 ### Tarefa 4: Hero com terminal, Serviços, Como funciona, Projetos, Tecnologias e Planos
 
-O corpo da página, fiel ao design: o hero escuro com o terminal, as cinco seções de conteúdo alternando escuro, claro e Petróleo, e os cartões de projeto com a imagem OG remota pelo `next/image` (só os dois caminhos exatos, sem query) e o selo do Botaí vindo do CMS. A página `/` passa a ser a `Landing`. Cores pelos tokens do contexto (ver "Decisões"): seção escura = classe `dark`; seção clara = sem classe; Planos = `bg-primary` no contexto claro (o Petróleo) com as cores próprias do `@theme` para cartão, borda e ✓.
+O corpo da página, fiel ao design: o hero escuro com o terminal, as cinco seções de conteúdo alternando escuro, claro e Petróleo, e os cartões de projeto com a imagem OG remota pelo `next/image` (só os dois caminhos exatos, sem query) e o selo do Botaí vindo do CMS. A página `/` passa a ser a `Landing`. Cores pelos tokens do contexto (ver "Decisões"): seção escura = classe `dark`; seção clara = sem classe; Planos = `bg-primary` no contexto claro (o Petróleo) com as cores próprias do `@theme` para cartão, borda e ✓. Os botões levam o `ANEL_DE_FOCO` (ver "Decisões"), e o E2E confere a cor computada de cada seção. O `test:e2e` ganha a primeira passada do molde do `apps/botai-site`: um build com um YAML de teste com loja publicada, que prova o selo "disponível" pelo caminho real (`page.tsx` → `Landing`).
 
 **Files:**
 
-- Create (`apps/pilutech-site/`): `components/classes.ts`, `components/terminal.tsx`, `components/hero.tsx`, `components/servicos.tsx`, `components/como-funciona.tsx`, `components/projetos.tsx`, `components/tecnologias.tsx`, `components/planos.tsx`, `components/landing.tsx` (cada `.tsx` com `.test.tsx` e `.stories.tsx` ao lado), `next.config.test.ts`
-- Modify (`apps/pilutech-site/`): `next.config.ts`, `app/page.tsx`, `app/pagina.e2e.ts`
+- Create (`apps/pilutech-site/`): `components/classes.ts`, `components/terminal.tsx`, `components/hero.tsx`, `components/servicos.tsx`, `components/como-funciona.tsx`, `components/projetos.tsx`, `components/tecnologias.tsx`, `components/planos.tsx`, `components/landing.tsx` (cada `.tsx` com `.test.tsx` e `.stories.tsx` ao lado), `next.config.test.ts`, `playwright.lojas.config.ts`, `app/lojas-publicadas.yaml`, `app/lojas-publicadas.e2e.ts`
+- Modify (`apps/pilutech-site/`): `next.config.ts`, `app/page.tsx`, `app/pagina.e2e.ts`, `playwright.config.ts` (`testIgnore`), `package.json` (`test:e2e`)
 
 **Interfaces:**
 
 - Consumes: `CabecalhoSecao` (Tarefa 1); `WHATSAPP`, `ABRE_EM_ABA_NOVA` (Tarefa 3); `LINHAS_DO_TERMINAL`, `SERVICOS`, `ETAPAS`, `cartoesDosProjetos`, `BOTAI`, `SOMBRAI`, `TECNOLOGIAS`, `PLANOS` (Tarefa 3); `lerFaseDoBotai` (Tarefa 3); `Button` de `@piluvitu/ui/button`; `cn` de `@piluvitu/ui/cn`.
 - Produces:
-  - `components/classes.ts`: `CONTEUDO` (largura de 1180 px com o gutter `clamp(20px,5vw,48px)`), `ESPACO_DA_SECAO` (padding vertical `clamp(72px,9vw,112px)`), `BOTAO_GRANDE` (50 px, raio 14, 16 px semibold, `gap-2`).
+  - `components/classes.ts`: `CONTEUDO` (largura de 1180 px com o gutter `clamp(20px,5vw,48px)`), `ESPACO_DA_SECAO` (padding vertical `clamp(72px,9vw,112px)`), `ANEL_DE_FOCO` (`focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background`), `BOTAO_GRANDE` (50 px, raio 14, 16 px semibold, `gap-2`, com o `ANEL_DE_FOCO`).
+  - `test:e2e` = `playwright test -c playwright.lojas.config.ts && playwright test` (as duas passadas do `apps/botai-site`).
   - `Terminal()`, `Hero()` (o `<header id="inicio">`, único `h1`), `Servicos()`, `ComoFunciona()`, `Projetos({ faseDoBotai }: { faseDoBotai: Fase })`, `Tecnologias()`, `Planos()`; cada seção é `<section id=… aria-labelledby="<id>-titulo">`, com o `h2` vindo do `CabecalhoSecao`.
   - `Landing({ faseDoBotai }: { faseDoBotai: Fase })` (a Tarefa 5 acrescenta as Dúvidas; a Tarefa 6, a barra, o contato, o rodapé, o botão flutuante e a prop `ano`).
   - `next.config.ts`: `images.remotePatterns` com `https://botai.pilutech.com.br/opengraph-image` e `https://sombrai.pilutech.com.br/opengraph-image.png`, `port: ''` e `search: ''`.
@@ -2571,6 +2697,17 @@ describe('Hero', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveClass(
       'wrap-break-word',
     )
+  })
+
+  // Review Focus 7: o anel do Button (1 px na cor do ring) é o Ciano do próprio botão no escuro.
+  it('os dois botões têm anel de foco de 2 px com folga do fundo', () => {
+    render(<Hero />)
+    for (const nome of ['Falar no WhatsApp', 'Ver serviços'])
+      expect(screen.getByRole('link', { name: nome })).toHaveClass(
+        'focus-visible:ring-2',
+        'focus-visible:ring-offset-2',
+        'focus-visible:ring-offset-background',
+      )
   })
 })
 ```
@@ -2809,6 +2946,20 @@ describe('Planos', () => {
       )
     }
   })
+
+  // Review Focus 7: o anel padrão seria Petróleo sobre o cartão Petróleo (cerca de 1,4:1).
+  it('o foco de cada "Pedir proposta" é um anel branco com folga Petróleo', () => {
+    render(<Planos />)
+    for (const link of screen.getAllByRole('link')) {
+      expect(link).toHaveClass(
+        'focus-visible:ring-2',
+        'focus-visible:ring-offset-2',
+        'focus-visible:ring-white',
+        'focus-visible:ring-offset-petroleo-cartao',
+      )
+      expect(link).not.toHaveClass('focus-visible:ring-ring')
+    }
+  })
 })
 ```
 
@@ -2899,8 +3050,9 @@ export default nextConfig
 export const CONTEUDO =
   'mx-auto w-full max-w-[1180px] px-[clamp(20px,5vw,48px)]'
 export const ESPACO_DA_SECAO = 'py-[clamp(72px,9vw,112px)]'
-export const BOTAO_GRANDE =
-  'h-[50px] gap-2 rounded-[14px] px-[22px] text-base font-semibold'
+export const ANEL_DE_FOCO =
+  'focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+export const BOTAO_GRANDE = `h-[50px] gap-2 rounded-[14px] px-[22px] text-base font-semibold ${ANEL_DE_FOCO}`
 ```
 
 `apps/pilutech-site/components/terminal.tsx`:
@@ -3300,7 +3452,7 @@ export function Planos() {
                 asChild
                 className={cn(
                   BOTAO_GRANDE,
-                  'text-petroleo-cartao h-[46px] w-full bg-white hover:bg-white/90',
+                  'text-petroleo-cartao focus-visible:ring-offset-petroleo-cartao h-[46px] w-full bg-white hover:bg-white/90 focus-visible:ring-white',
                 )}
               >
                 <a href={plano.whatsapp} {...ABRE_EM_ABA_NOVA}>
@@ -3526,9 +3678,13 @@ import { expect, test, type Page } from '@playwright/test'
 import { lerFaseDoBotai } from '../lib/cms'
 import { BOTAI, cartoesDosProjetos } from '../lib/conteudo'
 import { WHATSAPP } from '../lib/contato'
+import { rgbDoToken } from '../lib/tokens-do-ds'
 
 // O esperado sai do mesmo YAML que a página lê no build.
 const cartoes = cartoesDosProjetos(lerFaseDoBotai())
+
+const fundo = (page: Page, seletor: string) =>
+  page.locator(seletor).evaluate((el) => getComputedStyle(el).backgroundColor)
 
 const H2_DO_CORPO = [
   'Do primeiro protótipo ao servidor em produção.',
@@ -3596,13 +3752,15 @@ test.describe('/', () => {
     expect(erros).toEqual([])
   })
 
+  // No banner: na Tarefa 6 o botão flutuante também se chama "Falar no WhatsApp".
   test('Falar no WhatsApp e Ver serviços', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
+    const banner = page.getByRole('banner')
     await expect(
-      page.getByRole('link', { name: 'Falar no WhatsApp' }),
+      banner.getByRole('link', { name: 'Falar no WhatsApp' }),
     ).toHaveAttribute('href', WHATSAPP.geral)
-    await page.getByRole('link', { name: 'Ver serviços' }).click()
+    await banner.getByRole('link', { name: 'Ver serviços' }).click()
     await expect(page).toHaveURL(/#servicos$/)
     await expect(
       page.getByRole('heading', {
@@ -3610,6 +3768,52 @@ test.describe('/', () => {
         name: 'Do primeiro protótipo ao servidor em produção.',
       }),
     ).toBeInViewport()
+  })
+
+  // Review Focus 6: o `dark` de cada seção só vale com o @theme inline do globals.css.
+  test('cada seção com as cores do design', async ({ page }) => {
+    await page.goto('/')
+    const noite = rgbDoToken('escuro', 'background')
+    const nevoa = rgbDoToken('claro', 'background')
+    for (const [secao, esperado] of [
+      ['header#inicio', noite],
+      ['#servicos', nevoa],
+      ['#como-funciona', noite],
+      ['#projetos', nevoa],
+      ['#tecnologias', noite],
+      ['#planos', rgbDoToken('claro', 'primary')],
+    ])
+      expect([secao, await fundo(page, secao)]).toEqual([secao, esperado])
+    expect(
+      await page
+        .getByRole('heading', { level: 1 })
+        .evaluate((el) => getComputedStyle(el).color),
+    ).toBe(rgbDoToken('escuro', 'foreground'))
+    expect(await fundo(page, 'header#inicio a[href^="https://wa.me/"]')).toBe(
+      rgbDoToken('escuro', 'primary'),
+    )
+  })
+
+  // Review Focus 7: sem o ANEL_DE_FOCO, o anel é 1 px Ciano em volta do botão Ciano.
+  test('o foco pelo teclado no "Falar no WhatsApp" do hero mostra o anel Ciano com folga Noite', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const botao = page
+      .getByRole('banner')
+      .getByRole('link', { name: 'Falar no WhatsApp' })
+    for (
+      let i = 0;
+      i < 20 && !(await botao.evaluate((el) => el === document.activeElement));
+      i++
+    )
+      await page.keyboard.press('Tab')
+    await expect(botao).toBeFocused()
+    const sombra = await botao.evaluate((el) => getComputedStyle(el).boxShadow)
+    expect(sombra).toContain(
+      `${rgbDoToken('escuro', 'background')} 0px 0px 0px 2px`,
+    )
+    expect(sombra).toContain(`${rgbDoToken('escuro', 'ring')} 0px 0px 0px 4px`)
   })
 
   test('os cartões dos projetos: domínio em aba nova, imagem OG pelo otimizador e o selo do CMS', async ({
@@ -3672,15 +3876,87 @@ test.describe('/', () => {
 
 Se o teste de vazamento acusar algo, a correção é no componente (quebra de linha, `min-w-0`, `max-w-full`), nunca no teste.
 
+**A primeira passada do `test:e2e` (Review Focus 8),** no molde do `apps/botai-site` (`playwright.lojas.config.ts`, `app/lojas-publicadas.yaml` e `app/lojas-publicadas.e2e.ts` dele): o CMS real tem as 4 lojas do Botaí vazias, e só um build com loja publicada exercita o selo "disponível" vindo do `page.tsx`.
+
+`apps/pilutech-site/app/lojas-publicadas.yaml`:
+
+```yaml
+# YAML de teste do playwright.lojas.config.ts, no lugar de apps/web/content/pilulabs/botai/index.yaml.
+slug: botai
+chromeUrl: https://addons.mozilla.org/x
+firefoxUrl: https://addons.mozilla.org/pt-BR/firefox/addon/botai/
+edgeUrl: http://microsoftedge.microsoft.com/addons/detail/botai/xyz
+operaUrl: ''
+```
+
+`apps/pilutech-site/app/lojas-publicadas.e2e.ts`:
+
+```ts
+import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
+import { lerFaseDoBotai } from '../lib/cms'
+import { BOTAI, SOMBRAI } from '../lib/conteudo'
+
+// Roda só pelo playwright.lojas.config.ts, que builda a landing com este YAML no lugar do CMS.
+test('a fixture: Firefox publicado, então o Botaí está disponível', () => {
+  expect(lerFaseDoBotai(join(__dirname, 'lojas-publicadas.yaml'))).toBe(
+    'disponivel',
+  )
+})
+
+test('o selo do Botaí diz disponível, e o do Sombraí continua em breve', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await expect(page.locator(`a[href="${BOTAI.url}"]`)).toContainText(
+    'Extensão de navegador · disponível',
+  )
+  await expect(page.locator(`a[href="${SOMBRAI.url}"]`)).toContainText(
+    'App Android e iPhone · em breve',
+  )
+})
+```
+
+`apps/pilutech-site/playwright.lojas.config.ts`:
+
+```ts
+import { join } from 'node:path'
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testMatch: ['**/lojas-publicadas.e2e.ts'],
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: 1,
+  reporter: 'list',
+  use: {
+    baseURL: 'http://localhost:3021',
+    trace: 'on-first-retry',
+  },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  webServer: {
+    command: 'pnpm run build && pnpm run start',
+    url: 'http://localhost:3021',
+    reuseExistingServer: false,
+    timeout: 300_000,
+    cwd: '.',
+    env: { BOTAI_CMS_ITEM: join(__dirname, 'app', 'lojas-publicadas.yaml') },
+  },
+})
+```
+
+Em `apps/pilutech-site/playwright.config.ts`, depois de `testMatch: ['**/*.e2e.ts'],`, acrescente `testIgnore: ['**/lojas-publicadas.e2e.ts'],`. Em `apps/pilutech-site/package.json`, troque `"test:e2e": "playwright test"` por `"test:e2e": "playwright test -c playwright.lojas.config.ts && playwright test"` (a ordem deixa o `.next` com o CMS real).
+
 ```bash
 cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/eslint .; echo "eslint exit=$?"
 ./node_modules/.bin/tsc --noEmit; echo "tsc exit=$?"
 pnpm run build; echo "build exit=$?"
 ./node_modules/.bin/storybook build --quiet; echo "storybook exit=$?"
-lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
+lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "e2e lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
-Expected: tudo `exit=0`. Compare a página (desktop a 1280 px e celular a 390 px) com `desktop.png` e `mobile.png` do design, seção por seção, do hero aos planos: cores, tamanhos, espaços e textos. Confira `/usr/bin/git status` (arquivos do Next para agentes).
+Expected: tudo `exit=0`. **Prova da passada das lojas (uma vez):** troque, no `app/page.tsx`, `lerFaseDoBotai()` por `'em-breve'` e rode a passada das lojas → `exit=1` no "o selo do Botaí diz disponível"; desfaça e rode de novo → `exit=0`. Compare a página (desktop a 1280 px e celular a 390 px) com `desktop.png` e `mobile.png` do design, seção por seção, do hero aos planos: cores, tamanhos, espaços e textos. Confira `/usr/bin/git status` (arquivos do Next para agentes).
 
 - [ ] **Step 6: Commit**
 
@@ -4003,7 +4279,8 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/es
 ./node_modules/.bin/tsc --noEmit; echo "tsc exit=$?"
 pnpm run build; echo "build exit=$?"
 ./node_modules/.bin/storybook build --quiet; echo "storybook exit=$?"
-lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
+lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "e2e lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
 Expected: tudo `exit=0`; o build continua com `Rotas estáticas: /, /icon, /apple-icon` (o acordeão é ilha de cliente numa página estática). Compare a seção com o `desktop.png`. Confira `/usr/bin/git status`.
@@ -4027,7 +4304,7 @@ A moldura do design: a barra fixa com o símbolo e o lockup, os links das seçõ
 
 **Interfaces:**
 
-- Consumes: `PiluTechMark` (Tarefa 2); `WHATSAPP`, `ABRE_EM_ABA_NOVA`, `MAILTO_DO_SITE`, `EMAIL_DA_PILUTECH`, `TELEFONE_VISIVEL` (Tarefa 3); `SECOES_DA_BARRA` (Tarefa 3); `CONTEUDO`, `BOTAO_GRANDE` (Tarefa 4).
+- Consumes: `PiluTechMark` (Tarefa 2); `WHATSAPP`, `ABRE_EM_ABA_NOVA`, `MAILTO_DO_SITE`, `EMAIL_DA_PILUTECH`, `TELEFONE_VISIVEL` (Tarefa 3); `SECOES_DA_BARRA` (Tarefa 3); `CONTEUDO`, `ANEL_DE_FOCO`, `BOTAO_GRANDE` (Tarefa 4); `rgbDoToken` (Tarefa 1, só no E2E).
 - Produces: `Barra()` (`<nav aria-label="Principal">`), `Contato()` (`<section id="contato">`), `Rodape({ ano }: { ano: number })`, `WhatsappFlutuante()`; `Landing({ faseDoBotai, ano }: { faseDoBotai: Fase; ano: number })` na ordem do design: barra, hero, `<main>` (serviços, como funciona, projetos, tecnologias, planos, dúvidas, contato), rodapé, botão flutuante.
 
 - [ ] **Step 1: Escreva os testes que falham**
@@ -4079,6 +4356,16 @@ describe('Barra', () => {
     expect(link).toHaveAttribute('href', WHATSAPP.geral)
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  // Review Focus 7: no escuro, o anel padrão do Button é o Ciano do próprio botão.
+  it('o botão do WhatsApp tem anel de foco de 2 px com folga do fundo', () => {
+    render(<Barra />)
+    expect(screen.getByRole('link', { name: 'WhatsApp' })).toHaveClass(
+      'focus-visible:ring-2',
+      'focus-visible:ring-offset-2',
+      'focus-visible:ring-offset-background',
+    )
   })
 })
 ```
@@ -4133,6 +4420,20 @@ describe('Contato', () => {
         name: 'E-mail pilutechinformatica@gmail.com',
       }),
     ).toHaveClass('wrap-anywhere', 'whitespace-normal', 'max-w-full', 'h-auto')
+  })
+
+  // Review Focus 7: no escuro, o anel padrão do Button é o Ciano do próprio botão.
+  it('os dois botões têm anel de foco de 2 px com folga do fundo', () => {
+    render(<Contato />)
+    for (const nome of [
+      'WhatsApp (86) 98173-7625',
+      'E-mail pilutechinformatica@gmail.com',
+    ])
+      expect(screen.getByRole('link', { name: nome })).toHaveClass(
+        'focus-visible:ring-2',
+        'focus-visible:ring-offset-2',
+        'focus-visible:ring-offset-background',
+      )
   })
 })
 ```
@@ -4284,7 +4585,7 @@ import { Button } from '@piluvitu/ui/button'
 import { cn } from '@piluvitu/ui/cn'
 import { ABRE_EM_ABA_NOVA, WHATSAPP } from '@/lib/contato'
 import { SECOES_DA_BARRA } from '@/lib/conteudo'
-import { CONTEUDO } from './classes'
+import { ANEL_DE_FOCO, CONTEUDO } from './classes'
 import { PiluTechMark } from './pilutech-mark'
 
 export function Barra() {
@@ -4317,7 +4618,10 @@ export function Barra() {
           </ul>
           <Button
             asChild
-            className="h-[38px] gap-2 rounded-xl px-3.5 text-sm font-semibold"
+            className={cn(
+              'h-[38px] gap-2 rounded-xl px-3.5 text-sm font-semibold',
+              ANEL_DE_FOCO,
+            )}
           >
             <a href={WHATSAPP.geral} {...ABRE_EM_ABA_NOVA}>
               <FontAwesomeIcon icon={faWhatsapp} className="size-4" />
@@ -4606,9 +4910,15 @@ import {
   SECOES_DA_BARRA,
 } from '../lib/conteudo'
 import { EMAIL_DA_PILUTECH, MAILTO_DO_SITE, WHATSAPP } from '../lib/contato'
+import { rgbDoToken } from '../lib/tokens-do-ds'
 
 // O esperado sai do mesmo YAML que a página lê no build.
 const cartoes = cartoesDosProjetos(lerFaseDoBotai())
+
+const fundo = (page: Page, seletor: string) =>
+  page.locator(seletor).evaluate((el) => getComputedStyle(el).backgroundColor)
+const corDoTexto = (page: Page, seletor: string) =>
+  page.locator(seletor).evaluate((el) => getComputedStyle(el).color)
 
 const H2_DA_PAGINA = [
   'Do primeiro protótipo ao servidor em produção.',
@@ -4679,6 +4989,77 @@ test.describe('/', () => {
     )
     await page.waitForLoadState('networkidle')
     expect(erros).toEqual([])
+  })
+
+  // No banner: o botão flutuante também se chama "Falar no WhatsApp".
+  test('Falar no WhatsApp e Ver serviços', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    const banner = page.getByRole('banner')
+    await expect(
+      banner.getByRole('link', { name: 'Falar no WhatsApp' }),
+    ).toHaveAttribute('href', WHATSAPP.geral)
+    await banner.getByRole('link', { name: 'Ver serviços' }).click()
+    await expect(page).toHaveURL(/#servicos$/)
+    await expect(
+      page.getByRole('heading', {
+        level: 2,
+        name: 'Do primeiro protótipo ao servidor em produção.',
+      }),
+    ).toBeInViewport()
+  })
+
+  // Review Focus 6: o `dark` de cada seção só vale com o @theme inline do globals.css.
+  test('cada seção com as cores do design', async ({ page }) => {
+    await page.goto('/')
+    const noite = rgbDoToken('escuro', 'background')
+    const nevoa = rgbDoToken('claro', 'background')
+    for (const [secao, esperado] of [
+      ['header#inicio', noite],
+      ['#servicos', nevoa],
+      ['#como-funciona', noite],
+      ['#projetos', nevoa],
+      ['#tecnologias', noite],
+      ['#planos', rgbDoToken('claro', 'primary')],
+      ['#duvidas', nevoa],
+      ['#contato', noite],
+      ['footer', noite],
+      ['a[aria-label="Falar no WhatsApp"]', rgbDoToken('escuro', 'primary')],
+      [
+        'header#inicio a[href^="https://wa.me/"]',
+        rgbDoToken('escuro', 'primary'),
+      ],
+    ])
+      expect([secao, await fundo(page, secao)]).toEqual([secao, esperado])
+    // O fundo da barra tem 94% de opacidade (o Chromium devolve oklab): confere o texto.
+    expect(await corDoTexto(page, 'nav')).toBe(
+      rgbDoToken('escuro', 'foreground'),
+    )
+    expect(await corDoTexto(page, 'h1')).toBe(
+      rgbDoToken('escuro', 'foreground'),
+    )
+  })
+
+  // Review Focus 7: sem o ANEL_DE_FOCO, o anel é 1 px Ciano em volta do botão Ciano.
+  test('o foco pelo teclado no "Falar no WhatsApp" do hero mostra o anel Ciano com folga Noite', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const botao = page
+      .getByRole('banner')
+      .getByRole('link', { name: 'Falar no WhatsApp' })
+    for (
+      let i = 0;
+      i < 20 && !(await botao.evaluate((el) => el === document.activeElement));
+      i++
+    )
+      await page.keyboard.press('Tab')
+    await expect(botao).toBeFocused()
+    const sombra = await botao.evaluate((el) => getComputedStyle(el).boxShadow)
+    expect(sombra).toContain(
+      `${rgbDoToken('escuro', 'background')} 0px 0px 0px 2px`,
+    )
+    expect(sombra).toContain(`${rgbDoToken('escuro', 'ring')} 0px 0px 0px 4px`)
   })
 
   test.describe('barra fixa', () => {
@@ -4920,7 +5301,8 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/es
 ./node_modules/.bin/tsc --noEmit; echo "tsc exit=$?"
 pnpm run build; echo "build exit=$?"
 ./node_modules/.bin/storybook build --quiet; echo "storybook exit=$?"
-lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
+lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "e2e lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
 Expected: tudo `exit=0`. Compare a página inteira com `desktop.png` (1280 px) e `mobile.png` (390 px): a barra com o lockup e só o WhatsApp no celular, o contato com os dois botões, o rodapé e o botão flutuante no canto. Confira `/usr/bin/git status`.
@@ -4935,7 +5317,7 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/pilutech-site && /u
 
 ### Tarefa 7: SEO desde a criação (metadata, OG/Twitter, JSON-LD, sitemap, robots, manifest, verificação)
 
-Tudo o que a spec §4 pede, no molde do `apps/botai-site`: `metadataBase` em `https://pilutech.com.br` (ou `SITE_URL`, só a origem; preview e local sem ela apontam para a produção, e o preview da Vercel já responde com `X-Robots-Tag: noindex`), canonical, `lang`, título de até 60 caracteres e descrição de 140–160, Open Graph e Twitter com a imagem própria 1200×630 (o lockup em Plus Jakarta Sans 800 do `@fontsource`, o `h1` e a linha de Teresina), o JSON-LD com `Organization` (o mesmo `@id` que o `apps/botai-site` usa), `ProfessionalService` e `WebSite`, sem `FAQPage` e sem nota, e as rotas técnicas. O `theme-color` é a Noite. Todas as rotas continuam estáticas e entram na conferência do build.
+Tudo o que a spec §4 pede, no molde do `apps/botai-site`: `metadataBase` em `https://pilutech.com.br` (ou `SITE_URL`, só a origem; preview e local sem ela apontam para a produção, e o preview da Vercel já responde com `X-Robots-Tag: noindex`), canonical, `lang`, título de até 60 caracteres e descrição de 140–160, Open Graph e Twitter com a imagem própria 1200×630 (o lockup em Plus Jakarta Sans 800 do `@fontsource`, o `h1` e a linha de Teresina), o JSON-LD com a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']` (o mesmo `@id` que o `apps/botai-site` usa; ver "Decisões"), e o `WebSite`, sem `FAQPage` e sem nota, e as rotas técnicas. O `theme-color` é a Noite. Todas as rotas continuam estáticas e entram na conferência do build.
 
 **Files:**
 
@@ -4948,7 +5330,7 @@ Tudo o que a spec §4 pede, no molde do `apps/botai-site`: `metadataBase` em `ht
 - Produces:
   - `lib/site.ts`: `SITE_DE_PRODUCAO = 'https://pilutech.com.br'`; `urlDoSite(env?): string`; `urlAbsoluta(caminho: string, siteUrl?: string): string`.
   - `lib/seo.ts`: `TITULO_DA_HOME`, `DESCRICAO_DA_HOME`, `COR_DO_TEMA`, `type PaginaDoSite`, `metadataDaPagina(pagina): Metadata`, `metadataDoSite(siteUrl, env?): Metadata`, `VIEWPORT: Viewport`.
-  - `lib/json-ld.ts`: `CONTEXTO`, `ID_DA_PILUTECH = 'https://pilutech.com.br/#organizacao'`, `LOGO_DA_PILUTECH = 'https://pilutech.com.br/icon'`, `type NoJsonLd`, `serializarJsonLd(dados): string`, `jsonLdDaHome(siteUrl): { '@context'; '@graph': NoJsonLd[] }`.
+  - `lib/json-ld.ts`: `CONTEXTO`, `ID_DA_PILUTECH = 'https://pilutech.com.br/#organizacao'`, `LOGO_DA_PILUTECH = 'https://pilutech.com.br/icon'`, `TIPOS_DA_PILUTECH = ['Organization', 'ProfessionalService']`, `type NoJsonLd`, `serializarJsonLd(dados): string`, `jsonLdDaHome(siteUrl): { '@context'; '@graph': NoJsonLd[] }` (o grafo é `[a PiluTech, o WebSite]`).
   - `components/json-ld.tsx`: `JsonLd({ dados }: { dados: unknown })`.
   - `lib/imagem-og.tsx`: `size`, `contentType`, `alt`, `imagemOg(): Promise<ImageResponse>`.
   - Rotas `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`.
@@ -5120,6 +5502,7 @@ import {
   jsonLdDaHome,
   LOGO_DA_PILUTECH,
   serializarJsonLd,
+  TIPOS_DA_PILUTECH,
   type NoJsonLd,
 } from './json-ld'
 import { DESCRICAO_DA_HOME } from './seo'
@@ -5128,32 +5511,38 @@ const SITE = 'https://pilutech.com.br'
 const EMAIL = 'pilutechinformatica@gmail.com'
 const TELEFONE = '+55 86 98173-7625'
 
-function no(tipo: string, grafo: NoJsonLd[]): NoJsonLd | undefined {
-  return grafo.find((n) => n['@type'] === tipo)
+function no(id: string, grafo: NoJsonLd[]): NoJsonLd | undefined {
+  return grafo.find((n) => n['@id'] === id)
 }
 
 describe('jsonLdDaHome', () => {
   const dados = jsonLdDaHome(SITE)
+  const pilutech = no(ID_DA_PILUTECH, dados['@graph'])
 
-  it('um grafo com a PiluTech, o serviço profissional e o site', () => {
+  // Decisões do plano: uma empresa, um nó. Dois nós ligados por parentOrganization diriam que a
+  // PiluTech é filha de si mesma; os dois tipos da spec §4 ficam no mesmo nó.
+  it('um grafo com a PiluTech (Organization e ProfessionalService num nó só) e o site', () => {
     expect(dados['@context']).toBe(CONTEXTO)
+    expect(TIPOS_DA_PILUTECH).toEqual(['Organization', 'ProfessionalService'])
     expect(dados['@graph'].map((n) => n['@type'])).toEqual([
-      'Organization',
-      'ProfessionalService',
+      ['Organization', 'ProfessionalService'],
       'WebSite',
     ])
+    expect(JSON.stringify(dados)).not.toContain('parentOrganization')
   })
 
   // O mesmo @id que o apps/botai-site usa: os sites descrevem a mesma empresa.
-  it('Organization: a PiluTech, com logo, e-mail, telefone e contato comercial', () => {
+  it('a PiluTech: logo, e-mail, telefone, contato comercial, Brasil inteiro e endereço só com cidade, UF e país', () => {
     expect(ID_DA_PILUTECH).toBe('https://pilutech.com.br/#organizacao')
     expect(LOGO_DA_PILUTECH).toBe('https://pilutech.com.br/icon')
-    expect(no('Organization', dados['@graph'])).toEqual({
-      '@type': 'Organization',
+    expect(pilutech).toMatchObject({
+      '@type': ['Organization', 'ProfessionalService'],
       '@id': ID_DA_PILUTECH,
       name: 'PiluTech',
+      description: DESCRICAO_DA_HOME,
       url: SITE,
       logo: LOGO_DA_PILUTECH,
+      image: LOGO_DA_PILUTECH,
       email: EMAIL,
       telephone: TELEFONE,
       contactPoint: {
@@ -5164,19 +5553,6 @@ describe('jsonLdDaHome', () => {
         areaServed: 'BR',
         availableLanguage: 'pt-BR',
       },
-    })
-  })
-
-  it('ProfessionalService: Brasil inteiro, endereço só com cidade, UF e país', () => {
-    expect(no('ProfessionalService', dados['@graph'])).toMatchObject({
-      '@type': 'ProfessionalService',
-      '@id': `${SITE}/#servico`,
-      name: 'PiluTech',
-      description: DESCRICAO_DA_HOME,
-      url: `${SITE}/`,
-      image: LOGO_DA_PILUTECH,
-      email: EMAIL,
-      telephone: TELEFONE,
       address: {
         '@type': 'PostalAddress',
         addressLocality: 'Teresina',
@@ -5184,21 +5560,14 @@ describe('jsonLdDaHome', () => {
         addressCountry: 'BR',
       },
       areaServed: { '@type': 'Country', name: 'Brasil' },
-      parentOrganization: { '@id': ID_DA_PILUTECH },
     })
-    const endereco = no('ProfessionalService', dados['@graph'])
-      ?.address as Record<string, unknown>
-    expect(Object.keys(endereco).sort()).toEqual([
-      '@type',
-      'addressCountry',
-      'addressLocality',
-      'addressRegion',
-    ])
+    expect(
+      Object.keys(pilutech?.address as Record<string, unknown>).sort(),
+    ).toEqual(['@type', 'addressCountry', 'addressLocality', 'addressRegion'])
   })
 
   it('os 3 serviços do design no catálogo, como Service, sem preço', () => {
-    const catalogo = no('ProfessionalService', dados['@graph'])
-      ?.hasOfferCatalog as {
+    const catalogo = pilutech?.hasOfferCatalog as {
       '@type': string
       name: string
       itemListElement: {
@@ -5226,7 +5595,7 @@ describe('jsonLdDaHome', () => {
   })
 
   it('WebSite: o site na raiz do domínio, publicado pela PiluTech', () => {
-    expect(no('WebSite', dados['@graph'])).toEqual({
+    expect(no(`${SITE}/#site`, dados['@graph'])).toEqual({
       '@type': 'WebSite',
       '@id': `${SITE}/#site`,
       name: 'PiluTech',
@@ -5236,7 +5605,7 @@ describe('jsonLdDaHome', () => {
     })
   })
 
-  // Spec §4: sem FAQPage (rich result restrito a governo e saúde) e sem nota.
+  // Spec §4: sem FAQPage (o Google não mostra mais o rich result de FAQ, removido em maio de 2026) e sem nota.
   it('sem FAQPage, nota, review nem preço', () => {
     const texto = JSON.stringify(dados)
     for (const proibido of [
@@ -5251,8 +5620,10 @@ describe('jsonLdDaHome', () => {
 
   it('outro site muda as URLs da página, não as da PiluTech', () => {
     const local = jsonLdDaHome('http://localhost:3021')
-    expect(no('WebSite', local['@graph'])?.url).toBe('http://localhost:3021/')
-    expect(no('Organization', local['@graph'])).toMatchObject({
+    expect(no('http://localhost:3021/#site', local['@graph'])?.url).toBe(
+      'http://localhost:3021/',
+    )
+    expect(no(ID_DA_PILUTECH, local['@graph'])).toMatchObject({
       url: SITE,
       logo: LOGO_DA_PILUTECH,
     })
@@ -5454,6 +5825,7 @@ import { SITE_DE_PRODUCAO, urlAbsoluta } from './site'
 export const CONTEXTO = 'https://schema.org'
 export const ID_DA_PILUTECH = `${SITE_DE_PRODUCAO}/#organizacao`
 export const LOGO_DA_PILUTECH = `${SITE_DE_PRODUCAO}/icon`
+export const TIPOS_DA_PILUTECH = ['Organization', 'ProfessionalService']
 
 export type NoJsonLd = Record<string, unknown>
 
@@ -5466,16 +5838,17 @@ export function jsonLdDaHome(siteUrl: string): {
   '@graph': NoJsonLd[]
 } {
   const raiz = urlAbsoluta('/', siteUrl)
-  const pilutech = { '@id': ID_DA_PILUTECH }
   return {
     '@context': CONTEXTO,
     '@graph': [
       {
-        '@type': 'Organization',
+        '@type': TIPOS_DA_PILUTECH,
         '@id': ID_DA_PILUTECH,
         name: NOME_DA_MARCA,
+        description: DESCRICAO_DA_HOME,
         url: SITE_DE_PRODUCAO,
         logo: LOGO_DA_PILUTECH,
+        image: LOGO_DA_PILUTECH,
         email: EMAIL_DA_PILUTECH,
         telephone: TELEFONE_INTERNACIONAL,
         contactPoint: {
@@ -5486,16 +5859,6 @@ export function jsonLdDaHome(siteUrl: string): {
           areaServed: 'BR',
           availableLanguage: 'pt-BR',
         },
-      },
-      {
-        '@type': 'ProfessionalService',
-        '@id': `${raiz}#servico`,
-        name: NOME_DA_MARCA,
-        description: DESCRICAO_DA_HOME,
-        url: raiz,
-        image: LOGO_DA_PILUTECH,
-        email: EMAIL_DA_PILUTECH,
-        telephone: TELEFONE_INTERNACIONAL,
         address: {
           '@type': 'PostalAddress',
           addressLocality: 'Teresina',
@@ -5503,7 +5866,6 @@ export function jsonLdDaHome(siteUrl: string): {
           addressCountry: 'BR',
         },
         areaServed: { '@type': 'Country', name: 'Brasil' },
-        parentOrganization: pilutech,
         hasOfferCatalog: {
           '@type': 'OfferCatalog',
           name: 'Serviços da PiluTech',
@@ -5523,7 +5885,7 @@ export function jsonLdDaHome(siteUrl: string): {
         name: NOME_DA_MARCA,
         url: raiz,
         inLanguage: 'pt-BR',
-        publisher: pilutech,
+        publisher: { '@id': ID_DA_PILUTECH },
       },
     ],
   }
@@ -5908,7 +6270,7 @@ for (const largura of [1280, 320]) {
   })
 }
 
-test('JSON-LD: Organization, ProfessionalService e WebSite, sem FAQPage', async ({
+test('JSON-LD: a PiluTech (Organization e ProfessionalService num nó só) e o WebSite, sem FAQPage', async ({
   page,
 }) => {
   await page.goto('/')
@@ -5920,8 +6282,7 @@ test('JSON-LD: Organization, ProfessionalService e WebSite, sem FAQPage', async 
     '@graph': Record<string, unknown>[]
   }
   expect(dados['@graph'].map((n) => n['@type'])).toEqual([
-    'Organization',
-    'ProfessionalService',
+    ['Organization', 'ProfessionalService'],
     'WebSite',
   ])
   expect(dados['@graph'][0]).toMatchObject({
@@ -5986,7 +6347,8 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && ./node_modules/.bin/es
 ./node_modules/.bin/tsc --noEmit; echo "tsc exit=$?"
 pnpm run build; echo "build exit=$?"
 ./node_modules/.bin/storybook build --quiet; echo "storybook exit=$?"
-lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
+lsof -nP -iTCP:3021 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "e2e lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
 Expected: tudo `exit=0`; o build termina com as 8 rotas de `ROTAS` estáticas. Abra `http://localhost:3021/opengraph-image` (servidor de pé, ou `.next/server/app/opengraph-image.body`) e confira a olho: fundo Noite com o brilho no topo, o lockup em Jakarta 800, o `h1` e a linha de Teresina em Aço. Se o `tsc` recusar o `Buffer` no `data` da fonte, use `data: (await readFile(…)).buffer as ArrayBuffer` (o tipo do `next/og` é `ArrayBuffer`); não troque a fonte. Confira `/usr/bin/git status`.
@@ -5994,19 +6356,19 @@ Expected: tudo `exit=0`; o build termina com as 8 rotas de `ROTAS` estáticas. A
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/pilutech-site && /usr/bin/git status --short && /usr/bin/git commit -m "feat(pilutech-site): SEO (metadata, OG/Twitter, JSON-LD Organization/ProfessionalService/WebSite, sitemap, robots, manifest)"; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/pilutech-site && /usr/bin/git status --short && /usr/bin/git commit -m "feat(pilutech-site): SEO (metadata, OG/Twitter, JSON-LD da PiluTech e do site, sitemap, robots, manifest)"; echo "exit=$?"
 ```
 
 ---
 
 ### Tarefa 8: `apps/web` — a vitrine volta para `piluvitu.com.br/pilulabs` e o proxy dos subdomínios sai
 
-Com `pilutech.com.br` e `www` no projeto `pilutech-site` (e o merge só depois de movê-los, spec §7), o `apps/web` não recebe mais host nenhum de `pilutech.com.br`, e tudo o que o `proxy.ts` fazia fica sem uso (ver "Decisões tiradas do código"). Saem o proxy, o `lib/pilutech-dominios.ts`, os dois E2E de subdomínio e a chave `PILUTECH_SUBDOMINIOS`; `linkDoItem`, `itemParaProject`, `metadataDaPagina` e `jsonLdVitrine` perdem o parâmetro da chave; "Saiba mais", rodapé, canonical e JSON-LD da vitrine ficam em `/pilulabs`; o `publisher` da vitrine passa a ser a PiluTech no site dela. Os 308 de `/pilulabs/botai` e `/pilulabs/botai/privacidade` ficam (são `redirects` do `next.config.mjs`). O comportamento novo que muda para quem visita é o da produção com a chave ligada: `piluvitu.com.br/pilulabs` deixa de responder 308.
+Com `pilutech.com.br` e `www` no projeto `pilutech-site` (e o merge só depois de movê-los, spec §7), o `apps/web` não recebe mais host nenhum de `pilutech.com.br`, e tudo o que o `proxy.ts` fazia fica sem uso (ver "Decisões tiradas do código"). Saem o proxy, o `lib/pilutech-dominios.ts`, os dois E2E de subdomínio e a chave `PILUTECH_SUBDOMINIOS`; `linkDoItem`, `itemParaProject`, `metadataDaPagina` e `jsonLdVitrine` perdem o parâmetro da chave; "Saiba mais", rodapé, canonical e JSON-LD da vitrine ficam em `/pilulabs`; o `publisher` da vitrine passa a ser a PiluTech no site dela. Os 308 de `/pilulabs/botai` e `/pilulabs/botai/privacidade` ficam (são `redirects` do `next.config.mjs`). O comportamento novo que muda para quem visita é o da produção com a chave ligada: `piluvitu.com.br/pilulabs` deixa de responder 308. Saem também os restos do modelo de subdomínio no CMS: o rótulo do `slug` ("é o subdomínio") e a dica do `site` (`https://<slug>.pilutech.com.br`, um host que sem o proxy só serve se o produto tiver projeto Vercel próprio), no Keystatic e no formulário do `/admin/pilulabs`.
 
 **Files:**
 
 - Delete (`apps/web/`): `proxy.ts`, `proxy.test.ts`, `lib/pilutech-dominios.ts`, `lib/pilutech-dominios.test.ts`, `app/(site)/pilulabs/subdominios.e2e.ts`, `app/(site)/pilulabs/chave-ligada.e2e.ts`
-- Modify (`apps/web/`): `lib/pilulabs.ts`, `lib/pilulabs.test.ts`, `lib/pilulabs-json-ld.ts`, `lib/pilulabs-json-ld.test.ts`, `lib/pilulabs-conteudo.test.ts`, `lib/site-url.test.ts`, `app/(site)/page.tsx`, `app/(site)/pilulabs/page.tsx`, `app/(site)/pilulabs/pilulabs.e2e.ts`, `app/(site)/home.e2e.ts`, `components/secao-pilulabs.test.tsx`, `components/secao-pilulabs.stories.tsx`, `components/home-footer.test.tsx`, `components/home-footer.stories.tsx`, `components/home-bento-layout.test.tsx`, `components/pilulabs/vitrine.stories.tsx`, `.env.example`, `CLAUDE.md`; e a linha do `apps/web` na tabela do `CLAUDE.md` raiz
+- Modify (`apps/web/`): `lib/pilulabs.ts`, `lib/pilulabs.test.ts`, `lib/pilulabs-json-ld.ts`, `lib/pilulabs-json-ld.test.ts`, `lib/pilulabs-conteudo.test.ts`, `lib/site-url.test.ts`, `app/(site)/page.tsx`, `app/(site)/pilulabs/page.tsx`, `app/(site)/pilulabs/pilulabs.e2e.ts`, `app/(site)/home.e2e.ts`, `components/secao-pilulabs.test.tsx`, `components/secao-pilulabs.stories.tsx`, `components/home-footer.test.tsx`, `components/home-footer.stories.tsx`, `components/home-bento-layout.test.tsx`, `components/pilulabs/vitrine.stories.tsx`, `keystatic.config.ts` (rótulo do `slug` e dica do `site`), `components/admin/content/pilulabs-form.tsx` (placeholder do `site`), `.env.example`, `CLAUDE.md`; e a linha do `apps/web` na tabela do `CLAUDE.md` raiz
 
 **Interfaces:**
 
@@ -6128,7 +6490,7 @@ E2E:
 - `app/(site)/pilulabs/pilulabs.e2e.ts`: troque `linkDoItem(item, false)` por `linkDoItem(item)` e, dentro do `test.describe('/pilulabs', …)`, depois do primeiro teste:
 
 ```ts
-// Review Focus 2: a variável PILUTECH_SUBDOMINIOS pode sobrar na Vercel; ela não muda mais nada.
+// Review Focus 2: a chave antiga dos subdomínios pode voltar na Vercel; ela não muda mais nada.
 test('responde 200, sem 308, com o canonical e o og:url em /pilulabs', async ({
   page,
 }) => {
@@ -6339,6 +6701,8 @@ const totalPiluLabs = itensListados(piluLabs).length
 const naHome = selecionarParaHome(piluLabs).map((item) => itemParaProject(item))
 ```
 
+CMS: em `apps/web/keystatic.config.ts`, troque `label: 'Slug (sem acento; é o subdomínio e a pasta da rota)',` por `label: 'Slug (sem acento; é a pasta da rota própria)',` e `description: 'O padrão é https://<slug>.pilutech.com.br',` por `description: 'URL https da landing do produto (ex.: https://botai.pilutech.com.br)',`; em `apps/web/components/admin/content/pilulabs-form.tsx`, troque `placeholder="https://<slug>.pilutech.com.br"` por `placeholder="URL https da landing do produto"`. São textos de ajuda: o grep do Step 4 confere que não sobrou o modelo antigo, e o `pilulabs-form.test.tsx` e a trava do catálogo continuam verdes (nenhum deles lê rótulo nem dica).
+
 Stories: em `components/secao-pilulabs.stories.tsx` e `components/home-footer.stories.tsx`, apague o `export const ComSubdominios: Story = {…}`; em `components/pilulabs/vitrine.stories.tsx`, renomeie `ComLojasESubdominios` para `ComLojas` e troque o `hrefAutor: 'https://piluvitu.com.br/'` dela por `hrefAutor: '/'`.
 
 `apps/web/.env.example`: apague o bloco de 6 linhas que começa em `# PiluLabs: subdomínios *.pilutech.com.br (proxy.ts).` e termina em `# PILUTECH_SUBDOMINIOS=1` (e a linha em branco depois dele), e troque as linhas 3 e 4 (`# Em produção, defina-a sempre: VERCEL_PROJECT_PRODUCTION_URL é o domínio de produção mais` / `# curto, e pilutech.com.br (mesmo projeto) empata com piluvitu.com.br. NEXT_PUBLIC_SITE_URL tem prioridade.`) por:
@@ -6359,10 +6723,10 @@ pnpm run build:ci; echo "build exit=$?"
 lsof -nP -iTCP:3333 -sTCP:LISTEN
 CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/pilulabs' '\(site\)/home'; echo "e2e exit=$?"
 PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/pilulabs' '\(site\)/home'; echo "e2e com a chave exit=$?"
-/usr/bin/grep -rn "pilutech-dominios\|urlPublica\|subdominiosAtivos\|PILUTECH_SUBDOMINIOS\|rotearPorHost\|pilutech\.localhost" --include='*.ts' --include='*.tsx' --include='*.mjs' --include='.env.example' . | /usr/bin/grep -v node_modules | /usr/bin/grep -v '/\.next/'; echo "grep exit=$?"
+/usr/bin/grep -rn "pilutech-dominios\|urlPublica\|subdominiosAtivos\|PILUTECH_SUBDOMINIOS\|rotearPorHost\|pilutech\.localhost\|é o subdomínio\|<slug>\.pilutech" --include='*.ts' --include='*.tsx' --include='*.mjs' --include='.env.example' . | /usr/bin/grep -v node_modules | /usr/bin/grep -v '/\.next/'; echo "grep exit=$?"
 ```
 
-Expected: todos `exit=0`, menos o último `grep exit=1` (nada sobrou no código). O `tsc` é quem prova que nenhuma chamada ficou com o segundo argumento (o `ts-jest` só transpila). O `build:ci` não lista mais `ƒ Proxy (Middleware)` na saída. Confira `/usr/bin/git status` (o `next dev` do E2E pode reescrever o `apps/web/CLAUDE.md`; ver o ⚠️ na seção _Testes_ dele).
+Expected: todos `exit=0`, menos o último `grep exit=1` (nada sobrou no código; o comentário novo do `pilulabs.e2e.ts` fala em "chave antiga dos subdomínios" justamente para não casar). O `tsc` é quem prova que nenhuma chamada ficou com o segundo argumento (o `ts-jest` só transpila). O `build:ci` não lista mais `ƒ Proxy (Middleware)` na saída. Confira `/usr/bin/git status` (o `next dev` do E2E pode reescrever o `apps/web/CLAUDE.md`; ver o ⚠️ na seção _Testes_ dele).
 
 - [ ] **Step 5: Documente (`apps/web/CLAUDE.md` e a linha do `apps/web` no `CLAUDE.md` raiz)**
 
@@ -6421,7 +6785,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - a seção PiluLabs (`components/secao-pilulabs.tsx`) mostra até 4 cards (`selecionarParaHome` → `itemParaProject` → `ProjectCard`) e a contagem dos listados;
   - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `/pilulabs`;
   - o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado.
-- **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` do `apps/botai-site` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`: se a variável ainda existir no projeto da Vercel, ela não muda nada e pode ser apagada (o E2E da vitrine e da home roda também com ela no ambiente).
+- **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` do `apps/botai-site` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`. A variável saiu da Production do projeto antes da troca dos domínios (passo 5 do "Deploy" em `apps/pilutech-site/CLAUDE.md`: com ela ligada, o 308 de `/pilulabs` levaria à landing nova); se voltar, não muda nada (o E2E da vitrine e da home roda também com ela no ambiente).
 - **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
   - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
   - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque só o item com `paginaPropria` leva até ela;
@@ -6509,6 +6873,18 @@ por:
 - `NEXT_PUBLIC_SITE_URL` — domínio canônico (`https://piluvitu.com.br`) do `metadataBase`, do `og:image` e do canonical. **Obrigatória em Production:** sem ela, `getCanonicalSiteUrl()` usa o `VERCEL_PROJECT_PRODUCTION_URL`, o domínio de produção mais curto do projeto, que pode não ser o canônico (`lib/site-url.test.ts`).
 ```
 
+Na seção _Content structure (Keystatic YAML)_ do mesmo arquivo, troque:
+
+```text
+com visibilidade, destaque, lojas e subdomínio (ver _PiluLabs_)
+```
+
+por:
+
+```text
+com visibilidade, destaque e lojas (ver _PiluLabs_)
+```
+
 No `CLAUDE.md` raiz, na linha do `apps/web` da tabela de workspaces, troque:
 
 ```text
@@ -6521,7 +6897,7 @@ por:
 `/pilulabs`,
 ```
 
-Confira: `/usr/bin/grep -n "urlPublica\|subdominiosAtivos\|pilutech-dominios\|pilutech\.localhost\|chave-ligada\|subdominios\.e2e\|PILUTECH_SUBDOMINIOS\|proxy\.ts" apps/web/CLAUDE.md CLAUDE.md` → só o bullet **Domínios** (que cita `proxy.ts`, `lib/pilutech-dominios.ts` e `PILUTECH_SUBDOMINIOS` como removidos) e o bullet dos E2E (que manda rodar com `PILUTECH_SUBDOMINIOS=1`). Rode `./node_modules/.bin/prettier --check apps/web/CLAUDE.md CLAUDE.md; echo "exit=$?"` na raiz → `exit=0` (ou `--write` e confira o diff).
+Confira: `/usr/bin/grep -n "urlPublica\|subdominiosAtivos\|pilutech-dominios\|pilutech\.localhost\|chave-ligada\|subdominios\.e2e\|PILUTECH_SUBDOMINIOS\|proxy\.ts\|e subdomínio\|é o subdomínio" apps/web/CLAUDE.md CLAUDE.md` → só o bullet **Domínios** (que cita `proxy.ts`, `lib/pilutech-dominios.ts` e `PILUTECH_SUBDOMINIOS` como removidos) e o bullet dos E2E (que manda rodar com `PILUTECH_SUBDOMINIOS=1`). Rode `./node_modules/.bin/prettier --check apps/web/CLAUDE.md CLAUDE.md; echo "exit=$?"` na raiz → `exit=0` (ou `--write` e confira o diff).
 
 - [ ] **Step 6: Commit**
 
@@ -6533,19 +6909,19 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add -A apps/web CLAUDE.md &&
 
 ---
 
-### Tarefa 9: Botaí — e-mails com `[Botaí]` no assunto e o "← PiluLabs" em `piluvitu.com.br/pilulabs`
+### Tarefa 9: Botaí — e-mails com `[Botaí]` no assunto, o "← PiluLabs" em `piluvitu.com.br/pilulabs` e o logo da PiluTech no JSON-LD
 
-Na landing do Botaí, cada `mailto:` ganha o assunto do lugar de onde sai (spec §6): `[Botaí] Suporte` no botão do rodapé, `[Botaí] Privacidade` nos dois links da política e `[Botaí] Termos de uso` no link dos termos, por `mailtoDaPilutech` de `@piluvitu/tools/contato`. O texto visível continua o endereço puro. O "← PiluLabs" do topo passa a apontar para a vitrine no domínio pessoal; o "Powered by PiluTech" e a `Organization` seguem em `https://pilutech.com.br`, que agora é a landing da empresa. As docs do Botaí deixam de dizer que `pilutech.com.br` é a vitrine servida pelo `apps/web`.
+Na landing do Botaí, cada `mailto:` ganha o assunto do lugar de onde sai (spec §6): `[Botaí] Suporte` no botão do rodapé, `[Botaí] Privacidade` nos dois links da política e `[Botaí] Termos de uso` no link dos termos, por `mailtoDaPilutech` de `@piluvitu/tools/contato`. O texto visível continua o endereço puro. O "← PiluLabs" do topo passa a apontar para a vitrine no domínio pessoal; o "Powered by PiluTech" e a `Organization` seguem em `https://pilutech.com.br`, que agora é a landing da empresa. A `Organization` do JSON-LD ganha o `logo` `https://pilutech.com.br/icon`, o 192 px que a Tarefa 2 criou (a nota do `CLAUDE.md` do app prometia o logo "quando houver o arquivo"). As docs do Botaí deixam de dizer que `pilutech.com.br` é a vitrine servida pelo `apps/web`.
 
 **Files:**
 
-- Modify (`apps/botai-site/`): `lib/conteudo.ts`, `lib/conteudo.test.ts`, `components/rodape.tsx`, `components/rodape.test.tsx`, `components/landing.tsx`, `components/landing.test.tsx`, `components/topo.test.tsx`, `components/topo.stories.tsx`, `app/privacidade/page.tsx`, `app/privacidade/page.test.tsx`, `app/privacidade/privacidade.e2e.ts`, `app/termos/page.tsx`, `app/termos/page.test.tsx`, `app/pagina.e2e.ts`, `CLAUDE.md`
+- Modify (`apps/botai-site/`): `lib/conteudo.ts`, `lib/conteudo.test.ts`, `lib/json-ld.ts`, `lib/json-ld.test.ts`, `components/rodape.tsx`, `components/rodape.test.tsx`, `components/landing.tsx`, `components/landing.test.tsx`, `components/topo.test.tsx`, `components/topo.stories.tsx`, `app/privacidade/page.tsx`, `app/privacidade/page.test.tsx`, `app/privacidade/privacidade.e2e.ts`, `app/termos/page.tsx`, `app/termos/page.test.tsx`, `app/pagina.e2e.ts`, `CLAUDE.md`
 - Modify: `apps/botai/README.md`, `apps/botai/CLAUDE.md`, `CLAUDE.md` (raiz, linha do `apps/botai-site`)
 
 **Interfaces:**
 
 - Consumes: `EMAIL_DA_PILUTECH`, `mailtoDaPilutech` (Tarefa 3).
-- Produces (`apps/botai-site/lib/conteudo.ts`): `URL_DA_PILULABS = 'https://piluvitu.com.br/pilulabs'`; `MAILTO: { suporte: string; privacidade: string; termos: string }`; `EMAIL_DE_SUPORTE` passa a ser o `EMAIL_DA_PILUTECH` do pacote (mesmo valor).
+- Produces (`apps/botai-site/lib/conteudo.ts`): `URL_DA_PILULABS = 'https://piluvitu.com.br/pilulabs'`; `MAILTO: { suporte: string; privacidade: string; termos: string }`; `EMAIL_DE_SUPORTE` passa a ser o `EMAIL_DA_PILUTECH` do pacote (mesmo valor). Em `apps/botai-site/lib/json-ld.ts`: `LOGO_DA_PILUTECH = 'https://pilutech.com.br/icon'`, no `logo` da `Organization`.
 
 - [ ] **Step 1: Escreva os testes que falham**
 
@@ -6569,6 +6945,23 @@ describe('contato e links da PiluTech', () => {
   it('a vitrine PiluLabs mora no piluvitu.com.br, e a PiluTech no pilutech.com.br', () => {
     expect(URL_DA_PILULABS).toBe('https://piluvitu.com.br/pilulabs')
     expect(URL_DA_PILUTECH).toBe('https://pilutech.com.br')
+  })
+})
+```
+
+`apps/botai-site/lib/json-ld.test.ts`: acrescente `LOGO_DA_PILUTECH,` ao import de `./json-ld` (depois de `jsonLdDaTrilha,`) e troque o comentário `// Sem logo: não há logo da PiluTech no repo, e o ícone do Botaí não é o logo da empresa.` e o teste `'Organization: a PiluTech, sem logo'` inteiro por:
+
+```ts
+// O logo é o /icon do apps/pilutech-site (192 px; está no ROTAS dele, e o build quebra se sumir).
+// O ícone do Botaí não é o logo da empresa.
+it('Organization: a PiluTech, com o logo do site dela', () => {
+  expect(LOGO_DA_PILUTECH).toBe('https://pilutech.com.br/icon')
+  expect(no('Organization', dados['@graph'])).toEqual({
+    '@type': 'Organization',
+    '@id': ID_DA_PILUTECH,
+    name: 'PiluTech',
+    url: 'https://pilutech.com.br',
+    logo: LOGO_DA_PILUTECH,
   })
 })
 ```
@@ -6618,10 +7011,10 @@ test('o topo volta para a PiluLabs no piluvitu.com.br, e o suporte leva [Botaí]
 - [ ] **Step 2: Rode e confirme que falham**
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && ./node_modules/.bin/jest lib/conteudo.test.ts components/rodape.test.tsx components/landing.test.tsx app/privacidade/page.test.tsx app/termos/page.test.tsx; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && ./node_modules/.bin/jest lib/conteudo.test.ts lib/json-ld.test.ts components/rodape.test.tsx components/landing.test.tsx app/privacidade/page.test.tsx app/termos/page.test.tsx; echo "exit=$?"
 ```
 
-Expected: `exit=1`: `MAILTO`/`URL_DA_PILULABS` indefinidos, os `href` dos e-mails sem `?subject=`, e o "PiluLabs" ainda em `https://pilutech.com.br`.
+Expected: `exit=1`: `MAILTO`/`URL_DA_PILULABS`/`LOGO_DA_PILUTECH` indefinidos, a `Organization` sem `logo`, os `href` dos e-mails sem `?subject=`, e o "PiluLabs" ainda em `https://pilutech.com.br`.
 
 - [ ] **Step 3: Implemente**
 
@@ -6673,6 +7066,14 @@ por:
 
 `apps/botai-site/components/landing.tsx`: no import de `@/lib/conteudo`, troque `URL_DA_PILUTECH,` por `URL_DA_PILULABS,` e troque `voltar={{ href: URL_DA_PILUTECH, rotulo: 'PiluLabs' }}` por `voltar={{ href: URL_DA_PILULABS, rotulo: 'PiluLabs' }}`.
 
+`apps/botai-site/lib/json-ld.ts`: logo depois da linha do `ID_DA_PILUTECH`, acrescente
+
+```ts
+export const LOGO_DA_PILUTECH = `${URL_DA_PILUTECH}/icon`
+```
+
+e, no nó `Organization` do `jsonLdDaHome`, depois de `url: URL_DA_PILUTECH,`, acrescente `logo: LOGO_DA_PILUTECH,`.
+
 - [ ] **Step 4: Rode os testes, lint, tsc, build e os E2E do Botaí**
 
 ```bash
@@ -6695,6 +7096,18 @@ Expected: todos `exit=0`, menos o último `grep exit=1` (nenhum `mailto:` montad
 
 ```markdown
 - **E-mail e links da PiluTech:** todo `mailto:` vai para `pilutechinformatica@gmail.com` com `[Botaí]` no assunto (`MAILTO` em `lib/conteudo.ts`, por `mailtoDaPilutech` de `@piluvitu/tools/contato`): `[Botaí] Suporte` no rodapé, `[Botaí] Privacidade` na política, `[Botaí] Termos de uso` nos termos. O texto visível continua o endereço puro, e o `apps/botai/loja/textos.md` também. O "← PiluLabs" do topo leva a `https://piluvitu.com.br/pilulabs` (`URL_DA_PILULABS`, a vitrine no `apps/web`); o "Powered by PiluTech" e a `Organization` do JSON-LD seguem em `https://pilutech.com.br` (`URL_DA_PILUTECH`), a landing da empresa no `apps/pilutech-site`.
+```
+
+- Em `## SEO`, troque o sub-bullet do JSON-LD:
+
+```text
+  - A `Organization` sai **sem `logo`**: não há logo da PiluTech no repo, e o ícone do Botaí não é o logo da empresa. Entra quando houver o arquivo (≥ 112×112).
+```
+
+por:
+
+```text
+  - A `Organization` leva o `logo` `https://pilutech.com.br/icon` (`LOGO_DA_PILUTECH`): o símbolo da PiluTech, 192 px, gerado pelo `apps/pilutech-site`, que tem a rota no `ROTAS` (o build dele quebra se ela sumir). O ícone do Botaí não é o logo da empresa.
 ```
 
 - Em `## Deploy`, passo 7, troque:
@@ -6762,14 +7175,14 @@ Os textos públicos do Botaí que só citam o e-mail não mudam; confira com `cd
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai-site apps/botai/README.md apps/botai/CLAUDE.md CLAUDE.md && /usr/bin/git status --short && /usr/bin/git commit -m "feat(botai-site): e-mails com [Botaí] no assunto e o PiluLabs em piluvitu.com.br/pilulabs"; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai-site apps/botai/README.md apps/botai/CLAUDE.md CLAUDE.md && /usr/bin/git status --short && /usr/bin/git commit -m "feat(botai-site): e-mails com [Botaí] no assunto, o PiluLabs em piluvitu.com.br/pilulabs e o logo da PiluTech no JSON-LD"; echo "exit=$?"
 ```
 
 ---
 
 ### Tarefa 10: Documentação do app e da raiz, e verificação final
 
-O `CLAUDE.md` completo do `apps/pilutech-site` (com a seção Deploy no molde do `apps/botai-site`: projeto, "pular quando não muda" desligado, primeira produção pelo preview, troca dos domínios na hora do merge), o `CLAUDE.md` raiz (workspace novo, comandos, portas, lint-staged, CI e Vercel) e o consumidor novo no `packages/ui/CLAUDE.md`. Depois, a verificação de tudo o que o branch mexeu.
+O `CLAUDE.md` completo do `apps/pilutech-site` (com a seção Deploy no molde do `apps/botai-site`: projeto, "pular quando não muda" desligado, primeira produção pelo preview, a chave `PILUTECH_SUBDOMINIOS` desligada na produção do `apps/web` e só então a troca dos domínios, e o merge depois), o `CLAUDE.md` raiz (workspace novo, comandos, portas, lint-staged, CI e Vercel) e o consumidor novo no `packages/ui/CLAUDE.md`. Depois, a verificação de tudo o que o branch mexeu.
 
 **Files:**
 
@@ -6809,13 +7222,15 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 
 - **Textos:** os do design, letra por letra, em `lib/conteudo.ts` (listas) e nos componentes (frases únicas). Mudou o design? Mude o texto e o teste que o fixa.
 - **Cores por contexto:** seção escura leva a classe `dark` e usa os tokens (`bg-background`, `text-foreground`, `text-primary`, `text-muted-foreground`, `bg-card`, `border-border`, `text-ok`), que no `.dark` do `@piluvitu/ui` são a Noite, o texto claro, o Ciano, o Aço, o Grafite, a borda escura e o verde do design. Seção clara não leva classe e cai no `:root` (Névoa, Petróleo, cartão branco). Os Planos usam `bg-primary` no contexto claro (o Petróleo).
+  - ⚠️ **Só funciona por causa do `@theme inline` do `app/globals.css`.** O `@theme` do `@piluvitu/ui` não é `inline`: o Tailwind emite `--color-background: hsl(var(--background))` no `:root`, o `var()` é resolvido ali, e os filhos herdam a cor já resolvida (a clara). Sem o bloco, a seção com `dark` troca o `--background` e continua Névoa, sem erro nenhum; teste de classe e axe não pegam (medido com o Tailwind 4.3.3 e o Chromium do Playwright: `rgb(247, 249, 252)` numa `section.dark.bg-background`). O bloco repete as 32 cores do design system que dependem de variável; o `app/globals.test.ts` reprova a que faltar (cor nova no `@piluvitu/ui` entra aqui), e os E2E leem a cor computada de cada seção.
   - ⚠️ O `<html>` não leva `dark`: se levasse, as seções claras herdariam os tokens escuros sem erro nenhum. No Storybook, pelo mesmo motivo, a story de seção clara usa `globals: { fundo: 'claro' }`.
   - Cores sem token ficam no `@theme` do `globals.css` (`noite`, `grafite`, `ciano`, `ciano-claro`, `petroleo-cartao`, `petroleo-borda`, `petroleo-linha`); o `app/globals.test.ts` confere as três que repetem o `.dark`.
+- **Foco visível:** o `Button` do design system desenha um anel de 1 px na cor do `ring`, que no escuro é o Ciano do próprio botão. Os botões da landing levam o `ANEL_DE_FOCO` (`components/classes.ts`: anel de 2 px com folga do fundo), e os "Pedir proposta" dos Planos, anel branco com folga Petróleo. Os testes de componente travam as classes, e o E2E dá Tab até o "Falar no WhatsApp" do hero e lê o `boxShadow`.
 - **Barra:** `sticky`, escura, com o lockup e o WhatsApp. Os links das seções são `hidden min-[900px]:flex`: somem abaixo de 900 px por CSS (o E2E confere com o JavaScript desligado) e, a 900 px, cabem sem rolagem. `scroll-padding-top: 72px` no `html` para a âncora não ficar sob a barra; rolagem suave só com `prefers-reduced-motion: no-preference`.
 - **WhatsApp:** `lib/contato.ts` monta `https://wa.me/5586981737625?text=…` com as mensagens do design: a geral (barra, hero, contato e botão flutuante) e uma por plano. Todo link externo abre em aba nova com `rel="noopener noreferrer"` (`ABRE_EM_ABA_NOVA`). O botão flutuante tem `aria-label`; o "Pedir proposta" de cada plano diz o plano só para o leitor de tela (`sr-only`).
 - **E-mail:** `mailto:pilutechinformatica@gmail.com?subject=%5BPiluTech%5D%20Contato%20pelo%20site`, por `mailtoDaPilutech` de `@piluvitu/tools/contato` (ver "Módulo `contato`" em `packages/tools/CLAUDE.md`). O botão do e-mail quebra o endereço (`wrap-anywhere`, `max-w-full`): a 320 px ele não cabe numa linha.
 - **Projetos:** as imagens são as OG de `https://botai.pilutech.com.br/opengraph-image` e `https://sombrai.pilutech.com.br/opengraph-image.png`, pelo `next/image` com `remotePatterns` exatos (`search: ''`, sem o hash que o design trazia; o `next.config.test.ts` usa o `hasRemoteMatch` do Next). Imagem fora do ar não derruba o cartão: fundo Grafite, `alt`, link e selo continuam.
-- **Selo do Botaí:** `lib/cms.ts` lê `apps/web/content/pilulabs/botai/index.yaml` no build, por `urlsDasLojas` e `fase` de `@piluvitu/tools/pilulabs`; uma loja publicada pelo `/admin/pilulabs` vira "disponível". Arquivo ausente quebra o build de propósito: em silêncio, o selo diria "em breve" com a loja no ar. O Sombraí não tem fonte de fase e fica "em breve" até alguém mudar o texto.
+- **Selo do Botaí:** `lib/cms.ts` lê `apps/web/content/pilulabs/botai/index.yaml` no build, por `urlsDasLojas` e `fase` de `@piluvitu/tools/pilulabs`; uma loja publicada pelo `/admin/pilulabs` vira "disponível". Arquivo ausente quebra o build de propósito: em silêncio, o selo diria "em breve" com a loja no ar. `BOTAI_CMS_ITEM` troca o arquivo lido (só o `playwright.lojas.config.ts` a define). O Sombraí não tem fonte de fase e fica "em breve" até alguém mudar o texto.
 - **Dúvidas:** acordeão da WAI-ARIA (`button` dentro de `h3`, `aria-expanded`, `aria-controls`), a primeira aberta, uma por vez. As cinco respostas saem no HTML e as fechadas levam `hidden`: o Google não clica, e sem JavaScript a página continua legível. Ids fixos (`duvida-<n>-pergunta` e `-resposta`).
 - **Rodapé:** o ano é o do build (`new Date().getFullYear()` na página estática).
 - ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo layout e pelo Storybook), como no `apps/botai-site`: injetado em runtime, fora de camada, ele venceria o `size-*` dos ícones.
@@ -6833,10 +7248,9 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 - **Textos (`lib/seo.ts`):** título `PiluTech · Apps, infraestrutura e desenvolvimento fullstack` (59 caracteres; o `<title>` do design tem 66, e a spec pede até 60) e descrição de 156 caracteres com o que a PiluTech faz e onde. Os limites ficam no teste.
 - **Open Graph e Twitter:** `metadataDaPagina` repete `type`, `locale`, `siteName`, `url`, `title` e `description` (o Next substitui o `openGraph` inteiro) e não declara imagem: ela vem de `opengraph-image.tsx`/`twitter-image.tsx`.
 - **JSON-LD (`lib/json-ld.ts`):**
-  - `Organization` com `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/botai-site` e do `publisher` da vitrine do `apps/web`; logo, e-mail, telefone e `contactPoint` comercial;
-  - `ProfessionalService`: Brasil como `areaServed`, endereço só com Teresina, PI e BR, os 3 serviços em `hasOfferCatalog`, sem preço;
+  - a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']`, com `@id` `https://pilutech.com.br/#organizacao` (o mesmo do `apps/botai-site` e do `publisher` da vitrine do `apps/web`): logo (`/icon`), e-mail, telefone, `contactPoint` comercial, Brasil como `areaServed`, endereço só com Teresina, PI e BR, os 3 serviços em `hasOfferCatalog`, sem preço. Dois nós ligados por `parentOrganization` diriam que a empresa é filha de si mesma; o Google pede o subtipo mais específico de `Organization`, e o schema.org marca o `ProfessionalService` genérico como descontinuado (trocar por `LocalBusiness` é decisão do dono);
   - `WebSite`;
-  - sem `FAQPage` (rich result restrito a governo e saúde) e sem nota. `serializarJsonLd` troca `<` por `<`.
+  - sem `FAQPage` (o Google não mostra mais o rich result de FAQ, removido em maio de 2026) e sem nota. `serializarJsonLd` troca `<` por `\u003c`.
 - **Rotas técnicas:** `sitemap.xml` (só `/`), `robots.txt` (libera tudo e aponta o sitemap), `manifest.webmanifest`, `theme-color` Noite (`#090b11`, o `--background` do `.dark`). `GOOGLE_SITE_VERIFICATION` vira `verification.google`; cadastrar o domínio no Search Console é passo do dono.
 - **Lighthouse:** não há ferramenta no repo nem no PATH. As checagens estão no `app/seo.e2e.ts` (título, descrição, canonical, OG 1200×630, JSON-LD, `h1` único, níveis, `alt`, robots, sitemap, ícones, manifest, `theme-color` e `axe-core` WCAG 2.1 A/AA a 1280 e 320 px) e no `app/pagina.e2e.ts` (320 px sem vazamento).
 
@@ -6856,6 +7270,8 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 | Página, SEO, teclado, sem JS, 320 px, axe    | Playwright no build de produção (porta 3021) | `app/*.e2e.ts`; `make test-e2e-pilutech-site`  |
 
 - O E2E builda e sobe `next start`; rode com `CI=1` e a 3021 livre. Ele não roda no CI (como o do `apps/botai-site`).
+- **Duas passadas no `test:e2e`**, como no `apps/botai-site`: primeiro o `playwright.lojas.config.ts`, que builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` (Firefox publicado, Chrome com link de outra loja, Edge em `http:`) e roda `app/lojas-publicadas.e2e.ts` (o selo do Botaí "disponível", o do Sombraí "em breve"); depois o `playwright.config.ts`, que builda com o CMS real e roda o resto. O CMS real tem hoje as 4 lojas vazias, e só a primeira passada exercita o caminho "loja publicada" no build de produção. A ordem deixa o `.next` com o CMS real.
+- Os E2E de cor (`getComputedStyle` de cada seção) e de foco (`boxShadow` depois do Tab) comparam com `rgbDoToken` (`lib/tokens-do-ds.ts`), que lê o `styles.css` do `@piluvitu/ui`: mudou a cor no design system, o esperado muda junto.
 - O teste de vazamento a 320 px confere cada elemento contra a área de conteúdo da própria seção: um vazamento no gutter não aumenta o `scrollWidth` da página. Se ele acusar, a correção é no componente.
 - ⚠️ O `next dev`/`next build` pode anexar a este arquivo um bloco de regras para agentes ou criar um `AGENTS.md`: confira `git status` antes de commitar.
 
@@ -6863,23 +7279,24 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 
 1. Projeto `pilutech-site` ligado ao repo (`vercel project add pilutech-site` e `vercel link` na raiz do checkout, ou o painel): **Root Directory `apps/pilutech-site`**, framework Next.js, install e build padrão (`pnpm install` na raiz, `pnpm build`), Node 22.x, "Include files outside the root directory in the Build Step" ligado (o build lê `packages/*` e o YAML do Botaí no `apps/web`). Pela CLI, o que o `vercel project update` não cobre vai por `vercel api /v9/projects/pilutech-site -X PATCH` com `rootDirectory`, `nodeVersion` (`22.x`), `sourceFilesOutsideRootDirectory: true` e `enableAffectedProjectsDeployments: false`; confira os nomes dos campos no `vercel api list` antes.
 2. ⚠️ **"Skip deployments" (Root Directory) desligado:** a Vercel pula projeto de monorepo cujo código e dependências não mudaram, e o YAML do Botaí mora no `apps/web`, que não é dependência deste pacote: publicar uma loja pelo `/admin/pilulabs` não rebuildaria a landing. Quem filtra é o `ignoreCommand` do `vercel.json` (roda na Root Directory; `exit 0` cancela).
-3. Env: nenhuma obrigatória. `GOOGLE_SITE_VERIFICATION` em Production quando o dono cadastrar o domínio no Search Console. Não ponha `SITE_URL` em ambiente nenhum.
+3. Env: nenhuma obrigatória. `GOOGLE_SITE_VERIFICATION` em Production quando o dono cadastrar o domínio no Search Console. Não ponha `SITE_URL` nem `BOTAI_CMS_ITEM` em ambiente nenhum.
 4. **Primeira produção, antes do merge:** a produção do projeto sai da `main`, e a `main` só tem o app depois do merge. Depois do push do branch, ache o preview (`vercel ls pilutech-site`); se saiu `CANCELED` (o `ignoreCommand` compara `HEAD^` com `HEAD`) ou não existe, gere um com `vercel deploy` na raiz do checkout do branch. Promova: `vercel promote <url-do-preview> --yes`.
-5. **Domínios, na hora do merge:** `pilutech.com.br` e `www.pilutech.com.br` saem do projeto `pilu-vitu-dev` (o do `apps/web`) e entram no `pilutech-site`, o `www` com 308 para o apex. Um domínio só fica num projeto: `vercel domains inspect pilutech.com.br` diz onde está. Tire os dois do projeto antigo (`vercel api /v9/projects/pilu-vitu-dev/domains/www.pilutech.com.br -X DELETE`, depois o apex) e ponha no novo (`vercel domains add pilutech.com.br pilutech-site`; o `www` por `vercel api /v10/projects/pilutech-site/domains -X POST` com `name=www.pilutech.com.br`, `redirect=pilutech.com.br` e `redirectStatusCode=308`). O DNS não muda: o dono já apontou o apex e o `www` para a Vercel.
-6. Confira: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://pilutech.com.br` responde 200, sem `x-robots-tag: noindex`; `curl -sI https://www.pilutech.com.br` responde 308 para o apex; o `<link rel="canonical">` aponta para `https://pilutech.com.br`; `https://pilutech.com.br/sitemap.xml` lista `/`.
-7. **Merge depois de mover os domínios.** O mesmo merge leva a vitrine de volta para `piluvitu.com.br/pilulabs` (o `apps/web` deixa de servir `pilutech.com.br`) e o "← PiluLabs" do Botaí para lá. Depois do deploy da `main`, `curl -sI https://piluvitu.com.br/pilulabs` responde 200, sem `location`. O dono apaga a variável `PILUTECH_SUBDOMINIOS` do projeto `pilu-vitu-dev` (ela não muda mais nada).
+5. ⚠️ **Antes de mover os domínios, desligue a chave antiga no `pilu-vitu-dev`.** Em 2026-10-02, `PILUTECH_SUBDOMINIOS=1` estava na Production dele, e `piluvitu.com.br/pilulabs` respondia 308 para `https://pilutech.com.br/`. Com o apex já neste projeto, esse 308 levaria à landing, e a vitrine ficaria inacessível (o "Saiba mais" e o rodapé da home e o "← PiluLabs" do Botaí também) até o deploy da `main`. Apague a variável da Production (o `id` sai de `vercel api /v9/projects/pilu-vitu-dev/env`; depois `vercel api /v9/projects/pilu-vitu-dev/env/<id> -X DELETE`, ou o painel) e redeploye a produção atual (painel → Deployments → Redeploy, ou `vercel redeploy <url-da-produção-atual>`): a variável só vale no build. O código antigo, com a chave desligada, responde 200 em `/pilulabs`, linka `/pilulabs` e continua mostrando a vitrine no apex enquanto o domínio estiver lá. Só siga com `curl -sI https://piluvitu.com.br/pilulabs` respondendo 200, sem `location`.
+6. **Domínios, na hora do merge:** `pilutech.com.br` e `www.pilutech.com.br` saem do projeto `pilu-vitu-dev` (o do `apps/web`) e entram no `pilutech-site`, o `www` com 308 para o apex. Um domínio só fica num projeto: `vercel domains inspect pilutech.com.br` diz onde está. Use o `POST /v1/projects/pilu-vitu-dev/domains/<domínio>/move` (`vercel api`), que leva o domínio direto para o `pilutech-site`, sem intervalo fora de projeto; confira antes o corpo (o projeto de destino e, no `www`, o redirect 308 para o apex) na doc do endpoint ou no `vercel api list`. Sem ele: tire os dois do projeto antigo (`vercel api /v9/projects/pilu-vitu-dev/domains/www.pilutech.com.br -X DELETE`, depois o apex) e ponha no novo (`vercel domains add pilutech.com.br pilutech-site`; o `www` por `vercel api /v10/projects/pilutech-site/domains -X POST` com `name=www.pilutech.com.br`, `redirect=pilutech.com.br` e `redirectStatusCode=308`). O DNS não muda: o dono já apontou o apex e o `www` para a Vercel.
+7. Confira: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://pilutech.com.br` responde 200, sem `x-robots-tag: noindex`; `curl -sI https://www.pilutech.com.br` responde 308 para o apex; o `<link rel="canonical">` aponta para `https://pilutech.com.br`; `https://pilutech.com.br/sitemap.xml` lista `/`; `curl -sI https://piluvitu.com.br/pilulabs` continua 200.
+8. **Merge depois de mover os domínios.** O mesmo merge leva a vitrine de volta para `piluvitu.com.br/pilulabs` (o `apps/web` deixa de servir `pilutech.com.br`) e o "← PiluLabs" do Botaí para lá. Depois do deploy da `main`, `curl -sI https://piluvitu.com.br/pilulabs` responde 200, sem `location`. Se a variável `PILUTECH_SUBDOMINIOS` voltar ao `pilu-vitu-dev` por engano, ela não muda mais nada.
 
 ## Comandos
 
-| Comando                                  | O quê                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------ |
-| `make dev-pilutech-site`                 | `next dev` em http://localhost:3021                                |
-| `make build-pilutech-site`               | `next build` + gate do `@source` + conferência das rotas estáticas |
-| `make test-pilutech-site`                | Jest + `node --test`                                               |
-| `make test-e2e-pilutech-site`            | build de produção + `next start` na 3021 + Playwright (com `CI=1`) |
-| `make storybook-pilutech-site`           | Storybook em http://localhost:6020                                 |
-| `pnpm --filter @pilutech/site typecheck` | `tsc --noEmit`                                                     |
-| `pnpm --filter @pilutech/site lint`      | ESLint                                                             |
+| Comando                                  | O quê                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `make dev-pilutech-site`                 | `next dev` em http://localhost:3021                                                                                      |
+| `make build-pilutech-site`               | `next build` + gate do `@source` + conferência das rotas estáticas                                                       |
+| `make test-pilutech-site`                | Jest + `node --test`                                                                                                     |
+| `make test-e2e-pilutech-site`            | as duas passadas (loja publicada, depois o CMS real): build de produção + `next start` na 3021 + Playwright (com `CI=1`) |
+| `make storybook-pilutech-site`           | Storybook em http://localhost:6020                                                                                       |
+| `pnpm --filter @pilutech/site typecheck` | `tsc --noEmit`                                                                                                           |
+| `pnpm --filter @pilutech/site lint`      | ESLint                                                                                                                   |
 ````
 
 - [ ] **Step 2: `CLAUDE.md` raiz e `packages/ui/CLAUDE.md`**
@@ -6944,13 +7361,13 @@ consumida pelo web, pela extensão e pelas landings do Botaí e da PiluTech
 6. No bullet do `packages/ui`, troque:
 
 ```text
-e `apps/botai-site` (Next). → detalhes em `packages/ui/CLAUDE.md`.
+(WXT/Vite) e `apps/botai-site` (Next). → detalhes em `packages/ui/CLAUDE.md`.
 ```
 
 por:
 
 ```text
-`apps/botai-site` e `apps/pilutech-site` (Next). → detalhes em `packages/ui/CLAUDE.md`.
+(WXT/Vite), `apps/botai-site` e `apps/pilutech-site` (Next). → detalhes em `packages/ui/CLAUDE.md`.
 ```
 
 7. **Dependency security policy**, troque:
@@ -6990,7 +7407,7 @@ por:
 | `make dev-pilutech-site` | `next dev` em http://localhost:3021 |
 | `make build-pilutech-site` | `next build` + gate do `@source` + conferência das rotas estáticas |
 | `make test-pilutech-site` | Jest + `node --test` |
-| `make test-e2e-pilutech-site` | build de produção + `next start` na 3021 + Playwright (com `CI=1`) |
+| `make test-e2e-pilutech-site` | build de produção + `next start` na 3021 + Playwright (com `CI=1`), em duas passadas: loja publicada e CMS real |
 | `make storybook-pilutech-site` | Storybook em http://localhost:6020 |
 ```
 
@@ -7072,6 +7489,7 @@ por:
 
 ```markdown
 - **`apps/pilutech-site`** (landing da PiluTech, 2026-10-02) — quinto consumidor, Next 16 como o `apps/botai-site`: `app/globals.css` importa `@piluvitu/ui/styles.css` + `@source '../../../packages/ui/src'` (3 `../`) e `@source not '../*.md'`; usa `Button`, `cn` e os tokens do `.dark` por seção (a classe `dark` numa seção, nunca no `<html>`, para as seções claras ficarem no `:root`). Gate amarrado no `build` contra `.next`.
+  - ⚠️ **`.dark` num elemento que não é o `:root` não muda as cores das utilities deste pacote.** O `@theme` de `src/styles.css` não é `inline`: o Tailwind emite `--color-background: hsl(var(--background))` no `:root`, onde o `var()` é resolvido, e os filhos herdam a cor pronta. Quem põe `dark` numa seção (o `apps/pilutech-site`) redeclara as cores em `@theme inline` no próprio `globals.css` (o `app/globals.test.ts` dele compara com este arquivo). Os apps que põem `dark` no `<html>` não são afetados; o decorador `dark` do `apps/web/.storybook/preview.tsx` é, e fica como está até alguém mexer nele.
 ```
 
 ```bash
@@ -7098,7 +7516,7 @@ pnpm dedupe --check; echo "dedupe exit=$?"
 Expected: todos `exit=0`. Depois, os E2E, um por vez, com as portas livres (`lsof -nP -iTCP:<porta> -sTCP:LISTEN` vazio):
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e pilutech exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/pilutech-site && CI=1 pnpm run test:e2e; echo "e2e pilutech exit=$?"
 cd ../botai-site && CI=1 pnpm run test:e2e; echo "e2e botai exit=$?"
 cd ../web && CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/pilulabs' '\(site\)/home'; echo "e2e web exit=$?"
 PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/pilulabs' '\(site\)/home'; echo "e2e web com a chave exit=$?"
