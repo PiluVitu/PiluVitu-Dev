@@ -54,7 +54,7 @@ Injetar, sob demanda e só na aba liberada pelo activeTab, o script que identifi
 
 ## Justificativa: contextMenus
 
-Itens "Preencher esta página" e "Inserir › CPF / E-mail / CEP…" no menu do botão direito, para preencher a página inteira ou um campo específico.
+Itens no menu do botão direito: "Preencher esta página" e "Inserir › CPF / E-mail / CEP…", para preencher a página inteira ou um campo específico; "Nova pessoa", para trocar a pessoa de teste por outra; e "Abrir caixa de entrada", que abre numa aba nova a caixa pública do e-mail gerado, em tuamaeaquelaursa.com, site de terceiro.
 
 ## Justificativa: storage
 

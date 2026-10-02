@@ -80,6 +80,22 @@ describe('textos da listagem', () => {
       ).toBeGreaterThan(0)
   })
 
+  // "Abrir caixa de entrada" leva a um site de terceiro: a justificativa não
+  // pode citar só parte do menu.
+  it('a justificativa do contextMenus cita cada item do menu', () => {
+    const itens = [
+      ...ler('../src/lib/menus.ts').matchAll(/title: '([^']+)'/g),
+    ].map((m) => m[1])
+    expect(itens).toEqual([
+      'Preencher esta página',
+      'Inserir',
+      'Nova pessoa',
+      'Abrir caixa de entrada',
+    ])
+    for (const item of itens)
+      expect(textos.get('Justificativa: contextMenus')).toContain(`"${item}`)
+  })
+
   it.each(['textos.md', 'notas-revisores.md', 'README.md'])(
     '%s nunca escreve a marca com a grafia errada',
     (arquivo) => {
