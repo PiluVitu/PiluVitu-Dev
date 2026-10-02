@@ -4,6 +4,7 @@ packages:
   - 'apps/financas/web'
   - 'apps/ramielle'
   - 'apps/botai'
+  - 'apps/botai-site'
   - 'packages/tools'
   - 'packages/ui'
 
