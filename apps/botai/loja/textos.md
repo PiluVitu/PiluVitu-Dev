@@ -82,11 +82,11 @@ MIT. A AMO pede na primeira versão listed; as seguintes herdam.
 
 ## Endereços
 
-Site do produto e página de suporte: https://piluvitu.com.br/pilulabs/botai
-Política de privacidade: https://piluvitu.com.br/pilulabs/botai/privacidade
+Site do produto e página de suporte: https://botai.pilutech.com.br
+Política de privacidade: https://botai.pilutech.com.br/privacidade
 E-mail de suporte: pilutechinformatica@gmail.com
 Publicador: PiluTech
 
 ## Política de privacidade (texto para a AMO)
 
-A AMO pede o texto da política mesmo com a versão hospedada. Copie o texto renderizado de https://piluvitu.com.br/pilulabs/botai/privacidade: a página é a única fonte, para as duas não divergirem.
+A AMO pede o texto da política mesmo com a versão hospedada. Copie o texto renderizado de https://botai.pilutech.com.br/privacidade: a página é a única fonte, para as duas não divergirem.

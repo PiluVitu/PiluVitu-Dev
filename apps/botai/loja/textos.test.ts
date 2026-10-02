@@ -39,13 +39,20 @@ describe('textos da listagem', () => {
 
   it('endereços batem com o homepage_url, a política e o contato de suporte', () => {
     const enderecos = textos.get('Endereços')
-    expect(enderecos).toContain('https://piluvitu.com.br/pilulabs/botai\n')
-    expect(enderecos).toContain(
-      'https://piluvitu.com.br/pilulabs/botai/privacidade',
-    )
+    expect(enderecos).toContain('https://botai.pilutech.com.br\n')
+    expect(enderecos).toContain('https://botai.pilutech.com.br/privacidade')
     expect(enderecos).toContain('pilutechinformatica@gmail.com')
     expect(enderecos).toContain('Publicador: PiluTech')
   })
+
+  // O endereço antigo vive em piluvitu.com.br e passa a responder 308: a loja
+  // não pode guardar um link que redireciona. `ler` parte de loja/.
+  it.each(['textos.md', '../README.md', '../CLAUDE.md'])(
+    '%s não aponta mais para piluvitu.com.br/pilulabs',
+    (arquivo) => {
+      expect(ler(arquivo)).not.toContain('piluvitu.com.br/pilulabs')
+    },
+  )
 
   it('uma justificativa por permissão, menus inclusive', () => {
     expect(permissoesJustificadas(textos).sort()).toEqual([
