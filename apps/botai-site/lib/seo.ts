@@ -7,7 +7,7 @@ export const DESCRICAO_DA_HOME =
   'Extensão para Chrome, Firefox, Edge e Opera que gera dados de teste: CPF e CNPJ válidos, CEP real com endereço, e preenche o formulário com um atalho.'
 export const TITULO_DA_PRIVACIDADE = 'Política de privacidade do Botaí'
 export const DESCRICAO_DA_PRIVACIDADE =
-  'Como o Botaí trata os dados: nada sai do seu navegador. O que a extensão acessa, o que guarda, as permissões de cada navegador e como apagar a pessoa gerada.'
+  'Como o Botaí trata seus dados: a extensão não envia nada. O que ela acessa e guarda, as permissões, o que este site registra e seus direitos na LGPD.'
 export const TITULO_DOS_TERMOS = 'Termos de uso do Botaí'
 export const DESCRICAO_DOS_TERMOS =
   'Termos de uso do Botaí: dados fictícios só para teste, o que é proibido (fraude, cadastro real, burlar verificação), a licença MIT, garantias e o foro.'
