@@ -3,11 +3,7 @@ import { Button } from '@piluvitu/ui/button'
 import { Card } from '@piluvitu/ui/card'
 import { cn } from '@/lib/utils'
 import { Project } from '@/mocks/projects'
-import {
-  faArrowRight,
-  faArrowUpRightFromSquare,
-  faCode,
-} from '@fortawesome/free-solid-svg-icons'
+import { faArrowRight } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Link from 'next/link'
 
@@ -61,36 +57,21 @@ export function ProjectCard(props: ProjectCardProps) {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        {project.deployLink ? (
-          <Button asChild>
+      {project.deployLink ? (
+        <div className="flex flex-wrap gap-3">
+          <Button asChild className="gap-2">
             <Link
               href={project.deployLink}
               {...(linkInterno
                 ? {}
                 : { rel: 'noopener noreferrer', target: '_blank' })}
             >
-              <FontAwesomeIcon
-                icon={linkInterno ? faArrowRight : faArrowUpRightFromSquare}
-                className="size-3.5"
-              />
+              <FontAwesomeIcon icon={faArrowRight} className="size-3.5" />
               {project.deployLabel ?? 'Demo'}
             </Link>
           </Button>
-        ) : null}
-        {project.repoLink ? (
-          <Button asChild variant="outline">
-            <Link
-              href={project.repoLink}
-              rel="noopener noreferrer nofollow"
-              target="_blank"
-            >
-              <FontAwesomeIcon icon={faCode} className="size-3.5" />
-              Código
-            </Link>
-          </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </Card>
   )
 }

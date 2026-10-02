@@ -32,7 +32,6 @@ describe('HomeBentoLayout', () => {
               tags: [],
               deployLink: '/pilulabs/botai',
               deployLabel: 'Acessar',
-              repoLink: '',
               altImage: 'BO',
             },
           ],

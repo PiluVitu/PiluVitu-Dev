@@ -9,7 +9,6 @@ const BASE = {
   description: 'Agregador de pull requests.',
   tags: [],
   deployLink: 'https://pr-live.example.com',
-  repoLink: '',
   altImage: 'LPR',
 }
 
@@ -33,5 +32,28 @@ describe('ProjectCard', () => {
     ).querySelector('a[href="/pilulabs/botai"]')
     expect(link?.hasAttribute('target')).toBe(false)
     expect(link?.textContent).toBe('Acessar')
+  })
+
+  // O Button do @piluvitu/ui não tem gap: sem gap-2, o ícone gruda no texto.
+  it('o Acessar separa o ícone do texto', () => {
+    const link = renderEstatico(
+      <ProjectCard {...BASE} deployLabel="Acessar" />,
+    ).querySelector('a')
+    expect(link?.className.split(' ')).toContain('gap-2')
+  })
+
+  it('o Acessar tem o mesmo ícone com link interno e externo', () => {
+    const icone = (deployLink: string) =>
+      renderEstatico(<ProjectCard {...BASE} deployLink={deployLink} />)
+        .querySelector('a svg')
+        ?.getAttribute('data-icon')
+    expect(icone('/pilulabs/botai')).toBe('arrow-right')
+    expect(icone('https://sombrai.pilutech.com.br')).toBe('arrow-right')
+  })
+
+  it('o card tem só o Acessar, sem o botão Código', () => {
+    const raiz = renderEstatico(<ProjectCard {...BASE} />)
+    expect(raiz.querySelectorAll('a')).toHaveLength(1)
+    expect(raiz.textContent).not.toContain('Código')
   })
 })

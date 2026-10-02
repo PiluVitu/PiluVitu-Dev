@@ -11,7 +11,6 @@ function card(n: number): Project {
     description: `Descrição ${n}`,
     tags: [],
     deployLink: '',
-    repoLink: '',
     altImage: 'PR',
   }
 }

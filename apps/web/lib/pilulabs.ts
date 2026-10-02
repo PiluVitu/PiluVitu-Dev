@@ -149,9 +149,8 @@ export function itemParaProject(
     projectLogo: item.logo,
     description: item.descricao,
     tags: item.tags,
-    deployLink: link && link !== item.repo ? link : '',
+    deployLink: link ?? '',
     deployLabel: 'Acessar',
-    repoLink: item.repo,
     image: item.logo || undefined,
     altImage: siglaDoItem(item),
   }

@@ -28,8 +28,6 @@ export const SoPiluLabs: Story = {
           tags: ['Extensão', 'QA'],
           deployLink: 'https://botai.pilutech.com.br',
           deployLabel: 'Acessar',
-          repoLink:
-            'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
           altImage: 'BO',
         },
       ],

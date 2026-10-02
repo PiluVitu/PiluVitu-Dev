@@ -20,13 +20,12 @@ const base = {
     'Agrega os pull requests em que sua revisão foi solicitada, por repositório ou organização. Reúne tudo em cards com estado do PR, checks de CI e assignees.',
   tags: ['React', 'Next', 'Go', 'Tailwind', 'Docker', 'AWS', 'Grafana'],
   deployLink: 'https://example.com',
-  repoLink: 'https://github.com/example',
   altImage: 'LPR',
 }
 
 export const Default: Story = { args: base }
 export const SemSubtitulo: Story = {
-  args: { ...base, subtitle: '', repoLink: '' },
+  args: { ...base, subtitle: '' },
 }
 
 export const ItemPiluLabs: Story = {
@@ -41,7 +40,6 @@ export const ItemPiluLabs: Story = {
     tags: ['Extensão', 'Formulários', 'QA', 'CPF', 'CEP'],
     deployLink: 'https://botai.pilutech.com.br',
     deployLabel: 'Acessar',
-    repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
     altImage: 'BO',
   },
 }
