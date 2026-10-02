@@ -4,7 +4,7 @@ O que vai em cada campo das quatro lojas. O passo a passo da publicação (conta
 
 - `textos.md`: os textos da listagem, em pt-BR, uma seção por campo.
 - `notas-revisores.md`: as notas para os revisores da AMO e do Opera, em inglês.
-- `imagens/`: gerado por `make capturas-botai`; não edite à mão. As capturas de 1280×800 e o ícone vão também para `apps/web/public/pilulabs/botai/`.
+- `imagens/`: gerado por `make capturas-botai`; não edite à mão. O ícone vai também para `apps/web/public/pilulabs/botai/` (o card) e, com o ícone de 300 px e as capturas de 1280×800, para `apps/botai-site/` (a landing).
 - `icone-1i.svg`: o desenho 1i em vetor, de onde saem o ícone 128 da loja e o logo do Edge. O ícone do manifesto (`public/icon/`) não muda.
 - `vitrine.pagina.html`, `quadros.ts`, `pecas.ts` e `capturas.captura.ts`: o gerador das imagens.
 

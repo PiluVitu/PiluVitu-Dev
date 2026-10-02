@@ -26,7 +26,7 @@ export const SoPiluLabs: Story = {
           description:
             'Extensão que gera uma pessoa brasileira de teste e preenche o formulário.',
           tags: ['Extensão', 'QA'],
-          deployLink: '/pilulabs/botai',
+          deployLink: 'https://botai.pilutech.com.br',
           deployLabel: 'Acessar',
           repoLink:
             'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',

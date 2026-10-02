@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { normalizarItem, type EntradaItem, type ItemPiluLabs } from './pilulabs'
-import { ehDataValida, TIPOS } from './pilulabs-regras'
+import { ehDataValida, TIPOS } from '@piluvitu/tools/pilulabs'
 
 const PASTA_DO_CONTEUDO = join('content', 'pilulabs')
 const PASTA_DAS_ROTAS = join('app', '(site)', 'pilulabs')

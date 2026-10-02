@@ -13,7 +13,7 @@ const BOTAI: ItemVitrine = {
     sigla: 'BO',
     tags: ['Extensão', 'QA'],
   },
-  href: '/pilulabs/botai',
+  href: 'https://botai.pilutech.com.br',
   fase: 'em-breve',
   lojas: [],
 }

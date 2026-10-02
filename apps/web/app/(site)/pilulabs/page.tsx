@@ -2,11 +2,10 @@ import type { Metadata } from 'next'
 import { JsonLd } from '@/components/json-ld'
 import { PageTopBar } from '@/components/page-top-bar'
 import { Vitrine, type ItemVitrine } from '@/components/pilulabs/vitrine'
+import { fase, lojasPublicadas } from '@piluvitu/tools/pilulabs'
 import {
-  fase,
   itensListados,
   linkDoItem,
-  lojasPublicadas,
   metadataDaPagina,
   siglaDoItem,
 } from '@/lib/pilulabs'

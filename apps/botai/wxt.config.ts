@@ -3,11 +3,8 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'wxt'
+import { TECLAS_DO_MANIFESTO } from '@piluvitu/tools/pilulabs'
 
-// No Windows e no Linux o Chrome reserva Alt+Shift+P ("criar novo grupo de abas") e não o cede à extensão.
-const ATALHO_CHROMIUM = { default: 'Ctrl+Shift+Y', mac: 'Alt+Shift+P' }
-// No Linux o Firefox usa Ctrl+Shift+Y para os Downloads e também não cede a tecla.
-const ATALHO_FIREFOX = { ...ATALHO_CHROMIUM, linux: 'Alt+Shift+P' }
 const raizDoMonorepo = fileURLToPath(new URL('../..', import.meta.url))
 
 export default defineConfig({
@@ -69,7 +66,9 @@ export default defineConfig({
       ],
       commands: {
         'botai-preencher': {
-          suggested_key: firefox ? ATALHO_FIREFOX : ATALHO_CHROMIUM,
+          suggested_key: firefox
+            ? TECLAS_DO_MANIFESTO.firefox
+            : TECLAS_DO_MANIFESTO.chromium,
           description: 'Preencher esta página',
         },
       },

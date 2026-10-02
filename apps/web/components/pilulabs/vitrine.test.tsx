@@ -1,5 +1,5 @@
 import { renderEstatico } from '@/lib/render-estatico'
-import type { TipoItem } from '@/lib/pilulabs'
+import type { TipoItem } from '@piluvitu/tools/pilulabs'
 import { Vitrine, type ItemVitrine } from './vitrine'
 
 function itemVitrine(

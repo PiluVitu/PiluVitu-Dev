@@ -22,4 +22,4 @@ operaUrl: ''
 destaque: true
 data: 2026-10-01
 listado: true
-paginaPropria: true
+paginaPropria: false

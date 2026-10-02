@@ -23,7 +23,7 @@ function larguraDoPng(caminhoPublico: string): number {
 }
 
 describe('catálogo em content/pilulabs', () => {
-  it('o Botaí: extensão listada e em destaque, com página própria e o subdomínio', () => {
+  it('o Botaí: extensão listada e em destaque, sem página aqui: o site é a landing do apps/botai-site', () => {
     expect(doSlug('botai')).toMatchObject({
       nome: 'Botaí',
       tipo: 'extensao',
@@ -38,7 +38,7 @@ describe('catálogo em content/pilulabs', () => {
       order: 0,
       data: '2026-10-01',
       listado: true,
-      paginaPropria: true,
+      paginaPropria: false,
     })
   })
 
@@ -84,7 +84,7 @@ describe('catálogo em content/pilulabs', () => {
 
   // O site lê pelo reader do Keystatic, mais estrito que o normalizarItem: um
   // campo que ele recusa lança erro, e o Promise.all do .all() derruba a coleção
-  // inteira (home, /pilulabs, Botaí, OG e o next build). Este arquivo e os E2E
+  // inteira (home, /pilulabs, OG e o next build). Este arquivo e os E2E
   // leem pelo `yaml` + normalizarItem, e sem esta trava não veriam nada.
   it('todo YAML abre no reader do Keystatic: nenhum campo fora do tipo dele', () => {
     for (const [slug, bruto] of lerYamlsDoConteudo(RAIZ_WEB))

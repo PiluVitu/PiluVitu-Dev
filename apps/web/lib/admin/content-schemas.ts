@@ -7,7 +7,7 @@ import {
   TIPO_PADRAO,
   TIPOS,
   type Loja,
-} from '@/lib/pilulabs-regras'
+} from '@piluvitu/tools/pilulabs'
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 

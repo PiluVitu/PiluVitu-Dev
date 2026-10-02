@@ -113,3 +113,7 @@ apps/botai/playwright-report/
 apps/botai/web-ext.config.ts
 # Credenciais locais do `wxt submit`, que o CLI lê sozinho: nunca versionar
 .env.submit
+
+# Landing do Botaí: o storybook-static traz CSS compilado, e o Tailwind o varreria (o gate passaria sem medir nada)
+apps/botai-site/storybook-static/
+apps/botai-site/playwright-report/

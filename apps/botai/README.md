@@ -51,8 +51,8 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 
 **Uma vez, antes do primeiro envio:**
 
-1. **Domínios na Vercel**, no projeto do `apps/web` (Settings → Domains): `pilutech.com.br`, `www.pilutech.com.br` (redirecionando para o apex) e `botai.pilutech.com.br`. Antes, confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` em Production (passo 0 da seção PiluLabs do `apps/web/CLAUDE.md`).
-2. **DNS na Cloudflare**, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, `CNAME botai`). Não crie Single Redirect; se houver um de antes, apague. Com `curl -sI https://botai.pilutech.com.br` e `curl -sI https://botai.pilutech.com.br/privacidade` respondendo 200, ligue `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e faça o redeploy. O "Powered by PiluTech" do popup abre `https://pilutech.com.br`, que passa a ser a vitrine PiluLabs.
+1. **Domínios na Vercel:** `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex) no projeto do `apps/web`; `botai.pilutech.com.br` no projeto `botai-site` (Root Directory `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`). Antes, confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` em Production (passo 0 da seção PiluLabs do `apps/web/CLAUDE.md`).
+2. **DNS na Cloudflare**, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, e o `CNAME botai` com o valor do projeto `botai-site`). Não crie Single Redirect; se houver um de antes, apague. Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, servida pelo `apps/web`), ligue `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e faça o redeploy. O "Powered by PiluTech" do popup abre `https://pilutech.com.br`, que passa a ser a vitrine PiluLabs.
 3. **Contas:**
    - Chrome Web Store: taxa única de US$ 5, verificação em duas etapas obrigatória e e-mail de login **imutável** (use um dedicado da PiluTech). Declare-se Trader com os dados da PiluTech, depois de confirmar com o contador.
    - Firefox Add-ons: conta Mozilla com 2FA.
@@ -77,7 +77,7 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 9. **Lançamento**, com a Chrome e a AMO aprovadas:
    - publique o item adiado no painel da Chrome Web Store (há 30 dias a partir da aprovação);
    - AMO e Edge ficam públicos assim que aprovam;
-   - no `/admin/pilulabs` (item `botai`, que é o `apps/web/content/pilulabs/botai/index.yaml`), as URLs das lojas aprovadas; o Botaí já está listado, e Edge e Opera entram quando aprovarem;
+   - no `/admin/pilulabs` (item `botai`, que é o `apps/web/content/pilulabs/botai/index.yaml`), as URLs das lojas aprovadas; o Botaí já está listado, e Edge e Opera entram quando aprovarem; a landing relê o YAML no build e troca o "Em breve" pelos botões das lojas;
    - neste README, "Como instalar" ganha os links das lojas.
 
 **Versões seguintes:** `make versao-botai V=x.y.z` (abre o PR), merge, `git switch main && git pull`, `make release-botai` e aprove o job `lojas`. Para publicar adiado na Chrome, rejeite a aprovação da tag e rode `gh workflow run botai-release.yml --ref botai-v<versão> -f lojas=submeter -f adiar_chrome=true`. O Opera é sempre à mão, com o `botai-<versão>-opera.zip` do Release e a nota Opera.

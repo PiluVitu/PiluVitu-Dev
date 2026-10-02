@@ -55,13 +55,18 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const ExtensaoEmBreve: Story = {
-  args: { item: BOTAI, href: '/pilulabs/botai', fase: 'em-breve', lojas: [] },
+  args: {
+    item: BOTAI,
+    href: 'https://botai.pilutech.com.br',
+    fase: 'em-breve',
+    lojas: [],
+  },
 }
 
 export const ExtensaoDisponivel: Story = {
   args: {
     item: BOTAI,
-    href: '/pilulabs/botai',
+    href: 'https://botai.pilutech.com.br',
     fase: 'disponivel',
     lojas: ['chrome', 'firefox'],
   },

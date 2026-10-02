@@ -190,13 +190,11 @@ Tudo o que o autor publica, produto PiluTech (Botaí, Sombraí) ou projeto (Live
 
 **Rotas e hosts:**
 
-| Chave desligada (padrão)      | Com `PILUTECH_SUBDOMINIOS=1`                | O que é                                                                         |
-| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
-| `/pilulabs`                   | `https://pilutech.com.br/`                  | Vitrine: todos os listados, agrupados por tipo                                  |
-| `/pilulabs/botai`             | `https://botai.pilutech.com.br/`            | Página do Botaí. É a `homepage_url` da extensão e a página de suporte nas lojas |
-| `/pilulabs/botai/privacidade` | `https://botai.pilutech.com.br/privacidade` | A política que vai para as 4 lojas. O mesmo texto é colado na AMO               |
+| Chave desligada (padrão) | Com `PILUTECH_SUBDOMINIOS=1` | O que é                                        |
+| ------------------------ | ---------------------------- | ---------------------------------------------- |
+| `/pilulabs`              | `https://pilutech.com.br/`   | Vitrine: todos os listados, agrupados por tipo |
 
-O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto Vercel dele, e o link do card é o `site`.
+O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing do `apps/botai-site` e `sombrai.pilutech.com.br` a do projeto do Sombraí, cada uma num projeto Vercel próprio; o link do card é o `site`. Os caminhos antigos do Botaí (`/pilulabs/botai` e `/pilulabs/botai/privacidade`) respondem 308 para a landing, com a query, pelos `redirects` do `next.config.mjs`, que rodam antes do `proxy.ts`, com a chave ligada ou não.
 
 - **Coleção `pilulabs` (`content/pilulabs/<slug>/index.yaml`), campos:**
   - `slug`: sem acento; é o subdomínio e a pasta da rota;
@@ -212,18 +210,17 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
   Leitura: `getPiluLabs()`, em `lib/site-content.ts`. Edição: `/admin/pilulabs`. As coleções `projects` e `produtos` saíram.
 
 - ⚠️ **Um YAML que o reader do Keystatic recusa derruba o build.**
-  - **A armadilha:** o site lê pelo reader (`getPiluLabs`), mais estrito que o `normalizarItem`. `tipo` fora das opções, booleano em texto (`listado: "true"`), `order` que não é inteiro, texto em número e `data: ''` lançam erro. Como o `.all()` faz `Promise.all`, um item derruba a coleção inteira: home, `/pilulabs`, a página e a OG do Botaí, `/api/admin/stats` e o `next build`. A data inexistente sem aspas (`2026-02-30`) ele não recusa: o js-yaml a rola para `2026-03-02`. A chave sem valor ele lê como ausente.
+  - **A armadilha:** o site lê pelo reader (`getPiluLabs`), mais estrito que o `normalizarItem`. `tipo` fora das opções, booleano em texto (`listado: "true"`), `order` que não é inteiro, texto em número e `data: ''` lançam erro. Como o `.all()` faz `Promise.all`, um item derruba a coleção inteira: home, `/pilulabs`, `/api/admin/stats` e o `next build`. O `apps/botai-site` lê o mesmo `content/pilulabs/botai/index.yaml` no build dele (só as 4 URLs de loja, pelo `yaml`, sem o reader). A data inexistente sem aspas (`2026-02-30`) ele não recusa: o js-yaml a rola para `2026-03-02`. A chave sem valor ele lê como ausente.
   - **No admin:** o `pilulabsSchema` é mais estrito ainda (`https:`, host da loja, data real, chave sem valor recusada), e o `GET /api/admin/content/pilulabs` valida dentro de um `Promise.all`: um item recusado vira 502 na lista inteira, e o reorder também falha.
   - **Por que `data` é `fields.date`:** o `yaml` do admin grava `data: 2026-10-01` sem aspas, e o `js-yaml` do reader lê isso como `Date`, que um `fields.text` recusaria.
   - **A defesa:**
     - o registry do admin tem `omitirSeVazio: ['data']`, e o `serializeEntry` apaga a chave vazia;
     - o `lib/pilulabs-conteudo.test.ts` reprova o YAML que o reader recusa (`camposInvalidosNoYaml`, que espelha o parse de cada campo do `keystatic.config.ts`) e o que o `pilulabsSchema` recusa. Os dois leitores precisam das travas porque o Jest e os E2E leem pelo `yaml` + `normalizarItem`, tolerantes, e ficariam verdes.
 - **Regras (lógica pura, testada no Jest):**
-  - `lib/pilulabs-regras.ts`, sem `node:fs` e importável no cliente:
+  - `@piluvitu/tools/pilulabs` (`packages/tools/src/pilulabs.ts`), sem `node:fs`, importável no cliente e compartilhado com o `apps/botai-site`:
     - `Loja`, `LOJAS` e `ehUrlDaLoja`: só aceita `https:` no host exato da loja;
-    - `ehHttps`;
-    - `TipoItem` e `TIPOS`, na ordem da vitrine;
-    - `ehDataValida`.
+    - `lojasPublicadas`, `fase` e `ATALHOS` (derivado de `TECLAS_DO_MANIFESTO`, o `suggested_key` do Botaí);
+    - `ehHttps`, `TipoItem` e `TIPOS` (na ordem da vitrine) e `ehDataValida`.
   - `lib/pilulabs.ts`:
     - `normalizarItem`;
     - `itensListados`: só `listado: true`, por `order` e depois `slug`;
@@ -231,7 +228,7 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
     - `linkDoItem(item, subdominios)`: a página própria, com a chave desligada, é `/pilulabs/<slug>`. Senão vale o `site`, depois a página própria no subdomínio, depois o `repo`. Sem nenhum, o card fica sem botão;
     - `siglaDoItem`;
     - `itemParaProject`: o card da home. "Acessar" leva ao `linkDoItem`, e some quando seria o próprio `repo`; "Código" leva ao `repo`;
-    - `lojasPublicadas`, `fase`, `listarCapturas`, `ATALHOS` e `metadataDaPagina`/`metadataDoItem`.
+    - `metadataDaPagina`.
   - `lib/pilutech-dominios.ts`, sem `node:fs` (o `proxy.ts` só importa este): `subdominiosAtivos()`, `urlPublica(caminho, ativos)`, `destinoDoHost`, `ehCaminhoIntocavel`, `rotearPorHost` e `SITE_DO_AUTOR`.
   - Status "● Em breve"/"● Disponível" e ícones de loja aparecem só em `tipo: extensao`.
 - **Home:**
@@ -249,7 +246,7 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
   - **A reescrita e o 308 do apex não dependem da chave.** É assim que o dono confere o DNS antes de ligá-la.
   - **Matcher:** o `config.matcher` só pega os hosts PiluTech (`has` de `host`, fora de `/_next/`, `/__nextjs`, `/_vercel/` e `/api/`) e `/pilulabs/:path*`, então o resto do `piluvitu.com.br` não passa pelo proxy. Ele é literal porque o Next o lê no build.
   - **Teste do matcher:** `proxy.test.ts`, com `unstable_doesMiddlewareMatch` de `next/experimental/testing/server`. No Next 16.3.8 o nome é esse; a doc empacotada fala em `unstable_doesProxyMatch`, que não existe.
-  - **Local:** `http://pilutech.localhost:3333` e `http://botai.pilutech.localhost:3333/privacidade`.
+  - **Local:** `http://pilutech.localhost:3333`.
     - O Chromium e o Node resolvem `*.localhost` para o loopback.
     - O `next dev` já libera `**.localhost`, então o `allowedDevOrigins` não muda.
     - E2E: `app/(site)/pilulabs/subdominios.e2e.ts`, com a chave desligada, e `app/(site)/pilulabs/chave-ligada.e2e.ts`, com ela ligada (ver _Testes_).
@@ -264,10 +261,10 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
   - **O que não muda:** arquivos e imagens OG ficam no `piluvitu.com.br`, porque o `og:image` aponta para lá.
   - **As páginas são estáticas e leem a chave no build:** mudar o valor pede redeploy.
 - **Passos do dono para ligar os subdomínios:** 0. Vercel, projeto do `apps/web`, Production: confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` **antes** de adicionar os domínios. Sem ela, `getCanonicalSiteUrl()` cai no `VERCEL_PROJECT_PRODUCTION_URL`, que é o domínio de produção mais curto, e `pilutech.com.br` tem o mesmo tamanho de `piluvitu.com.br`: o `metadataBase`, o `og:image` e o canonical do site inteiro podiam passar para `pilutech.com.br`. `lib/site-url.test.ts` fixa essa precedência.
-  1. Vercel, mesmo projeto, Settings → Domains: `pilutech.com.br`, `www.pilutech.com.br` (redirecionando para o apex) e `botai.pilutech.com.br`.
-  2. Cloudflare, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, `CNAME botai`). Não crie o Single Redirect 308 que o README do Botaí descrevia; se ele existir, apague.
+  1. Vercel, mesmo projeto, Settings → Domains: `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex). O `botai.pilutech.com.br` vai no projeto do `apps/botai-site` (ver "Deploy" em `apps/botai-site/CLAUDE.md`).
+  2. Cloudflare, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`), e o `CNAME botai` com o valor do projeto do `apps/botai-site`. Não crie o Single Redirect 308 que o README do Botaí descrevia; se ele existir, apague.
   3. Projeto Vercel do Sombraí: domínio `sombrai.pilutech.com.br`, `CNAME sombrai` na Cloudflare e `SITE_URL=https://sombrai.pilutech.com.br` (variável que o site do Sombraí já lê), com redeploy. Até isso, o link do Sombraí na PiluLabs não abre.
-  4. Com `curl -sI https://botai.pilutech.com.br` respondendo 200: `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e redeploy.
+  4. Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, que a reescrita do apex serve com a chave desligada): `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e redeploy.
 - **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
   - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
   - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque o subdomínio depende disso;
@@ -285,51 +282,42 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
     3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/` se for extensão;
     4. para o subdomínio, o domínio na Vercel e o `CNAME` na Cloudflare (passos 1 e 2). Com a chave ligada, a página só abre depois disso, porque o `/pilulabs/<slug>` do `piluvitu.com.br` já responde 308 para o subdomínio; antes, confira no preview;
     5. `listado: true` quando a página estiver pronta.
-- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`. Edge e Opera entram quando aprovarem.
+  - **produto com landing própria** (o Botaí, no `apps/botai-site`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing.
+- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui e a landing (que relê o YAML no build, ver o `ignoreCommand` em `apps/botai-site/vercel.json`) mudam juntos. Edge e Opera entram quando aprovarem.
 - ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
-  - **Por quê:** `listarCapturas` lê `public/pilulabs/<slug>/capturas/*.png` com `fs`, no build, e `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: as capturas somem da página, e o ícone some da imagem OG, sem erro nenhum. Ler `process.env.PILUTECH_SUBDOMINIOS` no build não deixa a rota dinâmica.
+  - **Por quê:** `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: o ícone some da imagem OG, sem erro nenhum. Ler `process.env.PILUTECH_SUBDOMINIOS` no build não deixa a rota dinâmica.
   - **Como conferir, depois do `next build`, em `apps/web`:**
 
     ```bash
-    node -e 'const { routes } = require("./.next/prerender-manifest.json"); const ks = Object.keys(routes); for (const s of ["/pilulabs", "/pilulabs/botai", "/pilulabs/botai/privacidade"]) for (const r of [s, ...["opengraph-image", "twitter-image"].map((t) => ks.find((k) => new RegExp(`^${s}/${t}(-[a-z0-9]+)?$`).test(k)) || `${s}/${t}`)]) console.log(r, routes[r] ? routes[r].initialRevalidateSeconds : "NÃO ESTÁTICA")'
+    node -e 'const { routes } = require("./.next/prerender-manifest.json"); const ks = Object.keys(routes); for (const r of ["/pilulabs", ...["opengraph-image", "twitter-image"].map((t) => ks.find((k) => new RegExp(`^/pilulabs/${t}(-[a-z0-9]+)?$`).test(k)) || `/pilulabs/${t}`)]) console.log(r, routes[r] ? routes[r].initialRevalidateSeconds : "NÃO ESTÁTICA")'
     ```
 
-    As nove linhas têm de terminar em `false`. A chave das imagens tem sufixo de hash (`/pilulabs/opengraph-image-<hash>`), porque o segmento está dentro do grupo `(site)`.
+    As três linhas têm de terminar em `false`. A chave das imagens tem sufixo de hash (`/pilulabs/opengraph-image-<hash>`), porque o segmento está dentro do grupo `(site)`.
 
 - **Ícones e capturas:**
-  - `public/pilulabs/botai/icone-128.png` e `public/pilulabs/botai/capturas/<NN>-<nome>.png` são gerados por `make capturas-botai`, no `apps/botai`, e versionados. Não edite esses PNG à mão;
-  - `public/pilulabs/sombrai/icone.png` é uma cópia de `Sombrai/site/src/assets/app-icon.png` (repo `PiluVitu/Sombrai`, privado e só lido daqui), reduzida com `sips -Z 256`. Se o ícone mudar lá, refaça a cópia;
-  - a página as descobre no build, em ordem natural do `NN`, e só PNG;
-  - o `alt` sai do nome do arquivo: o mapa `ROTULOS_CAPTURA` devolve o acento (`pagina` → `página`) e o tema (`-claro`/`-escuro`).
-
-  PNG novo na `main` aparece na página sem mudar código. Nome com palavra acentuada nova pede uma entrada no mapa.
+  - `public/pilulabs/botai/icone-128.png` (o logo do card) é gerado por `make capturas-botai`, no `apps/botai`, e versionado. Não edite à mão; as capturas do Botaí moram no `apps/botai-site/public/capturas/`.
+  - `public/pilulabs/sombrai/icone.png` é uma cópia de `Sombrai/site/src/assets/app-icon.png` (repo `PiluVitu/Sombrai`, privado e só lido daqui), reduzida com `sips -Z 256`. Se o ícone mudar lá, refaça a cópia.
 
 - ⚠️ **SEO: `openGraph` é substituído inteiro, e a imagem é por segmento.**
   - **A armadilha:** no Next 16 a mesclagem é rasa. A página que declara `openGraph` perde `locale` e `siteName` do layout, por isso `metadataDaPagina` repete tudo. Ela também só ganha a imagem do `opengraph-image.tsx` do próprio segmento.
-  - **Por isso:** cada uma das 3 rotas tem `opengraph-image.tsx` e `twitter-image.tsx` (o módulo é `lib/og-pilulabs-image.tsx`). Isso vale inclusive para a política, que é filha da página do produto.
+  - **Por isso:** a vitrine tem `opengraph-image.tsx` e `twitter-image.tsx` (o módulo é `lib/og-pilulabs-image.tsx`); uma página nova com `openGraph` próprio precisa dos dela.
   - ⚠️ **Ruído do `next dev --webpack` (o `pnpm dev` e o servidor do E2E), não erro:** ao servir as imagens PiluLabs, ele imprime `Attempted import error: … does not contain a default export (imported as 'handler')` e `export 'alt' … was not found (possible exports: runtime)` para o `twitter-image.tsx`, que reexporta do `./opengraph-image`. As imagens saem certas, byte a byte iguais às do build de produção (Turbopack, que não reclama). Medido: tirar o gerador para um módulo à parte (no `lib/` ou ao lado da rota) passa o aviso também para o `opengraph-image.tsx`, e importar e reexportar localmente ainda deixa `alt`, `size` e `contentType` de fora. Não reestruture para calar o aviso.
   - **O que o E2E confere:** o `og:title` e que cada `og:image`/`twitter:image` responde PNG.
 - **JSON-LD (`lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`):**
-  - `SoftwareApplication`, com `BrowserApplication`, `price: 0` e `installUrl` só das lojas publicadas;
-  - sem `aggregateRating`, porque o Google proíbe copiar nota das lojas, e sem `softwareVersion`;
-  - `BreadcrumbList`;
   - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
-  - as URLs de página (`url`, trilha, `publisher`) passam por `urlPublica`. `image`, `screenshot` e `author` ficam sempre no `piluvitu.com.br`;
+  - as URLs (`url` e `publisher`) passam por `urlPublica`;
   - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
 - **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
   - `StatusProduto`;
-  - `BotoesLoja`: botões do DS com ícone Font Awesome, nunca os badges oficiais;
   - `ProdutoCard`:
     - link interno na mesma aba, externo em aba nova;
     - sem link, vira `<article>`;
     - o logo por URL sai sem o otimizador do `next/image`;
     - sem logo, mostra a sigla;
   - `Vitrine`, que agrupa por tipo;
-  - `CapturasGaleria`;
-  - `AtalhosTabela`;
   - `SecaoPiluLabs`.
 
-  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@/lib/pilulabs-regras`, como os `TIPOS` do formulário do admin.
+  ⚠️ Componentes e stories não importam valor de `lib/pilulabs-conteudo.ts` (que importa `node:fs`) nem de `lib/site-content.ts` (o reader do Keystatic): os dois quebram o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@piluvitu/tools/pilulabs`, como os `TIPOS` do formulário do admin.
 
 - **Testes:**
   - **Jest de componente:** usa `renderToStaticMarkup`, via `lib/render-estatico.ts`, sem Testing Library e sem dependência nova. Componente com TanStack Query vai embrulhado num `QueryClientProvider` (ver `home-footer.test.tsx`).
@@ -341,12 +329,13 @@ O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto
     - o `prettier --check` tem a mesma armadilha com glob: passe a pasta `"app/(site)/pilulabs"`.
   - **E2E (`app/(site)/pilulabs/{pilulabs,subdominios,chave-ligada}.e2e.ts`, `home.e2e.ts` e `app/(admin)/admin/pilulabs/pilulabs.e2e.ts`):**
     - o esperado sai do YAML, por `lerItensDoConteudo`, e por isso continua valendo quando o dono muda o catálogo;
-    - a 320 px, nenhuma das 3 rotas rola na horizontal: URL longa em `<code>` (como a caixa do `tuamaeaquelaursa.com` na política) não quebra sozinha e leva `wrap-anywhere`;
-    - **com a chave ligada:** o `chave-ligada.e2e.ts` confere links, `canonical` e `og:site_name` nos hosts PiluTech, e o 308 com a query. Ele só roda à parte, com `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada`, porque o Playwright repassa o próprio ambiente ao `pnpm dev`. Nas outras execuções, sai como `5 skipped`. Um segundo servidor com a chave ligada não serve: o `next dev` trava o `distDir` e sai com "Another next dev server is already running in this directory".
+    - a 320 px, a vitrine não rola na horizontal;
+    - os 308 dos caminhos antigos do Botaí, com a query (`pilulabs.e2e.ts`);
+    - **com a chave ligada:** o `chave-ligada.e2e.ts` confere a vitrine e a home nos hosts PiluTech. Ele só roda à parte, com `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada`, porque o Playwright repassa o próprio ambiente ao `pnpm dev`. Nas outras execuções, sai como `2 skipped`. Um segundo servidor com a chave ligada não serve: o `next dev` trava o `distDir` e sai com "Another next dev server is already running in this directory".
   - ⚠️ **Porta 3333:** antes do Playwright, ela tem de estar livre (`make stop`). Com `reuseExistingServer`, um `next dev` de outro worktree responderia no lugar, e o teste rodaria contra o código errado. Rode com `CI=1`, que faz o Playwright subir o próprio servidor e falhar se a porta estiver ocupada.
   - ⚠️ **O `next dev` reescreve este arquivo.** Quando detecta um agente de IA, ele anexa no fim o bloco entre os comentários HTML `BEGIN:nextjs-agent-rules` e `END:nextjs-agent-rules` (`node_modules/next/dist/server/lib/generate-agent-files.js`; o log diz "Generated CLAUDE.md for AI agents"). Depois de um E2E, confira `git status` e tire o bloco antes de commitar. Não escreva o marcador de abertura completo, com o `<!--`, neste arquivo: o `next dev` seguinte trocaria tudo o que vai dele até o marcador de fim por um bloco novo (medido: perde o _Admin unificado_ e as seções seguintes).
 - **Fora:**
-  - página própria do Sombraí no `apps/web`, porque ele tem landing própria;
+  - página do Botaí e do Sombraí no `apps/web`: os dois têm landing própria;
   - lojas de app mobile (Play Store e App Store) no modelo;
   - `sitemap.ts`/`robots.ts`, que vão para a fatia de SEO global.
 

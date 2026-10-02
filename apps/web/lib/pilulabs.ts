@@ -1,23 +1,13 @@
-import { readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import type { Metadata } from 'next'
-import type { Project } from '@/mocks/projects'
 import {
   ehDataValida,
   ehHttps,
-  ehUrlDaLoja,
-  LOJAS,
   TIPO_PADRAO,
   TIPOS,
-  type Loja,
   type TipoItem,
-} from './pilulabs-regras'
+} from '@piluvitu/tools/pilulabs'
+import type { Metadata } from 'next'
+import type { Project } from '@/mocks/projects'
 import { DOMINIO_PILUTECH, urlPublica } from './pilutech-dominios'
-
-export { LOJAS, TIPOS } from './pilulabs-regras'
-export type { Loja, TipoItem } from './pilulabs-regras'
-
-export type Fase = 'em-breve' | 'disponivel'
 
 export type ItemPiluLabs = {
   slug: string
@@ -62,16 +52,6 @@ export type EntradaItem = {
   paginaPropria?: boolean | null
 }
 
-export type LojaPublicada = { loja: Loja; url: string }
-
-const CAMPO_DA_LOJA = {
-  chrome: 'chromeUrl',
-  firefox: 'firefoxUrl',
-  edge: 'edgeUrl',
-  opera: 'operaUrl',
-} as const satisfies Record<Loja, keyof ItemPiluLabs>
-
-type UrlsDasLojas = Pick<ItemPiluLabs, (typeof CAMPO_DA_LOJA)[Loja]>
 type Ordenavel = Pick<ItemPiluLabs, 'order' | 'slug'>
 
 function texto(valor: unknown): string {
@@ -109,17 +89,6 @@ export function normalizarItem(
     listado: entrada.listado === true,
     paginaPropria: entrada.paginaPropria === true,
   }
-}
-
-export function lojasPublicadas(item: UrlsDasLojas): LojaPublicada[] {
-  return LOJAS.flatMap((loja) => {
-    const url = item[CAMPO_DA_LOJA[loja]].trim()
-    return ehUrlDaLoja(loja, url) ? [{ loja, url }] : []
-  })
-}
-
-export function fase(item: UrlsDasLojas): Fase {
-  return lojasPublicadas(item).length > 0 ? 'disponivel' : 'em-breve'
 }
 
 function porOrdem(a: Ordenavel, b: Ordenavel): number {
@@ -188,75 +157,10 @@ export function itemParaProject(
   }
 }
 
-export type Sistema = 'windows' | 'mac' | 'linux'
-export type Captura = { arquivo: string; src: string; alt: string }
 export type PaginaPiluLabs = {
   caminho: string
   titulo: string
   descricao: string
-}
-
-const ATALHO_CHROMIUM: Record<Sistema, string> = {
-  windows: 'Ctrl+Shift+Y',
-  mac: '⌥⇧P',
-  linux: 'Ctrl+Shift+Y',
-}
-
-export const ATALHOS: Record<Loja, Record<Sistema, string>> = {
-  chrome: { ...ATALHO_CHROMIUM },
-  edge: { ...ATALHO_CHROMIUM },
-  opera: { ...ATALHO_CHROMIUM },
-  // Espelha o wxt.config.ts do Botaí: no Firefox para Linux, Ctrl+Shift+Y é dos Downloads.
-  firefox: { ...ATALHO_CHROMIUM, linux: 'Alt+Shift+P' },
-}
-
-export const ROTULOS_CAPTURA: ReadonlyMap<string, string> = new Map([
-  ['pagina', 'página'],
-  ['formulario', 'formulário'],
-  ['cartao', 'cartão'],
-  ['endereco', 'endereço'],
-  ['opcoes', 'opções'],
-  ['claro', '(tema claro)'],
-  ['escuro', '(tema escuro)'],
-])
-
-const PREFIXO_DE_ORDEM = /^\d+-/
-const EXTENSAO_PNG = /\.png$/i
-
-export function altDaCaptura(arquivo: string): string {
-  const palavras = arquivo
-    .replace(EXTENSAO_PNG, '')
-    .replace(PREFIXO_DE_ORDEM, '')
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((palavra) => palavra.toLowerCase())
-    .map((palavra) => ROTULOS_CAPTURA.get(palavra) ?? palavra)
-  return `Captura de tela: ${palavras.join(' ')}`
-}
-
-// Roda no build: na Vercel, public/ não vai para o lambda, e a rota tem de ficar
-// estática (ver "PiluLabs" no CLAUDE.md do apps/web).
-export function listarCapturas(
-  slug: string,
-  raizPublica: string = join(process.cwd(), 'public'),
-): Captura[] {
-  const pasta = join(raizPublica, 'pilulabs', slug, 'capturas')
-  let arquivos: string[]
-  try {
-    arquivos = readdirSync(pasta, { withFileTypes: true })
-      .filter((entrada) => entrada.isFile() && EXTENSAO_PNG.test(entrada.name))
-      .map((entrada) => entrada.name)
-  } catch (erro) {
-    if ((erro as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw erro
-  }
-  return arquivos
-    .sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
-    .map((arquivo) => ({
-      arquivo,
-      src: `/pilulabs/${slug}/capturas/${encodeURIComponent(arquivo)}`,
-      alt: altDaCaptura(arquivo),
-    }))
 }
 
 // O Next substitui o openGraph do layout inteiro, e a imagem só vem do
@@ -284,13 +188,4 @@ export function metadataDaPagina(
       description: descricao,
     },
   }
-}
-
-export function metadataDoItem(
-  item: Pick<ItemPiluLabs, 'listado'>,
-  pagina: PaginaPiluLabs,
-  subdominiosAtivos: boolean,
-): Metadata {
-  const metadata = metadataDaPagina(pagina, subdominiosAtivos)
-  return item.listado ? metadata : { ...metadata, robots: { index: false } }
 }

@@ -77,10 +77,19 @@ export const PECAS_DA_LOJA: Peca[] = [
   })),
 ]
 
-export const COPIAS_PARA_O_SITE: { origem: string; destino: string }[] = [
-  { origem: ICONE.arquivo, destino: 'icone-128.png' },
+export interface Copia {
+  origem: string
+  destino: string
+}
+
+// destino relativo a apps/: o card do portfólio (apps/web) e a landing (apps/botai-site).
+export const COPIAS: Copia[] = [
+  { origem: ICONE.arquivo, destino: 'web/public/pilulabs/botai/icone-128.png' },
+  { origem: ICONE.arquivo, destino: 'botai-site/public/icone-128.png' },
+  { origem: LOGO_DO_EDGE.arquivo, destino: 'botai-site/app/icon.png' },
+  { origem: LOGO_DO_EDGE.arquivo, destino: 'botai-site/app/apple-icon.png' },
   ...CAPTURAS.map((captura) => ({
     origem: arquivoDaCaptura(captura, TAMANHOS_DAS_CAPTURAS[0]),
-    destino: `capturas/${captura.nome}.png`,
+    destino: `botai-site/public/capturas/${captura.nome}.png`,
   })),
 ]

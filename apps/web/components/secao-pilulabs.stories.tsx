@@ -11,7 +11,7 @@ const BOTAI: Project = {
   description:
     'Extensão para Chrome, Edge, Opera e Firefox que gera uma pessoa brasileira de teste e preenche o formulário da página com um atalho.',
   tags: ['Extensão', 'Formulários', 'QA'],
-  deployLink: '/pilulabs/botai',
+  deployLink: 'https://botai.pilutech.com.br',
   deployLabel: 'Acessar',
   repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
   altImage: 'BO',

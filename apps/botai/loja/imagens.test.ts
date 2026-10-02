@@ -2,13 +2,10 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { COPIAS_PARA_O_SITE, ICONE, PECAS_DA_LOJA } from './pecas'
+import { COPIAS, ICONE, PECAS_DA_LOJA } from './pecas'
 
 const LOJA = path.resolve(import.meta.dirname, 'imagens')
-const SITE = path.resolve(
-  import.meta.dirname,
-  '../../web/public/pilulabs/botai',
-)
+const APPS = path.resolve(import.meta.dirname, '../..')
 
 // Largura, altura e tipo de cor vêm do cabeçalho IHDR, logo depois da assinatura de 8 bytes.
 function cabecalhoPng(arquivo: string) {
@@ -38,12 +35,12 @@ describe('imagens da loja (geradas por make capturas-botai)', () => {
   })
 })
 
-describe('cópias para o site', () => {
-  it.each(COPIAS_PARA_O_SITE.map((c) => [c.destino, c] as const))(
-    'apps/web/public/pilulabs/botai/%s é idêntica à da loja',
+describe('cópias para os sites (apps/web e apps/botai-site)', () => {
+  it.each(COPIAS.map((c) => [c.destino, c] as const))(
+    'apps/%s é idêntica à da loja',
     (_, { origem, destino }) => {
       expect(
-        readFileSync(path.join(SITE, destino)).equals(
+        readFileSync(path.join(APPS, destino)).equals(
           readFileSync(path.join(LOJA, origem)),
         ),
       ).toBe(true)
