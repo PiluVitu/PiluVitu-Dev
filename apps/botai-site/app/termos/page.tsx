@@ -108,8 +108,8 @@ export default function TermosPage() {
             cadastro, como os de período de teste gratuito;
           </li>
           <li>
-            mandar SMS, fazer ligação ou consultar birôs de crédito com um CPF,
-            um CNPJ ou um celular gerado;
+            mandar SMS, fazer ligação, enviar correspondência ou consultar birôs
+            de crédito com um documento, um celular ou um endereço gerado;
           </li>
           <li>
             tentar pagar com o cartão de teste fora do modo de teste de um meio
@@ -130,12 +130,16 @@ export default function TermosPage() {
 
         <h2>Dados que podem ser de alguém</h2>
         <p>
-          Os CPFs, CNPJs e celulares são gerados ao acaso, com dígitos
-          verificadores válidos. Não existe faixa reservada para teste, então um
-          número gerado pode pertencer a uma pessoa ou a uma empresa de verdade.
-          Se isso acontecer, não use o número para contatar, consultar nem
-          cadastrar ninguém. Os CEPs e as ruas são reais, para passar nas buscas
-          de CEP; o número da casa e o resto da pessoa são inventados.
+          O CPF, o CNPJ, o RG, o PIS/NIS, o título de eleitor e o celular são
+          sorteados ao acaso, e os documentos saem com dígitos verificadores
+          válidos. Não existe faixa reservada para teste, então qualquer um
+          deles pode pertencer a uma pessoa ou a uma empresa de verdade. O
+          endereço completo também pode existir: o CEP, a rua, o bairro e a
+          cidade são reais, para passar nas buscas de CEP, e o número é sorteado
+          dentro da numeração daquele CEP. O nome, a data de nascimento e a
+          empresa são montados ao acaso, sem partir dos dados de ninguém, mas
+          podem coincidir com os de alguém. Se um dado gerado for de alguém, não
+          o use para contatar, consultar nem cadastrar ninguém.
         </p>
 
         <h2>A caixa de e-mail pública</h2>
@@ -159,14 +163,15 @@ export default function TermosPage() {
 
         <h2>Limite de responsabilidade</h2>
         <p>Dentro do que a lei permite, a PiluTech não responde por:</p>
-        <ul>
+        <ul aria-label="Limites de responsabilidade">
           <li>danos causados por uso fora do que estes termos permitem;</li>
           <li>
             dados enviados a sistemas em produção, a cadastros reais ou a
             serviços de terceiros;
           </li>
           <li>
-            o uso de um CPF, um CNPJ ou um celular gerado que pertença a alguém;
+            o uso de um CPF, um CNPJ, um RG, um PIS/NIS, um título de eleitor,
+            um celular ou um endereço gerado que pertença a alguém;
           </li>
           <li>
             valores que o {NOME} escreveu por cima do que já estava nos campos;

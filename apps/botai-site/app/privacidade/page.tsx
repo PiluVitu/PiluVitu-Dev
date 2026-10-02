@@ -32,13 +32,13 @@ const PERMISSOES = [
   {
     nome: 'scripting',
     paraQue:
-      'Rodar, só nessa aba e só nesse momento, o script que reconhece e preenche os campos.',
+      'Rodar nessa aba, quando você aciona a extensão, o script que reconhece e preenche os campos. O script fica na página até ela ser recarregada, trocada por outra ou fechada.',
     onde: 'Todos',
   },
   {
     nome: 'contextMenus',
     paraQue:
-      'Os itens “Preencher esta página” e “Inserir › CPF / E-mail / CEP…” do botão direito.',
+      'Os itens do botão direito: “Preencher esta página”, “Inserir › CPF / E-mail / CEP…”, “Nova pessoa” e “Abrir caixa de entrada”, que abre numa aba nova a caixa pública do e-mail gerado, num site de terceiro.',
     onde: 'Todos',
   },
   {
@@ -66,10 +66,11 @@ const TRATAMENTOS = [
   {
     dado: 'Os campos e o endereço da aba',
     paraQue:
-      'Decidir o que escrever em cada campo e saber se o navegador deixa a extensão agir ali.',
-    base: 'Não se aplica: são lidos só no seu navegador, no momento em que você aciona a extensão. A PiluTech não os recebe.',
+      'Decidir o que escrever em cada campo, levar você até os que ficaram de fora e saber se o navegador deixa a extensão agir ali.',
+    base: 'Não se aplica: são lidos só no seu navegador, quando você aciona a extensão. A PiluTech não os recebe.',
     comQuem: 'Ninguém.',
-    prazo: 'Só enquanto a ação dura. Nada é gravado.',
+    prazo:
+      'Na memória da página, até ela ser recarregada, trocada por outra ou fechada. Nada é gravado nem enviado.',
   },
   {
     dado: 'A escolha de tema claro ou escuro',
@@ -155,8 +156,9 @@ export default function PrivacidadePage() {
         </ul>
         <p>
           Quem libera o acesso é o próprio navegador, só no momento do gesto e
-          só para aquela aba. Tudo acontece no seu computador: nada da página é
-          guardado nem enviado.
+          só para aquela aba. Tudo acontece no seu computador: o que o {NOME} lê
+          fica só na memória da página, até ela ser recarregada, trocada por
+          outra ou fechada, e nada da página é gravado nem enviado.
         </p>
 
         <h2>O que fica guardado</h2>
@@ -203,11 +205,13 @@ export default function PrivacidadePage() {
 
         <h2>Dados fictícios e pessoas reais</h2>
         <p>
-          Os documentos são gerados ao acaso, com dígitos verificadores válidos.
-          Um CPF, um CNPJ ou um celular gerado pode pertencer a alguém de
-          verdade: use o {NOME} só em localhost e em ambientes de teste. Os{' '}
-          <Link href="/termos">termos de uso</Link> dizem o que é proibido fazer
-          com esses dados.
+          Os dados são gerados ao acaso, e os documentos saem com dígitos
+          verificadores válidos. Um CPF, um CNPJ, um RG, um PIS/NIS, um título
+          de eleitor ou um celular gerado pode pertencer a alguém de verdade, e
+          o endereço também pode existir: o CEP e a rua são reais, e o número é
+          sorteado dentro da numeração daquele CEP. Use o {NOME} só em localhost
+          e em ambientes de teste. Os <Link href="/termos">termos de uso</Link>{' '}
+          dizem o que é proibido fazer com esses dados.
         </p>
 
         <h2>Permissões</h2>

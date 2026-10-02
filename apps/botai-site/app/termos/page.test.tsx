@@ -1,5 +1,34 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, screen, within } from '@testing-library/react'
 import TermosPage from './page'
+
+const PESSOA = join(__dirname, '../../../../packages/tools/src/pessoa.ts')
+
+// Cada gerador que monta a pessoa (packages/tools/src/pessoa.ts) e o dado dele que
+// pode ser de alguém de verdade. Os documentos saem com dígito verificador válido e
+// sem faixa de teste; o celular tem DDD real; o número da casa é sorteado na
+// numeração real do CEP. null: não sorteia documento, telefone nem endereço (o
+// cartão é o de teste da Stripe; o e-mail tem seção própria).
+const PODE_SER_DE_ALGUEM: Record<string, string | null> = {
+  CPF: 'CPF',
+  Empresa: 'CNPJ',
+  RG: 'RG',
+  PIS: 'PIS/NIS',
+  TituloEleitor: 'título de eleitor',
+  Celular: 'celular',
+  Endereco: 'endereço',
+  Nome: null,
+  Nascimento: null,
+  Email: null,
+  Senha: null,
+  Cartao: null,
+}
+const DADOS_QUE_PODEM_EXISTIR = Object.values(PODE_SER_DE_ALGUEM).filter(
+  (dado): dado is string => dado !== null,
+)
+const mencao = (dado: string) =>
+  new RegExp(`(?<!\\p{L})${dado}(?!\\p{L})`, 'iu')
 
 describe('/termos', () => {
   beforeEach(() => {
@@ -56,6 +85,37 @@ describe('/termos', () => {
     expect(itens).toMatch(/cadastro, conta, compra/)
     expect(itens).toMatch(/verificação de identidade/)
     expect(itens).toMatch(/SMS/)
+  })
+
+  it('todo gerador da pessoa foi classificado em PODE_SER_DE_ALGUEM', () => {
+    const geradores = [
+      ...readFileSync(PESSOA, 'utf8').matchAll(/\bgerar(\w+)\(rng[,)]/g),
+    ].map((m) => m[1])
+    expect(geradores.sort()).toEqual(Object.keys(PODE_SER_DE_ALGUEM).sort())
+  })
+
+  // O revisor achou só CPF, CNPJ e celular aqui, e "o número da casa e o resto
+  // da pessoa são inventados": RG, PIS/NIS e título saem iguais ao CPF, e o
+  // número cai na faixa real do CEP.
+  it('"Dados que podem ser de alguém" cita cada dado que pode existir', () => {
+    const paragrafo = screen.getByRole('heading', {
+      level: 2,
+      name: 'Dados que podem ser de alguém',
+    }).nextElementSibling
+    for (const dado of DADOS_QUE_PODEM_EXISTIR)
+      expect(paragrafo?.textContent).toMatch(mencao(dado))
+    expect(paragrafo).toHaveTextContent('numeração daquele CEP')
+    expect(paragrafo).not.toHaveTextContent(/inventad/)
+  })
+
+  it('o limite de responsabilidade cobre os mesmos dados', () => {
+    const item = within(
+      screen.getByRole('list', { name: 'Limites de responsabilidade' }),
+    )
+      .getAllByRole('listitem')
+      .find((li) => li.textContent?.includes('pertença a alguém'))
+    for (const dado of DADOS_QUE_PODEM_EXISTIR)
+      expect(item?.textContent).toMatch(mencao(dado))
   })
 
   it('foro de Teresina/PI, com a ressalva do CDC', () => {

@@ -86,6 +86,55 @@ describe('/privacidade', () => {
     expect(linhas.at(-1)).toHaveTextContent('Só no Firefox')
   })
 
+  // O menu real (criarMenus) tem também "Nova pessoa" e "Abrir caixa de entrada",
+  // e este abre um site de terceiro: a permissão precisa dizer isso.
+  it('a linha do contextMenus cita cada item do menu do botão direito', () => {
+    const itens = [
+      ...ler('src/lib/menus.ts').matchAll(/title: '([^']+)'/g),
+    ].map((m) => m[1])
+    expect(itens).toEqual([
+      'Preencher esta página',
+      'Inserir',
+      'Nova pessoa',
+      'Abrir caixa de entrada',
+    ])
+    const linha = screen.getByRole('row', { name: /^contextMenus\b/ })
+    for (const item of itens) expect(linha).toHaveTextContent(item)
+    expect(linha).toHaveTextContent('site de terceiro')
+  })
+
+  // O script injetado fica na página: guarda o registro dos campos e o último
+  // resultado (api.ts, para o "Mostrar" do popup) e regrava 1 s depois
+  // (segunda-passada.ts). Nada disso é gravado em disco nem enviado.
+  it('o que a extensão lê da página fica na memória dela até recarregar', () => {
+    const campos = document.querySelectorAll('dl')[1]
+    expect(campos).toHaveTextContent(
+      'Na memória da página, até ela ser recarregada, trocada por outra ou fechada. Nada é gravado nem enviado.',
+    )
+    const scripting = screen.getByRole('row', { name: /^scripting\b/ })
+    expect(scripting).not.toHaveTextContent('só nesse momento')
+    expect(scripting).toHaveTextContent(
+      'fica na página até ela ser recarregada, trocada por outra ou fechada',
+    )
+  })
+
+  it('"Dados fictícios e pessoas reais" cita os documentos, o celular e o endereço', () => {
+    const paragrafo = screen.getByRole('heading', {
+      level: 2,
+      name: 'Dados fictícios e pessoas reais',
+    }).nextElementSibling
+    for (const dado of [
+      'CPF',
+      'CNPJ',
+      'RG',
+      'PIS/NIS',
+      'título de eleitor',
+      'celular',
+      'endereço',
+    ])
+      expect(paragrafo).toHaveTextContent(dado)
+  })
+
   it('"no Firefox o pacote declara que não coleta dados" é o que o wxt.config.ts diz', () => {
     expect(ler('wxt.config.ts')).toContain(
       "data_collection_permissions: { required: ['none'] }",
