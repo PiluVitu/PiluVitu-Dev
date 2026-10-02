@@ -19,7 +19,7 @@
 - **Fontes e ícones:** "Plus Jakarta Sans e JetBrains Mono por `next/font`, como o `apps/web`. Font Awesome pelos pacotes npm, sem CDN."
 - **Rotas:** "todas, sem `revalidate`. O build confere isso como o `apps/web` confere as rotas PiluLabs. O dev roda na porta 3020." Storybook na **6019**. E2E do `apps/web` na **3333**.
 - **Portas livres antes de E2E:** confira com `lsof -nP -iTCP:<porta> -sTCP:LISTEN`. Se houver processo que você não subiu, **não mate**: pare e reporte. Rode Playwright com `CI=1` (sobe o próprio servidor e falha se a porta estiver ocupada).
-- **Dependências (pnpm 11):** `minimumReleaseAge: 1440` e `allowBuilds` (ver `CLAUDE.md` raiz). Depois de mexer em dependência: `pnpm dedupe --check` e a trava do CodeMirror (`cd apps/web && ./node_modules/.bin/jest components/admin/posts/mdx-editor.codemirror.test.ts`). O diff do `pnpm-lock.yaml` só pode acrescentar o importer `apps/botai-site`; versão nova de pacote é defeito do plano (fixe no `package.json` a versão que o lock já tem).
+- **Dependências (pnpm 11):** `minimumReleaseAge: 1440` e `allowBuilds` (ver `CLAUDE.md` raiz). Depois de mexer em dependência: `pnpm dedupe --check` e a trava do CodeMirror (`cd apps/web && ./node_modules/.bin/jest components/admin/posts/mdx-editor.codemirror.test.ts`). O diff do `pnpm-lock.yaml` pode acrescentar o importer `apps/botai-site` e snapshots novos de versões que já estão em `packages:` (o mesmo pacote com outro conjunto de peers); versão nova em `packages:` é defeito do plano (fixe no `package.json` a versão que o lock já tem).
 - **Lei de comentários (CLAUDE.md raiz):** comentário em produção só com as três condições (porquê invisível, a ausência levaria a "consertar" e quebrar, não cabe em nome/teste/doc), 1 a 3 linhas. Teste é livre para explicar.
 - **Colocation:** teste e story ao lado do fonte; E2E `.e2e.ts` ao lado da rota que testa.
 - **Sentinela do gate:** nunca escreva o nome da classe sentinela por extenso em `apps/*` (nem em `.md`); cite `SENTINEL_SELECTOR` do script.
@@ -31,9 +31,9 @@
 
 ## Review Focus
 
-1. **URL de loja errada no CMS** (o dono cola o link de outra loja, ou `http:`, pelo `/admin/pilulabs`): o botão fica "Em breve", sem link; o selo e a nota não dizem que saiu; o JSON-LD não lista `installUrl`. Testes: `lib/modelo.test.ts` (Tarefa 3) e `lib/json-ld.test.ts` (Tarefa 8).
+1. **URL de loja errada no CMS** (o dono cola o link de outra loja, ou `http:`, pelo `/admin/pilulabs`): o botão fica "Em breve", sem link; o selo e a nota não dizem que saiu; o JSON-LD não lista `installUrl`. Testes: `lib/modelo.test.ts` (Tarefa 3), `lib/json-ld.test.ts` (Tarefa 8) e, no build de produção com um YAML de teste, `app/lojas-publicadas.e2e.ts` (Tarefas 6 e 8).
 2. **Tema escolhido diferente do sistema:** as capturas seguem a classe `.dark` do `<html>` (a escolha), não o `prefers-color-scheme`; só a variante visível é baixada; a escolha sobrevive ao reload. Testes: `components/imagem-por-tema.test.tsx` (Tarefa 5) e `app/pagina.e2e.ts` (Tarefa 6).
-3. **Celular estreito (320 px):** topo com âncoras e botão de tema, 4 botões de loja com "Em breve", tabela de atalhos e a política com URL longa quebram linha sem rolagem horizontal. Testes: `app/pagina.e2e.ts` (Tarefa 6) e `app/privacidade/privacidade.e2e.ts` (Tarefa 7).
+3. **Celular estreito (320 px):** topo com âncoras e botão de tema, 4 botões de loja com "Em breve" (cada um dentro da lista, não só sem rolagem da página), tabela de atalhos rolando numa região focável e a política com URL longa quebram linha sem rolagem horizontal. Testes: `app/pagina.e2e.ts` (Tarefa 6), `app/privacidade/privacidade.e2e.ts` (Tarefa 7) e o axe a 320 px do `app/seo.e2e.ts` (Tarefa 8).
 4. **Build de preview ou local sem `SITE_URL`** (ou com valor sem esquema): canonical, `og:url`, JSON-LD, sitemap e robots ficam no domínio de produção, nunca num `*.vercel.app`. Testes: `lib/site.test.ts` e `app/seo.e2e.ts` (Tarefa 8).
 5. **Links antigos com query** (`/pilulabs/botai?utm_source=loja`, a política colada nas lojas): 308 para o host novo, mantendo a query. Teste: `apps/web/app/(site)/pilulabs/pilulabs.e2e.ts` (Tarefa 9).
 
@@ -47,11 +47,12 @@
 
 ```
 package.json  tsconfig.json  next.config.mjs  postcss.config.mjs  eslint.config.mjs
-jest.config.ts  jest.setup.ts  playwright.config.ts  vercel.json  vercel.test.ts
+jest.config.ts  jest.setup.ts  playwright.config.ts  playwright.lojas.config.ts  vercel.json  vercel.test.ts
 .env.example  CLAUDE.md
 .storybook/main.ts  .storybook/preview.tsx
 scripts/conferir-rotas-estaticas.mjs (+ .test.mjs)
 app/globals.css  app/layout.tsx  app/page.tsx  app/pagina.e2e.ts  app/seo.e2e.ts
+app/lojas-publicadas.e2e.ts  app/lojas-publicadas.yaml
 app/opengraph-image.tsx  app/twitter-image.tsx  app/icon.png  app/apple-icon.png
 app/sitemap.ts  app/robots.ts  app/manifest.ts (+ .test.ts de cada um)
 app/privacidade/page.tsx (+ page.test.tsx)  app/privacidade/privacidade.e2e.ts
@@ -66,7 +67,7 @@ public/icone-128.png  public/capturas/0{1..6}-*.png
 
 **Alterados:** `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`, `Makefile`, `.github/workflows/ci.yml`, `CLAUDE.md` (raiz), `packages/tools/package.json`, `packages/tools/CLAUDE.md`, `packages/ui/CLAUDE.md`, `apps/web/**` (Tarefas 1 e 9), `apps/botai/{wxt.config.ts,loja/pecas.ts,loja/pecas.test.ts,loja/imagens.test.ts,loja/capturas.captura.ts,loja/README.md,README.md,CLAUDE.md}`.
 
-**Removidos:** `apps/web/lib/pilulabs-regras.ts` (+ teste), `apps/web/app/(site)/pilulabs/botai/**`, `apps/web/components/pilulabs/{atalhos-tabela,botoes-loja,capturas-galeria}.*`, `apps/web/public/pilulabs/botai/capturas/`.
+**Removidos:** `apps/web/lib/pilulabs-regras.ts` (+ teste), `apps/web/app/(site)/pilulabs/botai/**`, `apps/web/components/pilulabs/{atalhos-tabela,botoes-loja,capturas-galeria}.*` (Tarefa 9), `apps/web/public/pilulabs/botai/capturas/` (Tarefa 10, depois de o `apps/botai` parar de conferi-las).
 
 ---
 
@@ -548,10 +549,10 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git rm -q apps/web/lib/pilulabs-
 Confira que nada mais aponta para o arquivo apagado:
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/grep -rn --exclude-dir=node_modules --exclude-dir=.next "pilulabs-regras" . ; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/grep -rn --exclude-dir=node_modules --exclude-dir=.next --exclude='*.tsbuildinfo' "pilulabs-regras" . ; echo "exit=$?"
 ```
 
-Expected: nenhuma linha, `exit=1` (o `CLAUDE.md` muda no Step 8; se só ele aparecer, siga).
+Expected: nenhuma linha, `exit=1` (o `CLAUDE.md` muda no Step 8; se só ele aparecer, siga). O `--exclude='*.tsbuildinfo'` tira o `tsconfig.tsbuildinfo` local (ignorado pelo git), que guarda o nome do arquivo apagado até o `tsc` do Step 7 o regravar.
 
 - [ ] **Step 7: Verifique o `apps/web` inteiro**
 
@@ -696,7 +697,14 @@ pnpm dedupe --check; echo "dedupe exit=$?"
 cd apps/web && ./node_modules/.bin/jest components/admin/posts/mdx-editor.codemirror.test.ts; echo "codemirror exit=$?"
 ```
 
-Expected: os três `exit=0`. Abra `/usr/bin/git diff pnpm-lock.yaml`: o esperado é só o bloco novo `apps/botai-site:` em `importers:`. Se surgir versão nova de algum pacote em `packages:`/`snapshots:`, troque no `package.json` o range daquele pacote pela versão exata que o lock já tem (veja a do `apps/web`), rode `pnpm install` de novo e repita as três conferências.
+Expected: os três `exit=0`. Abra `/usr/bin/git diff pnpm-lock.yaml`. O esperado (medido numa cópia dos manifestos com o pnpm 11.1.1, ~415 linhas a mais):
+
+- o bloco novo `apps/botai-site:` em `importers:`;
+- **nenhuma** linha nova ou mudada em `packages:`;
+- em `snapshots:`, entradas novas de versões que já estão no lock, com outro conjunto de peers: `webpack@5.105.4:` sem o peer `esbuild@0.28.1` que a cópia do `apps/web` tem, e a cadeia webpack do Storybook que depende dele (`@storybook/nextjs@10.3.1(…)(webpack@5.105.4)`, `@storybook/builder-webpack5`, `@storybook/preset-react-webpack`, `babel-loader`, `css-loader` 6 e 7, `style-loader` 3 e 4, `sass-loader`, `postcss-loader`, `terser-webpack-plugin`, `html-webpack-plugin`, `webpack-dev-middleware` e outras);
+- 5 linhas de `snapshots:` reescritas: a chave de peers do `eslint-import-resolver-typescript@3.10.1` (e do `eslint-module-utils` que a cita) fica mais curta.
+
+Isso não é defeito e não se corrige fixando versão. O defeito é só versão nova em `packages:`: aí troque no `package.json` o range daquele pacote pela versão exata que o lock já tem (veja a do `apps/web`), rode `pnpm install` de novo e repita as três conferências.
 
 - [ ] **Step 2: Configurações do app**
 
@@ -1386,7 +1394,7 @@ Tudo o que a página decide sem React: as URLs das lojas lidas do YAML do CMS no
 - Consumes (Tarefa 1): `Loja`, `LOJAS`, `Fase`, `Sistema`, `UrlsDasLojas`, `fase`, `lojasPublicadas`, `ATALHOS` de `@piluvitu/tools/pilulabs`.
 - Produces:
   - `lib/conteudo.ts`: `NOME = 'Botaí'`; `PROPOSTA = 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)'`; `URL_DA_PILUTECH = 'https://pilutech.com.br'`; `EMAIL_DE_SUPORTE = 'pilutechinformatica@gmail.com'`; `type Recurso = { titulo: string; texto: string; icone: IconDefinition }`; `RECURSOS: Recurso[]`; `REQUISITOS: string` (frase visível); `REQUISITOS_DO_SOFTWARE: string` (frase do JSON-LD).
-  - `lib/cms.ts`: `ITEM_NO_CMS: string`; `lerUrlsDasLojas(caminho?: string): UrlsDasLojas` (lança se o arquivo não existe).
+  - `lib/cms.ts`: `ITEM_NO_CMS: string`; `lerUrlsDasLojas(caminho?: string): UrlsDasLojas` (sem caminho, lê `BOTAI_CMS_ITEM` se definida, senão `ITEM_NO_CMS`; lança se o arquivo não existe). A `BOTAI_CMS_ITEM` só existe para o E2E das lojas publicadas (Tarefa 6).
   - `lib/modelo.ts`: `type BotaoDeLoja = { loja: Loja; url: string | null }`; `type ModeloDaLanding = { fase: Fase; lojas: BotaoDeLoja[]; notaDasLojas: string }`; `botoesDasLojas(urls: UrlsDasLojas): BotaoDeLoja[]`; `notaDasLojas(publicadas: readonly Loja[]): string`; `modeloDaLanding(urls: UrlsDasLojas): ModeloDaLanding`.
   - `lib/visitante.ts`: `type NavegadorDoVisitante = { userAgent: string; platform?: string; userAgentData?: { platform?: string } }`; `type AtalhoDoVisitante = { tecla: string; nomeDoSistema: string }`; `sistemaDoVisitante(nav: NavegadorDoVisitante): Sistema`; `ehFirefox(nav: Pick<NavegadorDoVisitante, 'userAgent'>): boolean`; `atalhoDoVisitante(sistema: Sistema, firefox: boolean): AtalhoDoVisitante`; `VISITANTE_DO_SERVIDOR: { sistema: Sistema; firefox: boolean }`.
   - `lib/capturas.ts`: `type Tema = 'escuro' | 'claro'`; `type VarianteDaCaptura = { src: string; alt: string }`; `type CapturaDaGaleria = { numero: string; titulo: string; texto: string; variantes: Record<Tema, VarianteDaCaptura> }`; `LARGURA_DA_CAPTURA = 1280`; `ALTURA_DA_CAPTURA = 800`; `CAPTURAS: CapturaDaGaleria[]`.
@@ -1524,6 +1532,16 @@ describe('lerUrlsDasLojas', () => {
     expect(() => lerUrlsDasLojas(join(pasta, 'nao-existe.yaml'))).toThrow(
       /ENOENT/,
     )
+  })
+
+  // Só o playwright.lojas.config.ts define a variável: builda a landing com um YAML de teste.
+  it('BOTAI_CMS_ITEM troca o arquivo lido por padrão', () => {
+    process.env.BOTAI_CMS_ITEM = yaml(`chromeUrl: '${URL_CHROME}'\n`)
+    try {
+      expect(lerUrlsDasLojas().chromeUrl).toBe(URL_CHROME)
+    } finally {
+      delete process.env.BOTAI_CMS_ITEM
+    }
   })
 })
 ```
@@ -1883,7 +1901,9 @@ function texto(valor: unknown): string {
   return typeof valor === 'string' ? valor.trim() : ''
 }
 
-export function lerUrlsDasLojas(caminho: string = ITEM_NO_CMS): UrlsDasLojas {
+export function lerUrlsDasLojas(
+  caminho: string = process.env.BOTAI_CMS_ITEM || ITEM_NO_CMS,
+): UrlsDasLojas {
   const bruto: unknown = parse(readFileSync(caminho, 'utf8'))
   const item =
     typeof bruto === 'object' && bruto !== null
@@ -2280,6 +2300,19 @@ describe('BotoesLoja', () => {
       'border-input',
     )
   })
+
+  // A 320 px, "Microsoft Edge Add-ons Em breve" numa linha só (278 px) passa da lista (272 px) e
+  // invade o gutter; o scrollWidth da página não acusa. O botão quebra o texto em vez de vazar.
+  it('o botão quebra linha em vez de passar da largura da lista', () => {
+    render(<BotoesLoja lojas={[...LOJAS]} />)
+    for (const botao of [
+      screen.getByRole('button', { name: 'Microsoft Edge Add-ons Em breve' }),
+      screen.getByRole('link', { name: 'Firefox Add-ons' }),
+    ]) {
+      expect(botao).toHaveClass('whitespace-normal', 'max-w-full', 'min-h-10')
+      expect(botao).not.toHaveClass('whitespace-nowrap')
+    }
+  })
 })
 ```
 
@@ -2340,14 +2373,21 @@ describe('AtalhoLocal', () => {
 import { render, screen } from '@testing-library/react'
 import { TabelaAtalhos } from './tabela-atalhos'
 
+const LEGENDA = 'Atalho para preencher a página, por navegador e sistema'
+
 describe('TabelaAtalhos', () => {
   it('tem legenda para leitor de tela', () => {
     render(<TabelaAtalhos />)
-    expect(
-      screen.getByRole('table', {
-        name: 'Atalho para preencher a página, por navegador e sistema',
-      }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: LEGENDA })).toBeInTheDocument()
+  })
+
+  // A 320 px a tabela (~426 px) rola dentro da moldura. Sem foco nela, quem usa teclado não rola,
+  // e o axe acusa scrollable-region-focusable (serious, WCAG 2.1.1).
+  it('a moldura que rola é uma região focável, com o nome da legenda', () => {
+    render(<TabelaAtalhos />)
+    const regiao = screen.getByRole('region', { name: LEGENDA })
+    expect(regiao).toHaveAttribute('tabindex', '0')
+    expect(regiao).toHaveClass('overflow-x-auto', 'focus-visible:ring-2')
   })
 
   it('colunas de navegador, Windows, macOS e Linux', () => {
@@ -2516,6 +2556,8 @@ type BotoesLojaProps = {
   className?: string
 }
 
+const BOTAO = 'h-auto min-h-10 max-w-full gap-2 px-5 py-2 whitespace-normal'
+
 export function BotoesLoja({
   lojas,
   variante = 'default',
@@ -2529,26 +2571,16 @@ export function BotoesLoja({
       {lojas.map(({ loja, url }) => {
         const { rotulo, icone } = LOJA_UI[loja]
         return (
-          <li key={loja}>
+          <li key={loja} className="max-w-full">
             {url ? (
-              <Button
-                asChild
-                variant={variante}
-                size="lg"
-                className="gap-2 px-5"
-              >
+              <Button asChild variant={variante} size="lg" className={BOTAO}>
                 <a href={url} target="_blank" rel="noopener noreferrer">
                   <FontAwesomeIcon icon={icone} className="size-4" />
                   {rotulo}
                 </a>
               </Button>
             ) : (
-              <Button
-                variant={variante}
-                size="lg"
-                className="gap-2 px-5"
-                disabled
-              >
+              <Button variant={variante} size="lg" className={BOTAO} disabled>
                 <FontAwesomeIcon icon={icone} className="size-4" />
                 {rotulo} <span className="font-mono text-xs">Em breve</span>
               </Button>
@@ -2560,6 +2592,8 @@ export function BotoesLoja({
   )
 }
 ```
+
+(O `Button` passa a classe pelo `cn`, que usa o `tailwind-merge`: `h-auto` e `whitespace-normal` substituem o `h-10` do `size="lg"` e o `whitespace-nowrap` da base. Com espaço, nada quebra e o desktop fica igual ao design.)
 
 `apps/botai-site/components/atalho-local.tsx`:
 
@@ -2590,7 +2624,7 @@ export function AtalhoLocal() {
   const { tecla, nomeDoSistema } = atalhoDoVisitante(sistema, firefox)
   return (
     <span className="inline-flex items-center gap-1.5">
-      <kbd className="border-border bg-muted text-foreground rounded-md border px-1.5 py-0.5 font-mono text-xs">
+      <kbd className="border-border bg-muted text-foreground rounded-[6px] border px-1.5 py-0.5 font-mono text-xs">
         {tecla}
       </kbd>{' '}
       preenche a página no {nomeDoSistema}
@@ -2617,11 +2651,18 @@ const SISTEMAS: { sistema: Sistema; nome: string }[] = [
   { sistema: 'linux', nome: 'Linux' },
 ]
 
+const LEGENDA = 'tabela-atalhos-legenda'
+
 export function TabelaAtalhos() {
   return (
-    <div className="bg-card border-border overflow-x-auto rounded-lg border">
+    <div
+      role="region"
+      aria-labelledby={LEGENDA}
+      tabIndex={0}
+      className="bg-card border-border focus-visible:ring-ring overflow-x-auto rounded-lg border outline-none focus-visible:ring-2"
+    >
       <table className="w-full border-collapse text-sm">
-        <caption className="sr-only">
+        <caption id={LEGENDA} className="sr-only">
           Atalho para preencher a página, por navegador e sistema
         </caption>
         <thead>
@@ -2648,7 +2689,7 @@ export function TabelaAtalhos() {
               </th>
               {SISTEMAS.map(({ sistema }) => (
                 <td key={sistema} className="px-4 py-3">
-                  <kbd className="bg-muted rounded-md px-1.5 py-0.5 font-mono text-xs">
+                  <kbd className="bg-muted rounded-[6px] px-1.5 py-0.5 font-mono text-xs">
                     {ATALHOS[loja][sistema]}
                   </kbd>
                 </td>
@@ -2661,6 +2702,8 @@ export function TabelaAtalhos() {
   )
 }
 ```
+
+(`rounded-[6px]` nos dois `kbd`, como o `.dc.html` (`border-radius: 6px`): no `@piluvitu/ui` o `rounded-md` vale `--radius` − 2 px = 16 px e viraria pílula. O anel de foco da moldura só aparece pelo teclado.)
 
 - [ ] **Step 3: Stories**
 
@@ -2811,7 +2854,7 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai-site && /usr/
 - Consumes: `CAPTURAS`, `CapturaDaGaleria`, `Tema`, `VarianteDaCaptura`, `LARGURA_DA_CAPTURA`, `ALTURA_DA_CAPTURA` (`lib/capturas.ts`); `URL_DA_PILUTECH`, `EMAIL_DE_SUPORTE` (`lib/conteudo.ts`); `BotaoTema` (Tarefa 4).
 - Produces:
   - `ImagemPorTema({ variantes, sizes, destaque }: { variantes: Record<Tema, VarianteDaCaptura>; sizes: string; destaque?: boolean })` — duas `next/image` lazy, uma por tema, escondidas pela classe `.dark`; `destaque` põe `fetchPriority="high"` (Next 16: `loading="eager"`/`preload` baixariam as duas, ver "Theme detection" em `node_modules/next/dist/docs/01-app/03-api-reference/02-components/image.md`).
-  - `CapturasAbas({ capturas, rotuladoPor }: { capturas: CapturaDaGaleria[]; rotuladoPor: string })` (client; tabs WAI-ARIA com ativação automática, setas, Home e End, foco itinerante).
+  - `CapturasAbas({ capturas, rotuladoPor }: { capturas: CapturaDaGaleria[]; rotuladoPor: string })` (client; tabs WAI-ARIA com ativação automática, setas, Home e End, foco itinerante; um `tabpanel` por captura, `painel-captura-NN`, todos no HTML do servidor e os inativos com `hidden`).
   - `type LinkDoTopo = { href: string; rotulo: string }`; `Topo({ voltar, ancoras }: { voltar: LinkDoTopo; ancoras?: LinkDoTopo[] })`.
   - `Rodape()`.
 
@@ -2870,6 +2913,7 @@ describe('ImagemPorTema', () => {
 ```tsx
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { renderToString } from 'react-dom/server'
 import { CAPTURAS } from '@/lib/capturas'
 import { CapturasAbas } from './capturas-abas'
 
@@ -2877,6 +2921,27 @@ function renderizar() {
   render(<CapturasAbas capturas={CAPTURAS} rotuladoPor="capturas-heading" />)
   return screen.getAllByRole('tab')
 }
+
+// O Google não interage com a página ("Google Search does not interact with your page", Search Central,
+// "Fix lazy-loaded content"): o texto das cenas 02 e 03 só é indexado se vier no HTML, mesmo escondido.
+it('os três painéis vêm no HTML do servidor, e só o ativo aparece', () => {
+  const raiz = document.createElement('div')
+  raiz.innerHTML = renderToString(
+    <CapturasAbas capturas={CAPTURAS} rotuladoPor="capturas-heading" />,
+  )
+  const paineis = [...raiz.querySelectorAll('[role="tabpanel"]')]
+  expect(paineis.map((p) => p.querySelector('h3')?.textContent)).toEqual(
+    CAPTURAS.map((c) => c.titulo),
+  )
+  paineis.forEach((painel, indice) =>
+    expect(painel.textContent).toContain(CAPTURAS[indice].texto),
+  )
+  expect(paineis.map((p) => p.hasAttribute('hidden'))).toEqual([
+    false,
+    true,
+    true,
+  ])
+})
 
 describe('CapturasAbas', () => {
   it('3 abas; a primeira selecionada e a única no Tab', () => {
@@ -2898,7 +2963,17 @@ describe('CapturasAbas', () => {
     )
   })
 
-  it('o painel é rotulado pela aba ativa e mostra a cena dela', async () => {
+  it('cada aba controla o próprio painel', () => {
+    const abas = renderizar()
+    expect(abas.map((a) => a.getAttribute('aria-controls'))).toEqual([
+      'painel-captura-01',
+      'painel-captura-02',
+      'painel-captura-03',
+    ])
+  })
+
+  // O painel escondido (atributo hidden) sai da árvore de acessibilidade: getByRole só acha o ativo.
+  it('o painel visível é o da aba ativa, rotulado por ela, com a cena dela', async () => {
     const abas = renderizar()
     await userEvent.click(abas[1])
     const painel = screen.getByRole('tabpanel')
@@ -3068,8 +3143,6 @@ type CapturasAbasProps = {
   rotuladoPor: string
 }
 
-const PAINEL = 'painel-captura'
-
 const PROXIMA: Record<string, (atual: number, total: number) => number> = {
   ArrowRight: (atual, total) => (atual + 1) % total,
   ArrowLeft: (atual, total) => (atual - 1 + total) % total,
@@ -3078,11 +3151,12 @@ const PROXIMA: Record<string, (atual: number, total: number) => number> = {
 }
 
 const idDaAba = (captura: CapturaDaGaleria) => `aba-captura-${captura.numero}`
+const idDoPainel = (captura: CapturaDaGaleria) =>
+  `painel-captura-${captura.numero}`
 
 export function CapturasAbas({ capturas, rotuladoPor }: CapturasAbasProps) {
   const [ativa, setAtiva] = useState(0)
   const abas = useRef<(HTMLButtonElement | null)[]>([])
-  const captura = capturas[ativa]
   const total = String(capturas.length).padStart(2, '0')
 
   function aoTeclar(evento: KeyboardEvent<HTMLButtonElement>) {
@@ -3112,7 +3186,7 @@ export function CapturasAbas({ capturas, rotuladoPor }: CapturasAbasProps) {
               role="tab"
               id={idDaAba(item)}
               aria-selected={selecionada}
-              aria-controls={PAINEL}
+              aria-controls={idDoPainel(item)}
               tabIndex={selecionada ? 0 : -1}
               onClick={() => setAtiva(indice)}
               onKeyDown={aoTeclar}
@@ -3128,35 +3202,41 @@ export function CapturasAbas({ capturas, rotuladoPor }: CapturasAbasProps) {
           )
         })}
       </div>
-      <div
-        role="tabpanel"
-        id={PAINEL}
-        aria-labelledby={idDaAba(captura)}
-        tabIndex={0}
-        className="focus-visible:ring-ring flex flex-wrap items-center gap-6 rounded-lg outline-none focus-visible:ring-2"
-      >
-        <div className="bg-card border-border min-w-0 flex-[2_1_480px] overflow-hidden rounded-lg border">
-          <ImagemPorTema
-            variantes={captura.variantes}
-            sizes="(min-width: 1080px) 640px, calc(100vw - 48px)"
-          />
+      {capturas.map((captura, indice) => (
+        <div
+          key={captura.numero}
+          role="tabpanel"
+          id={idDoPainel(captura)}
+          aria-labelledby={idDaAba(captura)}
+          hidden={indice !== ativa}
+          tabIndex={0}
+          className="focus-visible:ring-ring flex flex-wrap items-center gap-6 rounded-lg outline-none focus-visible:ring-2"
+        >
+          <div className="bg-card border-border min-w-0 flex-[2_1_480px] overflow-hidden rounded-lg border">
+            <ImagemPorTema
+              variantes={captura.variantes}
+              sizes="(min-width: 1080px) 640px, calc(100vw - 48px)"
+            />
+          </div>
+          <div className="flex flex-[1_1_240px] flex-col gap-2.5">
+            <p className="text-primary font-mono text-xs">
+              {captura.numero} / {total}
+            </p>
+            <h3 className="text-2xl leading-[1.2] font-bold tracking-[-0.02em] text-balance">
+              {captura.titulo}
+            </h3>
+            <p className="text-muted-foreground text-base leading-[1.55] text-pretty">
+              {captura.texto}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-[1_1_240px] flex-col gap-2.5">
-          <p className="text-primary font-mono text-xs">
-            {captura.numero} / {total}
-          </p>
-          <h3 className="text-2xl leading-tight font-bold tracking-[-0.02em] text-balance">
-            {captura.titulo}
-          </h3>
-          <p className="text-muted-foreground text-base leading-[1.55] text-pretty">
-            {captura.texto}
-          </p>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
 ```
+
+Todos os painéis saem no HTML, e o atributo `hidden` esconde os inativos (o preflight do Tailwind 4 tem `[hidden] { display: none !important }`, então o `flex` não o vence). As imagens dos painéis escondidos são lazy com `display: none` e não são baixadas, então o teste de rede da Tarefa 6 continua valendo. O `h3` usa `leading-[1.2]`, do `.dc.html`, e não `leading-tight` (1,25).
 
 `apps/botai-site/components/topo.tsx`:
 
@@ -3346,10 +3426,12 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai-site && /usr/
 
 `Landing` monta as seções na ordem do design com os componentes das Tarefas 4 e 5; `app/page.tsx` lê o CMS e passa o modelo. Um `h1` só: a proposta, com o nome em texto só para leitor de tela, porque o nome grande do design fica numa linha com o selo e não pode virar parte do título; assim o visual não muda. O layout ganha o `TemaProvider`.
 
+O CMS real tem hoje as 4 URLs vazias, então o `pagina.e2e.ts` só exercita o "Em breve". A spec §8 pede Playwright com "botões de loja com e sem URL": um segundo config do Playwright (`playwright.lojas.config.ts`) builda a landing com um YAML de teste (`BOTAI_CMS_ITEM`, Tarefa 3) e roda `app/lojas-publicadas.e2e.ts` contra esse build. Ele roda **antes** do config principal e na mesma pasta `.next`, de propósito: um `distDir` à parte faria o `next build` acrescentar `<distDir>/types/**/*.ts` ao `include` do `tsconfig.json` (`getTypeDefinitionGlobPatterns(distDir)` em `next/dist/lib/typescript/writeConfigurationDefaults.js`) e pediria entradas novas de `.gitignore`/ESLint/Jest; em sequência, o build do config principal sobrescreve o de teste e o `.next` termina com o CMS real.
+
 **Files:**
 
-- Create (`apps/botai-site/`): `components/landing.tsx`, `components/landing.test.tsx`, `components/landing.stories.tsx`
-- Modify: `app/page.tsx`, `app/layout.tsx`, `app/pagina.e2e.ts`
+- Create (`apps/botai-site/`): `components/landing.tsx`, `components/landing.test.tsx`, `components/landing.stories.tsx`, `playwright.lojas.config.ts`, `app/lojas-publicadas.yaml`, `app/lojas-publicadas.e2e.ts`
+- Modify: `app/page.tsx`, `app/layout.tsx`, `app/pagina.e2e.ts`, `playwright.config.ts` (`testIgnore`), `package.json` (`test:e2e`)
 
 **Interfaces:**
 
@@ -3913,11 +3995,31 @@ test.describe('/', () => {
     await expect(page.getByRole('tabpanel')).toBeFocused()
   })
 
-  test('tema: segue o sistema sem piscar, alterna, lembra a escolha e troca o ícone', async ({
+  // Sem piscar: a classe tem de vir do script inline do next-themes, antes de qualquer JS do React.
+  // Com os bundles bloqueados nada hidrata, e a leitura é uma só (toHaveClass repetiria por 5 s e
+  // aceitaria uma classe posta depois da primeira pintura). O CSS também mora em /_next/static/chunks/
+  // no build do Next 16: só o .js é bloqueado.
+  test('tema: o escuro do sistema já vem do HTML, antes do JS do React', async ({
     page,
   }) => {
+    await page.route(/\/_next\/static\/chunks\/.+\.js(\?.*)?$/, (rota) =>
+      rota.abort(),
+    )
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/', { waitUntil: 'domcontentloaded' })
+    expect(await page.locator('html').getAttribute('class')).toMatch(/\bdark\b/)
+    const topo = page.getByRole('banner')
+    await expect(
+      topo.locator(`img[alt="${CAPTURAS[0].variantes.escuro.alt}"]`),
+    ).toBeVisible()
+    await expect(
+      topo.locator(`img[alt="${CAPTURAS[0].variantes.claro.alt}"]`),
+    ).toBeHidden()
+  })
+
+  test('tema: alterna, lembra a escolha e troca o ícone', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.goto('/')
     await expect(page.locator('html')).toHaveClass(/\bdark\b/)
     const botao = page.getByRole('button', { name: 'Alternar tema' })
     await expect(botao.locator('svg[data-icon="sun"]')).toBeVisible()
@@ -4027,17 +4129,138 @@ test.describe('/', () => {
       }))
       expect(largura.rolavel).toBeLessThanOrEqual(largura.visivel)
     })
+
+    // Um botão que vaza para dentro do gutter não aumenta o scrollWidth: confere cada um contra a lista.
+    test('nenhum botão de loja passa da borda da lista', async ({ page }) => {
+      await page.goto('/')
+      const listas = page.getByRole('list', { name: 'Instalar pela loja' })
+      await expect(listas).toHaveCount(2)
+      const vazados = await listas.evaluateAll((elementos) =>
+        elementos.flatMap((lista) => {
+          const borda = lista.getBoundingClientRect().right
+          return [...lista.querySelectorAll(':scope > li > *')]
+            .filter(
+              (botao) => botao.getBoundingClientRect().right > borda + 0.5,
+            )
+            .map((botao) => botao.textContent ?? '')
+        }),
+      )
+      expect(vazados).toEqual([])
+    })
   })
+})
+```
+
+`apps/botai-site/app/lojas-publicadas.yaml` (só o que o `lerUrlsDasLojas` lê; é o caso do Review Focus 1, com uma loja publicada, um link de outra loja e um `http:`):
+
+```yaml
+# YAML de teste do playwright.lojas.config.ts, no lugar de apps/web/content/pilulabs/botai/index.yaml.
+slug: botai
+chromeUrl: https://microsoftedge.microsoft.com/addons/detail/botai/xyz
+firefoxUrl: https://addons.mozilla.org/pt-BR/firefox/addon/botai/
+edgeUrl: http://microsoftedge.microsoft.com/addons/detail/botai/xyz
+operaUrl: ''
+```
+
+`apps/botai-site/playwright.lojas.config.ts`:
+
+```ts
+import { join } from 'node:path'
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testMatch: ['**/lojas-publicadas.e2e.ts'],
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: 1,
+  reporter: 'list',
+  use: {
+    baseURL: 'http://localhost:3020',
+    trace: 'on-first-retry',
+  },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  webServer: {
+    command: 'pnpm run build && pnpm run start',
+    url: 'http://localhost:3020',
+    reuseExistingServer: false,
+    timeout: 300_000,
+    cwd: '.',
+    env: { BOTAI_CMS_ITEM: join(__dirname, 'app', 'lojas-publicadas.yaml') },
+  },
+})
+```
+
+(`reuseExistingServer: false` sempre: um servidor já de pé na 3020 é o do CMS real, e este config tem de falhar em vez de testá-lo. O Playwright junta o `env` ao `process.env`.)
+
+`apps/botai-site/playwright.config.ts`: em `defineConfig`, depois de `testMatch`, acrescente `testIgnore: ['**/lojas-publicadas.e2e.ts'],`.
+
+`apps/botai-site/package.json`: `"test:e2e": "playwright test"` vira `"test:e2e": "playwright test -c playwright.lojas.config.ts && playwright test"` (o de teste primeiro, para o `.next` terminar com o CMS real).
+
+`apps/botai-site/app/lojas-publicadas.e2e.ts`:
+
+```ts
+import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
+import { lerUrlsDasLojas } from '../lib/cms'
+
+// Roda só pelo playwright.lojas.config.ts, que builda a landing com este YAML no lugar do CMS.
+const URLS = lerUrlsDasLojas(join(__dirname, 'lojas-publicadas.yaml'))
+
+test('a fixture: Firefox publicado, Chrome com link de outra loja, Edge em http', () => {
+  expect(URLS.firefoxUrl).toMatch(/^https:\/\/addons\.mozilla\.org\//)
+  expect(URLS.chromeUrl).toMatch(/^https:\/\/microsoftedge\.microsoft\.com\//)
+  expect(URLS.edgeUrl).toMatch(/^http:\/\//)
+  expect(URLS.operaUrl).toBe('')
+})
+
+test('Firefox publicado: link nos dois blocos, em aba nova', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const links = page.getByRole('link', { name: 'Firefox Add-ons', exact: true })
+  await expect(links).toHaveCount(2)
+  for (const link of await links.all()) {
+    await expect(link).toHaveAttribute('href', URLS.firefoxUrl)
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  }
+})
+
+// Review Focus 1: link de outra loja ou em http não vira botão.
+test('as outras três seguem "Em breve", desabilitadas e sem link', async ({
+  page,
+}) => {
+  await page.goto('/')
+  for (const rotulo of [
+    'Chrome Web Store',
+    'Microsoft Edge Add-ons',
+    'Opera add-ons',
+  ]) {
+    const botoes = page.getByRole('button', { name: `${rotulo} Em breve` })
+    await expect(botoes).toHaveCount(2)
+    for (const botao of await botoes.all()) await expect(botao).toBeDisabled()
+  }
+  await expect(page.locator('a[href*="microsoftedge"]')).toHaveCount(0)
+})
+
+test('o selo diz "Disponível" e a nota cita só o Firefox', async ({ page }) => {
+  await page.goto('/')
+  const topo = page.getByRole('banner')
+  await expect(topo.getByText('Disponível', { exact: true })).toBeVisible()
+  await expect(
+    topo.getByText('Firefox · grátis e de código aberto', { exact: true }),
+  ).toBeVisible()
 })
 ```
 
 Run:
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0 app/pagina.e2e.ts; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0 app/pagina.e2e.ts; echo "pagina exit=$?"
 ```
 
-Expected: todos PASS, `exit=0`. Se o teste do tema falhar porque o sol aparece no claro ou a lua no escuro, o CSS do Font Awesome está fora da camada `base` (Tarefa 4, `globals.css`) ou o `autoAddCss` voltou a injetar CSS no cliente: corrija lá, não no componente.
+Expected: todos PASS, os dois `exit=0`, e nessa ordem (o segundo rebuilda com o CMS real). Se o teste do tema falhar porque o sol aparece no claro ou a lua no escuro, o CSS do Font Awesome está fora da camada `base` (Tarefa 4, `globals.css`) ou o `autoAddCss` voltou a injetar CSS no cliente: corrija lá, não no componente.
 
 - [ ] **Step 4: Conferência visual contra o design**
 
@@ -4420,7 +4643,7 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && ./node_modules/.bin/tsc -
 lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
-Expected: os três `exit=0`; o build do E2E imprime `Rotas estáticas: /, /privacidade`. Se a tabela de permissões fizer a página rolar a 320 px, envolva o `<table>` num `<div className="overflow-x-auto">` (a página não pode rolar; a tabela pode).
+Expected: os três `exit=0`; o build do E2E imprime `Rotas estáticas: /, /privacidade`. Se a tabela de permissões fizer a página rolar a 320 px, envolva o `<table>` numa moldura que rola, como a da `TabelaAtalhos` (Tarefa 4): `<div role="region" aria-labelledby="permissoes" tabIndex={0} className="focus-visible:ring-ring overflow-x-auto rounded-lg outline-none focus-visible:ring-2">`, com `id="permissoes"` no `<h2>Permissões</h2>`, e acrescente ao `page.test.tsx` o teste de que a região "Permissões" tem `tabindex="0"`. A página não pode rolar; a tabela pode, mas só com a moldura focável (sem ela o axe acusa `scrollable-region-focusable` no E2E de 320 px da Tarefa 8).
 
 - [ ] **Step 4: Commit**
 
@@ -4446,7 +4669,7 @@ Pesquisa feita em 2026-10-02 nas fontes oficiais (Google Search Central e a doc 
 **Files:**
 
 - Create (`apps/botai-site/`): `lib/site.ts`, `lib/site.test.ts`, `lib/seo.ts`, `lib/seo.test.ts`, `lib/json-ld.ts`, `lib/json-ld.test.ts`, `lib/imagem-og.tsx`, `components/json-ld.tsx`, `components/json-ld.test.tsx`, `app/opengraph-image.tsx`, `app/twitter-image.tsx`, `app/privacidade/opengraph-image.tsx`, `app/privacidade/twitter-image.tsx`, `app/sitemap.ts`, `app/sitemap.test.ts`, `app/robots.ts`, `app/robots.test.ts`, `app/manifest.ts`, `app/manifest.test.ts`, `app/icon.png`, `app/apple-icon.png`, `app/seo.e2e.ts`, `.env.example`
-- Modify: `app/layout.tsx`, `app/page.tsx`, `app/privacidade/page.tsx`, `scripts/conferir-rotas-estaticas.mjs`
+- Modify: `app/layout.tsx`, `app/page.tsx`, `app/privacidade/page.tsx`, `scripts/conferir-rotas-estaticas.mjs`, `app/lojas-publicadas.e2e.ts`
 
 **Interfaces:**
 
@@ -4601,9 +4824,11 @@ describe('metadataDaPagina', () => {
 })
 
 describe('metadataDoSite', () => {
+  // O tipo é `null | string | URL | undefined`: `.href` não compila no tsc (o ts-jest só transpila e
+  // não acusaria), e `toEqual(new URL(…))` passaria sempre (URL não tem propriedade própria enumerável).
   it('metadataBase no site e a PiluTech como autora', () => {
     const metadata = metadataDoSite(SITE, {})
-    expect(metadata.metadataBase?.href).toBe(`${SITE}/`)
+    expect(metadata.metadataBase?.toString()).toBe(`${SITE}/`)
     expect(metadata).toMatchObject({
       applicationName: 'Botaí',
       creator: 'PiluTech',
@@ -5531,37 +5756,41 @@ for (const rota of ROTAS) {
       for (const alt of alts) expect(alt.length).toBeGreaterThan(40)
     })
 
-    for (const tema of ['light', 'dark'] as const) {
-      test(`acessibilidade (axe, WCAG 2.1 A e AA), tema ${tema}`, async ({
-        page,
-      }) => {
-        await page.emulateMedia({ colorScheme: tema })
-        await page.goto(rota.caminho)
-        await page.addScriptTag({
-          path: require.resolve('axe-core/axe.min.js'),
-        })
-        const violacoes = await page.evaluate(async () => {
-          const { axe } = window as unknown as {
-            axe: {
-              run: (alvo: Document, opcoes: RunOptions) => Promise<AxeResults>
-            }
-          }
-          const { violations } = await axe.run(document, {
-            runOnly: {
-              type: 'tag',
-              values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
-            },
+    // A meta da spec é o Lighthouse mobile: a 320 px a tabela de atalhos rola dentro da moldura, e só
+    // ali o axe vê o scrollable-region-focusable.
+    for (const tema of ['light', 'dark'] as const)
+      for (const largura of [1280, 320]) {
+        test(`acessibilidade (axe, WCAG 2.1 A e AA), tema ${tema}, ${largura} px`, async ({
+          page,
+        }) => {
+          await page.setViewportSize({ width: largura, height: 800 })
+          await page.emulateMedia({ colorScheme: tema })
+          await page.goto(rota.caminho)
+          await page.addScriptTag({
+            path: require.resolve('axe-core/axe.min.js'),
           })
-          return violations
-            .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-            .map(
-              (v) =>
-                `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
-            )
+          const violacoes = await page.evaluate(async () => {
+            const { axe } = window as unknown as {
+              axe: {
+                run: (alvo: Document, opcoes: RunOptions) => Promise<AxeResults>
+              }
+            }
+            const { violations } = await axe.run(document, {
+              runOnly: {
+                type: 'tag',
+                values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
+              },
+            })
+            return violations
+              .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+              .map(
+                (v) =>
+                  `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
+              )
+          })
+          expect(violacoes).toEqual([])
         })
-        expect(violacoes).toEqual([])
-      })
-    }
+      }
   })
 }
 
@@ -5623,14 +5852,32 @@ test('ícones, manifest e theme-color claro e escuro', async ({ page }) => {
 })
 ```
 
+`apps/botai-site/app/lojas-publicadas.e2e.ts`: acrescente, no fim, o JSON-LD do build com a loja publicada (o `seo.e2e.ts` lê o CMS real, onde hoje não há loja, e não chega ao `installUrl`):
+
+```ts
+test('JSON-LD: installUrl só com o Firefox', async ({ page }) => {
+  await page.goto('/')
+  const texto = await page
+    .locator('script[type="application/ld+json"]')
+    .first()
+    .textContent()
+  const grafo = (
+    JSON.parse(texto as string) as { '@graph': Record<string, unknown>[] }
+  )['@graph']
+  const aplicacao = grafo.find((no) => no['@type'] === 'SoftwareApplication')
+  expect(aplicacao?.installUrl).toEqual([URLS.firefoxUrl])
+})
+```
+
 Run:
 
 ```bash
 cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai-site && ./node_modules/.bin/tsc --noEmit; echo "tsc exit=$?"
-lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
+lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test -c playwright.lojas.config.ts --retries=0; echo "lojas exit=$?"
+CI=1 ./node_modules/.bin/playwright test --retries=0; echo "e2e exit=$?"
 ```
 
-Expected: `exit=0` nos dois, todos os E2E (página, política e SEO) verdes. Se o axe acusar `color-contrast`, ajuste a cor no componente com o token certo (nunca baixe o nível do teste); confira também se o alvo é o "Em breve" desabilitado (o axe ignora controle desabilitado; se não ignorou, o botão perdeu o `disabled`).
+Expected: `exit=0` nos três, todos os E2E (lojas publicadas, página, política e SEO, com o axe a 1280 e a 320 px) verdes. Se o axe acusar `color-contrast`, ajuste a cor no componente com o token certo (nunca baixe o nível do teste); confira também se o alvo é o "Em breve" desabilitado (o axe ignora controle desabilitado; se não ignorou, o botão perdeu o `disabled`). Se ele acusar `scrollable-region-focusable` a 320 px, uma moldura com `overflow-x-auto` perdeu o `tabIndex={0}`/`role="region"` (a `TabelaAtalhos` da Tarefa 4, ou a tabela da política, Tarefa 7).
 
 - [ ] **Step 5: Commit**
 
@@ -5647,7 +5894,8 @@ Saem a página, a política e as imagens OG do Botaí; os dois caminhos responde
 **Files:**
 
 - Modify (`apps/web/`): `next.config.mjs`, `content/pilulabs/botai/index.yaml`, `lib/pilulabs.ts`, `lib/pilulabs.test.ts`, `lib/pilulabs-json-ld.ts`, `lib/pilulabs-json-ld.test.ts`, `lib/pilulabs-conteudo.test.ts`, `app/(site)/pilulabs/pilulabs.e2e.ts`, `app/(site)/pilulabs/subdominios.e2e.ts`, `app/(site)/pilulabs/chave-ligada.e2e.ts`, `CLAUDE.md`
-- Delete: `app/(site)/pilulabs/botai/` (6 arquivos), `components/pilulabs/{atalhos-tabela,botoes-loja,capturas-galeria}.{tsx,test.tsx,stories.tsx}`, `public/pilulabs/botai/capturas/` (6 PNG)
+- Delete: `app/(site)/pilulabs/botai/` (6 arquivos), `components/pilulabs/{atalhos-tabela,botoes-loja,capturas-galeria}.{tsx,test.tsx,stories.tsx}`
+- **Fica para a Tarefa 10:** `public/pilulabs/botai/capturas/` (6 PNG). O `apps/botai/loja/imagens.test.ts` confere essas cópias (`COPIAS_PARA_O_SITE`) até a Tarefa 10 trocar a lista; apagá-las aqui deixaria vermelhos o Vitest do Botaí, o `make test` e o job `botai` do CI neste commit. Sem importador desde esta tarefa, elas ficam um commit como arquivos órfãos.
 
 **Interfaces:**
 
@@ -5727,7 +5975,7 @@ Expected: os dois testes de 308 FAIL (`Expected: 308, Received: 200`) e o do car
 Apague o que só o Botaí usava:
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/git rm -rq "app/(site)/pilulabs/botai" public/pilulabs/botai/capturas \
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/git rm -rq "app/(site)/pilulabs/botai" \
   components/pilulabs/atalhos-tabela.tsx components/pilulabs/atalhos-tabela.test.tsx components/pilulabs/atalhos-tabela.stories.tsx \
   components/pilulabs/botoes-loja.tsx components/pilulabs/botoes-loja.test.tsx components/pilulabs/botoes-loja.stories.tsx \
   components/pilulabs/capturas-galeria.tsx components/pilulabs/capturas-galeria.test.tsx components/pilulabs/capturas-galeria.stories.tsx; echo "exit=$?"
@@ -5762,7 +6010,8 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/git rm -rq "app/(site)/
 `apps/web/app/(site)/pilulabs/subdominios.e2e.ts`:
 
 - apague `function itemBotai()`, `const botai = itemBotai()`, o import de `lerItensDoConteudo` e o de `join`, e os testes `'botai.pilutech.localhost/ é a página do Botaí'` e `'botai.pilutech.localhost/privacidade é a política'`;
-- no teste `'a página do subdomínio carrega os chunks do /_next sem erro'`, troque o host por `pilutech.localhost` e o heading esperado por `page.getByRole('heading', { level: 1, name: 'PiluLabs' })`; título do teste: `'a vitrine no host PiluTech carrega os chunks do /_next sem erro'`.
+- no teste `'a página do subdomínio carrega os chunks do /_next sem erro'`, troque o host por `pilutech.localhost` e o heading esperado por `page.getByRole('heading', { level: 1, name: 'PiluLabs' })`; título do teste: `'a vitrine no host PiluTech carrega os chunks do /_next sem erro'`;
+- no teste `'os arquivos saem no subdomínio sem reescrita'`, o host `botai.pilutech.localhost` (que o `apps/web` deixa de servir) vira `pilutech.localhost`, e o pedido ganha `{ maxRedirects: 0 }`: no apex, o que não é exceção responde 308 para `piluvitu.com.br`, e seguir o redirect daria 200 pela internet sem provar nada. Título: `'os arquivos saem no host PiluTech sem reescrita nem 308'`; o comentário acima dele passa a falar de "todo host PiluTech". O `status` 200 e o `content-type` `image/x-icon` ficam.
 
 `apps/web/app/(site)/pilulabs/chave-ligada.e2e.ts`:
 
@@ -5772,7 +6021,7 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/git rm -rq "app/(site)/
 Confira que nada mais usa o que saiu:
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/grep -rn --exclude-dir=node_modules --exclude-dir=.next -E "listarCapturas|altDaCaptura|ROTULOS_CAPTURA|metadataDoItem|jsonLdDoItem|jsonLdBreadcrumb|DetalhesSoftware|AtalhosTabela|BotoesLoja|CapturasGaleria|pilulabs/botai/capturas" . ; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && /usr/bin/grep -rn --exclude-dir=node_modules --exclude-dir=.next --exclude='*.tsbuildinfo' -E "listarCapturas|altDaCaptura|ROTULOS_CAPTURA|metadataDoItem|jsonLdDoItem|jsonLdBreadcrumb|DetalhesSoftware|AtalhosTabela|BotoesLoja|CapturasGaleria|pilulabs/botai/capturas" . ; echo "exit=$?"
 ```
 
 Expected: só ocorrências em `CLAUDE.md` (o Step 4 as trata) e as strings genéricas de exemplo de `lib/pilutech-dominios.test.ts`/`proxy.test.ts`; nenhuma em código.
@@ -5786,9 +6035,10 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/web && ./node_modules/.bin/tsc --noEmit
 KEYSTATIC_GITHUB_CLIENT_ID=ci-dummy KEYSTATIC_GITHUB_CLIENT_SECRET=ci-dummy KEYSTATIC_SECRET=ci-dummy-secret-32-chars-padding-x NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG=ci-dummy pnpm run build:ci; echo "build exit=$?"
 node -e 'const { routes } = require("./.next/prerender-manifest.json"); const ks = Object.keys(routes); for (const r of ["/pilulabs", ...["opengraph-image", "twitter-image"].map((t) => ks.find((k) => new RegExp(`^/pilulabs/${t}(-[a-z0-9]+)?$`).test(k)) || `/pilulabs/${t}`)]) console.log(r, routes[r] ? routes[r].initialRevalidateSeconds : "NÃO ESTÁTICA")'
 lsof -nP -iTCP:3333 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/' '\(site\)/home'; echo "e2e exit=$?"
+cd ../botai && ./node_modules/.bin/vitest run loja/; echo "botai vitest exit=$?"
 ```
 
-Expected: os cinco `exit=0`; as três linhas do `node -e` terminam em `false`; o `chave-ligada` sai como skipped. Rode à parte o E2E com a chave ligada: `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada; echo "exit=$?"` → `exit=0`. Depois de cada E2E, confira `/usr/bin/git status` (o `next dev` reescreve o `apps/web/CLAUDE.md`).
+Expected: os seis `exit=0` (o último prova que as capturas do `apps/web`, ainda conferidas pelo `apps/botai`, continuam lá); as três linhas do `node -e` terminam em `false`; o `chave-ligada` sai como skipped. Rode à parte o E2E com a chave ligada: `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada; echo "exit=$?"` → `exit=0`. Depois de cada E2E, confira `/usr/bin/git status` (o `next dev` reescreve o `apps/web/CLAUDE.md`).
 
 - [ ] **Step 4: `apps/web/CLAUDE.md` (seção PiluLabs)**
 
@@ -5798,11 +6048,11 @@ Edite assim:
 2. **⚠️ "Um YAML que o reader do Keystatic recusa derruba o build":** troque "home, `/pilulabs`, a página e a OG do Botaí, `/api/admin/stats` e o `next build`" por "home, `/pilulabs`, `/api/admin/stats` e o `next build`. O `apps/botai-site` lê o mesmo `content/pilulabs/botai/index.yaml` no build dele (só as 4 URLs de loja, pelo `yaml`, sem o reader)".
 3. **"Regras":** no sub-bullet de `lib/pilulabs.ts`, troque "`listarCapturas` e `metadataDaPagina`/`metadataDoItem`." por "`metadataDaPagina`.".
 4. **"Subdomínios" › "Local":** troque "`http://pilutech.localhost:3333` e `http://botai.pilutech.localhost:3333/privacidade`." por "`http://pilutech.localhost:3333`."
-5. **"Passos do dono para ligar os subdomínios":** no passo 1, tire `botai.pilutech.com.br` da lista e acrescente "(o `botai.pilutech.com.br` vai no projeto do `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`)"; no passo 2, `CNAME botai` passa a ser "com o valor do projeto do `apps/botai-site`".
+5. **"Passos do dono para ligar os subdomínios":** no passo 1, tire `botai.pilutech.com.br` da lista e acrescente "(o `botai.pilutech.com.br` vai no projeto do `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`)"; no passo 2, `CNAME botai` passa a ser "com o valor do projeto do `apps/botai-site`"; no passo 4, "Com `curl -sI https://botai.pilutech.com.br` respondendo 200" vira "Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, que a reescrita do apex serve com a chave desligada)", porque o `botai` deixa de ser servido por este projeto.
 6. **"Novo item":** acrescente, depois do bloco "produto com página própria": "- **produto com landing própria** (o Botaí, no `apps/botai-site`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing."
 7. **"Lançar o Botaí":** "as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui e a landing (que relê o YAML no build, ver o `ignoreCommand` em `apps/botai-site/vercel.json`) mudam juntos. Edge e Opera entram quando aprovarem."
 8. **⚠️ rotas estáticas:** o "Por quê" fica só com o `lib/og-pilulabs-image.tsx` (que lê o ícone de `public/`); o comando `node -e` passa a ser o do Step 3 (só `/pilulabs`), e "As nove linhas" vira "As três linhas".
-9. **"Ícones e capturas":** o primeiro item vira "`public/pilulabs/botai/icone-128.png` (o logo do card) é gerado por `make capturas-botai`, no `apps/botai`, e versionado. Não edite à mão; as capturas do Botaí moram no `apps/botai-site/public/capturas/`."; apague os itens "a página as descobre no build…", "o `alt` sai do nome do arquivo…" e o parágrafo "PNG novo na `main`…".
+9. **"Ícones e capturas":** o primeiro item vira "`public/pilulabs/botai/icone-128.png` (o logo do card) é gerado por `make capturas-botai`, no `apps/botai`, e versionado. Não edite à mão; as capturas do Botaí moram no `apps/botai-site/public/capturas/`."; apague os itens "a página as descobre no build…", "o `alt` sai do nome do arquivo…" e o parágrafo "PNG novo na `main`…". (O texto já descreve o fim da Tarefa 10, que apaga as cópias antigas daqui.)
 10. **⚠️ SEO:** "cada uma das 3 rotas tem `opengraph-image.tsx` e `twitter-image.tsx` (…). Isso vale inclusive para a política, que é filha da página do produto." vira "a vitrine tem `opengraph-image.tsx` e `twitter-image.tsx` (o módulo é `lib/og-pilulabs-image.tsx`); uma página nova com `openGraph` próprio precisa dos dela."
 11. **"JSON-LD":** ficam só "`CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`", "as URLs passam por `urlPublica`" e o item do `serializarJsonLd`.
 12. **"Componentes":** tire `BotoesLoja`, `CapturasGaleria` e `AtalhosTabela` da lista.
@@ -5821,12 +6071,13 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add -A apps/web && /usr/bin/
 
 ### Tarefa 10: `apps/botai` alimenta a landing (capturas, ícones, atalho do manifesto e docs)
 
-O `make capturas-botai` passa a copiar, além do ícone do card do `apps/web`, o ícone, os ícones do app e as 6 capturas para o `apps/botai-site`; o `loja/imagens.test.ts` confere as cópias. O `wxt.config.ts` tenta importar `TECLAS_DO_MANIFESTO` do pacote (spec §3: "Se o `wxt.config.ts` do Botaí puder importar `ATALHOS` sem quebrar a reprodução do zip de fontes da AMO, ele importa. Senão, segue o espelho documentado de hoje.").
+O `make capturas-botai` passa a copiar, além do ícone do card do `apps/web`, o ícone, os ícones do app e as 6 capturas para o `apps/botai-site`; o `loja/imagens.test.ts` confere as cópias. Só depois disso as capturas antigas do `apps/web` saem (a Tarefa 9 as deixou porque o teste ainda as conferia). O `wxt.config.ts` tenta importar `TECLAS_DO_MANIFESTO` do pacote (spec §3: "Se o `wxt.config.ts` do Botaí puder importar `ATALHOS` sem quebrar a reprodução do zip de fontes da AMO, ele importa. Senão, segue o espelho documentado de hoje.").
 
 **Files:**
 
 - Modify (`apps/botai/`): `loja/pecas.ts`, `loja/pecas.test.ts`, `loja/imagens.test.ts`, `loja/capturas.captura.ts`, `wxt.config.ts`, `loja/README.md`, `README.md`, `CLAUDE.md`
-- Modify: `CLAUDE.md` (raiz, seção "Imagens do Botaí no `apps/web`")
+- Modify: `CLAUDE.md` (raiz: seção "Imagens do Botaí no `apps/web`" e a linha do `make capturas-botai` na tabela Commands), `Makefile` (comentário do alvo `capturas-botai`)
+- Delete: `apps/web/public/pilulabs/botai/capturas/` (6 PNG)
 
 **Interfaces:**
 
@@ -5931,7 +6182,20 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev/apps/botai && ./node_modules/.bin/vitest run
 
 Expected: `exit=0` nos dois (as cópias das Tarefas 3 e 8 vieram dos mesmos arquivos, então são idênticas). Não rode o `make capturas-botai` agora: nenhuma cena mudou.
 
-- [ ] **Step 3: O `wxt.config.ts` importa as teclas do pacote (com prova de que nada muda)**
+- [ ] **Step 3: As capturas antigas saem do `apps/web`**
+
+Agora nenhum teste confere `apps/web/public/pilulabs/botai/capturas/`, e nenhum código do `apps/web` as lê desde a Tarefa 9:
+
+```bash
+cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git rm -rq apps/web/public/pilulabs/botai/capturas; echo "rm exit=$?"
+/bin/ls apps/web/public/pilulabs/botai; echo "ls exit=$?"
+(cd apps/botai && ./node_modules/.bin/vitest run loja/); echo "botai vitest exit=$?"
+(cd apps/web && ./node_modules/.bin/jest lib/pilulabs); echo "web jest exit=$?"
+```
+
+Expected: o `ls` mostra só `icone-128.png`; os quatro `exit=0`.
+
+- [ ] **Step 4: O `wxt.config.ts` importa as teclas do pacote (com prova de que nada muda)**
 
 Guarde os manifestos de hoje:
 
@@ -5966,9 +6230,9 @@ V=$(node -p "require('./apps/botai/package.json').version") && docker run --rm -
 
 Expected: `IDENTICO: botai-<versão>-firefox.zip` e `reproducao exit=0`.
 
-**Se** o `wxt build` não carregar o config (erro ao resolver `@piluvitu/tools/pilulabs`) **ou** a reprodução falhar: desfaça só o `wxt.config.ts` (`/usr/bin/git checkout apps/botai/wxt.config.ts`), troque os dois comentários das constantes por um só, de uma linha, acima de `ATALHO_CHROMIUM`: `// Espelha TECLAS_DO_MANIFESTO de @piluvitu/tools/pilulabs (o config não carrega o pacote: <o erro medido>); mude os dois juntos.`, e registre o erro medido no item "Atalho por sistema" do `apps/botai/CLAUDE.md` (Step 4).
+**Se** o `wxt build` não carregar o config (erro ao resolver `@piluvitu/tools/pilulabs`) **ou** a reprodução falhar: desfaça só o `wxt.config.ts` (`/usr/bin/git checkout apps/botai/wxt.config.ts`), troque os dois comentários das constantes por um só, de uma linha, acima de `ATALHO_CHROMIUM`: `// Espelha TECLAS_DO_MANIFESTO de @piluvitu/tools/pilulabs (o config não carrega o pacote: <o erro medido>); mude os dois juntos.`, e registre o erro medido no item "Atalho por sistema" do `apps/botai/CLAUDE.md` (Step 5).
 
-- [ ] **Step 4: Docs do Botaí e da raiz**
+- [ ] **Step 5: Docs do Botaí e da raiz**
 
 `apps/botai/CLAUDE.md`:
 
@@ -5980,10 +6244,14 @@ Expected: `IDENTICO: botai-<versão>-firefox.zip` e `reproducao exit=0`.
 `apps/botai/README.md`, "Publicação (para quem mantém)":
 
 - passo 1: "**Domínios na Vercel:** `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex) no projeto do `apps/web`; `botai.pilutech.com.br` no projeto `botai-site` (Root Directory `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`). Antes, confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` em Production (passo 0 da seção PiluLabs do `apps/web/CLAUDE.md`)."
-- passo 2: "…(`A @`, `CNAME www`, e o `CNAME botai` com o valor do projeto `botai-site`)…" (o resto do passo fica);
+- passo 2: "…(`A @`, `CNAME www`, e o `CNAME botai` com o valor do projeto `botai-site`)…"; e a frase "Com `curl -sI https://botai.pilutech.com.br` e `curl -sI https://botai.pilutech.com.br/privacidade` respondendo 200, ligue `PILUTECH_SUBDOMINIOS=1`…" vira "Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, servida pelo `apps/web`), ligue `PILUTECH_SUBDOMINIOS=1`…" (o `botai` agora é do projeto `botai-site`, conferido no "Deploy" do `apps/botai-site/CLAUDE.md`). O resto do passo fica;
 - passo 9, item do `/admin/pilulabs`: acrescente "; a landing relê o YAML no build e troca o "Em breve" pelos botões das lojas".
 
 `apps/botai/loja/README.md`, linha 7: "`imagens/`: gerado por `make capturas-botai`; não edite à mão. O ícone vai também para `apps/web/public/pilulabs/botai/` (o card) e, com o ícone de 300 px e as capturas de 1280×800, para `apps/botai-site/` (a landing)."
+
+`Makefile`: o comentário acima de `capturas-botai`, "# Imagens das lojas em apps/botai/loja/imagens/ e cópias em apps/web/public/pilulabs/botai/.", vira "# Imagens das lojas em apps/botai/loja/imagens/ e cópias para o apps/web (ícone do card) e o apps/botai-site (landing).".
+
+`CLAUDE.md` (raiz), tabela "Commands", linha do `make capturas-botai`: "Imagens das lojas do Botaí + cópias em `apps/web/public/pilulabs/botai/` (rode no Mac)" vira "Imagens das lojas do Botaí + cópias para o `apps/web` e o `apps/botai-site` (rode no Mac)".
 
 `CLAUDE.md` (raiz): a seção "### Imagens do Botaí no `apps/web`" vira:
 
@@ -5993,13 +6261,13 @@ Expected: `IDENTICO: botai-<versão>-firefox.zip` e `reproducao exit=0`.
 `apps/web/public/pilulabs/botai/icone-128.png` (o logo do card da PiluLabs) e, no `apps/botai-site`, `public/icone-128.png`, `app/icon.png`, `app/apple-icon.png` e `public/capturas/<NN>-<cena>-<tema>.png` são gerados por `make capturas-botai`, no `apps/botai` (o mesmo gerador das imagens das lojas, `apps/botai/loja/`, lista `COPIAS` de `loja/pecas.ts`), e versionados. Os sites só os leem. Não edite esses PNG à mão; o `apps/botai/loja/imagens.test.ts` falha se alguma cópia divergir da da loja.
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai CLAUDE.md && /usr/bin/git status --short && /usr/bin/git commit -m "feat(botai): capturas e ícones copiados para a landing, e o atalho do manifesto vindo de @piluvitu/tools/pilulabs"; echo "exit=$?"
+cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add apps/botai CLAUDE.md Makefile && /usr/bin/git status --short && /usr/bin/git commit -m "feat(botai): capturas e ícones copiados para a landing, e o atalho do manifesto vindo de @piluvitu/tools/pilulabs"; echo "exit=$?"
 ```
 
-(Na mensagem, se ficou o espelho, troque o fim por "e o atalho do manifesto espelhado de @piluvitu/tools/pilulabs".)
+(O `git rm` do Step 3 já está no índice: o `status` mostra os 6 `D` das capturas do `apps/web`. Na mensagem, se ficou o espelho, troque o fim por "e o atalho do manifesto espelhado de @piluvitu/tools/pilulabs".)
 
 ---
 
@@ -6041,12 +6309,13 @@ scripts/              conferir-rotas-estaticas.mjs (roda no build)
 
 - **Lojas e fase saem do CMS do `apps/web`:** `lib/cms.ts` lê `apps/web/content/pilulabs/botai/index.yaml` no build (o dono edita em `/admin/pilulabs`), só as 4 URLs, pelo `yaml`. Arquivo ausente quebra o build de propósito: em silêncio, a landing sairia "Em breve" com a loja já publicada.
 - **Regras compartilhadas:** `@piluvitu/tools/pilulabs` (`lojasPublicadas`, `fase`, `ATALHOS`); o card da PiluLabs no `apps/web` decide igual.
-- **Botões de loja:** loja publicada → link em aba nova; sem URL → `<button disabled>` "Em breve", sem link. URL de outro host ou sem `https:` conta como sem URL.
+- **Botões de loja:** loja publicada → link em aba nova; sem URL → `<button disabled>` "Em breve", sem link. URL de outro host ou sem `https:` conta como sem URL. O botão quebra o texto (`whitespace-normal`, `max-w-full`) em vez de vazar da lista: a 320 px, "Microsoft Edge Add-ons Em breve" numa linha passa da largura, e o `scrollWidth` da página não acusa porque o vazamento fica no gutter.
 - **Nota das lojas:** cita só as publicadas; antes de todas, "Chegando às lojas…". Nenhum texto diz "disponível" antes das lojas.
 - **Tema:** `next-themes` (`attribute="class"`, `defaultTheme="system"`), o botão lembra a escolha no `localStorage`; o script do `next-themes` põe `.dark` antes da hidratação, e ícones e capturas trocam por CSS (`dark:`), sem piscar.
 - **Capturas por tema:** `ImagemPorTema` põe as duas variantes, lazy, e esconde uma pela classe `.dark`; imagem lazy com `display: none` não é baixada. A do topo (LCP) leva `fetchPriority="high"`, nunca `loading="eager"`/`preload`, que baixariam as duas (ver "Theme detection" na doc do `next/image`).
 - **Atalho de quem visita:** `useSyncExternalStore` com o atalho do Windows no servidor; depois da hidratação, `⌥⇧P` no Mac, `Alt+Shift+P` no Firefox para Linux e `Ctrl+Shift+Y` no resto (Android e ChromeOS inclusos).
-- **Abas das capturas:** tabs WAI-ARIA com ativação automática, setas (dando a volta), Home e End, foco itinerante; o painel é focável.
+- **Abas das capturas:** tabs WAI-ARIA com ativação automática, setas (dando a volta), Home e End, foco itinerante; o painel é focável. Os 3 painéis saem no HTML e os inativos levam `hidden`: o Google não interage com a página (Search Central, "Fix lazy-loaded content"), e o texto das cenas 02 e 03 só é indexado se estiver no DOM. As imagens dos painéis escondidos são lazy com `display: none` e não são baixadas.
+- **Tabela de atalhos:** a 320 px ela rola dentro da moldura, que é uma região focável (`role="region"`, `tabIndex={0}`, nome da legenda): sem isso, quem usa teclado não rola, e o axe acusa `scrollable-region-focusable`.
 - **Um `h1` só:** a proposta, com "Botaí: " só para leitor de tela; o nome grande do design é um `<p>` na linha do selo.
 - ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)` no `globals.css`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo `TemaProvider`): o CSS injetado em runtime fica fora de camada e vence as utilities, e o `hidden`/`size-*` dos ícones param de funcionar sem erro nenhum. O E2E do tema pega.
 
@@ -6084,28 +6353,31 @@ A política do Botaí, fonte única do texto (o texto da AMO se copia daqui). A 
 | Rotas, SEO, teclado, tema, rede, 320 px | Playwright no build de produção (porta 3020) | `app/**/*.e2e.ts`; `make test-e2e-botai-site` |
 
 - O E2E builda e sobe `next start`; rode com `CI=1` e a 3020 livre. Ele não roda no CI (como o do `apps/web`).
+- **Duas passadas no `test:e2e`:** primeiro o `playwright.lojas.config.ts`, que builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` (Firefox publicado, Chrome com link de outra loja, Edge em `http:`) e roda `app/lojas-publicadas.e2e.ts`; depois o `playwright.config.ts`, que builda com o CMS real e roda o resto. O CMS real tem hoje as 4 lojas vazias, e só a primeira passada exercita o caminho "loja com URL" no build de produção. A ordem deixa o `.next` com o CMS real; um `distDir` à parte faria o `next build` mexer no `include` do `tsconfig.json`.
+- O axe roda a 1280 e a 320 px, nos dois temas, nas duas rotas: a meta da spec é o Lighthouse mobile.
 - ⚠️ O `next dev` (e o servidor do E2E, que roda `next build`/`next start`) pode anexar a este arquivo um bloco de regras para agentes ou criar um `AGENTS.md`: confira `git status` antes de commitar.
 
 ## Deploy (Vercel, projeto próprio)
 
 1. Projeto `botai-site` ligado ao repo, **Root Directory `apps/botai-site`**, framework Next.js, install e build padrão (`pnpm install` na raiz, `pnpm build`), Node 22.x. "Include files outside the root directory in the Build Step" ligado (o build lê `packages/*` e o YAML do `apps/web`).
 2. ⚠️ **"Skip deployments" (Root Directory) desligado:** a Vercel pula projeto de monorepo cujo código e dependências não mudaram, e o YAML do CMS mora no `apps/web`, que não é dependência deste pacote: publicar uma loja pelo `/admin/pilulabs` não rebuildaria a landing. Quem filtra é o `ignoreCommand` do `vercel.json` (roda na Root Directory; `exit 0` cancela), que vigia o app, `packages/ui`, `packages/tools`, a entrada do Botaí no CMS e os arquivos de install e build.
-3. Domínio `botai.pilutech.com.br` no projeto; na Cloudflare, o `CNAME botai` com o valor que a Vercel mostrar, em **DNS only** (passo do dono).
-4. Env: nenhuma obrigatória. `GOOGLE_SITE_VERIFICATION` em Production quando o dono cadastrar o domínio no Search Console. Não ponha `SITE_URL` em Production.
-5. Depois do primeiro deploy: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://botai.pilutech.com.br` responde 200 e sem `noindex`.
-6. O PR só entra com o domínio respondendo pelo projeto novo: os 308 do `apps/web` apontam para ele.
+3. Domínio `botai.pilutech.com.br`: um domínio só fica num projeto, então, se ele estiver no projeto do `apps/web` (o README antigo do Botaí mandava pôr lá), tire-o de lá primeiro (`vercel domains inspect botai.pilutech.com.br` diz onde está). Depois, adicione-o ao `botai-site`; na Cloudflare, o `CNAME botai` com o valor que a Vercel mostrar, em **DNS only** (passo do dono).
+4. Env: nenhuma obrigatória. `GOOGLE_SITE_VERIFICATION` em Production quando o dono cadastrar o domínio no Search Console. Não ponha `SITE_URL` nem `BOTAI_CMS_ITEM` em ambiente nenhum.
+5. **Primeira produção, antes do merge:** a produção do projeto sai da `main`, e a `main` só tem o `apps/botai-site` depois do merge; sem isto, o domínio fica sem deploy de produção para servir. Depois do push do branch, ache o preview dele (`vercel ls botai-site`). Se ele saiu `CANCELED` (o `ignoreCommand` compara `HEAD^` com `HEAD`, e o último commit do branch pode não tocar nada vigiado) ou não existe, gere um com `vercel deploy` na raiz do checkout do branch. Promova: `vercel promote <url-do-preview> --yes` (a Vercel rebuilda o preview com o ambiente de produção; ver "Promote a deployment from preview to production" na doc dela).
+6. Confira: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://botai.pilutech.com.br` e `curl -sI https://botai.pilutech.com.br/privacidade` respondem 200, sem `x-robots-tag: noindex`; o `<link rel="canonical">` de `https://botai.pilutech.com.br` aponta para ele mesmo; `https://botai.pilutech.com.br/sitemap.xml` lista as duas rotas.
+7. **Merge, só com os dois hosts no ar:** `botai.pilutech.com.br` (passo 6), porque os 308 do `apps/web` apontam para ele, e `https://pilutech.com.br` respondendo 200 (domínio no projeto do `apps/web`, "Passos do dono" na seção PiluLabs do `apps/web/CLAUDE.md`), porque o "← PiluLabs" do topo, o "Powered by PiluTech" do rodapé e a `Organization` do JSON-LD apontam para ele (`URL_DA_PILUTECH`, em `lib/conteudo.ts`). Em 2026-10-02 o `pilutech.com.br` não tinha registro A, e o `CNAME botai` era provisório.
 
 ## Comandos
 
-| Comando                                        | O quê                                                              |
-| ---------------------------------------------- | ------------------------------------------------------------------ |
-| `make dev-botai-site`                          | `next dev` em http://localhost:3020                                |
-| `make build-botai-site`                        | `next build` + gate do `@source` + conferência das rotas estáticas |
-| `make test-botai-site`                         | Jest + `node --test`                                               |
-| `make test-e2e-botai-site`                     | build de produção + `next start` na 3020 + Playwright (com `CI=1`) |
-| `make storybook-botai-site`                    | Storybook em http://localhost:6019                                 |
-| `pnpm --filter @pilutech/botai-site typecheck` | `tsc --noEmit`                                                     |
-| `pnpm --filter @pilutech/botai-site lint`      | ESLint                                                             |
+| Comando                                        | O quê                                                                                                    |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `make dev-botai-site`                          | `next dev` em http://localhost:3020                                                                      |
+| `make build-botai-site`                        | `next build` + gate do `@source` + conferência das rotas estáticas                                       |
+| `make test-botai-site`                         | Jest + `node --test`                                                                                     |
+| `make test-e2e-botai-site`                     | 2 builds de produção (YAML de teste, depois o CMS real) + `next start` na 3020 + Playwright (com `CI=1`) |
+| `make storybook-botai-site`                    | Storybook em http://localhost:6019                                                                       |
+| `pnpm --filter @pilutech/botai-site typecheck` | `tsc --noEmit`                                                                                           |
+| `pnpm --filter @pilutech/botai-site lint`      | ESLint                                                                                                   |
 ````
 
 - [ ] **Step 2: `CLAUDE.md` da raiz e do `packages/ui`**
@@ -6119,7 +6391,7 @@ A política do Botaí, fonte única do texto (o texto da AMO se copia daqui). A 
    e, no bullet do `packages/tools`, "consumida pelo web e pela extensão" vira "consumida pelo web, pela extensão e pela landing do Botaí".
 3. Tabela "Commands": acrescente as linhas dos 5 alvos `make *-botai-site` (os textos da tabela do `apps/botai-site/CLAUDE.md`) e troque a linha do `make stop` por "Libera as portas 8081/8082/3333/6017/3018/6018/3020/6019 se travarem".
 4. "Gate do design system" › "Amarrado em": acrescente "E em `apps/botai-site/package.json` → `build` (`next build && node ../../scripts/check-tailwind-source.mjs .next && node scripts/conferir-rotas-estaticas.mjs`)."
-5. "Pre-commit hook": acrescente o bullet "- **`apps/botai-site/package.json`** → a mesma config do `apps/web` (`*.{ts,tsx}: [eslint --fix, prettier --write]`), pelo mesmo motivo: o ESLint flat do app só resolve com cwd nele."
+5. "Pre-commit hook": "Configs em quatro níveis" vira "Configs em cinco níveis", e acrescente o bullet "- **`apps/botai-site/package.json`** → a mesma config do `apps/web` (`*.{ts,tsx}: [eslint --fix, prettier --write]`), pelo mesmo motivo: o ESLint flat do app só resolve com cwd nele."
 6. "CI / CD" › `ci.yml`: "Em paralelo, **cinco** jobs" vira "Em paralelo, **seis** jobs" e acrescente, antes de "O E2E da extensão…": "botai-site (`eslint` + `tsc --noEmit` + Jest + `node --test` + `next build` com o gate do `@source` e a conferência das rotas estáticas; o E2E roda local)".
 7. "Vercel": acrescente, no fim da seção, "- **Landing do Botaí:** projeto à parte, Root Directory `apps/botai-site`, com o "Skip deployments" desligado e o `ignoreCommand` do `apps/botai-site/vercel.json` (ver "Deploy" em `apps/botai-site/CLAUDE.md`)."
 
@@ -6137,7 +6409,7 @@ pnpm --filter @piluvitu/tools lint; echo "tools lint exit=$?"
 (cd apps/web && ./node_modules/.bin/eslint . && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/jest); echo "web exit=$?"
 (cd apps/botai-site && ./node_modules/.bin/eslint . && ./node_modules/.bin/tsc --noEmit && pnpm run test && pnpm run build && ./node_modules/.bin/storybook build --quiet); echo "botai-site exit=$?"
 (cd apps/botai && pnpm run lint && pnpm run test); echo "botai exit=$?"
-(cd apps/botai-site && lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 ./node_modules/.bin/playwright test --retries=0); echo "botai-site e2e exit=$?"
+(cd apps/botai-site && lsof -nP -iTCP:3020 -sTCP:LISTEN; CI=1 pnpm run test:e2e); echo "botai-site e2e exit=$?"
 ./node_modules/.bin/prettier --check "apps/botai-site" "packages/tools/src/pilulabs.ts" "packages/tools/src/pilulabs.test.ts" "docs/superpowers/plans/2026-10-02-botai-landing.md"; echo "prettier exit=$?"
 /usr/bin/git status --short
 ```
@@ -6154,6 +6426,10 @@ cd /Users/piluvitu/WWW/PiluVitu-Dev && /usr/bin/git add CLAUDE.md packages/ui/CL
 
 ## Passos depois do código (fora deste plano, spec §9)
 
-- **Do agente, pela CLI da Vercel, depois do push:** criar o projeto `botai-site` com Root Directory `apps/botai-site`, desligar o "Skip deployments" e adicionar o domínio `botai.pilutech.com.br` (ver "Deploy" em `apps/botai-site/CLAUDE.md`).
-- **Do dono:** trocar, na Cloudflare, o `CNAME` provisório do `botai` pelo valor que a Vercel mostrar, em DNS only; cadastrar o domínio no Search Console e pôr `GOOGLE_SITE_VERIFICATION`.
-- **Merge:** só com `https://botai.pilutech.com.br` respondendo pelo projeto novo.
+- **Do agente, pela CLI da Vercel, depois do push** (passos 1 a 6 de "Deploy" em `apps/botai-site/CLAUDE.md`), nesta ordem:
+  1. criar o projeto `botai-site` com Root Directory `apps/botai-site` e desligar o "Skip deployments";
+  2. se `botai.pilutech.com.br` estiver no projeto do `apps/web`, tirá-lo de lá; depois, adicioná-lo ao `botai-site`;
+  3. promover a produção o preview do `feat/botai-landing` (`vercel promote <url-do-preview> --yes`; sem preview pronto, `vercel deploy` na raiz do checkout do branch antes), porque a produção só sairia da `main`, que ainda não tem o app;
+  4. conferir `https://botai.pilutech.com.br` e `/privacidade` (200, sem `noindex`), o canonical e o sitemap.
+- **Do dono:** trocar, na Cloudflare, o `CNAME` provisório do `botai` pelo valor que a Vercel mostrar, em DNS only; pôr `pilutech.com.br` e `www` no projeto do `apps/web`, com os registros na Cloudflare ("Passos do dono" em `apps/web/CLAUDE.md`); cadastrar o domínio no Search Console e pôr `GOOGLE_SITE_VERIFICATION`.
+- **Merge:** só com `https://botai.pilutech.com.br` respondendo pelo projeto novo **e** `https://pilutech.com.br` respondendo 200: o topo, o rodapé e o JSON-LD da landing apontam para lá. Se o dono quiser publicar antes de `pilutech.com.br` existir, o destino é uma constante só (`URL_DA_PILUTECH`, em `apps/botai-site/lib/conteudo.ts`), mas a troca é decisão dele: muda também a `Organization` do JSON-LD.
