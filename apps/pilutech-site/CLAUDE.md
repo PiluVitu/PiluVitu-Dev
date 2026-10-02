@@ -7,10 +7,10 @@ Landing da PiluTech em `https://pilutech.com.br`: Next 16 (App Router), React 19
 
 ## Comandos
 
-| Comando                        | O quê                                                              |
-| ------------------------------ | ------------------------------------------------------------------ |
-| `make dev-pilutech-site`       | `next dev` em http://localhost:3021                                |
-| `make build-pilutech-site`     | `next build` + gate do `@source` + conferência das rotas estáticas |
-| `make test-pilutech-site`      | Jest + `node --test` (scripts)                                     |
-| `make test-e2e-pilutech-site`  | build de produção + `next start` na 3021 + Playwright (com `CI=1`) |
-| `make storybook-pilutech-site` | Storybook em http://localhost:6020                                 |
+| Comando                        | O quê                                                                                                                                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make dev-pilutech-site`       | `next dev` em http://localhost:3021                                                                                                                                                                                                      |
+| `make build-pilutech-site`     | `next build` + gate do `@source` + conferência das rotas estáticas                                                                                                                                                                       |
+| `make test-pilutech-site`      | Jest + `node --test` (scripts)                                                                                                                                                                                                           |
+| `make test-e2e-pilutech-site`  | duas passadas, cada uma com build de produção + `next start` na 3021 + Playwright (com `CI=1`): `playwright.lojas.config.ts` (CMS trocado por `app/lojas-publicadas.yaml`, selo do Botaí "disponível") e depois a normal, com o CMS real |
+| `make storybook-pilutech-site` | Storybook em http://localhost:6020                                                                                                                                                                                                       |

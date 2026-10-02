@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest && node --test scripts/*.test.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test -c playwright.lojas.config.ts && playwright test",
     "storybook": "storybook dev -p 6020",
     "build-storybook": "storybook build",
     "prettier:check": "prettier --check \"**/*.{js,mjs,ts,tsx,json,md,css}\"",
