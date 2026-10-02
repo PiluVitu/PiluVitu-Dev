@@ -1,5 +1,6 @@
 import type { Preview } from '@storybook/nextjs'
 import '../app/globals.css'
+import '../lib/font-awesome'
 
 const preview: Preview = {
   initialGlobals: { tema: 'escuro' },
