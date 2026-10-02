@@ -1,6 +1,15 @@
+import type { Metadata } from 'next'
+import { JsonLd } from '@/components/json-ld'
 import { Rodape } from '@/components/rodape'
 import { Topo } from '@/components/topo'
 import { EMAIL_DE_SUPORTE, NOME } from '@/lib/conteudo'
+import { jsonLdDaPrivacidade } from '@/lib/json-ld'
+import {
+  DESCRICAO_DA_PRIVACIDADE,
+  metadataDaPagina,
+  TITULO_DA_PRIVACIDADE,
+} from '@/lib/seo'
+import { urlDoSite } from '@/lib/site'
 
 // Data em texto pronto: formatar "2026-10-01" em BRT mostraria 30 de setembro.
 const ATUALIZADA_EM = { iso: '2026-10-01', texto: '1 de outubro de 2026' }
@@ -40,9 +49,16 @@ const PERMISSOES = [
   },
 ]
 
+export const metadata: Metadata = metadataDaPagina({
+  caminho: '/privacidade',
+  titulo: TITULO_DA_PRIVACIDADE,
+  descricao: DESCRICAO_DA_PRIVACIDADE,
+})
+
 export default function PrivacidadePage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 pt-8 pb-10">
+      <JsonLd dados={jsonLdDaPrivacidade(urlDoSite())} />
       <Topo voltar={{ href: '/', rotulo: NOME }} />
       <main className="mt-12">
         <article>

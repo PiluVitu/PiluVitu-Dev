@@ -50,3 +50,16 @@ test('o selo diz "Disponível" e a nota cita só o Firefox', async ({ page }) =>
     topo.getByText('Firefox · grátis e de código aberto', { exact: true }),
   ).toBeVisible()
 })
+
+test('JSON-LD: installUrl só com o Firefox', async ({ page }) => {
+  await page.goto('/')
+  const texto = await page
+    .locator('script[type="application/ld+json"]')
+    .first()
+    .textContent()
+  const grafo = (
+    JSON.parse(texto as string) as { '@graph': Record<string, unknown>[] }
+  )['@graph']
+  const aplicacao = grafo.find((no) => no['@type'] === 'SoftwareApplication')
+  expect(aplicacao?.installUrl).toEqual([URLS.firefoxUrl])
+})
