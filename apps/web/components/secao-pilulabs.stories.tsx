@@ -13,7 +13,6 @@ const BOTAI: Project = {
   tags: ['Extensão', 'Formulários', 'QA'],
   deployLink: 'https://botai.pilutech.com.br',
   deployLabel: 'Acessar',
-  repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
   altImage: 'BO',
 }
 
@@ -28,7 +27,6 @@ const SOMBRAI: Project = {
   tags: ['Swift', 'Kotlin'],
   deployLink: 'https://sombrai.pilutech.com.br',
   deployLabel: 'Acessar',
-  repoLink: '',
   altImage: 'SO',
 }
 
@@ -42,7 +40,6 @@ const LIVE_PRS: Project = {
   tags: ['React', 'Go'],
   deployLink: 'https://pr-live-folder-front.vercel.app/',
   deployLabel: 'Acessar',
-  repoLink: '',
   altImage: 'LPR',
 }
 

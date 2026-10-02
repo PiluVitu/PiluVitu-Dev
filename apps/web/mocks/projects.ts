@@ -7,7 +7,6 @@ export type Project = {
   tags: string[]
   deployLink: string
   deployLabel?: string
-  repoLink: string
   image?: string
   altImage: string
 }
