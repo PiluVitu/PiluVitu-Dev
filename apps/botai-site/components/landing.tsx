@@ -261,6 +261,13 @@ export function Landing({ fase, lojas, notaDasLojas }: ModeloDaLanding) {
                   seguinte precisa de um novo gesto, e o atalho resolve.
                 </li>
               </ul>
+              <Link
+                href="/termos"
+                className="text-primary inline-flex items-center gap-2 text-[15px] hover:underline"
+              >
+                Termos de uso
+                <FontAwesomeIcon icon={faArrowRight} className="size-3" />
+              </Link>
             </section>
           </div>
 

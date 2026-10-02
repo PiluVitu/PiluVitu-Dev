@@ -1,6 +1,6 @@
 # CLAUDE.md — `apps/botai-site` (`@pilutech/botai-site`)
 
-Landing do Botaí em `https://botai.pilutech.com.br`: `/` e `/privacidade`. Next 16 (App Router), React 19, TypeScript strict, Tailwind CSS 4 e `@piluvitu/ui`. O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz.
+Landing do Botaí em `https://botai.pilutech.com.br`: `/`, `/privacidade` e `/termos`. Next 16 (App Router), React 19, TypeScript strict, Tailwind CSS 4 e `@piluvitu/ui`. O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz.
 
 - **Spec:** `docs/superpowers/specs/2026-10-02-botai-landing-design.md`. **Plano:** `docs/superpowers/plans/2026-10-02-botai-landing.md`. **Design (fonte visual):** `docs/superpowers/design/2026-10-02-botai-landing/` (`Botai Landing.dc.html`, `desktop-escuro.png`, `mobile-escuro.png`).
 - **Grafia:** "Botaí" em todo texto visível; `botai` no técnico (ver "Identidade" em `apps/botai/CLAUDE.md`).
@@ -8,9 +8,10 @@ Landing do Botaí em `https://botai.pilutech.com.br`: `/` e `/privacidade`. Next
 ## Estrutura
 
 ```
-app/                  layout (fontes, tema, metadataBase), page (/), privacidade/, imagens OG e Twitter por rota,
+app/                  layout (fontes, tema, metadataBase), page (/), privacidade/, termos/, imagens OG e Twitter por rota,
                       icon.png, apple-icon.png, sitemap.ts, robots.ts, manifest.ts e os E2E
 components/           landing e as peças (topo, rodapé, botões de loja, selo, atalho, tabela, abas, imagem por tema)
+                      e a moldura documento das páginas de texto
 lib/                  conteúdo, leitura do CMS, modelo da página, visitante, capturas, site, seo, json-ld, imagem OG
 public/               icone-128.png e capturas/ (gerados por make capturas-botai)
 scripts/              conferir-rotas-estaticas.mjs (roda no build)
@@ -30,20 +31,28 @@ scripts/              conferir-rotas-estaticas.mjs (roda no build)
 - **Um `h1` só:** a proposta, com "Botaí: " só para leitor de tela; o nome grande do design é um `<p>` na linha do selo.
 - ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)` no `globals.css`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo `TemaProvider`): o CSS injetado em runtime fica fora de camada e vence as utilities, e o `hidden`/`size-*` dos ícones param de funcionar sem erro nenhum. O E2E do tema pega.
 
-## `/privacidade`
+## `/privacidade` e `/termos`
 
-A política do Botaí, fonte única do texto (o texto da AMO se copia daqui). A data da última atualização é texto pronto (formatar em BRT daria o dia anterior). O link de histórico aponta para `app/privacidade/page.tsx`; as versões de antes de 2026-10-02 estão no histórico de `apps/web/app/(site)/pilulabs/botai/privacidade/page.tsx`.
+- Os dois textos moram no `page.tsx` de cada rota, fonte única (o da AMO se copia da política). A moldura é o `Documento` (`components/documento.tsx`): topo, rótulo, `h1`, "Em vigor desde" e resumo, corpo `prose`, rodapé. A data é texto pronto (formatar em BRT daria o dia anterior) e é a data em que o texto passa a valer.
+- Decisões do dono (2026-10-02): responsável só "PiluTech" + `pilutechinformatica@gmail.com`, sem razão social nem CNPJ; foro de Teresina/PI, ressalvado o domicílio do consumidor quando o CDC se aplicar. Plano: `docs/superpowers/plans/2026-10-02-botai-termos.md` (inclui os riscos jurídicos deixados ao dono).
+- Texto honesto: nenhuma das duas diz "disponível" nem "publicado nas lojas" (teste das páginas).
+- A política amarra o código: a tabela de permissões é a lista de "Justificativa:" de `apps/botai/loja/textos.md`, a linha do `contextMenus` cita cada item de `apps/botai/src/lib/menus.ts`, e "no Firefox o pacote declara que não coleta" lê o `apps/botai/wxt.config.ts` (`page.test.tsx`); o E2E confere que o site não pede nada a outro host, não grava cookie e só guarda `theme` no `localStorage`. Do lado da extensão, `apps/botai/loja/textos.test.ts` trava "sem rede", "uma chave de storage" e a justificativa do `contextMenus` com os mesmos itens do menu. Mudou um deles? Mude a política no mesmo PR.
+- O script injetado fica na página até ela recarregar (registro dos campos e último resultado em `api.ts`, segunda passada): a política diz "na memória da página", nunca "só durante a ação".
+- Os termos amarram a pessoa: `app/termos/page.test.tsx` lê os `gerar*(rng…)` de `packages/tools/src/pessoa.ts` e exige que cada gerador esteja classificado em `PODE_SER_DE_ALGUEM`; os dados que podem ser de alguém (CPF, CNPJ, RG, PIS/NIS, título de eleitor, celular e o endereço, cujo número cai na numeração real do CEP) precisam aparecer em "Dados que podem ser de alguém" e no "Limite de responsabilidade". Gerador novo na pessoa? Classifique-o e ajuste os dois textos (e "Dados fictícios e pessoas reais" da política).
+- Os termos dizem que, sobre os direitos no código, vale a MIT (`apps/botai/LICENSE`, conferido em `lib/conteudo.test.ts`); as proibições tratam de condutas.
+- Rodapé: `nav` "Documentos" com "Privacidade" e "Termos de uso" (`DOCUMENTOS`, em `lib/conteudo.ts`), nas três rotas; a seção "Cuidados" da landing leva aos termos.
+- O link de histórico aponta para o `page.tsx` de cada rota; as versões da política de antes de 2026-10-02 estão no histórico de `apps/web/app/(site)/pilulabs/botai/privacidade/page.tsx`.
 
 ## SEO
 
 - **URLs:** `metadataBase` = `urlDoSite()`: `https://botai.pilutech.com.br`, ou `SITE_URL` (só a origem; valor sem esquema é ignorado). Preview e local sem `SITE_URL` apontam canonical, `og:url`, JSON-LD, sitemap e robots para a produção, e o preview da Vercel já responde com `X-Robots-Tag: noindex`.
-- **Textos (`lib/seo.ts`):** título da home com até 60 caracteres e descrição de 140–160, com os termos buscados; a política com os dela. O Google não tem limite e trunca pela largura do dispositivo (Search Central, "title link" e "snippet"); os limites são da spec e ficam no teste.
+- **Textos (`lib/seo.ts`):** título da home com até 60 caracteres e descrição de 140–160, com os termos buscados; a política e os termos com os deles. O Google não tem limite e trunca pela largura do dispositivo (Search Central, "title link" e "snippet"); os limites são da spec e ficam no teste.
 - **Open Graph e Twitter:** `metadataDaPagina` repete `type`, `locale`, `siteName`, `url`, `title` e `description` (o Next substitui o `openGraph` inteiro) e não declara imagem: cada rota tem `opengraph-image.tsx` e `twitter-image.tsx` estáticos (1200×630, `lib/imagem-og.tsx`, lendo `app/icon.png`).
-- **JSON-LD (`lib/json-ld.ts`):** em `/`, `Organization` (PiluTech), `WebSite` e `SoftwareApplication` (`BrowserApplication`, preço 0 em BRL, `installUrl` só das lojas publicadas, capturas, PiluTech como `publisher` e `author`); em `/privacidade`, `BreadcrumbList`. `serializarJsonLd` troca `<` por `\u003c`.
+- **JSON-LD (`lib/json-ld.ts`):** em `/`, `Organization` (PiluTech), `WebSite` e `SoftwareApplication` (`BrowserApplication`, preço 0 em BRL, `installUrl` só das lojas publicadas, capturas, PiluTech como `publisher` e `author`); em `/privacidade` e `/termos`, `BreadcrumbList` (`jsonLdDaTrilha`). `serializarJsonLd` troca `<` por `\u003c`.
   - Sem `aggregateRating`/`review` (o Google proíbe copiar a nota das lojas), sem `FAQPage` e sem `HowTo`.
   - ⚠️ O rich result de app exige nota ou review (Search Central, "Software app", 2026-09-08): o markup ajuda o Google a entender a página, mas não gera estrela nem preço no resultado. Não prometa isso.
   - A `Organization` sai **sem `logo`**: não há logo da PiluTech no repo, e o ícone do Botaí não é o logo da empresa. Entra quando houver o arquivo (≥ 112×112).
-- **Sitemap e robots:** `/` e `/privacidade`; robots libera tudo e aponta o sitemap.
+- **Sitemap e robots:** `/`, `/privacidade` e `/termos`; robots libera tudo e aponta o sitemap.
 - **Ícones:** `app/icon.png` e `app/apple-icon.png` (300×300, cópias do `edge-logo-300.png` das lojas, geradas por `make capturas-botai`; o Google aceita PNG, não SVG), `app/manifest.ts` e `theme-color` claro e escuro (o `--background` dos dois temas do `@piluvitu/ui`, conferido no teste).
 - **Search Console:** `GOOGLE_SITE_VERIFICATION` vira `metadata.verification.google`. Cadastrar o domínio é passo do dono.
 - **Lighthouse:** não há ferramenta no repo nem no PATH; as checagens estão no `app/seo.e2e.ts` (título, descrição, canonical, OG com a imagem 1200×630, JSON-LD, `h1` único, níveis de título, `alt`, robots, sitemap, ícones, manifest e `axe-core` WCAG 2.1 A/AA nos dois temas) e a 320 px nos E2E das rotas.
@@ -65,7 +74,7 @@ A política do Botaí, fonte única do texto (o texto da AMO se copia daqui). A 
 
 - O E2E builda e sobe `next start`; rode com `CI=1` e a 3020 livre. Ele não roda no CI (como o do `apps/web`).
 - **Duas passadas no `test:e2e`:** primeiro o `playwright.lojas.config.ts`, que builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` (Firefox publicado, Chrome com link de outra loja, Edge em `http:`) e roda `app/lojas-publicadas.e2e.ts`; depois o `playwright.config.ts`, que builda com o CMS real e roda o resto. O CMS real tem hoje as 4 lojas vazias, e só a primeira passada exercita o caminho "loja com URL" no build de produção. A ordem deixa o `.next` com o CMS real; um `distDir` à parte faria o `next build` mexer no `include` do `tsconfig.json`.
-- O axe roda a 1280 e a 320 px, nos dois temas, nas duas rotas: a meta da spec é o Lighthouse mobile.
+- O axe roda a 1280 e a 320 px, nos dois temas, nas três rotas: a meta da spec é o Lighthouse mobile.
 - ⚠️ O `next dev` (e o servidor do E2E, que roda `next build`/`next start`) pode anexar a este arquivo um bloco de regras para agentes ou criar um `AGENTS.md`: confira `git status` antes de commitar.
 
 ## Deploy (Vercel, projeto próprio)
@@ -75,7 +84,7 @@ A política do Botaí, fonte única do texto (o texto da AMO se copia daqui). A 
 3. Domínio `botai.pilutech.com.br`: um domínio só fica num projeto, então, se ele estiver no projeto do `apps/web` (o README antigo do Botaí mandava pôr lá), tire-o de lá primeiro (`vercel domains inspect botai.pilutech.com.br` diz onde está). Depois, adicione-o ao `botai-site`; na Cloudflare, o `CNAME botai` com o valor que a Vercel mostrar, em **DNS only** (passo do dono).
 4. Env: nenhuma obrigatória. `GOOGLE_SITE_VERIFICATION` em Production quando o dono cadastrar o domínio no Search Console. Não ponha `SITE_URL` nem `BOTAI_CMS_ITEM` em ambiente nenhum.
 5. **Primeira produção, antes do merge:** a produção do projeto sai da `main`, e a `main` só tem o `apps/botai-site` depois do merge; sem isto, o domínio fica sem deploy de produção para servir. Depois do push do branch, ache o preview dele (`vercel ls botai-site`). Se ele saiu `CANCELED` (o `ignoreCommand` compara `HEAD^` com `HEAD`, e o último commit do branch pode não tocar nada vigiado) ou não existe, gere um com `vercel deploy` na raiz do checkout do branch. Promova: `vercel promote <url-do-preview> --yes` (a Vercel rebuilda o preview com o ambiente de produção; ver "Promote a deployment from preview to production" na doc dela).
-6. Confira: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://botai.pilutech.com.br` e `curl -sI https://botai.pilutech.com.br/privacidade` respondem 200, sem `x-robots-tag: noindex`; o `<link rel="canonical">` de `https://botai.pilutech.com.br` aponta para ele mesmo; `https://botai.pilutech.com.br/sitemap.xml` lista as duas rotas.
+6. Confira: `curl -sI https://<preview>.vercel.app | grep -i x-robots-tag` mostra `noindex`; `curl -sI https://botai.pilutech.com.br`, `curl -sI https://botai.pilutech.com.br/privacidade` e `curl -sI https://botai.pilutech.com.br/termos` respondem 200, sem `x-robots-tag: noindex`; o `<link rel="canonical">` de `https://botai.pilutech.com.br` aponta para ele mesmo; `https://botai.pilutech.com.br/sitemap.xml` lista as três rotas.
 7. **Merge, só com os dois hosts no ar:** `botai.pilutech.com.br` (passo 6), porque os 308 do `apps/web` apontam para ele, e `https://pilutech.com.br` respondendo 200 (domínio no projeto do `apps/web`, "Passos do dono" na seção PiluLabs do `apps/web/CLAUDE.md`), porque o "← PiluLabs" do topo, o "Powered by PiluTech" do rodapé e a `Organization` do JSON-LD apontam para ele (`URL_DA_PILUTECH`, em `lib/conteudo.ts`). Em 2026-10-02 o `pilutech.com.br` não tinha registro A, e o `CNAME botai` era provisório.
 
 ## Comandos

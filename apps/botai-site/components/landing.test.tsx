@@ -92,4 +92,12 @@ describe('Landing', () => {
       screen.getByRole('link', { name: 'Powered by PiluTech' }),
     ).toHaveAttribute('href', 'https://pilutech.com.br')
   })
+
+  it('os cuidados levam aos termos de uso', () => {
+    renderizar()
+    const cuidados = within(screen.getByRole('region', { name: 'Cuidados' }))
+    expect(
+      cuidados.getByRole('link', { name: 'Termos de uso' }),
+    ).toHaveAttribute('href', '/termos')
+  })
 })

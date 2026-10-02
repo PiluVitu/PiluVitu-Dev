@@ -44,6 +44,7 @@ As versões das lojas (Chrome Web Store, Firefox Add-ons, Microsoft Edge Add-ons
 
 - **A caixa de e-mail é pública.** O e-mail gerado é do `tuamaeaquelaursa.com`, e qualquer um que souber o endereço lê as mensagens. Nunca use para conta real.
 - CPF, CNPJ e celular gerados podem pertencer a alguém de verdade. Use só em localhost e staging.
+- Os dados são para teste: os [termos de uso](https://botai.pilutech.com.br/termos) dizem o que é proibido fazer com eles.
 
 ## Publicação (para quem mantém)
 
@@ -81,6 +82,10 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
    - neste README, "Como instalar" ganha os links das lojas.
 
 **Versões seguintes:** `make versao-botai V=x.y.z` (abre o PR), merge, `git switch main && git pull`, `make release-botai` e aprove o job `lojas`. Para publicar adiado na Chrome, rejeite a aprovação da tag e rode `gh workflow run botai-release.yml --ref botai-v<versão> -f lojas=submeter -f adiar_chrome=true`. O Opera é sempre à mão, com o `botai-<versão>-opera.zip` do Release e a nota Opera.
+
+## Privacidade e termos
+
+O Botaí não coleta nem envia dados: ele só lê os formulários da aba em que você o aciona e guarda no navegador a pessoa fictícia que gerou. A [política de privacidade](https://botai.pilutech.com.br/privacidade) e os [termos de uso](https://botai.pilutech.com.br/termos) moram no site do Botaí; o texto deles fica em `apps/botai-site/app/privacidade/page.tsx` e `apps/botai-site/app/termos/page.tsx`.
 
 ## Licença
 

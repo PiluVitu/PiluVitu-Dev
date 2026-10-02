@@ -5,8 +5,10 @@ import { lerUrlsDasLojas } from '../lib/cms'
 import {
   DESCRICAO_DA_HOME,
   DESCRICAO_DA_PRIVACIDADE,
+  DESCRICAO_DOS_TERMOS,
   TITULO_DA_HOME,
   TITULO_DA_PRIVACIDADE,
+  TITULO_DOS_TERMOS,
 } from '../lib/seo'
 import { SITE_DE_PRODUCAO } from '../lib/site'
 
@@ -22,6 +24,12 @@ const ROTAS = [
     titulo: TITULO_DA_PRIVACIDADE,
     descricao: DESCRICAO_DA_PRIVACIDADE,
     imagem: '/privacidade/opengraph-image',
+  },
+  {
+    caminho: '/termos',
+    titulo: TITULO_DOS_TERMOS,
+    descricao: DESCRICAO_DOS_TERMOS,
+    imagem: '/termos/opengraph-image',
   },
 ] as const
 
@@ -197,16 +205,25 @@ test('JSON-LD de /privacidade: a trilha Botaí › Política', async ({ page }) 
   expect(dados['@type']).toBe('BreadcrumbList')
 })
 
+test('JSON-LD de /termos: a trilha Botaí › Termos de uso', async ({ page }) => {
+  await page.goto('/termos')
+  const [dados] = await lerJsonLd(page)
+  expect(dados['@type']).toBe('BreadcrumbList')
+  const itens = dados.itemListElement as { name: string }[]
+  expect(itens.map((i) => i.name)).toEqual(['Botaí', 'Termos de uso'])
+})
+
 test('robots.txt libera tudo e aponta o sitemap', async ({ page }) => {
   const texto = await (await page.request.get('/robots.txt')).text()
   expect(texto).toContain('Allow: /')
   expect(texto).toContain(`Sitemap: ${SITE_DE_PRODUCAO}/sitemap.xml`)
 })
 
-test('sitemap.xml lista as duas rotas', async ({ page }) => {
+test('sitemap.xml lista as três rotas', async ({ page }) => {
   const xml = await (await page.request.get('/sitemap.xml')).text()
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/</loc>`)
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/privacidade</loc>`)
+  expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/termos</loc>`)
 })
 
 test('ícones, manifest e theme-color claro e escuro', async ({ page }) => {

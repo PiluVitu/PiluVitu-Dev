@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { Rodape } from './rodape'
 
 describe('Rodape', () => {
@@ -12,5 +12,18 @@ describe('Rodape', () => {
       'href',
       'mailto:pilutechinformatica@gmail.com',
     )
+  })
+
+  it('leva à política de privacidade e aos termos de uso', () => {
+    render(<Rodape />)
+    const documentos = within(
+      screen.getByRole('navigation', { name: 'Documentos' }),
+    )
+    expect(
+      documentos.getByRole('link', { name: 'Privacidade' }),
+    ).toHaveAttribute('href', '/privacidade')
+    expect(
+      documentos.getByRole('link', { name: 'Termos de uso' }),
+    ).toHaveAttribute('href', '/termos')
   })
 })

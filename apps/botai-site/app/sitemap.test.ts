@@ -8,9 +8,10 @@ afterAll(() => {
   if (SITE_URL_ORIGINAL !== undefined) process.env.SITE_URL = SITE_URL_ORIGINAL
 })
 
-it('lista / e /privacidade, no domínio de produção', () => {
+it('lista /, /privacidade e /termos, no domínio de produção', () => {
   expect(sitemap()).toEqual([
     { url: 'https://botai.pilutech.com.br/' },
     { url: 'https://botai.pilutech.com.br/privacidade' },
+    { url: 'https://botai.pilutech.com.br/termos' },
   ])
 })

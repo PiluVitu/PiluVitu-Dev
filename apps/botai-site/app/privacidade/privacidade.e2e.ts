@@ -9,8 +9,8 @@ test.describe('/privacidade', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'Política de privacidade do Botaí',
     )
-    await expect(page.locator('time[datetime="2026-10-01"]')).toHaveText(
-      '1 de outubro de 2026',
+    await expect(page.locator('time[datetime="2026-10-02"]')).toHaveText(
+      '2 de outubro de 2026',
     )
     await expect(
       page.locator('a[href="mailto:pilutechinformatica@gmail.com"]').first(),
@@ -29,6 +29,45 @@ test.describe('/privacidade', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
       'Política de privacidade',
     )
+  })
+
+  test('o rodapé leva à política, e a política aos termos', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page
+      .getByRole('contentinfo')
+      .getByRole('link', { name: 'Privacidade', exact: true })
+      .click()
+    await expect(page).toHaveURL('/privacidade')
+    await page
+      .getByRole('main')
+      .getByRole('link', { name: 'termos de uso', exact: true })
+      .click()
+    await expect(page).toHaveURL('/termos')
+  })
+
+  // Review Focus 3: o que a seção "Este site" afirma.
+  test('o site não pede nada a outro host, não grava cookie e só guarda o tema', async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    const hosts = new Set<string>()
+    page.on('request', (pedido) => {
+      const url = new URL(pedido.url())
+      if (url.protocol.startsWith('http')) hosts.add(url.host)
+    })
+    for (const caminho of ['/', '/privacidade', '/termos']) {
+      await page.goto(caminho)
+      await page.waitForLoadState('networkidle')
+    }
+    await page.getByRole('button', { name: 'Alternar tema' }).click()
+    expect([...hosts]).toEqual([new URL(baseURL as string).host])
+    expect(await context.cookies()).toEqual([])
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([
+      'theme',
+    ])
   })
 
   // Review Focus 3: a URL longa da caixa de e-mail, em <code>, empurrava a página a 375 px.
