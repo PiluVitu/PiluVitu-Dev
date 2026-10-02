@@ -4,6 +4,7 @@
 @source '../../../packages/ui/src';
 /* A documentação do app não pode mudar o CSS da landing (o Tailwind varre os .md). */
 @source not '../*.md';
+@plugin '@tailwindcss/typography';
 
 @layer base {
   * {
