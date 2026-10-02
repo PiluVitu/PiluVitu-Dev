@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pilulabsSchema } from './admin/content-schemas'
 import { itensListados, linkDoItem } from './pilulabs'
 import {
   camposInvalidosNoYaml,
@@ -88,6 +89,23 @@ describe('catálogo em content/pilulabs', () => {
   it('todo YAML abre no reader do Keystatic: nenhum campo fora do tipo dele', () => {
     for (const [slug, bruto] of lerYamlsDoConteudo(RAIZ_WEB))
       expect([slug, camposInvalidosNoYaml(bruto)]).toEqual([slug, []])
+  })
+
+  // O GET /api/admin/content/pilulabs valida cada YAML no pilulabsSchema dentro
+  // de um Promise.all: um item recusado (http, loja de outro host, chave sem
+  // valor) vira 502 na lista inteira do admin, e o reorder também falha.
+  it('todo YAML passa no pilulabsSchema do admin', () => {
+    for (const [slug, bruto] of lerYamlsDoConteudo(RAIZ_WEB)) {
+      const resultado = pilulabsSchema.safeParse(bruto)
+      expect([
+        slug,
+        resultado.success
+          ? []
+          : resultado.error.issues.map(
+              (i) => `${i.path.join('.')}: ${i.message}`,
+            ),
+      ]).toEqual([slug, []])
+    }
   })
 
   it('todo item com página própria tem a rota, e a política se for extensão', () => {

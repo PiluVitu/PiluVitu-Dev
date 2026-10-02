@@ -4,12 +4,14 @@ import {
   projectSchema,
   carreiraSchema,
   socialSchema,
+  pilulabsSchema,
   type ProjectEntry,
   type CarreiraEntry,
   type SocialEntry,
+  type PiluLabsEntry,
 } from './content-schemas'
 
-export type CollectionKey = 'projects' | 'carreiras' | 'socials'
+export type CollectionKey = 'projects' | 'pilulabs' | 'carreiras' | 'socials'
 
 export interface CollectionDef<T extends Record<string, unknown>> {
   key: CollectionKey
@@ -19,6 +21,7 @@ export interface CollectionDef<T extends Record<string, unknown>> {
   schema: ZodType<T>
   keyOrder: (keyof T & string)[]
   multiline: (keyof T & string)[]
+  omitirSeVazio?: (keyof T & string)[]
 }
 
 export const COLLECTIONS = {
@@ -43,6 +46,38 @@ export const COLLECTIONS = {
     ],
     multiline: ['description'],
   } as CollectionDef<ProjectEntry>,
+  pilulabs: {
+    key: 'pilulabs',
+    label: 'PiluLabs',
+    dir: sitePath('content/pilulabs'),
+    slugField: 'slug',
+    schema: pilulabsSchema,
+    keyOrder: [
+      'slug',
+      'order',
+      'nome',
+      'subtitulo',
+      'descricao',
+      'tipo',
+      'tags',
+      'logo',
+      'sigla',
+      'site',
+      'repo',
+      'chromeUrl',
+      'firefoxUrl',
+      'edgeUrl',
+      'operaUrl',
+      'destaque',
+      'data',
+      'listado',
+      'paginaPropria',
+    ],
+    multiline: ['descricao'],
+    // O fields.date do Keystatic recusa `data: ''`, e um item que não abre
+    // derruba o build do site: vazia, a chave sai do YAML.
+    omitirSeVazio: ['data'],
+  } as CollectionDef<PiluLabsEntry>,
   carreiras: {
     key: 'carreiras',
     label: 'Carreira',

@@ -16,7 +16,7 @@ describe('listEntries', () => {
     const fakeOctokit = {
       repos: {
         async getContent(p: { path: string }) {
-          if (p.path === 'apps/web/content/projects') {
+          if (p.path === 'apps/web/content/pilulabs') {
             return {
               data: [
                 { name: 'b', type: 'dir' },
@@ -26,32 +26,33 @@ describe('listEntries', () => {
           }
           const slug = p.path.includes('/a/') ? 'a' : 'b'
           const order = slug === 'a' ? 1 : 0
-          const yaml = `projectSlug: ${slug}\norder: ${order}\nprojectName: ${slug.toUpperCase()}\nsubtitle: ''\nprojectLogo: ''\ndescription: ''\ntags: []\ndeployLink: ''\nrepoLink: ''\nimage: ''\naltImage: ''`
+          const yaml = `slug: ${slug}\norder: ${order}\nnome: ${slug.toUpperCase()}`
           return { data: { content: b64(yaml), encoding: 'base64' } }
         },
       },
     }
     const deps: ReadDeps = { makeOctokit: () => fakeOctokit as never }
-    const entries = await listEntries(COLLECTIONS.projects, 'token', deps)
+    const entries = await listEntries(COLLECTIONS.pilulabs, 'token', deps)
     expect(entries.map((e) => e.slug)).toEqual(['b', 'a']) // sorted by order 0,1
-    expect(entries[0].data.projectName).toBe('B')
+    expect(entries[0].data.nome).toBe('B')
   })
 
   it('getEntry reads a single index.yaml and parses it', async () => {
     const fakeOctokit = {
       repos: {
         async getContent(p: { path: string }) {
-          expect(p.path).toBe('apps/web/content/projects/live-prs/index.yaml')
-          const yaml = `projectSlug: live-prs\norder: 0\nprojectName: Live PRs\nsubtitle: ''\nprojectLogo: ''\ndescription: ''\ntags: []\ndeployLink: ''\nrepoLink: ''\nimage: ''\naltImage: ''`
+          expect(p.path).toBe('apps/web/content/pilulabs/botai/index.yaml')
+          const yaml = `slug: botai\norder: 0\nnome: Botaí\ndata: 2026-10-01`
           return { data: { content: b64(yaml), encoding: 'base64' } }
         },
       },
     }
-    const entry = await getEntry(COLLECTIONS.projects, 'live-prs', 'token', {
+    const entry = await getEntry(COLLECTIONS.pilulabs, 'botai', 'token', {
       makeOctokit: () => fakeOctokit as never,
     })
-    expect(entry.slug).toBe('live-prs')
-    expect(entry.data.projectName).toBe('Live PRs')
+    expect(entry.slug).toBe('botai')
+    expect(entry.data.nome).toBe('Botaí')
+    expect(entry.data.data).toBe('2026-10-01')
   })
 
   it('readProfile reads the profile singleton', async () => {

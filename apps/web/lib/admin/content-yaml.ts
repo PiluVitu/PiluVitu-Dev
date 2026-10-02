@@ -9,6 +9,7 @@ export function serializeEntry<T extends Record<string, unknown>>(
   doc.contents = doc.createNode({}) as never
   for (const key of def.keyOrder) {
     const value = data[key]
+    if (value === '' && def.omitirSeVazio?.includes(key)) continue
     const node = doc.createNode(value)
     if (
       def.multiline.includes(key) &&

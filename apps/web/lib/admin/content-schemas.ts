@@ -1,5 +1,13 @@
 import { z } from 'zod'
 import { VISIT_CARD_FA_SELECT_OPTIONS } from '@/lib/visit-card-fontawesome'
+import {
+  ehDataValida,
+  ehHttps,
+  ehUrlDaLoja,
+  TIPO_PADRAO,
+  TIPOS,
+  type Loja,
+} from '@/lib/pilulabs-regras'
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -47,6 +55,20 @@ const linkColor = z
   .default('#4a65fc')
   .refine((v) => COLOR_VALUES.has(v), 'Cor inválida')
 
+const urlHttps = str.refine(
+  (v) => v === '' || ehHttps(v),
+  'Use uma URL https://',
+)
+const urlDaLoja = (loja: Loja) =>
+  str.refine(
+    (v) => v === '' || ehUrlDaLoja(loja, v),
+    'Use a URL https:// da própria loja',
+  )
+const dataIso = str.refine(
+  (v) => v === '' || ehDataValida(v),
+  'Data inválida (AAAA-MM-DD)',
+)
+
 export const projectSchema = z.object({
   projectSlug: slug,
   order,
@@ -85,6 +107,27 @@ export const socialSchema = z.object({
   image: str,
   altImage: str,
 })
+export const pilulabsSchema = z.object({
+  slug: slug.refine((v) => v !== 'www', 'Slug reservado para a vitrine'),
+  order,
+  nome: reqStr,
+  subtitulo: str,
+  descricao: str,
+  tipo: z.enum(TIPOS).default(TIPO_PADRAO),
+  tags: strArray,
+  logo: str,
+  sigla: str,
+  site: urlHttps,
+  repo: urlHttps,
+  chromeUrl: urlDaLoja('chrome'),
+  firefoxUrl: urlDaLoja('firefox'),
+  edgeUrl: urlDaLoja('edge'),
+  operaUrl: urlDaLoja('opera'),
+  destaque: bool,
+  data: dataIso,
+  listado: bool,
+  paginaPropria: bool,
+})
 export const profileSchema = z.object({
   displayName: reqStr,
   avatarSrc: str,
@@ -104,3 +147,4 @@ export type ProjectEntry = z.infer<typeof projectSchema>
 export type CarreiraEntry = z.infer<typeof carreiraSchema>
 export type SocialEntry = z.infer<typeof socialSchema>
 export type ProfileEntry = z.infer<typeof profileSchema>
+export type PiluLabsEntry = z.infer<typeof pilulabsSchema>
