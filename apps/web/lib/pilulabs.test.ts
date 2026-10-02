@@ -1,16 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import {
-  altDaCaptura,
   itemParaProject,
   itensListados,
   linkDoItem,
-  listarCapturas,
   metadataDaPagina,
-  metadataDoItem,
   normalizarItem,
-  ROTULOS_CAPTURA,
   selecionarParaHome,
   siglaDoItem,
   type ItemPiluLabs,
@@ -19,84 +12,6 @@ import {
 const SEM_LOJA = { chromeUrl: '', firefoxUrl: '', edgeUrl: '', operaUrl: '' }
 
 const URL_CHROME = 'https://chromewebstore.google.com/detail/botai/abc'
-
-describe('listarCapturas', () => {
-  let raiz: string
-
-  beforeEach(() => {
-    raiz = mkdtempSync(join(tmpdir(), 'pilulabs-'))
-  })
-  afterEach(() => {
-    rmSync(raiz, { recursive: true, force: true })
-  })
-
-  function criarCapturas(...arquivos: string[]): string {
-    const pasta = join(raiz, 'pilulabs', 'botai', 'capturas')
-    mkdirSync(pasta, { recursive: true })
-    for (const arquivo of arquivos) writeFileSync(join(pasta, arquivo), '')
-    return pasta
-  }
-
-  // Na fase 2 as capturas ainda não existem: a página tem de nascer sem elas.
-  it('devolve [] quando a pasta não existe', () => {
-    expect(listarCapturas('botai', raiz)).toEqual([])
-  })
-
-  it('lista só arquivos PNG, em ordem natural do prefixo NN', () => {
-    const pasta = criarCapturas(
-      '10-c.png',
-      '2-b.png',
-      '01-a.png',
-      '03-d.PNG',
-      '.DS_Store',
-      'notas.txt',
-    )
-    mkdirSync(join(pasta, '04-pasta.png'))
-    expect(listarCapturas('botai', raiz).map((c) => c.arquivo)).toEqual([
-      '01-a.png',
-      '2-b.png',
-      '03-d.PNG',
-      '10-c.png',
-    ])
-  })
-
-  it('monta o src público a partir do slug', () => {
-    criarCapturas('01-popup-escuro.png')
-    expect(listarCapturas('botai', raiz)).toEqual([
-      {
-        arquivo: '01-popup-escuro.png',
-        src: '/pilulabs/botai/capturas/01-popup-escuro.png',
-        alt: 'Captura de tela: popup (tema escuro)',
-      },
-    ])
-  })
-})
-
-describe('altDaCaptura', () => {
-  it('tira o NN e a extensão, devolve o acento e o tema pelo mapa de rótulos', () => {
-    expect(altDaCaptura('01-pagina-preenchida-escuro.png')).toBe(
-      'Captura de tela: página preenchida (tema escuro)',
-    )
-  })
-
-  it('palavra fora do mapa entra como está, em minúscula', () => {
-    expect(altDaCaptura('02-Popup-pessoa-pronta-claro.png')).toBe(
-      'Captura de tela: popup pessoa pronta (tema claro)',
-    )
-  })
-
-  // Com um objeto comum, "constructor" acharia Object.prototype.constructor.
-  it('palavra com nome de propriedade de Object não vira lixo', () => {
-    expect(altDaCaptura('03-constructor.png')).toBe(
-      'Captura de tela: constructor',
-    )
-  })
-
-  it('o mapa cobre os temas claro e escuro', () => {
-    expect(ROTULOS_CAPTURA.get('claro')).toBe('(tema claro)')
-    expect(ROTULOS_CAPTURA.get('escuro')).toBe('(tema escuro)')
-  })
-})
 
 const PAGINA = {
   caminho: '/pilulabs/botai',
@@ -144,20 +59,6 @@ describe('metadataDaPagina', () => {
     const metadata = metadataDaPagina(PAGINA, true)
     expect(metadata.openGraph).not.toHaveProperty('images')
     expect(metadata.twitter).not.toHaveProperty('images')
-  })
-})
-
-describe('metadataDoItem', () => {
-  it('item não listado: noindex', () => {
-    expect(metadataDoItem({ listado: false }, PAGINA, false).robots).toEqual({
-      index: false,
-    })
-  })
-
-  it('item listado: sem robots, igual à metadata da página', () => {
-    expect(metadataDoItem({ listado: true }, PAGINA, true)).toEqual(
-      metadataDaPagina(PAGINA, true),
-    )
   })
 })
 

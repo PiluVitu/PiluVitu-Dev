@@ -22,64 +22,7 @@ const url = (host: string, caminho = '/') => `http://${host}:3333${caminho}`
 const canonicalDaRaiz = (host: string) => `https://${host}`
 const itens = lerItensDoConteudo(join(__dirname, '..', '..', '..'))
 
-function doSlug(slug: string) {
-  const item = itens.find((i) => i.slug === slug)
-  if (!item) throw new Error(`content/pilulabs/${slug}/index.yaml sumiu`)
-  return item
-}
-
-const botai = doSlug('botai')
-
 test.describe('chave PILUTECH_SUBDOMINIOS ligada', () => {
-  test('no host de sempre, /pilulabs/botai responde 308 para o subdomínio, com a query', async ({
-    page,
-  }) => {
-    const resposta = await page.request.get('/pilulabs/botai?x=1', {
-      maxRedirects: 0,
-    })
-    expect(resposta.status()).toBe(308)
-    expect(resposta.headers()['location']).toBe(
-      'https://botai.pilutech.com.br/?x=1',
-    )
-  })
-
-  // Um href="/pilulabs" literal esquecido passaria no tsc e em todo o resto.
-  test('a página do Botaí no subdomínio: canonical, siteName e links nos hosts PiluTech', async ({
-    page,
-  }) => {
-    await page.goto(url('botai.pilutech.localhost'))
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
-      'href',
-      canonicalDaRaiz('botai.pilutech.com.br'),
-    )
-    await expect(page.locator('meta[property="og:site_name"]')).toHaveAttribute(
-      'content',
-      'pilutech.com.br',
-    )
-    await expect(
-      page.getByRole('link', { name: 'PiluLabs', exact: true }),
-    ).toHaveAttribute('href', 'https://pilutech.com.br/')
-    await expect(
-      page.getByRole('link', { name: 'Política de privacidade' }),
-    ).toHaveAttribute('href', 'https://botai.pilutech.com.br/privacidade')
-    await expect(
-      page.getByRole('link', { name: 'Powered by PiluTech', exact: true }),
-    ).toHaveAttribute('href', 'https://pilutech.com.br/')
-  })
-
-  test('a política no subdomínio: canonical e o voltar para a página do Botaí', async ({
-    page,
-  }) => {
-    await page.goto(url('botai.pilutech.localhost', '/privacidade'))
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
-      'href',
-      'https://botai.pilutech.com.br/privacidade',
-    )
-    await expect(
-      page.getByRole('link', { name: botai.nome, exact: true }),
-    ).toHaveAttribute('href', 'https://botai.pilutech.com.br/')
-  })
-
   test('a vitrine em pilutech.localhost: canonical, cards no link público e o autor absoluto', async ({
     page,
   }) => {

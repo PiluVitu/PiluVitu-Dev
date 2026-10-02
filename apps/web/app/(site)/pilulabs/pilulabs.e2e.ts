@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
-import { LOJA_UI } from '../../../components/pilulabs/lojas-ui'
-import { LOJAS, lojasPublicadas, TIPOS } from '@piluvitu/tools/pilulabs'
+import { TIPOS } from '@piluvitu/tools/pilulabs'
 import { itensListados, linkDoItem } from '../../../lib/pilulabs'
 import { lerItensDoConteudo } from '../../../lib/pilulabs-conteudo'
 
@@ -116,167 +115,38 @@ test.describe('/pilulabs', () => {
   })
 })
 
-test.describe('/pilulabs/botai', () => {
-  const botai = doSlug('botai')
-
-  test('responde com h1, o subtítulo e a tabela de atalhos', async ({
-    page,
-  }) => {
-    const resposta = await page.goto('/pilulabs/botai')
-    expect(resposta?.status()).toBe(200)
-    await expect(
-      page.getByRole('heading', { level: 1, name: botai.nome }),
-    ).toBeVisible()
-    await expect(page.locator('header').first()).toContainText(botai.subtitulo)
-    const firefox = page.getByRole('row', { name: /Firefox/ })
-    await expect(firefox.getByRole('cell').nth(2)).toHaveText('Alt+Shift+P')
-  })
-
-  test('noindex segue o listado do YAML', async ({ page }) => {
-    await page.goto('/pilulabs/botai')
-    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
-      'content',
-      `${botai.nome} | PiluLabs`,
-    )
-    await expect(
-      page.locator('meta[name="robots"][content*="noindex"]'),
-    ).toHaveCount(botai.listado ? 0 : 1)
-  })
-
-  test('botões só das lojas publicadas no YAML', async ({ page }) => {
-    await page.goto('/pilulabs/botai')
-    await expect(
-      page.getByRole('heading', { level: 1, name: botai.nome }),
-    ).toBeVisible()
-    const publicadas = lojasPublicadas(botai)
-    for (const loja of LOJAS) {
-      const publicada = publicadas.find((l) => l.loja === loja)
-      const link = page.getByRole('link', {
-        name: LOJA_UI[loja].rotulo,
-        exact: true,
-      })
-      if (publicada) await expect(link).toHaveAttribute('href', publicada.url)
-      else await expect(link).toHaveCount(0)
-    }
-  })
-
-  test('JSON-LD com SoftwareApplication gratuito e a trilha PiluLabs › produto', async ({
-    page,
-  }) => {
-    await page.goto('/pilulabs/botai')
-    const [dados] = await lerJsonLd(page)
-    const grafo = dados['@graph'] as Record<string, unknown>[]
-    const aplicacao = grafo.find((n) => n['@type'] === 'SoftwareApplication')
-    expect(aplicacao).toMatchObject({
-      name: botai.nome,
-      applicationCategory: 'BrowserApplication',
-      offers: { price: 0 },
+// O Botaí tem landing própria (apps/botai-site). Review Focus 5: link antigo, com query, segue valendo.
+test.describe('o Botaí mora em botai.pilutech.com.br', () => {
+  for (const [antiga, nova] of [
+    [
+      '/pilulabs/botai?utm_source=loja',
+      'https://botai.pilutech.com.br/?utm_source=loja',
+    ],
+    [
+      '/pilulabs/botai/privacidade?x=1',
+      'https://botai.pilutech.com.br/privacidade?x=1',
+    ],
+  ] as const) {
+    test(`${antiga} responde 308 para ${nova}`, async ({ page }) => {
+      const resposta = await page.request.get(antiga, { maxRedirects: 0 })
+      expect(resposta.status()).toBe(308)
+      expect(new URL(resposta.headers()['location']).href).toBe(nova)
     })
-    const urls = lojasPublicadas(botai).map((l) => l.url)
-    if (urls.length > 0) expect(aplicacao).toMatchObject({ installUrl: urls })
-    else expect(aplicacao).not.toHaveProperty('installUrl')
-    expect(grafo.find((n) => n['@type'] === 'BreadcrumbList')).toBeTruthy()
-  })
+  }
 
-  test('liga para a política de privacidade', async ({ page }) => {
-    await page.goto('/pilulabs/botai')
-    await expect(
-      page.getByRole('link', { name: 'Política de privacidade' }),
-    ).toHaveAttribute('href', '/pilulabs/botai/privacidade')
-  })
-
-  test('imagens OG do próprio segmento', async ({ page }) => {
-    await page.goto('/pilulabs/botai')
-    const og = await caminhoDaMeta(page, 'meta[property="og:image"]')
-    expect(og).toContain('/pilulabs/botai/opengraph-image')
-    await esperarPng(page, og)
-    const twitter = await caminhoDaMeta(page, 'meta[name="twitter:image"]')
-    expect(twitter).toContain('/pilulabs/botai/twitter-image')
-    await esperarPng(page, twitter)
+  test('o card do Botaí abre a landing, em aba nova', async ({ page }) => {
+    const botai = doSlug('botai')
+    await page.goto('/pilulabs')
+    const link = page.locator(`a[href="${botai.site}"]`)
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toContainText(botai.nome)
   })
 })
 
-test.describe('/pilulabs/botai/privacidade', () => {
-  const botai = doSlug('botai')
-
-  test('responde com h1, data, contato e a tabela de permissões', async ({
-    page,
-  }) => {
-    const resposta = await page.goto('/pilulabs/botai/privacidade')
-    expect(resposta?.status()).toBe(200)
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: `Política de privacidade do ${botai.nome}`,
-      }),
-    ).toBeVisible()
-    await expect(page.locator('time[datetime="2026-10-01"]')).toBeVisible()
-    await expect(
-      page.locator('a[href="mailto:pilutechinformatica@gmail.com"]').first(),
-    ).toBeVisible()
-    await expect(page.getByRole('row', { name: /^menus\b/ })).toContainText(
-      'Só no Firefox',
-    )
-  })
-
-  test('noindex igual ao da página do produto', async ({ page }) => {
-    await page.goto('/pilulabs/botai/privacidade')
-    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
-      'content',
-      `Política de privacidade do ${botai.nome} | PiluLabs`,
-    )
-    await expect(
-      page.locator('meta[name="robots"][content*="noindex"]'),
-    ).toHaveCount(botai.listado ? 0 : 1)
-  })
-
-  test('a página do produto leva até aqui', async ({ page }) => {
-    await page.goto('/pilulabs/botai')
-    await page.getByRole('link', { name: 'Política de privacidade' }).click()
-    await expect(page).toHaveURL('/pilulabs/botai/privacidade')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'Política de privacidade',
-    )
-  })
-
-  test('JSON-LD com a trilha PiluLabs › produto › política', async ({
-    page,
-  }) => {
-    await page.goto('/pilulabs/botai/privacidade')
-    const [dados] = await lerJsonLd(page)
-    expect(dados['@type']).toBe('BreadcrumbList')
-    const passos = dados.itemListElement as { name: string }[]
-    expect(passos.map((i) => i.name)).toEqual([
-      'PiluLabs',
-      botai.nome,
-      'Política de privacidade',
-    ])
-  })
-
-  // A política é filha da página do produto e declara openGraph: sem arquivo
-  // próprio, ela perderia a imagem (mesclagem do Next 16).
-  test('imagens OG do próprio segmento', async ({ page }) => {
-    await page.goto('/pilulabs/botai/privacidade')
-    const og = await caminhoDaMeta(page, 'meta[property="og:image"]')
-    expect(og).toContain('/pilulabs/botai/privacidade/opengraph-image')
-    await esperarPng(page, og)
-    const twitter = await caminhoDaMeta(page, 'meta[name="twitter:image"]')
-    expect(twitter).toContain('/pilulabs/botai/privacidade/twitter-image')
-    await esperarPng(page, twitter)
-  })
-})
-
-// A política é o link que vai para as lojas, e o revisor abre no celular também.
-// Uma URL longa em <code> (a caixa do tuamaeaquelaursa.com) não quebrava e
-// empurrava a página 16 px para fora da tela a 375 px.
 test.describe('cabe na largura de um celular, sem rolagem horizontal', () => {
   test.use({ viewport: { width: 320, height: 800 } })
 
-  for (const rota of [
-    '/pilulabs',
-    '/pilulabs/botai',
-    '/pilulabs/botai/privacidade',
-  ]) {
+  for (const rota of ['/pilulabs']) {
     test(rota, async ({ page }) => {
       await page.goto(rota)
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
