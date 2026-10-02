@@ -12,7 +12,7 @@ import {
   type Loja,
   type TipoItem,
 } from './pilulabs-regras'
-import { urlPublica } from './pilutech-dominios'
+import { DOMINIO_PILUTECH, urlPublica } from './pilutech-dominios'
 
 export { LOJAS, TIPOS } from './pilulabs-regras'
 export type { Loja, TipoItem } from './pilulabs-regras'
@@ -320,20 +320,20 @@ export function listarCapturas(
 
 // O Next substitui o openGraph do layout inteiro, e a imagem só vem do
 // opengraph-image.tsx do próprio segmento: por isso tudo de novo e sem images.
-export function metadataDaPagina({
-  caminho,
-  titulo,
-  descricao,
-}: PaginaPiluLabs): Metadata {
+export function metadataDaPagina(
+  { caminho, titulo, descricao }: PaginaPiluLabs,
+  subdominiosAtivos: boolean,
+): Metadata {
+  const url = urlPublica(caminho, subdominiosAtivos)
   return {
     title: { absolute: titulo },
     description: descricao,
-    alternates: { canonical: caminho },
+    alternates: { canonical: url },
     openGraph: {
       type: 'website',
       locale: 'pt_BR',
-      siteName: 'piluvitu.com.br',
-      url: caminho,
+      siteName: subdominiosAtivos ? DOMINIO_PILUTECH : 'piluvitu.com.br',
+      url,
       title: titulo,
       description: descricao,
     },
@@ -345,12 +345,13 @@ export function metadataDaPagina({
   }
 }
 
-export function metadataDoProduto(
-  produto: Pick<Produto, 'listado'>,
+export function metadataDoItem(
+  item: Pick<ItemPiluLabs, 'listado'>,
   pagina: PaginaPiluLabs,
+  subdominiosAtivos: boolean,
 ): Metadata {
-  const metadata = metadataDaPagina(pagina)
-  return produto.listado ? metadata : { ...metadata, robots: { index: false } }
+  const metadata = metadataDaPagina(pagina, subdominiosAtivos)
+  return item.listado ? metadata : { ...metadata, robots: { index: false } }
 }
 
 export function produtoParaProject(produto: Produto): Project {

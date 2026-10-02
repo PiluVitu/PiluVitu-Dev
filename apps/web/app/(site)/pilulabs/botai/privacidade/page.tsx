@@ -2,9 +2,10 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { JsonLd } from '@/components/json-ld'
 import { PageTopBar } from '@/components/page-top-bar'
-import { metadataDoProduto } from '@/lib/pilulabs'
+import { metadataDoItem } from '@/lib/pilulabs'
 import { CONTEXTO_SCHEMA, jsonLdBreadcrumb } from '@/lib/pilulabs-json-ld'
-import { getProdutos } from '@/lib/site-content'
+import { subdominiosAtivos, urlPublica } from '@/lib/pilutech-dominios'
+import { getPiluLabs } from '@/lib/site-content'
 import { getCanonicalSiteUrl } from '@/lib/site-url'
 
 const SLUG = 'botai'
@@ -50,37 +51,49 @@ const PERMISSOES = [
 ]
 
 async function lerProduto() {
-  const produtos = await getProdutos()
-  return produtos.find((p) => p.slug === SLUG)
+  const itens = await getPiluLabs()
+  return itens.find((item) => item.slug === SLUG)
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const produto = await lerProduto()
   if (!produto) return {}
-  return metadataDoProduto(produto, {
-    caminho: CAMINHO,
-    titulo: `Política de privacidade do ${produto.nome} | PiluLabs`,
-    descricao: `Como o ${produto.nome} trata os dados: nada sai do seu navegador.`,
-  })
+  return metadataDoItem(
+    produto,
+    {
+      caminho: CAMINHO,
+      titulo: `Política de privacidade do ${produto.nome} | PiluLabs`,
+      descricao: `Como o ${produto.nome} trata os dados: nada sai do seu navegador.`,
+    },
+    subdominiosAtivos(),
+  )
 }
 
 export default async function PrivacidadeBotaiPage() {
   const produto = await lerProduto()
   if (!produto) notFound()
+  const subdominios = subdominiosAtivos()
 
   const jsonLd = {
     '@context': CONTEXTO_SCHEMA,
-    ...jsonLdBreadcrumb(getCanonicalSiteUrl(), [
-      { nome: 'PiluLabs', caminho: '/pilulabs' },
-      { nome: produto.nome, caminho: CAMINHO_PRODUTO },
-      { nome: 'Política de privacidade', caminho: CAMINHO },
-    ]),
+    ...jsonLdBreadcrumb(
+      getCanonicalSiteUrl(),
+      [
+        { nome: 'PiluLabs', caminho: '/pilulabs' },
+        { nome: produto.nome, caminho: CAMINHO_PRODUTO },
+        { nome: 'Política de privacidade', caminho: CAMINHO },
+      ],
+      subdominios,
+    ),
   }
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-8 sm:px-8 xl:py-10">
       <JsonLd dados={jsonLd} />
-      <PageTopBar backHref={CAMINHO_PRODUTO} backLabel={produto.nome} />
+      <PageTopBar
+        backHref={urlPublica(CAMINHO_PRODUTO, subdominios)}
+        backLabel={produto.nome}
+      />
 
       <article className="mt-10">
         <header className="border-border flex flex-col gap-4 border-b pb-8">

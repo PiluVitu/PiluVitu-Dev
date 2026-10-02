@@ -12,7 +12,7 @@ import {
   LOJAS,
   lojasPublicadas,
   metadataDaPagina,
-  metadataDoProduto,
+  metadataDoItem,
   normalizarItem,
   normalizarProduto,
   produtoParaProject,
@@ -308,8 +308,8 @@ const PAGINA = {
 describe('metadataDaPagina', () => {
   // O Next substitui o openGraph do layout inteiro: locale e siteName têm de
   // vir de novo, senão a página perde os dois.
-  it('declara título absoluto, canonical, openGraph e twitter completos', () => {
-    expect(metadataDaPagina(PAGINA)).toEqual({
+  it('chave desligada: canonical e og:url no caminho, siteName piluvitu.com.br', () => {
+    expect(metadataDaPagina(PAGINA, false)).toEqual({
       title: { absolute: 'Botaí | PiluLabs' },
       description: PAGINA.descricao,
       alternates: { canonical: '/pilulabs/botai' },
@@ -329,24 +329,35 @@ describe('metadataDaPagina', () => {
     })
   })
 
+  it('chave ligada: canonical e og:url no subdomínio, siteName pilutech.com.br', () => {
+    const metadata = metadataDaPagina(PAGINA, true)
+    expect(metadata.alternates).toEqual({
+      canonical: 'https://botai.pilutech.com.br/',
+    })
+    expect(metadata.openGraph).toMatchObject({
+      siteName: 'pilutech.com.br',
+      url: 'https://botai.pilutech.com.br/',
+    })
+  })
+
   // Declarar images aqui desligaria o opengraph-image.tsx do segmento.
   it('não declara imagens', () => {
-    const metadata = metadataDaPagina(PAGINA)
+    const metadata = metadataDaPagina(PAGINA, true)
     expect(metadata.openGraph).not.toHaveProperty('images')
     expect(metadata.twitter).not.toHaveProperty('images')
   })
 })
 
-describe('metadataDoProduto', () => {
-  it('produto não listado: noindex', () => {
-    expect(metadataDoProduto({ listado: false }, PAGINA).robots).toEqual({
+describe('metadataDoItem', () => {
+  it('item não listado: noindex', () => {
+    expect(metadataDoItem({ listado: false }, PAGINA, false).robots).toEqual({
       index: false,
     })
   })
 
-  it('produto listado: sem robots, igual à metadata da página', () => {
-    expect(metadataDoProduto({ listado: true }, PAGINA)).toEqual(
-      metadataDaPagina(PAGINA),
+  it('item listado: sem robots, igual à metadata da página', () => {
+    expect(metadataDoItem({ listado: true }, PAGINA, true)).toEqual(
+      metadataDaPagina(PAGINA, true),
     )
   })
 })

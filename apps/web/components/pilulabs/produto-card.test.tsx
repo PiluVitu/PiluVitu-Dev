@@ -1,24 +1,44 @@
 import { renderEstatico } from '@/lib/render-estatico'
-import { ProdutoCard } from './produto-card'
+import { ProdutoCard, type ItemDoCard } from './produto-card'
 
-const BOTAI = {
+const BOTAI: ItemDoCard = {
   slug: 'botai',
   nome: 'Botaí',
-  resumo: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
-  icone: '/pilulabs/botai/icone-128.png',
+  subtitulo: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
+  descricao: 'Extensão que preenche o formulário da página com um atalho.',
+  logo: '/pilulabs/botai/icone-128.png',
+  sigla: 'BO',
   tags: ['Extensão', 'QA'],
+  tipo: 'extensao',
+}
+
+const SOMBRAI: ItemDoCard = {
+  slug: 'sombrai',
+  nome: 'Sombraí',
+  subtitulo: 'Plante sombra em Teresina',
+  descricao: 'App que mostra quais árvores nativas cabem no seu quintal.',
+  logo: '/pilulabs/sombrai/icone.png',
+  sigla: 'SO',
+  tags: ['Swift'],
+  tipo: 'mobile',
 }
 
 describe('ProdutoCard', () => {
-  it('é um link para a página do produto, com nome, resumo, tags e fase', () => {
+  it('extensão: link interno na mesma aba, com nome, subtítulo, descrição, tags e fase', () => {
     const raiz = renderEstatico(
-      <ProdutoCard produto={BOTAI} fase="em-breve" lojas={[]} />,
+      <ProdutoCard
+        item={BOTAI}
+        href="/pilulabs/botai"
+        fase="em-breve"
+        lojas={[]}
+      />,
     )
-    expect(raiz.querySelector('a')?.getAttribute('href')).toBe(
-      '/pilulabs/botai',
-    )
+    const link = raiz.querySelector('a')
+    expect(link?.getAttribute('href')).toBe('/pilulabs/botai')
+    expect(link?.hasAttribute('target')).toBe(false)
     expect(raiz.querySelector('h3')?.textContent).toBe('Botaí')
-    expect(raiz.textContent).toContain(BOTAI.resumo)
+    expect(raiz.textContent).toContain(BOTAI.subtitulo)
+    expect(raiz.textContent).toContain(BOTAI.descricao)
     expect(
       [...raiz.querySelectorAll('ul:not([aria-label]) li')].map(
         (li) => li.textContent,
@@ -27,17 +47,55 @@ describe('ProdutoCard', () => {
     expect(raiz.textContent).toContain('Em breve')
   })
 
-  it('sem loja publicada, sem a lista de lojas', () => {
+  it('link externo abre em aba nova', () => {
+    const link = renderEstatico(
+      <ProdutoCard
+        item={SOMBRAI}
+        href="https://sombrai.pilutech.com.br"
+        fase="em-breve"
+        lojas={[]}
+      />,
+    ).querySelector('a')
+    expect(link?.getAttribute('href')).toBe('https://sombrai.pilutech.com.br')
+    expect(link?.getAttribute('target')).toBe('_blank')
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  // Item sem site, página nem repo: o card existe, mas sem botão morto.
+  it('sem link, vira um article sem <a>', () => {
     const raiz = renderEstatico(
-      <ProdutoCard produto={BOTAI} fase="em-breve" lojas={[]} />,
+      <ProdutoCard item={SOMBRAI} href={null} fase="em-breve" lojas={[]} />,
+    )
+    expect(raiz.querySelector('a')).toBeNull()
+    expect(raiz.querySelector('article h3')?.textContent).toBe('Sombraí')
+  })
+
+  // As lojas modeladas são de navegador: fase e ícones só fazem sentido em extensão.
+  it('status e lojas só em extensão', () => {
+    const app = renderEstatico(
+      <ProdutoCard
+        item={SOMBRAI}
+        href={null}
+        fase="disponivel"
+        lojas={['chrome']}
+      />,
+    )
+    expect(app.textContent).not.toContain('Disponível')
+    expect(app.querySelector('[aria-label="Lojas"]')).toBeNull()
+  })
+
+  it('extensão sem loja publicada, sem a lista de lojas', () => {
+    const raiz = renderEstatico(
+      <ProdutoCard item={BOTAI} href={null} fase="em-breve" lojas={[]} />,
     )
     expect(raiz.querySelector('[aria-label="Lojas"]')).toBeNull()
   })
 
-  it('lista só as lojas recebidas, pelo nome', () => {
+  it('extensão: lista só as lojas recebidas, pelo nome', () => {
     const raiz = renderEstatico(
       <ProdutoCard
-        produto={BOTAI}
+        item={BOTAI}
+        href="/pilulabs/botai"
         fase="disponivel"
         lojas={['chrome', 'opera']}
       />,
@@ -49,14 +107,35 @@ describe('ProdutoCard', () => {
     ).toEqual(['Chrome Web Store', 'Opera add-ons'])
   })
 
-  it('sem ícone, sem img', () => {
+  // O next/image recusa host fora do remotePatterns; o logo por URL vai cru.
+  it('logo por URL sai sem o otimizador; o de public/ passa por ele', () => {
+    const remoto = renderEstatico(
+      <ProdutoCard
+        item={{ ...SOMBRAI, logo: 'https://cdn.example.com/sombrai.png' }}
+        href={null}
+        fase="em-breve"
+        lojas={[]}
+      />,
+    ).querySelector('img')
+    expect(remoto?.getAttribute('src')).toBe(
+      'https://cdn.example.com/sombrai.png',
+    )
+    const local = renderEstatico(
+      <ProdutoCard item={BOTAI} href={null} fase="em-breve" lojas={[]} />,
+    ).querySelector('img')
+    expect(local?.getAttribute('src')).toMatch(/^\/_next\/image\?url=/)
+  })
+
+  it('sem logo, a sigla no lugar', () => {
     const raiz = renderEstatico(
       <ProdutoCard
-        produto={{ ...BOTAI, icone: '' }}
+        item={{ ...SOMBRAI, logo: '' }}
+        href={null}
         fase="em-breve"
         lojas={[]}
       />,
     )
     expect(raiz.querySelector('img')).toBeNull()
+    expect(raiz.querySelector('[data-sigla]')?.textContent).toBe('SO')
   })
 })
