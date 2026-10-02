@@ -74,7 +74,7 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 | `make zip-botai`                        | Os 3 pacotes do Botaí (Chrome e Edge, Firefox, Opera) + o zip de fontes da AMO em apps/botai/.output/                   |
 | `make versao-botai V=x.y.z`             | PR de versão do Botaí (branch da `origin/main`, bump sem tag, `gh pr create`)                                           |
 | `make release-botai`                    | Na `main`, depois do merge: tag anotada `botai-v<versão>` + push (dispara o `botai-release.yml`)                        |
-| `make capturas-botai`                   | Imagens das lojas do Botaí + cópias em `apps/web/public/pilulabs/botai/` (rode no Mac)                                  |
+| `make capturas-botai`                   | Imagens das lojas do Botaí + cópias para o `apps/web` e o `apps/botai-site` (rode no Mac)                               |
 | `make storybook-botai`                  | Storybook da extensão em http://localhost:6018                                                                          |
 | `make test`                             | Todos os testes (pnpm -r test + go test + **uv run pytest** do promeia)                                                 |
 | `make lint`                             | ESLint + go vet + **ruff** (check + format --check) do promeia                                                          |
@@ -106,9 +106,9 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 - **Amarrado no `build`, nunca no `dev`, de propósito**: o Vite `dev` server mente sobre `@source` quebrado (mostra as classes certas mesmo sem ele; só o `build` real usa os content roots declarados), o Next `dev` não mente. Ver "Gate do design system: `@source`, o sentinela, e a assimetria dev/prod" em `packages/ui/CLAUDE.md` pra a história completa, com evidência medida dos dois lados.
 - ⚠️ **M4 (fix final, achado da revisão pré-deploy do branch de finanças): a varredura recursiva de `.css` excluía `node_modules`/`cache` mas não `dev`.** `.next/dev/static/css/app/...` guarda CSS de uma sessão `next dev` ANTERIOR (persiste entre execuções — não é limpo por `next build`). PROVADO por reprodução: um `.next/dev/.../layout.css` remanescente contendo a sentinela, somado a um `.next/static/.../layout.css` real (do build atual) SEM ela — simulando `@source` quebrado —, dava `exit 0` (falso positivo), porque a checagem é `cssFiles.some(...)` e bastava UM arquivo bater. CI/Vercel não eram afetados (checkout limpo, sem `.next/dev` de sessão anterior nenhuma); o alvo era o run LOCAL, exatamente o que um dev roda logo depois de mexer em `@source` achando que está confirmando o build atual. Corrigido filtrando qualquer segmento de path `dev`, mesmo padrão de `node_modules`/`cache` — confirmado que o mesmo cenário agora sai com `exit 1`, apontando só pro CSS real.
 
-### Imagens do Botaí no `apps/web`
+### Imagens do Botaí nos sites
 
-`apps/web/public/pilulabs/botai/icone-128.png` e `capturas/<NN>-<cena>-<tema>.png` são gerados por `make capturas-botai`, no `apps/botai` (o mesmo gerador das imagens das lojas, `apps/botai/loja/`), e versionados. O site só os lê: o `listarCapturas('botai')` descobre as capturas no build. Não edite esses PNG à mão; o `apps/botai/loja/imagens.test.ts` falha se a cópia do site divergir da da loja.
+`apps/web/public/pilulabs/botai/icone-128.png` (o logo do card da PiluLabs) e, no `apps/botai-site`, `public/icone-128.png`, `app/icon.png`, `app/apple-icon.png` e `public/capturas/<NN>-<cena>-<tema>.png` são gerados por `make capturas-botai`, no `apps/botai` (o mesmo gerador das imagens das lojas, `apps/botai/loja/`, lista `COPIAS` de `loja/pecas.ts`), e versionados. Os sites só os leem. Não edite esses PNG à mão; o `apps/botai/loja/imagens.test.ts` falha se alguma cópia divergir da da loja.
 
 ### Pre-commit hook (lint-staged)
 

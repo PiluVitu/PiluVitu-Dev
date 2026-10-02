@@ -23,7 +23,7 @@ import {
   arquivoDaOpera,
   CAPTURAS,
   CENAS_DA_OPERA,
-  COPIAS_PARA_O_SITE,
+  COPIAS,
   ICONE,
   LOGO_DO_EDGE,
   TAMANHO_DA_OPERA,
@@ -45,10 +45,7 @@ import {
 declare const chrome: typeof browser
 
 const LOJA = path.resolve(import.meta.dirname, 'imagens')
-const SITE = path.resolve(
-  import.meta.dirname,
-  '../../web/public/pilulabs/botai',
-)
+const APPS = path.resolve(import.meta.dirname, '../..')
 const STORYBOOK = path.resolve(import.meta.dirname, '../storybook-static')
 const STORYBOOK_URL = 'http://storybook.local'
 const SVG = readFileSync(path.join(import.meta.dirname, 'icone-1i.svg'), 'utf8')
@@ -310,9 +307,9 @@ for (const tema of TEMAS) {
   })
 }
 
-test('cópias para o site (apps/web/public/pilulabs/botai)', () => {
-  for (const { origem, destino } of COPIAS_PARA_O_SITE) {
-    mkdirSync(path.dirname(path.join(SITE, destino)), { recursive: true })
-    copyFileSync(path.join(LOJA, origem), path.join(SITE, destino))
+test('cópias para os sites (apps/web e apps/botai-site)', () => {
+  for (const { origem, destino } of COPIAS) {
+    mkdirSync(path.dirname(path.join(APPS, destino)), { recursive: true })
+    copyFileSync(path.join(LOJA, origem), path.join(APPS, destino))
   }
 })

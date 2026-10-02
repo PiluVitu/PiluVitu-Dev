@@ -104,7 +104,7 @@ versao-botai:
 release-botai:
 	bash apps/botai/scripts/release.sh
 
-# Imagens das lojas em apps/botai/loja/imagens/ e cópias em apps/web/public/pilulabs/botai/.
+# Imagens das lojas em apps/botai/loja/imagens/ e cópias para o apps/web (ícone do card) e o apps/botai-site (landing).
 # Rode no Mac: a vitrine usa as fontes do sistema.
 capturas-botai:
 	pnpm --filter @pilutech/botai capturas
