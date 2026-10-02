@@ -1,9 +1,8 @@
+import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-  testMatch: ['**/*.e2e.ts'],
-  testIgnore: ['**/lojas-publicadas.e2e.ts'],
-  fullyParallel: true,
+  testMatch: ['**/lojas-publicadas.e2e.ts'],
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
@@ -16,8 +15,9 @@ export default defineConfig({
   webServer: {
     command: 'pnpm run build && pnpm run start',
     url: 'http://localhost:3020',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 300_000,
     cwd: '.',
+    env: { BOTAI_CMS_ITEM: join(__dirname, 'app', 'lojas-publicadas.yaml') },
   },
 })

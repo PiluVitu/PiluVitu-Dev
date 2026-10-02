@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import type { ReactNode } from 'react'
+import { TemaProvider } from '@/components/tema-provider'
 import './globals.css'
 
 const sans = Plus_Jakarta_Sans({
@@ -25,7 +26,9 @@ export default function RootLayout({
       className={`${sans.variable} ${mono.variable}`}
       suppressHydrationWarning
     >
-      <body>{children}</body>
+      <body>
+        <TemaProvider>{children}</TemaProvider>
+      </body>
     </html>
   )
 }
