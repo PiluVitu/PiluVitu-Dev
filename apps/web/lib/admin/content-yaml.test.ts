@@ -53,8 +53,23 @@ describe('content-yaml', () => {
 
   it('writes the date as AAAA-MM-DD and reads it back as text', () => {
     const yaml = serializeEntry(COLLECTIONS.pilulabs, botai)
-    expect(yaml).toContain('\ndata: 2026-10-01\n')
+    expect(yaml).toContain('\ndata: "2026-10-01"\n')
     expect(parseEntry(COLLECTIONS.pilulabs, yaml).data).toBe('2026-10-01')
+  })
+
+  // O reader do Keystatic usa js-yaml (YAML 1.1), que lê `2026-10-01` sem aspas
+  // como Date: num fields.text isso lança erro e derruba a coleção inteira (o
+  // `.all()` é um Promise.all). O `yaml` daqui é 1.2 e não vê o problema.
+  it('quotes date-shaped text, so a YAML 1.1 reader keeps it a string', () => {
+    const yaml = serializeEntry(COLLECTIONS.pilulabs, {
+      ...botai,
+      sigla: '2026-10-01',
+      subtitulo: '2026-10-01T10:00:00Z',
+    })
+    const comoOKeystaticLe = parse(yaml, { version: '1.1' })
+    expect(comoOKeystaticLe.sigla).toBe('2026-10-01')
+    expect(comoOKeystaticLe.subtitulo).toBe('2026-10-01T10:00:00Z')
+    expect(comoOKeystaticLe.data).toBe('2026-10-01')
   })
 
   it('keeps every other empty string: only the listed keys are omitted', () => {
