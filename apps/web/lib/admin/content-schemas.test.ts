@@ -1,6 +1,5 @@
 /** @jest-environment node */
 import {
-  projectSchema,
   carreiraSchema,
   socialSchema,
   profileSchema,
@@ -8,34 +7,7 @@ import {
   SLUG_RE,
 } from './content-schemas'
 
-const project = {
-  projectSlug: 'live-prs',
-  order: 0,
-  projectName: 'Live PRs',
-  subtitle: '',
-  projectLogo: '/x.svg',
-  description: 'desc',
-  tags: ['Go'],
-  deployLink: '',
-  repoLink: '',
-  image: '/i.png',
-  altImage: 'LPR',
-}
-
 describe('content-schemas', () => {
-  it('accepts a valid project', () => {
-    expect(projectSchema.parse(project)).toEqual(project)
-  })
-  it('rejects an invalid slug', () => {
-    expect(
-      projectSchema.safeParse({ ...project, projectSlug: 'Bad Slug' }).success,
-    ).toBe(false)
-  })
-  it('rejects a negative order', () => {
-    expect(projectSchema.safeParse({ ...project, order: -1 }).success).toBe(
-      false,
-    )
-  })
   it('accepts a valid carreira', () => {
     expect(
       carreiraSchema.safeParse({
@@ -133,16 +105,6 @@ describe('content-schemas toleram campos opcionais ausentes', () => {
     expect(parsed.availabilityOpen).toBe(false)
     expect(parsed.disciplines).toEqual([])
     expect(parsed.avatarSrc).toBe('')
-  })
-
-  it('project só com slug + nome parseia (resto default)', () => {
-    const parsed = projectSchema.parse({
-      projectSlug: 'p',
-      projectName: 'P',
-    })
-    expect(parsed.order).toBe(0)
-    expect(parsed.image).toBe('')
-    expect(parsed.tags).toEqual([])
   })
 })
 

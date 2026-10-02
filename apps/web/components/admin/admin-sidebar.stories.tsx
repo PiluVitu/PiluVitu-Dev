@@ -19,7 +19,7 @@ const frame = (args: React.ComponentProps<typeof AdminSidebar>) => (
 )
 
 export const Default: Story = {
-  args: { counts: { posts: 6, projects: 1, careers: 5, sessions: 2 } },
+  args: { counts: { posts: 6, pilulabs: 3, careers: 5, sessions: 2 } },
   render: frame,
 }
 

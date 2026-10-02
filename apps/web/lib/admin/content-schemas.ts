@@ -69,19 +69,6 @@ const dataIso = str.refine(
   'Data inválida (AAAA-MM-DD)',
 )
 
-export const projectSchema = z.object({
-  projectSlug: slug,
-  order,
-  projectName: reqStr,
-  subtitle: str,
-  projectLogo: str,
-  description: str,
-  tags: strArray,
-  deployLink: str,
-  repoLink: str,
-  image: str,
-  altImage: str,
-})
 export const carreiraSchema = z.object({
   orgSlug: slug,
   order,
@@ -143,7 +130,6 @@ export const profileSchema = z.object({
   disciplines: strArray,
 })
 
-export type ProjectEntry = z.infer<typeof projectSchema>
 export type CarreiraEntry = z.infer<typeof carreiraSchema>
 export type SocialEntry = z.infer<typeof socialSchema>
 export type ProfileEntry = z.infer<typeof profileSchema>

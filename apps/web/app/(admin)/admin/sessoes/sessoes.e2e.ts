@@ -83,7 +83,7 @@ async function baseMocks(page: Page, opts: { isAdmin?: boolean } = {}) {
         posts: 0,
         drafts: 0,
         published: 0,
-        projects: 0,
+        pilulabs: 0,
         careers: 0,
         careersCurrent: 0,
         recentPosts: [],

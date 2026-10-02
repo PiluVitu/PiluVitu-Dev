@@ -17,7 +17,7 @@ const statsBody = {
   posts: 6,
   drafts: 1,
   published: 5,
-  projects: 1,
+  pilulabs: 1,
   careers: 5,
   careersCurrent: 2,
   recentPosts: [

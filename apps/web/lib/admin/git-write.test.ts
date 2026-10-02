@@ -183,7 +183,7 @@ describe('deleteFile', () => {
     }
     const res = await deleteFile(
       { token: 't', login: 'me' },
-      { repo: 'site', path: 'content/projects/x/index.yaml', message: 'rm' },
+      { repo: 'site', path: 'content/pilulabs/x/index.yaml', message: 'rm' },
       { makeOctokit: () => octokit },
     )
     expect(res.commitSha).toBe('del-commit')
@@ -191,7 +191,7 @@ describe('deleteFile', () => {
       owner: 'PiluVitu',
       repo: 'PiluVitu-Dev',
       sha: 'sha1',
-      path: 'content/projects/x/index.yaml',
+      path: 'content/pilulabs/x/index.yaml',
     })
   })
 
@@ -269,8 +269,8 @@ describe('commitFiles', () => {
         repo: 'site',
         message: 'reorder',
         files: [
-          { path: 'content/projects/a/index.yaml', content: 'order: 0' },
-          { path: 'content/projects/b/index.yaml', content: 'order: 1' },
+          { path: 'content/pilulabs/a/index.yaml', content: 'order: 0' },
+          { path: 'content/pilulabs/b/index.yaml', content: 'order: 1' },
         ],
       },
       { makeOctokit: () => octokit as unknown as OctokitLike },

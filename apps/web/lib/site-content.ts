@@ -2,7 +2,6 @@ import 'server-only'
 
 import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
-import type { Project } from '@/mocks/projects'
 import { normalizarItem, type ItemPiluLabs } from '@/lib/pilulabs'
 import type { FeedSource } from '@/mocks/feeds'
 import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
@@ -207,42 +206,6 @@ export async function getCarreiras(): Promise<Carreira[]> {
       atribuitions: row.atribuitions,
       current: row.current,
       tags: row.tags,
-    }),
-  )
-}
-
-export async function getProjects(): Promise<Project[]> {
-  await skipCacheWhenDraft()
-  const reader = await getKeystaticReader()
-  const items = await reader.collections.projects.all()
-  const mapped = items.map(({ slug, entry }) => {
-    const image = (entry.image ?? '').trim()
-    return {
-      id: slug,
-      projectName: entry.projectName,
-      subtitle: (entry.subtitle ?? '').trim(),
-      projectLogo: entry.projectLogo,
-      description: entry.description,
-      tags: [...entry.tags],
-      deployLink: (entry.deployLink ?? '').trim(),
-      repoLink: (entry.repoLink ?? '').trim(),
-      image: image ? image : undefined,
-      altImage: entry.altImage,
-      order: entry.order ?? 0,
-    }
-  })
-  return sortByOrder(mapped).map(
-    (row): Project => ({
-      id: row.id,
-      projectName: row.projectName,
-      subtitle: row.subtitle,
-      projectLogo: row.projectLogo,
-      description: row.description,
-      tags: row.tags,
-      deployLink: row.deployLink,
-      repoLink: row.repoLink,
-      image: row.image,
-      altImage: row.altImage,
     }),
   )
 }

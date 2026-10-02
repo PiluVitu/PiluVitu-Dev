@@ -313,38 +313,6 @@ export default config({
         }),
       },
     }),
-    projects: collection({
-      label: 'Projetos',
-      slugField: 'projectSlug',
-      path: 'content/projects/*/',
-      previewUrl: '/preview/start?branch={branch}&to=/',
-      schema: {
-        projectSlug: fields.slug({ name: { label: 'Slug do projeto' } }),
-        order: fields.integer({ label: 'Ordem (menor primeiro)' }),
-        projectName: fields.text({ label: 'Nome' }),
-        subtitle: fields.text({
-          label: 'Subtítulo',
-          description: 'Ex.: agregador de pull requests',
-          defaultValue: '',
-        }),
-        projectLogo: fields.text({
-          label: 'Logo (path ou URL)',
-        }),
-        description: fields.text({
-          label: 'Descrição',
-          multiline: true,
-        }),
-        tags: fields.array(fields.text({ label: 'Tag' }), {
-          label: 'Tags',
-        }),
-        deployLink: fields.text({ label: 'URL demo (opcional)' }),
-        repoLink: fields.text({ label: 'URL repositório (opcional)' }),
-        image: fields.text({
-          label: 'Imagem de capa (path em public/)',
-        }),
-        altImage: fields.text({ label: 'Abrev. / alt' }),
-      },
-    }),
     feeds: collection({
       label: 'Feeds RSS',
       slugField: 'name',

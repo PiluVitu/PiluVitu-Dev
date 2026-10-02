@@ -1,17 +1,15 @@
 import type { ZodType } from 'zod'
 import { sitePath } from './site-paths'
 import {
-  projectSchema,
   carreiraSchema,
   socialSchema,
   pilulabsSchema,
-  type ProjectEntry,
   type CarreiraEntry,
   type SocialEntry,
   type PiluLabsEntry,
 } from './content-schemas'
 
-export type CollectionKey = 'projects' | 'pilulabs' | 'carreiras' | 'socials'
+export type CollectionKey = 'pilulabs' | 'carreiras' | 'socials'
 
 export interface CollectionDef<T extends Record<string, unknown>> {
   key: CollectionKey
@@ -25,27 +23,6 @@ export interface CollectionDef<T extends Record<string, unknown>> {
 }
 
 export const COLLECTIONS = {
-  projects: {
-    key: 'projects',
-    label: 'Projetos',
-    dir: sitePath('content/projects'),
-    slugField: 'projectSlug',
-    schema: projectSchema,
-    keyOrder: [
-      'projectSlug',
-      'order',
-      'projectName',
-      'subtitle',
-      'projectLogo',
-      'description',
-      'tags',
-      'deployLink',
-      'repoLink',
-      'image',
-      'altImage',
-    ],
-    multiline: ['description'],
-  } as CollectionDef<ProjectEntry>,
   pilulabs: {
     key: 'pilulabs',
     label: 'PiluLabs',

@@ -15,7 +15,7 @@ const CRUMB: Record<string, string[]> = {
   '/admin': ['Admin', 'Dashboard'],
   '/admin/posts': ['Coleções', 'Posts'],
   '/admin/posts/novo': ['Coleções', 'Posts', 'Novo'],
-  '/admin/projetos': ['Coleções', 'Projetos'],
+  '/admin/pilulabs': ['Coleções', 'PiluLabs'],
   '/admin/carreira': ['Coleções', 'Carreira'],
   '/admin/socials': ['Coleções', 'Redes sociais'],
   '/admin/perfil': ['Site', 'Perfil & bio'],
@@ -58,7 +58,7 @@ export default function AdminShellLayout({
 
   const counts = {
     posts: stats.data?.posts,
-    projects: stats.data?.projects,
+    pilulabs: stats.data?.pilulabs,
     careers: stats.data?.careers,
   }
 

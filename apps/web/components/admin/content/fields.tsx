@@ -30,11 +30,13 @@ export function TextField(props: {
   onChange: (v: string) => void
   placeholder?: string
   error?: string
+  type?: 'text' | 'date'
 }) {
   return (
     <FieldShell label={props.label} error={props.error}>
       <input
         className={inputCls}
+        type={props.type}
         value={props.value}
         placeholder={props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faNewspaper,
-  faDiagramProject,
+  faFlask,
   faBriefcase,
   faShareNodes,
   faUser,
@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 
 export interface SidebarCounts {
   posts?: number
-  projects?: number
+  pilulabs?: number
   careers?: number
   sessions?: number
 }
@@ -49,10 +49,10 @@ const GROUPS: NavGroup[] = [
         countKey: 'posts',
       },
       {
-        label: 'Projetos',
-        href: '/admin/projetos',
-        icon: faDiagramProject,
-        countKey: 'projects',
+        label: 'PiluLabs',
+        href: '/admin/pilulabs',
+        icon: faFlask,
+        countKey: 'pilulabs',
       },
       {
         label: 'Carreira',
