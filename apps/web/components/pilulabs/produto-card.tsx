@@ -34,35 +34,37 @@ export function ProdutoCard({ item, href, fase, lojas }: ProdutoCardProps) {
   const extensao = item.tipo === 'extensao'
   const conteudo = (
     <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          {item.logo ? (
-            <Image
-              src={item.logo}
-              alt=""
-              width={44}
-              height={44}
-              unoptimized={!item.logo.startsWith('/')}
-              className="rounded-xl"
-            />
-          ) : (
-            <span
-              aria-hidden
-              data-sigla
-              className="bg-accent-soft text-primary grid size-11 shrink-0 place-items-center rounded-xl text-sm font-bold"
-            >
-              {item.sigla}
-            </span>
-          )}
-          <div className="flex flex-col">
-            <h3 className="text-lg font-semibold">{item.nome}</h3>
-            {item.subtitulo ? (
-              <p className="text-muted-foreground text-sm">{item.subtitulo}</p>
-            ) : null}
-          </div>
+      <div className="flex items-center gap-3">
+        {item.logo ? (
+          <Image
+            src={item.logo}
+            alt=""
+            width={44}
+            height={44}
+            unoptimized={!item.logo.startsWith('/')}
+            className="shrink-0 rounded-xl"
+          />
+        ) : (
+          <span
+            aria-hidden
+            data-sigla
+            className="bg-accent-soft text-primary grid size-11 shrink-0 place-items-center rounded-xl text-sm font-bold"
+          >
+            {item.sigla}
+          </span>
+        )}
+        <div className="flex min-w-0 flex-col">
+          <h3 className="text-lg font-semibold">{item.nome}</h3>
+          {item.subtitulo ? (
+            <p className="text-muted-foreground text-sm">{item.subtitulo}</p>
+          ) : null}
         </div>
-        {extensao ? <StatusProduto fase={fase} /> : null}
       </div>
+      {extensao ? (
+        <div className="flex">
+          <StatusProduto fase={fase} />
+        </div>
+      ) : null}
       {item.descricao ? (
         <p className="text-muted-foreground text-sm">{item.descricao}</p>
       ) : null}

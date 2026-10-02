@@ -47,6 +47,32 @@ describe('ProdutoCard', () => {
     expect(raiz.textContent).toContain('Em breve')
   })
 
+  // Na mesma linha do nome, o selo espremia o subtítulo numa coluna de uma ou
+  // duas palavras (6 linhas no card de 1/3 da largura, a 1280 px).
+  it('o selo da fase fica fora da linha do nome, que usa a largura do card', () => {
+    const raiz = renderEstatico(
+      <ProdutoCard
+        item={BOTAI}
+        href="/pilulabs/botai"
+        fase="em-breve"
+        lojas={[]}
+      />,
+    )
+    const cartao = raiz.querySelector('a')!
+    const selo = [...cartao.querySelectorAll('span')].find(
+      (el) => el.textContent === 'Em breve',
+    )!
+    const ancestraisDoNome: Element[] = []
+    for (
+      let el = raiz.querySelector('h3')!.parentElement;
+      el && el !== cartao;
+      el = el.parentElement
+    )
+      ancestraisDoNome.push(el)
+    expect(selo).toBeDefined()
+    expect(ancestraisDoNome.filter((el) => el.contains(selo))).toEqual([])
+  })
+
   it('link externo abre em aba nova', () => {
     const link = renderEstatico(
       <ProdutoCard
