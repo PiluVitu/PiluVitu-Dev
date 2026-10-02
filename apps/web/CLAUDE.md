@@ -52,12 +52,11 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 
 - `content/socials/*/` — social links with order, icon mode, FA icon or image
 - `content/carreiras/*/` — career history entries
-- `content/projects/*/` — project showcase entries
-- `content/produtos/*/` — catálogo PiluLabs (`produtos`): visibilidade e lojas de cada produto PiluTech. A página do produto é TSX (ver _PiluLabs_)
+- `content/pilulabs/*/` — catálogo PiluLabs (`pilulabs`): projetos e produtos PiluTech, com visibilidade, destaque, lojas e subdomínio (ver _PiluLabs_)
 
 ### Data flow
 
-1. Server components call readers in `lib/site-content.ts` (`getSiteProfile()`, `getSocials()`, `getCarreiras()`, `getProjects()`, `getVisitCard()`, `getProdutos()`) — these read Keystatic YAML at build/request time.
+1. Server components call readers in `lib/site-content.ts` (`getSiteProfile()`, `getSocials()`, `getCarreiras()`, `getPiluLabs()`, `getVisitCard()`) — these read Keystatic YAML at build/request time.
 2. `lib/blog-posts.ts` (`getBlogPosts()`, `getBlogPost()`) fetches MDX posts from the private `PiluVitu/piluvitu-blog` repo at build/ISR time via `@octokit/rest` using `BLOG_REPO_TOKEN`. Posts are cached 30 min (ISR tag `blog-posts`).
 3. `lib/article-feed.ts` provides `ArticleCardView` — a unified type for both dev.to and blog posts. `devToToView()` and `blogPostToView()` convert each source. `mergeFeed()` merges and sorts by date.
 4. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; merged with server-fetched blog posts in `ArticleSection`.
@@ -180,48 +179,115 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **UI (`apps/web`):** `hooks/use-camera-entropy.ts` captura alguns frames da webcam, hasheia localmente com `crypto.getRandomValues` num digest de 32 bytes e **descarta a imagem** — só o hash sai do hook; sem câmera/permissão cai no fallback crypto-only (ainda seguro). `components/entropy/roulette-wheel.tsx` (roda conic-gradient que pousa no vencedor passado pelo caller) e `components/entropy/camera-entropy-capture.tsx` (UI de consentimento + botão `data-testid="capture-entropy"`). `lib/log.ts` é um logger client leve (nunca recebe imagem crua, só hash/metadata).
 - **Tool `/tools/roleta`:** `components/tools/roleta-tool.tsx` (textarea de opções → gira com entropia da câmera ou só com aleatório do browser) + entrada `roleta` em `lib/tools-registry.ts` (ícone `faDharmachakra`). E2E em `tools.e2e.ts` usa o caminho crypto-only (sem câmera no CI).
 
-### PiluLabs (`/pilulabs`): vitrine dos produtos PiluTech
+### PiluLabs (`/pilulabs` e `*.pilutech.com.br`): vitrine dos projetos e produtos PiluTech
 
-Vitrine dos produtos que o autor publica pela PiluTech. O primeiro é o Botaí, a extensão de `apps/botai`.
+Tudo o que o autor publica, produto PiluTech (Botaí, Sombraí) ou projeto (Live PRs), mora numa coleção só, `pilulabs`. Ela alimenta a seção PiluLabs da home, a vitrine `/pilulabs` e o CRUD `/admin/pilulabs`. Cada item pode ter um subdomínio de `pilutech.com.br`.
 
-- **Spec:** `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6.
-- **Contrato entre as fases:** `docs/superpowers/plans/2026-10-01-botai-multinavegador-interfaces.md`.
-- **Plano:** `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md`.
+- **Specs:**
+  - `docs/superpowers/specs/2026-10-01-pilulabs-v2-subdominios-design.md`: a v2, com a coleção única, a home e os subdomínios;
+  - `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6: a v1, só com o Botaí.
+- **Planos:** `docs/superpowers/plans/2026-10-01-pilulabs-v2.md` e `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md`.
 
-**Rotas:**
+**Rotas e hosts:**
 
-| Rota                          | O que é                                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `/pilulabs`                   | Vitrine. Sem produto listado, mostra "PiluLabs: produtos da PiluTech. Em breve."         |
-| `/pilulabs/botai`             | Página do produto. É também a `homepage_url` da extensão e a página de suporte nas lojas |
-| `/pilulabs/botai/privacidade` | A URL de política que vai para as 4 lojas. O mesmo texto é colado na AMO                 |
+| Chave desligada (padrão)      | Com `PILUTECH_SUBDOMINIOS=1`                | O que é                                                                         |
+| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/pilulabs`                   | `https://pilutech.com.br/`                  | Vitrine: todos os listados, agrupados por tipo                                  |
+| `/pilulabs/botai`             | `https://botai.pilutech.com.br/`            | Página do Botaí. É a `homepage_url` da extensão e a página de suporte nas lojas |
+| `/pilulabs/botai/privacidade` | `https://botai.pilutech.com.br/privacidade` | A política que vai para as 4 lojas. O mesmo texto é colado na AMO               |
 
-As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para elas.
+O Sombraí não tem rota aqui: `sombrai.pilutech.com.br` é a landing do projeto Vercel dele, e o link do card é o `site`.
 
-- **Modelo híbrido:**
-  - A collection Keystatic `produtos` (`content/produtos/<slug>/index.yaml`) guarda só catálogo, visibilidade e lojas: `produtoSlug`, `order`, `nome`, `tipo`, `listado`, `resumo`, `icone`, `tags`, `chromeUrl`, `firefoxUrl`, `edgeUrl`, `operaUrl` e `repoLink`.
-  - Não tem `versao`, porque ninguém a atualizaria a cada release.
-  - O texto da página e o da política são TSX versionado, uma rota por produto.
-  - A leitura é `getProdutos()` em `lib/site-content.ts`.
-  - Ainda não há CRUD no `/admin`: URLs de loja e `listado` mudam por PR, no YAML.
-- **Trava do modelo híbrido (`lib/pilulabs-conteudo.test.ts`):**
-  - lê o YAML direto, pelo `lib/pilulabs-conteudo.ts` e sem o Keystatic, cujo reader exige `server-only` e `draftMode`;
-  - exige `app/(site)/pilulabs/<slug>/page.tsx` e `privacidade/page.tsx` para todo produto com `listado: true`;
-  - exige também o ícone em `public/`.
-- **Visibilidade, que sai dos dados (sem flag manual):**
-  - `listado: false`: a página e a política respondem por link, com `robots: { index: false }`. O produto fica fora de `/pilulabs`, do card em Projetos e do link `/pilulabs` no rodapé da home. Campo omitido no YAML conta como `false`.
-  - `listado: true` sem loja: "● Em breve".
-  - Ao menos uma loja publicada: "● Disponível" e o botão de cada loja publicada.
-- **`lib/pilulabs.ts` (lógica pura, testada no Jest):**
-  - `Loja` e `lojasPublicadas`: só aceita URL `https:` com o host exato da loja (`chromewebstore.google.com`, `addons.mozilla.org`, `microsoftedge.microsoft.com`, `addons.opera.com`), sempre na ordem chrome, firefox, edge, opera;
-  - `fase` e `listarCapturas`;
-  - `ATALHOS`, que espelha o `wxt.config.ts` do Botaí. O `apps/web` não importa nada de `apps/botai`: se o atalho mudar lá, muda aqui no mesmo PR;
-  - `metadataDaPagina`/`metadataDoProduto` e `produtoParaProject`.
+- **Coleção `pilulabs` (`content/pilulabs/<slug>/index.yaml`), campos:**
+  - `slug`: sem acento; é o subdomínio e a pasta da rota;
+  - `order`, `nome`, `subtitulo` e `descricao` (o texto do card);
+  - `tipo`: `extensao` | `mobile` | `web` | `cli`. Ausente, vira `web`. Fora da lista, o reader do Keystatic lança erro e derruba a coleção inteira (ver o ⚠️ abaixo);
+  - `tags`;
+  - `logo`: path em `public/` ou URL;
+  - `sigla`: vazia, vira as 2 primeiras letras do nome;
+  - `site` e `repo`: só `https:`. Outro esquema vira vazio, e um `href="javascript:…"` nunca chega ao card;
+  - as 4 URLs de loja;
+  - `destaque`, `data` (`AAAA-MM-DD`), `listado` e `paginaPropria`.
 
-  O JSON-LD fica em `lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`.
+  Leitura: `getPiluLabs()`, em `lib/site-content.ts`. Edição: `/admin/pilulabs`. As coleções `projects` e `produtos` saíram.
 
+- ⚠️ **Um YAML que o reader do Keystatic recusa derruba o build.**
+  - **A armadilha:** o site lê pelo reader (`getPiluLabs`), mais estrito que o `normalizarItem`. `tipo` fora das opções, booleano em texto (`listado: "true"`), `order` que não é inteiro, texto em número e `data: ''` lançam erro. Como o `.all()` faz `Promise.all`, um item derruba a coleção inteira: home, `/pilulabs`, a página e a OG do Botaí, `/api/admin/stats` e o `next build`. A data inexistente sem aspas (`2026-02-30`) ele não recusa: o js-yaml a rola para `2026-03-02`. A chave sem valor ele lê como ausente.
+  - **No admin:** o `pilulabsSchema` é mais estrito ainda (`https:`, host da loja, data real, chave sem valor recusada), e o `GET /api/admin/content/pilulabs` valida dentro de um `Promise.all`: um item recusado vira 502 na lista inteira, e o reorder também falha.
+  - **Por que `data` é `fields.date`:** o `yaml` do admin grava `data: 2026-10-01` sem aspas, e o `js-yaml` do reader lê isso como `Date`, que um `fields.text` recusaria.
+  - **A defesa:**
+    - o registry do admin tem `omitirSeVazio: ['data']`, e o `serializeEntry` apaga a chave vazia;
+    - o `lib/pilulabs-conteudo.test.ts` reprova o YAML que o reader recusa (`camposInvalidosNoYaml`, que espelha o parse de cada campo do `keystatic.config.ts`) e o que o `pilulabsSchema` recusa. Os dois leitores precisam das travas porque o Jest e os E2E leem pelo `yaml` + `normalizarItem`, tolerantes, e ficariam verdes.
+- **Regras (lógica pura, testada no Jest):**
+  - `lib/pilulabs-regras.ts`, sem `node:fs` e importável no cliente:
+    - `Loja`, `LOJAS` e `ehUrlDaLoja`: só aceita `https:` no host exato da loja;
+    - `ehHttps`;
+    - `TipoItem` e `TIPOS`, na ordem da vitrine;
+    - `ehDataValida`.
+  - `lib/pilulabs.ts`:
+    - `normalizarItem`;
+    - `itensListados`: só `listado: true`, por `order` e depois `slug`;
+    - `selecionarParaHome(itens, 4)`: primeiro os destaques, por `order`; depois os demais, pela `data` mais nova. A data vazia conta como a mais antiga, e o empate vai por `order` e depois `slug`;
+    - `linkDoItem(item, subdominios)`: a página própria, com a chave desligada, é `/pilulabs/<slug>`. Senão vale o `site`, depois a página própria no subdomínio, depois o `repo`. Sem nenhum, o card fica sem botão;
+    - `siglaDoItem`;
+    - `itemParaProject`: o card da home. "Acessar" leva ao `linkDoItem`, e some quando seria o próprio `repo`; "Código" leva ao `repo`;
+    - `lojasPublicadas`, `fase`, `listarCapturas`, `ATALHOS` e `metadataDaPagina`/`metadataDoItem`.
+  - `lib/pilutech-dominios.ts`, sem `node:fs` (o `proxy.ts` só importa este): `subdominiosAtivos()`, `urlPublica(caminho, ativos)`, `destinoDoHost`, `ehCaminhoIntocavel`, `rotearPorHost` e `SITE_DO_AUTOR`.
+  - Status "● Em breve"/"● Disponível" e ícones de loja aparecem só em `tipo: extensao`.
+- **Home:**
+  - a seção PiluLabs (`components/secao-pilulabs.tsx`) mostra até 4 cards (`selecionarParaHome` → `itemParaProject` → `ProjectCard`) e a contagem dos listados;
+  - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `urlPublica('/pilulabs')`;
+  - o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado.
+- **Subdomínios (`proxy.ts`, na raiz do `apps/web`):**
+  - **Reescrita:**
+    - em `pilutech.com.br` e `www.`, `/` é reescrito para `/pilulabs`;
+    - em `<slug>.pilutech.com.br`, `/` vira `/pilulabs/<slug>`, e `/<resto>` vira `/pilulabs/<slug>/<resto>`;
+    - o mesmo vale com `pilutech.localhost`;
+    - o host é lido sem porta e sem diferenciar maiúsculas. Subdomínio de dois níveis ou só parecido (`evilpilutech.com.br`) não conta.
+  - **O apex não espelha o portfólio:** fora de `/`, `/pilulabs*` e das exceções, `pilutech.com.br` responde 308 para `https://piluvitu.com.br` + caminho + query (`SITE_DO_AUTOR`, constante de propósito: o `getCanonicalSiteUrl()` sem `NEXT_PUBLIC_SITE_URL` podia devolver o próprio `pilutech.com.br` e fechar um laço). Sem isso, `/posts/<slug>`, `/tools` e `/admin` seriam o site inteiro sob a marca PiluTech, sem canonical. Local, `pilutech.localhost:3333/tools` também vai para a produção.
+  - **Exceções:** nunca reescreve nem redireciona `/_next/*`, `/__nextjs*`, `/_vercel/*`, `/api/*`, arquivo com extensão e `opengraph-image*`/`twitter-image*`, e nunca reescreve o que já começa com `/pilulabs`. O `/_vercel/*` são os beacons do Vercel Analytics e do Speed Insights (`/_vercel/insights/view`, `/_vercel/speed-insights/vitals`): sem extensão, no subdomínio eles virariam `/pilulabs/<slug>/_vercel/…` e dariam 404, e a página perderia analytics sem erro nenhum.
+  - **A reescrita e o 308 do apex não dependem da chave.** É assim que o dono confere o DNS antes de ligá-la.
+  - **Matcher:** o `config.matcher` só pega os hosts PiluTech (`has` de `host`, fora de `/_next/`, `/__nextjs`, `/_vercel/` e `/api/`) e `/pilulabs/:path*`, então o resto do `piluvitu.com.br` não passa pelo proxy. Ele é literal porque o Next o lê no build.
+  - **Teste do matcher:** `proxy.test.ts`, com `unstable_doesMiddlewareMatch` de `next/experimental/testing/server`. No Next 16.3.8 o nome é esse; a doc empacotada fala em `unstable_doesProxyMatch`, que não existe.
+  - **Local:** `http://pilutech.localhost:3333` e `http://botai.pilutech.localhost:3333/privacidade`.
+    - O Chromium e o Node resolvem `*.localhost` para o loopback.
+    - O `next dev` já libera `**.localhost`, então o `allowedDevOrigins` não muda.
+    - E2E: `app/(site)/pilulabs/subdominios.e2e.ts`, com a chave desligada, e `app/(site)/pilulabs/chave-ligada.e2e.ts`, com ela ligada (ver _Testes_).
+- **Chave `PILUTECH_SUBDOMINIOS`** (ver _Environment variables_):
+  - **Desligada** (o padrão): `urlPublica` devolve o caminho, e nada muda no `piluvitu.com.br`. Com `VERCEL_ENV` presente e diferente de `production`, o `subdominiosAtivos` a ignora: a Vercel marca os três ambientes ao criar a variável, e num preview ela mandaria o `/pilulabs*` com 308 para a produção.
+  - **Ligada:**
+    - os links usam os subdomínios: `linkDoItem`, "Saiba mais", o rodapé, o voltar e os links internos das páginas PiluLabs e o JSON-LD. O `canonical` e o `og:url` também;
+    - o `siteName` vira `pilutech.com.br`;
+    - o voltar da vitrine para a home do autor vira `getCanonicalSiteUrl()`;
+    - fora do host PiluTech, `/pilulabs` e `/pilulabs/<slug>[/<resto>]` respondem 308 para lá, com a query;
+    - o 308 é genérico, como a spec pede: vale para todo slug válido, mesmo sem página ou sem DNS. Um `/pilulabs/<typo>`, que antes era 404, vira erro de DNS no navegador. Por isso, com a chave ligada, um produto novo com página própria só abre depois do `CNAME` dele (ver _Novo item_); antes disso, confira no preview, onde a chave fica desligada.
+  - **O que não muda:** arquivos e imagens OG ficam no `piluvitu.com.br`, porque o `og:image` aponta para lá.
+  - **As páginas são estáticas e leem a chave no build:** mudar o valor pede redeploy.
+- **Passos do dono para ligar os subdomínios:** 0. Vercel, projeto do `apps/web`, Production: confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` **antes** de adicionar os domínios. Sem ela, `getCanonicalSiteUrl()` cai no `VERCEL_PROJECT_PRODUCTION_URL`, que é o domínio de produção mais curto, e `pilutech.com.br` tem o mesmo tamanho de `piluvitu.com.br`: o `metadataBase`, o `og:image` e o canonical do site inteiro podiam passar para `pilutech.com.br`. `lib/site-url.test.ts` fixa essa precedência.
+  1. Vercel, mesmo projeto, Settings → Domains: `pilutech.com.br`, `www.pilutech.com.br` (redirecionando para o apex) e `botai.pilutech.com.br`.
+  2. Cloudflare, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, `CNAME botai`). Não crie o Single Redirect 308 que o README do Botaí descrevia; se ele existir, apague.
+  3. Projeto Vercel do Sombraí: domínio `sombrai.pilutech.com.br`, `CNAME sombrai` na Cloudflare e `SITE_URL=https://sombrai.pilutech.com.br` (variável que o site do Sombraí já lê), com redeploy. Até isso, o link do Sombraí na PiluLabs não abre.
+  4. Com `curl -sI https://botai.pilutech.com.br` respondendo 200: `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e redeploy.
+- **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
+  - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
+  - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque o subdomínio depende disso;
+  - todo listado tenha `descricao`, link com e sem a chave e, se o `logo` for caminho, o arquivo em `public/`;
+  - todo YAML abra no reader do Keystatic: `camposInvalidosNoYaml` vazio, o que inclui `data` ausente ou `AAAA-MM-DD` de um dia que existe;
+  - todo YAML passe no `pilulabsSchema` do admin.
+
+  Se mudar um campo no `keystatic.config.ts`, mude também a regra dele em `camposInvalidosNoYaml`.
+
+- **Novo item:**
+  - pelo `/admin/pilulabs`, ou por PR no YAML (as travas acima pegam o que o reader ou o admin recusariam);
+  - **produto com página própria:**
+    1. `content/pilulabs/<slug>/index.yaml` com `paginaPropria: true` e `listado: false`;
+    2. o logo em `public/pilulabs/<slug>/`;
+    3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/` se for extensão;
+    4. para o subdomínio, o domínio na Vercel e o `CNAME` na Cloudflare (passos 1 e 2). Com a chave ligada, a página só abre depois disso, porque o `/pilulabs/<slug>` do `piluvitu.com.br` já responde 308 para o subdomínio; antes, confira no preview;
+    5. `listado: true` quando a página estiver pronta.
+- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`. Edge e Opera entram quando aprovarem.
 - ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
-  - **Por quê:** `listarCapturas` lê `public/pilulabs/<slug>/capturas/*.png` com `fs`, no build, e `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: as capturas somem da página, e o ícone some da imagem OG, sem erro nenhum.
+  - **Por quê:** `listarCapturas` lê `public/pilulabs/<slug>/capturas/*.png` com `fs`, no build, e `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: as capturas somem da página, e o ícone some da imagem OG, sem erro nenhum. Ler `process.env.PILUTECH_SUBDOMINIOS` no build não deixa a rota dinâmica.
   - **Como conferir, depois do `next build`, em `apps/web`:**
 
     ```bash
@@ -230,9 +296,9 @@ As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para el
 
     As nove linhas têm de terminar em `false`. A chave das imagens tem sufixo de hash (`/pilulabs/opengraph-image-<hash>`), porque o segmento está dentro do grupo `(site)`.
 
-- **Ícone e capturas, que vêm do `apps/botai` (fase 3 da spec):**
+- **Ícones e capturas:**
   - `public/pilulabs/botai/icone-128.png` e `public/pilulabs/botai/capturas/<NN>-<nome>.png` são gerados por `make capturas-botai`, no `apps/botai`, e versionados. Não edite esses PNG à mão;
-  - enquanto a fase 3 não chega à `main`, o ícone é uma cópia do `apps/botai/public/icon/128.png` e não há capturas. No conflito add/add do ícone, fica o da fase 3 (contrato, "Integração na `main`");
+  - `public/pilulabs/sombrai/icone.png` é uma cópia de `Sombrai/site/src/assets/app-icon.png` (repo `PiluVitu/Sombrai`, privado e só lido daqui), reduzida com `sips -Z 256`. Se o ícone mudar lá, refaça a cópia;
   - a página as descobre no build, em ordem natural do `NN`, e só PNG;
   - o `alt` sai do nome do arquivo: o mapa `ROTULOS_CAPTURA` devolve o acento (`pagina` → `página`) e o tema (`-claro`/`-escuro`).
 
@@ -243,43 +309,46 @@ As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para el
   - **Por isso:** cada uma das 3 rotas tem `opengraph-image.tsx` e `twitter-image.tsx` (o módulo é `lib/og-pilulabs-image.tsx`). Isso vale inclusive para a política, que é filha da página do produto.
   - ⚠️ **Ruído do `next dev --webpack` (o `pnpm dev` e o servidor do E2E), não erro:** ao servir as imagens PiluLabs, ele imprime `Attempted import error: … does not contain a default export (imported as 'handler')` e `export 'alt' … was not found (possible exports: runtime)` para o `twitter-image.tsx`, que reexporta do `./opengraph-image`. As imagens saem certas, byte a byte iguais às do build de produção (Turbopack, que não reclama). Medido: tirar o gerador para um módulo à parte (no `lib/` ou ao lado da rota) passa o aviso também para o `opengraph-image.tsx`, e importar e reexportar localmente ainda deixa `alt`, `size` e `contentType` de fora. Não reestruture para calar o aviso.
   - **O que o E2E confere:** o `og:title` e que cada `og:image`/`twitter:image` responde PNG.
-- **JSON-LD:**
+- **JSON-LD (`lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`):**
   - `SoftwareApplication`, com `BrowserApplication`, `price: 0` e `installUrl` só das lojas publicadas;
   - sem `aggregateRating`, porque o Google proíbe copiar nota das lojas, e sem `softwareVersion`;
   - `BreadcrumbList`;
-  - `CollectionPage` em `/pilulabs`;
+  - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
+  - as URLs de página (`url`, trilha, `publisher`) passam por `urlPublica`. `image`, `screenshot` e `author` ficam sempre no `piluvitu.com.br`;
   - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
-- **Componentes (`components/pilulabs/`, todos com story e teste):**
+- **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
   - `StatusProduto`;
   - `BotoesLoja`: botões do DS com ícone Font Awesome, nunca os badges oficiais;
-  - `ProdutoCard`;
-  - `Vitrine`, que agrupa por `tipo`;
+  - `ProdutoCard`:
+    - link interno na mesma aba, externo em aba nova;
+    - sem link, vira `<article>`;
+    - o logo por URL sai sem o otimizador do `next/image`;
+    - sem logo, mostra a sigla;
+  - `Vitrine`, que agrupa por tipo;
   - `CapturasGaleria`;
-  - `AtalhosTabela`.
+  - `AtalhosTabela`;
+  - `SecaoPiluLabs`.
 
-  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime, como `ATALHOS`, chega por prop, vindo da página.
+  ⚠️ Componentes e stories só fazem `import type` de `@/lib/pilulabs`: o módulo importa `node:fs`, que quebra o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@/lib/pilulabs-regras`, como os `TIPOS` do formulário do admin.
 
-- **Home:**
-  - os produtos listados viram cards em Projetos, via `produtoParaProject`;
-  - o botão é "Ver no PiluLabs", na mesma aba: o `ProjectCard` trata um `deployLink` que começa com `/` como link interno, e `deployLabel` troca o "Demo";
-  - o `HomeFooter` recebe `mostrarPiluLabs`.
 - **Testes:**
   - **Jest de componente:** usa `renderToStaticMarkup`, via `lib/render-estatico.ts`, sem Testing Library e sem dependência nova. Componente com TanStack Query vai embrulhado num `QueryClientProvider` (ver `home-footer.test.tsx`).
-  - ⚠️ **O `ts-jest` daqui só transpila:** um teste com tipo errado ou com export inexistente roda e falha em runtime (`… is not a function`), sem erro de TypeScript. O tipo só é checado pelo `tsc --noEmit`.
-  - ⚠️ **O filtro do Playwright é uma regex:** `playwright test "app/(site)/pilulabs/pilulabs.e2e.ts"` não casa nada (os parênteses viram grupo) e sai com `No tests found` e `exit=1`, o que parece um vermelho de TDD. Use `playwright test pilulabs/pilulabs.e2e.ts`. O `prettier --check` tem a mesma armadilha com glob: passe a pasta `"app/(site)/pilulabs"`.
-  - **E2E (`app/(site)/pilulabs/pilulabs.e2e.ts` e `home.e2e.ts`):** deriva o esperado do YAML com `lerProdutosDoConteudo`, e por isso continua valendo quando o dono muda `listado` ou uma URL de loja. Também confere, a 320 px, que nenhuma das 3 rotas rola na horizontal: URL longa em `<code>` (como a caixa do `tuamaeaquelaursa.com` na política) não quebra sozinha e leva `wrap-anywhere`.
+  - ⚠️ **O `ts-jest` daqui só transpila** (`isolatedModules: true` no `tsconfig.json`): um teste com tipo errado ou com export inexistente roda e falha em runtime (`TypeError: (0 , pilulabs_1.normalizarItem) is not a function`), sem erro de TypeScript. O tipo só é checado pelo `tsc --noEmit`.
+  - ⚠️ **O filtro do Playwright é uma regex:**
+    - `playwright test "app/(site)/pilulabs/pilulabs.e2e.ts"` não casa nada (os parênteses viram grupo) e sai com `No tests found` e `exit=1`, o que parece um vermelho de TDD;
+    - `pilulabs/pilulabs.e2e.ts` casa o E2E do site e o do admin;
+    - use `'\(site\)/pilulabs/pilulabs'`, `'\(site\)/pilulabs/'` (vitrine e subdomínios; o `chave-ligada` sai como skipped) ou `'admin/pilulabs/pilulabs'`;
+    - o `prettier --check` tem a mesma armadilha com glob: passe a pasta `"app/(site)/pilulabs"`.
+  - **E2E (`app/(site)/pilulabs/{pilulabs,subdominios,chave-ligada}.e2e.ts`, `home.e2e.ts` e `app/(admin)/admin/pilulabs/pilulabs.e2e.ts`):**
+    - o esperado sai do YAML, por `lerItensDoConteudo`, e por isso continua valendo quando o dono muda o catálogo;
+    - a 320 px, nenhuma das 3 rotas rola na horizontal: URL longa em `<code>` (como a caixa do `tuamaeaquelaursa.com` na política) não quebra sozinha e leva `wrap-anywhere`;
+    - **com a chave ligada:** o `chave-ligada.e2e.ts` confere links, `canonical` e `og:site_name` nos hosts PiluTech, e o 308 com a query. Ele só roda à parte, com `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada`, porque o Playwright repassa o próprio ambiente ao `pnpm dev`. Nas outras execuções, sai como `5 skipped`. Um segundo servidor com a chave ligada não serve: o `next dev` trava o `distDir` e sai com "Another next dev server is already running in this directory".
   - ⚠️ **Porta 3333:** antes do Playwright, ela tem de estar livre (`make stop`). Com `reuseExistingServer`, um `next dev` de outro worktree responderia no lugar, e o teste rodaria contra o código errado. Rode com `CI=1`, que faz o Playwright subir o próprio servidor e falhar se a porta estiver ocupada.
-- **Novo produto:**
-  1. `content/produtos/<slug>/index.yaml` com `listado: false`;
-  2. o ícone em `public/pilulabs/<slug>/`;
-  3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/`;
-  4. `listado: true` só depois de a página estar pronta.
-- **Lançar:**
-  - preencher as URLs das lojas aprovadas e `listado: true` no YAML, por PR;
-  - Edge e Opera entram quando aprovarem.
-- **Fora desta fatia:**
-  - `sitemap.ts`/`robots.ts` do site inteiro, que vão para a fatia de SEO global;
-  - o CRUD de `produtos` no `/admin`.
+  - ⚠️ **O `next dev` reescreve este arquivo.** Quando detecta um agente de IA, ele anexa no fim o bloco entre os comentários HTML `BEGIN:nextjs-agent-rules` e `END:nextjs-agent-rules` (`node_modules/next/dist/server/lib/generate-agent-files.js`; o log diz "Generated CLAUDE.md for AI agents"). Depois de um E2E, confira `git status` e tire o bloco antes de commitar. Não escreva o marcador de abertura completo, com o `<!--`, neste arquivo: o `next dev` seguinte trocaria tudo o que vai dele até o marcador de fim por um bloco novo (medido: perde o _Admin unificado_ e as seções seguintes).
+- **Fora:**
+  - página própria do Sombraí no `apps/web`, porque ele tem landing própria;
+  - lojas de app mobile (Play Store e App Store) no modelo;
+  - `sitemap.ts`/`robots.ts`, que vão para a fatia de SEO global.
 
 ### Admin unificado (`/admin`)
 
@@ -288,12 +357,13 @@ As duas URLs do Botaí são fixas, porque a extensão e as lojas apontam para el
 - **Conectar GitHub:** reusa a GitHub App do Keystatic. `GET /api/admin/github/login` → authorize (com `state` CSRF) → `GET /callback` troca o code e **sela o token** (`lib/admin/token-cookie.ts`, AES-256-GCM via `crypto` nativo) no cookie httpOnly `piluvitu_admin_gh`. `GET /status` e `POST /unlink` completam o fluxo. Origem dos redirects é validada por allowlist (`lib/admin/github-oauth.ts` `adminOAuthOrigin`) contra Host-header injection. Requer `ADMIN_TOKEN_SECRET` e o Callback URL `…/api/admin/github/callback` registrado na App.
 - **Menu de conta (top bar):** o pill do perfil no `AdminTopBar` é um dropdown (`components/admin/account-menu.tsx`, componente puro + story; o wiring com `useCurrentUser`/`useGithubLink` fica no top bar) que mostra identidade (nome/email), o **status da conexão GitHub** (🟢 conectado como @login / 🟠 não conectado) com Conectar (`/api/admin/github/login`) ou Desconectar (`POST /unlink`), e o **Sair** (também na sidebar). É o lar do status do GitHub no dia a dia; estruturado em seções pra acomodar itens futuros. O `GithubLinkBanner` no dashboard agora só aparece quando **desconectado** (CTA de setup inicial).
 - **Escrita no git:** `lib/admin/git-write.ts` `commitFile({ repo: 'site' | 'blog', path, content, message })` — Octokit (import dinâmico, pacote ESM-only) com o token linkado; `getContent` p/ sha → `createOrUpdateFileContents`; retry único com refresh em 401 (devolve `refreshed` p/ re-selar o cookie). Commit direto na `main`. Engine pronta na Fundação; os formulários dos próximos slices a consomem.
-- **Stats:** `GET /api/admin/stats` (`export const dynamic = 'force-dynamic'`) devolve contagens agregadas (públicas) + `recentPosts`; **títulos/slugs de rascunho só aparecem com o cookie `piluvitu_admin_gh` válido**. Alimenta os stat cards; a contagem de sessões vem da API Go client-side (`hooks/admin/use-sessions-count.ts`).
+- **Stats:** `GET /api/admin/stats` (`export const dynamic = 'force-dynamic'`) devolve contagens agregadas (públicas) + `recentPosts`; a do PiluLabs é `pilulabs` (todos os itens da coleção); **títulos/slugs de rascunho só aparecem com o cookie `piluvitu_admin_gh` válido**. Alimenta os stat cards; a contagem de sessões vem da API Go client-side (`hooks/admin/use-sessions-count.ts`).
 - **⚠️ Monorepo path prefix (`lib/admin/site-paths.ts`):** o app web vive em `apps/web`, então TODO caminho do **repo do site** que o admin lê/grava via Octokit é relativo à **raiz do repo** e leva o prefixo `apps/web/` — use `sitePath('content/…')` / `sitePath('public/media')` (`SITE_PATH_PREFIX='apps/web'`). O Keystatic reader usa `process.cwd()` (=apps/web) e por isso fica com `content/…` sem prefixo; a engine do admin (Octokit) NÃO — esquecer o prefixo dá **404→502** ao ler. O repo do **blog** (`piluvitu-blog`) é single-package → posts NÃO usam prefixo. (Caminhos do site: registry `dir`, `readProfile`, `MEDIA_DIR`, `mediaRawUrl`, rota do perfil — todos já via `sitePath`/`SITE_PATH_PREFIX`.)
-- **Slice ② (CRUD de coleções):** `/admin/projetos` (cards), `/admin/carreira` (tabela), `/admin/socials` (lista + picker FA), `/admin/perfil` (form singleton) — criar/editar (modal)/apagar/drag-reorder. Lê **live do GitHub** (`lib/admin/content-read.ts`: Octokit + `yaml` + Zod, token linkado), escreve via engine (`commitFile`/`deleteFile`/`commitFiles` atômico p/ reorder). Registry `lib/admin/content-registry.ts`; schemas Zod `lib/admin/content-schemas.ts`; serializer `lib/admin/content-yaml.ts` (block-literal `|` p/ multiline); rotas `app/api/admin/content/*` (auth-first, 404-narrowed conflict, slug imutável no edit, `maxDuration=30` + try/catch cobrindo o handler inteiro + `console.error` p/ erro nunca virar 502 opaco); hooks otimistas `hooks/admin/content/*`. **⚠️ Schema de leitura tolerante:** o Keystatic **omite campos opcionais vazios** no YAML (um `image` em branco some do arquivo), então em `content-schemas.ts` os campos opcionais usam `.default()` (`str→''`, `strArray→[]`, `bool→false`, `order→0`, `faIcon`/`linkColor` com default+refine) — campo ausente vira o vazio do tipo em vez de estourar `ZodError` (que vinha como 502). Só `slug` + nomes (`reqStr`) são obrigatórios. Ao adicionar um campo de conteúdo novo, faça-o opcional/`default` no schema senão entradas antigas quebram a leitura. Campos de imagem são input de texto (upload no slice ④). Site público segue lendo via `getKeystaticReader()` (intocado). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-03-admin-unificado-colecoes-slice2*`.
+- **Slice ② (CRUD de coleções):** `/admin/projetos` (cards; hoje `/admin/pilulabs`), `/admin/carreira` (tabela), `/admin/socials` (lista + picker FA), `/admin/perfil` (form singleton) — criar/editar (modal)/apagar/drag-reorder. Lê **live do GitHub** (`lib/admin/content-read.ts`: Octokit + `yaml` + Zod, token linkado), escreve via engine (`commitFile`/`deleteFile`/`commitFiles` atômico p/ reorder). Registry `lib/admin/content-registry.ts`; schemas Zod `lib/admin/content-schemas.ts`; serializer `lib/admin/content-yaml.ts` (block-literal `|` p/ multiline); rotas `app/api/admin/content/*` (auth-first, 404-narrowed conflict, slug imutável no edit, `maxDuration=30` + try/catch cobrindo o handler inteiro + `console.error` p/ erro nunca virar 502 opaco); hooks otimistas `hooks/admin/content/*`. **⚠️ Schema de leitura tolerante:** o Keystatic **omite campos opcionais vazios** no YAML (um `image` em branco some do arquivo), então em `content-schemas.ts` os campos opcionais usam `.default()` (`str→''`, `strArray→[]`, `bool→false`, `order→0`, `faIcon`/`linkColor` com default+refine) — campo ausente vira o vazio do tipo em vez de estourar `ZodError` (que vinha como 502). Só `slug` + nomes (`reqStr`) são obrigatórios. Ao adicionar um campo de conteúdo novo, faça-o opcional/`default` no schema senão entradas antigas quebram a leitura. Campos de imagem são input de texto (upload no slice ④). Site público segue lendo via `getKeystaticReader()` (intocado). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-03-admin-unificado-colecoes-slice2*`.
 - **Slice ③ (Posts + editor MDX):** `/admin/posts` (tabela) + editor full-page `/admin/posts/{novo,[slug]}` — **Editor (DS V2 reskin):** título grande no topo (`aria-label="Título"`), área de conteúdo com abas **Editar / Dividir / Pré-visualizar** (`components/admin/posts/editor-tabs.tsx`) + toolbar de markdown (`mdx-toolbar.tsx`, age no `EditorView` do CodeMirror via `lib/admin/mdx-toolbar-actions.ts` puro), e sidebar em cards (`sidebar-card.tsx`): **Publicação** (`post-publish-card.tsx`: toggle Publicado=`!draft`, Data, Leitura `readingTimeMinutes`, Salvar alterações), **Metadados** (`post-meta-card.tsx`: Slug + Resumo), **Tags** (`TagArrayInput`), **Imagem de capa** (`cover-image-card.tsx`: dropzone que faz upload via a rota de mídia + Biblioteca + path manual). `readingTimeMinutes` é editável e auto-sugerido (`lib/admin/reading-time.ts` `estimateReadingTime`, ~200 palavras/min) quando vazio. O `mdx-editor` (CodeMirror) esconde os nº de linha e expõe o `EditorView` via `onReady`. O `post-frontmatter-form` foi removido (substituído pelos cards). Preview fiel: `POST /api/admin/posts/preview` roda `serialize` reusando o pipeline MDX compartilhado; client `MDXRemote` + mermaid. IO single-file MDX no `piluvitu-blog` via token linkado: `lib/admin/post-io.ts` (`gray-matter`; preserva keys de frontmatter desconhecidas; rastreia filename p/ não orfanar no edit), schema `lib/admin/post-schema.ts`, rotas `app/api/admin/posts/*` (escrita via engine `repo:'blog'` + `revalidateTag('blog-posts','max')`). Pipeline MDX compartilhado extraído pra `lib/mdx/{mdx-plugins.ts,mdx-components.tsx}` (página pública + preview renderizam idêntico). Requer a GitHub App do Keystatic instalada no `piluvitu-blog`. **TinaCMS aposentado** (`tina/` + `public/cms/` + devDeps removidos; build = `next build`).
-- **Slice ④ (Mídia):** `/admin/midia` — biblioteca de imagens (grid + upload + apagar) que grava binário em `public/media/` do repo do site via a engine `commitBinary` (`lib/admin/git-write.ts`, **base64 passthrough — NÃO re-encoda** como o `commitFile`, que corromperia bytes). IO `lib/admin/media-io.ts` (`listMedia` via Octokit getContent filtrando `png/jpe?g/webp/svg/gif`; `sanitizeFilename` slugify+ext; `uniqueFilename` auto-sufixo `-1/-2`); `lib/admin/media-url.ts` `mediaRawUrl()` (client-safe, sem imports de server) mapeia `/media/*` → raw GitHub URL pro **preview imediato** (antes do redeploy; o valor salvo no campo é `/media/<file>`, servido pela Vercel só após o deploy). Rotas `app/api/admin/media/*` (GET list, POST upload, DELETE `[name]` com guard anti path-traversal) — valida ext **e** contentType contra allowlist, ≤4 MB (limite de body serverless). Hooks `hooks/admin/media/*` (`useMediaList` + `useMediaMutations` + `fileToUpload(file)` → `{filename,base64,contentType}`). Componentes `components/admin/media/*` (`MediaCard`, `MediaGrid` com filtros PNG·JPG·WEBP·SVG + dimensões decodadas client-side, `MediaPickerDialog`). `<ImageField>` (`components/admin/content/image-field.tsx`, preview + path/URL manual + botão "Biblioteca" abrindo o picker) substitui o `TextField` nos campos de imagem de projeto (`projectLogo`/`image`), carreira (`image`), social (`image`), perfil (`avatarSrc`) e post (`coverImage`). Sem processamento de imagem (sobe como está; o `next/image` faz o sizing na entrega pública). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-midia-slice4*`.
+- **Slice ④ (Mídia):** `/admin/midia` — biblioteca de imagens (grid + upload + apagar) que grava binário em `public/media/` do repo do site via a engine `commitBinary` (`lib/admin/git-write.ts`, **base64 passthrough — NÃO re-encoda** como o `commitFile`, que corromperia bytes). IO `lib/admin/media-io.ts` (`listMedia` via Octokit getContent filtrando `png/jpe?g/webp/svg/gif`; `sanitizeFilename` slugify+ext; `uniqueFilename` auto-sufixo `-1/-2`); `lib/admin/media-url.ts` `mediaRawUrl()` (client-safe, sem imports de server) mapeia `/media/*` → raw GitHub URL pro **preview imediato** (antes do redeploy; o valor salvo no campo é `/media/<file>`, servido pela Vercel só após o deploy). Rotas `app/api/admin/media/*` (GET list, POST upload, DELETE `[name]` com guard anti path-traversal) — valida ext **e** contentType contra allowlist, ≤4 MB (limite de body serverless). Hooks `hooks/admin/media/*` (`useMediaList` + `useMediaMutations` + `fileToUpload(file)` → `{filename,base64,contentType}`). Componentes `components/admin/media/*` (`MediaCard`, `MediaGrid` com filtros PNG·JPG·WEBP·SVG + dimensões decodadas client-side, `MediaPickerDialog`). `<ImageField>` (`components/admin/content/image-field.tsx`, preview + path/URL manual + botão "Biblioteca" abrindo o picker) substitui o `TextField` nos campos de imagem do PiluLabs (`logo`), carreira (`image`), social (`image`), perfil (`avatarSrc`) e post (`coverImage`). Sem processamento de imagem (sobe como está; o `next/image` faz o sizing na entrega pública). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-midia-slice4*`.
 - **Slice ⑤ (Votação na shell + delete do editor Keystatic):** o painel admin da votação migrou pro shell em **`/admin/sessoes`** (`app/(admin)/admin/sessoes/page.tsx`) reusando os componentes DS V2 existentes (`CreateSessionForm`/`SessionsManager`/`UsersTable`/`BackupsPanel`) — sem gate próprio (o `(admin)/layout.tsx` já barra não-admin). `/votacao/admin` virou **redirect** pra `/admin/sessoes`; a votação **pública** (`/votacao`, `/votacao/[id]`) e os controles de admin na detail (encerrar + roleta de desempate) ficam intocados. O **editor Keystatic foi removido** (`app/keystatic`, `app/api/keystatic`, `lib/keystatic-fa-icon-picker-input.tsx`, `lib/keystatic-fontawesome-icon-select-field.tsx`, deps diretas `@keystatic/next` + `@keystar/ui`, e 2 envs só-editor (`KEYSTATIC_SECRET` + `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`); `KEYSTATIC_GITHUB_CLIENT_ID/_SECRET` continuam (admin connect)); o **reader permanece** (`@keystatic/core` + `lib/keystatic-reader.ts` + `lib/site-content.ts`) alimentando o site público, e o `keystatic.config.ts` foi simplificado (campo FA custom → `fields.select`). Spec/plano: `docs/superpowers/{specs,plans}/2026-06-04-admin-unificado-votacao-slice5*`.
+- **PiluLabs (v2):** `/admin/pilulabs` substitui `/admin/projetos`, no mesmo padrão (lista com drag-reorder, criar, editar em modal e apagar). Schema `pilulabsSchema` (URLs `https:`, lojas pela mesma regra da página, `data` real `AAAA-MM-DD`, slug `www` reservado); registry com `omitirSeVazio: ['data']`, porque o `fields.date` do Keystatic recusa `data: ''`; booleanos no `ToggleField` e a data no `TextField type="date"`. Ver _PiluLabs_.
 
 ### Transcrição de áudio (`/admin/transcricao`)
 
@@ -332,6 +402,8 @@ A lei de colocation (teste/story no mesmo diretório do fonte; E2E `.e2e.ts` ao 
 
 Fonte: `apps/web/.env.example`. Cadastrar na Vercel (ver seção CI/CD na raiz). Domínios de prod + same-site cookie: ver `apps/api/CLAUDE.md`.
 
+- `NEXT_PUBLIC_SITE_URL` — domínio canônico (`https://piluvitu.com.br`) do `metadataBase`, do `og:image` e do canonical. **Obrigatória em Production** desde que o projeto tem os domínios `pilutech.com.br`: sem ela, `getCanonicalSiteUrl()` usa o `VERCEL_PROJECT_PRODUCTION_URL`, o domínio de produção mais curto, e `pilutech.com.br` empata com `piluvitu.com.br` (passo 0 de _PiluLabs_).
+- `PILUTECH_SUBDOMINIOS` — `1` liga os subdomínios `*.pilutech.com.br` do PiluLabs: links, `canonical` e `og:url` das páginas PiluLabs passam para `pilutech.com.br`, e `/pilulabs*` no `piluvitu.com.br` responde 308 para lá. Só em **Production**, depois do passo 4 de _PiluLabs_; fora dela (`VERCEL_ENV` preview ou development), o código a ignora, mesmo marcada. As páginas leem a variável no build: mudar pede redeploy. Ausente (padrão) = desligado.
 - `NEXT_PUBLIC_DEVTO_USERNAME` — dev.to username for article fetching
 - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` — reCAPTCHA v3 for email form
 - `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET` — OAuth da GitHub App (reusada) que o **/admin** usa pra "Conectar GitHub" e commitar conteúdo (`lib/admin/github-oauth.ts`). **Continuam necessárias** (não remover da Vercel). O editor Keystatic que também as usava saiu no slice ⑤, mas o admin permanece.

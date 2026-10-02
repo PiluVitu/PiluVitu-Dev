@@ -16,7 +16,7 @@ Pastas relevantes:
 | Stories                       | `stories/`                                                    |
 | Config Storybook              | `.storybook/`                                                 |
 | Conteúdo Keystatic (site)     | `content/site/` (perfil, cartão de visita)                    |
-| Conteúdo Keystatic (coleções) | `content/socials/`, `content/carreiras/`, `content/projects/` |
+| Conteúdo Keystatic (coleções) | `content/socials/`, `content/carreiras/`, `content/pilulabs/` |
 
 Alias de importação: `@/*` → raiz do repositório (ver `tsconfig.json`).
 
