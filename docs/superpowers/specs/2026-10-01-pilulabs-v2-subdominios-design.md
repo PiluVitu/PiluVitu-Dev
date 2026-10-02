@@ -138,3 +138,4 @@ Desligada (padrão, e em todo preview), `urlPublica` devolve o caminho como est�
 - Lojas de app mobile (Play Store e App Store) no modelo.
 - `sitemap.ts`/`robots.ts`.
 - Mudar o repositório do Sombraí.
+- Landing própria do Botaí: o dono vai mandar o design depois ("vai ser a mesma coisa" que a do Sombraí). Até lá, `botai.pilutech.com.br` tem um CNAME provisório e o link do Botaí cai em `/pilulabs/botai`, porque a chave está desligada. A landing nova precisa servir também `/privacidade`, que é a URL da política nas lojas e na extensão.
