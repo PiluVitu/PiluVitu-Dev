@@ -350,7 +350,7 @@ describe('siglaDoItem', () => {
 })
 
 describe('itemParaProject', () => {
-  it('vira o card da home, com Acessar e Código', () => {
+  it('vira o card da home, com o Acessar', () => {
     expect(
       itemParaProject(
         item({
@@ -369,7 +369,6 @@ describe('itemParaProject', () => {
       tags: ['QA'],
       deployLink: '/pilulabs/botai',
       deployLabel: 'Acessar',
-      repoLink: REPO_BOTAI,
       image: '/pilulabs/botai/icone-128.png',
       altImage: 'BO',
     })
@@ -384,11 +383,12 @@ describe('itemParaProject', () => {
     ).toBe('https://botai.pilutech.com.br')
   })
 
-  // Sem site nem página, o link do item é o repo: dois botões para a mesma URL.
-  it('só com repo, sem Acessar (o Código já leva lá)', () => {
+  // O card da home não tem mais o botão Código: sem site nem página, o Acessar
+  // é o único caminho até o projeto, e leva ao repo.
+  it('só com repo, o Acessar leva ao repo e não há link de código à parte', () => {
     const p = itemParaProject(item({ repo: REPO_BOTAI }), false)
-    expect(p.deployLink).toBe('')
-    expect(p.repoLink).toBe(REPO_BOTAI)
+    expect(p.deployLink).toBe(REPO_BOTAI)
+    expect(p).not.toHaveProperty('repoLink')
   })
 
   it('sem logo, sem imagem e com a sigla', () => {
