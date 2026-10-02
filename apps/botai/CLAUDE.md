@@ -142,6 +142,8 @@ O E2E funcional roda só no Chromium do Playwright (que cobre o código de Chrom
 
 Quatro lojas, o mesmo código: Chrome Web Store e Edge Add-ons com `botai-<versão>-chrome.zip`, Firefox Add-ons (AMO, canal listed) com `-firefox.zip` + `-sources.zip`, Opera Add-ons com `-opera.zip` (sem minificar, envio sempre manual). Publicador: PiluTech. O passo a passo do dono (contas, credenciais, primeiro envio e lançamento) está no `README.md`, seção "Publicação (para quem mantém)"; o que vai em cada campo das lojas, em `loja/README.md`.
 
+Política de privacidade e termos de uso: `https://botai.pilutech.com.br/privacidade` e `/termos` (texto em `apps/botai-site/app/*/page.tsx`); a política descreve o que esta extensão faz, e `loja/textos.test.ts` trava, do lado da extensão, o que ela promete (sem rede, uma chave de storage). Na AMO, o campo EULA fica vazio (ver `loja/README.md`).
+
 ### Versão
 
 - A `version` do `package.json` vale para as quatro lojas, é sempre `x.y.z` e sempre sobe: as lojas recusam versão repetida ou menor, e o WXT tira o sufixo no Firefox. A primeira pública é a 1.0.0.
