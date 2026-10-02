@@ -67,7 +67,12 @@ export function jsonLdDaHome(
   }
 }
 
-export function jsonLdDaPrivacidade(siteUrl: string): NoJsonLd {
+export type PaginaDaTrilha = { nome: string; caminho: string }
+
+export function jsonLdDaTrilha(
+  siteUrl: string,
+  pagina: PaginaDaTrilha,
+): NoJsonLd {
   return {
     '@context': CONTEXTO,
     '@type': 'BreadcrumbList',
@@ -81,8 +86,8 @@ export function jsonLdDaPrivacidade(siteUrl: string): NoJsonLd {
       {
         '@type': 'ListItem',
         position: 2,
-        name: 'Política de privacidade',
-        item: urlAbsoluta('/privacidade', siteUrl),
+        name: pagina.nome,
+        item: urlAbsoluta(pagina.caminho, siteUrl),
       },
     ],
   }

@@ -2,7 +2,7 @@ import {
   CONTEXTO,
   ID_DA_PILUTECH,
   jsonLdDaHome,
-  jsonLdDaPrivacidade,
+  jsonLdDaTrilha,
   serializarJsonLd,
   type NoJsonLd,
 } from './json-ld'
@@ -113,9 +113,12 @@ describe('jsonLdDaHome', () => {
   })
 })
 
-describe('jsonLdDaPrivacidade', () => {
-  it('a trilha Botaí › Política de privacidade', () => {
-    expect(jsonLdDaPrivacidade(SITE)).toEqual({
+describe('jsonLdDaTrilha', () => {
+  it.each([
+    ['/privacidade', 'Política de privacidade'],
+    ['/termos', 'Termos de uso'],
+  ])('a trilha Botaí › %s', (caminho, nome) => {
+    expect(jsonLdDaTrilha(SITE, { nome, caminho })).toEqual({
       '@context': CONTEXTO,
       '@type': 'BreadcrumbList',
       itemListElement: [
@@ -123,8 +126,8 @@ describe('jsonLdDaPrivacidade', () => {
         {
           '@type': 'ListItem',
           position: 2,
-          name: 'Política de privacidade',
-          item: `${SITE}/privacidade`,
+          name: nome,
+          item: `${SITE}${caminho}`,
         },
       ],
     })

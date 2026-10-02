@@ -12,6 +12,17 @@ export const PROPOSTA =
   'Gerador de dados fake para formulários (CPF, CNPJ, CEP)'
 export const URL_DA_PILUTECH = 'https://pilutech.com.br'
 export const EMAIL_DE_SUPORTE = 'pilutechinformatica@gmail.com'
+export const REPOSITORIO = 'https://github.com/PiluVitu/PiluVitu-Dev'
+export const URL_DA_LICENCA = `${REPOSITORIO}/blob/main/apps/botai/LICENSE`
+
+export const DOCUMENTOS = [
+  { href: '/privacidade', rotulo: 'Privacidade' },
+  { href: '/termos', rotulo: 'Termos de uso' },
+]
+
+export function historicoDe(arquivo: string): string {
+  return `${REPOSITORIO}/commits/main/apps/botai-site/${arquivo}`
+}
 
 export type Recurso = { titulo: string; texto: string; icone: IconDefinition }
 
