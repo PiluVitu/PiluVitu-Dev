@@ -16,13 +16,14 @@ Os pacotes vêm do GitHub Release da tag `botai-v<versão>`.
 - Ícone: `imagens/icone-128.png` (arte de 96 px com margem transparente de 16 px).
 - Capturas (até 5): `imagens/capturas/1280x800/` 01, 03 e 05 (escuro) e 02 e 04 (claro).
 - Bloco promocional pequeno: `imagens/chrome-tile-440x280.png`.
-- Textos: Descrição, Categoria, Propósito único, as quatro Justificativas (activeTab, scripting, contextMenus, storage), Código remoto, Dados e Endereços. O resumo da Chrome é o `description` do manifesto.
+- Textos: Descrição, Categoria, Propósito único, as quatro Justificativas (activeTab, scripting, contextMenus, storage), Código remoto, Dados e Endereços. O resumo da Chrome é o `description` do manifesto. Os termos de uso não têm campo próprio nessas lojas: vão na Descrição.
 
 ## Firefox Add-ons (AMO)
 
 - Pacotes: `botai-<versão>-firefox.zip` e, no campo de código-fonte, `botai-<versão>-sources.zip`. Canal listed.
 - Capturas: as 6 de `imagens/capturas/1280x800/`.
 - Textos: Resumo, Descrição, Categoria, Licença, Endereços e o texto da política (seção "Política de privacidade" de `textos.md`).
+- Contrato de licença (EULA): deixe vazio. A licença do código é a MIT (campo Licença), e os termos de uso não são um contrato a aceitar antes de instalar (o Firefox nem mostra mais esse aceite); o link deles vai na Descrição e em Endereços.
 - Notas para o revisor: a seção AMO de `notas-revisores.md`.
 
 ## Edge Add-ons
@@ -30,7 +31,7 @@ Os pacotes vêm do GitHub Release da tag `botai-v<versão>`.
 - Pacote: `botai-<versão>-chrome.zip`, o mesmo da Chrome.
 - Logo: `imagens/edge-logo-300.png`.
 - Capturas (até 6): as 6 de `imagens/capturas/1280x800/`.
-- Textos: Descrição (no mínimo 250 caracteres), Categoria, Propósito único, as quatro Justificativas, Código remoto, Dados e Endereços.
+- Textos: Descrição (no mínimo 250 caracteres), Categoria, Propósito único, as quatro Justificativas, Código remoto, Dados e Endereços. Os termos de uso não têm campo próprio nessas lojas: vão na Descrição.
 
 ## Opera Add-ons
 

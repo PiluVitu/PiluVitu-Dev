@@ -36,6 +36,8 @@ Cuidados: os dados são fictícios, mas um CPF ou um celular gerado pode pertenc
 
 Código aberto (licença MIT): https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai
 
+Termos de uso: https://botai.pilutech.com.br/termos
+
 Powered by PiluTech: https://pilutech.com.br
 
 ## Propósito único
@@ -84,9 +86,10 @@ MIT. A AMO pede na primeira versão listed; as seguintes herdam.
 
 Site do produto e página de suporte: https://botai.pilutech.com.br
 Política de privacidade: https://botai.pilutech.com.br/privacidade
+Termos de uso: https://botai.pilutech.com.br/termos
 E-mail de suporte: pilutechinformatica@gmail.com
 Publicador: PiluTech
 
 ## Política de privacidade (texto para a AMO)
 
-A AMO pede o texto da política mesmo com a versão hospedada. Copie o texto renderizado de https://botai.pilutech.com.br/privacidade: a página é a única fonte, para as duas não divergirem.
+A AMO pede o texto da política mesmo com a versão hospedada. Copie o texto renderizado de https://botai.pilutech.com.br/privacidade inteiro, inclusive "Este site" (os registros de acesso são do site, não da extensão, e a seção diz isso): a página é a única fonte, para as duas não divergirem.

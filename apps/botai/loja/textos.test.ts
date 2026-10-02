@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { lerSecoes, permissoesJustificadas } from './textos'
@@ -45,6 +45,18 @@ describe('textos da listagem', () => {
     expect(enderecos).toContain('Publicador: PiluTech')
   })
 
+  it('a descrição e os endereços apontam para os termos de uso', () => {
+    const termos = 'Termos de uso: https://botai.pilutech.com.br/termos'
+    expect(textos.get('Descrição')).toContain(termos)
+    expect(textos.get('Endereços')).toContain(termos)
+  })
+
+  it('o README do Botaí leva à política e aos termos', () => {
+    const readme = ler('../README.md')
+    expect(readme).toContain('https://botai.pilutech.com.br/privacidade')
+    expect(readme).toContain('https://botai.pilutech.com.br/termos')
+  })
+
   // O endereço antigo vive em piluvitu.com.br e passa a responder 308: a loja
   // não pode guardar um link que redireciona. `ler` parte de loja/.
   it.each(['textos.md', '../README.md', '../CLAUDE.md'])(
@@ -83,4 +95,31 @@ describe('notas para os revisores', () => {
       expect(notas.get(loja)).toContain('apps/botai/SOURCE-CODE-REVIEW.md')
     },
   )
+})
+
+// A política em botai.pilutech.com.br/privacidade diz que a extensão não envia nada e só
+// guarda a pessoa em local:botai_pessoa. Se um destes falhar, atualize a política antes.
+describe('o que a política promete, o código da extensão cumpre', () => {
+  const src = path.join(import.meta.dirname, '..', 'src')
+  const fontes = readdirSync(src, { recursive: true, encoding: 'utf8' })
+    .filter((arquivo) => /\.(ts|tsx)$/.test(arquivo))
+    .filter((arquivo) => !/\.(test|stories|e2e)\.tsx?$/.test(arquivo))
+    .filter((arquivo) => !arquivo.startsWith(`test${path.sep}`))
+    .map((arquivo) => readFileSync(path.join(src, arquivo), 'utf8'))
+
+  it('nenhuma chamada de rede', () => {
+    for (const fonte of fontes)
+      expect(fonte).not.toMatch(
+        /\bfetch\(|XMLHttpRequest|sendBeacon|new WebSocket|new EventSource/,
+      )
+  })
+
+  it('uma chave de storage só, local:botai_pessoa, e nada em sync', () => {
+    const chaves = fontes.flatMap((fonte) =>
+      [...fonte.matchAll(/['"`]((?:local|sync|session|managed):[\w-]+)/g)].map(
+        (m) => m[1],
+      ),
+    )
+    expect(chaves).toEqual(['local:botai_pessoa'])
+  })
 })
