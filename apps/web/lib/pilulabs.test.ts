@@ -14,14 +14,10 @@ import {
   metadataDaPagina,
   metadataDoItem,
   normalizarItem,
-  normalizarProduto,
-  produtoParaProject,
-  produtosListados,
   ROTULOS_CAPTURA,
   selecionarParaHome,
   siglaDoItem,
   type ItemPiluLabs,
-  type Produto,
 } from './pilulabs'
 
 const SEM_LOJA = { chromeUrl: '', firefoxUrl: '', edgeUrl: '', operaUrl: '' }
@@ -30,90 +26,6 @@ const URL_CHROME = 'https://chromewebstore.google.com/detail/botai/abc'
 const URL_FIREFOX = 'https://addons.mozilla.org/pt-BR/firefox/addon/botai/'
 const URL_EDGE = 'https://microsoftedge.microsoft.com/addons/detail/botai/xyz'
 const URL_OPERA = 'https://addons.opera.com/pt-br/extensions/details/botai/'
-
-function produto(parcial: Partial<Produto> = {}): Produto {
-  return {
-    slug: 'botai',
-    order: 0,
-    nome: 'Botaí',
-    tipo: 'extensao',
-    listado: false,
-    resumo: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
-    icone: '/pilulabs/botai/icone-128.png',
-    tags: ['QA'],
-    ...SEM_LOJA,
-    repoLink: '',
-    ...parcial,
-  }
-}
-
-describe('normalizarProduto', () => {
-  it('lê a entrada completa do YAML, aparando espaços', () => {
-    expect(
-      normalizarProduto('botai', {
-        order: 2,
-        nome: ' Botaí ',
-        tipo: 'extensao',
-        listado: true,
-        resumo: 'r',
-        icone: '/i.png',
-        tags: ['A', ' B '],
-        chromeUrl: ` ${URL_CHROME} `,
-        firefoxUrl: '',
-        edgeUrl: '',
-        operaUrl: '',
-        repoLink: 'https://github.com/x',
-      }),
-    ).toEqual({
-      slug: 'botai',
-      order: 2,
-      nome: 'Botaí',
-      tipo: 'extensao',
-      listado: true,
-      resumo: 'r',
-      icone: '/i.png',
-      tags: ['A', 'B'],
-      chromeUrl: URL_CHROME,
-      firefoxUrl: '',
-      edgeUrl: '',
-      operaUrl: '',
-      repoLink: 'https://github.com/x',
-    })
-  })
-
-  // O Keystatic apaga do YAML o campo opcional vazio. Um produto sem `listado`
-  // tem de cair em "não listado" (noindex), nunca em listado nem em exceção.
-  it('campo omitido vira o vazio do tipo, e sem listado o produto não é listado', () => {
-    expect(normalizarProduto('novo', {})).toEqual({
-      slug: 'novo',
-      order: 0,
-      nome: 'novo',
-      tipo: 'extensao',
-      listado: false,
-      resumo: '',
-      icone: '',
-      tags: [],
-      ...SEM_LOJA,
-      repoLink: '',
-    })
-  })
-
-  it('order nulo vira 0, e tipo desconhecido vira extensao', () => {
-    const p = normalizarProduto('x', { order: null, tipo: 'desktop' })
-    expect(p.order).toBe(0)
-    expect(p.tipo).toBe('extensao')
-  })
-
-  it('tags nulas (YAML com "tags:" vazio) viram lista vazia', () => {
-    expect(normalizarProduto('x', { tags: null }).tags).toEqual([])
-  })
-
-  it('só o booleano true lista; a string "true" não', () => {
-    expect(
-      normalizarProduto('x', { listado: 'true' as unknown as boolean }).listado,
-    ).toBe(false)
-  })
-})
 
 describe('lojasPublicadas', () => {
   it('a ordem fixa das lojas é chrome, firefox, edge, opera', () => {
@@ -173,26 +85,17 @@ describe('lojasPublicadas', () => {
 
 describe('fase', () => {
   it('em-breve sem loja publicada', () => {
-    expect(fase(produto())).toBe('em-breve')
+    expect(fase(item())).toBe('em-breve')
   })
 
   it('disponivel com uma loja publicada', () => {
-    expect(fase(produto({ edgeUrl: URL_EDGE }))).toBe('disponivel')
+    expect(fase(item({ edgeUrl: URL_EDGE }))).toBe('disponivel')
   })
 
   it('URL de host errado não conta como publicada', () => {
-    expect(fase(produto({ chromeUrl: 'https://example.com/botai' }))).toBe(
+    expect(fase(item({ chromeUrl: 'https://example.com/botai' }))).toBe(
       'em-breve',
     )
-  })
-})
-
-describe('produtosListados', () => {
-  it('fica só com os listados, na ordem recebida', () => {
-    const a = produto({ slug: 'a', listado: true })
-    const b = produto({ slug: 'b', listado: false })
-    const c = produto({ slug: 'c', listado: true })
-    expect(produtosListados([a, b, c]).map((p) => p.slug)).toEqual(['a', 'c'])
   })
 })
 
@@ -359,35 +262,6 @@ describe('metadataDoItem', () => {
     expect(metadataDoItem({ listado: true }, PAGINA, true)).toEqual(
       metadataDaPagina(PAGINA, true),
     )
-  })
-})
-
-describe('produtoParaProject', () => {
-  it('vira um card de Projetos que leva à página do produto', () => {
-    expect(
-      produtoParaProject(
-        produto({
-          repoLink:
-            'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
-        }),
-      ),
-    ).toEqual({
-      id: 'pilulabs-botai',
-      projectName: 'Botaí',
-      subtitle: 'PiluLabs · Powered by PiluTech',
-      projectLogo: '/pilulabs/botai/icone-128.png',
-      description: 'Gerador de dados fake para formulários (CPF, CNPJ, CEP)',
-      tags: ['QA'],
-      deployLink: '/pilulabs/botai',
-      deployLabel: 'Ver no PiluLabs',
-      repoLink: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
-      image: '/pilulabs/botai/icone-128.png',
-      altImage: 'BO',
-    })
-  })
-
-  it('sem ícone, sem imagem', () => {
-    expect(produtoParaProject(produto({ icone: '' })).image).toBeUndefined()
   })
 })
 

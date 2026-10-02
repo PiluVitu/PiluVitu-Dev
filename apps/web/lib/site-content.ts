@@ -3,12 +3,7 @@ import 'server-only'
 import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
 import type { Project } from '@/mocks/projects'
-import {
-  normalizarItem,
-  normalizarProduto,
-  type ItemPiluLabs,
-  type Produto,
-} from '@/lib/pilulabs'
+import { normalizarItem, type ItemPiluLabs } from '@/lib/pilulabs'
 import type { FeedSource } from '@/mocks/feeds'
 import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
 import type { Social, SocialIconMode } from '@/mocks/social'
@@ -267,15 +262,6 @@ export async function getFeeds(): Promise<FeedSource[]> {
     enabled: entry.enabled ?? true,
   }))
   return sortByOrder(mapped)
-}
-
-export async function getProdutos(): Promise<Produto[]> {
-  await skipCacheWhenDraft()
-  const reader = await getKeystaticReader()
-  const items = await reader.collections.produtos.all()
-  return sortByOrder(
-    items.map(({ slug, entry }) => normalizarProduto(slug, entry)),
-  )
 }
 
 export async function getPiluLabs(): Promise<ItemPiluLabs[]> {

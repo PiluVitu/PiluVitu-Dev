@@ -28,10 +28,10 @@ describe('ProjectCard', () => {
       <ProjectCard
         {...BASE}
         deployLink="/pilulabs/botai"
-        deployLabel="Ver no PiluLabs"
+        deployLabel="Acessar"
       />,
     ).querySelector('a[href="/pilulabs/botai"]')
     expect(link?.hasAttribute('target')).toBe(false)
-    expect(link?.textContent).toBe('Ver no PiluLabs')
+    expect(link?.textContent).toBe('Acessar')
   })
 })

@@ -6,7 +6,7 @@ import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 type HomeFooterProps = {
   name: string
   year?: number
-  mostrarPiluLabs?: boolean
+  piluLabsHref?: string
 }
 
 const linkCls = 'hover:text-foreground transition-colors'
@@ -14,7 +14,7 @@ const linkCls = 'hover:text-foreground transition-colors'
 export function HomeFooter({
   name,
   year = new Date().getFullYear(),
-  mostrarPiluLabs = false,
+  piluLabsHref,
 }: HomeFooterProps) {
   const user = useCurrentUser()
   const isLoggedIn = !!user.data
@@ -37,10 +37,10 @@ export function HomeFooter({
         <Link href="/tasks" className={linkCls}>
           /tasks
         </Link>
-        {mostrarPiluLabs ? (
+        {piluLabsHref ? (
           <>
             <span aria-hidden>·</span>
-            <Link href="/pilulabs" className={linkCls}>
+            <Link href={piluLabsHref} className={linkCls}>
               /pilulabs
             </Link>
           </>

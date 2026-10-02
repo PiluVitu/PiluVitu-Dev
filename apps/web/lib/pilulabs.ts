@@ -18,38 +18,6 @@ export { LOJAS, TIPOS } from './pilulabs-regras'
 export type { Loja, TipoItem } from './pilulabs-regras'
 
 export type Fase = 'em-breve' | 'disponivel'
-export type TipoProduto = 'extensao' | 'web' | 'cli'
-
-export type Produto = {
-  slug: string
-  order: number
-  nome: string
-  tipo: TipoProduto
-  listado: boolean
-  resumo: string
-  icone: string
-  tags: string[]
-  chromeUrl: string
-  firefoxUrl: string
-  edgeUrl: string
-  operaUrl: string
-  repoLink: string
-}
-
-export type EntradaProduto = {
-  order?: number | null
-  nome?: string | null
-  tipo?: string | null
-  listado?: boolean | null
-  resumo?: string | null
-  icone?: string | null
-  tags?: readonly string[] | null
-  chromeUrl?: string | null
-  firefoxUrl?: string | null
-  edgeUrl?: string | null
-  operaUrl?: string | null
-  repoLink?: string | null
-}
 
 export type ItemPiluLabs = {
   slug: string
@@ -96,8 +64,6 @@ export type EntradaItem = {
 
 export type LojaPublicada = { loja: Loja; url: string }
 
-const TIPOS_DE_PRODUTO: readonly TipoProduto[] = ['extensao', 'web', 'cli']
-
 const CAMPO_DA_LOJA = {
   chrome: 'chromeUrl',
   firefox: 'firefoxUrl',
@@ -115,27 +81,6 @@ function texto(valor: unknown): string {
 function https(valor: unknown): string {
   const url = texto(valor)
   return ehHttps(url) ? url : ''
-}
-
-export function normalizarProduto(
-  slug: string,
-  entrada: EntradaProduto,
-): Produto {
-  return {
-    slug,
-    order: typeof entrada.order === 'number' ? entrada.order : 0,
-    nome: texto(entrada.nome) || slug,
-    tipo: TIPOS_DE_PRODUTO.find((t) => t === entrada.tipo) ?? 'extensao',
-    listado: entrada.listado === true,
-    resumo: texto(entrada.resumo),
-    icone: texto(entrada.icone),
-    tags: (entrada.tags ?? []).map(texto).filter(Boolean),
-    chromeUrl: texto(entrada.chromeUrl),
-    firefoxUrl: texto(entrada.firefoxUrl),
-    edgeUrl: texto(entrada.edgeUrl),
-    operaUrl: texto(entrada.operaUrl),
-    repoLink: texto(entrada.repoLink),
-  }
 }
 
 export function normalizarItem(
@@ -175,10 +120,6 @@ export function lojasPublicadas(item: UrlsDasLojas): LojaPublicada[] {
 
 export function fase(item: UrlsDasLojas): Fase {
   return lojasPublicadas(item).length > 0 ? 'disponivel' : 'em-breve'
-}
-
-export function produtosListados(produtos: Produto[]): Produto[] {
-  return produtos.filter((p) => p.listado)
 }
 
 function porOrdem(a: Ordenavel, b: Ordenavel): number {
@@ -352,20 +293,4 @@ export function metadataDoItem(
 ): Metadata {
   const metadata = metadataDaPagina(pagina, subdominiosAtivos)
   return item.listado ? metadata : { ...metadata, robots: { index: false } }
-}
-
-export function produtoParaProject(produto: Produto): Project {
-  return {
-    id: `pilulabs-${produto.slug}`,
-    projectName: produto.nome,
-    subtitle: 'PiluLabs · Powered by PiluTech',
-    projectLogo: produto.icone,
-    description: produto.resumo,
-    tags: produto.tags,
-    deployLink: `/pilulabs/${produto.slug}`,
-    deployLabel: 'Ver no PiluLabs',
-    repoLink: produto.repoLink,
-    image: produto.icone || undefined,
-    altImage: produto.nome.slice(0, 2).toUpperCase(),
-  }
 }
