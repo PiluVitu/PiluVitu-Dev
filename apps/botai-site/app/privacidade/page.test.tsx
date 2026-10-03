@@ -160,7 +160,7 @@ describe('/privacidade', () => {
     }))
       expect(link).toHaveAttribute(
         'href',
-        'mailto:pilutechinformatica@gmail.com',
+        'mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Privacidade',
       )
     expect(screen.getByRole('link', { name: 'termos de uso' })).toHaveAttribute(
       'href',

@@ -6,12 +6,19 @@ import {
   faIdCard,
   faLocationDot,
 } from '@fortawesome/free-solid-svg-icons'
+import { EMAIL_DA_PILUTECH, mailtoDaPilutech } from '@piluvitu/tools/contato'
 
 export const NOME = 'Botaí'
 export const PROPOSTA =
   'Gerador de dados fake para formulários (CPF, CNPJ, CEP)'
 export const URL_DA_PILUTECH = 'https://pilutech.com.br'
-export const EMAIL_DE_SUPORTE = 'pilutechinformatica@gmail.com'
+export const URL_DA_PILULABS = 'https://piluvitu.com.br/pilulabs'
+export const EMAIL_DE_SUPORTE = EMAIL_DA_PILUTECH
+export const MAILTO = {
+  suporte: mailtoDaPilutech(NOME, 'Suporte'),
+  privacidade: mailtoDaPilutech(NOME, 'Privacidade'),
+  termos: mailtoDaPilutech(NOME, 'Termos de uso'),
+} as const
 export const REPOSITORIO = 'https://github.com/PiluVitu/PiluVitu-Dev'
 export const URL_DA_LICENCA = `${REPOSITORIO}/blob/main/apps/botai/LICENSE`
 

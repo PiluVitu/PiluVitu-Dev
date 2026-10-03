@@ -19,13 +19,13 @@ afterEach(() => {
 })
 
 describe('getCanonicalSiteUrl', () => {
-  // A Vercel escolhe o domínio de produção mais curto, e pilutech.com.br tem o
-  // mesmo tamanho de piluvitu.com.br: só a variável explícita segura o canônico.
+  // Com mais de um domínio no projeto, a Vercel escolhe o de produção mais curto,
+  // que pode não ser o canônico: só a variável explícita segura o canônico.
   it('NEXT_PUBLIC_SITE_URL vence o domínio de produção da Vercel', () => {
     comAmbiente({
       NEXT_PUBLIC_SITE_URL: 'https://piluvitu.com.br/',
       VERCEL_ENV: 'production',
-      VERCEL_PROJECT_PRODUCTION_URL: 'pilutech.com.br',
+      VERCEL_PROJECT_PRODUCTION_URL: 'outro.com.br',
     })
     expect(getCanonicalSiteUrl()).toBe('https://piluvitu.com.br')
   })
@@ -33,8 +33,8 @@ describe('getCanonicalSiteUrl', () => {
   it('sem NEXT_PUBLIC_SITE_URL, a produção usa o domínio que a Vercel escolher', () => {
     comAmbiente({
       VERCEL_ENV: 'production',
-      VERCEL_PROJECT_PRODUCTION_URL: 'pilutech.com.br',
+      VERCEL_PROJECT_PRODUCTION_URL: 'outro.com.br',
     })
-    expect(getCanonicalSiteUrl()).toBe('https://pilutech.com.br')
+    expect(getCanonicalSiteUrl()).toBe('https://outro.com.br')
   })
 })

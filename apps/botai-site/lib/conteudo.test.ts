@@ -2,12 +2,16 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   DOCUMENTOS,
+  EMAIL_DE_SUPORTE,
   historicoDe,
+  MAILTO,
   RECURSOS,
   REPOSITORIO,
   REQUISITOS,
   REQUISITOS_DO_SOFTWARE,
   URL_DA_LICENCA,
+  URL_DA_PILULABS,
+  URL_DA_PILUTECH,
 } from './conteudo'
 
 const WXT_CONFIG = readFileSync(
@@ -62,5 +66,25 @@ describe('documentos e código-fonte', () => {
       { href: '/privacidade', rotulo: 'Privacidade' },
       { href: '/termos', rotulo: 'Termos de uso' },
     ])
+  })
+})
+
+describe('contato e links da PiluTech', () => {
+  // O dono filtra no Gmail com subject:Botaí: cada link diz de onde veio (RFC 6068, UTF-8).
+  it('suporte, privacidade e termos vão para o e-mail da PiluTech com [Botaí] no assunto', () => {
+    expect(EMAIL_DE_SUPORTE).toBe('pilutechinformatica@gmail.com')
+    expect(MAILTO).toEqual({
+      suporte:
+        'mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Suporte',
+      privacidade:
+        'mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Privacidade',
+      termos:
+        'mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Termos%20de%20uso',
+    })
+  })
+
+  it('a vitrine PiluLabs mora no piluvitu.com.br, e a PiluTech no pilutech.com.br', () => {
+    expect(URL_DA_PILULABS).toBe('https://piluvitu.com.br/pilulabs')
+    expect(URL_DA_PILUTECH).toBe('https://pilutech.com.br')
   })
 })

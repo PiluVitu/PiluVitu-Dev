@@ -112,19 +112,15 @@ describe('catálogo em content/pilulabs', () => {
     expect(rotasFaltando(itens, existe)).toEqual([])
   })
 
-  // O subdomínio de um slug só serve a página se houver item com paginaPropria.
+  // Só o item com paginaPropria leva à rota própria: sem ele, a página fica órfã.
   it('toda rota própria em app/(site)/pilulabs tem item com paginaPropria', () => {
     expect(paginasSemItem(slugsComPaginaPropria(RAIZ_WEB), itens)).toEqual([])
   })
 
-  it('todo listado tem descrição, link com e sem a chave e o logo em public/', () => {
+  it('todo listado tem descrição, link e o logo em public/', () => {
     for (const item of itensListados(itens)) {
       expect([item.slug, item.descricao !== '']).toEqual([item.slug, true])
-      expect([
-        item.slug,
-        linkDoItem(item, false) !== null,
-        linkDoItem(item, true) !== null,
-      ]).toEqual([item.slug, true, true])
+      expect([item.slug, linkDoItem(item) !== null]).toEqual([item.slug, true])
       if (item.logo.startsWith('/'))
         expect([
           item.logo,

@@ -36,7 +36,7 @@ describe('HomeBentoLayout', () => {
             },
           ],
           total: 3,
-          hrefVitrine: 'https://pilutech.com.br/',
+          hrefVitrine: '/pilulabs',
         }}
         initialBlogPosts={[]}
       />,
@@ -49,6 +49,6 @@ describe('HomeBentoLayout', () => {
       [...(secao?.querySelectorAll('a') ?? [])].map((a) =>
         a.getAttribute('href'),
       ),
-    ).toEqual(['/pilulabs/botai', 'https://pilutech.com.br/'])
+    ).toEqual(['/pilulabs/botai', '/pilulabs'])
   })
 })

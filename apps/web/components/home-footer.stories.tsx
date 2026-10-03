@@ -21,11 +21,3 @@ export const ComPiluLabs: Story = {
     piluLabsHref: '/pilulabs',
   },
 }
-
-export const ComSubdominios: Story = {
-  args: {
-    name: 'Paulo Victor Torres Silva',
-    year: 2026,
-    piluLabsHref: 'https://pilutech.com.br/',
-  },
-}

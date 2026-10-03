@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+@import '@fortawesome/fontawesome-svg-core/styles.css' layer(base);
+@import '@piluvitu/ui/styles.css';
+@source '../../../packages/ui/src';
+/* A documentação do app não pode mudar o CSS da landing (o Tailwind varre os .md). */
+@source not '../*.md';
+
+@theme {
+  --color-noite: hsl(220 33% 5%);
+  --color-grafite: hsl(222 36% 9%);
+  --color-ciano: hsl(198 93% 60%);
+  --color-ciano-claro: hsl(198 93% 68%);
+  --color-petroleo-cartao: hsl(198 93% 20%);
+  --color-petroleo-borda: hsl(198 60% 40%);
+  --color-petroleo-linha: hsl(198 60% 45%);
+}
+
+/* O @theme do @piluvitu/ui não é inline: a cor sairia resolvida no :root, e o `dark` de uma seção não mudaria nada. */
+@theme inline {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-ok: hsl(var(--ok));
+  --color-ok-foreground: hsl(var(--ok-foreground));
+  --color-warn: hsl(var(--warn));
+  --color-warn-foreground: hsl(var(--warn-foreground));
+  --color-win: hsl(var(--win));
+  --color-win-foreground: hsl(var(--win-foreground));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-padding-top: 72px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  /* O design não define entrelinha no texto corrido: vale a do navegador, não o 1.5 do preflight. */
+  body {
+    @apply bg-noite text-foreground font-sans leading-[normal] antialiased;
+  }
+}

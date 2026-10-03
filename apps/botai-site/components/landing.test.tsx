@@ -91,6 +91,10 @@ describe('Landing', () => {
     expect(
       screen.getByRole('link', { name: 'Powered by PiluTech' }),
     ).toHaveAttribute('href', 'https://pilutech.com.br')
+    expect(screen.getByRole('link', { name: 'PiluLabs' })).toHaveAttribute(
+      'href',
+      'https://piluvitu.com.br/pilulabs',
+    )
   })
 
   it('os cuidados levam aos termos de uso', () => {

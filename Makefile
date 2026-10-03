@@ -6,7 +6,8 @@
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
         dev-botai build-botai test-botai test-e2e-botai storybook-botai zip-botai versao-botai release-botai capturas-botai \
-        dev-botai-site build-botai-site test-botai-site test-e2e-botai-site storybook-botai-site
+        dev-botai-site build-botai-site test-botai-site test-e2e-botai-site storybook-botai-site \
+        dev-pilutech-site build-pilutech-site test-pilutech-site test-e2e-pilutech-site storybook-pilutech-site
 
 dev-web:
 	pnpm --filter @piluvitu/web dev
@@ -34,7 +35,7 @@ dev:
 # Escape hatch: free the dev ports if a process got stuck (rare with air,
 # handy after a hard crash). macOS/BSD-safe (no GNU xargs -r).
 stop:
-	@for p in 8081 8082 3333 6017 3018 6018 3020 6019; do \
+	@for p in 8081 8082 3333 6017 3018 6018 3020 6019 3021 6020; do \
 		pids=$$(lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null); \
 		if [ -n "$$pids" ]; then kill $$pids 2>/dev/null && echo "killed :$$p ($$pids)"; else echo ":$$p free"; fi; \
 	done
@@ -125,6 +126,23 @@ test-e2e-botai-site:
 
 storybook-botai-site:
 	pnpm --filter @pilutech/botai-site storybook
+
+# --- pilutech-site (landing da PiluTech, Next 16) ---
+# Dev em 3021 e Storybook em 6020. O E2E builda e serve a produção; rode com CI=1.
+dev-pilutech-site:
+	pnpm --filter @pilutech/site dev
+
+build-pilutech-site:
+	pnpm --filter @pilutech/site build
+
+test-pilutech-site:
+	pnpm --filter @pilutech/site test
+
+test-e2e-pilutech-site:
+	CI=1 pnpm --filter @pilutech/site test:e2e
+
+storybook-pilutech-site:
+	pnpm --filter @pilutech/site storybook
 
 # --- promeia (serviço Python local) ---
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,

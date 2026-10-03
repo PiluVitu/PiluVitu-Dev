@@ -72,6 +72,23 @@ export function fase(urls: UrlsDasLojas): Fase {
   return lojasPublicadas(urls).length > 0 ? 'disponivel' : 'em-breve'
 }
 
+function textoOuVazio(valor: unknown): string {
+  return typeof valor === 'string' ? valor.trim() : ''
+}
+
+export function urlsDasLojas(item: unknown): UrlsDasLojas {
+  const campos =
+    typeof item === 'object' && item !== null
+      ? (item as Record<string, unknown>)
+      : {}
+  return {
+    chromeUrl: textoOuVazio(campos.chromeUrl),
+    firefoxUrl: textoOuVazio(campos.firefoxUrl),
+    edgeUrl: textoOuVazio(campos.edgeUrl),
+    operaUrl: textoOuVazio(campos.operaUrl),
+  }
+}
+
 // No Windows e no Linux o Chrome reserva Alt+Shift+P ("criar novo grupo de abas") e não o cede à extensão.
 const TECLAS_CHROMIUM: TeclasSugeridas = {
   default: 'Ctrl+Shift+Y',

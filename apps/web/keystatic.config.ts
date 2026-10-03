@@ -242,7 +242,7 @@ export default config({
       schema: {
         slug: fields.slug({
           name: {
-            label: 'Slug (sem acento; é o subdomínio e a pasta da rota)',
+            label: 'Slug (sem acento; é a pasta da rota própria)',
           },
         }),
         order: fields.integer({ label: 'Ordem (menor primeiro)' }),
@@ -270,7 +270,8 @@ export default config({
         }),
         site: fields.text({
           label: 'Site (https://)',
-          description: 'O padrão é https://<slug>.pilutech.com.br',
+          description:
+            'URL https da landing do produto (ex.: https://botai.pilutech.com.br)',
         }),
         repo: fields.text({ label: 'Código-fonte (https://)' }),
         chromeUrl: fields.text({

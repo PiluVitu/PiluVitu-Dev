@@ -117,3 +117,7 @@ apps/botai/web-ext.config.ts
 # Landing do Botaí: o storybook-static traz CSS compilado, e o Tailwind o varreria (o gate passaria sem medir nada)
 apps/botai-site/storybook-static/
 apps/botai-site/playwright-report/
+
+# Landing da PiluTech: mesmo motivo
+apps/pilutech-site/storybook-static/
+apps/pilutech-site/playwright-report/

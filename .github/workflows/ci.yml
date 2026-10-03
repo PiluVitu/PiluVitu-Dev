@@ -263,3 +263,35 @@ jobs:
       # O build lê apps/web/content/pilulabs/botai/index.yaml, que o checkout traz inteiro.
       - name: Build (+ gate do @source + rotas estáticas)
         run: pnpm --filter @pilutech/botai-site run build
+
+  pilutech-site:
+    name: PiluTech site (lint + tsc + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @pilutech/site run lint
+
+      - name: Typecheck
+        run: pnpm --filter @pilutech/site run typecheck
+
+      - name: Test (jest + node --test)
+        run: pnpm --filter @pilutech/site run test
+
+      # O build lê apps/web/content/pilulabs/botai/index.yaml, que o checkout traz inteiro.
+      - name: Build (+ gate do @source + rotas estáticas)
+        run: pnpm --filter @pilutech/site run build

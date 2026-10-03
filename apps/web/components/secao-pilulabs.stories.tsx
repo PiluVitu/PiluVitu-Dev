@@ -73,11 +73,3 @@ export const SeisItens: Story = {
     hrefVitrine: '/pilulabs',
   },
 }
-
-export const ComSubdominios: Story = {
-  args: {
-    itens: [{ ...BOTAI, deployLink: 'https://botai.pilutech.com.br' }],
-    total: 1,
-    hrefVitrine: 'https://pilutech.com.br/',
-  },
-}

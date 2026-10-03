@@ -10,29 +10,21 @@ import {
   siglaDoItem,
 } from '@/lib/pilulabs'
 import { jsonLdVitrine } from '@/lib/pilulabs-json-ld'
-import { subdominiosAtivos } from '@/lib/pilutech-dominios'
 import { getPiluLabs } from '@/lib/site-content'
 import { getCanonicalSiteUrl } from '@/lib/site-url'
 
-export const metadata: Metadata = metadataDaPagina(
-  {
-    caminho: '/pilulabs',
-    titulo: 'PiluLabs | produtos da PiluTech',
-    descricao:
-      'Produtos e apps que o Paulo Victor faz e mantém. Powered by PiluTech.',
-  },
-  subdominiosAtivos(),
-)
+export const metadata: Metadata = metadataDaPagina({
+  caminho: '/pilulabs',
+  titulo: 'PiluLabs | produtos da PiluTech',
+  descricao:
+    'Produtos e apps que o Paulo Victor faz e mantém. Powered by PiluTech.',
+})
 
 export default async function PiluLabsPage() {
-  const subdominios = subdominiosAtivos()
-  const siteUrl = getCanonicalSiteUrl()
-  // No host PiluTech, "/" é a própria vitrine: a home do autor vira absoluta.
-  const hrefAutor = subdominios ? `${siteUrl}/` : '/'
   const listados = itensListados(await getPiluLabs())
   const itens: ItemVitrine[] = listados.map((item) => ({
     item: { ...item, sigla: siglaDoItem(item) },
-    href: linkDoItem(item, subdominios),
+    href: linkDoItem(item),
     fase: fase(item),
     lojas: lojasPublicadas(item).map(({ loja }) => loja),
   }))
@@ -40,8 +32,8 @@ export default async function PiluLabsPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-5xl px-6 py-8 sm:px-8 xl:py-10">
-      <JsonLd dados={jsonLdVitrine(siteUrl, partes, subdominios)} />
-      <PageTopBar backHref={hrefAutor} backLabel="Paulo Victor" />
+      <JsonLd dados={jsonLdVitrine(getCanonicalSiteUrl(), partes)} />
+      <PageTopBar backHref="/" backLabel="Paulo Victor" />
 
       <header className="mt-10 mb-12">
         <h1 className="text-4xl font-bold tracking-tight">PiluLabs</h1>
@@ -57,7 +49,7 @@ export default async function PiluLabsPage() {
         </p>
       </header>
 
-      <Vitrine itens={itens} hrefAutor={hrefAutor} />
+      <Vitrine itens={itens} hrefAutor="/" />
     </div>
   )
 }

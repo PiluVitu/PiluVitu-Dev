@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/styles.css">
+<link rel="stylesheet" href="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/tokens/typography.css">
+<script src="_ds/piluvitu-design-system-c5cbccd6-fba7-4d67-9f03-d4819fa56130/_ds_bundle.js"></script>
+</helmet>
+<div style="display:inline-flex;align-items:center;gap:{{gap}}px;line-height:1">
+<sc-if value="{{is1a}}" hint-placeholder-val="{{ true }}">
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 48 48" style="display:block;flex:none">
+<rect x="8.5" y="0" width="14" height="14" rx="3.5" style="fill:{{fg}}"></rect>
+<rect x="25.5" y="0" width="14" height="14" rx="3.5" style="fill:{{accent}}"></rect>
+<rect x="8.5" y="17" width="14" height="14" rx="3.5" style="fill:{{fg}}"></rect>
+<rect x="25.5" y="17" width="14" height="14" rx="3.5" style="fill:{{fg}}"></rect>
+<rect x="8.5" y="34" width="14" height="14" rx="3.5" style="fill:{{fg}}"></rect>
+</svg>
+</sc-if>
+<sc-if value="{{is1b}}" hint-placeholder-val="{{ false }}">
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 48 48" style="display:block;flex:none">
+<path d="M8 11 L22 24 L8 37" style="fill:none;stroke:{{fg}};stroke-width:6;stroke-linecap:round;stroke-linejoin:round"></path>
+<rect x="26" y="32" width="17" height="6" rx="3" style="fill:{{accent}}"></rect>
+</svg>
+</sc-if>
+<sc-if value="{{is1c}}" hint-placeholder-val="{{ false }}">
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 48 48" style="display:block;flex:none">
+<path d="M14 36 V9 H27 A10.5 10.5 0 0 1 27 30 H14" style="fill:none;stroke:{{fg}};stroke-width:5.5;stroke-linecap:round;stroke-linejoin:round"></path>
+<circle cx="14" cy="40" r="5.5" style="fill:{{accent}}"></circle>
+</svg>
+</sc-if>
+<sc-if value="{{is1d}}" hint-placeholder-val="{{ false }}">
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 48 48" style="display:block;flex:none">
+<rect x="8" y="5" width="32" height="10.5" rx="5.25" style="fill:{{accent}}"></rect>
+<rect x="8" y="18.75" width="32" height="10.5" rx="5.25" style="fill:{{fg}}"></rect>
+<rect x="8" y="32.5" width="14" height="10.5" rx="5.25" style="fill:{{fg}}"></rect>
+</svg>
+</sc-if>
+<sc-if value="{{lockup}}" hint-placeholder-val="{{ false }}">
+<span style="font-family:{{wordFont}};font-weight:{{wordWeight}};font-size:{{wordSize}}px;letter-spacing:{{wordLs}};color:{{fg}};white-space:nowrap">{{wordText}}<span style="color:{{accent}}">{{wordSuffix}}</span></span>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:400,&quot;height&quot;:140},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;1a&quot;,&quot;1b&quot;,&quot;1c&quot;,&quot;1d&quot;],&quot;default&quot;:&quot;1a&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:48,&quot;tsType&quot;:&quot;number&quot;},&quot;lockup&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;fg&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0f1520&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0369a1&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const v = this.props.variant ?? '1a';
+    const size = Number(this.props.size ?? 48);
+    const words = {
+      '1a': { t: 'PiluTech', s: '', f: 'var(--font-sans)', w: 800, ls: '-0.035em', k: 0.6 },
+      '1b': { t: 'pilutech', s: '_', f: 'var(--font-mono)', w: 700, ls: '-0.03em', k: 0.56 },
+      '1c': { t: 'pilutech', s: '', f: 'var(--font-sans)', w: 700, ls: '-0.03em', k: 0.62 },
+      '1d': { t: 'PILUTECH', s: '', f: 'var(--font-sans)', w: 800, ls: '0.08em', k: 0.46 }
+    };
+    const w = words[v] || words['1a'];
+    return {
+      is1a: v === '1a', is1b: v === '1b', is1c: v === '1c', is1d: v === '1d',
+      size, gap: Math.round(size * 0.28),
+      fg: this.props.fg ?? 'hsl(var(--foreground))',
+      accent: this.props.accent ?? 'hsl(var(--primary))',
+      lockup: !!this.props.lockup,
+      wordText: w.t, wordSuffix: w.s, wordFont: w.f, wordWeight: w.w, wordLs: w.ls,
+      wordSize: Math.round(size * w.k)
+    };
+  }
+}
+</script>
+</body>
+</html>

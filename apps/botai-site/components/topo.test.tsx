@@ -5,7 +5,10 @@ describe('Topo', () => {
   it('voltar, âncoras e o botão de tema, numa navegação', () => {
     render(
       <Topo
-        voltar={{ href: 'https://pilutech.com.br', rotulo: 'PiluLabs' }}
+        voltar={{
+          href: 'https://piluvitu.com.br/pilulabs',
+          rotulo: 'PiluLabs',
+        }}
         ancoras={[
           { href: '#como-usar', rotulo: 'como usar' },
           { href: '#capturas', rotulo: 'capturas' },
@@ -15,7 +18,7 @@ describe('Topo', () => {
     expect(screen.getByRole('navigation', { name: 'Topo' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'PiluLabs' })).toHaveAttribute(
       'href',
-      'https://pilutech.com.br',
+      'https://piluvitu.com.br/pilulabs',
     )
     expect(screen.getByRole('link', { name: 'como usar' })).toHaveAttribute(
       'href',

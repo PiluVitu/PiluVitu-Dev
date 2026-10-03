@@ -71,6 +71,25 @@ test.describe('/', () => {
     ).toBeInViewport()
   })
 
+  test('o topo volta para a PiluLabs no piluvitu.com.br, e o suporte leva [Botaí] no assunto', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Topo' })
+        .getByRole('link', { name: 'PiluLabs' }),
+    ).toHaveAttribute('href', 'https://piluvitu.com.br/pilulabs')
+    const suporte = page
+      .getByRole('contentinfo')
+      .getByRole('link', { name: 'Suporte' })
+    expect(
+      new URL((await suporte.getAttribute('href')) as string).searchParams.get(
+        'subject',
+      ),
+    ).toBe('[Botaí] Suporte')
+  })
+
   test('abas das capturas pelo teclado (WAI-ARIA)', async ({ page }) => {
     await page.goto('/')
     const abas = page.getByRole('tab')

@@ -52,8 +52,8 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 
 **Uma vez, antes do primeiro envio:**
 
-1. **Domínios na Vercel:** `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex) no projeto do `apps/web`; `botai.pilutech.com.br` no projeto `botai-site` (Root Directory `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`). Antes, confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` em Production (passo 0 da seção PiluLabs do `apps/web/CLAUDE.md`).
-2. **DNS na Cloudflare**, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, e o `CNAME botai` com o valor do projeto `botai-site`). Não crie Single Redirect; se houver um de antes, apague. Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, servida pelo `apps/web`), ligue `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e faça o redeploy. O "Powered by PiluTech" do popup abre `https://pilutech.com.br`, que passa a ser a vitrine PiluLabs.
+1. **Domínios na Vercel:** `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex) no projeto `pilutech-site` (Root Directory `apps/pilutech-site`; ver "Deploy" em `apps/pilutech-site/CLAUDE.md`); `botai.pilutech.com.br` no projeto `botai-site` (Root Directory `apps/botai-site`; ver "Deploy" em `apps/botai-site/CLAUDE.md`).
+2. **DNS na Cloudflare**, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`, e o `CNAME botai` com o valor do projeto `botai-site`). Não crie Single Redirect; se houver um de antes, apague. O "Powered by PiluTech" do popup abre `https://pilutech.com.br`, a landing da PiluTech.
 3. **Contas:**
    - Chrome Web Store: taxa única de US$ 5, verificação em duas etapas obrigatória e e-mail de login **imutável** (use um dedicado da PiluTech). Declare-se Trader com os dados da PiluTech, depois de confirmar com o contador.
    - Firefox Add-ons: conta Mozilla com 2FA.

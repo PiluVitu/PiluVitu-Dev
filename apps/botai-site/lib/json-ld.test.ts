@@ -3,6 +3,7 @@ import {
   ID_DA_PILUTECH,
   jsonLdDaHome,
   jsonLdDaTrilha,
+  LOGO_DA_PILUTECH,
   serializarJsonLd,
   type NoJsonLd,
 } from './json-ld'
@@ -28,13 +29,16 @@ describe('jsonLdDaHome', () => {
     ])
   })
 
-  // Sem logo: não há logo da PiluTech no repo, e o ícone do Botaí não é o logo da empresa.
-  it('Organization: a PiluTech, sem logo', () => {
+  // O logo é o /icon do apps/pilutech-site (192 px; está no ROTAS dele, e o build quebra se sumir).
+  // O ícone do Botaí não é o logo da empresa.
+  it('Organization: a PiluTech, com o logo do site dela', () => {
+    expect(LOGO_DA_PILUTECH).toBe('https://pilutech.com.br/icon')
     expect(no('Organization', dados['@graph'])).toEqual({
       '@type': 'Organization',
       '@id': ID_DA_PILUTECH,
       name: 'PiluTech',
       url: 'https://pilutech.com.br',
+      logo: LOGO_DA_PILUTECH,
     })
   })
 

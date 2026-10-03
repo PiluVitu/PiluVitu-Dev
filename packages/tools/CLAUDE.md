@@ -130,11 +130,19 @@ Lógica pura da extensão Botaí (`apps/botai`) (spec `docs/superpowers/specs/20
 
 ## Módulo `pilulabs` (regras do catálogo PiluLabs e do Botaí)
 
-`pilulabs.ts`, exposto só por `@piluvitu/tools/pilulabs`, sem `node:fs` e importável no cliente. Saiu do `apps/web/lib` (era o `pilulabs-regras.ts` mais `lojasPublicadas`, `fase` e `ATALHOS`) porque dois apps decidem a mesma coisa: o `apps/web` (card da PiluLabs, formulário do admin) e o `apps/botai-site` (botões de loja, selo de fase, atalho de quem visita).
+`pilulabs.ts`, exposto só por `@piluvitu/tools/pilulabs`, sem `node:fs` e importável no cliente. Saiu do `apps/web/lib` (era o `pilulabs-regras.ts` mais `lojasPublicadas`, `fase` e `ATALHOS`) porque mais de um app decide a mesma coisa: o `apps/web` (card da PiluLabs, formulário do admin), o `apps/botai-site` (botões de loja, selo de fase, atalho de quem visita) e o `apps/pilutech-site` (o selo do Botaí no cartão de projeto).
 
 - `Loja`, `LOJAS` (ordem fixa) e `ehUrlDaLoja`: só `https:` no host exato da loja; `lojasPublicadas(urls)` e `fase(urls)` recebem as 4 URLs (`UrlsDasLojas`), e só URL válida conta.
 - `TipoItem`, `TIPOS` (ordem da vitrine), `TIPO_PADRAO`, `ehHttps` e `ehDataValida`.
 - `TECLAS_DO_MANIFESTO` é o `suggested_key` do Botaí (Chromium e Firefox) e `ATALHOS` sai dele (`teclaNoMac` troca `Alt`/`Shift`/`Ctrl` por `⌥`/`⇧`/`⌘`, como o Chrome mostra no Mac). Mudou a tecla da extensão? Mude aqui: os testes fixam os dois formatos.
+- `urlsDasLojas(item)`: as 4 URLs de loja de um item do CMS já lido pelo `yaml` (texto aparado; ausente, nulo ou não-texto vira vazio; YAML que não é objeto dá as 4 vazias). Os dois sites leem o `apps/web/content/pilulabs/botai/index.yaml` com ela, sem o reader do Keystatic.
+
+## Módulo `contato` (e-mail dos projetos PiluTech)
+
+`contato.ts`, exposto só por `@piluvitu/tools/contato`. Todo contato de projeto vai para `EMAIL_DA_PILUTECH` (`pilutechinformatica@gmail.com`), e `mailtoDaPilutech(projeto, assunto)` monta o `mailto:` com o assunto `[Projeto] Assunto`, para o dono filtrar no Gmail com `subject:Botaí`, `subject:Sombraí` ou `subject:PiluTech` (spec `docs/superpowers/specs/2026-10-02-pilutech-site-design.md` §6).
+
+- O assunto vai por `encodeURIComponent`: UTF-8 em percent-encoding, espaço como `%20` (RFC 6068). Em `mailto:` o `+` é literal, e o `URLSearchParams` codificaria o espaço como `+`: não troque.
+- Usado pelo `apps/pilutech-site` (`[PiluTech] Contato pelo site`) e pelo `apps/botai-site` (`[Botaí] Suporte`, `[Botaí] Privacidade`, `[Botaí] Termos de uso`). Texto que só cita o endereço (política, termos, `apps/botai/loja/textos.md`) continua com o e-mail puro.
 
 ## Dependency policy
 

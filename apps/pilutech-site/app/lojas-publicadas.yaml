@@ -1,0 +1,6 @@
+# YAML de teste do playwright.lojas.config.ts, no lugar de apps/web/content/pilulabs/botai/index.yaml.
+slug: botai
+chromeUrl: https://addons.mozilla.org/x
+firefoxUrl: https://addons.mozilla.org/pt-BR/firefox/addon/botai/
+edgeUrl: http://microsoftedge.microsoft.com/addons/detail/botai/xyz
+operaUrl: ''

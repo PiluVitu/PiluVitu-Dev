@@ -10,6 +10,7 @@ import {
   teclaNoMac,
   TIPO_PADRAO,
   TIPOS,
+  urlsDasLojas,
 } from './pilulabs'
 
 const SEM_LOJA = { chromeUrl: '', firefoxUrl: '', edgeUrl: '', operaUrl: '' }
@@ -211,4 +212,33 @@ describe('ATALHOS', () => {
   it('cobre as 4 lojas', () => {
     expect(Object.keys(ATALHOS).sort()).toEqual([...LOJAS].sort())
   })
+})
+
+describe('urlsDasLojas', () => {
+  it('as 4 URLs do item, aparadas, sem o resto do YAML', () => {
+    expect(
+      urlsDasLojas({
+        slug: 'botai',
+        nome: 'Botaí',
+        chromeUrl: ` ${URL_CHROME} `,
+        firefoxUrl: '',
+        edgeUrl: URL_EDGE,
+        operaUrl: '',
+      }),
+    ).toEqual({ ...SEM_LOJA, chromeUrl: URL_CHROME, edgeUrl: URL_EDGE })
+  })
+
+  // O Keystatic apaga do YAML o campo opcional vazio, e o yaml lê chave sem valor como null.
+  it('campo ausente, nulo ou que não é texto vira vazio', () => {
+    expect(
+      urlsDasLojas({ chromeUrl: 12, firefoxUrl: null, edgeUrl: ['a'] }),
+    ).toEqual(SEM_LOJA)
+  })
+
+  it.each([[null], [undefined], [''], ['texto'], [42], [[]]])(
+    'YAML que não é um objeto (%p): nenhuma loja',
+    (bruto) => {
+      expect(urlsDasLojas(bruto)).toEqual(SEM_LOJA)
+    },
+  )
 })

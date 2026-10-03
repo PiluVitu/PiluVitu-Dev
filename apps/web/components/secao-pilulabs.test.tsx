@@ -45,15 +45,4 @@ describe('SecaoPiluLabs', () => {
     expect(link?.textContent).toBe('Saiba mais no PiluLabs')
     expect(link?.getAttribute('href')).toBe('/pilulabs')
   })
-
-  it('com os subdomínios ligados, a vitrine é pilutech.com.br', () => {
-    const link = renderEstatico(
-      <SecaoPiluLabs
-        itens={[]}
-        total={0}
-        hrefVitrine="https://pilutech.com.br/"
-      />,
-    ).querySelector('a')
-    expect(link?.getAttribute('href')).toBe('https://pilutech.com.br/')
-  })
 })

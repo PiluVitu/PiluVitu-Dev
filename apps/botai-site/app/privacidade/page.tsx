@@ -6,6 +6,7 @@ import { JsonLd } from '@/components/json-ld'
 import {
   EMAIL_DE_SUPORTE,
   historicoDe,
+  MAILTO,
   NOME,
   REPOSITORIO,
 } from '@/lib/conteudo'
@@ -104,7 +105,7 @@ export const metadata: Metadata = metadataDaPagina({
 })
 
 function Email() {
-  return <a href={`mailto:${EMAIL_DE_SUPORTE}`}>{EMAIL_DE_SUPORTE}</a>
+  return <a href={MAILTO.privacidade}>{EMAIL_DE_SUPORTE}</a>
 }
 
 export default function PrivacidadePage() {
