@@ -13,7 +13,11 @@ test.describe('/privacidade', () => {
       '2 de outubro de 2026',
     )
     await expect(
-      page.locator('a[href="mailto:pilutechinformatica@gmail.com"]').first(),
+      page
+        .locator(
+          'a[href="mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Privacidade"]',
+        )
+        .first(),
     ).toBeVisible()
     await expect(page.getByRole('row', { name: /^menus\b/ })).toContainText(
       'Só no Firefox',

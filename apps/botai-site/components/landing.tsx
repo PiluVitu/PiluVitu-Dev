@@ -9,7 +9,7 @@ import {
   PROPOSTA,
   RECURSOS,
   REQUISITOS,
-  URL_DA_PILUTECH,
+  URL_DA_PILULABS,
 } from '@/lib/conteudo'
 import type { ModeloDaLanding } from '@/lib/modelo'
 import { AtalhoLocal } from './atalho-local'
@@ -34,7 +34,7 @@ export function Landing({ fase, lojas, notaDasLojas }: ModeloDaLanding) {
       />
       <div className="relative mx-auto max-w-[1080px] px-6 pt-8 pb-10">
         <Topo
-          voltar={{ href: URL_DA_PILUTECH, rotulo: 'PiluLabs' }}
+          voltar={{ href: URL_DA_PILULABS, rotulo: 'PiluLabs' }}
           ancoras={[
             { href: '#como-usar', rotulo: 'como usar' },
             { href: '#capturas', rotulo: 'capturas' },

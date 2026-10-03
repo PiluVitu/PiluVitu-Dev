@@ -2,7 +2,7 @@ import { faEnvelope } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
 import Link from 'next/link'
-import { DOCUMENTOS, EMAIL_DE_SUPORTE, URL_DA_PILUTECH } from '@/lib/conteudo'
+import { DOCUMENTOS, MAILTO, URL_DA_PILUTECH } from '@/lib/conteudo'
 
 const LINK =
   'text-muted-foreground inline-block py-1.5 font-mono text-xs hover:underline'
@@ -27,7 +27,7 @@ export function Rodape() {
         </nav>
       </div>
       <Button asChild variant="outline" className="gap-2">
-        <a href={`mailto:${EMAIL_DE_SUPORTE}`}>
+        <a href={MAILTO.suporte}>
           <FontAwesomeIcon icon={faEnvelope} className="size-[13px]" />
           Suporte
         </a>

@@ -12,7 +12,7 @@ type Story = StoryObj<typeof meta>
 
 export const DaLanding: Story = {
   args: {
-    voltar: { href: 'https://pilutech.com.br', rotulo: 'PiluLabs' },
+    voltar: { href: 'https://piluvitu.com.br/pilulabs', rotulo: 'PiluLabs' },
     ancoras: [
       { href: '#como-usar', rotulo: 'como usar' },
       { href: '#capturas', rotulo: 'capturas' },

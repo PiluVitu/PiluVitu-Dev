@@ -5,6 +5,7 @@ import { JsonLd } from '@/components/json-ld'
 import {
   EMAIL_DE_SUPORTE,
   historicoDe,
+  MAILTO,
   NOME,
   URL_DA_LICENCA,
 } from '@/lib/conteudo'
@@ -235,7 +236,7 @@ export default function TermosPage() {
         <h2>Contato</h2>
         <p>
           Dúvidas sobre estes termos:{' '}
-          <a href={`mailto:${EMAIL_DE_SUPORTE}`}>{EMAIL_DE_SUPORTE}</a>.
+          <a href={MAILTO.termos}>{EMAIL_DE_SUPORTE}</a>.
         </p>
       </Documento>
     </>

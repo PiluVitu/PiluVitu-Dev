@@ -11,6 +11,7 @@ import { urlAbsoluta } from './site'
 
 export const CONTEXTO = 'https://schema.org'
 export const ID_DA_PILUTECH = `${URL_DA_PILUTECH}/#organizacao`
+export const LOGO_DA_PILUTECH = `${URL_DA_PILUTECH}/icon`
 
 export type NoJsonLd = Record<string, unknown>
 
@@ -33,6 +34,7 @@ export function jsonLdDaHome(
         '@id': ID_DA_PILUTECH,
         name: 'PiluTech',
         url: URL_DA_PILUTECH,
+        logo: LOGO_DA_PILUTECH,
       },
       {
         '@type': 'WebSite',
