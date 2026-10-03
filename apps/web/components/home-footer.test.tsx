@@ -30,12 +30,4 @@ describe('HomeFooter', () => {
       '/pilulabs',
     ])
   })
-
-  it('com os subdomínios ligados, /pilulabs leva a pilutech.com.br', () => {
-    const link = [
-      ...rodape('https://pilutech.com.br/').querySelectorAll('a'),
-    ][2]
-    expect(link?.textContent).toBe('/pilulabs')
-    expect(link?.getAttribute('href')).toBe('https://pilutech.com.br/')
-  })
 })

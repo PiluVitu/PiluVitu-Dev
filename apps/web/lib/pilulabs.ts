@@ -7,7 +7,6 @@ import {
 } from '@piluvitu/tools/pilulabs'
 import type { Metadata } from 'next'
 import type { Project } from '@/mocks/projects'
-import { DOMINIO_PILUTECH, urlPublica } from './pilutech-dominios'
 
 export type ItemPiluLabs = {
   slug: string
@@ -122,13 +121,9 @@ export function selecionarParaHome<
 
 export function linkDoItem(
   item: Pick<ItemPiluLabs, 'slug' | 'paginaPropria' | 'site' | 'repo'>,
-  subdominiosAtivos: boolean,
 ): string | null {
-  const pagina = `/pilulabs/${item.slug}`
-  if (item.paginaPropria && !subdominiosAtivos) return pagina
-  if (item.site) return item.site
-  if (item.paginaPropria) return urlPublica(pagina, subdominiosAtivos)
-  return item.repo || null
+  if (item.paginaPropria) return `/pilulabs/${item.slug}`
+  return item.site || item.repo || null
 }
 
 export function siglaDoItem(
@@ -137,11 +132,8 @@ export function siglaDoItem(
   return item.sigla || item.nome.slice(0, 2).toUpperCase()
 }
 
-export function itemParaProject(
-  item: ItemPiluLabs,
-  subdominiosAtivos: boolean,
-): Project {
-  const link = linkDoItem(item, subdominiosAtivos)
+export function itemParaProject(item: ItemPiluLabs): Project {
+  const link = linkDoItem(item)
   return {
     id: `pilulabs-${item.slug}`,
     projectName: item.nome,
@@ -164,20 +156,20 @@ export type PaginaPiluLabs = {
 
 // O Next substitui o openGraph do layout inteiro, e a imagem só vem do
 // opengraph-image.tsx do próprio segmento: por isso tudo de novo e sem images.
-export function metadataDaPagina(
-  { caminho, titulo, descricao }: PaginaPiluLabs,
-  subdominiosAtivos: boolean,
-): Metadata {
-  const url = urlPublica(caminho, subdominiosAtivos)
+export function metadataDaPagina({
+  caminho,
+  titulo,
+  descricao,
+}: PaginaPiluLabs): Metadata {
   return {
     title: { absolute: titulo },
     description: descricao,
-    alternates: { canonical: url },
+    alternates: { canonical: caminho },
     openGraph: {
       type: 'website',
       locale: 'pt_BR',
-      siteName: subdominiosAtivos ? DOMINIO_PILUTECH : 'piluvitu.com.br',
-      url,
+      siteName: 'piluvitu.com.br',
+      url: caminho,
       title: titulo,
       description: descricao,
     },

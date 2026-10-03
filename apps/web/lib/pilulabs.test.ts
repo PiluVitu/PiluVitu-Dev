@@ -22,8 +22,8 @@ const PAGINA = {
 describe('metadataDaPagina', () => {
   // O Next substitui o openGraph do layout inteiro: locale e siteName têm de
   // vir de novo, senão a página perde os dois.
-  it('chave desligada: canonical e og:url no caminho, siteName piluvitu.com.br', () => {
-    expect(metadataDaPagina(PAGINA, false)).toEqual({
+  it('canonical e og:url no caminho do piluvitu.com.br', () => {
+    expect(metadataDaPagina(PAGINA)).toEqual({
       title: { absolute: 'Botaí | PiluLabs' },
       description: PAGINA.descricao,
       alternates: { canonical: '/pilulabs/botai' },
@@ -43,20 +43,9 @@ describe('metadataDaPagina', () => {
     })
   })
 
-  it('chave ligada: canonical e og:url no subdomínio, siteName pilutech.com.br', () => {
-    const metadata = metadataDaPagina(PAGINA, true)
-    expect(metadata.alternates).toEqual({
-      canonical: 'https://botai.pilutech.com.br/',
-    })
-    expect(metadata.openGraph).toMatchObject({
-      siteName: 'pilutech.com.br',
-      url: 'https://botai.pilutech.com.br/',
-    })
-  })
-
   // Declarar images aqui desligaria o opengraph-image.tsx do segmento.
   it('não declara imagens', () => {
-    const metadata = metadataDaPagina(PAGINA, true)
+    const metadata = metadataDaPagina(PAGINA)
     expect(metadata.openGraph).not.toHaveProperty('images')
     expect(metadata.twitter).not.toHaveProperty('images')
   })
@@ -315,30 +304,22 @@ describe('selecionarParaHome', () => {
 describe('linkDoItem', () => {
   const site = 'https://botai.pilutech.com.br'
 
-  it('página própria com subdomínios desligados: a rota do site', () => {
-    expect(linkDoItem(item({ paginaPropria: true, site }), false)).toBe(
+  it('página própria: a rota no piluvitu.com.br, mesmo com site', () => {
+    expect(linkDoItem(item({ paginaPropria: true, site }))).toBe(
       '/pilulabs/botai',
     )
   })
 
   it('senão o site', () => {
-    expect(linkDoItem(item({ paginaPropria: true, site }), true)).toBe(site)
-    expect(linkDoItem(item({ site, repo: REPO_BOTAI }), false)).toBe(site)
-  })
-
-  it('senão a página própria, no subdomínio', () => {
-    expect(linkDoItem(item({ paginaPropria: true }), true)).toBe(
-      'https://botai.pilutech.com.br/',
-    )
+    expect(linkDoItem(item({ site, repo: REPO_BOTAI }))).toBe(site)
   })
 
   it('senão o repo', () => {
-    expect(linkDoItem(item({ repo: REPO_BOTAI }), true)).toBe(REPO_BOTAI)
+    expect(linkDoItem(item({ repo: REPO_BOTAI }))).toBe(REPO_BOTAI)
   })
 
   it('senão nenhum', () => {
-    expect(linkDoItem(item(), false)).toBeNull()
-    expect(linkDoItem(item(), true)).toBeNull()
+    expect(linkDoItem(item())).toBeNull()
   })
 })
 
@@ -358,7 +339,6 @@ describe('itemParaProject', () => {
           site: 'https://botai.pilutech.com.br',
           repo: REPO_BOTAI,
         }),
-        false,
       ),
     ).toEqual({
       id: 'pilulabs-botai',
@@ -374,25 +354,16 @@ describe('itemParaProject', () => {
     })
   })
 
-  it('com os subdomínios ligados, Acessar vai ao site', () => {
-    expect(
-      itemParaProject(
-        item({ paginaPropria: true, site: 'https://botai.pilutech.com.br' }),
-        true,
-      ).deployLink,
-    ).toBe('https://botai.pilutech.com.br')
-  })
-
   // O card da home não tem mais o botão Código: sem site nem página, o Acessar
   // é o único caminho até o projeto, e leva ao repo.
   it('só com repo, o Acessar leva ao repo e não há link de código à parte', () => {
-    const p = itemParaProject(item({ repo: REPO_BOTAI }), false)
+    const p = itemParaProject(item({ repo: REPO_BOTAI }))
     expect(p.deployLink).toBe(REPO_BOTAI)
     expect(p).not.toHaveProperty('repoLink')
   })
 
   it('sem logo, sem imagem e com a sigla', () => {
-    const p = itemParaProject(item({ logo: '', sigla: 'BT' }), false)
+    const p = itemParaProject(item({ logo: '', sigla: 'BT' }))
     expect(p.image).toBeUndefined()
     expect(p.altImage).toBe('BT')
   })

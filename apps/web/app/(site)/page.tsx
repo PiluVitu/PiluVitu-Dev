@@ -16,7 +16,6 @@ import {
   itensListados,
   selecionarParaHome,
 } from '@/lib/pilulabs'
-import { subdominiosAtivos, urlPublica } from '@/lib/pilutech-dominios'
 import { getBlogPosts } from '@/lib/blog-posts'
 import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
@@ -61,11 +60,10 @@ export default async function Home() {
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
   const initialBlogPosts = blogPosts.map(blogPostToView)
-  const subdominios = subdominiosAtivos()
-  const hrefPiluLabs = urlPublica('/pilulabs', subdominios)
+  const hrefPiluLabs = '/pilulabs'
   const totalPiluLabs = itensListados(piluLabs).length
   const naHome = selecionarParaHome(piluLabs).map((item) =>
-    itemParaProject(item, subdominios),
+    itemParaProject(item),
   )
 
   return (

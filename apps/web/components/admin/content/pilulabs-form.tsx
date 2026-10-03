@@ -122,7 +122,7 @@ export function PiluLabsForm(props: {
       <TextField
         label="Site"
         value={d.site}
-        placeholder="https://<slug>.pilutech.com.br"
+        placeholder="URL https da landing do produto"
         onChange={(v) => set('site', v)}
         error={errors.site}
       />

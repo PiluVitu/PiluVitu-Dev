@@ -59,6 +59,23 @@ test.describe('/pilulabs', () => {
     expect(dados['@type']).toBe('CollectionPage')
   })
 
+  // Review Focus 2: a chave antiga dos subdomínios pode voltar na Vercel; ela não muda mais nada.
+  test('responde 200, sem 308, com o canonical e o og:url em /pilulabs', async ({
+    page,
+  }) => {
+    const resposta = await page.request.get('/pilulabs', { maxRedirects: 0 })
+    expect(resposta.status()).toBe(200)
+    await page.goto('/pilulabs')
+    const canonical = await page
+      .locator('link[rel="canonical"]')
+      .getAttribute('href')
+    expect(new URL(canonical as string).pathname).toBe('/pilulabs')
+    const ogUrl = await page
+      .locator('meta[property="og:url"]')
+      .getAttribute('content')
+    expect(new URL(ogUrl as string).pathname).toBe('/pilulabs')
+  })
+
   test('mostra todos os listados, e só eles, agrupados por tipo na ordem fixa', async ({
     page,
   }) => {
@@ -84,7 +101,7 @@ test.describe('/pilulabs', () => {
   test('cada card leva ao link do item', async ({ page }) => {
     await page.goto('/pilulabs')
     for (const item of listados) {
-      const href = linkDoItem(item, false)
+      const href = linkDoItem(item)
       if (href) await expect(page.locator(`a[href="${href}"]`)).toHaveCount(1)
     }
   })

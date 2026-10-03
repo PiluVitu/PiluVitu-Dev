@@ -67,7 +67,7 @@ export const CatalogoInicial: Story = {
   args: { itens: [BOTAI, SOMBRAI, LIVE_PRS], hrefAutor: '/' },
 }
 
-export const ComLojasESubdominios: Story = {
+export const ComLojas: Story = {
   args: {
     itens: [
       {
@@ -78,6 +78,6 @@ export const ComLojasESubdominios: Story = {
       },
       SOMBRAI,
     ],
-    hrefAutor: 'https://piluvitu.com.br/',
+    hrefAutor: '/',
   },
 }

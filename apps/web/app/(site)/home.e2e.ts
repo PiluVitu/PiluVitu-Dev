@@ -100,6 +100,10 @@ test.describe('PiluLabs na home (segue content/pilulabs)', () => {
     await expect(
       page.getByRole('link', { name: '/pilulabs', exact: true }),
     ).toHaveCount(listados.length > 0 ? 1 : 0)
+    if (listados.length > 0)
+      await expect(
+        page.getByRole('link', { name: '/pilulabs', exact: true }),
+      ).toHaveAttribute('href', '/pilulabs')
   })
 
   test('até 4 cards, na ordem de selecionarParaHome, e a contagem dos listados', async ({
@@ -120,9 +124,7 @@ test.describe('PiluLabs na home (segue content/pilulabs)', () => {
       .getByRole('link', { name: 'Acessar', exact: true })
       .evaluateAll((links) => links.map((a) => a.getAttribute('href')))
     expect(hrefs).toEqual(
-      naHome
-        .map((item) => itemParaProject(item, false).deployLink)
-        .filter(Boolean),
+      naHome.map((item) => itemParaProject(item).deployLink).filter(Boolean),
     )
   })
 

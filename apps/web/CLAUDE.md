@@ -52,7 +52,7 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 
 - `content/socials/*/` — social links with order, icon mode, FA icon or image
 - `content/carreiras/*/` — career history entries
-- `content/pilulabs/*/` — catálogo PiluLabs (`pilulabs`): projetos e produtos PiluTech, com visibilidade, destaque, lojas e subdomínio (ver _PiluLabs_)
+- `content/pilulabs/*/` — catálogo PiluLabs (`pilulabs`): projetos e produtos PiluTech, com visibilidade, destaque e lojas (ver _PiluLabs_)
 
 ### Data flow
 
@@ -179,25 +179,22 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 - **UI (`apps/web`):** `hooks/use-camera-entropy.ts` captura alguns frames da webcam, hasheia localmente com `crypto.getRandomValues` num digest de 32 bytes e **descarta a imagem** — só o hash sai do hook; sem câmera/permissão cai no fallback crypto-only (ainda seguro). `components/entropy/roulette-wheel.tsx` (roda conic-gradient que pousa no vencedor passado pelo caller) e `components/entropy/camera-entropy-capture.tsx` (UI de consentimento + botão `data-testid="capture-entropy"`). `lib/log.ts` é um logger client leve (nunca recebe imagem crua, só hash/metadata).
 - **Tool `/tools/roleta`:** `components/tools/roleta-tool.tsx` (textarea de opções → gira com entropia da câmera ou só com aleatório do browser) + entrada `roleta` em `lib/tools-registry.ts` (ícone `faDharmachakra`). E2E em `tools.e2e.ts` usa o caminho crypto-only (sem câmera no CI).
 
-### PiluLabs (`/pilulabs` e `*.pilutech.com.br`): vitrine dos projetos e produtos PiluTech
+### PiluLabs (`/pilulabs`): vitrine dos projetos e produtos PiluTech
 
-Tudo o que o autor publica, produto PiluTech (Botaí, Sombraí) ou projeto (Live PRs), mora numa coleção só, `pilulabs`. Ela alimenta a seção PiluLabs da home, a vitrine `/pilulabs` e o CRUD `/admin/pilulabs`. Cada item pode ter um subdomínio de `pilutech.com.br`.
+Tudo o que o autor publica, produto PiluTech (Botaí, Sombraí) ou projeto (Live PRs), mora numa coleção só, `pilulabs`. Ela alimenta a seção PiluLabs da home, a vitrine `/pilulabs` e o CRUD `/admin/pilulabs`. A vitrine mora em `piluvitu.com.br/pilulabs`; `pilutech.com.br` é a landing da empresa, no `apps/pilutech-site`.
 
 - **Specs:**
   - `docs/superpowers/specs/2026-10-01-pilulabs-v2-subdominios-design.md`: a v2, com a coleção única, a home e os subdomínios;
-  - `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6: a v1, só com o Botaí.
-- **Planos:** `docs/superpowers/plans/2026-10-01-pilulabs-v2.md` e `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md`.
+  - `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6: a v1, só com o Botaí;
+  - `docs/superpowers/specs/2026-10-02-pilutech-site-design.md` §5: a vitrine volta para o `piluvitu.com.br`, e o proxy dos subdomínios sai.
+- **Planos:** `docs/superpowers/plans/2026-10-01-pilulabs-v2.md`, `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md` e `docs/superpowers/plans/2026-10-02-pilutech-site.md` (Tarefa 8).
 
-**Rotas e hosts:**
+**Rota:** `/pilulabs`, a vitrine: todos os listados, agrupados por tipo.
 
-| Chave desligada (padrão) | Com `PILUTECH_SUBDOMINIOS=1` | O que é                                        |
-| ------------------------ | ---------------------------- | ---------------------------------------------- |
-| `/pilulabs`              | `https://pilutech.com.br/`   | Vitrine: todos os listados, agrupados por tipo |
-
-O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing do `apps/botai-site` e `sombrai.pilutech.com.br` a do projeto do Sombraí, cada uma num projeto Vercel próprio; o link do card é o `site`. Os caminhos antigos do Botaí (`/pilulabs/botai` e `/pilulabs/botai/privacidade`) respondem 308 para a landing, com a query, pelos `redirects` do `next.config.mjs`, que rodam antes do `proxy.ts`, com a chave ligada ou não.
+O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing do `apps/botai-site` e `sombrai.pilutech.com.br` a do projeto do Sombraí, cada uma num projeto Vercel próprio; o link do card é o `site`. Os caminhos antigos do Botaí (`/pilulabs/botai` e `/pilulabs/botai/privacidade`) respondem 308 para a landing, com a query, pelos `redirects` do `next.config.mjs`.
 
 - **Coleção `pilulabs` (`content/pilulabs/<slug>/index.yaml`), campos:**
-  - `slug`: sem acento; é o subdomínio e a pasta da rota;
+  - `slug`: sem acento; é a pasta da rota própria (`/pilulabs/<slug>`);
   - `order`, `nome`, `subtitulo` e `descricao` (o texto do card);
   - `tipo`: `extensao` | `mobile` | `web` | `cli`. Ausente, vira `web`. Fora da lista, o reader do Keystatic lança erro e derruba a coleção inteira (ver o ⚠️ abaixo);
   - `tags`;
@@ -225,50 +222,20 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     - `normalizarItem`;
     - `itensListados`: só `listado: true`, por `order` e depois `slug`;
     - `selecionarParaHome(itens, 4)`: primeiro os destaques, por `order`; depois os demais, pela `data` mais nova. A data vazia conta como a mais antiga, e o empate vai por `order` e depois `slug`;
-    - `linkDoItem(item, subdominios)`: a página própria, com a chave desligada, é `/pilulabs/<slug>`. Senão vale o `site`, depois a página própria no subdomínio, depois o `repo`. Sem nenhum, o card fica sem botão;
+    - `linkDoItem(item)`: a página própria é `/pilulabs/<slug>`; senão vale o `site`, depois o `repo`. Sem nenhum, o card fica sem botão;
     - `siglaDoItem`;
-    - `itemParaProject`: o card da home. "Acessar" leva ao `linkDoItem`, e some quando seria o próprio `repo`; "Código" leva ao `repo`;
+    - `itemParaProject`: o card da home, só com o "Acessar", que leva ao `linkDoItem` (só com `repo`, ao repo; sem link, o botão some);
     - `metadataDaPagina`.
-  - `lib/pilutech-dominios.ts`, sem `node:fs` (o `proxy.ts` só importa este): `subdominiosAtivos()`, `urlPublica(caminho, ativos)`, `destinoDoHost`, `ehCaminhoIntocavel`, `rotearPorHost` e `SITE_DO_AUTOR`.
   - Status "● Em breve"/"● Disponível" e ícones de loja aparecem só em `tipo: extensao`.
 - **Home:**
   - a seção PiluLabs (`components/secao-pilulabs.tsx`) mostra até 4 cards (`selecionarParaHome` → `itemParaProject` → `ProjectCard`) e a contagem dos listados;
-  - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `urlPublica('/pilulabs')`;
+  - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `/pilulabs`;
   - o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado.
-- **Subdomínios (`proxy.ts`, na raiz do `apps/web`):**
-  - **Reescrita:**
-    - em `pilutech.com.br` e `www.`, `/` é reescrito para `/pilulabs`;
-    - em `<slug>.pilutech.com.br`, `/` vira `/pilulabs/<slug>`, e `/<resto>` vira `/pilulabs/<slug>/<resto>`;
-    - o mesmo vale com `pilutech.localhost`;
-    - o host é lido sem porta e sem diferenciar maiúsculas. Subdomínio de dois níveis ou só parecido (`evilpilutech.com.br`) não conta.
-  - **O apex não espelha o portfólio:** fora de `/`, `/pilulabs*` e das exceções, `pilutech.com.br` responde 308 para `https://piluvitu.com.br` + caminho + query (`SITE_DO_AUTOR`, constante de propósito: o `getCanonicalSiteUrl()` sem `NEXT_PUBLIC_SITE_URL` podia devolver o próprio `pilutech.com.br` e fechar um laço). Sem isso, `/posts/<slug>`, `/tools` e `/admin` seriam o site inteiro sob a marca PiluTech, sem canonical. Local, `pilutech.localhost:3333/tools` também vai para a produção.
-  - **Exceções:** nunca reescreve nem redireciona `/_next/*`, `/__nextjs*`, `/_vercel/*`, `/api/*`, arquivo com extensão e `opengraph-image*`/`twitter-image*`, e nunca reescreve o que já começa com `/pilulabs`. O `/_vercel/*` são os beacons do Vercel Analytics e do Speed Insights (`/_vercel/insights/view`, `/_vercel/speed-insights/vitals`): sem extensão, no subdomínio eles virariam `/pilulabs/<slug>/_vercel/…` e dariam 404, e a página perderia analytics sem erro nenhum.
-  - **A reescrita e o 308 do apex não dependem da chave.** É assim que o dono confere o DNS antes de ligá-la.
-  - **Matcher:** o `config.matcher` só pega os hosts PiluTech (`has` de `host`, fora de `/_next/`, `/__nextjs`, `/_vercel/` e `/api/`) e `/pilulabs/:path*`, então o resto do `piluvitu.com.br` não passa pelo proxy. Ele é literal porque o Next o lê no build.
-  - **Teste do matcher:** `proxy.test.ts`, com `unstable_doesMiddlewareMatch` de `next/experimental/testing/server`. No Next 16.3.8 o nome é esse; a doc empacotada fala em `unstable_doesProxyMatch`, que não existe.
-  - **Local:** `http://pilutech.localhost:3333`.
-    - O Chromium e o Node resolvem `*.localhost` para o loopback.
-    - O `next dev` já libera `**.localhost`, então o `allowedDevOrigins` não muda.
-    - E2E: `app/(site)/pilulabs/subdominios.e2e.ts`, com a chave desligada, e `app/(site)/pilulabs/chave-ligada.e2e.ts`, com ela ligada (ver _Testes_).
-- **Chave `PILUTECH_SUBDOMINIOS`** (ver _Environment variables_):
-  - **Desligada** (o padrão): `urlPublica` devolve o caminho, e nada muda no `piluvitu.com.br`. Com `VERCEL_ENV` presente e diferente de `production`, o `subdominiosAtivos` a ignora: a Vercel marca os três ambientes ao criar a variável, e num preview ela mandaria o `/pilulabs*` com 308 para a produção.
-  - **Ligada:**
-    - os links usam os subdomínios: `linkDoItem`, "Saiba mais", o rodapé, o voltar e os links internos das páginas PiluLabs e o JSON-LD. O `canonical` e o `og:url` também;
-    - o `siteName` vira `pilutech.com.br`;
-    - o voltar da vitrine para a home do autor vira `getCanonicalSiteUrl()`;
-    - fora do host PiluTech, `/pilulabs` e `/pilulabs/<slug>[/<resto>]` respondem 308 para lá, com a query;
-    - o 308 é genérico, como a spec pede: vale para todo slug válido, mesmo sem página ou sem DNS. Um `/pilulabs/<typo>`, que antes era 404, vira erro de DNS no navegador. Por isso, com a chave ligada, um produto novo com página própria só abre depois do `CNAME` dele (ver _Novo item_); antes disso, confira no preview, onde a chave fica desligada.
-  - **O que não muda:** arquivos e imagens OG ficam no `piluvitu.com.br`, porque o `og:image` aponta para lá.
-  - **As páginas são estáticas e leem a chave no build:** mudar o valor pede redeploy.
-- **Passos do dono para ligar os subdomínios:** 0. Vercel, projeto do `apps/web`, Production: confira `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` **antes** de adicionar os domínios. Sem ela, `getCanonicalSiteUrl()` cai no `VERCEL_PROJECT_PRODUCTION_URL`, que é o domínio de produção mais curto, e `pilutech.com.br` tem o mesmo tamanho de `piluvitu.com.br`: o `metadataBase`, o `og:image` e o canonical do site inteiro podiam passar para `pilutech.com.br`. `lib/site-url.test.ts` fixa essa precedência.
-  1. Vercel, mesmo projeto, Settings → Domains: `pilutech.com.br` e `www.pilutech.com.br` (redirecionando para o apex). O `botai.pilutech.com.br` vai no projeto do `apps/botai-site` (ver "Deploy" em `apps/botai-site/CLAUDE.md`).
-  2. Cloudflare, zona `pilutech.com.br`: registros **DNS only** (nuvem cinza) com os valores que a Vercel mostrar (`A @`, `CNAME www`), e o `CNAME botai` com o valor do projeto do `apps/botai-site`. Não crie o Single Redirect 308 que o README do Botaí descrevia; se ele existir, apague.
-  3. Projeto Vercel do Sombraí: domínio `sombrai.pilutech.com.br`, `CNAME sombrai` na Cloudflare e `SITE_URL=https://sombrai.pilutech.com.br` (variável que o site do Sombraí já lê), com redeploy. Até isso, o link do Sombraí na PiluLabs não abre.
-  4. Com `curl -sI https://pilutech.com.br` respondendo 200 (a vitrine, que a reescrita do apex serve com a chave desligada): `PILUTECH_SUBDOMINIOS=1` em Production no projeto do `apps/web` e redeploy.
+- **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` do `apps/botai-site` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`. A variável saiu da Production do projeto antes da troca dos domínios (passo 5 do "Deploy" em `apps/pilutech-site/CLAUDE.md`: com ela ligada, o 308 de `/pilulabs` levaria à landing nova); se voltar, não muda nada (o E2E da vitrine e da home roda também com ela no ambiente).
 - **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
   - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
-  - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque o subdomínio depende disso;
-  - todo listado tenha `descricao`, link com e sem a chave e, se o `logo` for caminho, o arquivo em `public/`;
+  - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque só o item com `paginaPropria` leva até ela;
+  - todo listado tenha `descricao`, link e, se o `logo` for caminho, o arquivo em `public/`;
   - todo YAML abra no reader do Keystatic: `camposInvalidosNoYaml` vazio, o que inclui `data` ausente ou `AAAA-MM-DD` de um dia que existe;
   - todo YAML passe no `pilulabsSchema` do admin.
 
@@ -280,12 +247,11 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     1. `content/pilulabs/<slug>/index.yaml` com `paginaPropria: true` e `listado: false`;
     2. o logo em `public/pilulabs/<slug>/`;
     3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/` se for extensão;
-    4. para o subdomínio, o domínio na Vercel e o `CNAME` na Cloudflare (passos 1 e 2). Com a chave ligada, a página só abre depois disso, porque o `/pilulabs/<slug>` do `piluvitu.com.br` já responde 308 para o subdomínio; antes, confira no preview;
-    5. `listado: true` quando a página estiver pronta.
+    4. `listado: true` quando a página estiver pronta.
   - **produto com landing própria** (o Botaí, no `apps/botai-site`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing.
-- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui e a landing (que relê o YAML no build, ver o `ignoreCommand` em `apps/botai-site/vercel.json`) mudam juntos. Edge e Opera entram quando aprovarem.
+- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui, a landing do Botaí e o selo do Botaí na landing da PiluTech (as duas releem o YAML no build; ver o `ignoreCommand` dos `vercel.json` delas) mudam juntos. Edge e Opera entram quando aprovarem.
 - ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
-  - **Por quê:** `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: o ícone some da imagem OG, sem erro nenhum. Ler `process.env.PILUTECH_SUBDOMINIOS` no build não deixa a rota dinâmica.
+  - **Por quê:** `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: o ícone some da imagem OG, sem erro nenhum.
   - **Como conferir, depois do `next build`, em `apps/web`:**
 
     ```bash
@@ -305,8 +271,8 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - **O que o E2E confere:** o `og:title` e que cada `og:image`/`twitter:image` responde PNG.
 - **JSON-LD (`lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`):**
   - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
-  - as URLs (`url` e `publisher`) passam por `urlPublica`;
-  - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
+  - `url` é `/pilulabs` no site canônico, e o `publisher` é a PiluTech no site dela (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/pilutech-site` e do `apps/botai-site`);
+  - `serializarJsonLd` troca `<` por `<`, para um texto do YAML com `</script>` não fechar a tag.
 - **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
   - `StatusProduto`;
   - `ProdutoCard`:
@@ -325,13 +291,13 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - ⚠️ **O filtro do Playwright é uma regex:**
     - `playwright test "app/(site)/pilulabs/pilulabs.e2e.ts"` não casa nada (os parênteses viram grupo) e sai com `No tests found` e `exit=1`, o que parece um vermelho de TDD;
     - `pilulabs/pilulabs.e2e.ts` casa o E2E do site e o do admin;
-    - use `'\(site\)/pilulabs/pilulabs'`, `'\(site\)/pilulabs/'` (vitrine e subdomínios; o `chave-ligada` sai como skipped) ou `'admin/pilulabs/pilulabs'`;
+    - use `'\(site\)/pilulabs/pilulabs'` ou `'admin/pilulabs/pilulabs'`;
     - o `prettier --check` tem a mesma armadilha com glob: passe a pasta `"app/(site)/pilulabs"`.
-  - **E2E (`app/(site)/pilulabs/{pilulabs,subdominios,chave-ligada}.e2e.ts`, `home.e2e.ts` e `app/(admin)/admin/pilulabs/pilulabs.e2e.ts`):**
+  - **E2E (`app/(site)/pilulabs/pilulabs.e2e.ts`, `home.e2e.ts` e `app/(admin)/admin/pilulabs/pilulabs.e2e.ts`):**
     - o esperado sai do YAML, por `lerItensDoConteudo`, e por isso continua valendo quando o dono muda o catálogo;
     - a 320 px, a vitrine não rola na horizontal;
     - os 308 dos caminhos antigos do Botaí, com a query (`pilulabs.e2e.ts`);
-    - **com a chave ligada:** o `chave-ligada.e2e.ts` confere a vitrine e a home nos hosts PiluTech. Ele só roda à parte, com `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 pilulabs/chave-ligada`, porque o Playwright repassa o próprio ambiente ao `pnpm dev`. Nas outras execuções, sai como `2 skipped`. Um segundo servidor com a chave ligada não serve: o `next dev` trava o `distDir` e sai com "Another next dev server is already running in this directory".
+    - `/pilulabs` responde 200, sem 308, com canonical e `og:url` em `/pilulabs`, e o rodapé da home leva a `/pilulabs`. Rode também com `PILUTECH_SUBDOMINIOS=1 CI=1 ./node_modules/.bin/playwright test --retries=0 '\(site\)/pilulabs/pilulabs' '\(site\)/home'`: prova que a variável que sobrar na Vercel não muda nada.
   - ⚠️ **Porta 3333:** antes do Playwright, ela tem de estar livre (`make stop`). Com `reuseExistingServer`, um `next dev` de outro worktree responderia no lugar, e o teste rodaria contra o código errado. Rode com `CI=1`, que faz o Playwright subir o próprio servidor e falhar se a porta estiver ocupada.
   - ⚠️ **O `next dev` reescreve este arquivo.** Quando detecta um agente de IA, ele anexa no fim o bloco entre os comentários HTML `BEGIN:nextjs-agent-rules` e `END:nextjs-agent-rules` (`node_modules/next/dist/server/lib/generate-agent-files.js`; o log diz "Generated CLAUDE.md for AI agents"). Depois de um E2E, confira `git status` e tire o bloco antes de commitar. Não escreva o marcador de abertura completo, com o `<!--`, neste arquivo: o `next dev` seguinte trocaria tudo o que vai dele até o marcador de fim por um bloco novo (medido: perde o _Admin unificado_ e as seções seguintes).
 - **Fora:**
@@ -391,8 +357,7 @@ A lei de colocation (teste/story no mesmo diretório do fonte; E2E `.e2e.ts` ao 
 
 Fonte: `apps/web/.env.example`. Cadastrar na Vercel (ver seção CI/CD na raiz). Domínios de prod + same-site cookie: ver `apps/api/CLAUDE.md`.
 
-- `NEXT_PUBLIC_SITE_URL` — domínio canônico (`https://piluvitu.com.br`) do `metadataBase`, do `og:image` e do canonical. **Obrigatória em Production** desde que o projeto tem os domínios `pilutech.com.br`: sem ela, `getCanonicalSiteUrl()` usa o `VERCEL_PROJECT_PRODUCTION_URL`, o domínio de produção mais curto, e `pilutech.com.br` empata com `piluvitu.com.br` (passo 0 de _PiluLabs_).
-- `PILUTECH_SUBDOMINIOS` — `1` liga os subdomínios `*.pilutech.com.br` do PiluLabs: links, `canonical` e `og:url` das páginas PiluLabs passam para `pilutech.com.br`, e `/pilulabs*` no `piluvitu.com.br` responde 308 para lá. Só em **Production**, depois do passo 4 de _PiluLabs_; fora dela (`VERCEL_ENV` preview ou development), o código a ignora, mesmo marcada. As páginas leem a variável no build: mudar pede redeploy. Ausente (padrão) = desligado.
+- `NEXT_PUBLIC_SITE_URL` — domínio canônico (`https://piluvitu.com.br`) do `metadataBase`, do `og:image` e do canonical. **Obrigatória em Production:** sem ela, `getCanonicalSiteUrl()` usa o `VERCEL_PROJECT_PRODUCTION_URL`, o domínio de produção mais curto do projeto, que pode não ser o canônico (`lib/site-url.test.ts`).
 - `NEXT_PUBLIC_DEVTO_USERNAME` — dev.to username for article fetching
 - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` — reCAPTCHA v3 for email form
 - `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET` — OAuth da GitHub App (reusada) que o **/admin** usa pra "Conectar GitHub" e commitar conteúdo (`lib/admin/github-oauth.ts`). **Continuam necessárias** (não remover da Vercel). O editor Keystatic que também as usava saiu no slice ⑤, mas o admin permanece.
