@@ -1,7 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import { lerFaseDoBotai } from '../lib/cms'
-import { BOTAI, cartoesDosProjetos, DUVIDAS } from '../lib/conteudo'
-import { WHATSAPP } from '../lib/contato'
+import {
+  BOTAI,
+  cartoesDosProjetos,
+  DUVIDAS,
+  SECOES_DA_BARRA,
+} from '../lib/conteudo'
+import { EMAIL_DA_PILUTECH, MAILTO_DO_SITE, WHATSAPP } from '../lib/contato'
 import { rgbDoToken } from '../lib/tokens-do-ds'
 
 // O esperado sai do mesmo YAML que a página lê no build.
@@ -9,15 +14,21 @@ const cartoes = cartoesDosProjetos(lerFaseDoBotai())
 
 const fundo = (page: Page, seletor: string) =>
   page.locator(seletor).evaluate((el) => getComputedStyle(el).backgroundColor)
+const corDoTexto = (page: Page, seletor: string) =>
+  page.locator(seletor).evaluate((el) => getComputedStyle(el).color)
 
-const H2_DO_CORPO = [
+const H2_DA_PAGINA = [
   'Do primeiro protótipo ao servidor em produção.',
   'Quatro etapas, com escopo e valor por escrito.',
   'Produtos próprios da PiluTech.',
   'Ferramentas usadas no dia a dia.',
   'Seu aplicativo atualizado, monitorado e no ar.',
   'Dúvidas comuns',
+  'Conte o que você precisa.',
 ]
+
+const barra = (page: Page) =>
+  page.getByRole('navigation', { name: 'Principal' })
 
 // Review Focus 1: um elemento que vaza para o gutter não aumenta o scrollWidth da página. Confere cada
 // elemento contra a área de conteúdo (sem o padding) do contêiner da própria seção, e o texto que vaza
@@ -71,13 +82,13 @@ test.describe('/', () => {
       'Aplicativos, infraestrutura e desenvolvimento fullstack.',
     )
     await expect(page.getByRole('heading', { level: 2 })).toHaveText(
-      H2_DO_CORPO,
+      H2_DA_PAGINA,
     )
     await page.waitForLoadState('networkidle')
     expect(erros).toEqual([])
   })
 
-  // No banner: na Tarefa 6 o botão flutuante também se chama "Falar no WhatsApp".
+  // No banner: o botão flutuante também se chama "Falar no WhatsApp".
   test('Falar no WhatsApp e Ver serviços', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
@@ -107,15 +118,22 @@ test.describe('/', () => {
       ['#projetos', nevoa],
       ['#tecnologias', noite],
       ['#planos', rgbDoToken('claro', 'primary')],
+      ['#duvidas', nevoa],
+      ['#contato', noite],
+      ['footer', noite],
+      ['a[aria-label="Falar no WhatsApp"]', rgbDoToken('escuro', 'primary')],
+      [
+        'header#inicio a[href^="https://wa.me/"]',
+        rgbDoToken('escuro', 'primary'),
+      ],
     ])
       expect([secao, await fundo(page, secao)]).toEqual([secao, esperado])
-    expect(
-      await page
-        .getByRole('heading', { level: 1 })
-        .evaluate((el) => getComputedStyle(el).color),
-    ).toBe(rgbDoToken('escuro', 'foreground'))
-    expect(await fundo(page, 'header#inicio a[href^="https://wa.me/"]')).toBe(
-      rgbDoToken('escuro', 'primary'),
+    // O fundo da barra tem 94% de opacidade (o Chromium devolve oklab): confere o texto.
+    expect(await corDoTexto(page, 'nav')).toBe(
+      rgbDoToken('escuro', 'foreground'),
+    )
+    expect(await corDoTexto(page, 'h1')).toBe(
+      rgbDoToken('escuro', 'foreground'),
     )
   })
 
@@ -139,6 +157,147 @@ test.describe('/', () => {
       `${rgbDoToken('escuro', 'background')} 0px 0px 0px 2px`,
     )
     expect(sombra).toContain(`${rgbDoToken('escuro', 'ring')} 0px 0px 0px 4px`)
+  })
+
+  test.describe('barra fixa', () => {
+    for (const largura of [900, 1280]) {
+      test(`a ${largura} px: os 5 links visíveis, sem rolagem horizontal na barra`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: largura, height: 800 })
+        await page.goto('/')
+        for (const secao of SECOES_DA_BARRA)
+          await expect(
+            barra(page).getByRole('link', { name: secao.rotulo, exact: true }),
+          ).toBeVisible()
+        const medida = await barra(page).evaluate((nav) => {
+          const caixa = nav.firstElementChild as HTMLElement
+          return {
+            caixa: caixa.scrollWidth - caixa.clientWidth,
+            nav: nav.scrollWidth - nav.clientWidth,
+          }
+        })
+        expect(medida).toEqual({ caixa: 0, nav: 0 })
+      })
+    }
+
+    test('a 899 px os links somem e ficam o símbolo e o WhatsApp', async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 899, height: 800 })
+      await page.goto('/')
+      await expect(
+        barra(page).getByRole('link', { name: 'Serviços', exact: true }),
+      ).toBeHidden()
+      await expect(
+        barra(page).getByRole('link', { name: 'PiluTech' }),
+      ).toBeVisible()
+      await expect(
+        barra(page).getByRole('link', { name: 'WhatsApp' }),
+      ).toBeVisible()
+    })
+
+    // Review Focus 4: é CSS, então vale antes da hidratação e sem JavaScript.
+    test('sem JavaScript, a mesma regra dos 900 px', async ({ browser }) => {
+      for (const [largura, visivel] of [
+        [899, false],
+        [900, true],
+      ] as const) {
+        const contexto = await browser.newContext({
+          javaScriptEnabled: false,
+          viewport: { width: largura, height: 800 },
+        })
+        const page = await contexto.newPage()
+        await page.goto('/')
+        const link = barra(page).getByRole('link', {
+          name: 'Serviços',
+          exact: true,
+        })
+        if (visivel) await expect(link).toBeVisible()
+        else await expect(link).toBeHidden()
+        await contexto.close()
+      }
+    })
+
+    test('fica no topo ao rolar', async ({ page }) => {
+      await page.goto('/')
+      await page.getByRole('contentinfo').scrollIntoViewIfNeeded()
+      await expect(barra(page)).toBeInViewport()
+      expect((await barra(page).boundingBox())?.y).toBe(0)
+    })
+
+    for (const secao of SECOES_DA_BARRA) {
+      test(`${secao.rotulo} leva à seção, sem a barra cobrir o começo dela`, async ({
+        page,
+      }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        await page.goto('/')
+        await barra(page)
+          .getByRole('link', { name: secao.rotulo, exact: true })
+          .click()
+        await expect(page).toHaveURL(new RegExp(`#${secao.id}$`))
+        await expect(
+          page.locator(`#${secao.id}`).getByRole('heading', { level: 2 }),
+        ).toBeInViewport()
+        await expect
+          .poll(
+            async () => (await page.locator(`#${secao.id}`).boundingBox())?.y,
+          )
+          .toBeGreaterThanOrEqual(68)
+      })
+    }
+  })
+
+  test('todo link externo abre em aba nova, sem passar a referência', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const externos = await page.locator('a[href^="http"]').all()
+    expect(externos.length).toBeGreaterThan(0)
+    for (const link of externos) {
+      await expect(link).toHaveAttribute('target', '_blank')
+      await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    }
+  })
+
+  test('o WhatsApp: a conversa geral na barra, no hero, no contato e no botão flutuante, e uma por plano', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const hrefs = await page
+      .locator('a[href^="https://wa.me/"]')
+      .evaluateAll((links) => links.map((a) => a.getAttribute('href')))
+    expect(hrefs.filter((h) => h === WHATSAPP.geral)).toHaveLength(4)
+    expect(hrefs.filter((h) => h !== WHATSAPP.geral)).toEqual([
+      WHATSAPP.essencial,
+      WHATSAPP.evolucao,
+      WHATSAPP.infraestrutura,
+    ])
+  })
+
+  test('o botão flutuante tem nome e continua na tela ao rolar', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const flutuante = page.locator('a[aria-label="Falar no WhatsApp"]')
+    await expect(flutuante).toHaveAttribute('href', WHATSAPP.geral)
+    await page.getByRole('contentinfo').scrollIntoViewIfNeeded()
+    await expect(flutuante).toBeInViewport()
+  })
+
+  test('o e-mail vai para a PiluTech com [PiluTech] no assunto', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const email = page.getByRole('link', {
+      name: `E-mail ${EMAIL_DA_PILUTECH}`,
+    })
+    await expect(email).toHaveAttribute('href', MAILTO_DO_SITE)
+    expect(
+      new URL((await email.getAttribute('href')) as string).searchParams.get(
+        'subject',
+      ),
+    ).toBe('[PiluTech] Contato pelo site')
   })
 
   test('os cartões dos projetos: domínio em aba nova, imagem OG pelo otimizador e o selo do CMS', async ({
@@ -185,14 +344,14 @@ test.describe('/', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
     const areas = await page
-      .locator('header#inicio, main > section')
+      .locator('nav, header#inicio, main > section, footer')
       .evaluateAll((secoes) =>
         secoes.map((secao) => {
           const caixa = secao.firstElementChild as HTMLElement
           const estilo = getComputedStyle(caixa)
           const r = caixa.getBoundingClientRect()
           return {
-            secao: secao.id,
+            secao: secao.id || secao.tagName.toLowerCase(),
             esquerda: r.left + parseFloat(estilo.paddingLeft),
             largura:
               r.width -
@@ -203,6 +362,7 @@ test.describe('/', () => {
       )
     const larga = { esquerda: 50, largura: 1180 }
     expect(areas).toEqual([
+      { secao: 'nav', ...larga },
       { secao: 'inicio', ...larga },
       { secao: 'servicos', ...larga },
       { secao: 'como-funciona', ...larga },
@@ -210,6 +370,8 @@ test.describe('/', () => {
       { secao: 'tecnologias', ...larga },
       { secao: 'planos', ...larga },
       { secao: 'duvidas', esquerda: 210, largura: 860 },
+      { secao: 'contato', ...larga },
+      { secao: 'footer', ...larga },
     ])
     const partidas = await page
       .getByRole('heading', { level: 1 })
@@ -239,7 +401,7 @@ test.describe('/', () => {
     await page.goto('/')
     const entrelinhas = await page
       .locator(
-        '#servicos h3, #como-funciona h3, #projetos h3, #planos h3, #planos li li, #tecnologias li, #duvidas h3 button',
+        '#servicos h3, #como-funciona h3, #projetos h3, #planos h3, #planos li li, #tecnologias li, #duvidas h3 button, nav li, footer p',
       )
       .evaluateAll((els) => [
         ...new Set(els.map((el) => getComputedStyle(el).lineHeight)),

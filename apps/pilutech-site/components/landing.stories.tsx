@@ -11,5 +11,9 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const EmBreve: Story = { args: { faseDoBotai: 'em-breve' } }
-export const BotaiPublicado: Story = { args: { faseDoBotai: 'disponivel' } }
+export const EmBreve: Story = {
+  args: { faseDoBotai: 'em-breve', ano: 2026 },
+}
+export const BotaiPublicado: Story = {
+  args: { faseDoBotai: 'disponivel', ano: 2026 },
+}
