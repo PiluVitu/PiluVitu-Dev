@@ -15,6 +15,8 @@ const mono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains',
   display: 'swap',
+  adjustFontFallback: false,
+  fallback: ['ui-monospace', 'monospace'],
 })
 
 export const metadata: Metadata = metadataDoSite(urlDoSite())

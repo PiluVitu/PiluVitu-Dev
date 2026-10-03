@@ -409,6 +409,32 @@ test.describe('/', () => {
     expect(entrelinhas).toEqual(['normal'])
   })
 
+  // O → (U+2192) fica fora do subset latin da JetBrains Mono. No design ele cai na mono do sistema, com a
+  // largura de uma célula (~0,6em); o fallback automático do next/font é o Arial com size-adjust de 134,59%,
+  // que desenhava a seta com 1,35em, mais que o dobro.
+  test('as setas dos serviços e dos projetos têm a largura de uma célula mono, como no design', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const larguras = await page
+      .locator(
+        '#servicos li li > span[aria-hidden], #projetos a span[aria-hidden]',
+      )
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          seta: el.textContent?.trim(),
+          largura:
+            el.getBoundingClientRect().width /
+            parseFloat(getComputedStyle(el).fontSize),
+        })),
+      )
+    expect(larguras).toHaveLength(11)
+    for (const { seta, largura } of larguras) {
+      expect(seta).toBe('→')
+      expect(largura).toBeLessThan(0.75)
+    }
+  })
+
   test('dúvidas: abre e fecha pelo teclado, uma por vez', async ({ page }) => {
     await page.goto('/')
     const perguntas = page.locator('#duvidas').getByRole('button')
