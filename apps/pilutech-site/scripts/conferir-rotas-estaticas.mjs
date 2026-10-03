@@ -2,7 +2,16 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const ROTAS = ['/', '/icon', '/apple-icon']
+export const ROTAS = [
+  '/',
+  '/icon',
+  '/apple-icon',
+  '/opengraph-image',
+  '/twitter-image',
+  '/sitemap.xml',
+  '/robots.txt',
+  '/manifest.webmanifest',
+]
 
 function escaparRegex(texto) {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

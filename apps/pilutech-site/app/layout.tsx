@@ -1,7 +1,9 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import type { ReactNode } from 'react'
 import '@/lib/font-awesome'
+import { metadataDoSite, VIEWPORT } from '@/lib/seo'
+import { urlDoSite } from '@/lib/site'
 import './globals.css'
 
 const sans = Plus_Jakarta_Sans({
@@ -15,7 +17,8 @@ const mono = JetBrains_Mono({
   display: 'swap',
 })
 
-export const metadata: Metadata = { title: 'PiluTech' }
+export const metadata: Metadata = metadataDoSite(urlDoSite())
+export const viewport: Viewport = VIEWPORT
 
 export default function RootLayout({
   children,
