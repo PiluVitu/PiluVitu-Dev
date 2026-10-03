@@ -131,7 +131,8 @@ test.describe('PiluLabs na home (segue content/pilulabs)', () => {
   test('"Saiba mais no PiluLabs" leva à vitrine', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('link', { name: 'Saiba mais no PiluLabs' }).click()
-    await expect(page).toHaveURL('/pilulabs')
+    // No `next dev`, a 1ª navegação compila /pilulabs: já passou de 5 s e falhou com a URL ainda em `/`.
+    await expect(page).toHaveURL('/pilulabs', { timeout: 15_000 })
     await expect(
       page.getByRole('heading', { level: 1, name: 'PiluLabs' }),
     ).toBeVisible()

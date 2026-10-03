@@ -272,7 +272,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
 - **JSON-LD (`lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`):**
   - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
   - `url` é `/pilulabs` no site canônico, e o `publisher` é a PiluTech no site dela (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/pilutech-site` e do `apps/botai-site`);
-  - `serializarJsonLd` troca `<` por `<`, para um texto do YAML com `</script>` não fechar a tag.
+  - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
 - **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
   - `StatusProduto`;
   - `ProdutoCard`:
