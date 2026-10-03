@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { lerFaseDoBotai } from '../lib/cms'
-import { BOTAI, cartoesDosProjetos } from '../lib/conteudo'
+import { BOTAI, cartoesDosProjetos, DUVIDAS } from '../lib/conteudo'
 import { WHATSAPP } from '../lib/contato'
 import { rgbDoToken } from '../lib/tokens-do-ds'
 
@@ -16,6 +16,7 @@ const H2_DO_CORPO = [
   'Produtos próprios da PiluTech.',
   'Ferramentas usadas no dia a dia.',
   'Seu aplicativo atualizado, monitorado e no ar.',
+  'Dúvidas comuns',
 ]
 
 // Review Focus 1: um elemento que vaza para o gutter não aumenta o scrollWidth da página. Confere cada
@@ -177,7 +178,8 @@ test.describe('/', () => {
 
   // No design, os 1180 px são a área de conteúdo, com o gutter por fora (a 1280 px, o texto começa em
   // x = 50). Com os 1180 contando o padding, a coluna do hero estreita e o h1 quebra "desenvolvimento".
-  test('a 1280 px, cada seção tem 1180 px de conteúdo e o h1 não parte palavra', async ({
+  // As Dúvidas seguem a mesma regra com 860 px: a 1280 px, o texto começa em x = (1280 − 860) / 2 = 210.
+  test('a 1280 px, cada seção tem 1180 px de conteúdo (860 nas dúvidas) e o h1 não parte palavra', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -190,6 +192,7 @@ test.describe('/', () => {
           const estilo = getComputedStyle(caixa)
           const r = caixa.getBoundingClientRect()
           return {
+            secao: secao.id,
             esquerda: r.left + parseFloat(estilo.paddingLeft),
             largura:
               r.width -
@@ -198,9 +201,16 @@ test.describe('/', () => {
           }
         }),
       )
-    expect(areas).toHaveLength(6)
-    for (const area of areas)
-      expect(area).toEqual({ esquerda: 50, largura: 1180 })
+    const larga = { esquerda: 50, largura: 1180 }
+    expect(areas).toEqual([
+      { secao: 'inicio', ...larga },
+      { secao: 'servicos', ...larga },
+      { secao: 'como-funciona', ...larga },
+      { secao: 'projetos', ...larga },
+      { secao: 'tecnologias', ...larga },
+      { secao: 'planos', ...larga },
+      { secao: 'duvidas', esquerda: 210, largura: 860 },
+    ])
     const partidas = await page
       .getByRole('heading', { level: 1 })
       .evaluate((h1) => {
@@ -229,12 +239,46 @@ test.describe('/', () => {
     await page.goto('/')
     const entrelinhas = await page
       .locator(
-        '#servicos h3, #como-funciona h3, #projetos h3, #planos h3, #planos li li, #tecnologias li',
+        '#servicos h3, #como-funciona h3, #projetos h3, #planos h3, #planos li li, #tecnologias li, #duvidas h3 button',
       )
       .evaluateAll((els) => [
         ...new Set(els.map((el) => getComputedStyle(el).lineHeight)),
       ])
     expect(entrelinhas).toEqual(['normal'])
+  })
+
+  test('dúvidas: abre e fecha pelo teclado, uma por vez', async ({ page }) => {
+    await page.goto('/')
+    const perguntas = page.locator('#duvidas').getByRole('button')
+    await expect(perguntas).toHaveCount(5)
+    await expect(perguntas.nth(0)).toHaveAttribute('aria-expanded', 'true')
+    await perguntas.nth(1).focus()
+    await page.keyboard.press('Enter')
+    await expect(perguntas.nth(1)).toHaveAttribute('aria-expanded', 'true')
+    await expect(perguntas.nth(0)).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByText(DUVIDAS[1].resposta)).toBeVisible()
+    await expect(page.getByText(DUVIDAS[0].resposta)).toBeHidden()
+    await page.keyboard.press('Tab')
+    await expect(perguntas.nth(2)).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(perguntas.nth(2)).toHaveAttribute('aria-expanded', 'true')
+    await page.keyboard.press('Space')
+    await expect(perguntas.nth(2)).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // Review Focus 4.
+  test('dúvidas sem JavaScript: as 5 respostas no HTML, a primeira aberta', async ({
+    browser,
+  }) => {
+    const contexto = await browser.newContext({ javaScriptEnabled: false })
+    const page = await contexto.newPage()
+    await page.goto('/')
+    const html = await page.content()
+    for (const duvida of DUVIDAS) expect(html).toContain(duvida.resposta)
+    await expect(page.getByText(DUVIDAS[0].resposta)).toBeVisible()
+    for (const duvida of DUVIDAS.slice(1))
+      await expect(page.getByText(duvida.resposta)).toBeHidden()
+    await contexto.close()
   })
 
   test.describe('a 320 px', () => {

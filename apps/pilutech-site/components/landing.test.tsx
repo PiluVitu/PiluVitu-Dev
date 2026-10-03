@@ -24,6 +24,7 @@ describe('Landing', () => {
       'Produtos próprios da PiluTech.',
       'Ferramentas usadas no dia a dia.',
       'Seu aplicativo atualizado, monitorado e no ar.',
+      'Dúvidas comuns',
     ])
   })
 
