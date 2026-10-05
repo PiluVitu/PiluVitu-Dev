@@ -59,6 +59,8 @@ test.describe('/', () => {
           await expect(botao).toBeDisabled()
       }
     }
+    if (!botoes.some(({ loja }) => loja === 'edge'))
+      await expect(page.getByText('Microsoft Edge Add-ons')).toHaveCount(0)
     await expect(page.locator('a[href="#"]')).toHaveCount(0)
   })
 
