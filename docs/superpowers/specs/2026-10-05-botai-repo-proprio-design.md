@@ -64,7 +64,7 @@ Sentidos de dependência: o Botaí depende de `@piluvitu/ui` (npm). O PiluVitu d
 
 ### 4.2 O repo novo
 
-1. Clone espelho do monorepo numa pasta temporária e `git filter-repo` com `--path` e `--path-rename`:
+1. Clone da `main` do monorepo (só essa branch e as tags dela; um espelho traria os `refs/pull/*`) numa pasta temporária e `git filter-repo` com `--path` e `--path-rename`:
    - `apps/botai/` → `extensao/`, `apps/botai-site/` → `site/`;
    - de `packages/tools/src/`: `aleatorio`, `uf`, `cpf`, `cnpj`, `rg`, `pis`, `titulo-eleitor`, `celular`, `nascimento`, `senha`, `nome`, `endereco`, `empresa`, `cartao`, `pessoa`, `campos`, `campos-formatar`, `rng-teste` e os testes deles → `packages/core/src/`;
    - specs, planos, design e pesquisa do Botaí em `docs/superpowers/` (lista exata no plano);
@@ -100,7 +100,7 @@ Cópia é aceita onde o código é pequeno e o dono do conceito é outro; o que 
 
 ### 4.5 CI/CD no repo novo
 
-- `ci.yml`: core (tsc, Jest, build, `npm pack --dry-run` com a lista de arquivos conferida), extensão (o que o job `botai` faz hoje), site (o que o job `botai-site` faz hoje).
+- `ci.yml`: core (tsc, Jest, build, `pnpm pack --dry-run` com a lista de arquivos conferida; é o `pnpm pack` que aplica o `publishConfig`), extensão (o que o job `botai` faz hoje), site (o que o job `botai-site` faz hoje).
 - `botai-e2e.yml` e `botai-release.yml` com os paths novos. O zip de fontes da AMO passa a declarar `@piluvitu/ui` como dependência do npm; a reprodução byte a byte do pacote do Firefox tem de ser provada de novo no CI.
 - Environment `lojas-botai` recriado no repo novo (revisor = dono, só `main` e tags `botai-v*`). Os secrets são cadastrados pelo dono.
 - `trivy.yml` (fs, secret estrito, misconfig) e `dependabot.yml` (5.3).
@@ -117,7 +117,7 @@ O projeto `botai-site` passa a ser ligado a `PiluVitu/Botai`, Root Directory `si
 ### 4.8 Ordem do corte
 
 1. Publicar `@piluvitu/ui` (monorepo).
-2. Montar o repo novo localmente, CI verde localmente, varredura de segredos limpa.
+2. Montar o repo novo localmente, CI verde localmente, varredura de segredos limpa. As fases 1 a 3 podem rodar em seguida, ainda locais e sem push; as tags de cada versão nascem locais e só sobem depois do passo 4 (ordem no contrato).
 3. Criar o repo no GitHub e fazer o push (OK do dono). CI verde lá.
 4. Publicar `@pilutech/botai-core` 0.1.0 com a API de hoje (as mesmas funções e subpaths do `packages/tools`).
 5. Religar o projeto da Vercel (OK do dono) e conferir a landing em produção.
@@ -156,7 +156,7 @@ O `git filter-repo` leva todo commit que tocou os caminhos escolhidos. Antes do 
 ### 5.4 Publicação dos nossos pacotes
 
 - Trusted publishing com proveniência, a partir de tag (`core-v*`, `playwright-v*`, `ui-v*`), num job atrás de environment com aprovação do dono.
-- `files` em lista fechada no `package.json`; o CI confere a saída do `npm pack --dry-run`.
+- `files` em lista fechada no `package.json`; o CI confere a saída do `pnpm pack --dry-run` (o `pnpm pack` aplica o `publishConfig`).
 - O core não tem dependência de runtime.
 - 2FA na conta do npm.
 
