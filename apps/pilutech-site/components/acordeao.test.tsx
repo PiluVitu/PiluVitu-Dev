@@ -6,6 +6,8 @@ import { Acordeao } from './acordeao'
 
 const perguntas = () => screen.getAllByRole('button')
 const estados = () => perguntas().map((b) => b.getAttribute('aria-expanded'))
+const soAberta = (aberta: number) =>
+  DUVIDAS.map((_, indice) => (indice === aberta ? 'true' : 'false'))
 
 describe('Acordeao', () => {
   it('cada pergunta é um botão num h3, ligado à resposta por aria-controls', () => {
@@ -24,15 +26,7 @@ describe('Acordeao', () => {
 
   it('a primeira vem aberta e as outras fechadas, com hidden', () => {
     render(<Acordeao itens={DUVIDAS} />)
-    expect(estados()).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-      'false',
-      'false',
-      'false',
-    ])
+    expect(estados()).toEqual(soAberta(0))
     expect(screen.getByText(DUVIDAS[0].resposta)).toBeVisible()
     for (const duvida of DUVIDAS.slice(1))
       expect(screen.getByText(duvida.resposta)).not.toBeVisible()
@@ -43,18 +37,10 @@ describe('Acordeao', () => {
     render(<Acordeao itens={DUVIDAS} />)
     const terceira = screen.getByRole('button', { name: DUVIDAS[2].pergunta })
     await user.click(terceira)
-    expect(estados()).toEqual([
-      'false',
-      'false',
-      'true',
-      'false',
-      'false',
-      'false',
-      'false',
-    ])
+    expect(estados()).toEqual(soAberta(2))
     expect(screen.getByText(DUVIDAS[2].resposta)).toBeVisible()
     await user.click(terceira)
-    expect(estados()).toEqual(Array(7).fill('false'))
+    expect(estados()).toEqual(soAberta(-1))
   })
 
   it('pelo teclado: Tab chega na pergunta, Enter e Espaço abrem e fecham', async () => {
@@ -77,14 +63,14 @@ describe('Acordeao', () => {
       [...container.querySelectorAll('button [aria-hidden="true"]')].map(
         (sinal) => sinal.textContent,
       ),
-    ).toEqual(['−', '+', '+', '+', '+', '+', '+'])
+    ).toEqual(soAberta(0).map((aberta) => (aberta === 'true' ? '−' : '+')))
   })
 
   // Review Focus 4: o Google não clica no acordeão, e sem JavaScript as respostas têm de estar no HTML.
-  it('no HTML do servidor: as 7 respostas, a primeira aberta e 6 com hidden', () => {
+  it('no HTML do servidor: todas as respostas, a primeira aberta e as outras com hidden', () => {
     const html = renderToStaticMarkup(<Acordeao itens={DUVIDAS} />)
     for (const duvida of DUVIDAS) expect(html).toContain(duvida.resposta)
-    expect(html.match(/ hidden=""/g)).toHaveLength(6)
+    expect(html.match(/ hidden=""/g)).toHaveLength(DUVIDAS.length - 1)
     expect(html.match(/aria-expanded="true"/g)).toHaveLength(1)
   })
 })
