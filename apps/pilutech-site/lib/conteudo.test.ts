@@ -47,7 +47,7 @@ describe('conteúdo do design', () => {
     ])
   })
 
-  it('4 serviços, 4 etapas, 3 grupos de tecnologia, 3 planos e 5 dúvidas, na ordem', () => {
+  it('4 serviços, 4 etapas, 4 grupos de tecnologia, 4 planos e 7 dúvidas, na ordem', () => {
     expect(SERVICOS.map((s) => `${s.area}: ${s.titulo}`)).toEqual([
       'Infraestrutura: Provisionamento e orçamento',
       'Inteligência artificial: IA sob medida',
@@ -61,19 +61,23 @@ describe('conteúdo do design', () => {
       'Entrega e acompanhamento',
     ])
     expect(TECNOLOGIAS.map((g) => g.grupo)).toEqual([
-      'Front-end',
-      'Back-end',
       'Infraestrutura',
+      'IA',
+      'Back-end',
+      'Front-end',
     ])
     expect(PLANOS.map((p) => p.nome)).toEqual([
+      'Infraestrutura',
+      'IA',
       'Essencial',
       'Evolução',
-      'Infraestrutura',
     ])
     expect(DUVIDAS.map((d) => d.pergunta)).toEqual([
       'Quanto custa um aplicativo?',
       'Você assume um aplicativo que outra pessoa fez?',
       'Como funciona o orçamento de infraestrutura?',
+      'Meus dados ficam seguros com IA?',
+      'Quanto custa usar IA no dia a dia?',
       'O atendimento é só em Teresina?',
       'A PiluTech ainda faz manutenção de computadores e impressoras?',
     ])
@@ -141,13 +145,104 @@ describe('conteúdo do design', () => {
 
   it('cada plano pede proposta com a mensagem dele no WhatsApp', () => {
     expect(PLANOS.map((p) => p.whatsapp)).toEqual([
+      WHATSAPP.infraestrutura,
+      WHATSAPP.ia,
       WHATSAPP.essencial,
       WHATSAPP.evolucao,
-      WHATSAPP.infraestrutura,
     ])
-    expect(new URL(PLANOS[1].whatsapp).searchParams.get('text')).toBe(
+    expect(new URL(PLANOS[3].whatsapp).searchParams.get('text')).toBe(
       MENSAGENS_DO_WHATSAPP.evolucao,
     )
+  })
+
+  it('o plano de IA logo depois do de infraestrutura', () => {
+    expect(PLANOS[1]).toEqual({
+      nome: 'IA',
+      para: 'Para quem já usa IA no dia a dia.',
+      itens: [
+        'Acompanhamento do custo e do uso dos modelos',
+        'Ajuste das respostas e das instruções',
+        'Atualização dos modelos e da base de documentos',
+        'Relatório mensal do que foi feito',
+      ],
+      whatsapp: WHATSAPP.ia,
+    })
+    expect(new URL(PLANOS[1].whatsapp).searchParams.get('text')).toBe(
+      'Olá! Quero uma proposta do plano de IA.',
+    )
+  })
+
+  it('os outros três planos mantêm os textos', () => {
+    expect(
+      PLANOS.filter((p) => p.nome !== 'IA').map((p) => [p.para, p.itens]),
+    ).toEqual([
+      [
+        'Para quem quer alguém cuidando da nuvem.',
+        [
+          'Revisão mensal de custos',
+          'Ajuste de capacidade',
+          'Alertas e resposta a incidentes',
+          'Atualização dos servidores',
+        ],
+      ],
+      [
+        'Para manter o app no ar e seguro.',
+        [
+          'Correção de bugs',
+          'Atualização de dependências e segurança',
+          'Monitoramento de disponibilidade',
+          'Backup verificado',
+        ],
+      ],
+      [
+        'Para quem continua lançando funcionalidades.',
+        [
+          'Tudo do Essencial',
+          'Horas mensais para novas funcionalidades',
+          'Relatório mensal do que foi feito',
+          'Prioridade no atendimento',
+        ],
+      ],
+    ])
+  })
+
+  it('o grupo de IA logo depois do de infraestrutura, e os outros com as mesmas ferramentas', () => {
+    expect(TECNOLOGIAS.map((g) => [g.grupo, g.itens])).toEqual([
+      [
+        'Infraestrutura',
+        [
+          'Docker',
+          'Kubernetes',
+          'Terraform',
+          'AWS',
+          'Cloudflare',
+          'GitHub Actions',
+        ],
+      ],
+      ['IA', ['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG']],
+      ['Back-end', ['Go', 'Node.js', 'Python', 'PostgreSQL']],
+      ['Front-end', ['React', 'Next.js', 'TypeScript', 'Tailwind CSS']],
+    ])
+  })
+
+  it('as duas dúvidas de IA logo depois da do orçamento de infraestrutura', () => {
+    expect(DUVIDAS.slice(2, 5)).toEqual([
+      {
+        pergunta: 'Como funciona o orçamento de infraestrutura?',
+        resposta:
+          'É feito um levantamento do uso esperado e cada item recebe uma estimativa de custo: servidores, banco de dados, armazenamento, rede e monitoramento. Quando faz sentido, a comparação inclui mais de um provedor.',
+      },
+      {
+        pergunta: 'Meus dados ficam seguros com IA?',
+        resposta:
+          'Dá para usar modelos que rodam no seu próprio servidor, sem mandar dados para fora. Quando o modelo é na nuvem, a proposta diz qual provedor recebe os dados e como eles são tratados.',
+      },
+      {
+        pergunta: 'Quanto custa usar IA no dia a dia?',
+        resposta:
+          'Depende do volume e do modelo. A proposta estima o custo mensal do uso, seja por consumo do modelo ou pelo servidor, junto com o da infraestrutura.',
+      },
+    ])
   })
 })
 

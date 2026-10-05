@@ -17,7 +17,7 @@ export function Tecnologias() {
           contagem={TECNOLOGIAS.length}
           titulo="Ferramentas usadas no dia a dia."
         />
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-5">
           {TECNOLOGIAS.map((grupo, indice) => {
             const id = `tecnologias-grupo-${indice + 1}`
             return (

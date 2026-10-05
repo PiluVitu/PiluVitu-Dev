@@ -15,6 +15,7 @@ export const MENSAGENS_DO_WHATSAPP = {
   essencial: 'Olá! Quero uma proposta do plano Essencial de manutenção.',
   evolucao: 'Olá! Quero uma proposta do plano Evolução de manutenção.',
   infraestrutura: 'Olá! Quero uma proposta do plano de Infraestrutura.',
+  ia: 'Olá! Quero uma proposta do plano de IA.',
 } as const
 
 export const WHATSAPP: Record<keyof typeof MENSAGENS_DO_WHATSAPP, string> = {
@@ -22,6 +23,7 @@ export const WHATSAPP: Record<keyof typeof MENSAGENS_DO_WHATSAPP, string> = {
   essencial: linkDoWhatsApp(MENSAGENS_DO_WHATSAPP.essencial),
   evolucao: linkDoWhatsApp(MENSAGENS_DO_WHATSAPP.evolucao),
   infraestrutura: linkDoWhatsApp(MENSAGENS_DO_WHATSAPP.infraestrutura),
+  ia: linkDoWhatsApp(MENSAGENS_DO_WHATSAPP.ia),
 }
 
 export const MAILTO_DO_SITE = mailtoDaPilutech('PiluTech', 'Contato pelo site')

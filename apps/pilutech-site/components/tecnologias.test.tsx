@@ -10,13 +10,20 @@ describe('Tecnologias', () => {
     })
     expect(secao).toHaveAttribute('id', 'tecnologias')
     expect(secao).toHaveClass('dark')
+    expect(within(secao).getByText('Tecnologias')).toBeInTheDocument()
+    expect(within(secao).getByText('04')).toBeInTheDocument()
   })
 
-  it('os 3 grupos, cada um com a lista de ferramentas do design', () => {
+  it('os 4 grupos, IA logo depois de infraestrutura, cada um com a sua lista de ferramentas', () => {
     render(<Tecnologias />)
     expect(
       screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent),
-    ).toEqual(TECNOLOGIAS.map((g) => g.grupo))
+    ).toEqual(['Infraestrutura', 'IA', 'Back-end', 'Front-end'])
+    expect(
+      within(screen.getByRole('list', { name: 'IA' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'])
     for (const grupo of TECNOLOGIAS)
       expect(
         within(screen.getByRole('list', { name: grupo.grupo }))

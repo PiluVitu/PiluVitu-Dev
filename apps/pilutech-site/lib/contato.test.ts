@@ -24,13 +24,20 @@ describe('WhatsApp', () => {
     expect(soDigitos(TELEFONE_INTERNACIONAL)).toBe(WHATSAPP_NUMERO)
   })
 
-  it('as mensagens são as do design', () => {
+  it('as mensagens são as do design, mais a do plano de IA', () => {
     expect(MENSAGENS_DO_WHATSAPP).toEqual({
       geral: 'Olá! Vim pelo site da PiluTech e quero falar sobre um projeto.',
       essencial: 'Olá! Quero uma proposta do plano Essencial de manutenção.',
       evolucao: 'Olá! Quero uma proposta do plano Evolução de manutenção.',
       infraestrutura: 'Olá! Quero uma proposta do plano de Infraestrutura.',
+      ia: 'Olá! Quero uma proposta do plano de IA.',
     })
+  })
+
+  it('o link do plano de IA, codificado', () => {
+    expect(WHATSAPP.ia).toBe(
+      'https://wa.me/5586981737625?text=Ol%C3%A1!%20Quero%20uma%20proposta%20do%20plano%20de%20IA.',
+    )
   })
 
   it('o link geral, codificado', () => {
