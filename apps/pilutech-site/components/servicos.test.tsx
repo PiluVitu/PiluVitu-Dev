@@ -20,7 +20,7 @@ describe('Servicos', () => {
       screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent),
     ).toEqual([
       'Provisionamento e orçamento',
-      'IA sob medida',
+      'IA personalizada',
       'Criação e manutenção',
       'Desenvolvimento sob medida',
     ])

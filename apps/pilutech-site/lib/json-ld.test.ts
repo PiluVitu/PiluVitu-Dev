@@ -82,12 +82,12 @@ describe('jsonLdDaHome', () => {
     expect(catalogo.name).toBe('Serviços da PiluTech')
     expect(catalogo.itemListElement.map((o) => o.itemOffered.name)).toEqual([
       'Provisionamento e orçamento de infraestrutura',
-      'Implementação de IA sob medida',
+      'Criação e implementação de IA personalizada',
       'Criação e manutenção de aplicativos',
       'Desenvolvimento fullstack sob medida',
     ])
     expect(catalogo.itemListElement[1].itemOffered.description).toBe(
-      'Assistentes, automações e buscas com IA ajustados aos seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
+      'Criação de assistentes, agentes e automações com IA para os seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
     )
     expect(catalogo.itemListElement).toEqual(
       SERVICOS.map((servico) => ({

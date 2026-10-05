@@ -19,16 +19,16 @@ describe('textos de busca', () => {
     expect(TITULO_DA_HOME.length).toBeLessThanOrEqual(60)
   })
 
-  // O texto pedido tinha 167 caracteres; sem o "em nuvem" cabe no limite e mantém os quatro serviços.
+  // Com a criação de IA o texto passava de 160: saíram o "em nuvem" e o "desenvolvimento de", e os quatro serviços ficaram.
   it('descrição: 140–160 caracteres, o que a PiluTech faz, na ordem do foco, e onde', () => {
     expect(DESCRICAO_DA_HOME).toBe(
-      'Infraestrutura, implementação de IA sob medida e desenvolvimento de aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.',
+      'Infraestrutura, criação e implementação de IA personalizada, aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.',
     )
     expect(DESCRICAO_DA_HOME.length).toBeGreaterThanOrEqual(140)
     expect(DESCRICAO_DA_HOME.length).toBeLessThanOrEqual(160)
     for (const termo of [
       'Infraestrutura',
-      'implementação de IA sob medida',
+      'criação e implementação de IA personalizada',
       'aplicativos e sistemas',
       'Teresina (PI)',
       'remoto',
