@@ -6,6 +6,7 @@ export const ROTAS = [
   '/',
   '/icon',
   '/apple-icon',
+  '/favicon.ico',
   '/opengraph-image',
   '/twitter-image',
   '/sitemap.xml',

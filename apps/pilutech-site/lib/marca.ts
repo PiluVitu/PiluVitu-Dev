@@ -20,6 +20,7 @@ export const CORES_DA_MARCA = {
 
 export const LADO_DO_ICONE = 192
 export const LADO_DO_APPLE_ICON = 180
+export const LADOS_DO_FAVICON = [16, 32, 48] as const
 
 export function proporcoesDoLockup(tamanho: number): {
   espaco: number

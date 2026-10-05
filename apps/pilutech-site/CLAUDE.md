@@ -43,6 +43,7 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 - `lib/marca.ts` guarda o símbolo como dados (`BLOCOS_DA_MARCA`: 5 blocos de 14 no quadro de 48, o de cima à direita em destaque) e as cores em hex para as imagens (`CORES_DA_MARCA`, conferidas contra o `.dark` do `@piluvitu/ui`).
 - `SvgDaMarca` (em `components/pilutech-mark.tsx`) desenha com os tokens do contexto (`fill-foreground`/`fill-primary`: as versões escura e clara da marca) ou com `cores` em hex, para o Satori, que não tem CSS. `PiluTechMark` junta o lockup "PiluTech" em Jakarta 800, tracking −0.035em, a 60% do símbolo, com espaço de 28%, como o design.
 - `app/icon.tsx` (192 px, múltiplo de 48 como o Google pede, cantos arredondados) e `app/apple-icon.tsx` (180 px) saem de `lib/imagem-do-icone.tsx`. O `/icon` também é o `logo` da `Organization`.
+- `/favicon.ico` (`app/favicon.ico/route.ts`, estático): o mesmo `imagemDoIcone` em 16, 32 e 48 px (`LADOS_DO_FAVICON`), empacotado em ICO por `icoDePngs` de `@piluvitu/tools/ico`. Existe para quem não lê o `<link rel="icon">` e pede o caminho padrão (favoritos, prévias de link, buscadores); até 2026-10-05 ele dava 404. O E2E abre cada tamanho num canvas e confere a Noite e o Ciano.
 - A imagem OG (`lib/imagem-og.tsx`, 1200×630) usa a Plus Jakarta Sans de `@fontsource/plus-jakarta-sans`, o pacote estático com `.woff`: o `ImageResponse` só lê `ttf`/`otf`/`woff`, e o `@fontsource-variable` do Botaí só tem `woff2`.
 
 ## SEO
@@ -59,7 +60,7 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 
 ## Build
 
-- `pnpm build` = `next build` + o gate do `@source` (`scripts/check-tailwind-source.mjs .next`; a classe que ele procura está em `SENTINEL_SELECTOR`, no topo do script) + `scripts/conferir-rotas-estaticas.mjs`, que falha se uma rota de `ROTAS` (`/`, `/icon`, `/apple-icon`, `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`) sumir do `prerender-manifest.json` ou ganhar `revalidate`. Rota nova entra em `ROTAS`.
+- `pnpm build` = `next build` + o gate do `@source` (`scripts/check-tailwind-source.mjs .next`; a classe que ele procura está em `SENTINEL_SELECTOR`, no topo do script) + `scripts/conferir-rotas-estaticas.mjs`, que falha se uma rota de `ROTAS` (`/`, `/icon`, `/apple-icon`, `/favicon.ico`, `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`) sumir do `prerender-manifest.json` ou ganhar `revalidate`. Rota nova entra em `ROTAS`.
 - `@source not '../*.md'`, e o `storybook-static/` no `.gitignore` da raiz, pelo mesmo motivo do `apps/botai-site`: sem eles, o Tailwind varreria a documentação e CSS já compilado, e o gate aprovaria `@source` quebrado.
 
 ## Testes

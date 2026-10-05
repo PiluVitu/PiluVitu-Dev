@@ -40,7 +40,8 @@
     "./campos": "./src/campos.ts",
     "./campos-formatar": "./src/campos-formatar.ts",
     "./pilulabs": "./src/pilulabs.ts",
-    "./contato": "./src/contato.ts"
+    "./contato": "./src/contato.ts",
+    "./ico": "./src/ico.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

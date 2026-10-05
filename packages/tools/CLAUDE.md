@@ -144,6 +144,12 @@ Lógica pura da extensão Botaí (`apps/botai`) (spec `docs/superpowers/specs/20
 - O assunto vai por `encodeURIComponent`: UTF-8 em percent-encoding, espaço como `%20` (RFC 6068). Em `mailto:` o `+` é literal, e o `URLSearchParams` codificaria o espaço como `+`: não troque.
 - Usado pelo `apps/pilutech-site` (`[PiluTech] Contato pelo site`) e pelo `apps/botai-site` (`[Botaí] Suporte`, `[Botaí] Privacidade`, `[Botaí] Termos de uso`). Texto que só cita o endereço (política, termos, `apps/botai/loja/textos.md`) continua com o e-mail puro.
 
+## Módulo `ico` (favicon dos sites)
+
+`ico.ts`, exposto só por `@piluvitu/tools/ico`, sem `node:fs`. `icoDePngs(pngs)` empacota PNGs num `.ico` (tipo 1, uma entrada de 32 bits por PNG, o PNG inteiro dentro, lado lido do IHDR; 256 px vira 0 no byte do lado) e `imagensDoIco(ico)` faz o caminho de volta, para os testes. Recusa lista vazia, arquivo que não é PNG e lado fora de 1 a 256 px. Usado pelo `/favicon.ico` do `apps/pilutech-site` (os PNGs do `ImageResponse`) e do `apps/botai-site` (os ícones da extensão).
+
+- Devolve `Uint8Array<ArrayBuffer>`: com o `Uint8Array` genérico do TypeScript 5.7, um `Uint8Array<ArrayBufferLike>` não entra no `new Response(...)`.
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.
