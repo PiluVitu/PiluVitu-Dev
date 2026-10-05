@@ -5,7 +5,7 @@ it('nome, idioma, a Noite e o ícone de 192 px', () => {
     name: 'PiluTech',
     short_name: 'PiluTech',
     description:
-      'Criação e manutenção de aplicativos, infraestrutura em nuvem e desenvolvimento fullstack. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.',
+      'Infraestrutura, implementação de IA sob medida e desenvolvimento de aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.',
     lang: 'pt-BR',
     start_url: '/',
     display: 'browser',

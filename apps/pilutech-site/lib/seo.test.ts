@@ -11,21 +11,25 @@ import { hslParaHex, tokenDoDs } from './tokens-do-ds'
 const SITE = 'https://pilutech.com.br'
 
 describe('textos de busca', () => {
-  // O <title> do design tem 66 caracteres; a spec pede até 60.
-  it('título: até 60 caracteres, a partir do <title> do design', () => {
+  // A spec pede até 60 caracteres.
+  it('título: até 60 caracteres, com o foco em infraestrutura e IA', () => {
     expect(TITULO_DA_HOME).toBe(
-      'PiluTech · Apps, infraestrutura e desenvolvimento fullstack',
+      'PiluTech · Infraestrutura, IA e desenvolvimento de software',
     )
     expect(TITULO_DA_HOME.length).toBeLessThanOrEqual(60)
   })
 
-  it('descrição: 140–160 caracteres, o que a PiluTech faz e onde', () => {
+  // O texto pedido tinha 167 caracteres; sem o "em nuvem" cabe no limite e mantém os quatro serviços.
+  it('descrição: 140–160 caracteres, o que a PiluTech faz, na ordem do foco, e onde', () => {
+    expect(DESCRICAO_DA_HOME).toBe(
+      'Infraestrutura, implementação de IA sob medida e desenvolvimento de aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.',
+    )
     expect(DESCRICAO_DA_HOME.length).toBeGreaterThanOrEqual(140)
     expect(DESCRICAO_DA_HOME.length).toBeLessThanOrEqual(160)
     for (const termo of [
-      'aplicativos',
-      'infraestrutura',
-      'fullstack',
+      'Infraestrutura',
+      'implementação de IA sob medida',
+      'aplicativos e sistemas',
       'Teresina (PI)',
       'remoto',
       'todo o Brasil',

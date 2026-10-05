@@ -10,12 +10,12 @@ describe('Hero', () => {
     expect(banner).toHaveClass('dark')
   })
 
-  it('o h1 e os textos do design', () => {
+  it('o h1 e os textos, com o foco em infraestrutura e IA', () => {
     render(<Hero />)
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: 'Aplicativos, infraestrutura e desenvolvimento fullstack.',
+        name: 'Infraestrutura, IA e desenvolvimento de software.',
       }),
     ).toBeInTheDocument()
     expect(
@@ -23,7 +23,7 @@ describe('Hero', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'A PiluTech cria e mantém aplicativos, provisiona infraestrutura em nuvem e entrega o orçamento de cada item antes de você contratar. Você fala direto com quem desenvolve.',
+        'A PiluTech provisiona infraestrutura em nuvem, implementa IA sob medida e cria e mantém aplicativos, com o orçamento de cada item antes de você contratar. Você fala direto com quem desenvolve.',
       ),
     ).toBeInTheDocument()
   })

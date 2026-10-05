@@ -1,3 +1,4 @@
+import { faBrain } from '@fortawesome/free-solid-svg-icons'
 import { MENSAGENS_DO_WHATSAPP, WHATSAPP } from './contato'
 import {
   BOTAI,
@@ -36,20 +37,21 @@ describe('conteúdo do design', () => {
     ])
   })
 
-  it('o terminal lista os 5 serviços do design', () => {
+  it('o terminal lista os serviços na ordem do foco: infraestrutura, IA e o resto', () => {
     expect(LINHAS_DO_TERMINAL).toEqual([
-      'criação de aplicativos',
-      'manutenção de aplicativos',
       'provisionamento de infraestrutura',
       'orçamento de infraestrutura',
+      'implementação de IA sob medida',
+      'criação e manutenção de aplicativos',
       'desenvolvimento fullstack',
     ])
   })
 
-  it('3 serviços, 4 etapas, 3 grupos de tecnologia, 3 planos e 5 dúvidas, na ordem', () => {
+  it('4 serviços, 4 etapas, 3 grupos de tecnologia, 3 planos e 5 dúvidas, na ordem', () => {
     expect(SERVICOS.map((s) => `${s.area}: ${s.titulo}`)).toEqual([
-      'Aplicativos: Criação e manutenção',
       'Infraestrutura: Provisionamento e orçamento',
+      'Inteligência artificial: IA sob medida',
+      'Aplicativos: Criação e manutenção',
       'Fullstack: Desenvolvimento sob medida',
     ])
     expect(ETAPAS.map((e) => e.titulo)).toEqual([
@@ -80,9 +82,60 @@ describe('conteúdo do design', () => {
   it('cada serviço tem 3 itens e um nome completo para o JSON-LD', () => {
     for (const servico of SERVICOS) expect(servico.itens).toHaveLength(3)
     expect(SERVICOS.map((s) => s.nome)).toEqual([
-      'Criação e manutenção de aplicativos',
       'Provisionamento e orçamento de infraestrutura',
+      'Implementação de IA sob medida',
+      'Criação e manutenção de aplicativos',
       'Desenvolvimento fullstack sob medida',
+    ])
+  })
+
+  it('o cartão de IA logo depois do de infraestrutura, com o ícone do cérebro', () => {
+    expect(SERVICOS[1]).toEqual({
+      area: 'Inteligência artificial',
+      titulo: 'IA sob medida',
+      nome: 'Implementação de IA sob medida',
+      texto:
+        'Assistentes, automações e buscas com IA ajustados aos seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
+      itens: [
+        'Assistentes que respondem com os seus documentos',
+        'Automação de tarefas com modelos de linguagem',
+        'Modelos locais para dados sensíveis',
+      ],
+      icone: faBrain,
+    })
+  })
+
+  it('os outros três cartões mantêm os textos e os ícones', () => {
+    expect(
+      SERVICOS.filter((s) => s.area !== 'Inteligência artificial').map((s) => [
+        s.texto,
+        s.itens,
+        s.icone.iconName,
+      ]),
+    ).toEqual([
+      [
+        'Servidores, banco de dados, rede e monitoramento configurados como código, com o custo mensal estimado antes de contratar.',
+        [
+          'Infraestrutura como código',
+          'Custo estimado por item',
+          'Monitoramento e alertas',
+        ],
+        'server',
+      ],
+      [
+        'Aplicativos web e mobile do protótipo à publicação, e manutenção contínua depois do lançamento.',
+        ['Web e mobile', 'Publicação nas lojas', 'Correções e atualizações'],
+        'mobile-screen',
+      ],
+      [
+        'Front-end, back-end e integrações para sistemas internos, painéis e APIs.',
+        [
+          'APIs e integrações',
+          'Painéis e sistemas internos',
+          'Modelagem de banco de dados',
+        ],
+        'layer-group',
+      ],
     ])
   })
 

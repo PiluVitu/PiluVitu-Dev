@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next'
 import { CORES_DA_MARCA, NOME_DA_MARCA } from './marca'
 
 export const TITULO_DA_HOME =
-  'PiluTech · Apps, infraestrutura e desenvolvimento fullstack'
+  'PiluTech · Infraestrutura, IA e desenvolvimento de software'
 export const DESCRICAO_DA_HOME =
-  'Criação e manutenção de aplicativos, infraestrutura em nuvem e desenvolvimento fullstack. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.'
+  'Infraestrutura, implementação de IA sob medida e desenvolvimento de aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.'
 
 export const COR_DO_TEMA = CORES_DA_MARCA.noite
 
