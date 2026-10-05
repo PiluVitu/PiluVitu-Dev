@@ -487,7 +487,15 @@ test.describe('/', () => {
         .locator('#tecnologias')
         .getByRole('list', { name: 'IA' })
         .getByRole('listitem'),
-    ).toHaveText(['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'])
+    ).toHaveText([
+      'OpenAI',
+      'Claude',
+      'Ollama',
+      'Whisper',
+      'MLX',
+      'RAG',
+      'Fine-tuning',
+    ])
     const perguntas = page.locator('#duvidas').getByRole('button')
     await expect(perguntas).toHaveCount(7)
     for (const [indice, pergunta] of [

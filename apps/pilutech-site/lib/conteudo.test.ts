@@ -220,7 +220,10 @@ describe('conteúdo do design', () => {
           'GitHub Actions',
         ],
       ],
-      ['IA', ['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG']],
+      [
+        'IA',
+        ['OpenAI', 'Claude', 'Ollama', 'Whisper', 'MLX', 'RAG', 'Fine-tuning'],
+      ],
       ['Back-end', ['Go', 'Node.js', 'Python', 'PostgreSQL']],
       ['Front-end', ['React', 'Next.js', 'TypeScript', 'Tailwind CSS']],
     ])
