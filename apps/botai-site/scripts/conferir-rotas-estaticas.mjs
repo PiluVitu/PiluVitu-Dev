@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 export const ROTAS = [
   '/',
+  '/favicon.ico',
   '/privacidade',
   '/opengraph-image',
   '/twitter-image',

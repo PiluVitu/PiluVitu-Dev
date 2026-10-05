@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import type { AxeResults, RunOptions } from 'axe-core'
-import { LADO_DO_APPLE_ICON, LADO_DO_ICONE } from '../lib/marca'
+import { imagensDoIco } from '@piluvitu/tools/ico'
+import {
+  CORES_DA_MARCA,
+  LADO_DO_APPLE_ICON,
+  LADO_DO_ICONE,
+  LADOS_DO_FAVICON,
+} from '../lib/marca'
 import { COR_DO_TEMA, DESCRICAO_DA_HOME, TITULO_DA_HOME } from '../lib/seo'
 import { SITE_DE_PRODUCAO } from '../lib/site'
 
@@ -189,6 +195,47 @@ test('favicon e apple-icon: PNG do símbolo, nos tamanhos declarados', async ({
     largura: LADO_DO_ICONE,
     altura: LADO_DO_ICONE,
   })
+})
+
+// Quem não lê o <link rel="icon"> (favoritos, prévias de link, buscadores) pede o caminho padrão.
+test('favicon.ico: o símbolo em 16, 32 e 48 px, com as cores da marca', async ({
+  page,
+}) => {
+  const resposta = await page.request.get('/favicon.ico')
+  expect(resposta.status()).toBe(200)
+  expect(resposta.headers()['content-type']).toBe('image/x-icon')
+  const imagens = imagensDoIco(new Uint8Array(await resposta.body()))
+  expect(imagens.map(({ largura, altura }) => [largura, altura])).toEqual(
+    LADOS_DO_FAVICON.map((lado) => [lado, lado]),
+  )
+  await page.goto('/')
+  for (const { largura, png } of imagens) {
+    expect(Buffer.from(png).readUInt32BE(16)).toBe(largura)
+    const cores = await page.evaluate(async (base64) => {
+      const imagem = new Image()
+      imagem.src = `data:image/png;base64,${base64}`
+      await imagem.decode()
+      const tela = document.createElement('canvas')
+      tela.width = imagem.width
+      tela.height = imagem.height
+      const contexto = tela.getContext('2d') as CanvasRenderingContext2D
+      contexto.drawImage(imagem, 0, 0)
+      const { data } = contexto.getImageData(0, 0, tela.width, tela.height)
+      const hex = new Set<string>()
+      for (let i = 0; i < data.length; i += 4)
+        if (data[i + 3] === 255)
+          hex.add(
+            '#' +
+              [data[i], data[i + 1], data[i + 2]]
+                .map((canal) => canal.toString(16).padStart(2, '0'))
+                .join(''),
+          )
+      return [...hex]
+    }, Buffer.from(png).toString('base64'))
+    expect(cores).toEqual(
+      expect.arrayContaining([CORES_DA_MARCA.noite, CORES_DA_MARCA.ciano]),
+    )
+  }
 })
 
 test('manifest e theme-color', async ({ page }) => {

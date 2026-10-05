@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../packages/ui ../../packages/tools ../web/content/pilulabs/botai ../../pnpm-lock.yaml ../../pnpm-workspace.yaml ../../package.json ../../scripts/check-tailwind-source.mjs"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../packages/ui ../../packages/tools ../web/content/pilulabs/botai ../botai/public/icon ../../pnpm-lock.yaml ../../pnpm-workspace.yaml ../../package.json ../../scripts/check-tailwind-source.mjs"
 }

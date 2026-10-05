@@ -122,7 +122,7 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 
 ### Imagens do Botaí nos sites
 
-`apps/web/public/pilulabs/botai/icone-128.png` (o logo do card da PiluLabs) e, no `apps/botai-site`, `public/icone-128.png`, `app/icon.png`, `app/apple-icon.png` e `public/capturas/<NN>-<cena>-<tema>.png` são gerados por `make capturas-botai`, no `apps/botai` (o mesmo gerador das imagens das lojas, `apps/botai/loja/`, lista `COPIAS` de `loja/pecas.ts`), e versionados. Os sites só os leem. Não edite esses PNG à mão; o `apps/botai/loja/imagens.test.ts` falha se alguma cópia divergir da da loja.
+`apps/web/public/pilulabs/botai/icone-128.png` (o logo do card da PiluLabs) e, no `apps/botai-site`, `public/icone-128.png`, `app/icon.png`, `app/apple-icon.png` e `public/capturas/<NN>-<cena>-<tema>.png` são gerados por `make capturas-botai`, no `apps/botai` (o mesmo gerador das imagens das lojas, `apps/botai/loja/`, lista `COPIAS` de `loja/pecas.ts`), e versionados. Os sites só os leem. Não edite esses PNG à mão; o `apps/botai/loja/imagens.test.ts` falha se alguma cópia divergir da da loja. O `/favicon.ico` do `apps/botai-site` não é cópia: ele empacota no build os ícones de 16, 32 e 48 px da extensão (`apps/botai/public/icon/`).
 
 ### Pre-commit hook (lint-staged)
 

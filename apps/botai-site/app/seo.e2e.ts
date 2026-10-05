@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { lojasPublicadas } from '@piluvitu/tools/pilulabs'
 import type { AxeResults, RunOptions } from 'axe-core'
 import { lerUrlsDasLojas } from '../lib/cms'
+import { faviconDoBotai } from '../lib/favicon'
 import {
   DESCRICAO_DA_HOME,
   DESCRICAO_DA_PRIVACIDADE,
@@ -224,6 +225,16 @@ test('sitemap.xml lista as três rotas', async ({ page }) => {
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/</loc>`)
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/privacidade</loc>`)
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/termos</loc>`)
+})
+
+// Quem não lê o <link rel="icon"> (favoritos, prévias de link, buscadores) pede o caminho padrão.
+test('favicon.ico: os ícones de 16, 32 e 48 px da extensão', async ({
+  page,
+}) => {
+  const resposta = await page.request.get('/favicon.ico')
+  expect(resposta.status()).toBe(200)
+  expect(resposta.headers()['content-type']).toBe('image/x-icon')
+  expect(new Uint8Array(await resposta.body())).toEqual(faviconDoBotai())
 })
 
 test('ícones, manifest e theme-color claro e escuro', async ({ page }) => {
