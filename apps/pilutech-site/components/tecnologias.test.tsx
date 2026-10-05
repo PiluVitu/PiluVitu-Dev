@@ -23,7 +23,15 @@ describe('Tecnologias', () => {
       within(screen.getByRole('list', { name: 'IA' }))
         .getAllByRole('listitem')
         .map((li) => li.textContent),
-    ).toEqual(['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'])
+    ).toEqual([
+      'OpenAI',
+      'Claude',
+      'Ollama',
+      'Whisper',
+      'MLX',
+      'RAG',
+      'Fine-tuning',
+    ])
     for (const grupo of TECNOLOGIAS)
       expect(
         within(screen.getByRole('list', { name: grupo.grupo }))

@@ -170,7 +170,18 @@ export const TECNOLOGIAS = [
       'GitHub Actions',
     ],
   },
-  { grupo: 'IA', itens: ['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'] },
+  {
+    grupo: 'IA',
+    itens: [
+      'OpenAI',
+      'Claude',
+      'Ollama',
+      'Whisper',
+      'MLX',
+      'RAG',
+      'Fine-tuning',
+    ],
+  },
   { grupo: 'Back-end', itens: ['Go', 'Node.js', 'Python', 'PostgreSQL'] },
   {
     grupo: 'Front-end',
