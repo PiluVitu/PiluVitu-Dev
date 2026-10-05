@@ -21,11 +21,15 @@ const NOME_CURTO: Record<Loja, string> = {
   opera: 'Opera',
 }
 
+const SO_COM_LINK: readonly Loja[] = ['edge']
+
 export function botoesDasLojas(urls: UrlsDasLojas): BotaoDeLoja[] {
   const publicadas = new Map(
     lojasPublicadas(urls).map(({ loja, url }) => [loja, url]),
   )
-  return LOJAS.map((loja) => ({ loja, url: publicadas.get(loja) ?? null }))
+  return LOJAS.filter(
+    (loja) => publicadas.has(loja) || !SO_COM_LINK.includes(loja),
+  ).map((loja) => ({ loja, url: publicadas.get(loja) ?? null }))
 }
 
 function emLista(nomes: string[]): string {

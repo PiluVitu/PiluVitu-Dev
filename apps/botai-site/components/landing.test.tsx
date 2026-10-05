@@ -41,7 +41,7 @@ describe('Landing', () => {
       expect(document.getElementById(alvo)).not.toBeNull()
   })
 
-  it('em breve: selo, nota e as 4 lojas desabilitadas nos dois blocos', () => {
+  it('em breve: selo, nota e as 3 lojas desabilitadas nos dois blocos, sem o Edge', () => {
     renderizar()
     // "Em breve" aparece no selo e dentro de cada botão de loja sem URL.
     expect(
@@ -55,7 +55,8 @@ describe('Landing', () => {
     expect(
       screen.getAllByRole('list', { name: 'Instalar pela loja' }),
     ).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: /Em breve$/ })).toHaveLength(8)
+    expect(screen.getAllByRole('button', { name: /Em breve$/ })).toHaveLength(6)
+    expect(screen.queryByText('Microsoft Edge Add-ons')).toBeNull()
     expect(screen.queryByText(/dispon[ií]vel/i)).toBeNull()
   })
 

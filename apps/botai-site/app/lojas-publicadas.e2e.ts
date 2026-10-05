@@ -25,16 +25,13 @@ test('Firefox publicado: link nos dois blocos, em aba nova', async ({
   }
 })
 
-// Review Focus 1: link de outra loja ou em http não vira botão.
-test('as outras três seguem "Em breve", desabilitadas e sem link', async ({
+// Review Focus 1: link de outra loja ou em http não vira botão. O Edge sem link nem aparece.
+test('Chrome e Opera seguem "Em breve", desabilitados e sem link, e o Edge some', async ({
   page,
 }) => {
   await page.goto('/')
-  for (const rotulo of [
-    'Chrome Web Store',
-    'Microsoft Edge Add-ons',
-    'Opera add-ons',
-  ]) {
+  await expect(page.getByText('Microsoft Edge Add-ons')).toHaveCount(0)
+  for (const rotulo of ['Chrome Web Store', 'Opera add-ons']) {
     const botoes = page.getByRole('button', { name: `${rotulo} Em breve` })
     await expect(botoes).toHaveCount(2)
     for (const botao of await botoes.all()) await expect(botao).toBeDisabled()

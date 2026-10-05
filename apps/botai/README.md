@@ -16,7 +16,11 @@ Uma pessoa de teste falsa e coerente, que fica guardada até você pedir outra:
 
 ## Como instalar
 
-As versões das lojas (Chrome Web Store, Firefox Add-ons, Microsoft Edge Add-ons e Opera Add-ons) chegam com a 1.0.0. Até lá, a partir do código, na raiz do monorepo:
+- **Chrome:** [Chrome Web Store](https://chromewebstore.google.com/detail/bota%C3%AD/mblmjomopainbcdjipkdmioglamdinnc).
+- **Edge:** pela mesma página da Chrome Web Store (na primeira vez, o Edge pede para permitir extensões de outras lojas).
+- **Firefox e Opera:** em revisão nas lojas. Até lá, a partir do código.
+
+**A partir do código**, na raiz do monorepo:
 
 **Chrome e Edge**
 
@@ -78,7 +82,7 @@ O Botaí sai em quatro lojas pela PiluTech. Como o release funciona está no [`C
 9. **Lançamento**, com a Chrome e a AMO aprovadas:
    - publique o item adiado no painel da Chrome Web Store (há 30 dias a partir da aprovação);
    - AMO e Edge ficam públicos assim que aprovam;
-   - no `/admin/pilulabs` (item `botai`, que é o `apps/web/content/pilulabs/botai/index.yaml`), as URLs das lojas aprovadas; o Botaí já está listado, e Edge e Opera entram quando aprovarem; a landing relê o YAML no build e troca o "Em breve" pelos botões das lojas;
+   - no `/admin/pilulabs` (item `botai`, que é o `apps/web/content/pilulabs/botai/index.yaml`), as URLs das lojas aprovadas; o Botaí já está listado, e Firefox e Opera entram quando aprovarem; a landing relê o YAML no build e troca o "Em breve" pelos botões das lojas (o Edge não tem "Em breve": o botão dele só aparece com o link);
    - neste README, "Como instalar" ganha os links das lojas.
 
 **Versões seguintes:** `make versao-botai V=x.y.z` (abre o PR), merge, `git switch main && git pull`, `make release-botai` e aprove o job `lojas`. Para publicar adiado na Chrome, rejeite a aprovação da tag e rode `gh workflow run botai-release.yml --ref botai-v<versão> -f lojas=submeter -f adiar_chrome=true`. O Opera é sempre à mão, com o `botai-<versão>-opera.zip` do Release e a nota Opera.
