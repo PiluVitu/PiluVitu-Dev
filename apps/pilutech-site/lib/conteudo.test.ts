@@ -47,7 +47,7 @@ describe('conteúdo do design', () => {
     ])
   })
 
-  it('4 serviços, 4 etapas, 4 grupos de tecnologia, 4 planos e 7 dúvidas, na ordem', () => {
+  it('4 serviços, 4 etapas, 4 grupos de tecnologia, 4 planos e 8 dúvidas, na ordem', () => {
     expect(SERVICOS.map((s) => `${s.area}: ${s.titulo}`)).toEqual([
       'Infraestrutura: Provisionamento e orçamento',
       'Inteligência artificial: IA personalizada',
@@ -78,6 +78,7 @@ describe('conteúdo do design', () => {
       'Como funciona o orçamento de infraestrutura?',
       'Meus dados ficam seguros com IA?',
       'Quanto custa usar IA no dia a dia?',
+      'Como funciona o treino de um modelo com os dados da empresa?',
       'O atendimento é só em Teresina?',
       'A PiluTech ainda faz manutenção de computadores e impressoras?',
     ])
@@ -229,8 +230,8 @@ describe('conteúdo do design', () => {
     ])
   })
 
-  it('as duas dúvidas de IA logo depois da do orçamento de infraestrutura', () => {
-    expect(DUVIDAS.slice(2, 5)).toEqual([
+  it('as três dúvidas de IA logo depois da do orçamento de infraestrutura', () => {
+    expect(DUVIDAS.slice(2, 6)).toEqual([
       {
         pergunta: 'Como funciona o orçamento de infraestrutura?',
         resposta:
@@ -245,6 +246,12 @@ describe('conteúdo do design', () => {
         pergunta: 'Quanto custa usar IA no dia a dia?',
         resposta:
           'Depende do volume e do modelo. A proposta estima o custo mensal do uso, seja por consumo do modelo ou pelo servidor, junto com o da infraestrutura.',
+      },
+      {
+        pergunta:
+          'Como funciona o treino de um modelo com os dados da empresa?',
+        resposta:
+          'Os documentos e exemplos da empresa são usados para ajustar um modelo (fine-tuning) às suas tarefas e ao seu vocabulário. Com dados sensíveis, o treino e o modelo podem ficar no seu próprio servidor. A proposta diz quanto custa treinar de novo quando os dados mudam.',
       },
     ])
   })

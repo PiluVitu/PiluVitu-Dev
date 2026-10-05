@@ -465,7 +465,7 @@ test.describe('/', () => {
     for (const [secao, contagem] of [
       ['planos', '04'],
       ['tecnologias', '04'],
-      ['duvidas', '07'],
+      ['duvidas', '08'],
     ])
       await expect(
         page.locator(`#${secao}`).getByText(contagem, { exact: true }),
@@ -497,13 +497,14 @@ test.describe('/', () => {
       'Fine-tuning',
     ])
     const perguntas = page.locator('#duvidas').getByRole('button')
-    await expect(perguntas).toHaveCount(7)
+    await expect(perguntas).toHaveCount(8)
     for (const [indice, pergunta] of [
       'Quanto custa um aplicativo?',
       'Você assume um aplicativo que outra pessoa fez?',
       'Como funciona o orçamento de infraestrutura?',
       'Meus dados ficam seguros com IA?',
       'Quanto custa usar IA no dia a dia?',
+      'Como funciona o treino de um modelo com os dados da empresa?',
       'O atendimento é só em Teresina?',
       'A PiluTech ainda faz manutenção de computadores e impressoras?',
     ].entries())
@@ -570,7 +571,7 @@ test.describe('/', () => {
   test('dúvidas: abre e fecha pelo teclado, uma por vez', async ({ page }) => {
     await page.goto('/')
     const perguntas = page.locator('#duvidas').getByRole('button')
-    await expect(perguntas).toHaveCount(7)
+    await expect(perguntas).toHaveCount(8)
     await expect(perguntas.nth(0)).toHaveAttribute('aria-expanded', 'true')
     await perguntas.nth(1).focus()
     await page.keyboard.press('Enter')
@@ -587,14 +588,14 @@ test.describe('/', () => {
   })
 
   // Review Focus 4.
-  test('dúvidas sem JavaScript: as 7 respostas no HTML, a primeira aberta', async ({
+  test('dúvidas sem JavaScript: as 8 respostas no HTML, a primeira aberta', async ({
     browser,
   }) => {
     const contexto = await browser.newContext({ javaScriptEnabled: false })
     const page = await contexto.newPage()
     await page.goto('/')
     const html = await page.content()
-    expect(DUVIDAS).toHaveLength(7)
+    expect(DUVIDAS).toHaveLength(8)
     for (const duvida of DUVIDAS) expect(html).toContain(duvida.resposta)
     await expect(page.getByText(DUVIDAS[0].resposta)).toBeVisible()
     for (const duvida of DUVIDAS.slice(1))

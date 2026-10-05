@@ -273,6 +273,11 @@ export const DUVIDAS: readonly Duvida[] = [
       'Depende do volume e do modelo. A proposta estima o custo mensal do uso, seja por consumo do modelo ou pelo servidor, junto com o da infraestrutura.',
   },
   {
+    pergunta: 'Como funciona o treino de um modelo com os dados da empresa?',
+    resposta:
+      'Os documentos e exemplos da empresa são usados para ajustar um modelo (fine-tuning) às suas tarefas e ao seu vocabulário. Com dados sensíveis, o treino e o modelo podem ficar no seu próprio servidor. A proposta diz quanto custa treinar de novo quando os dados mudam.',
+  },
+  {
     pergunta: 'O atendimento é só em Teresina?',
     resposta: 'Não. O atendimento é remoto e vale para todo o Brasil.',
   },

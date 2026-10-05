@@ -9,10 +9,10 @@ describe('Duvidas', () => {
     expect(secao).toHaveAttribute('id', 'duvidas')
     expect(secao).not.toHaveClass('dark')
     expect(within(secao).getByText('Perguntas frequentes')).toBeInTheDocument()
-    expect(within(secao).getByText('07')).toBeInTheDocument()
+    expect(within(secao).getByText('08')).toBeInTheDocument()
   })
 
-  it('as 7 perguntas no acordeão, as duas de IA logo depois da do orçamento de infraestrutura', () => {
+  it('as 8 perguntas no acordeão, as três de IA logo depois da do orçamento de infraestrutura', () => {
     render(<Duvidas />)
     const perguntas = screen.getAllByRole('button')
     expect(perguntas.map((b) => b.getAttribute('aria-controls'))).toEqual(
@@ -24,11 +24,13 @@ describe('Duvidas', () => {
       'Como funciona o orçamento de infraestrutura?',
       'Meus dados ficam seguros com IA?',
       'Quanto custa usar IA no dia a dia?',
+      'Como funciona o treino de um modelo com os dados da empresa?',
       'O atendimento é só em Teresina?',
       'A PiluTech ainda faz manutenção de computadores e impressoras?',
     ])
     expect(perguntas.map((b) => b.getAttribute('aria-expanded'))).toEqual([
       'true',
+      'false',
       'false',
       'false',
       'false',
