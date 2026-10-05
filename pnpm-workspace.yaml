@@ -31,3 +31,15 @@ allowBuilds:
 # Ignore package versions published less than 24h ago (1440 min).
 # Defense against supply-chain attacks where malicious versions are published and quickly pulled.
 minimumReleaseAge: 1440
+# Falha se um pacote perder a proveniência que tinha (pnpm ≥ 10.21.0).
+trustPolicy: no-downgrade
+# Versão exata, nunca o nome solto: a próxima versão de cada um volta a ser conferida.
+trustPolicyExclude:
+  # chokidar 4.0.3 (2024-12-18, via fork-ts-checker-webpack-plugin do @storybook/nextjs) saiu sem a proveniência que a 4.0.0 e a 4.0.1 tinham.
+  - 'chokidar@4.0.3'
+  # eslint-import-resolver-typescript 3.10.1 (2025-04-21, via eslint-config-next): linha 3.x publicada sem a proveniência que a 4.x já tinha.
+  - 'eslint-import-resolver-typescript@3.10.1'
+  # semver 6.3.1 (2023-07-10, via @babel/core, eslint-plugin-react e outros): backport do fix de ReDoS sem a proveniência que a 7.5.x já tinha.
+  - 'semver@6.3.1'
+# Só dependência direta pode vir de git ou de tarball (pnpm ≥ 10.26.0).
+blockExoticSubdeps: true

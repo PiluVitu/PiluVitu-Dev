@@ -16,6 +16,13 @@ updates:
       prefix-development: "chore"
       include: "scope"
 
+    # Dias de espera antes de propor uma versão nova (só version updates).
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+
     # Aglomera minor e patch em uma única PR por grupo
     groups:
       all-minor-patch:
@@ -41,6 +48,9 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+
+    cooldown:
+      default-days: 7
 
     groups:
       github-actions-minor-patch:
