@@ -51,6 +51,7 @@ describe('Planos', () => {
     ).toEqual([
       '✓Acompanhamento do custo e do uso dos modelos',
       '✓Ajuste das respostas e das instruções',
+      '✓Novo treino dos modelos com os dados mais recentes',
       '✓Atualização dos modelos e da base de documentos',
       '✓Relatório mensal do que foi feito',
     ])
