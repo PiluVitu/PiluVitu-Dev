@@ -11,3 +11,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Padrao: Story = {}
+
+export const Celular: Story = {
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+}

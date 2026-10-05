@@ -160,11 +160,6 @@ export function cartoesDosProjetos(faseDoBotai: Fase): CartaoDeProjeto[] {
 
 export const TECNOLOGIAS = [
   {
-    grupo: 'Front-end',
-    itens: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS'],
-  },
-  { grupo: 'Back-end', itens: ['Go', 'Node.js', 'Python', 'PostgreSQL'] },
-  {
     grupo: 'Infraestrutura',
     itens: [
       'Docker',
@@ -174,6 +169,12 @@ export const TECNOLOGIAS = [
       'Cloudflare',
       'GitHub Actions',
     ],
+  },
+  { grupo: 'IA', itens: ['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'] },
+  { grupo: 'Back-end', itens: ['Go', 'Node.js', 'Python', 'PostgreSQL'] },
+  {
+    grupo: 'Front-end',
+    itens: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS'],
   },
 ] as const
 
@@ -185,6 +186,28 @@ export type Plano = {
 }
 
 export const PLANOS: readonly Plano[] = [
+  {
+    nome: 'Infraestrutura',
+    para: 'Para quem quer alguém cuidando da nuvem.',
+    itens: [
+      'Revisão mensal de custos',
+      'Ajuste de capacidade',
+      'Alertas e resposta a incidentes',
+      'Atualização dos servidores',
+    ],
+    whatsapp: WHATSAPP.infraestrutura,
+  },
+  {
+    nome: 'IA',
+    para: 'Para quem já usa IA no dia a dia.',
+    itens: [
+      'Acompanhamento do custo e do uso dos modelos',
+      'Ajuste das respostas e das instruções',
+      'Atualização dos modelos e da base de documentos',
+      'Relatório mensal do que foi feito',
+    ],
+    whatsapp: WHATSAPP.ia,
+  },
   {
     nome: 'Essencial',
     para: 'Para manter o app no ar e seguro.',
@@ -207,17 +230,6 @@ export const PLANOS: readonly Plano[] = [
     ],
     whatsapp: WHATSAPP.evolucao,
   },
-  {
-    nome: 'Infraestrutura',
-    para: 'Para quem quer alguém cuidando da nuvem.',
-    itens: [
-      'Revisão mensal de custos',
-      'Ajuste de capacidade',
-      'Alertas e resposta a incidentes',
-      'Atualização dos servidores',
-    ],
-    whatsapp: WHATSAPP.infraestrutura,
-  },
 ]
 
 export type Duvida = { pergunta: string; resposta: string }
@@ -237,6 +249,16 @@ export const DUVIDAS: readonly Duvida[] = [
     pergunta: 'Como funciona o orçamento de infraestrutura?',
     resposta:
       'É feito um levantamento do uso esperado e cada item recebe uma estimativa de custo: servidores, banco de dados, armazenamento, rede e monitoramento. Quando faz sentido, a comparação inclui mais de um provedor.',
+  },
+  {
+    pergunta: 'Meus dados ficam seguros com IA?',
+    resposta:
+      'Dá para usar modelos que rodam no seu próprio servidor, sem mandar dados para fora. Quando o modelo é na nuvem, a proposta diz qual provedor recebe os dados e como eles são tratados.',
+  },
+  {
+    pergunta: 'Quanto custa usar IA no dia a dia?',
+    resposta:
+      'Depende do volume e do modelo. A proposta estima o custo mensal do uso, seja por consumo do modelo ou pelo servidor, junto com o da infraestrutura.',
   },
   {
     pergunta: 'O atendimento é só em Teresina?',

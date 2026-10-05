@@ -25,7 +25,7 @@ export function Planos() {
             infraestrutura, e vem na proposta.
           </p>
         </CabecalhoSecao>
-        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5">
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-5">
           {PLANOS.map((plano) => (
             <li
               key={plano.nome}

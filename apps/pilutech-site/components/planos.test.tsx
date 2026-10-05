@@ -16,21 +16,55 @@ describe('Planos', () => {
         'Planos mensais. O valor depende do tamanho do aplicativo e da infraestrutura, e vem na proposta.',
       ),
     ).toBeInTheDocument()
+    expect(within(secao).getByText('Planos de manutenção')).toBeInTheDocument()
+    expect(within(secao).getByText('04')).toBeInTheDocument()
   })
 
-  it('os 3 planos, com o público e os itens', () => {
+  it('os 4 planos, IA logo depois de infraestrutura, com o público e os itens', () => {
     render(<Planos />)
     expect(
       screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent),
-    ).toEqual(PLANOS.map((p) => p.nome))
+    ).toEqual(['Infraestrutura', 'IA', 'Essencial', 'Evolução'])
+    // O IA e o Evolução repetem o "Relatório mensal do que foi feito": cada cartão é conferido por dentro.
     for (const plano of PLANOS) {
-      expect(screen.getByText(plano.para)).toBeInTheDocument()
+      const cartao = screen
+        .getByRole('heading', { level: 3, name: plano.nome })
+        .closest('li') as HTMLElement
+      expect(within(cartao).getByText(plano.para)).toBeInTheDocument()
       for (const item of plano.itens)
-        expect(screen.getByText(item)).toBeInTheDocument()
+        expect(within(cartao).getByText(item)).toBeInTheDocument()
     }
   })
 
-  // O texto visível é "Pedir proposta" nos três; o nome acessível diz de qual plano é.
+  it('o plano de IA: público, itens com ✓ e o WhatsApp com a mensagem dele', () => {
+    render(<Planos />)
+    const cartao = screen
+      .getByRole('heading', { level: 3, name: 'IA' })
+      .closest('li') as HTMLElement
+    expect(
+      within(cartao).getByText('Para quem já usa IA no dia a dia.'),
+    ).toBeInTheDocument()
+    expect(
+      within(cartao)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([
+      '✓Acompanhamento do custo e do uso dos modelos',
+      '✓Ajuste das respostas e das instruções',
+      '✓Atualização dos modelos e da base de documentos',
+      '✓Relatório mensal do que foi feito',
+    ])
+    const link = within(cartao).getByRole('link', {
+      name: 'Pedir proposta do plano IA',
+    })
+    const url = new URL(link.getAttribute('href') as string)
+    expect(`${url.origin}${url.pathname}`).toBe('https://wa.me/5586981737625')
+    expect(url.searchParams.get('text')).toBe(
+      'Olá! Quero uma proposta do plano de IA.',
+    )
+  })
+
+  // O texto visível é "Pedir proposta" em todos; o nome acessível diz de qual plano é.
   it('cada "Pedir proposta" abre o WhatsApp com a mensagem do plano, em aba nova', () => {
     render(<Planos />)
     for (const plano of PLANOS) {

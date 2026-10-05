@@ -64,10 +64,16 @@ async function vazamentos(page: Page): Promise<string[]> {
     )
 }
 
-const caixasDosServicos = (page: Page) =>
-  page.locator('#servicos h3').evaluateAll((titulos) =>
+// A caixa de cada cartão é o item da grade que contém o h3 dele.
+const caixasDaGrade = (page: Page, secao: string) =>
+  page.locator(`#${secao} h3`).evaluateAll((titulos) =>
     titulos.map((h3) => {
-      const r = (h3.closest('li') as HTMLElement).getBoundingClientRect()
+      let item = h3 as HTMLElement
+      while (
+        getComputedStyle(item.parentElement as HTMLElement).display !== 'grid'
+      )
+        item = item.parentElement as HTMLElement
+      const r = item.getBoundingClientRect()
       return {
         x: Math.round(r.left),
         y: Math.round(r.top),
@@ -75,6 +81,12 @@ const caixasDosServicos = (page: Page) =>
       }
     }),
   )
+
+const GRADES_2X2 = [
+  { secao: 'servicos', cartoes: 'serviços' },
+  { secao: 'tecnologias', cartoes: 'grupos de tecnologia' },
+  { secao: 'planos', cartoes: 'planos' },
+]
 
 test.describe('/', () => {
   test('o h1 e as seções do design, na ordem, sem erro de hidratação', async ({
@@ -281,9 +293,10 @@ test.describe('/', () => {
       .evaluateAll((links) => links.map((a) => a.getAttribute('href')))
     expect(hrefs.filter((h) => h === WHATSAPP.geral)).toHaveLength(4)
     expect(hrefs.filter((h) => h !== WHATSAPP.geral)).toEqual([
+      WHATSAPP.infraestrutura,
+      WHATSAPP.ia,
       WHATSAPP.essencial,
       WHATSAPP.evolucao,
-      WHATSAPP.infraestrutura,
     ])
   })
 
@@ -406,41 +419,103 @@ test.describe('/', () => {
     expect(partidas).toEqual([])
   })
 
-  // Com 4 cartões, a grade de 3 colunas deixava o de Fullstack sozinho na segunda linha.
-  test('a 1280 px, os 4 serviços em 2×2, com a mesma largura', async ({
+  // Com 4 cartões, a grade de 3 colunas deixava o quarto sozinho na segunda linha.
+  for (const { secao, cartoes: nome } of GRADES_2X2) {
+    test(`a 1280 px, os 4 ${nome} em 2×2, com a mesma largura`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto('/')
+      const cartoes = await caixasDaGrade(page, secao)
+      expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual([
+        { x: 50, largura: 580 },
+        { x: 650, largura: 580 },
+        { x: 50, largura: 580 },
+        { x: 650, largura: 580 },
+      ])
+      expect(cartoes[0].y).toBe(cartoes[1].y)
+      expect(cartoes[2].y).toBe(cartoes[3].y)
+      expect(cartoes[2].y).toBeGreaterThan(cartoes[0].y)
+    })
+
+    test(`a 390 px, os 4 ${nome} numa coluna, sem rolagem horizontal`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto('/')
+      const cartoes = await caixasDaGrade(page, secao)
+      expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual(
+        Array(4).fill({ x: 20, largura: 350 }),
+      )
+      for (let i = 1; i < cartoes.length; i++)
+        expect(cartoes[i].y).toBeGreaterThan(cartoes[i - 1].y)
+      const largura = await page.evaluate(() => ({
+        rolavel: document.documentElement.scrollWidth,
+        visivel: document.documentElement.clientWidth,
+      }))
+      expect(largura.rolavel).toBeLessThanOrEqual(largura.visivel)
+      expect(await vazamentos(page)).toEqual([])
+    })
+  }
+
+  test('planos, tecnologias e dúvidas: a contagem e a ordem, IA logo depois de infraestrutura', async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
-    const cartoes = await caixasDosServicos(page)
-    expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual([
-      { x: 50, largura: 580 },
-      { x: 650, largura: 580 },
-      { x: 50, largura: 580 },
-      { x: 650, largura: 580 },
+    for (const [secao, contagem] of [
+      ['planos', '04'],
+      ['tecnologias', '04'],
+      ['duvidas', '07'],
     ])
-    expect(cartoes[0].y).toBe(cartoes[1].y)
-    expect(cartoes[2].y).toBe(cartoes[3].y)
-    expect(cartoes[2].y).toBeGreaterThan(cartoes[0].y)
+      await expect(
+        page.locator(`#${secao}`).getByText(contagem, { exact: true }),
+      ).toBeVisible()
+    await expect(page.locator('#planos h3')).toHaveText([
+      'Infraestrutura',
+      'IA',
+      'Essencial',
+      'Evolução',
+    ])
+    await expect(page.locator('#tecnologias h3')).toHaveText([
+      'Infraestrutura',
+      'IA',
+      'Back-end',
+      'Front-end',
+    ])
+    await expect(
+      page
+        .locator('#tecnologias')
+        .getByRole('list', { name: 'IA' })
+        .getByRole('listitem'),
+    ).toHaveText(['OpenAI', 'Claude', 'Ollama', 'Whisper', 'RAG'])
+    const perguntas = page.locator('#duvidas').getByRole('button')
+    await expect(perguntas).toHaveCount(7)
+    for (const [indice, pergunta] of [
+      'Quanto custa um aplicativo?',
+      'Você assume um aplicativo que outra pessoa fez?',
+      'Como funciona o orçamento de infraestrutura?',
+      'Meus dados ficam seguros com IA?',
+      'Quanto custa usar IA no dia a dia?',
+      'O atendimento é só em Teresina?',
+      'A PiluTech ainda faz manutenção de computadores e impressoras?',
+    ].entries())
+      await expect(perguntas.nth(indice)).toHaveAccessibleName(pergunta)
   })
 
-  test('a 390 px, os 4 serviços numa coluna, sem rolagem horizontal', async ({
+  test('o "Pedir proposta" do plano de IA abre o WhatsApp com a mensagem dele, em aba nova', async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
-    const cartoes = await caixasDosServicos(page)
-    expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual(
-      Array(4).fill({ x: 20, largura: 350 }),
+    const link = page
+      .locator('#planos')
+      .getByRole('link', { name: 'Pedir proposta do plano IA' })
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    const url = new URL((await link.getAttribute('href')) as string)
+    expect(`${url.origin}${url.pathname}`).toBe('https://wa.me/5586981737625')
+    expect(url.searchParams.get('text')).toBe(
+      'Olá! Quero uma proposta do plano de IA.',
     )
-    for (let i = 1; i < cartoes.length; i++)
-      expect(cartoes[i].y).toBeGreaterThan(cartoes[i - 1].y)
-    const largura = await page.evaluate(() => ({
-      rolavel: document.documentElement.scrollWidth,
-      visivel: document.documentElement.clientWidth,
-    }))
-    expect(largura.rolavel).toBeLessThanOrEqual(largura.visivel)
-    expect(await vazamentos(page)).toEqual([])
   })
 
   // O design não define a entrelinha do texto corrido: vale a do navegador (normal), não o 1.5 do preflight.
@@ -487,7 +562,7 @@ test.describe('/', () => {
   test('dúvidas: abre e fecha pelo teclado, uma por vez', async ({ page }) => {
     await page.goto('/')
     const perguntas = page.locator('#duvidas').getByRole('button')
-    await expect(perguntas).toHaveCount(5)
+    await expect(perguntas).toHaveCount(7)
     await expect(perguntas.nth(0)).toHaveAttribute('aria-expanded', 'true')
     await perguntas.nth(1).focus()
     await page.keyboard.press('Enter')
@@ -504,13 +579,14 @@ test.describe('/', () => {
   })
 
   // Review Focus 4.
-  test('dúvidas sem JavaScript: as 5 respostas no HTML, a primeira aberta', async ({
+  test('dúvidas sem JavaScript: as 7 respostas no HTML, a primeira aberta', async ({
     browser,
   }) => {
     const contexto = await browser.newContext({ javaScriptEnabled: false })
     const page = await contexto.newPage()
     await page.goto('/')
     const html = await page.content()
+    expect(DUVIDAS).toHaveLength(7)
     for (const duvida of DUVIDAS) expect(html).toContain(duvida.resposta)
     await expect(page.getByText(DUVIDAS[0].resposta)).toBeVisible()
     for (const duvida of DUVIDAS.slice(1))
