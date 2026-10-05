@@ -4,7 +4,7 @@ import { CORES_DA_MARCA, NOME_DA_MARCA } from './marca'
 export const TITULO_DA_HOME =
   'PiluTech · Infraestrutura, IA e desenvolvimento de software'
 export const DESCRICAO_DA_HOME =
-  'Infraestrutura, implementação de IA sob medida e desenvolvimento de aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.'
+  'Infraestrutura, criação e implementação de IA personalizada, aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.'
 
 export const COR_DO_TEMA = CORES_DA_MARCA.noite
 

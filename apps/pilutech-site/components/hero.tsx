@@ -26,9 +26,10 @@ export function Hero() {
             Infraestrutura, IA e desenvolvimento de software.
           </h1>
           <p className="text-muted-foreground max-w-[560px] text-[clamp(17px,1.6vw,20px)] leading-[1.6] text-pretty">
-            A PiluTech provisiona infraestrutura em nuvem, implementa IA sob
-            medida e cria e mantém aplicativos, com o orçamento de cada item
-            antes de você contratar. Você fala direto com quem desenvolve.
+            A PiluTech provisiona infraestrutura em nuvem, desenvolve e
+            implementa IA personalizada e cria e mantém aplicativos, com o
+            orçamento de cada item antes de você contratar. Você fala direto com
+            quem desenvolve.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button asChild className={BOTAO_GRANDE}>

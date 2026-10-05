@@ -19,7 +19,7 @@ export const SECOES_DA_BARRA = [
 export const LINHAS_DO_TERMINAL = [
   'provisionamento de infraestrutura',
   'orçamento de infraestrutura',
-  'implementação de IA sob medida',
+  'criação e implementação de IA personalizada',
   'criação e manutenção de aplicativos',
   'desenvolvimento fullstack',
 ] as const
@@ -49,13 +49,13 @@ export const SERVICOS: readonly Servico[] = [
   },
   {
     area: 'Inteligência artificial',
-    titulo: 'IA sob medida',
-    nome: 'Implementação de IA sob medida',
+    titulo: 'IA personalizada',
+    nome: 'Criação e implementação de IA personalizada',
     texto:
-      'Assistentes, automações e buscas com IA ajustados aos seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
+      'Criação de assistentes, agentes e automações com IA para os seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
     itens: [
+      'Modelos treinados com os dados da sua empresa',
       'Assistentes que respondem com os seus documentos',
-      'Automação de tarefas com modelos de linguagem',
       'Modelos locais para dados sensíveis',
     ],
     icone: faBrain,

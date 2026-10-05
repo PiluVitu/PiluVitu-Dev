@@ -23,7 +23,7 @@ describe('Hero', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'A PiluTech provisiona infraestrutura em nuvem, implementa IA sob medida e cria e mantém aplicativos, com o orçamento de cada item antes de você contratar. Você fala direto com quem desenvolve.',
+        'A PiluTech provisiona infraestrutura em nuvem, desenvolve e implementa IA personalizada e cria e mantém aplicativos, com o orçamento de cada item antes de você contratar. Você fala direto com quem desenvolve.',
       ),
     ).toBeInTheDocument()
   })

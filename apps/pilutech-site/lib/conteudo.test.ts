@@ -41,7 +41,7 @@ describe('conteúdo do design', () => {
     expect(LINHAS_DO_TERMINAL).toEqual([
       'provisionamento de infraestrutura',
       'orçamento de infraestrutura',
-      'implementação de IA sob medida',
+      'criação e implementação de IA personalizada',
       'criação e manutenção de aplicativos',
       'desenvolvimento fullstack',
     ])
@@ -50,7 +50,7 @@ describe('conteúdo do design', () => {
   it('4 serviços, 4 etapas, 4 grupos de tecnologia, 4 planos e 7 dúvidas, na ordem', () => {
     expect(SERVICOS.map((s) => `${s.area}: ${s.titulo}`)).toEqual([
       'Infraestrutura: Provisionamento e orçamento',
-      'Inteligência artificial: IA sob medida',
+      'Inteligência artificial: IA personalizada',
       'Aplicativos: Criação e manutenção',
       'Fullstack: Desenvolvimento sob medida',
     ])
@@ -87,7 +87,7 @@ describe('conteúdo do design', () => {
     for (const servico of SERVICOS) expect(servico.itens).toHaveLength(3)
     expect(SERVICOS.map((s) => s.nome)).toEqual([
       'Provisionamento e orçamento de infraestrutura',
-      'Implementação de IA sob medida',
+      'Criação e implementação de IA personalizada',
       'Criação e manutenção de aplicativos',
       'Desenvolvimento fullstack sob medida',
     ])
@@ -96,13 +96,13 @@ describe('conteúdo do design', () => {
   it('o cartão de IA logo depois do de infraestrutura, com o ícone do cérebro', () => {
     expect(SERVICOS[1]).toEqual({
       area: 'Inteligência artificial',
-      titulo: 'IA sob medida',
-      nome: 'Implementação de IA sob medida',
+      titulo: 'IA personalizada',
+      nome: 'Criação e implementação de IA personalizada',
       texto:
-        'Assistentes, automações e buscas com IA ajustados aos seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
+        'Criação de assistentes, agentes e automações com IA para os seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
       itens: [
+        'Modelos treinados com os dados da sua empresa',
         'Assistentes que respondem com os seus documentos',
-        'Automação de tarefas com modelos de linguagem',
         'Modelos locais para dados sensíveis',
       ],
       icone: faBrain,
