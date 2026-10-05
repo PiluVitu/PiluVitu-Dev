@@ -6,8 +6,7 @@ import { CORES_DA_MARCA, NOME_DA_MARCA, proporcoesDoLockup } from './marca'
 
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
-export const alt =
-  'PiluTech: aplicativos, infraestrutura e desenvolvimento fullstack'
+export const alt = 'PiluTech: infraestrutura, IA e desenvolvimento de software'
 
 const PASTA_DAS_FONTES = join(
   process.cwd(),
@@ -73,7 +72,7 @@ export async function imagemOg(): Promise<ImageResponse> {
           letterSpacing: -2.2,
         }}
       >
-        Aplicativos, infraestrutura e desenvolvimento fullstack.
+        Infraestrutura, IA e desenvolvimento de software.
       </div>
       <div
         style={{

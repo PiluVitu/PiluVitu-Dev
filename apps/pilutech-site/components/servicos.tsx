@@ -18,7 +18,7 @@ export function Servicos() {
           contagem={SERVICOS.length}
           titulo="Do primeiro protótipo ao servidor em produção."
         />
-        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5">
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-5">
           {SERVICOS.map((servico, indice) => (
             <li
               key={servico.area}

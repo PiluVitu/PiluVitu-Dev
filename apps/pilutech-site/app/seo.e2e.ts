@@ -56,7 +56,7 @@ test('Open Graph e Twitter, com a imagem própria de 1200×630', async ({
   await expect(og('description')).toHaveAttribute('content', DESCRICAO_DA_HOME)
   await expect(og('image:alt')).toHaveAttribute(
     'content',
-    'PiluTech: aplicativos, infraestrutura e desenvolvimento fullstack',
+    'PiluTech: infraestrutura, IA e desenvolvimento de software',
   )
   expect(
     new URL((await og('url').getAttribute('content')) as string).href,

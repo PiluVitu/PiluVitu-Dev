@@ -11,20 +11,27 @@ describe('Servicos', () => {
     expect(secao).toHaveAttribute('id', 'servicos')
     expect(secao).not.toHaveClass('dark')
     expect(within(secao).getByText('Serviços')).toBeInTheDocument()
-    expect(within(secao).getByText('03')).toBeInTheDocument()
+    expect(within(secao).getByText('04')).toBeInTheDocument()
   })
 
-  it('os 3 cartões: número e área, título, texto e itens', () => {
+  it('os 4 cartões, IA logo depois de infraestrutura: número e área, título, texto e itens', () => {
     render(<Servicos />)
     expect(
       screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent),
-    ).toEqual(SERVICOS.map((s) => s.titulo))
-    for (const rotulo of [
-      '01 · Aplicativos',
-      '02 · Infraestrutura',
-      '03 · Fullstack',
+    ).toEqual([
+      'Provisionamento e orçamento',
+      'IA sob medida',
+      'Criação e manutenção',
+      'Desenvolvimento sob medida',
     ])
-      expect(screen.getByText(rotulo)).toBeInTheDocument()
+    expect(
+      screen.getAllByText(/^\d{2} · /).map((rotulo) => rotulo.textContent),
+    ).toEqual([
+      '01 · Infraestrutura',
+      '02 · Inteligência artificial',
+      '03 · Aplicativos',
+      '04 · Fullstack',
+    ])
     for (const servico of SERVICOS) {
       expect(screen.getByText(servico.texto)).toBeInTheDocument()
       for (const item of servico.itens)
@@ -32,10 +39,15 @@ describe('Servicos', () => {
     }
   })
 
-  it('os ícones são decorativos', () => {
+  it('um ícone decorativo por cartão, o cérebro no de IA', () => {
     const { container } = render(<Servicos />)
-    const icones = container.querySelectorAll('svg')
-    expect(icones).toHaveLength(3)
+    const icones = [...container.querySelectorAll('svg')]
+    expect(icones.map((icone) => icone.getAttribute('data-icon'))).toEqual([
+      'server',
+      'brain',
+      'mobile-screen',
+      'layer-group',
+    ])
     for (const icone of icones)
       expect(icone).toHaveAttribute('aria-hidden', 'true')
   })

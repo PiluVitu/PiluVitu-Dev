@@ -1,5 +1,6 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
+  faBrain,
   faLayerGroup,
   faMobileScreen,
   faServer,
@@ -16,10 +17,10 @@ export const SECOES_DA_BARRA = [
 ] as const
 
 export const LINHAS_DO_TERMINAL = [
-  'criação de aplicativos',
-  'manutenção de aplicativos',
   'provisionamento de infraestrutura',
   'orçamento de infraestrutura',
+  'implementação de IA sob medida',
+  'criação e manutenção de aplicativos',
   'desenvolvimento fullstack',
 ] as const
 
@@ -34,15 +35,6 @@ export type Servico = {
 
 export const SERVICOS: readonly Servico[] = [
   {
-    area: 'Aplicativos',
-    titulo: 'Criação e manutenção',
-    nome: 'Criação e manutenção de aplicativos',
-    texto:
-      'Aplicativos web e mobile do protótipo à publicação, e manutenção contínua depois do lançamento.',
-    itens: ['Web e mobile', 'Publicação nas lojas', 'Correções e atualizações'],
-    icone: faMobileScreen,
-  },
-  {
     area: 'Infraestrutura',
     titulo: 'Provisionamento e orçamento',
     nome: 'Provisionamento e orçamento de infraestrutura',
@@ -54,6 +46,28 @@ export const SERVICOS: readonly Servico[] = [
       'Monitoramento e alertas',
     ],
     icone: faServer,
+  },
+  {
+    area: 'Inteligência artificial',
+    titulo: 'IA sob medida',
+    nome: 'Implementação de IA sob medida',
+    texto:
+      'Assistentes, automações e buscas com IA ajustados aos seus dados e processos, com modelos na nuvem ou rodando no seu próprio servidor.',
+    itens: [
+      'Assistentes que respondem com os seus documentos',
+      'Automação de tarefas com modelos de linguagem',
+      'Modelos locais para dados sensíveis',
+    ],
+    icone: faBrain,
+  },
+  {
+    area: 'Aplicativos',
+    titulo: 'Criação e manutenção',
+    nome: 'Criação e manutenção de aplicativos',
+    texto:
+      'Aplicativos web e mobile do protótipo à publicação, e manutenção contínua depois do lançamento.',
+    itens: ['Web e mobile', 'Publicação nas lojas', 'Correções e atualizações'],
+    icone: faMobileScreen,
   },
   {
     area: 'Fullstack',
@@ -231,6 +245,6 @@ export const DUVIDAS: readonly Duvida[] = [
   {
     pergunta: 'A PiluTech ainda faz manutenção de computadores e impressoras?',
     resposta:
-      'Não. A PiluTech atende apenas aplicativos, infraestrutura e desenvolvimento de software.',
+      'Não. A PiluTech atende apenas infraestrutura, IA, aplicativos e desenvolvimento de software.',
   },
 ]

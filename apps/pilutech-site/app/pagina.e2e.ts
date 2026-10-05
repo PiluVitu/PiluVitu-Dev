@@ -64,6 +64,18 @@ async function vazamentos(page: Page): Promise<string[]> {
     )
 }
 
+const caixasDosServicos = (page: Page) =>
+  page.locator('#servicos h3').evaluateAll((titulos) =>
+    titulos.map((h3) => {
+      const r = (h3.closest('li') as HTMLElement).getBoundingClientRect()
+      return {
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        largura: Math.round(r.width),
+      }
+    }),
+  )
+
 test.describe('/', () => {
   test('o h1 e as seções do design, na ordem, sem erro de hidratação', async ({
     page,
@@ -79,7 +91,7 @@ test.describe('/', () => {
     const resposta = await page.goto('/')
     expect(resposta?.status()).toBe(200)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Aplicativos, infraestrutura e desenvolvimento fullstack.',
+      'Infraestrutura, IA e desenvolvimento de software.',
     )
     await expect(page.getByRole('heading', { level: 2 })).toHaveText(
       H2_DA_PAGINA,
@@ -394,6 +406,43 @@ test.describe('/', () => {
     expect(partidas).toEqual([])
   })
 
+  // Com 4 cartões, a grade de 3 colunas deixava o de Fullstack sozinho na segunda linha.
+  test('a 1280 px, os 4 serviços em 2×2, com a mesma largura', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto('/')
+    const cartoes = await caixasDosServicos(page)
+    expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual([
+      { x: 50, largura: 580 },
+      { x: 650, largura: 580 },
+      { x: 50, largura: 580 },
+      { x: 650, largura: 580 },
+    ])
+    expect(cartoes[0].y).toBe(cartoes[1].y)
+    expect(cartoes[2].y).toBe(cartoes[3].y)
+    expect(cartoes[2].y).toBeGreaterThan(cartoes[0].y)
+  })
+
+  test('a 390 px, os 4 serviços numa coluna, sem rolagem horizontal', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    const cartoes = await caixasDosServicos(page)
+    expect(cartoes.map(({ x, largura }) => ({ x, largura }))).toEqual(
+      Array(4).fill({ x: 20, largura: 350 }),
+    )
+    for (let i = 1; i < cartoes.length; i++)
+      expect(cartoes[i].y).toBeGreaterThan(cartoes[i - 1].y)
+    const largura = await page.evaluate(() => ({
+      rolavel: document.documentElement.scrollWidth,
+      visivel: document.documentElement.clientWidth,
+    }))
+    expect(largura.rolavel).toBeLessThanOrEqual(largura.visivel)
+    expect(await vazamentos(page)).toEqual([])
+  })
+
   // O design não define a entrelinha do texto corrido: vale a do navegador (normal), não o 1.5 do preflight.
   test('texto sem entrelinha própria usa a do navegador, como no design', async ({
     page,
@@ -428,7 +477,7 @@ test.describe('/', () => {
             parseFloat(getComputedStyle(el).fontSize),
         })),
       )
-    expect(larguras).toHaveLength(11)
+    expect(larguras).toHaveLength(14)
     for (const { seta, largura } of larguras) {
       expect(seta).toBe('→')
       expect(largura).toBeLessThan(0.75)

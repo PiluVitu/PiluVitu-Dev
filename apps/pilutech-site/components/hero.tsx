@@ -23,12 +23,12 @@ export function Hero() {
             ~/pilutech · Teresina, PI · atendimento remoto
           </p>
           <h1 className="text-[clamp(40px,5.6vw,68px)] leading-[1.04] font-extrabold tracking-[-0.035em] text-balance wrap-break-word">
-            Aplicativos, infraestrutura e desenvolvimento fullstack.
+            Infraestrutura, IA e desenvolvimento de software.
           </h1>
           <p className="text-muted-foreground max-w-[560px] text-[clamp(17px,1.6vw,20px)] leading-[1.6] text-pretty">
-            A PiluTech cria e mantém aplicativos, provisiona infraestrutura em
-            nuvem e entrega o orçamento de cada item antes de você contratar.
-            Você fala direto com quem desenvolve.
+            A PiluTech provisiona infraestrutura em nuvem, implementa IA sob
+            medida e cria e mantém aplicativos, com o orçamento de cada item
+            antes de você contratar. Você fala direto com quem desenvolve.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button asChild className={BOTAO_GRANDE}>
