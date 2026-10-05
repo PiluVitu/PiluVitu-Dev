@@ -1,20 +1,20 @@
 version: 2
 
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "America/Sao_Paulo"
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'America/Sao_Paulo'
     open-pull-requests-limit: 20
     labels:
-      - "dependencies"
+      - 'dependencies'
     commit-message:
-      prefix: "chore"
-      prefix-development: "chore"
-      include: "scope"
+      prefix: 'chore'
+      prefix-development: 'chore'
+      include: 'scope'
 
     # Dias de espera antes de propor uma versão nova (só version updates).
     cooldown:
@@ -28,26 +28,26 @@ updates:
       all-minor-patch:
         applies-to: version-updates
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
 
     # Majors ficam isoladas (comportamento padrão fora dos grupos)
     ignore: []
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "America/Sao_Paulo"
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'America/Sao_Paulo'
     open-pull-requests-limit: 10
     labels:
-      - "dependencies"
-      - "github-actions"
+      - 'dependencies'
+      - 'github-actions'
     commit-message:
-      prefix: "ci"
-      include: "scope"
+      prefix: 'ci'
+      include: 'scope'
 
     cooldown:
       default-days: 7
@@ -56,5 +56,5 @@ updates:
       github-actions-minor-patch:
         applies-to: version-updates
         update-types:
-          - "minor"
-          - "patch"
+          - 'minor'
+          - 'patch'
