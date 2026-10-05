@@ -242,7 +242,7 @@ Um plano por fase, escrito na hora de cada fase.
 
 ## 10. Passos do dono
 
-1. Criar no npm as organizações `pilutech` e `piluvitu` (pacote público é grátis) e ligar o 2FA.
+1. npm (2026-10-05): `@piluvitu` é o escopo do usuário `piluvitu`, sem organização; a organização `pilutech` foi criada para o escopo `@pilutech`. Falta ligar o 2FA, se ainda não estiver. Todo pacote leva `"publishConfig": { "access": "public" }`: com escopo, o padrão é privado (pago).
 2. Fazer a primeira publicação de cada pacote com um token no env local, quando o plano chegar lá, e depois configurar o trusted publishing no npmjs.com.
 3. Dar o OK para criar `PiluVitu/Botai` e para religar o projeto `botai-site` da Vercel.
 4. Cadastrar os secrets do environment `lojas-botai` no repo novo.
@@ -254,7 +254,7 @@ PyPI e outros pacotes por linguagem, assinatura de código, versão mobile, plug
 
 ## 12. Riscos e pontos a confirmar no plano
 
-- O escopo `@pilutech` no npm não foi confirmado como livre.
+- Os escopos `@pilutech` (organização) e `@piluvitu` (usuário) existem segundo o dono; ainda não há pacote publicado em nenhum dos dois.
 - Nomes e versões mínimas das configurações do pnpm em 5.3 e a sintaxe do `cooldown` do Dependabot.
 - Ferramenta de build do core e do ui (`tsc` com extensões nos imports, ou um bundler).
 - O `@piluvitu/ui` publicado precisa funcionar nos três consumidores do Botaí (WXT/Vite e Next) com o `@source` em `node_modules`.
