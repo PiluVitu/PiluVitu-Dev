@@ -245,6 +245,6 @@ export const DUVIDAS: readonly Duvida[] = [
   {
     pergunta: 'A PiluTech ainda faz manutenção de computadores e impressoras?',
     resposta:
-      'Não. A PiluTech atende apenas aplicativos, infraestrutura e desenvolvimento de software.',
+      'Não. A PiluTech atende apenas infraestrutura, IA, aplicativos e desenvolvimento de software.',
   },
 ]

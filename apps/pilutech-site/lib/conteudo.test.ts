@@ -166,6 +166,16 @@ describe('regras da marca (marca-CLAUDE.md)', () => {
     expect(mencoes[0].resposta).toMatch(/^Não\./)
   })
 
+  // A resposta lista o que a PiluTech atende: sem a IA, contradiria o cartão 02 dos Serviços.
+  it('a dúvida dos computadores lista os serviços na ordem dos cartões, com a IA', () => {
+    const resposta = DUVIDAS.find((d) =>
+      /computador/i.test(d.pergunta),
+    )?.resposta
+    expect(resposta).toBe(
+      'Não. A PiluTech atende apenas infraestrutura, IA, aplicativos e desenvolvimento de software.',
+    )
+  })
+
   it('nenhum texto fixo diz "disponível"', () => {
     expect(TODOS_OS_TEXTOS).not.toMatch(/dispon[ií]vel/i)
   })
