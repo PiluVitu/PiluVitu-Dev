@@ -63,5 +63,9 @@ export default defineConfig([
       'jsx-a11y/role-supports-aria-props': 'warn',
     },
   },
-  globalIgnores(['node_modules/**']),
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  globalIgnores(['node_modules/**', 'dist/**']),
 ])
