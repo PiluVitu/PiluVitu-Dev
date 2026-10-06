@@ -48,6 +48,7 @@ This section is about the **pnpm** side of the monorepo (`apps/web`, `apps/finan
 - **`blockExoticSubdeps: true`** (pnpm ≥ 10.26.0; já é o padrão no 11, aqui explícito): só dependência direta pode vir de git ou de tarball.
 - **Dependabot com `cooldown`** (`.github/dependabot.yml`): npm espera 7 dias (major 30, minor 7, patch 3) antes de propor versão nova; actions, 7. Vale só para version updates (os de segurança não esperam). A tabela de ecossistemas do GitHub lista o pnpm até a v10; com o pnpm 11 não está confirmado que ele atualiza o lockfile.
 - **Actions fixadas por SHA**, com a versão em comentário (`uses: actions/checkout@<sha> # v4.4.0`). Uma action nova entra já fixada (`git ls-remote --tags https://github.com/<dono>/<action> '<tag>^{}'`).
+- **`persist-credentials: false` em todo `actions/checkout`**: o token do job não fica gravado no `.git/config` para os passos seguintes. Nenhum workflow daqui faz `git push`/`fetch` depois do checkout (o `gh release create` do `botai-release.yml` usa o `GH_TOKEN` do env); um passo que precisar disso passa o token só nele.
 - **`pnpm dedupe --check`** roda no job `web` do CI.
 - **`pnpm audit --audit-level high` ainda não está no CI daqui:** em 2026-10-05 ele achava 17 advisories high (picomatch, fast-uri, undici, node-forge, braces, webpack-dev-middleware, @babel/plugin-transform-modules-systemjs e sharp), quase todos em ferramenta de build e de Storybook. Entra num PR de remediação que zere a lista. No repo do Botaí ele já é gate.
 - Run `pnpm audit` periodically and before releases.
