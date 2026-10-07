@@ -80,6 +80,8 @@ scripts/              conferir-rotas-estaticas.mjs (roda no build)
 
 ## Deploy (Vercel, projeto próprio)
 
+**Desde 2026-10-06 isto é histórico.** O projeto `botai-site` foi religado ao repo `PiluVitu/Botai` (Root Directory `site`; passo C9 de `docs/superpowers/plans/2026-10-05-botai-fase0-separacao.md`): push aqui não gera deploy, e mudança na landing vai para lá (`site/CLAUDE.md`, "Deploy"). Esta pasta sai do monorepo na Parte D do mesmo plano.
+
 1. Projeto `botai-site` ligado ao repo, **Root Directory `apps/botai-site`**, framework Next.js, install e build padrão (`pnpm install` na raiz, `pnpm build`), Node 22.x. "Include files outside the root directory in the Build Step" ligado (o build lê `packages/*` e o YAML do `apps/web`).
 2. ⚠️ **"Skip deployments" (Root Directory) desligado:** a Vercel pula projeto de monorepo cujo código e dependências não mudaram, e o YAML do CMS mora no `apps/web`, que não é dependência deste pacote: publicar uma loja pelo `/admin/pilulabs` não rebuildaria a landing. Quem filtra é o `ignoreCommand` do `vercel.json` (roda na Root Directory; `exit 0` cancela), que vigia o app, `packages/ui`, `packages/tools`, a entrada do Botaí no CMS, os ícones da extensão (`apps/botai/public/icon`, de onde sai o `/favicon.ico`) e os arquivos de install e build.
 3. Domínio `botai.pilutech.com.br`: um domínio só fica num projeto, então, se ele estiver no projeto do `apps/web` (o README antigo do Botaí mandava pôr lá), tire-o de lá primeiro (`vercel domains inspect botai.pilutech.com.br` diz onde está). Depois, adicione-o ao `botai-site`; na Cloudflare, o `CNAME botai` com o valor que a Vercel mostrar, em **DNS only** (passo do dono).

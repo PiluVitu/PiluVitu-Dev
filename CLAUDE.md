@@ -169,6 +169,18 @@ Todo teste e story fica no mesmo diretório do arquivo fonte. Jamais em `stories
 
 E2E files use `.e2e.ts` extension and live next to the route they test (e.g., `app/(site)/tasks/kanban.e2e.ts`).
 
+## Testes de carga e concorrência (lei do projeto)
+
+A máquina de dev é um MacBook Air M4 com **24 GB e 10 núcleos**, e roda workflows de subagentes sem supervisão. Em 2026-10-06 um stress test de subagente subiu ~2.400 `node` ao mesmo tempo (~130 MB cada) e o Mac travou até ser desligado no botão.
+
+Todo teste que dispara processos em paralelo (stress de pipe/`EPIPE`, fuzz, benchmark, `for … &`) segue três limites:
+
+1. **No máximo 10 processos vivos ao mesmo tempo, somando tudo.** Os `&` do shell multiplicam o paralelismo de dentro do script. Use um pool de verdade (N workers puxando de uma fila). `Promise.all(Array.from({ length: 8 }, f))` dentro de um loop **não** é lote: `Array.from` chama `f` na hora, e os N filhos sobem juntos.
+2. **Meça um processo antes de escalar.** O "peak memory footprint" de `/usr/bin/time -l <cmd>`, vezes a concorrência, tem que ficar abaixo de ~12 GB (metade da RAM).
+3. **Escale em degraus de ×2**, conferindo a memória (`memory_pressure`) a cada degrau. Nunca ×12 de uma vez.
+
+⚠️ **O macOS não se defende sozinho:** sem memória, o kernel só suspende **apps** (Chrome, Warp, Terminal…). Um processo de CLI filho de terminal nunca é suspenso, então a máquina para tudo menos o culpado e trava.
+
 ## Environment variables
 
 Fontes separadas por frente — a lista completa de cada uma vive no `CLAUDE.md` do app:
@@ -216,5 +228,5 @@ Fontes separadas por frente — a lista completa de cada uma vive no `CLAUDE.md`
 - **Node version:** 22.x
 - **Env vars:** copiar de `apps/web/.env.example` (todas as `NEXT_PUBLIC_*`, `BLOG_REPO_*`, `KEYSTATIC_GITHUB_REPO`, `KEYSTATIC_GITHUB_CLIENT_ID`, `KEYSTATIC_GITHUB_CLIENT_SECRET`, `ADMIN_TOKEN_SECRET`; apenas `KEYSTATIC_SECRET` e `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` foram removidos no slice ⑤)
 - **NEXT_PUBLIC_API_URL:** apontar pra URL do Cloud Run depois do primeiro deploy
-- **Landing do Botaí:** projeto à parte, Root Directory `apps/botai-site`, com o "Skip deployments" desligado e o `ignoreCommand` do `apps/botai-site/vercel.json` (ver "Deploy" em `apps/botai-site/CLAUDE.md`).
+- **Landing do Botaí:** desde 2026-10-06 o projeto `botai-site` publica a partir do repo `PiluVitu/Botai` (Root Directory `site`; passo C9 do plano da fase 0). O `apps/botai-site` daqui não gera mais deploy e sai do monorepo na Parte D desse plano.
 - **Landing da PiluTech:** projeto à parte (`pilutech-site`), Root Directory `apps/pilutech-site`, com o "Skip deployments" desligado e o `ignoreCommand` do `apps/pilutech-site/vercel.json`; domínios `pilutech.com.br` e `www` (308 para o apex), que saíram do projeto do `apps/web` (ver "Deploy" em `apps/pilutech-site/CLAUDE.md`).
