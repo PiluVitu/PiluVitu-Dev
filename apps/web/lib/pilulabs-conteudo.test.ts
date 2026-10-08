@@ -43,9 +43,10 @@ describe('catálogo em content/pilulabs', () => {
     })
   })
 
-  // O card daqui, a landing do Botaí e o selo na landing da PiluTech leem estas
-  // URLs. Chrome desde 2026-10-05 e Firefox desde 2026-10-08 (AMO: status
-  // public, 1.0.0); Edge e Opera entram quando aprovarem.
+  // O card daqui e o selo na landing da PiluTech leem estas URLs; a landing do
+  // Botaí (repo PiluVitu/Botai) lê as mesmas do site/lojas.json de lá. Chrome
+  // desde 2026-10-05 e Firefox desde 2026-10-08 (AMO: status public, 1.0.0);
+  // Edge e Opera entram quando aprovarem.
   it('o Botaí está publicado na Chrome Web Store e na Firefox Add-ons; Edge e Opera ainda não', () => {
     expect(lojasPublicadas(urlsDasLojas(doSlug('botai')))).toEqual([
       {
