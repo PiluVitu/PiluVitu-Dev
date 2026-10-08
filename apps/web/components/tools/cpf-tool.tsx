@@ -5,7 +5,7 @@ import { Button } from '@piluvitu/ui/button'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { CopyButton } from './copy-button'
-import { gerarCPF, validarCPF } from '@piluvitu/tools/cpf'
+import { gerarCPF, validarCPF } from '@pilutech/botai-core/cpf'
 
 export function CpfTool() {
   const [generated, setGenerated] = useState('')

@@ -15,7 +15,7 @@ const BOTAI: PiluLabsEntry = {
   logo: '/pilulabs/botai/icone-128.png',
   sigla: '',
   site: 'https://botai.pilutech.com.br',
-  repo: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
+  repo: 'https://github.com/PiluVitu/Botai',
   chromeUrl: '',
   firefoxUrl: '',
   edgeUrl: '',

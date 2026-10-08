@@ -108,19 +108,6 @@ import.sql
 *.db-wal
 *.db-shm
 
-# Botaí (extensão WXT): sem isto o Tailwind varre builds antigos e o gate do @source passa sem medir nada
-apps/botai/.output/
-apps/botai/.wxt/
-apps/botai/storybook-static/
-apps/botai/playwright-report/
-apps/botai/web-ext.config.ts
-# Credenciais locais do `wxt submit`, que o CLI lê sozinho: nunca versionar
-.env.submit
-
-# Landing do Botaí: o storybook-static traz CSS compilado, e o Tailwind o varreria (o gate passaria sem medir nada)
-apps/botai-site/storybook-static/
-apps/botai-site/playwright-report/
-
-# Landing da PiluTech: mesmo motivo
+# Landing da PiluTech: o storybook-static traz CSS compilado, e o Tailwind o varreria (o gate passaria sem medir nada)
 apps/pilutech-site/storybook-static/
 apps/pilutech-site/playwright-report/

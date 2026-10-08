@@ -156,7 +156,7 @@ A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** 
 
 ### Tools dashboard (`/tools`)
 
-> A **lógica pura** (algoritmos CPF/CNPJ/Base64/JWT/JSON/UUID + PRNG/entropia/roleta) mora em `packages/tools` (`@piluvitu/tools`) — ver `packages/tools/CLAUDE.md`. Aqui é só a UI React e o registro.
+> A **lógica pura** mora em `packages/tools` (`@piluvitu/tools`: Base64, JWT, JSON, UUID, QR e PRNG/entropia/roleta; ver `packages/tools/CLAUDE.md`), menos CPF e CNPJ, que vêm do `@pilutech/botai-core` (npm, o motor do Botaí, repo `PiluVitu/Botai`) com versão exata: o `package-json.test.ts` reprova `^` e `~`. Aqui é só a UI React e o registro.
 
 - **Visual (DS V2):** landing e páginas de ferramenta usam o DS V2 — `PageTopBar` (← voltar + toggle "Tema"), hero com linha de terminal `$ ~/tools`, `SectionHeader` (label mono + contador + régua) por grupo, e `ToolCard`/`ToolPageShell` com ícone `bg-accent-soft text-primary`. O `PageTopBar` (`components/page-top-bar.tsx`) é compartilhado pelas sub-páginas (tools/posts/votação). O `ModeToggle` é uma pílula "Tema".
 - **Rota:** `app/(site)/tools/page.tsx` (landing) + `app/(site)/tools/[slug]/page.tsx` por ferramenta
@@ -185,13 +185,13 @@ Tudo o que o autor publica, produto PiluTech (Botaí, Sombraí) ou projeto (Live
 
 - **Specs:**
   - `docs/superpowers/specs/2026-10-01-pilulabs-v2-subdominios-design.md`: a v2, com a coleção única, a home e os subdomínios;
-  - `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6: a v1, só com o Botaí;
+  - `docs/superpowers/specs/2026-10-01-botai-multinavegador-design.md` §6 (no repo `PiluVitu/Botai`): a v1, só com o Botaí;
   - `docs/superpowers/specs/2026-10-02-pilutech-site-design.md` §5: a vitrine volta para o `piluvitu.com.br`, e o proxy dos subdomínios sai.
-- **Planos:** `docs/superpowers/plans/2026-10-01-pilulabs-v2.md`, `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md` e `docs/superpowers/plans/2026-10-02-pilutech-site.md` (Tarefa 8).
+- **Planos:** `docs/superpowers/plans/2026-10-01-pilulabs-v2.md`, `docs/superpowers/plans/2026-10-01-botai-fase2-pilulabs-site.md` (no repo `PiluVitu/Botai`) e `docs/superpowers/plans/2026-10-02-pilutech-site.md` (Tarefa 8).
 
 **Rota:** `/pilulabs`, a vitrine: todos os listados, agrupados por tipo.
 
-O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing do `apps/botai-site` e `sombrai.pilutech.com.br` a do projeto do Sombraí, cada uma num projeto Vercel próprio; o link do card é o `site`. Os caminhos antigos do Botaí (`/pilulabs/botai` e `/pilulabs/botai/privacidade`) respondem 308 para a landing, com a query, pelos `redirects` do `next.config.mjs`.
+O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing do repo `PiluVitu/Botai` (pasta `site/`) e `sombrai.pilutech.com.br` a do projeto do Sombraí, cada uma num projeto Vercel próprio; o link do card é o `site`. Os caminhos antigos do Botaí (`/pilulabs/botai` e `/pilulabs/botai/privacidade`) respondem 308 para a landing, com a query, pelos `redirects` do `next.config.mjs`.
 
 - **Coleção `pilulabs` (`content/pilulabs/<slug>/index.yaml`), campos:**
   - `slug`: sem acento; é a pasta da rota própria (`/pilulabs/<slug>`);
@@ -207,16 +207,16 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   Leitura: `getPiluLabs()`, em `lib/site-content.ts`. Edição: `/admin/pilulabs`. As coleções `projects` e `produtos` saíram.
 
 - ⚠️ **Um YAML que o reader do Keystatic recusa derruba o build.**
-  - **A armadilha:** o site lê pelo reader (`getPiluLabs`), mais estrito que o `normalizarItem`. `tipo` fora das opções, booleano em texto (`listado: "true"`), `order` que não é inteiro, texto em número e `data: ''` lançam erro. Como o `.all()` faz `Promise.all`, um item derruba a coleção inteira: home, `/pilulabs`, `/api/admin/stats` e o `next build`. O `apps/botai-site` lê o mesmo `content/pilulabs/botai/index.yaml` no build dele (só as 4 URLs de loja, pelo `yaml`, sem o reader). A data inexistente sem aspas (`2026-02-30`) ele não recusa: o js-yaml a rola para `2026-03-02`. A chave sem valor ele lê como ausente.
+  - **A armadilha:** o site lê pelo reader (`getPiluLabs`), mais estrito que o `normalizarItem`. `tipo` fora das opções, booleano em texto (`listado: "true"`), `order` que não é inteiro, texto em número e `data: ''` lançam erro. Como o `.all()` faz `Promise.all`, um item derruba a coleção inteira: home, `/pilulabs`, `/api/admin/stats` e o `next build`. O `apps/pilutech-site` lê o mesmo `content/pilulabs/botai/index.yaml` no build dele (só as 4 URLs de loja, pelo `yaml`, sem o reader). A data inexistente sem aspas (`2026-02-30`) ele não recusa: o js-yaml a rola para `2026-03-02`. A chave sem valor ele lê como ausente.
   - **No admin:** o `pilulabsSchema` é mais estrito ainda (`https:`, host da loja, data real, chave sem valor recusada), e o `GET /api/admin/content/pilulabs` valida dentro de um `Promise.all`: um item recusado vira 502 na lista inteira, e o reorder também falha.
   - **Por que `data` é `fields.date`:** o `yaml` do admin grava `data: 2026-10-01` sem aspas, e o `js-yaml` do reader lê isso como `Date`, que um `fields.text` recusaria.
   - **A defesa:**
     - o registry do admin tem `omitirSeVazio: ['data']`, e o `serializeEntry` apaga a chave vazia;
     - o `lib/pilulabs-conteudo.test.ts` reprova o YAML que o reader recusa (`camposInvalidosNoYaml`, que espelha o parse de cada campo do `keystatic.config.ts`) e o que o `pilulabsSchema` recusa. Os dois leitores precisam das travas porque o Jest e os E2E leem pelo `yaml` + `normalizarItem`, tolerantes, e ficariam verdes.
 - **Regras (lógica pura, testada no Jest):**
-  - `@piluvitu/tools/pilulabs` (`packages/tools/src/pilulabs.ts`), sem `node:fs`, importável no cliente e compartilhado com o `apps/botai-site`:
+  - `@piluvitu/tools/pilulabs` (`packages/tools/src/pilulabs.ts`), sem `node:fs`, importável no cliente e compartilhado com o `apps/pilutech-site` (a landing do Botaí, no repo `PiluVitu/Botai`, tem uma cópia das regras de loja):
     - `Loja`, `LOJAS` e `ehUrlDaLoja`: só aceita `https:` no host exato da loja;
-    - `lojasPublicadas`, `fase` e `ATALHOS` (derivado de `TECLAS_DO_MANIFESTO`, o `suggested_key` do Botaí);
+    - `lojasPublicadas` e `fase` (o atalho do Botaí, `ATALHOS`, saiu para o `@pilutech/botai-core/atalhos`, no repo do Botaí);
     - `ehHttps`, `TipoItem` e `TIPOS` (na ordem da vitrine) e `ehDataValida`.
   - `lib/pilulabs.ts`:
     - `normalizarItem`;
@@ -231,7 +231,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - a seção PiluLabs (`components/secao-pilulabs.tsx`) mostra até 4 cards (`selecionarParaHome` → `itemParaProject` → `ProjectCard`) e a contagem dos listados;
   - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `/pilulabs`;
   - o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado.
-- **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` do `apps/botai-site` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`. A variável saiu da Production do projeto antes da troca dos domínios (passo 5 do "Deploy" em `apps/pilutech-site/CLAUDE.md`: com ela ligada, o 308 de `/pilulabs` levaria à landing nova); se voltar, não muda nada (o E2E da vitrine e da home roda também com ela no ambiente).
+- **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` da landing do repo `PiluVitu/Botai` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`. A variável saiu da Production do projeto antes da troca dos domínios (passo 5 do "Deploy" em `apps/pilutech-site/CLAUDE.md`: com ela ligada, o 308 de `/pilulabs` levaria à landing nova); se voltar, não muda nada (o E2E da vitrine e da home roda também com ela no ambiente).
 - **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
   - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
   - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque só o item com `paginaPropria` leva até ela;
@@ -249,7 +249,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     2. o logo em `public/pilulabs/<slug>/`;
     3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/` se for extensão;
     4. `listado: true` quando a página estiver pronta.
-  - **produto com landing própria** (o Botaí, no `apps/botai-site`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing.
+  - **produto com landing própria** (o Botaí, no repo `PiluVitu/Botai`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing.
 - **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs` (o card daqui e o selo do Botaí na landing da PiluTech, que relê o YAML no build; ver o `ignoreCommand` do `vercel.json` dela) **e** por PR no `site/lojas.json` do repo `PiluVitu/Botai` (a landing do Botaí, que publica de lá desde 2026-10-06). Publicadas: Chrome Web Store (desde 2026-10-05) e Firefox Add-ons (desde 2026-10-08). Edge e Opera entram quando aprovarem.
 - ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
   - **Por quê:** `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: o ícone some da imagem OG, sem erro nenhum.
@@ -262,7 +262,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     As três linhas têm de terminar em `false`. A chave das imagens tem sufixo de hash (`/pilulabs/opengraph-image-<hash>`), porque o segmento está dentro do grupo `(site)`.
 
 - **Ícones e capturas:**
-  - `public/pilulabs/botai/icone-128.png` (o logo do card) é gerado por `make capturas-botai`, no `apps/botai`, e versionado. Não edite à mão; as capturas do Botaí moram no `apps/botai-site/public/capturas/`.
+  - `public/pilulabs/botai/icone-128.png` (o logo do card) é uma cópia fixa do ícone 128 do Botaí (repo `PiluVitu/Botai`, `extensao/loja/imagens/icone-128.png`). Se o ícone mudar lá, refaça a cópia aqui.
   - `public/pilulabs/sombrai/icone.png` é uma cópia de `Sombrai/site/src/assets/app-icon.png` (repo `PiluVitu/Sombrai`, privado e só lido daqui), reduzida com `sips -Z 256`. Se o ícone mudar lá, refaça a cópia.
 
 - ⚠️ **SEO: `openGraph` é substituído inteiro, e a imagem é por segmento.**
@@ -272,7 +272,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - **O que o E2E confere:** o `og:title` e que cada `og:image`/`twitter:image` responde PNG.
 - **JSON-LD (`lib/pilulabs-json-ld.ts`, com o componente `<JsonLd>`):**
   - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
-  - `url` é `/pilulabs` no site canônico, e o `publisher` é a PiluTech no site dela (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/pilutech-site` e do `apps/botai-site`);
+  - `url` é `/pilulabs` no site canônico, e o `publisher` é a PiluTech no site dela (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/pilutech-site` e da landing do Botaí);
   - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
 - **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
   - `StatusProduto`;

@@ -1,5 +1,3 @@
-export * from './cpf'
-export * from './cnpj'
 export * from './base64'
 export * from './jwt-decode'
 export * from './json-format'

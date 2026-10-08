@@ -3,8 +3,6 @@ packages:
   - 'apps/financas'
   - 'apps/financas/web'
   - 'apps/ramielle'
-  - 'apps/botai'
-  - 'apps/botai-site'
   - 'apps/pilutech-site'
   - 'packages/tools'
   - 'packages/ui'
