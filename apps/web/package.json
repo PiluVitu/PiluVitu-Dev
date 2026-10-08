@@ -40,6 +40,7 @@
     "@keystatic/core": "^0.5.48",
     "@markdoc/markdoc": "^0.5.6",
     "@octokit/rest": "^22.0.1",
+    "@pilutech/botai-core": "0.4.1",
     "@piluvitu/tools": "workspace:*",
     "@piluvitu/ui": "workspace:*",
     "@radix-ui/react-aspect-ratio": "^1.1.8",

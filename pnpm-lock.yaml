@@ -522,6 +522,9 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
+      '@pilutech/botai-core':
+        specifier: 0.4.1
+        version: 0.4.1
       '@piluvitu/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -3153,6 +3156,10 @@ packages:
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
+
+  '@pilutech/botai-core@0.4.1':
+    resolution: {integrity: sha512-5ao+aNeVgfwXZg4y1d6iWV28zyds83RY4WNMi/95EghfxFQhLMSPnub7Vl9ExTOeHZYO8+bkmrvN4yWw/nWiOQ==}
+    hasBin: true
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -13768,6 +13775,8 @@ snapshots:
   '@opentelemetry/semantic-conventions@1.43.0': {}
 
   '@oxc-project/types@0.139.0': {}
+
+  '@pilutech/botai-core@0.4.1': {}
 
   '@pinojs/redact@0.4.0': {}
 

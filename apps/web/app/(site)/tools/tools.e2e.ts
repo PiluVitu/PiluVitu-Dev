@@ -84,6 +84,36 @@ test.describe('CPF tool', () => {
   })
 })
 
+test.describe('CNPJ tool', () => {
+  test('gera CNPJ no formato 00.000.000/0000-00', async ({ page }) => {
+    await page.goto('/tools/cnpj')
+    await page.click('[data-testid="cnpj-generate"]')
+    const result = page.locator('[data-testid="cnpj-result"]')
+    await expect(result).toBeVisible()
+    expect(await result.textContent()).toMatch(
+      /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/,
+    )
+  })
+
+  test('valida CNPJ gerado como válido', async ({ page }) => {
+    await page.goto('/tools/cnpj')
+    await page.click('[data-testid="cnpj-generate"]')
+    const generated = await page
+      .locator('[data-testid="cnpj-result"]')
+      .textContent()
+    await page.fill('[data-testid="cnpj-validate-input"]', generated!)
+    await page.click('[data-testid="cnpj-validate-btn"]')
+    await expect(page.locator('[data-testid="cnpj-valid"]')).toBeVisible()
+  })
+
+  test('rejeita CNPJ inválido', async ({ page }) => {
+    await page.goto('/tools/cnpj')
+    await page.fill('[data-testid="cnpj-validate-input"]', '00.000.000/0000-00')
+    await page.click('[data-testid="cnpj-validate-btn"]')
+    await expect(page.locator('[data-testid="cnpj-invalid"]')).toBeVisible()
+  })
+})
+
 test.describe('JSON tool', () => {
   test('formata JSON válido', async ({ page }) => {
     await page.goto('/tools/json')
