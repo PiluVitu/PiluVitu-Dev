@@ -43,3 +43,6 @@ trustPolicyExclude:
   - 'semver@6.3.1'
 # Só dependência direta pode vir de git ou de tarball (pnpm ≥ 10.26.0).
 blockExoticSubdeps: true
+# Sufixo de peer só com nome@versão (pnpm ≥ 10.33.0): com o sufixo aninhado, o ciclo eslint-plugin-import <->
+# eslint-import-resolver-typescript mudava de notação conforme a ordem da rede, e o dedupe --check falhava às vezes.
+dedupePeers: true
