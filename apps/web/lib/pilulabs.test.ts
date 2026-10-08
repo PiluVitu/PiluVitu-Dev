@@ -51,8 +51,7 @@ describe('metadataDaPagina', () => {
   })
 })
 
-const REPO_BOTAI =
-  'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai'
+const REPO_BOTAI = 'https://github.com/PiluVitu/Botai'
 
 function item(parcial: Partial<ItemPiluLabs> = {}): ItemPiluLabs {
   return {

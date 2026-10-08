@@ -4,7 +4,7 @@ const SITE = 'https://piluvitu.com.br'
 
 describe('jsonLdVitrine', () => {
   // A vitrine mora no piluvitu.com.br; quem publica é a PiluTech, no site dela, com o
-  // mesmo @id da Organization do apps/pilutech-site e do apps/botai-site.
+  // mesmo @id da Organization do apps/pilutech-site e da landing do Botaí.
   it('é uma CollectionPage em /pilulabs, publicada pela PiluTech', () => {
     expect(jsonLdVitrine(SITE, [])).toEqual({
       '@context': CONTEXTO_SCHEMA,

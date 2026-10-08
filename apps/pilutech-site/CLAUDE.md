@@ -3,7 +3,7 @@
 Landing da PiluTech em `https://pilutech.com.br`: uma página (`/`) com os serviços, o processo, os produtos próprios, as tecnologias, os planos de manutenção, as dúvidas e o contato. Next 16 (App Router), React 19, TypeScript strict, Tailwind CSS 4 e `@piluvitu/ui`. O Claude Code carrega este arquivo junto com o `CLAUDE.md` da raiz.
 
 - **Spec:** `docs/superpowers/specs/2026-10-02-pilutech-site-design.md`. **Plano:** `docs/superpowers/plans/2026-10-02-pilutech-site.md`. **Design (fonte visual):** `docs/superpowers/design/2026-10-02-pilutech-landing/` (`PiluTech Landing Page.dc.html`, `PiluTechMark.dc.html`, `marca-CLAUDE.md`, `desktop.png`, `mobile.png`).
-- **Molde:** o `apps/botai-site` (mesma estrutura, gate, conferência de rotas, testes e deploy).
+- **Molde:** a landing do Botaí (hoje a pasta `site/` do repo `PiluVitu/Botai`) (mesma estrutura, gate, conferência de rotas, testes e deploy).
 - **Marca (`marca-CLAUDE.md`):** texto factual, sem slogan e sem emoji; nunca anunciar manutenção de computadores e impressoras (a única menção é a dúvida que responde "Não."; `lib/conteudo.test.ts` trava). Logo único: o símbolo de blocos, variante `1a`.
 
 ## Estrutura
@@ -36,7 +36,7 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 - **Dúvidas:** oito, com as três de IA ("Meus dados ficam seguros com IA?", "Quanto custa usar IA no dia a dia?" e "Como funciona o treino de um modelo com os dados da empresa?", esta pedida pelo dono em 2026-10-05) logo depois da do orçamento de infraestrutura. Acordeão da WAI-ARIA (`button` dentro de `h3`, `aria-expanded`, `aria-controls`), a primeira aberta, uma por vez. As oito respostas saem no HTML e as fechadas levam `hidden`: o Google não clica, e sem JavaScript a página continua legível. Ids fixos (`duvida-<n>-pergunta` e `-resposta`).
 - **Rodapé:** o ano é o do build (`new Date().getFullYear()` na página estática).
 - **Fonte mono sem o fallback automático do `next/font`** (`adjustFontFallback: false`, `fallback: ['ui-monospace', 'monospace']` no `app/layout.tsx`). O `→` dos serviços e dos projetos (U+2192) fica fora do subset `latin` da JetBrains Mono; o fallback automático é o Arial com `size-adjust` de 134,59%, que desenhava a seta com 1,35em, mais que o dobro da do design (que cai na mono do sistema, ~0,6em). O E2E "as setas … têm a largura de uma célula mono" mede.
-- ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo layout e pelo Storybook), como no `apps/botai-site`: injetado em runtime, fora de camada, ele venceria o `size-*` dos ícones.
+- ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo layout e pelo Storybook), como na landing do Botaí: injetado em runtime, fora de camada, ele venceria o `size-*` dos ícones.
 
 ## Marca e imagens geradas
 
@@ -52,7 +52,7 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 - **Textos (`lib/seo.ts`):** título `PiluTech · Infraestrutura, IA e desenvolvimento de software` (59 caracteres; a spec pede até 60) e descrição de 151 caracteres com o que a PiluTech faz, na ordem dos serviços, e onde. Com "criação e implementação de IA personalizada" o texto passava de 160: saíram o "em nuvem" depois de "Infraestrutura" e o "desenvolvimento de" antes de "aplicativos e sistemas". Os limites ficam no teste.
 - **Open Graph e Twitter:** `metadataDaPagina` repete `type`, `locale`, `siteName`, `url`, `title` e `description` (o Next substitui o `openGraph` inteiro) e não declara imagem: ela vem de `opengraph-image.tsx`/`twitter-image.tsx`.
 - **JSON-LD (`lib/json-ld.ts`):**
-  - a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']`, com `@id` `https://pilutech.com.br/#organizacao` (o mesmo do `apps/botai-site` e do `publisher` da vitrine do `apps/web`): logo (`/icon`), e-mail, telefone, `contactPoint` comercial, Brasil como `areaServed`, endereço só com Teresina, PI e BR, os 4 serviços em `hasOfferCatalog` (na ordem da página, com o nome completo e o texto de cada cartão), sem preço. Dois nós ligados por `parentOrganization` diriam que a empresa é filha de si mesma; o Google pede o subtipo mais específico de `Organization`, e o schema.org marca o `ProfessionalService` genérico como descontinuado (trocar por `LocalBusiness` é decisão do dono);
+  - a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']`, com `@id` `https://pilutech.com.br/#organizacao` (o mesmo da landing do Botaí e do `publisher` da vitrine do `apps/web`): logo (`/icon`), e-mail, telefone, `contactPoint` comercial, Brasil como `areaServed`, endereço só com Teresina, PI e BR, os 4 serviços em `hasOfferCatalog` (na ordem da página, com o nome completo e o texto de cada cartão), sem preço. Dois nós ligados por `parentOrganization` diriam que a empresa é filha de si mesma; o Google pede o subtipo mais específico de `Organization`, e o schema.org marca o `ProfessionalService` genérico como descontinuado (trocar por `LocalBusiness` é decisão do dono);
   - `WebSite`;
   - sem `FAQPage` (o Google não mostra mais o rich result de FAQ, removido em maio de 2026) e sem nota. `serializarJsonLd` troca `<` por `\u003c`.
 - **Rotas técnicas:** `sitemap.xml` (só `/`), `robots.txt` (libera tudo e aponta o sitemap), `manifest.webmanifest`, `theme-color` Noite (`#090b11`, o `--background` do `.dark`). `GOOGLE_SITE_VERIFICATION` vira `verification.google`; cadastrar o domínio no Search Console é passo do dono.
@@ -61,7 +61,7 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 ## Build
 
 - `pnpm build` = `next build` + o gate do `@source` (`scripts/check-tailwind-source.mjs .next`; a classe que ele procura está em `SENTINEL_SELECTOR`, no topo do script) + `scripts/conferir-rotas-estaticas.mjs`, que falha se uma rota de `ROTAS` (`/`, `/icon`, `/apple-icon`, `/favicon.ico`, `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`) sumir do `prerender-manifest.json` ou ganhar `revalidate`. Rota nova entra em `ROTAS`.
-- `@source not '../*.md'`, e o `storybook-static/` no `.gitignore` da raiz, pelo mesmo motivo do `apps/botai-site`: sem eles, o Tailwind varreria a documentação e CSS já compilado, e o gate aprovaria `@source` quebrado.
+- `@source not '../*.md'`, e o `storybook-static/` no `.gitignore` da raiz, pelo mesmo motivo da landing do Botaí: sem eles, o Tailwind varreria a documentação e CSS já compilado, e o gate aprovaria `@source` quebrado.
 
 ## Testes
 
@@ -73,8 +73,8 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 | Script do build                              | `node --test`                                | `scripts/*.test.mjs`                           |
 | Página, SEO, teclado, sem JS, 320 px, axe    | Playwright no build de produção (porta 3021) | `app/*.e2e.ts`; `make test-e2e-pilutech-site`  |
 
-- O E2E builda e sobe `next start`; rode com `CI=1` e a 3021 livre. Ele não roda no CI (como o do `apps/botai-site`).
-- **Duas passadas no `test:e2e`**, como no `apps/botai-site`: primeiro o `playwright.lojas.config.ts`, que builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` (Firefox publicado, Chrome com link de outra loja, Edge em `http:`) e roda `app/lojas-publicadas.e2e.ts` (o selo do Botaí "disponível", o do Sombraí "em breve"); depois o `playwright.config.ts`, que builda com o CMS real e roda o resto. O CMS real tem a Chrome Web Store (desde 2026-10-05) e a Firefox Add-ons (desde 2026-10-08) publicadas, Edge e Opera ainda não (o `lib/pilulabs-conteudo.test.ts` do `apps/web` trava), e o selo do Botaí diz "disponível" nas duas passadas; só a primeira exercita link de outra loja e em `http:`. A ordem deixa o `.next` com o CMS real.
+- O E2E builda e sobe `next start`; rode com `CI=1` e a 3021 livre. Ele não roda no CI (como o da landing do Botaí).
+- **Duas passadas no `test:e2e`**, como na landing do Botaí: primeiro o `playwright.lojas.config.ts`, que builda com `BOTAI_CMS_ITEM=app/lojas-publicadas.yaml` (Firefox publicado, Chrome com link de outra loja, Edge em `http:`) e roda `app/lojas-publicadas.e2e.ts` (o selo do Botaí "disponível", o do Sombraí "em breve"); depois o `playwright.config.ts`, que builda com o CMS real e roda o resto. O CMS real tem a Chrome Web Store (desde 2026-10-05) e a Firefox Add-ons (desde 2026-10-08) publicadas, Edge e Opera ainda não (o `lib/pilulabs-conteudo.test.ts` do `apps/web` trava), e o selo do Botaí diz "disponível" nas duas passadas; só a primeira exercita link de outra loja e em `http:`. A ordem deixa o `.next` com o CMS real.
 - Os E2E de cor (`getComputedStyle` de cada seção) e de foco (`boxShadow` depois do Tab) comparam com `rgbDoToken` (`lib/tokens-do-ds.ts`), que lê o `styles.css` do `@piluvitu/ui`: mudou a cor no design system, o esperado muda junto.
 - O teste de vazamento a 320 px confere cada elemento contra a área de conteúdo da própria seção: um vazamento no gutter não aumenta o `scrollWidth` da página. Se ele acusar, a correção é no componente.
 - ⚠️ O `next dev`/`next build` pode anexar a este arquivo um bloco de regras para agentes ou criar um `AGENTS.md`: confira `git status` antes de commitar.

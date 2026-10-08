@@ -34,7 +34,7 @@ describe('jsonLdDaHome', () => {
     expect(JSON.stringify(dados)).not.toContain('parentOrganization')
   })
 
-  // O mesmo @id que o apps/botai-site usa: os sites descrevem a mesma empresa.
+  // O mesmo @id que a landing do Botaí usa: os sites descrevem a mesma empresa.
   it('a PiluTech: logo, e-mail, telefone, contato comercial, Brasil inteiro e endereço só com cidade, UF e país', () => {
     expect(ID_DA_PILUTECH).toBe('https://pilutech.com.br/#organizacao')
     expect(LOGO_DA_PILUTECH).toBe('https://pilutech.com.br/icon')

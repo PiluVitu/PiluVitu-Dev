@@ -132,7 +132,7 @@ test.describe('/pilulabs', () => {
   })
 })
 
-// O Botaí tem landing própria (apps/botai-site). Review Focus 5: link antigo, com query, segue valendo.
+// O Botaí tem landing própria (repo PiluVitu/Botai). Review Focus 5: link antigo, com query, segue valendo.
 test.describe('o Botaí mora em botai.pilutech.com.br', () => {
   for (const [antiga, nova] of [
     [

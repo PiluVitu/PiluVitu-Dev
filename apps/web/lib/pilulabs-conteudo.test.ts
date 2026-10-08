@@ -24,7 +24,7 @@ function larguraDoPng(caminhoPublico: string): number {
 }
 
 describe('catálogo em content/pilulabs', () => {
-  it('o Botaí: extensão listada e em destaque, sem página aqui: o site é a landing do apps/botai-site', () => {
+  it('o Botaí: extensão listada e em destaque, sem página aqui: o site é a landing do repo PiluVitu/Botai', () => {
     expect(doSlug('botai')).toMatchObject({
       nome: 'Botaí',
       tipo: 'extensao',
@@ -34,7 +34,7 @@ describe('catálogo em content/pilulabs', () => {
       tags: ['Extensão', 'Formulários', 'QA', 'CPF', 'CEP'],
       logo: '/pilulabs/botai/icone-128.png',
       site: 'https://botai.pilutech.com.br',
-      repo: 'https://github.com/PiluVitu/PiluVitu-Dev/tree/main/apps/botai',
+      repo: 'https://github.com/PiluVitu/Botai',
       destaque: true,
       order: 0,
       data: '2026-10-01',
