@@ -237,7 +237,8 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - toda pasta de rota com `page.tsx` tenha item com `paginaPropria`, porque só o item com `paginaPropria` leva até ela;
   - todo listado tenha `descricao`, link e, se o `logo` for caminho, o arquivo em `public/`;
   - todo YAML abra no reader do Keystatic: `camposInvalidosNoYaml` vazio, o que inclui `data` ausente ou `AAAA-MM-DD` de um dia que existe;
-  - todo YAML passe no `pilulabsSchema` do admin.
+  - todo YAML passe no `pilulabsSchema` do admin;
+  - as lojas publicadas do Botaí (`lojasPublicadas`) sejam as de hoje: Chrome e Firefox. Publicou ou tirou uma loja pelo `/admin/pilulabs`? Mude o teste junto.
 
   Se mudar um campo no `keystatic.config.ts`, mude também a regra dele em `camposInvalidosNoYaml`.
 
@@ -249,7 +250,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     3. `app/(site)/pilulabs/<slug>/{page,opengraph-image,twitter-image}.tsx`, e o mesmo em `privacidade/` se for extensão;
     4. `listado: true` quando a página estiver pronta.
   - **produto com landing própria** (o Botaí, no `apps/botai-site`; o Sombraí): `paginaPropria: false` e o `site` na URL da landing.
-- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui, a landing do Botaí e o selo do Botaí na landing da PiluTech (as duas releem o YAML no build; ver o `ignoreCommand` dos `vercel.json` delas) mudam juntos. Edge e Opera entram quando aprovarem.
+- **Lançar o Botaí:** as URLs das lojas aprovadas entram pelo `/admin/pilulabs`; o card daqui, a landing do Botaí e o selo do Botaí na landing da PiluTech (as duas releem o YAML no build; ver o `ignoreCommand` dos `vercel.json` delas) mudam juntos. Publicadas: Chrome Web Store (desde 2026-10-05) e Firefox Add-ons (desde 2026-10-08). Edge e Opera entram quando aprovarem.
 - ⚠️ **As rotas PiluLabs, e as imagens OG delas, têm de continuar estáticas, sem `revalidate`.**
   - **Por quê:** `lib/og-pilulabs-image.tsx` lê o ícone de `public/` com `readFile`. Na Vercel, `public/` vai para a CDN e não para o lambda. Se a rota virar ISR ou dinâmica (um `revalidate`, um `fetch` com cache de tempo, `cookies()`), a revalidação roda sem a pasta: o ícone some da imagem OG, sem erro nenhum.
   - **Como conferir, depois do `next build`, em `apps/web`:**

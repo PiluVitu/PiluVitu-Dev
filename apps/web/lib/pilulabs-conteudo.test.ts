@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { lojasPublicadas, urlsDasLojas } from '@piluvitu/tools/pilulabs'
 import { pilulabsSchema } from './admin/content-schemas'
 import { itensListados, linkDoItem } from './pilulabs'
 import {
@@ -40,6 +41,22 @@ describe('catálogo em content/pilulabs', () => {
       listado: true,
       paginaPropria: false,
     })
+  })
+
+  // O card daqui, a landing do Botaí e o selo na landing da PiluTech leem estas
+  // URLs. Chrome desde 2026-10-05 e Firefox desde 2026-10-08 (AMO: status
+  // public, 1.0.0); Edge e Opera entram quando aprovarem.
+  it('o Botaí está publicado na Chrome Web Store e na Firefox Add-ons; Edge e Opera ainda não', () => {
+    expect(lojasPublicadas(urlsDasLojas(doSlug('botai')))).toEqual([
+      {
+        loja: 'chrome',
+        url: 'https://chromewebstore.google.com/detail/bota%C3%AD/mblmjomopainbcdjipkdmioglamdinnc',
+      },
+      {
+        loja: 'firefox',
+        url: 'https://addons.mozilla.org/pt-BR/firefox/addon/bota%C3%AD/',
+      },
+    ])
   })
 
   it('o Sombraí: app mobile com o site no subdomínio, sem repo', () => {
