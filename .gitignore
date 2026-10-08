@@ -19,6 +19,9 @@
 # production
 /build
 
+# @piluvitu/ui: o build só existe para o npm (pnpm pack)
+packages/ui/dist/
+
 # misc
 .DS_Store
 *.pem

@@ -1,9 +1,27 @@
 {
   "name": "@piluvitu/ui",
   "version": "0.1.0",
-  "private": true,
+  "description": "Design system da PiluTech: tokens do Tailwind CSS 4, cn() e componentes shadcn/ui (Radix) para React 19.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PiluVitu/PiluVitu-Dev.git",
+    "directory": "packages/ui"
+  },
+  "homepage": "https://github.com/PiluVitu/PiluVitu-Dev/tree/main/packages/ui#readme",
+  "keywords": [
+    "design-system",
+    "tailwindcss",
+    "shadcn",
+    "radix",
+    "react"
+  ],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "exports": {
     "./styles.css": "./src/styles.css",
     "./cn": "./src/cn.ts",
@@ -24,6 +42,84 @@
     "./sheet": "./src/sheet.tsx",
     "./skeleton": "./src/skeleton.tsx",
     "./textarea": "./src/textarea.tsx"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./styles.css": "./dist/styles.css",
+      "./cn": {
+        "types": "./dist/cn.d.ts",
+        "default": "./dist/cn.js"
+      },
+      "./ajuda": {
+        "types": "./dist/ajuda.d.ts",
+        "default": "./dist/ajuda.js"
+      },
+      "./aspect-ratio": {
+        "types": "./dist/aspect-ratio.d.ts",
+        "default": "./dist/aspect-ratio.js"
+      },
+      "./avatar": {
+        "types": "./dist/avatar.d.ts",
+        "default": "./dist/avatar.js"
+      },
+      "./badge": {
+        "types": "./dist/badge.d.ts",
+        "default": "./dist/badge.js"
+      },
+      "./button": {
+        "types": "./dist/button.d.ts",
+        "default": "./dist/button.js"
+      },
+      "./card": {
+        "types": "./dist/card.d.ts",
+        "default": "./dist/card.js"
+      },
+      "./chart": {
+        "types": "./dist/chart.d.ts",
+        "default": "./dist/chart.js"
+      },
+      "./command": {
+        "types": "./dist/command.d.ts",
+        "default": "./dist/command.js"
+      },
+      "./dialog": {
+        "types": "./dist/dialog.d.ts",
+        "default": "./dist/dialog.js"
+      },
+      "./dropdown-menu": {
+        "types": "./dist/dropdown-menu.d.ts",
+        "default": "./dist/dropdown-menu.js"
+      },
+      "./form": {
+        "types": "./dist/form.d.ts",
+        "default": "./dist/form.js"
+      },
+      "./input": {
+        "types": "./dist/input.d.ts",
+        "default": "./dist/input.js"
+      },
+      "./label": {
+        "types": "./dist/label.d.ts",
+        "default": "./dist/label.js"
+      },
+      "./separator": {
+        "types": "./dist/separator.d.ts",
+        "default": "./dist/separator.js"
+      },
+      "./sheet": {
+        "types": "./dist/sheet.d.ts",
+        "default": "./dist/sheet.js"
+      },
+      "./skeleton": {
+        "types": "./dist/skeleton.d.ts",
+        "default": "./dist/skeleton.js"
+      },
+      "./textarea": {
+        "types": "./dist/textarea.d.ts",
+        "default": "./dist/textarea.js"
+      }
+    }
   },
   "peerDependencies": {
     "react": "^19.2.4"
@@ -67,8 +163,10 @@
     "typescript-eslint": "^8.57.1"
   },
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/extensoes.mjs dist && cp src/styles.css dist/styles.css",
+    "prepack": "pnpm run build",
     "lint": "eslint .",
-    "test": "jest",
+    "test": "jest && node --test scripts/*.test.mjs",
     "test:watch": "jest --watch"
   }
 }

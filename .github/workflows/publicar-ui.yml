@@ -1,0 +1,106 @@
+name: Publicar @piluvitu/ui
+
+# A tag ui-v<versão> sai na main, depois do merge do PR que sobe a versão em packages/ui/package.json.
+on:
+  push:
+    tags: ['ui-v*']
+
+concurrency:
+  group: publicar-ui-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pacote:
+    name: Verificação + pacote
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Versão (packages/ui/package.json)
+        id: versao
+        run: echo "versao=$(node -p "require('./packages/ui/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Tag = ui-v<versão>, num commit da main
+        env:
+          VERSAO: ${{ steps.versao.outputs.versao }}
+        run: |
+          if [ "$GITHUB_REF_NAME" != "ui-v$VERSAO" ]; then
+            echo "::error::A tag $GITHUB_REF_NAME não bate com a versão de packages/ui/package.json (esperado ui-v$VERSAO)."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA^{commit}" origin/main; then
+            echo "::error::O commit da tag $GITHUB_REF_NAME não está na main."
+            exit 1
+          fi
+
+      - name: Lint
+        run: pnpm --filter @piluvitu/ui run lint
+
+      - name: Test (jest + build + conferência do pacote)
+        run: pnpm --filter @piluvitu/ui run test
+
+      - name: Pacote (o pnpm pack aplica o publishConfig)
+        run: pnpm --filter @piluvitu/ui pack --pack-destination "$RUNNER_TEMP/pacote"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pacote-ui
+          path: ${{ runner.temp }}/pacote/
+          if-no-files-found: error
+          retention-days: 30
+
+  publicar:
+    name: npm (trusted publishing, com proveniência)
+    needs: pacote
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pacote-ui
+          path: pacote
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.14.0'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: npm ≥ 11.5.1 (antes disso não há trusted publishing)
+        run: |
+          versao=$(npm --version)
+          if ! node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$versao"; then
+            echo "::error::npm $versao: o trusted publishing pede 11.5.1 ou mais novo."
+            exit 1
+          fi
+
+      - name: Extrair o tarball
+        env:
+          VERSAO: ${{ needs.pacote.outputs.versao }}
+        run: tar -xzf "pacote/piluvitu-ui-$VERSAO.tgz" -C pacote
+
+      # O ./ não sai: sem ele, o npm lê "pacote/package" como o repositório GitHub pacote/package.
+      - name: Publicar
+        run: npm publish ./pacote/package --access public --provenance
