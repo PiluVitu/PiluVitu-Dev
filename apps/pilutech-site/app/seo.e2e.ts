@@ -7,7 +7,13 @@ import {
   LADO_DO_ICONE,
   LADOS_DO_FAVICON,
 } from '../lib/marca'
-import { COR_DO_TEMA, DESCRICAO_DA_HOME, TITULO_DA_HOME } from '../lib/seo'
+import {
+  COR_DO_TEMA,
+  DESCRICAO_DA_HOME,
+  DESCRICAO_DA_PRIVACIDADE,
+  TITULO_DA_HOME,
+  TITULO_DA_PRIVACIDADE,
+} from '../lib/seo'
 import { SITE_DE_PRODUCAO } from '../lib/site'
 
 const naProducao = (caminho: string) =>
@@ -108,35 +114,36 @@ test('toda imagem tem alt, e as dos projetos um alt descritivo', async ({
 })
 
 // A meta da spec é o Lighthouse mobile (não há Lighthouse no PATH): o axe a 1280 e a 320 px.
-for (const largura of [1280, 320]) {
-  test(`acessibilidade (axe, WCAG 2.1 A e AA) a ${largura} px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: largura, height: 800 })
-    await page.goto('/')
-    await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
-    const violacoes = await page.evaluate(async () => {
-      const { axe } = window as unknown as {
-        axe: {
-          run: (alvo: Document, opcoes: RunOptions) => Promise<AxeResults>
+for (const caminho of ['/', '/privacidade'])
+  for (const largura of [1280, 320]) {
+    test(`acessibilidade (axe, WCAG 2.1 A e AA) de ${caminho} a ${largura} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: largura, height: 800 })
+      await page.goto(caminho)
+      await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
+      const violacoes = await page.evaluate(async () => {
+        const { axe } = window as unknown as {
+          axe: {
+            run: (alvo: Document, opcoes: RunOptions) => Promise<AxeResults>
+          }
         }
-      }
-      const { violations } = await axe.run(document, {
-        runOnly: {
-          type: 'tag',
-          values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
-        },
+        const { violations } = await axe.run(document, {
+          runOnly: {
+            type: 'tag',
+            values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
+          },
+        })
+        return violations
+          .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+          .map(
+            (v) =>
+              `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
+          )
       })
-      return violations
-        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-        .map(
-          (v) =>
-            `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
-        )
+      expect(violacoes).toEqual([])
     })
-    expect(violacoes).toEqual([])
-  })
-}
+  }
 
 test('JSON-LD: a PiluTech (Organization e ProfessionalService num nó só) e o WebSite, sem FAQPage', async ({
   page,
@@ -166,9 +173,30 @@ test('robots.txt libera tudo e aponta o sitemap', async ({ page }) => {
   expect(texto).toContain(`Sitemap: ${SITE_DE_PRODUCAO}/sitemap.xml`)
 })
 
-test('sitemap.xml lista a página', async ({ page }) => {
+test('sitemap.xml lista a home e a política de privacidade', async ({
+  page,
+}) => {
   const xml = await (await page.request.get('/sitemap.xml')).text()
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/</loc>`)
+  expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/privacidade</loc>`)
+})
+
+test('/privacidade: title, description, canonical e indexável', async ({
+  page,
+}) => {
+  await page.goto('/privacidade')
+  await expect(page).toHaveTitle(TITULO_DA_PRIVACIDADE)
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    'content',
+    DESCRICAO_DA_PRIVACIDADE,
+  )
+  const canonical = await page
+    .locator('link[rel="canonical"]')
+    .getAttribute('href')
+  expect(new URL(canonical as string).href).toBe(naProducao('/privacidade'))
+  await expect(
+    page.locator('meta[name="robots"][content*="noindex"]'),
+  ).toHaveCount(0)
 })
 
 test('favicon e apple-icon: PNG do símbolo, nos tamanhos declarados', async ({

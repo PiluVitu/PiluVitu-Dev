@@ -2,6 +2,7 @@ import {
   ABRE_EM_ABA_NOVA,
   EMAIL_DA_PILUTECH,
   linkDoWhatsApp,
+  MAILTO_DA_PRIVACIDADE,
   MAILTO_DO_SITE,
   MENSAGENS_DO_WHATSAPP,
   TELEFONE_INTERNACIONAL,
@@ -67,6 +68,12 @@ describe('e-mail', () => {
     expect(EMAIL_DA_PILUTECH).toBe('pilutechinformatica@gmail.com')
     expect(MAILTO_DO_SITE).toBe(
       'mailto:pilutechinformatica@gmail.com?subject=%5BPiluTech%5D%20Contato%20pelo%20site',
+    )
+  })
+
+  it('o da política de privacidade leva [PiluTech] Privacidade no assunto', () => {
+    expect(MAILTO_DA_PRIVACIDADE).toBe(
+      'mailto:pilutechinformatica@gmail.com?subject=%5BPiluTech%5D%20Privacidade',
     )
   })
 })

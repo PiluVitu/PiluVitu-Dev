@@ -31,6 +31,8 @@
     "@fortawesome/react-fontawesome": "^3.3.0",
     "@piluvitu/tools": "workspace:*",
     "@piluvitu/ui": "workspace:*",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "next": "16.3.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

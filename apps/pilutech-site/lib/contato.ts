@@ -27,6 +27,7 @@ export const WHATSAPP: Record<keyof typeof MENSAGENS_DO_WHATSAPP, string> = {
 }
 
 export const MAILTO_DO_SITE = mailtoDaPilutech('PiluTech', 'Contato pelo site')
+export const MAILTO_DA_PRIVACIDADE = mailtoDaPilutech('PiluTech', 'Privacidade')
 
 export const ABRE_EM_ABA_NOVA = {
   target: '_blank',
