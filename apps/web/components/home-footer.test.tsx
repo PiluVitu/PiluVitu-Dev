@@ -30,4 +30,12 @@ describe('HomeFooter', () => {
       '/pilulabs',
     ])
   })
+
+  it.each([['/pilulabs'], [undefined]])(
+    'a política de privacidade fica sempre, depois dos links públicos (piluLabsHref=%s)',
+    (piluLabsHref) => {
+      const lista = hrefs(rodape(piluLabsHref))
+      expect(lista.at(-1)).toBe('/privacidade')
+    },
+  )
 })

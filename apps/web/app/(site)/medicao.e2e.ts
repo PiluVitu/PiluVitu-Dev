@@ -10,7 +10,7 @@ function ehDaVercel(url: string): boolean {
   )
 }
 
-for (const caminho of ['/', '/tools', '/pilulabs'])
+for (const caminho of ['/', '/tools', '/pilulabs', '/privacidade'])
   test(`${caminho} não carrega a medição da Vercel fora da produção`, async ({
     page,
   }) => {

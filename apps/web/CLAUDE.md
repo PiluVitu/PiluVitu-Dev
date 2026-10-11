@@ -385,8 +385,27 @@ Como na landing do Botaí (`PiluVitu/Botai`, PR #47) e no `apps/pilutech-site`: 
 - ⚠️ **O `beforeSend` mora num componente de cliente** (`components/medicao-da-vercel-cliente.tsx`, `'use client'`). Passada por um componente de servidor, a função não atravessa a fronteira RSC: o `next build` com `VERCEL_ENV=production` quebra no `/tasks` com "Functions cannot be passed directly to Client Components" ({beforeSend: function}), e o Jest (que usa `renderToStaticMarkup`) não vê. O `medicao-da-vercel.test.tsx` trava os dois arquivos.
 - **Pacotes:** `@vercel/analytics/next` (agrupa por rota: `/posts/[slug]` é uma rota só) e `@vercel/speed-insights/next`. Até 2026-10-11 o layout usava `@vercel/analytics/react` sem condição: media o preview, e no `next dev` os dois puxavam o `script.debug.js` de `va.vercel-scripts.com` (o `app/(site)/medicao.e2e.ts` reprovava aquele layout).
 - **Cotas grátis da conta, divididas entre os 5 projetos da Vercel** (`pilu-vitu-dev`, `pilutech-site`, `botai-site`, `botai-docs` e o do Sombraí): Web Analytics, 50 mil eventos por mês (passou, pausa depois de 3 dias, sem cobrar; histórico de 1 mês); Speed Insights, 10 mil eventos numa janela de 30 dias (passou, pausa por pelo menos 14 dias, sem cobrar; no grátis só o Real Experience Score). Sem `sampleRate` (decisão do dono em 2026-10-11); o uso fica no painel (Usage → Observability).
-- **Painel:** o projeto `pilu-vitu-dev` tem os dois ligados desde 2024-05-12 (`vercel api /v9/projects/pilu-vitu-dev`, `webAnalytics.enabledAt` e `speedInsights.enabledAt`). Ligar é toggle no painel, não API; as rotas `/_vercel/*` só aparecem no deploy seguinte.
+- **Painel:** no projeto `pilu-vitu-dev`, o Web Analytics está ligado desde 2024-05-12; o Speed Insights foi ligado na mesma data e está desligado desde 2026-09-16 (`vercel api /v9/projects/pilu-vitu-dev`: `webAnalytics.enabledAt`, `speedInsights.enabledAt` e `speedInsights.disabledAt`). Ligar é toggle no painel, não API; as rotas `/_vercel/*` só aparecem no deploy seguinte. Para saber se o Speed Insights recebe dados, use `speedInsights.dataReceivedAt` ou o painel, não o `enabledAt`: em 2026-10-11, o `botai-site` recebia dados sem esse campo.
 - **Conferir:** `VERCEL_ENV=production pnpm build` passa e `grep -rho '_vercel/[a-z-]*/script.js' .next/static/chunks | sort -u` acha os dois. Sem a variável, o `grep` nos chunks acha os dois do mesmo jeito (o Next empacota todo componente de cliente importado, renderizado ou não); a conferência fora da produção é o HTML sem `<script>` de `/_vercel` e o `medicao.e2e.ts`, que reprova qualquer pedido a `/_vercel/` ou a `vercel-scripts.com`.
+
+## Política de privacidade (`/privacidade`)
+
+`app/(site)/privacidade/page.tsx`, em vigor desde 2026-10-11, com o texto aprovado pelo dono. O responsável é ele, pessoa física, e o e-mail leva `[PiluVitu] Privacidade` no assunto (`mailtoDaPilutech`, de `@piluvitu/tools/contato`). O link fica no `HomeFooter`, sempre visível, depois dos links públicos e antes dos de login.
+
+- **O que ela descreve:**
+  - a medição da Vercel (seção acima);
+  - os registros da hospedagem;
+  - a votação (o que o `apps/ramielle` guarda no D1, o cookie do Better Auth e o backup);
+  - o formulário de contato (FormSubmit e reCAPTCHA);
+  - o que o navegador pede a terceiros (a API do dev.to, as imagens de fora);
+  - o que fica só no navegador (o tema, o `/tasks`, a câmera do `/tools`).
+- **A duração do cookie da votação é o padrão do Better Auth** (7 dias, renovados a cada dia de uso), porque `apps/ramielle/src/lib/auth.ts` não define `session`. Conferido no 1.6.25.
+- **Quando mudar um desses pontos, a página muda junto.** Isso vale para o que o ramielle guarda, o prazo da sessão, um serviço novo chamado pelo navegador, a medição ou a hospedagem. Atualize o texto, a data de vigência e o `page.test.tsx`, que trava cada fato.
+- **Testes:**
+  - o `page.test.tsx` cobre a estrutura, os fatos, os links e a metadata;
+  - o `privacidade.e2e.ts` cobre o caminho rodapé → política → home, o console limpo e a página a 320 px;
+  - o `medicao.e2e.ts` inclui a rota.
+- **Fica de fora:** sem sitemap, porque o web não tem um, e sem axe, porque o web não tem o `@axe-core/playwright`, ao contrário do `apps/pilutech-site`.
 
 ## Import alias
 

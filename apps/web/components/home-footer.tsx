@@ -45,6 +45,10 @@ export function HomeFooter({
             </Link>
           </>
         ) : null}
+        <span aria-hidden>·</span>
+        <Link href="/privacidade" className={linkCls}>
+          /privacidade
+        </Link>
         {/* /votação precisa do back (sessão/dados) → só pra logado. */}
         {isLoggedIn ? (
           <>

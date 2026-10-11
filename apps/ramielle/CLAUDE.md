@@ -203,6 +203,8 @@ Consequência provada por teste (`session.test.ts`, describe "o caso que prova o
 - **`user`** (singular, `migrations/0002_better_auth.sql`) — contrato da lib Better Auth. PK `TEXT`, uma linha por identidade autenticada, colunas camelCase (contrato da lib, não escolha deste projeto — mesma observação já registrada em `apps/financas/CLAUDE.md`).
 - **`users`** (plural, `migrations/0001_votacao.sql`) — domínio da votação, portado 1:1 do schema Go. PK `INTEGER` (a que `votes`/`voting_sessions` referenciam via FK), `google_sub` UNIQUE, `is_admin`.
 
+**A política de privacidade do piluvitu.com.br descreve este D1** (`apps/web/app/(site)/privacidade/page.tsx`, desde 2026-10-11). Ela diz o que a votação guarda (o usuário do Google com os tokens, a sessão com IP e navegador, os votos) e quanto dura o cookie: 7 dias renovados, o padrão do Better Auth, porque o `lib/auth.ts` não define `session`. Ela diz também que não há limpeza automática e que o backup fica no Mac do dono. Mudou um desses pontos? A página muda junto (ver "Política de privacidade" em `apps/web/CLAUDE.md`).
+
 Nada na migration liga uma tabela na outra. **`src/domain/users.ts#upsertVotacaoUser` é a ponte** — chamada a cada request autenticado por `lib/session.ts`. Casa por `google_sub` (`INSERT ... ON CONFLICT(google_sub) DO UPDATE`), sempre sobrescreve `email`/`name`/`picture`/`is_admin` com o valor recebido (nunca merge com o que já estava no banco — mesma semântica do `UpsertUser` do Go), nunca toca `created_at` num update.
 
 ## A decisão da PK `INTEGER` + `RETURNING id` — medida na Task 2, não assumida
