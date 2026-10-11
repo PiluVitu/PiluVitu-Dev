@@ -9,10 +9,12 @@ Landing da PiluTech em `https://pilutech.com.br`: uma página (`/`) com os servi
 ## Estrutura
 
 ```
-app/          layout (fontes, metadataBase, viewport), page (/), icon.tsx, apple-icon.tsx, opengraph-image.tsx,
-              twitter-image.tsx, sitemap.ts, robots.ts, manifest.ts, globals.css e os E2E (pagina, seo)
+app/          layout (fontes, metadataBase, viewport, medição), page (/), privacidade/ (página, teste e E2E), icon.tsx,
+              apple-icon.tsx, opengraph-image.tsx, twitter-image.tsx, sitemap.ts, robots.ts, manifest.ts, globals.css
+              e os E2E (pagina, seo)
 components/   landing e as seções (barra, hero + terminal, serviços, como funciona, projetos, tecnologias, planos,
-              dúvidas + acordeão, contato, rodapé, WhatsApp flutuante), cabeçalho de seção, PiluTechMark, json-ld, classes.ts
+              dúvidas + acordeão, contato, rodapé, WhatsApp flutuante), cabeçalho de seção, PiluTechMark, json-ld,
+              medicao-da-vercel, classes.ts
 lib/          conteúdo do design, contato (WhatsApp, mailto), CMS (fase do Botaí), marca, site, seo, json-ld,
               imagens geradas (ícone, OG), font-awesome, tokens-do-ds (só os testes importam)
 scripts/      conferir-rotas-estaticas.mjs (roda no build)
@@ -34,9 +36,18 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
 - **Projetos:** as imagens são as OG de `https://botai.pilutech.com.br/opengraph-image` e `https://sombrai.pilutech.com.br/opengraph-image.png`, pelo `next/image` com `remotePatterns` exatos (`search: ''`, sem o hash que o design trazia; o `next.config.test.ts` usa o `hasRemoteMatch` do Next). Imagem fora do ar não derruba o cartão: fundo Grafite, `alt`, link e selo continuam.
 - **Selo do Botaí:** `lib/cms.ts` lê `apps/web/content/pilulabs/botai/index.yaml` no build, por `urlsDasLojas` e `fase` de `@piluvitu/tools/pilulabs`; uma loja publicada pelo `/admin/pilulabs` vira "disponível". Arquivo ausente quebra o build de propósito: em silêncio, o selo diria "em breve" com a loja no ar. `BOTAI_CMS_ITEM` troca o arquivo lido (só o `playwright.lojas.config.ts` a define). O Sombraí não tem fonte de fase e fica "em breve" até alguém mudar o texto.
 - **Dúvidas:** oito, com as três de IA ("Meus dados ficam seguros com IA?", "Quanto custa usar IA no dia a dia?" e "Como funciona o treino de um modelo com os dados da empresa?", esta pedida pelo dono em 2026-10-05) logo depois da do orçamento de infraestrutura. Acordeão da WAI-ARIA (`button` dentro de `h3`, `aria-expanded`, `aria-controls`), a primeira aberta, uma por vez. As oito respostas saem no HTML e as fechadas levam `hidden`: o Google não clica, e sem JavaScript a página continua legível. Ids fixos (`duvida-<n>-pergunta` e `-resposta`).
-- **Rodapé:** o ano é o do build (`new Date().getFullYear()` na página estática).
+- **Rodapé:** o ano é o do build (`new Date().getFullYear()` na página estática) e o link "Política de privacidade" (`/privacidade`, na mesma aba).
 - **Fonte mono sem o fallback automático do `next/font`** (`adjustFontFallback: false`, `fallback: ['ui-monospace', 'monospace']` no `app/layout.tsx`). O `→` dos serviços e dos projetos (U+2192) fica fora do subset `latin` da JetBrains Mono; o fallback automático é o Arial com `size-adjust` de 134,59%, que desenhava a seta com 1,35em, mais que o dobro da do design (que cai na mono do sistema, ~0,6em). O E2E "as setas … têm a largura de uma célula mono" mede.
 - ⚠️ **CSS do Font Awesome na camada `base`** (`@import … layer(base)`) e `config.autoAddCss = false` (`lib/font-awesome.ts`, importado pelo layout e pelo Storybook), como na landing do Botaí: injetado em runtime, fora de camada, ele venceria o `size-*` dos ícones.
+
+## Medição e política de privacidade
+
+- **Vercel Web Analytics e Speed Insights, como na landing do Botaí (`PiluVitu/Botai`, PR #47):** `components/medicao-da-vercel.tsx` (`MedicaoDaVercel`), no `app/layout.tsx`, devolve `<Analytics />` (de `@vercel/analytics/next`, que agrupa por rota) e `<SpeedInsights />` (de `@vercel/speed-insights/next`) **só com `VERCEL_ENV === 'production'`**; preview, build local, E2E e Storybook ficam sem os scripts. É só a visão geral do público: sem evento próprio, sem `track()`, sem cookie, servido pelo próprio domínio (`/_vercel/insights/*` e `/_vercel/speed-insights/*`).
+- **Cotas grátis da conta, divididas entre os 5 projetos da Vercel** (`pilu-vitu-dev`, `pilutech-site`, `botai-site`, `botai-docs` e o do Sombraí): Web Analytics, 50 mil eventos por mês (passou, pausa depois de 3 dias, sem cobrar; histórico de 1 mês); Speed Insights, 10 mil eventos numa janela de 30 dias (passou, pausa por pelo menos 14 dias, sem cobrar; no grátis só o Real Experience Score). É o motivo do "só produção".
+- **Ligar é no painel, não na API:** projeto `pilutech-site` → Analytics → Enable e Speed Insights → Enable; as rotas `/_vercel/*` só aparecem no deploy seguinte. Conferir: `vercel api /v9/projects/pilutech-site` (`webAnalytics.enabledAt`, `speedInsights.enabledAt`) e, depois do redeploy, `curl -sI https://pilutech.com.br/_vercel/insights/script.js` e `/_vercel/speed-insights/script.js` respondendo 200.
+- **Conferir o build:** `VERCEL_ENV=production pnpm build` e `grep -rho '_vercel/[a-z-]*/script.js' .next/static/chunks | sort -u` mostram `/_vercel/insights/script.js` e `/_vercel/speed-insights/script.js`.
+  - ⚠️ **Sem a variável, o `grep` nos chunks acha os dois do mesmo jeito:** o Next empacota todo componente de cliente que um componente de servidor importa, renderizado ou não (medido em 2026-10-11: um chunk de 7 KB, 2,2 KB com gzip, só com as duas bibliotecas, baixado pela home). Fora da produção o `MedicaoDaVercel` devolve `null`: nenhum `<script src="/_vercel/…">` no HTML (`grep -o '_vercel/[a-z-]*/script.js' .next/server/app/index.html` não acha nada) e nenhum pedido em `/_vercel/` (o `app/privacidade/privacidade.e2e.ts` confere no navegador). A conferência fora da produção é essa, não o `grep` nos chunks.
+- **`/privacidade`** (`app/privacidade/page.tsx`), linkada no rodapé, no `ROTAS` e no `sitemap.ts`: o que o Web Analytics e o Speed Insights registram (sem cookie), a base legal (legítimo interesse, LGPD art. 7º, IX), a Vercel como operadora, os registros da hospedagem, o contato por WhatsApp e e-mail, os direitos da LGPD e a ANPD. Responsável: a PiluTech, com o `MAILTO_DA_PRIVACIDADE` (`[PiluTech] Privacidade`). Mudou o que o site trata (outra ferramenta, cookie, formulário)? Mude o texto, a `VIGENCIA` no topo da página e o `page.test.tsx` juntos, antes do deploy.
 
 ## Marca e imagens geradas
 
@@ -55,12 +66,12 @@ scripts/      conferir-rotas-estaticas.mjs (roda no build)
   - a PiluTech num nó só, `@type` `['Organization', 'ProfessionalService']`, com `@id` `https://pilutech.com.br/#organizacao` (o mesmo da landing do Botaí e do `publisher` da vitrine do `apps/web`): logo (`/icon`), e-mail, telefone, `contactPoint` comercial, Brasil como `areaServed`, endereço só com Teresina, PI e BR, os 4 serviços em `hasOfferCatalog` (na ordem da página, com o nome completo e o texto de cada cartão), sem preço. Dois nós ligados por `parentOrganization` diriam que a empresa é filha de si mesma; o Google pede o subtipo mais específico de `Organization`, e o schema.org marca o `ProfessionalService` genérico como descontinuado (trocar por `LocalBusiness` é decisão do dono);
   - `WebSite`;
   - sem `FAQPage` (o Google não mostra mais o rich result de FAQ, removido em maio de 2026) e sem nota. `serializarJsonLd` troca `<` por `\u003c`.
-- **Rotas técnicas:** `sitemap.xml` (só `/`), `robots.txt` (libera tudo e aponta o sitemap), `manifest.webmanifest`, `theme-color` Noite (`#090b11`, o `--background` do `.dark`). `GOOGLE_SITE_VERIFICATION` vira `verification.google`; cadastrar o domínio no Search Console é passo do dono.
+- **Rotas técnicas:** `sitemap.xml` (`/` e `/privacidade`), `robots.txt` (libera tudo e aponta o sitemap), `manifest.webmanifest`, `theme-color` Noite (`#090b11`, o `--background` do `.dark`). `GOOGLE_SITE_VERIFICATION` vira `verification.google`; cadastrar o domínio no Search Console é passo do dono.
 - **Lighthouse:** não há ferramenta no repo nem no PATH. As checagens estão no `app/seo.e2e.ts` (título, descrição, canonical, OG 1200×630, JSON-LD, `h1` único, níveis, `alt`, robots, sitemap, ícones, manifest, `theme-color` e `axe-core` WCAG 2.1 A/AA a 1280 e 320 px) e no `app/pagina.e2e.ts` (320 px sem vazamento).
 
 ## Build
 
-- `pnpm build` = `next build` + o gate do `@source` (`scripts/check-tailwind-source.mjs .next`; a classe que ele procura está em `SENTINEL_SELECTOR`, no topo do script) + `scripts/conferir-rotas-estaticas.mjs`, que falha se uma rota de `ROTAS` (`/`, `/icon`, `/apple-icon`, `/favicon.ico`, `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`) sumir do `prerender-manifest.json` ou ganhar `revalidate`. Rota nova entra em `ROTAS`.
+- `pnpm build` = `next build` + o gate do `@source` (`scripts/check-tailwind-source.mjs .next`; a classe que ele procura está em `SENTINEL_SELECTOR`, no topo do script) + `scripts/conferir-rotas-estaticas.mjs`, que falha se uma rota de `ROTAS` (`/`, `/privacidade`, `/icon`, `/apple-icon`, `/favicon.ico`, `/opengraph-image`, `/twitter-image`, `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`) sumir do `prerender-manifest.json` ou ganhar `revalidate`. Rota nova entra em `ROTAS`.
 - `@source not '../*.md'`, e o `storybook-static/` no `.gitignore` da raiz, pelo mesmo motivo da landing do Botaí: sem eles, o Tailwind varreria a documentação e CSS já compilado, e o gate aprovaria `@source` quebrado.
 
 ## Testes

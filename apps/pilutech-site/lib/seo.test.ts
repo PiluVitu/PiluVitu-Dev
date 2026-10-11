@@ -1,9 +1,11 @@
 import {
   COR_DO_TEMA,
   DESCRICAO_DA_HOME,
+  DESCRICAO_DA_PRIVACIDADE,
   metadataDaPagina,
   metadataDoSite,
   TITULO_DA_HOME,
+  TITULO_DA_PRIVACIDADE,
   VIEWPORT,
 } from './seo'
 import { hslParaHex, tokenDoDs } from './tokens-do-ds'
@@ -37,8 +39,21 @@ describe('textos de busca', () => {
       expect(DESCRICAO_DA_HOME).toContain(termo)
   })
 
+  it('política de privacidade: título até 60 e descrição até 160, com o "sem cookie" e a LGPD', () => {
+    expect(TITULO_DA_PRIVACIDADE).toBe('Política de privacidade · PiluTech')
+    expect(TITULO_DA_PRIVACIDADE.length).toBeLessThanOrEqual(60)
+    expect(DESCRICAO_DA_PRIVACIDADE.length).toBeLessThanOrEqual(160)
+    expect(DESCRICAO_DA_PRIVACIDADE).toContain('sem cookie')
+    expect(DESCRICAO_DA_PRIVACIDADE).toContain('LGPD')
+  })
+
   it('regras da marca: sem computadores e impressoras, sem emoji', () => {
-    for (const texto of [TITULO_DA_HOME, DESCRICAO_DA_HOME]) {
+    for (const texto of [
+      TITULO_DA_HOME,
+      DESCRICAO_DA_HOME,
+      TITULO_DA_PRIVACIDADE,
+      DESCRICAO_DA_PRIVACIDADE,
+    ]) {
       expect(texto).not.toMatch(/computador|impressora/i)
       expect(texto).not.toMatch(/\p{Extended_Pictographic}/u)
     }

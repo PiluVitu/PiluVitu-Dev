@@ -8,6 +8,9 @@ afterAll(() => {
   if (SITE_URL_ORIGINAL !== undefined) process.env.SITE_URL = SITE_URL_ORIGINAL
 })
 
-it('lista a página única, no domínio de produção', () => {
-  expect(sitemap()).toEqual([{ url: 'https://pilutech.com.br/' }])
+it('lista a home e a política de privacidade, no domínio de produção', () => {
+  expect(sitemap()).toEqual([
+    { url: 'https://pilutech.com.br/' },
+    { url: 'https://pilutech.com.br/privacidade' },
+  ])
 })

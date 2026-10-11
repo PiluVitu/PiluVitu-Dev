@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import type { ReactNode } from 'react'
+import { MedicaoDaVercel } from '@/components/medicao-da-vercel'
 import '@/lib/font-awesome'
 import { metadataDoSite, VIEWPORT } from '@/lib/seo'
 import { urlDoSite } from '@/lib/site'
@@ -27,7 +28,10 @@ export default function RootLayout({
 }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="pt-BR" className={`${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <MedicaoDaVercel />
+      </body>
     </html>
   )
 }

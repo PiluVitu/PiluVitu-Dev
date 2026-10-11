@@ -18,4 +18,11 @@ describe('Rodape', () => {
     rerender(<Rodape ano={2027} />)
     expect(screen.getByText(/^© 2027 PiluTech/)).toBeInTheDocument()
   })
+
+  it('leva à política de privacidade, na mesma aba', () => {
+    render(<Rodape ano={2026} />)
+    const link = screen.getByRole('link', { name: 'Política de privacidade' })
+    expect(link).toHaveAttribute('href', '/privacidade')
+    expect(link).not.toHaveAttribute('target')
+  })
 })

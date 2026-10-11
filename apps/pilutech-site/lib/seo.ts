@@ -6,6 +6,10 @@ export const TITULO_DA_HOME =
 export const DESCRICAO_DA_HOME =
   'Infraestrutura, criação e implementação de IA personalizada, aplicativos e sistemas. A PiluTech fica em Teresina (PI) e atende remoto em todo o Brasil.'
 
+export const TITULO_DA_PRIVACIDADE = 'Política de privacidade · PiluTech'
+export const DESCRICAO_DA_PRIVACIDADE =
+  'O que o site da PiluTech registra: estatísticas de visita sem cookie, pela Vercel, os registros da hospedagem e os seus direitos na LGPD.'
+
 export const COR_DO_TEMA = CORES_DA_MARCA.noite
 
 export type PaginaDoSite = {
