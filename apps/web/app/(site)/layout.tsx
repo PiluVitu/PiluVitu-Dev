@@ -1,8 +1,7 @@
+import { MedicaoDaVercel } from '@/components/medicao-da-vercel'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { ReactQueryProvider } from '@/utils/providers/react-query-provider'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import { draftMode } from 'next/headers'
 
 export default async function SiteLayout({
@@ -42,8 +41,7 @@ export default async function SiteLayout({
         ) : null}
         {children}
         <Toaster />
-        <Analytics />
-        <SpeedInsights />
+        <MedicaoDaVercel rascunho={isDraftMode} />
       </ThemeProvider>
     </ReactQueryProvider>
   )
