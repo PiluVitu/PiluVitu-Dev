@@ -362,7 +362,7 @@ test.describe('/votacao/[id] detail', () => {
 
 test.describe('sessão de Halloween', () => {
   const halloween = {
-    Title: 'Halloween 31/10',
+    Title: 'Noite de Halloween',
     SortOptionsJSON: JSON.stringify({
       categories: ['terror', 'suspense'],
       per_category: 4,
@@ -384,8 +384,9 @@ test.describe('sessão de Halloween', () => {
     await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
     await expect(page.getByTestId('halloween-backdrop')).toBeAttached()
     await expect(page.getByText('🎃 Sessão de Halloween')).toBeVisible()
+    await expect(page.getByText(/criada em/)).toHaveCount(0)
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Halloween 31/10' }),
+      page.getByRole('heading', { level: 1, name: 'Noite de Halloween' }),
     ).toBeVisible()
 
     await page.getByText('A Coisa').click()

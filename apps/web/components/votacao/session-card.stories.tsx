@@ -45,7 +45,7 @@ export const Halloween: Story = {
   args: {
     session: {
       ...baseSession,
-      Title: 'Halloween 31/10',
+      Title: 'Noite de Halloween',
       SortOptionsJSON: JSON.stringify({ theme: 'halloween' }),
     },
   },

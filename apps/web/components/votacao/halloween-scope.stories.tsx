@@ -15,7 +15,7 @@ export const Pagina: Story = {
     <HalloweenScope>
       <div className="mx-auto max-w-4xl px-6 py-16">
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <HalloweenHeading title="Halloween 31/10" />
+          <HalloweenHeading title="Noite de Halloween" />
           <SessionStatusBadge status="open" />
         </header>
         <div className="mt-10 grid gap-4 sm:grid-cols-3">

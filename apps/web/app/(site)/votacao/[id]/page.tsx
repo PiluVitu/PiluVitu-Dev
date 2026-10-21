@@ -87,9 +87,11 @@ export default function SessionDetailPage({
               {session.Title}
             </h1>
           )}
-          <p className="text-muted-foreground mt-1 font-mono text-xs">
-            criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
-          </p>
+          {!halloween && (
+            <p className="text-muted-foreground mt-1 font-mono text-xs">
+              criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
+            </p>
+          )}
         </div>
         <SessionStatusBadge status={session.Status} />
       </header>

@@ -3010,7 +3010,7 @@ describe('POST /votacao/sessions', () => {
           method: 'POST',
           headers: { cookie, 'content-type': 'application/json' },
           body: JSON.stringify({
-            title: 'Halloween 31/10',
+            title: 'Noite de Halloween',
             types: ['filme'],
             include_watched: false,
             categories: ['terror', 'suspense'],
@@ -3032,7 +3032,7 @@ describe('POST /votacao/sessions', () => {
       expect(movies).toHaveLength(3)
       expect(new Set(movies.map((m) => m.Title)).size).toBe(3)
       expect(JSON.parse(body.data?.session.SortOptionsJSON ?? '{}')).toEqual({
-        title: 'Halloween 31/10',
+        title: 'Noite de Halloween',
         types: ['filme'],
         include_watched: false,
         categories: ['terror', 'suspense'],

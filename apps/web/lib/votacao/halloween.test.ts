@@ -16,7 +16,7 @@ describe('isHalloweenSession', () => {
     expect(isHalloweenSession({ ...base, Title: 'Noite de HALLOWEEN' })).toBe(
       true,
     )
-    expect(isHalloweenSession({ ...base, Title: '🎃 Sexta 31/10' })).toBe(true)
+    expect(isHalloweenSession({ ...base, Title: '🎃 Sessão de sexta' })).toBe(true)
   })
 
   it('sessão comum não é de Halloween', () => {
@@ -35,12 +35,12 @@ describe('halloweenSessionBody', () => {
   it('sorteia só filmes de terror e suspense, com o tema ligado', () => {
     expect(
       halloweenSessionBody({
-        title: 'Halloween 31/10',
+        title: 'Noite de Halloween',
         includeWatched: false,
         perCategory: 4,
       }),
     ).toEqual({
-      title: 'Halloween 31/10',
+      title: 'Noite de Halloween',
       types: ['filme'],
       include_watched: false,
       categories: ['terror', 'suspense'],

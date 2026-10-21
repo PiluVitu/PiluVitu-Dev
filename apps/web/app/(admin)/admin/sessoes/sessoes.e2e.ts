@@ -202,7 +202,7 @@ test.describe('/admin/sessoes', () => {
         contentType: 'application/json',
         body: envelope(
           {
-            session: { ...session, ID: 1, Title: 'Halloween 31/10' },
+            session: { ...session, ID: 1, Title: 'Noite de Halloween' },
             movies: [],
           },
           [{ type: 'success', message: 'Sessão criada.' }],
@@ -211,7 +211,7 @@ test.describe('/admin/sessoes', () => {
     })
 
     await page.goto('/admin/sessoes')
-    await page.getByLabel('Título').fill('Halloween 31/10')
+    await page.getByLabel('Título').fill('Noite de Halloween')
     await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
     await page.getByLabel('Filmes por categoria').fill('3')
     await page
@@ -220,7 +220,7 @@ test.describe('/admin/sessoes', () => {
 
     await expect(page).toHaveURL(/\/votacao\/1$/)
     expect(corpo).toEqual({
-      title: 'Halloween 31/10',
+      title: 'Noite de Halloween',
       types: ['filme'],
       include_watched: false,
       categories: ['terror', 'suspense'],

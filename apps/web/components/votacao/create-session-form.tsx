@@ -65,7 +65,7 @@ export function CreateSessionForm() {
           id="title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={halloween ? 'Halloween 31/10' : 'Sexta 22/05'}
+          placeholder={halloween ? 'Noite de Halloween' : 'Sexta 22/05'}
           required
         />
       </div>
