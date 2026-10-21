@@ -307,9 +307,9 @@ export type SessionMovieInsert = {
 //                   AUTOINCREMENT, nunca bound) -> floor(100/8) = 12
 //                   linhas/statement (96 params).
 //
-// Com as ~11 categorias medidas na planilha real, isto NUNCA chunka na
-// prática (sortOnePerCategory devolve no máximo 1 filme por categoria).
-// Escrito e testado mesmo assim — mesmo aviso do brief já seguido em
+// Com as ~11 categorias medidas na planilha real e 1 filme por categoria,
+// isto não chunka; com `per_category` (até 5) passa de 12 linhas e chunka.
+// Escrito e testado — mesmo aviso do brief já seguido em
 // `voteInsertStatements`: o custo de descobrir o teto em produção é uma
 // sessão de votação perdida.
 const MAX_BOUND_PARAMS = 100

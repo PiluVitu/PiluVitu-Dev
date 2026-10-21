@@ -40,3 +40,13 @@ export const Closed: Story = {
     },
   },
 }
+
+export const Halloween: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      Title: 'Halloween 31/10',
+      SortOptionsJSON: JSON.stringify({ theme: 'halloween' }),
+    },
+  },
+}

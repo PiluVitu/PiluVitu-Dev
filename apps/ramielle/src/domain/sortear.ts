@@ -26,6 +26,8 @@ export type SortOnePerCategoryOptions = {
   includeWatched?: boolean
   /** Vazio/ausente = todas as categorias presentes no catálogo. */
   categories?: string[]
+  /** Quantos filmes distintos sortear por categoria. Ausente = 1 (paridade com o Go). */
+  perCategory?: number
 }
 
 /**
@@ -125,8 +127,24 @@ export function sortOnePerCategory(
     a < b ? -1 : a > b ? 1 : 0,
   )
 
-  return sortedEntries.map(([, candidates]) => {
-    const index = Math.floor(rng() * candidates.length)
-    return candidates[index]
-  })
+  const perCategory = opts.perCategory ?? 1
+  return sortedEntries.flatMap(([, candidates]) =>
+    pickDistinct(candidates, perCategory, rng),
+  )
+}
+
+// Fisher-Yates parcial: o 1º sorteio é exatamente `floor(rng() * length)`,
+// o mesmo do Go, então `perCategory = 1` consome o `rng` igual ao porte 1:1.
+function pickDistinct(
+  candidates: SheetMovie[],
+  count: number,
+  rng: Rng,
+): SheetMovie[] {
+  const pool = [...candidates]
+  const take = Math.min(count, pool.length)
+  for (let i = 0; i < take; i++) {
+    const j = i + Math.floor(rng() * (pool.length - i))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return pool.slice(0, take)
 }

@@ -248,6 +248,8 @@ type RawCreateSessionBody = {
   types?: unknown
   include_watched?: unknown
   categories?: unknown
+  per_category?: unknown
+  theme?: unknown
 }
 
 type ParsedCreateSessionBody = {
@@ -255,7 +257,16 @@ type ParsedCreateSessionBody = {
   types: string[]
   includeWatched: boolean
   categories: string[]
+  /** Ausente = 1 por categoria, o sorteio do Go. */
+  perCategory?: number
+  theme?: SessionTheme
 }
+
+const SESSION_THEMES = ['halloween'] as const
+type SessionTheme = (typeof SESSION_THEMES)[number]
+
+// Teto de subrequests do Worker: cada filme sorteado é uma busca no TMDb.
+const MAX_PER_CATEGORY = 5
 
 function parseStringArray(raw: unknown): string[] | null {
   if (raw === undefined || raw === null) return []
@@ -306,7 +317,29 @@ function parseCreateSessionBody(raw: unknown): ParsedCreateSessionBody | null {
   const categories = parseStringArray(body.categories)
   if (categories === null) return null
 
-  return { title, types, includeWatched, categories }
+  const parsed: ParsedCreateSessionBody = {
+    title,
+    types,
+    includeWatched,
+    categories,
+  }
+
+  if (body.per_category !== undefined && body.per_category !== null) {
+    if (
+      !Number.isInteger(body.per_category) ||
+      (body.per_category as number) < 1 ||
+      (body.per_category as number) > MAX_PER_CATEGORY
+    )
+      return null
+    parsed.perCategory = body.per_category as number
+  }
+
+  if (body.theme !== undefined && body.theme !== null) {
+    if (!SESSION_THEMES.includes(body.theme as SessionTheme)) return null
+    parsed.theme = body.theme as SessionTheme
+  }
+
+  return parsed
 }
 
 const TMDB_MAX_CONCURRENCY = 5
@@ -478,6 +511,7 @@ votacaoRoutes.post('/sessions', requireAdmin<AuthBindings>(), async (c) => {
         types: parsed.types,
         includeWatched: parsed.includeWatched,
         categories: parsed.categories,
+        perCategory: parsed.perCategory,
       },
       Math.random,
     )
@@ -511,6 +545,8 @@ votacaoRoutes.post('/sessions', requireAdmin<AuthBindings>(), async (c) => {
     types: parsed.types,
     include_watched: parsed.includeWatched,
     categories: parsed.categories,
+    per_category: parsed.perCategory,
+    theme: parsed.theme,
   })
 
   const votacaoUser = c.get('votacaoUser')

@@ -58,11 +58,16 @@ export interface CategoriesResponse {
   categories: string[]
 }
 
+export type SessionTheme = 'halloween'
+
 export interface CreateSessionBody {
   title: string
   types: string[]
   include_watched: boolean
   categories: string[]
+  /** Filmes sorteados por categoria (1–5). Ausente = 1. */
+  per_category?: number
+  theme?: SessionTheme
 }
 
 // --- Admin ---

@@ -2982,6 +2982,114 @@ describe('POST /votacao/sessions', () => {
     }
   })
 
+  test('per_category + theme — sorteia N filmes por categoria e grava as duas opções no SortOptionsJSON', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-halloween@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-halloween'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [
+        ['1', 'A Coisa', 'Filme', 'Terror', 'não'],
+        ['2', 'Hereditário', 'Filme', 'Terror', 'não'],
+        ['3', 'Invocação do Mal', 'Filme', 'Terror', 'não'],
+        ['4', 'Fragmentado', 'Filme', 'Suspense', 'não'],
+        ['5', 'Matrix', 'Filme', 'Ficção Científica', 'não'],
+      ],
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-halloween@example.com',
+        'Halloween',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Halloween 31/10',
+            types: ['filme'],
+            include_watched: false,
+            categories: ['terror', 'suspense'],
+            per_category: 2,
+            theme: 'halloween',
+          }),
+        },
+        {
+          ...testEnv('criar-halloween@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as Envelope<CreateSessionData>
+      const movies = body.data?.movies ?? []
+      expect(movies.filter((m) => m.Category === 'terror')).toHaveLength(2)
+      expect(movies.filter((m) => m.Category === 'suspense')).toHaveLength(1)
+      expect(movies).toHaveLength(3)
+      expect(new Set(movies.map((m) => m.Title)).size).toBe(3)
+      expect(JSON.parse(body.data?.session.SortOptionsJSON ?? '{}')).toEqual({
+        title: 'Halloween 31/10',
+        types: ['filme'],
+        include_watched: false,
+        categories: ['terror', 'suspense'],
+        per_category: 2,
+        theme: 'halloween',
+      })
+
+      const rows = await sessionMoviesDireto(body.data?.session.ID ?? 0)
+      expect(rows).toHaveLength(3)
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test.each([
+    ['per_category zero', { per_category: 0 }],
+    ['per_category acima do teto', { per_category: 6 }],
+    ['per_category fracionário', { per_category: 1.5 }],
+    ['per_category string', { per_category: '2' }],
+    ['theme desconhecido', { theme: 'natal' }],
+  ])('%s responde 400 invalid_json', async (_nome, extra) => {
+    const sa = await gerarServiceAccountDeTeste(
+      'criar-opcaoinvalida@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const spreadsheetId = 'planilha-opcao-invalida'
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: [['1', 'A Coisa', 'Filme', 'Terror', 'não']],
+    })
+    try {
+      const cookie = await cookieDeSessaoValido(
+        'criar-opcaoinvalida@example.com',
+        'Opção Inválida',
+      )
+      const res = await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Sessão', ...extra }),
+        },
+        {
+          ...testEnv('criar-opcaoinvalida@example.com'),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]?.code).toBe('invalid_json')
+    } finally {
+      mock.restaurar()
+    }
+  })
+
   test('TMDB_API_KEY ausente — sessão criada SEM pôsteres (fail-soft de config, nunca erro), TMDb nunca é chamado', async () => {
     const sa = await gerarServiceAccountDeTeste(
       'criar-semtmdbkey@projeto-de-teste.iam.gserviceaccount.com',

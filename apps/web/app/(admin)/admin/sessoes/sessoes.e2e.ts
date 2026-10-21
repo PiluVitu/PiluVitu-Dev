@@ -186,6 +186,49 @@ test.describe('/admin/sessoes', () => {
     await expect(page.getByText('Nova sessão')).toBeVisible()
   })
 
+  test('cria uma sessão de Halloween: só terror e suspense, vários por categoria', async ({
+    page,
+  }) => {
+    await baseMocks(page)
+    let corpo: unknown = null
+    await page.route('**/votacao/sessions', async (r) => {
+      if (r.request().method() !== 'POST') {
+        await r.fallback()
+        return
+      }
+      corpo = r.request().postDataJSON()
+      await r.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: envelope(
+          {
+            session: { ...session, ID: 1, Title: 'Halloween 31/10' },
+            movies: [],
+          },
+          [{ type: 'success', message: 'Sessão criada.' }],
+        ),
+      })
+    })
+
+    await page.goto('/admin/sessoes')
+    await page.getByLabel('Título').fill('Halloween 31/10')
+    await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
+    await page.getByLabel('Filmes por categoria').fill('3')
+    await page
+      .getByRole('button', { name: /sortear filmes de halloween/i })
+      .click()
+
+    await expect(page).toHaveURL(/\/votacao\/1$/)
+    expect(corpo).toEqual({
+      title: 'Halloween 31/10',
+      types: ['filme'],
+      include_watched: false,
+      categories: ['terror', 'suspense'],
+      per_category: 3,
+      theme: 'halloween',
+    })
+  })
+
   test('bloqueia não-admin (gate do shell)', async ({ page }) => {
     await baseMocks(page, { isAdmin: false })
     await page.goto('/admin/sessoes')

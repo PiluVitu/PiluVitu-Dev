@@ -166,27 +166,6 @@ describe('migration 0001 — CHECK', () => {
 })
 
 describe('migration 0001 — UNIQUE', () => {
-  it('UNIQUE (session_id, category) de session_movies rejeita a segunda linha', async () => {
-    const userId = await novoUsuario('google-unique-category')
-    const sessionId = await novaSessao(userId)
-
-    await DB.prepare(
-      `INSERT INTO session_movies (session_id, category, title, type)
-       VALUES (?, 'acao', 'Filme A', 'filme')`,
-    )
-      .bind(sessionId)
-      .run()
-
-    await expect(
-      DB.prepare(
-        `INSERT INTO session_movies (session_id, category, title, type)
-         VALUES (?, 'acao', 'Filme B', 'filme')`,
-      )
-        .bind(sessionId)
-        .run(),
-    ).rejects.toThrow(/UNIQUE constraint failed/)
-  })
-
   it('UNIQUE (session_id, user_id, movie_id) de votes rejeita voto duplicado', async () => {
     const userId = await novoUsuario('google-unique-vote')
     const sessionId = await novaSessao(userId)
@@ -289,5 +268,70 @@ describe('migration 0001 — RETURNING id (Step 5, premissa da decisão de mante
     expect(primeiro?.id).toBeGreaterThan(0)
     expect(segundo?.id).toBeGreaterThan(0)
     expect(segundo?.id).not.toBe(primeiro?.id)
+  })
+})
+
+describe('migration 0005 — vários filmes da mesma categoria por sessão', () => {
+  it('session_movies aceita duas linhas com a mesma categoria na mesma sessão', async () => {
+    const userId = await novoUsuario('google-0005-categoria')
+    const sessionId = await novaSessao(userId)
+
+    for (const title of ['A Coisa', 'Hereditário']) {
+      await DB.prepare(
+        `INSERT INTO session_movies (session_id, category, title, type)
+         VALUES (?, 'terror', ?, 'filme')`,
+      )
+        .bind(sessionId, title)
+        .run()
+    }
+
+    const row = await DB.prepare(
+      `SELECT COUNT(*) AS n FROM session_movies WHERE session_id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ n: number }>()
+    expect(row?.n).toBe(2)
+  })
+
+  it('a FK de votes.movie_id continua valendo contra a tabela recriada', async () => {
+    const userId = await novoUsuario('google-0005-fk')
+    const sessionId = await novaSessao(userId)
+
+    await expect(
+      DB.prepare(
+        `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, 999999, ?)`,
+      )
+        .bind(sessionId, userId, NOW)
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+  })
+
+  it('apagar a sessão ainda apaga os filmes em cascata', async () => {
+    const userId = await novoUsuario('google-0005-cascade')
+    const sessionId = await novaSessao(userId)
+    await DB.prepare(
+      `INSERT INTO session_movies (session_id, category, title, type)
+       VALUES (?, 'terror', 'A Coisa', 'filme')`,
+    )
+      .bind(sessionId)
+      .run()
+
+    await DB.prepare(`DELETE FROM voting_sessions WHERE id = ?`)
+      .bind(sessionId)
+      .run()
+
+    const row = await DB.prepare(
+      `SELECT COUNT(*) AS n FROM session_movies WHERE session_id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ n: number }>()
+    expect(row?.n).toBe(0)
+  })
+
+  it('mantém o índice idx_session_movies_session', async () => {
+    const row = await DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_movies' AND name = 'idx_session_movies_session'`,
+    ).first<{ name: string }>()
+    expect(row?.name).toBe('idx_session_movies_session')
   })
 })

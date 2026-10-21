@@ -14,6 +14,7 @@ interface Props {
   /** 'roulette' when the winner came from a tie-break draw. */
   winnerMethod?: 'votes' | 'roulette' | null
   winnerMovieId?: number | null
+  halloween?: boolean
 }
 
 type Tone = 'win' | 'ok' | 'warn' | 'default'
@@ -38,6 +39,7 @@ export function ResultsList({
   votedMovieIds,
   winnerMethod,
   winnerMovieId,
+  halloween = false,
 }: Props) {
   const { data, isLoading } = useResults(sessionId)
   if (isLoading)
@@ -122,7 +124,7 @@ export function ResultsList({
                     )}
                     {isVotesWinner && !isRouletteWinner && (
                       <span className="bg-win/15 text-win rounded-full px-2 py-0.5 text-xs font-medium">
-                        🏆 Vencedor
+                        {halloween ? '🎃 Vencedor' : '🏆 Vencedor'}
                       </span>
                     )}
                     {isTied && (
