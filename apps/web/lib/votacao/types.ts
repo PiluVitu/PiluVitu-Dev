@@ -65,7 +65,7 @@ export interface CreateSessionBody {
   types: string[]
   include_watched: boolean
   categories: string[]
-  /** Filmes sorteados por categoria (1–5). Ausente = 1. */
+  /** Filmes sorteados por categoria (1–10). Ausente = 1. */
   per_category?: number
   theme?: SessionTheme
 }

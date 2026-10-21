@@ -186,10 +186,16 @@ test.describe('/admin/sessoes', () => {
     await expect(page.getByText('Nova sessão')).toBeVisible()
   })
 
-  test('cria uma sessão de Halloween: só terror e suspense, vários por categoria', async ({
+  test('cria uma sessão de Halloween: categorias da planilha, terror já marcada', async ({
     page,
   }) => {
     await baseMocks(page)
+    await page.route('**/votacao/categorias', (r) =>
+      r.fulfill({
+        contentType: 'application/json',
+        body: envelope({ categories: ['drama', 'suspense', 'terror'] }),
+      }),
+    )
     let corpo: unknown = null
     await page.route('**/votacao/sessions', async (r) => {
       if (r.request().method() !== 'POST') {
@@ -213,6 +219,13 @@ test.describe('/admin/sessoes', () => {
     await page.goto('/admin/sessoes')
     await page.getByLabel('Título').fill('Noite de Halloween')
     await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
+    await expect(
+      page.getByRole('checkbox', { name: 'terror', exact: true }),
+    ).toBeChecked()
+    await expect(
+      page.getByRole('checkbox', { name: 'drama', exact: true }),
+    ).not.toBeChecked()
+    await page.getByRole('checkbox', { name: 'suspense', exact: true }).check()
     await page.getByLabel('Filmes por categoria').fill('3')
     await page
       .getByRole('button', { name: /sortear filmes de halloween/i })
@@ -227,6 +240,26 @@ test.describe('/admin/sessoes', () => {
       per_category: 3,
       theme: 'halloween',
     })
+  })
+
+  test('sessão de Halloween sem nenhuma categoria marcada não é enviada', async ({
+    page,
+  }) => {
+    await baseMocks(page)
+    let enviou = false
+    await page.route('**/votacao/sessions', async (r) => {
+      if (r.request().method() === 'POST') enviou = true
+      await r.fallback()
+    })
+    await page.goto('/admin/sessoes')
+    await page.getByLabel('Título').fill('Noite de Halloween')
+    await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
+    await page.getByRole('checkbox', { name: 'terror', exact: true }).uncheck()
+    await page
+      .getByRole('button', { name: /sortear filmes de halloween/i })
+      .click()
+    await expect(page.getByText('Escolha ao menos uma categoria')).toBeVisible()
+    expect(enviou).toBe(false)
   })
 
   test('bloqueia não-admin (gate do shell)', async ({ page }) => {

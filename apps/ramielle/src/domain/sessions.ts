@@ -308,7 +308,7 @@ export type SessionMovieInsert = {
 //                   linhas/statement (96 params).
 //
 // Com as ~11 categorias medidas na planilha real e 1 filme por categoria,
-// isto não chunka; com `per_category` (até 5) passa de 12 linhas e chunka.
+// isto não chunka; com `per_category` (até 10) passa de 12 linhas e chunka.
 // Escrito e testado — mesmo aviso do brief já seguido em
 // `voteInsertStatements`: o custo de descobrir o teto em produção é uma
 // sessão de votação perdida.

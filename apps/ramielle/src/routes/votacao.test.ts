@@ -3049,7 +3049,7 @@ describe('POST /votacao/sessions', () => {
 
   test.each([
     ['per_category zero', { per_category: 0 }],
-    ['per_category acima do teto', { per_category: 6 }],
+    ['per_category acima do teto', { per_category: 11 }],
     ['per_category fracionário', { per_category: 1.5 }],
     ['per_category string', { per_category: '2' }],
     ['theme desconhecido', { theme: 'natal' }],

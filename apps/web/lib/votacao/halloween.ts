@@ -1,8 +1,9 @@
 import type { CreateSessionBody, VotingSession } from './types'
 
-export const HALLOWEEN_CATEGORIES = ['terror', 'suspense']
-export const HALLOWEEN_PER_CATEGORY = 4
-export const MAX_PER_CATEGORY = 5
+/** Categorias marcadas por padrão; o admin pode trocar no formulário. */
+export const HALLOWEEN_CATEGORIES = ['terror']
+export const HALLOWEEN_PER_CATEGORY = 8
+export const MAX_PER_CATEGORY = 10
 
 const TITULO_DE_HALLOWEEN = /halloween|🎃/i
 
@@ -22,13 +23,22 @@ export function halloweenSessionBody(input: {
   title: string
   includeWatched: boolean
   perCategory: number
+  categories?: string[]
 }): CreateSessionBody {
   return {
     title: input.title,
     types: ['filme'],
     include_watched: input.includeWatched,
-    categories: HALLOWEEN_CATEGORIES,
+    categories: input.categories ?? HALLOWEEN_CATEGORIES,
     per_category: Math.min(Math.max(1, input.perCategory), MAX_PER_CATEGORY),
     theme: 'halloween',
   }
+}
+
+/**
+ * Opções do formulário: as categorias da planilha mais as padrão de
+ * Halloween, que aparecem mesmo antes de existirem na planilha.
+ */
+export function categoriasDisponiveis(daPlanilha: string[] = []): string[] {
+  return [...new Set([...HALLOWEEN_CATEGORIES, ...daPlanilha])]
 }

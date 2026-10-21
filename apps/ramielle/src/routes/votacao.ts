@@ -266,7 +266,7 @@ const SESSION_THEMES = ['halloween'] as const
 type SessionTheme = (typeof SESSION_THEMES)[number]
 
 // Teto de subrequests do Worker: cada filme sorteado é uma busca no TMDb.
-const MAX_PER_CATEGORY = 5
+const MAX_PER_CATEGORY = 10
 
 function parseStringArray(raw: unknown): string[] | null {
   if (raw === undefined || raw === null) return []

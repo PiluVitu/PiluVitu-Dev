@@ -1,4 +1,8 @@
-import { halloweenSessionBody, isHalloweenSession } from './halloween'
+import {
+  categoriasDisponiveis,
+  halloweenSessionBody,
+  isHalloweenSession,
+} from './halloween'
 
 const base = { Title: 'Sexta 22/05', SortOptionsJSON: '{}' }
 
@@ -16,7 +20,9 @@ describe('isHalloweenSession', () => {
     expect(isHalloweenSession({ ...base, Title: 'Noite de HALLOWEEN' })).toBe(
       true,
     )
-    expect(isHalloweenSession({ ...base, Title: '🎃 Sessão de sexta' })).toBe(true)
+    expect(isHalloweenSession({ ...base, Title: '🎃 Sessão de sexta' })).toBe(
+      true,
+    )
   })
 
   it('sessão comum não é de Halloween', () => {
@@ -32,7 +38,7 @@ describe('isHalloweenSession', () => {
 })
 
 describe('halloweenSessionBody', () => {
-  it('sorteia só filmes de terror e suspense, com o tema ligado', () => {
+  it('por padrão sorteia só filmes da categoria terror, com o tema ligado', () => {
     expect(
       halloweenSessionBody({
         title: 'Noite de Halloween',
@@ -43,17 +49,41 @@ describe('halloweenSessionBody', () => {
       title: 'Noite de Halloween',
       types: ['filme'],
       include_watched: false,
-      categories: ['terror', 'suspense'],
+      categories: ['terror'],
       per_category: 4,
       theme: 'halloween',
     })
   })
 
-  it('prende per_category entre 1 e 5, o teto aceito pelo ramielle', () => {
+  it('usa as categorias escolhidas no formulário', () => {
+    expect(
+      halloweenSessionBody({
+        title: 't',
+        includeWatched: false,
+        perCategory: 2,
+        categories: ['terror', 'suspense'],
+      }).categories,
+    ).toEqual(['terror', 'suspense'])
+  })
+
+  it('prende per_category entre 1 e 10, o teto aceito pelo ramielle', () => {
     const corpo = (perCategory: number) =>
       halloweenSessionBody({ title: 't', includeWatched: false, perCategory })
         .per_category
     expect(corpo(0)).toBe(1)
-    expect(corpo(9)).toBe(5)
+    expect(corpo(15)).toBe(10)
+  })
+})
+
+describe('categoriasDisponiveis', () => {
+  it('junta terror às categorias da planilha, sem repetir', () => {
+    expect(categoriasDisponiveis(['drama', 'terror'])).toEqual([
+      'terror',
+      'drama',
+    ])
+  })
+
+  it('sem planilha (ou antes de carregar), oferece só terror', () => {
+    expect(categoriasDisponiveis()).toEqual(['terror'])
   })
 })
