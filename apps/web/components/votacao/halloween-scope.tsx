@@ -7,9 +7,134 @@ const MORCEGOS = [
   { topo: '7%', escala: 0.55, duracao: '28s', atraso: '-17s' },
 ]
 
-function Morcego() {
+const REVOADA = [
+  {
+    x: '6%',
+    dx: '14vw',
+    giro: '-12deg',
+    escala: 1.1,
+    duracao: '1.9s',
+    atraso: '0s',
+  },
+  {
+    x: '18%',
+    dx: '-8vw',
+    giro: '10deg',
+    escala: 0.8,
+    duracao: '1.6s',
+    atraso: '0.15s',
+  },
+  {
+    x: '29%',
+    dx: '10vw',
+    giro: '-6deg',
+    escala: 1.3,
+    duracao: '2.2s',
+    atraso: '0.05s',
+  },
+  {
+    x: '41%',
+    dx: '-12vw',
+    giro: '14deg',
+    escala: 0.7,
+    duracao: '1.7s',
+    atraso: '0.35s',
+  },
+  {
+    x: '50%',
+    dx: '4vw',
+    giro: '-4deg',
+    escala: 1.5,
+    duracao: '2.4s',
+    atraso: '0.1s',
+  },
+  {
+    x: '60%',
+    dx: '12vw',
+    giro: '-10deg',
+    escala: 0.9,
+    duracao: '1.8s',
+    atraso: '0.25s',
+  },
+  {
+    x: '71%',
+    dx: '-6vw',
+    giro: '8deg',
+    escala: 1.2,
+    duracao: '2.1s',
+    atraso: '0.45s',
+  },
+  {
+    x: '82%',
+    dx: '-14vw',
+    giro: '12deg',
+    escala: 0.75,
+    duracao: '1.6s',
+    atraso: '0.2s',
+  },
+  {
+    x: '90%',
+    dx: '-4vw',
+    giro: '6deg',
+    escala: 1,
+    duracao: '2s',
+    atraso: '0.55s',
+  },
+  {
+    x: '36%',
+    dx: '6vw',
+    giro: '-8deg',
+    escala: 0.6,
+    duracao: '1.5s',
+    atraso: '0.6s',
+  },
+]
+
+const FANTASMAS_SUBINDO = [
+  {
+    x: '10%',
+    balanco: '4vw',
+    largura: '3rem',
+    duracao: '3.2s',
+    atraso: '0.3s',
+  },
+  {
+    x: '27%',
+    balanco: '-3vw',
+    largura: '2.25rem',
+    duracao: '3.6s',
+    atraso: '0.6s',
+  },
+  {
+    x: '47%',
+    balanco: '3vw',
+    largura: '3.5rem',
+    duracao: '3s',
+    atraso: '0.2s',
+  },
+  {
+    x: '66%',
+    balanco: '-4vw',
+    largura: '2.5rem',
+    duracao: '3.4s',
+    atraso: '0.8s',
+  },
+  {
+    x: '84%',
+    balanco: '2vw',
+    largura: '3rem',
+    duracao: '3.1s',
+    atraso: '0.45s',
+  },
+]
+
+function Morcego({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 64 28" className="h-6 w-14" fill="currentColor">
+    <svg
+      viewBox="0 0 64 28"
+      className={cn('h-6 w-14', className)}
+      fill="currentColor"
+    >
       <path d="M32 9c-1.6-3-3.1-4.5-4-4.6.4 1.3.3 2.6-.3 3.6C25 4.6 19.5 1.5 12 1c3 2.6 4.1 5.6 3.7 8.4C12.5 7.2 6.7 6.5 0 8.3c5.6 1.6 9.6 5.6 11 10.4 2.5-2.3 6.2-2.8 9.4-1.2.6-2.6 2.6-4.3 5-4.3.5 3 2.9 5.6 6.6 7.5 3.7-1.9 6.1-4.5 6.6-7.5 2.4 0 4.4 1.7 5 4.3 3.2-1.6 6.9-1.1 9.4 1.2 1.4-4.8 5.4-8.8 11-10.4-6.7-1.8-12.5-1.1-15.7 1.1C48.9 6.6 50 3.6 53 1c-7.5.5-13 3.6-15.7 7-.6-1-.7-2.3-.3-3.6-.9.1-2.4 1.6-4 4.6Z" />
     </svg>
   )
@@ -17,11 +142,7 @@ function Morcego() {
 
 function Fantasma({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 40 48"
-      className={cn('halloween-fantasma text-foreground/20', className)}
-      fill="currentColor"
-    >
+    <svg viewBox="0 0 40 48" className={className} fill="currentColor">
       <path d="M20 0C9 0 2 8.5 2 19v27l6-5 6 5 6-5 6 5 6-5 6 5V19C38 8.5 31 0 20 0Zm-7 22a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm14 0a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" />
     </svg>
   )
@@ -70,7 +191,7 @@ export function HalloweenBackdrop() {
       {MORCEGOS.map((m) => (
         <div
           key={m.topo}
-          className="halloween-morcego absolute left-0 text-black/80"
+          className="halloween-morcego halloween-silhueta absolute left-0"
           style={
             {
               top: m.topo,
@@ -83,8 +204,8 @@ export function HalloweenBackdrop() {
           <Morcego />
         </div>
       ))}
-      <Fantasma className="absolute top-[45%] left-4 hidden w-10 md:block" />
-      <Fantasma className="absolute top-[70%] right-6 hidden w-8 [animation-delay:-3s] md:block" />
+      <Fantasma className="halloween-fantasma text-foreground/35 absolute top-[45%] left-2 w-7 sm:left-4 sm:w-10" />
+      <Fantasma className="halloween-fantasma text-foreground/35 absolute top-[70%] right-2 w-6 [animation-delay:-3s] sm:right-6 sm:w-8" />
       <div className="absolute inset-x-0 bottom-0 h-40 overflow-hidden">
         <div
           className="halloween-nevoa h-full w-[200%]"
@@ -94,6 +215,53 @@ export function HalloweenBackdrop() {
           }}
         />
       </div>
+    </div>
+  )
+}
+
+/** Revoada de morcegos e fantasmas subindo, uma vez, ao abrir a página. */
+export function HalloweenEntrada() {
+  return (
+    <div
+      aria-hidden
+      data-testid="halloween-entrada"
+      className="halloween-entrada pointer-events-none fixed inset-0 z-40 overflow-hidden"
+    >
+      {FANTASMAS_SUBINDO.map((f) => (
+        <div
+          key={f.x}
+          className="halloween-subir absolute bottom-0"
+          style={
+            {
+              left: f.x,
+              width: f.largura,
+              '--balanco': f.balanco,
+              animationDuration: f.duracao,
+              animationDelay: f.atraso,
+            } as CSSProperties
+          }
+        >
+          <Fantasma className="text-foreground/70 w-full" />
+        </div>
+      ))}
+      {REVOADA.map((m) => (
+        <div
+          key={m.x}
+          className="halloween-revoada halloween-silhueta absolute bottom-0"
+          style={
+            {
+              left: m.x,
+              '--dx': m.dx,
+              '--giro': m.giro,
+              '--escala': m.escala,
+              animationDuration: m.duracao,
+              animationDelay: m.atraso,
+            } as CSSProperties
+          }
+        >
+          <Morcego className="halloween-asas" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -112,6 +280,7 @@ export function HalloweenScope({
       className={cn('halloween relative isolate min-h-screen', className)}
     >
       <HalloweenBackdrop />
+      <HalloweenEntrada />
       {children}
     </div>
   )

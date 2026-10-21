@@ -383,6 +383,13 @@ test.describe('sessão de Halloween', () => {
     await page.goto('/votacao/1')
     await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
     await expect(page.getByTestId('halloween-backdrop')).toBeAttached()
+    // A revoada de entrada cobre a tela inteira, mas não pode bloquear o clique
+    // no card logo abaixo (o voto é feito durante a animação).
+    await expect(page.getByTestId('halloween-entrada')).toBeVisible()
+    await expect(page.getByTestId('halloween-entrada')).toHaveCSS(
+      'pointer-events',
+      'none',
+    )
     await expect(page.getByText('🎃 Sessão de Halloween')).toBeVisible()
     await expect(page.getByText(/criada em/)).toHaveCount(0)
     await expect(
@@ -407,6 +414,16 @@ test.describe('sessão de Halloween', () => {
     await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
       0,
     )
+  })
+
+  test('com "reduzir movimento" do sistema, a revoada de entrada não aparece', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await mockAPI(page, { sessionOverrides: halloween })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.getByTestId('halloween-entrada')).toBeHidden()
   })
 
   test('sessão comum não ganha o tema', async ({ page }) => {

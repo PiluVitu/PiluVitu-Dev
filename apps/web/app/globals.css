@@ -270,8 +270,63 @@ code[data-theme*=' '] span {
   animation: halloween-voo var(--duracao, 18s) linear infinite;
   animation-delay: var(--atraso, 0s);
 }
-.halloween-morcego svg {
+.halloween-morcego svg,
+.halloween-asas {
   animation: halloween-asas 0.35s ease-in-out infinite;
+}
+.halloween-silhueta {
+  color: hsl(275 60% 8%);
+  filter: drop-shadow(0 0 6px hsl(280 85% 65% / 0.75))
+    drop-shadow(0 0 2px hsl(26 96% 54% / 0.6));
+}
+
+@keyframes halloween-revoada {
+  0% {
+    transform: translate(0, 10vh) scale(var(--escala, 1));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx, 0), -110vh) scale(var(--escala, 1))
+      rotate(var(--giro, 0deg));
+    opacity: 0;
+  }
+}
+
+@keyframes halloween-subir {
+  0% {
+    transform: translate(0, 10vh);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(var(--balanco, 0), -50vh);
+  }
+  80% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(0, -115vh);
+    opacity: 0;
+  }
+}
+
+.halloween-revoada {
+  animation-name: halloween-revoada;
+  animation-timing-function: cubic-bezier(0.3, 0.1, 0.4, 1);
+  animation-fill-mode: both;
+}
+.halloween-subir {
+  animation-name: halloween-subir;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
 }
 .halloween-fantasma {
   animation: halloween-flutuar 6s ease-in-out infinite;
@@ -281,8 +336,12 @@ code[data-theme*=' '] span {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .halloween-entrada {
+    display: none;
+  }
   .halloween-morcego,
   .halloween-morcego svg,
+  .halloween-asas,
   .halloween-fantasma,
   .halloween-nevoa {
     animation: none;
