@@ -218,7 +218,9 @@ test.describe('/admin/sessoes', () => {
 
     await page.goto('/admin/sessoes')
     await page.getByLabel('Título').fill('Noite de Halloween')
-    await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
+    await page
+      .getByRole('checkbox', { name: /votação especial de halloween/i })
+      .check()
     await expect(
       page.getByRole('checkbox', { name: 'terror', exact: true }),
     ).toBeChecked()
@@ -253,7 +255,9 @@ test.describe('/admin/sessoes', () => {
     })
     await page.goto('/admin/sessoes')
     await page.getByLabel('Título').fill('Noite de Halloween')
-    await page.getByRole('checkbox', { name: /sessão de halloween/i }).check()
+    await page
+      .getByRole('checkbox', { name: /votação especial de halloween/i })
+      .check()
     await page.getByRole('checkbox', { name: 'terror', exact: true }).uncheck()
     await page
       .getByRole('button', { name: /sortear filmes de halloween/i })

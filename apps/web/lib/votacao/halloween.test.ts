@@ -16,13 +16,11 @@ describe('isHalloweenSession', () => {
     ).toBe(true)
   })
 
-  it('reconhece pelo título (sessões criadas antes do tema existir)', () => {
-    expect(isHalloweenSession({ ...base, Title: 'Noite de HALLOWEEN' })).toBe(
-      true,
-    )
-    expect(isHalloweenSession({ ...base, Title: '🎃 Sessão de sexta' })).toBe(
-      true,
-    )
+  it('o título sozinho não liga o tema: só a flag escolhida na criação', () => {
+    for (const Title of ['Noite de HALLOWEEN', '🎃 Sessão de sexta']) {
+      const sessao = { ...base, Title }
+      expect(isHalloweenSession(sessao)).toBe(false)
+    }
   })
 
   it('sessão comum não é de Halloween', () => {

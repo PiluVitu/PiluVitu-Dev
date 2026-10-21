@@ -93,7 +93,7 @@ export function CreateSessionForm() {
           onChange={(e) => setHalloween(e.target.checked)}
         />
         <span>
-          <span className="font-medium">🎃 Sessão de Halloween</span>
+          <span className="font-medium">🎃 Votação especial de Halloween</span>
           <span className="text-muted-foreground block text-xs">
             Sorteia vários filmes das categorias escolhidas da planilha (terror
             por padrão), e a página da sessão ganha o tema de Halloween.

@@ -5,12 +5,9 @@ export const HALLOWEEN_CATEGORIES = ['terror']
 export const HALLOWEEN_PER_CATEGORY = 8
 export const MAX_PER_CATEGORY = 10
 
-const TITULO_DE_HALLOWEEN = /halloween|🎃/i
-
 export function isHalloweenSession(
-  session: Pick<VotingSession, 'Title' | 'SortOptionsJSON'>,
+  session: Pick<VotingSession, 'SortOptionsJSON'>,
 ): boolean {
-  if (TITULO_DE_HALLOWEEN.test(session.Title)) return true
   try {
     const opts = JSON.parse(session.SortOptionsJSON) as { theme?: unknown }
     return opts?.theme === 'halloween'

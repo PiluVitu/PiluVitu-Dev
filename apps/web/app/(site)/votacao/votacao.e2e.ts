@@ -396,6 +396,19 @@ test.describe('sessão de Halloween', () => {
     })
   })
 
+  test('título com "Halloween" sem a flag não ganha o tema', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      sessionOverrides: { Title: 'Noite de Halloween', SortOptionsJSON: '{}' },
+    })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
+      0,
+    )
+  })
+
   test('sessão comum não ganha o tema', async ({ page }) => {
     await mockAPI(page)
     await page.goto('/votacao/1')
