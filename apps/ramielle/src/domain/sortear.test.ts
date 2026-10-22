@@ -228,3 +228,51 @@ describe('sortOnePerCategory — o rng injetado decide a escolha (nunca Math.ran
     spy.mockRestore()
   })
 })
+
+describe('sortOnePerCategory — perCategory (sessão temática, ex.: Halloween)', () => {
+  it('sorteia N filmes DISTINTOS por categoria, sem repetir nenhum', () => {
+    const got = sortOnePerCategory(
+      sample(),
+      { includeWatched: true, perCategory: 2 },
+      seededRng(42),
+    )
+    const titles = got.map((m) => m.title)
+    expect(new Set(titles).size).toBe(titles.length)
+    expect(got.filter((m) => m.category === 'terror')).toHaveLength(2)
+    expect(got.filter((m) => m.category === 'drama')).toHaveLength(2)
+    expect(got.filter((m) => m.category === 'ação')).toHaveLength(1)
+  })
+
+  it('categoria com menos candidatos que N devolve todos os que tem, sem duplicar', () => {
+    const got = sortOnePerCategory(
+      sample(),
+      { categories: ['terror'], perCategory: 5 },
+      seededRng(1),
+    )
+    expect(got.map((m) => m.title).sort()).toEqual(['A Coisa', 'Hereditário'])
+  })
+
+  it('perCategory 1 consome o rng igual ao sorteio sem a opção (paridade com o Go)', () => {
+    const fila = [0, 0.9, 0.6]
+    const semOpcao = sortOnePerCategory(
+      sample(),
+      { includeWatched: true },
+      queueRng(fila),
+    )
+    const comUm = sortOnePerCategory(
+      sample(),
+      { includeWatched: true, perCategory: 1 },
+      queueRng(fila),
+    )
+    expect(comUm).toEqual(semOpcao)
+  })
+
+  it('o rng decide a ordem dentro da categoria: rng perto de 1 traz o último candidato primeiro', () => {
+    const got = sortOnePerCategory(
+      sample(),
+      { categories: ['terror'], perCategory: 2 },
+      queueRng([0.999999, 0]),
+    )
+    expect(got.map((m) => m.title)).toEqual(['Hereditário', 'A Coisa'])
+  })
+})

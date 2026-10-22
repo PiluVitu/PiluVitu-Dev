@@ -118,3 +118,235 @@ code[data-theme*=' '] span {
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
+
+/*
+  Tema de Halloween da votação (`components/votacao/halloween-scope.tsx`).
+  Redefine os tokens do DS dentro do escopo, então todo componente da
+  votação herda a paleta sem saber do tema. Sempre escuro, nos dois modos.
+*/
+.halloween {
+  --background: 266 45% 5%;
+  --foreground: 36 60% 92%;
+  --card: 268 38% 9%;
+  --card-foreground: 36 60% 92%;
+  --popover: 268 38% 9%;
+  --popover-foreground: 36 60% 92%;
+  --primary: 26 96% 54%;
+  --primary-foreground: 266 45% 5%;
+  --secondary: 268 30% 15%;
+  --secondary-foreground: 36 60% 92%;
+  --muted: 268 30% 13%;
+  --muted-foreground: 270 15% 72%;
+  --accent: 268 32% 17%;
+  --accent-foreground: 36 60% 92%;
+  --destructive: 0 78% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 270 28% 22%;
+  --input: 270 28% 22%;
+  --ring: 26 96% 54%;
+  --success: 95 70% 48%;
+  --success-foreground: 266 45% 5%;
+  --ok: 95 70% 48%;
+  --ok-foreground: 266 45% 5%;
+  --warn: 45 100% 58%;
+  --warn-foreground: 266 45% 5%;
+  --win: 30 100% 60%;
+  --win-foreground: 266 45% 5%;
+
+  /* O @theme resolve os --color-* no :root; sem redeclarar aqui, as
+     utilities (bg-primary, text-win…) continuariam com a paleta do site. */
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-background: hsl(var(--background));
+  --color-border: hsl(var(--border));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card: hsl(var(--card));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-foreground: hsl(var(--foreground));
+  --color-input: hsl(var(--input));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-ok-foreground: hsl(var(--ok-foreground));
+  --color-ok: hsl(var(--ok));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-ring: hsl(var(--ring));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-success: hsl(var(--success));
+  --color-warn-foreground: hsl(var(--warn-foreground));
+  --color-warn: hsl(var(--warn));
+  --color-win-foreground: hsl(var(--win-foreground));
+  --color-win: hsl(var(--win));
+
+  color-scheme: dark;
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(
+      ellipse 60% 40% at 85% 0%,
+      hsl(280 70% 30% / 0.35),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 90% 35% at 50% 100%,
+      hsl(26 96% 54% / 0.18),
+      transparent 70%
+    ),
+    hsl(var(--background));
+}
+
+.halloween-title {
+  text-shadow:
+    0 0 18px hsl(26 96% 54% / 0.55),
+    0 0 42px hsl(280 80% 50% / 0.35);
+}
+
+.halloween .halloween-card {
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.halloween .halloween-card:not(:disabled):hover {
+  transform: translateY(-4px) rotate(-0.6deg);
+  box-shadow:
+    0 0 0 1px hsl(26 96% 54% / 0.6),
+    0 18px 40px hsl(26 96% 54% / 0.25);
+}
+
+@keyframes halloween-voo {
+  0% {
+    transform: translate(-10vw, 0) scale(var(--escala, 1));
+  }
+  25% {
+    transform: translate(25vw, -3vh) scale(var(--escala, 1));
+  }
+  50% {
+    transform: translate(55vw, 2vh) scale(var(--escala, 1));
+  }
+  75% {
+    transform: translate(85vw, -4vh) scale(var(--escala, 1));
+  }
+  100% {
+    transform: translate(115vw, 0) scale(var(--escala, 1));
+  }
+}
+
+@keyframes halloween-asas {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.35);
+  }
+}
+
+@keyframes halloween-flutuar {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-14px);
+    opacity: 0.85;
+  }
+}
+
+@keyframes halloween-nevoa {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.halloween-morcego {
+  animation: halloween-voo var(--duracao, 18s) linear infinite;
+  animation-delay: var(--atraso, 0s);
+}
+.halloween-morcego svg,
+.halloween-asas {
+  animation: halloween-asas 0.35s ease-in-out infinite;
+}
+.halloween-silhueta {
+  color: hsl(275 60% 8%);
+  filter: drop-shadow(0 0 6px hsl(280 85% 65% / 0.75))
+    drop-shadow(0 0 2px hsl(26 96% 54% / 0.6));
+}
+
+@keyframes halloween-revoada {
+  0% {
+    transform: translate(0, 10vh) scale(var(--escala, 1));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx, 0), -110vh) scale(var(--escala, 1))
+      rotate(var(--giro, 0deg));
+    opacity: 0;
+  }
+}
+
+@keyframes halloween-subir {
+  0% {
+    transform: translate(0, 10vh);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(var(--balanco, 0), -50vh);
+  }
+  80% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(0, -115vh);
+    opacity: 0;
+  }
+}
+
+.halloween-revoada {
+  animation-name: halloween-revoada;
+  animation-timing-function: cubic-bezier(0.3, 0.1, 0.4, 1);
+  animation-fill-mode: both;
+}
+.halloween-subir {
+  animation-name: halloween-subir;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+.halloween-fantasma {
+  animation: halloween-flutuar 6s ease-in-out infinite;
+}
+.halloween-nevoa {
+  animation: halloween-nevoa 40s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halloween-entrada {
+    display: none;
+  }
+  .halloween-morcego,
+  .halloween-morcego svg,
+  .halloween-asas,
+  .halloween-fantasma,
+  .halloween-nevoa {
+    animation: none;
+  }
+  .halloween .halloween-card:not(:disabled):hover {
+    transform: none;
+  }
+}

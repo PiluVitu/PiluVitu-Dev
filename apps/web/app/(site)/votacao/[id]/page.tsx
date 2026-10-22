@@ -7,6 +7,11 @@ import { SessionStatusBadge } from '@/components/votacao/session-status-badge'
 import { VoteSection } from '@/components/votacao/vote-section'
 import { ResultsList } from '@/components/votacao/results-list'
 import { TiebreakRoulette } from '@/components/votacao/tiebreak-roulette'
+import {
+  HalloweenHeading,
+  HalloweenScope,
+} from '@/components/votacao/halloween-scope'
+import { isHalloweenSession } from '@/lib/votacao/halloween'
 import { LoginButton } from '@/components/votacao/login-button'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
@@ -26,12 +31,19 @@ export default function SessionDetailPage({
   const detail = useSessionDetail(id)
   const close = useCloseSession()
 
-  const shell = (children: React.ReactNode) => (
-    <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
-      <PageTopBar backHref="/votacao" backLabel="Sessões" />
-      <div className="mt-10">{children}</div>
-    </div>
-  )
+  const halloween = detail.data
+    ? isHalloweenSession(detail.data.session)
+    : false
+
+  const shell = (children: React.ReactNode) => {
+    const pagina = (
+      <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
+        <PageTopBar backHref="/votacao" backLabel="Sessões" />
+        <div className="mt-10">{children}</div>
+      </div>
+    )
+    return halloween ? <HalloweenScope>{pagina}</HalloweenScope> : pagina
+  }
 
   if (!Number.isFinite(id) || id <= 0) {
     return shell(<p className="text-destructive">ID inválido.</p>)
@@ -68,10 +80,18 @@ export default function SessionDetailPage({
     <div className="space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">{session.Title}</h1>
-          <p className="text-muted-foreground mt-1 font-mono text-xs">
-            criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
-          </p>
+          {halloween ? (
+            <HalloweenHeading title={session.Title} />
+          ) : (
+            <h1 className="text-4xl font-bold tracking-tight">
+              {session.Title}
+            </h1>
+          )}
+          {!halloween && (
+            <p className="text-muted-foreground mt-1 font-mono text-xs">
+              criada em {new Date(session.CreatedAt).toLocaleString('pt-BR')}
+            </p>
+          )}
         </div>
         <SessionStatusBadge status={session.Status} />
       </header>
@@ -85,13 +105,16 @@ export default function SessionDetailPage({
 
       {closed ? (
         <section className="space-y-4">
-          <h2 className="text-2xl font-bold tracking-tight">Resultados</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {halloween ? 'O veredito da noite' : 'Resultados'}
+          </h2>
           <ResultsList
             sessionId={id}
             movies={movies}
             votedMovieIds={voted_movie_ids}
             winnerMethod={session.WinnerMethod}
             winnerMovieId={session.WinnerMovieID}
+            halloween={halloween}
           />
         </section>
       ) : (
@@ -100,6 +123,7 @@ export default function SessionDetailPage({
           movies={movies}
           closed={closed}
           votedMovieIds={voted_movie_ids}
+          halloween={halloween}
         />
       )}
 

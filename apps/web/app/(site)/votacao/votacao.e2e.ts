@@ -116,6 +116,7 @@ interface MockOptions {
   loggedIn?: boolean
   votedMovieIds?: number[]
   sessionStatus?: 'open' | 'closed'
+  sessionOverrides?: Partial<typeof mockSession>
 }
 
 async function mockAPI(page: Page, options: MockOptions = {}) {
@@ -123,7 +124,9 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
     loggedIn = true,
     votedMovieIds = [],
     sessionStatus = 'open',
+    sessionOverrides = {},
   } = options
+  const session = { ...mockSession, ...sessionOverrides, Status: sessionStatus }
 
   await page.route(`**/auth/me`, (route) => {
     if (loggedIn) {
@@ -145,7 +148,7 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       status: 200,
       contentType: 'application/json',
       body: envelope({
-        sessions: [{ ...mockSession, Status: sessionStatus }],
+        sessions: [session],
       }),
     })
   })
@@ -154,7 +157,7 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       status: 200,
       contentType: 'application/json',
       body: envelope({
-        session: { ...mockSession, Status: sessionStatus },
+        session,
         movies: mockMovies,
         has_voted: votedMovieIds.length > 0,
         voted_movie_ids: votedMovieIds,
@@ -354,5 +357,105 @@ test.describe('/votacao/[id] detail', () => {
     await expect(page.getByText(/vencedor do desempate/i)).toBeVisible({
       timeout: 10_000,
     })
+  })
+})
+
+test.describe('sessão de Halloween', () => {
+  const halloween = {
+    Title: 'Noite de Halloween',
+    SortOptionsJSON: JSON.stringify({
+      categories: ['terror', 'suspense'],
+      per_category: 4,
+      theme: 'halloween',
+    }),
+  }
+
+  test('a listagem destaca a sessão de Halloween', async ({ page }) => {
+    await mockAPI(page, { sessionOverrides: halloween })
+    await page.goto('/votacao')
+    await expect(page.getByText('Sessão de Halloween')).toBeVisible()
+  })
+
+  test('a página da sessão ganha o tema e a votação continua funcionando', async ({
+    page,
+  }) => {
+    await mockAPI(page, { sessionOverrides: halloween })
+    await page.goto('/votacao/1')
+    await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
+    await expect(page.getByTestId('halloween-backdrop')).toBeAttached()
+    // A revoada de entrada cobre a tela inteira, mas não pode bloquear o clique
+    // no card logo abaixo (o voto é feito durante a animação).
+    await expect(page.getByTestId('halloween-entrada')).toBeVisible()
+    await expect(page.getByTestId('halloween-entrada')).toHaveCSS(
+      'pointer-events',
+      'none',
+    )
+    await expect(page.getByText('🎃 Sessão de Halloween')).toBeVisible()
+    await expect(page.getByText(/criada em/)).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Noite de Halloween' }),
+    ).toBeVisible()
+
+    await page.getByText('A Coisa').click()
+    await page.getByRole('button', { name: /🎃 votar \(1\)/i }).click()
+    await expect(page.getByText(/voto registrado 👻/i)).toBeVisible({
+      timeout: 5_000,
+    })
+  })
+
+  test('título com "Halloween" sem a flag não ganha o tema', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      sessionOverrides: { Title: 'Noite de Halloween', SortOptionsJSON: '{}' },
+    })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
+      0,
+    )
+  })
+
+  test('com "reduzir movimento" do sistema, a revoada de entrada não aparece', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await mockAPI(page, { sessionOverrides: halloween })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.getByTestId('halloween-entrada')).toBeHidden()
+  })
+
+  test('sessão comum não ganha o tema', async ({ page }) => {
+    await mockAPI(page)
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
+      0,
+    )
+  })
+
+  test('encerrada, mostra o vencedor com a abóbora', async ({ page }) => {
+    await mockAPI(page, {
+      sessionStatus: 'closed',
+      sessionOverrides: halloween,
+    })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('O veredito da noite')).toBeVisible()
+    await expect(page.getByText('🎃 Vencedor')).toBeVisible()
+  })
+
+  test('não rola na horizontal a 320 px (o voo dos morcegos fica contido)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await mockAPI(page, { sessionOverrides: halloween })
+    await page.goto('/votacao/1')
+    await expect(page.getByText('A Coisa')).toBeVisible()
+    const larguras = await page.evaluate(() => ({
+      conteudo: document.documentElement.scrollWidth,
+      janela: window.innerWidth,
+    }))
+    expect(larguras.conteudo).toBeLessThanOrEqual(larguras.janela)
   })
 })

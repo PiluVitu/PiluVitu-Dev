@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HalloweenScope } from './halloween-scope'
 import { VoteSection } from './vote-section'
 import type { SessionMovie } from '@/lib/votacao/types'
 
@@ -86,4 +87,21 @@ export const Closed: Story = {
     closed: true,
     votedMovieIds: [],
   },
+}
+
+export const Halloween: Story = {
+  args: {
+    sessionId: 1,
+    movies: mockMovies,
+    closed: false,
+    votedMovieIds: [mockMovies[0].ID],
+    halloween: true,
+  },
+  decorators: [
+    (Story) => (
+      <HalloweenScope className="p-6">
+        <Story />
+      </HalloweenScope>
+    ),
+  ],
 }
