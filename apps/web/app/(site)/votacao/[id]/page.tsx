@@ -11,7 +11,8 @@ import {
   HalloweenHeading,
   HalloweenScope,
 } from '@/components/votacao/halloween-scope'
-import { isHalloweenSession } from '@/lib/votacao/halloween'
+import { HalloweenRoleta } from '@/components/votacao/halloween-roleta'
+import { isHalloweenSession, isRoletaSession } from '@/lib/votacao/halloween'
 import { LoginButton } from '@/components/votacao/login-button'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
@@ -34,6 +35,7 @@ export default function SessionDetailPage({
   const halloween = detail.data
     ? isHalloweenSession(detail.data.session)
     : false
+  const roleta = detail.data ? isRoletaSession(detail.data.session) : false
 
   const shell = (children: React.ReactNode) => {
     const pagina = (
@@ -81,7 +83,7 @@ export default function SessionDetailPage({
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           {halloween ? (
-            <HalloweenHeading title={session.Title} />
+            <HalloweenHeading title={session.Title} roleta={roleta} />
           ) : (
             <h1 className="text-4xl font-bold tracking-tight">
               {session.Title}
@@ -103,56 +105,67 @@ export default function SessionDetailPage({
         </div>
       )}
 
-      {closed ? (
-        <section className="space-y-4">
-          <h2 className="text-2xl font-bold tracking-tight">
-            {halloween ? 'O veredito da noite' : 'Resultados'}
-          </h2>
-          <ResultsList
-            sessionId={id}
-            movies={movies}
-            votedMovieIds={voted_movie_ids}
-            winnerMethod={session.WinnerMethod}
-            winnerMovieId={session.WinnerMovieID}
-            halloween={halloween}
-          />
-        </section>
-      ) : (
-        <VoteSection
+      {roleta ? (
+        <HalloweenRoleta
           sessionId={id}
           movies={movies}
-          closed={closed}
-          votedMovieIds={voted_movie_ids}
-          halloween={halloween}
+          isAdmin={user.data?.is_admin ?? false}
+          winnerMovieId={session.WinnerMovieID}
         />
-      )}
+      ) : (
+        <>
+          {closed ? (
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold tracking-tight">
+                {halloween ? 'O veredito da noite' : 'Resultados'}
+              </h2>
+              <ResultsList
+                sessionId={id}
+                movies={movies}
+                votedMovieIds={voted_movie_ids}
+                winnerMethod={session.WinnerMethod}
+                winnerMovieId={session.WinnerMovieID}
+                halloween={halloween}
+              />
+            </section>
+          ) : (
+            <VoteSection
+              sessionId={id}
+              movies={movies}
+              closed={closed}
+              votedMovieIds={voted_movie_ids}
+              halloween={halloween}
+            />
+          )}
 
-      {user.data?.is_admin && !closed && (
-        <div className="border-border border-t pt-6">
-          <Button
-            variant="destructive"
-            disabled={close.isPending}
-            onClick={() =>
-              close.mutate(id, {
-                onSuccess: (data) =>
-                  toast.success(
-                    data.winner_movie_id
-                      ? `Encerrada. Vencedor: ${data.winner_movie_id}`
-                      : 'Encerrada sem votos.',
-                  ),
-                onError: (err) => toast.error(errorMessage(err)),
-              })
-            }
-          >
-            {close.isPending ? 'Encerrando…' : 'Encerrar sessão'}
-          </Button>
-        </div>
-      )}
+          {user.data?.is_admin && !closed && (
+            <div className="border-border border-t pt-6">
+              <Button
+                variant="destructive"
+                disabled={close.isPending}
+                onClick={() =>
+                  close.mutate(id, {
+                    onSuccess: (data) =>
+                      toast.success(
+                        data.winner_movie_id
+                          ? `Encerrada. Vencedor: ${data.winner_movie_id}`
+                          : 'Encerrada sem votos.',
+                      ),
+                    onError: (err) => toast.error(errorMessage(err)),
+                  })
+                }
+              >
+                {close.isPending ? 'Encerrando…' : 'Encerrar sessão'}
+              </Button>
+            </div>
+          )}
 
-      {user.data?.is_admin && closed && (
-        <div className="border-border border-t pt-6">
-          <TiebreakRoulette sessionId={id} movies={movies} />
-        </div>
+          {user.data?.is_admin && closed && (
+            <div className="border-border border-t pt-6">
+              <TiebreakRoulette sessionId={id} movies={movies} />
+            </div>
+          )}
+        </>
       )}
     </div>,
   )

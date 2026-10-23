@@ -40,8 +40,8 @@ const mockSession = {
   CreatedBy: 1,
   CreatedAt: new Date().toISOString(),
   ClosedAt: null,
-  WinnerMovieID: null,
-  WinnerMethod: null,
+  WinnerMovieID: null as number | null,
+  WinnerMethod: null as 'votes' | 'roulette' | null,
   SortOptionsJSON: '{}',
 }
 
@@ -457,5 +457,91 @@ test.describe('sessão de Halloween', () => {
       janela: window.innerWidth,
     }))
     expect(larguras.conteudo).toBeLessThanOrEqual(larguras.janela)
+  })
+})
+
+test.describe('roleta de Halloween', () => {
+  const roleta = {
+    Title: 'Noite de Halloween',
+    SortOptionsJSON: JSON.stringify({ theme: 'halloween', mode: 'roleta' }),
+  }
+
+  test('admin gira a roleta pelo caminho crypto-only e vê o vencedor', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: () => Promise.reject(new Error('no camera')) },
+        configurable: true,
+      })
+    })
+    await mockAPI(page, { sessionOverrides: roleta })
+    const corpos: { entropy?: string }[] = []
+    await page.route('**/votacao/sessions/1/roleta', async (route) => {
+      corpos.push(route.request().postDataJSON() as { entropy?: string })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope(
+          {
+            winner_movie_id: 2,
+            candidate_movie_ids: [1, 2],
+            server_nonce: 'abcd',
+          },
+          [{ type: 'success', message: 'Roleta girada.' }],
+        ),
+      })
+    })
+
+    await page.goto('/votacao/1')
+    await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
+    await expect(page.getByTestId('roleta-halloween')).toBeVisible()
+    // Na roleta não tem votação nem botão de encerrar.
+    await expect(page.getByRole('button', { name: /votar/i })).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: /encerrar sessão/i }),
+    ).toHaveCount(0)
+
+    await page.getByTestId('capture-entropy').click()
+    await expect(page.getByText(/o filme da noite: forrest gump/i)).toBeVisible(
+      { timeout: 10_000 },
+    )
+    await expect(page.getByTestId('roleta-vencedor')).toContainText(
+      'Forrest Gump',
+    )
+    // 32 bytes de entropia em hex, gerados no navegador.
+    expect(corpos).toHaveLength(1)
+    expect(corpos[0]?.entropy).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  test('quem não é admin vê os candidatos e espera o giro', async ({
+    page,
+  }) => {
+    await mockAPI(page, { sessionOverrides: roleta })
+    await page.route('**/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: envelope({ ...mockUser, is_admin: false }),
+      }),
+    )
+    await page.goto('/votacao/1')
+    await expect(page.getByText(/aguardando quem organiza/i)).toBeVisible()
+    await expect(page.getByTestId('capture-entropy')).toHaveCount(0)
+    await expect(page.getByText('2 filmes na roleta')).toBeVisible()
+  })
+
+  test('encerrada, mostra o vencedor gravado', async ({ page }) => {
+    await mockAPI(page, {
+      sessionStatus: 'closed',
+      sessionOverrides: {
+        ...roleta,
+        WinnerMovieID: 1,
+        WinnerMethod: 'roulette',
+      },
+    })
+    await page.goto('/votacao/1')
+    await expect(page.getByTestId('roleta-vencedor')).toContainText('A Coisa')
+    await expect(page.getByTestId('capture-entropy')).toHaveCount(0)
   })
 })

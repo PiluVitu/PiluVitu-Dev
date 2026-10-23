@@ -286,7 +286,13 @@ export function HalloweenScope({
   )
 }
 
-export function HalloweenHeading({ title }: { title: string }) {
+export function HalloweenHeading({
+  title,
+  roleta = false,
+}: {
+  title: string
+  roleta?: boolean
+}) {
   return (
     <div>
       <p className="text-primary font-mono text-xs tracking-[0.3em] uppercase">
@@ -296,8 +302,9 @@ export function HalloweenHeading({ title }: { title: string }) {
         {title}
       </h1>
       <p className="text-muted-foreground mt-2 text-sm">
-        Escolha os filmes que vão assombrar a noite. Quem tiver coragem vota em
-        todos.
+        {roleta
+          ? 'A roleta escolhe o filme que vai assombrar a noite.'
+          : 'Escolha os filmes que vão assombrar a noite. Quem tiver coragem vota em todos.'}
       </p>
     </div>
   )
