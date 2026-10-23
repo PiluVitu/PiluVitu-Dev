@@ -7,14 +7,7 @@ import { toast } from 'sonner'
 import { useCreateSession } from '@/hooks/votacao/use-create-session'
 import { errorMessage } from '@/lib/votacao/api-client'
 import { useRouter } from 'next/navigation'
-import {
-  HALLOWEEN_CATEGORIES,
-  HALLOWEEN_PER_CATEGORY,
-  MAX_PER_CATEGORY,
-  categoriasDisponiveis,
-  halloweenSessionBody,
-} from '@/lib/votacao/halloween'
-import { useCategories } from '@/hooks/votacao/use-categories'
+import { halloweenSessionBody } from '@/lib/votacao/halloween'
 import type { CreateSessionBody } from '@/lib/votacao/types'
 
 export function CreateSessionForm() {
@@ -23,16 +16,6 @@ export function CreateSessionForm() {
   const [includeSerie, setIncludeSerie] = useState(true)
   const [includeWatched, setIncludeWatched] = useState(false)
   const [halloween, setHalloween] = useState(false)
-  const [perCategory, setPerCategory] = useState(HALLOWEEN_PER_CATEGORY)
-  const [categorias, setCategorias] = useState<string[]>(HALLOWEEN_CATEGORIES)
-  const planilha = useCategories(halloween)
-  const opcoes = categoriasDisponiveis(planilha.data?.categories)
-
-  function alternarCategoria(categoria: string, marcada: boolean) {
-    setCategorias((atual) =>
-      marcada ? [...atual, categoria] : atual.filter((c) => c !== categoria),
-    )
-  }
   const router = useRouter()
   const mutation = useCreateSession()
 
@@ -49,17 +32,8 @@ export function CreateSessionForm() {
           toast.error('Título obrigatório')
           return
         }
-        if (halloween && categorias.length === 0) {
-          toast.error('Escolha ao menos uma categoria')
-          return
-        }
         const body: CreateSessionBody = halloween
-          ? halloweenSessionBody({
-              title: title.trim(),
-              includeWatched,
-              perCategory,
-              categories: categorias,
-            })
+          ? halloweenSessionBody({ title: title.trim(), includeWatched })
           : {
               title: title.trim(),
               types,
@@ -95,55 +69,12 @@ export function CreateSessionForm() {
         <span>
           <span className="font-medium">🎃 Votação especial de Halloween</span>
           <span className="text-muted-foreground block text-xs">
-            Sorteia vários filmes das categorias escolhidas da planilha (terror
-            por padrão), e a página da sessão ganha o tema de Halloween.
+            Em vez de votação, uma roleta sorteia um filme entre os marcados na
+            coluna Halloween da planilha, com a entropia da câmera. A página da
+            sessão ganha o tema de Halloween.
           </span>
         </span>
       </label>
-      {halloween && (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">
-            Categorias da planilha
-          </legend>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {opcoes.map((categoria) => (
-              <label
-                key={categoria}
-                className="flex items-center gap-2 text-sm capitalize"
-              >
-                <input
-                  type="checkbox"
-                  checked={categorias.includes(categoria)}
-                  onChange={(e) =>
-                    alternarCategoria(categoria, e.target.checked)
-                  }
-                />
-                {categoria}
-              </label>
-            ))}
-          </div>
-          {planilha.isError && (
-            <p className="text-muted-foreground text-xs">
-              Não deu pra ler as categorias da planilha; dá pra sortear com as
-              marcadas.
-            </p>
-          )}
-        </fieldset>
-      )}
-      {halloween && (
-        <div className="space-y-2">
-          <Label htmlFor="per-category">Filmes por categoria</Label>
-          <Input
-            id="per-category"
-            type="number"
-            min={1}
-            max={MAX_PER_CATEGORY}
-            value={perCategory}
-            onChange={(e) => setPerCategory(Number(e.target.value) || 1)}
-            className="w-24"
-          />
-        </div>
-      )}
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">
           {halloween ? 'Filtros' : 'Tipos'}
@@ -181,7 +112,7 @@ export function CreateSessionForm() {
         {mutation.isPending
           ? 'Sorteando…'
           : halloween
-            ? '🎃 Sortear filmes de Halloween'
+            ? '🎃 Criar roleta de Halloween'
             : 'Criar sessão'}
       </Button>
     </form>

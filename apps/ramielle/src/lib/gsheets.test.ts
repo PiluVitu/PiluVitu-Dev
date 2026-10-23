@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest'
-import { getCategories, parseRow, readMovies, type SheetMovie } from './gsheets'
+import {
+  getCategories,
+  layoutDoCabecalho,
+  parseRow,
+  rangeDoCabecalho,
+  readMovies,
+  type SheetMovie,
+} from './gsheets'
 import {
   gerarServiceAccountDeTeste,
   instalarMockGoogleSheets,
@@ -14,6 +21,7 @@ describe('parseRow', () => {
       type: 'filme',
       category: 'romance',
       watched: false,
+      halloween: false,
     })
   })
 
@@ -89,6 +97,9 @@ describe('parseRow', () => {
   test.each([
     ['sim', true],
     ['SIM', true],
+    ['TRUE', true], // checkbox marcado
+    ['verdadeiro', true],
+    ['FALSE', false],
     ['  sim  ', true],
     ['yes', true],
     ['true', true],
@@ -145,6 +156,7 @@ describe('readMovies — descarte em massa (paridade com a planilha real)', () =
         type: 'filme',
         category: 'comédia',
         watched: true,
+        halloween: false,
       })
     } finally {
       mock.restaurar()
@@ -255,6 +267,163 @@ describe('getCategories — dedupe + ordenação de BYTE, não localeCompare', (
       ])
       // Dedupe: 12 linhas de entrada (Romance duplicado), 11 categorias únicas.
       expect(categorias).toHaveLength(11)
+    } finally {
+      mock.restaurar()
+    }
+  })
+})
+
+// O cabeçalho real medido em 2026-10-23: a coluna "Halloween" entrou em E e
+// empurrou "Assistido?" pra F. Com índice fixo, o checkbox do Halloween
+// virava "assistido" e os filmes de Halloween sumiam do sorteio.
+const CABECALHO_REAL = [
+  'N°',
+  'Título',
+  'Filme ou Série?',
+  'Gênero',
+  'Halloween',
+  'Assistido?',
+  'Nota?',
+]
+
+describe('layoutDoCabecalho', () => {
+  test('acha as colunas pelo nome, com acento e pontuação', () => {
+    expect(layoutDoCabecalho(CABECALHO_REAL)).toEqual({
+      number: 0,
+      title: 1,
+      type: 2,
+      category: 3,
+      halloween: 4,
+      watched: 5,
+      minLength: 4,
+    })
+  })
+
+  test('sem a coluna Halloween, halloween fica null', () => {
+    expect(
+      layoutDoCabecalho([
+        'N°',
+        'Título',
+        'Filme ou Série?',
+        'Gênero',
+        'Assistido?',
+      ])?.halloween,
+    ).toBeNull()
+  })
+
+  test('sem Título ou Gênero não é cabeçalho', () => {
+    expect(layoutDoCabecalho([])).toBeNull()
+    expect(
+      layoutDoCabecalho(['1', 'Duna', 'Filme', 'Ficção', 'FALSE']),
+    ).toBeNull()
+  })
+
+  test('com o layout do cabeçalho real, E é Halloween e F é Assistido', () => {
+    const layout = layoutDoCabecalho(CABECALHO_REAL)!
+    const row = ['7', 'Corra!', 'Filme', 'Terror', 'TRUE', 'FALSE']
+    expect(parseRow(row, layout)).toEqual<SheetMovie>({
+      number: 7,
+      title: 'Corra!',
+      type: 'filme',
+      category: 'terror',
+      watched: false,
+      halloween: true,
+    })
+  })
+
+  test('célula vazia no fim da linha (o Sheets corta) vale false', () => {
+    const layout = layoutDoCabecalho(CABECALHO_REAL)!
+    const parsed = parseRow(['8', 'Duna', 'Filme', 'Ficção'], layout)
+    expect(parsed).toMatchObject({ watched: false, halloween: false })
+  })
+})
+
+describe('rangeDoCabecalho', () => {
+  test.each([
+    ['A2:F', '1:1'],
+    ['Página5!A2:F', 'Página5!1:1'],
+    ["'Minha aba'!A2:G", "'Minha aba'!1:1"],
+  ])('%p ⇒ %p', (range, esperado) => {
+    expect(rangeDoCabecalho(range)).toBe(esperado)
+  })
+})
+
+describe('readMovies — colunas pelo cabeçalho', () => {
+  test('lê a linha 1 à parte e usa o layout dela no range de dados', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'teste-cabecalho@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const cfg = {
+      serviceAccount: sa,
+      spreadsheetId: 'planilha-cabecalho',
+      range: 'A2:F',
+    }
+    const mock = instalarMockGoogleSheets(
+      sa.token_uri,
+      cfg.spreadsheetId,
+      cfg.range,
+      [
+        ['1', 'Corra!', 'Filme', 'Terror', 'TRUE', 'FALSE'],
+        ['2', 'Duna', 'Filme', 'Ficção', 'FALSE', 'TRUE'],
+      ],
+      undefined,
+      CABECALHO_REAL,
+    )
+    try {
+      const movies = await readMovies(cfg)
+      expect(movies.map((m) => [m.title, m.halloween, m.watched])).toEqual([
+        ['Corra!', true, false],
+        ['Duna', false, true],
+      ])
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('range que inclui a linha 1 não vira filme', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'teste-cabecalho-no-range@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const cfg = {
+      serviceAccount: sa,
+      spreadsheetId: 'planilha-cabecalho-no-range',
+      range: 'A1:G',
+    }
+    const mock = instalarMockGoogleSheets(
+      sa.token_uri,
+      cfg.spreadsheetId,
+      cfg.range,
+      [CABECALHO_REAL, ['1', 'Corra!', 'Filme', 'Terror', 'TRUE', 'FALSE']],
+      undefined,
+      CABECALHO_REAL,
+    )
+    try {
+      const movies = await readMovies(cfg)
+      expect(movies.map((m) => m.title)).toEqual(['Corra!'])
+    } finally {
+      mock.restaurar()
+    }
+  })
+
+  test('falha ao ler o cabeçalho lança (a rota mapeia pra 502)', async () => {
+    const sa = await gerarServiceAccountDeTeste(
+      'teste-cabecalho-falha@projeto-de-teste.iam.gserviceaccount.com',
+    )
+    const cfg = {
+      serviceAccount: sa,
+      spreadsheetId: 'planilha-cabecalho-falha',
+      range: 'A2:F',
+    }
+    const mock = instalarMockGoogleSheets(
+      sa.token_uri,
+      cfg.spreadsheetId,
+      cfg.range,
+      [['1', 'Corra!', 'Filme', 'Terror', 'TRUE', 'FALSE']],
+      undefined,
+      500,
+    )
+    try {
+      await expect(readMovies(cfg)).rejects.toThrow()
     } finally {
       mock.restaurar()
     }

@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test'
+import { applyD1Migrations, env, reset } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 
 const DB = env.DB
@@ -333,5 +333,86 @@ describe('migration 0005 — vários filmes da mesma categoria por sessão', () 
       `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_movies' AND name = 'idx_session_movies_session'`,
     ).first<{ name: string }>()
     expect(row?.name).toBe('idx_session_movies_session')
+  })
+})
+
+describe('migration 0005 — banco com dados de produção', () => {
+  // Em produção a 0005 falhou com "FOREIGN KEY constraint failed": votes,
+  // tiebreaks e voting_sessions.winner_movie_id apontam para session_movies,
+  // e o banco dos outros testes chega vazio na 0005. Aqui ela roda depois de
+  // 0001–0004 com sessão encerrada, votos, desempate e vencedor gravados.
+  it('preserva ids, votos, desempate e vencedor e passa na checagem de FK', async () => {
+    await reset()
+    const ate0004 = env.TEST_MIGRATIONS.filter(
+      (m) => !m.name.startsWith('0005'),
+    )
+    const m0005 = env.TEST_MIGRATIONS.filter((m) => m.name.startsWith('0005'))
+    expect(m0005).toHaveLength(1)
+    await applyD1Migrations(DB, ate0004)
+
+    const userId = await novoUsuario('google-0005-dados')
+    const sessionId = await novaSessao(userId)
+    const filmes: number[] = []
+    for (const [category, title] of [
+      ['terror', 'A Coisa'],
+      ['comedia', 'Superbad'],
+    ]) {
+      const row = await DB.prepare(
+        `INSERT INTO session_movies (session_id, category, title, type)
+         VALUES (?, ?, ?, 'filme') RETURNING id`,
+      )
+        .bind(sessionId, category, title)
+        .first<{ id: number }>()
+      filmes.push(row!.id)
+    }
+    for (const movieId of filmes) {
+      await DB.prepare(
+        `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, ?, ?)`,
+      )
+        .bind(sessionId, userId, movieId, NOW)
+        .run()
+    }
+    await DB.prepare(
+      `INSERT INTO tiebreaks (session_id, triggered_by, tied_ids_json, client_entropy, server_nonce, winner_movie_id)
+       VALUES (?, ?, ?, 'e', 'n', ?)`,
+    )
+      .bind(sessionId, userId, JSON.stringify(filmes), filmes[1])
+      .run()
+    await DB.prepare(
+      `UPDATE voting_sessions SET status = 'closed', winner_movie_id = ?, winner_method = 'tiebreak' WHERE id = ?`,
+    )
+      .bind(filmes[1], sessionId)
+      .run()
+
+    await applyD1Migrations(DB, m0005)
+
+    const movies = await DB.prepare(
+      `SELECT id, title FROM session_movies ORDER BY id`,
+    ).all<{ id: number; title: string }>()
+    expect(movies.results).toEqual([
+      { id: filmes[0], title: 'A Coisa' },
+      { id: filmes[1], title: 'Superbad' },
+    ])
+    const votos = await DB.prepare(
+      `SELECT movie_id FROM votes ORDER BY movie_id`,
+    ).all<{ movie_id: number }>()
+    expect(votos.results.map((v) => v.movie_id)).toEqual(filmes)
+    const sessao = await DB.prepare(
+      `SELECT winner_movie_id FROM voting_sessions WHERE id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ winner_movie_id: number }>()
+    expect(sessao?.winner_movie_id).toBe(filmes[1])
+    const desempate = await DB.prepare(
+      `SELECT winner_movie_id FROM tiebreaks`,
+    ).first<{ winner_movie_id: number }>()
+    expect(desempate?.winner_movie_id).toBe(filmes[1])
+
+    const fk = await DB.prepare(`PRAGMA foreign_key_check`).all()
+    expect(fk.results).toEqual([])
+    const sobras = await DB.prepare(
+      `SELECT name FROM sqlite_master WHERE name LIKE 'session_movies_%'`,
+    ).all()
+    expect(sobras.results).toEqual([])
   })
 })

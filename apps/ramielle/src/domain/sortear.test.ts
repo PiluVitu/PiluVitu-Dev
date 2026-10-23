@@ -7,7 +7,13 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { SheetMovie } from '../lib/gsheets'
-import { NoCandidatesError, type Rng, sortOnePerCategory } from './sortear'
+import {
+  MAX_CANDIDATOS_ROLETA,
+  NoCandidatesError,
+  type Rng,
+  sortOnePerCategory,
+  sortearCandidatosRoleta,
+} from './sortear'
 
 /** Espelha `sample()` de `sortear_test.go` — mesmos 5 filmes, mesma ordem. */
 function sample(): SheetMovie[] {
@@ -18,6 +24,7 @@ function sample(): SheetMovie[] {
       type: 'filme',
       category: 'terror',
       watched: false,
+      halloween: false,
     },
     {
       number: 2,
@@ -25,6 +32,7 @@ function sample(): SheetMovie[] {
       type: 'filme',
       category: 'terror',
       watched: false,
+      halloween: false,
     },
     {
       number: 3,
@@ -32,6 +40,7 @@ function sample(): SheetMovie[] {
       type: 'filme',
       category: 'ação',
       watched: true,
+      halloween: false,
     },
     {
       number: 4,
@@ -39,6 +48,7 @@ function sample(): SheetMovie[] {
       type: 'serie',
       category: 'drama',
       watched: false,
+      halloween: false,
     },
     {
       number: 5,
@@ -46,6 +56,7 @@ function sample(): SheetMovie[] {
       type: 'filme',
       category: 'drama',
       watched: false,
+      halloween: false,
     },
   ]
 }
@@ -138,6 +149,7 @@ describe('sortOnePerCategory — happy path e filtros (paridade com sortear_test
         type: 'filme',
         category: 'terror',
         watched: true,
+        halloween: false,
       },
     ]
     expect(() =>
@@ -274,5 +286,74 @@ describe('sortOnePerCategory — perCategory (sessão temática, ex.: Halloween)
       queueRng([0.999999, 0]),
     )
     expect(got.map((m) => m.title)).toEqual(['Hereditário', 'A Coisa'])
+  })
+})
+
+describe('sortearCandidatosRoleta', () => {
+  function filme(number: number, extra: Partial<SheetMovie> = {}): SheetMovie {
+    return {
+      number,
+      title: `Filme ${number}`,
+      type: 'filme',
+      category: 'terror',
+      watched: false,
+      halloween: true,
+      ...extra,
+    }
+  }
+
+  it('só entram os filmes com a coluna Halloween marcada, de qualquer categoria', () => {
+    const movies = [
+      filme(1),
+      filme(2, { halloween: false }),
+      filme(3, { category: 'comédia' }),
+    ]
+    expect(
+      sortearCandidatosRoleta(movies, {}, seededRng(1)).map((m) => m.number),
+    ).toEqual([1, 3])
+  })
+
+  it('respeita os filtros de assistido e de tipo', () => {
+    const movies = [
+      filme(1, { watched: true }),
+      filme(2, { type: 'serie' }),
+      filme(3),
+    ]
+    expect(
+      sortearCandidatosRoleta(movies, { types: ['filme'] }, seededRng(1)).map(
+        (m) => m.number,
+      ),
+    ).toEqual([3])
+    expect(
+      sortearCandidatosRoleta(
+        movies,
+        { types: ['filme'], includeWatched: true },
+        seededRng(1),
+      ).map((m) => m.number),
+    ).toEqual([1, 3])
+  })
+
+  it('nenhum filme marcado ⇒ NoCandidatesError (planilha sem a coluna cai aqui)', () => {
+    expect(() =>
+      sortearCandidatosRoleta(
+        [filme(1, { halloween: false })],
+        {},
+        seededRng(1),
+      ),
+    ).toThrow(NoCandidatesError)
+  })
+
+  it('acima do teto, sorteia MAX_CANDIDATOS_ROLETA distintos na ordem da planilha', () => {
+    const movies = Array.from({ length: MAX_CANDIDATOS_ROLETA + 15 }, (_, i) =>
+      filme(i + 1),
+    )
+    const a = sortearCandidatosRoleta(movies, {}, seededRng(7))
+    expect(a).toHaveLength(MAX_CANDIDATOS_ROLETA)
+    expect(new Set(a).size).toBe(MAX_CANDIDATOS_ROLETA)
+    const numeros = a.map((m) => m.number)
+    expect(numeros).toEqual([...numeros].sort((x, y) => x - y))
+    expect(
+      sortearCandidatosRoleta(movies, {}, seededRng(7)).map((m) => m.number),
+    ).toEqual(numeros)
   })
 })

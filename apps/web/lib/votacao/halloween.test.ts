@@ -1,7 +1,7 @@
 import {
-  categoriasDisponiveis,
   halloweenSessionBody,
   isHalloweenSession,
+  isRoletaSession,
 } from './halloween'
 
 const base = { Title: 'Sexta 22/05', SortOptionsJSON: '{}' }
@@ -35,53 +35,54 @@ describe('isHalloweenSession', () => {
   })
 })
 
+describe('isRoletaSession', () => {
+  it('sessão de Halloween nova (mode roleta) é roleta', () => {
+    expect(
+      isRoletaSession({
+        SortOptionsJSON: JSON.stringify({ theme: 'halloween', mode: 'roleta' }),
+      }),
+    ).toBe(true)
+  })
+
+  it('sessão de Halloween antiga, sem mode, continua sendo votação', () => {
+    expect(
+      isRoletaSession({
+        SortOptionsJSON: JSON.stringify({
+          theme: 'halloween',
+          categories: ['terror'],
+          per_category: 8,
+        }),
+      }),
+    ).toBe(false)
+  })
+
+  it('sessão comum ou JSON inválido não é roleta', () => {
+    expect(isRoletaSession(base)).toBe(false)
+    expect(isRoletaSession({ SortOptionsJSON: '{oops' })).toBe(false)
+    expect(isRoletaSession({ SortOptionsJSON: 'null' })).toBe(false)
+  })
+})
+
 describe('halloweenSessionBody', () => {
-  it('por padrão sorteia só filmes da categoria terror, com o tema ligado', () => {
+  it('só filmes, sem categoria (o ramielle usa a coluna Halloween), com o tema ligado', () => {
     expect(
       halloweenSessionBody({
         title: 'Noite de Halloween',
         includeWatched: false,
-        perCategory: 4,
       }),
     ).toEqual({
       title: 'Noite de Halloween',
       types: ['filme'],
       include_watched: false,
-      categories: ['terror'],
-      per_category: 4,
+      categories: [],
       theme: 'halloween',
     })
   })
 
-  it('usa as categorias escolhidas no formulário', () => {
+  it('repassa "incluir já assistidos"', () => {
     expect(
-      halloweenSessionBody({
-        title: 't',
-        includeWatched: false,
-        perCategory: 2,
-        categories: ['terror', 'suspense'],
-      }).categories,
-    ).toEqual(['terror', 'suspense'])
-  })
-
-  it('prende per_category entre 1 e 10, o teto aceito pelo ramielle', () => {
-    const corpo = (perCategory: number) =>
-      halloweenSessionBody({ title: 't', includeWatched: false, perCategory })
-        .per_category
-    expect(corpo(0)).toBe(1)
-    expect(corpo(15)).toBe(10)
-  })
-})
-
-describe('categoriasDisponiveis', () => {
-  it('junta terror às categorias da planilha, sem repetir', () => {
-    expect(categoriasDisponiveis(['drama', 'terror'])).toEqual([
-      'terror',
-      'drama',
-    ])
-  })
-
-  it('sem planilha (ou antes de carregar), oferece só terror', () => {
-    expect(categoriasDisponiveis()).toEqual(['terror'])
+      halloweenSessionBody({ title: 't', includeWatched: true })
+        .include_watched,
+    ).toBe(true)
   })
 })

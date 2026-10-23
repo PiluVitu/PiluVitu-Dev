@@ -19,6 +19,7 @@
  * simples é só açúcar sobre a geral.
  */
 import type { ServiceAccount } from '../lib/google-auth'
+import { rangeDoCabecalho } from '../lib/gsheets'
 
 export type MockHttpResponse = { status: number; body: unknown }
 
@@ -132,9 +133,20 @@ export function instalarMockGoogleSheets(
   range: string,
   sheetsResposta?: unknown[][] | number | MockHttpResponse,
   tokenResposta: MockHttpResponse = TOKEN_SUCESSO_PADRAO,
+  cabecalho: unknown[] | number | MockHttpResponse = [],
 ): { restaurar: () => void } {
   const fetchOriginal = globalThis.fetch
   const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`
+  // `readMovies` lê a linha 1 à parte; o padrão `[]` (sem cabeçalho) mantém
+  // o layout legado de colunas que os testes antigos assumem.
+  const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(rangeDoCabecalho(range))}`
+  const headerResposta = normalizarRespostaValues(
+    Array.isArray(cabecalho)
+      ? cabecalho.length === 0
+        ? []
+        : [cabecalho]
+      : cabecalho,
+  )
   const sheetsNormalizada =
     sheetsResposta === undefined
       ? null
@@ -149,6 +161,9 @@ export function instalarMockGoogleSheets(
           : input.url
     if (urlTexto === tokenUri) {
       return responderCom(tokenResposta)
+    }
+    if (urlTexto === headerUrl && headerUrl !== valuesUrl) {
+      return responderCom(headerResposta)
     }
     if (urlTexto === valuesUrl) {
       if (sheetsNormalizada === null) {

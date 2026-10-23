@@ -148,3 +148,33 @@ function pickDistinct(
   }
   return pool.slice(0, take)
 }
+
+/**
+ * Teto de filmes na roleta de Halloween: cada um é uma busca de pôster no
+ * TMDb, e o Worker grátis tem 50 subrequests por invocação (o Sheets gasta
+ * 2–3).
+ */
+export const MAX_CANDIDATOS_ROLETA = 40
+
+/**
+ * Candidatos da roleta de Halloween: os filmes com a coluna "Halloween"
+ * marcada, com os mesmos filtros de tipo e de assistido do sorteio comum
+ * (categoria não entra). Acima de `MAX_CANDIDATOS_ROLETA`, sorteia esse
+ * tanto com o `rng`; a ordem da planilha é mantida.
+ */
+export function sortearCandidatosRoleta(
+  movies: SheetMovie[],
+  opts: Pick<SortOnePerCategoryOptions, 'types' | 'includeWatched'>,
+  rng: Rng,
+): SheetMovie[] {
+  const candidatos = filterMovies(movies, opts).filter((m) => m.halloween)
+  if (candidatos.length === 0) {
+    throw new NoCandidatesError()
+  }
+  if (candidatos.length <= MAX_CANDIDATOS_ROLETA) return candidatos
+
+  const escolhidos = new Set(
+    pickDistinct(candidatos, MAX_CANDIDATOS_ROLETA, rng),
+  )
+  return candidatos.filter((m) => escolhidos.has(m))
+}

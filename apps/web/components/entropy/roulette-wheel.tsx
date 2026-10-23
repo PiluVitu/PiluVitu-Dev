@@ -29,6 +29,8 @@ const PALETTE = [
 ]
 const SPIN_MS = 4000
 const EXTRA_TURNS = 6
+// Acima disto os nomes se sobrepõem na roda; o caller lista as opções fora dela.
+const MAX_LABELS = 12
 
 /**
  * Conic-gradient roulette. Lands deterministically on `winnerId` when spinning.
@@ -121,22 +123,23 @@ export function RouletteWheel({
               : 'none',
           }}
         >
-          {options.map((o, i) => {
-            const mid = i * slice + slice / 2
-            // metade inferior: flip 180° pro texto não ficar de cabeça pra baixo
-            const flip = mid > 90 && mid < 270
-            return (
-              <span
-                key={o.id}
-                className="pointer-events-none absolute top-1/2 left-1/2 max-w-[38%] truncate text-sm font-bold text-[#0b1220]"
-                style={{
-                  transform: `translate(-50%, -50%) rotate(${mid}deg) translateY(-86px) rotate(${flip ? 180 : 0}deg)`,
-                }}
-              >
-                {o.label}
-              </span>
-            )
-          })}
+          {n <= MAX_LABELS &&
+            options.map((o, i) => {
+              const mid = i * slice + slice / 2
+              // metade inferior: flip 180° pro texto não ficar de cabeça pra baixo
+              const flip = mid > 90 && mid < 270
+              return (
+                <span
+                  key={o.id}
+                  className="pointer-events-none absolute top-1/2 left-1/2 max-w-[38%] truncate text-sm font-bold text-[#0b1220]"
+                  style={{
+                    transform: `translate(-50%, -50%) rotate(${mid}deg) translateY(-86px) rotate(${flip ? 180 : 0}deg)`,
+                  }}
+                >
+                  {o.label}
+                </span>
+              )
+            })}
         </div>
       </div>
 

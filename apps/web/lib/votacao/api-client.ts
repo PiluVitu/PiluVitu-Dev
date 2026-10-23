@@ -4,6 +4,7 @@ import type {
   CategoriesResponse,
   CreateSessionBody,
   ResultsResponse,
+  RoletaResponse,
   TiebreakResponse,
   SessionDetail,
   SessionListResponse,
@@ -99,6 +100,11 @@ export const votacaoApi = {
     }),
   tiebreak: (id: number, entropy: string) =>
     call<TiebreakResponse>(`/votacao/sessions/${id}/tiebreak`, {
+      method: 'POST',
+      body: JSON.stringify({ entropy }),
+    }),
+  girarRoleta: (id: number, entropy: string) =>
+    call<RoletaResponse>(`/votacao/sessions/${id}/roleta`, {
       method: 'POST',
       body: JSON.stringify({ entropy }),
     }),

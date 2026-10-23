@@ -9,9 +9,14 @@ import { env } from 'cloudflare:test'
 import { betterAuth } from 'better-auth'
 import { describe, expect, test, vi } from 'vitest'
 import app, { type Bindings } from '../index'
-import { hexToBytes } from '../domain/tiebreak'
+import {
+  bytesToHex,
+  hexToBytes,
+  pickTiebreakIndex,
+  tiebreakSeed,
+} from '../domain/tiebreak'
 import type { Envelope } from '../lib/envelope'
-import type { SheetMovie } from '../lib/gsheets'
+import { rangeDoCabecalho, type SheetMovie } from '../lib/gsheets'
 import { sessionToWire, type VotingSessionRow } from '../lib/wire'
 import {
   gerarServiceAccountDeTeste,
@@ -2497,9 +2502,12 @@ function instalarMockCriarSessao(opts: {
   range: string
   sheetsResposta: unknown[][] | number
   tmdb?: TmdbMockResponder
+  /** Linha 1 da planilha. Ausente = sem cabeçalho (layout legado de colunas). */
+  cabecalho?: unknown[]
 }): { restaurar: () => void } {
   const fetchOriginal = globalThis.fetch
   const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(opts.spreadsheetId)}/values/${encodeURIComponent(opts.range)}`
+  const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(opts.spreadsheetId)}/values/${encodeURIComponent(rangeDoCabecalho(opts.range))}`
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const urlTexto =
       typeof input === 'string'
@@ -2515,6 +2523,12 @@ function instalarMockCriarSessao(opts: {
           token_type: 'Bearer',
           expires_in: 3599,
         }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    if (urlTexto === headerUrl) {
+      return new Response(
+        JSON.stringify({ values: opts.cabecalho ? [opts.cabecalho] : [] }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       )
     }
@@ -2982,7 +2996,7 @@ describe('POST /votacao/sessions', () => {
     }
   })
 
-  test('per_category + theme — sorteia N filmes por categoria e grava as duas opções no SortOptionsJSON', async () => {
+  test('per_category — sorteia N filmes por categoria e grava a opção no SortOptionsJSON', async () => {
     const sa = await gerarServiceAccountDeTeste(
       'criar-halloween@projeto-de-teste.iam.gserviceaccount.com',
     )
@@ -3015,7 +3029,6 @@ describe('POST /votacao/sessions', () => {
             include_watched: false,
             categories: ['terror', 'suspense'],
             per_category: 2,
-            theme: 'halloween',
           }),
         },
         {
@@ -3037,7 +3050,6 @@ describe('POST /votacao/sessions', () => {
         include_watched: false,
         categories: ['terror', 'suspense'],
         per_category: 2,
-        theme: 'halloween',
       })
 
       const rows = await sessionMoviesDireto(body.data?.session.ID ?? 0)
@@ -3297,6 +3309,7 @@ describe('POST /votacao/sessions', () => {
         type: 'filme',
         category: 'acao',
         watched: false,
+        halloween: false,
       }
     }
 
@@ -3411,6 +3424,321 @@ describe('POST /votacao/sessions', () => {
     } finally {
       spyConsole.mockRestore()
       mock.restaurar()
+    }
+  })
+})
+
+describe('POST /votacao/sessions — theme halloween vira roleta', () => {
+  const CABECALHO = [
+    'N°',
+    'Título',
+    'Filme ou Série?',
+    'Gênero',
+    'Halloween',
+    'Assistido?',
+    'Nota?',
+  ]
+
+  async function criarHalloween(
+    nome: string,
+    linhas: unknown[][],
+    cabecalho: unknown[] | undefined = CABECALHO,
+  ): Promise<Response> {
+    const sa = await gerarServiceAccountDeTeste(
+      `${nome}@projeto-de-teste.iam.gserviceaccount.com`,
+    )
+    const spreadsheetId = `planilha-${nome}`
+    const mock = instalarMockCriarSessao({
+      tokenUri: sa.token_uri,
+      spreadsheetId,
+      range: 'A2:F',
+      sheetsResposta: linhas,
+      cabecalho,
+    })
+    try {
+      const email = `${nome}@example.com`
+      const cookie = await cookieDeSessaoValido(email, nome)
+      return await app.request(
+        '/votacao/sessions',
+        {
+          method: 'POST',
+          headers: { cookie, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Noite de Halloween',
+            types: ['filme'],
+            include_watched: false,
+            categories: [],
+            theme: 'halloween',
+          }),
+        },
+        {
+          ...testEnv(email),
+          GOOGLE_SA_JSON: JSON.stringify(sa),
+          GSHEETS_MOVIES_SPREADSHEET_ID: spreadsheetId,
+        },
+      )
+    } finally {
+      mock.restaurar()
+    }
+  }
+
+  test('candidatos são os filmes com a coluna Halloween marcada (E), lendo Assistido na F', async () => {
+    const res = await criarHalloween('roleta-criar', [
+      ['1', 'Corra!', 'Filme', 'Terror', 'TRUE', 'FALSE'],
+      ['2', 'Sinners', 'Filme', 'Terror', 'TRUE', 'FALSE'],
+      ['3', 'Donnie Darko', 'Filme', 'Ficção', 'TRUE', 'FALSE'],
+      ['4', 'Invocação do Mal 2', 'Filme', 'Terror', 'FALSE', 'FALSE'],
+      ['5', 'Us', 'Filme', 'Terror', 'TRUE', 'TRUE'], // já assistido
+      ['6', 'Missa da Meia-Noite', 'Série', 'Terror', 'TRUE', 'FALSE'],
+    ])
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Envelope<CreateSessionData>
+    expect(body.data?.movies?.map((m) => m.Title)).toEqual([
+      'Corra!',
+      'Sinners',
+      'Donnie Darko',
+    ])
+    expect(JSON.parse(body.data?.session.SortOptionsJSON ?? '{}')).toEqual({
+      title: 'Noite de Halloween',
+      types: ['filme'],
+      include_watched: false,
+      categories: [],
+      theme: 'halloween',
+      mode: 'roleta',
+    })
+  })
+
+  test('nenhum filme marcado responde 422 no_candidates com mensagem própria', async () => {
+    const res = await criarHalloween('roleta-sem-marcados', [
+      ['1', 'Corra!', 'Filme', 'Terror', 'FALSE', 'FALSE'],
+    ])
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]).toEqual({
+      type: 'error',
+      code: 'no_candidates',
+      message: 'Nenhum filme marcado na coluna Halloween da planilha.',
+    })
+  })
+
+  test('planilha sem a coluna Halloween não quebra: 422 no_candidates', async () => {
+    const res = await criarHalloween(
+      'roleta-sem-coluna',
+      [['1', 'Corra!', 'Filme', 'Terror', 'não']],
+      undefined,
+    )
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('no_candidates')
+  })
+})
+
+describe('POST /votacao/sessions/:id/roleta', () => {
+  const ENTROPIA_VALIDA = '00112233445566778899aabbccddeeff'
+  const OPCOES_ROLETA = JSON.stringify({ theme: 'halloween', mode: 'roleta' })
+
+  async function sessaoRoleta(
+    sub: string,
+    opts: { sortOptionsJson?: string; filmes?: number } = {},
+  ): Promise<{ sessionId: number; filmes: number[] }> {
+    const criador = await novoUsuario(sub)
+    const r = await DB.prepare(
+      `INSERT INTO voting_sessions (title, status, created_by, sort_options_json)
+       VALUES ('Noite de Halloween', 'open', ?, ?) RETURNING id`,
+    )
+      .bind(criador, opts.sortOptionsJson ?? OPCOES_ROLETA)
+      .first<{ id: number }>()
+    if (r === null) throw new Error('RETURNING id não devolveu linha')
+    const filmes: number[] = []
+    for (let i = 0; i < (opts.filmes ?? 3); i++) {
+      filmes.push(await novoFilmeAuto(r.id, 'terror', `Filme ${i}`))
+    }
+    return { sessionId: r.id, filmes }
+  }
+
+  test('sem cookie responde 401; não-admin 403', async () => {
+    const { sessionId } = await sessaoRoleta('sub-roleta-guard')
+    const semCookie = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      null,
+      { entropy: ENTROPIA_VALIDA },
+    )
+    expect(semCookie.status).toBe(401)
+
+    const cookie = await cookieDeSessaoValido(
+      'roleta-naoadmin@example.com',
+      'Não Admin',
+    )
+    const naoAdmin = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+    )
+    expect(naoAdmin.status).toBe(403)
+  })
+
+  test.each([
+    [
+      'id inválido',
+      '/votacao/sessions/abc/roleta',
+      { entropy: ENTROPIA_VALIDA },
+      400,
+      'invalid_id',
+    ],
+    [
+      'corpo não-JSON',
+      '/votacao/sessions/999999/roleta',
+      '{oops',
+      400,
+      'invalid_json',
+    ],
+    [
+      'entropia curta',
+      '/votacao/sessions/999999/roleta',
+      { entropy: '0011' },
+      400,
+      'invalid_entropy',
+    ],
+    [
+      'sessão inexistente',
+      '/votacao/sessions/999999/roleta',
+      { entropy: ENTROPIA_VALIDA },
+      404,
+      'session_not_found',
+    ],
+  ])('%s', async (nome, path, corpo, status, code) => {
+    const email = `roleta-${nome.replace(/\W+/g, '-')}@example.com`
+    const cookie = await cookieDeSessaoValido(email, nome)
+    const res = await postTiebreak(path, cookie, corpo, email)
+    expect(res.status).toBe(status)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe(code)
+  })
+
+  test('sessão comum (sem mode roleta) responde 409 not_roulette_session', async () => {
+    const { sessionId } = await sessaoRoleta('sub-roleta-comum', {
+      sortOptionsJson: JSON.stringify({ theme: 'halloween' }),
+    })
+    const cookie = await cookieDeSessaoValido(
+      'roleta-comum@example.com',
+      'Comum',
+    )
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'roleta-comum@example.com',
+    )
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_roulette_session')
+  })
+
+  test('sessão sem filmes responde 422 no_candidates', async () => {
+    const { sessionId } = await sessaoRoleta('sub-roleta-vazia', { filmes: 0 })
+    const cookie = await cookieDeSessaoValido(
+      'roleta-vazia@example.com',
+      'Vazia',
+    )
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      'roleta-vazia@example.com',
+    )
+    expect(res.status).toBe(422)
+  })
+
+  test('gira: encerra com o vencedor recomputável, grava auditoria, e não gira de novo', async () => {
+    const { sessionId, filmes } = await sessaoRoleta('sub-roleta-gira', {
+      filmes: 5,
+    })
+    const email = 'roleta-gira@example.com'
+    const cookie = await cookieDeSessaoValido(email, 'Gira')
+    const res = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      email,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      winner_movie_id: number
+      candidate_movie_ids: number[]
+      server_nonce: string
+    }>
+    const data = body.data!
+    expect(data.candidate_movie_ids).toEqual(filmes)
+    expect(body.notifications[0]?.message).toBe('Roleta girada.')
+
+    // Qualquer um recomputa o vencedor a partir do que a API devolveu.
+    const seed = await tiebreakSeed(
+      hexToBytes(ENTROPIA_VALIDA)!,
+      hexToBytes(data.server_nonce)!,
+      sessionId,
+      data.candidate_movie_ids,
+    )
+    const idx = await pickTiebreakIndex(seed, data.candidate_movie_ids.length)
+    expect(data.winner_movie_id).toBe(data.candidate_movie_ids[idx])
+
+    const sessao = await DB.prepare(
+      'SELECT status, winner_movie_id, winner_method FROM voting_sessions WHERE id = ?',
+    )
+      .bind(sessionId)
+      .first()
+    expect(sessao).toEqual({
+      status: 'closed',
+      winner_movie_id: data.winner_movie_id,
+      winner_method: 'roulette',
+    })
+
+    const auditoria = await DB.prepare(
+      'SELECT tied_ids_json, client_entropy, server_nonce, winner_movie_id FROM tiebreaks WHERE session_id = ?',
+    )
+      .bind(sessionId)
+      .all()
+    expect(auditoria.results).toEqual([
+      {
+        tied_ids_json: JSON.stringify(filmes),
+        client_entropy: ENTROPIA_VALIDA,
+        server_nonce: data.server_nonce,
+        winner_movie_id: data.winner_movie_id,
+      },
+    ])
+
+    const deNovo = await postTiebreak(
+      `/votacao/sessions/${sessionId}/roleta`,
+      cookie,
+      { entropy: ENTROPIA_VALIDA },
+      email,
+    )
+    expect(deNovo.status).toBe(409)
+    const corpo = (await deNovo.json()) as Envelope<null>
+    expect(corpo.notifications[0]?.code).toBe('session_not_open')
+  })
+
+  test('nonce fixo ⇒ vencedor fixo (o sorteio usa o nonce do servidor, não Math.random)', async () => {
+    const { sessionId } = await sessaoRoleta('sub-roleta-nonce', { filmes: 4 })
+    const email = 'roleta-nonce@example.com'
+    const cookie = await cookieDeSessaoValido(email, 'Nonce')
+    const nonce = new Uint8Array(32).fill(7)
+    const spy = vi
+      .spyOn(crypto, 'getRandomValues')
+      .mockImplementation(<T extends ArrayBufferView | null>(arr: T): T => {
+        if (arr instanceof Uint8Array && arr.length === 32) arr.set(nonce)
+        return arr
+      })
+    try {
+      const res = await postTiebreak(
+        `/votacao/sessions/${sessionId}/roleta`,
+        cookie,
+        { entropy: ENTROPIA_VALIDA },
+        email,
+      )
+      const body = (await res.json()) as Envelope<{ server_nonce: string }>
+      expect(body.data?.server_nonce).toBe(bytesToHex(nonce))
+    } finally {
+      spy.mockRestore()
     }
   })
 })
