@@ -11,6 +11,7 @@
  */
 import { env } from 'cloudflare:test'
 import { betterAuth } from 'better-auth'
+import { mesFortaleza } from '@piluvitu/ia/uso'
 import { afterEach, describe, expect, test } from 'vitest'
 import app, { type Bindings } from '../index'
 import {
@@ -18,6 +19,7 @@ import {
   upsertDistributionTarget,
 } from '../domain/distribution'
 import type { Envelope } from '../lib/envelope'
+import { TETOS_RAMIELLE } from '../lib/ia'
 import {
   erroClaude,
   respostaClaude,
@@ -370,7 +372,9 @@ describe('POST /admin/distribution/proposals', () => {
     expect([...trechoDeVoz(pedidoAnthropic(vistos[0]))]).toHaveLength(800)
   })
 
-  test('Claude falhando (529) ⇒ 502 proposals_failed, nada é persistido', async () => {
+  // Os erros da IA saem com o envelope do @piluvitu/ia, não no genérico
+  // proposals_failed: é ele que diz o teto, o gasto e o mês.
+  test('Claude falhando (529) ⇒ 503 claude_indisponivel, nada é persistido', async () => {
     const cookie = await cookieDeAdmin()
     mockarFetch([
       {
@@ -389,13 +393,48 @@ describe('POST /admin/distribution/proposals', () => {
         ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(503)
     const body = (await res.json()) as Envelope<null>
-    expect(body.notifications[0]?.code).toBe('proposals_failed')
-    expect(body.notifications[0]?.message).toBe('Falha ao gerar propostas.')
+    expect(body.notifications[0]?.code).toBe('claude_indisponivel')
 
     const persistido = await getDistributionTarget(DB, 'outro-post', 'bluesky')
     expect(persistido).toBeNull()
+  })
+
+  test('teto de hooks atingido ⇒ 429 teto_atingido com teto, gasto e mês, sem chamar a API', async () => {
+    const cookie = await cookieDeAdmin()
+    await DB.prepare(
+      `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, custo_micro, criado_em)
+       VALUES ('cheio-hooks', 'hooks', ?, 'claude-haiku-5-5', 'concluido', 0, ?, '2026-10-01T00:00:00Z')`,
+    )
+      .bind(mesFortaleza(), TETOS_RAMIELLE.hooks)
+      .run()
+    const vistos = mockarFetch([
+      {
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('hook'),
+      },
+    ])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'post-teto', body: 'corpo' },
+      cookie,
+      testEnv({
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-password',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
+      }),
+    )
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('teto_atingido')
+    const mensagem = body.notifications[0]?.message ?? ''
+    expect(mensagem).toContain('US$ 2,00')
+    expect(mensagem).toContain('"hooks"')
+    expect(mensagem).toContain(mesFortaleza())
+    expect(vistos).toHaveLength(0)
+    expect(await getDistributionTarget(DB, 'post-teto', 'bluesky')).toBeNull()
   })
 
   test('sem ANTHROPIC_API_KEY pula os sociais em silêncio e devolve só os artigos', async () => {

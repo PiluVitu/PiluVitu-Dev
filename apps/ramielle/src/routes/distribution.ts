@@ -49,6 +49,7 @@
  * qualquer OUTRA rota. Reportado ao coordenador, não uma correção
  * silenciosa — revisado e confirmado no fix round 1 desta task.
  */
+import { codigoDoErro } from '@piluvitu/ia/erros'
 import { Hono } from 'hono'
 import {
   buildDistributionProposals,
@@ -277,7 +278,8 @@ type ProposalsWireBody = {
 /**
  * `POST /admin/distribution/proposals` — porte de `Handlers.Proposals`
  * (`handlers.go:52-79`). `200 {data:{targets:[...]}}` | `400 invalid_json`
- * | `502 proposals_failed` | `503 distribution_unavailable`.
+ * | `502 proposals_failed` | `503 distribution_unavailable` | os erros da IA
+ * (`claude_*`, `429 teto_atingido`) com o envelope do `@piluvitu/ia`.
  */
 distributionRoutes.post(
   '/distribution/proposals',
@@ -323,6 +325,10 @@ distributionRoutes.post(
       )
       return okJson({ targets })
     } catch (err) {
+      const erroIa = codigoDoErro(err)
+      if (erroIa !== null) {
+        return errJson(erroIa.status, erroIa.code, erroIa.message)
+      }
       console.error('POST /admin/distribution/proposals falhou', err)
       return errJson(502, 'proposals_failed', 'Falha ao gerar propostas.')
     }
