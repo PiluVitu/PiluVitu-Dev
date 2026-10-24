@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { describe, expect, test } from 'vitest'
-import app, { onErrorGlobal, type Bindings } from './index'
+import { app, onErrorGlobal, type Bindings } from './index'
 import type { Envelope } from './lib/envelope'
 
 describe('worker financas — bindings', () => {

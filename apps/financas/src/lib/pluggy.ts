@@ -6,8 +6,7 @@
  * cópias do banco em texto claro. Secrets no Worker; `itemId`/`accountId`, que
  * não são credencial, podem ir pra `settings`.
  *
- * Desenho copiado de `lib/promeia.ts` (fetch injetado, erro por CAUSA). Detalhes
- * e divergências: ver "Open Finance / Pluggy" no CLAUDE.md.
+ * Fetch injetado e um erro por CAUSA. Detalhes e divergências: ver "Open Finance / Pluggy" no CLAUDE.md.
  */
 import { isRealCalendarDate } from './dates'
 
@@ -26,10 +25,7 @@ export type PluggyConfig = {
 }
 
 /**
- * Timeout por chamada. Generoso, mas **não é o `TIMEOUT_MS` do promeia**: lá
- * o valor cobre uma rodada de modelo local (20-33 s medidos) e existe uma
- * janela CURTA deliberada por cima (`PromeiaDemorou` é resultado normal).
- * Aqui não há janela curta nenhuma — o Pluggy é uma API HTTP comum, então
+ * Timeout por chamada. Não há janela curta nenhuma: o Pluggy é uma API HTTP comum, então
  * estourar 30 s **é falha**, e cai em `PluggyInalcancavel` junto com DNS e
  * conexão recusada (a ação do dono é a mesma: tentar de novo mais tarde).
  */
@@ -81,8 +77,7 @@ export const AMOSTRA_OMITIDA = '<corpo do /auth omitido: carrega a apiKey>'
 // Tabela completa em "Open Finance / Pluggy" no CLAUDE.md.
 
 /**
- * Os secrets não estão configurados. **Não é falha** — espelha
- * `promeiaConfigurado()`: a rota chama `pluggyConfigurado(env)` e responde
+ * Os secrets não estão configurados. **Não é falha**: a rota chama `pluggyConfigurado(env)` e responde
  * `503 pluggy_disabled` ANTES de chegar aqui.
  *
  * ⚠️ Esta classe é a rede pra quem esquecer esse guard. Sem ela, um `/auth`
@@ -197,8 +192,8 @@ export class PluggyItemDesconectado extends Error {
 }
 
 /**
- * Alguém respondeu e o corpo não é o que o Pluggy promete. Mesma lição
- * medida do promeia: **"não respondeu" e "respondeu e eu não entendi" mandam
+ * Alguém respondeu e o corpo não é o que o Pluggy promete. Lição medida
+ * no antigo cliente do promeia: **"não respondeu" e "respondeu e eu não entendi" mandam
  * o dono para lados OPOSTOS**, então colapsá-las num tipo só é o próprio
  * bug. Aqui isso sobra para: 2xx com corpo que não é objeto JSON, corpo
  * ilegível, e 4xx fora de 401/403/429.
@@ -347,8 +342,7 @@ const sessoes = new WeakMap<PluggyBindings, Promise<Sessao>>()
 /**
  * O recurso está configurado? Sem os dois secrets a feature está
  * **DESLIGADA**, não quebrada — a rota responde `503 pluggy_disabled` e nada
- * mais no módulo muda. Espelha `promeiaConfigurado()` byte a byte no
- * espírito: credencial ausente nunca é erro de execução.
+ * mais no módulo muda: credencial ausente nunca é erro de execução.
  */
 export function pluggyConfigurado(env: PluggyBindings): PluggyConfig | null {
   const clientId = (env.PLUGGY_CLIENT_ID ?? '').trim()
@@ -840,8 +834,7 @@ async function pedir(
   }
 
   // ⚠️ `clearTimeout` DEPOIS de ler o corpo, não logo depois do fetch —
-  // lição medida em `apps/ramielle/src/lib/publishers/http.ts` e repetida em
-  // `promeia.ts`: limpar o timer quando os HEADERS chegam deixa todo
+  // lição medida em `apps/ramielle/src/lib/publishers/http.ts`: limpar o timer quando os HEADERS chegam deixa todo
   // `.text()` seguinte SEM limite, e um timeout que o corpo pode furar não é
   // um timeout.
   let bruto: string | null

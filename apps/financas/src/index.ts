@@ -20,6 +20,7 @@ import { rulesRoutes } from './routes/rules'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 import { transfersRoutes } from './routes/transfers'
+import { scheduled } from './scheduled'
 
 // PLUGGY_CLIENT_ID/PLUGGY_CLIENT_SECRET (fatia ④): credenciais do app no
 // Meu Pluggy, lidas SÓ por routes/pluggy.ts (via lib/pluggy.ts). Também
@@ -30,7 +31,7 @@ import { transfersRoutes } from './routes/transfers'
 // `settings` normalmente.
 export type Bindings = AuthBindings & PluggyBindings & IaBindings
 
-const app = new Hono<{ Bindings: Bindings }>()
+export const app = new Hono<{ Bindings: Bindings }>()
 
 /**
  * Duas exceções à guarda de sessão, ambas explícitas:
@@ -153,4 +154,4 @@ app.onError(onErrorGlobal)
 // app.route('/api', ...) registrado DEPOIS desta linha fica inalcançável.
 app.all('/api/*', () => errJson(404, 'not_found', 'rota não encontrada'))
 
-export default app
+export default { fetch: app.fetch, scheduled }

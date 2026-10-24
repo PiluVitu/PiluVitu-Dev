@@ -108,6 +108,17 @@ export async function latestInsight(db: D1Database): Promise<Insight | null> {
   return row ?? null
 }
 
+export async function existeInsightDoPeriodo(
+  db: D1Database,
+  periodo: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 AS existe FROM insights WHERE periodo = ? LIMIT 1')
+    .bind(periodo)
+    .first()
+  return row !== null
+}
+
 /** Top N categorias — mesmo teto de leitura de outras listas pequenas do módulo. */
 export const TOP_CATEGORIES_LIMIT = 5
 

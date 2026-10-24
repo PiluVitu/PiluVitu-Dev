@@ -1,7 +1,7 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
-import app from '../index'
+import { app } from '../index'
 import { settingsRoutes } from './settings'
 
 beforeAll(async () => {
