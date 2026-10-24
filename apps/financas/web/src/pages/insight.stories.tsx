@@ -9,6 +9,7 @@ const meta = {
   title: 'Finanças/Insight/Leitura',
   component: CartaoLeitura,
   args: {
+    mes: '2026-10',
     insight: null,
     insightError: null,
     insightLoaded: true,

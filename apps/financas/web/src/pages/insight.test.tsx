@@ -129,7 +129,7 @@ describe('InsightPage — os números independem do texto (propriedade central)'
       ),
     )
     expect(
-      screen.getByRole('button', { name: 'Gerar insight deste mês' }),
+      screen.getByRole('button', { name: /^Gerar insight de / }),
     ).toBeInTheDocument()
     expect(document.body.textContent).not.toContain('insight.mjs')
     expect(document.body.textContent).not.toContain('make insight')
@@ -272,6 +272,7 @@ describe('InsightPage — com insight gerado', () => {
     const alerta = screen.getByTestId('insight-alerta-desatualizado')
     expect(alerta).toHaveTextContent(/desatualizado/i)
     expect(alerta).toHaveTextContent(/botão/i)
+    expect(alerta).toHaveTextContent('jul/26')
     expect(alerta.textContent).not.toMatch(/Mac|comando/)
     expect(screen.getByTestId('insight-geracao')).toHaveClass(
       'text-destructive',
@@ -280,6 +281,59 @@ describe('InsightPage — com insight gerado', () => {
     // não deve sumir, só deixar de parecer atual.
     expect(screen.getByTestId('insight-texto')).toHaveTextContent(
       'Leitura de três semanas atrás.',
+    )
+  })
+})
+
+describe('InsightPage — frescor contra o período', () => {
+  it('o insight do Cron de um mês fechado não fica desatualizado semanas depois', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+    mockApi({
+      latest: () => ({
+        id: 'cron',
+        texto: 'Outubro fechou sem surpresas.',
+        modelo: 'claude-sonnet-5-5',
+        periodo: '2026-10',
+        generated_at: '2026-11-01T12:00:00Z',
+      }),
+    })
+
+    render(<InsightPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-geracao')).toHaveTextContent(
+        'há 3 semanas',
+      ),
+    )
+    expect(
+      screen.queryByTestId('insight-alerta-desatualizado'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('insight-geracao')).not.toHaveClass(
+      'text-destructive',
+    )
+  })
+
+  it('o botão diz para qual mês vai gerar, e acompanha o seletor', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+    mockApi({ latest: () => null })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
+      'Gerar insight de nov/26',
+    )
+
+    const seletor = document.querySelector(
+      'input[type="month"]',
+    ) as HTMLInputElement
+    fireEvent.change(seletor, { target: { value: '2026-10' } })
+
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
+      'Gerar insight de out/26',
     )
   })
 })
@@ -371,7 +425,7 @@ describe('InsightPage — o botão de gerar', () => {
     expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
     expect(screen.getByTestId('botao-gerar')).toBeEnabled()
     expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
-      'Gerar insight deste mês',
+      /^Gerar insight de /,
     )
   })
 

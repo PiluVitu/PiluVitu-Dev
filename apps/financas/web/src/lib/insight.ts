@@ -10,6 +10,7 @@
  */
 
 import type { CategoryRowView } from './categories'
+import { addMonthsToCompetence } from './dates'
 
 /**
  * Espelha `InsightNumbers` de `src/domain/insights.ts` (Worker) — a SPA
@@ -111,9 +112,24 @@ export function formatInsightAge(days: number): string {
  */
 export const STALE_THRESHOLD_DAYS = 7
 
+/** Meia-noite do dia 1 do mês seguinte em Fortaleza (UTC-3 fixo), em UTC. */
+export function fechamentoDoPeriodo(periodo: string): string {
+  return `${addMonthsToCompetence(periodo, 1)}-01T03:00:00Z`
+}
+
+/**
+ * Só um insight gerado antes de o seu mês fechar pode envelhecer: o de um mês
+ * fechado (o do Cron do dia 1) descreve números que não mudam mais.
+ */
 export function isStaleInsight(
-  generatedAt: string,
+  insight: Pick<InsightView, 'periodo' | 'generated_at'>,
   now: Date = new Date(),
 ): boolean {
-  return insightAgeDays(generatedAt, now) > STALE_THRESHOLD_DAYS
+  const geradoAntesDoFechamento =
+    Date.parse(insight.generated_at) <
+    Date.parse(fechamentoDoPeriodo(insight.periodo))
+  return (
+    geradoAntesDoFechamento &&
+    insightAgeDays(insight.generated_at, now) > STALE_THRESHOLD_DAYS
+  )
 }

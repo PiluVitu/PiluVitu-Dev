@@ -47,6 +47,8 @@ function apiResponde(responder: () => Response) {
 }
 
 async function rodarCron(scheduledTime: number, chave: string | undefined) {
+  // O relógio acompanha o disparo: o `generated_at` gravado é o do Cron.
+  vi.setSystemTime(scheduledTime)
   const controller = createScheduledController({
     scheduledTime,
     cron: '0 12 1 * *',
@@ -68,6 +70,7 @@ function comoTexto(valor: unknown): string {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
   urlsChamadas = []
   saidasDoConsole = []
   for (const metodo of ['log', 'info', 'warn', 'error', 'debug'] as const) {
@@ -79,6 +82,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe('cron do insight mensal', () => {
@@ -151,10 +155,11 @@ describe('cron do insight mensal', () => {
     expect(usos?.n).toBe(1)
   })
 
-  it('um insight gerado à mão para o mês já basta: o cron não gera outro', async () => {
+  it('um insight gerado depois do mês fechar já basta: o cron não gera outro', async () => {
+    // 02:00 de 01/11 em Fortaleza: outubro já tinha fechado.
     await env.DB.prepare(
       `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
-       VALUES ('manual', 'Gerado pelo botão.', 'claude-sonnet-5-5', '2026-10', '2026-10-31T20:00:00Z')`,
+       VALUES ('manual', 'Gerado pelo botão.', 'claude-sonnet-5-5', '2026-10', '2026-11-01T05:00:00Z')`,
     ).run()
     apiResponde(() => respostaClaude('Outro.'))
 
@@ -165,6 +170,71 @@ describe('cron do insight mensal', () => {
       n: number
     }>()
     expect(n?.n).toBe(1)
+  })
+
+  it.each([
+    ['no meio do mês', '2026-10-10T15:00:00Z'],
+    ['às 23:59 de 31/10 em Fortaleza', '2026-11-01T02:59:59Z'],
+  ])(
+    'um insight do mês gerado antes de ele fechar (%s) não bloqueia: o cron gera o do mês fechado',
+    async (_quando, generatedAt) => {
+      await env.DB.prepare(
+        `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
+         VALUES ('parcial', 'Leitura parcial.', 'claude-sonnet-5-5', '2026-10', ?)`,
+      )
+        .bind(generatedAt)
+        .run()
+      apiResponde(() => respostaClaude('Outubro fechado.'))
+
+      await rodarCron(PRIMEIRO_DE_NOVEMBRO, CHAVE)
+
+      expect(urlsChamadas).toHaveLength(1)
+      const maisRecente = await env.DB.prepare(
+        'SELECT texto, periodo FROM insights ORDER BY generated_at DESC LIMIT 1',
+      ).first()
+      expect(maisRecente).toEqual({
+        texto: 'Outubro fechado.',
+        periodo: '2026-10',
+      })
+    },
+  )
+
+  it('falha do D1 ao consultar os insights não lança: só console.error', async () => {
+    const dbQueFalha = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            if (sql.includes('FROM insights')) {
+              throw new Error('D1_ERROR: no such table: insights')
+            }
+            return alvo.prepare(sql)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+    apiResponde(() => respostaClaude('x'))
+    const controller = createScheduledController({
+      scheduledTime: PRIMEIRO_DE_NOVEMBRO,
+      cron: '0 12 1 * *',
+    })
+    const ctx = createExecutionContext()
+
+    await expect(
+      scheduled(
+        controller,
+        { ...env, DB: dbQueFalha, ANTHROPIC_API_KEY: CHAVE },
+        ctx,
+      ),
+    ).resolves.toBeUndefined()
+    await waitOnExecutionContext(ctx)
+
+    expect(urlsChamadas).toHaveLength(0)
+    const tudo = saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
+    expect(tudo.some((linha) => linha.includes('cron do insight falhou'))).toBe(
+      true,
+    )
   })
 
   it('falha da Claude não lança: console.error sem a chave, e uso_ia fica falhou', async () => {

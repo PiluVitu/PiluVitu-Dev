@@ -108,13 +108,26 @@ export async function latestInsight(db: D1Database): Promise<Insight | null> {
   return row ?? null
 }
 
-export async function existeInsightDoPeriodo(
+/** Meia-noite do dia 1 do mês seguinte em Fortaleza (UTC-3 fixo), em UTC. */
+export function fechamentoDoPeriodo(periodo: string): string {
+  return `${addMonthsToCompetence(periodo, 1)}-01T03:00:00Z`
+}
+
+/**
+ * Só conta o insight gerado depois de o mês fechar: um gerado no meio do mês
+ * leu dados parciais e não pode impedir o Cron de gerar o do mês fechado.
+ */
+export async function existeInsightDoMesFechado(
   db: D1Database,
   periodo: string,
 ): Promise<boolean> {
   const row = await db
-    .prepare('SELECT 1 AS existe FROM insights WHERE periodo = ? LIMIT 1')
-    .bind(periodo)
+    .prepare(
+      `SELECT 1 AS existe FROM insights
+        WHERE periodo = ? AND generated_at >= ?
+        LIMIT 1`,
+    )
+    .bind(periodo, fechamentoDoPeriodo(periodo))
     .first()
   return row !== null
 }

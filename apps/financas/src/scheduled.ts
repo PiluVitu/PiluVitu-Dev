@@ -1,7 +1,7 @@
 import { codigoDoErro } from '@piluvitu/ia/erros'
 import { mesFortaleza } from '@piluvitu/ia/uso'
 import { gerarInsight } from './domain/insight-gerar'
-import { existeInsightDoPeriodo } from './domain/insights'
+import { existeInsightDoMesFechado } from './domain/insights'
 import { addMonthsToCompetence } from './lib/dates'
 import type { IaBindings } from './lib/ia'
 
@@ -16,9 +16,8 @@ export async function scheduled(
     mesFortaleza(new Date(controller.scheduledTime)),
     -1,
   )
-  if (await existeInsightDoPeriodo(env.DB, competencia)) return
-
   try {
+    if (await existeInsightDoMesFechado(env.DB, competencia)) return
     await gerarInsight(env, competencia)
   } catch (err) {
     // Só o código e a mensagem traduzida: o erro cru da SDK pode trazer o

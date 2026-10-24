@@ -158,6 +158,7 @@ export function InsightPage() {
       </Card>
 
       <CartaoLeitura
+        mes={mes}
         insight={insight}
         insightError={insightError}
         insightLoaded={insightLoaded}
@@ -172,6 +173,8 @@ export function InsightPage() {
 }
 
 export type CartaoLeituraProps = {
+  /** O mês que o botão gera: o do seletor, que pode não ser o da leitura. */
+  mes: string
   insight: InsightView | null
   insightError: string | null
   insightLoaded: boolean
@@ -181,6 +184,7 @@ export type CartaoLeituraProps = {
 }
 
 export function CartaoLeitura({
+  mes,
   insight,
   insightError,
   insightLoaded,
@@ -223,7 +227,9 @@ export function CartaoLeitura({
             disabled={gerando || !insightLoaded}
             onClick={onGerar}
           >
-            {gerando ? 'Gerando…' : 'Gerar insight deste mês'}
+            {gerando
+              ? 'Gerando…'
+              : `Gerar insight de ${rotuloCompetencia(mes)}`}
           </Button>
 
           {gerando ? (
@@ -396,7 +402,8 @@ function NumerosCalculados({ numbers }: { numbers: InsightNumbersView }) {
  */
 function LeituraGerada({ insight }: { insight: InsightView }) {
   const dias = insightAgeDays(insight.generated_at)
-  const antigo = isStaleInsight(insight.generated_at)
+  const antigo = isStaleInsight(insight)
+  const periodo = rotuloCompetencia(insight.periodo)
 
   return (
     <div className="space-y-2">
@@ -407,7 +414,7 @@ function LeituraGerada({ insight }: { insight: InsightView }) {
           antigo ? 'text-destructive font-semibold' : 'text-muted-foreground',
         )}
       >
-        Referente a {rotuloCompetencia(insight.periodo)} · gerado em{' '}
+        Referente a {periodo} · gerado em{' '}
         {formatDateTimeTeresina(insight.generated_at)} ({formatInsightAge(dias)}
         )
       </p>
@@ -418,9 +425,10 @@ function LeituraGerada({ insight }: { insight: InsightView }) {
           data-testid="insight-alerta-desatualizado"
           className="text-destructive text-sm font-medium"
         >
-          Desatualizado — gerado há mais de {STALE_THRESHOLD_DAYS} dias. Os
-          números acima já podem ter mudado desde então; use o botão abaixo pra
-          gerar o texto de novo.
+          Desatualizado — gerado antes de {periodo} fechar, há mais de{' '}
+          {STALE_THRESHOLD_DAYS} dias. Os gastos de {periodo} podem ter mudado
+          desde então; escolha {periodo} no seletor acima e use o botão abaixo
+          pra gerar o texto de novo.
         </p>
       ) : null}
 
