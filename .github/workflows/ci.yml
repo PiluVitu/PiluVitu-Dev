@@ -148,6 +148,12 @@ jobs:
       - name: Test (worker + D1)
         run: pnpm --filter @piluvitu/ramielle run test
 
+      - name: Typecheck (packages/ia)
+        run: pnpm --filter @piluvitu/ia run lint
+
+      - name: Test (packages/ia)
+        run: pnpm --filter @piluvitu/ia run test
+
   promeia:
     name: Promeia (lint + test)
     runs-on: ubuntu-latest

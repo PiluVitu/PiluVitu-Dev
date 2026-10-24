@@ -1,0 +1,22 @@
+{
+  "name": "@piluvitu/ia",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./custo": "./src/custo.ts",
+    "./erros": "./src/erros.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
