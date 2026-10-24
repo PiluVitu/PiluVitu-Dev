@@ -3,23 +3,30 @@
  * O que mudou de propósito: não há mais `careful` (sempre Sonnet), nem
  * temperatura (Sonnet 5.5 e Haiku 5.5 recusam valor não padrão).
  */
+import { ClaudeRecusou } from '@piluvitu/ia/erros'
 import { describe, expect, it } from 'vitest'
 import {
   INSTRUCAO_PADRAO,
+  PROOFREAD_LOTE_SYSTEM,
   PROOFREAD_SYSTEM,
   REFINE_SYSTEM,
   SHORTEN_SYSTEM,
 } from './prompts'
 import {
+  agruparEmLotes,
   ajustarAoLimite,
+  FORMATO_LOTE,
   gerarHooks,
   LIMITE_PADRAO,
   LIMITES,
   limiteDaPlataforma,
   MODELO_HOOKS,
+  MAX_LOTES_PROOFREAD,
   MODELO_PROOFREAD,
   proofread,
   refine,
+  TETO_CARACTERES_LOTE,
+  TextoGrandeDemais,
   truncar,
   type Chat,
   type PedidoChat,
@@ -46,18 +53,105 @@ describe('modelos', () => {
   })
 })
 
+// O proofread manda os blocos de prosa em lotes: o user é {"blocos": [...]} e
+// a resposta, no mesmo formato. Este chat falso corrige cada bloco com `corrigir`.
+function chatDeLote(
+  corrigir: (bloco: string) => string = (b) => `[${b.trim()}]`,
+): {
+  chat: Chat
+  chamadas: PedidoChat[]
+  lotes: string[][]
+} {
+  const chamadas: PedidoChat[] = []
+  const lotes: string[][] = []
+  const chat: Chat = async (p) => {
+    chamadas.push(p)
+    const { blocos } = JSON.parse(p.user) as { blocos: string[] }
+    lotes.push(blocos)
+    return JSON.stringify({ blocos: blocos.map(corrigir) })
+  }
+  return { chat, chamadas, lotes }
+}
+
+function chatQueResponde(texto: string): Chat {
+  return async () => texto
+}
+
+async function motivoDaRecusa(promessa: Promise<unknown>): Promise<string> {
+  try {
+    await promessa
+  } catch (err) {
+    expect(err).toBeInstanceOf(ClaudeRecusou)
+    return (err as ClaudeRecusou).motivo
+  }
+  throw new Error('era para ter rejeitado')
+}
+
+describe('agruparEmLotes', () => {
+  const bloco = (n: number, tamanho: number) => ({
+    id: n,
+    texto: 'x'.repeat(tamanho),
+  })
+
+  it('junta blocos em ordem até o teto, sem passar dele', () => {
+    const blocos = [bloco(1, 40), bloco(2, 40), bloco(3, 40), bloco(4, 10)]
+    const lotes = agruparEmLotes(blocos, 100)
+    expect(lotes.map((l) => l.map((b) => b.id))).toEqual([
+      [1, 2],
+      [3, 4],
+    ])
+    for (const lote of lotes) {
+      expect(lote.reduce((s, b) => s + b.texto.length, 0)).toBeLessThanOrEqual(
+        100,
+      )
+    }
+  })
+
+  it('um bloco maior que o teto vai sozinho num lote', () => {
+    const blocos = [bloco(1, 10), bloco(2, 500), bloco(3, 10)]
+    expect(agruparEmLotes(blocos, 100).map((l) => l.map((b) => b.id))).toEqual([
+      [1],
+      [2],
+      [3],
+    ])
+  })
+
+  it('preserva a ordem e todos os blocos', () => {
+    const blocos = Array.from({ length: 37 }, (_, i) => bloco(i, (i * 7) % 60))
+    const lotes = agruparEmLotes(blocos, 100)
+    expect(lotes.flat().map((b) => b.id)).toEqual(blocos.map((b) => b.id))
+  })
+
+  it('sem blocos, sem lotes', () => {
+    expect(agruparEmLotes([], 100)).toEqual([])
+  })
+
+  it('o teto padrão é TETO_CARACTERES_LOTE', () => {
+    const blocos = [
+      bloco(1, TETO_CARACTERES_LOTE - 1),
+      bloco(2, 1),
+      bloco(3, 1),
+    ]
+    expect(agruparEmLotes(blocos).map((l) => l.map((b) => b.id))).toEqual([
+      [1, 2],
+      [3],
+    ])
+  })
+})
+
 describe('proofread', () => {
   it('manda ao chat SÓ os blocos de prosa', async () => {
     const entrada =
       'Olá mundo.\n\n```py\nprint(1)\n```\n\n| a | b |\n\nTchau.\n'
-    const { chat, chamadas } = chatEspiao({ resposta: 'CORRIGIDO' })
+    const { chat, chamadas, lotes } = chatDeLote()
     const saida = await proofread(entrada, chat)
 
-    expect(chamadas.map((c) => c.user)).toEqual(['Olá mundo.\n', 'Tchau.\n'])
+    expect(lotes).toEqual([['Olá mundo.\n', 'Tchau.\n']])
     expect(chamadas.some((c) => c.user.includes('print(1)'))).toBe(false)
     expect(chamadas.some((c) => c.user.includes('| a | b |'))).toBe(false)
-    expect(saida).toContain('```py\nprint(1)\n```')
-    expect(saida).toContain('| a | b |')
+    expect(saida).toBe(
+      '[Olá mundo.]\n\n```py\nprint(1)\n```\n\n| a | b |\n\n[Tchau.]\n',
+    )
   })
 
   it('cerca não fechada, tabela, JSX e citação saem byte a byte', async () => {
@@ -69,53 +163,79 @@ describe('proofread', () => {
       '```ts\nconst naoFechada = 1\n\nmais codigo\n',
     ]
     const entrada = `Paragrafo um.\n\n${passthrough.slice(0, 4).join('\n')}\nParagrafo dois.\n\n${passthrough[4]}`
-    const { chat, chamadas } = chatEspiao({ resposta: 'TROCADO' })
+    const { chat, lotes } = chatDeLote(() => 'TROCADO')
     const saida = await proofread(entrada, chat)
 
     for (const trecho of passthrough) expect(saida).toContain(trecho)
-    expect(chamadas.map((c) => c.user)).toEqual([
-      'Paragrafo um.\n',
-      'Paragrafo dois.\n',
-    ])
+    expect(lotes).toEqual([['Paragrafo um.\n', 'Paragrafo dois.\n']])
   })
 
-  it('manda cada título sozinho, sem contexto ao redor', async () => {
+  it('títulos e parágrafos vão no mesmo lote, cada um como um item', async () => {
     const entrada = 'Antes.\n\n## Subtítulo\n\n### Seção\n\nDepois.\n'
-    const { chat, chamadas } = chatEspiao({ resposta: 'X' })
-    await proofread(entrada, chat)
-    expect(chamadas.map((c) => c.user)).toEqual([
-      'Antes.\n',
-      '## Subtítulo\n',
-      '### Seção\n',
-      'Depois.\n',
+    const { chat, chamadas, lotes } = chatDeLote()
+    const saida = await proofread(entrada, chat)
+    expect(chamadas).toHaveLength(1)
+    expect(lotes).toEqual([
+      ['Antes.\n', '## Subtítulo\n', '### Seção\n', 'Depois.\n'],
     ])
+    expect(saida).toBe(
+      '[Antes.]\n\n[## Subtítulo]\n\n[### Seção]\n\n[Depois.]\n',
+    )
   })
 
-  it('usa o prompt literal, Sonnet e maxTokens 4096 por bloco', async () => {
-    const { chat, chamadas } = chatEspiao()
+  it('pede Sonnet, maxTokens 4096 e o JSON {blocos} com o prompt literal intacto', async () => {
+    const { chat, chamadas } = chatDeLote()
     await proofread('texto\n', chat)
-    expect(chamadas[0]).toEqual({
-      modelo: 'claude-sonnet-5-5',
-      system: PROOFREAD_SYSTEM,
-      user: 'texto\n',
-      maxTokens: 4096,
+    expect(chamadas).toEqual([
+      {
+        modelo: 'claude-sonnet-5-5',
+        system: `${PROOFREAD_SYSTEM}\n\n${PROOFREAD_LOTE_SYSTEM}`,
+        user: JSON.stringify({ blocos: ['texto\n'] }),
+        maxTokens: 4096,
+        formatoJson: FORMATO_LOTE,
+      },
+    ])
+    expect(FORMATO_LOTE).toEqual({
+      type: 'object',
+      properties: { blocos: { type: 'array', items: { type: 'string' } } },
+      required: ['blocos'],
+      additionalProperties: false,
     })
   })
 
+  it('divide em vários lotes pelo teto e aplica as correções na ordem', async () => {
+    const paragrafos = Array.from(
+      { length: 9 },
+      (_, i) => `Paragrafo ${i} ${'p'.repeat(TETO_CARACTERES_LOTE / 4)}\n`,
+    )
+    const entrada = paragrafos.join('\n')
+    const { chat, lotes } = chatDeLote((b) => `C${b.split(' ')[1]}`)
+    const saida = await proofread(entrada, chat)
+
+    expect(lotes.length).toBeGreaterThan(1)
+    expect(lotes.flat()).toEqual(paragrafos)
+    for (const lote of lotes) {
+      expect(lote.join('').length).toBeLessThanOrEqual(TETO_CARACTERES_LOTE)
+    }
+    expect(saida).toBe(
+      Array.from({ length: 9 }, (_, i) => `C${i}\n`).join('\n'),
+    )
+  })
+
   it('preserva o espaçamento entre blocos', async () => {
-    const { chat } = chatEspiao({ resposta: '  X  ' })
+    const { chat } = chatDeLote(() => '  X  ')
     expect(await proofread('Primeiro.\n\nSegundo.\n', chat)).toBe('X\n\nX\n')
   })
 
   it('texto sem prosa não chama o chat', async () => {
-    const { chat, chamadas } = chatEspiao()
+    const { chat, chamadas } = chatDeLote()
     const entrada = '```py\nso codigo\n```\n'
     expect(await proofread(entrada, chat)).toBe(entrada)
     expect(chamadas).toEqual([])
   })
 
   it('texto vazio não chama o chat', async () => {
-    const { chat, chamadas } = chatEspiao()
+    const { chat, chamadas } = chatDeLote()
     expect(await proofread('', chat)).toBe('')
     expect(chamadas).toEqual([])
   })
@@ -125,6 +245,83 @@ describe('proofread', () => {
       throw new Error('caiu')
     }
     await expect(proofread('a\n\nb\n', chat)).rejects.toThrow('caiu')
+  })
+
+  it('uma falha no segundo lote derruba tudo, mesmo com o primeiro corrigido', async () => {
+    const grande = 'x'.repeat(TETO_CARACTERES_LOTE)
+    let n = 0
+    const chat: Chat = async (p) => {
+      if (n++ === 1) throw new Error('caiu no segundo')
+      const { blocos } = JSON.parse(p.user) as { blocos: string[] }
+      return JSON.stringify({ blocos })
+    }
+    await expect(proofread(`${grande}\n\n${grande}\n`, chat)).rejects.toThrow(
+      'caiu no segundo',
+    )
+  })
+
+  describe('resposta fora do formato vira ClaudeRecusou("formato")', () => {
+    const entrada = 'Um.\n\nDois.\n\nTrês.\n'
+
+    it('com menos blocos que os enviados', async () => {
+      const chat = chatQueResponde(JSON.stringify({ blocos: ['Um.', 'Dois.'] }))
+      expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+    })
+
+    it('com mais blocos que os enviados', async () => {
+      const chat = chatQueResponde(
+        JSON.stringify({ blocos: ['Um.', 'Dois.', 'Três.', 'Quatro.'] }),
+      )
+      expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+    })
+
+    it('com JSON ilegível', async () => {
+      const chat = chatQueResponde('Um.\n\nDois.\n\nTrês.')
+      expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+    })
+
+    it('com um item que não é string', async () => {
+      const chat = chatQueResponde(
+        JSON.stringify({ blocos: ['Um.', 2, 'Três.'] }),
+      )
+      expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+    })
+
+    it('sem o campo blocos, ou com ele fora de um array', async () => {
+      for (const corpo of [
+        { outro: ['Um.', 'Dois.', 'Três.'] },
+        { blocos: 'Um. Dois. Três.' },
+        ['Um.', 'Dois.', 'Três.'],
+        null,
+      ]) {
+        const chat = chatQueResponde(JSON.stringify(corpo))
+        expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+      }
+    })
+  })
+
+  it(`acima de ${MAX_LOTES_PROOFREAD} lotes lança TextoGrandeDemais sem chamar o chat`, async () => {
+    const grande = `${'x'.repeat(TETO_CARACTERES_LOTE)}\n`
+    const entrada = Array.from(
+      { length: MAX_LOTES_PROOFREAD + 1 },
+      () => grande,
+    ).join('\n')
+    const { chat, chamadas } = chatDeLote()
+    const erro = await proofread(entrada, chat).catch((e: unknown) => e)
+    expect(erro).toBeInstanceOf(TextoGrandeDemais)
+    expect((erro as TextoGrandeDemais).lotes).toBe(MAX_LOTES_PROOFREAD + 1)
+    expect(chamadas).toEqual([])
+  })
+
+  it(`exatamente ${MAX_LOTES_PROOFREAD} lotes ainda passa`, async () => {
+    const grande = `${'x'.repeat(TETO_CARACTERES_LOTE)}\n`
+    const entrada = Array.from(
+      { length: MAX_LOTES_PROOFREAD },
+      () => grande,
+    ).join('\n')
+    const { chat, chamadas } = chatDeLote((b) => b)
+    expect(await proofread(entrada, chat)).toBe(entrada)
+    expect(chamadas).toHaveLength(MAX_LOTES_PROOFREAD)
   })
 })
 

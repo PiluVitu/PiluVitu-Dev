@@ -460,6 +460,47 @@ describe('POST /admin/distribution/proposals', () => {
   })
 })
 
+// O plano Free do Workers corta em 50 subrequests por request. As propostas
+// chamam a Claude só para os sociais (bluesky e mastodon): um hook e, se ele
+// passar do limite, um encurtamento, cada um com até 2 fetches (maxRetries: 1).
+describe('POST /admin/distribution/proposals: pior caso de subrequests', () => {
+  test('as 4 plataformas, hooks longos e retry em toda chamada ⇒ 8 fetches à Claude e nenhum outro', async () => {
+    const cookie = await cookieDeAdmin()
+    let tentativa = 0
+    const vistos = mockarFetch([
+      {
+        prefixo: 'https://api.anthropic.com',
+        responder: () =>
+          tentativa++ % 2 === 0
+            ? erroClaude(529, 'overloaded_error')
+            : respostaClaude('palavra '.repeat(100)),
+      },
+    ])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'pior-caso', title: 'T', body: 'corpo' },
+      cookie,
+      testEnv({
+        DEVTO_API_KEY: MARCADOR_DEVTO,
+        HASHNODE_API_TOKEN: MARCADOR_HASHNODE,
+        HASHNODE_PUBLICATION_ID: 'pub-1',
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-pw',
+        MASTODON_INSTANCE_URL: MARCADOR_MASTODON,
+        MASTODON_ACCESS_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(vistos).toHaveLength(8)
+    expect(
+      vistos.every((v) => v.url.startsWith('https://api.anthropic.com')),
+    ).toBe(true)
+    expect(vistos.length).toBeLessThan(50)
+  })
+})
+
 describe('GET /admin/distribution/:slug', () => {
   test('conta autenticada mas não-admin responde 403 admin_only', async () => {
     const cookie = await cookieDeNaoAdmin()

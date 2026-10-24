@@ -15,10 +15,17 @@ import app, { type Bindings } from '../index'
 import type { Envelope } from '../lib/envelope'
 import { TETOS_RAMIELLE } from '../lib/ia'
 import {
+  blocosDoPedido,
   erroClaude,
   mockarAnthropic,
   respostaClaude,
+  responderLote,
+  type PedidoAnthropic,
 } from '../test-support/anthropic-mock'
+import {
+  MAX_LOTES_PROOFREAD,
+  TETO_CARACTERES_LOTE,
+} from '../domain/revisao/revisao'
 
 const DB = env.DB
 const BASE_URL_TESTE = 'http://localhost:8787'
@@ -132,7 +139,7 @@ describe('POST /admin/llm/proofread', () => {
 
   test('caminho feliz devolve corrected no envelope', async () => {
     const cookie = await cookieDeAdmin()
-    mockarAnthropic(() => respostaClaude('Olá.'))
+    mockarAnthropic(responderLote(() => 'Olá.'))
 
     const res = await chamar('/admin/llm/proofread', { text: 'Ola.' }, cookie)
     expect(res.status).toBe(200)
@@ -141,21 +148,34 @@ describe('POST /admin/llm/proofread', () => {
     expect(body.data?.corrected).toBe('Olá.')
   })
 
-  test('manda ao Sonnet, com o prompt de revisão, maxTokens 4096 e sem temperature', async () => {
+  test('manda ao Sonnet, com o prompt de revisão, maxTokens 4096, o lote em JSON e sem temperature', async () => {
     const cookie = await cookieDeAdmin()
-    const pedidos = mockarAnthropic(() => respostaClaude('x'))
+    const pedidos = mockarAnthropic(responderLote((b) => b))
     await chamar('/admin/llm/proofread', { text: 'texto\n' }, cookie)
     expect(pedidos).toHaveLength(1)
     expect(pedidos[0]?.model).toBe('claude-sonnet-5-5')
     expect(pedidos[0]?.max_tokens).toBe(4096)
-    expect(pedidos[0]?.messages).toEqual([{ role: 'user', content: 'texto\n' }])
+    expect(pedidos[0]?.messages).toEqual([
+      { role: 'user', content: JSON.stringify({ blocos: ['texto\n'] }) },
+    ])
+    expect(pedidos[0]?.output_config).toEqual({
+      format: {
+        type: 'json_schema',
+        schema: {
+          type: 'object',
+          properties: { blocos: { type: 'array', items: { type: 'string' } } },
+          required: ['blocos'],
+          additionalProperties: false,
+        },
+      },
+    })
     expect(pedidos[0]).not.toHaveProperty('temperature')
     expect(pedidos[0]).not.toHaveProperty('thinking')
   })
 
   test('careful é ignorado: continua Sonnet', async () => {
     const cookie = await cookieDeAdmin()
-    const pedidos = mockarAnthropic(() => respostaClaude('x'))
+    const pedidos = mockarAnthropic(responderLote((b) => b))
     const res = await chamar(
       '/admin/llm/proofread',
       { text: 't', careful: true },
@@ -171,8 +191,8 @@ describe('POST /admin/llm/proofread', () => {
     const jsx = '<Aviso tipo="info">\n  nao corrija isto\n</Aviso>\n'
     const cercaAberta = '```ts\nconst naoFechada = 1\n\nmais codigo sem fim\n'
     const texto = `Paragrafo um.\n\n${tabela}\n${jsx}\nParagrafo dois.\n\n${cercaAberta}`
-    const pedidos = mockarAnthropic((p) =>
-      respostaClaude(`CORRIGIDO(${p.messages[0]?.content.trim()})`),
+    const pedidos = mockarAnthropic(
+      responderLote((b) => `CORRIGIDO(${b.trim()})`),
     )
 
     const res = await chamar('/admin/llm/proofread', { text: texto }, cookie)
@@ -181,8 +201,9 @@ describe('POST /admin/llm/proofread', () => {
     expect(body.data?.corrected).toBe(
       `CORRIGIDO(Paragrafo um.)\n\n${tabela}\n${jsx}\nCORRIGIDO(Paragrafo dois.)\n\n${cercaAberta}`,
     )
-    const enviados = pedidos.map((p) => p.messages[0]?.content)
-    expect(enviados).toEqual(['Paragrafo um.\n', 'Paragrafo dois.\n'])
+    expect(pedidos.map(blocosDoPedido)).toEqual([
+      ['Paragrafo um.\n', 'Paragrafo dois.\n'],
+    ])
   })
 
   test('text vazio dá 400 com a mensagem do Go, sem chamar a Claude', async () => {
@@ -196,6 +217,201 @@ describe('POST /admin/llm/proofread', () => {
       "Corpo inválido: 'text' é obrigatório.",
     )
     expect(pedidos).toHaveLength(0)
+  })
+})
+
+// O plano Free do Workers corta em 50 subrequests (fetch externo) por request,
+// e cada chamada lógica à Claude pode virar 2 fetches (maxRetries: 1 da SDK).
+// O mock registra um pedido por fetch, inclusive os que respondem 529.
+const LIMITE_SUBREQUESTS = 50
+
+function falhaNaPrimeiraTentativa(
+  responder: (pedido: PedidoAnthropic) => Response,
+): (pedido: PedidoAnthropic) => Response {
+  let tentativa = 0
+  return (pedido) =>
+    tentativa++ % 2 === 0
+      ? erroClaude(529, 'overloaded_error')
+      : responder(pedido)
+}
+
+function artigoComSessentaBlocos() {
+  const tabela = '| col | outra |\n|---|---|\n| x | y |\n'
+  const partes: string[] = []
+  const corrigidas: string[] = []
+  const paragrafos: string[] = []
+  const passthrough: string[] = []
+  for (let i = 0; i < 60; i++) {
+    const paragrafo = `Paragrafo ${i} com acentuaçao errada. ${'texto '.repeat(30).trim()}\n`
+    paragrafos.push(paragrafo)
+    partes.push(paragrafo)
+    corrigidas.push(`CORRIGIDO(${i})\n`)
+    let extra: string | null = null
+    if (i % 10 === 4) extra = '```ts\nconst bloco = ' + i + '\n```\n'
+    if (i === 30) extra = tabela
+    if (extra !== null) {
+      passthrough.push(extra)
+      partes.push(extra)
+      corrigidas.push(extra)
+    }
+  }
+  return {
+    texto: partes.join('\n'),
+    esperado: corrigidas.join('\n'),
+    paragrafos,
+    passthrough,
+  }
+}
+
+describe('POST /admin/llm/proofread em lotes (limite de subrequests)', () => {
+  test('artigo com 60 blocos de prosa, cercas e tabela: poucos pedidos, correções na ordem e passthrough idêntico', async () => {
+    const cookie = await cookieDeAdmin()
+    const { texto, esperado, paragrafos, passthrough } =
+      artigoComSessentaBlocos()
+    const pedidos = mockarAnthropic(
+      responderLote((b) => `CORRIGIDO(${b.split(' ')[1]})`),
+    )
+
+    const res = await chamar('/admin/llm/proofread', { text: texto }, cookie)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ corrected: string }>
+    expect(body.data?.corrected).toBe(esperado)
+
+    expect(pedidos.length).toBeGreaterThan(1)
+    expect(pedidos.length).toBeLessThanOrEqual(4)
+    expect(pedidos.flatMap(blocosDoPedido)).toEqual(paragrafos)
+    for (const pedido of pedidos) {
+      for (const trecho of passthrough) {
+        expect(pedido.messages[0]?.content).not.toContain(
+          JSON.stringify(trecho).slice(1, -1),
+        )
+      }
+    }
+  })
+
+  test(`pior caso: ${MAX_LOTES_PROOFREAD} lotes com retry em todos fica abaixo de ${LIMITE_SUBREQUESTS} fetches`, async () => {
+    const cookie = await cookieDeAdmin()
+    const grande = `${'x'.repeat(TETO_CARACTERES_LOTE)}\n`
+    const texto = Array.from(
+      { length: MAX_LOTES_PROOFREAD },
+      () => grande,
+    ).join('\n')
+    const pedidos = mockarAnthropic(
+      falhaNaPrimeiraTentativa(responderLote((b) => b)),
+    )
+
+    const res = await chamar('/admin/llm/proofread', { text: texto }, cookie)
+    expect(res.status).toBe(200)
+    expect(pedidos).toHaveLength(2 * MAX_LOTES_PROOFREAD)
+    expect(pedidos.length).toBeLessThanOrEqual(LIMITE_SUBREQUESTS / 2)
+  })
+
+  test(`acima de ${MAX_LOTES_PROOFREAD} lotes ⇒ 413 text_too_large com mensagem acionável, sem chamar a Claude`, async () => {
+    const cookie = await cookieDeAdmin()
+    const grande = `${'x'.repeat(TETO_CARACTERES_LOTE)}\n`
+    const texto = Array.from(
+      { length: MAX_LOTES_PROOFREAD + 1 },
+      () => grande,
+    ).join('\n')
+    const pedidos = mockarAnthropic(responderLote((b) => b))
+
+    const res = await chamar('/admin/llm/proofread', { text: texto }, cookie)
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.data).toBeNull()
+    expect(body.notifications[0]?.code).toBe('text_too_large')
+    expect(body.notifications[0]?.message).toContain('em partes')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('resposta com número de blocos diferente ⇒ 502 claude_recusou de formato, sem texto parcial', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic((p) =>
+      respostaClaude(
+        JSON.stringify({
+          blocos: blocosDoPedido(p)
+            .slice(1)
+            .map((b) => `CORRIGIDO ${b}`),
+        }),
+      ),
+    )
+
+    const res = await chamar(
+      '/admin/llm/proofread',
+      { text: 'Um.\n\nDois.\n\nTrês.\n' },
+      cookie,
+    )
+    expect(res.status).toBe(502)
+    const cru = await res.text()
+    const body = JSON.parse(cru) as Envelope<null>
+    expect(body.data).toBeNull()
+    expect(body.notifications[0]?.code).toBe('claude_recusou')
+    expect(body.notifications[0]?.message).toContain('fora do formato')
+    expect(cru).not.toContain('CORRIGIDO')
+  })
+
+  test('o primeiro lote certo e o segundo com contagem errada ⇒ 502, nada do primeiro é devolvido', async () => {
+    const cookie = await cookieDeAdmin()
+    const grande = `${'x'.repeat(TETO_CARACTERES_LOTE)}\n`
+    let lote = 0
+    const pedidos = mockarAnthropic((p) => {
+      const blocos = blocosDoPedido(p)
+      const saida =
+        lote++ === 0 ? blocos.map(() => 'CORRIGIDO') : [...blocos, 'extra']
+      return respostaClaude(JSON.stringify({ blocos: saida }))
+    })
+
+    const res = await chamar(
+      '/admin/llm/proofread',
+      { text: `${grande}\n${grande}` },
+      cookie,
+    )
+    expect(pedidos).toHaveLength(2)
+    expect(res.status).toBe(502)
+    const cru = await res.text()
+    expect((JSON.parse(cru) as Envelope<null>).notifications[0]?.code).toBe(
+      'claude_recusou',
+    )
+    expect(cru).not.toContain('CORRIGIDO')
+  })
+
+  test('resposta em JSON ilegível ⇒ 502 claude_recusou de formato, sem texto', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic(() => respostaClaude('Um corrigido.\n\nDois corrigido.'))
+
+    const res = await chamar(
+      '/admin/llm/proofread',
+      { text: 'Um.\n\nDois.\n' },
+      cookie,
+    )
+    expect(res.status).toBe(502)
+    const cru = await res.text()
+    const body = JSON.parse(cru) as Envelope<null>
+    expect(body.data).toBeNull()
+    expect(body.notifications[0]?.code).toBe('claude_recusou')
+    expect(body.notifications[0]?.message).toContain('fora do formato')
+    expect(cru).not.toContain('corrigido')
+  })
+})
+
+describe('POST /admin/llm/refine: pior caso de subrequests', () => {
+  test(`refine e encurtamento, os dois com retry, ficam em 4 fetches (limite ${LIMITE_SUBREQUESTS})`, async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(
+      falhaNaPrimeiraTentativa(() => respostaClaude('palavra '.repeat(60))),
+    )
+
+    const res = await chamar(
+      '/admin/llm/refine',
+      { platform: 'bluesky', text: 'texto', instruction: 'x' },
+      cookie,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ refined: string }>
+    expect(Array.from(body.data?.refined ?? '').length).toBeLessThanOrEqual(300)
+    expect(pedidos).toHaveLength(4)
+    expect(pedidos.length).toBeLessThan(LIMITE_SUBREQUESTS)
   })
 })
 
@@ -284,7 +500,11 @@ describe('falhas da Claude viram o envelope de erro da IA', () => {
   test('o refine conta no teto de hooks, não no da revisão', async () => {
     const cookie = await cookieDeAdmin()
     await encherTeto('hooks')
-    mockarAnthropic(() => respostaClaude('x'))
+    mockarAnthropic((p) =>
+      p.model === 'claude-sonnet-5-5'
+        ? responderLote((b) => b)(p)
+        : respostaClaude('x'),
+    )
     const refine = await chamar(
       '/admin/llm/refine',
       { text: 't', platform: 'bluesky' },

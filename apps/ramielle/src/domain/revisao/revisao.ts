@@ -1,8 +1,10 @@
 import type { Modelo } from '@piluvitu/ia/custo'
+import { ClaudeRecusou } from '@piluvitu/ia/erros'
 import { dividirBlocos, restaurarBordas } from './markdown-blocos'
 import {
   hooksSystem,
   INSTRUCAO_PADRAO,
+  PROOFREAD_LOTE_SYSTEM,
   PROOFREAD_SYSTEM,
   REFINE_SYSTEM,
   SHORTEN_SYSTEM,
@@ -13,6 +15,7 @@ export type PedidoChat = {
   system: string
   user: string
   maxTokens: number
+  formatoJson?: object
 }
 
 export type Chat = (pedido: PedidoChat) => Promise<string>
@@ -21,6 +24,18 @@ export const MODELO_PROOFREAD: Modelo = 'claude-sonnet-5-5'
 export const MODELO_HOOKS: Modelo = 'claude-haiku-5-5'
 
 const MAX_TOKENS_PROOFREAD = 4096
+
+// Contas em "Revisão em lotes" no CLAUDE.md do ramielle.
+export const TETO_CARACTERES_LOTE = 5000
+export const MAX_LOTES_PROOFREAD = 10
+
+export const FORMATO_LOTE = {
+  type: 'object',
+  properties: { blocos: { type: 'array', items: { type: 'string' } } },
+  required: ['blocos'],
+  additionalProperties: false,
+} as const
+
 export const MAX_TOKENS_HOOKS = 1024
 
 export const LIMITES: Record<string, number> = { bluesky: 300, mastodon: 500 }
@@ -75,22 +90,94 @@ export async function ajustarAoLimite(
   return truncar(despido || texto, limite)
 }
 
-export async function proofread(texto: string, chat: Chat): Promise<string> {
-  const partes: string[] = []
-  for (const bloco of dividirBlocos(texto)) {
-    if (bloco.tipo === 'passthrough' || bloco.texto.trim() === '') {
-      partes.push(bloco.texto)
-      continue
-    }
-    const corrigido = await chat({
-      modelo: MODELO_PROOFREAD,
-      system: PROOFREAD_SYSTEM,
-      user: bloco.texto,
-      maxTokens: MAX_TOKENS_PROOFREAD,
-    })
-    partes.push(restaurarBordas(bloco.texto, corrigido.trim()))
+export class TextoGrandeDemais extends Error {
+  readonly lotes: number
+  readonly maximo: number
+
+  constructor(lotes: number) {
+    super(
+      `O texto é grande demais para revisar de uma vez: precisaria de ${lotes} pedidos à Claude, e o máximo é ${MAX_LOTES_PROOFREAD} (cada pedido leva até ${TETO_CARACTERES_LOTE / 1000} mil caracteres de prosa). Revise o artigo em partes.`,
+    )
+    this.name = 'TextoGrandeDemais'
+    this.lotes = lotes
+    this.maximo = MAX_LOTES_PROOFREAD
   }
-  return partes.join('')
+}
+
+export function agruparEmLotes<T extends { texto: string }>(
+  blocos: T[],
+  teto: number = TETO_CARACTERES_LOTE,
+): T[][] {
+  const lotes: T[][] = []
+  let atual: T[] = []
+  let tamanhoAtual = 0
+  for (const bloco of blocos) {
+    if (atual.length > 0 && tamanhoAtual + bloco.texto.length > teto) {
+      lotes.push(atual)
+      atual = []
+      tamanhoAtual = 0
+    }
+    atual.push(bloco)
+    tamanhoAtual += bloco.texto.length
+  }
+  if (atual.length > 0) lotes.push(atual)
+  return lotes
+}
+
+function lerLote(resposta: string, esperados: number): string[] {
+  let corpo: unknown
+  try {
+    corpo = JSON.parse(resposta)
+  } catch {
+    throw new ClaudeRecusou('formato')
+  }
+  const blocos =
+    typeof corpo === 'object' && corpo !== null
+      ? (corpo as { blocos?: unknown }).blocos
+      : undefined
+  if (
+    !Array.isArray(blocos) ||
+    blocos.length !== esperados ||
+    !blocos.every((b) => typeof b === 'string')
+  ) {
+    throw new ClaudeRecusou('formato')
+  }
+  return blocos
+}
+
+export function pedidoDoLote(textos: string[]): PedidoChat {
+  return {
+    modelo: MODELO_PROOFREAD,
+    system: `${PROOFREAD_SYSTEM}\n\n${PROOFREAD_LOTE_SYSTEM}`,
+    user: JSON.stringify({ blocos: textos }),
+    maxTokens: MAX_TOKENS_PROOFREAD,
+    formatoJson: FORMATO_LOTE,
+  }
+}
+
+export async function proofread(texto: string, chat: Chat): Promise<string> {
+  const blocos = dividirBlocos(texto)
+  const prosa = blocos
+    .map((bloco, indice) => ({ ...bloco, indice }))
+    .filter((b) => b.tipo === 'prosa' && b.texto.trim() !== '')
+
+  const lotes = agruparEmLotes(prosa)
+  if (lotes.length > MAX_LOTES_PROOFREAD) {
+    throw new TextoGrandeDemais(lotes.length)
+  }
+
+  const corrigidas = new Map<number, string>()
+  for (const lote of lotes) {
+    const resposta = await chat(pedidoDoLote(lote.map((b) => b.texto)))
+    lerLote(resposta, lote.length).forEach((corrigido, i) => {
+      const bloco = lote[i] as (typeof lote)[number]
+      corrigidas.set(
+        bloco.indice,
+        restaurarBordas(bloco.texto, corrigido.trim()),
+      )
+    })
+  }
+  return blocos.map((bloco, i) => corrigidas.get(i) ?? bloco.texto).join('')
 }
 
 export async function refine(

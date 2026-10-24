@@ -27,3 +27,10 @@ FAÇA: destacar rapidamente o que o post tem de bacana + um convite curto pra le
 Use o trecho do meu artigo abaixo só como referência da minha voz (não copie).
 Responda SOMENTE com o texto da chamada, curto.`
 }
+
+// Não vem do promeia: é a instrução do lote, somada ao PROOFREAD_SYSTEM.
+export const PROOFREAD_LOTE_SYSTEM = `FORMATO DO PEDIDO:
+- Você recebe um JSON {"blocos": [...]} com trechos de um mesmo artigo, em ordem.
+- Revise cada trecho sozinho, com as regras acima.
+- Responda com {"blocos": [...]} com exatamente um item por trecho recebido, na mesma ordem: o trecho corrigido, ou o próprio trecho se não houver erro.
+- NÃO junte, NÃO divida, NÃO reordene e NÃO omita trechos.`

@@ -47,6 +47,41 @@ describe('chatComOrcamento', () => {
     expect(linha).toEqual({ feature: 'hooks', estado: 'concluido' })
   })
 
+  it('passa o formatoJson adiante como output_config json_schema', async () => {
+    const schema = {
+      type: 'object',
+      properties: { blocos: { type: 'array', items: { type: 'string' } } },
+      required: ['blocos'],
+      additionalProperties: false,
+    }
+    const pedidos = mockarAnthropic(() => respostaClaude('{"blocos":["a"]}'))
+    const chat = chatComOrcamento(
+      { DB: env.DB, ANTHROPIC_API_KEY: CHAVE },
+      'revisao',
+    )
+
+    await chat({
+      modelo: 'claude-sonnet-5-5',
+      system: 'S',
+      user: 'U',
+      maxTokens: 4096,
+      formatoJson: schema,
+    })
+
+    expect(pedidos[0]?.output_config).toEqual({
+      format: { type: 'json_schema', schema },
+    })
+  })
+
+  it('sem formatoJson não manda output_config', async () => {
+    const pedidos = mockarAnthropic(() => respostaClaude('x'))
+    await chatComOrcamento(
+      { DB: env.DB, ANTHROPIC_API_KEY: CHAVE },
+      'hooks',
+    )({ modelo: 'claude-haiku-5-5', system: 'S', user: 'U', maxTokens: 10 })
+    expect(pedidos[0]).not.toHaveProperty('output_config')
+  })
+
   it('sem chave lança ClaudeDesligado sem chamar a API', async () => {
     const pedidos = mockarAnthropic(() => respostaClaude('x'))
     const chat = chatComOrcamento({ DB: env.DB }, 'revisao')

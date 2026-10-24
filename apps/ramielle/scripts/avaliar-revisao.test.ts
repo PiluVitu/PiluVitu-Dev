@@ -7,7 +7,12 @@
 import { describe, expect, it } from 'vitest'
 import type { RespostaClaude } from '@piluvitu/ia/claude'
 import { dividirBlocos } from '../src/domain/revisao/markdown-blocos'
-import type { Chat, PedidoChat } from '../src/domain/revisao/revisao'
+import { estimativaMicroUsd } from '@piluvitu/ia/custo'
+import {
+  pedidoDoLote,
+  type Chat,
+  type PedidoChat,
+} from '../src/domain/revisao/revisao'
 import {
   avaliarHook,
   avaliarProofread,
@@ -49,14 +54,25 @@ function contar(texto: string, trecho: string): number {
   return texto.split(trecho).length - 1
 }
 
-// Chat falso: proofread responde pelo bloco enviado; hooks, pela plataforma
-// que aparece no system. Pedido sem gravação falha o teste, em vez de inventar.
+// Chat falso: o proofread manda os blocos em lote ({"blocos": [...]}) e cada
+// bloco é respondido pela gravação dele; hooks, pela plataforma que aparece no
+// system. Pedido sem gravação falha o teste, em vez de inventar.
 function chatGravado(): { chat: Chat; pedidos: PedidoChat[] } {
   const pedidos: PedidoChat[] = []
   const chat: Chat = async (pedido) => {
     pedidos.push(pedido)
-    const proofread = gravadas.proofread.find((g) => g.entrada === pedido.user)
-    if (proofread) return proofread.saida
+    if (pedido.formatoJson) {
+      const { blocos } = JSON.parse(pedido.user) as { blocos: string[] }
+      return JSON.stringify({
+        blocos: blocos.map((bloco) => {
+          const gravada = gravadas.proofread.find((g) => g.entrada === bloco)
+          if (!gravada) {
+            throw new Error(`bloco sem resposta gravada: ${bloco.slice(0, 60)}`)
+          }
+          return gravada.saida
+        }),
+      })
+    }
     const hook = gravadas.hooks.find((g) =>
       pedido.system.includes(`Plataforma: ${g.plataforma}.`),
     )
@@ -254,7 +270,7 @@ describe('fixtures do conjunto', () => {
 })
 
 describe('rodarAvaliacao com as respostas gravadas', () => {
-  it('passa o mesmo código de produção: Sonnet por bloco de prosa e Haiku nos hooks', async () => {
+  it('passa o mesmo código de produção: Sonnet com os blocos de prosa em lote e Haiku nos hooks', async () => {
     const { chat, pedidos } = chatGravado()
     await rodarAvaliacao(CASOS, HOOKS, chat)
     const blocosDeProsa = CASOS.flatMap(({ original }) =>
@@ -263,9 +279,13 @@ describe('rodarAvaliacao com as respostas gravadas', () => {
       ),
     )
     const proofreads = pedidos.filter((p) => p.modelo === 'claude-sonnet-5-5')
-    expect(proofreads.map((p) => p.user)).toEqual(
-      blocosDeProsa.map((b) => b.texto),
-    )
+    expect(
+      proofreads.flatMap(
+        (p) => (JSON.parse(p.user) as { blocos: string[] }).blocos,
+      ),
+    ).toEqual(blocosDeProsa.map((b) => b.texto))
+    // Cada artigo do conjunto cabe num lote só: um pedido ao Sonnet por artigo.
+    expect(proofreads).toHaveLength(CASOS.length)
     expect(pedidos.filter((p) => p.modelo === 'claude-haiku-5-5')).toHaveLength(
       3,
     )
@@ -318,6 +338,24 @@ describe('rodarAvaliacao com as respostas gravadas', () => {
 })
 
 describe('custo', () => {
+  it('a estimativa do proofread conta um pedido por lote, com o system do lote e o schema', () => {
+    const caso = CASOS[0] as CasoProofread
+    const prosa = dividirBlocos(caso.original)
+      .filter((b) => b.tipo === 'prosa' && b.texto.trim() !== '')
+      .map((b) => b.texto)
+    const pedido = pedidoDoLote(prosa)
+    const esperado = estimativaMicroUsd(
+      'claude-sonnet-5-5',
+      pedido.system.length +
+        pedido.user.length +
+        JSON.stringify(pedido.formatoJson).length,
+      Math.ceil(pedido.user.length / 2),
+    )
+    expect(estimarCustoMicro([caso], { ...HOOKS, plataformas: [] })).toBe(
+      esperado,
+    )
+  })
+
   it('a estimativa da rodada fica abaixo de US$ 0,05', () => {
     const micro = estimarCustoMicro(CASOS, HOOKS)
     expect(micro).toBeGreaterThan(0)

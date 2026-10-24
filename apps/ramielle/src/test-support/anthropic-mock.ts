@@ -58,3 +58,19 @@ export function mockarAnthropic(
   })
   return pedidos
 }
+
+// O proofread manda {"blocos": [...]} no user e espera o mesmo formato de
+// volta; este responder corrige cada bloco com `corrigir`.
+export function blocosDoPedido(pedido: PedidoAnthropic): string[] {
+  const conteudo = pedido.messages[0]?.content ?? ''
+  return (JSON.parse(conteudo) as { blocos: string[] }).blocos
+}
+
+export function responderLote(
+  corrigir: (bloco: string) => string,
+): (pedido: PedidoAnthropic) => Response {
+  return (pedido) =>
+    respostaClaude(
+      JSON.stringify({ blocos: blocosDoPedido(pedido).map(corrigir) }),
+    )
+}

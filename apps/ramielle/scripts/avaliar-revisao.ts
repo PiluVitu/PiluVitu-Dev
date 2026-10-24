@@ -1,13 +1,15 @@
 import type { PedidoClaude, RespostaClaude } from '@piluvitu/ia/claude'
 import { estimativaMicroUsd } from '@piluvitu/ia/custo'
 import { dividirBlocos } from '../src/domain/revisao/markdown-blocos'
-import { hooksSystem, PROOFREAD_SYSTEM } from '../src/domain/revisao/prompts'
+import { hooksSystem } from '../src/domain/revisao/prompts'
 import {
+  agruparEmLotes,
   gerarHooks,
   limiteDaPlataforma,
   MAX_TOKENS_HOOKS,
   MODELO_HOOKS,
   MODELO_PROOFREAD,
+  pedidoDoLote,
   proofread,
   type ArtigoHooks,
   type Chat,
@@ -227,20 +229,25 @@ export function consolidar(resultado: Resultado): Consolidado {
   }
 }
 
-// Saída do proofread estimada do tamanho do próprio bloco; nos hooks, o teto
-// de tokens, porque o texto sai do zero.
+// Saída do proofread estimada do tamanho do próprio lote em JSON; nos hooks, o
+// teto de tokens, porque o texto sai do zero.
 export function estimarCustoMicro(
   casos: CasoProofread[],
   entradaHooks: EntradaHooks,
 ): number {
   let micro = 0
   for (const { original } of casos) {
-    for (const bloco of dividirBlocos(original)) {
-      if (bloco.tipo !== 'prosa' || bloco.texto.trim() === '') continue
+    const prosa = dividirBlocos(original).filter(
+      (b) => b.tipo === 'prosa' && b.texto.trim() !== '',
+    )
+    for (const lote of agruparEmLotes(prosa)) {
+      const pedido = pedidoDoLote(lote.map((b) => b.texto))
       micro += estimativaMicroUsd(
         MODELO_PROOFREAD,
-        PROOFREAD_SYSTEM.length + bloco.texto.length,
-        Math.ceil(bloco.texto.length / 2),
+        pedido.system.length +
+          pedido.user.length +
+          JSON.stringify(pedido.formatoJson).length,
+        Math.ceil(pedido.user.length / 2),
       )
     }
   }
@@ -285,7 +292,7 @@ export function formatarRelatorio(
   nota: Consolidado,
   custo: { estimadoMicro: number; medicao: Medicao },
 ): string {
-  const linhas: string[] = ['Proofread (Sonnet, um pedido por bloco de prosa):']
+  const linhas: string[] = ['Proofread (Sonnet, blocos de prosa em lotes):']
   for (const { id, nota: n } of resultado.proofread) {
     linhas.push(
       `  ${id}: passthrough ${n.passthroughIdentico ? 'ok' : 'ALTERADO'}, erros ${n.errosCorrigidos}/${n.errosTotal}, extras ${n.mudancasExtras}`,
