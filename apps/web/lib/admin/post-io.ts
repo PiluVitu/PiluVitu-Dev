@@ -164,7 +164,9 @@ export function serializePost(
 ): string {
   const merged: Record<string, unknown> = { ...rawFrontmatter, ...known }
   for (const k of OPCIONAIS_OMITIDOS_QUANDO_VAZIOS) {
-    if (merged[k] === '') delete merged[k]
+    if (typeof merged[k] === 'string' && merged[k].trim() === '') {
+      delete merged[k]
+    }
   }
   return matter.stringify(body, merged)
 }

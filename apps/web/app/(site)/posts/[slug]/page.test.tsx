@@ -55,6 +55,14 @@ describe('posts/[slug] — generateMetadata', () => {
     expect(meta.openGraph?.description).toBe('O excerpt do post.')
   })
 
+  it('metaDescription só de espaço cai no excerpt', async () => {
+    mockPost.atual = { ...base, metaDescription: ' \n ' }
+    const meta = await generateMetadata({ params })
+    expect(meta.description).toBe('O excerpt do post.')
+    expect(meta.openGraph?.description).toBe('O excerpt do post.')
+    expect(meta.twitter?.description).toBe('O excerpt do post.')
+  })
+
   it('sem nenhum dos dois, não define description', async () => {
     mockPost.atual = { ...base, excerpt: '' }
     const meta = await generateMetadata({ params })

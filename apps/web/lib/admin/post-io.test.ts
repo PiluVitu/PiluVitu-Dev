@@ -120,6 +120,16 @@ describe('post-io', () => {
     expect(out).not.toMatch(/^metaDescription:/m)
   })
 
+  it('serializePost não grava tldr nem metaDescription só de espaço', () => {
+    const out = serializePost(
+      { ...base, tldr: ' \n', metaDescription: '  ' },
+      '# body',
+      { metaDescription: 'velha' },
+    )
+    expect(out).not.toMatch(/^tldr:/m)
+    expect(out).not.toMatch(/^metaDescription:/m)
+  })
+
   it('serializePost apaga do arquivo o tldr que o dono esvaziou', () => {
     const raw = {
       title: 'T',

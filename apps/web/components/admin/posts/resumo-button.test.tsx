@@ -143,6 +143,45 @@ describe('ResumoButton', () => {
     expect(container.textContent).not.toMatch(/usar as sugeridas/i)
   })
 
+  // A resposta leva segundos; o dono pode editar o post enquanto isso. O que
+  // chega tem de ser aplicado sobre os props atuais, não os do clique.
+  it('aplica com o onAplicar e as tags da renderização atual, não da do clique', async () => {
+    let responder: (r: Resumo) => void = () => {}
+    resumoMock.mockReturnValue(
+      new Promise<Resumo>((res) => {
+        responder = res
+      }),
+    )
+    const antigo = jest.fn()
+    const atual = jest.fn()
+    montar({ tags: [], onAplicar: antigo })
+    await clicar(/gerar resumo/i)
+
+    montar({ tags: [], onAplicar: atual })
+    await act(async () => responder(sugerido))
+
+    expect(antigo).not.toHaveBeenCalled()
+    expect(atual).toHaveBeenCalledWith(sugerido)
+  })
+
+  it('pede confirmação quando o dono pôs tags enquanto a resposta não chegava', async () => {
+    let responder: (r: Resumo) => void = () => {}
+    resumoMock.mockReturnValue(
+      new Promise<Resumo>((res) => {
+        responder = res
+      }),
+    )
+    const onAplicar = jest.fn()
+    montar({ tags: [], onAplicar })
+    await clicar(/gerar resumo/i)
+
+    montar({ tags: ['devops'], onAplicar })
+    await act(async () => responder(sugerido))
+
+    expect(onAplicar).not.toHaveBeenCalled()
+    expect(container.textContent).toMatch(/usar as sugeridas/i)
+  })
+
   it('erro mostra a mensagem da primeira notificação e não aplica nada', async () => {
     resumoMock.mockRejectedValue(
       new ApiError(429, [

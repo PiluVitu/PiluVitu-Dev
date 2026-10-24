@@ -28,7 +28,7 @@ export async function generateMetadata({
   if (!post) return {}
 
   const ogImage = post.coverImage ?? undefined
-  const description = post.metaDescription || post.excerpt || undefined
+  const description = post.metaDescription.trim() || post.excerpt || undefined
 
   return {
     title: post.title,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@piluvitu/ui/button'
 import { useResumo } from '@/hooks/admin/atelier/use-resumo'
 import { errorMessage } from '@/lib/votacao/api-client'
@@ -107,9 +107,13 @@ export function ResumoButton(props: {
 }) {
   const [estado, setEstado] = useState<EstadoResumo>({ tipo: 'ocioso' })
   const resumo = useResumo()
+  const atuais = useRef(props)
+  useLayoutEffect(() => {
+    atuais.current = props
+  })
 
   function aplicar(r: Resumo) {
-    props.onAplicar(r)
+    atuais.current.onAplicar(r)
     setEstado({ tipo: 'preenchido' })
   }
 
@@ -120,7 +124,8 @@ export function ResumoButton(props: {
         title: props.title,
         body: props.body,
       })
-      if (props.tags.length === 0 || mesmasTags(props.tags, sugestao.tags)) {
+      const { tags } = atuais.current
+      if (tags.length === 0 || mesmasTags(tags, sugestao.tags)) {
         aplicar(sugestao)
       } else {
         setEstado({ tipo: 'confirmarTags', sugestao })
