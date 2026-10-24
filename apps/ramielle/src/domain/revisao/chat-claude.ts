@@ -6,7 +6,7 @@ export type AmbienteChat = { DB: BancoD1; ANTHROPIC_API_KEY?: string }
 
 export function chatComOrcamento(
   env: AmbienteChat,
-  feature: 'revisao' | 'hooks',
+  feature: keyof typeof TETOS_RAMIELLE,
 ): Chat {
   return async (pedido) => {
     const resposta = await comOrcamento(

@@ -15,6 +15,13 @@ import {
   refine,
   TextoGrandeDemais,
 } from '../domain/revisao/revisao'
+import {
+  CorpoGrandeDemais,
+  gerarResumo,
+  MAX_CARACTERES_TITULO_RESUMO,
+  ParagrafoGrandeDemais,
+  SemProsa,
+} from '../domain/revisao/resumo'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
 import { respostaDeErroIa } from '../lib/ia'
@@ -89,6 +96,49 @@ atelierRoutes.post('/llm/refine', requireAdmin<AuthBindings>(), async (c) => {
     )
     return okJson({ refined })
   } catch (err) {
+    return respostaDeErroIa(err)
+  }
+})
+
+const MSG_CORPO_RESUMO_INVALIDO = `Corpo inválido: 'body' é obrigatório e 'title' é texto de até ${MAX_CARACTERES_TITULO_RESUMO} caracteres.`
+
+atelierRoutes.post('/llm/resumo', requireAdmin<AuthBindings>(), async (c) => {
+  if (!c.env.ANTHROPIC_API_KEY) {
+    return respostaDeErroIa(new ClaudeDesligado())
+  }
+
+  let corpo: { title?: unknown; body?: unknown }
+  try {
+    corpo = await c.req.json()
+  } catch {
+    return errJson(400, 'invalid_json', MSG_CORPO_RESUMO_INVALIDO)
+  }
+  const { title = '', body } = corpo ?? {}
+  if (
+    typeof body !== 'string' ||
+    body === '' ||
+    typeof title !== 'string' ||
+    title.length > MAX_CARACTERES_TITULO_RESUMO
+  ) {
+    return errJson(400, 'invalid_json', MSG_CORPO_RESUMO_INVALIDO)
+  }
+
+  try {
+    const resumo = await gerarResumo(
+      { title, body },
+      chatComOrcamento(c.env, 'resumo'),
+    )
+    return okJson(resumo)
+  } catch (err) {
+    if (
+      err instanceof CorpoGrandeDemais ||
+      err instanceof ParagrafoGrandeDemais
+    ) {
+      return errJson(413, 'text_too_large', err.message)
+    }
+    if (err instanceof SemProsa) {
+      return errJson(422, 'sem_prosa', err.message)
+    }
     return respostaDeErroIa(err)
   }
 })

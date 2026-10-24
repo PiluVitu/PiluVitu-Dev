@@ -163,6 +163,52 @@ describe('atelierApi', () => {
     expect((init.body as FormData).has('termos')).toBe(false)
   })
 
+  it('resumo manda {title, body} pro /admin/llm/resumo e devolve o resumo', async () => {
+    const data = {
+      tldr: 'Em duas frases.',
+      metaDescription: 'Uma descrição para a busca.',
+      tags: ['git', 'husky'],
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, data, notifications: [] }),
+    }) as unknown as typeof fetch
+
+    const res = await atelierApi.resumo('Título', '# corpo')
+    expect(res).toEqual(data)
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(url).toMatch(/\/admin\/llm\/resumo$/)
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(init.body)).toEqual({ title: 'Título', body: '# corpo' })
+  })
+
+  it('resumo lança a mensagem do teto vinda do ramielle', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'teto_atingido',
+            message: 'Teto do mês atingido.',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch
+
+    await expect(atelierApi.resumo('T', 'x')).rejects.toMatchObject({
+      status: 429,
+      code: 'teto_atingido',
+      message: 'Teto do mês atingido.',
+    })
+  })
+
   it('lança ApiError em status !ok', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,

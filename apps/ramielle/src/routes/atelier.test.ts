@@ -27,6 +27,12 @@ import {
   TETO_CARACTERES_BLOCO,
   TETO_CARACTERES_LOTE,
 } from '../domain/revisao/revisao'
+import {
+  MAX_CARACTERES_CORPO_RESUMO,
+  MAX_CARACTERES_TITULO_RESUMO,
+  MAX_TOKENS_RESUMO,
+  TETO_CARACTERES_RESUMO,
+} from '../domain/revisao/resumo'
 
 const DB = env.DB
 const BASE_URL_TESTE = 'http://localhost:8787'
@@ -116,7 +122,7 @@ async function chamar(
   )
 }
 
-async function encherTeto(feature: 'revisao' | 'hooks') {
+async function encherTeto(feature: 'revisao' | 'hooks' | 'resumo') {
   await DB.prepare(
     `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, custo_micro, criado_em)
      VALUES (?, ?, ?, 'claude-sonnet-5-5', 'concluido', 0, ?, '2026-10-01T00:00:00Z')`,
@@ -583,6 +589,307 @@ describe('falhas da Claude viram o envelope de erro da IA', () => {
       vi.restoreAllMocks()
       mockarAnthropic(responder)
       const res = await chamar('/admin/llm/proofread', { text: 't' }, cookie)
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect(await res.text()).not.toContain(SENTINELA)
+      for (const [nome, valor] of res.headers) {
+        expect(`${nome}: ${valor}`).not.toContain(SENTINELA)
+      }
+    }
+  })
+})
+
+describe('POST /admin/llm/resumo', () => {
+  const RESUMO = {
+    tldr: 'Contei como levei a revisão de posts para a Claude dentro do Worker.',
+    metaDescription:
+      'Como a revisão de posts do blog saiu do Mac e foi para a Claude num Worker da Cloudflare.',
+    tags: ['cloudflare', 'claude'],
+  }
+  const responderResumo = () => respostaClaude(JSON.stringify(RESUMO))
+
+  test('sem sessão ⇒ 401 not_authenticated, sem chamar a Claude', async () => {
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await app.request(
+      '/admin/llm/resumo',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'T', body: 'Prosa.' }),
+      },
+      testEnv(),
+    )
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('not_authenticated')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('conta autenticada mas não-admin ⇒ 403 admin_only, sem chamar a Claude', async () => {
+    const cookie = await cookieDeNaoAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('caminho feliz: 200 com {tldr, metaDescription, tags}, pelo Haiku, com json_schema e sem temperature/thinking', async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      {
+        title: 'Claude no Worker',
+        body: 'Um parágrafo.\n\n```ts\nconst x = 1\n```\n',
+      },
+      cookie,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<typeof RESUMO>
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual(RESUMO)
+    expect(pedidos).toHaveLength(1)
+    const pedido = pedidos[0] as PedidoAnthropic
+    expect(pedido.model).toBe('claude-haiku-5-5')
+    expect(pedido.max_tokens).toBe(MAX_TOKENS_RESUMO)
+    expect(pedido).not.toHaveProperty('temperature')
+    expect(pedido).not.toHaveProperty('thinking')
+    expect(pedido.output_config).toMatchObject({
+      format: { type: 'json_schema' },
+    })
+    expect(pedido.messages[0]?.content).toContain('Um parágrafo.')
+    expect(pedido.messages[0]?.content).not.toContain('const x = 1')
+  })
+
+  test('registra o uso na feature resumo', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic(responderResumo)
+    await chamar('/admin/llm/resumo', { title: 'T', body: 'Prosa.' }, cookie)
+    const linhas = await DB.prepare(
+      `SELECT feature, modelo, estado FROM uso_ia`,
+    ).all()
+    expect(linhas.results).toEqual([
+      { feature: 'resumo', modelo: 'claude-haiku-5-5', estado: 'concluido' },
+    ])
+  })
+
+  test.each([
+    [
+      'metaDescription com 161 caracteres',
+      JSON.stringify({ ...RESUMO, metaDescription: 'm'.repeat(161) }),
+    ],
+    ['tag "Next JS"', JSON.stringify({ ...RESUMO, tags: ['Next JS'] })],
+    ['campo extra', JSON.stringify({ ...RESUMO, extra: 1 })],
+    ['JSON quebrado', '{"tldr": "corta'],
+  ])('%s ⇒ 502 claude_recusou, sem data', async (_, texto) => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic(() => respostaClaude(texto))
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.ok).toBe(false)
+    expect(body.data ?? null).toBeNull()
+    expect(body.notifications[0]?.code).toBe('claude_recusou')
+  })
+
+  test('stop_reason max_tokens ⇒ 502 claude_recusou, mesmo com um JSON que parece válido', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic(() =>
+      respostaClaude(JSON.stringify(RESUMO), { stop_reason: 'max_tokens' }),
+    )
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('claude_recusou')
+  })
+
+  test('sem ANTHROPIC_API_KEY ⇒ 503 claude_desligado, sem chamar a API nem gravar uso', async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+      testEnv({ ANTHROPIC_API_KEY: undefined }),
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('claude_desligado')
+    expect(pedidos).toHaveLength(0)
+    const uso = await DB.prepare('SELECT COUNT(*) AS n FROM uso_ia').first()
+    expect(uso).toEqual({ n: 0 })
+  })
+
+  test('teto do resumo atingido ⇒ 429 teto_atingido, sem chamar a API', async () => {
+    const cookie = await cookieDeAdmin()
+    await encherTeto('resumo')
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('teto_atingido')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('o teto do resumo é só dele: com o de hooks cheio, o resumo passa', async () => {
+    const cookie = await cookieDeAdmin()
+    await encherTeto('hooks')
+    mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(200)
+  })
+
+  test.each([
+    ['sem body', { title: 'T' }],
+    ['body vazio', { title: 'T', body: '' }],
+    ['body que não é string', { title: 'T', body: 1 }],
+    ['title que não é string', { title: 1, body: 'Prosa.' }],
+    [
+      'title acima do máximo',
+      { title: 't'.repeat(MAX_CARACTERES_TITULO_RESUMO + 1), body: 'Prosa.' },
+    ],
+  ])('%s ⇒ 400 invalid_json, sem chamar a Claude', async (_, corpo) => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar('/admin/llm/resumo', corpo, cookie)
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('invalid_json')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('JSON ilegível no corpo ⇒ 400 invalid_json', async () => {
+    const cookie = await cookieDeAdmin()
+    const res = await app.request(
+      '/admin/llm/resumo',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: '{',
+      },
+      testEnv(),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  test(`body acima de ${MAX_CARACTERES_CORPO_RESUMO} caracteres ⇒ 413 text_too_large, sem chamar a Claude nem gravar uso`, async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'a'.repeat(MAX_CARACTERES_CORPO_RESUMO + 1) },
+      cookie,
+    )
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('text_too_large')
+    expect(pedidos).toHaveLength(0)
+    const uso = await DB.prepare('SELECT COUNT(*) AS n FROM uso_ia').first()
+    expect(uso).toEqual({ n: 0 })
+  })
+
+  test(`primeiro parágrafo acima de ${TETO_CARACTERES_RESUMO} caracteres ⇒ 413 text_too_large, sem chamar a Claude`, async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'p'.repeat(TETO_CARACTERES_RESUMO + 1) },
+      cookie,
+    )
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('text_too_large')
+    expect(body.notifications[0]?.message).toContain('24 mil')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test('artigo só com código ⇒ 422 sem_prosa, sem chamar a Claude', async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderResumo)
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: '```ts\nconst so = "codigo"\n```\n' },
+      cookie,
+    )
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('sem_prosa')
+    expect(pedidos).toHaveLength(0)
+  })
+
+  test(`pior caso de subrequests: o maior corpo aceito, com 529 na 1ª tentativa, fica em 2 fetches (limite ${LIMITE_SUBREQUESTS})`, async () => {
+    const cookie = await cookieDeAdmin()
+    const paragrafo = `${'palavra '.repeat(120).trim()}\n\n`
+    const corpoMaximo = paragrafo
+      .repeat(Math.ceil(MAX_CARACTERES_CORPO_RESUMO / paragrafo.length))
+      .slice(0, MAX_CARACTERES_CORPO_RESUMO)
+    expect(corpoMaximo.length).toBe(MAX_CARACTERES_CORPO_RESUMO)
+    const pedidos = mockarAnthropic(falhaNaPrimeiraTentativa(responderResumo))
+
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 't'.repeat(MAX_CARACTERES_TITULO_RESUMO), body: corpoMaximo },
+      cookie,
+    )
+    expect(res.status).toBe(200)
+    expect(pedidos).toHaveLength(2)
+    expect(pedidos.length).toBeLessThan(LIMITE_SUBREQUESTS)
+    expect((pedidos[1]?.messages[0]?.content ?? '').length).toBeLessThanOrEqual(
+      TETO_CARACTERES_RESUMO + MAX_CARACTERES_TITULO_RESUMO + 200,
+    )
+  })
+
+  test('529 nas duas tentativas ⇒ 503 claude_indisponivel em 2 fetches', async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(() => erroClaude(529, 'overloaded_error'))
+    const res = await chamar(
+      '/admin/llm/resumo',
+      { title: 'T', body: 'Prosa.' },
+      cookie,
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('claude_indisponivel')
+    expect(pedidos).toHaveLength(2)
+  })
+
+  test('a chave não aparece na resposta em nenhum caminho de erro', async () => {
+    const cookie = await cookieDeAdmin()
+    const respostas = [
+      () => erroClaude(401, 'authentication_error'),
+      () => erroClaude(529, 'overloaded_error'),
+      () => respostaClaude('', { stop_reason: 'max_tokens' }),
+      () => respostaClaude('{"tldr": 1}'),
+    ]
+    for (const responder of respostas) {
+      vi.restoreAllMocks()
+      mockarAnthropic(responder)
+      const res = await chamar(
+        '/admin/llm/resumo',
+        { title: 'T', body: 'Prosa.' },
+        cookie,
+      )
       expect(res.status).toBeGreaterThanOrEqual(500)
       expect(await res.text()).not.toContain(SENTINELA)
       for (const [nome, valor] of res.headers) {

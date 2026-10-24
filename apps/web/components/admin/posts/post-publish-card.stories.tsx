@@ -11,6 +11,8 @@ const base = {
   publishedAt: '2025-04-28',
   draft: false,
   readingTimeMinutes: 5,
+  tldr: '',
+  metaDescription: '',
 }
 
 const meta: Meta<typeof PostPublishCard> = {

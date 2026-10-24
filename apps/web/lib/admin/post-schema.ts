@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { SLUG_RE } from './content-schemas'
 
+export const META_DESCRIPTION_MAX = 160
+
 export const postFrontmatterSchema = z.object({
   title: z.string().min(1, 'Obrigatório'),
   slug: z
@@ -12,6 +14,11 @@ export const postFrontmatterSchema = z.object({
   publishedAt: z.string().default(''),
   draft: z.boolean().default(false),
   readingTimeMinutes: z.number().int().min(0).default(0),
+  tldr: z.string().default(''),
+  metaDescription: z
+    .string()
+    .max(META_DESCRIPTION_MAX, `Máximo de ${META_DESCRIPTION_MAX} caracteres`)
+    .default(''),
 })
 
 export type PostFrontmatter = z.infer<typeof postFrontmatterSchema>
@@ -25,6 +32,8 @@ const KNOWN_KEYS: (keyof PostFrontmatter)[] = [
   'publishedAt',
   'draft',
   'readingTimeMinutes',
+  'tldr',
+  'metaDescription',
 ]
 
 /** Pulls the known fields out of a raw frontmatter object (drops extras). */

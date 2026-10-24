@@ -3,6 +3,7 @@ import type {
   DistributionTarget,
   ModoTranscricao,
   ProposalsBody,
+  Resumo,
   SelectedTarget,
   Transcricao,
 } from './types'
@@ -57,6 +58,11 @@ export const atelierApi = {
     call<{ corrected: string }>('/admin/llm/proofread', {
       method: 'POST',
       body: JSON.stringify({ text }),
+    }),
+  resumo: (title: string, body: string) =>
+    call<Resumo>('/admin/llm/resumo', {
+      method: 'POST',
+      body: JSON.stringify({ title, body }),
     }),
   refine: (platform: string, text: string, instruction: string) =>
     call<{ refined: string }>('/admin/llm/refine', {
