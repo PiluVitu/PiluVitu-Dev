@@ -10,6 +10,7 @@ TypeScript puro, sem Hono: o que os dois Workers precisam igual para falar com a
 - **SDK:** `@anthropic-ai/sdk` em versão **exata** (`1.1.0`, publicada em 2026-10-21). Subir de versão é decisão explícita, nunca `^`.
 - **Testes:** Vitest, colocated (`src/*.test.ts`). `pnpm --filter @piluvitu/ia test` roda duas passadas: `vitest.config.ts` (Node) para `claude`/`custo`/`erros`, e `vitest.workers.config.ts` (`@cloudflare/vitest-pool-workers`, D1 `DB` no Miniflare, `sql/` aplicado com `readD1Migrations` + `applyD1Migrations` após `reset()` em cada teste) só para `uso.test.ts`. O `claude.test.ts` fica no Node porque mexe em `process.env`.
 - **Tipos:** `pnpm --filter @piluvitu/ia lint` (`tsc --noEmit`).
+- **Consumidores:** `apps/ramielle` e `apps/financas` (`"@piluvitu/ia": "workspace:*"`). Cada um tem o seu `src/lib/ia.ts`, com os tetos da feature (`TETOS_RAMIELLE`, `TETOS_FINANCAS`) e o `respostaDeErroIa`, que liga o `codigoDoErro` ao `errJson` local, e o seu `src/ia-segredo.test.ts`, a sentinela da chave (ver o `CLAUDE.md` de cada Worker).
 - **CI:** o job `ramielle` do `ci.yml` roda o `lint` e o `test` daqui.
 - Instalar a SDK trouxe `@opentelemetry/api` (dependência dela) para o lock, e isso mudou o sufixo de peer de `next`, `better-auth` e `vitest` nos outros workspaces. É esperado: o lockfile só reescreveu o sufixo, as versões ficaram as mesmas.
 

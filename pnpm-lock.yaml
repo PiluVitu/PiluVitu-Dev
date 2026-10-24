@@ -39,6 +39,9 @@ importers:
 
   apps/financas:
     dependencies:
+      '@piluvitu/ia':
+        specifier: workspace:*
+        version: link:../../packages/ia
       '@piluvitu/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -249,6 +252,9 @@ importers:
 
   apps/ramielle:
     dependencies:
+      '@piluvitu/ia':
+        specifier: workspace:*
+        version: link:../../packages/ia
       better-auth:
         specifier: 1.6.25
         version: 1.6.25(@opentelemetry/api@1.10.0)(next@16.3.8)(react-dom@19.2.4)(react@19.2.4)(vitest@4.1.11)

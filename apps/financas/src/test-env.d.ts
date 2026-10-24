@@ -17,7 +17,7 @@ declare namespace Cloudflare {
   }
 }
 
-declare module '*.sql?raw' {
+declare module '*?raw' {
   const conteudo: string
   export default conteudo
 }

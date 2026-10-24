@@ -445,6 +445,22 @@ Também disponível como script `backup` no `package.json` (`pnpm --filter @pilu
 
 Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` falha se as duas divergirem (lidas com `?raw` do Vite) e confere colunas, STRICT, o índice `idx_uso_ia_feature_mes` e o CHECK de `estado`. Mudar a tabela é mudar o SQL do pacote e copiar de novo, nas duas migrations (aqui e `apps/financas/migrations/0015_uso_ia.sql`). A reserva atômica e o teto por feature ficam em `packages/ia/src/uso.ts` (ver `packages/ia/CLAUDE.md`). A migration somou 1 tabela e 1 índice às contagens de `schema.test.ts` (12 tabelas, 10 índices). Aplicada só `--local`; produção: `pnpm --filter @piluvitu/ramielle db:migrate:remote`.
 
+## Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
+
+- **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/ramielle exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `AuthBindings` (`src/lib/auth.ts`), que é o `Bindings` inteiro do Worker.
+- **`src/lib/ia.ts`**: `TETOS_RAMIELLE` (tetos mensais em micro-dólar, por feature) e `respostaDeErroIa(err)`, que traduz os erros do pacote (`codigoDoErro`) para o `errJson` daqui e **relança** o que não é da IA, para cair no `onError` global. Nenhuma rota de produção chama a Claude no PR1; as dos PRs 3 e 4 (revisão, hooks, resumo) usam estes dois.
+- Tetos: `revisao` US$ 10, `hooks` US$ 2, `resumo` US$ 2. A soma das quatro features dos dois Workers é US$ 16; o teto duro de US$ 20 fica no Console da Anthropic.
+- Erros, todos no envelope `{ok:false, notifications}`:
+
+| Código                | Status | Quando                                                                                                                         |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                                                                        |
+| `claude_indisponivel` | 503    | Rede, 5xx, 529 ou 429                                                                                                          |
+| `claude_recusou`      | 502    | 400, 401 ou 403, `stop_reason: "refusal"` ou resposta fora do formato; o 401 diz "chave inválida, confira o `wrangler secret`" |
+| `teto_atingido`       | 429    | A reserva estouraria o teto do mês; a mensagem diz o teto, o gasto e o mês                                                     |
+
+- **Sentinela (`src/ia-segredo.test.ts`)**: lê o `wrangler.jsonc` (e o `.dev.vars.example`) com `?raw` e exige que não tenham a chave; e, numa rota montada só no teste na frente do app real (`comOrcamento` + `respostaDeErroIa`), com o `fetch` global devolvendo 401 com a chave ecoada no corpo, confere que corpo, headers e `console.*` saem sem a chave, que ela só viaja para `api.anthropic.com` (no header `authorization: Bearer`, não `x-api-key`: é como a SDK 1.1.0 manda) e que a reserva fica `falhou`. Medido: um `console.error(err)` com o erro da SDK dentro do `chamarClaude` faz o teste falhar. `src/test-env.d.ts` declara `*?raw` para qualquer arquivo.
+
 ## Pendências do dono — nada disto foi feito nesta fatia
 
 ⚠️ **A sequência completa, com comando exato/verificação/rollback por passo, está em `docs/superpowers/runbooks/2026-08-12-cutover-ramielle.md` (fatia ④, Task 6) — leia aquele arquivo pra EXECUTAR o cutover.** A lista abaixo continua aqui como referência rápida do _o quê_ (o runbook cobre a _ordem_, que é obrigatória e não deve ser deduzida desta lista solta).

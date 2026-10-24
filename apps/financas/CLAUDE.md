@@ -169,6 +169,22 @@ Aplicada só **localmente**; produção é ação manual do dono:
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0015_uso_ia
 ```
 
+### Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
+
+- **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `IaBindings` (`src/lib/ia.ts`), somado ao `Bindings` em `src/index.ts`.
+- **`src/lib/ia.ts`**: `TETOS_FINANCAS` (tetos mensais em micro-dólar, por feature) e `respostaDeErroIa(err)`, que traduz os erros do pacote (`codigoDoErro`) para o `errJson` daqui e **relança** o que não é da IA, para cair no `onError` global. Nenhuma rota chama a Claude no PR1; a do insight (PR2) usa estes dois.
+- Tetos: `insight` US$ 2. A soma das quatro features dos dois Workers é US$ 16; o teto duro de US$ 20 fica no Console da Anthropic.
+- Erros, todos no envelope `{ok:false, notifications}`:
+
+| Código                | Status | Quando                                                                                                                         |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                                                                        |
+| `claude_indisponivel` | 503    | Rede, 5xx, 529 ou 429                                                                                                          |
+| `claude_recusou`      | 502    | 400, 401 ou 403, `stop_reason: "refusal"` ou resposta fora do formato; o 401 diz "chave inválida, confira o `wrangler secret`" |
+| `teto_atingido`       | 429    | A reserva estouraria o teto do mês; a mensagem diz o teto, o gasto e o mês                                                     |
+
+- **Sentinela (`src/ia-segredo.test.ts`)**: lê o `wrangler.jsonc` (e o `.dev.vars.example`) com `?raw` e exige que não tenham a chave; e, numa rota montada só no teste na frente do app real (`comOrcamento` + `respostaDeErroIa`), com o `fetch` global devolvendo 401 com a chave ecoada no corpo, confere que corpo, headers e `console.*` saem sem a chave, que ela só viaja para `api.anthropic.com` (no header `authorization: Bearer`, não `x-api-key`: é como a SDK 1.1.0 manda) e que a reserva fica `falhou`. Medido: um `console.error(err)` com o erro da SDK dentro do `chamarClaude` faz o teste falhar. `src/test-env.d.ts` declara `*?raw` para qualquer arquivo.
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
