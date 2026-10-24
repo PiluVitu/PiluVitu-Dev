@@ -2,9 +2,20 @@
 
 Serviço Python (FastAPI) que roda no MacBook do dono, atrás de um túnel — o
 processamento que precisa de GPU, modelo local ou acesso a arquivo em disco.
-Hoje: o insight financeiro (lê números do ramielle, gera texto via Ollama
-local, publica de volta) **e a revisão de artigo** (`proofread`/`refine`).
-Depois: PDF e transcrição (§9.3 do spec da fatia).
+Hoje: a transcrição de áudio e a revisão de artigo (`proofread`/`refine`/
+`hooks`), esta última só até o PR3 da IA fase 1, quando vai para a Claude no
+`apps/ramielle`. Depois: PDF.
+
+O insight financeiro **saiu daqui em 2026-10** (PR2 da IA fase 1): é escrito
+pela Claude dentro do Worker do finanças, pelo botão da tela e por um Cron no
+dia 1 (ver "Insight de IA" em `apps/financas/CLAUDE.md`). Saíram junto
+`insight.py`, `ramielle.py`, `cli.py` (e o console script `promeia-insight`),
+`money.py`, `dates.py` (só o insight os usava, conferido por grep), a rota
+`POST /insight`, o alvo `make insight` e as settings `ingest_token`,
+`ramielle_url` e `ollama_model` (`INGEST_TOKEN`, `RAMIELLE_URL` e
+`OLLAMA_MODEL` no ambiente são ignorados). `ollama.generate` ficou sem
+chamador (a revisão usa `ollama.chat`) e sai com o resto do `ollama.py` no
+PR3.
 
 ## Revisão de artigo — `POST /llm/proofread`, `POST /llm/refine` e `POST /llm/hooks`
 
@@ -16,7 +27,7 @@ gera uma chamada social por plataforma — **sem consumidor no ramielle ainda**
 descuido).
 
 ⚠️ **Quem chama é o ramielle, não o navegador** (§3). Por isso a forma de erro
-destas rotas é a do promeia (`{ok, code, message}`, a mesma de `/insight`) e
+destas rotas é a do promeia (`{ok, code, message}`, a mesma de `/transcrever`) e
 **não** o envelope `{ok, data, notifications}` que o `apps/web` consome —
 traduzir é trabalho do ramielle, na fatia seguinte. Fazer aqui inverteria a
 camada e obrigaria o promeia a conhecer o formato do frontend.
@@ -75,8 +86,7 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   seria pior que uma chamada um pouco longa.
 - **Os prompts** (`prompts.py`) são **contrato byte a byte** com o Go —
   igualdade verificada programaticamente contra `prompts.go` (672/289/168
-  caracteres). Por isso o arquivo tem `E501` no per-file-ignore, como
-  `insight.py`: quebrar linha pra caber em 88 colunas insere uma quebra
+  caracteres). Por isso o arquivo tem `E501` no per-file-ignore: quebrar linha pra caber em 88 colunas insere uma quebra
   **real** no texto mandado ao modelo.
 - ⚠️ **Uma divergência consciente do Go, registrada:** `truncateRunes`
   (`client.go:205`) compara um índice de **byte** com `limit/2`, que é
@@ -163,7 +173,7 @@ reproduzi-lo concluiria que a tabela mente. O que se sustenta é a ORDEM DE
 GRANDEZA: uma a duas ordens a mais de tokens e de tempo, num prompt de UMA
 frase.
 
-Ou seja: o insight (que usa `generate`) **não** tem o bug de resposta vazia —
+Ou seja: o insight (que usava `generate` e saiu em 2026-10) **não** tinha o bug de resposta vazia —
 tem uma a duas ordens de grandeza a mais de tokens e de parede contra o
 `read=180.0` de `ollama.TIMEOUT`, num prompt de UMA frase (o prompt real é bem
 maior). `generate` também manda `"think": false` desde esta task: uma linha,
@@ -230,42 +240,6 @@ modelo, e o `gemma4:12b` que entrou agora **É** thinking model — sem o campo
 ele devolve `content` vazio (3.621 tokens, 12.435 chars em `thinking`). Só os
 DEFAULTS estavam errados.
 
-⚠️ **`OLLAMA_MODEL` (o insight) NÃO mudou, e isso é decisão, não esquecimento.**
-A tarefa dele é redigir um parágrafo sobre números **já calculados** pelo
-Worker; o gargalo medido é o **prompt** e a quantidade de dado, não o modelo.
-Evidência: o insight de 2026-08 saiu afirmando _"mantendo-se igual ao mesmo
-período do ano anterior"_ sobre um banco que **não tem ano anterior** — modelo
-maior nenhum conserta um prompt que deixa essa frase ser possível. Pinado por
-`test_o_modelo_do_insight_NAO_acompanha_os_da_revisao` (`config_test.py`), pra
-ninguém "uniformizar" os quatro slots numa próxima passada.
-
-## Resposta vazia do modelo é FALHA, nunca sucesso silencioso
-
-`ollama.chat` levanta **`OllamaVazio`** quando `message.content` volta vazio.
-Antes, a guarda era só `isinstance(texto, str)` — e **`""` É `str`**, então
-passava reto: o `proofread` devolvia o bloco vazio pro `restaurar_bordas`, que
-remontava um markdown que ainda **parecia válido**, e o artigo saía com um
-parágrafo comido sem nada ter falhado em lugar nenhum. O teste que existia
-(`test_chat_sem_message_content_vira_failed`) cobria o campo **ausente**, nunca
-o vazio.
-
-- **`OllamaVazio` herda de `OllamaFailed`** (que herda de `OllamaError`), e não
-  é uma exceção solta nem o `InsightVazio` de `insight.py` reusado. Dois
-  motivos: `revisao_rotas.py` tem **um** `except ollama.OllamaError` por rota —
-  algo fora dessa árvore viraria **500 com stack trace**, o que _Erros são o
-  produto_ proíbe; e `insight.py` já importa `ollama`, então importar de volta
-  seria ciclo. Duas classes irmãs, uma em cada camada. Herdar de `OllamaFailed`
-  (não direto de `OllamaError`) mantém a régua honesta: o Ollama foi
-  **alcançado** e respondeu ⇒ 502, nunca o 503 de "suba o Ollama".
-- ⚠️ **Só-espaço-em-branco CONTA como vazio** — decisão, não descuido. Todo
-  consumidor de produção já trima antes de usar (`proofread` antes do
-  `restaurar_bordas`; `refine`/`gerar_hooks` antes de medir o limite), então
-  pra todos eles `"\n \t "` e `""` são o mesmo nada.
-- ⚠️ **E isso NÃO quebra o "sem trim" (achado I3):** o `.strip()` é do **teste**,
-  nunca do valor — o `return` segue devolvendo o texto CRU. Pinado por
-  `test_chat_NAO_trima_o_retorno_apesar_da_guarda_de_vazio`, que falha na hora
-  se alguém "arrumar" o retorno pra `texto.strip()`.
-
 ## O que é promeia, e a regra de corte
 
 **A pergunta que decide se algo entra aqui é: _este trabalho precisa de GPU,
@@ -279,20 +253,6 @@ precisa de GPU nem de disco local, e é ramielle, mesmo que o texto publicado
 tenha sido escrito por um LLM em outra etapa do pipeline. O critério é sobre
 _onde o trabalho PRECISA rodar_, não sobre se um modelo está envolvido em
 algum ponto do fluxo.
-
-## O Mac empurra, o app lê
-
-O promeia nunca é onde a verdade mora. Ele lê os números já calculados do
-ramielle (`GET /api/insights/numbers` — nunca um lançamento cru, só agregado),
-manda pro Ollama local escrever uma leitura em texto por cima deles, e
-**empurra** o resultado de volta (`POST /api/insights`). A tela que o dono
-olha lê do D1 do ramielle — nunca chama o Mac ao vivo, nunca depende do Mac
-estar ligado no momento em que alguém abre o app.
-
-Consequência prática: depois que `promeia-insight` termina (publicou com
-sucesso, ou falhou com uma mensagem clara), não precisa continuar nada rodando
-— pode fechar o Ollama, fechar o terminal, fechar a tampa do MacBook. Não há
-processo em segundo plano, não há socket esperando a próxima chamada.
 
 ## `PROMEIA_TOKEN` — toda rota HTTP, por middleware, sem exceção
 
@@ -333,8 +293,8 @@ repetido rota a rota (que se esquece).
   `app.routes`** — sem `.path`, sem `.methods` no próprio objeto. Uma
   enumeração ingênua de rotas (`if getattr(r, "methods", None)` direto em
   `app.routes`) pula esse objeto inteiro **em silêncio**: um teste assim passa
-  verde cobrindo só `/health`, e `POST /insight` (montado via
-  `app.include_router(insight_router)`) nunca é exercitado — a prova de "toda
+  verde cobrindo só `/health`, e as rotas montadas via
+  `app.include_router(...)` nunca são exercitadas — a prova de "toda
   rota exige token" mentiria sobre o que prova. É por isso que `app_test.py`
   tem `_rotas_registradas`, que **LEVANTA** no que não sabe achatar (via
   `entrada.routes` ou `entrada.original_router.routes`) em vez de ignorar —
@@ -363,51 +323,20 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   configuração deste workspace, não fato transversal.
 - **pytest com `python_files = ["*_test.py"]`** (`pyproject.toml`) — o default
   do pytest é `test_*.py`, que **briga com a lei de colocation** deste
-  monorepo (teste ao lado do fonte, nomeado a partir dele: `money.py` →
-  `money_test.py`, nunca `test_money.py` num diretório `tests/`). Este fato É
+  monorepo (teste ao lado do fonte, nomeado a partir dele: `ollama.py` →
+  `ollama_test.py`, nunca `test_ollama.py` num diretório `tests/`). Este fato É
   específico do promeia (o default do pytest, não uma regra de dependência),
   por isso mora aqui e não na raiz.
 - **`ruff`** para lint (`select = ["E", "F", "I", "UP", "B", "SIM"]`) e format.
-  Per-file-ignores: **`insight.py` e `prompts.py`** têm `E501` desligado, pelo
-  mesmo motivo — os dois montam PROMPT, que é contrato byte a byte com o que o
+  Per-file-ignores: **`prompts.py`** tem `E501` desligado porque monta
+  PROMPT, que é contrato byte a byte com o que o
   dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
   colunas insere uma quebra **real** no texto mandado pro modelo: não é
   formatação, é mudar a entrada de dados.
-- **Suíte hoje: 210 testes** (`uv run pytest`, linha final `N passed`). Os
-  **+16** da task do `POST /insight` por HTTP: **+4** em `config_test.py` (o
-  fail-open deliberado do `INGEST_TOKEN` no boot, `exigir_ingest_token`
-  levantando/devolvendo, e a mensagem dizendo que NÃO é rede) e **+12** em
-  `insight_test.py` (a guarda antes de qualquer I/O, os 9 ramos parametrizados
-  de `test_NENHUM_erro_da_rota_sai_como_502`, o `ingest_token_missing` pela
-  rota e o `publish_failed` preservando `data.texto`). Composição anterior,
-  **194** (por arquivo): `app_test.py` 9, `cli_test.py` 12, `config_test.py`
-  10, `dates_test.py` 16,
-  `insight_test.py` 20, `markdown_blocos_test.py` 29, `money_test.py` 15,
-  `ollama_test.py` 23, `ramielle_test.py` 8, `revisao_rotas_test.py` 20,
-  `revisao_test.py` 32). Os **+2** da correção dos modelos são a trava de
-  família (`test_nenhum_slot_da_revisao_usa_a_familia_qwen3_5`,
-  `config_test.py`) e a premissa de medição
-  (`test_proofread_manda_o_TITULO_SOZINHO_sem_contexto_ao_redor`,
-  `revisao_test.py`). ⚠️ **M7 (revisão): este número já tinha ficado pra
-  trás uma vez** — dizia "171 testes" enquanto a suíte real já estava em 180
-  (o `/llm/hooks`/`gerar_hooks` tinha entrado numa task anterior sem
-  atualizar esta contagem). Os **+8** da task dos modelos de 2026 são **+5**
-  em `ollama_test.py` (o `"think": false` nos dois endpoints, e as três faces
-  da guarda de resposta vazia: vazio, só-espaço, e o retorno seguir cru) e
-  **+3** em `config_test.py` (os defaults medidos, o insight NÃO acompanhando
-  a revisão, e cada `MODEL_*` lendo a env certa) — o `config_test.py` não
-  tinha asserção NENHUMA sobre os três slots de modelo até então. **Recontar
-  sempre via `uv run
-pytest -v` (linha final `N passed`), nunca confiar num número solto neste
-  arquivo** — mesmo aviso que `apps/ramielle/CLAUDE.md` já registra pra sua
-  própria suíte, e pelo mesmo motivo: o número já andou mais de uma vez sem
-  o arquivo acompanhar.
-- A remoção do CLI Node que a fatia do insight substituiu
-  (`apps/financas/scripts/insight.mjs`/`insight.test.mjs`) tirou 40 testes
-  correspondentes de `apps/financas`: `pnpm --filter @piluvitu/financas run
-test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
-  sob esse arquivo de config, `vitest.scripts.config.ts`) — prova de que a
-  remoção foi cirúrgica, não um efeito colateral.
+- **Suíte hoje: 151 testes** depois da saída do insight (2026-10). Recontar
+  sempre via `uv run pytest` (linha final `N passed`), nunca confiar num
+  número solto neste arquivo: ele já andou mais de uma vez sem o arquivo
+  acompanhar.
 
 ## Comandos
 
@@ -416,65 +345,26 @@ test:pdf-import` caiu de **117 para 77** (só `pdf-import.test.mjs` continua
 | `make dev-promeia`             | `uvicorn` com `--reload` na porta **8082**                                               |
 | `make test-promeia`            | `cd apps/promeia && uv run pytest`                                                       |
 | `make lint-promeia`            | `uv run ruff check .` + `uv run ruff format --check .`                                   |
-| `make insight`                 | `uv run promeia-insight` — gera e publica o insight do mês                               |
 | `make promeia-servico`         | instala o LaunchAgent: promeia sobe no login e reinicia se cair (ver _Serviço no login_) |
 | `make promeia-servico-remover` | desinstala o LaunchAgent                                                                 |
 
 De dentro de `apps/promeia`, sem o `make`: `uv run pytest` / `uv run ruff
-check .` / `uv run ruff format --check .` / `uv run promeia-insight`.
+check .` / `uv run ruff format --check .`.
 
 ⚠️ **`.env.example` é decorativo — `uv run` NÃO lê `.env` sozinho** (só com
 `--env-file <arquivo>`/`UV_ENV_FILE`, MEDIDO no uv 0.11.32 instalado aqui).
-Quem fizer `cp .env.example .env` e rodar `uv run promeia-insight` direto
-recebe só "PROMEIA_TOKEN não está definido", sem pista de que o `.env`
-existe e não foi lido. `make insight` **e `make dev-promeia`** já resolvem
-isso — mesmo padrão do `dev-api` da raiz, source condicional (`set -a && [ -f
-.env ] && . ./.env; set +a`), só carrega se o arquivo existir, nunca quebra
-quem prefere exportar as vars na mão. Rodando `uv run promeia-insight` direto
-(sem `make`), a saída é sua: `set -a; source .env; set +a` antes, ou
-`uv run --env-file .env promeia-insight`.
-
-⚠️ **`dev-promeia` NÃO fazia esse source até agora, e o defeito era invisível
-justamente porque só metade dele aparecia.** `PROMEIA_TOKEN` ausente derruba o
-boot (`ConfigError`), então quem subia o serviço sem `.env` percebia na hora e
-exportava o token na mão — e seguia com `INGEST_TOKEN=""`, que **não** impede o
-serviço de subir. `/health` respondia, `/llm/proofread` funcionava, e só
-`POST /insight` quebrava: **502** com `Illegal header value b'Bearer '`
-(o header `"Bearer "` que o httpx recusa), classificado como
-`ramielle_unreachable` — "confira a conexão e a URL". MEDIDO por HTTP contra o
-serviço que estava de pé havia dois dias. Os dois lados do defeito foram
-consertados: o alvo faz source (aqui) e o token vazio agora falha com nome
-próprio (§ _INGEST_TOKEN_ abaixo).
+`make dev-promeia` e o LaunchAgent (`scripts/servir.sh`) fazem source
+condicional (`set -a && [ -f .env ] && . ./.env; set +a`), que só carrega se
+o arquivo existir e nunca quebra quem exporta as vars na mão.
 
 `make test`/`make lint` (raiz) **incluem o promeia** desde esta task — os dois
 alvos encadeiam `cd apps/promeia && uv run pytest` / `uv run ruff check . &&
 uv run ruff format --check .` depois de rodar `pnpm -r`/`go`.
 
-## O comando `promeia-insight` (`src/promeia/cli.py`)
-
-Console script declarado em `[project.scripts]` desde a Task 1
-(`promeia-insight = "promeia.cli:main"`). `main(argv=None, *, env=None,
-log=print, log_erro=..., executar=None) -> int` — `env`/`log`/`log_erro`/
-`executar` são pontos de injeção que permitem testar toda a árvore de decisão
-(help, opção desconhecida, token ausente, os quatro tipos de falha de rede) em
-`cli_test.py` sem tocar Ollama nem rede real.
-
-```bash
-ollama serve   # se ainda não estiver rodando
-cd apps/promeia
-PROMEIA_TOKEN=... INGEST_TOKEN=... uv run promeia-insight --competencia 2026-07
-# ou, da raiz:
-make insight
-```
-
-Opções: `--competencia YYYY-MM` (default: mês corrente em Teresina) e
-`--help`/`-h`.
-
 ## Erros são o produto
 
 Nunca uma stack trace, nunca um erro cru de biblioteca — as mensagens abaixo
-foram **medidas contra os serviços reais** (Ollama e o Worker de finanças
-local), não só stubadas em teste:
+foram **medidas contra o Ollama real**, não só stubadas em teste:
 
 - **Ollama desligado** (porta fechada/serviço parado): _"não consegui
   conectar ao Ollama em `<url>` — ele parece estar desligado. Inicie com
@@ -482,38 +372,13 @@ local), não só stubadas em teste:
 - **Modelo não instalado**: _"modelo `'<nome>'` não está instalado no Ollama
   local. Instale com: `ollama pull <nome>`"_ — cita o comando exato, nunca só
   "modelo não encontrado".
-- **Token errado** (401 do ramielle): _"a API recusou o token (401 em
-  `<url>`) — confira se o INGEST_TOKEN deste serviço é o MESMO configurado no
-  servidor (`wrangler secret put INGEST_TOKEN` em produção, ou a chave
-  INGEST_TOKEN de `apps/financas/.dev.vars` em dev)"_.
-- **API inalcançável** (rede/DNS/porta fechada): _"não consegui alcançar a
-  API em `<url>` — confira a conexão e a URL (RAMIELLE_URL)"_, com o detalhe
-  técnico anexado, nunca substituindo a frase.
-- **Payload da API fora do formato esperado** (envelope `ok:true` sem
-  `"data"`, ou `"data"` faltando uma chave que `build_prompt` espera): sem
-  guarda, isso é `TypeError`/`KeyError` cru saindo de `build_prompt` — MEDIDO
-  executando de verdade. `run_insight` (`insight.py`) embrulha os dois em
-  `RamielleRefused` com uma frase acionável, então a rota E o CLI já sabem
-  tratar (nenhum `except` novo em nenhum dos dois). Mesma lógica em
-  `ollama.py`: `/api/generate` devolvendo um JSON que não é objeto (ex.: uma
-  lista) virava `AttributeError` no `.get("response")` — um `isinstance(dict)`
-  antes resolve, espelhando o que `ramielle.py` já fazia.
-
-⚠️ **A distinção "não alcancei" vs. "alcancei e recusou" é deliberada e
-estrutural**, não estilo de mensagem: `OllamaUnreachable`/`RamielleUnreachable`
-(problema de transporte — suba o serviço, confira a URL) nunca se confundem
-com `OllamaModelMissing`/`OllamaFailed`/`RamielleRefused` (o serviço respondeu,
-e recusou ou falhou — o gargalo é outro). Cada categoria tem sua própria
-classe de exceção (`src/promeia/ollama.py`, `src/promeia/ramielle.py`) e sua
-própria mensagem; colapsar as duas manda o dono conferir a rede quando o
-problema é o token, ou vice-versa.
-
-`PublicacaoFalhou` (`src/promeia/insight.py`) é a exceção que carrega o texto
-já gerado quando a publicação falha **depois** de o Ollama já ter rodado — o
-CLI imprime esse texto sob `--- texto gerado (NÃO publicado) ---` (`stderr`),
-porque ele já custou uma rodada de inferência e perdê-lo obrigaria rodar tudo
-de novo. Texto vazio (`InsightVazio`) sai com código ≠ 0 e nunca é publicado —
-nunca finge sucesso.
+  ⚠️ **A distinção "não alcancei" vs. "alcancei e recusou" é deliberada e
+  estrutural**, não estilo de mensagem: `OllamaUnreachable` (problema de
+  transporte — suba o serviço, confira a URL) nunca se confunde com
+  `OllamaModelMissing`/`OllamaFailed` (o serviço respondeu, e recusou ou falhou
+  — o gargalo é outro). Cada categoria tem sua própria classe de exceção
+  (`src/promeia/ollama.py`) e sua própria mensagem; colapsar as duas manda o
+  dono conferir a rede quando o problema é outro, ou vice-versa.
 
 ## ⚠️ O túnel COME o corpo do 502 — e só o do 502
 
@@ -543,72 +408,17 @@ desligado. Então **todo 502 daqui chega ao dono como _"Suba o promeia no
 Mac"_, com o promeia de pé**: a pior mensagem possível, porque manda arrumar
 o que está certo.
 
-Por isso **`insight.py` não emite mais nenhum 502** — os sete ramos de erro
-(`empty_insight`, `publish_failed`, `ollama_failed`, `ramielle_unreachable`,
-`ramielle_refused` e as duas redes de segurança `ollama_error`/
-`ramielle_error`) responderam 502 até esta task e agora respondem **503**; o
-corpo inválido segue em 422. A distinção que importa nunca morou no status —
-mora no campo `code`, que viaja **dentro** do corpo e só sobrevive se o corpo
-sobreviver. O caso que mais dependia disso é o `publish_failed`: ele carrega
-em `data.texto` a leitura que já custou 20-33 s de GPU, e num 502 ela sumia
-sem ninguém saber que existiu. A regra é grepável (nenhum `502` no arquivo) e
-travada por `test_NENHUM_erro_da_rota_sai_como_502` (parametrizado sobre os
-nove ramos, `insight_test.py`) — inclusive contra o ramo novo nascido de
-copiar/colar um existente, que é exatamente como os cinco anteriores nasceram.
+O antigo `insight.py` (que saiu em 2026-10) trocou todos os seus 502 por 503
+por este motivo: a distinção que importa mora no campo `code`, que viaja
+**dentro** do corpo e só sobrevive se o corpo sobreviver. Uma rota nova aqui
+segue a mesma regra.
 
 ⚠️ **`revisao_rotas.py` NÃO foi alinhado a isto, e é contrato, não
 esquecimento.** `/llm/*` é consumido hoje pelo `apps/ramielle`, cujo
 `src/routes/atelier.test.ts` tem um teste explícito — _"502 ollama_failed do
 promeia é repassado como 502, intocado"_ — fixando aquele status. Mudá-lo é
-decisão dos dois lados, com o teste de lá junto. (Verificado também que
-`/insight` **não tem consumidor nenhum** no ramielle: `grep -rn insight
-apps/ramielle/src` não devolve nada — por isso a mudança aqui não quebra
-ninguém.) Vale registrar que o mesmo defeito existe lá: um `ollama_failed`
+decisão dos dois lados, com o teste de lá junto. Vale registrar que o mesmo defeito existe lá: um `ollama_failed`
 (502) pelo túnel chega ao admin como "Suba o promeia no Mac", com o Mac de pé.
-
-## `INGEST_TOKEN`: exigido no PONTO DE USO, não no boot
-
-`load_settings` levanta `ConfigError` sem `PROMEIA_TOKEN`, mas **deixa o
-`INGEST_TOKEN` cair em string vazia de propósito** — e a assimetria é decisão
-medida rota a rota, não a mesma lacuna com outro nome:
-
-| Rota                  | usa `INGEST_TOKEN`?                        |
-| --------------------- | ------------------------------------------ |
-| `POST /insight`       | **SIM** — `fetch_numbers` + `post_insight` |
-| `POST /llm/proofread` | não — só Ollama                            |
-| `POST /llm/refine`    | não — só Ollama                            |
-| `POST /llm/hooks`     | não — só Ollama                            |
-| `GET /health`         | não                                        |
-
-Três das quatro rotas POST não tocam o ramielle, e `/llm/proofread` está **em
-produção** (é o botão "Corrigir texto" do admin, via ramielle). Exigir o token
-no boot derrubaria o serviço inteiro por uma credencial que essas três não
-usam — trocaria um modo de falha silencioso por uma feature que funciona
-caindo. O `PROMEIA_TOKEN` é o caso oposto (protege TODA rota, por middleware):
-subir sem ele não tem nenhum uso legítimo, é publicar a GPU do dono.
-
-**A regra que sai disso: credencial que TODA rota precisa ⇒ boot; credencial
-que UMA rota precisa ⇒ ponto de uso, com mensagem que diga o que fazer.**
-
-Quem exige é `Settings.exigir_ingest_token()` (`config.py`), chamado por
-`run_insight` **antes de qualquer I/O e antes da rodada de modelo** — nada de
-queimar 20-33 s de GPU pra descobrir no fim que não dá pra publicar. `cli.py`
-já fazia exatamente isso desde sempre (checa antes de chamar `run_insight`,
-com mensagem de terminal) e **continua fazendo**: a dele sai antes das linhas
-"==> buscando os números", que seriam mentira; a nova é a rede pra todo
-chamador, inclusive o HTTP, que não passa pelo CLI.
-
-⚠️ **A classificação também estava errada, e isso era metade do defeito.** Sem
-essa guarda o token vazio virava o header `"Bearer "`, que o httpx recusa
-(`Illegal header value b'Bearer '`) — e o `except httpx.RequestError` de
-`ramielle.py` o classificava como `RamielleUnreachable`, ou seja **502
-`ramielle_unreachable`, "confira a conexão e a URL"**, mandando o dono
-investigar uma rede que não tinha problema nenhum. Agora é **503
-`ingest_token_missing`**, com uma mensagem que diz explicitamente _"NÃO é
-problema de rede: o serviço está de pé, falta configuração"_ e cita o
-`wrangler secret put INGEST_TOKEN`. Verificado pelo túnel: 578 bytes idênticos
-local e remoto. Um erro só é de transporte se uma requisição chegou a ser
-tentada.
 
 ## Serviço no login (LaunchAgent)
 

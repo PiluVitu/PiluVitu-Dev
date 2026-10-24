@@ -2,7 +2,7 @@
         compose-up compose-down tunnel-up tunnel-down tunnel-logs \
         backup-financas backup-financas-test \
         backup-ramielle backup-ramielle-test \
-        dev-promeia test-promeia lint-promeia insight \
+        dev-promeia test-promeia lint-promeia \
         promeia-servico promeia-servico-remover \
         dev-ramielle test-ramielle \
         dev-pilutech-site build-pilutech-site test-pilutech-site test-e2e-pilutech-site storybook-pilutech-site
@@ -92,12 +92,8 @@ storybook-pilutech-site:
 # Porta 8082: 8080 é a Go no docker, 8081 a Go em dev, 3333 o web,
 # 6017 o Storybook, 5273 o Vite do financas, 8787 o wrangler, 11434 o Ollama.
 #
-# Faz source do .env, MESMO padrão (e mesmas ressalvas) do alvo `insight`
-# abaixo — `uv run` não lê .env sozinho. Sem isto o serviço subia com
-# INGEST_TOKEN="" e `POST /insight` respondia 502 `Illegal header value
-# b'Bearer '` classificado como "confira a conexão" (MEDIDO). O PROMEIA_TOKEN
-# não escondia o problema porque sem ele o serviço nem sobe — o INGEST_TOKEN,
-# que só uma rota usa, sim.
+# Faz source do .env: `uv run` não lê .env sozinho (só com --env-file, que
+# erra se o arquivo não existir e quebraria quem exporta as vars na mão).
 dev-promeia:
 	cd apps/promeia && set -a && [ -f .env ] && . ./.env; set +a && uv run uvicorn promeia.app:create_app --factory --reload --port 8082
 
@@ -121,15 +117,6 @@ test-promeia:
 
 lint-promeia:
 	cd apps/promeia && uv run ruff check . && uv run ruff format --check .
-
-# Gera e publica o insight financeiro. Exige Ollama de pé e PROMEIA_TOKEN +
-# INGEST_TOKEN no ambiente. Nada precisa continuar rodando depois.
-#
-# `uv run` NÃO lê .env sozinho (só com --env-file, que erra se o arquivo não
-# existir — quebraria quem exporta as vars na mão sem ter copiado o .env.example).
-# Mesmo padrão de dev-api: source condicional, só se o arquivo existir.
-insight:
-	cd apps/promeia && set -a && [ -f .env ] && . ./.env; set +a && uv run promeia-insight
 
 test-e2e:
 	pnpm --filter @piluvitu/web test:e2e
