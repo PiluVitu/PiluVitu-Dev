@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./claude": "./src/claude.ts",
     "./custo": "./src/custo.ts",
     "./erros": "./src/erros.ts"
   },
