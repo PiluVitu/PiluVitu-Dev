@@ -441,6 +441,10 @@ Também disponível como script `backup` no `package.json` (`pnpm --filter @pilu
 
 `components/votacao/admin/backups-panel.tsx` (`apps/web`) removeu o botão "Fazer backup agora" — não sobrou capacidade nenhuma no Worker pra ele chamar (o corpo `{file_name,size_bytes,trigger_type}` só o script tem; o navegador não tem como preencher isso de forma honesta). No lugar: uma linha fixa com o comando real (`make backup-ramielle`) + o histórico de backups já registrados (`GET /admin/backups`, inalterado), que já mostra o backup mais recente no topo — não foi necessário um destaque redundante de "último backup" separado da lista. `hooks/votacao/use-admin-backups.ts` perdeu `useCreateBackup`; `lib/votacao/api-client.ts` perdeu `adminCreateBackup`. `fmtSize` foi extraída pra `apps/web/lib/votacao/format-bytes.ts#formatBackupSize` (lib pura, testável em Jest) — o componente em si continua sem teste próprio, seguindo o padrão já estabelecido dos outros componentes de `components/votacao/admin/` (puros, só stories).
 
+## `uso_ia` — reserva e custo da Claude (`migrations/0006_uso_ia.sql`, IA fase 1)
+
+Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` falha se as duas divergirem (lidas com `?raw` do Vite) e confere colunas, STRICT, o índice `idx_uso_ia_feature_mes` e o CHECK de `estado`. Mudar a tabela é mudar o SQL do pacote e copiar de novo, nas duas migrations (aqui e `apps/financas/migrations/0015_uso_ia.sql`). A reserva atômica e o teto por feature ficam em `packages/ia/src/uso.ts` (ver `packages/ia/CLAUDE.md`). A migration somou 1 tabela e 1 índice às contagens de `schema.test.ts` (12 tabelas, 10 índices). Aplicada só `--local`; produção: `pnpm --filter @piluvitu/ramielle db:migrate:remote`.
+
 ## Pendências do dono — nada disto foi feito nesta fatia
 
 ⚠️ **A sequência completa, com comando exato/verificação/rollback por passo, está em `docs/superpowers/runbooks/2026-08-12-cutover-ramielle.md` (fatia ④, Task 6) — leia aquele arquivo pra EXECUTAR o cutover.** A lista abaixo continua aqui como referência rápida do _o quê_ (o runbook cobre a _ordem_, que é obrigatória e não deve ser deduzida desta lista solta).

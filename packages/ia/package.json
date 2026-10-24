@@ -6,17 +6,19 @@
   "exports": {
     "./claude": "./src/claude.ts",
     "./custo": "./src/custo.ts",
-    "./erros": "./src/erros.ts"
+    "./erros": "./src/erros.ts",
+    "./uso": "./src/uso.ts"
   },
   "scripts": {
     "lint": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.workers.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.1.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.8",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

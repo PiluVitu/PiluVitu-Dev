@@ -159,6 +159,16 @@ Ver a seção _Regras de categorização_ mais abaixo pro desenho completo (o po
 
 Aplicada só **localmente** nesta fatia; produção é ação manual do dono — ver _Deploy_ § 2.
 
+### `0015_uso_ia.sql` — reserva e custo da Claude (IA fase 1)
+
+Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` falha se as duas divergirem (lidas com `?raw` do Vite). Mudar a tabela é mudar o SQL do pacote e copiar de novo, nas duas migrations (aqui e `apps/ramielle/migrations/0006_uso_ia.sql`). Uma linha por chamada à Claude: `estado` `reservado` → `concluido`/`falhou`, dinheiro em micro-dólar inteiro, `mes` em America/Fortaleza, índice `(feature, mes)`. A reserva atômica e o teto ficam em `packages/ia/src/uso.ts` (ver `packages/ia/CLAUDE.md`). Num STRICT, o `id TEXT PRIMARY KEY` sai `notnull = 1` no `PRAGMA table_info`.
+
+Aplicada só **localmente**; produção é ação manual do dono:
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0015_uso_ia
+```
+
 ### Testes de schema
 
 `src/schema.test.ts` roda 100% local no Miniflare via
