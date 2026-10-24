@@ -461,6 +461,14 @@ Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` fal
 
 - **Sentinela (`src/ia-segredo.test.ts`)**: lê o `wrangler.jsonc` (e o `.dev.vars.example`) com `?raw` e exige que não tenham a chave; e, numa rota montada só no teste na frente do app real (`comOrcamento` + `respostaDeErroIa`), com o `fetch` global devolvendo 401 com a chave ecoada no corpo, confere que corpo, headers e `console.*` saem sem a chave, que ela só viaja para `api.anthropic.com` (no header `authorization: Bearer`, não `x-api-key`: é como a SDK 1.1.0 manda) e que a reserva fica `falhou`. Medido: um `console.error(err)` com o erro da SDK dentro do `chamarClaude` faz o teste falhar. `src/test-env.d.ts` declara `*?raw` para qualquer arquivo.
 
+## Revisão de post: `markdown-blocos` e prompts (IA fase 1, PR3)
+
+- **`src/domain/revisao/markdown-blocos.ts`**: porte de `promeia/markdown_blocos.py`. `dividirBlocos` separa prosa (vai ao modelo) de passthrough (cerca de código atômica, mesmo sem fechar; bloco cuja primeira linha não vazia começa com `|`, `<`, `>` ou `![`; bloco só de branco). Contrato: `dividirBlocos(x).map(b => b.texto).join('') === x`. `restaurarBordas` devolve ao texto corrigido o branco de borda (`' \t\r\n'`) do original, calculando as duas bordas de forma independente como o Python (original só de branco sai com ele dos dois lados).
+- O "despir" das linhas usa o conjunto do `str.isspace()` do Python, não o `trim()` do JS: o `trim()` remove o BOM (U+FEFF) e mantém U+001C–U+001F e U+0085, e classificaria diferente um artigo que começa com BOM. Trocar por `trim()` derruba 5 testes (medido).
+- **`src/domain/revisao/prompts.ts`**: `PROOFREAD_SYSTEM`, `REFINE_SYSTEM`, `SHORTEN_SYSTEM`, `INSTRUCAO_PADRAO` e `hooksSystem(plataforma, limite)`, byte a byte com o `prompts.py` do promeia.
+- Fixtures em `src/domain/revisao/__fixtures__/`, geradas do Python com `uv run python -I` antes de o código do promeia sair: `prompts-promeia.json` (constantes, o template cru e `hooksSystem` formatado para bluesky/300 e mastodon/500) e `markdown-blocos-promeia.json` (saída de `dividir_blocos` para 32 entradas, incluindo CRLF, cerca não fechada, JSX, emoji e brancos Unicode, e de `restaurar_bordas` para 8 pares). Os testes comparam com `toBe`/`toEqual`; mudar um prompt é mudar a fixture de propósito.
+- Escreva os caracteres invisíveis como escape (`'﻿'`) nos `.ts`: numa edição, um escape virou o caractere literal e sumiu da vista.
+
 ## Pendências do dono — nada disto foi feito nesta fatia
 
 ⚠️ **A sequência completa, com comando exato/verificação/rollback por passo, está em `docs/superpowers/runbooks/2026-08-12-cutover-ramielle.md` (fatia ④, Task 6) — leia aquele arquivo pra EXECUTAR o cutover.** A lista abaixo continua aqui como referência rápida do _o quê_ (o runbook cobre a _ordem_, que é obrigatória e não deve ser deduzida desta lista solta).
