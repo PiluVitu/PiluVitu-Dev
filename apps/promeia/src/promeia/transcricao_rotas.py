@@ -1,7 +1,7 @@
 """Rota HTTP da transcrição: `POST /transcrever`.
 
 ⚠️ **De quem é este contrato.** Chamada pelo **ramielle**, nunca pelo
-navegador — mesma regra de `revisao_rotas.py`. A forma de erro é a do promeia
+navegador. A forma de erro é a do promeia
 (`{ok, code, message}`); traduzir pro envelope do frontend é trabalho do
 Worker.
 

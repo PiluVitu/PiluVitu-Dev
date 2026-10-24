@@ -5,7 +5,7 @@
  * sessão genuíno via uma segunda instância `betterAuth()`
  * (`emailAndPassword`, técnica de teste — produção é só Google).
  *
- * ⚠️ **Nenhum teste chama plataforma real nem o promeia real.** `fetch`
+ * ⚠️ **Nenhum teste chama plataforma real nem a Claude real.** `fetch`
  * global é substituído em todo teste que exercita rede — qualquer URL não
  * mockada lança, nunca cai no `fetch` original.
  */
@@ -18,6 +18,11 @@ import {
   upsertDistributionTarget,
 } from '../domain/distribution'
 import type { Envelope } from '../lib/envelope'
+import {
+  erroClaude,
+  respostaClaude,
+  type PedidoAnthropic,
+} from '../test-support/anthropic-mock'
 import { montarPublishers } from './distribution'
 
 const DB = env.DB
@@ -96,6 +101,17 @@ function jsonResponse(status: number, corpo: unknown): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function pedidoAnthropic(
+  visto: { init: RequestInit } | undefined,
+): PedidoAnthropic {
+  return JSON.parse(visto?.init.body as string) as PedidoAnthropic
+}
+
+function trechoDeVoz(pedido: PedidoAnthropic): string {
+  const user = pedido.messages[0]?.content ?? ''
+  return user.split('Trecho do meu artigo (referência de voz):\n')[1] ?? ''
 }
 
 /** Intercepta `fetch` por prefixo de URL — qualquer URL sem prefixo casando lança. */
@@ -258,18 +274,12 @@ describe('POST /admin/distribution/proposals', () => {
     expect(persistido?.status).toBe('pending')
   })
 
-  test('social (bluesky) chama o promeia com o article certo e persiste o hook gerado', async () => {
+  test('social (bluesky) gera o hook pelo Haiku com o artigo certo e persiste o hook gerado', async () => {
     const cookie = await cookieDeAdmin()
     const vistos = mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () =>
-          jsonResponse(200, {
-            ok: true,
-            data: {
-              hooks: [{ platform: 'bluesky', text: 'confere esse post!' }],
-            },
-          }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('confere esse post!'),
       },
     ])
 
@@ -287,8 +297,7 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
     expect(res.status).toBe(200)
@@ -307,14 +316,14 @@ describe('POST /admin/distribution/proposals', () => {
       },
     ])
 
-    // voiceSample enviado ao promeia é o corpo cortado em 800 code points
-    // (firstRunes) — não o corpo inteiro (1000 chars).
-    const enviado = JSON.parse(vistos[0]?.init.body as string) as {
-      article: { voice_sample: string }
-      platforms: string[]
-    }
-    expect(enviado.article.voice_sample).toHaveLength(800)
-    expect(enviado.platforms).toEqual(['bluesky'])
+    // O voiceSample enviado à Claude é o corpo cortado em 800 code points
+    // (firstRunes), não o corpo inteiro (1000 chars).
+    expect(vistos).toHaveLength(1)
+    const enviado = pedidoAnthropic(vistos[0])
+    expect(enviado.model).toBe('claude-haiku-5-5')
+    expect(enviado).not.toHaveProperty('temperature')
+    expect(enviado.system).toContain('Plataforma: bluesky.')
+    expect(trechoDeVoz(enviado)).toHaveLength(800)
   })
 
   // ⚠️ I1 (fix round 1, Important): o teste ACIMA usa 'x'.repeat(1000)
@@ -334,8 +343,8 @@ describe('POST /admin/distribution/proposals', () => {
     const cookie = await cookieDeAdmin()
     const vistos = mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () => jsonResponse(200, { ok: true, data: { hooks: [] } }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('hook'),
       },
     ])
 
@@ -353,25 +362,20 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
     expect(res.status).toBe(200)
 
-    const enviado = JSON.parse(vistos[0]?.init.body as string) as {
-      article: { voice_sample: string }
-    }
-    expect([...enviado.article.voice_sample]).toHaveLength(800)
+    expect([...trechoDeVoz(pedidoAnthropic(vistos[0]))]).toHaveLength(800)
   })
 
-  test('promeia recusa ⇒ 502 proposals_failed, nada é persistido', async () => {
+  test('Claude falhando (529) ⇒ 502 proposals_failed, nada é persistido', async () => {
     const cookie = await cookieDeAdmin()
     mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () =>
-          jsonResponse(500, { ok: false, code: 'x', message: 'falhou' }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => erroClaude(529, 'overloaded_error'),
       },
     ])
 
@@ -382,8 +386,7 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
     expect(res.status).toBe(502)
@@ -393,6 +396,28 @@ describe('POST /admin/distribution/proposals', () => {
 
     const persistido = await getDistributionTarget(DB, 'outro-post', 'bluesky')
     expect(persistido).toBeNull()
+  })
+
+  test('sem ANTHROPIC_API_KEY pula os sociais em silêncio e devolve só os artigos', async () => {
+    const cookie = await cookieDeAdmin()
+    const vistos = mockarFetch([])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'sem-chave', body: 'corpo' },
+      cookie,
+      testEnv({
+        DEVTO_API_KEY: MARCADOR_DEVTO,
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-password',
+      }),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      targets: Array<{ platform: string }>
+    }>
+    expect(body.data?.targets.map((t) => t.platform)).toEqual(['devto'])
+    expect(vistos).toHaveLength(0)
   })
 })
 

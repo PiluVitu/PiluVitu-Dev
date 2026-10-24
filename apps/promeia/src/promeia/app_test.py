@@ -175,3 +175,13 @@ def test_o_mapa_de_rotas_nao_e_publicado(client):
     """
     caminhos = [path for path, _ in _rotas_registradas(client.app)]
     assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
+
+
+@pytest.mark.parametrize("caminho", ["/llm/proofread", "/llm/refine", "/llm/hooks"])
+def test_a_revisao_de_texto_saiu_do_promeia(client, caminho):
+    # A revisão foi para a Claude no ramielle; aqui sobra só a transcrição
+    # (e o insight, enquanto ele não sai).
+    r = client.post(
+        caminho, json={"text": "t"}, headers={"authorization": f"Bearer {TOKEN}"}
+    )
+    assert r.status_code == 404

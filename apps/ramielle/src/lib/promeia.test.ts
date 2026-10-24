@@ -25,7 +25,7 @@ describe('chamarPromeia — caminho feliz', () => {
       respostaJson(200, { ok: true, data: { corrected: 'texto' } }),
     )
     const data = await chamarPromeia<{ corrected: string }>(
-      '/llm/proofread',
+      '/transcrever',
       { text: 'x' },
       CFG,
       { fetchImpl: fetchImpl as unknown as typeof fetch },
@@ -37,14 +37,14 @@ describe('chamarPromeia — caminho feliz', () => {
     const fetchImpl = vi.fn(async () =>
       respostaJson(200, { ok: true, data: {} }),
     )
-    await chamarPromeia('/llm/refine', { text: 'x' }, CFG, {
+    await chamarPromeia('/transcrever', { text: 'x' }, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [
       string,
       RequestInit,
     ]
-    expect(url).toBe('https://promeia.exemplo.test/llm/refine')
+    expect(url).toBe('https://promeia.exemplo.test/transcrever')
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>).authorization).toBe(
       `Bearer ${TOKEN_MARCADOR}`,
@@ -77,13 +77,13 @@ describe('chamarPromeia — caminho feliz', () => {
       respostaJson(200, { ok: true, data: {} }),
     )
     await chamarPromeia(
-      '/llm/refine',
+      '/transcrever',
       {},
       { ...CFG, baseUrl: 'https://promeia.exemplo.test/' },
       { fetchImpl: fetchImpl as unknown as typeof fetch },
     )
     const [url] = fetchImpl.mock.calls[0] as unknown as [string]
-    expect(url).toBe('https://promeia.exemplo.test/llm/refine')
+    expect(url).toBe('https://promeia.exemplo.test/transcrever')
   })
 })
 
@@ -93,7 +93,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
       throw new TypeError('fetch failed')
     })
     await expect(
-      chamarPromeia('/llm/proofread', {}, CFG, {
+      chamarPromeia('/transcrever', {}, CFG, {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
     ).rejects.toBeInstanceOf(PromeiaInalcancavel)
@@ -109,7 +109,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
         }),
     )
     await expect(
-      chamarPromeia('/llm/proofread', {}, CFG, {
+      chamarPromeia('/transcrever', {}, CFG, {
         fetchImpl: fetchImpl as unknown as typeof fetch,
         timeoutMs: 10,
       }),
@@ -118,22 +118,22 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
 
   it('status de erro vira RECUSOU, repassando code e message do promeia', async () => {
     // É o ponto da §5: "alcancei e falhou" tem que DIZER isso. A mensagem do
-    // promeia ("rode ollama pull X") é o que torna o erro acionável.
+    // promeia ("instale o modelo") é o que torna o erro acionável.
     const fetchImpl = vi.fn(async () =>
       respostaJson(503, {
         ok: false,
-        code: 'ollama_model_missing',
-        message: "modelo 'qwen' não está instalado. Instale: ollama pull qwen",
+        code: 'whisper_model_missing',
+        message: 'modelo do Whisper não está instalado. Instale: uv sync',
       }),
     )
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
 
     expect(erro).toBeInstanceOf(PromeiaRecusou)
-    expect((erro as PromeiaRecusou).code).toBe('ollama_model_missing')
+    expect((erro as PromeiaRecusou).code).toBe('whisper_model_missing')
     expect((erro as PromeiaRecusou).status).toBe(503)
-    expect((erro as PromeiaRecusou).message).toContain('ollama pull qwen')
+    expect((erro as PromeiaRecusou).message).toContain('uv sync')
   })
 
   it('as duas falhas são classes DIFERENTES — nunca a mesma frase', async () => {
@@ -154,7 +154,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
   // texto cru, não `{ok,code,message}`) é o formato que o TÚNEL CLOUDFLARE
   // devolve quando o Mac está desligado/travado, NUNCA o formato que o
   // próprio promeia devolve (toda rota dele SEMPRE inclui `code`+`message`
-  // no erro — ver `_erro`/`TokenMiddleware` em revisao_rotas.py/auth.py). A
+  // no erro — ver `_erro`/`TokenMiddleware` em transcricao_rotas.py/auth.py). A
   // versão antiga classificava isso como "RECUSOU" (alcancei e ele
   // recusou) — a frase errada da §5, mandando o dono investigar um serviço
   // que nunca respondeu.
@@ -162,7 +162,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
     const fetchImpl = vi.fn(
       async () => new Response('<html>502</html>', { status: 502 }),
     )
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaInalcancavel)
@@ -177,7 +177,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
           headers: { 'content-type': 'text/html' },
         }),
     )
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaInalcancavel)
@@ -186,7 +186,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
 
   it('túnel Cloudflare travado (524, sem corpo) vira INALCANÇÁVEL — mesmo cenário medido pelo revisor', async () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 524 }))
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaInalcancavel)
@@ -204,7 +204,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
           headers: { 'content-type': 'application/json' },
         }),
     )
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaInalcancavel)
@@ -212,7 +212,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
 
   it('status na faixa Cloudflare VENCE mesmo com um corpo que parece do promeia — o promeia nunca emite esses status por contrato', async () => {
     // Nunca acontece na prática (promeia só emite 400/401/502/503 — ver
-    // revisao_rotas.py/auth.py — e a Cloudflare não fala o shape do
+    // transcricao_rotas.py/auth.py — e a Cloudflare não fala o shape do
     // promeia), mas a checagem de STATUS é deliberadamente autoritativa:
     // testar isto isolado evita que um refactor futuro troque o `||` por um
     // `&&` (fazendo a checagem de status parar de proteger nada) sem que
@@ -220,11 +220,11 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
     const fetchImpl = vi.fn(async () =>
       respostaJson(524, {
         ok: false,
-        code: 'ollama_failed',
-        message: 'o Ollama respondeu e falhou',
+        code: 'transcricao_falhou',
+        message: 'o Whisper respondeu e falhou',
       }),
     )
-    const erro = await chamarPromeia('/llm/proofread', {}, CFG, {
+    const erro = await chamarPromeia('/transcrever', {}, CFG, {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     }).catch((e) => e)
     expect(erro).toBeInstanceOf(PromeiaInalcancavel)
@@ -235,7 +235,7 @@ describe('chamarPromeia — os DOIS modos de falha (§5 do spec)', () => {
       async () => new Response('nao e json', { status: 200 }),
     )
     await expect(
-      chamarPromeia('/llm/proofread', {}, CFG, {
+      chamarPromeia('/transcrever', {}, CFG, {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
     ).rejects.toBeInstanceOf(PromeiaRecusou)
@@ -262,7 +262,7 @@ describe('o PROMEIA_TOKEN NUNCA vaza', () => {
     ]
 
     for (const montar of cenarios) {
-      const erro = await chamarPromeia('/llm/proofread', { text: 'x' }, CFG, {
+      const erro = await chamarPromeia('/transcrever', { text: 'x' }, CFG, {
         fetchImpl: montar(),
       }).catch((e) => e)
       const serializado = `${(erro as Error).message} ${(erro as Error).stack ?? ''}`

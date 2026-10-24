@@ -127,8 +127,8 @@ test.describe('Atelier — ProofreadButton', () => {
       page.getByRole('button', { name: /corrigir texto/i }),
     ).toBeVisible()
 
-    // The "Revisão cuidadosa" checkbox must be present next to the button.
-    await expect(page.getByText(/revisão cuidadosa/i)).toBeVisible()
+    // The proofread always runs on the same model: no "careful" option.
+    await expect(page.getByText(/revisão cuidadosa/i)).toHaveCount(0)
 
     // Click — triggers POST /admin/llm/proofread
     await page.getByRole('button', { name: /corrigir texto/i }).click()

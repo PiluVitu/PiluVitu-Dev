@@ -112,7 +112,7 @@ describe('atelierApi', () => {
 
     const [, init] = (global.fetch as jest.Mock).mock.calls[0]
     expect(init.credentials).toBe('include')
-    expect(JSON.parse(init.body)).toEqual({ text: 'txto', careful: false })
+    expect(JSON.parse(init.body)).toEqual({ text: 'txto' })
   })
 
   // O navegador só gera o `multipart/form-data; boundary=...` se ninguém

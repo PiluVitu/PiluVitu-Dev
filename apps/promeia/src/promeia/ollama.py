@@ -1,45 +1,9 @@
-"""Cliente do Ollama local — DOIS endpoints, de propósito.
+"""Cliente do Ollama local, usado só pelo insight (`insight.py`).
 
-⚠️ `/api/generate` (prompt único) e `/api/chat` (system+user) são APIs
-DIFERENTES do Ollama, e este módulo expõe as duas porque os dois consumidores
-precisam de coisas diferentes:
-
-- **`generate`** — o insight (`insight.py`). Prompt único, temperatura fixa
-  em 0: é resumo de números já calculados, e variação entre execuções ali é
-  DEFEITO, não estilo.
-- **`chat`** — a revisão de artigo (`revisao.py`), porte de
-  `apps/api/internal/llm/client.go:76`. Precisa separar a instrução (system)
-  do texto a tratar (user), e usa temperatura VARIÁVEL (0.1 no proofread,
-  0.7 no refine).
-
-⚠️ **`"think": false` no payload do `chat` é OBRIGATÓRIO, e a geração 2026 é
-thinking-by-default.** MEDIDO contra o Ollama local, sem o campo: `qwen3.5:4b`
-queimou 3.614 tokens e devolveu `message.content` VAZIO; `gemma4:12b` queimou
-3.621 tokens com 12.435 caracteres em `message.thinking` e `message.content`
-também VAZIO. Não é peculiaridade de uma família — os dois modelos anunciam
-`"thinking"` em `capabilities` e o ligam sozinhos. Sem o campo, a revisão não
-"fica lenta": ela devolve NADA, gastando GPU. **`gemma4:12b` é hoje o default
-de `MODEL_PROOFREAD_CAREFUL` e `MODEL_HOOKS`**, então isto não é hipótese: é o
-que faz o botão "Corrigir texto (cuidadoso)" devolver alguma coisa. Ver
-`OllamaVazio` abaixo, que é a rede de segurança pro dia em que este campo for
-removido por engano.
-
-⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO**, e por isso
-aqui não tem fallback (YAGNI): `qwen2.5:7b-instruct` (`capabilities:
-["completion","tools"]`, sem `"thinking"`) recebeu `"think": false` em
-`/api/chat` e respondeu **HTTP 200** com o `message.content` normal. Isso
-também deixou de ser hipótese: **ele é o default de `MODEL_PROOFREAD`** (venceu
-a medição de preservação de título, ver `config.py#Settings`), então o campo
-convive com os dois tipos de modelo em produção. Um fallback "tenta com, repete
-sem" só existiria pra um erro que não acontece — e custaria uma segunda rodada
-de inferência pra descobrir isso.
-
-⚠️ A versão anterior deste aviso dizia que `chat` só entraria "quando a
-revisão de artigo migrar — depois do ramielle. Não antecipar." Ele cumpriu o
-papel: o ramielle ficou pronto na fatia ④ e a revisão de artigo migrou nesta.
-Mantido aqui em forma reescrita, e não apagado, porque a pergunta que ele
-respondia ("por que este módulo não tem `chat`?") virou outra igualmente
-válida: "por que tem os dois?".
+`generate` manda um prompt único em `/api/generate` com temperatura fixa em 0:
+é resumo de números já calculados, e variação entre execuções ali é DEFEITO,
+não estilo. A revisão de artigo, que usava `/api/chat`, foi para a Claude no
+ramielle; quando o insight sair também, este módulo sai junto.
 """
 
 from __future__ import annotations
@@ -77,28 +41,6 @@ class OllamaFailed(OllamaError):
     """Cheguei no Ollama e ele falhou (HTTP de erro, resposta malformada)."""
 
 
-class OllamaVazio(OllamaFailed):
-    """O Ollama respondeu 200 e o texto veio vazio (ou só espaço em branco).
-
-    ⚠️ **Subclasse de `OllamaFailed`, não de `OllamaError` nem uma exceção
-    solta, e nada disso é detalhe de estilo:**
-
-    - `revisao_rotas.py` tem UM `except ollama.OllamaError` por rota. Uma
-      exceção que não descenda dessa base atravessaria as três rotas e viraria
-      500 com stack trace — exatamente o que _Erros são o produto_ proíbe.
-    - Herdar de `OllamaFailed` (e não direto de `OllamaError`) mantém a
-      classificação honesta pela régua deste módulo: o Ollama foi ALCANÇADO e
-      respondeu — não é `OllamaUnreachable` ("suba o Ollama") nem
-      `OllamaModelMissing` ("ollama pull X"). Também preserva todo `except
-      OllamaFailed` já escrito, incluindo os testes desta suíte.
-
-    ⚠️ **Não é `InsightVazio` (`insight.py`) reusada**, embora o conceito seja
-    irmão: `insight.py` importa `ollama`, então importar de volta seria ciclo;
-    e `InsightVazio` herda de `Exception` pura — cairia no problema do primeiro
-    item acima. Duas classes irmãs, cada uma na sua camada, é o desenho certo.
-    """
-
-
 def _postar(
     *,
     url: str,
@@ -106,13 +48,7 @@ def _postar(
     model: str,
     client: httpx.Client | None,
 ) -> dict:
-    """POST no Ollama + as quatro traduções de falha. Devolve o corpo JSON.
-
-    Extraído quando `chat` entrou (revisão de artigo): `generate` e `chat` são
-    endpoints diferentes com o MESMO tratamento de erro — duplicá-lo era
-    garantir que uma das cópias envelhecesse. O que muda entre os dois é só a
-    URL, o payload e QUAL campo da resposta interessa; nada disso mora aqui.
-    """
+    """POST no Ollama + as quatro traduções de falha. Devolve o corpo JSON."""
     proprio = client is None
     c = client if client is not None else httpx.Client(timeout=TIMEOUT)
     try:
@@ -180,7 +116,8 @@ def generate(
     "veio só espaço em branco", e essa decisão não é do transporte — aqui ela é
     do `run_insight` (`insight.py`), que já trima e levanta `InsightVazio`.
 
-    ⚠️ **`"think": false` aqui NÃO é o mesmo defeito do `chat`, e mesmo assim
+    ⚠️ **`"think": false` aqui NÃO é o defeito de resposta vazia que o
+    `/api/chat` tinha (a revisão de artigo usava esse endpoint), e mesmo assim
     foi tratado — os dois lados MEDIDOS, com a mesma prompt de uma frase:**
 
     Tudo com `qwen3.5:4b`, mesma prompt de uma frase. ⚠️ Ele NÃO é mais
@@ -236,85 +173,5 @@ def generate(
     if not isinstance(texto, str):
         raise OllamaFailed(
             f'resposta do Ollama não trouxe o campo "response" esperado: {corpo!r:.500}'
-        )
-    return texto
-
-
-def chat(
-    *,
-    model: str,
-    system: str,
-    user: str,
-    temperature: float,
-    base_url: str,
-    client: httpx.Client | None = None,
-) -> str:
-    """Um turno system+user em `/api/chat`. Devolve o texto CRU (sem trim).
-
-    ⚠️ Endpoint DIFERENTE do `generate`: corpo com `messages` e resposta em
-    `message.content`. É o que a revisão de artigo usa (porte de
-    `apps/api/internal/llm/client.go`), porque proofread/refine precisam
-    separar a instrução (system) do texto a tratar (user) — no `generate`
-    os dois viram um prompt só e o modelo confunde um com o outro.
-
-    ⚠️ `temperature` é PARÂMETRO aqui, ao contrário do `generate` (que fixa 0):
-    o Go usa 0.1 no proofread (correção tem que ser conservadora) e 0.7 no
-    refine (reescrita precisa de variação). Uniformizar muda o comportamento
-    dos dois.
-    """
-    url = f"{base_url.rstrip('/')}/api/chat"
-    corpo = _postar(
-        url=url,
-        payload={
-            "model": model,
-            # A ORDEM importa: invertido, o modelo trata a instrução como
-            # conteúdo a revisar.
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "stream": False,
-            # ⚠️ OBRIGATÓRIO, não otimização — ver o cabeçalho do módulo.
-            # Sem isto, todo modelo da geração 2026 devolve `message.content`
-            # VAZIO e joga o raciocínio em `message.thinking`.
-            "think": False,
-            "options": {"temperature": temperature},
-        },
-        model=model,
-        client=client,
-    )
-    mensagem = corpo.get("message")
-    if not isinstance(mensagem, dict):
-        raise OllamaFailed(
-            f'resposta do Ollama não trouxe o objeto "message" esperado: {corpo!r:.500}'
-        )
-    texto = mensagem.get("content")
-    if not isinstance(texto, str):
-        raise OllamaFailed(
-            'resposta do Ollama não trouxe o campo "message.content" esperado: '
-            f"{corpo!r:.500}"
-        )
-    # ⚠️ `isinstance(str)` acima NÃO cobre isto: "" é str e passava reto. A
-    # consequência não é um erro visível — é um SUCESSO FALSO. Na revisão, um
-    # bloco vazio volta pro `restaurar_bordas`, que remonta um markdown que
-    # ainda PARECE válido, e o dono publica um artigo com um parágrafo comido
-    # sem nada ter falhado em lugar nenhum.
-    #
-    # ⚠️ **Só-espaço-em-branco CONTA como vazio, e isso não briga com o "sem
-    # trim" desta função:** o texto devolvido no caminho feliz continua CRU
-    # (nenhum `.strip()` no `return` — invariante I3, de que `refine`/
-    # `gerar_hooks` dependem). O `.strip()` aqui é do TESTE, não do valor.
-    # Conta como vazio porque TODO consumidor de produção já trima antes de
-    # usar (`proofread` antes do `restaurar_bordas`, `refine`/`gerar_hooks`
-    # antes de medir o limite): pra todos eles "\n  \n" e "" são o mesmo nada,
-    # e deixar passar reproduziria o sucesso falso descrito acima.
-    if texto.strip() == "":
-        raise OllamaVazio(
-            f"o modelo {model!r} respondeu sem texto nenhum (message.content "
-            f"vazio) em {url} — nada foi gerado. Se este for um modelo de "
-            f'raciocínio (gemma4, qwen3.5...), confira se o payload manda "think": '
-            f"false: sem isso o modelo escreve tudo em message.thinking e devolve "
-            f"content vazio. Caso contrário, tente de novo ou troque o modelo "
-            f"(MODEL_PROOFREAD / MODEL_PROOFREAD_CAREFUL / MODEL_HOOKS)"
         )
     return texto

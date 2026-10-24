@@ -38,7 +38,7 @@
  * (checar `pubs.length === 0` e devolver um 404 manual em vez do 503) seria
  * TECNICAMENTE possível — só seria uma escolha pior, não uma impossibilidade
  * (ver motivo 4); (3) é exatamente o padrão que TODA outra rota degradável
- * deste Worker já usa (`routes/atelier.ts#promeiaConfigurado`,
+ * deste Worker já usa (`routes/atelier.ts` `claude_desligado`,
  * `routes/votacao.ts` `sheets_disabled`) — sempre montada, 503 decidido
  * dentro do handler a cada request; (4) replicar o 404 cru do chi seria
  * ATIVAMENTE PIOR pro cliente, não neutro: um 404 fora do envelope
@@ -58,9 +58,9 @@ import {
   type Publisher,
   type Selected,
 } from '../domain/distribution-service'
+import { chatComOrcamento } from '../domain/revisao/chat-claude'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
-import { promeiaConfigurado } from '../lib/promeia'
 import {
   BLUESKY_KIND,
   BLUESKY_PLATFORM,
@@ -316,7 +316,7 @@ distributionRoutes.post(
       const targets = await buildDistributionProposals(
         c.env.DB,
         pubs,
-        promeiaConfigurado(c.env),
+        c.env.ANTHROPIC_API_KEY ? chatComOrcamento(c.env, 'hooks') : null,
         slug,
         art,
         bodyMd,

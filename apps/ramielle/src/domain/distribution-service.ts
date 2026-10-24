@@ -12,15 +12,11 @@
  * publishers/config) como primeiro(s) parâmetro(s), em vez de campos de
  * struct guardados num construtor.
  *
- * O `HookGenerator` do Go (`GenerateHooks(ctx, Article, platforms)`) vira uma
- * chamada a `chamarPromeia('/llm/hooks', {article, platforms}, cfg)`
- * (`lib/promeia.ts`, já pronto — nada de infraestrutura nova aqui). O
- * contrato do lado promeia é `POST /llm/hooks` (`revisao_rotas.py`):
- * corpo `{article: {title, excerpt, url, tags, voice_sample}, platforms}`,
- * resposta `data: {hooks: [{platform, text}, ...]}`.
+ * O `HookGenerator` do Go (`GenerateHooks(ctx, Article, platforms)`) vira
+ * `gerarHooks` (`domain/revisao/revisao.ts`), com o `Chat` da Claude que a
+ * rota injeta.
  */
 import { nowIsoUtc } from '../lib/dates'
-import { chamarPromeia, type PromeiaConfig } from '../lib/promeia'
 import type { DistributionPlatform, Payload } from '../lib/publishers/types'
 import {
   getDistributionTarget,
@@ -31,12 +27,13 @@ import {
   type DistributionKind,
   type DistributionTarget,
 } from './distribution'
+import { gerarHooks, type Chat } from './revisao/revisao'
 
 /**
  * Resumo do artigo usado para gerar as chamadas sociais — porte de
  * `pkgllm.Article` (`apps/api/internal/llm/client.go:141-147`).
  * `voiceSample` é o trecho do corpo (~800 chars) usado como referência de
- * tom/voz do autor; vira `article.voice_sample` no corpo mandado ao promeia.
+ * tom/voz do autor no prompt dos hooks.
  */
 export type Article = {
   title: string
@@ -84,7 +81,7 @@ function pubsPorPlataforma(pubs: Publisher[]): Map<string, Publisher> {
 
 /**
  * Monta os alvos de distribuição — artigos de crosspost (conteúdo = corpo
- * completo) + hooks sociais (gerados via promeia) —, PERSISTE tudo, e
+ * completo) + hooks sociais (gerados pela Claude) —, PERSISTE tudo, e
  * devolve a lista. Porte de `Service.BuildProposals` (`service.go:42-70`).
  *
  * ⚠️ **A lista devolvida é a de MEMÓRIA, com `status:'pending'` SEMPRE**
@@ -95,24 +92,20 @@ function pubsPorPlataforma(pubs: Publisher[]): Map<string, Publisher> {
  * contra rebaixar um alvo já publicado mora no upsert, não neste retorno.
  * `publishDistributionTargets` (abaixo) é quem relê o banco.
  *
- * ⚠️ **Os DOIS estados do gerador de hooks** (acréscimo do coordenador,
- * medido em `service.go:54-63` — o brief original não capturava isso):
- * - `promeiaCfg === null` (gerador NÃO configurado, ex.: `PROMEIA_URL`/
- *   `PROMEIA_TOKEN` ausentes) ⇒ pula os sociais em SILÊNCIO — devolve só os
- *   artigos, sem erro. Mandar o dono subir um serviço que já está de pé (ou
- *   que ele simplesmente não configurou ainda) impediria gerar crosspost de
- *   artigo sempre que o Mac estiver desligado — o caso comum.
- * - `promeiaCfg` configurado mas `chamarPromeia` LANÇA
- *   (`PromeiaInalcancavel`/`PromeiaRecusou`) ⇒ o erro PROPAGA e esta função
- *   inteira falha — nenhum alvo é persistido, nem os de artigo já montados
- *   em memória. O loop de `upsertDistributionTarget` só roda DEPOIS que a
- *   lista inteira monta com sucesso (mesma ordem de `service.go:64-70`:
- *   `return nil, err` acontece ANTES do loop de `Upsert`).
+ * **Os DOIS estados do gerador de hooks** (`service.go:54-63`):
+ * - `chat === null` (sem `ANTHROPIC_API_KEY`) ⇒ pula os sociais em SILÊNCIO e
+ *   devolve só os artigos, sem erro: sem chave, o crosspost de artigo
+ *   continua funcionando.
+ * - `chat` configurado mas a Claude falha (indisponível, recusa, teto) ⇒ o
+ *   erro PROPAGA e esta função inteira falha, sem persistir nenhum alvo, nem
+ *   os de artigo já montados em memória. O loop de `upsertDistributionTarget`
+ *   só roda DEPOIS que a lista inteira monta (mesma ordem de
+ *   `service.go:64-70`).
  */
 export async function buildDistributionProposals(
   db: D1Database,
   pubs: Publisher[],
-  promeiaCfg: PromeiaConfig | null,
+  chat: Chat | null,
   slug: string,
   art: Article,
   bodyMd: string,
@@ -135,35 +128,12 @@ export async function buildDistributionProposals(
     }
   }
 
-  // 2) sociais: uma chamada ao promeia (que gera uma chamada de chat por
-  // plataforma do lado dele) — nunca uma requisição por adapter aqui.
+  // 2) sociais: um hook por plataforma; uma falha derruba o lote.
   const social = pubsUnicos
     .filter((p) => p.kind === 'social_hook')
     .map((p) => p.platform)
-  if (social.length > 0 && promeiaCfg !== null) {
-    const data = await chamarPromeia<{
-      hooks: { platform: string; text: string }[]
-    }>(
-      '/llm/hooks',
-      {
-        article: {
-          title: art.title,
-          excerpt: art.excerpt,
-          url: art.url,
-          tags: art.tags,
-          voice_sample: art.voiceSample,
-        },
-        platforms: social,
-      },
-      promeiaCfg,
-    )
-    // ⚠️ M1 (fix round 1) — `chamarPromeia` devolve `json.data as T` sem
-    // checar o shape: um `{ok:true}` sem `data.hooks` (ou com `hooks`
-    // não-array) viraria `TypeError: ... is not iterable` aqui, que na
-    // Task 4 sairia como `500 internal_error` genérico em vez de atribuído
-    // ao promeia. O Go, com um slice `nil`, simplesmente não itera —
-    // replicado com o guard abaixo.
-    const hooks = Array.isArray(data.hooks) ? data.hooks : []
+  if (social.length > 0 && chat !== null) {
+    const hooks = await gerarHooks(art, social, chat)
     for (const hook of hooks) {
       targets.push({
         slug,
@@ -176,8 +146,6 @@ export async function buildDistributionProposals(
       })
     }
   }
-  // promeiaCfg === null: pula os sociais em silêncio — nenhum alvo social
-  // entra em `targets`, nenhum erro lançado.
 
   for (const target of targets) {
     await upsertDistributionTarget(db, {

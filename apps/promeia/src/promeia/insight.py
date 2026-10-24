@@ -258,15 +258,6 @@ def gerar_insight(body: InsightBody, request: Request):
     distinção que importa — "não alcancei" × "alcancei e recusou" — nunca
     morou no status, mora no campo `code`, que viaja DENTRO do corpo e
     sobrevive junto com ele.
-
-    ⚠️ **`revisao_rotas.py` NÃO foi alinhado a isto, e a razão é contrato, não
-    esquecimento**: `/llm/*` é consumido hoje pelo `apps/ramielle`, cujo
-    `src/routes/atelier.test.ts` tem um teste explícito
-    (`'502 ollama_failed do promeia é repassado como 502, intocado'`) que fixa
-    o 502 daquelas rotas. Mudá-lo é uma decisão dos dois lados, com o teste de
-    lá junto — não um efeito colateral desta task, que é sobre `/insight`
-    (zero consumidor no ramielle: `grep -rn insight apps/ramielle/src` não
-    devolve nada).
     """
     settings: Settings = request.app.state.settings
     try:
