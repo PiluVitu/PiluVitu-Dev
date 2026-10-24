@@ -2,7 +2,9 @@
 // mesmo código de produção (revisao.ts + chamarClaude do @piluvitu/ia). Gasta
 // dinheiro: só roda à mão, com o OK do dono, nunca no CI nem no vitest.
 //
-//   ANTHROPIC_API_KEY=... pnpm --filter @piluvitu/ramielle eval:revisao
+//   ANTHROPIC_API_KEY=$(security find-generic-password -s anthropic-api-key -w) pnpm --filter @piluvitu/ramielle eval:revisao
+//
+// Nunca digite a chave na linha de comando: ela fica no histórico do shell.
 import { readdirSync, readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { join } from 'node:path'
@@ -26,7 +28,8 @@ const apiKey = process.env.ANTHROPIC_API_KEY
 if (!apiKey) {
   console.error(
     'ANTHROPIC_API_KEY não está no ambiente. Rode:\n' +
-      '  ANTHROPIC_API_KEY=<sua chave> pnpm --filter @piluvitu/ramielle eval:revisao\n' +
+      '  ANTHROPIC_API_KEY=$(security find-generic-password -s anthropic-api-key -w) pnpm --filter @piluvitu/ramielle eval:revisao\n' +
+      '(a chave vem do Keychain; digitada na linha, ela fica no histórico do shell)\n' +
       'A chave é lida só do ambiente e nunca é impressa.',
   )
   process.exit(2)
