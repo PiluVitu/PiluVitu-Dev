@@ -52,9 +52,9 @@ export function isRotaDeAuth(path: string): boolean {
  * identidade, então ela NÃO vai para o contexto do Hono — o tipo continua
  * limpo nas rotas de domínio, que não mudam uma linha.
  *
- * Genérico em `TBindings extends AuthBindings` (fatia ⑨, Task 3): o
- * `Bindings` de `src/index.ts` cresceu para `AuthBindings & { INGEST_TOKEN:
- * string }` quando o segredo de ingestão entrou — e `Context<E>` do Hono é
+ * Genérico em `TBindings extends AuthBindings`: o `Bindings` de
+ * `src/index.ts` é `AuthBindings` somado aos secrets de outras frentes
+ * (Pluggy, IA) — e `Context<E>` do Hono é
  * INVARIANTE no seu parâmetro de env (mesma classe de problema já
  * documentada em `lib/auth.ts` sobre `Auth`/`ReturnType<typeof betterAuth>`),
  * então `MiddlewareHandler<{ Bindings: AuthBindings }>` fixo deixa de

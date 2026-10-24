@@ -130,7 +130,7 @@ export async function chamarPromeia<T>(
     // ⚠️ I2 (revisão): um erro HTTP SEM `code`/`message` reconhecíveis no
     // corpo NÃO é evidência de que o promeia recusou — é evidência de que o
     // promeia nunca respondeu. Toda rota do promeia que devolve erro
-    // (`_erro` em `revisao_rotas.py`, e `TokenMiddleware`) SEMPRE inclui os
+    // (`_erro` em `transcricao_rotas.py`, e `TokenMiddleware`) SEMPRE inclui os
     // dois no JSON. Quem responde SEM esse shape é a INFRAESTRUTURA entre o
     // navegador e o Mac — o túnel Cloudflare, quando o Mac está desligado ou
     // travado: HTML de erro (530) ou um 524 de timeout, nunca

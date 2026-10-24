@@ -14,10 +14,6 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 def settings_de_teste() -> Settings:
     return Settings(
         promeia_token=TOKEN,
-        ollama_url="http://localhost:11434",
-        ollama_model="modelo-do-insight",
-        ramielle_url="http://localhost:8787",
-        ingest_token="ingest",
     )
 
 

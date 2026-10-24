@@ -3,51 +3,34 @@
  * pode sair pelo corpo nem pelos headers da resposta, nem pelo console, e só
  * pode viajar para api.anthropic.com.
  *
- * No PR1 nenhuma rota de produção chama a Claude ainda, então a rota abaixo
- * existe só neste teste, montada na frente do app real, e faz exatamente o
- * que a rota do insight (PR2) vai fazer: `comOrcamento` + `respostaDeErroIa`.
+ * Exercita a rota real do insight (`POST /api/insights/generate`), montada sem
+ * a guarda de sessão, que é provada à parte em routes/insights.test.ts.
  *
  * O `fetch` global é trocado: nenhum teste alcança a API de verdade.
  */
 import { env } from 'cloudflare:test'
-import { comOrcamento } from '@piluvitu/ia/uso'
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import devVarsExemplo from '../.dev.vars.example?raw'
 import wranglerJsonc from '../wrangler.jsonc?raw'
-import app, { type Bindings } from './index'
-import { okJson } from './lib/envelope'
-import { respostaDeErroIa, TETOS_FINANCAS } from './lib/ia'
+import { type Bindings } from './index'
+import { insightsRoutes } from './routes/insights'
 
 const SENTINELA = 'SENTINELA-ia-financas-b71d'
 const CHAVE = `sk-ant-${SENTINELA}`
 
-function montarApp() {
-  const rotaDeTeste = new Hono<{ Bindings: Bindings }>()
-  rotaDeTeste.post('/__teste/ia', async (c) => {
-    try {
-      const resposta = await comOrcamento(
-        c.env.DB,
-        {
-          feature: 'insight',
-          tetoMicro: TETOS_FINANCAS.insight,
-          apiKey: c.env.ANTHROPIC_API_KEY,
-        },
-        {
-          modelo: 'claude-sonnet-5-5',
-          system: 'Responda curto.',
-          user: 'oi',
-          maxTokens: 100,
-        },
-      )
-      return okJson({ texto: resposta.texto })
-    } catch (err) {
-      return respostaDeErroIa(err)
-    }
-  })
+function gerarInsight(ambiente: Bindings) {
   return new Hono<{ Bindings: Bindings }>()
-    .route('/', rotaDeTeste)
-    .route('/', app)
+    .route('/api', insightsRoutes)
+    .request(
+      '/api/insights/generate',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ competence: '2026-09' }),
+      },
+      ambiente,
+    )
 }
 
 function testEnv(extra: Partial<Bindings> = {}): Bindings {
@@ -58,7 +41,6 @@ function testEnv(extra: Partial<Bindings> = {}): Bindings {
     GOOGLE_CLIENT_ID: 'client-id-de-teste',
     GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
     ALLOWED_EMAIL: 'dono@exemplo.test',
-    INGEST_TOKEN: 'ingest-token-de-teste',
     ...extra,
   }
 }
@@ -120,11 +102,7 @@ describe('ANTHROPIC_API_KEY não vaza', () => {
   })
 
   it('com 401 da API, corpo, headers e console saem sem a chave', async () => {
-    const res = await montarApp().request(
-      '/__teste/ia',
-      { method: 'POST' },
-      testEnv({ ANTHROPIC_API_KEY: CHAVE }),
-    )
+    const res = await gerarInsight(testEnv({ ANTHROPIC_API_KEY: CHAVE }))
     const corpo = await res.text()
 
     expect(res.status).toBe(502)
@@ -142,11 +120,7 @@ describe('ANTHROPIC_API_KEY não vaza', () => {
   })
 
   it('a chave só viaja para api.anthropic.com, e a reserva é liberada', async () => {
-    await montarApp().request(
-      '/__teste/ia',
-      { method: 'POST' },
-      testEnv({ ANTHROPIC_API_KEY: CHAVE }),
-    )
+    await gerarInsight(testEnv({ ANTHROPIC_API_KEY: CHAVE }))
 
     expect(chamadas.length).toBeGreaterThan(0)
     for (const chamada of chamadas) {
@@ -168,11 +142,7 @@ describe('ANTHROPIC_API_KEY não vaza', () => {
   })
 
   it('sem a chave, responde claude_desligado sem chamar a API', async () => {
-    const res = await montarApp().request(
-      '/__teste/ia',
-      { method: 'POST' },
-      testEnv(),
-    )
+    const res = await gerarInsight(testEnv())
 
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({

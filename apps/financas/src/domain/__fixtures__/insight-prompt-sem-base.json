@@ -1,0 +1,28 @@
+{
+  "competence": "2026-01",
+  "previous_competence": "2025-12",
+  "top_categories": [
+    {
+      "category_id": "cat-saude",
+      "category_name": "Saúde",
+      "category_slug": "saude",
+      "total_cents": -1500000
+    }
+  ],
+  "total_cents": -1500000,
+  "total_pf_cents": -1500000,
+  "total_pj_cents": 0,
+  "previous_total_cents": 0,
+  "variation_cents": 1500000,
+  "variation_pct": null,
+  "variation_pf_cents": 1500000,
+  "variation_pf_pct": null,
+  "biggest_increase": {
+    "category_id": "cat-saude",
+    "category_name": "Saúde",
+    "category_slug": "saude",
+    "current_cents": -1500000,
+    "previous_cents": 0,
+    "delta_cents": 1500000
+  }
+}
