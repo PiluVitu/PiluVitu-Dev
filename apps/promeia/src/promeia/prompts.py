@@ -6,7 +6,7 @@ quebrar linha muda o que o modelo recebe e, com isso, o que ele devolve. Não
 são código, são entrada de dados.
 
 Por isso este módulo tem `E501` desligado no `pyproject.toml`, pelo mesmo
-motivo que `insight.py` já tinha: uma quebra de linha inserida aqui pra
+motivo que o antigo `insight.py` tinha: uma quebra de linha inserida aqui pra
 caber em 88 colunas é uma quebra de linha REAL no texto mandado ao modelo.
 """
 

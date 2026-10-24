@@ -4,9 +4,9 @@
 DIFERENTES do Ollama, e este módulo expõe as duas porque os dois consumidores
 precisam de coisas diferentes:
 
-- **`generate`** — o insight (`insight.py`). Prompt único, temperatura fixa
-  em 0: é resumo de números já calculados, e variação entre execuções ali é
-  DEFEITO, não estilo.
+- **`generate`** — prompt único, temperatura fixa em 0. Era o do insight,
+  que foi para a Claude no Worker do financas; hoje só os testes o usam, e o
+  módulo inteiro sai quando a revisão também for (PR3 da IA fase 1).
 - **`chat`** — a revisão de artigo (`revisao.py`), porte de
   `apps/api/internal/llm/client.go:76`. Precisa separar a instrução (system)
   do texto a tratar (user), e usa temperatura VARIÁVEL (0.1 no proofread,
@@ -91,11 +91,6 @@ class OllamaVazio(OllamaFailed):
       respondeu — não é `OllamaUnreachable` ("suba o Ollama") nem
       `OllamaModelMissing` ("ollama pull X"). Também preserva todo `except
       OllamaFailed` já escrito, incluindo os testes desta suíte.
-
-    ⚠️ **Não é `InsightVazio` (`insight.py`) reusada**, embora o conceito seja
-    irmão: `insight.py` importa `ollama`, então importar de volta seria ciclo;
-    e `InsightVazio` herda de `Exception` pura — cairia no problema do primeiro
-    item acima. Duas classes irmãs, cada uma na sua camada, é o desenho certo.
     """
 
 
@@ -177,8 +172,7 @@ def generate(
     """Um turno não-streaming em `/api/generate`. Devolve o texto CRU (sem trim).
 
     O trim é de quem chama: quem publica precisa distinguir "veio vazio" de
-    "veio só espaço em branco", e essa decisão não é do transporte — aqui ela é
-    do `run_insight` (`insight.py`), que já trima e levanta `InsightVazio`.
+    "veio só espaço em branco", e essa decisão não é do transporte.
 
     ⚠️ **`"think": false` aqui NÃO é o mesmo defeito do `chat`, e mesmo assim
     foi tratado — os dois lados MEDIDOS, com a mesma prompt de uma frase:**

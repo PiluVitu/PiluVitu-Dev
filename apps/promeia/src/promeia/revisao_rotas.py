@@ -3,7 +3,7 @@
 ⚠️ **De quem é este contrato.** Estas rotas são chamadas pelo **ramielle**, não
 pelo navegador (§3 e §7.2 do spec: o botão no admin chama ramielle, que chama
 promeia — o navegador nunca fala com o Mac direto). Então a forma de erro aqui
-é a do promeia (`{ok, code, message}`, a mesma de `/insight`), **não** o
+é a do promeia (`{ok, code, message}`), **não** o
 envelope `{ok, data, notifications}` que o `apps/web` consome.
 
 Traduzir para o envelope — e para as mensagens genéricas que o Go emitia
