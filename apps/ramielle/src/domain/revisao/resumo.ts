@@ -18,7 +18,10 @@ const TLDR_MAX = 400
 const META_MIN = 50
 const META_MAX = 160
 const TAGS_MAX = 5
-const TAG_VALIDA = /^[a-z0-9-]+$/
+const TAG_VALIDA = /^[a-z0-9-]{1,40}$/
+const CARACTERE_PROIBIDO =
+  /[\u0000-\u0008\u000B-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/
+const LINK = /https?:\/\/|www\./i
 const CAMPOS = ['metaDescription', 'tags', 'tldr']
 
 export const FORMATO_RESUMO = {
@@ -119,12 +122,17 @@ export function lerResumo(resposta: string): Resumo {
   const metaLimpa = metaDescription.trim()
   if (tldrLimpo.length < 1 || tldrLimpo.length > TLDR_MAX) recusar()
   if (metaLimpa.length < META_MIN || metaLimpa.length > META_MAX) recusar()
+  for (const texto of [tldrLimpo, metaLimpa]) {
+    if (CARACTERE_PROIBIDO.test(texto) || LINK.test(texto)) recusar()
+  }
+  if (/[\n\r]/.test(metaLimpa)) recusar()
 
   if (
     !Array.isArray(tags) ||
     tags.length < 1 ||
     tags.length > TAGS_MAX ||
-    !tags.every((t) => typeof t === 'string' && TAG_VALIDA.test(t))
+    !tags.every((t) => typeof t === 'string' && TAG_VALIDA.test(t)) ||
+    new Set(tags).size !== tags.length
   ) {
     recusar()
   }

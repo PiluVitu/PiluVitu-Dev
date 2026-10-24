@@ -217,6 +217,38 @@ describe('lerResumo: validação estrita (Review Focus 5)', () => {
     ['campo extra', { ...VALIDO, autor: 'eu' }],
     ['campo faltando', { tldr: VALIDO.tldr, tags: VALIDO.tags }],
     ['tldr que não é string', { ...VALIDO, tldr: 3 }],
+    ['tag repetida', { ...VALIDO, tags: ['nextjs', 'nextjs'] }],
+    ['tag com 41 caracteres', { ...VALIDO, tags: ['a'.repeat(41)] }],
+    [
+      'tldr com caractere de controle',
+      { ...VALIDO, tldr: `${VALIDO.tldr}\u0007` },
+    ],
+    [
+      'tldr com controle bidi U+202E',
+      { ...VALIDO, tldr: `\u202E${VALIDO.tldr}` },
+    ],
+    [
+      'tldr com isolante bidi U+2066',
+      { ...VALIDO, tldr: `\u2066${VALIDO.tldr}` },
+    ],
+    [
+      'tldr com largura zero U+200B',
+      { ...VALIDO, tldr: `a\u200Bb ${VALIDO.tldr}` },
+    ],
+    ['tldr com link https', { ...VALIDO, tldr: `${VALIDO.tldr} https://x.io` }],
+    ['tldr com link www', { ...VALIDO, tldr: `${VALIDO.tldr} www.x.io` }],
+    [
+      'metaDescription com quebra de linha',
+      { ...VALIDO, metaDescription: `${VALIDO.metaDescription}\nmais` },
+    ],
+    [
+      'metaDescription com controle bidi U+2069',
+      { ...VALIDO, metaDescription: `${VALIDO.metaDescription}\u2069` },
+    ],
+    [
+      'metaDescription com link',
+      { ...VALIDO, metaDescription: `${VALIDO.metaDescription} http://x.io` },
+    ],
     ['array no lugar do objeto', [VALIDO]],
     ['null', null],
   ]
@@ -243,7 +275,7 @@ describe('lerResumo: validação estrita (Review Focus 5)', () => {
         }),
       ),
     ).toEqual({ tldr: 'x', metaDescription: 'm'.repeat(50), tags: ['a'] })
-    const tags = ['a', 'b-2', 'c', 'next-js', '9']
+    const tags = ['a', 'b-2', 'c', 'next-js', 'x'.repeat(40)]
     expect(
       lerResumo(
         JSON.stringify({
