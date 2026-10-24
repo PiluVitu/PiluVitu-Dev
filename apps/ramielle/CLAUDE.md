@@ -475,12 +475,33 @@ Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` fal
   - `proofread(texto, chat)`: só os blocos de prosa de `dividirBlocos` vão ao chat, **um por chamada** (um título vai sozinho, como no promeia); o resto volta byte a byte, e `restaurarBordas` repõe o branco de borda. Sonnet (`claude-sonnet-5-5`), `maxTokens` 4096 por bloco. Uma falha em qualquer bloco derruba o texto inteiro, sem devolver texto pela metade.
   - `refine`, `gerarHooks` e `ajustarAoLimite`: Haiku (`claude-haiku-5-5`), `maxTokens` 1024. O texto do chat é trimado antes de medir o limite. Encurtar que falha vira `truncar` (fail-soft). Um hook que falha derruba o lote. `LIMITES = {bluesky: 300, mastodon: 500}`, padrão 280.
   - `truncar` e o limite contam **code points** (`Array.from`), como o `len()` do Python: com `String.length` um emoji contaria dois.
-  - Sem `temperature`, `top_p` ou `thinking`: Sonnet 5.5 e Haiku 5.5 recusam valor não padrão, e as temperaturas 0.1/0.7/0.3 do promeia sumiram. O `careful` também saiu: é sempre o Sonnet. O conjunto de avaliação (Task 9) confere que o comportamento continua aceitável.
+  - Sem `temperature`, `top_p` ou `thinking`: Sonnet 5.5 e Haiku 5.5 recusam valor não padrão, e as temperaturas 0.1/0.7/0.3 do promeia sumiram. O `careful` também saiu: é sempre o Sonnet. O conjunto de avaliação (§ _Conjunto de avaliação da revisão_ abaixo) confere que o comportamento continua aceitável.
 - **`src/domain/revisao/chat-claude.ts`**: `chatComOrcamento(env, 'revisao' | 'hooks')` devolve um `Chat` sobre `comOrcamento`, com o teto da feature (`TETOS_RAMIELLE`).
 - **Rotas** (`src/routes/atelier.ts`): `POST /admin/llm/proofread` usa a feature `revisao`; `POST /admin/llm/refine` usa `hooks`. Sem chave, `503 claude_desligado` antes de ler o corpo (substitui o `promeia_disabled` destas rotas); os demais erros saem por `respostaDeErroIa` (529 → `503 claude_indisponivel`, teto → `429 teto_atingido`). O campo `careful` do corpo é ignorado. Os shapes de sucesso (`{corrected}` e `{refined}`) não mudaram.
 - **Distribuição** (`buildDistributionProposals`): recebe `chat: Chat | null` no lugar do `PromeiaConfig`. A rota passa `null` quando não há `ANTHROPIC_API_KEY`: os sociais são pulados em silêncio e o crosspost de artigo continua. Com chave, uma falha da Claude (indisponível, recusa ou teto) derruba as propostas inteiras, sem persistir nada, e a rota responde `502 proposals_failed`, o mesmo tratamento de antes.
 - **Testes**: `revisao.test.ts` (casos de `revisao_test.py` com `Chat` falso), `chat-claude.test.ts`, `atelier.test.ts` e `distribution.test.ts` com a Anthropic falsa de `src/test-support/anthropic-mock.ts` (só aceita `https://api.anthropic.com/v1/messages`; outra URL lança). O de rota confere que cerca não fechada, tabela e JSX voltam idênticos e nunca chegam à Claude, o modelo e a ausência de `temperature` no corpo enviado, o 529, o teto de cada feature e a chave fora de corpo e headers.
 - ⚠️ **Limite de subrequests**: o proofread faz uma chamada por bloco de prosa (até duas, com o retry da SDK). No plano Free do Workers o teto é 50 subrequests por request; num artigo com mais de ~25 blocos de prosa ele estoura e a rota falha. No plano pago o teto é bem maior. Se um dia estourar, agrupar blocos muda o comportamento do prompt (o título deixa de ir sozinho) e exige rodar a avaliação de novo.
+
+## Conjunto de avaliação da revisão (IA fase 1, PR3, Task 9)
+
+Confere, contra a API real, que o proofread e os hooks continuam aceitáveis sem as temperaturas do promeia. Roda **só à mão e com o OK do dono**, porque gasta dinheiro:
+
+```
+ANTHROPIC_API_KEY=<chave> pnpm --filter @piluvitu/ramielle eval:revisao
+```
+
+- **Critério de aceite** (sai `APROVADO`, exit 0; senão `REPROVADO` com o motivo, exit 1):
+  - passthrough idêntico em 5/5 artigos (cerca, tabela, JSX, citação e imagem voltam byte a byte);
+  - pelo menos 90% dos erros plantados corrigidos (hoje 17);
+  - no máximo 1 mudança fora dos erros plantados por artigo;
+  - hooks 3/3 nos três critérios: dentro do limite (code points), sem URL, sem o nome do autor.
+- **Custo**: o script imprime a estimativa antes (≈ US$ 0,02, 15 pedidos ao Sonnet e 3 ao Haiku) e o custo real no fim, somado do `custoMicro` de cada resposta. O plano pede menos de US$ 0,05 por rodada, e o teste trava a estimativa abaixo disso. Não passa por `uso_ia` nem pelos tetos: roda fora do Worker, sem D1.
+- **Mesmo código de produção**: `scripts/rodar-avaliacao-revisao.mjs` chama `proofread`/`gerarHooks` de `src/domain/revisao/revisao.ts` com `chamarClaude` de `@piluvitu/ia/claude`. O Node 22 tira os tipos dos `.ts` sozinho; o script registra um hook de `resolve` que acrescenta `.ts` aos imports sem extensão. Sem a chave no ambiente, aborta com exit 2 antes de importar a SDK. A chave só é lida do ambiente e nunca é impressa; um erro da API sai pela mensagem dos erros do `@piluvitu/ia`, que não carrega a chave nem o corpo da resposta (conferido com um `fetch` falso que ecoava a chave num 401).
+- **Arquivos**:
+  - `scripts/avaliar-revisao.ts`: a nota. `avaliarProofread(original, esperado, obtido)` dá `passthroughIdentico` (cada bloco passthrough não branco do original aparece, em ordem, no obtido), `errosCorrigidos` (um dos `aceitos` presente e o `trecho` errado ausente), `errosTotal` e `mudancasExtras` (trechos contíguos diferentes no diff por palavra contra o texto ideal; erro não corrigido não conta de novo como extra, e mudança só de branco não conta). `avaliarHook(texto, limite)` dá `dentroDoLimite`, `semUrl` e `semNome`. Também `rodarAvaliacao`, `consolidar`, `estimarCustoMicro`, `criarChatMedido` e `formatarRelatorio`.
+  - `scripts/__fixtures__/avaliacao/`: 5 artigos `.md` com erros plantados (crase, concordância, acento, digitação) e, ao lado, `<id>.esperado.json` com cada `{tipo, trecho, aceitos}`; `artigo-hooks.json` (bluesky 300, mastodon 500 e `x`, que cai no limite padrão de 280); `respostas-gravadas.json`, escritas à mão para o teste (não vêm de uma rodada real). Os `.md` estão no `.prettierignore` da raiz: o lint-staged realinharia a tabela torta de propósito.
+  - `scripts/avaliar-revisao.test.ts` (config `vitest.scripts.config.ts`, Node, sem Miniflare): a nota com casos inline, a sanidade das fixtures (cada `trecho` aparece uma vez, fora do passthrough; nenhum aceito já está no original; o conjunto cobre cerca fechada e aberta, tabela, JSX, citação e imagem) e o conjunto inteiro com um `Chat` falso sobre as respostas gravadas. Também trava que o `test`/`lint` do pacote e o `ci.yml` nunca chamam o `eval:revisao`.
+- Para mudar um prompt: rode o eval antes e depois e compare as notas. Para acrescentar um artigo: `.md` + `.esperado.json` com o mesmo id, e uma resposta gravada por bloco de prosa.
 
 ## Pendências do dono — nada disto foi feito nesta fatia
 

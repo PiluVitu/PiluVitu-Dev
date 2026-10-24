@@ -1,0 +1,20 @@
+{
+  "descricao": "Acento, concordância nominal e digitação na prosa; tabela com palavras sem acento, que deve voltar igual.",
+  "erros": [
+    {
+      "tipo": "acento",
+      "trecho": "Se voce quiser",
+      "aceitos": ["Se você quiser"]
+    },
+    {
+      "tipo": "concordância",
+      "trecho": "duas tabela para",
+      "aceitos": ["duas tabelas para"]
+    },
+    {
+      "tipo": "digitação",
+      "trecho": "ver qeu o D1",
+      "aceitos": ["ver que o D1"]
+    }
+  ]
+}

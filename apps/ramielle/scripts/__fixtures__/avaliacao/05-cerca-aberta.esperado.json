@@ -1,0 +1,16 @@
+{
+  "descricao": "Digitação e concordância na prosa; o artigo termina numa cerca de código que nunca fecha, com erros no comentário, que deve voltar igual.",
+  "erros": [
+    {
+      "tipo": "digitação",
+      "trecho": "Toda excessão",
+      "aceitos": ["Toda exceção"]
+    },
+    {
+      "tipo": "concordância",
+      "trecho": "houveram erros",
+      "aceitos": ["houve erros"]
+    },
+    { "tipo": "crase", "trecho": "A medida que", "aceitos": ["À medida que"] }
+  ]
+}

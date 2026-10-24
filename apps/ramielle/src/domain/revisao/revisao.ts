@@ -21,7 +21,7 @@ export const MODELO_PROOFREAD: Modelo = 'claude-sonnet-5-5'
 export const MODELO_HOOKS: Modelo = 'claude-haiku-5-5'
 
 const MAX_TOKENS_PROOFREAD = 4096
-const MAX_TOKENS_HOOKS = 1024
+export const MAX_TOKENS_HOOKS = 1024
 
 export const LIMITES: Record<string, number> = { bluesky: 300, mastodon: 500 }
 export const LIMITE_PADRAO = 280

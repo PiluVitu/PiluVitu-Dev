@@ -1,0 +1,16 @@
+{
+  "descricao": "Concordância, crase e acento na prosa; bloco JSX com erro, que deve voltar igual; código inline sem acento (`configuracao`), que não pode mudar.",
+  "erros": [
+    {
+      "tipo": "concordância",
+      "trecho": "a gente vamos montar",
+      "aceitos": ["a gente vai montar", "nós vamos montar"]
+    },
+    { "tipo": "crase", "trecho": "sai as 18h", "aceitos": ["sai às 18h"] },
+    {
+      "tipo": "acento",
+      "trecho": "é possivel reaproveitar",
+      "aceitos": ["é possível reaproveitar"]
+    }
+  ]
+}

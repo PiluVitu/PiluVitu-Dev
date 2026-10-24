@@ -128,6 +128,8 @@ Aceita um diretório (busca recursiva por `*.css`, ex.: `apps/web/.next`) ou um 
 - **`apps/pilutech-site/package.json`** → a mesma config do `apps/web`, pelo mesmo motivo.
 - **`apps/promeia/.lintstagedrc.json`** → `*.py: [uv run ruff check --fix, uv run ruff format]`. Arquivo `.lintstagedrc.json` avulso, não uma entrada em `package.json` — `apps/promeia` não tem (nem precisa de) `package.json`. Fica ali, e não na raiz, pelo mesmo motivo do apps/web: `uv run` resolve o projeto Python a partir do cwd, então rodar com cwd na raiz não acharia o `pyproject.toml`/venv de `apps/promeia`. Provado rodando de verdade: um `.py` mal formatado, `git add` + `git commit`, teve o hook reformatando-o antes do commit fechar.
 
+`.prettierignore` (raiz) tira do Prettier só os artigos de `apps/ramielle/scripts/__fixtures__/avaliacao/*.md`, cujos erros e tabela torta são de propósito (ver "Conjunto de avaliação da revisão" em `apps/ramielle/CLAUDE.md`).
+
 Os scripts `prettier:fix` / `lint` seguem pra formatação/lint full manual (e CI).
 
 ## Comentários: raros, e só onde o código não alcança (lei do projeto)
