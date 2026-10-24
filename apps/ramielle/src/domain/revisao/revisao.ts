@@ -27,6 +27,7 @@ const MAX_TOKENS_PROOFREAD = 4096
 
 // Contas em "Revisão em lotes" no CLAUDE.md do ramielle.
 export const TETO_CARACTERES_LOTE = 5000
+export const TETO_CARACTERES_BLOCO = 2 * TETO_CARACTERES_LOTE
 export const MAX_LOTES_PROOFREAD = 10
 
 export const FORMATO_LOTE = {
@@ -104,6 +105,15 @@ export class TextoGrandeDemais extends Error {
   }
 }
 
+export class BlocoGrandeDemais extends Error {
+  constructor(tamanho: number) {
+    super(
+      `Um parágrafo tem ${tamanho} caracteres, e o máximo por parágrafo é ${TETO_CARACTERES_BLOCO / 1000} mil. Divida esse parágrafo em partes.`,
+    )
+    this.name = 'BlocoGrandeDemais'
+  }
+}
+
 export function agruparEmLotes<T extends { texto: string }>(
   blocos: T[],
   teto: number = TETO_CARACTERES_LOTE,
@@ -138,7 +148,7 @@ function lerLote(resposta: string, esperados: number): string[] {
   if (
     !Array.isArray(blocos) ||
     blocos.length !== esperados ||
-    !blocos.every((b) => typeof b === 'string')
+    !blocos.every((b) => typeof b === 'string' && b.trim() !== '')
   ) {
     throw new ClaudeRecusou('formato')
   }
@@ -160,6 +170,9 @@ export async function proofread(texto: string, chat: Chat): Promise<string> {
   const prosa = blocos
     .map((bloco, indice) => ({ ...bloco, indice }))
     .filter((b) => b.tipo === 'prosa' && b.texto.trim() !== '')
+
+  const gigante = prosa.find((b) => b.texto.length > TETO_CARACTERES_BLOCO)
+  if (gigante) throw new BlocoGrandeDemais(gigante.texto.length)
 
   const lotes = agruparEmLotes(prosa)
   if (lotes.length > MAX_LOTES_PROOFREAD) {

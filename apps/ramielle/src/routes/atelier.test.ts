@@ -24,6 +24,7 @@ import {
 } from '../test-support/anthropic-mock'
 import {
   MAX_LOTES_PROOFREAD,
+  TETO_CARACTERES_BLOCO,
   TETO_CARACTERES_LOTE,
 } from '../domain/revisao/revisao'
 
@@ -374,6 +375,58 @@ describe('POST /admin/llm/proofread em lotes (limite de subrequests)', () => {
       'claude_recusou',
     )
     expect(cru).not.toContain('CORRIGIDO')
+  })
+
+  test('um item vazio com a contagem certa ⇒ 502 claude_recusou de formato, sem texto', async () => {
+    const cookie = await cookieDeAdmin()
+    mockarAnthropic((p) =>
+      respostaClaude(
+        JSON.stringify({
+          blocos: blocosDoPedido(p).map((b, i) =>
+            i === 1 ? '   ' : `CORRIGIDO ${b}`,
+          ),
+        }),
+      ),
+    )
+
+    const res = await chamar(
+      '/admin/llm/proofread',
+      {
+        text: '# Título\n\nPrimeiro parágrafo com erro.\n\nSegundo parágrafo.\n',
+      },
+      cookie,
+    )
+    expect(res.status).toBe(502)
+    const cru = await res.text()
+    const body = JSON.parse(cru) as Envelope<null>
+    expect(body.data).toBeNull()
+    expect(body.notifications[0]?.code).toBe('claude_recusou')
+    expect(body.notifications[0]?.message).toContain('fora do formato')
+    expect(cru).not.toContain('CORRIGIDO')
+  })
+
+  test('um bloco de prosa acima de TETO_CARACTERES_BLOCO ⇒ 413 text_too_large, sem chamar a Claude nem gravar em uso_ia', async () => {
+    const cookie = await cookieDeAdmin()
+    const pedidos = mockarAnthropic(responderLote((b) => b))
+    const antes = await DB.prepare('SELECT COUNT(*) AS n FROM uso_ia').first<{
+      n: number
+    }>()
+
+    const res = await chamar(
+      '/admin/llm/proofread',
+      { text: `Curto.\n\n${'x'.repeat(TETO_CARACTERES_BLOCO + 1)}\n` },
+      cookie,
+    )
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.data).toBeNull()
+    expect(body.notifications[0]?.code).toBe('text_too_large')
+    expect(body.notifications[0]?.message).toContain('em partes')
+    expect(pedidos).toHaveLength(0)
+    const depois = await DB.prepare('SELECT COUNT(*) AS n FROM uso_ia').first<{
+      n: number
+    }>()
+    expect(depois?.n).toBe(antes?.n)
   })
 
   test('resposta em JSON ilegível ⇒ 502 claude_recusou de formato, sem texto', async () => {

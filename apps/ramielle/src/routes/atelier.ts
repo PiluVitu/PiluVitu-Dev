@@ -1,14 +1,20 @@
 /**
  * As rotas do Atelier que revisam texto pela Claude: `POST
  * /admin/llm/proofread` (Sonnet, teto `revisao`, em lotes; acima de
- * `MAX_LOTES_PROOFREAD` responde `413 text_too_large`) e `POST
+ * `MAX_LOTES_PROOFREAD` ou com um bloco acima de `TETO_CARACTERES_BLOCO`
+ * responde `413 text_too_large`) e `POST
  * /admin/llm/refine` (Haiku, teto `hooks`). Os erros da IA saem pelo `respostaDeErroIa`, e o
  * `apps/web` mostra a mensagem dele direto no toast.
  */
 import { ClaudeDesligado } from '@piluvitu/ia/erros'
 import { Hono } from 'hono'
 import { chatComOrcamento } from '../domain/revisao/chat-claude'
-import { proofread, refine, TextoGrandeDemais } from '../domain/revisao/revisao'
+import {
+  BlocoGrandeDemais,
+  proofread,
+  refine,
+  TextoGrandeDemais,
+} from '../domain/revisao/revisao'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
 import { respostaDeErroIa } from '../lib/ia'
@@ -48,7 +54,10 @@ atelierRoutes.post(
       )
       return okJson({ corrected })
     } catch (err) {
-      if (err instanceof TextoGrandeDemais) {
+      if (
+        err instanceof TextoGrandeDemais ||
+        err instanceof BlocoGrandeDemais
+      ) {
         return errJson(413, 'text_too_large', err.message)
       }
       return respostaDeErroIa(err)

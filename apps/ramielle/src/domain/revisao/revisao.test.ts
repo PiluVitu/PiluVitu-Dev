@@ -15,6 +15,7 @@ import {
 import {
   agruparEmLotes,
   ajustarAoLimite,
+  BlocoGrandeDemais,
   FORMATO_LOTE,
   gerarHooks,
   LIMITE_PADRAO,
@@ -25,6 +26,7 @@ import {
   MODELO_PROOFREAD,
   proofread,
   refine,
+  TETO_CARACTERES_BLOCO,
   TETO_CARACTERES_LOTE,
   TextoGrandeDemais,
   truncar,
@@ -287,6 +289,17 @@ describe('proofread', () => {
       expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
     })
 
+    // O modelo pode juntar dois trechos num item e completar a contagem com
+    // um item vazio: a contagem confere e o parágrafo sumiria sem erro.
+    it('com um item vazio ou só de espaço', async () => {
+      for (const vazio of ['', '   ', '\n\t ']) {
+        const chat = chatQueResponde(
+          JSON.stringify({ blocos: ['Um.', vazio, 'Três.'] }),
+        )
+        expect(await motivoDaRecusa(proofread(entrada, chat))).toBe('formato')
+      }
+    })
+
     it('sem o campo blocos, ou com ele fora de um array', async () => {
       for (const corpo of [
         { outro: ['Um.', 'Dois.', 'Três.'] },
@@ -311,6 +324,27 @@ describe('proofread', () => {
     expect(erro).toBeInstanceOf(TextoGrandeDemais)
     expect((erro as TextoGrandeDemais).lotes).toBe(MAX_LOTES_PROOFREAD + 1)
     expect(chamadas).toEqual([])
+  })
+
+  it('um bloco de prosa acima de TETO_CARACTERES_BLOCO lança BlocoGrandeDemais sem chamar o chat', async () => {
+    const entrada = `Curto.\n\n${'x'.repeat(TETO_CARACTERES_BLOCO + 1)}`
+    const { chat, chamadas } = chatDeLote()
+    const erro = await proofread(entrada, chat).catch((e: unknown) => e)
+    expect(erro).toBeInstanceOf(BlocoGrandeDemais)
+    expect((erro as Error).message).toContain('em partes')
+    expect(chamadas).toEqual([])
+  })
+
+  it('um bloco de prosa com exatamente TETO_CARACTERES_BLOCO ainda passa', async () => {
+    const entrada = 'x'.repeat(TETO_CARACTERES_BLOCO)
+    const { chat, chamadas } = chatDeLote((b) => b)
+    expect(await proofread(entrada, chat)).toBe(entrada)
+    expect(chamadas).toHaveLength(1)
+  })
+
+  it('o teto por bloco cabe no max_tokens em português real e é maior que o do lote', () => {
+    expect(TETO_CARACTERES_BLOCO).toBeGreaterThan(TETO_CARACTERES_LOTE)
+    expect(TETO_CARACTERES_BLOCO / 3.5).toBeLessThan(4096 * 0.9)
   })
 
   it(`exatamente ${MAX_LOTES_PROOFREAD} lotes ainda passa`, async () => {
