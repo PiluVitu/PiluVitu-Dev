@@ -16,3 +16,8 @@ declare namespace Cloudflare {
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[]
   }
 }
+
+declare module '*?raw' {
+  const conteudo: string
+  export default conteudo
+}

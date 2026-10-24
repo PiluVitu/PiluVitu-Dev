@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
+import type { IaBindings } from './lib/ia'
 import type { PluggyBindings } from './lib/pluggy'
 import type { PromeiaBindings } from './lib/promeia'
 import { isRotaDeAuth, requireSession } from './lib/session'
@@ -43,7 +44,8 @@ import { transfersRoutes } from './routes/transfers'
 export type Bindings = AuthBindings & {
   INGEST_TOKEN: string
 } & PromeiaBindings &
-  PluggyBindings
+  PluggyBindings &
+  IaBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 

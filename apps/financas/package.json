@@ -23,6 +23,7 @@
     "test:pdf-import": "vitest run --config vitest.scripts.config.ts"
   },
   "dependencies": {
+    "@piluvitu/ia": "workspace:*",
     "@piluvitu/tools": "workspace:*",
     "better-auth": "1.6.25",
     "hono": "^4.13.12",

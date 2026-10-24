@@ -1,5 +1,7 @@
 import { applyD1Migrations, env, reset } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import migracaoUsoIa from '../migrations/0006_uso_ia.sql?raw'
+import sqlUsoIaDoPacote from '../../../packages/ia/sql/uso_ia.sql?raw'
 
 const DB = env.DB
 const NOW = '2026-07-28T12:00:00Z'
@@ -48,8 +50,8 @@ describe('migration 0001 — tabelas e índices', () => {
   // `distribution_targets`. Este teste conta TODAS as tabelas do banco (não
   // filtra por migration), então ele quebraria em silêncio assim que uma
   // migration nova fosse aplicada sem este ajuste — atualizado aqui de
-  // propósito, não uma regressão desta task.
-  it('cria exatamente as 11 tabelas (6 da votação + 4 do Better Auth + 1 da distribuição)', async () => {
+  // propósito, não uma regressão desta task. A 0006_uso_ia.sql soma `uso_ia`.
+  it('cria exatamente as 12 tabelas (6 da votação + 4 do Better Auth + 1 da distribuição + 1 do uso de IA)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -68,6 +70,7 @@ describe('migration 0001 — tabelas e índices', () => {
       'tiebreaks',
       'user',
       'users',
+      'uso_ia',
       'verification',
       'votes',
       'voting_sessions',
@@ -81,8 +84,9 @@ describe('migration 0001 — tabelas e índices', () => {
   // account_providerId_accountId_idx — índice composto que o Better Auth
   // consulta no sign-in social, mais decisivo aqui que no finanças porque
   // a votação é LIVRE e `account` cresce com cada votante (ver o
-  // raciocínio completo na própria migration).
-  it('cria os 9 índices (5 da votação + 4 do Better Auth)', async () => {
+  // raciocínio completo na própria migration). A 0006_uso_ia.sql soma
+  // idx_uso_ia_feature_mes.
+  it('cria os 10 índices (5 da votação + 4 do Better Auth + 1 do uso de IA)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'index'
@@ -96,6 +100,7 @@ describe('migration 0001 — tabelas e índices', () => {
       'idx_backups_created',
       'idx_session_movies_session',
       'idx_tiebreaks_session',
+      'idx_uso_ia_feature_mes',
       'idx_votes_session',
       'idx_voting_sessions_created',
       'session_userId_idx',
@@ -414,5 +419,71 @@ describe('migration 0005 — banco com dados de produção', () => {
       `SELECT name FROM sqlite_master WHERE name LIKE 'session_movies_%'`,
     ).all()
     expect(sobras.results).toEqual([])
+  })
+})
+
+// uso_ia: a migration é cópia exata do SQL de @piluvitu/ia. Se divergir, o
+// Worker grava num schema que a reserva atômica de packages/ia/src/uso.ts não
+// conhece; corrija os dois juntos.
+describe('migration 0006_uso_ia', () => {
+  it('é idêntica a packages/ia/sql/uso_ia.sql', () => {
+    expect(migracaoUsoIa).toBe(sqlUsoIaDoPacote)
+  })
+
+  it('cria uso_ia STRICT com as colunas e o índice (feature, mes)', async () => {
+    const colunas = await env.DB.prepare('PRAGMA table_info(uso_ia)').all<{
+      name: string
+      type: string
+      notnull: number
+      pk: number
+    }>()
+    expect(
+      colunas.results.map(({ name, type, notnull, pk }) => ({
+        name,
+        type,
+        notnull,
+        pk,
+      })),
+    ).toEqual([
+      { name: 'id', type: 'TEXT', notnull: 1, pk: 1 },
+      { name: 'feature', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'mes', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'modelo', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'estado', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'reservado_micro', type: 'INTEGER', notnull: 1, pk: 0 },
+      { name: 'custo_micro', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'tokens_entrada', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'tokens_saida', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'criado_em', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'concluido_em', type: 'TEXT', notnull: 0, pk: 0 },
+    ])
+
+    const tabela = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'uso_ia'",
+    ).first<{ sql: string }>()
+    expect(tabela?.sql).toMatch(/\)\s*STRICT$/)
+
+    const indice = await env.DB.prepare(
+      "SELECT name FROM pragma_index_list('uso_ia') WHERE origin = 'c'",
+    ).all<{ name: string }>()
+    expect(indice.results.map((i) => i.name)).toEqual([
+      'idx_uso_ia_feature_mes',
+    ])
+    const colunasDoIndice = await env.DB.prepare(
+      "SELECT name FROM pragma_index_info('idx_uso_ia_feature_mes')",
+    ).all<{ name: string }>()
+    expect(colunasDoIndice.results.map((c) => c.name)).toEqual([
+      'feature',
+      'mes',
+    ])
+  })
+
+  it('o CHECK de estado recusa valor fora de reservado/concluido/falhou', async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, criado_em)
+         VALUES ('x', 'insight', '2026-10', 'claude-sonnet-5-5', 'pago', 1, '2026-10-24T00:00:00Z')`,
+      ).run(),
+    ).rejects.toThrow(/CHECK/)
   })
 })

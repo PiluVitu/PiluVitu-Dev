@@ -62,6 +62,7 @@ export type AuthBindings = {
   GSHEETS_MOVIES_SPREADSHEET_ID?: string
   /** Default `'A2:F'` aplicado em `routes/votacao.ts` quando ausente/vazia — mesmo fallback do Go (`cmd/api/main.go:63-65`). */
   GSHEETS_MOVIES_RANGE?: string
+  ANTHROPIC_API_KEY?: string
   /**
    * Fatia do Atelier — o serviço promeia (Python, no MacBook do dono, atrás
    * do túnel), que faz a inferência de `proofread`/`refine`.

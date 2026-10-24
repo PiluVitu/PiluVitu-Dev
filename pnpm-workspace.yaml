@@ -4,6 +4,7 @@ packages:
   - 'apps/financas/web'
   - 'apps/ramielle'
   - 'apps/pilutech-site'
+  - 'packages/ia'
   - 'packages/tools'
   - 'packages/ui'
 
