@@ -4,7 +4,6 @@ import { type AuthBindings, getAuth } from './lib/auth'
 import { errJson, okJson } from './lib/envelope'
 import type { IaBindings } from './lib/ia'
 import type { PluggyBindings } from './lib/pluggy'
-import type { PromeiaBindings } from './lib/promeia'
 import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
 import { categoriesRoutes } from './routes/categories'
@@ -22,18 +21,6 @@ import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 import { transfersRoutes } from './routes/transfers'
 
-// INGEST_TOKEN (fatia ⑨, Task 3): segredo dedicado pro comando que roda no
-// Mac do dono, checado SÓ por POST /api/insights (routes/insights.ts#
-// requireIngestToken) — nunca por sessão de navegador. Fica aqui (não em
-// AuthBindings, lib/auth.ts) porque não tem nada a ver com Better Auth;
-// é o próprio index.ts, dono do Bindings final do Worker, quem soma os
-// dois. Via `wrangler secret put INGEST_TOKEN` em produção, `.dev.vars`
-// localmente — mesmo padrão de BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET.
-// PROMEIA_URL/PROMEIA_TOKEN (fatia do botão de insight): a outra ponta da
-// mesma cadeia. O INGEST_TOKEN acima autentica o Mac ESCREVENDO aqui; estes
-// dois autenticam este Worker CHAMANDO o Mac (POST /api/insights/generate →
-// túnel → promeia). Os dois são secrets (`wrangler secret put`), nunca
-// `vars` em wrangler.jsonc — ver routes/insights.ts e lib/promeia.ts.
 // PLUGGY_CLIENT_ID/PLUGGY_CLIENT_SECRET (fatia ④): credenciais do app no
 // Meu Pluggy, lidas SÓ por routes/pluggy.ts (via lib/pluggy.ts). Também
 // secrets, e por um motivo medido: scripts/backup-d1.sh exporta o D1
@@ -41,50 +28,20 @@ import { transfersRoutes } from './routes/transfers'
 // `settings` publicaria a credencial em 30 arquivos que rotacionar a chave
 // depois não apagaria. `itemId`/`accountId` NÃO são credencial e vão em
 // `settings` normalmente.
-export type Bindings = AuthBindings & {
-  INGEST_TOKEN: string
-} & PromeiaBindings &
-  PluggyBindings &
-  IaBindings
+export type Bindings = AuthBindings & PluggyBindings & IaBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
 /**
- * QUATRO exceções à guarda de sessão, todas EXPLÍCITAS:
+ * Duas exceções à guarda de sessão, ambas explícitas:
  *  - /api/health: sondado por monitor externo, que não tem cookie.
- *  - /api/auth/*: é o próprio fluxo de login. Barrar aqui é deadlock —
- *    ninguém consegue autenticar porque não está autenticado.
- *  - POST /api/insights: autenticado por INGEST_TOKEN, não por sessão
- *    (fatia ⑨, Task 3) — o comando que roda no Mac do dono não tem
- *    cookie de navegador.
- *  - GET /api/insights/numbers: MESMO INGEST_TOKEN, extensão de escopo da
- *    Task 4 — o comando do Mac também precisa LER os números antes de
- *    escrever a leitura em cima deles, e não tem sessão pra isso.
- *  Nos dois casos de /api/insights, a exceção aqui só pula o
- *  requireSession() PARA AQUELE MÉTODO+PATH; quem de fato barra ou libera
- *  é a guarda presa à própria rota em routes/insights.ts
- *  (requireIngestToken para o POST; requireIngestTokenOrSession para o
- *  GET, que cai de volta pro caminho de sessão quando não há header
- *  Authorization nenhum) — sem essa guarda na rota, pular requireSession()
- *  aqui abriria a rota pra qualquer requisição sem exigir nada.
- *  ⚠️ POST /api/insights/generate (o botão da tela) também NÃO está em
- *  nenhuma exceção, e a diferença é de quem chama: o INGEST_TOKEN é do
- *  comando que roda no Mac; o botão é o dono, no navegador, com cookie.
- *  Abrir uma exceção pra ela exporia o disparo de uma rodada de GPU a
- *  qualquer requisição anônima.
- *  ⚠️ GET /api/insights/latest NÃO está em nenhuma exceção — continua
- *  exigindo só sessão, igual toda outra leitura do app (ver
- *  src/index.test.ts, "fronteira do INGEST_TOKEN", pras provas de que o
- *  token não abre /api/accounts, não abre POST /api/payees, e não abre
- *  /api/insights/latest também).
+ *  - /api/auth/*: é o próprio fluxo de login; barrar aqui é deadlock.
+ * Toda outra rota, insights inclusos, exige a sessão do dono (ver
+ * src/index.test.ts, "fronteira do INGEST_TOKEN").
  */
 app.use('/api/*', async (c, next) => {
   if (c.req.path === '/api/health') return next()
   if (isRotaDeAuth(c.req.path)) return next()
-  if (c.req.method === 'POST' && c.req.path === '/api/insights') return next()
-  if (c.req.method === 'GET' && c.req.path === '/api/insights/numbers') {
-    return next()
-  }
   return requireSession<Bindings>()(c, next)
 })
 
@@ -106,10 +63,6 @@ app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)
 app.route('/api/rules', rulesRoutes)
-// Fatia ④: `GET /api/pluggy/transactions`. Atrás da guarda de sessão como
-// qualquer outra rota — NENHUMA exceção foi acrescentada ao middleware
-// acima (o INGEST_TOKEN é do comando do Mac; quem sincroniza é o dono no
-// navegador). Provado em src/index.test.ts.
 app.route('/api/pluggy', pluggyRoutes)
 app.route('/api', reserveRoutes)
 app.route('/api', insightsRoutes)

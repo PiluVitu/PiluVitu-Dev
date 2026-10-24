@@ -1,40 +1,28 @@
-import { applyD1Migrations, env } from 'cloudflare:test'
+import { env } from 'cloudflare:test'
+import { mesFortaleza } from '@piluvitu/ia/uso'
 import { Hono } from 'hono'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import appMontado from '../index'
+import { todayInTeresina } from '../lib/dates'
 import { errJson } from '../lib/envelope'
+import { TETOS_FINANCAS } from '../lib/ia'
 import { insightsRoutes } from './insights'
 
-beforeAll(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-})
+// Marcador improvável: uma asserção negativa contra "sk-ant" casaria com
+// qualquer texto que só mencione o prefixo.
+const CHAVE = 'sk-ant-CHAVE-ROTA-INSIGHT-NAO-PODE-VAZAR-4e2a'
+const testEnv = { DB: env.DB, ANTHROPIC_API_KEY: CHAVE }
 
-const INGEST_TOKEN = 'token-de-teste-ingestao'
-// ⚠️ Marcador improvável: uma asserção negativa contra a palavra "token"
-// casaria com qualquer texto que a mencione (mesma lição de lib/promeia.test.ts).
-const PROMEIA_TOKEN = 'TOKEN-PROMEIA-NAO-PODE-VAZAR-1a5d'
-const PROMEIA_URL = 'https://promeia.exemplo.test'
-const testEnv = {
-  DB: env.DB,
-  INGEST_TOKEN,
-  PROMEIA_URL,
-  PROMEIA_TOKEN,
-}
-
-// Monta só o router, sem o middleware de sessão do Better Auth — mesma
-// convenção de routes/recurring.test.ts/routes/reserve.test.ts: o que
-// está sob teste aqui é o contrato HTTP + envelope da própria rota
-// (incl. a guarda do token, que mora NELA), não o middleware global de
-// index.ts.
+// Só o router, sem o middleware de sessão: aqui está sob teste o contrato
+// HTTP + envelope da rota. A guarda de sessão é provada no describe
+// "sem sessão" (app montado) e em src/index.test.ts.
 function app() {
   const hono = new Hono()
   hono.route('/api', insightsRoutes)
   return hono
 }
 
-// Monta EXATAMENTE como src/index.ts: insightsRoutes registrado ANTES do
-// catch-all. Prova por EXECUÇÃO REAL (não leitura de index.ts) que a rota
-// fica alcançável — mesmo padrão de routes/recurring.test.ts/reserve.test.ts.
+// Monta como src/index.ts: insightsRoutes antes do catch-all.
 function appComCatchAll() {
   const hono = new Hono()
   hono.route('/api', insightsRoutes)
@@ -42,35 +30,8 @@ function appComCatchAll() {
   return hono
 }
 
-// `token` opcional: só as rotas guardadas por requireIngestToken(OrSession)
-// precisam dele. Sem `token`, nenhum header Authorization é enviado — o
-// caminho de sessão (fora do escopo deste arquivo, ver index.test.ts) é
-// quem decidiria, e este testEnv não tem os campos de AuthBindings pra
-// isso (de propósito: as duas rotas cobertas aqui, latest e a autenticação
-// por TOKEN de numbers, não precisam deles).
-function get(path: string, token?: string) {
-  return app().request(
-    path,
-    token !== undefined
-      ? { headers: { authorization: `Bearer ${token}` } }
-      : {},
-    testEnv,
-  )
-}
-
-function post(path: string, body: unknown, token?: string) {
-  return app().request(
-    path,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token !== undefined ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body),
-    },
-    testEnv,
-  )
+function get(path: string) {
+  return app().request(path, {}, testEnv)
 }
 
 type Envelope = {
@@ -84,10 +45,10 @@ type Envelope = {
   }>
 }
 
-async function countInsights(): Promise<number> {
-  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM insights').first<{
-    n: number
-  }>()
+async function contar(tabela: 'insights' | 'uso_ia'): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM ${tabela}`,
+  ).first<{ n: number }>()
   return row?.n ?? 0
 }
 
@@ -102,6 +63,30 @@ describe('rotas de insights', () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as Envelope
       expect(body.notifications).toEqual([])
+    })
+
+    it('POST /api/insights (a ingestão do Mac) não existe mais: cai no catch-all', async () => {
+      const res = await appComCatchAll().request(
+        '/api/insights',
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer qualquer-token',
+          },
+          body: JSON.stringify({
+            texto: 't',
+            modelo: 'm',
+            periodo: '2026-07',
+          }),
+        },
+        testEnv,
+      )
+      expect(res.status).toBe(404)
+      expect(((await res.json()) as Envelope).notifications[0].code).toBe(
+        'not_found',
+      )
+      expect(await contar('insights')).toBe(0)
     })
   })
 
@@ -119,7 +104,7 @@ describe('rotas de insights', () => {
       await env.DB.prepare(
         `INSERT INTO insights (id, texto, modelo, periodo, generated_at)
          VALUES ('i-latest-route', 'Você gastou mais em Mercado.',
-                 'qwen2.5:7b-instruct', '2026-07', '2026-07-20T10:00:00Z')`,
+                 'claude-sonnet-5-5', '2026-07', '2026-07-20T10:00:00Z')`,
       ).run()
 
       const res = await get('/api/insights/latest')
@@ -128,26 +113,16 @@ describe('rotas de insights', () => {
       expect(body.data).toEqual({
         id: 'i-latest-route',
         texto: 'Você gastou mais em Mercado.',
-        modelo: 'qwen2.5:7b-instruct',
+        modelo: 'claude-sonnet-5-5',
         periodo: '2026-07',
         generated_at: '2026-07-20T10:00:00Z',
       })
     })
   })
 
-  // Task 4 (comando do Mac): esta rota passou a exigir requireIngestTokenOrSession
-  // — sem sessão de navegador disponível neste testEnv (de propósito, ver
-  // comentário do `get()` acima), todo teste abaixo passa o INGEST_TOKEN.
-  // A cobertura de "sem token E sem sessão" e "sessão sozinha também
-  // funciona" mora em src/index.test.ts (describe "fronteira do
-  // INGEST_TOKEN"), que monta o app inteiro com AuthBindings completo —
-  // é o único lugar que consegue provar as duas metades juntas.
   describe('GET /api/insights/numbers', () => {
     it('200 com envelope, mesmo sem nenhum lançamento no período', async () => {
-      const res = await get(
-        '/api/insights/numbers?competence=2100-01',
-        INGEST_TOKEN,
-      )
+      const res = await get('/api/insights/numbers?competence=2100-01')
       expect(res.status).toBe(200)
       const body = (await res.json()) as Envelope
       expect(body.ok).toBe(true)
@@ -157,492 +132,220 @@ describe('rotas de insights', () => {
     })
 
     it('400 invalid_query quando competence está ausente', async () => {
-      const res = await get('/api/insights/numbers', INGEST_TOKEN)
+      const res = await get('/api/insights/numbers')
       expect(res.status).toBe(400)
       const body = (await res.json()) as Envelope
       expect(body.notifications[0].code).toBe('invalid_query')
     })
 
     it('400 invalid_query quando competence é malformada', async () => {
-      const res = await get(
-        '/api/insights/numbers?competence=2026-13',
-        INGEST_TOKEN,
-      )
+      const res = await get('/api/insights/numbers?competence=2026-13')
       expect(res.status).toBe(400)
       const body = (await res.json()) as Envelope
       expect(body.notifications[0].code).toBe('invalid_query')
-    })
-
-    it('token errado: 401 invalid_ingest_token, nunca chega no domínio', async () => {
-      const res = await get(
-        '/api/insights/numbers?competence=2026-07',
-        'token-errado',
-      )
-      expect(res.status).toBe(401)
-      const body = (await res.json()) as Envelope
-      expect(body.notifications[0].code).toBe('invalid_ingest_token')
-    })
-  })
-
-  describe('POST /api/insights', () => {
-    const payload = {
-      texto: 'Você gastou mais em Mercado este mês.',
-      modelo: 'qwen2.5:7b-instruct',
-      periodo: '2026-07',
-    }
-
-    it('sem header Authorization: 401 invalid_ingest_token, nada gravado', async () => {
-      const antes = await countInsights()
-      const res = await post('/api/insights', payload)
-      expect(res.status).toBe(401)
-      const body = (await res.json()) as Envelope
-      expect(body.notifications[0].code).toBe('invalid_ingest_token')
-      expect(await countInsights()).toBe(antes)
-    })
-
-    it('token errado: 401 invalid_ingest_token, nada gravado', async () => {
-      const antes = await countInsights()
-      const res = await post('/api/insights', payload, 'token-errado')
-      expect(res.status).toBe(401)
-      expect(await countInsights()).toBe(antes)
-    })
-
-    it('token correto e corpo válido: 201, grava exatamente uma linha', async () => {
-      const antes = await countInsights()
-      const res = await post('/api/insights', payload, INGEST_TOKEN)
-      expect(res.status).toBe(201)
-      const body = (await res.json()) as Envelope
-      expect(body.ok).toBe(true)
-      expect(body.data.texto).toBe(payload.texto)
-      expect(body.data.modelo).toBe(payload.modelo)
-      expect(body.data.periodo).toBe(payload.periodo)
-      expect(body.data.id).toBeTruthy()
-      expect(body.data.generated_at).toBeTruthy()
-      expect(await countInsights()).toBe(antes + 1)
-    })
-
-    it('generated_at do corpo é IGNORADO — o servidor sempre grava o próprio relógio', async () => {
-      const res = await post(
-        '/api/insights',
-        { ...payload, generated_at: '2000-01-01T00:00:00Z' },
-        INGEST_TOKEN,
-      )
-      expect(res.status).toBe(201)
-      const body = (await res.json()) as Envelope
-      expect(body.data.generated_at).not.toBe('2000-01-01T00:00:00Z')
-      // "agora" em teste é o relógio real do processo — só confirmamos que
-      // não é o ano 2000 injetado pelo corpo, sem acoplar a um timestamp
-      // exato (frágil).
-      expect(String(body.data.generated_at).startsWith('20')).toBe(true)
-      expect(String(body.data.generated_at).startsWith('2000')).toBe(false)
-    })
-
-    it('corpo não é JSON válido: 400 invalid_json (mesmo com token correto)', async () => {
-      const res = await app().request(
-        '/api/insights',
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${INGEST_TOKEN}`,
-          },
-          body: '{ nao e json',
-        },
-        testEnv,
-      )
-      expect(res.status).toBe(400)
-      const body = (await res.json()) as Envelope
-      expect(body.notifications[0].code).toBe('invalid_json')
-    })
-
-    it('campo faltando/tipo errado: 422 invalid_insight', async () => {
-      const antes = await countInsights()
-      const res = await post(
-        '/api/insights',
-        { texto: 'x', modelo: 'm' /* periodo ausente */ },
-        INGEST_TOKEN,
-      )
-      expect(res.status).toBe(422)
-      const body = (await res.json()) as Envelope
-      expect(body.notifications[0].code).toBe('invalid_insight')
-      expect(await countInsights()).toBe(antes)
-    })
-
-    it('texto vazio: 422 invalid_insight, nada gravado', async () => {
-      const antes = await countInsights()
-      const res = await post(
-        '/api/insights',
-        { ...payload, texto: '   ' },
-        INGEST_TOKEN,
-      )
-      expect(res.status).toBe(422)
-      expect(await countInsights()).toBe(antes)
-    })
-
-    it('periodo fora do formato YYYY-MM: 422 invalid_insight, nada gravado', async () => {
-      const antes = await countInsights()
-      const res = await post(
-        '/api/insights',
-        { ...payload, periodo: '2026-13' },
-        INGEST_TOKEN,
-      )
-      expect(res.status).toBe(422)
-      const body = (await res.json()) as Envelope
-      expect(body.notifications[0].code).toBe('invalid_insight')
-      expect(await countInsights()).toBe(antes)
     })
   })
 })
 
 /**
- * `POST /api/insights/generate` — o botão que substitui o `make insight`.
+ * `POST /api/insights/generate`: o Worker gera o insight na Claude e responde
+ * só quando ele está gravado.
  *
- * ⚠️ **Nenhum teste aqui alcança o Mac, o túnel ou o Ollama**: o `fetch`
- * global é substituído em todo caso que exercita a chamada ao promeia, e
- * restaurado num `afterEach`. Um teste que "esquecesse" o mock não sairia
- * pela rede em silêncio — `PROMEIA_URL` aponta pra um host `.test`
- * inexistente, então a chamada falharia alto.
+ * O `fetch` global é trocado em todo teste deste bloco: nenhum alcança a API.
  */
-const fetchOriginal = globalThis.fetch
-afterEach(() => {
-  globalThis.fetch = fetchOriginal
-  vi.useRealTimers()
-})
+type Chamada = { url: string; corpo: string; headers: Record<string, string> }
 
-type ChamadaPromeia = { url: string; init: RequestInit }
+let chamadas: Chamada[]
+let responder: () => Response
 
-/** Substitui o `fetch` global e guarda o que foi enviado ao promeia. */
-function mockarPromeia(
-  responder: (chamada: ChamadaPromeia) => Response | Promise<Response>,
-): ChamadaPromeia[] {
-  const vistas: ChamadaPromeia[] = []
-  globalThis.fetch = (async (url: string, init: RequestInit) => {
-    const chamada = { url: String(url), init }
-    vistas.push(chamada)
-    return responder(chamada)
-  }) as unknown as typeof fetch
-  return vistas
-}
-
-function respostaJson(status: number, corpo: unknown): Response {
-  return new Response(JSON.stringify(corpo), {
-    status,
-    headers: { 'content-type': 'application/json' },
+function respostaClaude(texto: string): Response {
+  return Response.json({
+    id: 'msg_teste',
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-sonnet-5-5',
+    content: [{ type: 'text', text: texto }],
+    stop_reason: 'end_turn',
+    stop_sequence: null,
+    usage: {
+      input_tokens: 800,
+      output_tokens: 150,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+    },
   })
 }
 
-function gerar(corpo: unknown, ambiente: Record<string, unknown> = testEnv) {
+beforeEach(() => {
+  chamadas = []
+  responder = () => respostaClaude('Leitura do mês.')
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const req = new Request(input, init)
+    chamadas.push({
+      url: req.url,
+      corpo: await req.text(),
+      headers: Object.fromEntries(req.headers),
+    })
+    return responder()
+  })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+function gerar(
+  corpo: unknown,
+  ambiente: Record<string, unknown> = testEnv,
+  bruto = false,
+) {
   return app().request(
     '/api/insights/generate',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(corpo),
+      body: bruto ? String(corpo) : JSON.stringify(corpo),
     },
     ambiente,
   )
 }
 
+async function gastarTeto() {
+  await env.DB.prepare(
+    `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, custo_micro, criado_em)
+     VALUES ('gasto', 'insight', ?, 'claude-sonnet-5-5', 'concluido', 0, ?, '2026-10-01T00:00:00Z')`,
+  )
+    .bind(mesFortaleza(), TETOS_FINANCAS.insight)
+    .run()
+}
+
 describe('POST /api/insights/generate', () => {
-  it('promeia responde dentro da janela: 200 com o texto gerado', async () => {
-    const vistas = mockarPromeia(() =>
-      respostaJson(200, {
-        ok: true,
-        data: {
-          competence: '2026-07',
-          texto: 'Você gastou mais em Mercado neste mês.',
-          modelo: 'qwen2.5:7b-instruct',
-        },
-      }),
-    )
+  it('200 síncrono com o insight já gravado', async () => {
+    responder = () => respostaClaude('  Setembro foi tranquilo.  ')
 
-    const res = await gerar({ competence: '2026-07' })
+    const res = await gerar({ competence: '2026-09' })
+
     expect(res.status).toBe(200)
     const body = (await res.json()) as Envelope
     expect(body.ok).toBe(true)
-    expect(body.data).toEqual({
-      competence: '2026-07',
-      texto: 'Você gastou mais em Mercado neste mês.',
-      modelo: 'qwen2.5:7b-instruct',
-    })
-
-    // A cadeia inteira em uma asserção: o Worker (não o navegador) é quem
-    // carrega o PROMEIA_TOKEN, e ele vai no header, nunca na URL.
-    expect(vistas).toHaveLength(1)
-    expect(vistas[0].url).toBe(`${PROMEIA_URL}/insight`)
-    expect(vistas[0].init.method).toBe('POST')
-    expect(
-      (vistas[0].init.headers as Record<string, string>).authorization,
-    ).toBe(`Bearer ${PROMEIA_TOKEN}`)
-    expect(JSON.parse(vistas[0].init.body as string)).toEqual({
-      competence: '2026-07',
-    })
-  })
-
-  it('sem competence no corpo, manda null — o promeia usa o mês corrente', async () => {
-    const vistas = mockarPromeia(() =>
-      respostaJson(200, {
-        ok: true,
-        data: { competence: '2026-08', texto: 'leitura', modelo: 'm' },
-      }),
-    )
-    const res = await gerar({})
-    expect(res.status).toBe(200)
-    expect(JSON.parse(vistas[0].init.body as string)).toEqual({
-      competence: null,
-    })
-  })
-
-  // ⚠️ O CAMINHO FELIZ MAIS COMUM, não uma exceção: a geração leva
-  // 20,3-32,8 s medidos e a janela é de 8 s. Nada se perde — `run_insight`
-  // (promeia) faz `POST /api/insights` por conta própria, e o handler dele é
-  // um `def` SÍNCRONO (threadpool, sem checagem de desconexão), então
-  // abortar o fetch daqui não interrompe o trabalho de lá.
-  it('estourando a janela de 8 s: 202 {status:"gerando"}, nunca um erro', async () => {
-    vi.useFakeTimers()
-
-    let avisarQueChamou: () => void = () => {}
-    const fetchChamado = new Promise<void>((r) => {
-      avisarQueChamou = r
-    })
-
-    // Nunca resolve por conta própria: só reage ao abort da janela curta —
-    // é o promeia levando os 20-33 s normais dele.
-    globalThis.fetch = ((_url: string, init: RequestInit) => {
-      avisarQueChamou()
-      return new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () =>
-          reject(new DOMException('abortado', 'AbortError')),
-        )
-      })
-    }) as unknown as typeof fetch
-
-    const pendente = gerar({ competence: '2026-07' })
-    await fetchChamado
-    await vi.advanceTimersByTimeAsync(8_000)
-
-    const res = await pendente
-    expect(res.status).toBe(202)
-    const body = (await res.json()) as Envelope
-    expect(body.ok).toBe(true)
-    expect(body.data).toEqual({ status: 'gerando' })
     expect(body.notifications).toEqual([])
-  })
-
-  /**
-   * ⚠️ **A GUARDA DA CONSTANTE, e ela prende a PROPRIEDADE — não o número.**
-   * `expect(ESPERA_CURTA_MS).toBe(8000)` seria decorativo: quem encolhe a
-   * constante edita o teste junto, e a suíte continua verde enquanto o
-   * comportamento piora. MEDIDO que era esse o buraco: trocar `8_000` por
-   * `50` (160× menor) mantinha 46/46 testes passando.
-   *
-   * O vale existe porque as duas populações medidas não se tocam — toda
-   * falha real leva 0,3-0,4 s, toda geração real leva ≥ 20 s. O que o teste
-   * abaixo trava é a borda de BAIXO: uma resposta de ERRO que chega em
-   * 0,4 s tem que virar erro, nunca `202 {status:"gerando"}`. Com a janela
-   * pequena demais, a falha rápida seria abortada pela própria janela e sairia
-   * como "gerando": o dono esperaria 90 s de polling na tela por algo que já
-   * tinha falhado, e a mensagem acionável do promeia ("inicie com `ollama
-   * serve`") seria jogada fora.
-   *
-   * A borda de CIMA fica travada pelo teste do 202 logo acima (que avança
-   * exatamente 8 s de relógio falso): esticar a janela pra 40 s prenderia o
-   * navegador por uma rodada inteira de GPU, e aquele teste pendura.
-   */
-  const ATRASO_FALHA_MEDIDO_MS = 400
-
-  it('falha que chega em 0,4 s (o pior caso medido) vira ERRO, nunca 202 "gerando"', async () => {
-    vi.useFakeTimers()
-
-    let avisarQueChamou: () => void = () => {}
-    const fetchChamado = new Promise<void>((r) => {
-      avisarQueChamou = r
+    expect(body.data).toMatchObject({
+      texto: 'Setembro foi tranquilo.',
+      modelo: 'claude-sonnet-5-5',
+      periodo: '2026-09',
     })
+    expect(chamadas).toHaveLength(1)
+    expect(new URL(chamadas[0].url).host).toBe('api.anthropic.com')
 
-    // O promeia RESPONDE, e rápido: é o perfil medido de toda falha real
-    // (Mac off, token errado, competência inválida — 0,3-0,4 s). O abort é
-    // honrado pra que uma janela curta demais produza `PromeiaDemorou`
-    // (⇒ 202) em vez de pendurar o teste — é assim que a mutação aparece.
-    globalThis.fetch = ((_url: string, init: RequestInit) => {
-      avisarQueChamou()
-      return new Promise<Response>((resolve, reject) => {
-        const id = setTimeout(
-          () =>
-            resolve(
-              respostaJson(503, {
-                ok: false,
-                code: 'ollama_unreachable',
-                message:
-                  'não consegui conectar ao Ollama — inicie com `ollama serve`',
-              }),
-            ),
-          ATRASO_FALHA_MEDIDO_MS,
-        )
-        init.signal?.addEventListener('abort', () => {
-          clearTimeout(id)
-          reject(new DOMException('abortado', 'AbortError'))
-        })
-      })
-    }) as unknown as typeof fetch
+    const latest = (await (
+      await get('/api/insights/latest')
+    ).json()) as Envelope
+    expect(latest.data).toEqual(body.data)
+  })
 
-    const pendente = gerar({ competence: '2026-07' })
-    await fetchChamado
-    await vi.advanceTimersByTimeAsync(ATRASO_FALHA_MEDIDO_MS)
+  it('sem competence no corpo, usa o mês corrente de Teresina', async () => {
+    const res = await gerar({})
 
-    const res = await pendente
-    expect(res.status).not.toBe(202)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope
+    expect(body.data.periodo).toBe(todayInTeresina().slice(0, 7))
+  })
+
+  it('sem ANTHROPIC_API_KEY: 503 claude_desligado, sem chamar a API', async () => {
+    const res = await gerar({ competence: '2026-09' }, { DB: env.DB })
+
     expect(res.status).toBe(503)
     const body = (await res.json()) as Envelope
-    // A mensagem acionável chega ao dono na hora, em vez de virar "gerando".
-    expect(body.notifications[0].code).toBe('ollama_unreachable')
-    expect(body.notifications[0].message).toContain('ollama serve')
+    expect(body.notifications[0].code).toBe('claude_desligado')
+    expect(body.notifications[0].message).toContain('ANTHROPIC_API_KEY')
+    expect(chamadas).toHaveLength(0)
+    expect(await contar('insights')).toBe(0)
   })
 
-  it('Mac/túnel fora (fetch rejeita): 503 promeia_unreachable com mensagem acionável', async () => {
-    mockarPromeia(() => {
-      throw new TypeError('fetch failed')
-    })
-    const res = await gerar({})
-    expect(res.status).toBe(503)
+  it('teto do mês atingido: 429 teto_atingido com teto, gasto e mês', async () => {
+    await gastarTeto()
+
+    const res = await gerar({ competence: '2026-09' })
+
+    expect(res.status).toBe(429)
     const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('promeia_unreachable')
-    expect(body.notifications[0].message).toContain('Ligue o Mac')
+    expect(body.notifications[0].code).toBe('teto_atingido')
+    expect(body.notifications[0].message).toContain('US$ 2,00')
+    expect(body.notifications[0].message).toContain(mesFortaleza())
+    expect(chamadas).toHaveLength(0)
+    expect(await contar('insights')).toBe(0)
   })
 
-  // ⚠️ O MODO DE QUEDA MAIS COMUM, medido 3/3: `cloudflared` no ar (serviço
-  // docker) + promeia parado (comando de terminal que não sobrevive a
-  // reboot) ⇒ 502, text/plain, 16 bytes. É AUSÊNCIA de origem, e a ação é
-  // subir o serviço — tratar como corpo ilegível dizia ao dono o CONTRÁRIO
-  // ("o Mac respondeu, NÃO é caso de subir o serviço"), proibindo a única
-  // coisa que resolve. As asserções negativas são o que trava a inversão.
-  it('502 do túnel (promeia parado): 503 promeia_unreachable, mandando SUBIR o serviço', async () => {
-    mockarPromeia(
-      () =>
-        // Byte a byte o corpo medido, `\n` final incluso (16 b).
-        new Response('error code: 502\n', {
-          status: 502,
-          headers: { 'content-type': 'text/plain' },
-        }),
-    )
-    const res = await gerar({})
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('promeia_unreachable')
-    expect(body.notifications[0].code).not.toBe('promeia_ilegivel')
-    expect(body.notifications[0].message).toContain('Ligue o Mac')
-    expect(body.notifications[0].message).toMatch(/suba o serviço/i)
-  })
-
-  // A distinção continua existindo — só deixou de comer o 502: um erro que
-  // NÃO é 502 e não fala o shape do promeia segue sendo "alguém respondeu e
-  // eu não entendi", com a frase que PROÍBE subir o serviço.
-  it('500 com JSON fora do shape: 502 promeia_ilegivel, NUNCA "suba o promeia"', async () => {
-    mockarPromeia(() => respostaJson(500, { erro: 'algo genérico' }))
-    const res = await gerar({})
-    expect(res.status).toBe(502)
-    const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('promeia_ilegivel')
-    expect(body.notifications[0].code).not.toBe('promeia_unreachable')
-    expect(body.notifications[0].message).not.toContain('Ligue o Mac')
-  })
-
-  it('túnel caído (530): aí sim 503 promeia_unreachable — a faixa da Cloudflare é a única evidência de ausência', async () => {
-    mockarPromeia(() => new Response('<html>530</html>', { status: 530 }))
-    const res = await gerar({})
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('promeia_unreachable')
-  })
-
-  it('promeia recusa (503 ollama_unreachable): repassa code E message, sem achatar', async () => {
-    mockarPromeia(() =>
-      respostaJson(503, {
-        ok: false,
-        code: 'ollama_unreachable',
-        message:
-          'não consegui conectar ao Ollama — inicie com `ollama serve` e tente de novo',
-      }),
-    )
-    const res = await gerar({})
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('ollama_unreachable')
-    // É esta frase que distingue "abra o Ollama" de "suba o promeia" — o
-    // Worker nunca a reescreve.
-    expect(body.notifications[0].message).toContain('ollama serve')
-  })
-
-  it('200 sem `data.texto`: 502 promeia_ilegivel, nunca um 200 vazio', async () => {
-    mockarPromeia(() => respostaJson(200, { ok: true, data: { texto: '' } }))
-    const res = await gerar({})
-    expect(res.status).toBe(502)
-    expect(((await res.json()) as Envelope).notifications[0].code).toBe(
-      'promeia_ilegivel',
-    )
-  })
-
-  it('sem PROMEIA_URL/PROMEIA_TOKEN: 503 promeia_disabled e NENHUMA chamada de rede', async () => {
-    const vistas = mockarPromeia(() =>
-      respostaJson(200, { ok: true, data: {} }),
-    )
-    const res = await gerar({}, { DB: env.DB, INGEST_TOKEN })
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as Envelope
-    expect(body.notifications[0].code).toBe('promeia_disabled')
-    expect(body.notifications[0].message).toContain('PROMEIA_URL')
-    expect(vistas).toHaveLength(0)
-  })
-
-  it('corpo não-JSON: 400 invalid_json, sem gastar uma ida ao Mac', async () => {
-    const vistas = mockarPromeia(() =>
-      respostaJson(200, { ok: true, data: {} }),
-    )
-    const res = await app().request(
-      '/api/insights/generate',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{ nao e json',
-      },
-      testEnv,
-    )
-    expect(res.status).toBe(400)
-    expect(((await res.json()) as Envelope).notifications[0].code).toBe(
-      'invalid_json',
-    )
-    expect(vistas).toHaveLength(0)
-  })
-
-  it('competence malformada: 422 invalid_competence, sem gastar uma ida ao Mac', async () => {
-    const vistas = mockarPromeia(() =>
-      respostaJson(200, { ok: true, data: {} }),
-    )
+  it('competence malformada: 422 invalid_competence, sem reserva nem chamada', async () => {
     const res = await gerar({ competence: '2026-13' })
+
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0]).toMatchObject({
+      code: 'invalid_competence',
+      field: 'competence',
+    })
+    expect(chamadas).toHaveLength(0)
+    expect(await contar('uso_ia')).toBe(0)
+  })
+
+  it('competence que não é string: 422 invalid_competence', async () => {
+    const res = await gerar({ competence: 202609 })
+
     expect(res.status).toBe(422)
     const body = (await res.json()) as Envelope
     expect(body.notifications[0].code).toBe('invalid_competence')
-    expect(body.notifications[0].field).toBe('competence')
-    expect(vistas).toHaveLength(0)
+    expect(chamadas).toHaveLength(0)
   })
 
-  it('o PROMEIA_TOKEN não aparece em nenhuma resposta de erro', async () => {
-    const cenarios: Array<() => Response> = [
-      () => new Response('error code: 502', { status: 502 }),
-      () => new Response('<html>530</html>', { status: 530 }),
-      () => respostaJson(503, { ok: false, code: 'x', message: 'falhou' }),
-    ]
-    for (const responder of cenarios) {
-      mockarPromeia(responder)
-      const res = await gerar({})
-      expect(await res.text()).not.toContain(PROMEIA_TOKEN)
-    }
+  it('corpo não-JSON: 400 invalid_json, sem chamar a API', async () => {
+    const res = await gerar('{nao e json', testEnv, true)
+
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('invalid_json')
+    expect(chamadas).toHaveLength(0)
   })
 
-  // ⚠️ A guarda de sessão desta rota é a GLOBAL de src/index.ts (ela não
-  // está em nenhuma das exceções de lá) — então provar isso exige o APP
-  // MONTADO DE VERDADE, não o router isolado que os testes acima usam. Sem
-  // esta prova, a rota poderia ter entrado nas exceções por engano e
-  // qualquer requisição anônima dispararia uma rodada de GPU no Mac do dono.
+  it('a Claude recusa a chave (401): 502 claude_recusou, sem a chave no corpo', async () => {
+    responder = () =>
+      Response.json(
+        {
+          type: 'error',
+          error: {
+            type: 'authentication_error',
+            message: `invalid x-api-key: ${CHAVE}`,
+          },
+        },
+        { status: 401 },
+      )
+
+    const res = await gerar({ competence: '2026-09' })
+    const texto = await res.text()
+
+    expect(res.status).toBe(502)
+    expect(JSON.parse(texto).notifications[0].code).toBe('claude_recusou')
+    expect(texto).not.toContain(CHAVE)
+    expect(await contar('insights')).toBe(0)
+  })
+
+  it('a Claude fora do ar (529): 503 claude_indisponivel, nada gravado', async () => {
+    responder = () =>
+      Response.json(
+        { type: 'error', error: { type: 'overloaded_error', message: 'x' } },
+        { status: 529, headers: { 'retry-after-ms': '1' } },
+      )
+
+    const res = await gerar({ competence: '2026-09' })
+
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('claude_indisponivel')
+    expect(await contar('insights')).toBe(0)
+  })
+
+  // A guarda de sessão desta rota é a global de src/index.ts; provar isso
+  // exige o app montado de verdade, não o router isolado.
   describe('sem sessão', () => {
     const envDoApp = {
       DB: env.DB,
@@ -651,21 +354,16 @@ describe('POST /api/insights/generate', () => {
       GOOGLE_CLIENT_ID: 'client-id-de-teste',
       GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
       ALLOWED_EMAIL: 'dono@exemplo.com',
-      INGEST_TOKEN,
-      PROMEIA_URL,
-      PROMEIA_TOKEN,
+      ANTHROPIC_API_KEY: CHAVE,
     }
 
-    it('sem cookie: 401 not_authenticated e o promeia NUNCA é chamado', async () => {
-      const vistas = mockarPromeia(() =>
-        respostaJson(200, { ok: true, data: { texto: 'nao deveria' } }),
-      )
+    it('sem cookie: 401 not_authenticated e a Claude NUNCA é chamada', async () => {
       const res = await appMontado.request(
         '/api/insights/generate',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ competence: '2026-07' }),
+          body: JSON.stringify({ competence: '2026-09' }),
         },
         envDoApp,
       )
@@ -673,20 +371,18 @@ describe('POST /api/insights/generate', () => {
       expect(((await res.json()) as Envelope).notifications[0].code).toBe(
         'not_authenticated',
       )
-      expect(vistas).toHaveLength(0)
+      expect(chamadas).toHaveLength(0)
+      expect(await contar('uso_ia')).toBe(0)
     })
 
-    it('o INGEST_TOKEN (do comando do Mac) também não abre esta rota', async () => {
-      const vistas = mockarPromeia(() =>
-        respostaJson(200, { ok: true, data: { texto: 'nao deveria' } }),
-      )
+    it('um Bearer qualquer também não abre esta rota', async () => {
       const res = await appMontado.request(
         '/api/insights/generate',
         {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            authorization: `Bearer ${INGEST_TOKEN}`,
+            authorization: 'Bearer ingest-token-antigo',
           },
           body: JSON.stringify({}),
         },
@@ -696,7 +392,7 @@ describe('POST /api/insights/generate', () => {
       expect(((await res.json()) as Envelope).notifications[0].code).toBe(
         'not_authenticated',
       )
-      expect(vistas).toHaveLength(0)
+      expect(chamadas).toHaveLength(0)
     })
   })
 })
