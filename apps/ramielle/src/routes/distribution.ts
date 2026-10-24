@@ -38,7 +38,7 @@
  * (checar `pubs.length === 0` e devolver um 404 manual em vez do 503) seria
  * TECNICAMENTE possível — só seria uma escolha pior, não uma impossibilidade
  * (ver motivo 4); (3) é exatamente o padrão que TODA outra rota degradável
- * deste Worker já usa (`routes/atelier.ts#promeiaConfigurado`,
+ * deste Worker já usa (`routes/atelier.ts` `claude_desligado`,
  * `routes/votacao.ts` `sheets_disabled`) — sempre montada, 503 decidido
  * dentro do handler a cada request; (4) replicar o 404 cru do chi seria
  * ATIVAMENTE PIOR pro cliente, não neutro: um 404 fora do envelope
@@ -49,6 +49,7 @@
  * qualquer OUTRA rota. Reportado ao coordenador, não uma correção
  * silenciosa — revisado e confirmado no fix round 1 desta task.
  */
+import { codigoDoErro } from '@piluvitu/ia/erros'
 import { Hono } from 'hono'
 import {
   buildDistributionProposals,
@@ -58,9 +59,9 @@ import {
   type Publisher,
   type Selected,
 } from '../domain/distribution-service'
+import { chatComOrcamento } from '../domain/revisao/chat-claude'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
-import { promeiaConfigurado } from '../lib/promeia'
 import {
   BLUESKY_KIND,
   BLUESKY_PLATFORM,
@@ -277,7 +278,8 @@ type ProposalsWireBody = {
 /**
  * `POST /admin/distribution/proposals` — porte de `Handlers.Proposals`
  * (`handlers.go:52-79`). `200 {data:{targets:[...]}}` | `400 invalid_json`
- * | `502 proposals_failed` | `503 distribution_unavailable`.
+ * | `502 proposals_failed` | `503 distribution_unavailable` | os erros da IA
+ * (`claude_*`, `429 teto_atingido`) com o envelope do `@piluvitu/ia`.
  */
 distributionRoutes.post(
   '/distribution/proposals',
@@ -316,13 +318,17 @@ distributionRoutes.post(
       const targets = await buildDistributionProposals(
         c.env.DB,
         pubs,
-        promeiaConfigurado(c.env),
+        c.env.ANTHROPIC_API_KEY ? chatComOrcamento(c.env, 'hooks') : null,
         slug,
         art,
         bodyMd,
       )
       return okJson({ targets })
     } catch (err) {
+      const erroIa = codigoDoErro(err)
+      if (erroIa !== null) {
+        return errJson(erroIa.status, erroIa.code, erroIa.message)
+      }
       console.error('POST /admin/distribution/proposals falhou', err)
       return errJson(502, 'proposals_failed', 'Falha ao gerar propostas.')
     }

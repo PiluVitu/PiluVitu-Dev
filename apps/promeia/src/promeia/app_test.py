@@ -11,7 +11,6 @@ TOKEN = "token-de-teste"
 def make_settings(**over) -> Settings:
     base = dict(
         promeia_token=TOKEN,
-        ollama_url="http://localhost:11434",
     )
     base.update(over)
     return Settings(**base)
@@ -160,7 +159,7 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     rotas = _rotas_registradas(client.app)
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
     # Controle positivo: as rotas de router entram na enumeração.
-    assert ("/llm/proofread", ["POST"]) in rotas
+    assert ("/transcrever", ["POST"]) in rotas
 
     for path, methods in rotas:
         for method in methods:
@@ -182,3 +181,13 @@ def test_o_mapa_de_rotas_nao_e_publicado(client):
     """
     caminhos = [path for path, _ in _rotas_registradas(client.app)]
     assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
+
+
+@pytest.mark.parametrize("caminho", ["/llm/proofread", "/llm/refine", "/llm/hooks"])
+def test_a_revisao_de_texto_saiu_do_promeia(client, caminho):
+    # A revisão foi para a Claude no ramielle; aqui sobra só a transcrição
+    # (e o insight, enquanto ele não sai).
+    r = client.post(
+        caminho, json={"text": "t"}, headers={"authorization": f"Bearer {TOKEN}"}
+    )
+    assert r.status_code == 404

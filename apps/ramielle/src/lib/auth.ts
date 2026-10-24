@@ -64,18 +64,16 @@ export type AuthBindings = {
   GSHEETS_MOVIES_RANGE?: string
   ANTHROPIC_API_KEY?: string
   /**
-   * Fatia do Atelier — o serviço promeia (Python, no MacBook do dono, atrás
-   * do túnel), que faz a inferência de `proofread`/`refine`.
+   * O serviço promeia (Python, no MacBook do dono, atrás do túnel), que hoje
+   * só faz a transcrição de áudio (`routes/transcricao.ts`).
    *
    * ⚠️ `PROMEIA_TOKEN` é **secret**, nunca `vars` do `wrangler.jsonc` (texto
    * claro, commitado). É ele que impede que qualquer um que descubra o
-   * hostname do túnel rode inferência na GPU do dono (§3 do spec) — e o
-   * navegador NUNCA o vê, porque o fluxo é navegador → ramielle → promeia.
+   * hostname do túnel use a GPU do dono (§3 do spec) — e o navegador NUNCA o
+   * vê, porque o fluxo é navegador → ramielle → promeia.
    *
-   * Opcionais pelo mesmo motivo das bindings acima: ausentes é o estado
-   * normal até o `wrangler secret put`. Sem as duas, as rotas do Atelier
-   * respondem `503 promeia_disabled` — feature desligada, não quebrada
-   * (mesmo padrão do `sheets_disabled`).
+   * Opcionais: sem as duas, a transcrição responde `503 promeia_disabled` —
+   * feature desligada, não quebrada (mesmo padrão do `sheets_disabled`).
    */
   PROMEIA_URL?: string
   PROMEIA_TOKEN?: string

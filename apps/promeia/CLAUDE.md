@@ -2,109 +2,32 @@
 
 Serviço Python (FastAPI) que roda no MacBook do dono, atrás de um túnel — o
 processamento que precisa de GPU, modelo local ou acesso a arquivo em disco.
-Hoje: a transcrição de áudio e a revisão de artigo (`proofread`/`refine`/
-`hooks`), esta última só até o PR3 da IA fase 1, quando vai para a Claude no
-`apps/ramielle`. Depois: PDF.
+Hoje faz uma coisa só: a transcrição de áudio (`POST /transcrever`, Whisper
+local via `mlx-whisper`), chamada pelo ramielle (`/admin/transcrever`). Além
+dela só existe `GET /health`. Depois: PDF (§9.3 do spec da fatia).
 
-O insight financeiro **saiu daqui em 2026-10** (PR2 da IA fase 1): é escrito
-pela Claude dentro do Worker do finanças, pelo botão da tela e por um Cron no
-dia 1 (ver "Insight de IA" em `apps/financas/CLAUDE.md`). Saíram junto
-`insight.py`, `ramielle.py`, `cli.py` (e o console script `promeia-insight`),
-`money.py`, `dates.py` (só o insight os usava, conferido por grep), a rota
-`POST /insight`, o alvo `make insight` e as settings `ingest_token`,
-`ramielle_url` e `ollama_model` (`INGEST_TOKEN`, `RAMIELLE_URL` e
-`OLLAMA_MODEL` no ambiente são ignorados). `ollama.generate` ficou sem
-chamador (a revisão usa `ollama.chat`) e sai com o resto do `ollama.py` no
-PR3.
+## O que saiu daqui (IA fase 1, 2026-10)
 
-## Revisão de artigo — `POST /llm/proofread`, `POST /llm/refine` e `POST /llm/hooks`
-
-Porte da **inferência** de `apps/api/internal/llm/` (§7.2 do spec: _"os prompts
-e a inferência vão para promeia; o estado e a publicação ficam em ramielle"_).
-`gerar_hooks`/`POST /llm/hooks` (porte de `GenerateHooks`, `client.go:152`)
-gera uma chamada social por plataforma — **sem consumidor no ramielle ainda**
-(M6 de uma revisão desta fatia: preparação deliberada, não código morto por
-descuido).
-
-⚠️ **Quem chama é o ramielle, não o navegador** (§3). Por isso a forma de erro
-destas rotas é a do promeia (`{ok, code, message}`, a mesma de `/transcrever`) e
-**não** o envelope `{ok, data, notifications}` que o `apps/web` consome —
-traduzir é trabalho do ramielle, na fatia seguinte. Fazer aqui inverteria a
-camada e obrigaria o promeia a conhecer o formato do frontend.
-
-⚠️ **As mensagens daqui são melhores que as do Go, de propósito, e quem
-traduzir não pode achatá-las.** O Go dizia `"Falha ao corrigir o texto."` pra
-qualquer falha. Aqui a distinção estrutural do serviço (ver _Erros são o
-produto_) sobrevive: `ollama_unreachable` (503, "abra o Ollama") ≠
-`ollama_model_missing` (503, com o `ollama pull` exato) ≠ `ollama_failed`
-(502, o Ollama respondeu e falhou). Só `invalid_json` mantém a mensagem
-literal do Go (`"Corpo inválido: 'text' é obrigatório."`), porque é a única
-que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
-
-- **`proofread`** manda ao modelo **só os blocos de prosa** — código, tabela,
-  HTML/JSX, citação e imagem passam verbatim (`markdown_blocos.py`). Não é
-  otimização: é o que impede o LLM de "corrigir" um trecho de código.
-  ⚠️ A **invariante** do splitter (concatenar os blocos reproduz a entrada
-  byte a byte) é o que permite remontar o artigo sem corromper o texto do
-  dono — quebrá-la produz markdown que ainda _parece_ certo. Provado por
-  mutação: trocar o split por `splitlines()` (que descarta os separadores)
-  derruba 16 testes.
-- **`careful`** é porte, não feature: o nível de revisão já existia no Go
-  (`Proofread(ctx, text, careful bool)`). `false` ⇒ modelo menor, `true` ⇒
-  maior. Configurável por `MODEL_PROOFREAD` / `MODEL_PROOFREAD_CAREFUL` /
-  `MODEL_HOOKS`.
-  ⚠️ **A PARIDADE DE MODELO COM A GO ACABOU — e a "divergência do
-  `MODEL_HOOKS`" deixou de existir junto.** A versão anterior desta seção
-  dizia que `MODEL_PROOFREAD`/`MODEL_PROOFREAD_CAREFUL` tinham default IGUAL
-  ao da Go em produção e que `MODEL_HOOKS` era a única divergência (porque o
-  Go usava `qwen2.5:14b-instruct`, nunca instalado aqui). **As duas frases
-  morreram nesta task**, e a razão não é preguiça: a **Go foi aposentada**
-  (`docs/superpowers/ROADMAP.md` §2), então não há mais um comportamento de
-  produção do outro lado pra empatar — "igual ao Go" virou âncora num serviço
-  morto, e o `14b` deixou de ser uma dívida a pagar porque não há mais de quem
-  divergir. Os **três slots agora são escolha própria, MEDIDA** (ver a tabela
-  em _Modelos de 2026_ abaixo): `qwen2.5:7b-instruct` no rápido, `gemma4:12b`
-  no careful e no hooks. ⚠️ **Não confundir com os defaults de sempre:** o
-  rápido era `qwen2.5:3b-instruct` e virou o `7b`; o `7b` era o careful e saiu
-  de lá. O `qwen3.5` que o `6808f60` pôs nos três **foi revertido** — ele
-  rebaixa o nível dos títulos, ver o erro de método em _Modelos de 2026_.
-  Comentário completo em `config.py#Settings`.
-- ⚠️ **`refine`/`gerar_hooks` TRIMAM a saída do modelo antes de medir o
-  limite** (`I3` de uma revisão desta fatia) — paridade com o Go, cujo
-  `chat()` (`client.go:96`) sempre devolve `strings.TrimSpace(...)` pra todo
-  chamador. O `chat` injetado aqui (`ollama.py`) devolve texto CRU de
-  propósito ("o trim é de quem chama"); sem o `.strip()` em `refine`/
-  `gerar_hooks`, espaço em branco nas bordas contava pro limite de
-  caracteres — `proofread` já fazia isso certo (`.strip()` antes de
-  `restaurar_bordas`), os outros dois não.
-- **Três temperaturas diferentes**, medidas no Go: `0.1` no proofread
-  (correção conservadora), `0.7` no refine (reescrita precisa variar), `0.3`
-  no encurtamento. Uniformizar muda o comportamento das três.
-- ⚠️ **Fail-soft no encurtador**, replicando o Go: se o LLM falhar ao encurtar
-  uma chamada que estourou o limite, o texto é **truncado** e devolvido, não
-  vira erro. Um refine que morre inteiro porque a melhoria opcional falhou
-  seria pior que uma chamada um pouco longa.
-- **Os prompts** (`prompts.py`) são **contrato byte a byte** com o Go —
-  igualdade verificada programaticamente contra `prompts.go` (672/289/168
-  caracteres). Por isso o arquivo tem `E501` no per-file-ignore: quebrar linha pra caber em 88 colunas insere uma quebra
-  **real** no texto mandado ao modelo.
-- ⚠️ **Uma divergência consciente do Go, registrada:** `truncateRunes`
-  (`client.go:205`) compara um índice de **byte** com `limit/2`, que é
-  contagem de **runas** — em português acentuado o índice de byte é inflado.
-  `truncar` (`revisao.py`) usa índice de **caractere**, que é o que a condição
-  quer dizer. ⚠️ **M1 (revisão): a frase antiga aqui tinha a conclusão
-  INVERTIDA.** Medido de verdade (`truncateRunes` do Go rodado contra este
-  `truncar` em 3.042 casos): 11 divergências, e em 100% delas é o **Go** que
-  recua até a palavra inteira (resultado mais curto, texto nunca quebrado) e
-  este **porte** que mantém o corte no meio da palavra — o oposto do que a
-  versão anterior desta linha afirmava. A conclusão prática segue de pé:
-  **0 divergências em 3.000 amostras de português realista** — o efeito só
-  aparece em casos adversariais (muito caractere multi-byte concentrado perto
-  da metade do limite), não em texto normal.
+- **Insight financeiro** (PR2): escrito pela Claude no Worker do finanças,
+  pelo botão da tela e por um Cron no dia 1 (ver "Insight de IA" em
+  `apps/financas/CLAUDE.md`). Saíram `insight.py`, `ramielle.py`, `cli.py` (e
+  o console script `promeia-insight`), `money.py`, `dates.py`, a rota
+  `POST /insight`, o alvo `make insight` e as settings `ingest_token`,
+  `ramielle_url` e `ollama_model`.
+- **Revisão de artigo** (PR3): `proofread`, `refine` e `hooks` foram para a
+  Claude no ramielle (`apps/ramielle/src/domain/revisao/`, ver o `CLAUDE.md`
+  de lá). Saíram `revisao.py`, `revisao_rotas.py`, `prompts.py`,
+  `markdown_blocos.py`, os testes deles, o router em `app.py` e as settings
+  `model_proofread`, `model_proofread_careful` e `model_hooks`. `app_test.py`
+  confere que `/llm/*` responde 404.
+- **Ollama**: sem consumidor, saíram `ollama.py`, `ollama_test.py` e a setting
+  `ollama_url`. `INGEST_TOKEN`, `RAMIELLE_URL`, `OLLAMA_URL`, `OLLAMA_MODEL` e
+  `MODEL_*` no ambiente são ignorados (`config_test.py`). As medições de
+  modelo (thinking, escolha por slot) ficam no histórico do git.
 
 ## Transcrição de áudio — `POST /transcrever`
 
-Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. Chamada pelo ramielle (`POST /admin/transcrever`, ver `apps/ramielle/CLAUDE.md`), nunca pelo navegador — mesma regra de `revisao_rotas.py`. A tela é `/admin/transcricao` no `apps/web`.
+Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. Chamada pelo ramielle (`POST /admin/transcrever`, ver `apps/ramielle/CLAUDE.md`), nunca pelo navegador. A tela é `/admin/transcricao` no `apps/web`.
 
 ⚠️ **`mlx-whisper` NÃO está em `pyproject.toml`, de propósito.** Ele depende do `mlx`, que só existe em macOS/arm64; declará-lo quebraria o `uv sync --locked` do CI, que roda em Ubuntu — o serviço inteiro deixaria de instalar num runner Linux por causa de UMA rota. Por isso `transcricao.py` chama o **binário** por subprocess: a dependência vira requisito de _ambiente_ (a máquina do dono, a única onde a rota faz sentido) e não de pacote. Instalar: `uv tool install mlx-whisper`. `WHISPER_BIN` sobrescreve o caminho.
 
@@ -114,131 +37,20 @@ Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. C
 
 ⚠️ **O teto real NÃO é tamanho de arquivo, é TEMPO.** A Cloudflare corta a requisição do navegador em ~100 s (524) e o ramielle desiste em 120 s (`TIMEOUT_MS`). MEDIDO num M4: `large-v3` roda a **4,4x** tempo real e o `turbo` a **13,1x** — ou seja ~7 min e ~20 min de áudio dentro do orçamento, respectivamente. Daí o campo `modo` (`preciso` default, `rapido`). `MAX_AUDIOS`/`MAX_BYTES_TOTAL` são um proxy grosseiro disso: medir duração exigiria ffprobe, uma segunda dependência de ambiente, e o proxy já barra o caso absurdo.
 
-| erro                   | status | quando                                    |
-| ---------------------- | ------ | ----------------------------------------- |
-| `invalid_body`         | 400    | nenhum áudio enviado                      |
-| `too_many_files`       | 400    | acima de `MAX_AUDIOS`                     |
-| `audio_too_large`      | 413    | soma acima de `MAX_BYTES_TOTAL`           |
-| `whisper_indisponivel` | 503    | binário ausente — instale no Mac          |
-| `transcricao_vazia`    | 503    | rodou, saiu vazio (espelha `OllamaVazio`) |
-| `transcricao_falhou`   | 503    | rodou e falhou                            |
+| erro                   | status | quando                           |
+| ---------------------- | ------ | -------------------------------- |
+| `invalid_body`         | 400    | nenhum áudio enviado             |
+| `too_many_files`       | 400    | acima de `MAX_AUDIOS`            |
+| `audio_too_large`      | 413    | soma acima de `MAX_BYTES_TOTAL`  |
+| `whisper_indisponivel` | 503    | binário ausente — instale no Mac |
+| `transcricao_vazia`    | 503    | rodou, saiu vazio                |
+| `transcricao_falhou`   | 503    | rodou e falhou                   |
 
 ⚠️ **Nenhum erro desta rota sai como 502** — o túnel troca o corpo de um 502 por `error code: 502`, o ramielle não acha `code` e o admin lia "Suba o promeia no Mac" com o Mac de pé (aconteceu em produção, 2026-09-30; ver _O túnel COME o corpo do 502_). A distinção entre "falta instalar" e "rodou e falhou" mora no `code`, não no status. Travado em `transcricao_rotas_test.py` (`TestFalhas`).
 
 ⚠️ **`--output-name` fixo (`NOME_SAIDA`) é obrigatório.** O `mlx_whisper` grava a saída com `Path(nome).with_suffix(".txt")`, que troca só o **último** trecho depois do ponto: `WhatsApp_Ptt_2026-09-30_at_22.15.03` vira `…_22.15.txt`. Procurar `{stem}.txt` falhava em **todo** áudio do WhatsApp (a hora vem com pontos no nome). E o `mlx_whisper` **sai 0 mesmo quando pula o áudio por erro** — por isso a falha volta com a última linha de `Error` que ele imprimiu (`_linha_de_erro`), sem o banner do ffmpeg.
 
 ⚠️ **O nome do arquivo vem do cliente e é sanitizado** (`_nome_seguro`): só o basename, só `[A-Za-z0-9._-]`. Sem isso um `../../etc/x.ogg` escaparia do diretório temporário.
-
-## Modelos de 2026: `"think": false` é obrigatório, não otimização
-
-⚠️ **A geração 2026 é thinking-by-default, e no `/api/chat` isso não deixa a
-revisão lenta — deixa ela VAZIA.** MEDIDO contra o Ollama local, sem o campo
-`think` no payload:
-
-| Modelo       | Tokens gastos | `message.thinking` | `message.content` |
-| ------------ | ------------- | ------------------ | ----------------- |
-| `qwen3.5:4b` | 3.614         | —                  | **VAZIO**         |
-| `gemma4:12b` | 3.621         | 12.435 chars       | **VAZIO**         |
-
-Não é peculiaridade de uma família: os dois anunciam `"thinking"` em
-`capabilities` (`GET /api/tags`) e o ligam sozinhos. Por isso `ollama.chat`
-manda `"think": false` — sem ele, `MODEL_PROOFREAD_CAREFUL` e `MODEL_HOOKS`
-(hoje `gemma4:12b` nos dois) gastariam GPU pra devolver nada. O
-`MODEL_PROOFREAD` (`qwen2.5:7b-instruct`) não tem thinking e **ignora** o
-campo — os dois tipos convivem sem fallback, como diz o parágrafo seguinte.
-
-⚠️ **Modelo SEM thinking IGNORA o campo, não recusa — MEDIDO, e é por isso que
-não existe fallback aqui** (seria YAGNI, e custaria uma segunda rodada de
-inferência pra descobrir um erro que não acontece): `qwen2.5:7b-instruct`
-(`capabilities: ["completion","tools"]`) recebeu `"think": false` em
-`/api/chat` **e** em `/api/generate` e respondeu **HTTP 200** normalmente.
-
-⚠️ **Os dois endpoints do Ollama tratam thinking DIFERENTE** — descoberto ao
-checar se o insight tinha o mesmo defeito latente. `/api/chat` engole a
-resposta; `/api/generate` separa o raciocínio em `thinking` e **ainda preenche
-`response`**. Mesma prompt de uma frase, `qwen3.5:4b`:
-
-| Endpoint        | `think` | Resposta   | Tokens      | Tempo             |
-| --------------- | ------- | ---------- | ----------- | ----------------- |
-| `/api/chat`     | ausente | **VAZIA**  | 3.614       | —                 |
-| `/api/generate` | ausente | preenchida | 248 a 3.481 | **22 s a >120 s** |
-| `/api/generate` | `false` | preenchida | **2 a 21**  | **1 s a 5,4 s**   |
-
-⚠️ **As faixas do `/api/generate` são largas de propósito: o custo do thinking
-NÃO é reprodutível.** A 1ª medição desta task deu 3.481 tokens / >120 s; a
-verificação independente, com o mesmo modelo e o mesmo `temperature: 0`, deu
-**248 tokens / 22,3 s** — ~14× menos, mesma direção. Um número único aqui seria
-mais preciso do que o fenômeno permite, e a próxima pessoa que tentasse
-reproduzi-lo concluiria que a tabela mente. O que se sustenta é a ORDEM DE
-GRANDEZA: uma a duas ordens a mais de tokens e de tempo, num prompt de UMA
-frase.
-
-Ou seja: o insight (que usava `generate` e saiu em 2026-10) **não** tinha o bug de resposta vazia —
-tem uma a duas ordens de grandeza a mais de tokens e de parede contra o
-`read=180.0` de `ollama.TIMEOUT`, num prompt de UMA frase (o prompt real é bem
-maior). `generate` também manda `"think": false` desde esta task: uma linha,
-medida como inofensiva no modelo que o insight de fato usa, e coerente com o
-`temperature: 0` que aquele caminho fixa justamente por exigir determinismo.
-
-### ⚠️ O erro de método que escolheu os modelos errados (commit `6808f60`)
-
-**O `6808f60` mediu a coisa errada, e o registro disso é a parte útil desta
-seção.** Ele elegeu `qwen3.5:4b` (rápido) e `qwen3.5:9b` (careful/hooks) com
-base num corpus com gabarito — 9 erros plantados, 18 armadilhas — que mandava
-**o artigo INTEIRO numa chamada só**. Nesse formato o `qwen3.5:9b` tirou 9/9 e
-pareceu o melhor candidato.
-
-⚠️ **Só que o `proofread` de produção não manda o texto inteiro.** Ele divide
-(`dividir_blocos`) e manda **um bloco de prosa por chamada** — então um título
-chega ao modelo **SOZINHO**, como `'## Subtitulo\n'`, sem nenhum parágrafo
-antes ou depois que indique que `##` é estrutura e não texto. É exatamente
-nesse caso que a família qwen3.5 "normaliza" o nível do título, e é exatamente
-esse caso que um corpus de texto inteiro **nunca produz**. Um corpus que manda
-o texto inteiro numa chamada NÃO mede o que a produção faz — foi por isso que
-deu 9/9 pro `qwen3.5:9b`, que na verdade destrói o nível de mais da metade dos
-títulos.
-
-**Preservação do NÍVEL do título** — 9 repetições por modelo, blocos
-`## Subtitulo` / `### Secao` / `#### Detalhe` mandados isolados, temperatura
-0.1, pelo caminho real do `chat()`:
-
-| Modelo                              | Preservou o nível | Amostra do erro                  | s/bloco |
-| ----------------------------------- | ----------------- | -------------------------------- | ------- |
-| `gemma4:12b` ← careful, hooks       | **9/9**           | —                                | 11,8    |
-| `qwen2.5:7b-instruct` ← rápido      | **9/9**           | —                                | **3,7** |
-| `qwen2.5:3b-instruct` (rápido ANT.) | 6/9               | `'##\nSubtitulo'` (quebra!)      | 2,1     |
-| `qwen3.5:9b` (6808f60)              | 4/9               | `'# Subtítulo'`, `'### Detalhe'` | —       |
-| `qwen3.5:4b` (6808f60)              | 1/9               | `'# Subtítulo'`                  | 1,4     |
-
-⚠️ **`'##\nSubtitulo'` NÃO é um título** — com a quebra de linha no meio, o
-markdown renderiza `##` como texto literal. O `qwen2.5:3b-instruct`, que era o
-rápido desde sempre, já tinha esse defeito.
-
-⚠️ **O `qwen3.5:9b` ainda vazou ESPANHOL** uma vez: `'#### Detalhe'` virou
-`'#### Detalle'`.
-
-**A correção ainda MELHORA os dois slots** em relação ao estado anterior ao
-`6808f60` — não é um recuo: o rápido sobe de **6/9 pra 9/9** em título e de
-**5/9 pra 8/9** no corpus de erros; o careful sobe de **8/9 pra 9/9** no
-corpus, mantendo 9/9 em título. O careful paga no relógio (`gemma4:12b` no
-artigo REAL do blog, 5.778 chars, 27 blocos, caminho real do `proofread`:
-**381 s** contra 232 s do 9b, pior bloco **35,9 s**) — e é o slot cuja razão
-de existir é justamente trocar tempo por precisão; 35,9 s deixa **80% de
-folga** contra o `read=180.0` de `ollama.TIMEOUT`.
-
-⚠️ **PRA QUEM FOR REMEDIR NO FUTURO: meça pelo CAMINHO REAL** — `dividir_blocos`
-e um `chat` por bloco, com títulos entre os blocos —, **nunca o texto inteiro
-numa chamada**. Foi essa diferença, e só ela, que separou a escolha errada da
-certa. A premissa está pinada por
-`test_proofread_manda_o_TITULO_SOZINHO_sem_contexto_ao_redor`
-(`revisao_test.py`): se alguém agrupar blocos, o teste cai e avisa que a tabela
-acima precisa ser refeita antes de mudar qualquer default.
-
-⚠️ **O que o `6808f60` acertou continua valendo:** o `"think": false` e a
-guarda `OllamaVazio` (as duas seções acima e abaixo) não dependem da escolha de
-modelo, e o `gemma4:12b` que entrou agora **É** thinking model — sem o campo
-ele devolve `content` vazio (3.621 tokens, 12.435 chars em `thinking`). Só os
-DEFAULTS estavam errados.
 
 ## O que é promeia, e a regra de corte
 
@@ -323,20 +135,17 @@ nao_e_publicado` (`app_test.py`) prova que nenhum path `/openapi*` aparece na
   configuração deste workspace, não fato transversal.
 - **pytest com `python_files = ["*_test.py"]`** (`pyproject.toml`) — o default
   do pytest é `test_*.py`, que **briga com a lei de colocation** deste
-  monorepo (teste ao lado do fonte, nomeado a partir dele: `ollama.py` →
-  `ollama_test.py`, nunca `test_ollama.py` num diretório `tests/`). Este fato É
+  monorepo (teste ao lado do fonte, nomeado a partir dele: `transcricao.py` →
+  `transcricao_test.py`, nunca `test_transcricao.py` num diretório `tests/`). Este fato É
   específico do promeia (o default do pytest, não uma regra de dependência),
   por isso mora aqui e não na raiz.
 - **`ruff`** para lint (`select = ["E", "F", "I", "UP", "B", "SIM"]`) e format.
-  Per-file-ignores: **`prompts.py`** tem `E501` desligado porque monta
-  PROMPT, que é contrato byte a byte com o que o
-  dono já calibrou contra o modelo real. Quebrar linha ali pra caber em 88
-  colunas insere uma quebra **real** no texto mandado pro modelo: não é
-  formatação, é mudar a entrada de dados.
-- **Suíte hoje: 151 testes** depois da saída do insight (2026-10). Recontar
-  sempre via `uv run pytest` (linha final `N passed`), nunca confiar num
-  número solto neste arquivo: ele já andou mais de uma vez sem o arquivo
-  acompanhar.
+  A tabela `per-file-ignores` está vazia: o `E501` desligado era dos arquivos
+  de prompt, que saíram com o insight e a revisão.
+- **Suíte hoje: 47 testes** (transcrição, auth e config), depois da saída do
+  insight, da revisão e do Ollama. Recontar sempre via `uv run pytest` (linha
+  final `N passed`), nunca confiar num número solto neste arquivo: ele já
+  andou mais de uma vez sem o arquivo acompanhar.
 
 ## Comandos
 
@@ -361,25 +170,6 @@ o arquivo existir e nunca quebra quem exporta as vars na mão.
 alvos encadeiam `cd apps/promeia && uv run pytest` / `uv run ruff check . &&
 uv run ruff format --check .` depois de rodar `pnpm -r`/`go`.
 
-## Erros são o produto
-
-Nunca uma stack trace, nunca um erro cru de biblioteca — as mensagens abaixo
-foram **medidas contra o Ollama real**, não só stubadas em teste:
-
-- **Ollama desligado** (porta fechada/serviço parado): _"não consegui
-  conectar ao Ollama em `<url>` — ele parece estar desligado. Inicie com
-  `ollama serve` (ou abra o app Ollama) e tente de novo"_.
-- **Modelo não instalado**: _"modelo `'<nome>'` não está instalado no Ollama
-  local. Instale com: `ollama pull <nome>`"_ — cita o comando exato, nunca só
-  "modelo não encontrado".
-  ⚠️ **A distinção "não alcancei" vs. "alcancei e recusou" é deliberada e
-  estrutural**, não estilo de mensagem: `OllamaUnreachable` (problema de
-  transporte — suba o serviço, confira a URL) nunca se confunde com
-  `OllamaModelMissing`/`OllamaFailed` (o serviço respondeu, e recusou ou falhou
-  — o gargalo é outro). Cada categoria tem sua própria classe de exceção
-  (`src/promeia/ollama.py`) e sua própria mensagem; colapsar as duas manda o
-  dono conferir a rede quando o problema é outro, ou vice-versa.
-
 ## ⚠️ O túnel COME o corpo do 502 — e só o do 502
 
 MEDIDO contra o túnel real (`promeia.piluvitu.com.br`), 3/3 de cada lado, e
@@ -396,9 +186,8 @@ sobre a Cloudflare, não sobre este serviço):
 
 A Cloudflare substitui o corpo de um 502 da origem pelo próprio error page.
 **500 e 503 — as duas lacunas que a spike tinha deixado abertas — passam
-intactos**, incluindo o `ollama_unreachable` (503) verificado pelo caminho real
-(`POST /llm/proofread` com `OLLAMA_URL` numa porta fechada: 215 bytes idênticos
-local e pelo túnel, 3/3).
+intactos**, inclusive pelo caminho real de uma rota já removida (um 503 de 215
+bytes, idêntico local e pelo túnel, 3/3).
 
 **Consequência, e por que ela é grave:** o cliente do outro lado
 (`apps/ramielle/src/lib/promeia.ts#chamarPromeia`) trata "erro HTTP sem
@@ -413,20 +202,12 @@ por este motivo: a distinção que importa mora no campo `code`, que viaja
 **dentro** do corpo e só sobrevive se o corpo sobreviver. Uma rota nova aqui
 segue a mesma regra.
 
-⚠️ **`revisao_rotas.py` NÃO foi alinhado a isto, e é contrato, não
-esquecimento.** `/llm/*` é consumido hoje pelo `apps/ramielle`, cujo
-`src/routes/atelier.test.ts` tem um teste explícito — _"502 ollama_failed do
-promeia é repassado como 502, intocado"_ — fixando aquele status. Mudá-lo é
-decisão dos dois lados, com o teste de lá junto. Vale registrar que o mesmo defeito existe lá: um `ollama_failed`
-(502) pelo túnel chega ao admin como "Suba o promeia no Mac", com o Mac de pé.
-
 ## Serviço no login (LaunchAgent)
 
 `make promeia-servico` deixa o Mac servindo sozinho depois de reiniciar:
 
 - **promeia** — `launchd/com.piluvitu.promeia.plist` → `scripts/servir.sh` (carrega `.env`, `uvicorn` sem `--reload`, `127.0.0.1:8082`). `RunAtLoad` + `KeepAlive`: sobe no login e volta se morrer. Log em `~/Library/Logs/promeia.log`.
 - **túnel** — o alvo liga `orbctl config set app.start_at_login true`; o container `cloudflared` tem `restart: unless-stopped`, então volta junto com o OrbStack.
-- **Ollama** — já sobe sozinho (LaunchAgent do próprio app, `com.ollama.ollama`).
 
 ⚠️ **O plist fixa o `PATH`** (`~/.local/bin` incluso): o `launchd` roda com PATH mínimo e sem isso o subprocess do `mlx_whisper` não é achado — a transcrição responde `503 whisper_indisponivel` com o serviço "de pé".
 
@@ -442,18 +223,8 @@ O plist aponta pro script **dentro do repo**: renomear/mover `apps/promeia` exig
   recebe requisição nenhuma pela internet~~ — **VENCIDA em 2026-08-14**
   (`ROADMAP.md` §2): o promeia **assumiu** o hostname e serve tráfego real.
   Cadeia provada ponta a ponta: `piluvitu.com.br → ramielle.piluvitu.com.br →
-promeia.piluvitu.com.br → Ollama local`. Consequência que vale pra esta
-  seção: os defaults de modelo daqui não são mais teoria de laboratório — o
-  botão "Corrigir texto" bate neles em produção assim que o Mac está ligado.
-- ~~**Baixar o `qwen2.5:14b-instruct` pra bater com o Go**~~ — **OBSOLETA,
-  resolvida por não ser mais um problema.** Ela existia só porque
-  `MODEL_HOOKS` divergia do Go; a Go foi aposentada e o slot de hooks agora é
-  escolha própria (`gemma4:12b`, medido 9/9 em preservação de título). Não há
-  mais motivo pra baixar ~9 GB de um modelo de 2024 pra empatar com um serviço
-  que saiu do ar.
-- **`process-compose.yaml` (na raiz, não neste app) ainda puxa
-  `qwen2.5:14b-instruct`**, que continua não instalado — `make stack` baixaria
-  ~9 GB na primeira execução. Isto **sobrevive** à pendência acima: é um
-  arquivo da stack local da API Go, e limpá-lo faz parte de aposentar a Go, não
-  desta task. Instalados hoje: `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:12b`,
-  `qwen2.5:3b-instruct` e `qwen2.5:7b-instruct`.
+promeia.piluvitu.com.br`; hoje só a transcrição passa por ela.
+- **`process-compose.yaml` (na raiz, não neste app) é da stack legada da API
+  Go**, não uma dependência do promeia. Ainda puxa `qwen2.5:14b-instruct`, não
+  instalado (`make stack` baixaria ~9 GB na primeira execução); limpá-lo faz
+  parte de aposentar a Go.

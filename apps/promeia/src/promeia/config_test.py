@@ -19,17 +19,6 @@ def test_recusa_subir_com_token_vazio():
 def test_le_o_token_e_aplica_defaults():
     s = load_settings({"PROMEIA_TOKEN": "segredo"})
     assert s.promeia_token == "segredo"
-    assert s.ollama_url == "http://localhost:11434"
-
-
-def test_env_sobrescreve_os_defaults():
-    s = load_settings(
-        {
-            "PROMEIA_TOKEN": "segredo",
-            "OLLAMA_URL": "http://127.0.0.1:99999",
-        }
-    )
-    assert s.ollama_url == "http://127.0.0.1:99999"
 
 
 def test_o_insight_saiu_settings_nao_tem_mais_os_campos_dele():
@@ -50,65 +39,18 @@ def test_o_insight_saiu_settings_nao_tem_mais_os_campos_dele():
     assert "sobra-de-um-env-antigo" not in repr(s)
 
 
-def test_defaults_de_modelo_da_revisao_sao_os_MEDIDOS_de_2026():
-    # ⚠️ Estes três valores são ESCOLHA PRÓPRIA, medida BLOCO A BLOCO (o
-    # caminho real do `proofread`) — não mais "igual ao que o Go usava" (a Go
-    # foi aposentada, ver ROADMAP §2). Rápido: qwen2.5:7b-instruct (9/9 em
-    # preservação de nível de título, 8/9 no corpus de erros) contra o
-    # qwen2.5:3b-instruct antigo (6/9 e 5/9). Careful e hooks: gemma4:12b
-    # (9/9 nos dois), pagando 11,8 s/bloco — que é o preço que o slot
-    # "careful" existe pra pagar. Comentário completo em `config.py#Settings`.
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    assert s.model_proofread == "qwen2.5:7b-instruct"
-    assert s.model_proofread_careful == "gemma4:12b"
-    assert s.model_hooks == "gemma4:12b"
-
-
-def test_nenhum_slot_da_revisao_usa_a_familia_qwen3_5():
-    # ⚠️ Este é o teste que teria impedido o 6808f60, e o de cima NÃO seria.
-    # Fixar a string do default não protege nada: quem troca o default troca a
-    # string do teste junto, no mesmo commit, sem nunca encarar o motivo. O que
-    # protege é uma trava sobre a FAMÍLIA medida como ruim, com a evidência na
-    # mensagem de falha: pra reintroduzir um qwen3.5 é preciso APAGAR uma
-    # asserção que diz, em português, que ela destrói o nível do título — vira
-    # ato consciente, não troca mecânica de valor. E ela pega o caso que uma
-    # igualdade não pega: uma tag qwen3.5 QUALQUER (4b, 9b, ou a próxima que
-    # sair), inclusive num slot que hoje está certo.
-    #
-    # MEDIDO, 9 repetições, blocos `## Subtitulo`/`### Secao`/`#### Detalhe`
-    # mandados sozinhos (é assim que o `proofread` manda): qwen3.5:4b preservou
-    # o nível 1/9 vez, qwen3.5:9b 4/9 — devolvendo `'# Subtítulo'` no lugar de
-    # `'## Subtitulo'` — e o 9b ainda vazou espanhol (`'#### Detalle'`).
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    for slot, modelo in (
-        ("MODEL_PROOFREAD", s.model_proofread),
-        ("MODEL_PROOFREAD_CAREFUL", s.model_proofread_careful),
-        ("MODEL_HOOKS", s.model_hooks),
+def test_as_settings_do_ollama_sairam_com_a_revisao_e_o_insight():
+    # O insight foi para o financas e a revisão para o ramielle, os dois pela
+    # Claude: nenhuma env de modelo configura mais nada aqui.
+    s = load_settings({"PROMEIA_TOKEN": "x", "MODEL_PROOFREAD": "qualquer"})
+    for campo in (
+        "model_proofread",
+        "model_proofread_careful",
+        "model_hooks",
+        "ollama_model",
+        "ollama_url",
     ):
-        assert not modelo.startswith("qwen3.5"), (
-            f"{slot}={modelo}: a família qwen3.5 REBAIXA o nível dos títulos "
-            f"quando o bloco chega sozinho (4b: 1/9; 9b: 4/9), que é como o "
-            f"proofread manda. Ela já foi escolhida uma vez (6808f60) com base "
-            f"num corpus de texto INTEIRO, que não mede esse caso. Se for medir "
-            f"de novo, meça bloco a bloco."
-        )
-
-
-def test_env_sobrescreve_os_tres_modelos_da_revisao():
-    # Cada slot lê a SUA env: um `src.get` copiado e colado (os três lendo
-    # MODEL_PROOFREAD, por exemplo) passa despercebido se o teste usar o mesmo
-    # valor nos três.
-    s = load_settings(
-        {
-            "PROMEIA_TOKEN": "x",
-            "MODEL_PROOFREAD": "rapido-X",
-            "MODEL_PROOFREAD_CAREFUL": "cuidadoso-Y",
-            "MODEL_HOOKS": "hooks-Z",
-        }
-    )
-    assert s.model_proofread == "rapido-X"
-    assert s.model_proofread_careful == "cuidadoso-Y"
-    assert s.model_hooks == "hooks-Z"
+        assert not hasattr(s, campo)
 
 
 def test_repr_de_settings_nao_expoe_os_segredos():
@@ -117,6 +59,5 @@ def test_repr_de_settings_nao_expoe_os_segredos():
     # se alguém logar o objeto inteiro por engano no futuro.
     s = Settings(
         promeia_token="segredo-promeia",
-        ollama_url="http://localhost:11434",
     )
     assert "segredo-promeia" not in repr(s)

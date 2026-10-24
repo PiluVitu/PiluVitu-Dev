@@ -14,7 +14,6 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 def settings_de_teste() -> Settings:
     return Settings(
         promeia_token=TOKEN,
-        ollama_url="http://localhost:11434",
     )
 
 

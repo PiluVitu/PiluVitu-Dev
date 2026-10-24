@@ -23,14 +23,13 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
   const [open, setOpen] = useState(false)
   const [corrected, setCorrected] = useState('')
   const [showFull, setShowFull] = useState(false)
-  const [careful, setCareful] = useState(false)
   // Quais mudanças estão aceitas (por índice). Ausente ⇒ aceita por padrão.
   const [accepted, setAccepted] = useState<Record<number, boolean>>({})
   const proofread = useProofread()
 
   async function run() {
     try {
-      const res = await proofread.mutateAsync({ text: body, careful })
+      const res = await proofread.mutateAsync({ text: body })
       setCorrected(res.corrected)
       setAccepted({})
       setShowFull(false)
@@ -62,27 +61,15 @@ export function ProofreadButton({ body, onApply }: ProofreadButtonProps) {
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!body.trim() || proofread.isPending}
-          onClick={run}
-        >
-          {proofread.isPending ? 'Corrigindo…' : 'Corrigir texto'}
-        </Button>
-        <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
-          <input
-            type="checkbox"
-            checked={careful}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setCareful(e.target.checked)
-            }
-          />
-          Revisão cuidadosa (mais lenta)
-        </label>
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!body.trim() || proofread.isPending}
+        onClick={run}
+      >
+        {proofread.isPending ? 'Corrigindo…' : 'Corrigir texto'}
+      </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

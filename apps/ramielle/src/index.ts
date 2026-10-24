@@ -76,7 +76,7 @@ app.route('/votacao', votacaoRoutes)
 // `index.test.ts` (describe da montagem), não por leitura deste comentário.
 app.route('/admin', adminRoutes)
 
-// As rotas do Atelier que dependem do promeia (`/admin/llm/*`) — mesma
+// As rotas do Atelier que revisam texto pela Claude (`/admin/llm/*`) — mesma
 // regra de sempre: ACIMA do catch-all, com prova por EXECUÇÃO em
 // `index.test.ts`. Montadas sob `/admin` porque é onde o `apps/web` já as
 // chama hoje (`lib/admin/atelier/api.ts`), na Go.
