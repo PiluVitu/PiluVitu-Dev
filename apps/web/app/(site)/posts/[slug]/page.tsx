@@ -2,6 +2,7 @@ import { getBlogPost, getBlogPostSlugs } from '@/lib/blog-posts'
 import { mdxComponents } from '@/lib/mdx/mdx-components'
 import { MDX_REMARK_PLUGINS, MDX_REHYPE_PLUGINS } from '@/lib/mdx/mdx-plugins'
 import { PageTopBar } from '@/components/page-top-bar'
+import { PostTldr } from '@/components/posts/post-tldr'
 import { Button } from '@piluvitu/ui/button'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import type { Metadata } from 'next'
@@ -27,13 +28,14 @@ export async function generateMetadata({
   if (!post) return {}
 
   const ogImage = post.coverImage ?? undefined
+  const description = post.metaDescription || post.excerpt || undefined
 
   return {
     title: post.title,
-    description: post.excerpt || undefined,
+    description,
     openGraph: {
       title: post.title,
-      description: post.excerpt || undefined,
+      description,
       type: 'article',
       publishedTime: post.publishedAt,
       tags: post.tags,
@@ -42,7 +44,7 @@ export async function generateMetadata({
     twitter: {
       card: 'summary_large_image',
       title: post.title,
-      description: post.excerpt || undefined,
+      description,
       ...(ogImage ? { images: [ogImage] } : {}),
     },
   }
@@ -106,6 +108,8 @@ export default async function PostPage({ params }: PostPageProps) {
             />
           )}
         </header>
+
+        <PostTldr texto={post.tldr} />
 
         <div className="prose prose-invert post-prose mt-10 max-w-none">
           <MDXRemote

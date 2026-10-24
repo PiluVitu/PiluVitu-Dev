@@ -17,6 +17,8 @@ export type BlogPost = {
   readingTimeMinutes: number
   bodyMdx: string
   draft: boolean
+  tldr: string
+  metaDescription: string
 }
 
 const BLOG_OWNER = process.env.BLOG_REPO_OWNER ?? 'PiluVitu'
@@ -33,6 +35,10 @@ function getOctokit(): Octokit {
 function estimateReadingTime(text: string): number {
   const words = text.trim().split(/\s+/).length
   return Math.max(1, Math.ceil(words / 200))
+}
+
+function texto(valor: unknown): string {
+  return typeof valor === 'string' ? valor : ''
 }
 
 async function skipCacheWhenDraft(): Promise<void> {
@@ -96,6 +102,8 @@ async function _fetchAllPosts(): Promise<BlogPost[]> {
         readingTimeMinutes: estimateReadingTime(body),
         bodyMdx: body,
         draft: (fm.draft as boolean | undefined) ?? false,
+        tldr: texto(fm.tldr),
+        metaDescription: texto(fm.metaDescription),
       } satisfies BlogPost
     }),
   )

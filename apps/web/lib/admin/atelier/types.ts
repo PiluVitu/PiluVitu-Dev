@@ -37,3 +37,9 @@ export interface Transcricao {
   texto: string
   modelo: string
 }
+
+export interface Resumo {
+  tldr: string
+  metaDescription: string
+  tags: string[]
+}

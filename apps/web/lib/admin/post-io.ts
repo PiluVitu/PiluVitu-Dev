@@ -151,6 +151,11 @@ export async function getPost(
   return null
 }
 
+const OPCIONAIS_OMITIDOS_QUANDO_VAZIOS: (keyof PostFrontmatter)[] = [
+  'tldr',
+  'metaDescription',
+]
+
 /** Serializes a post: known fields (edited) merged over the preserved raw frontmatter. */
 export function serializePost(
   known: PostFrontmatter,
@@ -158,6 +163,9 @@ export function serializePost(
   rawFrontmatter: Record<string, unknown> = {},
 ): string {
   const merged: Record<string, unknown> = { ...rawFrontmatter, ...known }
+  for (const k of OPCIONAIS_OMITIDOS_QUANDO_VAZIOS) {
+    if (merged[k] === '') delete merged[k]
+  }
   return matter.stringify(body, merged)
 }
 
