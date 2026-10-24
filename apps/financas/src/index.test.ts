@@ -1,8 +1,9 @@
 import { env, SELF } from 'cloudflare:test'
+import { betterAuth } from 'better-auth'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { describe, expect, test } from 'vitest'
-import app, { onErrorGlobal, type Bindings } from './index'
+import { app, onErrorGlobal, type Bindings } from './index'
 import type { Envelope } from './lib/envelope'
 
 describe('worker financas — bindings', () => {
@@ -39,6 +40,7 @@ describe('worker financas — bindings', () => {
 })
 
 // Sem DB e sem rede: estes casos não precisam de sessão real.
+// O Bearer que o comando do Mac usava; hoje não abre rota nenhuma.
 const INGEST_TOKEN = 'ingest-token-e2e-de-teste'
 const authTestEnv = {
   DB: env.DB,
@@ -47,8 +49,7 @@ const authTestEnv = {
   GOOGLE_CLIENT_ID: 'client-id-de-teste',
   GOOGLE_CLIENT_SECRET: 'client-secret-de-teste',
   ALLOWED_EMAIL: 'dono@exemplo.com',
-  INGEST_TOKEN,
-} as unknown as Bindings
+} satisfies Bindings
 
 type CorpoErro = {
   ok: boolean
@@ -125,192 +126,95 @@ describe('worker de finanças', () => {
   })
 })
 
-// Fatia ⑨, Task 3 (+ extensão de escopo na Task 4, comando do Mac) — a
-// fronteira de segurança do INGEST_TOKEN, provada contra o APP MONTADO DE
-// VERDADE (mesma cadeia de middleware de src/index.ts, não um router
-// isolado como routes/insights.test.ts usa) — é o único jeito de provar
-// que as exceções do middleware global (POST /api/insights desde a Task 3;
-// GET /api/insights/numbers desde a Task 4) não vazaram pra nenhuma outra
-// rota. O escopo do token continua o mesmo depois da extensão: lê
-// agregado (numbers), escreve prosa (insights) — nunca toca o livro-caixa.
-describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3 + Task 4)', () => {
-  test('o token do Mac NÃO abre /api/accounts — nem com header correto, sem sessão', async () => {
-    const res = await app.request(
-      '/api/accounts',
-      { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
-      authTestEnv,
-    )
-    expect(res.status).toBe(401)
-    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-      'not_authenticated',
-    )
+// O INGEST_TOKEN autenticava o comando do Mac (POST /api/insights e GET
+// /api/insights/numbers). Com o insight gerado no próprio Worker, as duas
+// exceções saíram do middleware global: um Bearer não abre mais nada, e
+// quem lê os números ou gera o insight é o dono, com sessão. Provado contra
+// o APP MONTADO, porque só ele tem o middleware global.
+async function cookieDoDono(): Promise<string> {
+  const authDeTeste = betterAuth({
+    database: env.DB,
+    baseURL: authTestEnv.BETTER_AUTH_URL,
+    secret: authTestEnv.BETTER_AUTH_SECRET,
+    emailAndPassword: { enabled: true },
   })
-
-  test('o token do Mac NÃO abre nenhuma outra rota de escrita — POST /api/payees também ignora o header', async () => {
-    const res = await app.request(
-      '/api/payees',
-      {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${INGEST_TOKEN}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ name: 'Teste', kind: 'other' }),
-      },
-      authTestEnv,
-    )
-    expect(res.status).toBe(401)
-    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-      'not_authenticated',
-    )
+  const cadastro = await authDeTeste.api.signUpEmail({
+    body: {
+      email: authTestEnv.ALLOWED_EMAIL,
+      password: 'senha-forte-123',
+      name: 'Dono',
+    },
+    asResponse: true,
   })
+  const cookie = cadastro.headers.getSetCookie()[0]?.split(';')[0]
+  if (!cookie) throw new Error('signUpEmail não devolveu cookie de sessão')
+  return cookie
+}
 
-  test('GET /api/insights/latest continua exigindo sessão — o token do Mac NÃO abre esta rota (Task 4 estendeu só /numbers)', async () => {
-    const semNada = await app.request('/api/insights/latest', {}, authTestEnv)
-    expect(semNada.status).toBe(401)
-    expect(((await semNada.json()) as CorpoErro).notifications[0].code).toBe(
-      'not_authenticated',
-    )
+describe('worker de finanças — fronteira do INGEST_TOKEN: o token antigo não abre nada', () => {
+  const comToken = { authorization: `Bearer ${INGEST_TOKEN}` }
 
-    // Mesmo com o Bearer CORRETO: /latest não tem a exceção do middleware
-    // global (só POST /insights e GET /insights/numbers têm, ver
-    // src/index.ts) — a requisição nunca sai do requireSession() global,
-    // então o resultado é idêntico ao caso sem header nenhum.
-    const comToken = await app.request(
-      '/api/insights/latest',
-      { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
-      authTestEnv,
-    )
-    expect(comToken.status).toBe(401)
-    expect(((await comToken.json()) as CorpoErro).notifications[0].code).toBe(
-      'not_authenticated',
-    )
-  })
-
-  // Task 4 (comando do Mac): o MESMO INGEST_TOKEN que já autenticava a
-  // ESCRITA (POST /insights) passa a autenticar também esta LEITURA — e
-  // só esta, entre as duas leituras de insight. As três pernas abaixo
-  // provam a extensão completa: sem nada barra, token errado barra, token
-  // certo abre (sem cookie nenhum — o comando do Mac não tem sessão de
-  // navegador).
-  describe('GET /api/insights/numbers — extensão de escopo do INGEST_TOKEN (Task 4)', () => {
-    test('sem sessão e sem token: 401 not_authenticated (cai no requireSession(), igual antes da Task 4)', async () => {
+  test.each([
+    ['GET', '/api/accounts'],
+    ['POST', '/api/payees'],
+    ['GET', '/api/insights/latest'],
+    ['GET', '/api/insights/numbers?competence=2026-07'],
+    ['POST', '/api/insights'],
+    ['POST', '/api/insights/generate'],
+  ])(
+    '%s %s com o Bearer e sem sessão: 401 not_authenticated',
+    async (method, path) => {
       const res = await app.request(
-        '/api/insights/numbers?competence=2026-07',
-        {},
+        path,
+        {
+          method,
+          headers: { ...comToken, 'content-type': 'application/json' },
+          ...(method === 'POST' ? { body: JSON.stringify({}) } : {}),
+        },
         authTestEnv,
       )
       expect(res.status).toBe(401)
       expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
         'not_authenticated',
       )
-    })
+    },
+  )
 
-    test('token de ingestão errado: 401 invalid_ingest_token — nunca cai pro fallback de sessão', async () => {
-      const res = await app.request(
-        '/api/insights/numbers?competence=2026-07',
-        { headers: { authorization: 'Bearer token-errado' } },
-        authTestEnv,
-      )
-      expect(res.status).toBe(401)
-      expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-        'invalid_ingest_token',
-      )
-    })
-
-    test('token de ingestão correto, SEM cookie nenhum: 200 com os números — o comando do Mac consegue ler', async () => {
-      const res = await app.request(
-        '/api/insights/numbers?competence=2026-07',
-        { headers: { authorization: `Bearer ${INGEST_TOKEN}` } },
-        authTestEnv,
-      )
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as {
-        ok: boolean
-        data: { competence: string; top_categories: unknown[] }
-      }
-      expect(body.ok).toBe(true)
-      expect(body.data.competence).toBe('2026-07')
-      expect(body.data.top_categories).toEqual([])
-    })
-  })
-
-  test('POST /api/insights sem token: 401 invalid_ingest_token (chega na rota — a exceção do middleware global funcionou)', async () => {
+  test('a ingestão POST /api/insights não existe mais: com sessão, 404 e nada gravado', async () => {
+    const cookie = await cookieDoDono()
     const res = await app.request(
       '/api/insights',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { cookie, 'content-type': 'application/json', ...comToken },
         body: JSON.stringify({
-          texto: 't',
-          modelo: 'm',
-          periodo: '2026-07',
-        }),
-      },
-      authTestEnv,
-    )
-    // Se a exceção do middleware não existisse, isto sairia 401
-    // not_authenticated (a guarda de sessão barrando ANTES da rota).
-    // invalid_ingest_token só aparece quando a requisição chegou na rota
-    // e foi a GUARDA DO TOKEN quem barrou — prova que a exceção em
-    // index.ts está funcionando e que é a rota (não a sessão) quem decide.
-    expect(res.status).toBe(401)
-    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-      'invalid_ingest_token',
-    )
-  })
-
-  test('cookie de sessão (mesmo formato de um genuíno) NÃO substitui o token em POST /api/insights', async () => {
-    const res = await app.request(
-      '/api/insights',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          // Mesmo formato usado no teste de 401 not_authenticated acima
-          // ('GET /api/accounts com cookie de sessão inexistente') — o
-          // ponto aqui não é a validade do cookie, é provar que ele é
-          // IRRELEVANTE para esta rota: sem o header Authorization, a
-          // resposta é a mesma (invalid_ingest_token), cookie ou não.
-          cookie:
-            'better-auth.session_token=token-que-nao-existe.assinatura-que-nao-bate',
-        },
-        body: JSON.stringify({
-          texto: 't',
-          modelo: 'm',
-          periodo: '2026-07',
-        }),
-      },
-      authTestEnv,
-    )
-    expect(res.status).toBe(401)
-    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
-      'invalid_ingest_token',
-    )
-  })
-
-  test('POST /api/insights com o token correto: 201, alcança o handler de verdade (registro acima do catch-all)', async () => {
-    const res = await app.request(
-      '/api/insights',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${INGEST_TOKEN}`,
-        },
-        body: JSON.stringify({
-          texto: 'Insight de ponta a ponta.',
+          texto: 'Insight de fora.',
           modelo: 'qwen2.5:7b-instruct',
           periodo: '2026-07',
         }),
       },
       authTestEnv,
     )
-    expect(res.status).toBe(201)
-    const body = await res.json()
-    expect((body as { data: { texto: string } }).data.texto).toBe(
-      'Insight de ponta a ponta.',
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as CorpoErro).notifications[0].code).toBe(
+      'not_found',
     )
+    const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM insights').first<{
+      n: number
+    }>()
+    expect(n?.n).toBe(0)
+  })
+
+  test('GET /api/insights/numbers volta a ser só sessão: com o cookie do dono, 200', async () => {
+    const cookie = await cookieDoDono()
+    const res = await app.request(
+      '/api/insights/numbers?competence=2026-07',
+      { headers: { cookie } },
+      authTestEnv,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ competence: string }>
+    expect(body.data?.competence).toBe('2026-07')
   })
 })
 
@@ -327,7 +231,7 @@ describe('worker de finanças — fronteira do INGEST_TOKEN (fatia ⑨, Task 3 +
 describe('app.onError global', () => {
   /**
    * Shim que quebra SÓ o statement pedido — todo o resto passa pro D1 real
-   * do Miniflare, então a guarda do INGEST_TOKEN e o parse do corpo
+   * do Miniflare, então a guarda de sessão e o parse da query
    * completam normalmente e a exceção nasce lá no fundo, dentro do domínio,
    * exatamente como nasceria em produção. Mesmo padrão de `apps/ramielle`.
    */
@@ -347,26 +251,14 @@ describe('app.onError global', () => {
   }
 
   test('exceção comum de dentro de uma rota vira 500 DENTRO do envelope, code internal_error', async () => {
-    // POST /api/insights: `createInsight` relança qualquer erro que não seja
-    // RangeError (routes/insights.ts, `throw err`), então a exceção sobe crua
-    // até o Hono — o caminho que só o onError global cobre. Rota escolhida
-    // por autenticar com o INGEST_TOKEN (sem precisar forjar cookie de
-    // sessão), não por ser especial: o handler é do app inteiro.
+    // GET /api/insights/numbers relança qualquer erro que não seja
+    // RangeError, então a exceção sobe crua até o Hono — o caminho que só o
+    // onError global cobre.
+    const cookie = await cookieDoDono()
     const res = await app.request(
-      '/api/insights',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${INGEST_TOKEN}`,
-        },
-        body: JSON.stringify({
-          texto: 'Insight que nunca chega ao banco.',
-          modelo: 'qwen2.5:7b-instruct',
-          periodo: '2026-07',
-        }),
-      },
-      { ...authTestEnv, DB: dbQueQuebraEm('INSERT INTO insights') },
+      '/api/insights/numbers?competence=2026-07',
+      { headers: { cookie } },
+      { ...authTestEnv, DB: dbQueQuebraEm('FROM transactions t') },
     )
 
     expect(res.status).toBe(500)
@@ -392,21 +284,11 @@ describe('app.onError global', () => {
   })
 
   test('a mensagem interna do erro NÃO aparece no corpo (só no log do servidor)', async () => {
+    const cookie = await cookieDoDono()
     const res = await app.request(
-      '/api/insights',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${INGEST_TOKEN}`,
-        },
-        body: JSON.stringify({
-          texto: 'Insight que nunca chega ao banco.',
-          modelo: 'qwen2.5:7b-instruct',
-          periodo: '2026-07',
-        }),
-      },
-      { ...authTestEnv, DB: dbQueQuebraEm('INSERT INTO insights') },
+      '/api/insights/numbers?competence=2026-07',
+      { headers: { cookie } },
+      { ...authTestEnv, DB: dbQueQuebraEm('FROM transactions t') },
     )
 
     const texto = await res.text()
@@ -416,7 +298,7 @@ describe('app.onError global', () => {
     expect(texto).not.toContain('D1_ERROR')
     expect(texto).not.toContain('disk I/O')
     expect(texto).not.toContain('simulado')
-    expect(texto).not.toContain('insights') // nem o nome da tabela/statement
+    expect(texto).not.toContain('transactions') // nem o nome da tabela/statement
   })
 
   test('HTTPException preserva o status deliberado do lançador, nunca vira 500', async () => {

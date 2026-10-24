@@ -1,0 +1,46 @@
+{
+  "competence": "2026-09",
+  "previous_competence": "2026-08",
+  "top_categories": [
+    {
+      "category_id": "cat-moradia",
+      "category_name": "Moradia",
+      "category_slug": "moradia",
+      "total_cents": -250000
+    },
+    {
+      "category_id": "cat-mercado",
+      "category_name": "Mercado",
+      "category_slug": "mercado",
+      "total_cents": -123456
+    },
+    {
+      "category_id": "cat-transporte",
+      "category_name": "Transporte",
+      "category_slug": "transporte",
+      "total_cents": -45099
+    },
+    {
+      "category_id": null,
+      "category_name": "Sem categoria",
+      "category_slug": null,
+      "total_cents": -1205
+    }
+  ],
+  "total_cents": -419760,
+  "total_pf_cents": -369760,
+  "total_pj_cents": -50000,
+  "previous_total_cents": -380000,
+  "variation_cents": 39760,
+  "variation_pct": 10,
+  "variation_pf_cents": 9760,
+  "variation_pf_pct": 3,
+  "biggest_increase": {
+    "category_id": "cat-mercado",
+    "category_name": "Mercado",
+    "category_slug": "mercado",
+    "current_cents": -123456,
+    "previous_cents": -98000,
+    "delta_cents": 25456
+  }
+}

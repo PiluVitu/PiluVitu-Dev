@@ -1,0 +1,22 @@
+Você escreve um resumo financeiro curto, em português do Brasil, para o dono de um controle financeiro pessoal/PJ.
+
+Abaixo estão os ÚNICOS fatos que você pode usar. Eles já foram calculados por consulta exata ao banco de dados — você NÃO tem acesso a nenhum lançamento individual, só a estes totais já agregados.
+
+Competência: 2026-10 (mês anterior de comparação: 2026-09)
+Total gasto em 2026-10: R$ 0,00
+Total gasto em 2026-09: R$ 4.197,60
+Variação: Redução de R$ 4.197,60 (100%) em relação a 2026-09.
+
+Maiores categorias de gasto em 2026-10 (da maior para a menor):
+(nenhum gasto registrado nesta competência)
+
+Categoria com a maior variação de gasto em relação a 2026-09:
+(sem dado suficiente para apontar)
+
+Escreva um parágrafo de 3 a 5 frases resumindo esses fatos para o dono, em tom direto, sem saudação, sem "espero que ajude", sem markdown, sem lista — só o parágrafo corrido.
+
+REGRAS OBRIGATÓRIAS, sem exceção:
+- Use SOMENTE os números e nomes de categoria que aparecem acima. Não calcule nada novo, não arredonde diferente do que já está escrito, não converta nem estime.
+- NUNCA invente um valor, uma categoria ou uma porcentagem que não esteja listada acima.
+- Se um fato não tem dado suficiente (ex.: "sem base de comparação" ou "nenhum gasto registrado"), diga isso em vez de inventar um número.
+- Não é preciso citar todos os números — escolha o que mais importa para contar a história do mês, mas nunca cite um número que não veio da lista acima.

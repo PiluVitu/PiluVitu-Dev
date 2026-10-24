@@ -19,7 +19,7 @@ import {
 
 // Marcadores improváveis: uma asserção negativa contra "secret"/"key"
 // casaria com qualquer texto que mencione as palavras (mesma lição de
-// lib/promeia.test.ts / lib/pluggy.test.ts).
+// lib/pluggy.test.ts).
 const CLIENT_SECRET = 'SECRET-PLUGGY-ROTA-NAO-PODE-VAZAR-7b2e'
 const API_KEY = 'APIKEY-PLUGGY-ROTA-NAO-PODE-VAZAR-4c9f'
 

@@ -10,14 +10,15 @@
  */
 
 import type { CategoryRowView } from './categories'
+import { addMonthsToCompetence } from './dates'
 
 /**
  * Espelha `InsightNumbers` de `src/domain/insights.ts` (Worker) — a SPA
  * não importa código do Worker (dois runtimes/bundles diferentes, mesma
  * razão de `lib/dates.ts` duplicar `todayInTeresina`).
  *
- * ⚠️ Isto é o que a tela SEMPRE consegue mostrar, mesmo que o comando do
- * Mac nunca tenha rodado — nasce de uma consulta exata contra o
+ * ⚠️ Isto é o que a tela SEMPRE consegue mostrar, mesmo sem insight
+ * nenhum gerado — nasce de uma consulta exata contra o
  * livro-caixa (`byCategory`, chamada duas vezes), nunca da tabela
  * `insights`. Nenhum campo aqui tem origem em texto de modelo.
  */
@@ -53,7 +54,7 @@ export type InsightNumbersView = {
 /**
  * Espelha `Insight` de `src/domain/insights.ts` (Worker) — a ÚNICA coisa
  * gerada pelo modelo que esta tela mostra. `generated_at` é sempre o
- * relógio do SERVIDOR (nunca aceito do corpo do POST que o Mac manda) —
+ * relógio do SERVIDOR (nunca aceito de quem pede a geração) —
  * é o que torna o cálculo de idade abaixo confiável.
  */
 export type InsightView = {
@@ -111,60 +112,24 @@ export function formatInsightAge(days: number): string {
  */
 export const STALE_THRESHOLD_DAYS = 7
 
+/** Meia-noite do dia 1 do mês seguinte em Fortaleza (UTC-3 fixo), em UTC. */
+export function fechamentoDoPeriodo(periodo: string): string {
+  return `${addMonthsToCompetence(periodo, 1)}-01T03:00:00Z`
+}
+
+/**
+ * Só um insight gerado antes de o seu mês fechar pode envelhecer: o de um mês
+ * fechado (o do Cron do dia 1) descreve números que não mudam mais.
+ */
 export function isStaleInsight(
-  generatedAt: string,
+  insight: Pick<InsightView, 'periodo' | 'generated_at'>,
   now: Date = new Date(),
 ): boolean {
-  return insightAgeDays(generatedAt, now) > STALE_THRESHOLD_DAYS
-}
-
-/**
- * Resposta de `POST /api/insights/generate` (`src/routes/insights.ts`).
- *
- * ⚠️ **As duas formas são disjuntas de propósito, e é por elas que a tela
- * distingue 200 de 202** — `api<T>()` (`src/api.ts`) devolve só
- * `envelope.data`, nunca o status HTTP, e ir de `fetch` cru pra ler
- * `res.status` custaria o re-gate de sessão que `api()` faz no 401
- * (`$sessionSignal`). O Worker responde `{competence, texto, modelo}` no
- * 200 e `{status: 'gerando'}` no 202: `texto` presente ⟺ o texto já está
- * publicado.
- */
-export type GerarInsightResposta = {
-  status?: unknown
-  texto?: unknown
-  modelo?: unknown
-  competence?: unknown
-}
-
-/** 200 (texto pronto) × 202 (`{status:'gerando'}`) — ver o tipo acima. */
-export function respostaTemTexto(r: GerarInsightResposta | null): boolean {
-  return typeof r?.texto === 'string' && r.texto !== ''
-}
-
-/**
- * A dica que traduz o `code` do erro em AÇÃO — e a razão dela existir é
- * que dois erros de mesmo status HTTP (503) mandam o dono pra lados
- * OPOSTOS: `promeia_disabled` é secret que nunca foi configurado NESTE
- * Worker (ligar o Mac não resolve nada), `promeia_unreachable` é o Mac
- * fora (configuração está certa). Trocar os dois faz perder tempo
- * arrumando o que já está certo — mesma disciplina de `lib/promeia.ts`
- * (Worker), aqui no nível da tela.
- *
- * A mensagem do servidor continua sendo mostrada como está (é ela que
- * distingue "abra o Ollama" de "rode `ollama pull X`" nos códigos
- * repassados pelo promeia); esta dica é um SEGUNDO parágrafo, nunca uma
- * reescrita. `null` para todo código sem ação específica conhecida — não
- * inventar conselho para erro que não foi mapeado.
- */
-export function dicaParaErroDeGeracao(code: string): string | null {
-  if (code === 'promeia_disabled') {
-    return 'Isto NÃO é o Mac desligado: os secrets PROMEIA_URL e PROMEIA_TOKEN nunca foram configurados neste Worker. Rode `wrangler secret put PROMEIA_URL` e `wrangler secret put PROMEIA_TOKEN` e publique de novo.'
-  }
-  if (code === 'promeia_unreachable') {
-    return 'Ninguém respondeu do outro lado: ligue o MacBook, suba o serviço (`make dev-promeia`) e o túnel, e tente de novo.'
-  }
-  if (code === 'promeia_ilegivel') {
-    return 'O Mac RESPONDEU — então não é caso de subir o serviço. Confira o log do promeia.'
-  }
-  return null
+  const geradoAntesDoFechamento =
+    Date.parse(insight.generated_at) <
+    Date.parse(fechamentoDoPeriodo(insight.periodo))
+  return (
+    geradoAntesDoFechamento &&
+    insightAgeDays(insight.generated_at, now) > STALE_THRESHOLD_DAYS
+  )
 }
