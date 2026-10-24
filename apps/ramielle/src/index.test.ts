@@ -226,6 +226,7 @@ describe('rotas de votação/admin — todas montadas ACIMA do catch-all', () =>
     // por EXECUÇÃO, e uma rota nova só é coberta se for acrescentada aqui.
     ['POST', '/admin/llm/proofread'],
     ['POST', '/admin/llm/refine'],
+    ['POST', '/admin/llm/resumo'],
     // Distribuição de artigo (fatia 2026-08-13, Task 4) — mesma técnica.
     ['POST', '/admin/distribution/proposals'],
     ['GET', '/admin/distribution/algum-slug'],

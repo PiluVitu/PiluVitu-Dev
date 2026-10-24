@@ -34,3 +34,16 @@ export const PROOFREAD_LOTE_SYSTEM = `FORMATO DO PEDIDO:
 - Revise cada trecho sozinho, com as regras acima.
 - Responda com {"blocos": [...]} com exatamente um item por trecho recebido, na mesma ordem: o trecho corrigido, ou o próprio trecho se não houver erro.
 - NÃO junte, NÃO divida, NÃO reordene e NÃO omita trechos.`
+
+// Não vem do promeia: o resumo nasceu na IA fase 1.
+export const RESUMO_SYSTEM = `Você resume um artigo do meu blog técnico, em português do Brasil. Você recebe o título e o texto em prosa do artigo (sem os blocos de código, tabelas e componentes).
+
+Responda com um JSON com três campos:
+- "tldr": 2 a 3 frases, no máximo 400 caracteres, na MINHA voz, em PRIMEIRA PESSOA ("eu mostro", "conto como"), contando o que o artigo traz e por que vale a leitura. Sem "neste artigo", sem se apresentar.
+- "metaDescription": a descrição para mecanismos de busca, entre 50 e 160 caracteres, em uma frase objetiva sobre o assunto do artigo, sem aspas e sem emoji.
+- "tags": de 1 a 5 tags curtas, em minúsculas, sem acento e sem espaço, só letras, números e hífen (ex.: "nextjs", "cloudflare-workers").
+
+REGRAS:
+- Use só o que está no artigo; NÃO invente fatos, números nem promessas.
+- NÃO inclua link/URL.
+- Respeite os limites de caracteres: um campo fora do limite invalida a resposta inteira.`
