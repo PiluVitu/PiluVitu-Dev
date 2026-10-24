@@ -9,27 +9,35 @@ export class ClaudeDesligado extends Error {
 
 export class ClaudeIndisponivel extends Error {
   readonly status?: number
+  readonly tempoEsgotado: boolean
 
-  constructor(status?: number) {
+  constructor(status?: number, tempoEsgotado = false) {
     super('A Claude não respondeu agora. Tente de novo em alguns instantes.')
     this.name = 'ClaudeIndisponivel'
     this.status = status
+    this.tempoEsgotado = tempoEsgotado
   }
 }
 
 export type MotivoRecusa =
   | 'chave_invalida'
+  | 'cobranca'
+  | 'modelo_indisponivel'
   | 'requisicao_invalida'
   | 'recusa'
   | 'formato'
 
-const MENSAGEM_RECUSA: Record<MotivoRecusa, string> = {
-  chave_invalida:
+const MENSAGEM_RECUSA: Record<MotivoRecusa, (modelo?: string) => string> = {
+  chave_invalida: () =>
     'A Claude recusou a ANTHROPIC_API_KEY: chave inválida, confira o `wrangler secret`.',
-  requisicao_invalida:
+  cobranca: () =>
+    'A Anthropic recusou a cobrança: confira o crédito e o limite de gasto no Console (console.anthropic.com).',
+  modelo_indisponivel: (modelo) =>
+    `A Claude não achou o modelo "${modelo ?? '?'}": confira o id do modelo e se a organização tem acesso a ele.`,
+  requisicao_invalida: () =>
     'A Claude recusou a requisição como inválida. Confira o texto enviado e tente de novo.',
-  recusa: 'A Claude se recusou a responder a este conteúdo.',
-  formato:
+  recusa: () => 'A Claude se recusou a responder a este conteúdo.',
+  formato: () =>
     'A resposta da Claude veio fora do formato esperado (vazia, cortada ou inválida). Tente de novo.',
 }
 
@@ -37,8 +45,8 @@ export class ClaudeRecusou extends Error {
   readonly motivo: MotivoRecusa
   readonly status?: number
 
-  constructor(motivo: MotivoRecusa, status?: number) {
-    super(MENSAGEM_RECUSA[motivo])
+  constructor(motivo: MotivoRecusa, status?: number, modelo?: string) {
+    super(MENSAGEM_RECUSA[motivo](modelo))
     this.name = 'ClaudeRecusou'
     this.motivo = motivo
     this.status = status

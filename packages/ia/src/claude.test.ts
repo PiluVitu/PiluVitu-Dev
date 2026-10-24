@@ -161,7 +161,8 @@ describe('chamarClaude', () => {
     [401, 'authentication_error', 'chave_invalida'],
     [403, 'permission_error', 'chave_invalida'],
     [400, 'invalid_request_error', 'requisicao_invalida'],
-    [404, 'not_found_error', 'requisicao_invalida'],
+    [402, 'billing_error', 'cobranca'],
+    [404, 'not_found_error', 'modelo_indisponivel'],
     [413, 'request_too_large', 'requisicao_invalida'],
   ] as const)(
     'status %i vira ClaudeRecusou{%s → %s}',
@@ -197,6 +198,39 @@ describe('chamarClaude', () => {
     const err = await erroDe(chamarClaude(SENTINELA, PEDIDO, { fetch }))
     expect(err).toBeInstanceOf(ClaudeIndisponivel)
     expect((err as ClaudeIndisponivel).status).toBeUndefined()
+  })
+
+  it('402 manda conferir crédito e limite no Console, não o texto', async () => {
+    const { fetch } = fetchFalso(() => respostaErro(402, 'billing_error'))
+    const err = await erroDe(chamarClaude(SENTINELA, PEDIDO, { fetch }))
+    expect((err as Error).message).toMatch(/crédito/)
+    expect((err as Error).message).toMatch(/Console/)
+    expect((err as Error).message).not.toMatch(/texto enviado/)
+  })
+
+  it('404 aponta o id do modelo', async () => {
+    const { fetch } = fetchFalso(() => respostaErro(404, 'not_found_error'))
+    const err = await erroDe(chamarClaude(SENTINELA, PEDIDO, { fetch }))
+    expect((err as Error).message).toContain('claude-haiku-5-5')
+    expect((err as Error).message).not.toMatch(/texto enviado/)
+  })
+
+  it('erro de conexão comum não marca tempo esgotado', async () => {
+    const { fetch } = fetchFalso(() => {
+      throw new TypeError('fetch failed')
+    })
+    const err = await erroDe(chamarClaude(SENTINELA, PEDIDO, { fetch }))
+    expect((err as ClaudeIndisponivel).tempoEsgotado).toBe(false)
+  })
+
+  it('timeout (AbortError) vira ClaudeIndisponivel com tempoEsgotado', async () => {
+    const { fetch, chamadas } = fetchFalso(() => {
+      throw new DOMException(`abortado ${SENTINELA}`, 'AbortError')
+    })
+    const err = await erroDe(chamarClaude(SENTINELA, PEDIDO, { fetch }))
+    expect(err).toBeInstanceOf(ClaudeIndisponivel)
+    expect((err as ClaudeIndisponivel).tempoEsgotado).toBe(true)
+    expect(chamadas).toHaveLength(2)
   })
 
   it.each([

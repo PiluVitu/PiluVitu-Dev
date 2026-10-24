@@ -1,7 +1,8 @@
 import { applyD1Migrations, env, reset } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { RespostaClaude } from './claude'
-import { ClaudeRecusou, TetoAtingido } from './erros'
+import { estimativaMicroUsd } from './custo'
+import { ClaudeIndisponivel, ClaudeRecusou, TetoAtingido } from './erros'
 import {
   comOrcamento,
   concluir,
@@ -166,9 +167,10 @@ describe('reservar', () => {
     const liberada = await reservar(DB, reserva({ estimativaMicro: 200_000 }))
     await liberar(DB, liberada)
 
-    const erro = await reservar(DB, reserva({ estimativaMicro: 700_000 })).catch(
-      (e: unknown) => e,
-    )
+    const erro = await reservar(
+      DB,
+      reserva({ estimativaMicro: 700_000 }),
+    ).catch((e: unknown) => e)
 
     expect((erro as TetoAtingido).gastoMicro).toBe(400_000)
   })
@@ -338,18 +340,88 @@ describe('comOrcamento', () => {
   it('401 (nada cobrado) deixa a linha falhou', async () => {
     const fetch401 = (async () =>
       respostaHttp(
-        { type: 'error', error: { type: 'authentication_error', message: 'x' } },
+        {
+          type: 'error',
+          error: { type: 'authentication_error', message: 'x' },
+        },
         401,
       )) as typeof fetch
 
     await expect(
       comOrcamento(
         DB,
-        { feature: 'insight', tetoMicro: 2_000_000, apiKey: 'k', fetch: fetch401 },
+        {
+          feature: 'insight',
+          tetoMicro: 2_000_000,
+          apiKey: 'k',
+          fetch: fetch401,
+        },
         pedido,
       ),
     ).rejects.toBeInstanceOf(ClaudeRecusou)
 
     expect((await unicaLinha()).estado).toBe('falhou')
+  })
+
+  it('timeout conta a estimativa inteira (a API pode ter cobrado)', async () => {
+    const fetchTimeout = (async () => {
+      throw new DOMException('abortado', 'AbortError')
+    }) as typeof fetch
+
+    await expect(
+      comOrcamento(
+        DB,
+        {
+          feature: 'insight',
+          tetoMicro: 2_000_000,
+          apiKey: 'k',
+          fetch: fetchTimeout,
+        },
+        pedido,
+      ),
+    ).rejects.toBeInstanceOf(ClaudeIndisponivel)
+
+    const row = await unicaLinha()
+    expect(row.estado).toBe('concluido')
+    expect(row.custo_micro).toBe(row.reservado_micro)
+  })
+
+  it('com formatoJson, o schema entra na estimativa da reserva', async () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        tldr: { type: 'string', description: 'resumo de uma linha' },
+        topicos: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['tldr', 'topicos'],
+      additionalProperties: false,
+    }
+    const fetchOk = (async () =>
+      respostaHttp(
+        mensagemOk('end_turn', '{"tldr":"x","topicos":[]}'),
+      )) as typeof fetch
+
+    await comOrcamento(
+      DB,
+      { feature: 'resumo', tetoMicro: 2_000_000, apiKey: 'k', fetch: fetchOk },
+      { ...pedido, formatoJson: schema },
+    )
+
+    const row = await unicaLinha()
+    const semSchema = estimativaMicroUsd(
+      SONNET,
+      pedido.system.length + pedido.user.length,
+      pedido.maxTokens,
+    )
+    expect(row.reservado_micro).toBe(
+      estimativaMicroUsd(
+        SONNET,
+        pedido.system.length +
+          pedido.user.length +
+          JSON.stringify(schema).length,
+        pedido.maxTokens,
+      ),
+    )
+    expect(row.reservado_micro).toBeGreaterThan(semSchema)
   })
 })

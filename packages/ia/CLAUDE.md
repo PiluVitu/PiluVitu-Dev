@@ -12,7 +12,7 @@ TypeScript puro, sem Hono: o que os dois Workers precisam igual para falar com a
 - **Tipos:** `pnpm --filter @piluvitu/ia lint` (`tsc --noEmit`).
 - **Consumidores:** `apps/ramielle` e `apps/financas` (`"@piluvitu/ia": "workspace:*"`). Cada um tem o seu `src/lib/ia.ts`, com os tetos da feature (`TETOS_RAMIELLE`, `TETOS_FINANCAS`) e o `respostaDeErroIa`, que liga o `codigoDoErro` ao `errJson` local, e o seu `src/ia-segredo.test.ts`, a sentinela da chave (ver o `CLAUDE.md` de cada Worker).
 - **CI:** o job `ramielle` do `ci.yml` roda o `lint` e o `test` daqui.
-- Instalar a SDK trouxe `@opentelemetry/api` (dependência dela) para o lock, e isso mudou o sufixo de peer de `next`, `better-auth` e `vitest` nos outros workspaces. É esperado: o lockfile só reescreveu o sufixo, as versões ficaram as mesmas.
+- Instalar a SDK trouxe `@opentelemetry/api` (dependência dela) para o lock, e isso mudou o sufixo de peer de `next`, `better-auth` e `vitest` nos outros workspaces. É esperado: o lockfile só reescreveu o sufixo, as versões ficaram as mesmas. Isso muda o grafo de `apps/web` e `apps/pilutech-site`, que o PR1 não toca: o corpo do PR cita a mudança, o job `web` do CI (`dedupe --check` + `build:ci`) confirma o lock, e o dono roda o `pnpm dedupe --check` local, fora de sessão do Claude, antes do merge.
 
 ## Modelos e preços
 
@@ -41,14 +41,17 @@ O Haiku 5.5 tem uma segunda tabela, de US$ 0,50 / 2,50, para prompt acima de 100
 - `maxRetries: 1`: a SDK tenta de novo uma vez em 408, 409, 429, 5xx e erro de conexão.
 - Tradução de erro, sempre com mensagem nossa (o `err.message` da SDK nunca passa adiante):
 
-  | Origem                                                     | Vira                                      |
-  | ---------------------------------------------------------- | ----------------------------------------- |
-  | conexão (`fetch` lançou, timeout), 408, 409, 429, 5xx/529  | `ClaudeIndisponivel(status?)`             |
-  | 401, 403                                                   | `ClaudeRecusou('chave_invalida', status)` |
-  | outro 4xx (400, 404, 413, 422)                             | `ClaudeRecusou('requisicao_invalida')`    |
-  | `stop_reason: 'refusal'`                                   | `ClaudeRecusou('recusa')`                 |
-  | `max_tokens`, `model_context_window_exceeded`, texto vazio | `ClaudeRecusou('formato')`                |
-  | qualquer outro erro                                        | `ClaudeIndisponivel()`                    |
+  | Origem                                                          | Vira                                                    |
+  | --------------------------------------------------------------- | ------------------------------------------------------- |
+  | timeout (`APIConnectionTimeoutError`)                           | `ClaudeIndisponivel(undefined, true)` (`tempoEsgotado`) |
+  | outra falha de conexão (`fetch` lançou), 408, 409, 429, 5xx/529 | `ClaudeIndisponivel(status?)`                           |
+  | 401, 403                                                        | `ClaudeRecusou('chave_invalida', status)`               |
+  | 402 (`billing_error`)                                           | `ClaudeRecusou('cobranca', status)`                     |
+  | 404                                                             | `ClaudeRecusou('modelo_indisponivel', status, modelo)`  |
+  | outro 4xx (400, 413, 422)                                       | `ClaudeRecusou('requisicao_invalida', status)`          |
+  | `stop_reason: 'refusal'`                                        | `ClaudeRecusou('recusa')`                               |
+  | `max_tokens`, `model_context_window_exceeded`, texto vazio      | `ClaudeRecusou('formato')`                              |
+  | qualquer outro erro                                             | `ClaudeIndisponivel()`                                  |
 
 - **Onde a chave pode sair:** a SDK 1.1.0 manda a `apiKey` no header `Authorization: Bearer`, **não** em `x-api-key` (medido no teste). Um sentinela de header precisa olhar `authorization`. O cliente fixa `baseURL: 'https://api.anthropic.com'` e `authToken: null`, porque sem isso a SDK lê `ANTHROPIC_BASE_URL` e `ANTHROPIC_AUTH_TOKEN` do `process.env` (que, com `nodejs_compat`, pode vir preenchido com as vars do Worker) e mandaria a chave para outro host; o teste prova com as duas variáveis setadas. `logLevel: 'off'` tira o log da SDK do console do Worker.
 - **Haiku 5.5 pensa por padrão:** só tem adaptive thinking, ligado sem precisar mandar `thinking` (segundo a skill `claude-api`), e o cliente não manda `thinking`. O pensamento conta no `max_tokens`: um `maxTokens` apertado pode terminar em `max_tokens` e virar `formato`. Medir nas features do Haiku antes de fixar o valor.
@@ -58,14 +61,15 @@ O Haiku 5.5 tem uma segunda tabela, de US$ 0,50 / 2,50, para prompt acima de 100
 
 Os Workers mapeiam com `codigoDoErro(err)` para o envelope `{ok:false, notifications}` de cada um. `null` quer dizer "não é erro da IA": o Worker relança.
 
-| Classe               | Código                | Status | Quando                                                                 |
-| -------------------- | --------------------- | ------ | ---------------------------------------------------------------------- |
-| `ClaudeDesligado`    | `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                |
-| `ClaudeIndisponivel` | `claude_indisponivel` | 503    | Rede, 5xx, 529 (overloaded) ou 429 (rate limit)                        |
-| `ClaudeRecusou`      | `claude_recusou`      | 502    | 400, 401 ou 403, `stop_reason: "refusal"`, ou resposta fora do formato |
-| `TetoAtingido`       | `teto_atingido`       | 429    | A reserva estouraria o teto do mês da feature                          |
+| Classe               | Código                | Status | Quando                                                                                    |
+| -------------------- | --------------------- | ------ | ----------------------------------------------------------------------------------------- |
+| `ClaudeDesligado`    | `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                                   |
+| `ClaudeIndisponivel` | `claude_indisponivel` | 503    | Rede, 5xx, 529 (overloaded) ou 429 (rate limit)                                           |
+| `ClaudeRecusou`      | `claude_recusou`      | 502    | 4xx (400, 401, 402, 403, 404, 413), `stop_reason: "refusal"`, ou resposta fora do formato |
+| `TetoAtingido`       | `teto_atingido`       | 429    | A reserva estouraria o teto do mês da feature                                             |
 
-- `ClaudeRecusou.motivo`: `chave_invalida`, `requisicao_invalida`, `recusa` ou `formato`. Cada um tem mensagem própria; a de `chave_invalida` manda conferir o `wrangler secret`.
+- `ClaudeRecusou.motivo`: `chave_invalida`, `cobranca`, `modelo_indisponivel`, `requisicao_invalida`, `recusa` ou `formato`. Cada um tem mensagem própria: `chave_invalida` manda conferir o `wrangler secret`; `cobranca` (402, crédito acabou ou o limite de gasto do Console foi atingido) manda conferir crédito e limite no Console; `modelo_indisponivel` (404) cita o id do modelo pedido. Sem o 402 à parte, o fim do crédito chegava ao dono como "confira o texto enviado".
+- `ClaudeIndisponivel.tempoEsgotado` é `true` só no timeout da SDK, que inclui o connect timeout (a SDK não separa o timeout antes do envio do timeout depois).
 - As mensagens são montadas aqui, nunca copiadas do erro da SDK: o texto cru da API pode trazer dado da requisição, e a chave não pode vazar por corpo de resposta nem por log.
 - A mensagem do `TetoAtingido` traz o teto, o gasto (em `US$ x,yy`) e o mês (`YYYY-MM`).
 
@@ -77,7 +81,8 @@ Uma linha por chamada na tabela `uso_ia` (STRICT, índice `(feature, mes)`): `es
 - **`reservar(db, { feature, mes, modelo, estimativaMicro, tetoMicro })`** é um único `INSERT … SELECT … WHERE gasto + estimativa <= teto`, atômico no D1: de duas reservas concorrentes com espaço para uma, só uma grava (teste com `Promise.allSettled`). O gasto do mês soma `custo_micro` dos `concluido` e `reservado_micro` dos `reservado`; `falhou` conta 0. `meta.changes === 0` vira `TetoAtingido`, com o gasto lido numa segunda consulta só para a mensagem.
 - **Reserva órfã conta, de propósito:** se o Worker morre entre reservar e concluir, a linha fica `reservado` e segue prendendo a estimativa contra o teto. Erra para o lado barato; não existe limpeza automática.
 - **`concluir(db, id, resposta)`** troca a estimativa pelo custo real; **`liberar(db, id)`** marca `falhou`. Os dois só mexem em linha `reservado` (uma linha concluída não volta).
-- **`comOrcamento(db, { feature, tetoMicro, apiKey?, fetch? }, pedido)`:** sem chave lança `ClaudeDesligado` antes de reservar (nenhuma linha). Depois, reserva com `estimativaMicroUsd(modelo, system.length + user.length, maxTokens)` e `mes = mesFortaleza()`, chama a Claude e conclui. Se a Claude falha: `ClaudeRecusou` com motivo `recusa` ou `formato` veio de uma resposta que a API **já cobrou** (o uso real não chega até aqui), então a linha fica `concluido` com `custo_micro = reservado_micro`; qualquer outro erro (rede, 429, 5xx, 401, 400) chama `liberar`. Em todos os casos o erro é relançado. Se o `concluir` falhar depois de uma chamada boa, a linha fica `reservado` (conta a estimativa).
+- **`comOrcamento(db, { feature, tetoMicro, apiKey?, fetch? }, pedido)`:** sem chave lança `ClaudeDesligado` antes de reservar (nenhuma linha). Depois, reserva com `estimativaMicroUsd(modelo, caracteres, maxTokens)`, em que `caracteres` soma `system`, `user` e, com `formatoJson`, o `JSON.stringify` do schema (o schema e o prompt de structured output que a API injeta são entrada cobrada), e `mes = mesFortaleza()`; chama a Claude e conclui. O `concluir` grava o custo real sem conferir o teto, então a estimativa precisa cobrir a entrada inteira. Se a Claude falha: `ClaudeRecusou` com motivo `recusa` ou `formato` veio de uma resposta que a API **já cobrou**, e um `ClaudeIndisponivel` com `tempoEsgotado` pode ter sido processado; nos dois casos o uso real não chega até aqui, então a linha fica `concluido` com `custo_micro = reservado_micro`. Qualquer outro erro (rede, 429, 5xx, 401, 402, 400) chama `liberar`. Em todos os casos o erro é relançado. Se o `concluir` falhar depois de uma chamada boa, a linha fica `reservado` (conta a estimativa).
+- **Subcontagem aceita:** um 5xx que chegue depois de a API ter processado o pedido é liberado (conta 0), e o timeout com retry (`maxRetries: 1`) pode ter cobrado duas vezes e conta uma estimativa só. O teto por feature pode ficar um pouco abaixo do gasto real nesses casos; o limite duro do Console continua valendo.
 - **`mesFortaleza(agora?)`:** `YYYY-MM` em America/Fortaleza, UTC-3 fixo (sem horário de verão desde 2001): `2026-11-01T02:00Z` ainda é `2026-10`.
 - **`BancoD1`** é um tipo estrutural mínimo (`prepare` → `bind`/`run`/`first`), para o pacote não depender de `@cloudflare/workers-types`. O `D1Database` real dos Workers é atribuível a ele (conferido com `tsc` no ramielle).
 

@@ -1,6 +1,11 @@
 import { chamarClaude, type PedidoClaude, type RespostaClaude } from './claude'
 import { estimativaMicroUsd, type Modelo } from './custo'
-import { ClaudeDesligado, ClaudeRecusou, TetoAtingido } from './erros'
+import {
+  ClaudeDesligado,
+  ClaudeIndisponivel,
+  ClaudeRecusou,
+  TetoAtingido,
+} from './erros'
 
 export type ComandoD1 = {
   bind(...valores: unknown[]): ComandoD1
@@ -108,13 +113,19 @@ async function cobrarEstimativa(db: BancoD1, id: string): Promise<void> {
     .run()
 }
 
-// 'recusa' e 'formato' vêm de uma resposta que a API já cobrou, mas cujo uso
-// não chega até aqui; contar a estimativa inteira erra para o lado barato.
-function foiCobrada(err: unknown): boolean {
+// 'recusa' e 'formato' vêm de uma resposta que a API já cobrou, e um timeout
+// pode ter sido processado; o uso real não chega até aqui, então conta a estimativa.
+function podeTerSidoCobrada(err: unknown): boolean {
+  if (err instanceof ClaudeIndisponivel) return err.tempoEsgotado
   return (
     err instanceof ClaudeRecusou &&
     (err.motivo === 'recusa' || err.motivo === 'formato')
   )
+}
+
+function caracteresDeEntrada(pedido: PedidoClaude): number {
+  const schema = pedido.formatoJson ? JSON.stringify(pedido.formatoJson) : ''
+  return pedido.system.length + pedido.user.length + schema.length
 }
 
 export type ConfigOrcamento = {
@@ -137,7 +148,7 @@ export async function comOrcamento(
     modelo: pedido.modelo,
     estimativaMicro: estimativaMicroUsd(
       pedido.modelo,
-      pedido.system.length + pedido.user.length,
+      caracteresDeEntrada(pedido),
       pedido.maxTokens,
     ),
     tetoMicro: cfg.tetoMicro,
@@ -147,7 +158,7 @@ export async function comOrcamento(
   try {
     resposta = await chamarClaude(cfg.apiKey, pedido, { fetch: cfg.fetch })
   } catch (err) {
-    await (foiCobrada(err) ? cobrarEstimativa(db, id) : liberar(db, id))
+    await (podeTerSidoCobrada(err) ? cobrarEstimativa(db, id) : liberar(db, id))
     throw err
   }
   await concluir(db, id, resposta)

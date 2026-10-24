@@ -452,12 +452,12 @@ Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` fal
 - Tetos: `revisao` US$ 10, `hooks` US$ 2, `resumo` US$ 2. A soma das quatro features dos dois Workers é US$ 16; o teto duro de US$ 20 fica no Console da Anthropic.
 - Erros, todos no envelope `{ok:false, notifications}`:
 
-| Código                | Status | Quando                                                                                                                         |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                                                                        |
-| `claude_indisponivel` | 503    | Rede, 5xx, 529 ou 429                                                                                                          |
-| `claude_recusou`      | 502    | 400, 401 ou 403, `stop_reason: "refusal"` ou resposta fora do formato; o 401 diz "chave inválida, confira o `wrangler secret`" |
-| `teto_atingido`       | 429    | A reserva estouraria o teto do mês; a mensagem diz o teto, o gasto e o mês                                                     |
+| Código                | Status | Quando                                                                                                                                                                                                                         |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude_desligado`    | 503    | Sem `ANTHROPIC_API_KEY`                                                                                                                                                                                                        |
+| `claude_indisponivel` | 503    | Rede, 5xx, 529 ou 429                                                                                                                                                                                                          |
+| `claude_recusou`      | 502    | 4xx (400, 401, 402, 403, 404, 413), `stop_reason: "refusal"` ou resposta fora do formato; o 401 diz "chave inválida, confira o `wrangler secret`", o 402 manda conferir crédito e limite no Console, o 404 cita o id do modelo |
+| `teto_atingido`       | 429    | A reserva estouraria o teto do mês; a mensagem diz o teto, o gasto e o mês                                                                                                                                                     |
 
 - **Sentinela (`src/ia-segredo.test.ts`)**: lê o `wrangler.jsonc` (e o `.dev.vars.example`) com `?raw` e exige que não tenham a chave; e, numa rota montada só no teste na frente do app real (`comOrcamento` + `respostaDeErroIa`), com o `fetch` global devolvendo 401 com a chave ecoada no corpo, confere que corpo, headers e `console.*` saem sem a chave, que ela só viaja para `api.anthropic.com` (no header `authorization: Bearer`, não `x-api-key`: é como a SDK 1.1.0 manda) e que a reserva fica `falhou`. Medido: um `console.error(err)` com o erro da SDK dentro do `chamarClaude` faz o teste falhar. `src/test-env.d.ts` declara `*?raw` para qualquer arquivo.
 

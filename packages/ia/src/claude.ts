@@ -60,7 +60,7 @@ export async function chamarClaude(
   try {
     resposta = await client.messages.create(params)
   } catch (err) {
-    throw traduzirErro(err)
+    throw traduzirErro(err, pedido.modelo)
   }
 
   if (resposta.stop_reason === 'refusal') throw new ClaudeRecusou('recusa')
@@ -85,12 +85,16 @@ export async function chamarClaude(
 }
 
 function motivoDoStatus(status: number): MotivoRecusa {
-  return status === 401 || status === 403
-    ? 'chave_invalida'
-    : 'requisicao_invalida'
+  if (status === 401 || status === 403) return 'chave_invalida'
+  if (status === 402) return 'cobranca'
+  if (status === 404) return 'modelo_indisponivel'
+  return 'requisicao_invalida'
 }
 
-function traduzirErro(err: unknown): Error {
+function traduzirErro(err: unknown, modelo: Modelo): Error {
+  if (err instanceof Anthropic.APIConnectionTimeoutError) {
+    return new ClaudeIndisponivel(undefined, true)
+  }
   if (err instanceof Anthropic.APIConnectionError) {
     return new ClaudeIndisponivel()
   }
@@ -99,7 +103,7 @@ function traduzirErro(err: unknown): Error {
     if (status === 408 || status === 409 || status === 429 || status >= 500) {
       return new ClaudeIndisponivel(status)
     }
-    return new ClaudeRecusou(motivoDoStatus(status), status)
+    return new ClaudeRecusou(motivoDoStatus(status), status, modelo)
   }
   return new ClaudeIndisponivel()
 }
