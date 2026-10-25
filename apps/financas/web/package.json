@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.6.25",
     "@piluvitu/tools": "workspace:*",
     "@piluvitu/ui": "workspace:*",
     "better-auth": "1.6.25",
