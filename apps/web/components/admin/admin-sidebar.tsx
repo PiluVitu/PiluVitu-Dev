@@ -12,6 +12,7 @@ import {
   faImage,
   faSquareCheck,
   faMicrophone,
+  faKey,
   faCubes,
   faUpRightFromSquare,
   faRightFromBracket,
@@ -90,6 +91,10 @@ const GROUPS: NavGroup[] = [
     items: [
       { label: 'Transcrição', href: '/admin/transcricao', icon: faMicrophone },
     ],
+  },
+  {
+    title: 'Conta',
+    items: [{ label: 'Passkeys', href: '/admin/passkeys', icon: faKey }],
   },
 ]
 

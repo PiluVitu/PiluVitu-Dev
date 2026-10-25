@@ -46,3 +46,35 @@ export const LoginError: Story = {
     )
   },
 }
+
+export const ComPasskey: Story = {
+  args: {
+    onLogin: () => {},
+    onPasskeyLogin: async () => {},
+    passkeySuportado: true,
+  },
+}
+
+export const PasskeySemSuporte: Story = {
+  args: {
+    onLogin: () => {},
+    onPasskeyLogin: async () => {},
+    passkeySuportado: false,
+  },
+}
+
+export const PasskeyCancelada: Story = {
+  args: {
+    onLogin: () => {},
+    onPasskeyLogin: () => Promise.reject(new Error('Operação cancelada.')),
+    passkeySuportado: true,
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: /entrar com passkey/i }),
+    )
+    await expect(canvas.getByRole('alert')).toHaveTextContent(
+      'Operação cancelada.',
+    )
+  },
+}

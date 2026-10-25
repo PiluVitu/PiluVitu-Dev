@@ -21,4 +21,12 @@ describe('AdminSidebar', () => {
       raiz.querySelector('a[href="/admin/pilulabs"]')?.className,
     ).toContain('text-primary')
   })
+
+  it('Passkeys em Conta, apontando pra /admin/passkeys', () => {
+    const raiz = renderEstatico(<AdminSidebar />)
+    expect(raiz.querySelector('a[href="/admin/passkeys"]')?.textContent).toBe(
+      'Passkeys',
+    )
+    expect(raiz.textContent).toContain('Conta')
+  })
 })
