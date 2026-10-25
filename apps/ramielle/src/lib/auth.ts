@@ -11,14 +11,21 @@
  * bloquearia todo mundo menos o dono e mataria a feature: a votação existe
  * para várias pessoas, qualquer conta Google entra e vota.
  *
- * Quem decide ADMIN é `isAdminEmail` (abaixo) — exportada, e
- * DELIBERADAMENTE NÃO usada dentro de `createAuth`. O guard de admin roda a
- * cada request (Task 4), não na criação do usuário: o Better Auth não tem
- * noção de allowlist fora do hook de criação, então um privilégio gravado
- * no cadastro não acompanharia uma troca de `ADMIN_EMAILS` feita depois.
+ * Quem decide ADMIN é `isAdminEmail` (abaixo), sempre a cada request e
+ * nunca gravado na criação do usuário: um privilégio gravado no cadastro
+ * não acompanharia uma troca de `ADMIN_EMAILS` feita depois. Dentro de
+ * `createAuth` ela só aparece nos hooks da passkey (lib/passkey.ts), que
+ * também conferem a cada pedido.
  */
 import { betterAuth } from 'better-auth'
 import { allowedOrigins } from './cors'
+import {
+  metodoLoginDaSessao,
+  passkeyAmbiente,
+  passkeyDoAdmin,
+  passkeyLoginPedeVerificacao,
+  passkeySoAdmin,
+} from './passkey'
 
 export type AuthBindings = {
   DB: D1Database
@@ -139,9 +146,8 @@ export type Auth = ReturnType<typeof createAuth>
  * ninguém (`undefined` é o valor real em runtime de uma binding não
  * setada — o tipo `string` é só uma promessa de compile-time).
  *
- * Exportada e NUNCA chamada dentro de `createAuth` — ver o comentário no
- * topo do arquivo. `isAdminEmail` é consumida pelo guard de request da
- * Task 4, a cada chamada, contra o valor CORRENTE de `ADMIN_EMAILS`.
+ * Consumida a cada chamada, contra o valor CORRENTE de `ADMIN_EMAILS`, pelo
+ * guard de request (lib/session.ts) e pelos hooks da passkey.
  */
 export function isAdminEmail(
   email: string | null | undefined,
@@ -195,6 +201,10 @@ export function createAuth(env: AuthBindings) {
       'BETTER_AUTH_SECRET ausente — configure via `wrangler secret put BETTER_AUTH_SECRET` (produção) ou `.dev.vars` (local). O Better Auth não falha sozinho nesse caso.',
     )
   }
+
+  const ehAdmin = (email: string | null | undefined) =>
+    isAdminEmail(email, env.ADMIN_EMAILS)
+  const ambientePasskey = passkeyAmbiente(env.BETTER_AUTH_URL)
 
   return betterAuth({
     // Binding cru: o adapter Kysely detecta D1 por duck-typing
@@ -319,8 +329,30 @@ export function createAuth(env: AuthBindings) {
       },
     },
 
-    // NENHUM databaseHooks aqui — de propósito. Ver o comentário no topo
-    // do arquivo: a votação é livre, qualquer e-mail Google completa o
-    // cadastro. Não copiar o hook de allowlist do finanças.
+    // Nenhum hook de `user` aqui, de propósito: a votação é livre (ver o
+    // topo do arquivo). Não copiar o hook de allowlist do finanças. O de
+    // `session` só marca como ela foi aberta (lib/passkey.ts).
+    session: {
+      additionalFields: {
+        metodoLogin: { type: 'string', required: false, input: false },
+      },
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (sessao, ctx) => ({
+            data: { ...sessao, metodoLogin: metodoLoginDaSessao(ctx) },
+          }),
+        },
+      },
+    },
+
+    // A exceção é a passkey, só de admin (lib/passkey.ts). Fora de produção
+    // e de localhost o plugin nem é registrado.
+    hooks: {
+      before: passkeySoAdmin(ehAdmin),
+      after: passkeyLoginPedeVerificacao(),
+    },
+    plugins: ambientePasskey ? [passkeyDoAdmin(ambientePasskey, ehAdmin)] : [],
   })
 }

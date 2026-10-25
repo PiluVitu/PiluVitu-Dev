@@ -6,6 +6,8 @@
 # Worker sozinho em :8787 e SERVE a SPA por lá também, mas o browser manda
 # Origin: http://localhost:8787 (!= :5273) -> 403 em
 # POST /api/auth/sign-in/social. Ver CLAUDE.md, seção SPA -> "Dev:".
+# Passkey: só liga com este valor exato (ou o de produção). Outro valor desliga
+# o plugin (/api/auth/passkey/* dá 404). Ver CLAUDE.md, seção Passkey.
 BETTER_AUTH_URL=http://localhost:5273
 BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
 GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud

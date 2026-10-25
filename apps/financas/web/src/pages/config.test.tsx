@@ -20,6 +20,12 @@ vi.mock('../auth-client', () => ({
   signOut: vi.fn(),
 }))
 
+// O cartão tem a própria suíte (Passkeys.test.tsx); aqui só importa onde ele
+// aparece.
+vi.mock('../Passkeys', () => ({
+  PasskeysCard: () => <section aria-label="Passkeys" />,
+}))
+
 // jsdom não implementa matchMedia — só o clique em "Sistema" chama
 // aplicarTema('sistema'), que lê window.matchMedia. Mock mínimo, sem
 // simular mudança de SO (isso já é coberto por lib/theme.test.ts).
@@ -46,6 +52,13 @@ afterEach(() => {
 })
 
 describe('ConfigPage', () => {
+  it('mostra o cartão de passkeys junto da Conta', async () => {
+    vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
+    render(<ConfigPage />)
+    expect(screen.getByRole('region', { name: 'Passkeys' })).toBeInTheDocument()
+    await waitFor(() => expect(api).toHaveBeenCalled())
+  })
+
   it('mostra o heading e busca a renda salva no mount', async () => {
     vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
 

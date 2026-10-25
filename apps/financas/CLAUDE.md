@@ -169,6 +169,16 @@ Aplicada só **localmente**; produção é ação manual do dono:
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0015_uso_ia
 ```
 
+### `0016_passkey.sql` — passkeys do Better Auth
+
+Tabela `passkey` do `@better-auth/passkey` 1.6.25, mesma adaptação do `0002` (camelCase, `TEXT` para data, `INTEGER` 0|1 para boolean, STRICT, `ON DELETE CASCADE` para `user`). Única divergência do gerador: `passkey_credentialID_idx` é `UNIQUE`. A mesma migração faz `ALTER TABLE session ADD COLUMN metodoLogin TEXT` (`'google'`/`'passkey'`, ver _Passkey_), para o dono rodar uma migração só. Coberta em `src/lib/auth.passkey.test.ts` (colunas, STRICT, índices, FK, `session.metodoLogin`) e na contagem de tabelas de `src/schema.test.ts` (20). Ver a seção _Passkey_.
+
+Aplicada só **localmente**; produção é ação manual do dono, **antes** do deploy do Worker com o plugin (sem a tabela, cadastrar e entrar por passkey dão 500; sem a coluna `session.metodoLogin`, **todo** login, Google incluso, dá 500, porque o Worker novo grava a coluna em toda sessão):
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0016_passkey
+```
+
 ### Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
 
 - **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `IaBindings` (`src/lib/ia.ts`), somado ao `Bindings` em `src/index.ts`.
@@ -407,6 +417,45 @@ O Cloudflare Access saiu por completo (`src/lib/access.ts`/`access.test.ts` dele
 ```bash
 pnpm --filter @piluvitu/financas exec vitest run src/lib/auth.test.ts
 ```
+
+## Passkey — segundo jeito de entrar (`@better-auth/passkey` 1.6.25)
+
+O Google continua sendo o jeito principal. A passkey só entra depois: o dono, já logado pelo Google, cadastra a passkey em **Configurações → Passkeys**; daí em diante a tela de login mostra **Entrar com passkey** ao lado do Google. Sem senha, sem OTP, sem e-mail (`emailAndPassword` segue `enabled: false`).
+
+**Servidor (`src/lib/auth.ts`):**
+
+- **rpID e origin fixos, escolhidos por `BETTER_AUTH_URL`** (`configPasskey`): `https://financas.piluvitu.com.br` → rpID `financas.piluvitu.com.br`, origin `https://financas.piluvitu.com.br`; `http://localhost:5273` (o `.dev.vars.example`, Vite com proxy para o `wrangler dev`) → rpID `localhost`, origin `http://localhost:5273`. Qualquer outro valor (inclusive `http://localhost:8787` e o mesmo domínio com `/` no fim) **não registra o plugin**: `/api/auth/passkey/*` dá 404. Sem `origin` explícito o plugin usaria o header `Origin` do pedido, e sem `rpID` o hostname do `baseURL`; os dois vão sempre passados.
+- **Cerimônia:** `authenticatorSelection { residentKey: 'required', userVerification: 'required' }` (credencial descobrível, por isso o login não pede e-mail). O plugin confere com `requireUserVerification: false` fixo, então `registration.afterVerification` e `authentication.afterVerification` recusam resposta sem a flag UV (`USER_VERIFICATION_REQUIRED`, 400 no cadastro e 401 no login), sem fork do plugin. Assimetria: no login o pedido ao navegador sai com `userVerification: 'preferred'` (fixo no `generate-authenticate-options` do plugin 1.6.25, sem opção para mudar); quem garante a UV é a conferência no servidor, e o sintoma de um autenticador que pula a UV é o `401 USER_VERIFICATION_REQUIRED` no login.
+- **Allowlist, as duas pontas:**
+  - cadastro e gestão (`generate-register-options`, `verify-registration`, `list-user-passkeys`, `delete-passkey`, `update-passkey`): `hooks.before` lê a sessão e responde `403 email_not_allowed` se o e-mail não é `ALLOWED_EMAIL`. Sem sessão, o próprio plugin responde 401. O cadastro também exige sessão "fresca" (`freshSessionMiddleware` do plugin: `SESSION_NOT_FRESH` se a sessão passou do `freshAge`; a SPA pede para sair e entrar de novo pelo Google).
+  - **cadastro só com sessão aberta pelo Google** (regra do dono): `session.additionalFields.metodoLogin` (`input: false`) é preenchido em `databaseHooks.session.create.before` pelo `ctx.path` de quem cria a sessão (`metodoLoginDoCaminho`: `/passkey/verify-authentication` → `'passkey'`; `/callback/:id` e `/sign-in/social` → `'google'`; qualquer outro → `'desconhecido'`). O mesmo `hooks.before` recusa `generate-register-options` e `verify-registration` com `403 PASSKEY_EXIGE_LOGIN_GOOGLE` ("Para cadastrar uma passkey, entre pelo Google") quando o método não é `google`. `NULL` conta como `google` (`sessaoPodeCadastrarPasskey`): antes da `0016` o Google era o único jeito de abrir sessão. Listar, renomear e remover seguem liberados na sessão por passkey (não ampliam acesso). Sem isto, a sessão criada pela passkey passava no `freshSessionMiddleware` e cadastrava outra passkey. `session.cookieCache` está desligado no finanças, então o hook lê a coluna do D1 a cada pedido; se um dia for ligado, `metodoLogin` precisa continuar chegando na sessão do cache (o campo adicional vai junto no cookie, conferir com teste).
+  - login: `authentication.afterVerification` roda depois da assinatura e **antes** do `createSession`, busca o e-mail do dono da credencial (`passkey JOIN user` por `credentialID`) e responde `403 email_not_allowed` se ele saiu da lista. Nenhuma sessão é criada. Passkey nunca cria `user` (o plugin só aceita credencial já gravada, e só grava para a sessão aberta).
+  - `decidirAcesso` (`session.ts`) continua como 2ª camada em toda rota de domínio.
+- **Rate limit:** `generate-authenticate-options` e `verify-authentication` têm `customRules` de 3 a cada 10 s por IP, o mesmo teto do `/sign-in` embutido (o primeiro grava uma linha em `verification` sem sessão nenhuma). As rotas de gestão ficam no balde geral (20/60 s).
+- **`isRotaDeAuth`** já cobre `/api/auth/passkey/*`: essas rotas vão direto ao handler do Better Auth, fora da guarda de sessão do domínio (teste `montagem no Worker`).
+- **CPU (Workers Free, 10 ms):** a conferência é ECDSA P-256 pelo WebCrypto do `@simplewebauthn/server`. Medido em Node 22 (`process.cpuUsage`, 30 cerimônias, autenticador ES256 falso): `verifyAuthenticationResponse` mediana 0,59 ms (pior quente 2,7 ms, primeira chamada fria 3,3 ms), `verifyRegistrationResponse` mediana 0,27 ms (fria 4,3 ms), `generateAuthenticationOptions` 0,02 ms; montar o `betterAuth()` com o plugin custa 0,2 ms (mediana), igual a sem ele. D1 é I/O e não conta CPU. Cabe com folga; é estimativa em Node, não medição no workerd.
+
+**SPA (`web/src`):** `auth-client.ts` registra `passkeyClient()` (de `@better-auth/passkey/client`). `Gate.tsx` mostra **Entrar com passkey** (`signIn.passkey()`) ao lado do Google, com o erro traduzido em `role="alert"`. `Passkeys.tsx` (`PasskeysCard`, montado em `pages/config.tsx` logo depois de **Conta**) tem **Cadastrar passkey** (`passkey.addPasskey`, nome opcional), a lista (`useListPasskeys`, com carregando/erro/vazio) e **Remover** (`passkey.deletePasskey`). `lib/passkey.ts`: `suportaPasskey()` (há `window.PublicKeyCredential`) esconde os botões em navegador sem WebAuthn (o cartão mostra "Este navegador não suporta passkey."), e `mensagemDeErroPasskey()` traduz os códigos do plugin (e o `PASSKEY_EXIGE_LOGIN_GOOGLE` do servidor: "Para cadastrar uma passkey, saia e entre pelo Google.") e o 429 do rate limit (que chega sem `code` e com a mensagem em inglês). Sem Storybook no finanças (não há story).
+
+**Perdeu o aparelho:** entre pelo Google e remova a passkey em Configurações → Passkeys. Sem acesso à tela, o dono apaga pelo banco (comando só documentado, roda em produção):
+
+```bash
+# ver as passkeys
+pnpm --filter @piluvitu/financas exec wrangler d1 execute piluvitu-financas --remote --command "SELECT id, name, createdAt FROM passkey"
+# apagar uma
+pnpm --filter @piluvitu/financas exec wrangler d1 execute piluvitu-financas --remote --command "DELETE FROM passkey WHERE id = '<id>'"
+# apagar todas do dono
+pnpm --filter @piluvitu/financas exec wrangler d1 execute piluvitu-financas --remote --command "DELETE FROM passkey WHERE userId = (SELECT id FROM user WHERE email = 'paulo.tspi@gmail.com')"
+```
+
+**Testes:** `src/lib/auth.passkey.test.ts` (31) roda o plugin de ponta a ponta pelo `auth.handler` real com um autenticador ES256 em software (`src/lib/autenticador-falso.ts`: chave do WebCrypto, attestation `none`, CBOR à mão) e a sessão do Google simulada (`src/lib/login-google-falso.ts`, o helper que saiu de `auth.test.ts`): ambientes e 404 com o plugin desligado, rpID fixo mesmo com o pedido vindo de outro host, `residentKey`/`userVerification`, 401 sem sessão, 403 `email_not_allowed` nas cinco rotas de gestão, cadastrar → listar → entrar → remover, conferência sem header `Origin` (prova de que a origem vem da config), `clientDataJSON` de outra origem recusado, UV ausente recusado nas duas cerimônias, login de quem saiu da lista sem sessão nova, cadastro recusado (`403 PASSKEY_EXIGE_LOGIN_GOOGLE`) na sessão aberta pela passkey com lista/remoção liberadas, sessão do Google marcada `google` e sessão `NULL` cadastrando, rate limit e a migration. SPA: `lib/passkey.test.ts`, `Passkeys.test.tsx`, os casos de passkey em `Gate.test.tsx` e o cartão em `pages/config.test.tsx`.
+
+```bash
+pnpm --filter @piluvitu/financas exec vitest run src/lib/auth.passkey.test.ts
+pnpm --filter @piluvitu/financas-web exec vitest run src/lib/passkey.test.ts src/Passkeys.test.tsx src/Gate.test.tsx
+```
+
+**Produção, na ordem (dono):** 1) `wrangler d1 migrations apply piluvitu-financas --remote` (0016); 2) deploy do Worker. Nada novo de secret, binding ou recurso na Cloudflare.
 
 ## Datas, fuso e ids (`src/lib/dates.ts`, `src/lib/ids.ts`)
 

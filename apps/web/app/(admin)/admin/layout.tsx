@@ -1,12 +1,15 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { AdminTopBar } from '@/components/admin/admin-top-bar'
 import { AdminLoginScreen } from '@/components/admin/admin-login-screen'
 import { Skeleton } from '@piluvitu/ui/skeleton'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useAdminStats } from '@/hooks/admin/use-admin-stats'
+import { usePasskeySuportado } from '@/hooks/admin/use-passkey-suportado'
+import { signInWithPasskey } from '@/lib/admin/passkey'
 import { votacaoApi } from '@/lib/votacao/api-client'
 
 // Rotas não mapeadas caem no fallback ['Admin'] no JSX abaixo; adicione a entrada
@@ -22,6 +25,7 @@ const CRUMB: Record<string, string[]> = {
   '/admin/midia': ['Site', 'Mídia'],
   '/admin/sessoes': ['Votação', 'Sessões'],
   '/admin/transcricao': ['Ferramentas', 'Transcrição'],
+  '/admin/passkeys': ['Conta', 'Passkeys'],
 }
 
 export default function AdminShellLayout({
@@ -30,6 +34,8 @@ export default function AdminShellLayout({
   const pathname = usePathname()
   const user = useCurrentUser()
   const stats = useAdminStats()
+  const queryClient = useQueryClient()
+  const passkeySuportado = usePasskeySuportado()
 
   if (user.isLoading) {
     return (
@@ -39,10 +45,18 @@ export default function AdminShellLayout({
     )
   }
 
-  // Não autenticado (sessão Google ausente → /auth/me 401) ou falha de auth →
-  // oferece o login com Google em vez de um beco sem saída.
+  // Não autenticado (sessão ausente → /auth/me 401) ou falha de auth →
+  // oferece o login com Google ou passkey em vez de um beco sem saída.
   if (!user.data) {
-    return <AdminLoginScreen />
+    return (
+      <AdminLoginScreen
+        passkeySuportado={passkeySuportado}
+        onPasskeyLogin={async () => {
+          await signInWithPasskey()
+          await queryClient.invalidateQueries({ queryKey: ['votacao', 'me'] })
+        }}
+      />
+    )
   }
 
   if (!user.data.is_admin) {

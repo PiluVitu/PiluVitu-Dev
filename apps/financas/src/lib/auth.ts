@@ -6,8 +6,13 @@
  * allowlist (a 2ª, sobre sessão já existente, é decidirAcesso em
  * session.ts, Task 3).
  */
+import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
-import { APIError } from 'better-auth/api'
+import {
+  APIError,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from 'better-auth/api'
 
 export type AuthBindings = {
   DB: D1Database
@@ -80,6 +85,128 @@ export function assertEmailPermitido(email: unknown, permitido: string): void {
   if (!isAllowedEmail(email, permitido)) {
     throw new APIError('FORBIDDEN', { message: CODIGO_BARRADO })
   }
+}
+
+export type ConfigPasskey = { rpID: string; origin: string }
+
+/**
+ * Lista fechada por BETTER_AUTH_URL: rpID e origin nunca saem do pedido (sem
+ * `origin`, o plugin confia no header Origin). Ambiente fora da lista desliga
+ * a passkey. Ver "Passkey" no CLAUDE.md do app.
+ */
+const PASSKEY_POR_AMBIENTE = new Map<string, ConfigPasskey>([
+  [
+    'https://financas.piluvitu.com.br',
+    {
+      rpID: 'financas.piluvitu.com.br',
+      origin: 'https://financas.piluvitu.com.br',
+    },
+  ],
+  [
+    'http://localhost:5273',
+    { rpID: 'localhost', origin: 'http://localhost:5273' },
+  ],
+])
+
+export function configPasskey(baseURL: string): ConfigPasskey | null {
+  return PASSKEY_POR_AMBIENTE.get(baseURL) ?? null
+}
+
+const ROTAS_DE_CADASTRO_DA_PASSKEY = new Set([
+  '/passkey/generate-register-options',
+  '/passkey/verify-registration',
+])
+
+export type MetodoLogin = 'google' | 'passkey' | 'desconhecido'
+
+/** Caminho do endpoint que está criando a sessão → método gravado nela. */
+export function metodoLoginDoCaminho(caminho: string | undefined): MetodoLogin {
+  if (caminho === '/passkey/verify-authentication') return 'passkey'
+  if (caminho === '/callback/:id' || caminho === '/sign-in/social') {
+    return 'google'
+  }
+  return 'desconhecido'
+}
+
+/** NULL = sessão anterior à migração 0016, quando só existia o Google. */
+export function sessaoPodeCadastrarPasskey(metodo: unknown): boolean {
+  return metodo === null || metodo === undefined || metodo === 'google'
+}
+
+const ROTAS_DE_GESTAO_DA_PASSKEY = new Set([
+  '/passkey/generate-register-options',
+  '/passkey/verify-registration',
+  '/passkey/list-user-passkeys',
+  '/passkey/delete-passkey',
+  '/passkey/update-passkey',
+])
+
+// O plugin confere com requireUserVerification: false fixo; a flag UV do
+// autenticador é conferida aqui, depois da assinatura.
+function exigirVerificacaoDoUsuario(
+  verificado: boolean | undefined,
+  status: 'BAD_REQUEST' | 'UNAUTHORIZED',
+): void {
+  if (verificado !== true) {
+    throw new APIError(status, {
+      code: 'USER_VERIFICATION_REQUIRED',
+      message: 'a passkey precisa confirmar quem é você (biometria ou PIN)',
+    })
+  }
+}
+
+async function assertDonoDaPasskeyPermitido(
+  env: AuthBindings,
+  credentialID: string,
+): Promise<void> {
+  const dono = await env.DB.prepare(
+    'SELECT u.email FROM passkey p JOIN user u ON u.id = p.userId WHERE p.credentialID = ?',
+  )
+    .bind(credentialID)
+    .first<{ email: string }>()
+  if (!isAllowedEmail(dono?.email, env.ALLOWED_EMAIL)) {
+    throw new APIError('FORBIDDEN', {
+      code: 'email_not_allowed',
+      message: 'este e-mail não tem acesso ao aplicativo',
+    })
+  }
+}
+
+function pluginsDePasskey(env: AuthBindings) {
+  const config = configPasskey(env.BETTER_AUTH_URL)
+  if (!config) return []
+  return [
+    passkey({
+      rpID: config.rpID,
+      origin: config.origin,
+      rpName: 'Finanças PiluVitu',
+      authenticatorSelection: {
+        residentKey: 'required',
+        userVerification: 'required',
+      },
+      registration: {
+        afterVerification: ({ verification }) =>
+          exigirVerificacaoDoUsuario(
+            verification.registrationInfo?.userVerified,
+            'BAD_REQUEST',
+          ),
+      },
+      // Roda depois da assinatura e antes de createSession: quem saiu da
+      // allowlist depois de cadastrar a passkey não ganha sessão.
+      authentication: {
+        afterVerification: async ({ verification }) => {
+          exigirVerificacaoDoUsuario(
+            verification.authenticationInfo.userVerified,
+            'UNAUTHORIZED',
+          )
+          await assertDonoDaPasskeyPermitido(
+            env,
+            verification.authenticationInfo.credentialID,
+          )
+        },
+      },
+    }),
+  ]
 }
 
 /**
@@ -189,6 +316,10 @@ export function createAuth(env: AuthBindings) {
       // por-isolate documentado abaixo, storage: 'memory').
       customRules: {
         '/get-session': { window: 60, max: 120 },
+        // Login por passkey sem sessão: mesmo teto do /sign-in embutido.
+        // generate-authenticate-options grava uma linha em verification.
+        '/passkey/generate-authenticate-options': { window: 10, max: 3 },
+        '/passkey/verify-authentication': { window: 10, max: 3 },
       },
       // 'database' pediria uma tabela `rateLimit` própria — migration 0003
       // nova, e migration aqui é forward-only, então essa decisão fica de
@@ -237,7 +368,46 @@ export function createAuth(env: AuthBindings) {
       },
     },
 
+    plugins: pluginsDePasskey(env),
+
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (!ROTAS_DE_GESTAO_DA_PASSKEY.has(ctx.path)) return
+        const sessao = await getSessionFromCtx(ctx)
+        // Sem sessão, o próprio plugin responde 401.
+        if (!sessao) return
+        if (!isAllowedEmail(sessao.user.email, env.ALLOWED_EMAIL)) {
+          throw new APIError('FORBIDDEN', {
+            code: 'email_not_allowed',
+            message: 'este e-mail não tem acesso ao aplicativo',
+          })
+        }
+        if (
+          ROTAS_DE_CADASTRO_DA_PASSKEY.has(ctx.path) &&
+          !sessaoPodeCadastrarPasskey(sessao.session.metodoLogin)
+        ) {
+          throw new APIError('FORBIDDEN', {
+            code: 'PASSKEY_EXIGE_LOGIN_GOOGLE',
+            message: 'Para cadastrar uma passkey, entre pelo Google',
+          })
+        }
+      }),
+    },
+
+    session: {
+      additionalFields: {
+        metodoLogin: { type: 'string', required: false, input: false },
+      },
+    },
+
     databaseHooks: {
+      session: {
+        create: {
+          before: async (sessao, ctx) => ({
+            data: { ...sessao, metodoLogin: metodoLoginDoCaminho(ctx?.path) },
+          }),
+        },
+      },
       user: {
         create: {
           before: async (user) => {

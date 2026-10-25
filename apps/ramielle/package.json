@@ -21,6 +21,7 @@
     "db:migrate:list:remote": "wrangler d1 migrations list piluvitu-ramielle --remote"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.6.25",
     "@piluvitu/ia": "workspace:*",
     "better-auth": "1.6.25",
     "hono": "^4.13.12"
