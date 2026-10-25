@@ -11,8 +11,13 @@ vi.mock('./auth-client', () => ({
     },
     isPending: false,
   }),
-  signIn: { social: vi.fn() },
+  signIn: { social: vi.fn(), passkey: vi.fn() },
   signOut: vi.fn(),
+  // Configurações monta o PasskeysCard (coberto em Passkeys.test.tsx).
+  authClient: {
+    useListPasskeys: () => ({ data: [], error: null, isPending: false }),
+    passkey: { addPasskey: vi.fn(), deletePasskey: vi.fn() },
+  },
 }))
 
 // Fix round 1 (Task 8, IMPORTANT do review): o fallback genérico `: []` pra

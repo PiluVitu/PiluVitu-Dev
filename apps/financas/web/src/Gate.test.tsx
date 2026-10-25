@@ -304,3 +304,113 @@ describe('Gate — callbackURL preserva a rota (hash) atual', () => {
     )
   })
 })
+
+describe('Gate — Entrar com passkey', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    window.history.pushState({}, '', '/')
+  })
+
+  async function montarSemSessao(passkey: ReturnType<typeof vi.fn>) {
+    vi.resetModules()
+    vi.doMock('./auth-client', () => ({
+      useSession: () => ({ data: null, error: null, isPending: false }),
+      signIn: { social: vi.fn(), passkey },
+      signOut: vi.fn(),
+    }))
+    return import('./Gate')
+  }
+
+  function comWebAuthn() {
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {})
+  }
+
+  test('navegador sem WebAuthn: só o Google', async () => {
+    const { Gate } = await montarSemSessao(vi.fn())
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    expect(screen.getByText('Entrar com Google')).toBeDefined()
+    expect(screen.queryByText('Entrar com passkey')).toBeNull()
+  })
+
+  test('com WebAuthn: botão ao lado do Google chama signIn.passkey', async () => {
+    comWebAuthn()
+    const passkey = vi.fn().mockResolvedValue({ data: {}, error: null })
+    const { Gate } = await montarSemSessao(passkey)
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    expect(screen.getByText('Entrar com Google')).toBeDefined()
+    fireEvent.click(screen.getByText('Entrar com passkey'))
+    await waitFor(() => expect(passkey).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  test('erro do servidor aparece traduzido em role="alert"', async () => {
+    comWebAuthn()
+    const passkey = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'email_not_allowed', status: 403 },
+    })
+    const { Gate } = await montarSemSessao(passkey)
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    fireEvent.click(screen.getByText('Entrar com passkey'))
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Este e-mail não tem acesso a este aplicativo.',
+      ),
+    )
+    expect(screen.queryByText('SEGREDO')).toBeNull()
+  })
+
+  test('cancelar no navegador mostra "Operação cancelada."', async () => {
+    comWebAuthn()
+    const passkey = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'AUTH_CANCELLED', status: 400 },
+    })
+    const { Gate } = await montarSemSessao(passkey)
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    fireEvent.click(screen.getByText('Entrar com passkey'))
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('Operação cancelada.'),
+    )
+  })
+
+  test('exceção (rede fora) vira mensagem e libera o botão de novo', async () => {
+    comWebAuthn()
+    const passkey = vi.fn().mockRejectedValue(new Error('rede fora'))
+    const { Gate } = await montarSemSessao(passkey)
+    render(
+      <Gate>
+        <p>SEGREDO</p>
+      </Gate>,
+    )
+    fireEvent.click(screen.getByText('Entrar com passkey'))
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Não foi possível concluir (rede fora).',
+      ),
+    )
+    expect(
+      (
+        screen
+          .getByText('Entrar com passkey')
+          .closest('button') as HTMLButtonElement
+      ).disabled,
+    ).toBe(false)
+  })
+})

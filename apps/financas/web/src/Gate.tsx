@@ -1,6 +1,11 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from '@piluvitu/ui/button'
 import { signIn, useSession } from './auth-client'
+import {
+  mensagemDeErroPasskey,
+  mensagemDeExcecao,
+  suportaPasskey,
+} from './lib/passkey'
 
 export function mensagemDeErro(codigo: string | null): string | null {
   if (codigo === null) return null
@@ -11,6 +16,21 @@ export function mensagemDeErro(codigo: string | null): string | null {
 
 export function Gate({ children }: { children: ReactNode }) {
   const { data: sessao, isPending, error } = useSession()
+  const [entrandoComPasskey, setEntrandoComPasskey] = useState(false)
+  const [erroPasskey, setErroPasskey] = useState<string | null>(null)
+
+  async function entrarComPasskey() {
+    setEntrandoComPasskey(true)
+    setErroPasskey(null)
+    try {
+      const r = await signIn.passkey()
+      if (r?.error) setErroPasskey(mensagemDeErroPasskey(r.error))
+    } catch (err) {
+      setErroPasskey(mensagemDeExcecao(err))
+    } finally {
+      setEntrandoComPasskey(false)
+    }
+  }
 
   // A ORDEM É A GUARDA. isPending PRIMEIRO: o primeiro render é sempre
   // pending. Testar !sessao antes pisca a tela de login pra quem já está
@@ -48,26 +68,42 @@ export function Gate({ children }: { children: ReactNode }) {
             Não consegui verificar sua sessão. Tente novamente.
           </p>
         )}
-        <Button
-          onClick={() =>
-            signIn.social({
-              provider: 'google',
-              // Preserva a rota atual (hash) no round trip: sem isso, um
-              // login feito em qualquer tela que não seja a inicial volta
-              // pra #/contas (default de useHash()) depois do callback do
-              // Google, porque o Better Auth navega pra callbackURL SEM
-              // hash nenhum — Gate nunca toca o hash, então a URL ainda
-              // lia a tela certa até este clique.
-              callbackURL: `/${window.location.hash}`,
-              // PATH, não hash: o redirect de erro monta
-              // `${errorURL}?error=…` — com '/#/login' a query cairia
-              // dentro do hash e location.search ficaria vazio.
-              errorCallbackURL: '/login',
-            })
-          }
-        >
-          Entrar com Google
-        </Button>
+        {erroPasskey !== null && (
+          <p role="alert" className="text-destructive text-sm">
+            {erroPasskey}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() =>
+              signIn.social({
+                provider: 'google',
+                // Preserva a rota atual (hash) no round trip: sem isso, um
+                // login feito em qualquer tela que não seja a inicial volta
+                // pra #/contas (default de useHash()) depois do callback do
+                // Google, porque o Better Auth navega pra callbackURL SEM
+                // hash nenhum — Gate nunca toca o hash, então a URL ainda
+                // lia a tela certa até este clique.
+                callbackURL: `/${window.location.hash}`,
+                // PATH, não hash: o redirect de erro monta
+                // `${errorURL}?error=…` — com '/#/login' a query cairia
+                // dentro do hash e location.search ficaria vazio.
+                errorCallbackURL: '/login',
+              })
+            }
+          >
+            Entrar com Google
+          </Button>
+          {suportaPasskey() && (
+            <Button
+              variant="outline"
+              disabled={entrandoComPasskey}
+              onClick={entrarComPasskey}
+            >
+              Entrar com passkey
+            </Button>
+          )}
+        </div>
       </main>
     )
   }

@@ -8,6 +8,7 @@ import { Label } from '@piluvitu/ui/label'
 import { Textarea } from '@piluvitu/ui/textarea'
 import { api, ApiError } from '../api'
 import { signOut, useSession } from '../auth-client'
+import { PasskeysCard } from '../Passkeys'
 import { cn } from '@piluvitu/ui/cn'
 import { CARTAO_SECAO, GRID_BLOCOS } from '../lib/superficie'
 import { ROTULO, SUBTITULO_PAGINA } from '../lib/tipografia'
@@ -41,7 +42,7 @@ function paraCampo(cents: number): string {
  * honesto: Renda fixa de referência (o denominador editável de
  * Comprometido, `PUT /api/settings`), Tema (motor de `lib/theme.ts`,
  * Task 4 — esta é a PRIMEIRA tela a expor um controle de UI pra ele),
- * Conta (e-mail da sessão + Sair) e Backup (comando + o que cobre).
+ * Conta (e-mail da sessão + Sair), Passkeys (`../Passkeys.tsx`) e Backup (comando + o que cobre).
  * "Conectar contas" NÃO tem controle nenhum de propósito — Open Finance é
  * fatia ④, não construída, bloqueada por restrições reais (ver
  * apps/financas/CLAUDE.md); um botão que não faz nada é pior que a
@@ -255,6 +256,8 @@ export function ConfigPage() {
             </Button>
           </CardContent>
         </Card>
+
+        <PasskeysCard />
 
         <Card className={cn(CARTAO_SECAO, 'col-span-full')}>
           <CardHeader>

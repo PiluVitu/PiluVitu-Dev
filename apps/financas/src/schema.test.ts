@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015 — tabelas', () => {
-  it('cria exatamente as 19 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016 — tabelas', () => {
+  it('cria exatamente as 20 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -192,6 +192,7 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015 — tabelas', () => {
       'insights',
       'installment_plans',
       'installments',
+      'passkey',
       'payees',
       'recurring_expenses',
       'rules',
