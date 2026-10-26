@@ -6,23 +6,30 @@ import { PageTopBar } from '@/components/page-top-bar'
 import { Skeleton } from '@piluvitu/ui/skeleton'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
 import { useSessionList } from '@/hooks/votacao/use-session-list'
+import { useBaseDaVotacao } from '@/hooks/votacao/use-base-da-votacao'
+import { caminhoNaBase, urlDoSite } from '@/lib/votai'
 import Link from 'next/link'
 
 export default function VotacaoPage() {
   const user = useCurrentUser()
-  const list = useSessionList()
+  const list = useSessionList({ enabled: !!user.data })
+  const base = useBaseDaVotacao()
 
   return (
     <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
-      <PageTopBar backHref="/" backLabel="Paulo Victor" />
+      <PageTopBar backHref={urlDoSite('/')} backLabel="Paulo Victor" />
 
       <header className="mt-10 mb-10 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">
-            Votação de Filmes
-          </h1>
+          <h1 className="text-4xl font-bold tracking-tight">Votaí</h1>
           <p className="text-muted-foreground mt-2">
-            Sessões em aberto e histórico recente.
+            A votação de filmes da turma.{' '}
+            <Link
+              href={caminhoNaBase(base, '/anteriores')}
+              className="hover:text-primary text-foreground underline underline-offset-4 transition-colors"
+            >
+              Votações anteriores
+            </Link>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -38,7 +45,7 @@ export default function VotacaoPage() {
               </span>
               {user.data.is_admin && (
                 <Link
-                  href="/admin/sessoes"
+                  href={urlDoSite('/admin/sessoes')}
                   className="hover:text-primary text-sm underline underline-offset-4 transition-colors"
                 >
                   Painel admin
@@ -60,6 +67,11 @@ export default function VotacaoPage() {
             <Skeleton className="h-24 w-full" />
           </div>
         )}
+        {!user.isLoading && !user.data && (
+          <p className="text-muted-foreground">
+            Entre com o Google para ver e votar nas sessões abertas.
+          </p>
+        )}
         {list.error && (
           <p className="text-destructive text-sm">Erro ao carregar sessões.</p>
         )}
@@ -71,7 +83,11 @@ export default function VotacaoPage() {
         )}
         <div className="grid gap-3">
           {list.data?.sessions.map((s) => (
-            <SessionCard key={s.ID} session={s} />
+            <SessionCard
+              key={s.ID}
+              session={s}
+              href={caminhoNaBase(base, `/${s.ID}`)}
+            />
           ))}
         </div>
       </section>

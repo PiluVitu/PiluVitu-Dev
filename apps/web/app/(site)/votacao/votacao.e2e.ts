@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 
+// O Votaí serve a votação na raiz do próprio host (proxy.ts): /votacao → '/', /votacao/1 → '/1'.
+// O Chromium resolve *.localhost para o loopback, e o next dev da 3333 atende os dois hosts.
+const VOTAI = 'http://votai.localhost:3333'
+
 // Routes are matched host-agnostically (`**/path`) so the mocks apply
 // regardless of NEXT_PUBLIC_API_URL (localhost:8080 in CI, 8081 in dev, the
 // tunnel host in prod). Hardcoding the host here previously broke the suite
@@ -143,7 +147,16 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
       })
     }
   })
+  // Contrato real do ramielle: GET /votacao/sessions exige login (401 sem cookie).
   await page.route(`**/votacao/sessions`, (route) => {
+    if (!loggedIn) {
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: errorEnvelope('not_authenticated', 'Você precisa estar logado.'),
+      })
+      return
+    }
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -216,41 +229,69 @@ async function mockAPI(page: Page, options: MockOptions = {}) {
   })
 }
 
-test.describe('/votacao listing', () => {
+test.describe('Votaí: lista', () => {
   test('shows login button when anonymous', async ({ page }) => {
     await mockAPI(page, { loggedIn: false })
-    await page.goto('/votacao')
+    await page.goto(`${VOTAI}/`)
     // O login virou POST /api/auth/sign-in/social (Better Auth, ramielle) em
     // vez de navegação top-level via <a href>, então o gatilho agora é um
     // <button>, não um <a> (role muda de link pra button).
     await expect(
       page.getByRole('button', { name: /entrar com google/i }),
     ).toBeVisible()
+    await expect(
+      page.getByText(
+        'Entre com o Google para ver e votar nas sessões abertas.',
+      ),
+    ).toBeVisible()
+    await expect(page.getByText('Erro ao carregar sessões.')).toHaveCount(0)
   })
 
   test('lists sessions and links to detail', async ({ page }) => {
     await mockAPI(page)
-    await page.goto('/votacao')
+    await page.goto(`${VOTAI}/`)
     await expect(page.getByText('Sexta 22/05')).toBeVisible()
     await page.getByText('Sexta 22/05').click()
-    await expect(page).toHaveURL(/\/votacao\/1$/)
+    await expect(page).toHaveURL(`${VOTAI}/1`)
   })
 
   test('admin sees painel link', async ({ page }) => {
     await mockAPI(page)
-    await page.goto('/votacao')
+    await page.goto(`${VOTAI}/`)
     await expect(
       page.getByRole('link', { name: /painel admin/i }),
-    ).toHaveAttribute('href', '/admin/sessoes')
+    ).toHaveAttribute('href', 'http://localhost:3333/admin/sessoes')
   })
 })
 
-test.describe('/votacao/[id] detail', () => {
+test.describe('Votaí: sessão', () => {
+  test('a sessão tem canonical e og:url próprios, sem indexar', async ({
+    page,
+  }) => {
+    await mockAPI(page)
+    await page.goto(`${VOTAI}/1`)
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'https://votai.piluvitu.com.br/1',
+    )
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+      'content',
+      'https://votai.piluvitu.com.br/1',
+    )
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      'content',
+      'noindex, follow',
+    )
+    // O openGraph do layout filho substitui o do pai inteiro: sem o opengraph-image próprio do
+    // [id], a sessão sairia sem og:image.
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1)
+  })
+
   test('renders movies and submits a single vote (happy path)', async ({
     page,
   }) => {
     await mockAPI(page)
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('A Coisa')).toBeVisible()
     await expect(page.getByText('Forrest Gump')).toBeVisible()
     await page.getByText('A Coisa').click()
@@ -283,7 +324,7 @@ test.describe('/votacao/[id] detail', () => {
       })
     })
 
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await page.getByText('A Coisa').click()
     await page.getByText('Forrest Gump').click()
     await page.getByRole('button', { name: /votar \(2\)/i }).click()
@@ -296,7 +337,7 @@ test.describe('/votacao/[id] detail', () => {
     page,
   }) => {
     await mockAPI(page, { votedMovieIds: [1] })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     // The previously approved card carries the "Seu voto" badge (exact text —
     // the helper sentence "Você pode mudar seu voto" must not match)…
     await expect(page.getByText('Seu voto', { exact: true })).toBeVisible()
@@ -308,7 +349,7 @@ test.describe('/votacao/[id] detail', () => {
 
   test('shows results with a winner badge when closed', async ({ page }) => {
     await mockAPI(page, { sessionStatus: 'closed' })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText(/resultados/i)).toBeVisible()
     await expect(page.getByText(/total de votos/i)).toBeVisible()
     // results mock: movie 1 has 2 votes vs movie 2 with 1 → clear winner.
@@ -351,7 +392,7 @@ test.describe('/votacao/[id] detail', () => {
       })
     })
 
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await page.getByTestId('capture-entropy').click()
     // Allow up to ~10s for the wheel animation to settle.
     await expect(page.getByText(/vencedor do desempate/i)).toBeVisible({
@@ -372,7 +413,7 @@ test.describe('sessão de Halloween', () => {
 
   test('a listagem destaca a sessão de Halloween', async ({ page }) => {
     await mockAPI(page, { sessionOverrides: halloween })
-    await page.goto('/votacao')
+    await page.goto(`${VOTAI}/`)
     await expect(page.getByText('Sessão de Halloween')).toBeVisible()
   })
 
@@ -380,7 +421,7 @@ test.describe('sessão de Halloween', () => {
     page,
   }) => {
     await mockAPI(page, { sessionOverrides: halloween })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
     await expect(page.getByTestId('halloween-backdrop')).toBeAttached()
     // A revoada de entrada cobre a tela inteira, mas não pode bloquear o clique
@@ -409,7 +450,7 @@ test.describe('sessão de Halloween', () => {
     await mockAPI(page, {
       sessionOverrides: { Title: 'Noite de Halloween', SortOptionsJSON: '{}' },
     })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('A Coisa')).toBeVisible()
     await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
       0,
@@ -421,14 +462,14 @@ test.describe('sessão de Halloween', () => {
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await mockAPI(page, { sessionOverrides: halloween })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('A Coisa')).toBeVisible()
     await expect(page.getByTestId('halloween-entrada')).toBeHidden()
   })
 
   test('sessão comum não ganha o tema', async ({ page }) => {
     await mockAPI(page)
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('A Coisa')).toBeVisible()
     await expect(page.locator('[data-theme-votacao="halloween"]')).toHaveCount(
       0,
@@ -440,7 +481,7 @@ test.describe('sessão de Halloween', () => {
       sessionStatus: 'closed',
       sessionOverrides: halloween,
     })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('O veredito da noite')).toBeVisible()
     await expect(page.getByText('🎃 Vencedor')).toBeVisible()
   })
@@ -450,7 +491,7 @@ test.describe('sessão de Halloween', () => {
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await mockAPI(page, { sessionOverrides: halloween })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText('A Coisa')).toBeVisible()
     const larguras = await page.evaluate(() => ({
       conteudo: document.documentElement.scrollWidth,
@@ -493,7 +534,7 @@ test.describe('roleta de Halloween', () => {
       })
     })
 
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.locator('[data-theme-votacao="halloween"]')).toBeVisible()
     await expect(page.getByTestId('roleta-halloween')).toBeVisible()
     // Na roleta não tem votação nem botão de encerrar.
@@ -525,7 +566,7 @@ test.describe('roleta de Halloween', () => {
         body: envelope({ ...mockUser, is_admin: false }),
       }),
     )
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByText(/aguardando quem organiza/i)).toBeVisible()
     await expect(page.getByTestId('capture-entropy')).toHaveCount(0)
     await expect(page.getByText('2 filmes na roleta')).toBeVisible()
@@ -540,7 +581,7 @@ test.describe('roleta de Halloween', () => {
         WinnerMethod: 'roulette',
       },
     })
-    await page.goto('/votacao/1')
+    await page.goto(`${VOTAI}/1`)
     await expect(page.getByTestId('roleta-vencedor')).toContainText('A Coisa')
     await expect(page.getByTestId('capture-entropy')).toHaveCount(0)
   })

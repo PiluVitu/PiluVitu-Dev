@@ -118,3 +118,37 @@ export interface Backup {
 export interface BackupsResponse {
   backups: Backup[]
 }
+
+// --- Histórico público (sem login, só sessões encerradas, sem dado pessoal) ---
+
+export interface HistoricoFilme {
+  id: number
+  title: string
+  type: 'filme' | 'serie'
+  category: string
+  poster_url: string
+  votes: number
+}
+
+export interface HistoricoSessao {
+  id: number
+  title: string
+  created_at: string
+  closed_at: string | null
+  theme: 'halloween' | null
+  mode: 'votacao' | 'roleta'
+  winner_movie_id: number | null
+  winner_method: 'votes' | 'roulette' | null
+  total_voters: number
+  total_votes: number
+  /** Ordem do servidor: votos desc, depois id asc. */
+  movies: HistoricoFilme[]
+}
+
+export interface HistoricoPagina {
+  sessions: HistoricoSessao[]
+  page: number
+  page_size: number
+  total: number
+  has_more: boolean
+}

@@ -19,6 +19,8 @@ import { useSessionDetail } from '@/hooks/votacao/use-session-detail'
 import { useCloseSession } from '@/hooks/votacao/use-close-session'
 import { errorMessage } from '@/lib/votacao/api-client'
 import { toast } from 'sonner'
+import { useBaseDaVotacao } from '@/hooks/votacao/use-base-da-votacao'
+import { caminhoNaBase } from '@/lib/votai'
 
 export default function SessionDetailPage({
   params,
@@ -31,6 +33,7 @@ export default function SessionDetailPage({
   const user = useCurrentUser()
   const detail = useSessionDetail(id)
   const close = useCloseSession()
+  const base = useBaseDaVotacao()
 
   const halloween = detail.data
     ? isHalloweenSession(detail.data.session)
@@ -40,7 +43,7 @@ export default function SessionDetailPage({
   const shell = (children: React.ReactNode) => {
     const pagina = (
       <div className="mx-auto min-h-screen max-w-4xl px-6 py-8 sm:px-8 xl:py-10">
-        <PageTopBar backHref="/votacao" backLabel="Sessões" />
+        <PageTopBar backHref={caminhoNaBase(base)} backLabel="Votaí" />
         <div className="mt-10">{children}</div>
       </div>
     )

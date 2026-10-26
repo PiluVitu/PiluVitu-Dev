@@ -177,6 +177,14 @@ test.describe('/admin/sessoes', () => {
     await expect(page.getByText('A Coisa')).toBeVisible()
   })
 
+  test('o título da sessão leva à página dela no Votaí', async ({ page }) => {
+    await baseMocks(page)
+    await page.goto('/admin/sessoes')
+    await expect(
+      page.getByRole('link', { name: session.Title }).first(),
+    ).toHaveAttribute('href', 'http://votai.localhost:3333/1')
+  })
+
   test('o redirect de /votacao/admin chega em /admin/sessoes', async ({
     page,
   }) => {
@@ -221,7 +229,7 @@ test.describe('/admin/sessoes', () => {
       .getByRole('button', { name: /criar roleta de halloween/i })
       .click()
 
-    await expect(page).toHaveURL(/\/votacao\/1$/)
+    await expect(page).toHaveURL('http://votai.localhost:3333/1')
     expect(corpo).toEqual({
       title: 'Noite de Halloween',
       types: ['filme'],
