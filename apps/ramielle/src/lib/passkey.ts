@@ -11,16 +11,18 @@ import {
 } from 'better-auth/api'
 import { errJson } from './envelope'
 
-export type PasskeyAmbiente = { rpID: string; origin: string }
+export type PasskeyAmbiente = { rpID: string; origin: string[] }
 
+// O admin entra pelo site; a tela da sessão (encerrar, roleta, desempate)
+// mora no Votaí, então as duas origens assinam com o mesmo rpID.
 const PRODUCAO: PasskeyAmbiente = {
   rpID: 'piluvitu.com.br',
-  origin: 'https://piluvitu.com.br',
+  origin: ['https://piluvitu.com.br', 'https://votai.piluvitu.com.br'],
 }
 
 const DESENVOLVIMENTO: PasskeyAmbiente = {
   rpID: 'localhost',
-  origin: 'http://localhost:3333',
+  origin: ['http://localhost:3333', 'http://votai.localhost:3333'],
 }
 
 /**

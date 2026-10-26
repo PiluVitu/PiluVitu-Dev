@@ -37,7 +37,7 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 # responde 403 INVALID_CALLBACK_URL, com um erro que não diz que a causa é
 # CORS. DESCOMENTE a linha para desenvolver o web contra o ramielle local.
 # CSV, mesmo contrato de ADMIN_EMAILS acima.
-CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
+CORS_ALLOWED_ORIGINS=http://localhost:3333,http://votai.localhost:3333,https://piluvitu.com.br,https://votai.piluvitu.com.br
 
 # Task 2 (fatia ③): cliente do Sheets (src/lib/gsheets.ts) — lê filmes e
 # categorias da planilha de votação. Os três SEMPRE via `wrangler secret
