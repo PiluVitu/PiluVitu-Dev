@@ -363,7 +363,7 @@ test.describe('/', () => {
     }
   })
 
-  // Os cartões sem imagem ficam em linhas próprias (3 e 4, 5 e 6, 7): nenhum estica um vizinho com imagem.
+  // Os 4 com imagem ocupam as linhas 1 e 2, e os sem imagem as linhas 3 (5 e 6) e 4 (7): nenhum estica um vizinho com imagem.
   // Com o gap-6 (24 px) da grade dos projetos, cada coluna tem (1180 − 24) / 2 = 578 px.
   // O 7º (Live PRs) fica sozinho na 4ª linha, na coluna da esquerda, com a largura dos outros e sem esticar.
   test('a 1280 px, os 7 projetos em 4 linhas (3 de 2 e o último sozinho à esquerda)', async ({
@@ -396,9 +396,10 @@ test.describe('/', () => {
     expect(caixas[2].y).toBeGreaterThan(caixas[0].y)
     expect(caixas[4].y).toBeGreaterThan(caixas[2].y)
     expect(caixas[6].y).toBeGreaterThan(caixas[4].y)
-    expect(caixas[2].altura).toBeLessThan(caixas[0].altura)
+    expect(caixas[4].altura).toBeLessThan(caixas[0].altura)
+    expect(caixas[4].altura).toBeLessThan(caixas[2].altura)
     // Sem imagem, o último tem a altura dos outros cartões sem imagem, não a dos com imagem.
-    expect(caixas[6].altura).toBeLessThan(caixas[0].altura)
+    expect(caixas[6].altura).toBeLessThan(caixas[2].altura)
   })
 
   // Review Focus 3.

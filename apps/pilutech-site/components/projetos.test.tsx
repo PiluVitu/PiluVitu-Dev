@@ -76,18 +76,18 @@ describe('Projetos', () => {
 
   it('a imagem OG de cada domínio passa pelo otimizador do Next, com o alt do design', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [BOTAI, SOMBRAI]) {
+    for (const projeto of [BOTAI, SOMBRAI, APURAI, REPARAI]) {
       const imagem = screen.getByRole('img', { name: projeto.imagem.alt })
       expect(imagem.getAttribute('src')).toContain(
         `url=${encodeURIComponent(projeto.imagem.src)}&`,
       )
     }
-    expect(screen.getAllByRole('img')).toHaveLength(2)
+    expect(screen.getAllByRole('img')).toHaveLength(4)
   })
 
   it('os cartões sem imagem não têm img', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [APURAI, REPARAI, VEJAI, ORAI, LIVE_PRS])
+    for (const projeto of [VEJAI, ORAI, LIVE_PRS])
       expect(cartaoPeloNome(projeto.nome).querySelector('img')).toBeNull()
   })
 
@@ -142,7 +142,9 @@ describe('CartaoDoProjeto', () => {
     expect(link).toHaveAttribute('href', 'https://apurai.pilutech.com.br/')
     expect(link).toHaveClass('hover:border-primary')
     expect(link).toHaveTextContent('apurai.pilutech.com.br →')
-    expect(screen.queryByRole('img')).toBeNull()
+    expect(
+      within(link).getByRole('img', { name: APURAI.imagem.alt }),
+    ).toBeInTheDocument()
   })
 
   it('sem URL é uma caixa sem hover, sem link e sem seta', () => {

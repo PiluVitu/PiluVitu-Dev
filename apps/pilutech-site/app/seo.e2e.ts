@@ -109,7 +109,7 @@ test('toda imagem tem alt, e as dos projetos um alt descritivo', async ({
   const alts = await page
     .locator('#projetos img')
     .evaluateAll((imagens) => imagens.map((i) => i.getAttribute('alt') ?? ''))
-  expect(alts).toHaveLength(2)
+  expect(alts).toHaveLength(4)
   for (const alt of alts) expect(alt.length).toBeGreaterThan(30)
 })
 

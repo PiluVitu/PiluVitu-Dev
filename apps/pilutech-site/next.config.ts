@@ -18,6 +18,20 @@ const nextConfig: NextConfig = {
         pathname: '/opengraph-image.png',
         search: '',
       },
+      {
+        protocol: 'https',
+        hostname: 'apurai.pilutech.com.br',
+        port: '',
+        pathname: '/opengraph-image.png',
+        search: '',
+      },
+      {
+        protocol: 'https',
+        hostname: 'reparai.pilutech.com.br',
+        port: '',
+        pathname: '/opengraph-image.png',
+        search: '',
+      },
     ],
   },
 }

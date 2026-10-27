@@ -354,16 +354,22 @@ describe('projetos', () => {
       else expect(projeto.endereco).toBeUndefined()
   })
 
-  it('as imagens são as OG dos domínios, sem o parâmetro de hash; os novos não têm imagem', () => {
+  it('as imagens são as OG dos domínios, sem o parâmetro de hash; os que não têm site não têm imagem', () => {
     expect(BOTAI.imagem.src).toBe(
       'https://botai.pilutech.com.br/opengraph-image',
     )
     expect(SOMBRAI.imagem.src).toBe(
       'https://sombrai.pilutech.com.br/opengraph-image.png',
     )
-    for (const projeto of [BOTAI, SOMBRAI])
+    expect(APURAI.imagem.src).toBe(
+      'https://apurai.pilutech.com.br/opengraph-image.png',
+    )
+    expect(REPARAI.imagem.src).toBe(
+      'https://reparai.pilutech.com.br/opengraph-image.png',
+    )
+    for (const projeto of [BOTAI, SOMBRAI, APURAI, REPARAI])
       expect(new URL(projeto.imagem.src).search).toBe('')
-    for (const projeto of [APURAI, REPARAI, VEJAI, ORAI, LIVE_PRS])
+    for (const projeto of [VEJAI, ORAI, LIVE_PRS])
       expect(projeto).not.toHaveProperty('imagem')
   })
 
