@@ -13,6 +13,7 @@ export const ROTAS = [
   '/sitemap.xml',
   '/robots.txt',
   '/manifest.webmanifest',
+  '/llms.txt',
 ]
 
 function escaparRegex(texto) {
