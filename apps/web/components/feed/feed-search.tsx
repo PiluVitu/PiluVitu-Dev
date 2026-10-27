@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 type FeedSearchProps = {
   value: string
@@ -11,11 +11,13 @@ type FeedSearchProps = {
 
 export function FeedSearch({ value, onChange, className }: FeedSearchProps) {
   const [local, setLocal] = useState(value)
+  const [valorAnterior, setValorAnterior] = useState(value)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
+  if (value !== valorAnterior) {
+    setValorAnterior(value)
     setLocal(value)
-  }, [value])
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const next = e.target.value
