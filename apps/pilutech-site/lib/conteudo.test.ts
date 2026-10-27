@@ -2,12 +2,13 @@ import { faBrain } from '@fortawesome/free-solid-svg-icons'
 import { MENSAGENS_DO_WHATSAPP, WHATSAPP } from './contato'
 import {
   APURAI,
-  BIBLIA,
+  ORAI,
   BOTAI,
   cartoesDosProjetos,
   DUVIDAS,
   ETAPAS,
   LINHAS_DO_TERMINAL,
+  LIVE_PRS,
   PLANOS,
   SECOES_DA_BARRA,
   seloDoProjeto,
@@ -28,7 +29,8 @@ const SEM_DUVIDAS = [
   APURAI,
   REPARAI,
   VEJAI,
-  BIBLIA,
+  ORAI,
+  LIVE_PRS,
   TECNOLOGIAS,
   PLANOS,
 ]
@@ -296,14 +298,15 @@ describe('regras da marca (marca-CLAUDE.md)', () => {
 })
 
 describe('projetos', () => {
-  it('seis cartões, nesta ordem: Botaí, Sombraí, Apuraí, Reparaí, Vejaí e a Bíblia', () => {
+  it('sete cartões, nesta ordem: Botaí, Sombraí, Apuraí, Reparaí, Vejaí, o Oraí e o Live PRs', () => {
     expect(cartoesDosProjetos('em-breve').map((c) => c.nome)).toEqual([
       'Botaí',
       'Sombraí',
       'Apuraí',
       'Reparaí',
       'Vejaí',
-      'Bíblia offline',
+      'Oraí',
+      'Live PRs',
     ])
   })
 
@@ -315,6 +318,7 @@ describe('projetos', () => {
       'Painel web · em breve',
       'Extensão de navegador · em breve',
       'App de celular · em breve',
+      'App web · em breve',
     ])
   })
 
@@ -327,6 +331,7 @@ describe('projetos', () => {
       'Painel web · em breve',
       'Extensão de navegador · em breve',
       'App de celular · em breve',
+      'App web · em breve',
     ])
   })
 
@@ -339,6 +344,7 @@ describe('projetos', () => {
       'https://botai.pilutech.com.br/',
       'https://sombrai.pilutech.com.br/',
       'https://apurai.pilutech.com.br/',
+      undefined,
       undefined,
       undefined,
       undefined,
@@ -357,7 +363,7 @@ describe('projetos', () => {
     )
     for (const projeto of [BOTAI, SOMBRAI])
       expect(new URL(projeto.imagem.src).search).toBe('')
-    for (const projeto of [APURAI, REPARAI, VEJAI, BIBLIA])
+    for (const projeto of [APURAI, REPARAI, VEJAI, ORAI, LIVE_PRS])
       expect(projeto).not.toHaveProperty('imagem')
   })
 
@@ -371,8 +377,20 @@ describe('projetos', () => {
     expect(VEJAI.texto).toBe(
       'Deixa o play, a pausa e a posição do vídeo iguais para todos da sala, sem compartilhar a tela. Cada um assiste pela própria conta, dublado ou legendado.',
     )
-    expect(BIBLIA.texto).toBe(
+    expect(ORAI.texto).toBe(
       'Para ler a Bíblia sem internet, com um modo de foco na leitura, destaque de versículos e o versículo pronto para compartilhar nos stories.',
+    )
+    expect(LIVE_PRS.texto).toBe(
+      'Junta num lugar só os pull requests do GitHub que aguardam a revisão da conta, nos repositórios escolhidos, e atualiza a lista a cada cinco minutos.',
+    )
+  })
+
+  // Só o GitHub está implementado; Bitbucket, GitLab e Azure DevOps são planos. O cartão não fala deles.
+  it('o Live PRs só cita o GitHub e não se dirige ao leitor', () => {
+    const textos = JSON.stringify(LIVE_PRS)
+    expect(textos).not.toMatch(/bitbucket|gitlab|azure|dispon[ií]vel/i)
+    expect(LIVE_PRS.texto).not.toMatch(
+      /(^|[^\p{L}])(você|seus?|suas?)(?![\p{L}])/iu,
     )
   })
 
@@ -384,8 +402,8 @@ describe('projetos', () => {
   })
 
   // No iPhone, um app não bloqueia as notificações dos outros; e o app ainda não está em loja nenhuma.
-  it('a Bíblia não promete bloquear notificações nem fala de loja ou download', () => {
-    const textos = JSON.stringify(BIBLIA)
+  it('o Oraí não promete bloquear notificações nem fala de loja ou download', () => {
+    const textos = JSON.stringify(ORAI)
     expect(textos).not.toMatch(
       /notifica|bloque|loja|baix|store|play|dispon[ií]vel/i,
     )

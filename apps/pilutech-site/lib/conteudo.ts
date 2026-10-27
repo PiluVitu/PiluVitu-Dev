@@ -166,13 +166,18 @@ export const VEJAI = {
     'Deixa o play, a pausa e a posição do vídeo iguais para todos da sala, sem compartilhar a tela. Cada um assiste pela própria conta, dublado ou legendado.',
 } satisfies Projeto
 
-export const NOME_PROVISORIO_DA_BIBLIA = 'Bíblia offline'
-
-export const BIBLIA = {
-  nome: NOME_PROVISORIO_DA_BIBLIA,
+export const ORAI = {
+  nome: 'Oraí',
   tipo: 'App de celular',
   texto:
     'Para ler a Bíblia sem internet, com um modo de foco na leitura, destaque de versículos e o versículo pronto para compartilhar nos stories.',
+} satisfies Projeto
+
+export const LIVE_PRS = {
+  nome: 'Live PRs',
+  tipo: 'App web',
+  texto:
+    'Junta num lugar só os pull requests do GitHub que aguardam a revisão da conta, nos repositórios escolhidos, e atualiza a lista a cada cinco minutos.',
 } satisfies Projeto
 
 export function seloDoProjeto(
@@ -195,7 +200,8 @@ export function cartoesDosProjetos(faseDoBotai: Fase): CartaoDeProjeto[] {
     comFase(APURAI, 'disponivel'),
     comFase(REPARAI, 'em-breve'),
     comFase(VEJAI, 'em-breve'),
-    comFase(BIBLIA, 'em-breve'),
+    comFase(ORAI, 'em-breve'),
+    comFase(LIVE_PRS, 'em-breve'),
   ]
 }
 

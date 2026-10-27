@@ -363,9 +363,10 @@ test.describe('/', () => {
     }
   })
 
-  // Os cartões sem imagem ficam em linhas próprias (3 e 4 e 5 e 6): nenhum estica um vizinho com imagem.
+  // Os cartões sem imagem ficam em linhas próprias (3 e 4, 5 e 6, 7): nenhum estica um vizinho com imagem.
   // Com o gap-6 (24 px) da grade dos projetos, cada coluna tem (1180 − 24) / 2 = 578 px.
-  test('a 1280 px, os 6 projetos em 3 linhas de 2, cada linha com a mesma altura', async ({
+  // O 7º (Live PRs) fica sozinho na 4ª linha, na coluna da esquerda, com a largura dos outros e sem esticar.
+  test('a 1280 px, os 7 projetos em 4 linhas (3 de 2 e o último sozinho à esquerda)', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -381,19 +382,23 @@ test.describe('/', () => {
         }
       }),
     )
-    expect(caixas.map(({ x, largura }) => ({ x, largura }))).toEqual(
-      Array.from({ length: 3 }, () => [
+    expect(caixas.map(({ x, largura }) => ({ x, largura }))).toEqual([
+      ...Array.from({ length: 3 }, () => [
         { x: 50, largura: 578 },
         { x: 652, largura: 578 },
       ]).flat(),
-    )
+      { x: 50, largura: 578 },
+    ])
     for (const i of [0, 2, 4]) {
       expect(caixas[i].y).toBe(caixas[i + 1].y)
       expect(caixas[i].altura).toBe(caixas[i + 1].altura)
     }
     expect(caixas[2].y).toBeGreaterThan(caixas[0].y)
     expect(caixas[4].y).toBeGreaterThan(caixas[2].y)
+    expect(caixas[6].y).toBeGreaterThan(caixas[4].y)
     expect(caixas[2].altura).toBeLessThan(caixas[0].altura)
+    // Sem imagem, o último tem a altura dos outros cartões sem imagem, não a dos com imagem.
+    expect(caixas[6].altura).toBeLessThan(caixas[0].altura)
   })
 
   // Review Focus 3.

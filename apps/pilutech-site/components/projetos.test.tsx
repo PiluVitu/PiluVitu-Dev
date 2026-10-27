@@ -1,9 +1,10 @@
 import { render, screen, within } from '@testing-library/react'
 import {
   APURAI,
-  BIBLIA,
+  ORAI,
   BOTAI,
   cartoesDosProjetos,
+  LIVE_PRS,
   REPARAI,
   SOMBRAI,
   VEJAI,
@@ -34,7 +35,7 @@ describe('Projetos', () => {
     expect(secao).not.toHaveClass('dark')
   })
 
-  it('os seis produtos, na ordem, e a contagem do cabeçalho', () => {
+  it('os sete produtos, na ordem, e a contagem do cabeçalho', () => {
     render(<Projetos faseDoBotai="em-breve" />)
     expect(
       screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent),
@@ -44,9 +45,10 @@ describe('Projetos', () => {
       'Apuraí',
       'Reparaí',
       'Vejaí',
-      'Bíblia offline',
+      'Oraí',
+      'Live PRs',
     ])
-    expect(screen.getByText('06')).toBeInTheDocument()
+    expect(screen.getByText('07')).toBeInTheDocument()
   })
 
   it('Botaí, Sombraí e Apuraí levam ao domínio deles em aba nova', () => {
@@ -63,7 +65,7 @@ describe('Projetos', () => {
 
   it('cartão sem link não é clicável: sem <a>, sem seta e sem endereço', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [REPARAI, VEJAI, BIBLIA]) {
+    for (const projeto of [REPARAI, VEJAI, ORAI, LIVE_PRS]) {
       const item = cartaoPeloNome(projeto.nome)
       expect(item.querySelector('a')).toBeNull()
       expect(within(item).getByText(projeto.texto)).toBeInTheDocument()
@@ -85,7 +87,7 @@ describe('Projetos', () => {
 
   it('os cartões sem imagem não têm img', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [APURAI, REPARAI, VEJAI, BIBLIA])
+    for (const projeto of [APURAI, REPARAI, VEJAI, ORAI, LIVE_PRS])
       expect(cartaoPeloNome(projeto.nome).querySelector('img')).toBeNull()
   })
 
@@ -109,9 +111,10 @@ describe('Projetos', () => {
       ),
     ).toBeInTheDocument()
     expect(
-      within(cartaoPeloNome(BIBLIA.nome)).getByText(
-        'App de celular · em breve',
-      ),
+      within(cartaoPeloNome(ORAI.nome)).getByText('App de celular · em breve'),
+    ).toBeInTheDocument()
+    expect(
+      within(cartaoPeloNome(LIVE_PRS.nome)).getByText('App web · em breve'),
     ).toBeInTheDocument()
   })
 
