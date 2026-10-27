@@ -156,7 +156,7 @@ export const REPARAI = {
   nome: 'Reparaí',
   tipo: 'Painel web',
   texto:
-    'Junta num lugar só os números de público dos analytics que você já usa e guarda o histórico de cada dia.',
+    'Junta num lugar só os números de público de vários analytics e guarda o histórico de cada dia.',
 } satisfies Projeto
 
 export const VEJAI = {

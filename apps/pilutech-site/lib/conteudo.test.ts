@@ -366,13 +366,20 @@ describe('projetos', () => {
       'Mostra a apuração das eleições brasileiras no mapa, do Brasil ao município, com a linha do tempo da contagem. Os dados são os do TSE.',
     )
     expect(REPARAI.texto).toBe(
-      'Junta num lugar só os números de público dos analytics que você já usa e guarda o histórico de cada dia.',
+      'Junta num lugar só os números de público de vários analytics e guarda o histórico de cada dia.',
     )
     expect(VEJAI.texto).toBe(
       'Deixa o play, a pausa e a posição do vídeo iguais para todos da sala, sem compartilhar a tela. Cada um assiste pela própria conta, dublado ou legendado.',
     )
     expect(BIBLIA.texto).toBe(
       'Para ler a Bíblia sem internet, com um modo de foco na leitura, destaque de versículos e o versículo pronto para compartilhar nos stories.',
+    )
+  })
+
+  // O Reparaí é de uso interno (lista de e-mails); o cartão não pode dar a entender que o visitante usa.
+  it('o Reparaí não se dirige ao leitor', () => {
+    expect(REPARAI.texto).not.toMatch(
+      /(^|[^\p{L}])(você|seus?|suas?)(?![\p{L}])/iu,
     )
   })
 
