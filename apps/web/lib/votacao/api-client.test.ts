@@ -112,6 +112,64 @@ describe('call (via votacaoApi)', () => {
   })
 })
 
+describe('histórico público', () => {
+  it('lista a página pedida, sem cookie e sem Content-Type (pedido CORS simples)', async () => {
+    mockFetch(200, {
+      ok: true,
+      data: {
+        sessions: [],
+        page: 2,
+        page_size: 10,
+        total: 11,
+        has_more: false,
+      },
+      notifications: [],
+    })
+    const out = await votacaoApi.historico(2)
+    expect(out.page).toBe(2)
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(url).toBe(`${apiBase}/votacao/historico?page=2`)
+    expect(init.credentials).toBe('omit')
+    expect(init.headers).toEqual({})
+    expect(init.method).toBeUndefined()
+  })
+
+  it('busca uma sessão encerrada pelo id', async () => {
+    mockFetch(200, {
+      ok: true,
+      data: { id: 7, title: 'Sexta' },
+      notifications: [],
+    })
+    const out = await votacaoApi.historicoSessao(7)
+    expect(out.title).toBe('Sexta')
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+      `${apiBase}/votacao/historico/7`,
+    )
+  })
+
+  it('o 404 de sessão aberta ou inexistente vira ApiError com o código', async () => {
+    mockFetch(404, {
+      ok: false,
+      data: null,
+      notifications: [
+        { type: 'error', code: 'not_found', message: 'Sessão não encontrada.' },
+      ],
+    })
+    await expect(votacaoApi.historicoSessao(3)).rejects.toMatchObject({
+      status: 404,
+      code: 'not_found',
+    })
+  })
+
+  it('as rotas logadas continuam mandando o cookie', async () => {
+    mockFetch(200, { ok: true, data: { sessions: [] }, notifications: [] })
+    await votacaoApi.listSessions()
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(init.credentials).toBe('include')
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
+  })
+})
+
 describe('startGoogleLogin', () => {
   function mockSignInSocial(status: number, body: unknown) {
     global.fetch = jest.fn().mockResolvedValue({

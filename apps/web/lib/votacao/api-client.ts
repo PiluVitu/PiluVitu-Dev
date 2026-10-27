@@ -1,8 +1,11 @@
+import { destinoDoLogin } from '@/lib/votai'
 import type {
   AdminUsersResponse,
   BackupsResponse,
   CategoriesResponse,
   CreateSessionBody,
+  HistoricoPagina,
+  HistoricoSessao,
   ResultsResponse,
   RoletaResponse,
   TiebreakResponse,
@@ -83,6 +86,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return (env?.data ?? undefined) as T
 }
 
+// Rota pública: sem cookie e sem Content-Type, o GET é um pedido CORS simples (sem preflight) e
+// a resposta pode ficar no cache compartilhado.
+async function callPublico<T>(path: string): Promise<T> {
+  return call<T>(path, { credentials: 'omit', headers: {} })
+}
+
 export const votacaoApi = {
   me: () => call<User>('/auth/me'),
   logout: () => call<void>('/auth/logout', { method: 'POST' }),
@@ -110,6 +119,11 @@ export const votacaoApi = {
     }),
   results: (id: number) =>
     call<ResultsResponse>(`/votacao/sessions/${id}/results`),
+
+  historico: (page: number) =>
+    callPublico<HistoricoPagina>(`/votacao/historico?page=${page}`),
+  historicoSessao: (id: number) =>
+    callPublico<HistoricoSessao>(`/votacao/historico/${id}`),
 
   categories: () => call<CategoriesResponse>('/votacao/categorias'),
   createSession: (body: CreateSessionBody) =>
@@ -147,8 +161,8 @@ export const votacaoApi = {
  * é ignorado de propósito — é `!disableRedirect`, sempre `true` aqui (nunca
  * mandamos `disableRedirect`), então não carrega informação nova.
  *
- * `callbackURL`/`errorCallbackURL` são SEMPRE absolutas (`window.location.href`,
- * a página atual) — quem processa o callback OAuth (sucesso OU erro) é o
+ * `callbackURL`/`errorCallbackURL` são SEMPRE absolutas (`destinoDoLogin`: no
+ * Votaí, a origem fixa em código + o caminho atual; fora dele, a página atual) — quem processa o callback OAuth (sucesso OU erro) é o
  * ramielle, em outra origem; um path relativo (o padrão do finanças, mesma
  * origem lá) resolveria contra `ramielle.piluvitu.com.br`, não contra
  * `piluvitu.com.br`. Isso vale pros dois campos, não só `callbackURL`:
@@ -187,7 +201,7 @@ export async function startGoogleLogin(options?: {
     ((url: string) => {
       window.location.href = url
     })
-  const destino = window.location.href
+  const destino = destinoDoLogin(window.location)
 
   let res: Response
   try {

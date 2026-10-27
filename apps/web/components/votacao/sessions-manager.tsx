@@ -9,6 +9,7 @@ import { useSessionList } from '@/hooks/votacao/use-session-list'
 import { useCloseSession } from '@/hooks/votacao/use-close-session'
 import { useAdminSessionVotes } from '@/hooks/votacao/use-admin-session-votes'
 import { errorMessage } from '@/lib/votacao/api-client'
+import { urlDaSessao } from '@/lib/votai'
 
 // SessionVotesExpander lazy-loads the per-session vote breakdown (only when the
 // row is expanded — the query is gated by `enabled`).
@@ -47,7 +48,12 @@ export function SessionsManager() {
           <li key={s.ID} className="rounded-md border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="font-medium">{s.Title}</span>
+                <a
+                  href={urlDaSessao(s.ID)}
+                  className="hover:text-primary font-medium underline-offset-4 hover:underline"
+                >
+                  {s.Title}
+                </a>
                 <SessionStatusBadge status={s.Status} />
               </div>
               <div className="flex items-center gap-2">

@@ -142,19 +142,19 @@ async function contar(tabela: 'passkey' | 'session') {
 }
 
 describe('passkeyAmbiente — rpID e origin saem da config (BETTER_AUTH_URL), nunca do pedido', () => {
-  test('ramielle de produção: rpID piluvitu.com.br, origin do apps/web de produção', () => {
+  test('ramielle de produção: rpID piluvitu.com.br, origens do site e do Votaí de produção', () => {
     expect(passkeyAmbiente(URL_PROD)).toEqual({
       rpID: 'piluvitu.com.br',
-      origin: 'https://piluvitu.com.br',
+      origin: ['https://piluvitu.com.br', 'https://votai.piluvitu.com.br'],
     })
   })
 
   test.each(['http://localhost:8788', 'http://127.0.0.1:8788'])(
-    'dev (%s): rpID localhost, origin do apps/web de dev',
+    'dev (%s): rpID localhost, origens do site e do Votaí de dev',
     (url) => {
       expect(passkeyAmbiente(url)).toEqual({
         rpID: 'localhost',
-        origin: 'http://localhost:3333',
+        origin: ['http://localhost:3333', 'http://votai.localhost:3333'],
       })
     },
   )
@@ -390,6 +390,40 @@ describe('ponta a ponta com autenticador falso (a conferência roda no workerd)'
     expect(((await login.json()) as Notificacao).code).toBe(
       'AUTHENTICATION_FAILED',
     )
+  })
+
+  // Os controles de admin da sessão (encerrar, roleta, desempate) moram no
+  // Votaí, outro host do mesmo rpID: a passkey cadastrada no site entra lá.
+  test('passkey cadastrada no site entra a partir do Votaí (mesmo rpID)', async () => {
+    const e = envDeTeste()
+    const autenticador = await criarAutenticadorFalso()
+    expect(
+      (await cadastrarPasskey(e, await cookieDeSessao(ADMIN), autenticador))
+        .status,
+    ).toBe(200)
+    const login = await entrarComPasskey(
+      e,
+      autenticador,
+      'http://votai.localhost:3333',
+    )
+    expect(login.status).toBe(200)
+  })
+
+  test('host parecido com o Votaí não entra', async () => {
+    const e = envDeTeste({
+      CORS_ALLOWED_ORIGINS: `${ORIGEM_DEV},http://votai.localhost:4444`,
+    })
+    const autenticador = await criarAutenticadorFalso()
+    expect(
+      (await cadastrarPasskey(e, await cookieDeSessao(ADMIN), autenticador))
+        .status,
+    ).toBe(200)
+    const login = await entrarComPasskey(
+      e,
+      autenticador,
+      'http://votai.localhost:4444',
+    )
+    expect(login.status).toBe(400)
   })
 })
 

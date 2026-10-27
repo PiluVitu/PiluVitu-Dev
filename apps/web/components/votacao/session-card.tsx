@@ -4,11 +4,17 @@ import { isHalloweenSession } from '@/lib/votacao/halloween'
 import { SessionStatusBadge } from './session-status-badge'
 import type { VotingSession } from '@/lib/votacao/types'
 
-export function SessionCard({ session }: { session: VotingSession }) {
+export function SessionCard({
+  session,
+  href,
+}: {
+  session: VotingSession
+  href: string
+}) {
   const halloween = isHalloweenSession(session)
   return (
     <Link
-      href={`/votacao/${session.ID}`}
+      href={href}
       data-halloween={halloween || undefined}
       className={cn(
         'group bg-card border-border hover:bg-accent flex items-center justify-between gap-4 rounded-lg border p-6 transition-colors',

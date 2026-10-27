@@ -29,9 +29,10 @@ const baseSession: VotingSession = {
   SortOptionsJSON: '{}',
 }
 
-export const Open: Story = { args: { session: baseSession } }
+export const Open: Story = { args: { session: baseSession, href: '/1' } }
 export const Closed: Story = {
   args: {
+    href: '/1',
     session: {
       ...baseSession,
       Status: 'closed',
@@ -43,6 +44,7 @@ export const Closed: Story = {
 
 export const Halloween: Story = {
   args: {
+    href: '/1',
     session: {
       ...baseSession,
       Title: 'Noite de Halloween',

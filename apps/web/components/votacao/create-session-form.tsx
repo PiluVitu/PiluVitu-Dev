@@ -6,7 +6,7 @@ import { Label } from '@piluvitu/ui/label'
 import { toast } from 'sonner'
 import { useCreateSession } from '@/hooks/votacao/use-create-session'
 import { errorMessage } from '@/lib/votacao/api-client'
-import { useRouter } from 'next/navigation'
+import { urlDaSessao } from '@/lib/votai'
 import { halloweenSessionBody } from '@/lib/votacao/halloween'
 import type { CreateSessionBody } from '@/lib/votacao/types'
 
@@ -16,7 +16,6 @@ export function CreateSessionForm() {
   const [includeSerie, setIncludeSerie] = useState(true)
   const [includeWatched, setIncludeWatched] = useState(false)
   const [halloween, setHalloween] = useState(false)
-  const router = useRouter()
   const mutation = useCreateSession()
 
   const types: string[] = []
@@ -43,7 +42,7 @@ export function CreateSessionForm() {
         mutation.mutate(body, {
           onSuccess: (data) => {
             toast.success('Sessão criada')
-            router.push(`/votacao/${data.session.ID}`)
+            window.location.assign(urlDaSessao(data.session.ID))
           },
           onError: (err) => toast.error(errorMessage(err)),
         })
