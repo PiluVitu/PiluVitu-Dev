@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // O repo guia o agente pelos CLAUDE.md; sem isto o `next dev` grava um AGENTS.md.
+  agentRules: false,
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

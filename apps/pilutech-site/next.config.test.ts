@@ -32,3 +32,9 @@ describe('next.config: imagens remotas', () => {
     expect(nextConfig.images?.formats).toEqual(['image/avif', 'image/webp'])
   })
 })
+
+describe('next.config: regras de agente', () => {
+  it('o next dev não grava AGENTS.md (o repo usa os CLAUDE.md)', () => {
+    expect(nextConfig.agentRules).toBe(false)
+  })
+})
