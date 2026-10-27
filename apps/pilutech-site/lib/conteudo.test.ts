@@ -310,12 +310,12 @@ describe('projetos', () => {
     ])
   })
 
-  it('sem loja publicada do Botaí, só o Apuraí (no ar) diz disponível', () => {
+  it('sem loja publicada do Botaí, só o Apuraí e o Reparaí (no ar) dizem disponível', () => {
     expect(cartoesDosProjetos('em-breve').map((c) => c.selo)).toEqual([
       'Extensão de navegador · em breve',
       'App Android e iPhone · em breve',
       'Site · disponível',
-      'Painel web · em breve',
+      'Painel web · disponível',
       'Extensão de navegador · em breve',
       'App de celular · em breve',
       'App web · em breve',
@@ -328,7 +328,7 @@ describe('projetos', () => {
       'Extensão de navegador · disponível',
       'App Android e iPhone · em breve',
       'Site · disponível',
-      'Painel web · em breve',
+      'Painel web · disponível',
       'Extensão de navegador · em breve',
       'App de celular · em breve',
       'App web · em breve',
@@ -339,12 +339,12 @@ describe('projetos', () => {
     expect(seloDoProjeto({ tipo: 'X' }, 'em-breve')).toBe('X · em breve')
   })
 
-  it('Botaí, Sombraí e Apuraí levam ao domínio do produto; os outros não têm link', () => {
+  it('Botaí, Sombraí, Apuraí e Reparaí levam ao domínio do produto; os outros não têm link', () => {
     expect(cartoesDosProjetos('em-breve').map((c) => c.url)).toEqual([
       'https://botai.pilutech.com.br/',
       'https://sombrai.pilutech.com.br/',
       'https://apurai.pilutech.com.br/',
-      undefined,
+      'https://reparai.pilutech.com.br/',
       undefined,
       undefined,
       undefined,
@@ -394,7 +394,7 @@ describe('projetos', () => {
     )
   })
 
-  // O Reparaí é de uso interno (lista de e-mails); o cartão não pode dar a entender que o visitante usa.
+  // O painel do Reparaí só abre para quem está na lista de e-mails; o visitante pede uma demo pela landing.
   it('o Reparaí não se dirige ao leitor', () => {
     expect(REPARAI.texto).not.toMatch(
       /(^|[^\p{L}])(você|seus?|suas?)(?![\p{L}])/iu,

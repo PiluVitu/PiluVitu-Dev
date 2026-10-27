@@ -15,10 +15,10 @@ type Story = StoryObj<typeof meta>
 export const EmBreve: Story = { args: { faseDoBotai: 'em-breve' } }
 export const BotaiPublicado: Story = { args: { faseDoBotai: 'disponivel' } }
 
-const [botai, , apurai, reparai] = cartoesDosProjetos('disponivel')
+const [botai, , apurai, , vejai] = cartoesDosProjetos('disponivel')
 
 function UmCartao({ indice }: { indice: number }) {
-  const projeto = [botai, apurai, reparai][indice]
+  const projeto = [botai, apurai, vejai][indice]
   return (
     <div className="bg-background p-6">
       <div className="max-w-[580px]">
