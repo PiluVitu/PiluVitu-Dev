@@ -13,10 +13,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@better-auth/passkey": "1.6.25",
+    "@better-auth/passkey": "1.7.13",
     "@piluvitu/tools": "workspace:*",
     "@piluvitu/ui": "workspace:*",
-    "better-auth": "1.6.25",
+    "better-auth": "1.7.13",
     "lucide-react": "^1.33.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
