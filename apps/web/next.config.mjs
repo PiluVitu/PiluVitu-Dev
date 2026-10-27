@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // O repo guia o agente pelos CLAUDE.md; sem isto o `next dev` grava um AGENTS.md.
+  agentRules: false,
   allowedDevOrigins: ['127.0.0.1', 'localhost', 'votai.localhost'],
   // O Votaí escolhe as origens fixas (produção, preview sem host próprio, dev) por isto, inclusive
   // no cliente e no proxy: ver "Votaí" no CLAUDE.md.
