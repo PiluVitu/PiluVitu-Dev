@@ -1,17 +1,22 @@
 import { faBrain } from '@fortawesome/free-solid-svg-icons'
 import { MENSAGENS_DO_WHATSAPP, WHATSAPP } from './contato'
 import {
+  APURAI,
+  ORAI,
   BOTAI,
   cartoesDosProjetos,
   DUVIDAS,
   ETAPAS,
   LINHAS_DO_TERMINAL,
+  LIVE_PRS,
   PLANOS,
   SECOES_DA_BARRA,
   seloDoProjeto,
   SERVICOS,
   SOMBRAI,
+  REPARAI,
   TECNOLOGIAS,
+  VEJAI,
 } from './conteudo'
 
 const SEM_DUVIDAS = [
@@ -21,6 +26,11 @@ const SEM_DUVIDAS = [
   ETAPAS,
   BOTAI,
   SOMBRAI,
+  APURAI,
+  REPARAI,
+  VEJAI,
+  ORAI,
+  LIVE_PRS,
   TECNOLOGIAS,
   PLANOS,
 ]
@@ -288,10 +298,27 @@ describe('regras da marca (marca-CLAUDE.md)', () => {
 })
 
 describe('projetos', () => {
-  it('sem loja publicada, os dois selos dizem em breve', () => {
+  it('sete cartões, nesta ordem: Botaí, Sombraí, Apuraí, Reparaí, Vejaí, o Oraí e o Live PRs', () => {
+    expect(cartoesDosProjetos('em-breve').map((c) => c.nome)).toEqual([
+      'Botaí',
+      'Sombraí',
+      'Apuraí',
+      'Reparaí',
+      'Vejaí',
+      'Oraí',
+      'Live PRs',
+    ])
+  })
+
+  it('sem loja publicada do Botaí, só o Apuraí (no ar) diz disponível', () => {
     expect(cartoesDosProjetos('em-breve').map((c) => c.selo)).toEqual([
       'Extensão de navegador · em breve',
       'App Android e iPhone · em breve',
+      'Site · disponível',
+      'Painel web · em breve',
+      'Extensão de navegador · em breve',
+      'App de celular · em breve',
+      'App web · em breve',
     ])
   })
 
@@ -300,6 +327,11 @@ describe('projetos', () => {
     expect(cartoesDosProjetos('disponivel').map((c) => c.selo)).toEqual([
       'Extensão de navegador · disponível',
       'App Android e iPhone · em breve',
+      'Site · disponível',
+      'Painel web · em breve',
+      'Extensão de navegador · em breve',
+      'App de celular · em breve',
+      'App web · em breve',
     ])
   })
 
@@ -307,14 +339,22 @@ describe('projetos', () => {
     expect(seloDoProjeto({ tipo: 'X' }, 'em-breve')).toBe('X · em breve')
   })
 
-  it('cada cartão leva ao domínio do produto', () => {
+  it('Botaí, Sombraí e Apuraí levam ao domínio do produto; os outros não têm link', () => {
     expect(cartoesDosProjetos('em-breve').map((c) => c.url)).toEqual([
       'https://botai.pilutech.com.br/',
       'https://sombrai.pilutech.com.br/',
+      'https://apurai.pilutech.com.br/',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     ])
+    for (const projeto of cartoesDosProjetos('em-breve'))
+      if (projeto.url) expect(projeto.endereco).toBe(new URL(projeto.url).host)
+      else expect(projeto.endereco).toBeUndefined()
   })
 
-  it('as imagens são as OG dos domínios, sem o parâmetro de hash', () => {
+  it('as imagens são as OG dos domínios, sem o parâmetro de hash; os novos não têm imagem', () => {
     expect(BOTAI.imagem.src).toBe(
       'https://botai.pilutech.com.br/opengraph-image',
     )
@@ -323,5 +363,49 @@ describe('projetos', () => {
     )
     for (const projeto of [BOTAI, SOMBRAI])
       expect(new URL(projeto.imagem.src).search).toBe('')
+    for (const projeto of [APURAI, REPARAI, VEJAI, ORAI, LIVE_PRS])
+      expect(projeto).not.toHaveProperty('imagem')
+  })
+
+  it('os textos dos novos cartões', () => {
+    expect(APURAI.texto).toBe(
+      'Mostra a apuração das eleições brasileiras no mapa, do Brasil ao município, com a linha do tempo da contagem. Os dados são os do TSE.',
+    )
+    expect(REPARAI.texto).toBe(
+      'Junta num lugar só os números de público de vários analytics e guarda o histórico de cada dia.',
+    )
+    expect(VEJAI.texto).toBe(
+      'Deixa o play, a pausa e a posição do vídeo iguais para todos da sala, sem compartilhar a tela. Cada um assiste pela própria conta, dublado ou legendado.',
+    )
+    expect(ORAI.texto).toBe(
+      'Para ler a Bíblia sem internet, com um modo de foco na leitura, destaque de versículos e o versículo pronto para compartilhar nos stories.',
+    )
+    expect(LIVE_PRS.texto).toBe(
+      'Junta num lugar só os pull requests do GitHub que aguardam a revisão da conta, nos repositórios escolhidos, e atualiza a lista a cada cinco minutos.',
+    )
+  })
+
+  // Só o GitHub está implementado; Bitbucket, GitLab e Azure DevOps são planos. O cartão não fala deles.
+  it('o Live PRs só cita o GitHub e não se dirige ao leitor', () => {
+    const textos = JSON.stringify(LIVE_PRS)
+    expect(textos).not.toMatch(/bitbucket|gitlab|azure|dispon[ií]vel/i)
+    expect(LIVE_PRS.texto).not.toMatch(
+      /(^|[^\p{L}])(você|seus?|suas?)(?![\p{L}])/iu,
+    )
+  })
+
+  // O Reparaí é de uso interno (lista de e-mails); o cartão não pode dar a entender que o visitante usa.
+  it('o Reparaí não se dirige ao leitor', () => {
+    expect(REPARAI.texto).not.toMatch(
+      /(^|[^\p{L}])(você|seus?|suas?)(?![\p{L}])/iu,
+    )
+  })
+
+  // No iPhone, um app não bloqueia as notificações dos outros; e o app ainda não está em loja nenhuma.
+  it('o Oraí não promete bloquear notificações nem fala de loja ou download', () => {
+    const textos = JSON.stringify(ORAI)
+    expect(textos).not.toMatch(
+      /notifica|bloque|loja|baix|store|play|dispon[ií]vel/i,
+    )
   })
 })

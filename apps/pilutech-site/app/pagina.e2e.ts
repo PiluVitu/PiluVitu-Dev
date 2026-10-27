@@ -329,16 +329,76 @@ test.describe('/', () => {
     page,
   }) => {
     await page.goto('/')
+    const secao = page.locator('#projetos')
+    await expect(secao.locator('h3')).toHaveText(cartoes.map((c) => c.nome))
+    await expect(
+      secao.getByText(String(cartoes.length).padStart(2, '0'), { exact: true }),
+    ).toBeVisible()
+    await expect(secao.locator('a')).toHaveCount(
+      cartoes.filter((c) => c.url).length,
+    )
+    await expect(secao.locator('img')).toHaveCount(
+      cartoes.filter((c) => c.imagem).length,
+    )
     for (const projeto of cartoes) {
-      const link = page.locator(`a[href="${projeto.url}"]`)
+      const item = secao.locator('li').filter({
+        has: page.getByRole('heading', { level: 3, name: projeto.nome }),
+      })
+      await expect(item).toContainText(projeto.selo)
+      await expect(item).toContainText(projeto.texto)
+      if (!projeto.url) {
+        await expect(item.locator('a')).toHaveCount(0)
+        await expect(item).not.toContainText('→')
+        continue
+      }
+      const link = item.locator(`a[href="${projeto.url}"]`)
       await expect(link).toHaveAttribute('target', '_blank')
       await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-      await expect(link).toContainText(projeto.selo)
+      await expect(link).toContainText(`${projeto.endereco} →`)
+      if (!projeto.imagem) continue
       const imagem = link.getByRole('img', { name: projeto.imagem.alt })
       expect(await imagem.getAttribute('src')).toContain(
         `/_next/image?url=${encodeURIComponent(projeto.imagem.src)}&`,
       )
     }
+  })
+
+  // Os cartões sem imagem ficam em linhas próprias (3 e 4, 5 e 6, 7): nenhum estica um vizinho com imagem.
+  // Com o gap-6 (24 px) da grade dos projetos, cada coluna tem (1180 − 24) / 2 = 578 px.
+  // O 7º (Live PRs) fica sozinho na 4ª linha, na coluna da esquerda, com a largura dos outros e sem esticar.
+  test('a 1280 px, os 7 projetos em 4 linhas (3 de 2 e o último sozinho à esquerda)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto('/')
+    const caixas = await page.locator('#projetos li').evaluateAll((itens) =>
+      itens.map((li) => {
+        const r = (li.firstElementChild as HTMLElement).getBoundingClientRect()
+        return {
+          x: Math.round(r.left),
+          y: Math.round(r.top),
+          largura: Math.round(r.width),
+          altura: Math.round(r.height),
+        }
+      }),
+    )
+    expect(caixas.map(({ x, largura }) => ({ x, largura }))).toEqual([
+      ...Array.from({ length: 3 }, () => [
+        { x: 50, largura: 578 },
+        { x: 652, largura: 578 },
+      ]).flat(),
+      { x: 50, largura: 578 },
+    ])
+    for (const i of [0, 2, 4]) {
+      expect(caixas[i].y).toBe(caixas[i + 1].y)
+      expect(caixas[i].altura).toBe(caixas[i + 1].altura)
+    }
+    expect(caixas[2].y).toBeGreaterThan(caixas[0].y)
+    expect(caixas[4].y).toBeGreaterThan(caixas[2].y)
+    expect(caixas[6].y).toBeGreaterThan(caixas[4].y)
+    expect(caixas[2].altura).toBeLessThan(caixas[0].altura)
+    // Sem imagem, o último tem a altura dos outros cartões sem imagem, não a dos com imagem.
+    expect(caixas[6].altura).toBeLessThan(caixas[0].altura)
   })
 
   // Review Focus 3.
@@ -561,7 +621,7 @@ test.describe('/', () => {
             parseFloat(getComputedStyle(el).fontSize),
         })),
       )
-    expect(larguras).toHaveLength(14)
+    expect(larguras).toHaveLength(15)
     for (const { seta, largura } of larguras) {
       expect(seta).toBe('→')
       expect(largura).toBeLessThan(0.75)
