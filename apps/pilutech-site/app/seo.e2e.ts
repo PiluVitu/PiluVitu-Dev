@@ -181,6 +181,19 @@ test('sitemap.xml lista a home e a política de privacidade', async ({
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/privacidade</loc>`)
 })
 
+test('llms.txt é texto puro com os produtos e os links de produção', async ({
+  page,
+}) => {
+  const resposta = await page.request.get('/llms.txt')
+  expect(resposta.status()).toBe(200)
+  expect(resposta.headers()['content-type']).toBe('text/plain; charset=utf-8')
+  const texto = await resposta.text()
+  expect(texto.startsWith('# PiluTech\n')).toBe(true)
+  expect(texto).toContain('- [Apuraí](https://apurai.pilutech.com.br/): ')
+  expect(texto).toContain('- [Reparaí](https://reparai.pilutech.com.br/): ')
+  expect(texto).toContain(`- [Página inicial](${SITE_DE_PRODUCAO}/)`)
+})
+
 test('/privacidade: title, description, canonical e indexável', async ({
   page,
 }) => {
