@@ -98,7 +98,7 @@ function sessaoDoGoogle(metodoLogin: string | null | undefined) {
 
 type ContextoDoLogin = {
   path?: string
-  params?: Record<string, string>
+  params?: Record<string, string | undefined>
   body?: { provider?: unknown }
 } | null
 
