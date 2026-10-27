@@ -53,19 +53,19 @@ describe('Projetos', () => {
 
   it('Botaí, Sombraí e Apuraí levam ao domínio deles em aba nova', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [BOTAI, SOMBRAI, APURAI]) {
+    for (const projeto of [BOTAI, SOMBRAI, APURAI, REPARAI]) {
       const link = cartao(projeto.url)
       expect(link).toHaveAttribute('target', '_blank')
       expect(link).toHaveAttribute('rel', 'noopener noreferrer')
       expect(within(link).getByText(projeto.texto)).toBeInTheDocument()
       expect(link).toHaveTextContent(`${projeto.endereco} →`)
     }
-    expect(screen.getAllByRole('link')).toHaveLength(3)
+    expect(screen.getAllByRole('link')).toHaveLength(4)
   })
 
   it('cartão sem link não é clicável: sem <a>, sem seta e sem endereço', () => {
     render(<Projetos faseDoBotai="em-breve" />)
-    for (const projeto of [REPARAI, VEJAI, ORAI, LIVE_PRS]) {
+    for (const projeto of [VEJAI, ORAI, LIVE_PRS]) {
       const item = cartaoPeloNome(projeto.nome)
       expect(item.querySelector('a')).toBeNull()
       expect(within(item).getByText(projeto.texto)).toBeInTheDocument()
@@ -91,7 +91,7 @@ describe('Projetos', () => {
       expect(cartaoPeloNome(projeto.nome).querySelector('img')).toBeNull()
   })
 
-  it('sem loja publicada, o Botaí diz em breve, e o Apuraí, disponível', () => {
+  it('sem loja publicada, o Botaí diz em breve, e o Apuraí e o Reparaí, disponível', () => {
     render(<Projetos faseDoBotai="em-breve" />)
     expect(
       within(cartao(BOTAI.url)).getByText('Extensão de navegador · em breve'),
@@ -103,7 +103,7 @@ describe('Projetos', () => {
       within(cartao(APURAI.url)).getByText('Site · disponível'),
     ).toBeInTheDocument()
     expect(
-      within(cartaoPeloNome(REPARAI.nome)).getByText('Painel web · em breve'),
+      within(cartao(REPARAI.url)).getByText('Painel web · disponível'),
     ).toBeInTheDocument()
     expect(
       within(cartaoPeloNome(VEJAI.nome)).getByText(
@@ -146,13 +146,13 @@ describe('CartaoDoProjeto', () => {
   })
 
   it('sem URL é uma caixa sem hover, sem link e sem seta', () => {
-    const [, , , reparai] = cartoesDosProjetos('em-breve')
-    const { container } = render(<CartaoDoProjeto projeto={reparai} />)
+    const [, , , , vejai] = cartoesDosProjetos('em-breve')
+    const { container } = render(<CartaoDoProjeto projeto={vejai} />)
     expect(screen.queryByRole('link')).toBeNull()
     const caixa = container.firstElementChild
     expect(caixa?.tagName).toBe('DIV')
     expect(caixa).not.toHaveClass('hover:border-primary')
-    expect(caixa).toHaveTextContent('Painel web · em breve')
+    expect(caixa).toHaveTextContent('Extensão de navegador · em breve')
     expect(caixa).not.toHaveTextContent('→')
   })
 })

@@ -154,6 +154,8 @@ export const APURAI = {
 
 export const REPARAI = {
   nome: 'Reparaí',
+  url: 'https://reparai.pilutech.com.br/',
+  endereco: 'reparai.pilutech.com.br',
   tipo: 'Painel web',
   texto:
     'Junta num lugar só os números de público de vários analytics e guarda o histórico de cada dia.',
@@ -198,7 +200,7 @@ export function cartoesDosProjetos(faseDoBotai: Fase): CartaoDeProjeto[] {
     comFase(BOTAI, faseDoBotai),
     comFase(SOMBRAI, 'em-breve'),
     comFase(APURAI, 'disponivel'),
-    comFase(REPARAI, 'em-breve'),
+    comFase(REPARAI, 'disponivel'),
     comFase(VEJAI, 'em-breve'),
     comFase(ORAI, 'em-breve'),
     comFase(LIVE_PRS, 'em-breve'),

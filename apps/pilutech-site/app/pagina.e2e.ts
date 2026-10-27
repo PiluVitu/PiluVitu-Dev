@@ -621,7 +621,7 @@ test.describe('/', () => {
             parseFloat(getComputedStyle(el).fontSize),
         })),
       )
-    expect(larguras).toHaveLength(15)
+    expect(larguras).toHaveLength(16)
     for (const { seta, largura } of larguras) {
       expect(seta).toBe('→')
       expect(largura).toBeLessThan(0.75)
