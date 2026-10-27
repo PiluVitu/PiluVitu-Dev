@@ -107,16 +107,17 @@ export const ETAPAS: readonly Etapa[] = [
   },
 ]
 
+type ProjetoComLink = { url: string; endereco: string }
+type ProjetoSemLink = { url?: undefined; endereco?: undefined }
+
 export type Projeto = {
   nome: string
-  url: string
-  endereco: string
   tipo: string
   texto: string
-  imagem: { src: string; alt: string }
-}
+  imagem?: { src: string; alt: string }
+} & (ProjetoComLink | ProjetoSemLink)
 
-export const BOTAI: Projeto = {
+export const BOTAI = {
   nome: 'Botaí',
   url: 'https://botai.pilutech.com.br/',
   endereco: 'botai.pilutech.com.br',
@@ -127,9 +128,9 @@ export const BOTAI: Projeto = {
     src: 'https://botai.pilutech.com.br/opengraph-image',
     alt: 'Botaí: gerador de dados fake para formulários',
   },
-}
+} satisfies Projeto
 
-export const SOMBRAI: Projeto = {
+export const SOMBRAI = {
   nome: 'Sombraí',
   url: 'https://sombrai.pilutech.com.br/',
   endereco: 'sombrai.pilutech.com.br',
@@ -140,7 +141,39 @@ export const SOMBRAI: Projeto = {
     src: 'https://sombrai.pilutech.com.br/opengraph-image.png',
     alt: 'O ícone do Sombraí e a tela Início do app',
   },
-}
+} satisfies Projeto
+
+export const APURAI = {
+  nome: 'Apuraí',
+  url: 'https://apurai.pilutech.com.br/',
+  endereco: 'apurai.pilutech.com.br',
+  tipo: 'Site',
+  texto:
+    'Mostra a apuração das eleições brasileiras no mapa, do Brasil ao município, com a linha do tempo da contagem. Os dados são os do TSE.',
+} satisfies Projeto
+
+export const REPARAI = {
+  nome: 'Reparaí',
+  tipo: 'Painel web',
+  texto:
+    'Junta num lugar só os números de público dos analytics que você já usa e guarda o histórico de cada dia.',
+} satisfies Projeto
+
+export const VEJAI = {
+  nome: 'Vejaí',
+  tipo: 'Extensão de navegador',
+  texto:
+    'Deixa o play, a pausa e a posição do vídeo iguais para todos da sala, sem compartilhar a tela. Cada um assiste pela própria conta, dublado ou legendado.',
+} satisfies Projeto
+
+export const NOME_PROVISORIO_DA_BIBLIA = 'Bíblia offline'
+
+export const BIBLIA = {
+  nome: NOME_PROVISORIO_DA_BIBLIA,
+  tipo: 'App de celular',
+  texto:
+    'Para ler a Bíblia sem internet, com um modo de foco na leitura, destaque de versículos e o versículo pronto para compartilhar nos stories.',
+} satisfies Projeto
 
 export function seloDoProjeto(
   projeto: Pick<Projeto, 'tipo'>,
@@ -152,9 +185,17 @@ export function seloDoProjeto(
 export type CartaoDeProjeto = Projeto & { selo: string }
 
 export function cartoesDosProjetos(faseDoBotai: Fase): CartaoDeProjeto[] {
+  const comFase = (projeto: Projeto, fase: Fase): CartaoDeProjeto => ({
+    ...projeto,
+    selo: seloDoProjeto(projeto, fase),
+  })
   return [
-    { ...BOTAI, selo: seloDoProjeto(BOTAI, faseDoBotai) },
-    { ...SOMBRAI, selo: seloDoProjeto(SOMBRAI, 'em-breve') },
+    comFase(BOTAI, faseDoBotai),
+    comFase(SOMBRAI, 'em-breve'),
+    comFase(APURAI, 'disponivel'),
+    comFase(REPARAI, 'em-breve'),
+    comFase(VEJAI, 'em-breve'),
+    comFase(BIBLIA, 'em-breve'),
   ]
 }
 
