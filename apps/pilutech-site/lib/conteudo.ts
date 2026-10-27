@@ -150,6 +150,10 @@ export const APURAI = {
   tipo: 'Site',
   texto:
     'Mostra a apuração das eleições brasileiras no mapa, do Brasil ao município, com a linha do tempo da contagem. Os dados são os do TSE.',
+  imagem: {
+    src: 'https://apurai.pilutech.com.br/opengraph-image.png',
+    alt: 'O nome Apuraí ao lado do mapa do Brasil com os estados',
+  },
 } satisfies Projeto
 
 export const REPARAI = {
@@ -159,6 +163,10 @@ export const REPARAI = {
   tipo: 'Painel web',
   texto:
     'Junta num lugar só os números de público de vários analytics e guarda o histórico de cada dia.',
+  imagem: {
+    src: 'https://reparai.pilutech.com.br/opengraph-image.png',
+    alt: 'A marca Reparaí ao lado de um exemplo do painel com dados fictícios',
+  },
 } satisfies Projeto
 
 export const VEJAI = {
