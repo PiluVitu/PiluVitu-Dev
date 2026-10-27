@@ -215,7 +215,7 @@ MEDIDO nas T2–T5: sem um `app.onError` registrado, uma exceção não mapeada 
 
 ## Votação LIVRE × finanças fail-closed — desenhos OPOSTOS do MESMO Better Auth
 
-`apps/ramielle` e `apps/financas` usam a mesma versão do Better Auth (`1.6.25`), com desenhos de acesso **opostos**. Confundir os dois é o defeito mais caro possível nesta fatia — copiar um pro outro não é um ajuste fino, é trocar o propósito do módulo:
+`apps/ramielle` e `apps/financas` usam a mesma versão do Better Auth (`1.7.13`), com desenhos de acesso **opostos**. Confundir os dois é o defeito mais caro possível nesta fatia — copiar um pro outro não é um ajuste fino, é trocar o propósito do módulo:
 
 |                             | `apps/financas`                                                                                                  | `apps/ramielle`                                                                                                                 |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,6 +225,16 @@ MEDIDO nas T2–T5: sem um `app.onError` registrado, uma exceção não mapeada 
 | O que a env controla        | **ACESSO** — fora da lista, a pessoa nem entra                                                                   | **PRIVILÉGIO** — fora da lista, a pessoa entra e vota, só não é admin                                                           |
 
 ⚠️ **Copiar o hook de allowlist do finanças pra cá bloquearia todo mundo menos o dono e mataria a feature.** ⚠️ **Tirar o hook de lá abriria o finanças (single-user, fail-closed) pra qualquer conta Google.** A ausência do hook aqui é verificada por mutação em `src/lib/auth.test.ts`: reinserir o hook copiado do finanças derruba exatamente os 3 testes do describe "votação livre" (um e-mail fora de `ADMIN_EMAILS` completa o cadastro e grava 1 linha em `user`+`account`); os outros 20 testes do arquivo continuam verdes.
+
+### Versão do Better Auth: 1.7.13 (subida de 1.6.25 em 2026-10-27)
+
+Vale para os três `package.json` (`apps/ramielle`, `apps/financas`, `apps/financas/web`): `better-auth` e `@better-auth/passkey` andam juntos, na mesma versão exata.
+
+- **Motivo:** três advisories publicados em 2026-10-27 contra a 1.6.25. Nenhum tinha caminho alcançável aqui, porque cada um exige um plugin que não usamos. O GHSA-965c-763c-88jm (critical, magic link aceita o state do OAuth) exige magic link. O GHSA-r4xp-prcw-77qf (high, oauth-proxy) exige oauth-proxy com state em cookie, e aqui o state fica no banco (`storeStateStrategy` padrão `database`, porque há `database`). O GHSA-q84f-53jg-9ppm (high) exige o plugin `deviceAuthorization()`. Usamos só Google social + passkey. A subida é para o `pnpm audit` voltar a passar e para não depender de nunca ligar esses plugins.
+- **Por que 1.7.13, e não 1.7.14:** a 1.7.14 saiu em 2026-10-26 20:51 UTC e ainda estava dentro do `minimumReleaseAge` (24 h) na hora do bump. Ela só muda o TOTP e o login do Kakao, que não usamos.
+- **Sem migração de D1.** A 1.7.0 exigia `account.issuer`, mas a 1.7.3 voltou ao schema de account da 1.6. Os demais itens de schema da 1.7 são de plugins que não usamos (oauth-provider, SCIM, device, organization).
+- ⚠️ **Desde a 1.7.3, o Better Auth valida o schema ao iniciar, também em produção, e recusa as requisições de auth se o banco não bater.** Uma migração de `user`/`session`/`account`/`verification`/`passkey` que falte no D1 remoto passa a derrubar o login, em vez de dar erro só na coluna. Antes do deploy, rode `db:migrate:list:remote` e confira que não há migração pendente.
+- **Mudanças de comportamento que tocam a gente:** atributos de cookie alinhados à RFC 6265bis (1.7.8) e o cookie cache da sessão preso ao cookie `session_token` (não usamos cookie cache). Duração da sessão, `userVerification: 'preferred'` no login por passkey e `requireUserVerification: false` continuam iguais (conferido no pacote instalado).
 
 ## `is_admin` é recalculado A CADA REQUEST — nunca gravado como verdade
 
@@ -470,7 +480,7 @@ Cópia **byte a byte** de `packages/ia/sql/uso_ia.sql`; `src/schema.test.ts` fal
 
 ## Passkey do admin (`src/lib/passkey.ts`, `migrations/0007_passkey.sql`)
 
-Segundo jeito de o **admin** entrar no `/admin` do site, ao lado do Google. Plugin oficial `@better-auth/passkey` 1.6.25 (versão exata, igual à `better-auth`), registrado em `createAuth`. A votação continua livre; a passkey não. Sem senha, OTP ou e-mail (`emailAndPassword` segue `false`).
+Segundo jeito de o **admin** entrar no `/admin` do site, ao lado do Google. Plugin oficial `@better-auth/passkey` 1.7.13 (versão exata, igual à `better-auth`), registrado em `createAuth`. A votação continua livre; a passkey não. Sem senha, OTP ou e-mail (`emailAndPassword` segue `false`).
 
 **Fluxo.** A tela roda no `apps/web` e chama, com `credentials: 'include'`, as rotas do plugin sob `/api/auth/passkey/*`:
 

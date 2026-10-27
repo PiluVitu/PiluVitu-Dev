@@ -52,9 +52,9 @@ export type AuthBindings = {
 export type Auth = ReturnType<typeof createAuth>
 
 /**
- * A mensagem do APIError VIRA o código de erro na URL: o callback faz
- * result.error.split(' ').join('_') e redireciona para
- * <errorCallbackURL>?error=<mensagem>. Por isso é slug: minúsculo, sem
+ * O callback do OAuth só converte em redirect
+ * (<errorCallbackURL>?error=<code>) um APIError que tenha `code`; sem ele,
+ * desde o 1.7, o erro sobe como 403 cru. Por isso é slug: minúsculo, sem
  * acento, sem espaço.
  */
 export const CODIGO_BARRADO = 'nao_autorizado'
@@ -83,7 +83,10 @@ export function isAllowedEmail(email: unknown, permitido: string): boolean {
 
 export function assertEmailPermitido(email: unknown, permitido: string): void {
   if (!isAllowedEmail(email, permitido)) {
-    throw new APIError('FORBIDDEN', { message: CODIGO_BARRADO })
+    throw new APIError('FORBIDDEN', {
+      code: CODIGO_BARRADO,
+      message: CODIGO_BARRADO,
+    })
   }
 }
 

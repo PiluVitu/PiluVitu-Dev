@@ -424,7 +424,7 @@ Como na landing do Botaí (`PiluVitu/Botai`, PR #47) e no `apps/pilutech-site`: 
   - o formulário de contato (FormSubmit e reCAPTCHA);
   - o que o navegador pede a terceiros (a API do dev.to, as imagens de fora);
   - o que fica só no navegador (o tema, o `/tasks`, a câmera do `/tools`).
-- **A duração do cookie da votação é o padrão do Better Auth** (7 dias, renovados a cada dia de uso), porque `apps/ramielle/src/lib/auth.ts` não define `session`. Conferido no 1.6.25.
+- **A duração do cookie da votação é o padrão do Better Auth** (7 dias, renovados a cada dia de uso), porque `apps/ramielle/src/lib/auth.ts` não define `session`. Conferido no 1.6.25 e de novo no 1.7.13 (`expiresIn` 604800, `updateAge` 86400).
 - **Quando mudar um desses pontos, a página muda junto.** Isso vale para o que o ramielle guarda, o prazo da sessão, um serviço novo chamado pelo navegador, a medição ou a hospedagem. Atualize o texto, a data de vigência e o `page.test.tsx`, que trava cada fato.
 - **Testes:**
   - o `page.test.tsx` cobre a estrutura, os fatos, os links e a metadata;
