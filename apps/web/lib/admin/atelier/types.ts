@@ -37,3 +37,26 @@ export interface Transcricao {
   texto: string
   modelo: string
 }
+
+export type StatusTranscricao =
+  | 'na_fila'
+  | 'transcrevendo'
+  | 'pronto'
+  | 'falhou'
+
+/** Job assíncrono do promeia, repassado como veio pelo ramielle. */
+export interface JobTranscricao {
+  id: string
+  status: StatusTranscricao
+  /** 1 = próximo; só em `na_fila`. */
+  posicao: number | null
+  /** Quantos áudios já terminaram (0..total_partes). */
+  parte_atual: number
+  total_partes: number
+  nome_atual: string | null
+  modelo: string
+  criado_em: string
+  atualizado_em: string
+  resultado: Transcricao | null
+  erro: { code: string; message: string } | null
+}

@@ -10,34 +10,33 @@ import {
 import { Button } from '@piluvitu/ui/button'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
-import { Textarea } from '@piluvitu/ui/textarea'
 import { cn } from '@/lib/utils'
 import { mover, problemaDaFila, remover } from '@/lib/admin/transcricao/fila'
 import { formatBackupSize } from '@/lib/votacao/format-bytes'
-import type { ModoTranscricao, Transcricao } from '@/lib/admin/atelier/types'
+import type { ModoTranscricao } from '@/lib/admin/atelier/types'
 
 const MODOS: { valor: ModoTranscricao; titulo: string; detalhe: string }[] = [
-  { valor: 'preciso', titulo: 'Preciso', detalhe: 'large-v3 · até ~7 min' },
-  { valor: 'rapido', titulo: 'Rápido', detalhe: 'turbo · até ~20 min' },
+  {
+    valor: 'preciso',
+    titulo: 'Preciso',
+    detalhe: 'large-v3 · mais fiel, mais lento',
+  },
+  { valor: 'rapido', titulo: 'Rápido', detalhe: 'turbo · bem mais rápido' },
 ]
 
 export interface TranscricaoFormProps {
   pendente?: boolean
-  resultado?: Transcricao | null
   audiosIniciais?: File[]
   onTranscrever: (
     audios: File[],
     opts: { termos: string; modo: ModoTranscricao },
   ) => void
-  onCopiar?: (texto: string) => void
 }
 
 export function TranscricaoForm({
   pendente = false,
-  resultado = null,
   audiosIniciais = [],
   onTranscrever,
-  onCopiar,
 }: TranscricaoFormProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [audios, setAudios] = useState<File[]>(audiosIniciais)
@@ -177,32 +176,9 @@ export function TranscricaoForm({
           disabled={pendente || problema !== null}
           onClick={() => onTranscrever(audios, { termos, modo })}
         >
-          {pendente ? 'Transcrevendo…' : 'Transcrever'}
+          {pendente ? 'Enviando…' : 'Transcrever'}
         </Button>
       </div>
-
-      {resultado ? (
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-muted-foreground font-mono text-xs">
-              {resultado.modelo}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCopiar?.(resultado.texto)}
-            >
-              Copiar texto
-            </Button>
-          </div>
-          <Textarea
-            readOnly
-            aria-label="Transcrição"
-            value={resultado.texto}
-            className="min-h-80 font-mono text-sm"
-          />
-        </section>
-      ) : null}
     </div>
   )
 }

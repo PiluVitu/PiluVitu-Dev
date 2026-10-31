@@ -92,9 +92,9 @@ que o admin já mostra em `toast.error` sem intermediação de diagnóstico.
   aparece em casos adversariais (muito caractere multi-byte concentrado perto
   da metade do limite), não em texto normal.
 
-## Transcrição de áudio — `POST /transcrever`
+## Transcrição de áudio — `POST /transcrever` + `GET /transcrever/{id}` (job assíncrono)
 
-Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. Chamada pelo ramielle (`POST /admin/transcrever`, ver `apps/ramielle/CLAUDE.md`), nunca pelo navegador — mesma regra de `revisao_rotas.py`. A tela é `/admin/transcricao` no `apps/web`.
+Recebe N áudios por **multipart**, grava no diretório do job e responde **202** com o job; o Whisper roda numa thread de fundo (`transcricao_jobs.py`, `FilaDeTranscricao`) e o chamador consulta `GET /transcrever/{id}` até `pronto` ou `falhou`. O resultado (texto de cada áudio e um costurado) vem em `resultado`. Chamada pelo ramielle (`POST /admin/transcrever`, ver `apps/ramielle/CLAUDE.md`), nunca pelo navegador — mesma regra de `revisao_rotas.py`. A tela é `/admin/transcricao` no `apps/web`.
 
 ⚠️ **`mlx-whisper` NÃO está em `pyproject.toml`, de propósito.** Ele depende do `mlx`, que só existe em macOS/arm64; declará-lo quebraria o `uv sync --locked` do CI, que roda em Ubuntu — o serviço inteiro deixaria de instalar num runner Linux por causa de UMA rota. Por isso `transcricao.py` chama o **binário** por subprocess: a dependência vira requisito de _ambiente_ (a máquina do dono, a única onde a rota faz sentido) e não de pacote. Instalar: `uv tool install mlx-whisper`. `WHISPER_BIN` sobrescreve o caminho.
 
@@ -102,22 +102,65 @@ Recebe N áudios por **multipart**, devolve o texto de cada um e um costurado. C
 
 **O encadeamento de contexto é o produto do módulo.** Áudios que se complementam precisam grafar o mesmo nome próprio igual nos três: a cauda de cada transcrição vira o `initial_prompt` do seguinte. O `initial_prompt` do Whisper cabe em **224 tokens**, então só entram as últimas `PALAVRAS_DE_CONTEXTO` (120) — passar mais faz a janela cortar em silêncio.
 
-⚠️ **O teto real NÃO é tamanho de arquivo, é TEMPO.** A Cloudflare corta a requisição do navegador em ~100 s (524) e o ramielle desiste em 120 s (`TIMEOUT_MS`). MEDIDO num M4: `large-v3` roda a **4,4x** tempo real e o `turbo` a **13,1x** — ou seja ~7 min e ~20 min de áudio dentro do orçamento, respectivamente. Daí o campo `modo` (`preciso` default, `rapido`). `MAX_AUDIOS`/`MAX_BYTES_TOTAL` são um proxy grosseiro disso: medir duração exigiria ffprobe, uma segunda dependência de ambiente, e o proxy já barra o caso absurdo.
+⚠️ **Por que job e não request síncrono: a Cloudflare corta um request em ~100 s.** Até 2026-10-31 a rota respondia só no fim, e um áudio de 9 min (1,4 MB) no modo Preciso passou do corte: o cloudflared logou `Incoming request ended abruptly: context canceled` em `/transcrever`, o ramielle viu a conexão cair e o admin leu `503 promeia_unreachable` ("Suba o promeia no Mac") com o promeia de pé. Agora o POST só grava e enfileira e o GET só lê o estado: nenhum request espera o Whisper, então **não existe mais teto de duração de áudio imposto pelo request**. O limite que sobra é `MAX_AUDIOS`/`MAX_BYTES_TOTAL` (proxy grosseiro do tamanho do trabalho; medir duração exigiria ffprobe). Travado em `transcricao_rotas_test.py` (`TestNaoBloqueia`: o executor fica preso num `Event` e o POST tem que voltar 202 em menos de 3 s).
 
-| erro                   | status | quando                                    |
-| ---------------------- | ------ | ----------------------------------------- |
-| `invalid_body`         | 400    | nenhum áudio enviado                      |
-| `too_many_files`       | 400    | acima de `MAX_AUDIOS`                     |
-| `audio_too_large`      | 413    | soma acima de `MAX_BYTES_TOTAL`           |
-| `whisper_indisponivel` | 503    | binário ausente — instale no Mac          |
-| `transcricao_vazia`    | 503    | rodou, saiu vazio (espelha `OllamaVazio`) |
-| `transcricao_falhou`   | 503    | rodou e falhou                            |
+| modelo (`modo`)                | velocidade MEDIDA num M4   | 9 min de áudio |
+| ------------------------------ | -------------------------- | -------------- |
+| `large-v3` (`preciso`, padrão) | **3,5x a 4,4x** tempo real | ~2 a 3 min     |
+| `turbo` (`rapido`)             | **13,1x** tempo real       | ~40 s          |
 
-⚠️ **Nenhum erro desta rota sai como 502** — o túnel troca o corpo de um 502 por `error code: 502`, o ramielle não acha `code` e o admin lia "Suba o promeia no Mac" com o Mac de pé (aconteceu em produção, 2026-09-30; ver _O túnel COME o corpo do 502_). A distinção entre "falta instalar" e "rodou e falhou" mora no `code`, não no status. Travado em `transcricao_rotas_test.py` (`TestFalhas`).
+Antes do job, esses números viravam teto (~7 min e ~20 min de áudio cabiam nos ~100 s); hoje são só a espera que a tela mostra. Medição de 2026-10-31, áudio de 12,3 min no `large-v3`, já sem o laço (seção abaixo): **211 s, ~3,5x** tempo real. Com o laço, o mesmo áudio levou ~19 min, porque o Whisper gerava texto inventado sem parar.
+
+⚠️ **Laço em áudio longo: `--condition-on-previous-text False`.** Com `True` e `--temperature 0`, o Whisper entra em laço em áudio longo e não sai: o CLI do `mlx_whisper` recebe uma temperatura só, então perde a recaída de temperatura (0 → 0,2 → … → 1,0) que a API Python usa para escapar quando a taxa de compressão dispara. Medido em 2026-10-31 com uma reunião sintética de 12,3 min (voz `Luciana` do `say`, 72 itens numerados com nome, valor e mês; roteiro de 1.543 palavras), passando pelo túnel até o job:
+
+| configuração                                           | palavras | itens (1..72)                                             | tempo   |
+| ------------------------------------------------------ | -------- | --------------------------------------------------------- | ------- |
+| `condition True` + temperatura 0 (antes)               | 12.146   | laço a partir do 19; "Item 90" ×529                       | ~19 min |
+| `condition False` + temperatura 0 (**hoje**)           | 1.555    | os 72, uma vez, em ordem; 0 divergência de nome/valor/mês | 211 s   |
+| `condition True` + recaída de temperatura (API Python) | 1.640    | 6 faltando, 7 repetidos, 16 divergentes                   | 712 s   |
+
+Custo aceito: sem condicionamento, o `initial_prompt` (base + termos + cauda do áudio anterior) só guia a **primeira janela de 30 s** de cada áudio (`prompt_reset_since` em `mlx_whisper/transcribe.py`). O encadeamento entre áudios continua valendo, porque é exatamente a fronteira que ele cobre; os termos perdem força no meio de um áudio longo. Trava: `transcricao_test.py` › `TestSemLacoEmAudioLongo`.
+
+**Forma do job** (`data` do 202 e do GET): `{id, status, posicao, parte_atual, total_partes, nome_atual, modelo, criado_em, atualizado_em, resultado, erro}`. `status` ∈ `na_fila | transcrevendo | pronto | falhou`; `posicao` (1 = próximo) só em `na_fila`, calculada na leitura a partir da fila em memória; `parte_atual` = quantos áudios já terminaram (sobe pelo callback `ao_concluir` de `transcrever()`); `resultado = {partes:[{nome,texto}], texto, modelo}`; `erro = {code, message}`. Campos com `_` (a entrada: nomes, idioma, termos) ficam só no disco.
+
+**Fila:** um job por vez, uma thread (`promeia-transcricao`, daemon) iniciada no `lifespan` do `create_app` — e preguiçosamente pelas rotas, se o lifespan não rodou. O executor continua buscado no módulo `transcricao` a cada job, para o teste trocar.
+
+**Estado em disco**, em `TRANSCRICAO_DIR` (padrão `~/Library/Application Support/promeia/transcricoes`): `<id>.json` por job, gravado por arquivo temporário + `os.replace` (atômico), e os áudios em `<id>/<n>/<nome>` — um subdiretório por posição, para dois `a.ogg` não se sobrescreverem. Os áudios são apagados **antes** de o status virar `pronto`/`falhou` (sucesso ou falha): quem lê um job terminado nunca acha a pasta ainda no disco. Na ordem inversa, os testes de rota que conferem a limpeza falhavam em 9 de 10 rodadas da suíte; a trava é `transcricao_jobs_test.py` › `TestAudiosSomemAntesDoFim`; o json de um job terminado expira em **24 h** (limpeza na subida e a cada job criado).
+
+⚠️ **Promeia reiniciado:** na subida, todo job em `na_fila`/`transcrevendo` vira `falhou` com `promeia_reiniciado` e os áudios dele são apagados (a thread morreu com o processo; ninguém mais vai terminá-lo). Pasta de áudio órfã, json corrompido e `.job-*.tmp` de escrita interrompida também são limpos.
+
+⚠️ **Os testes nunca usam o diretório real:** `src/promeia/conftest.py` aponta `TRANSCRICAO_DIR` para o `tmp_path` em toda a suíte. Sem isso, um `create_app()` de teste com lifespan rodaria a recuperação no diretório de produção e marcaria como falha a transcrição que o promeia de verdade estivesse fazendo.
+
+⚠️ **O id é validado antes de tudo:** `[0-9a-f]{32}` com `fullmatch` (o `uuid4().hex`), não `match` com `$` — esse aceita um `\n` no fim. Fora do formato é `404 job_not_found`, igual a id inexistente, e nunca vira caminho de arquivo.
+
+POST (validação, mesma de antes):
+
+| erro              | status | quando                          |
+| ----------------- | ------ | ------------------------------- |
+| `invalid_body`    | 400    | nenhum áudio enviado            |
+| `too_many_files`  | 400    | acima de `MAX_AUDIOS`           |
+| `audio_too_large` | 413    | soma acima de `MAX_BYTES_TOTAL` |
+
+GET:
+
+| erro            | status | quando                                                                                              |
+| --------------- | ------ | --------------------------------------------------------------------------------------------------- |
+| `job_not_found` | 404    | id inexistente, expirado ou fora do formato ("Transcrição não encontrada — ela pode ter expirado.") |
+
+Falha da transcrição é **estado do job** (`status: "falhou"`, GET responde 200), não status HTTP; o `code` vem em `erro.code`, com as mensagens de antes:
+
+| `erro.code`            | quando                                                 |
+| ---------------------- | ------------------------------------------------------ |
+| `whisper_indisponivel` | binário ausente — instale no Mac                       |
+| `transcricao_vazia`    | rodou, saiu vazio (espelha `OllamaVazio`)              |
+| `transcricao_falhou`   | rodou e falhou (ou erro inesperado no worker)          |
+| `promeia_reiniciado`   | o promeia reiniciou com o job na fila ou transcrevendo |
+
+⚠️ **Nenhum erro destas rotas sai como 502** — o túnel troca o corpo de um 502 por `error code: 502`, o ramielle não acha `code` e o admin lia "Suba o promeia no Mac" com o Mac de pé (aconteceu em produção, 2026-09-30; ver _O túnel COME o corpo do 502_). A distinção entre "falta instalar" e "rodou e falhou" mora no `code`, não no status. Hoje as falhas do Whisper nem passam por status HTTP (são estado do job), e os erros que sobraram são 400/404/413. Travado em `transcricao_rotas_test.py` (`TestFalhas`).
 
 ⚠️ **`--output-name` fixo (`NOME_SAIDA`) é obrigatório.** O `mlx_whisper` grava a saída com `Path(nome).with_suffix(".txt")`, que troca só o **último** trecho depois do ponto: `WhatsApp_Ptt_2026-09-30_at_22.15.03` vira `…_22.15.txt`. Procurar `{stem}.txt` falhava em **todo** áudio do WhatsApp (a hora vem com pontos no nome). E o `mlx_whisper` **sai 0 mesmo quando pula o áudio por erro** — por isso a falha volta com a última linha de `Error` que ele imprimiu (`_linha_de_erro`), sem o banner do ffmpeg.
 
-⚠️ **O nome do arquivo vem do cliente e é sanitizado** (`_nome_seguro`): só o basename, só `[A-Za-z0-9._-]`. Sem isso um `../../etc/x.ogg` escaparia do diretório temporário.
+⚠️ **O nome do arquivo vem do cliente e é sanitizado** (`_nome_seguro`): só o basename, só `[A-Za-z0-9._-]`. Sem isso um `../../etc/x.ogg` escaparia do diretório do job.
 
 ## Modelos de 2026: `"think": false` é obrigatório, não otimização
 

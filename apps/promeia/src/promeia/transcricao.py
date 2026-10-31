@@ -23,17 +23,13 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 MODELO_PADRAO = "mlx-community/whisper-large-v3-mlx"
-# Destilado: ~13x tempo real contra ~4,4x do large-v3 (MEDIDO num M4), ao
-# custo de precisão. Existe pro áudio que não cabe no teto de tempo abaixo.
+# Destilado: mais rápido que o large-v3, ao custo de precisão (tabela de
+# velocidade medida no CLAUDE.md).
 MODELO_RAPIDO = "mlx-community/whisper-large-v3-turbo"
 IDIOMA_PADRAO = "pt"
 
-# ⚠️ O teto real NÃO é tamanho de arquivo, é TEMPO. A Cloudflare corta a
-# requisição do navegador em ~100 s (524), e o ramielle desiste em 120 s
-# (`TIMEOUT_MS`). A 4,4x tempo real, `MODELO_PADRAO` dá conta de ~7 min de
-# áudio dentro desse orçamento; `MODELO_RAPIDO`, de ~20 min. Os limites de
-# bytes abaixo são um PROXY grosseiro disso — medir duração exigiria ffprobe,
-# uma segunda dependência de ambiente, e o proxy já barra o caso absurdo.
+# Proxy grosseiro do tamanho do trabalho: medir duração exigiria ffprobe, uma
+# segunda dependência de ambiente, e o proxy já barra o caso absurdo.
 MAX_AUDIOS = 10
 MAX_BYTES_TOTAL = 40 * 1024 * 1024
 
@@ -87,8 +83,12 @@ def transcrever(
     modelo: str = MODELO_PADRAO,
     idioma: str = IDIOMA_PADRAO,
     termos: str = "",
+    ao_concluir: Callable[[int], None] | None = None,
 ) -> list[str]:
-    """Transcreve na ORDEM dada, encadeando o contexto de um no seguinte."""
+    """Transcreve na ORDEM dada, encadeando o contexto de um no seguinte.
+
+    `ao_concluir(n)` é chamado depois de cada áudio, com quantos já terminaram.
+    """
     if not caminhos:
         raise ValueError("nenhum áudio informado")
 
@@ -104,6 +104,8 @@ def transcrever(
             )
         textos.append(texto)
         contexto = cauda(texto)
+        if ao_concluir is not None:
+            ao_concluir(len(textos))
     return textos
 
 
@@ -138,8 +140,11 @@ def executar_mlx_whisper(
             # Determinístico: sem amostragem, a mesma entrada dá a mesma saída.
             "--temperature",
             "0",
+            # True + temperatura fixa prende o Whisper num laço em áudio longo
+            # (ver "Laço em áudio longo" no CLAUDE.md). Custo: os termos do
+            # initial_prompt só guiam a primeira janela de 30 s.
             "--condition-on-previous-text",
-            "True",
+            "False",
             # O modo clássico do Whisper inventar frase repetida em trecho mudo.
             "--hallucination-silence-threshold",
             "2",
