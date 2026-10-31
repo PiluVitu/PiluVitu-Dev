@@ -744,15 +744,29 @@ O achado do `main.go` acima **foi confirmado pelo revisor, medindo do zero, mais
 
 **Contagem de testes depois do fix round 1: 559** (Worker) + **116** (scripts, inalterado) — eram 553 antes desta rodada. **+6**: 1 teste de emoji (`firstRunes`, I1), 2 testes de ordem (`M2`, um por rota), e o describe de M5 saindo de 1 teste pra 4 (`test.each`, +3) — nenhum teste de M1/M3/M4 é novo (M1 é rename, M3 é uma asserção a mais dentro de um teste já existente, M4 é só comentário).
 
-## Transcrição de áudio — `POST /admin/transcrever`
+## Transcrição de áudio — job assíncrono (`POST /admin/transcrever` + `GET /admin/transcrever/:id`)
 
-`src/routes/transcricao.ts`: recebe N áudios por **multipart** (`audios`, na ordem), mais `termos`/`idioma`/`modo` opcionais, e repassa ao `POST /transcrever` do promeia (Whisper local — ver `apps/promeia/CLAUDE.md` § _Transcrição de áudio_). Devolve `{partes, texto, modelo}` no envelope. Consumida por `/admin/transcricao` no `apps/web`.
+`src/routes/transcricao.ts`: recebe N áudios por **multipart** (`audios`, na ordem), mais `termos`/`idioma`/`modo` opcionais, e repassa ao `POST /transcrever` do promeia (Whisper local — ver `apps/promeia/CLAUDE.md` § _Transcrição de áudio_). O promeia **não transcreve no request**: grava os áudios, enfileira um job e responde `202` com o JOB; o ramielle devolve `202` com o JOB no envelope. A tela `/admin/transcricao` do `apps/web` consulta `GET /admin/transcrever/:id` (que repassa ao `GET /transcrever/{id}` do promeia) a cada poucos segundos até `pronto`/`falhou`.
 
-- **`requireAdmin`**, mesmo motivo do Atelier: é a GPU do dono e a votação é livre.
+JOB (tipo `JobTranscricao`, repassado como veio): `{id, status: na_fila|transcrevendo|pronto|falhou, posicao, parte_atual, total_partes, nome_atual, modelo, criado_em, atualizado_em, resultado: {partes, texto, modelo}|null, erro: {code, message}|null}`. Falhas do Whisper (`whisper_indisponivel`, `transcricao_vazia`, `transcricao_falhou`) e o `promeia_reiniciado` chegam **dentro do JOB** (`status: falhou`, `erro`), com `200` no GET — não como status HTTP.
+
+- **Por que assíncrono (bug de 2026-10-31):** um áudio de 9 min no modo Preciso deu `503 promeia_unreachable` ("Suba o promeia no Mac") com o promeia de pé. A chamada era síncrona: a Cloudflare corta o request em **~100 s** (o cloudflared logou `Incoming request ended abruptly: context canceled`) e o `TIMEOUT_MS` era 120 s. Com o job, nenhum request passa de alguns segundos e o teto de ~100 s deixou de limitar a duração do áudio.
+- **Timeouts próprios da rota, ambos abaixo do corte de ~100 s:** `TIMEOUT_ENVIO_MS` (60 s, cobre o upload de até 40 MB pelo túnel) no POST e `TIMEOUT_STATUS_MS` (15 s) no GET. `TIMEOUT_MS` (120 s) segue como padrão do `chamarPromeia` para o Atelier. Agora `promeia_unreachable` na transcrição volta a significar o que diz. Teste do bug: `routes/transcricao.test.ts` › _transcrição longa não passa do corte da Cloudflare_ (fake timers).
+- **`requireAdmin`** nas duas rotas, mesmo motivo do Atelier: é a GPU do dono e a votação é livre.
+- **O id é validado aqui** (`ID_JOB`, uuid4 hex de 32 chars minúsculos) antes de chamar o promeia: fora do formato ⇒ `404 job_not_found` sem request nenhum (o promeia valida de novo antes de tocar no disco — path traversal).
+- **`404 job_not_found` do promeia passa como `404`**, não `502` (o resto dos 4xx do promeia continua virando `502` em `traduzirFalhaPromeia`): um job expirado (24 h) não é falha do upstream.
 - **`MAX_AUDIOS` (10) e `MAX_BYTES_TOTAL` (40 MB) são checados AQUI também**, espelhando o promeia — barrar no Worker evita subir o áudio inteiro pelo túnel só pra ouvir `413` do outro lado. Mudou lá, muda aqui (e em `apps/web/lib/admin/transcricao/fila.ts`).
-- **`chamarPromeia` aceita `FormData`**: nesse caso não seta `content-type` (o runtime gera o boundary). Forçar `application/json` faz o FastAPI não achar arquivo nenhum e responder `invalid_body`.
+- **`chamarPromeia` aceita `FormData`** (não seta `content-type`; o runtime gera o boundary — forçar `application/json` faz o FastAPI responder `invalid_body`) e **`method: 'GET'`** (sem corpo, só o `authorization`).
 - Campo ausente no form **não** é repassado como `''` — o promeia aplica o próprio default (`idioma=pt`, `modo=preciso`).
-- Falhas traduzidas por `traduzirFalhaPromeia` (`lib/promeia.ts`, extraída do `atelier.ts`, que agora a importa): Mac inalcançável ⇒ `503 promeia_unreachable`; `whisper_indisponivel` (503) passa com a mensagem do promeia; `transcricao_vazia`/`transcricao_falhou` (502) idem.
-- ⚠️ O teto real é **tempo**, não bytes: `TIMEOUT_MS` (120 s) e o corte de ~100 s da Cloudflare. Ver a tabela de medição no CLAUDE.md do promeia.
+- **Ordem de deploy do job assíncrono: promeia (`launchctl kickstart -k gui/$(id -u)/com.piluvitu.promeia`), depois o ramielle (`wrangler deploy`, com o OK do dono), depois o web (merge → Vercel).** Fora dessa ordem, o POST devolve um corpo sem `id`: o promeia antigo atrás do ramielle novo responde a transcrição pronta (ou estoura o corte de ~100 s, como antes). O web aguenta a janela (`respostaDoPost` em `apps/web/lib/admin/transcricao/acompanhamento.ts` mostra o texto e não guarda id inválido), mas o áudio longo só passa com os três no ar.
 
-Erros próprios da rota: `400 invalid_body` (sem áudio ou corpo não-multipart), `400 too_many_files`, `413 audio_too_large`, `503 promeia_disabled`.
+| Código                                                            | Status | Onde                                                  |
+| ----------------------------------------------------------------- | ------ | ----------------------------------------------------- |
+| `invalid_body`                                                    | 400    | POST: sem áudio ou corpo não-multipart                |
+| `too_many_files`                                                  | 400    | POST: mais que `MAX_AUDIOS`                           |
+| `audio_too_large`                                                 | 413    | POST: soma acima de `MAX_BYTES_TOTAL`                 |
+| `promeia_disabled`                                                | 503    | POST/GET: sem `PROMEIA_URL`/`PROMEIA_TOKEN`           |
+| `promeia_unreachable`                                             | 503    | POST/GET: Mac/túnel fora ou timeout da rota           |
+| `job_not_found`                                                   | 404    | GET: id fora do formato, inexistente ou expirado      |
+| `promeia_reiniciado`                                              | —      | dentro do JOB (`falhou`): o promeia reiniciou no meio |
+| `whisper_indisponivel`, `transcricao_vazia`, `transcricao_falhou` | —      | dentro do JOB (`falhou`), mensagem do promeia         |

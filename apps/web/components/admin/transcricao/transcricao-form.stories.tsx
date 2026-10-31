@@ -13,7 +13,7 @@ const meta: Meta<typeof TranscricaoForm> = {
   component: TranscricaoForm,
   tags: ['autodocs'],
   parameters: { layout: 'padded' },
-  args: { onTranscrever: fn(), onCopiar: fn() },
+  args: { onTranscrever: fn() },
 }
 export default meta
 type Story = StoryObj<typeof TranscricaoForm>
@@ -36,21 +36,6 @@ export const AcimaDoLimite: Story = {
   },
 }
 
-export const Transcrevendo: Story = {
+export const Enviando: Story = {
   args: { ...ComFila.args, pendente: true },
-}
-
-export const ComResultado: Story = {
-  args: {
-    ...ComFila.args,
-    resultado: {
-      modelo: 'mlx-community/whisper-large-v3-mlx',
-      partes: [
-        { nome: 'reuniao-parte-1.ogg', texto: 'Começamos pelo ramielle.' },
-        { nome: 'reuniao-parte-2.ogg', texto: 'Depois o promeia.' },
-      ],
-      texto:
-        '===== ÁUDIO 1 de 2 — reuniao-parte-1.ogg =====\n\nComeçamos pelo ramielle.\n\n===== ÁUDIO 2 de 2 — reuniao-parte-2.ogg =====\n\nDepois o promeia.',
-    },
-  },
 }

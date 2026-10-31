@@ -5,10 +5,10 @@
  */
 import { env } from 'cloudflare:test'
 import { betterAuth } from 'better-auth'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import app, { type Bindings } from '../index'
 import type { Envelope } from '../lib/envelope'
-import { MAX_AUDIOS, MAX_BYTES_TOTAL } from './transcricao'
+import { MAX_AUDIOS, MAX_BYTES_TOTAL, TIMEOUT_STATUS_MS } from './transcricao'
 
 const DB = env.DB
 const BASE_URL_TESTE = 'http://localhost:8787'
@@ -49,9 +49,10 @@ async function cookieDe(email: string): Promise<string> {
 const fetchOriginal = globalThis.fetch
 afterEach(() => {
   globalThis.fetch = fetchOriginal
+  vi.useRealTimers()
 })
 
-type Visto = { init: RequestInit; form: FormData }
+type Visto = { url: string; init: RequestInit; form: FormData }
 
 function mockarPromeia(responder: () => Response) {
   const vistos: Visto[] = []
@@ -59,7 +60,7 @@ function mockarPromeia(responder: () => Response) {
     if (!String(url).startsWith('https://promeia.exemplo.test/transcrever')) {
       throw new Error(`promeia chamado sem mock: ${url}`)
     }
-    vistos.push({ init, form: init.body as FormData })
+    vistos.push({ url: String(url), init, form: init.body as FormData })
     return responder()
   }) as unknown as typeof fetch
   return vistos
@@ -88,17 +89,23 @@ async function enviar(
   )
 }
 
-const RESPOSTA_OK = {
-  ok: true,
-  data: {
-    partes: [
-      { nome: 'a.ogg', texto: 'um' },
-      { nome: 'b.ogg', texto: 'dois' },
-    ],
-    texto: 'costurado',
-    modelo: 'mlx-community/whisper-large-v3-mlx',
-  },
+const ID_OK = '0123456789abcdef0123456789abcdef'
+
+const JOB_NA_FILA = {
+  id: ID_OK,
+  status: 'na_fila',
+  posicao: 1,
+  parte_atual: 0,
+  total_partes: 1,
+  nome_atual: null,
+  modelo: 'mlx-community/whisper-large-v3-mlx',
+  criado_em: '2026-10-31T12:00:00+00:00',
+  atualizado_em: '2026-10-31T12:00:00+00:00',
+  resultado: null,
+  erro: null,
 }
+
+const RESPOSTA_OK = { ok: true, data: JOB_NA_FILA }
 
 describe('POST /admin/transcrever', () => {
   // A única barreira entre qualquer conta Google e a GPU do dono.
@@ -128,7 +135,7 @@ describe('POST /admin/transcrever', () => {
     expect(body.notifications[0]?.code).toBe('promeia_disabled')
   })
 
-  test('repassa os áudios NA ORDEM, com os campos, e devolve o data no envelope', async () => {
+  test('repassa os áudios NA ORDEM, com os campos, e devolve 202 com o JOB no envelope', async () => {
     const cookie = await cookieDe(ADMIN)
     const vistos = mockarPromeia(() => json(200, RESPOSTA_OK))
     const form = new FormData()
@@ -140,7 +147,7 @@ describe('POST /admin/transcrever', () => {
 
     const res = await enviar(form, cookie)
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(202)
     const body = (await res.json()) as Envelope<typeof RESPOSTA_OK.data>
     expect(body.ok).toBe(true)
     expect(body.data).toEqual(RESPOSTA_OK.data)
@@ -267,6 +274,192 @@ describe('POST /admin/transcrever', () => {
     const form = new FormData()
     form.append('audios', audio('a.ogg'))
     const res = await enviar(form, cookie)
+    expect(res.status).toBe(503)
+    const texto = await res.text()
+    expect(texto).toContain('promeia_unreachable')
+    expect(texto).not.toContain(TOKEN_MARCADOR)
+  })
+})
+
+// O bug: 9 min de áudio no modo Preciso levam mais que o corte de ~100 s da
+// Cloudflare; com a chamada síncrona, o request morria no meio e o dono lia
+// "Suba o promeia no Mac" com o promeia de pé. O conserto é o job assíncrono:
+// o promeia aceita na hora (202) e a tela consulta o andamento depois.
+const CORTE_CLOUDFLARE_MS = 100_000
+
+function promeiaQueSoSoltaNoAbort() {
+  globalThis.fetch = ((_url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('abortado', 'AbortError')),
+      )
+    })) as unknown as typeof fetch
+}
+
+describe('transcrição longa não passa do corte da Cloudflare (bug do áudio de 9 min)', () => {
+  test('o promeia aceita o job na hora: o ramielle devolve 202 com o JOB', async () => {
+    const cookie = await cookieDe(ADMIN)
+    mockarPromeia(() => json(202, RESPOSTA_OK))
+    const form = new FormData()
+    form.append('audios', audio('nove-minutos.ogg'))
+    const res = await enviar(form, cookie)
+    expect(res.status).toBe(202)
+    const body = (await res.json()) as Envelope<typeof JOB_NA_FILA>
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual(JOB_NA_FILA)
+  })
+
+  test('promeia travado: o ramielle desiste ANTES do corte de ~100 s da Cloudflare', async () => {
+    const cookie = await cookieDe(ADMIN)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    promeiaQueSoSoltaNoAbort()
+    const form = new FormData()
+    form.append('audios', audio('nove-minutos.ogg'))
+    let resolvida: Response | null = null
+    const pendente = enviar(form, cookie).then((r) => (resolvida = r))
+    await vi.advanceTimersByTimeAsync(CORTE_CLOUDFLARE_MS - 1)
+    expect(resolvida).not.toBeNull()
+    const res = await pendente
+    expect(res.status).toBe(503)
+    const texto = await res.text()
+    expect(texto).toContain('promeia_unreachable')
+    expect(texto).not.toContain(TOKEN_MARCADOR)
+  })
+})
+
+async function consultar(
+  id: string,
+  cookie: string | null,
+  ambiente = testEnv(),
+): Promise<Response> {
+  return app.request(
+    `/admin/transcrever/${id}`,
+    { method: 'GET', headers: cookie ? { cookie } : {} },
+    ambiente,
+  )
+}
+
+const JOB_PRONTO = {
+  ...JOB_NA_FILA,
+  status: 'pronto',
+  posicao: null,
+  parte_atual: 1,
+  resultado: {
+    partes: [{ nome: 'a.ogg', texto: 'um' }],
+    texto: 'um',
+    modelo: JOB_NA_FILA.modelo,
+  },
+}
+
+describe('GET /admin/transcrever/:id', () => {
+  test('devolve 200 com o JOB do promeia, por GET autenticado', async () => {
+    const cookie = await cookieDe(ADMIN)
+    const vistos = mockarPromeia(() =>
+      json(200, { ok: true, data: JOB_PRONTO }),
+    )
+    const res = await consultar(ID_OK, cookie)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<typeof JOB_PRONTO>
+    expect(body.data).toEqual(JOB_PRONTO)
+    expect(vistos).toHaveLength(1)
+    expect(vistos[0]!.url).toBe(
+      `https://promeia.exemplo.test/transcrever/${ID_OK}`,
+    )
+    expect(vistos[0]!.init.method).toBe('GET')
+    const headers = vistos[0]!.init.headers as Record<string, string>
+    expect(headers.authorization).toBe(`Bearer ${TOKEN_MARCADOR}`)
+  })
+
+  // Um 502 aqui faria a tela achar que o promeia quebrou, quando o job só
+  // expirou ou o promeia reiniciou e o perdeu.
+  test('job_not_found do promeia passa como 404, não 502', async () => {
+    const cookie = await cookieDe(ADMIN)
+    mockarPromeia(() =>
+      json(404, {
+        ok: false,
+        code: 'job_not_found',
+        message: 'Transcrição não encontrada — ela pode ter expirado.',
+      }),
+    )
+    const res = await consultar(ID_OK, cookie)
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('job_not_found')
+    expect(body.notifications[0]?.message).toContain('expirado')
+  })
+
+  test.each([
+    ['curto', 'abc123'],
+    ['maiúsculo', '0123456789ABCDEF0123456789ABCDEF'],
+    ['path traversal', '..%2F..%2Fetc%2Fpasswd'],
+    ['33 chars', `${ID_OK}0`],
+  ])(
+    'id malformado (%s) responde 404 job_not_found sem chamar o promeia',
+    async (_nome, id) => {
+      const cookie = await cookieDe(ADMIN)
+      const vistos = mockarPromeia(() =>
+        json(200, { ok: true, data: JOB_PRONTO }),
+      )
+      const res = await consultar(id, cookie)
+      expect(res.status).toBe(404)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.notifications[0]?.code).toBe('job_not_found')
+      expect(vistos).toHaveLength(0)
+    },
+  )
+
+  test('sem sessão responde 401, sem chamar o promeia', async () => {
+    const vistos = mockarPromeia(() =>
+      json(200, { ok: true, data: JOB_PRONTO }),
+    )
+    const res = await consultar(ID_OK, null)
+    expect(res.status).toBe(401)
+    expect(vistos).toHaveLength(0)
+  })
+
+  test('não-admin responde 403 admin_only, sem chamar o promeia', async () => {
+    const cookie = await cookieDe('votante@exemplo.test')
+    const vistos = mockarPromeia(() =>
+      json(200, { ok: true, data: JOB_PRONTO }),
+    )
+    const res = await consultar(ID_OK, cookie)
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('admin_only')
+    expect(vistos).toHaveLength(0)
+  })
+
+  test('sem PROMEIA_URL/TOKEN responde 503 promeia_disabled', async () => {
+    const cookie = await cookieDe(ADMIN)
+    const res = await consultar(
+      ID_OK,
+      cookie,
+      testEnv({ PROMEIA_URL: '', PROMEIA_TOKEN: '' }),
+    )
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('promeia_disabled')
+  })
+
+  test('Mac desligado (túnel 530) vira 503 promeia_unreachable, sem vazar o token', async () => {
+    const cookie = await cookieDe(ADMIN)
+    mockarPromeia(() => new Response('<html>530</html>', { status: 530 }))
+    const res = await consultar(ID_OK, cookie)
+    expect(res.status).toBe(503)
+    const texto = await res.text()
+    expect(texto).toContain('promeia_unreachable')
+    expect(texto).not.toContain(TOKEN_MARCADOR)
+  })
+
+  test('promeia travado: a consulta desiste em segundos, como promeia_unreachable', async () => {
+    const cookie = await cookieDe(ADMIN)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    promeiaQueSoSoltaNoAbort()
+    let resolvida: Response | null = null
+    const pendente = consultar(ID_OK, cookie).then((r) => (resolvida = r))
+    await vi.advanceTimersByTimeAsync(TIMEOUT_STATUS_MS)
+    expect(resolvida).not.toBeNull()
+    const res = await pendente
     expect(res.status).toBe(503)
     const texto = await res.text()
     expect(texto).toContain('promeia_unreachable')

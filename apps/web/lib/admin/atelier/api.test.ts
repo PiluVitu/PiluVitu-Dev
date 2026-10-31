@@ -90,6 +90,20 @@ describe('transcrever usa a base do ramielle, não a do Atelier', () => {
   })
 })
 
+const jobNaFila = {
+  id: '0123456789abcdef0123456789abcdef',
+  status: 'na_fila' as const,
+  posicao: 1,
+  parte_atual: 0,
+  total_partes: 1,
+  nome_atual: null,
+  modelo: 'mlx-community/whisper-large-v3-mlx',
+  criado_em: '2026-10-31T12:00:00Z',
+  atualizado_em: '2026-10-31T12:00:00Z',
+  resultado: null,
+  erro: null,
+}
+
 describe('atelierApi', () => {
   const realFetch = global.fetch
   afterEach(() => {
@@ -118,10 +132,10 @@ describe('atelierApi', () => {
   // O navegador só gera o `multipart/form-data; boundary=...` se ninguém
   // definir Content-Type; forçar JSON faz o servidor não achar áudio nenhum.
   it('transcrever manda multipart na ordem, sem Content-Type forçado', async () => {
-    const data = { partes: [], texto: 'oi', modelo: 'm' }
+    const data = jobNaFila
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      status: 200,
+      status: 202,
       json: async () => ({ ok: true, data, notifications: [] }),
     }) as unknown as typeof fetch
 
@@ -161,6 +175,71 @@ describe('atelierApi', () => {
     })
     const [, init] = (global.fetch as jest.Mock).mock.calls[0]
     expect((init.body as FormData).has('termos')).toBe(false)
+  })
+
+  // Bug do áudio de 9 min: o POST síncrono passava do corte de ~100 s da
+  // Cloudflare e virava 503 promeia_unreachable. Agora o POST só enfileira
+  // (202 + JOB) e a tela consulta o andamento em requests curtos.
+  it('transcrever devolve o JOB do 202, não o texto', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({ ok: true, data: jobNaFila, notifications: [] }),
+    }) as unknown as typeof fetch
+
+    const job = await atelierApi.transcrever([new File(['a'], 'a.ogg')], {
+      termos: '',
+      modo: 'preciso',
+    })
+    expect(job.id).toBe(jobNaFila.id)
+    expect(job.status).toBe('na_fila')
+    expect(job.posicao).toBe(1)
+  })
+
+  it('statusTranscricao faz GET /admin/transcrever/{id} sem corpo', async () => {
+    const pronto = {
+      ...jobNaFila,
+      status: 'pronto',
+      posicao: null,
+      parte_atual: 1,
+      resultado: { partes: [], texto: 'oi', modelo: 'm' },
+    }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, data: pronto, notifications: [] }),
+    }) as unknown as typeof fetch
+
+    const job = await atelierApi.statusTranscricao(jobNaFila.id)
+    expect(job).toEqual(pronto)
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(url).toMatch(new RegExp(`/admin/transcrever/${jobNaFila.id}$`))
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.body).toBeUndefined()
+    expect(init.credentials).toBe('include')
+  })
+
+  it('statusTranscricao propaga o 404 job_not_found como ApiError', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'job_not_found',
+            message: 'Transcrição não encontrada — ela pode ter expirado.',
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch
+
+    await expect(
+      atelierApi.statusTranscricao(jobNaFila.id),
+    ).rejects.toMatchObject({ status: 404, code: 'job_not_found' })
   })
 
   it('resumo manda {title, body} pro /admin/llm/resumo e devolve o resumo', async () => {

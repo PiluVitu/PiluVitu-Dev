@@ -1,4 +1,7 @@
-"""Rota HTTP da transcrição: `POST /transcrever`.
+"""Rotas HTTP da transcrição: `POST /transcrever` e `GET /transcrever/{id}`.
+
+O POST só grava os áudios e enfileira (202 + job); o GET devolve o estado.
+Nenhum dos dois espera o Whisper (ver `transcricao_jobs.py`).
 
 ⚠️ **De quem é este contrato.** Chamada pelo **ramielle**, nunca pelo
 navegador. A forma de erro é a do promeia
@@ -13,19 +16,19 @@ arquivo como veio.
 from __future__ import annotations
 
 import re
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
-from promeia import transcricao
+from promeia import transcricao, transcricao_jobs
 
 router = APIRouter()
 
 # Nome de arquivo vem do cliente: só o basename, e só caracteres inertes.
-# Sem isso, um `../../etc/x.ogg` escaparia do diretório temporário.
+# Sem isso, um `../../etc/x.ogg` escaparia do diretório do job.
 _SEGURO = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -66,57 +69,36 @@ async def rota_transcrever(
         transcricao.MODELO_RAPIDO if modo == "rapido" else transcricao.MODELO_PADRAO
     )
 
-    with tempfile.TemporaryDirectory() as tmp:
-        destino = Path(tmp)
-        caminhos: list[Path] = []
-        total = 0
-
-        for i, upload in enumerate(audios):
-            conteudo = await upload.read()
-            total += len(conteudo)
-            if total > transcricao.MAX_BYTES_TOTAL:
-                limite_mb = transcricao.MAX_BYTES_TOTAL // (1024 * 1024)
-                return _erro(
-                    413,
-                    "audio_too_large",
-                    f"Os áudios somam mais que o limite de {limite_mb} MB.",
-                )
-            caminho = destino / _nome_seguro(upload.filename, i)
-            caminho.write_bytes(conteudo)
-            caminhos.append(caminho)
-
-        try:
-            textos = transcricao.transcrever(
-                caminhos,
-                # Buscado no MÓDULO (não importado direto) para o teste poder
-                # trocar o executor sem tocar no binário.
-                executar=transcricao.executar_mlx_whisper,
-                modelo=modelo,
-                idioma=idioma,
-                termos=termos,
+    recebidos: list[tuple[str, bytes]] = []
+    total = 0
+    for i, upload in enumerate(audios):
+        conteudo = await upload.read()
+        total += len(conteudo)
+        if total > transcricao.MAX_BYTES_TOTAL:
+            limite_mb = transcricao.MAX_BYTES_TOTAL // (1024 * 1024)
+            return _erro(
+                413,
+                "audio_too_large",
+                f"Os áudios somam mais que o limite de {limite_mb} MB.",
             )
-        except transcricao.WhisperIndisponivel as err:
-            return _erro(503, "whisper_indisponivel", str(err))
-        # 503, nunca 502: o túnel troca o corpo de um 502 e a mensagem some
-        # (ver "O túnel COME o corpo do 502" no CLAUDE.md).
-        except transcricao.TranscricaoVazia as err:
-            return _erro(503, "transcricao_vazia", str(err))
-        except transcricao.TranscricaoFalhou as err:
-            return _erro(503, "transcricao_falhou", str(err))
+        recebidos.append((_nome_seguro(upload.filename, i), conteudo))
 
-    partes = [
-        {"nome": c.name, "texto": t} for c, t in zip(caminhos, textos, strict=True)
-    ]
-    total_partes = len(partes)
-    costurado = "\n\n".join(
-        f"===== ÁUDIO {i + 1} de {total_partes} — {p['nome']} =====\n\n{p['texto']}"
-        for i, p in enumerate(partes)
+    fila: transcricao_jobs.FilaDeTranscricao = request.app.state.transcricoes
+    job = await run_in_threadpool(
+        fila.criar, recebidos, modelo=modelo, idioma=idioma, termos=termos
     )
+    return JSONResponse(status_code=202, content={"ok": True, "data": job})
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "ok": True,
-            "data": {"partes": partes, "texto": costurado, "modelo": modelo},
-        },
-    )
+
+@router.get("/transcrever/{job_id}")
+def rota_status(request: Request, job_id: str):
+    fila: transcricao_jobs.FilaDeTranscricao = request.app.state.transcricoes
+    fila.iniciar()
+    job = fila.obter(job_id)
+    if job is None:
+        return _erro(
+            404,
+            "job_not_found",
+            "Transcrição não encontrada — ela pode ter expirado.",
+        )
+    return JSONResponse(status_code=200, content={"ok": True, "data": job})

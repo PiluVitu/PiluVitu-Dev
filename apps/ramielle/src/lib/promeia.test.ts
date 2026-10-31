@@ -52,6 +52,23 @@ describe('chamarPromeia — caminho feliz', () => {
     expect(JSON.parse(init.body as string)).toEqual({ text: 'x' })
   })
 
+  it('GET vai sem corpo e sem content-type, com o token', async () => {
+    const fetchImpl = vi.fn(async () =>
+      respostaJson(200, { ok: true, data: { id: 'x' } }),
+    )
+    const data = await chamarPromeia('/transcrever/x', undefined, CFG, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      method: 'GET',
+    })
+    expect(data).toEqual({ id: 'x' })
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.method).toBe('GET')
+    expect(init.body).toBeUndefined()
+    const headers = init.headers as Record<string, string>
+    expect(headers['content-type']).toBeUndefined()
+    expect(headers.authorization).toBe(`Bearer ${TOKEN_MARCADOR}`)
+  })
+
   // Áudio vai por multipart: o `content-type` com o boundary tem que ser o
   // que o runtime gera a partir do FormData. Forçar `application/json` (ou
   // um `multipart/form-data` sem boundary) faz o FastAPI não achar arquivo

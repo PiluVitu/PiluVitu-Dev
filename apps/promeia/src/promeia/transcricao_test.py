@@ -113,6 +113,19 @@ class TestTranscrever:
         with pytest.raises(TranscricaoVazia):
             transcrever([A1], executar=executar)
 
+    def test_avisa_o_progresso_a_cada_audio_concluido(self):
+        executar, _ = executor_espiao(["um", "dois", "tres"])
+        avisos: list[int] = []
+        transcrever([A1, A2, A3], executar=executar, ao_concluir=avisos.append)
+        assert avisos == [1, 2, 3]
+
+    def test_falha_no_meio_nao_avisa_o_audio_que_falhou(self):
+        executar, _ = executor_espiao(["um", "   "])
+        avisos: list[int] = []
+        with pytest.raises(TranscricaoVazia):
+            transcrever([A1, A2], executar=executar, ao_concluir=avisos.append)
+        assert avisos == [1]
+
     def test_sem_audio_nenhum_e_erro_de_entrada(self):
         executar, _ = executor_espiao([])
         with pytest.raises(ValueError):
@@ -189,3 +202,27 @@ class TestExecutarMlxWhisper:
             "Error opening input files: Invalid data found when processing input"
         )
         assert "libavutil" not in mensagem
+
+
+class TestSemLacoEmAudioLongo:
+    # Medido em 2026-10-31 com uma reunião sintética de 12 min (72 itens) no
+    # large-v3: com `--condition-on-previous-text True` e `--temperature 0`
+    # (o CLI não tem a recaída de temperatura que tira o Whisper de um laço),
+    # a partir do item 19 ele só copiava a frase anterior — 12.146 palavras
+    # para um roteiro de 1.543, um "Item 90" inexistente repetido 529 vezes.
+    # Com False: 1.555 palavras, os 72 itens uma vez cada, em ordem.
+    def test_nao_condiciona_no_texto_anterior(self, tmp_path):
+        audio = tmp_path / "reuniao.m4a"
+        audio.write_bytes(b"x")
+        vistos = []
+        rodar_real = rodar_como_mlx_whisper("oi")
+
+        def rodar(args, **kw):
+            vistos.append(args)
+            return rodar_real(args, **kw)
+
+        executar_mlx_whisper(audio, "m", "pt", "p", binario="mlx", rodar=rodar)
+
+        args = vistos[0]
+        indice = args.index("--condition-on-previous-text")
+        assert args[indice + 1] == "False"

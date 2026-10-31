@@ -1,11 +1,11 @@
 import { apiBase, ApiError, type ApiEnvelope } from '@/lib/votacao/api-client'
 import type {
   DistributionTarget,
+  JobTranscricao,
   ModoTranscricao,
   ProposalsBody,
   Resumo,
   SelectedTarget,
-  Transcricao,
 } from './types'
 
 /**
@@ -92,10 +92,16 @@ export const atelierApi = {
     if (opts.termos.trim()) form.append('termos', opts.termos.trim())
     form.append('modo', opts.modo)
     // Só existe no ramielle; `atelierBase` segue na Go até o cutover do Atelier.
-    return call<Transcricao>(
+    return call<JobTranscricao>(
       '/admin/transcrever',
       { method: 'POST', body: form },
       apiBase,
     )
   },
+  statusTranscricao: (id: string) =>
+    call<JobTranscricao>(
+      `/admin/transcrever/${encodeURIComponent(id)}`,
+      undefined,
+      apiBase,
+    ),
 }

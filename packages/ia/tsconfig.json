@@ -1,14 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": [
-      "@cloudflare/vitest-pool-workers/types"
-    ],
+    "types": ["@cloudflare/vitest-pool-workers/types"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -17,12 +13,6 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": [
-    "src/**/*.ts",
-    "vitest.config.ts",
-    "vitest.workers.config.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["src/**/*.ts", "vitest.config.ts", "vitest.workers.config.ts"],
+  "exclude": ["node_modules"]
 }

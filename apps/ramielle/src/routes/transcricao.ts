@@ -1,12 +1,14 @@
 /**
- * `POST /admin/transcrever` — repassa N áudios ao Whisper do promeia e
- * devolve o texto no envelope. Só admin: é a GPU do dono.
+ * Transcrição como job assíncrono no promeia. `POST /admin/transcrever`
+ * repassa os áudios e devolve 202 com o JOB; `GET /admin/transcrever/:id`
+ * devolve o andamento. Só admin: é a GPU do dono.
  */
 import { Hono } from 'hono'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
 import {
   chamarPromeia,
+  PromeiaRecusou,
   promeiaConfigurado,
   traduzirFalhaPromeia,
 } from '../lib/promeia'
@@ -23,6 +25,30 @@ export type Transcricao = {
   modelo: string
 }
 
+export type StatusJob = 'na_fila' | 'transcrevendo' | 'pronto' | 'falhou'
+
+export type JobTranscricao = {
+  id: string
+  status: StatusJob
+  posicao: number | null
+  parte_atual: number
+  total_partes: number
+  nome_atual: string | null
+  modelo: string
+  criado_em: string
+  atualizado_em: string
+  resultado: Transcricao | null
+  erro: { code: string; message: string } | null
+}
+
+// Mesmo formato que o promeia valida antes de tocar no disco.
+export const ID_JOB = /^[0-9a-f]{32}$/
+
+// Os dois abaixo do corte de ~100 s da Cloudflare: passar dele faz o túnel
+// derrubar o request e o dono ler "Suba o promeia" com o promeia de pé.
+export const TIMEOUT_ENVIO_MS = 60_000
+export const TIMEOUT_STATUS_MS = 15_000
+
 // Espelham `MAX_AUDIOS`/`MAX_BYTES_TOTAL` de `apps/promeia/.../transcricao.py`.
 export const MAX_AUDIOS = 10
 export const MAX_BYTES_TOTAL = 40 * 1024 * 1024
@@ -32,6 +58,8 @@ const CAMPOS_REPASSADOS = ['termos', 'idioma', 'modo'] as const
 const MSG_DESLIGADO =
   'A transcrição está desligada — configure PROMEIA_URL e PROMEIA_TOKEN.'
 const MSG_SEM_AUDIO = "Envie ao menos um áudio em 'audios'."
+const MSG_JOB_NAO_ENCONTRADO =
+  'Transcrição não encontrada — ela pode ter expirado.'
 
 const transcricaoRoutes = new Hono<Env>()
 
@@ -80,9 +108,47 @@ transcricaoRoutes.post(
     }
 
     try {
-      const data = await chamarPromeia<Transcricao>('/transcrever', saida, cfg)
-      return okJson(data)
+      const job = await chamarPromeia<JobTranscricao>(
+        '/transcrever',
+        saida,
+        cfg,
+        { timeoutMs: TIMEOUT_ENVIO_MS },
+      )
+      return okJson(job, 202)
     } catch (err) {
+      return traduzirFalhaPromeia(err)
+    }
+  },
+)
+
+transcricaoRoutes.get(
+  '/transcrever/:id',
+  requireAdmin<AuthBindings>(),
+  async (c) => {
+    const cfg = promeiaConfigurado(c.env)
+    if (cfg === null) return errJson(503, 'promeia_disabled', MSG_DESLIGADO)
+
+    const id = c.req.param('id')
+    if (!ID_JOB.test(id)) {
+      return errJson(404, 'job_not_found', MSG_JOB_NAO_ENCONTRADO)
+    }
+
+    try {
+      const job = await chamarPromeia<JobTranscricao>(
+        `/transcrever/${id}`,
+        undefined,
+        cfg,
+        { method: 'GET', timeoutMs: TIMEOUT_STATUS_MS },
+      )
+      return okJson(job)
+    } catch (err) {
+      if (
+        err instanceof PromeiaRecusou &&
+        err.status === 404 &&
+        err.code === 'job_not_found'
+      ) {
+        return errJson(404, err.code, err.message)
+      }
       return traduzirFalhaPromeia(err)
     }
   },

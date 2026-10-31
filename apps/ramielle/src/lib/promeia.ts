@@ -73,7 +73,7 @@ const STATUS_CLOUDFLARE_ORIGEM_INALCANCAVEL = new Set([
 ])
 
 /**
- * POST autenticado no promeia. Devolve o `data` do corpo em caso de sucesso.
+ * Chamada autenticada ao promeia (POST por padrão; GET sem corpo). Devolve o `data` do corpo em caso de sucesso.
  *
  * ⚠️ **O token nunca entra em mensagem de erro.** Nenhuma das mensagens
  * abaixo é construída a partir da URL completa (que não o carrega hoje, mas
@@ -84,7 +84,11 @@ export async function chamarPromeia<T>(
   caminho: string,
   corpo: unknown,
   cfg: PromeiaConfig,
-  opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+  opts: {
+    fetchImpl?: typeof fetch
+    timeoutMs?: number
+    method?: 'GET' | 'POST'
+  } = {},
 ): Promise<T> {
   const f = opts.fetchImpl ?? fetch
   const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS
@@ -95,20 +99,26 @@ export async function chamarPromeia<T>(
 
   let resposta: Response
   try {
-    const multipart = corpo instanceof FormData
-    resposta = await f(url, {
-      method: 'POST',
-      // Com FormData o runtime gera o `content-type` com o boundary; forçar
-      // qualquer valor aqui faz o promeia não achar o arquivo.
-      headers: multipart
-        ? { authorization: `Bearer ${cfg.token}` }
-        : {
-            'content-type': 'application/json',
-            authorization: `Bearer ${cfg.token}`,
-          },
-      body: multipart ? corpo : JSON.stringify(corpo),
-      signal: controller.signal,
-    })
+    const autorizacao = { authorization: `Bearer ${cfg.token}` }
+    if (opts.method === 'GET') {
+      resposta = await f(url, {
+        method: 'GET',
+        headers: autorizacao,
+        signal: controller.signal,
+      })
+    } else {
+      const multipart = corpo instanceof FormData
+      resposta = await f(url, {
+        method: 'POST',
+        // Com FormData o runtime gera o `content-type` com o boundary; forçar
+        // qualquer valor aqui faz o promeia não achar o arquivo.
+        headers: multipart
+          ? autorizacao
+          : { 'content-type': 'application/json', ...autorizacao },
+        body: multipart ? corpo : JSON.stringify(corpo),
+        signal: controller.signal,
+      })
+    }
   } catch {
     // Texto FIXO: nem o erro original (que em alguns runtimes ecoa a
     // requisição inteira, headers inclusos) nem a URL entram aqui.
