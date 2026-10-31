@@ -15,7 +15,7 @@ const buttonVariants = cva(
   // tem `disabled:cursor-not-allowed` (comportamento visual do cursor
   // desabilitado é o default do browser); um comentário anterior alegava
   // o contrário, sem a classe existir de verdade.
-  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,transform] duration-150 motion-safe:active:scale-[0.97] focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {

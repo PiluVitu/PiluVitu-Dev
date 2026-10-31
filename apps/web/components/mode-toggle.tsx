@@ -11,11 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@piluvitu/ui/dropdown-menu'
+import { trocarTemaComTransicao } from '@piluvitu/ui/transicao-de-tema'
 
 const triggerClass = 'flex w-fit items-center gap-2 rounded-full px-4'
 
 export function ModeToggle() {
   const { setTheme } = useTheme()
+  const trocar = (tema: string) => trocarTemaComTransicao(() => setTheme(tema))
 
   return (
     <NoSSR
@@ -35,13 +37,13 @@ export function ModeToggle() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setTheme('light')}>
+          <DropdownMenuItem onClick={() => trocar('light')}>
             Light
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('dark')}>
+          <DropdownMenuItem onClick={() => trocar('dark')}>
             Dark
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('system')}>
+          <DropdownMenuItem onClick={() => trocar('system')}>
             System
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@piluvitu/ui/card'
 import { Input } from '@piluvitu/ui/input'
 import { Label } from '@piluvitu/ui/label'
 import { Textarea } from '@piluvitu/ui/textarea'
+import { trocarTemaComTransicao } from '@piluvitu/ui/transicao-de-tema'
 import { api, ApiError } from '../api'
 import { signOut, useSession } from '../auth-client'
 import { PasskeysCard } from '../Passkeys'
@@ -155,7 +156,7 @@ export function ConfigPage() {
   }
 
   function trocarTema(t: Tema) {
-    aplicarTema(t)
+    trocarTemaComTransicao(() => aplicarTema(t))
     setTema(t)
   }
 

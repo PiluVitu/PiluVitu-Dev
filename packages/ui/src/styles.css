@@ -226,3 +226,106 @@
 @utility ui-sentinela-nao-remover {
   content: 'ui-sentinela-nao-remover';
 }
+
+/* Movimento de entrada e saída (dialog, sheet, menus, ajuda): os nomes são os
+   do tw-animate, que os componentes shadcn já usam. Só opacity e transform;
+   `duration-*` do Tailwind ajusta o tempo via --tw-duration. Com
+   prefers-reduced-motion (ou `data-reduzir-movimento` num ancestral, usado
+   pelas stories) fica só um fade curto. Ver "Movimento" no CLAUDE.md. */
+@keyframes ui-entrar {
+  from {
+    opacity: var(--ui-entrar-opacidade, 1);
+    transform: translate3d(var(--ui-entrar-x, 0), var(--ui-entrar-y, 0), 0)
+      scale(var(--ui-entrar-escala, 1));
+  }
+}
+
+@keyframes ui-sair {
+  to {
+    opacity: var(--ui-sair-opacidade, 1);
+    transform: translate3d(var(--ui-sair-x, 0), var(--ui-sair-y, 0), 0)
+      scale(var(--ui-sair-escala, 1));
+  }
+}
+
+@keyframes ui-entrar-reduzido {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-sair-reduzido {
+  to {
+    opacity: 0;
+  }
+}
+
+@utility animate-in {
+  animation: ui-entrar var(--tw-duration, 200ms) cubic-bezier(0.2, 0, 0, 1) both;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation-name: ui-entrar-reduzido;
+    animation-duration: 120ms;
+  }
+
+  [data-reduzir-movimento] & {
+    animation-name: ui-entrar-reduzido;
+    animation-duration: 120ms;
+  }
+}
+
+@utility animate-out {
+  animation: ui-sair var(--tw-duration, 150ms) cubic-bezier(0.4, 0, 1, 1) both;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation-name: ui-sair-reduzido;
+    animation-duration: 100ms;
+  }
+
+  [data-reduzir-movimento] & {
+    animation-name: ui-sair-reduzido;
+    animation-duration: 100ms;
+  }
+}
+
+@utility fade-in-0 {
+  --ui-entrar-opacidade: 0;
+}
+@utility fade-out-0 {
+  --ui-sair-opacidade: 0;
+}
+@utility zoom-in-95 {
+  --ui-entrar-escala: 0.95;
+}
+@utility zoom-out-95 {
+  --ui-sair-escala: 0.95;
+}
+@utility slide-in-from-top {
+  --ui-entrar-y: -100%;
+}
+@utility slide-in-from-bottom {
+  --ui-entrar-y: 100%;
+}
+@utility slide-in-from-left {
+  --ui-entrar-x: -100%;
+}
+@utility slide-in-from-right {
+  --ui-entrar-x: 100%;
+}
+@utility slide-out-to-top {
+  --ui-sair-y: -100%;
+}
+@utility slide-out-to-bottom {
+  --ui-sair-y: 100%;
+}
+@utility slide-out-to-left {
+  --ui-sair-x: -100%;
+}
+@utility slide-out-to-right {
+  --ui-sair-x: 100%;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 250ms;
+}
