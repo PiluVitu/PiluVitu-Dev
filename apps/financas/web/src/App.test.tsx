@@ -779,3 +779,59 @@ describe('App — top bar do celular', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
+
+describe('App — troca de tema', () => {
+  const matchMediaOriginal = window.matchMedia
+
+  function simularViewTransition(fn: unknown) {
+    Object.defineProperty(document, 'startViewTransition', {
+      value: fn,
+      configurable: true,
+    })
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'startViewTransition')
+    window.matchMedia = matchMediaOriginal
+  })
+
+  function preferirMenosMovimento(reduzir: boolean) {
+    window.matchMedia = vi.fn((q: string) => ({
+      matches: q === '(prefers-reduced-motion: reduce)' && reduzir,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })) as unknown as typeof window.matchMedia
+  }
+
+  test('o botão de tema troca dentro de uma View Transition', async () => {
+    const user = userEvent.setup()
+    preferirMenosMovimento(false)
+    const transicao = vi.fn((cb: () => unknown) => {
+      void cb()
+      return {}
+    })
+    simularViewTransition(transicao)
+    mockFetchVazio()
+    window.location.hash = '#/'
+    render(<App />)
+
+    await user.click(await screen.findByTestId('alternar-tema'))
+
+    expect(transicao).toHaveBeenCalledTimes(1)
+  })
+
+  test('com prefers-reduced-motion troca sem transição', async () => {
+    const user = userEvent.setup()
+    preferirMenosMovimento(true)
+    const transicao = vi.fn()
+    simularViewTransition(transicao)
+    mockFetchVazio()
+    window.location.hash = '#/'
+    render(<App />)
+
+    await user.click(await screen.findByTestId('alternar-tema'))
+
+    expect(transicao).not.toHaveBeenCalled()
+    expect(localStorage.getItem('financas-tema')).not.toBeNull()
+  })
+})

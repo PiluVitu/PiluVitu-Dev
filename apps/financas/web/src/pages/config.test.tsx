@@ -217,6 +217,28 @@ describe('ConfigPage', () => {
     expect(localStorage.getItem('financas-tema')).toBe('claro')
   })
 
+  it('tema: a troca passa por uma View Transition quando o navegador suporta', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
+    const transicao = vi.fn((cb: () => unknown) => {
+      void cb()
+      return {}
+    })
+    Object.defineProperty(document, 'startViewTransition', {
+      value: transicao,
+      configurable: true,
+    })
+    try {
+      render(<ConfigPage />)
+      await user.click(screen.getByRole('button', { name: 'Escuro' }))
+
+      expect(transicao).toHaveBeenCalledTimes(1)
+      expect(document.documentElement.classList.contains('dark')).toBe(true)
+    } finally {
+      Reflect.deleteProperty(document, 'startViewTransition')
+    }
+  })
+
   // Task 5 (ajuda contextual, §3.2 do spec): "Comprometido / Configurações"
   // — este é o "Configurações". Clique, não hover — ver
   // BlocoComprometido.test.tsx pro mesmo ponto do lado da home.
