@@ -29,6 +29,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@piluvitu/ui/sheet'
+import { trocarTemaComTransicao } from '@piluvitu/ui/transicao-de-tema'
 import { signOut, useSession } from './auth-client'
 import { Gate } from './Gate'
 import { useMenorQueMd } from './lib/breakpoint'
@@ -342,11 +343,13 @@ function BotaoTema() {
       onClick={() => {
         const proximo = PROXIMO_TEMA[tema]
         setTema(proximo)
-        try {
-          aplicarTema(proximo)
-        } catch {
-          // storage indisponível: o tema não persiste, mas a tela não cai.
-        }
+        trocarTemaComTransicao(() => {
+          try {
+            aplicarTema(proximo)
+          } catch {
+            // storage indisponível: o tema não persiste, mas a tela não cai.
+          }
+        })
       }}
     >
       <Icone className="size-5" aria-hidden="true" />

@@ -97,6 +97,24 @@ Versão do Radix: `@radix-ui/react-popover@^1.1.15` — fixada no mesmo valor ex
 
 ⚠️ **Efeito em `apps/web` é uma mudança de IDENTIDADE visível no tema claro, e a decisão é do dono, não do agente:** o azul de marca (sky-400) vira azul-petróleo escuro em todo `text-primary` e `bg-primary`. Os fundos translúcidos de marca (`--color-accent-soft`/`--color-accent-line`, sky-400 estáticos, deliberadamente não derivados de `--primary`) **não mudam** — então os selos/ícones ficam com azul escuro sobre o mesmo fundo sky pálido, o que é justamente o par que antes era ilegível. O tema escuro do site (intocado) segue com o sky-400 de sempre.
 
+## Movimento
+
+⚠️ **Os componentes shadcn usam as classes do tw-animate (`animate-in`, `animate-out`, `fade-in-0`, `zoom-in-95`, `slide-in-from-*`…), e esse plugin nunca foi instalado.** Até 2026-10-31 elas não geravam CSS nenhum (medido no CSS emitido do web, do finanças e da landing: zero ocorrências), e dialog, sheet, dropdown-menu e ajuda abriam e fechavam secos. Hoje o `styles.css` define essas classes por conta própria (`@utility`), sem dependência nova:
+
+- **Só `opacity` e `transform`**, nos keyframes `ui-entrar`/`ui-sair`. `fade-*`, `zoom-*` e `slide-*` só ajustam variáveis (`--ui-entrar-opacidade`, `--ui-entrar-escala`, `--ui-entrar-x/y` e as de saída) que os keyframes leem.
+- **Tempo:** entrada 200 ms, saída 150 ms. `duration-*` do Tailwind muda o tempo, porque o v4 grava `--tw-duration` e as animações leem essa variável. O sheet usa 300 ms para abrir e 200 ms para fechar (eram 500/300, acima da faixa de 150–300 ms).
+- **Reduced motion:** com `prefers-reduced-motion: reduce`, ou `data-reduzir-movimento` num ancestral (atalho para as stories, porque os componentes abrem em portal), a animação troca para `ui-entrar-reduzido`/`ui-sair-reduzido`: só opacidade, 120/100 ms, sem deslize nem zoom.
+- **Só existem as classes que os componentes usam.** Uma variante nova (por exemplo `slide-in-from-top-2`) precisa de `@utility` nova aqui, ou não vira CSS. Não instalar o tw-animate por cima: ele redefiniria as mesmas classes.
+- **Botão:** "afunda" a 97% ao pressionar (`motion-safe:active:scale-[0.97]`, 150 ms). O `motion-safe` desliga a escala com reduced-motion.
+- **Troca de tema:** `trocarTemaComTransicao(aplicar)` (`transicao-de-tema.ts`) faz um crossfade de 250 ms com a View Transitions API. Pula a transição quando o navegador não suporta ou o sistema pede menos movimento. A captura do estado novo espera dois quadros, porque o next-themes troca a classe num efeito depois do render. Usado pelo `ModeToggle` do web e pelo botão de tema do finanças.
+
+Travas:
+
+- `apps/web/app/movimento.test.ts` compila o CSS com o Tailwind de verdade. É o lugar onde o `tailwindcss` está instalado; ler o arquivo como texto não pegaria uma classe que não vira CSS.
+- `button.test.tsx` e `transicao-de-tema.test.ts`.
+- O E2E `apps/web/app/(site)/movimento.e2e.ts` lê a animação computada no Chrome, com e sem reduced-motion.
+- As stories `Design System/Movimento` do web.
+
 ## Dependências
 
 `react` é **peerDependency** (`^19.2.4` — cada app consumidor traz sua própria cópia). Os Radix primitives, `class-variance-authority`, `clsx`, `cmdk`, `react-hook-form` e `tailwind-merge` são **dependencies** diretas do pacote, nas mesmas versões que `apps/web` já usava antes da migração (conferir contra `apps/web/package.json` ao bumpar). `@radix-ui/react-popover@^1.1.15` (dep. de `ajuda.tsx`) segue a mesma regra — copiada do valor exato de `@radix-ui/react-dialog`, não resolvida fresh. `recharts@^3.10.1` (dep. de `chart.tsx`, Task 1 da fatia ⑨) segue a MESMA regra — copiada do valor exato que `apps/financas/web/package.json` já declarava, não resolvida fresh (evita duas versões de `recharts` divergindo no mesmo grafo de dependências transitivas). `@types/react` é **devDependency** — necessário pro `tsc` de qualquer consumidor conseguir checar os `.tsx` crus deste pacote (sem isso, `React.HTMLAttributes`/JSX ficam `any` silenciosamente em quem importa). Nenhuma dessas adições precisou de `allowBuilds` — nenhuma delas tem lifecycle script de instalação.

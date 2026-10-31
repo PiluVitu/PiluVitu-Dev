@@ -41,7 +41,8 @@
     "./separator": "./src/separator.tsx",
     "./sheet": "./src/sheet.tsx",
     "./skeleton": "./src/skeleton.tsx",
-    "./textarea": "./src/textarea.tsx"
+    "./textarea": "./src/textarea.tsx",
+    "./transicao-de-tema": "./src/transicao-de-tema.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -118,6 +119,10 @@
       "./textarea": {
         "types": "./dist/textarea.d.ts",
         "default": "./dist/textarea.js"
+      },
+      "./transicao-de-tema": {
+        "types": "./dist/transicao-de-tema.d.ts",
+        "default": "./dist/transicao-de-tema.js"
       }
     }
   },
