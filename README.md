@@ -6,21 +6,21 @@ Monorepo pessoal: site + blog, dashboard de ferramentas, votação de filmes e u
 
 ## Frentes
 
-| Workspace        | O que é                                                                                  | Onde roda                                       |
-| ---------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `apps/web`       | Next.js 16 — site, blog, `/tools`, `/tasks`, `/admin`, `/votacao`                        | Vercel                                          |
-| `apps/api`       | Go 1.23 + chi — votação, auth, distribuição de artigos com LLM local                     | MacBook, exposto por Cloudflare Tunnel          |
-| `apps/financas`  | Cloudflare Worker (Hono + D1) + SPA Vite                                                 | `financas.piluvitu.com.br`                      |
-| `apps/promeia`   | Python 3.13 (FastAPI + uv) — insight financeiro via Ollama local, PDF/transcrição depois | MacBook, atrás de túnel                         |
-| `packages/ui`    | `@piluvitu/ui` — design system (tokens + componentes shadcn)                             | consumido por `apps/web` e pela SPA do finanças |
-| `packages/tools` | `@piluvitu/tools` — lógica pura em TS                                                    | consumido pelo `/tools` e pelo finanças         |
+| Workspace        | O que é                                                                        | Onde roda                                       |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `apps/web`       | Next.js 16 — site, blog, `/tools`, `/tasks`, `/admin`, `/votacao`              | Vercel                                          |
+| `apps/api`       | Go 1.23 + chi — votação, auth, distribuição de artigos com LLM local           | MacBook, exposto por Cloudflare Tunnel          |
+| `apps/financas`  | Cloudflare Worker (Hono + D1) + SPA Vite                                       | `financas.piluvitu.com.br`                      |
+| `apps/promeia`   | Python 3.13 (FastAPI + uv) — transcrição de áudio via modelo local, PDF depois | MacBook, atrás de túnel                         |
+| `packages/ui`    | `@piluvitu/ui` — design system (tokens + componentes shadcn)                   | consumido por `apps/web` e pela SPA do finanças |
+| `packages/tools` | `@piluvitu/tools` — lógica pura em TS                                          | consumido pelo `/tools` e pelo finanças         |
 
 ## Pré-requisitos
 
 - **Node 22** e **pnpm ≥ 11**
 - **Go 1.23** (para `apps/api`)
 - **Python 3.13** e **uv** (para `apps/promeia`) — `brew install uv` (ou o instalador em https://docs.astral.sh/uv/getting-started/installation/); `uv sync` baixa o Python certo sozinho a partir de `apps/promeia/.python-version`
-- **Ollama** com `qwen2.5:7b-instruct` (insight, leitura de PDF em `apps/financas/scripts/pdf-import.mjs`, e a revisão rápida) e `gemma4:12b` (revisão cuidadosa e chamadas sociais). Só esses dois — `qwen2.5:3b-instruct` deixou de ser default de qualquer slot (ver `apps/promeia/CLAUDE.md` § _Modelos de 2026_: ele devolve `'##\n Subtitulo'`, com quebra de linha, o que o markdown renderiza como texto literal em vez de título)
+- **Ollama** com `qwen2.5:7b-instruct` (leitura de PDF em `apps/financas/scripts/pdf-import.mjs`, e a revisão rápida) e `gemma4:12b` (revisão cuidadosa e chamadas sociais). Só esses dois — `qwen2.5:3b-instruct` deixou de ser default de qualquer slot (ver `apps/promeia/CLAUDE.md` § _Modelos de 2026_: ele devolve `'##\n Subtitulo'`, com quebra de linha, o que o markdown renderiza como texto literal em vez de título)
 - **wrangler** autenticado na conta Cloudflare que hospeda a zona `piluvitu.com.br`
 
 ```bash
@@ -113,10 +113,18 @@ pnpm --filter @piluvitu/financas exec wrangler secret list   # confere os nomes
 pnpm --filter @piluvitu/financas exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @piluvitu/financas exec wrangler secret put GOOGLE_CLIENT_ID
 pnpm --filter @piluvitu/financas exec wrangler secret put GOOGLE_CLIENT_SECRET
-pnpm --filter @piluvitu/financas exec wrangler secret put INGEST_TOKEN
+pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY
 ```
 
-Gere valores com `openssl rand -base64 32`. O `wrangler secret` **não devolve o valor depois** — guarde antes de colar.
+Gere o `BETTER_AUTH_SECRET` com `openssl rand -base64 32`; a `ANTHROPIC_API_KEY` sai do Console da Anthropic (workspace com limite de gasto). O `wrangler secret` **não devolve o valor depois** — guarde antes de colar.
+
+O `INGEST_TOKEN`, o `PROMEIA_URL` e o `PROMEIA_TOKEN` não são mais lidos por nenhum código. Se ainda existirem no Worker, apague depois do deploy:
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler secret delete INGEST_TOKEN
+pnpm --filter @piluvitu/financas exec wrangler secret delete PROMEIA_URL
+pnpm --filter @piluvitu/financas exec wrangler secret delete PROMEIA_TOKEN
+```
 
 ## Comandos locais que usam AI
 
@@ -125,10 +133,9 @@ Rodam no MacBook com o Ollama ligado. Nenhum precisa de servidor no ar depois.
 ```bash
 # fatura em PDF → CSV que a tela #/importar lê
 node apps/financas/scripts/pdf-import.mjs fatura.pdf
-
-# gera o insight financeiro e empurra para o D1 (serviço Python, apps/promeia)
-make insight
 ```
+
+O insight financeiro não roda mais no MacBook: a Claude o gera dentro do Worker do finanças (`ANTHROPIC_API_KEY`), pelo botão da tela `#/insight` e pelo Cron do dia 1, que escreve o do mês que fechou.
 
 ## Deploy automatizado
 

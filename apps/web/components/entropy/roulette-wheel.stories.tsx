@@ -21,6 +21,18 @@ export const Idle: Story = {
   args: { options: OPTIONS, winnerId: null, spinning: false },
 }
 
+/** Com mais de 12 opções (a roleta de Halloween tem ~35), os nomes saem da roda. */
+export const ManyOptions: Story = {
+  args: {
+    options: Array.from({ length: 35 }, (_, i) => ({
+      id: i + 1,
+      label: `Filme ${i + 1}`,
+    })),
+    winnerId: null,
+    spinning: false,
+  },
+}
+
 export const Interactive: Story = {
   render: () => {
     const [winner, setWinner] = useState<number | null>(null)

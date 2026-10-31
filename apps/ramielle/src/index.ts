@@ -6,6 +6,7 @@ import adminRoutes from './routes/admin'
 import atelierRoutes from './routes/atelier'
 import authRoutes from './routes/auth'
 import distributionRoutes from './routes/distribution'
+import historicoRoutes, { type HistoricoBindings } from './routes/historico'
 import transcricaoRoutes from './routes/transcricao'
 import votacaoRoutes from './routes/votacao'
 
@@ -14,7 +15,7 @@ import votacaoRoutes from './routes/votacao'
 // pra montar `trustedOrigins`, então declará-la só uma vez em `AuthBindings`
 // evita duas cópias do mesmo campo divergindo. Contrato de formato/default
 // (CSV, `DEFAULT_ALLOWED_ORIGINS`) continua documentado só em `lib/cors.ts`.
-export type Bindings = AuthBindings
+export type Bindings = HistoricoBindings
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -71,12 +72,16 @@ app.route('/auth', authRoutes)
 // comentário.
 app.route('/votacao', votacaoRoutes)
 
+// Histórico público do Votaí (sem login). Prova por execução em
+// `routes/historico.test.ts`.
+app.route('/votacao', historicoRoutes)
+
 // As três rotas de `/admin` da votação (fatia ③, Task 5) — precisam vir
 // ACIMA do catch-all, mesma regra de sempre. Prova por EXECUÇÃO em
 // `index.test.ts` (describe da montagem), não por leitura deste comentário.
 app.route('/admin', adminRoutes)
 
-// As rotas do Atelier que dependem do promeia (`/admin/llm/*`) — mesma
+// As rotas do Atelier que revisam texto pela Claude (`/admin/llm/*`) — mesma
 // regra de sempre: ACIMA do catch-all, com prova por EXECUÇÃO em
 // `index.test.ts`. Montadas sob `/admin` porque é onde o `apps/web` já as
 // chama hoje (`lib/admin/atelier/api.ts`), na Go.

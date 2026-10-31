@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCurrentUser } from '@/hooks/votacao/use-current-user'
+import { urlDoVotai } from '@/lib/votai'
 
 type HomeFooterProps = {
   name: string
@@ -49,13 +50,13 @@ export function HomeFooter({
         <Link href="/privacidade" className={linkCls}>
           /privacidade
         </Link>
-        {/* /votação precisa do back (sessão/dados) → só pra logado. */}
+        {/* A votação precisa do back (sessão/dados) → só pra logado. */}
         {isLoggedIn ? (
           <>
             <span aria-hidden>·</span>
-            <Link href="/votacao" className={linkCls}>
-              /votação
-            </Link>
+            <a href={urlDoVotai('/')} className={linkCls}>
+              Votaí
+            </a>
           </>
         ) : null}
         {/* admin só aparece pra admin logado. */}

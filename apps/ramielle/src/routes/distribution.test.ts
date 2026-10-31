@@ -5,12 +5,13 @@
  * sessão genuíno via uma segunda instância `betterAuth()`
  * (`emailAndPassword`, técnica de teste — produção é só Google).
  *
- * ⚠️ **Nenhum teste chama plataforma real nem o promeia real.** `fetch`
+ * ⚠️ **Nenhum teste chama plataforma real nem a Claude real.** `fetch`
  * global é substituído em todo teste que exercita rede — qualquer URL não
  * mockada lança, nunca cai no `fetch` original.
  */
 import { env } from 'cloudflare:test'
 import { betterAuth } from 'better-auth'
+import { mesFortaleza } from '@piluvitu/ia/uso'
 import { afterEach, describe, expect, test } from 'vitest'
 import app, { type Bindings } from '../index'
 import {
@@ -18,6 +19,12 @@ import {
   upsertDistributionTarget,
 } from '../domain/distribution'
 import type { Envelope } from '../lib/envelope'
+import { TETOS_RAMIELLE } from '../lib/ia'
+import {
+  erroClaude,
+  respostaClaude,
+  type PedidoAnthropic,
+} from '../test-support/anthropic-mock'
 import { montarPublishers } from './distribution'
 
 const DB = env.DB
@@ -96,6 +103,17 @@ function jsonResponse(status: number, corpo: unknown): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function pedidoAnthropic(
+  visto: { init: RequestInit } | undefined,
+): PedidoAnthropic {
+  return JSON.parse(visto?.init.body as string) as PedidoAnthropic
+}
+
+function trechoDeVoz(pedido: PedidoAnthropic): string {
+  const user = pedido.messages[0]?.content ?? ''
+  return user.split('Trecho do meu artigo (referência de voz):\n')[1] ?? ''
 }
 
 /** Intercepta `fetch` por prefixo de URL — qualquer URL sem prefixo casando lança. */
@@ -258,18 +276,12 @@ describe('POST /admin/distribution/proposals', () => {
     expect(persistido?.status).toBe('pending')
   })
 
-  test('social (bluesky) chama o promeia com o article certo e persiste o hook gerado', async () => {
+  test('social (bluesky) gera o hook pelo Haiku com o artigo certo e persiste o hook gerado', async () => {
     const cookie = await cookieDeAdmin()
     const vistos = mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () =>
-          jsonResponse(200, {
-            ok: true,
-            data: {
-              hooks: [{ platform: 'bluesky', text: 'confere esse post!' }],
-            },
-          }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('confere esse post!'),
       },
     ])
 
@@ -287,8 +299,7 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
     expect(res.status).toBe(200)
@@ -307,14 +318,14 @@ describe('POST /admin/distribution/proposals', () => {
       },
     ])
 
-    // voiceSample enviado ao promeia é o corpo cortado em 800 code points
-    // (firstRunes) — não o corpo inteiro (1000 chars).
-    const enviado = JSON.parse(vistos[0]?.init.body as string) as {
-      article: { voice_sample: string }
-      platforms: string[]
-    }
-    expect(enviado.article.voice_sample).toHaveLength(800)
-    expect(enviado.platforms).toEqual(['bluesky'])
+    // O voiceSample enviado à Claude é o corpo cortado em 800 code points
+    // (firstRunes), não o corpo inteiro (1000 chars).
+    expect(vistos).toHaveLength(1)
+    const enviado = pedidoAnthropic(vistos[0])
+    expect(enviado.model).toBe('claude-haiku-5-5')
+    expect(enviado).not.toHaveProperty('temperature')
+    expect(enviado.system).toContain('Plataforma: bluesky.')
+    expect(trechoDeVoz(enviado)).toHaveLength(800)
   })
 
   // ⚠️ I1 (fix round 1, Important): o teste ACIMA usa 'x'.repeat(1000)
@@ -334,8 +345,8 @@ describe('POST /admin/distribution/proposals', () => {
     const cookie = await cookieDeAdmin()
     const vistos = mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () => jsonResponse(200, { ok: true, data: { hooks: [] } }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('hook'),
       },
     ])
 
@@ -353,25 +364,22 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
     expect(res.status).toBe(200)
 
-    const enviado = JSON.parse(vistos[0]?.init.body as string) as {
-      article: { voice_sample: string }
-    }
-    expect([...enviado.article.voice_sample]).toHaveLength(800)
+    expect([...trechoDeVoz(pedidoAnthropic(vistos[0]))]).toHaveLength(800)
   })
 
-  test('promeia recusa ⇒ 502 proposals_failed, nada é persistido', async () => {
+  // Os erros da IA saem com o envelope do @piluvitu/ia, não no genérico
+  // proposals_failed: é ele que diz o teto, o gasto e o mês.
+  test('Claude falhando (529) ⇒ 503 claude_indisponivel, nada é persistido', async () => {
     const cookie = await cookieDeAdmin()
     mockarFetch([
       {
-        prefixo: 'https://promeia.exemplo.test',
-        responder: () =>
-          jsonResponse(500, { ok: false, code: 'x', message: 'falhou' }),
+        prefixo: 'https://api.anthropic.com',
+        responder: () => erroClaude(529, 'overloaded_error'),
       },
     ])
 
@@ -382,17 +390,114 @@ describe('POST /admin/distribution/proposals', () => {
       testEnv({
         BLUESKY_HANDLE: MARCADOR_BLUESKY,
         BLUESKY_APP_PASSWORD: 'app-password',
-        PROMEIA_URL: 'https://promeia.exemplo.test',
-        PROMEIA_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
       }),
     )
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(503)
     const body = (await res.json()) as Envelope<null>
-    expect(body.notifications[0]?.code).toBe('proposals_failed')
-    expect(body.notifications[0]?.message).toBe('Falha ao gerar propostas.')
+    expect(body.notifications[0]?.code).toBe('claude_indisponivel')
 
     const persistido = await getDistributionTarget(DB, 'outro-post', 'bluesky')
     expect(persistido).toBeNull()
+  })
+
+  test('teto de hooks atingido ⇒ 429 teto_atingido com teto, gasto e mês, sem chamar a API', async () => {
+    const cookie = await cookieDeAdmin()
+    await DB.prepare(
+      `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, custo_micro, criado_em)
+       VALUES ('cheio-hooks', 'hooks', ?, 'claude-haiku-5-5', 'concluido', 0, ?, '2026-10-01T00:00:00Z')`,
+    )
+      .bind(mesFortaleza(), TETOS_RAMIELLE.hooks)
+      .run()
+    const vistos = mockarFetch([
+      {
+        prefixo: 'https://api.anthropic.com',
+        responder: () => respostaClaude('hook'),
+      },
+    ])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'post-teto', body: 'corpo' },
+      cookie,
+      testEnv({
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-password',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
+      }),
+    )
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0]?.code).toBe('teto_atingido')
+    const mensagem = body.notifications[0]?.message ?? ''
+    expect(mensagem).toContain('US$ 2,00')
+    expect(mensagem).toContain('"hooks"')
+    expect(mensagem).toContain(mesFortaleza())
+    expect(vistos).toHaveLength(0)
+    expect(await getDistributionTarget(DB, 'post-teto', 'bluesky')).toBeNull()
+  })
+
+  test('sem ANTHROPIC_API_KEY pula os sociais em silêncio e devolve só os artigos', async () => {
+    const cookie = await cookieDeAdmin()
+    const vistos = mockarFetch([])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'sem-chave', body: 'corpo' },
+      cookie,
+      testEnv({
+        DEVTO_API_KEY: MARCADOR_DEVTO,
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-password',
+      }),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{
+      targets: Array<{ platform: string }>
+    }>
+    expect(body.data?.targets.map((t) => t.platform)).toEqual(['devto'])
+    expect(vistos).toHaveLength(0)
+  })
+})
+
+// O plano Free do Workers corta em 50 subrequests por request. As propostas
+// chamam a Claude só para os sociais (bluesky e mastodon): um hook e, se ele
+// passar do limite, um encurtamento, cada um com até 2 fetches (maxRetries: 1).
+describe('POST /admin/distribution/proposals: pior caso de subrequests', () => {
+  test('as 4 plataformas, hooks longos e retry em toda chamada ⇒ 8 fetches à Claude e nenhum outro', async () => {
+    const cookie = await cookieDeAdmin()
+    let tentativa = 0
+    const vistos = mockarFetch([
+      {
+        prefixo: 'https://api.anthropic.com',
+        responder: () =>
+          tentativa++ % 2 === 0
+            ? erroClaude(529, 'overloaded_error')
+            : respostaClaude('palavra '.repeat(100)),
+      },
+    ])
+
+    const res = await postJson(
+      '/admin/distribution/proposals',
+      { slug: 'pior-caso', title: 'T', body: 'corpo' },
+      cookie,
+      testEnv({
+        DEVTO_API_KEY: MARCADOR_DEVTO,
+        HASHNODE_API_TOKEN: MARCADOR_HASHNODE,
+        HASHNODE_PUBLICATION_ID: 'pub-1',
+        BLUESKY_HANDLE: MARCADOR_BLUESKY,
+        BLUESKY_APP_PASSWORD: 'app-pw',
+        MASTODON_INSTANCE_URL: MARCADOR_MASTODON,
+        MASTODON_ACCESS_TOKEN: 'tok',
+        ANTHROPIC_API_KEY: 'sk-ant-teste-distribuicao',
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(vistos).toHaveLength(8)
+    expect(
+      vistos.every((v) => v.url.startsWith('https://api.anthropic.com')),
+    ).toBe(true)
+    expect(vistos.length).toBeLessThan(50)
   })
 })
 

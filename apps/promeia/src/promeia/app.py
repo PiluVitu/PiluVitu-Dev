@@ -10,8 +10,6 @@ from fastapi import FastAPI
 
 from promeia.auth import TokenMiddleware
 from promeia.config import Settings, load_settings
-from promeia.insight import router as insight_router
-from promeia.revisao_rotas import router as revisao_router
 from promeia.transcricao_jobs import FilaDeTranscricao, diretorio_padrao
 from promeia.transcricao_rotas import router as transcricao_router
 
@@ -45,19 +43,12 @@ def create_app(
     app.add_middleware(TokenMiddleware, esperado=cfg.promeia_token)
     app.state.settings = cfg
     app.state.transcricoes = fila
-    app.include_router(insight_router)
-    # Revisão de artigo (proofread/refine). Não precisa de guarda própria: o
-    # TokenMiddleware acima envolve o app ASGI inteiro, e
-    # `test_TODA_rota_registrada_recusa_sem_token` cobre rota nova sozinha.
-    app.include_router(revisao_router)
     app.include_router(transcricao_router)
 
     @app.get("/health")
     def health() -> dict:
-        # Não sonda o Ollama: /health responde "o promeia está de pé", que é
-        # a pergunta que o chamador precisa distinguir de "não alcancei"
-        # (spec §5). Saúde do modelo é outra pergunta, e tem custo — o Ollama
-        # carrega o modelo sob demanda.
+        # Não carrega o Whisper: /health responde "o promeia está de pé", que
+        # é a pergunta que o chamador precisa distinguir de "não alcancei".
         return {"ok": True, "service": "promeia"}
 
     return app

@@ -28,6 +28,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
+  // Insight do mês que fechou, todo dia 1 às 09:00 de Teresina (src/scheduled.ts).
+  "triggers": { "crons": ["0 12 1 * *"] },
+
   // Static Assets é GRÁTIS, ilimitado e FORA da cota de 100.000 requests/dia.
   // 'run_worker_first' é o que garante, de forma documentada, que /api/* chega
   // no Worker em vez de ser engolido pelo fallback de SPA. Sem ele, a ordem de

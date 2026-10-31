@@ -1,0 +1,25 @@
+{
+  "descricao": "Crase, concordância e digitação na prosa; cerca fechada com comentário sem acento, que deve voltar igual.",
+  "erros": [
+    {
+      "tipo": "crase",
+      "trecho": "devido a mudança",
+      "aceitos": ["devido à mudança"]
+    },
+    {
+      "tipo": "digitação",
+      "trecho": "objetivo pricipal",
+      "aceitos": ["objetivo principal"]
+    },
+    {
+      "tipo": "concordância",
+      "trecho": "os testes passou",
+      "aceitos": ["os testes passaram"]
+    },
+    {
+      "tipo": "crase",
+      "trecho": "graças a ajuda",
+      "aceitos": ["graças à ajuda"]
+    }
+  ]
+}

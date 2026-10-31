@@ -6,33 +6,17 @@
 # Worker sozinho em :8787 e SERVE a SPA por lá também, mas o browser manda
 # Origin: http://localhost:8787 (!= :5273) -> 403 em
 # POST /api/auth/sign-in/social. Ver CLAUDE.md, seção SPA -> "Dev:".
+# Passkey: só liga com este valor exato (ou o de produção). Outro valor desliga
+# o plugin (/api/auth/passkey/* dá 404). Ver CLAUDE.md, seção Passkey.
 BETTER_AUTH_URL=http://localhost:5273
 BETTER_AUTH_SECRET=troque-por-openssl-rand-base64-32
 GOOGLE_CLIENT_ID=troque-pelo-client-id-do-google-cloud
 GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-do-google-cloud
 
-# Fatia ⑨, Task 3: segredo do comando que roda no Mac do dono (lê os
-# números, gera texto via Ollama local, faz POST em /api/insights). Só
-# esta rota checa este valor (routes/insights.ts#requireIngestToken) — não
-# é `vars` em wrangler.jsonc porque é segredo, mesmo padrão de
-# BETTER_AUTH_SECRET/GOOGLE_CLIENT_SECRET acima. Em produção, via
-# `wrangler secret put INGEST_TOKEN`. Gerar com `openssl rand -base64 32`.
-INGEST_TOKEN=troque-por-openssl-rand-base64-32
-
-# A OUTRA PONTA DA MESMA CADEIA (botão "gerar insight", POST
-# /api/insights/generate): o INGEST_TOKEN acima autentica o Mac ESCREVENDO
-# aqui; estes dois autenticam este Worker CHAMANDO o Mac.
-#   navegador -> Worker -> túnel -> promeia (Mac) -> Ollama -> POST /api/insights
-# O navegador NUNCA fala com o Mac: carregaria o PROMEIA_TOKEN, e token no
-# cliente é token público. Os dois são SEGREDO (nunca `vars` em
-# wrangler.jsonc); em produção, `wrangler secret put PROMEIA_URL` /
-# `wrangler secret put PROMEIA_TOKEN`.
-# ⚠️ PROMEIA_TOKEN é o MESMO valor que `apps/promeia` usa como PROMEIA_TOKEN
-# (ver apps/promeia/CLAUDE.md) — não gere um novo aqui, senão toda chamada
-# volta 401. Ausentes/vazios, a rota responde 503 promeia_disabled: a
-# feature fica DESLIGADA, não quebrada.
-# PROMEIA_URL=http://localhost:8082
-# PROMEIA_TOKEN=o-mesmo-valor-do-apps-promeia
+# Chave da API da Claude (insight). É secret: em produção, `wrangler secret
+# put ANTHROPIC_API_KEY`; localmente, descomente com uma chave sua. Ausente,
+# POST /api/insights/generate responde 503 claude_desligado.
+# ANTHROPIC_API_KEY=
 
 # M5: também é `vars` em wrangler.jsonc (não é segredo), mas listar aqui
 # comentado deixa claro que a chave existe e o que faz, mesmo num clone

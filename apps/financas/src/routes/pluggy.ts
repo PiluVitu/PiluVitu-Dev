@@ -108,7 +108,7 @@ pluggyRoutes.get('/transactions', async (c) => {
   // existe neste ambiente. Roda ANTES de qualquer validação de parâmetro
   // (e antes de qualquer `fetch`) porque "não configurei o Pluggy" é uma
   // resposta mais útil que "seu from está errado" pra quem nunca ligou
-  // nada. Mesmo padrão de `promeia_disabled` em `routes/insights.ts`.
+  // nada. Mesmo padrão de `claude_desligado` em `routes/insights.ts`.
   if (pluggyConfigurado(c.env) === null) {
     return errJson(503, 'pluggy_disabled', MSG_DESLIGADO)
   }

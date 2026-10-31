@@ -51,7 +51,7 @@ test.describe('Footer — links gateados por auth', () => {
     is_admin: true,
   }
 
-  test('anônimo/back-off: mostra /tools e /tasks (offline), esconde /votação e admin', async ({
+  test('anônimo/back-off: mostra /tools e /tasks (offline), esconde Votaí e admin', async ({
     page,
   }) => {
     await page.route('**/auth/me', (r) =>
@@ -60,30 +60,36 @@ test.describe('Footer — links gateados por auth', () => {
     await page.goto('/')
     await expect(page.getByRole('link', { name: '/tools' })).toBeVisible()
     await expect(page.getByRole('link', { name: '/tasks' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '/votação' })).toHaveCount(0)
+    await expect(
+      page.locator('footer').getByRole('link', { name: 'Votaí', exact: true }),
+    ).toHaveCount(0)
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toHaveCount(0)
   })
 
-  test('logado não-admin: mostra /votação e /tasks, esconde admin', async ({
+  test('logado não-admin: mostra Votaí e /tasks, esconde admin', async ({
     page,
   }) => {
     await page.route('**/auth/me', (r) =>
       r.fulfill(meEnvelope({ ...admin, is_admin: false })),
     )
     await page.goto('/')
-    await expect(page.getByRole('link', { name: '/votação' })).toBeVisible()
+    await expect(
+      page.locator('footer').getByRole('link', { name: 'Votaí', exact: true }),
+    ).toBeVisible()
     await expect(page.getByRole('link', { name: '/tasks' })).toBeVisible()
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toHaveCount(0)
   })
 
-  test('admin logado: mostra /votação e admin', async ({ page }) => {
+  test('admin logado: mostra Votaí e admin', async ({ page }) => {
     await page.route('**/auth/me', (r) => r.fulfill(meEnvelope(admin)))
     await page.goto('/')
-    await expect(page.getByRole('link', { name: '/votação' })).toBeVisible()
+    await expect(
+      page.locator('footer').getByRole('link', { name: 'Votaí', exact: true }),
+    ).toBeVisible()
     await expect(
       page.getByRole('link', { name: 'admin', exact: true }),
     ).toBeVisible()

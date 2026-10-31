@@ -1,0 +1,21 @@
+{
+  "descricao": "Concordância, digitação e crase na prosa e numa lista; citação com palavras sem acento e imagem, que devem voltar iguais.",
+  "erros": [
+    {
+      "tipo": "concordância",
+      "trecho": "Fazem dois anos",
+      "aceitos": ["Faz dois anos"]
+    },
+    {
+      "tipo": "digitação",
+      "trecho": "mais não funcionou",
+      "aceitos": ["mas não funcionou"]
+    },
+    {
+      "tipo": "crase",
+      "trecho": "se refere a versão",
+      "aceitos": ["se refere à versão"]
+    },
+    { "tipo": "digitação", "trecho": "dessa vês", "aceitos": ["dessa vez"] }
+  ]
+}

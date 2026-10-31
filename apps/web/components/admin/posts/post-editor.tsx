@@ -129,6 +129,7 @@ export function PostEditor(props: {
           />
           <PostMetaCard
             value={{ ...fm, slug: displaySlug }}
+            body={body}
             onChange={handleFm}
             slugEditable={isCreate}
             errors={errors}

@@ -4,6 +4,7 @@ import type {
   JobTranscricao,
   ModoTranscricao,
   ProposalsBody,
+  Resumo,
   SelectedTarget,
 } from './types'
 
@@ -13,8 +14,7 @@ import type {
  * A votação vai ser repontada pro ramielle na Task 2 desta fatia ④; o
  * Atelier NÃO — é desacoplado agora, antes disso, exatamente pra essa troca
  * não arrastá-lo junto. As 5 rotas dele (`/admin/llm/*`,
- * `/admin/distribution/*`) só existem na Go e estão previstas pro promeia
- * (spec §7.2), que ainda não existe.
+ * `/admin/distribution/*`) moram no ramielle, que gera o texto pela Claude.
  *
  * ⚠️ Se um dia isto voltar a apontar pro mesmo host da votação, o card
  * "Distribuição" volta a renderizar VAZIO SEM ERRO em todo post existente
@@ -54,10 +54,15 @@ async function call<T>(
 }
 
 export const atelierApi = {
-  proofread: (text: string, careful = false) =>
+  proofread: (text: string) =>
     call<{ corrected: string }>('/admin/llm/proofread', {
       method: 'POST',
-      body: JSON.stringify({ text, careful }),
+      body: JSON.stringify({ text }),
+    }),
+  resumo: (title: string, body: string) =>
+    call<Resumo>('/admin/llm/resumo', {
+      method: 'POST',
+      body: JSON.stringify({ title, body }),
     }),
   refine: (platform: string, text: string, instruction: string) =>
     call<{ refined: string }>('/admin/llm/refine', {

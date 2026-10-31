@@ -10,6 +10,8 @@ const fm = {
   publishedAt: '2025-04-28T00:00:00.000Z',
   draft: false,
   readingTimeMinutes: 0,
+  tldr: '',
+  metaDescription: '',
 }
 
 describe('post-schema', () => {
@@ -39,5 +41,46 @@ describe('post-schema', () => {
     expect(parsed.draft).toBe(false)
     expect(parsed.excerpt).toBe('')
     expect(parsed.coverImage).toBe('')
+  })
+
+  it('aceita o frontmatter antigo, sem tldr nem metaDescription', () => {
+    const antigo = {
+      title: 'Como usar o Husky',
+      slug: 'como-usar-o-husky',
+      excerpt: 'resumo',
+      tags: ['git'],
+      publishedAt: '2025-04-28T00:00:00.000Z',
+      draft: false,
+    }
+    const parsed = postFrontmatterSchema.parse(antigo)
+    expect(parsed.tldr).toBe('')
+    expect(parsed.metaDescription).toBe('')
+    expect(extractKnownFrontmatter(antigo).tldr).toBe('')
+  })
+
+  it('lê tldr e metaDescription do frontmatter cru', () => {
+    const raw = {
+      ...fm,
+      tldr: 'Em resumo: X.',
+      metaDescription: 'M'.repeat(160),
+    }
+    const out = extractKnownFrontmatter(raw)
+    expect(out.tldr).toBe('Em resumo: X.')
+    expect(out.metaDescription).toBe('M'.repeat(160))
+  })
+
+  it('aceita metaDescription com 160 caracteres e recusa com 161', () => {
+    expect(
+      postFrontmatterSchema.safeParse({
+        ...fm,
+        metaDescription: 'a'.repeat(160),
+      }).success,
+    ).toBe(true)
+    const r = postFrontmatterSchema.safeParse({
+      ...fm,
+      metaDescription: 'a'.repeat(161),
+    })
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0]?.path).toEqual(['metaDescription'])
   })
 })

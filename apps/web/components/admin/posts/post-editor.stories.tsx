@@ -21,6 +21,8 @@ const fm = {
   publishedAt: '2025-04-28',
   draft: false,
   readingTimeMinutes: 0,
+  tldr: '',
+  metaDescription: '',
 }
 
 // The preview pane calls the server serialize route, which Storybook can't run —
@@ -45,6 +47,8 @@ export const Create: Story = {
       publishedAt: '',
       draft: true,
       readingTimeMinutes: 0,
+      tldr: '',
+      metaDescription: '',
     },
     initialBody: '# Novo\n\n',
     pending: false,

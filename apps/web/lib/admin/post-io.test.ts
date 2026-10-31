@@ -92,10 +92,69 @@ describe('post-io', () => {
       publishedAt: '2025-01-01',
       draft: true,
       readingTimeMinutes: 7,
+      tldr: '',
+      metaDescription: '',
     }
     const out = serializePost(known, '# body', raw)
     expect(out).toContain('title: T2')
     expect(out).toContain('readingTimeMinutes: 7')
     expect(out).toContain('# body')
+  })
+
+  const base = {
+    title: 'T',
+    slug: 't',
+    excerpt: '',
+    coverImage: '',
+    tags: ['x'],
+    publishedAt: '2025-01-01',
+    draft: false,
+    readingTimeMinutes: 3,
+    tldr: '',
+    metaDescription: '',
+  }
+
+  it('serializePost não grava tldr nem metaDescription vazios', () => {
+    const out = serializePost(base, '# body', {})
+    expect(out).not.toMatch(/^tldr:/m)
+    expect(out).not.toMatch(/^metaDescription:/m)
+  })
+
+  it('serializePost não grava tldr nem metaDescription só de espaço', () => {
+    const out = serializePost(
+      { ...base, tldr: ' \n', metaDescription: '  ' },
+      '# body',
+      { metaDescription: 'velha' },
+    )
+    expect(out).not.toMatch(/^tldr:/m)
+    expect(out).not.toMatch(/^metaDescription:/m)
+  })
+
+  it('serializePost apaga do arquivo o tldr que o dono esvaziou', () => {
+    const raw = {
+      title: 'T',
+      slug: 't',
+      tldr: 'velho',
+      metaDescription: 'velha',
+    }
+    const out = serializePost(base, '# body', raw)
+    expect(out).not.toContain('velho')
+    expect(out).not.toContain('velha')
+  })
+
+  // O tldr e a meta vêm do modelo, texto livre: aspas, dois-pontos, quebra de
+  // linha, um '---' ou um '#' não podem quebrar o YAML nem vazar para o corpo.
+  it('serializePost escapa o texto livre do resumo e o lê de volta igual', () => {
+    const tldr =
+      'Primeira: "aspas" e \'apóstrofo\'.\n---\n# não é título\nkey: value'
+    const metaDescription = ': começa com dois-pontos, tem # e termina com ---'
+    const out = serializePost({ ...base, tldr, metaDescription }, '# body', {})
+    const matter = jest.requireActual(
+      'gray-matter',
+    ) as typeof import('gray-matter')
+    const lido = matter(out)
+    expect(lido.data.tldr).toBe(tldr)
+    expect(lido.data.metaDescription).toBe(metaDescription)
+    expect(lido.content.trim()).toBe('# body')
   })
 })

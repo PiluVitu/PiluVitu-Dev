@@ -58,7 +58,7 @@ class TranscricaoFalhou(TranscricaoError):
 
 
 class TranscricaoVazia(TranscricaoFalhou):
-    """Rodou, saiu vazio. Espelha `OllamaVazio`: vazio é falha, nunca sucesso."""
+    """Rodou, saiu vazio: vazio é falha, nunca sucesso."""
 
 
 def cauda(texto: str, palavras: int = PALAVRAS_DE_CONTEXTO) -> str:

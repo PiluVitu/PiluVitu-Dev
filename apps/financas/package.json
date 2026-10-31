@@ -23,8 +23,10 @@
     "test:pdf-import": "vitest run --config vitest.scripts.config.ts"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.13",
+    "@piluvitu/ia": "workspace:*",
     "@piluvitu/tools": "workspace:*",
-    "better-auth": "1.6.25",
+    "better-auth": "1.7.13",
     "hono": "^4.13.12",
     "pdfjs-dist": "6.3.289"
   },

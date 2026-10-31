@@ -1,0 +1,94 @@
+{
+  "origem": "Escritas à mão para o teste da nota, simulando a Claude; não vêm de uma rodada real contra a API.",
+  "proofread": [
+    {
+      "artigo": "01-crase-e-cerca",
+      "entrada": "# Como organizei o deploy do blog\n",
+      "saida": "# Como organizei o deploy do blog"
+    },
+    {
+      "artigo": "01-crase-e-cerca",
+      "entrada": "Mudei o fluxo de deploy devido a mudança no plano da hospedagem. O objetivo pricipal era parar de depender de um servidor ligado no meu Mac.\n",
+      "saida": "Mudei o fluxo de deploy devido à mudança no plano da hospedagem. O objetivo principal era parar de depender de um servidor ligado no meu Mac."
+    },
+    {
+      "artigo": "01-crase-e-cerca",
+      "entrada": "Depois da troca, os testes passou de primeira, graças a ajuda do cache do pnpm. O resto foi ajustar as variáveis de ambiente.\n",
+      "saida": "Depois da troca, os testes passaram de primeira, graças à ajuda do cache do pnpm. O resto foi ajustar as variáveis de ambiente."
+    },
+    {
+      "artigo": "02-tabela",
+      "entrada": "# Comparando três bancos para um projeto pequeno\n",
+      "saida": "# Comparando três bancos para um projeto pequeno"
+    },
+    {
+      "artigo": "02-tabela",
+      "entrada": "Se voce quiser algo simples, o SQLite resolve quase tudo. Montei duas tabela para comparar os custos.\n",
+      "saida": "Se você quiser algo simples, o SQLite resolve quase tudo. Montei duas tabelas para comparar os custos."
+    },
+    {
+      "artigo": "02-tabela",
+      "entrada": "No fim, deu pra ver qeu o D1 cobre o meu caso sem servidor nenhum.\n",
+      "saida": "No fim, deu pra ver que o D1 cobre o meu caso sem servidor nenhum."
+    },
+    {
+      "artigo": "03-jsx",
+      "entrada": "# Um aviso que aparece só no MDX\n",
+      "saida": "# Um aviso que aparece só no MDX"
+    },
+    {
+      "artigo": "03-jsx",
+      "entrada": "Neste post a gente vamos montar um componente de aviso. O deploy sai as 18h, então dá tempo de testar.\n",
+      "saida": "Neste post a gente vai montar um componente de aviso. O deploy sai às 18h, então dá tempo de testar."
+    },
+    {
+      "artigo": "03-jsx",
+      "entrada": "Com o componente pronto, é possivel reaproveitar o mesmo `configuracao` em todos os posts.\n",
+      "saida": "Com o componente pronto, é possível reaproveitar o mesmo `configuracao` em todos os posts."
+    },
+    {
+      "artigo": "04-citacao-e-imagem",
+      "entrada": "# O que aprendi migrando a API de Go para Workers\n",
+      "saida": "# O que aprendi migrando a API de Go para Workers"
+    },
+    {
+      "artigo": "04-citacao-e-imagem",
+      "entrada": "Fazem dois anos que essa API roda num container. Tentei manter tudo igual, mais não funcionou do jeito que eu queria.\n",
+      "saida": "Faz dois anos que essa API roda num container. Tentei manter tudo igual, mas não funcionou do jeito que eu queria."
+    },
+    {
+      "artigo": "04-citacao-e-imagem",
+      "entrada": "- Primeiro passo: entender o que se refere a versão antiga.\n- Segundo passo: dessa vês, escrever os testes antes.\n",
+      "saida": "- Primeiro passo: entender o que se refere à versão antiga.\n- Segundo passo: dessa vez, escrever os testes antes."
+    },
+    {
+      "artigo": "05-cerca-aberta",
+      "entrada": "# Tratando erros no Worker\n",
+      "saida": "# Tratando erros no Worker"
+    },
+    {
+      "artigo": "05-cerca-aberta",
+      "entrada": "Toda excessão que escapa do handler vira um 500 genérico. Na semana passada houveram erros que ninguém viu nos logs.\n",
+      "saida": "Toda exceção que escapa do handler vira um 500 genérico. Na semana passada houve erros que ninguém viu nos logs."
+    },
+    {
+      "artigo": "05-cerca-aberta",
+      "entrada": "A medida que o projeto cresce, vale centralizar isso num lugar só. O trecho abaixo é o começo:\n",
+      "saida": "À medida que o projeto cresce, vale centralizar isso num lugar só. O trecho abaixo é o começo:"
+    }
+  ],
+  "hooks": [
+    {
+      "plataforma": "bluesky",
+      "saida": "Opa, pessoal! Tirei a API do container e levei rota por rota para um Worker com D1, sem parar a votação. Escrevi o que deu certo, o que quebrou e por que os testes vieram antes dessa vez. Vale a leitura se você pensa em sair do Go para a borda."
+    },
+    {
+      "plataforma": "mastodon",
+      "saida": "Migrei a API inteira de Go para Cloudflare Workers, uma rota de cada vez e com a votação no ar o tempo todo. No post conto como o D1 entrou no lugar do SQLite, o que eu faria diferente e por que dessa vez escrevi os testes antes do código. #cloudflare"
+    },
+    {
+      "plataforma": "x",
+      "saida": "Tirei a API do container e levei tudo para Workers com D1, rota por rota, sem derrubar a votação. Contei no post o que funcionou e o que eu faria diferente."
+    }
+  ]
+}

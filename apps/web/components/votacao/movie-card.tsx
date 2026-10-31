@@ -26,7 +26,7 @@ export function MovieCard({
       disabled={disabled}
       aria-pressed={youVoted}
       className={cn(
-        'group bg-card relative flex flex-col overflow-hidden rounded-lg border text-left transition-all',
+        'group halloween-card bg-card relative flex flex-col overflow-hidden rounded-lg border text-left transition-all',
         selected && !youVoted && 'ring-primary ring-2',
         youVoted && 'ring-success ring-2',
         // Keep the chosen card fully visible even when voting is locked.

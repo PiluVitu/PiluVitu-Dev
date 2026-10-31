@@ -1,5 +1,7 @@
-import { env } from 'cloudflare:test'
+import { applyD1Migrations, env, reset } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import migracaoUsoIa from '../migrations/0006_uso_ia.sql?raw'
+import sqlUsoIaDoPacote from '../../../packages/ia/sql/uso_ia.sql?raw'
 
 const DB = env.DB
 const NOW = '2026-07-28T12:00:00Z'
@@ -48,8 +50,9 @@ describe('migration 0001 — tabelas e índices', () => {
   // `distribution_targets`. Este teste conta TODAS as tabelas do banco (não
   // filtra por migration), então ele quebraria em silêncio assim que uma
   // migration nova fosse aplicada sem este ajuste — atualizado aqui de
-  // propósito, não uma regressão desta task.
-  it('cria exatamente as 11 tabelas (6 da votação + 4 do Better Auth + 1 da distribuição)', async () => {
+  // propósito, não uma regressão desta task. A 0006_uso_ia.sql soma `uso_ia`
+  // e a 0007_passkey.sql soma `passkey`.
+  it('cria exatamente as 13 tabelas (6 da votação + 4 do Better Auth + 1 da distribuição + 1 do uso de IA + 1 da passkey)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -63,11 +66,13 @@ describe('migration 0001 — tabelas e índices', () => {
       'account',
       'backups',
       'distribution_targets',
+      'passkey',
       'session',
       'session_movies',
       'tiebreaks',
       'user',
       'users',
+      'uso_ia',
       'verification',
       'votes',
       'voting_sessions',
@@ -81,8 +86,9 @@ describe('migration 0001 — tabelas e índices', () => {
   // account_providerId_accountId_idx — índice composto que o Better Auth
   // consulta no sign-in social, mais decisivo aqui que no finanças porque
   // a votação é LIVRE e `account` cresce com cada votante (ver o
-  // raciocínio completo na própria migration).
-  it('cria os 9 índices (5 da votação + 4 do Better Auth)', async () => {
+  // raciocínio completo na própria migration). A 0006_uso_ia.sql soma
+  // idx_uso_ia_feature_mes, e a 0007_passkey.sql os dois da passkey.
+  it('cria os 12 índices (5 da votação + 4 do Better Auth + 1 do uso de IA + 2 da passkey)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'index'
@@ -96,8 +102,11 @@ describe('migration 0001 — tabelas e índices', () => {
       'idx_backups_created',
       'idx_session_movies_session',
       'idx_tiebreaks_session',
+      'idx_uso_ia_feature_mes',
       'idx_votes_session',
       'idx_voting_sessions_created',
+      'passkey_credentialID_idx',
+      'passkey_userId_idx',
       'session_userId_idx',
       'verification_identifier_idx',
     ])
@@ -166,27 +175,6 @@ describe('migration 0001 — CHECK', () => {
 })
 
 describe('migration 0001 — UNIQUE', () => {
-  it('UNIQUE (session_id, category) de session_movies rejeita a segunda linha', async () => {
-    const userId = await novoUsuario('google-unique-category')
-    const sessionId = await novaSessao(userId)
-
-    await DB.prepare(
-      `INSERT INTO session_movies (session_id, category, title, type)
-       VALUES (?, 'acao', 'Filme A', 'filme')`,
-    )
-      .bind(sessionId)
-      .run()
-
-    await expect(
-      DB.prepare(
-        `INSERT INTO session_movies (session_id, category, title, type)
-         VALUES (?, 'acao', 'Filme B', 'filme')`,
-      )
-        .bind(sessionId)
-        .run(),
-    ).rejects.toThrow(/UNIQUE constraint failed/)
-  })
-
   it('UNIQUE (session_id, user_id, movie_id) de votes rejeita voto duplicado', async () => {
     const userId = await novoUsuario('google-unique-vote')
     const sessionId = await novaSessao(userId)
@@ -289,5 +277,287 @@ describe('migration 0001 — RETURNING id (Step 5, premissa da decisão de mante
     expect(primeiro?.id).toBeGreaterThan(0)
     expect(segundo?.id).toBeGreaterThan(0)
     expect(segundo?.id).not.toBe(primeiro?.id)
+  })
+})
+
+describe('migration 0005 — vários filmes da mesma categoria por sessão', () => {
+  it('session_movies aceita duas linhas com a mesma categoria na mesma sessão', async () => {
+    const userId = await novoUsuario('google-0005-categoria')
+    const sessionId = await novaSessao(userId)
+
+    for (const title of ['A Coisa', 'Hereditário']) {
+      await DB.prepare(
+        `INSERT INTO session_movies (session_id, category, title, type)
+         VALUES (?, 'terror', ?, 'filme')`,
+      )
+        .bind(sessionId, title)
+        .run()
+    }
+
+    const row = await DB.prepare(
+      `SELECT COUNT(*) AS n FROM session_movies WHERE session_id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ n: number }>()
+    expect(row?.n).toBe(2)
+  })
+
+  it('a FK de votes.movie_id continua valendo contra a tabela recriada', async () => {
+    const userId = await novoUsuario('google-0005-fk')
+    const sessionId = await novaSessao(userId)
+
+    await expect(
+      DB.prepare(
+        `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, 999999, ?)`,
+      )
+        .bind(sessionId, userId, NOW)
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+  })
+
+  it('apagar a sessão ainda apaga os filmes em cascata', async () => {
+    const userId = await novoUsuario('google-0005-cascade')
+    const sessionId = await novaSessao(userId)
+    await DB.prepare(
+      `INSERT INTO session_movies (session_id, category, title, type)
+       VALUES (?, 'terror', 'A Coisa', 'filme')`,
+    )
+      .bind(sessionId)
+      .run()
+
+    await DB.prepare(`DELETE FROM voting_sessions WHERE id = ?`)
+      .bind(sessionId)
+      .run()
+
+    const row = await DB.prepare(
+      `SELECT COUNT(*) AS n FROM session_movies WHERE session_id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ n: number }>()
+    expect(row?.n).toBe(0)
+  })
+
+  it('mantém o índice idx_session_movies_session', async () => {
+    const row = await DB.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_movies' AND name = 'idx_session_movies_session'`,
+    ).first<{ name: string }>()
+    expect(row?.name).toBe('idx_session_movies_session')
+  })
+})
+
+describe('migration 0005 — banco com dados de produção', () => {
+  // Em produção a 0005 falhou com "FOREIGN KEY constraint failed": votes,
+  // tiebreaks e voting_sessions.winner_movie_id apontam para session_movies,
+  // e o banco dos outros testes chega vazio na 0005. Aqui ela roda depois de
+  // 0001–0004 com sessão encerrada, votos, desempate e vencedor gravados.
+  it('preserva ids, votos, desempate e vencedor e passa na checagem de FK', async () => {
+    await reset()
+    const ate0004 = env.TEST_MIGRATIONS.filter(
+      (m) => !m.name.startsWith('0005'),
+    )
+    const m0005 = env.TEST_MIGRATIONS.filter((m) => m.name.startsWith('0005'))
+    expect(m0005).toHaveLength(1)
+    await applyD1Migrations(DB, ate0004)
+
+    const userId = await novoUsuario('google-0005-dados')
+    const sessionId = await novaSessao(userId)
+    const filmes: number[] = []
+    for (const [category, title] of [
+      ['terror', 'A Coisa'],
+      ['comedia', 'Superbad'],
+    ]) {
+      const row = await DB.prepare(
+        `INSERT INTO session_movies (session_id, category, title, type)
+         VALUES (?, ?, ?, 'filme') RETURNING id`,
+      )
+        .bind(sessionId, category, title)
+        .first<{ id: number }>()
+      filmes.push(row!.id)
+    }
+    for (const movieId of filmes) {
+      await DB.prepare(
+        `INSERT INTO votes (session_id, user_id, movie_id, created_at) VALUES (?, ?, ?, ?)`,
+      )
+        .bind(sessionId, userId, movieId, NOW)
+        .run()
+    }
+    await DB.prepare(
+      `INSERT INTO tiebreaks (session_id, triggered_by, tied_ids_json, client_entropy, server_nonce, winner_movie_id)
+       VALUES (?, ?, ?, 'e', 'n', ?)`,
+    )
+      .bind(sessionId, userId, JSON.stringify(filmes), filmes[1])
+      .run()
+    await DB.prepare(
+      `UPDATE voting_sessions SET status = 'closed', winner_movie_id = ?, winner_method = 'tiebreak' WHERE id = ?`,
+    )
+      .bind(filmes[1], sessionId)
+      .run()
+
+    await applyD1Migrations(DB, m0005)
+
+    const movies = await DB.prepare(
+      `SELECT id, title FROM session_movies ORDER BY id`,
+    ).all<{ id: number; title: string }>()
+    expect(movies.results).toEqual([
+      { id: filmes[0], title: 'A Coisa' },
+      { id: filmes[1], title: 'Superbad' },
+    ])
+    const votos = await DB.prepare(
+      `SELECT movie_id FROM votes ORDER BY movie_id`,
+    ).all<{ movie_id: number }>()
+    expect(votos.results.map((v) => v.movie_id)).toEqual(filmes)
+    const sessao = await DB.prepare(
+      `SELECT winner_movie_id FROM voting_sessions WHERE id = ?`,
+    )
+      .bind(sessionId)
+      .first<{ winner_movie_id: number }>()
+    expect(sessao?.winner_movie_id).toBe(filmes[1])
+    const desempate = await DB.prepare(
+      `SELECT winner_movie_id FROM tiebreaks`,
+    ).first<{ winner_movie_id: number }>()
+    expect(desempate?.winner_movie_id).toBe(filmes[1])
+
+    const fk = await DB.prepare(`PRAGMA foreign_key_check`).all()
+    expect(fk.results).toEqual([])
+    const sobras = await DB.prepare(
+      `SELECT name FROM sqlite_master WHERE name LIKE 'session_movies_%'`,
+    ).all()
+    expect(sobras.results).toEqual([])
+  })
+})
+
+// uso_ia: a migration é cópia exata do SQL de @piluvitu/ia. Se divergir, o
+// Worker grava num schema que a reserva atômica de packages/ia/src/uso.ts não
+// conhece; corrija os dois juntos.
+describe('migration 0006_uso_ia', () => {
+  it('é idêntica a packages/ia/sql/uso_ia.sql', () => {
+    expect(migracaoUsoIa).toBe(sqlUsoIaDoPacote)
+  })
+
+  it('cria uso_ia STRICT com as colunas e o índice (feature, mes)', async () => {
+    const colunas = await env.DB.prepare('PRAGMA table_info(uso_ia)').all<{
+      name: string
+      type: string
+      notnull: number
+      pk: number
+    }>()
+    expect(
+      colunas.results.map(({ name, type, notnull, pk }) => ({
+        name,
+        type,
+        notnull,
+        pk,
+      })),
+    ).toEqual([
+      { name: 'id', type: 'TEXT', notnull: 1, pk: 1 },
+      { name: 'feature', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'mes', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'modelo', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'estado', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'reservado_micro', type: 'INTEGER', notnull: 1, pk: 0 },
+      { name: 'custo_micro', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'tokens_entrada', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'tokens_saida', type: 'INTEGER', notnull: 0, pk: 0 },
+      { name: 'criado_em', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'concluido_em', type: 'TEXT', notnull: 0, pk: 0 },
+    ])
+
+    const tabela = await env.DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'uso_ia'",
+    ).first<{ sql: string }>()
+    expect(tabela?.sql).toMatch(/\)\s*STRICT$/)
+
+    const indice = await env.DB.prepare(
+      "SELECT name FROM pragma_index_list('uso_ia') WHERE origin = 'c'",
+    ).all<{ name: string }>()
+    expect(indice.results.map((i) => i.name)).toEqual([
+      'idx_uso_ia_feature_mes',
+    ])
+    const colunasDoIndice = await env.DB.prepare(
+      "SELECT name FROM pragma_index_info('idx_uso_ia_feature_mes')",
+    ).all<{ name: string }>()
+    expect(colunasDoIndice.results.map((c) => c.name)).toEqual([
+      'feature',
+      'mes',
+    ])
+  })
+
+  it('o CHECK de estado recusa valor fora de reservado/concluido/falhou', async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO uso_ia (id, feature, mes, modelo, estado, reservado_micro, criado_em)
+         VALUES ('x', 'insight', '2026-10', 'claude-sonnet-5-5', 'pago', 1, '2026-10-24T00:00:00Z')`,
+      ).run(),
+    ).rejects.toThrow(/CHECK/)
+  })
+})
+
+describe('migration 0007_passkey', () => {
+  async function novoUserBetterAuth(id: string) {
+    await DB.prepare(
+      `INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt)
+       VALUES (?, ?, ?, 1, ?, ?)`,
+    )
+      .bind(id, id, `${id}@example.com`, NOW, NOW)
+      .run()
+  }
+
+  function inserirPasskey(id: string, userId: string, credentialID: string) {
+    return DB.prepare(
+      `INSERT INTO passkey (id, name, publicKey, userId, credentialID, counter,
+                            deviceType, backedUp, transports, createdAt, aaguid)
+       VALUES (?, 'Notebook', 'chave', ?, ?, 0, 'multiDevice', 1, 'internal', ?, NULL)`,
+    )
+      .bind(id, userId, credentialID, NOW)
+      .run()
+  }
+
+  it('aceita a linha que o plugin grava (boolean e data já convertidos pelo adapter)', async () => {
+    await novoUserBetterAuth('u1')
+    await inserirPasskey('p1', 'u1', 'cred-1')
+    const linha = await DB.prepare('SELECT * FROM passkey WHERE id = ?')
+      .bind('p1')
+      .first<{ backedUp: number; counter: number; createdAt: string }>()
+    expect(linha).toMatchObject({ backedUp: 1, counter: 0, createdAt: NOW })
+  })
+
+  it('é STRICT: boolean fora de INTEGER é recusado', async () => {
+    await novoUserBetterAuth('u1')
+    await expect(
+      DB.prepare(
+        `INSERT INTO passkey (id, publicKey, userId, credentialID, counter, deviceType, backedUp)
+         VALUES ('p1', 'k', 'u1', 'c', 0, 'singleDevice', 'sim')`,
+      ).run(),
+    ).rejects.toThrow()
+  })
+
+  it('credentialID é único (o login acha a passkey só por ele)', async () => {
+    await novoUserBetterAuth('u1')
+    await novoUserBetterAuth('u2')
+    await inserirPasskey('p1', 'u1', 'cred-1')
+    await expect(inserirPasskey('p2', 'u2', 'cred-1')).rejects.toThrow()
+  })
+
+  // Marca de como a sessão foi aberta (lib/passkey.ts recusa cadastro de
+  // passkey quando não é Google). NULL nas sessões que já existiam.
+  it('session ganha metodoLogin TEXT anulável', async () => {
+    const { results } = await DB.prepare(
+      `SELECT name, type, "notnull" AS nn, dflt_value AS padrao
+         FROM pragma_table_info('session') WHERE name = 'metodoLogin'`,
+    ).all<{ name: string; type: string; nn: number; padrao: string | null }>()
+    expect(results).toEqual([
+      { name: 'metodoLogin', type: 'TEXT', nn: 0, padrao: null },
+    ])
+  })
+
+  it('userId referencia user, e apagar o user apaga as passkeys dele', async () => {
+    await expect(inserirPasskey('p1', 'nao-existe', 'cred-1')).rejects.toThrow()
+    await novoUserBetterAuth('u1')
+    await inserirPasskey('p1', 'u1', 'cred-1')
+    await DB.prepare('DELETE FROM user WHERE id = ?').bind('u1').run()
+    const resto = await DB.prepare('SELECT COUNT(*) AS n FROM passkey').first<{
+      n: number
+    }>()
+    expect(resto?.n).toBe(0)
   })
 })

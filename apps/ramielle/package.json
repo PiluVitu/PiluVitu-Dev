@@ -12,6 +12,7 @@
     "test:gerar-import": "vitest run --config vitest.scripts.config.ts",
     "gerar-import": "node scripts/gerar-import.mjs",
     "comparar-com-go": "node scripts/comparar-com-go.mjs",
+    "eval:revisao": "node --disable-warning=ExperimentalWarning scripts/rodar-avaliacao-revisao.mjs",
     "backup": "./scripts/backup-d1.sh",
     "cf-typegen": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply piluvitu-ramielle --local",
@@ -20,7 +21,9 @@
     "db:migrate:list:remote": "wrangler d1 migrations list piluvitu-ramielle --remote"
   },
   "dependencies": {
-    "better-auth": "1.6.25",
+    "@better-auth/passkey": "1.7.13",
+    "@piluvitu/ia": "workspace:*",
+    "better-auth": "1.7.13",
     "hono": "^4.13.12"
   },
   "devDependencies": {

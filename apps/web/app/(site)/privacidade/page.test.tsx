@@ -34,8 +34,8 @@ describe('/privacidade', () => {
     const raiz = pagina()
     expect(texto(raiz.querySelector('h1'))).toBe('Política de privacidade')
     const vigencia = raiz.querySelector('time')
-    expect(vigencia?.getAttribute('datetime')).toBe('2026-10-11')
-    expect(texto(vigencia)).toBe('11 de outubro de 2026')
+    expect(vigencia?.getAttribute('datetime')).toBe('2026-10-26')
+    expect(texto(vigencia)).toBe('26 de outubro de 2026')
     expect(link(raiz, 'Paulo Victor').getAttribute('href')).toBe('/')
   })
 
@@ -79,7 +79,7 @@ describe('/privacidade', () => {
       'Vercel Speed Insights',
       'as Web Vitals',
       'sem identificar quem visita',
-      'a votação de filmes e o painel de administração não são medidos',
+      'Ficam de fora da medição a votação de filmes (o Votaí, em votai.piluvitu.com.br, com o histórico) e o painel de administração',
       'LGPD, art. 7º, IX',
     ])
   })
@@ -116,9 +116,28 @@ describe('/privacidade', () => {
       '7 dias',
       'Sair apaga',
       'Só o administrador vê quem votou em quê',
+      'votai.piluvitu.com.br',
+      'só no endereço desse serviço (ramielle.piluvitu.com.br)',
       'LGPD, art. 7º, V',
       'enquanto a votação existir',
       'as 30 mais recentes',
+    ])
+  })
+
+  // O histórico público do Votaí (2026-10-26): as rotas GET /votacao/historico do ramielle só
+  // devolvem sessões encerradas, com contagens e o número de participantes, sem dado pessoal.
+  it('o histórico público: o que aparece sem login e o que nunca aparece', () => {
+    esperaTrechos(secao(pagina(), 'Votação de filmes'), [
+      'As votações encerradas ficam públicas, sem login, em votai.piluvitu.com.br/anteriores',
+      'o título, a data, os filmes, a contagem de votos de cada filme, o vencedor (inclusive o sorteado na roleta) e o número de participantes',
+      'O histórico não mostra quem votou nem em quê, e nenhum nome, e-mail ou foto de quem participou',
+    ])
+  })
+
+  it('o resumo cita o Votaí e o histórico público só com contagens', () => {
+    esperaTrechos(pagina().querySelector('article') as HTMLElement, [
+      'o Votaí, pede login com o Google para votar',
+      'o histórico das votações encerradas é público e só mostra contagens',
     ])
   })
 

@@ -1,6 +1,6 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
-import app from '../index'
+import { app } from '../index'
 import { categoriesRoutes } from './categories'
 
 type Categoria = { id: string; name: string; kind: string; slug: string | null }

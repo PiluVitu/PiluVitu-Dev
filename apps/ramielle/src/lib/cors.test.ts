@@ -33,6 +33,26 @@ describe('allowedOrigins — CSV, mesmo contrato do Go (apps/api/internal/router
     expect(DEFAULT_ALLOWED_ORIGINS).toContain('https://piluvitu.com.br')
   })
 
+  test('DEFAULT_ALLOWED_ORIGINS inclui o Votaí de produção e de dev, e nada fora de piluvitu.com.br/localhost', () => {
+    expect(DEFAULT_ALLOWED_ORIGINS).toEqual([
+      'http://localhost:3333',
+      'http://votai.localhost:3333',
+      'https://piluvitu.com.br',
+      'https://votai.piluvitu.com.br',
+    ])
+  })
+
+  // O cookie é de ramielle.piluvitu.com.br: só um host de piluvitu.com.br é
+  // same-site; o wrangler.jsonc é o que vale em produção.
+  test('wrangler.jsonc de produção libera o site e o Votaí, sem localhost', async () => {
+    const { default: config } = await import('../../wrangler.jsonc?raw')
+    const linha = config.match(/"CORS_ALLOWED_ORIGINS":\s*"([^"]*)"/)?.[1]
+    expect(allowedOrigins(linha)).toEqual([
+      'https://piluvitu.com.br',
+      'https://votai.piluvitu.com.br',
+    ])
+  })
+
   // Asserção negativa exigida pelo brief: nenhum caminho deste módulo pode
   // emitir '*' — o default nem deveria conter o literal.
   test('DEFAULT_ALLOWED_ORIGINS nunca contém o wildcard "*"', () => {

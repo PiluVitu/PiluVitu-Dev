@@ -29,14 +29,26 @@ const baseSession: VotingSession = {
   SortOptionsJSON: '{}',
 }
 
-export const Open: Story = { args: { session: baseSession } }
+export const Open: Story = { args: { session: baseSession, href: '/1' } }
 export const Closed: Story = {
   args: {
+    href: '/1',
     session: {
       ...baseSession,
       Status: 'closed',
       ClosedAt: new Date('2026-05-19T23:00:00Z').toISOString(),
       WinnerMovieID: 1,
+    },
+  },
+}
+
+export const Halloween: Story = {
+  args: {
+    href: '/1',
+    session: {
+      ...baseSession,
+      Title: 'Noite de Halloween',
+      SortOptionsJSON: JSON.stringify({ theme: 'halloween' }),
     },
   },
 }

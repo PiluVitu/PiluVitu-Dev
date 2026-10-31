@@ -13,6 +13,7 @@ interface Props {
   closed: boolean
   /** Movies the current user already approved. */
   votedMovieIds: number[]
+  halloween?: boolean
 }
 
 export function VoteSection({
@@ -20,6 +21,7 @@ export function VoteSection({
   movies,
   closed,
   votedMovieIds,
+  halloween = false,
 }: Props) {
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(votedMovieIds),
@@ -44,8 +46,9 @@ export function VoteSection({
       )}
       {!closed && (
         <p className="text-muted-foreground text-sm">
-          Aprove quantos filmes quiser. Você pode mudar seu voto até a sessão
-          ser encerrada.
+          {halloween
+            ? 'Aprove quantos sustos aguentar. Dá pra mudar o voto até a sessão ser encerrada — depois, não tem mais volta. 👻'
+            : 'Aprove quantos filmes quiser. Você pode mudar seu voto até a sessão ser encerrada.'}
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -66,12 +69,17 @@ export function VoteSection({
             disabled={mutation.isPending}
             onClick={() =>
               mutation.mutate(Array.from(selected), {
-                onSuccess: () => toast.success('Voto registrado'),
+                onSuccess: () =>
+                  toast.success(
+                    halloween ? 'Voto registrado 👻' : 'Voto registrado',
+                  ),
                 onError: (err) => toast.error(errorMessage(err)),
               })
             }
           >
-            {mutation.isPending ? 'Enviando…' : `Votar (${selected.size})`}
+            {mutation.isPending
+              ? 'Enviando…'
+              : `${halloween ? '🎃 ' : ''}Votar (${selected.size})`}
           </Button>
         </div>
       )}

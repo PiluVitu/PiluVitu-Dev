@@ -107,7 +107,7 @@ class TestTranscrever:
         assert "CPF, company" in chamadas[0]["prompt"]
         assert "CPF, company" in chamadas[1]["prompt"]
 
-    # Espelha OllamaVazio: resposta vazia é FALHA, nunca sucesso silencioso.
+    # Resposta vazia é FALHA, nunca sucesso silencioso.
     def test_saida_vazia_e_falha(self):
         executar, _ = executor_espiao(["   "])
         with pytest.raises(TranscricaoVazia):

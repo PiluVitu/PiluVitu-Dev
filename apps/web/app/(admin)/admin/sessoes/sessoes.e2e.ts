@@ -177,6 +177,14 @@ test.describe('/admin/sessoes', () => {
     await expect(page.getByText('A Coisa')).toBeVisible()
   })
 
+  test('o título da sessão leva à página dela no Votaí', async ({ page }) => {
+    await baseMocks(page)
+    await page.goto('/admin/sessoes')
+    await expect(
+      page.getByRole('link', { name: session.Title }).first(),
+    ).toHaveAttribute('href', 'http://votai.localhost:3333/1')
+  })
+
   test('o redirect de /votacao/admin chega em /admin/sessoes', async ({
     page,
   }) => {
@@ -184,6 +192,51 @@ test.describe('/admin/sessoes', () => {
     await page.goto('/votacao/admin')
     await expect(page).toHaveURL(/\/admin\/sessoes$/)
     await expect(page.getByText('Nova sessão')).toBeVisible()
+  })
+
+  test('cria a roleta de Halloween: sem categorias, o ramielle usa a coluna Halloween', async ({
+    page,
+  }) => {
+    await baseMocks(page)
+    let corpo: unknown = null
+    await page.route('**/votacao/sessions', async (r) => {
+      if (r.request().method() !== 'POST') {
+        await r.fallback()
+        return
+      }
+      corpo = r.request().postDataJSON()
+      await r.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: envelope(
+          {
+            session: { ...session, ID: 1, Title: 'Noite de Halloween' },
+            movies: [],
+          },
+          [{ type: 'success', message: 'Sessão criada.' }],
+        ),
+      })
+    })
+
+    await page.goto('/admin/sessoes')
+    await page.getByLabel('Título').fill('Noite de Halloween')
+    await page
+      .getByRole('checkbox', { name: /votação especial de halloween/i })
+      .check()
+    await expect(page.getByText(/coluna Halloween da planilha/)).toBeVisible()
+    await expect(page.getByLabel('Filmes por categoria')).toHaveCount(0)
+    await page
+      .getByRole('button', { name: /criar roleta de halloween/i })
+      .click()
+
+    await expect(page).toHaveURL('http://votai.localhost:3333/1')
+    expect(corpo).toEqual({
+      title: 'Noite de Halloween',
+      types: ['filme'],
+      include_watched: false,
+      categories: [],
+      theme: 'halloween',
+    })
   })
 
   test('bloqueia não-admin (gate do shell)', async ({ page }) => {

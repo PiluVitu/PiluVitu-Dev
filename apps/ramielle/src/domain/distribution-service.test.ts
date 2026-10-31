@@ -1,12 +1,12 @@
 /**
  * Testes de `distribution-service.ts` — oráculo de paridade:
  * `apps/api/internal/distribution/service_test.go` (`fakeHooks`/`fakePub`).
- * Publishers falsos (nunca os adapters reais) + `globalThis.fetch` mockado
- * pro promeia (nunca a rede real) — mesmo padrão de `routes/atelier.test.ts`.
+ * Publishers falsos (nunca os adapters reais) + um `Chat` falso no lugar da
+ * Claude (nunca a rede real).
  */
 import { env } from 'cloudflare:test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { PromeiaInalcancavel, PromeiaRecusou } from '../lib/promeia'
+import { ClaudeIndisponivel, TetoAtingido } from '@piluvitu/ia/erros'
 import { publishBluesky } from '../lib/publishers/bluesky'
 import type { DistributionKind } from './distribution'
 import {
@@ -21,9 +21,9 @@ import {
   type Publisher,
   type Selected,
 } from './distribution-service'
+import type { Chat, PedidoChat } from './revisao/revisao'
 
 const DB = env.DB
-const PROMEIA_CFG = { baseUrl: 'https://promeia.exemplo.test', token: 'tok' }
 
 const ARTIGO: Article = {
   title: 'T',
@@ -45,17 +45,21 @@ afterEach(() => {
   globalThis.fetch = fetchOriginal
 })
 
-/** Mocka só a URL do promeia — qualquer outra URL lança (nunca rede real). */
-function mockarPromeia(responder: () => Response | Promise<Response>) {
-  const chamadas: unknown[] = []
-  globalThis.fetch = (async (url: string) => {
-    if (String(url).startsWith(PROMEIA_CFG.baseUrl)) {
-      chamadas.push(url)
-      return responder()
-    }
-    throw new Error(`URL não mockada: ${url}`)
-  }) as unknown as typeof fetch
-  return chamadas
+/** `Chat` falso: responde `hook-<plataforma>` a partir do system do hook. */
+function chatFalso(
+  responder: (p: PedidoChat) => string | Promise<string> = (p) =>
+    `hook-${/Plataforma: (\w+)\./.exec(p.system)?.[1]}`,
+): { chat: Chat; pedidos: PedidoChat[] } {
+  const pedidos: PedidoChat[] = []
+  const chat: Chat = async (p) => {
+    pedidos.push(p)
+    return responder(p)
+  }
+  return { chat, pedidos }
+}
+
+const chatQueNaoPodeSerChamado: Chat = async () => {
+  throw new Error('o chat não deveria ser chamado')
 }
 
 /** Publisher falso — porte de `fakePub` (service_test.go:50-62). */
@@ -120,20 +124,15 @@ function criarShimQuebraMarkPosted(db: D1Database, falhas: number): D1Database {
 }
 
 describe('buildDistributionProposals', () => {
-  it('monta artigos + hooks sociais via promeia e persiste tudo — porte de TestBuildProposals (service_test.go:20-48)', async () => {
+  it('monta artigos + hooks sociais pela Claude e persiste tudo — porte de TestBuildProposals (service_test.go:20-48)', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
-    mockarPromeia(() =>
-      jsonResponse(200, {
-        ok: true,
-        data: { hooks: [{ platform: 'bluesky', text: 'hook-bluesky' }] },
-      }),
-    )
+    const { chat } = chatFalso()
 
     const targets = await buildDistributionProposals(
       DB,
       [devto, bluesky],
-      PROMEIA_CFG,
+      chat,
       'p',
       ARTIGO,
       'corpo do artigo',
@@ -146,72 +145,43 @@ describe('buildDistributionProposals', () => {
     expect(byPlat.bluesky?.content).toBe('hook-bluesky')
     expect(byPlat.bluesky?.kind).toBe('social_hook')
 
-    // persistiu?
     const stored = await listDistributionTargetsBySlug(DB, 'p')
     expect(stored).toHaveLength(2)
   })
 
-  it('manda o article certo e a lista de plataformas sociais pro promeia — M4 (fix round 1): array EXATO, não superset, e com um publisher de artigo na cena', async () => {
+  it('gera um hook por plataforma SOCIAL, exatamente essas, com os dados do artigo — o artigo não passa pela Claude', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
     const { pub: mastodon } = criarPublisherFalso('mastodon', 'social_hook')
-    const chamadas: unknown[] = []
-    globalThis.fetch = (async (url: string, init: RequestInit) => {
-      chamadas.push({ url, body: JSON.parse(init.body as string) })
-      return jsonResponse(200, {
-        ok: true,
-        data: {
-          hooks: [
-            { platform: 'bluesky', text: 'hb' },
-            { platform: 'mastodon', text: 'hm' },
-          ],
-        },
-      })
-    }) as unknown as typeof fetch
+    const { chat, pedidos } = chatFalso()
 
     const targets = await buildDistributionProposals(
       DB,
       [devto, bluesky, mastodon],
-      PROMEIA_CFG,
+      chat,
       'p2',
       ARTIGO,
       'corpo',
     )
 
-    expect(chamadas).toHaveLength(1)
-    const chamada = chamadas[0] as {
-      url: string
-      body: { platforms: string[] }
+    const plataformas = pedidos.map(
+      (p) => /Plataforma: (\w+)\./.exec(p.system)?.[1],
+    )
+    expect([...plataformas].sort()).toEqual(['bluesky', 'mastodon'])
+    for (const p of pedidos) {
+      expect(p.modelo).toBe('claude-haiku-5-5')
+      expect(p.user).toBe(
+        'Título: T\nResumo: e\nTags: go\n\nTrecho do meu artigo (referência de voz):\ntrecho de referência',
+      )
     }
-    expect(chamada.url).toBe('https://promeia.exemplo.test/llm/hooks')
-    // M4: array EXATO (ordenado) — `arrayContaining` aceitaria um superset
-    // (ex.: 'devto' vazando pra dentro de `platforms`, o que seria um bug:
-    // o artigo NÃO passa por hook nenhum).
-    expect([...chamada.body.platforms].sort()).toEqual(['bluesky', 'mastodon'])
-    expect(chamada.body).toMatchObject({
-      article: {
-        title: 'T',
-        excerpt: 'e',
-        url: 'https://blog/p',
-        tags: ['go'],
-        voice_sample: 'trecho de referência',
-      },
-    })
-    // e o publisher de artigo continua gerando o alvo dele, sem passar
-    // pelo promeia.
     expect(targets.find((t) => t.platform === 'devto')?.kind).toBe(
       'article_crosspost',
     )
   })
 
-  it('gerador NÃO configurado (promeiaCfg null) pula os sociais em SILÊNCIO — devolve só os artigos, sem erro (acréscimo do coordenador)', async () => {
+  it('sem chave (chat null) pula os sociais em SILÊNCIO — devolve só os artigos, sem erro', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
-    // Se o fetch fosse chamado, este teste acusaria — prova que o promeia
-    // NUNCA é alcançado quando o gerador não está configurado.
-    globalThis.fetch = (async () => {
-      throw new Error('fetch não deveria ser chamado')
-    }) as unknown as typeof fetch
 
     const targets = await buildDistributionProposals(
       DB,
@@ -230,65 +200,55 @@ describe('buildDistributionProposals', () => {
     expect(stored[0]?.platform).toBe('devto')
   })
 
-  it('gerador configurado mas INALCANÇÁVEL derruba o buildProposals inteiro — nada é persistido, nem os artigos já montados em memória (acréscimo do coordenador)', async () => {
+  it('Claude INDISPONÍVEL derruba o buildProposals inteiro — nada é persistido, nem os artigos já montados em memória', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
-    mockarPromeia(() => {
-      throw new TypeError('fetch failed')
+    const { chat } = chatFalso(() => {
+      throw new ClaudeIndisponivel(529)
     })
 
     await expect(
       buildDistributionProposals(
         DB,
         [devto, bluesky],
-        PROMEIA_CFG,
+        chat,
         'p4',
         ARTIGO,
         'corpo',
       ),
-    ).rejects.toBeInstanceOf(PromeiaInalcancavel)
+    ).rejects.toBeInstanceOf(ClaudeIndisponivel)
 
-    const stored = await listDistributionTargetsBySlug(DB, 'p4')
-    expect(stored).toEqual([])
+    expect(await listDistributionTargetsBySlug(DB, 'p4')).toEqual([])
   })
 
-  it('gerador configurado mas RECUSA (Ollama sem o modelo) também derruba o buildProposals inteiro — nada persiste', async () => {
+  it('teto atingido também derruba o buildProposals inteiro — nada persiste', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
     const { pub: bluesky } = criarPublisherFalso('bluesky', 'social_hook')
-    mockarPromeia(() =>
-      jsonResponse(503, {
-        ok: false,
-        code: 'ollama_model_missing',
-        message: "modelo 'qwen' não instalado",
-      }),
-    )
+    const { chat } = chatFalso(() => {
+      throw new TetoAtingido('hooks', '2026-10', 2_000_000, 2_000_000)
+    })
 
-    const erro = await buildDistributionProposals(
-      DB,
-      [devto, bluesky],
-      PROMEIA_CFG,
-      'p5',
-      ARTIGO,
-      'corpo',
-    ).catch((e) => e)
+    await expect(
+      buildDistributionProposals(
+        DB,
+        [devto, bluesky],
+        chat,
+        'p5',
+        ARTIGO,
+        'corpo',
+      ),
+    ).rejects.toBeInstanceOf(TetoAtingido)
 
-    expect(erro).toBeInstanceOf(PromeiaRecusou)
-    expect((erro as PromeiaRecusou).code).toBe('ollama_model_missing')
-
-    const stored = await listDistributionTargetsBySlug(DB, 'p5')
-    expect(stored).toEqual([])
+    expect(await listDistributionTargetsBySlug(DB, 'p5')).toEqual([])
   })
 
-  it('sem publisher social nenhum, o promeia NUNCA é chamado mesmo com promeiaCfg configurado', async () => {
+  it('sem publisher social nenhum, a Claude NUNCA é chamada mesmo com chave', async () => {
     const { pub: devto } = criarPublisherFalso('devto', 'article_crosspost')
-    globalThis.fetch = (async () => {
-      throw new Error('fetch não deveria ser chamado')
-    }) as unknown as typeof fetch
 
     const targets = await buildDistributionProposals(
       DB,
       [devto],
-      PROMEIA_CFG,
+      chatQueNaoPodeSerChamado,
       'p6',
       ARTIGO,
       'corpo',
@@ -315,68 +275,49 @@ describe('buildDistributionProposals', () => {
       'novo corpo',
     )
 
-    // devolvido: sempre pending, mesmo o alvo já estando posted no banco.
     expect(targets[0]?.status).toBe('pending')
 
-    // banco: o CASE WHEN do upsert preserva o status real (posted).
     const stored = await listDistributionTargetsBySlug(DB, 'p7')
     expect(stored[0]?.status).toBe('posted')
     expect(stored[0]?.content).toBe('novo corpo')
   })
 
-  // ⚠️ I1 (fix round 1) — a versão anterior deste teste usava
-  // `promeiaCfg: null` com um devtoV1 SOCIAL: nesse caso o ramo social é
-  // pulado inteiro (`promeiaCfg === null`), então o resultado (1 alvo, do
-  // devtoV2 artigo) seria IDÊNTICO com ou sem dedup — removendo a dedup
-  // inteira (`pubsUnicos = pubs`), a suíte continuava 100% verde. Corrigido
-  // com `promeiaCfg` CONFIGURADO (o ramo social de fato executa) e as duas
-  // ORDENS testadas, provando que quem sobrevive é o ÚLTIMO da lista, não
-  // o primeiro (um `.find()` no lugar do `Map` também passaria pela versão
-  // antiga do teste).
-  it('dedup por platform (I1, fix round 1): social por ÚLTIMO vence — o artigo NÃO aparece, e o promeia É chamado pra essa plataforma', async () => {
+  // Com o chat configurado o ramo social executa de fato, e as duas ordens
+  // provam que quem sobrevive à dedup é o ÚLTIMO da lista, não o primeiro.
+  it('dedup por platform: social por ÚLTIMO vence — o artigo NÃO aparece, e a Claude É chamada pra essa plataforma', async () => {
     const { pub: devtoArtigo } = criarPublisherFalso(
       'devto',
       'article_crosspost',
     )
     const { pub: devtoSocial } = criarPublisherFalso('devto', 'social_hook')
-    const chamadas = mockarPromeia(() =>
-      jsonResponse(200, {
-        ok: true,
-        data: { hooks: [{ platform: 'devto', text: 'hook-devto' }] },
-      }),
-    )
+    const { chat, pedidos } = chatFalso()
 
     const targets = await buildDistributionProposals(
       DB,
-      [devtoArtigo, devtoSocial], // social por ÚLTIMO
-      PROMEIA_CFG,
+      [devtoArtigo, devtoSocial],
+      chat,
       'p8a',
       ARTIGO,
       'corpo',
     )
 
-    expect(chamadas).toHaveLength(1) // o promeia FOI chamado pra 'devto'
+    expect(pedidos).toHaveLength(1)
     expect(targets).toHaveLength(1)
     expect(targets[0]?.kind).toBe('social_hook')
     expect(targets[0]?.content).toBe('hook-devto')
   })
 
-  it('dedup por platform (I1, fix round 1): artigo por ÚLTIMO vence — o social NÃO aparece, e o promeia NÃO é chamado pra essa plataforma', async () => {
+  it('dedup por platform: artigo por ÚLTIMO vence — o social NÃO aparece, e a Claude NÃO é chamada pra essa plataforma', async () => {
     const { pub: devtoSocial } = criarPublisherFalso('devto', 'social_hook')
     const { pub: devtoArtigo } = criarPublisherFalso(
       'devto',
       'article_crosspost',
     )
-    globalThis.fetch = (async () => {
-      throw new Error(
-        'fetch não deveria ser chamado — devto não é social depois do dedup',
-      )
-    }) as unknown as typeof fetch
 
     const targets = await buildDistributionProposals(
       DB,
-      [devtoSocial, devtoArtigo], // artigo por ÚLTIMO
-      PROMEIA_CFG,
+      [devtoSocial, devtoArtigo],
+      chatQueNaoPodeSerChamado,
       'p8b',
       ARTIGO,
       'corpo',

@@ -60,3 +60,9 @@ export interface JobTranscricao {
   resultado: Transcricao | null
   erro: { code: string; message: string } | null
 }
+
+export interface Resumo {
+  tldr: string
+  metaDescription: string
+  tags: string[]
+}

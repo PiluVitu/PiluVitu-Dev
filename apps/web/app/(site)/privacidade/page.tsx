@@ -4,7 +4,7 @@ import { EMAIL_DA_PILUTECH, mailtoDaPilutech } from '@piluvitu/tools/contato'
 import { PageTopBar } from '@/components/page-top-bar'
 import { metadataDaPagina } from '@/lib/pilulabs'
 
-const VIGENCIA = { iso: '2026-10-11', texto: '11 de outubro de 2026' }
+const VIGENCIA = { iso: '2026-10-26', texto: '26 de outubro de 2026' }
 const MAILTO_DA_PRIVACIDADE = mailtoDaPilutech('PiluVitu', 'Privacidade')
 const POLITICA_DA_VERCEL = 'https://vercel.com/legal/privacy-policy'
 const ANPD = 'https://www.gov.br/anpd/pt-br'
@@ -62,9 +62,10 @@ export default function PrivacidadePage() {
           Em resumo: este é o site pessoal de Paulo Victor Torres Silva e não
           tem anúncios. Ele conta as visitas com o Vercel Web Analytics e mede a
           velocidade das páginas com o Vercel Speed Insights, sem cookie e sem
-          identificar quem visita. A votação de filmes pede login com o Google e
-          grava um cookie para manter você conectado, e o formulário de contato
-          passa por um serviço de terceiros.
+          identificar quem visita. A votação de filmes, o Votaí, pede login com
+          o Google para votar e grava um cookie para manter você conectado; o
+          histórico das votações encerradas é público e só mostra contagens. O
+          formulário de contato passa por um serviço de terceiros.
         </p>
 
         <Secao titulo="Quem é o responsável">
@@ -98,11 +99,12 @@ export default function PrivacidadePage() {
             identificar quem visita.
           </p>
           <p>
-            Fora deles, a votação de filmes e o painel de administração não são
-            medidos. A base legal é o legítimo interesse do responsável em
-            entender o uso do site (LGPD, art. 7º, IX). A Vercel trata esses
-            dados em nome do responsável, e os números somados ficam no painel
-            dela pelo prazo do plano (hoje, até 1 mês).
+            Ficam de fora da medição a votação de filmes (o Votaí, em
+            votai.piluvitu.com.br, com o histórico) e o painel de administração.
+            A base legal é o legítimo interesse do responsável em entender o uso
+            do site (LGPD, art. 7º, IX). A Vercel trata esses dados em nome do
+            responsável, e os números somados ficam no painel dela pelo prazo do
+            plano (hoje, até 1 mês).
           </p>
         </Secao>
 
@@ -128,12 +130,13 @@ export default function PrivacidadePage() {
 
         <Secao titulo="Votação de filmes">
           <p>
-            A votação de filmes é de um grupo de amigos e pede login com o
-            Google. Ela roda num serviço à parte, em ramielle.piluvitu.com.br,
-            hospedado pela Cloudflare, Inc., empresa dos Estados Unidos, que
-            trata os dados em nome do responsável e pode processá-los fora do
-            Brasil. O login em si é feito pelo Google, que segue a própria
-            política de privacidade.
+            A votação de filmes, o Votaí, fica em votai.piluvitu.com.br. Ela é
+            de um grupo de amigos e pede login com o Google para votar. Os dados
+            ficam num serviço à parte, em ramielle.piluvitu.com.br, hospedado
+            pela Cloudflare, Inc., empresa dos Estados Unidos, que trata os
+            dados em nome do responsável e pode processá-los fora do Brasil. O
+            login em si é feito pelo Google, que segue a própria política de
+            privacidade.
           </p>
           <p>
             Ao entrar, o serviço guarda o identificador do Google, o nome, o
@@ -142,13 +145,20 @@ export default function PrivacidadePage() {
             manter você conectado, guarda também um registro do acesso com o
             endereço IP e o navegador, e grava o cookie{' '}
             <Codigo>__Secure-better-auth.session_token</Codigo>, só no endereço
-            da votação. Ele dura 7 dias, renovados enquanto você usa a votação.
-            Sair apaga o cookie. Durante o login, um cookie temporário confere
-            que a resposta veio mesmo do Google.
+            desse serviço (ramielle.piluvitu.com.br). Ele dura 7 dias, renovados
+            enquanto você usa a votação. Sair apaga o cookie. Durante o login,
+            um cookie temporário confere que a resposta veio mesmo do Google.
           </p>
           <p>
             Você vê os seus votos e o resultado somado. Só o administrador vê
             quem votou em quê e a lista de participantes.
+          </p>
+          <p>
+            As votações encerradas ficam públicas, sem login, em
+            votai.piluvitu.com.br/anteriores: o título, a data, os filmes, a
+            contagem de votos de cada filme, o vencedor (inclusive o sorteado na
+            roleta) e o número de participantes. O histórico não mostra quem
+            votou nem em quê, e nenhum nome, e-mail ou foto de quem participou.
           </p>
           <p>
             A base legal é a execução do serviço que você pede ao entrar (LGPD,

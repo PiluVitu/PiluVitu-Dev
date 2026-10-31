@@ -37,7 +37,7 @@ GOOGLE_CLIENT_SECRET=troque-pelo-client-secret-de-teste-ou-do-client-existente
 # responde 403 INVALID_CALLBACK_URL, com um erro que não diz que a causa é
 # CORS. DESCOMENTE a linha para desenvolver o web contra o ramielle local.
 # CSV, mesmo contrato de ADMIN_EMAILS acima.
-CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
+CORS_ALLOWED_ORIGINS=http://localhost:3333,http://votai.localhost:3333,https://piluvitu.com.br,https://votai.piluvitu.com.br
 
 # Task 2 (fatia ③): cliente do Sheets (src/lib/gsheets.ts) — lê filmes e
 # categorias da planilha de votação. Os três SEMPRE via `wrangler secret
@@ -57,16 +57,21 @@ CORS_ALLOWED_ORIGINS=http://localhost:3333,https://piluvitu.com.br
 # normalmente, só SEM pôsteres — nunca erro.
 # TMDB_API_KEY=troque-pela-chave-do-tmdb
 
-# Atelier (revisão de artigo) — o serviço promeia, que faz a inferência local.
+# Revisão de artigo (proofread, refine, hooks) — Claude, pela ANTHROPIC_API_KEY.
+# É SECRET (`wrangler secret put ANTHROPIC_API_KEY`), nunca `vars`. Sem ela,
+# /admin/llm/proofread e /refine respondem 503 claude_desligado e as propostas
+# de distribuição saem sem os sociais.
+# ANTHROPIC_API_KEY=
+
+# Transcrição de áudio — o serviço promeia, no Mac do dono.
 #
 # ⚠️ PROMEIA_TOKEN é SECRET (`wrangler secret put`), nunca `vars` do
 # wrangler.jsonc: é ele que impede que qualquer um que descubra o hostname do
-# túnel rode inferência na GPU do dono (§3 do spec). O navegador NUNCA o vê —
-# o fluxo é navegador → ramielle → promeia, e é este Worker que o guarda.
+# túnel use a GPU do dono. O navegador NUNCA o vê — o fluxo é
+# navegador → ramielle → promeia, e é este Worker que o guarda.
 #
-# Sem as DUAS, POST /admin/llm/proofread e /refine respondem 503
-# promeia_disabled: feature desligada, não quebrada (mesmo padrão do
-# sheets_disabled). Em dev, o promeia sobe com `make dev-promeia` na 8082.
+# Sem as DUAS, POST /admin/transcrever responde 503 promeia_disabled. Em dev,
+# o promeia sobe com `make dev-promeia` na 8082.
 # PROMEIA_URL=http://localhost:8082
 # PROMEIA_TOKEN=o-mesmo-valor-do-PROMEIA_TOKEN-do-apps/promeia
 

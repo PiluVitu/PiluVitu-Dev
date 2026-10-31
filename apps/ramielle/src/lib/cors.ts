@@ -36,13 +36,14 @@ import { cors } from 'hono/cors'
 import type { MiddlewareHandler } from 'hono'
 
 /**
- * Mesmo default do Go (`apps/api/internal/router/router.go`,
- * `defaultAllowedOrigins`) — `localhost:3333` cobre o dev do `apps/web`,
- * `piluvitu.com.br` é a produção dele.
+ * `localhost:3333` e `piluvitu.com.br` são o dev e a produção do `apps/web`;
+ * os dois `votai.` são o Votaí, o mesmo app servido no subdomínio da votação.
  */
 export const DEFAULT_ALLOWED_ORIGINS = [
   'http://localhost:3333',
+  'http://votai.localhost:3333',
   'https://piluvitu.com.br',
+  'https://votai.piluvitu.com.br',
 ]
 
 /**

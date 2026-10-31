@@ -11,10 +11,6 @@ TOKEN = "token-de-teste"
 def make_settings(**over) -> Settings:
     base = dict(
         promeia_token=TOKEN,
-        ollama_url="http://localhost:11434",
-        ollama_model="qwen2.5:7b-instruct",
-        ramielle_url="https://exemplo.invalid",
-        ingest_token="ingest",
     )
     base.update(over)
     return Settings(**base)
@@ -68,6 +64,15 @@ def test_token_valido_aceita_nao_ascii_sem_lancar():
     assert token_valido(f"Bearer {esperado}", "ascii-puro") is False
 
 
+def test_a_rota_do_insight_saiu(client):
+    # O insight passou para a Claude no Worker de finanças; com o token
+    # certo, POST /insight agora é rota desconhecida.
+    r = client.post("/insight", headers={"authorization": f"Bearer {TOKEN}"})
+    assert r.status_code == 404
+    caminhos = [path for path, _ in _rotas_registradas(client.app)]
+    assert "/insight" not in caminhos
+
+
 def test_rota_inexistente_tambem_exige_token(client):
     # O 401 vem ANTES do 404: quem não tem token não descobre nem quais
     # rotas existem. Um guard montado por decorator, rota a rota, daria 404
@@ -83,7 +88,7 @@ def _rotas_registradas(app) -> list[tuple[str, list[str]]]:
     em `app.routes` — coloca UM objeto `_IncludedRouter` opaco, sem `.path` e
     sem `.methods`. Um filtro ingênuo (`if getattr(r, "methods", None)`) pula
     esse objeto inteiro, em silêncio: este teste passou verde cobrindo só
-    /health enquanto POST /insight, montado por router, nunca era exercitado.
+    /health enquanto as rotas montadas por router nunca eram exercitadas.
 
     Por isso esta função LEVANTA no que não souber achatar, em vez de
     ignorar. Um `continue` aqui devolveria a prova falsa que ela existe pra
@@ -147,13 +152,14 @@ def test_TODA_rota_registrada_recusa_sem_token(client):
     em `app.routes`) passava verde cobrindo só `/health` — o fastapi 0.140.7
     guarda as rotas de um `include_router()` atrás de um `_IncludedRouter`
     opaco, sem `.methods` no próprio objeto, e o filtro simplesmente pulava
-    ele em silêncio. `POST /insight` nunca foi exercitado por este teste até
-    isso ser corrigido (achatamento em `_rotas_registradas`, que levanta em
-    vez de ignorar o que não sabe abrir). Ver `test_a_rota_insight_aparece_
-    na_prova_de_toda_rota` em `insight_test.py` para o controle positivo.
+    ele em silêncio. As rotas montadas por router nunca foram exercitadas por
+    este teste até isso ser corrigido (achatamento em `_rotas_registradas`,
+    que levanta em vez de ignorar o que não sabe abrir).
     """
     rotas = _rotas_registradas(client.app)
     assert rotas, "nenhuma rota registrada — o teste passaria vazio"
+    # Controle positivo: as rotas de router entram na enumeração.
+    assert ("/transcrever", ["POST"]) in rotas
 
     for path, methods in rotas:
         for method in methods:
@@ -175,3 +181,13 @@ def test_o_mapa_de_rotas_nao_e_publicado(client):
     """
     caminhos = [path for path, _ in _rotas_registradas(client.app)]
     assert not [p for p in caminhos if p.startswith("/openapi")], caminhos
+
+
+@pytest.mark.parametrize("caminho", ["/llm/proofread", "/llm/refine", "/llm/hooks"])
+def test_a_revisao_de_texto_saiu_do_promeia(client, caminho):
+    # A revisão foi para a Claude no ramielle; aqui sobra só a transcrição
+    # (e o insight, enquanto ele não sai).
+    r = client.post(
+        caminho, json={"text": "t"}, headers={"authorization": f"Bearer {TOKEN}"}
+    )
+    assert r.status_code == 404

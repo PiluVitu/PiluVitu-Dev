@@ -1,7 +1,6 @@
 /**
  * ⚠️ **NENHUM teste deste arquivo toca a API do Pluggy nem a rede** — o
- * `fetch` é sempre INJETADO (`opts.fetchImpl`), mesma disciplina de
- * `promeia.test.ts`. Um teste que esquecesse o mock bateria em
+ * `fetch` é sempre INJETADO (`opts.fetchImpl`). Um teste que esquecesse o mock bateria em
  * `api.pluggy.ai` de verdade, com a credencial de mentira, e queimaria cota
  * de rate limit do dono.
  */

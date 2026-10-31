@@ -1,33 +1,30 @@
 /**
- * As rotas do Atelier que dependem de inferência local: `POST
- * /admin/llm/proofread` e `POST /admin/llm/refine`.
- *
- * Porte de `apps/api/internal/handlers/llm/handlers.go`, com a inferência
- * movida pro promeia (§7.2 do spec). O ramielle aqui é ORQUESTRADOR: valida
- * o corpo, exige admin, chama o promeia com o token que só ele tem, e
- * traduz a resposta pro envelope que o `apps/web` consome.
- *
- * ⚠️ **Por que a tradução mora aqui e não no promeia.** O promeia responde
- * na forma dele (`{ok, code, message}`), que é o contrato dele com este
- * Worker. O `{ok, data, notifications}` é o contrato do Worker com o
- * navegador. Fazer o promeia falar o envelope o obrigaria a conhecer o
- * formato do frontend — camada trocada.
- *
- * ⚠️ **A mensagem do promeia é REPASSADA, não achatada.** O Go dizia
- * `"Falha ao corrigir o texto."` pra qualquer falha; o promeia distingue
- * "o Ollama está desligado" de "o modelo não está instalado, rode `ollama
- * pull X`" de "o Ollama respondeu e falhou". A §5 do spec pede exatamente
- * essa distinção, e o `apps/web` mostra `primary.message` direto em
- * `toast.error` — então o que o promeia escreve é o que o dono lê.
+ * As rotas do Atelier que revisam texto pela Claude: `POST
+ * /admin/llm/proofread` (Sonnet, teto `revisao`, em lotes; acima de
+ * `MAX_LOTES_PROOFREAD` ou com um bloco acima de `TETO_CARACTERES_BLOCO`
+ * responde `413 text_too_large`) e `POST
+ * /admin/llm/refine` (Haiku, teto `hooks`). Os erros da IA saem pelo `respostaDeErroIa`, e o
+ * `apps/web` mostra a mensagem dele direto no toast.
  */
+import { ClaudeDesligado } from '@piluvitu/ia/erros'
 import { Hono } from 'hono'
+import { chatComOrcamento } from '../domain/revisao/chat-claude'
+import {
+  BlocoGrandeDemais,
+  proofread,
+  refine,
+  TextoGrandeDemais,
+} from '../domain/revisao/revisao'
+import {
+  CorpoGrandeDemais,
+  gerarResumo,
+  MAX_CARACTERES_TITULO_RESUMO,
+  ParagrafoGrandeDemais,
+  SemProsa,
+} from '../domain/revisao/resumo'
 import type { AuthBindings } from '../lib/auth'
 import { errJson, okJson } from '../lib/envelope'
-import {
-  chamarPromeia,
-  promeiaConfigurado,
-  traduzirFalhaPromeia,
-} from '../lib/promeia'
+import { respostaDeErroIa } from '../lib/ia'
 import { requireAdmin, type SessionVariables } from '../lib/session'
 
 type Env = {
@@ -37,21 +34,17 @@ type Env = {
 
 const atelierRoutes = new Hono<Env>()
 
-/** Mesma mensagem do Go pra corpo inválido — o admin já a mostra hoje. */
 const MSG_CORPO_INVALIDO = "Corpo inválido: 'text' é obrigatório."
-
-/** Feature desligada (sem `PROMEIA_URL`/`PROMEIA_TOKEN`), não quebrada. */
-const MSG_DESLIGADO =
-  'A revisão por IA está desligada — configure PROMEIA_URL e PROMEIA_TOKEN.'
 
 atelierRoutes.post(
   '/llm/proofread',
   requireAdmin<AuthBindings>(),
   async (c) => {
-    const cfg = promeiaConfigurado(c.env)
-    if (cfg === null) return errJson(503, 'promeia_disabled', MSG_DESLIGADO)
+    if (!c.env.ANTHROPIC_API_KEY) {
+      return respostaDeErroIa(new ClaudeDesligado())
+    }
 
-    let corpo: { text?: unknown; careful?: unknown }
+    let corpo: { text?: unknown }
     try {
       corpo = await c.req.json()
     } catch {
@@ -62,21 +55,27 @@ atelierRoutes.post(
     }
 
     try {
-      const data = await chamarPromeia<{ corrected: string }>(
-        '/llm/proofread',
-        { text: corpo.text, careful: corpo.careful === true },
-        cfg,
+      const corrected = await proofread(
+        corpo.text,
+        chatComOrcamento(c.env, 'revisao'),
       )
-      return okJson({ corrected: data.corrected })
+      return okJson({ corrected })
     } catch (err) {
-      return traduzirFalhaPromeia(err)
+      if (
+        err instanceof TextoGrandeDemais ||
+        err instanceof BlocoGrandeDemais
+      ) {
+        return errJson(413, 'text_too_large', err.message)
+      }
+      return respostaDeErroIa(err)
     }
   },
 )
 
 atelierRoutes.post('/llm/refine', requireAdmin<AuthBindings>(), async (c) => {
-  const cfg = promeiaConfigurado(c.env)
-  if (cfg === null) return errJson(503, 'promeia_disabled', MSG_DESLIGADO)
+  if (!c.env.ANTHROPIC_API_KEY) {
+    return respostaDeErroIa(new ClaudeDesligado())
+  }
 
   let corpo: { platform?: unknown; text?: unknown; instruction?: unknown }
   try {
@@ -89,19 +88,58 @@ atelierRoutes.post('/llm/refine', requireAdmin<AuthBindings>(), async (c) => {
   }
 
   try {
-    const data = await chamarPromeia<{ refined: string }>(
-      '/llm/refine',
-      {
-        platform: typeof corpo.platform === 'string' ? corpo.platform : '',
-        text: corpo.text,
-        instruction:
-          typeof corpo.instruction === 'string' ? corpo.instruction : '',
-      },
-      cfg,
+    const refined = await refine(
+      typeof corpo.platform === 'string' ? corpo.platform : '',
+      corpo.text,
+      typeof corpo.instruction === 'string' ? corpo.instruction : '',
+      chatComOrcamento(c.env, 'hooks'),
     )
-    return okJson({ refined: data.refined })
+    return okJson({ refined })
   } catch (err) {
-    return traduzirFalhaPromeia(err)
+    return respostaDeErroIa(err)
+  }
+})
+
+const MSG_CORPO_RESUMO_INVALIDO = `Corpo inválido: 'body' é obrigatório e 'title' é texto de até ${MAX_CARACTERES_TITULO_RESUMO} caracteres.`
+
+atelierRoutes.post('/llm/resumo', requireAdmin<AuthBindings>(), async (c) => {
+  if (!c.env.ANTHROPIC_API_KEY) {
+    return respostaDeErroIa(new ClaudeDesligado())
+  }
+
+  let corpo: { title?: unknown; body?: unknown }
+  try {
+    corpo = await c.req.json()
+  } catch {
+    return errJson(400, 'invalid_json', MSG_CORPO_RESUMO_INVALIDO)
+  }
+  const { title = '', body } = corpo ?? {}
+  if (
+    typeof body !== 'string' ||
+    body === '' ||
+    typeof title !== 'string' ||
+    title.length > MAX_CARACTERES_TITULO_RESUMO
+  ) {
+    return errJson(400, 'invalid_json', MSG_CORPO_RESUMO_INVALIDO)
+  }
+
+  try {
+    const resumo = await gerarResumo(
+      { title, body },
+      chatComOrcamento(c.env, 'resumo'),
+    )
+    return okJson(resumo)
+  } catch (err) {
+    if (
+      err instanceof CorpoGrandeDemais ||
+      err instanceof ParagrafoGrandeDemais
+    ) {
+      return errJson(413, 'text_too_large', err.message)
+    }
+    if (err instanceof SemProsa) {
+      return errJson(422, 'sem_prosa', err.message)
+    }
+    return respostaDeErroIa(err)
   }
 })
 

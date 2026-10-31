@@ -19,172 +19,45 @@ def test_recusa_subir_com_token_vazio():
 def test_le_o_token_e_aplica_defaults():
     s = load_settings({"PROMEIA_TOKEN": "segredo"})
     assert s.promeia_token == "segredo"
-    assert s.ollama_url == "http://localhost:11434"
-    assert s.ollama_model == "qwen2.5:7b-instruct"
-    assert s.ramielle_url == "https://financas.piluvitu.com.br"
-    assert s.ingest_token == ""
 
 
-def test_env_sobrescreve_os_defaults():
-    s = load_settings(
-        {
-            "PROMEIA_TOKEN": "segredo",
-            "OLLAMA_URL": "http://127.0.0.1:99999",
-            "OLLAMA_MODEL": "qwen2.5:3b-instruct",
-            "RAMIELLE_URL": "http://localhost:8787",
-            "INGEST_TOKEN": "ingest",
-        }
-    )
-    assert s.ollama_url == "http://127.0.0.1:99999"
-    assert s.ollama_model == "qwen2.5:3b-instruct"
-    assert s.ramielle_url == "http://localhost:8787"
-    assert s.ingest_token == "ingest"
-
-
-def test_defaults_de_modelo_da_revisao_sao_os_MEDIDOS_de_2026():
-    # ⚠️ Estes três valores são ESCOLHA PRÓPRIA, medida BLOCO A BLOCO (o
-    # caminho real do `proofread`) — não mais "igual ao que o Go usava" (a Go
-    # foi aposentada, ver ROADMAP §2). Rápido: qwen2.5:7b-instruct (9/9 em
-    # preservação de nível de título, 8/9 no corpus de erros) contra o
-    # qwen2.5:3b-instruct antigo (6/9 e 5/9). Careful e hooks: gemma4:12b
-    # (9/9 nos dois), pagando 11,8 s/bloco — que é o preço que o slot
-    # "careful" existe pra pagar. Comentário completo em `config.py#Settings`.
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    assert s.model_proofread == "qwen2.5:7b-instruct"
-    assert s.model_proofread_careful == "gemma4:12b"
-    assert s.model_hooks == "gemma4:12b"
-
-
-def test_nenhum_slot_da_revisao_usa_a_familia_qwen3_5():
-    # ⚠️ Este é o teste que teria impedido o 6808f60, e o de cima NÃO seria.
-    # Fixar a string do default não protege nada: quem troca o default troca a
-    # string do teste junto, no mesmo commit, sem nunca encarar o motivo. O que
-    # protege é uma trava sobre a FAMÍLIA medida como ruim, com a evidência na
-    # mensagem de falha: pra reintroduzir um qwen3.5 é preciso APAGAR uma
-    # asserção que diz, em português, que ela destrói o nível do título — vira
-    # ato consciente, não troca mecânica de valor. E ela pega o caso que uma
-    # igualdade não pega: uma tag qwen3.5 QUALQUER (4b, 9b, ou a próxima que
-    # sair), inclusive num slot que hoje está certo.
-    #
-    # MEDIDO, 9 repetições, blocos `## Subtitulo`/`### Secao`/`#### Detalhe`
-    # mandados sozinhos (é assim que o `proofread` manda): qwen3.5:4b preservou
-    # o nível 1/9 vez, qwen3.5:9b 4/9 — devolvendo `'# Subtítulo'` no lugar de
-    # `'## Subtitulo'` — e o 9b ainda vazou espanhol (`'#### Detalle'`).
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    for slot, modelo in (
-        ("MODEL_PROOFREAD", s.model_proofread),
-        ("MODEL_PROOFREAD_CAREFUL", s.model_proofread_careful),
-        ("MODEL_HOOKS", s.model_hooks),
-    ):
-        assert not modelo.startswith("qwen3.5"), (
-            f"{slot}={modelo}: a família qwen3.5 REBAIXA o nível dos títulos "
-            f"quando o bloco chega sozinho (4b: 1/9; 9b: 4/9), que é como o "
-            f"proofread manda. Ela já foi escolhida uma vez (6808f60) com base "
-            f"num corpus de texto INTEIRO, que não mede esse caso. Se for medir "
-            f"de novo, meça bloco a bloco."
-        )
-
-
-def test_o_modelo_do_insight_NAO_acompanha_os_da_revisao():
-    # ⚠️ Decisão deliberada, não esquecimento: a tarefa do insight é redigir um
-    # parágrafo sobre números JÁ calculados pelo Worker, e o gargalo medido
-    # dele é o PROMPT, não o modelo — o insight de 2026-08 saiu afirmando
-    # "mantendo-se igual ao mesmo período do ano anterior" sobre um banco sem
-    # ano anterior, coisa que modelo maior nenhum conserta. Este teste é o que
-    # impede alguém de "uniformizar" os quatro slots numa próxima passada.
-    #
-    # ⚠️ `ollama_model` e `model_proofread` calharem de ser o MESMO modelo hoje
-    # é coincidência de valor, não decisão compartilhada: um venceu no corpus
-    # de revisão bloco a bloco, o outro nunca foi medido porque não é o gargalo
-    # dele. Por isso a asserção de independência é contra o `careful`.
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    assert s.ollama_model == "qwen2.5:7b-instruct"
-    assert s.ollama_model != s.model_proofread_careful
-
-
-def test_env_sobrescreve_os_tres_modelos_da_revisao():
-    # Cada slot lê a SUA env: um `src.get` copiado e colado (os três lendo
-    # MODEL_PROOFREAD, por exemplo) passa despercebido se o teste usar o mesmo
-    # valor nos três.
+def test_o_insight_saiu_settings_nao_tem_mais_os_campos_dele():
+    # O insight foi para a Claude no Worker de finanças (PR2 da IA fase 1):
+    # o promeia não lê números nem publica nada, então não guarda mais a
+    # credencial de ingestão, a URL do Worker nem o modelo do insight.
     s = load_settings(
         {
             "PROMEIA_TOKEN": "x",
-            "MODEL_PROOFREAD": "rapido-X",
-            "MODEL_PROOFREAD_CAREFUL": "cuidadoso-Y",
-            "MODEL_HOOKS": "hooks-Z",
+            "INGEST_TOKEN": "sobra-de-um-env-antigo",
+            "RAMIELLE_URL": "https://exemplo.invalid",
+            "OLLAMA_MODEL": "qwen2.5:7b-instruct",
         }
     )
-    assert s.model_proofread == "rapido-X"
-    assert s.model_proofread_careful == "cuidadoso-Y"
-    assert s.model_hooks == "hooks-Z"
+    for campo in ("ingest_token", "ramielle_url", "ollama_model"):
+        assert not hasattr(s, campo), campo
+    assert not hasattr(s, "exigir_ingest_token")
+    assert "sobra-de-um-env-antigo" not in repr(s)
+
+
+def test_as_settings_do_ollama_sairam_com_a_revisao_e_o_insight():
+    # O insight foi para o financas e a revisão para o ramielle, os dois pela
+    # Claude: nenhuma env de modelo configura mais nada aqui.
+    s = load_settings({"PROMEIA_TOKEN": "x", "MODEL_PROOFREAD": "qualquer"})
+    for campo in (
+        "model_proofread",
+        "model_proofread_careful",
+        "model_hooks",
+        "ollama_model",
+        "ollama_url",
+    ):
+        assert not hasattr(s, campo)
 
 
 def test_repr_de_settings_nao_expoe_os_segredos():
     # Ninguém loga `settings` hoje, mas o dataclass gera __repr__ com todos
-    # os campos por padrão — os dois únicos segredos do serviço (o token que
-    # protege toda rota e o token que autentica no ramielle) não podem
-    # aparecer se alguém logar o objeto inteiro por engano no futuro.
+    # os campos por padrão — o token que protege toda rota não pode aparecer
+    # se alguém logar o objeto inteiro por engano no futuro.
     s = Settings(
         promeia_token="segredo-promeia",
-        ollama_url="http://localhost:11434",
-        ollama_model="qwen2.5:7b-instruct",
-        ramielle_url="https://exemplo.invalid",
-        ingest_token="segredo-ingest",
     )
-    texto = repr(s)
-    assert "segredo-promeia" not in texto
-    assert "segredo-ingest" not in texto
-
-
-def test_load_settings_NAO_derruba_o_servico_por_INGEST_TOKEN_ausente():
-    # ⚠️ Este teste fixa uma DECISÃO, não um descuido. A simetria óbvia com o
-    # PROMEIA_TOKEN (que levanta ConfigError logo acima) é ERRADA aqui: das
-    # quatro rotas POST do serviço, só `/insight` usa o INGEST_TOKEN;
-    # `/llm/proofread`, `/llm/refine` e `/llm/hooks` mandam texto pro Ollama e
-    # devolvem texto, sem tocar o ramielle. Exigir o token no boot derrubaria
-    # o serviço inteiro — incluindo o `/llm/proofread` que está EM PRODUÇÃO,
-    # por trás do botão "Corrigir texto" do admin — por uma credencial que
-    # nenhuma dessas três usa.
-    #
-    # Quem for "consertar a assimetria" trocando isto por um pytest.raises tem
-    # que apagar esta explicação antes — que é o ponto de ela estar aqui.
-    s = load_settings({"PROMEIA_TOKEN": "so-o-do-middleware"})
-    assert s.ingest_token == ""
-    assert s.promeia_token == "so-o-do-middleware"
-
-
-def test_exigir_ingest_token_levanta_quando_vazio():
-    # String vazia é o caso REAL: `make dev-promeia` sem source do .env, ou um
-    # `INGEST_TOKEN=` solto. Sem esta guarda o valor vazio virava o header
-    # "Bearer " e o httpx o recusava com `Illegal header value b'Bearer '` —
-    # que `ramielle.py` classificava como falha de TRANSPORTE.
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    with pytest.raises(ConfigError, match="INGEST_TOKEN"):
-        s.exigir_ingest_token()
-
-
-def test_exigir_ingest_token_devolve_o_token_quando_configurado():
-    s = load_settings({"PROMEIA_TOKEN": "x", "INGEST_TOKEN": "ingest-de-verdade"})
-    assert s.exigir_ingest_token() == "ingest-de-verdade"
-
-
-def test_a_mensagem_do_ingest_token_diz_que_NAO_e_rede_e_o_que_fazer():
-    # A classificação errada não era só um `code` trocado: a mensagem mandava
-    # "confira a conexão e a URL". Quem lê a nova precisa sair dela sabendo
-    # (a) que o serviço está de pé e (b) qual comando resolve.
-    s = load_settings({"PROMEIA_TOKEN": "x"})
-    with pytest.raises(ConfigError) as exc:
-        s.exigir_ingest_token()
-    msg = str(exc.value)
-    assert "NÃO é problema de rede" in msg
-    assert "wrangler secret put INGEST_TOKEN" in msg
-    assert ".dev.vars" in msg
-    assert "confira a conexão" not in msg
-
-
-def test_barra_final_do_ramielle_url_e_removida():
-    # Sem isso, `f"{url}/api/insights"` vira `...com.br//api/insights`.
-    s = load_settings(
-        {"PROMEIA_TOKEN": "x", "RAMIELLE_URL": "https://exemplo.com.br///"}
-    )
-    assert s.ramielle_url == "https://exemplo.com.br"
+    assert "segredo-promeia" not in repr(s)

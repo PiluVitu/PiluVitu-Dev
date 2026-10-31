@@ -550,14 +550,18 @@ describe('insertSessionMovies', () => {
     )
   })
 
-  it('UNIQUE(session_id, category) — categoria duplicada faz o batch inteiro falhar, e NENHUM filme fica gravado (rollback real do db.batch())', async () => {
-    const userId = await novoUsuario('sub-insertmovies-unique')
+  it('uma linha inválida (CHECK de type) faz o batch inteiro falhar, e NENHUM filme fica gravado (rollback real do db.batch())', async () => {
+    const userId = await novoUsuario('sub-insertmovies-rollback')
     const sessionId = await novaSessao(userId)
 
     await expect(
       insertSessionMovies(DB, sessionId, [
         filme({ category: 'acao', title: 'Primeiro' }),
-        filme({ category: 'acao', title: 'Categoria Repetida' }),
+        filme({
+          category: 'drama',
+          title: 'Tipo Inválido',
+          type: 'documentario' as SessionMovieInsert['type'],
+        }),
       ]),
     ).rejects.toThrow()
 

@@ -10,7 +10,13 @@ function ehDaVercel(url: string): boolean {
   )
 }
 
-for (const caminho of ['/', '/tools', '/pilulabs', '/privacidade'])
+for (const caminho of [
+  '/',
+  '/tools',
+  '/pilulabs',
+  '/privacidade',
+  'http://votai.localhost:3333/anteriores',
+])
   test(`${caminho} não carrega a medição da Vercel fora da produção`, async ({
     page,
   }) => {

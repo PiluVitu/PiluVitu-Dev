@@ -1,0 +1,10 @@
+{
+  "artigo": {
+    "title": "O que aprendi migrando a API de Go para Workers",
+    "excerpt": "Tirei a API do container e levei rota por rota para um Worker com D1, sem parar a votação.",
+    "url": "https://piluvitu.com.br/posts/go-para-workers",
+    "tags": ["cloudflare", "workers", "go"],
+    "voiceSample": "Faz dois anos que essa API roda num container. Tentei manter tudo igual, mas não funcionou do jeito que eu queria. Dessa vez escrevi os testes antes."
+  },
+  "plataformas": ["bluesky", "mastodon", "x"]
+}

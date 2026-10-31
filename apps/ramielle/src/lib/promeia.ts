@@ -1,5 +1,7 @@
 /**
- * Cliente do promeia — o serviço Python que roda no MacBook do dono.
+ * Cliente do promeia — o serviço Python que roda no MacBook do dono. Hoje só
+ * a transcrição (`routes/transcricao.ts`) passa por aqui; a revisão de texto
+ * foi para a Claude (`domain/revisao/`).
  *
  * ⚠️ **Este módulo existe por causa da §3 do spec, e a razão não é
  * organizacional.** O túnel torna `promeia.piluvitu.com.br` alcançável pela
@@ -33,7 +35,7 @@ export class PromeiaInalcancavel extends Error {
 
 /** Alcancei o Mac e ele recusou/falhou — o gargalo é outro. */
 export class PromeiaRecusou extends Error {
-  /** `code` que o promeia emitiu (`ollama_unreachable`, `invalid_json`, …). */
+  /** `code` que o promeia emitiu (`invalid_json`, …). */
   readonly code: string
   /** Status HTTP que o promeia devolveu. */
   readonly status: number
@@ -47,11 +49,9 @@ export class PromeiaRecusou extends Error {
 }
 
 /**
- * Timeout por chamada. Generoso: um `proofread` de artigo longo faz uma
- * chamada ao modelo POR BLOCO de prosa, e um modelo frio leva dezenas de
- * segundos só pra primeira token. Curto demais aqui vira "não alcancei" numa
- * situação em que o Mac está trabalhando — a pior mensagem possível, porque
- * manda o dono mexer no que está certo.
+ * Timeout por chamada. Generoso: transcrever um áudio longo num modelo frio
+ * leva dezenas de segundos, e curto demais aqui vira "não alcancei" com o Mac
+ * trabalhando, mandando o dono mexer no que está certo.
  */
 export const TIMEOUT_MS = 120_000
 
@@ -140,7 +140,7 @@ export async function chamarPromeia<T>(
     // ⚠️ I2 (revisão): um erro HTTP SEM `code`/`message` reconhecíveis no
     // corpo NÃO é evidência de que o promeia recusou — é evidência de que o
     // promeia nunca respondeu. Toda rota do promeia que devolve erro
-    // (`_erro` em `revisao_rotas.py`, e `TokenMiddleware`) SEMPRE inclui os
+    // (`_erro` em `transcricao_rotas.py`, e `TokenMiddleware`) SEMPRE inclui os
     // dois no JSON. Quem responde SEM esse shape é a INFRAESTRUTURA entre o
     // navegador e o Mac — o túnel Cloudflare, quando o Mac está desligado ou
     // travado: HTML de erro (530) ou um 524 de timeout, nunca
@@ -171,8 +171,8 @@ export async function chamarPromeia<T>(
     }
 
     // A mensagem do promeia é MELHOR que qualquer coisa que o Worker
-    // inventaria aqui: ela distingue "o Ollama está desligado, abra ele" de
-    // "o modelo não está instalado, rode `ollama pull X`". Repassar, não
+    // inventaria aqui: ela diz o que falhou na transcrição e o que fazer.
+    // Repassar, não
     // achatar num "falhou" genérico — é o que a §5 do spec pede.
     throw new PromeiaRecusou(json.message, json.code, resposta.status)
   }
@@ -210,7 +210,7 @@ export function promeiaConfigurado(env: {
 /**
  * Falha do promeia → envelope do navegador. Inalcançável vira 503 com a frase
  * de subir o Mac; recusa repassa `code` e `message` do promeia, porque é a
- * mensagem dele que distingue "abra o Ollama" de "instale o Whisper". Um 4xx
+ * mensagem dele que diz o que fazer (ex.: "instale o Whisper"). Um 4xx
  * do promeia vira 502: foi o upstream que recusou, não o navegador que errou.
  */
 export function traduzirFalhaPromeia(err: unknown) {

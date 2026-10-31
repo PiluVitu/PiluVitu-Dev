@@ -109,7 +109,7 @@ test('toda imagem tem alt, e as dos projetos um alt descritivo', async ({
   const alts = await page
     .locator('#projetos img')
     .evaluateAll((imagens) => imagens.map((i) => i.getAttribute('alt') ?? ''))
-  expect(alts).toHaveLength(2)
+  expect(alts).toHaveLength(4)
   for (const alt of alts) expect(alt.length).toBeGreaterThan(30)
 })
 
@@ -179,6 +179,19 @@ test('sitemap.xml lista a home e a política de privacidade', async ({
   const xml = await (await page.request.get('/sitemap.xml')).text()
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/</loc>`)
   expect(xml).toContain(`<loc>${SITE_DE_PRODUCAO}/privacidade</loc>`)
+})
+
+test('llms.txt é texto puro com os produtos e os links de produção', async ({
+  page,
+}) => {
+  const resposta = await page.request.get('/llms.txt')
+  expect(resposta.status()).toBe(200)
+  expect(resposta.headers()['content-type']).toBe('text/plain; charset=utf-8')
+  const texto = await resposta.text()
+  expect(texto.startsWith('# PiluTech\n')).toBe(true)
+  expect(texto).toContain('- [Apuraí](https://apurai.pilutech.com.br/): ')
+  expect(texto).toContain('- [Reparaí](https://reparai.pilutech.com.br/): ')
+  expect(texto).toContain(`- [Página inicial](${SITE_DE_PRODUCAO}/)`)
 })
 
 test('/privacidade: title, description, canonical e indexável', async ({

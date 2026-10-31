@@ -1,16 +1,12 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../api'
 import type { InsightView } from '../lib/insight'
-import {
-  InsightPage,
-  MENSAGEM_BASELINE_INDISPONIVEL,
-  MENSAGEM_GERADO_SEM_RECARGA,
-  MENSAGEM_SEM_CONFIRMACAO,
-  POLL_INTERVALO_MS,
-  POLL_LIMITE_MS,
-} from './insight'
+import { CartaoLeitura, InsightPage } from './insight'
+import metaHistorias, * as todasAsHistorias from './insight.stories'
+
+const { default: _meta, ...historias } = todasAsHistorias
 
 // Mockar `api` (não a rede) — mesmo padrão de reserva.test.tsx/
 // config.test.tsx: `api` já traduz envelope/erro, testar aqui prova o
@@ -76,39 +72,18 @@ function mockApi(
 
 const insightNovo: InsightView = {
   id: 'i2',
-  texto: 'Leitura novinha, saída do Ollama agora.',
-  modelo: 'qwen2.5:7b-instruct',
+  texto: 'Leitura novinha, saída da Claude agora.',
+  modelo: 'claude-sonnet-5-5',
   periodo: '2026-07',
   generated_at: '2026-07-25T12:00:30Z',
 }
 
-/** Quantas chamadas a `api()` bateram em `POST /api/insights/generate`. */
-function chamadasDeGeracao(): number {
-  return vi
-    .mocked(api)
-    .mock.calls.filter((c) => c[0] === '/api/insights/generate').length
+function chamadasPara(path: string): number {
+  return vi.mocked(api).mock.calls.filter((c) => c[0] === path).length
 }
 
-/**
- * ⚠️ Relógio FIXO + timers falsos, e as duas coisas juntas de propósito:
- * `shouldAdvanceTime` mantém `waitFor`/`userEvent` (que dependem de
- * `setTimeout` por baixo) funcionando, enquanto
- * `advanceTimersByTimeAsync` deixa os 90 s do teto de polling passarem em
- * milissegundos — nenhum teste espera 90 s de verdade. Sem o relógio
- * fixo, `insightAgeDays`/`isStaleInsight` derivariam com o calendário
- * (este app já teve 2 testes vermelhos por isso).
- */
-function relogioFixo() {
-  vi.useFakeTimers({ shouldAdvanceTime: true })
-  vi.setSystemTime(new Date('2026-07-25T12:00:00Z'))
-  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-}
-
-async function avancar(ms: number) {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms)
-  })
-}
+const chamadasDeGeracao = () => chamadasPara('/api/insights/generate')
+const chamadasDeLatest = () => chamadasPara('/api/insights/latest')
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -154,10 +129,14 @@ describe('InsightPage — os números independem do texto (propriedade central)'
       ),
     )
     expect(
-      screen.getByRole('button', { name: 'Gerar insight deste mês' }),
+      screen.getByRole('button', { name: /^Gerar insight de / }),
     ).toBeInTheDocument()
     expect(document.body.textContent).not.toContain('insight.mjs')
     expect(document.body.textContent).not.toContain('make insight')
+    expect(screen.getByTestId('sem-insight').textContent).not.toMatch(
+      /Mac|modelo local/,
+    )
+    expect(screen.getByTestId('sem-insight')).toHaveTextContent(/dia 1/)
   })
 
   it('os números aparecem mesmo que a BUSCA do insight falhe (não só "nunca gravado")', async () => {
@@ -292,6 +271,9 @@ describe('InsightPage — com insight gerado', () => {
     )
     const alerta = screen.getByTestId('insight-alerta-desatualizado')
     expect(alerta).toHaveTextContent(/desatualizado/i)
+    expect(alerta).toHaveTextContent(/botão/i)
+    expect(alerta).toHaveTextContent('jul/26')
+    expect(alerta.textContent).not.toMatch(/Mac|comando/)
     expect(screen.getByTestId('insight-geracao')).toHaveClass(
       'text-destructive',
     )
@@ -299,6 +281,59 @@ describe('InsightPage — com insight gerado', () => {
     // não deve sumir, só deixar de parecer atual.
     expect(screen.getByTestId('insight-texto')).toHaveTextContent(
       'Leitura de três semanas atrás.',
+    )
+  })
+})
+
+describe('InsightPage — frescor contra o período', () => {
+  it('o insight do Cron de um mês fechado não fica desatualizado semanas depois', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+    mockApi({
+      latest: () => ({
+        id: 'cron',
+        texto: 'Outubro fechou sem surpresas.',
+        modelo: 'claude-sonnet-5-5',
+        periodo: '2026-10',
+        generated_at: '2026-11-01T12:00:00Z',
+      }),
+    })
+
+    render(<InsightPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-geracao')).toHaveTextContent(
+        'há 3 semanas',
+      ),
+    )
+    expect(
+      screen.queryByTestId('insight-alerta-desatualizado'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('insight-geracao')).not.toHaveClass(
+      'text-destructive',
+    )
+  })
+
+  it('o botão diz para qual mês vai gerar, e acompanha o seletor', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+    mockApi({ latest: () => null })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
+      'Gerar insight de nov/26',
+    )
+
+    const seletor = document.querySelector(
+      'input[type="month"]',
+    ) as HTMLInputElement
+    fireEvent.change(seletor, { target: { value: '2026-10' } })
+
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
+      'Gerar insight de out/26',
     )
   })
 })
@@ -344,7 +379,7 @@ describe('InsightPage — números: erro, mês e Ajuda', () => {
     )
   })
 
-  it('Ajuda ("Insight") abre no clique, explicando calculado vs. gerado localmente', async () => {
+  it('Ajuda ("Insight") abre no clique, explicando calculado vs. escrito pela Claude', async () => {
     const user = userEvent.setup()
     mockApi({ latest: () => null })
 
@@ -358,34 +393,24 @@ describe('InsightPage — números: erro, mês e Ajuda', () => {
       screen.getByRole('button', { name: 'Ajuda sobre Insight' }),
     )
 
-    const popover = await screen.findByText(/gerado por um modelo de IA local/i)
+    const popover = await screen.findByText(/escrito pela Claude/i)
     expect(popover).toBeInTheDocument()
     expect(popover.textContent).toMatch(/calculad/i)
+    expect(popover.textContent).toMatch(/só os totais/i)
+    expect(popover.textContent).not.toMatch(/Mac|Ollama/)
   })
 })
 
 describe('InsightPage — o botão de gerar', () => {
-  it('200: o texto aparece na hora, sem polling', async () => {
+  it('200: o texto aparece na hora, sem reler o latest', async () => {
     const user = userEvent.setup()
-    // O promeia publica ANTES de responder (ver routes/insights.ts) — o
-    // mock reproduz isso: quando o POST volta, `latest` já mudou.
-    let publicado: InsightView | null = null
-    mockApi({
-      latest: () => publicado,
-      gerar: () => {
-        publicado = insightNovo
-        return {
-          competence: '2026-07',
-          texto: insightNovo.texto,
-          modelo: insightNovo.modelo,
-        }
-      },
-    })
+    mockApi({ latest: () => null, gerar: () => insightNovo })
 
     render(<InsightPage />)
     await waitFor(() =>
       expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
     )
+    expect(chamadasDeLatest()).toBe(1)
 
     await user.click(screen.getByTestId('botao-gerar'))
 
@@ -394,34 +419,101 @@ describe('InsightPage — o botão de gerar', () => {
         'Leitura novinha',
       ),
     )
-    // Nunca entrou em "gerando": o 200 já é o resultado.
+    // O 200 já traz o insight gravado: nenhuma releitura, nenhum polling.
+    expect(chamadasDeLatest()).toBe(1)
+    expect(chamadasDeGeracao()).toBe(1)
     expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
     expect(screen.getByTestId('botao-gerar')).toBeEnabled()
-    // A competência selecionada vai no corpo — não um mês fixo.
-    expect(vi.mocked(api)).toHaveBeenCalledWith(
-      '/api/insights/generate',
-      expect.objectContaining({ method: 'POST' }),
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent(
+      /^Gerar insight de /,
     )
   })
 
-  it('200 mas a RECARGA falha: diz que gerou — nunca que falhou', async () => {
+  it('manda a competência selecionada no corpo, não um mês fixo', async () => {
     const user = userEvent.setup()
-    let chamadasLatest = 0
+    mockApi({ latest: () => null, gerar: () => insightNovo })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+    const seletor = document.querySelector(
+      'input[type="month"]',
+    ) as HTMLInputElement
+    fireEvent.change(seletor, { target: { value: '2026-05' } })
+
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    await waitFor(() => expect(chamadasDeGeracao()).toBe(1))
+    expect(vi.mocked(api)).toHaveBeenCalledWith('/api/insights/generate', {
+      method: 'POST',
+      body: JSON.stringify({ competence: '2026-05' }),
+    })
+  })
+
+  it('durante o request mostra "Gerando…" sem prometer tempo nem falar do Mac', async () => {
+    const user = userEvent.setup()
+    mockApi({ latest: () => null, gerar: () => new Promise(() => {}) })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    const status = await screen.findByTestId('gerando-status')
+    expect(status).toHaveTextContent(/gerando/i)
+    expect(status.textContent).not.toMatch(/segundos|Mac|Ollama/)
+    expect(screen.getByTestId('botao-gerar')).toBeDisabled()
+    expect(screen.getByTestId('botao-gerar')).toHaveTextContent('Gerando…')
+  })
+
+  it('429 teto_atingido: mostra a mensagem do teto e mantém o insight anterior', async () => {
+    const user = userEvent.setup()
+    const anterior: InsightView = {
+      ...insightNovo,
+      id: 'i1',
+      texto: 'Leitura de antes.',
+      generated_at: new Date().toISOString(),
+    }
+    const mensagem =
+      'O teto de IA de US$ 2,00 para "insight" em 2026-07 foi atingido (gasto até agora: US$ 2,00). Volta no mês que vem.'
     mockApi({
-      latest: () => {
-        chamadasLatest += 1
-        // 1ª = mount, 2ª = a releitura da linha de base dentro de `gerar()`
-        // (as duas OK); só a 3ª — a recarga PÓS-geração — é que cai.
-        if (chamadasLatest > 2) {
-          throw new ApiError(503, 'auth_unavailable', 'sem conexão')
-        }
-        return null
+      latest: () => anterior,
+      gerar: () => {
+        throw new ApiError(429, 'teto_atingido', mensagem)
       },
-      gerar: () => ({
-        competence: '2026-07',
-        texto: insightNovo.texto,
-        modelo: insightNovo.modelo,
-      }),
+    })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-texto')).toHaveTextContent(
+        'Leitura de antes.',
+      ),
+    )
+
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('geracao-erro')).toHaveTextContent(mensagem),
+    )
+    expect(screen.getByTestId('insight-texto')).toHaveTextContent(
+      'Leitura de antes.',
+    )
+    expect(screen.getByTestId('botao-gerar')).toBeEnabled()
+    expect(chamadasDeLatest()).toBe(1)
+  })
+
+  it('503 claude_desligado: repassa a mensagem do servidor, que diz o que fazer', async () => {
+    const user = userEvent.setup()
+    const mensagem =
+      'A IA está desligada: falta a ANTHROPIC_API_KEY neste Worker (wrangler secret put ANTHROPIC_API_KEY).'
+    mockApi({
+      latest: () => null,
+      gerar: () => {
+        throw new ApiError(503, 'claude_desligado', mensagem)
+      },
     })
 
     render(<InsightPage />)
@@ -432,326 +524,66 @@ describe('InsightPage — o botão de gerar', () => {
     await user.click(screen.getByTestId('botao-gerar'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('geracao-aviso')).toHaveTextContent(
-        MENSAGEM_GERADO_SEM_RECARGA,
+      expect(screen.getByTestId('geracao-erro')).toHaveTextContent(mensagem),
+    )
+    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
+  })
+
+  it('um sucesso depois de um erro apaga o erro', async () => {
+    const user = userEvent.setup()
+    let tentativa = 0
+    mockApi({
+      latest: () => null,
+      gerar: () => {
+        tentativa += 1
+        if (tentativa === 1) {
+          throw new ApiError(
+            503,
+            'claude_indisponivel',
+            'A Claude não respondeu agora. Tente de novo em alguns instantes.',
+          )
+        }
+        return insightNovo
+      },
+    })
+
+    render(<InsightPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
+    )
+
+    await user.click(screen.getByTestId('botao-gerar'))
+    await screen.findByTestId('geracao-erro')
+    await user.click(screen.getByTestId('botao-gerar'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('insight-texto')).toHaveTextContent(
+        'Leitura novinha',
       ),
     )
-    // A mensagem do GET NUNCA é repassada como se fosse falha da geração —
-    // é o defeito inteiro que lib/mutar-e-recarregar.ts existe pra impedir,
-    // aqui preservado à mão (ver comentário de gerar()).
-    expect(document.body.textContent).not.toContain('sem conexão')
     expect(screen.queryByTestId('geracao-erro')).not.toBeInTheDocument()
   })
 
-  it('202: entra em "gerando", faz polling e mostra o texto quando chega', async () => {
-    const user = relogioFixo()
-    let publicado: InsightView | null = null
+  it('a leitura inicial que falhou some quando a geração dá certo', async () => {
+    const user = userEvent.setup()
     mockApi({
-      latest: () => publicado,
-      gerar: () => ({ status: 'gerando' }),
+      latest: () => {
+        throw new ApiError(503, 'auth_unavailable', 'D1 fora do ar')
+      },
+      gerar: () => insightNovo,
     })
 
     render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
+    await screen.findByText('D1 fora do ar')
 
     await user.click(screen.getByTestId('botao-gerar'))
-
-    await waitFor(() =>
-      expect(screen.getByTestId('gerando-status')).toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('botao-gerar')).toBeDisabled()
-
-    // Dois ciclos com o Mac ainda trabalhando: nada muda na tela.
-    await avancar(POLL_INTERVALO_MS * 2)
-    expect(screen.queryByTestId('insight-texto')).not.toBeInTheDocument()
-    expect(screen.getByTestId('gerando-status')).toBeInTheDocument()
-
-    // O promeia publica; o ciclo seguinte enxerga.
-    publicado = insightNovo
-    await avancar(POLL_INTERVALO_MS)
 
     await waitFor(() =>
       expect(screen.getByTestId('insight-texto')).toHaveTextContent(
         'Leitura novinha',
       ),
     )
-    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
-    expect(screen.getByTestId('botao-gerar')).toBeEnabled()
-    expect(screen.queryByTestId('geracao-aviso')).not.toBeInTheDocument()
-  })
-
-  it('202: um insight ANTIGO já na tela não passa por resultado novo', async () => {
-    const user = relogioFixo()
-    const antigo: InsightView = {
-      id: 'i1',
-      texto: 'Leitura de ontem.',
-      modelo: 'qwen2.5:7b-instruct',
-      periodo: '2026-07',
-      generated_at: '2026-07-24T12:00:00Z',
-    }
-    let publicado: InsightView = antigo
-    mockApi({ latest: () => publicado, gerar: () => ({ status: 'gerando' }) })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('insight-texto')).toHaveTextContent(
-        'Leitura de ontem.',
-      ),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-    // `latest` continua devolvendo o MESMO generated_at — polling segue.
-    await avancar(POLL_INTERVALO_MS * 3)
-    expect(screen.getByTestId('gerando-status')).toBeInTheDocument()
-    expect(screen.getByTestId('insight-texto')).toHaveTextContent(
-      'Leitura de ontem.',
-    )
-
-    publicado = insightNovo
-    await avancar(POLL_INTERVALO_MS)
-    await waitFor(() =>
-      expect(screen.getByTestId('insight-texto')).toHaveTextContent(
-        'Leitura novinha',
-      ),
-    )
-  })
-
-  it('202: o polling TERMINA no teto, com uma frase honesta — nunca gira pra sempre', async () => {
-    // ⚠️ O teto é aferido em VALOR, não só "existe": o `avancar()` abaixo
-    // é derivado da própria constante, então um teto de uma hora passaria
-    // por esta prova sem esta linha — e uma hora de spinner é, pro dono,
-    // indistinguível de girar pra sempre.
-    expect(POLL_LIMITE_MS).toBeLessThanOrEqual(120_000)
-
-    const user = relogioFixo()
-    mockApi({ latest: () => null, gerar: () => ({ status: 'gerando' }) })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-    await waitFor(() =>
-      expect(screen.getByTestId('gerando-status')).toBeInTheDocument(),
-    )
-
-    await avancar(POLL_LIMITE_MS + POLL_INTERVALO_MS)
-
-    await waitFor(() =>
-      expect(screen.getByTestId('geracao-aviso')).toHaveTextContent(
-        MENSAGEM_SEM_CONFIRMACAO,
-      ),
-    )
-    // Parou de girar e devolveu o controle ao dono.
-    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
-    expect(screen.getByTestId('botao-gerar')).toBeEnabled()
-    // E não inventou sucesso nenhum.
-    expect(screen.queryByTestId('insight-texto')).not.toBeInTheDocument()
-    expect(screen.getByTestId('sem-insight')).toBeInTheDocument()
-  })
-
-  it('503 promeia_unreachable: manda LIGAR o Mac, não mexer em secret', async () => {
-    const user = userEvent.setup()
-    mockApi({
-      latest: () => null,
-      gerar: () => {
-        throw new ApiError(
-          503,
-          'promeia_unreachable',
-          'Não consegui alcançar o promeia no Mac.',
-        )
-      },
-    })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-
-    const erro = await screen.findByTestId('geracao-erro')
-    // A mensagem do servidor é repassada inteira, não reescrita.
-    expect(erro).toHaveTextContent('Não consegui alcançar o promeia no Mac.')
-    expect(screen.getByTestId('geracao-dica')).toHaveTextContent(
-      /ligue o macbook/i,
-    )
-    // ⚠️ Assertiva NEGATIVA: os dois 503 mandam pra lados OPOSTOS —
-    // sugerir `wrangler secret put` aqui faria o dono mexer no que já
-    // está certo.
-    expect(erro.textContent).not.toMatch(/wrangler secret put/i)
-    // A tela segue de pé: os números não dependem disso.
-    expect(screen.getByTestId('insight-total')).toHaveTextContent('R$ 1.230,00')
-  })
-
-  it('503 promeia_disabled: manda configurar os secrets, não ligar o Mac', async () => {
-    const user = userEvent.setup()
-    mockApi({
-      latest: () => null,
-      gerar: () => {
-        throw new ApiError(
-          503,
-          'promeia_disabled',
-          'A geração de insight está desligada.',
-        )
-      },
-    })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-
-    const erro = await screen.findByTestId('geracao-erro')
-    expect(erro).toHaveTextContent('A geração de insight está desligada.')
-    expect(screen.getByTestId('geracao-dica')).toHaveTextContent(
-      /wrangler secret put/i,
-    )
-    expect(erro.textContent).not.toMatch(/ligue o macbook/i)
-    expect(screen.getByTestId('insight-total')).toHaveTextContent('R$ 1.230,00')
-  })
-
-  /**
-   * ⚠️ O caminho REAL que a revisão mediu com probe: `latest` falha SÓ no
-   * mount (503 `auth_unavailable` — rede instável no Android, caminho
-   * documentado no módulo) e depois volta a funcionar, devolvendo o insight
-   * de ONTEM. Antes da correção, o `catch` do efeito marcava
-   * `insightLoaded` com `insight` ainda `null`: botão habilitado, linha de
-   * base `null`, e o PRIMEIRO ciclo do polling aceitava qualquer `latest`
-   * (`novo !== null && novo.generated_at !== anterior`). Resultado medido:
-   * o erro sumia, o texto de ontem aparecia, "gerando" sumia — a tela
-   * afirmando um sucesso que não houve.
-   */
-  it('leitura inicial que FALHA não deixa a base desconhecida — o insight de ONTEM não passa por novo', async () => {
-    const user = relogioFixo()
-    const ontem: InsightView = {
-      id: 'i1',
-      texto: 'Leitura de ontem.',
-      modelo: 'qwen2.5:7b-instruct',
-      periodo: '2026-07',
-      generated_at: '2026-07-24T12:00:00Z',
-    }
-    let chamadasLatest = 0
-    mockApi({
-      latest: () => {
-        chamadasLatest += 1
-        if (chamadasLatest === 1) {
-          throw new ApiError(503, 'auth_unavailable', 'sem conexão')
-        }
-        return ontem
-      },
-      gerar: () => ({ status: 'gerando' }),
-    })
-
-    render(<InsightPage />)
-    // Estado de partida do defeito: a leitura inicial caiu, e o botão
-    // continua habilitado (ele é a saída do erro — ver comentário na tela).
-    await waitFor(() => expect(screen.getByTestId('botao-gerar')).toBeEnabled())
-    expect(screen.queryByTestId('insight-texto')).not.toBeInTheDocument()
-
-    await user.click(screen.getByTestId('botao-gerar'))
-    await waitFor(() =>
-      expect(screen.getByTestId('gerando-status')).toBeInTheDocument(),
-    )
-
-    // Vários ciclos com `latest` devolvendo SEMPRE o insight de ontem: ele
-    // é a linha de base agora, então nada aqui é "resultado".
-    await avancar(POLL_INTERVALO_MS * 4)
-    expect(screen.getByTestId('gerando-status')).toBeInTheDocument()
-
-    // E o fim é honesto — "não recebi confirmação", nunca um sucesso.
-    await avancar(POLL_LIMITE_MS)
-    await waitFor(() =>
-      expect(screen.getByTestId('geracao-aviso')).toHaveTextContent(
-        MENSAGEM_SEM_CONFIRMACAO,
-      ),
-    )
-    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
-    // O texto de ontem fica visível (com a data/idade dele, como sempre) —
-    // "frescor, não silêncio"; o que não pode é ter sido anunciado como o
-    // resultado do clique, e não foi.
-    expect(screen.getByTestId('insight-texto')).toHaveTextContent(
-      'Leitura de ontem.',
-    )
-  })
-
-  it('se a releitura da base falhar no clique, NADA é gerado — e a tela diz isso', async () => {
-    const user = userEvent.setup()
-    let chamadasLatest = 0
-    mockApi({
-      latest: () => {
-        chamadasLatest += 1
-        // Mount OK; a releitura da base (no clique) é que cai.
-        if (chamadasLatest > 1) {
-          throw new ApiError(503, 'auth_unavailable', 'sem conexão')
-        }
-        return null
-      },
-      gerar: () => ({ status: 'gerando' }),
-    })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-
-    await waitFor(() =>
-      expect(screen.getByTestId('geracao-erro')).toHaveTextContent(
-        MENSAGEM_BASELINE_INDISPONIVEL,
-      ),
-    )
-    // O ponto inteiro: nenhuma rodada de GPU foi disparada às cegas.
-    expect(chamadasDeGeracao()).toBe(0)
-    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
-    expect(screen.getByTestId('botao-gerar')).toBeEnabled()
-    // A propriedade central da tela segue de pé: os números não dependem
-    // disso — e a mensagem do GET não é repassada como se fosse a falha.
-    expect(screen.getByTestId('insight-total')).toHaveTextContent('R$ 1.230,00')
-    expect(document.body.textContent).not.toContain('sem conexão')
-  })
-
-  it('enquanto CONFERE a base, não afirma que está gerando', async () => {
-    const user = userEvent.setup()
-    let chamadasLatest = 0
-    mockApi({
-      latest: () => {
-        chamadasLatest += 1
-        // 1ª: o mount, resolve. 2ª: a releitura da base dentro de `gerar()`,
-        // que NUNCA resolve — simula a rede instável do Android que motivou
-        // a correção da baseline. `api()` não tem timeout de cliente, então
-        // este é um estado em que a tela pode ficar presa de verdade.
-        if (chamadasLatest === 1) return null
-        return new Promise(() => {})
-      },
-      gerar: () => ({ status: 'gerando' }),
-    })
-
-    render(<InsightPage />)
-    await waitFor(() =>
-      expect(screen.getByTestId('sem-insight')).toBeInTheDocument(),
-    )
-
-    await user.click(screen.getByTestId('botao-gerar'))
-
-    // O botão TRAVA (nada de clique duplo)...
-    await waitFor(() =>
-      expect(screen.getByTestId('botao-gerar')).toBeDisabled(),
-    )
-    // ...mas o rótulo diz a verdade sobre a fase.
-    expect(screen.getByTestId('botao-gerar')).toHaveTextContent('Conferindo…')
-
-    // ⚠️ A asserção que importa: NADA foi pedido ao Mac, então a tela não
-    // pode prometer "leva de 20 a 35 segundos". Antes do conserto, este
-    // bloco aparecia com `chamadasDeGeracao() === 0`.
-    expect(screen.queryByTestId('gerando-status')).not.toBeInTheDocument()
-    expect(chamadasDeGeracao()).toBe(0)
+    expect(screen.queryByText('D1 fora do ar')).not.toBeInTheDocument()
   })
 
   it('clique duplo não dispara duas gerações', async () => {
@@ -776,6 +608,37 @@ describe('InsightPage — o botão de gerar', () => {
     await user.click(screen.getByTestId('botao-gerar'))
 
     expect(chamadasDeGeracao()).toBe(1)
+  })
+})
+
+describe('insight.stories — os estados do card de Leitura', () => {
+  it('cada story renderiza o estado que o nome promete', () => {
+    const esperado: Record<string, string> = {
+      SemInsight: 'sem-insight',
+      Gerando: 'gerando-status',
+      Pronto: 'insight-texto',
+      TetoAtingido: 'geracao-erro',
+      ClaudeDesligado: 'geracao-erro',
+    }
+    expect(Object.keys(historias).sort()).toEqual(Object.keys(esperado).sort())
+
+    for (const [nome, historia] of Object.entries(historias)) {
+      const { unmount } = render(
+        <CartaoLeitura {...metaHistorias.args} {...historia.args} />,
+      )
+      expect(screen.getByTestId(esperado[nome])).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('as stories de erro mostram o código certo', () => {
+    render(
+      <CartaoLeitura
+        {...metaHistorias.args}
+        {...historias.TetoAtingido.args}
+      />,
+    )
+    expect(screen.getByTestId('geracao-erro')).toHaveTextContent(/teto/i)
   })
 })
 

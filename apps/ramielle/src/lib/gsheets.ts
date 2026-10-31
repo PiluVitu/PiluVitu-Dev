@@ -6,10 +6,11 @@
  * readonly do Sheets, e chama a API REST v4 direto via `fetch` — mesmo
  * desenho de `google-auth.ts`: sem SDK do Google (`googleapis`), sem disco.
  *
- * ⚠️ O ACHADO que decide este arquivo, medido contra a planilha real
- * (2026-08-06): o layout de coluna é `A=Nº, B=Título, C=Filme/Série,
- * D=Gênero, E=Assistido?, F=Nota` (mesmo comentário de
- * `gsheets/movies.go:52`). A CATEGORIA é a coluna D (índice 3), NÃO a B —
+ * As colunas são achadas pelo NOME na linha 1 (`layoutDoCabecalho`); sem
+ * cabeçalho reconhecível, vale o layout legado `A=Nº, B=Título,
+ * C=Filme/Série, D=Gênero, E=Assistido?` (`gsheets/movies.go:52`).
+ *
+ * ⚠️ Achado de 2026-08-06: a CATEGORIA é a coluna D (índice 3), NÃO a B —
  * um spike que leu o índice 1 (título) como categoria produziu 255
  * "categorias" que na verdade eram títulos de filme; a lista PARECIA
  * plausível, só comparando com o Go (11 categorias reais) o erro aparecia.
@@ -22,6 +23,8 @@ export type SheetMovie = {
   type: 'filme' | 'serie'
   category: string
   watched: boolean
+  /** Coluna "Halloween" marcada. `false` quando a planilha não tem a coluna. */
+  halloween: boolean
 }
 
 export type GsheetsConfig = {
@@ -70,42 +73,117 @@ function normalizeType(raw: string): 'filme' | 'serie' {
 }
 
 /**
- * `true` só para `sim`/`yes`/`true`/`1` (case-insensitive); qualquer outra
- * coisa, `false` (`gsheets/movies.go:87-94`).
+ * `true` só para `sim`/`yes`/`true`/`verdadeiro`/`1` (case-insensitive) —
+ * checkbox marcado chega como `TRUE`; qualquer outra coisa, `false`.
  */
 function parseYesNo(raw: string): boolean {
   const v = raw.trim().toLowerCase()
-  return v === 'sim' || v === 'yes' || v === 'true' || v === '1'
+  return (
+    v === 'sim' ||
+    v === 'yes' ||
+    v === 'true' ||
+    v === 'verdadeiro' ||
+    v === '1'
+  )
+}
+
+/** Índice de cada campo na linha; `halloween: null` = a planilha não tem a coluna. */
+export type LayoutColunas = {
+  number: number
+  title: number
+  type: number
+  category: number
+  watched: number
+  halloween: number | null
+  /** Linha mais curta que isto é descartada. */
+  minLength: number
+}
+
+/** `A=Nº, B=Título, C=Filme/Série, D=Gênero, E=Assistido?` — usado quando não há cabeçalho reconhecível. */
+export const LAYOUT_LEGADO: LayoutColunas = {
+  number: 0,
+  title: 1,
+  type: 2,
+  category: 3,
+  watched: 4,
+  halloween: null,
+  minLength: 5,
+}
+
+function normalizarCabecalho(raw: unknown): string {
+  return cellString(raw)
+    .normalize('NFD')
+    .replace(/[^a-zA-Z]/g, '')
+    .toLowerCase()
+}
+
+/**
+ * Monta o layout a partir da linha 1 da planilha, pelo NOME de cada coluna.
+ * Ver "Colunas pelo cabeçalho" no CLAUDE.md: a coluna "Halloween" entrou
+ * em E e empurrou "Assistido?" pra F, e o índice fixo passou a ler o
+ * Halloween como assistido. Sem "Título" e "Gênero" no cabeçalho, `null`.
+ */
+export function layoutDoCabecalho(header: unknown[]): LayoutColunas | null {
+  const nomes = header.map(normalizarCabecalho)
+  const achar = (teste: (nome: string) => boolean): number =>
+    nomes.findIndex(teste)
+
+  const title = achar((n) => n === 'titulo')
+  const category = achar((n) => n === 'genero' || n === 'categoria')
+  if (title < 0 || category < 0) return null
+
+  const number = achar((n) => n === 'n' || n === 'no' || n === 'numero')
+  const type = achar((n) => n.startsWith('filmeouserie') || n === 'tipo')
+  const watched = achar((n) => n.startsWith('assistido'))
+  const halloween = achar((n) => n === 'halloween')
+
+  return {
+    number,
+    title,
+    type,
+    category,
+    watched,
+    halloween: halloween < 0 ? null : halloween,
+    minLength: Math.max(title, category) + 1,
+  }
+}
+
+function celula(row: unknown[], idx: number | null): string {
+  return idx === null || idx < 0 ? '' : cellString(row[idx])
 }
 
 /**
  * Porte de `parseRow` (`gsheets/movies.go:54-71`).
  *
- * - `row.length < 5` ⇒ descarta (larguras observadas na planilha real: 5 e
- *   6).
- * - Título vazio (após trim, coluna B/índice 1) OU categoria vazia (após
- *   trim + lowercase, coluna D/índice 3) ⇒ descarta.
- * - `number` (coluna A/índice 0) é TOLERANTE — nunca descarta a linha por
- *   causa dele, vira `0`.
+ * - Linha mais curta que `layout.minLength` ⇒ descarta (5 no layout
+ *   legado).
+ * - Título vazio (após trim) OU categoria vazia (após trim + lowercase) ⇒
+ *   descarta.
+ * - `number` é TOLERANTE — nunca descarta a linha por causa dele, vira `0`.
+ * - Os índices vêm do `layout` (do cabeçalho, ou `LAYOUT_LEGADO`).
  *
  * ⚠️ 745 de 1001 linhas da planilha real são descartadas (256 usáveis) —
  * NORMAL, não defeito. A planilha tem muita linha curta/incompleta; "de
  * propósito" essa tolerância não vira uma exigência mais rígida, senão o
  * conjunto sorteável em produção muda.
  */
-export function parseRow(row: unknown[]): SheetMovie | null {
-  if (row.length < 5) return null
+export function parseRow(
+  row: unknown[],
+  layout: LayoutColunas = LAYOUT_LEGADO,
+): SheetMovie | null {
+  if (row.length < layout.minLength) return null
 
-  const title = cellString(row[1]).trim()
-  const category = cellString(row[3]).trim().toLowerCase()
+  const title = celula(row, layout.title).trim()
+  const category = celula(row, layout.category).trim().toLowerCase()
   if (title === '' || category === '') return null
 
   return {
-    number: parseNumberTolerant(cellString(row[0]).trim()),
+    number: parseNumberTolerant(celula(row, layout.number).trim()),
     title,
-    type: normalizeType(cellString(row[2])),
+    type: normalizeType(celula(row, layout.type)),
     category,
-    watched: parseYesNo(cellString(row[4])),
+    watched: parseYesNo(celula(row, layout.watched)),
+    halloween: parseYesNo(celula(row, layout.halloween)),
   }
 }
 
@@ -115,6 +193,32 @@ function sheetsValuesUrl(spreadsheetId: string, range: string): string {
 
 type SheetsValuesResponse = {
   values?: unknown[][]
+}
+
+/** A linha 1 da mesma aba do range configurado (`Aba!A2:F` ⇒ `Aba!1:1`). */
+export function rangeDoCabecalho(range: string): string {
+  const bang = range.lastIndexOf('!')
+  return `${bang < 0 ? '' : range.slice(0, bang + 1)}1:1`
+}
+
+async function lerValores(
+  url: string,
+  token: string,
+  oQue: string,
+): Promise<unknown[][]> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(`gsheets: falha ao ler ${oQue} (status ${res.status})`)
+  }
+  let data: SheetsValuesResponse
+  try {
+    data = (await res.json()) as SheetsValuesResponse
+  } catch {
+    throw new Error('gsheets: resposta da planilha não é um JSON válido')
+  }
+  return data.values ?? []
 }
 
 /**
@@ -141,24 +245,24 @@ export async function readMovies(
     },
   )
 
-  const res = await fetch(sheetsValuesUrl(cfg.spreadsheetId, cfg.range), {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    throw new Error(`gsheets: falha ao ler valores (status ${res.status})`)
-  }
+  // O range de produção começa na linha 2 (sem cabeçalho), então a linha 1
+  // vem numa leitura à parte.
+  const [cabecalho, rows] = await Promise.all([
+    lerValores(
+      sheetsValuesUrl(cfg.spreadsheetId, rangeDoCabecalho(cfg.range)),
+      token,
+      'o cabeçalho',
+    ),
+    lerValores(sheetsValuesUrl(cfg.spreadsheetId, cfg.range), token, 'valores'),
+  ])
+  const header = cabecalho[0] ?? []
+  const layout = layoutDoCabecalho(header) ?? LAYOUT_LEGADO
+  const headerKey = JSON.stringify(header)
 
-  let data: SheetsValuesResponse
-  try {
-    data = (await res.json()) as SheetsValuesResponse
-  } catch {
-    throw new Error('gsheets: resposta da planilha não é um JSON válido')
-  }
-
-  const rows = data.values ?? []
   const movies: SheetMovie[] = []
   for (const row of rows) {
-    const movie = parseRow(row)
+    if (JSON.stringify(row) === headerKey) continue
+    const movie = parseRow(row, layout)
     if (movie !== null) movies.push(movie)
   }
   return movies

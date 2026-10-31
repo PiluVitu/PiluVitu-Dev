@@ -127,8 +127,8 @@ test.describe('Atelier — ProofreadButton', () => {
       page.getByRole('button', { name: /corrigir texto/i }),
     ).toBeVisible()
 
-    // The "Revisão cuidadosa" checkbox must be present next to the button.
-    await expect(page.getByText(/revisão cuidadosa/i)).toBeVisible()
+    // The proofread always runs on the same model: no "careful" option.
+    await expect(page.getByText(/revisão cuidadosa/i)).toHaveCount(0)
 
     // Click — triggers POST /admin/llm/proofread
     await page.getByRole('button', { name: /corrigir texto/i }).click()
@@ -262,5 +262,124 @@ test.describe('Atelier — DistributionPanel', () => {
     await expect(
       page.getByRole('link', { name: /✅ publicado/i }).first(),
     ).toBeVisible()
+  })
+})
+
+test.describe('Atelier — Resumo do post', () => {
+  const post = {
+    filename: 'husky.mdx',
+    slug: 'husky',
+    title: 'Como usar o Husky',
+    draft: true,
+    publishedAt: '2025-02-05',
+    readingTimeMinutes: 4,
+    frontmatter: {
+      title: 'Como usar o Husky',
+      slug: 'husky',
+      excerpt: '',
+      coverImage: '',
+      tags: ['devops'],
+      publishedAt: '2025-02-05',
+      draft: true,
+      readingTimeMinutes: 0,
+    },
+    body: '# Husky\n\nUm texto sobre o Husky e o lint-staged.',
+  }
+  const resumo = {
+    tldr: 'Eu mostro como configurar o Husky com lint-staged em dois passos.',
+    metaDescription:
+      'Como configurar o Husky com lint-staged num monorepo pnpm, passo a passo, sem varrer o repo inteiro.',
+    tags: ['git', 'husky'],
+  }
+
+  test('gera o resumo, confirma a troca de tags e o PUT leva tldr e metaDescription', async ({
+    page,
+  }) => {
+    await baseMocks(page)
+    let pedido: unknown = null
+    await page.route('**/admin/llm/resumo', (r) => {
+      pedido = r.request().postDataJSON()
+      return r.fulfill({
+        contentType: 'application/json',
+        body: envelope(resumo),
+      })
+    })
+    await page.route('**/admin/distribution/husky', (r) =>
+      r.fulfill({
+        contentType: 'application/json',
+        body: envelope({ targets: [] }),
+      }),
+    )
+    let put: { frontmatter?: Record<string, unknown> } | null = null
+    await page.route('**/api/admin/posts/husky', async (r) => {
+      if (r.request().method() === 'PUT') {
+        put = r.request().postDataJSON()
+        return r.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ slug: 'husky' }),
+        })
+      }
+      return r.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ post }),
+      })
+    })
+
+    await page.goto('/admin/posts/husky')
+    await expect(page.getByLabel('Título').first()).toHaveValue(
+      'Como usar o Husky',
+    )
+
+    await page.getByRole('button', { name: /gerar resumo/i }).click()
+
+    // O post já tinha tags: a troca pede confirmação inline.
+    const confirmacao = page.getByRole('group', { name: /trocar as tags/i })
+    await expect(confirmacao).toBeVisible({ timeout: 5_000 })
+    await expect(confirmacao.getByText('devops')).toBeVisible()
+    await expect(confirmacao.getByText('husky')).toBeVisible()
+    await confirmacao
+      .getByRole('button', { name: /usar as sugeridas/i })
+      .click()
+
+    await expect(page.getByLabel('TL;DR')).toHaveValue(resumo.tldr)
+    await expect(page.getByLabel('Meta description')).toHaveValue(
+      resumo.metaDescription,
+    )
+    expect(pedido).toEqual({ title: post.title, body: post.body })
+
+    await page.getByRole('button', { name: /salvar altera/i }).click()
+    await expect.poll(() => put?.frontmatter?.tldr).toBe(resumo.tldr)
+    expect(put!.frontmatter?.metaDescription).toBe(resumo.metaDescription)
+    expect(put!.frontmatter?.tags).toEqual(resumo.tags)
+  })
+
+  test('erro de teto aparece no card e nada é preenchido', async ({ page }) => {
+    await baseMocks(page)
+    await page.route('**/admin/llm/resumo', (r) =>
+      r.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: false,
+          data: null,
+          notifications: [
+            {
+              type: 'error',
+              code: 'teto_atingido',
+              message: 'O teto de gasto do resumo neste mês foi atingido.',
+            },
+          ],
+        }),
+      }),
+    )
+
+    await page.goto('/admin/posts/novo')
+    await page.getByRole('button', { name: /gerar resumo/i }).click()
+
+    // O Next tem o próprio role="alert" (route announcer), vazio.
+    await expect(
+      page.getByRole('alert').filter({ hasText: /teto/ }),
+    ).toHaveText('O teto de gasto do resumo neste mês foi atingido.')
+    await expect(page.getByLabel('TL;DR')).toHaveValue('')
   })
 })

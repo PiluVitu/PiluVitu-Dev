@@ -52,7 +52,11 @@ import {
 } from '../lib/tmdb'
 import { movieToWire, sessionToWire } from '../lib/wire'
 import { computeTopMovies, tallyVotes } from '../domain/tally'
-import { NoCandidatesError, sortOnePerCategory } from '../domain/sortear'
+import {
+  NoCandidatesError,
+  sortearCandidatosRoleta,
+  sortOnePerCategory,
+} from '../domain/sortear'
 import {
   bytesToHex,
   hexToBytes,
@@ -248,6 +252,8 @@ type RawCreateSessionBody = {
   types?: unknown
   include_watched?: unknown
   categories?: unknown
+  per_category?: unknown
+  theme?: unknown
 }
 
 type ParsedCreateSessionBody = {
@@ -255,7 +261,28 @@ type ParsedCreateSessionBody = {
   types: string[]
   includeWatched: boolean
   categories: string[]
+  /** Ausente = 1 por categoria, o sorteio do Go. */
+  perCategory?: number
+  theme?: SessionTheme
 }
+
+const SESSION_THEMES = ['halloween'] as const
+
+/** `mode` gravado em `sort_options_json` da sessão que é uma roleta (Halloween). */
+const MODO_ROLETA = 'roleta'
+
+function isSessaoRoleta(sortOptionsJson: string): boolean {
+  try {
+    const opts = JSON.parse(sortOptionsJson) as { mode?: unknown } | null
+    return opts?.mode === MODO_ROLETA
+  } catch {
+    return false
+  }
+}
+type SessionTheme = (typeof SESSION_THEMES)[number]
+
+// Teto de subrequests do Worker: cada filme sorteado é uma busca no TMDb.
+const MAX_PER_CATEGORY = 10
 
 function parseStringArray(raw: unknown): string[] | null {
   if (raw === undefined || raw === null) return []
@@ -306,7 +333,29 @@ function parseCreateSessionBody(raw: unknown): ParsedCreateSessionBody | null {
   const categories = parseStringArray(body.categories)
   if (categories === null) return null
 
-  return { title, types, includeWatched, categories }
+  const parsed: ParsedCreateSessionBody = {
+    title,
+    types,
+    includeWatched,
+    categories,
+  }
+
+  if (body.per_category !== undefined && body.per_category !== null) {
+    if (
+      !Number.isInteger(body.per_category) ||
+      (body.per_category as number) < 1 ||
+      (body.per_category as number) > MAX_PER_CATEGORY
+    )
+      return null
+    parsed.perCategory = body.per_category as number
+  }
+
+  if (body.theme !== undefined && body.theme !== null) {
+    if (!SESSION_THEMES.includes(body.theme as SessionTheme)) return null
+    parsed.theme = body.theme as SessionTheme
+  }
+
+  return parsed
 }
 
 const TMDB_MAX_CONCURRENCY = 5
@@ -470,23 +519,36 @@ votacaoRoutes.post('/sessions', requireAdmin<AuthBindings>(), async (c) => {
     )
   }
 
+  // A sessão de Halloween é uma roleta entre os filmes com a coluna
+  // "Halloween" marcada; categoria e per_category não se aplicam a ela.
+  const roleta = parsed.theme === 'halloween'
+
   let picked: SheetMovie[]
   try {
-    picked = sortOnePerCategory(
-      movies,
-      {
-        types: parsed.types,
-        includeWatched: parsed.includeWatched,
-        categories: parsed.categories,
-      },
-      Math.random,
-    )
+    picked = roleta
+      ? sortearCandidatosRoleta(
+          movies,
+          { types: parsed.types, includeWatched: parsed.includeWatched },
+          Math.random,
+        )
+      : sortOnePerCategory(
+          movies,
+          {
+            types: parsed.types,
+            includeWatched: parsed.includeWatched,
+            categories: parsed.categories,
+            perCategory: parsed.perCategory,
+          },
+          Math.random,
+        )
   } catch (err) {
     if (err instanceof NoCandidatesError) {
       return errJson(
         422,
         'no_candidates',
-        'Nenhum filme corresponde aos filtros escolhidos.',
+        roleta
+          ? 'Nenhum filme marcado na coluna Halloween da planilha.'
+          : 'Nenhum filme corresponde aos filtros escolhidos.',
       )
     }
     // Defensivo — sortOnePerCategory só lança NoCandidatesError na prática;
@@ -511,6 +573,9 @@ votacaoRoutes.post('/sessions', requireAdmin<AuthBindings>(), async (c) => {
     types: parsed.types,
     include_watched: parsed.includeWatched,
     categories: parsed.categories,
+    per_category: parsed.perCategory,
+    theme: parsed.theme,
+    mode: roleta ? MODO_ROLETA : undefined,
   })
 
   const votacaoUser = c.get('votacaoUser')
@@ -1142,6 +1207,118 @@ votacaoRoutes.post(
       },
       200,
       [{ type: 'success', message: 'Desempate concluído.' }],
+    )
+  },
+)
+
+/**
+ * `POST /votacao/sessions/{id}/roleta` (admin) — gira a roleta da sessão de
+ * Halloween: sorteia UM filme entre todos os da sessão, encerra a sessão
+ * com ele como vencedor (`winner_method='roulette'`) e grava a auditoria em
+ * `tiebreaks`. Mesmo sorteio auditável do `/tiebreak` (`tiebreakSeed` +
+ * `pickTiebreakIndex` sobre a entropia do cliente e um nonce do servidor),
+ * com os candidatos (ids ASC) no lugar dos empatados.
+ *
+ *   0. (middleware) sem sessão / não-admin -> 401 / 403
+ *   1. `id` inválido                       -> 400 invalid_id
+ *   2. corpo não é JSON válido             -> 400 invalid_json
+ *   3. `entropy` não-hex OU < 16 bytes     -> 400 invalid_entropy
+ *   4. sessão inexistente                  -> 404 session_not_found
+ *   5. sessão não é de roleta              -> 409 not_roulette_session
+ *   6. sessão já encerrada                 -> 409 session_not_open
+ *   7. sessão sem filmes                   -> 422 no_candidates
+ *
+ * Encerra ANTES de gravar o vencedor e a auditoria: o `UPDATE ... WHERE
+ * status='open'` é a trava contra dois giros simultâneos.
+ */
+votacaoRoutes.post(
+  '/sessions/:id/roleta',
+  requireAdmin<AuthBindings>(),
+  async (c) => {
+    const id = parseIdDaRota(c.req.param('id'))
+    if (id === null) {
+      return errJson(400, 'invalid_id', 'Identificador inválido.')
+    }
+
+    let rawBody: unknown
+    try {
+      rawBody = await c.req.json()
+    } catch {
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+    }
+    const entropyHex = parseEntropy(rawBody)
+    if (entropyHex === null) {
+      return errJson(400, 'invalid_json', 'Corpo da requisição inválido.')
+    }
+    const clientEntropy = hexToBytes(entropyHex)
+    if (clientEntropy === null || clientEntropy.length < 16) {
+      return errJson(400, 'invalid_entropy', 'Entropia inválida.')
+    }
+
+    const session = await getVotingSession(c.env.DB, id)
+    if (session === null) {
+      return errJson(404, 'session_not_found', 'Sessão não encontrada.')
+    }
+    if (!isSessaoRoleta(session.sort_options_json)) {
+      return errJson(
+        409,
+        'not_roulette_session',
+        'Esta sessão não é uma roleta.',
+      )
+    }
+    if (session.status !== 'open') {
+      return errJson(409, 'session_not_open', 'A roleta já foi girada.')
+    }
+
+    const candidatos = (await getSessionMovies(c.env.DB, id))
+      .map((m) => m.id)
+      .sort((a, b) => a - b)
+    if (candidatos.length === 0) {
+      return errJson(422, 'no_candidates', 'A sessão não tem filmes.')
+    }
+
+    const serverNonce = new Uint8Array(32)
+    crypto.getRandomValues(serverNonce)
+    const seed = await tiebreakSeed(clientEntropy, serverNonce, id, candidatos)
+    const winner = candidatos[await pickTiebreakIndex(seed, candidatos.length)]
+    if (winner === undefined) {
+      throw new Error('roleta: índice fora do range dos candidatos')
+    }
+
+    const closed = await closeVotingSession(c.env.DB, id, winner, nowIsoUtc())
+    if (!closed) {
+      return errJson(409, 'session_not_open', 'A roleta já foi girada.')
+    }
+
+    const serverNonceHex = bytesToHex(serverNonce)
+    const votacaoUser = c.get('votacaoUser')
+    try {
+      await setSessionWinner(c.env.DB, id, winner, 'roulette')
+      await createTiebreak(c.env.DB, {
+        sessionId: id,
+        triggeredBy: votacaoUser.id,
+        tiedIdsJson: JSON.stringify(candidatos),
+        clientEntropy: entropyHex,
+        serverNonce: serverNonceHex,
+        winnerMovieId: winner,
+      })
+    } catch (err) {
+      // A sessão já está encerrada com o vencedor; falhar aqui deixaria o
+      // admin sem resultado e sem como girar de novo.
+      console.error(
+        'POST /roleta — falha ao gravar o método ou a auditoria, respondendo 200',
+        err,
+      )
+    }
+
+    return okJson(
+      {
+        winner_movie_id: winner,
+        candidate_movie_ids: candidatos,
+        server_nonce: serverNonceHex,
+      },
+      200,
+      [{ type: 'success', message: 'Roleta girada.' }],
     )
   },
 )

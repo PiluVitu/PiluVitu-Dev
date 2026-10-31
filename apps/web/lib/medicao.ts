@@ -1,8 +1,10 @@
 export function foraDaVotacao<Evento extends { url: string }>(
   evento: Evento,
 ): Evento | null {
-  const { pathname } = new URL(evento.url)
-  return pathname === '/votacao' || pathname.startsWith('/votacao/')
-    ? null
-    : evento
+  const { hostname, pathname } = new URL(evento.url)
+  const naVotacao =
+    hostname.startsWith('votai.') ||
+    pathname === '/votacao' ||
+    pathname.startsWith('/votacao/')
+  return naVotacao ? null : evento
 }

@@ -1,0 +1,505 @@
+{
+  "dividirBlocos": [
+    {
+      "entrada": "",
+      "blocos": []
+    },
+    {
+      "entrada": "   ",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "   "
+        }
+      ]
+    },
+    {
+      "entrada": "\n\n\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "\n\n\n"
+        }
+      ]
+    },
+    {
+      "entrada": "uma linha sem quebra no fim",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "uma linha sem quebra no fim"
+        }
+      ]
+    },
+    {
+      "entrada": "com quebra no fim\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "com quebra no fim\n"
+        }
+      ]
+    },
+    {
+      "entrada": "\n\ncomeca com linhas em branco",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "\n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "comeca com linhas em branco"
+        }
+      ]
+    },
+    {
+      "entrada": "termina com linhas em branco\n\n\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "termina com linhas em branco\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n\n"
+        }
+      ]
+    },
+    {
+      "entrada": "a\r\nb\r\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "a\r\nb\r\n"
+        }
+      ]
+    },
+    {
+      "entrada": "prosa\n\n```py\ncodigo\n\ncom linha em branco\n```\n\nmais prosa\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "prosa\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```py\ncodigo\n\ncom linha em branco\n```\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "mais prosa\n"
+        }
+      ]
+    },
+    {
+      "entrada": "prosa\n\n```py\nnunca fecha\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "prosa\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```py\nnunca fecha\n"
+        }
+      ]
+    },
+    {
+      "entrada": "| a | b |\n| - | - |\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "| a | b |\n| - | - |\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "<div>\n  <p>oi</p>\n</div>\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "<div>\n  <p>oi</p>\n</div>\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "> citação\n> segunda linha\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "> citação\n> segunda linha\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "![alt](/img.png)\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "![alt](/img.png)\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "# Título\n\nParágrafo com *ênfase* e `código inline`.\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "# Título\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "Parágrafo com *ênfase* e `código inline`.\n"
+        }
+      ]
+    },
+    {
+      "entrada": "```\n```\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "```\n```\n"
+        }
+      ]
+    },
+    {
+      "entrada": "texto\n```\nfecha sem abrir label\n```\ndepois\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```\nfecha sem abrir label\n```\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "depois\n"
+        }
+      ]
+    },
+    {
+      "entrada": "<Aviso tipo=\"info\">\n  Conteúdo JSX\n</Aviso>\n\nprosa depois\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "<Aviso tipo=\"info\">\n  Conteúdo JSX\n</Aviso>\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "prosa depois\n"
+        }
+      ]
+    },
+    {
+      "entrada": "Olá 👋 pessoal 🎉\n\n🚀 emoji no começo\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "Olá 👋 pessoal 🎉\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "🚀 emoji no começo\n"
+        }
+      ]
+    },
+    {
+      "entrada": "Primeira\r\n\r\n```ts\r\nconst a = 1\r\n```\r\n\r\nfim",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "Primeira\r\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\r\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```ts\r\nconst a = 1\r\n```\r\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\r\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "fim"
+        }
+      ]
+    },
+    {
+      "entrada": "texto\n\n   \n\noutro\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n   \n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "outro\n"
+        }
+      ]
+    },
+    {
+      "entrada": "\t- item\n  - sub\n\n\ttab\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "\t- item\n  - sub\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "\ttab\n"
+        }
+      ]
+    },
+    {
+      "entrada": "  ```js\n  indentada\n  ```\nfim\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "  ```js\n  indentada\n  ```\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "fim\n"
+        }
+      ]
+    },
+    {
+      "entrada": "﻿```py\ncodigo\n```\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "﻿```py\ncodigo\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```\n"
+        }
+      ]
+    },
+    {
+      "entrada": "﻿\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "﻿\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "\u001c\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "\u001c\n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "\n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": " \n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": " \n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "　\n\ntexto\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "　\n\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "texto\n"
+        }
+      ]
+    },
+    {
+      "entrada": "\u000b```\nx\n```\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": "\u000b```\nx\n```\n"
+        }
+      ]
+    },
+    {
+      "entrada": " | tabela\n",
+      "blocos": [
+        {
+          "tipo": "passthrough",
+          "texto": " | tabela\n"
+        }
+      ]
+    },
+    {
+      "entrada": "Olá mundo.\n\n```py\nprint(1)\n```\n\nTchau.\n",
+      "blocos": [
+        {
+          "tipo": "prosa",
+          "texto": "Olá mundo.\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "```py\nprint(1)\n```\n"
+        },
+        {
+          "tipo": "passthrough",
+          "texto": "\n"
+        },
+        {
+          "tipo": "prosa",
+          "texto": "Tchau.\n"
+        }
+      ]
+    }
+  ],
+  "restaurarBordas": [
+    {
+      "original": "\n\n  texto  \n\n",
+      "corrigido": "TEXTO",
+      "saida": "\n\n  TEXTO  \n\n"
+    },
+    {
+      "original": "  - item\n",
+      "corrigido": "- item corrigido",
+      "saida": "  - item corrigido\n"
+    },
+    {
+      "original": "texto",
+      "corrigido": "TEXTO",
+      "saida": "TEXTO"
+    },
+    {
+      "original": "",
+      "corrigido": "X",
+      "saida": "X"
+    },
+    {
+      "original": "   ",
+      "corrigido": "X",
+      "saida": "   X   "
+    },
+    {
+      "original": "\r\n\tlinha\r\n",
+      "corrigido": "L",
+      "saida": "\r\n\tL\r\n"
+    },
+    {
+      "original": " x ",
+      "corrigido": "Y",
+      "saida": "Y"
+    },
+    {
+      "original": "\u000bx\f",
+      "corrigido": "Y",
+      "saida": "Y"
+    }
+  ]
+}
