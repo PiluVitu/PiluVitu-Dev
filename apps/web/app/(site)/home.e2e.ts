@@ -1,17 +1,10 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { join } from 'node:path'
-import {
-  itemParaProject,
-  itensListados,
-  selecionarParaHome,
-} from '../../lib/pilulabs'
+import { itensListados } from '../../lib/pilulabs'
 import { lerItensDoConteudo } from '../../lib/pilulabs-conteudo'
 
-// O esperado sai do mesmo YAML que a home lê: muda o destaque ou a data pelo
-// /admin/pilulabs, e o teste acompanha.
-const itens = lerItensDoConteudo(join(__dirname, '..', '..'))
-const listados = itensListados(itens)
-const naHome = selecionarParaHome(itens)
+// O link do rodapé segue o mesmo YAML que a home lê.
+const listados = itensListados(lerItensDoConteudo(join(__dirname, '..', '..')))
 
 test.describe('Home V2', () => {
   test('mostra perfil, seções e abre o modal de carreira', async ({ page }) => {
@@ -23,9 +16,17 @@ test.describe('Home V2', () => {
 
     await expect(page.getByRole('heading', { name: 'Carreira' })).toBeVisible()
     await expect(
-      page.getByRole('heading', { level: 2, name: 'PiluLabs' }),
+      page.getByRole('heading', {
+        level: 2,
+        name: 'Meus apps agora moram na PiluTech',
+      }),
     ).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Artigos' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'PiluLabs' }),
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole('heading', { name: '~/blog · ls -t' }),
+    ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Projetos' })).toHaveCount(0)
 
     await page
@@ -96,10 +97,7 @@ test.describe('Footer — links gateados por auth', () => {
   })
 })
 
-test.describe('PiluLabs na home (segue content/pilulabs)', () => {
-  const secao = (page: Page) =>
-    page.locator('section[aria-labelledby="pilulabs-heading"]')
-
+test.describe('PiluLabs fora da home, no rodapé', () => {
   test('o rodapé só mostra /pilulabs com item listado', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('link', { name: '/tools' })).toBeVisible()
@@ -110,37 +108,5 @@ test.describe('PiluLabs na home (segue content/pilulabs)', () => {
       await expect(
         page.getByRole('link', { name: '/pilulabs', exact: true }),
       ).toHaveAttribute('href', '/pilulabs')
-  })
-
-  test('até 4 cards, na ordem de selecionarParaHome, e a contagem dos listados', async ({
-    page,
-  }) => {
-    await page.goto('/')
-    await expect(secao(page).locator('#pilulabs-heading + span')).toHaveText(
-      String(listados.length).padStart(2, '0'),
-    )
-    await expect(secao(page).getByRole('heading', { level: 3 })).toHaveText(
-      naHome.map((item) => item.nome),
-    )
-  })
-
-  test('cada "Acessar" leva ao link do item', async ({ page }) => {
-    await page.goto('/')
-    const hrefs = await secao(page)
-      .getByRole('link', { name: 'Acessar', exact: true })
-      .evaluateAll((links) => links.map((a) => a.getAttribute('href')))
-    expect(hrefs).toEqual(
-      naHome.map((item) => itemParaProject(item).deployLink).filter(Boolean),
-    )
-  })
-
-  test('"Saiba mais no PiluLabs" leva à vitrine', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('link', { name: 'Saiba mais no PiluLabs' }).click()
-    // No `next dev`, a 1ª navegação compila /pilulabs: já passou de 5 s e falhou com a URL ainda em `/`.
-    await expect(page).toHaveURL('/pilulabs', { timeout: 15_000 })
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'PiluLabs' }),
-    ).toBeVisible()
   })
 })

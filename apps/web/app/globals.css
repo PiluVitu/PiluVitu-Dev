@@ -350,3 +350,76 @@ code[data-theme*=' '] span {
     transform: none;
   }
 }
+
+/* Home: kubectl e `whoami` digitando. O estado base (reduced-motion) mostra só
+   "Running" e o texto inteiro; o Pending fica empilhado sobre o Running e só
+   aparece com animação, senão os dois se sobrepõem. */
+.home-pod-pendente {
+  display: none;
+  position: absolute;
+  inset: 0 auto auto 0;
+  color: hsl(var(--warn));
+}
+.home-pod-rodando {
+  color: hsl(var(--ok));
+}
+.home-digitando {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+  max-width: 22ch;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-pod-pendente {
+    display: inline;
+    animation: home-pendente 6s ease var(--atraso-pod, 0s) infinite both;
+  }
+  .home-pod-rodando {
+    animation: home-rodando 6s ease var(--atraso-pod, 0s) infinite both;
+  }
+  .home-digitando {
+    animation: home-digitar 1.6s steps(22, end) 0.4s both;
+  }
+  .home-cursor {
+    animation: home-piscar 1s step-end infinite;
+  }
+}
+
+@keyframes home-pendente {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  36%,
+  94% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes home-rodando {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  36%,
+  94% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes home-digitar {
+  from {
+    max-width: 0;
+  }
+}
+@keyframes home-piscar {
+  50% {
+    opacity: 0;
+  }
+}

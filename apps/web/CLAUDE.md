@@ -61,7 +61,7 @@ Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estã
 2. `lib/blog-posts.ts` (`getBlogPosts()`, `getBlogPost()`) fetches MDX posts from the private `PiluVitu/piluvitu-blog` repo at build/ISR time via `@octokit/rest` using `BLOG_REPO_TOKEN`. Posts are cached 30 min (ISR tag `blog-posts`).
 3. `lib/article-feed.ts` provides `ArticleCardView` — a unified type for both dev.to and blog posts. `devToToView()` and `blogPostToView()` convert each source. `mergeFeed()` merges and sorts by date.
 4. `hooks/useArticleData.ts` fetches dev.to articles client-side via TanStack Query; merged with server-fetched blog posts in `ArticleSection`.
-5. The visit card (`components/profile-visit-card.tsx`) opens on triple-click of the avatar, showing a 3D animated card with cells configured in Keystatic.
+5. The visit card (`getVisitCard()`) feeds only the OG image (`lib/og-visit-card-image.tsx`); the home no longer shows it (2026-11 redesign).
 
 ### Font Awesome no conteúdo
 
@@ -102,6 +102,8 @@ Depois do `@import`/`@source`, `app/globals.css` guarda só o que é **específi
 - **Spec/plano:** `docs/superpowers/specs/2026-06-02-design-system-v2-foundation-design.md` + `docs/superpowers/plans/2026-06-02-design-system-v2-foundation.md`. Escopo entregue = **fundação** (tokens + fontes); reskin página a página fica pra depois.
 
 ### Home V2 (DS V2 reskin)
+
+**Redesign de 2026-11 (layout D):** a coluna esquerda (`Bio`) traz avatar 56px + `$ whoami --role` digitando, nome 32px, cargo + empresa do CMS, o bloco `kubectl get pods -n pilutech` (`components/home-kubectl.tsx`, decorativo), bio, a linha `location · disciplines` e as redes. Saíram o selo de disponibilidade (os campos `availability*` seguem no CMS, sem uso na home), o cartão de visita e o link do dev.to. A coluna é `xl:sticky xl:top-6` com `xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto` (só rola por dentro se não couber; medido em 1440×900: termina em 624 px) e reduz tipografia com `@media(max-height:820px)`. A direita é um grid de 6 colunas (`HomeBentoLayout`): painel da PiluTech vindo do catálogo `https://pilutech.com.br/apps.json` (`lib/home/catalogo-pilutech.ts`: `buscarAppsPiluTech`, `fetch` com `revalidate: 3600`, validado com zod — `versao: 1`, lista não vazia, `url` só `https`; ícone fora de `https://pilutech.com.br` vira a inicial, porque só esse host está no `images.remotePatterns`). Erro de rede, HTTP de erro, formato inválido ou lista vazia caem em `APPS_PILUTECH` (os 6 apps de antes, com os ícones locais); a contagem do overline sai da lista, Carreira em formato `git log` (`JobCard variante="log"`: data `AAAA-MM` de `lib/home/carreira-log.ts`, `HEAD` na primeira linha, o mesmo modal de detalhes; span 4), STACK (`STACK`, span 2), `~/blog · ls -t` com os 6 posts do blog (só `getBlogPosts`, sem o dev.to) em duas colunas, e o contato `$ ping paulo`. Ícones dos apps em `public/pilutech/apps/<slug>.png` (96 px, cópia de `pilutech-sites/packages/produtos/icones`; o Toolkit fica com a inicial). No celular a ordem é PiluTech, carreira, artigos, stack, contato (`order-*`). A seção PiluLabs saiu da home; `/pilulabs` fica no rodapé. Animações do kubectl e da digitação em `globals.css` (`.home-pod-*`, `.home-digitando`, `.home-cursor`), só dentro de `prefers-reduced-motion: no-preference`; sem animação aparece só "Running" (o "Pending" fica empilhado sobre ele e é `display:none` no estado base). ⚠️ O atraso de cada pod vem da variável `--atraso-pod` (classe `[--atraso-pod:.8s]` na linha): um `[animation-delay:…]` do Tailwind fica em `@layer utilities` e perde para o shorthand `animation` do `globals.css`, que está fora de camada; os cinco pods mudavam juntos sem erro nenhum. Trava: `bio.test.tsx`. Travas: `bio.test.tsx`, `home-bento-layout.test.tsx`, `home.e2e.ts`. Design de referência: `.design-handoff/` (local, fora do git).
 
 A home (`/`) foi completamente reskinada para o DS V2. **Layout (`page.tsx`):** scroll da página inteira (sem overflow independente de coluna) — a coluna esquerda do perfil (`col-span-4`) é `xl:sticky xl:top-10 xl:self-start` e fica fixa por todo o scroll (é mais baixa que a viewport), enquanto a direita (`col-span-8`) flui normalmente e é o que "rola". O grid usa `xl:items-start` (necessário pro sticky). O `HomeFooter` fica **fora** do grid, full-width, no fim do scroll (cobre as duas colunas) — não dentro da coluna direita. No mobile (`< xl`) tudo empilha em `flex flex-col`. Novos componentes: `SectionHeader` (título + ação + divider), `HomeFooter` (rodapé inline com mailto), cards V2 (`JobCard` com modal de "Atribuições", `ProjectCard` com subtitle, `ArticleCard` com métricas). Social strip com email icon → mailto. O container raiz usa `2xl:max-w-[1180px]` + glow decorativo ciano fixo no topo (`--color-accent-soft` radial-gradient). Novos campos Keystatic: perfil (`availabilityOpen`/`availabilityLabel`/`location`/`disciplines`), carreira (`current`/`tags`), projeto (`subtitle`). Smoke test E2E em `app/(site)/home.e2e.ts`. Spec: `docs/superpowers/specs/2026-06-02-home-v2-reskin-design.md`.
 
@@ -248,10 +250,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
     - `itemParaProject`: o card da home, só com o "Acessar", que leva ao `linkDoItem` (só com `repo`, ao repo; sem link, o botão some);
     - `metadataDaPagina`.
   - Status "● Em breve"/"● Disponível" e ícones de loja aparecem só em `tipo: extensao`.
-- **Home:**
-  - a seção PiluLabs (`components/secao-pilulabs.tsx`) mostra até 4 cards (`selecionarParaHome` → `itemParaProject` → `ProjectCard`) e a contagem dos listados;
-  - abaixo dos cards, sempre, "Saiba mais no PiluLabs", para `/pilulabs`;
-  - o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado.
+- **Home:** a seção PiluLabs saiu da home no redesign de 2026-11; o rodapé (`HomeFooter`, prop `piluLabsHref`) mostra `/pilulabs` quando há listado. `selecionarParaHome`/`itemParaProject` seguem em `lib/pilulabs.ts`, sem uso na home.
 - **Domínios:** o `apps/web` não serve host nenhum de `pilutech.com.br` desde 2026-10-02. O apex e o `www` são do `apps/pilutech-site`, o `botai.` da landing do repo `PiluVitu/Botai` e o `sombrai.` do projeto do Sombraí, cada um num projeto Vercel próprio. Saíram o `proxy.ts` (reescrita do apex e dos subdomínios, 308 do apex para o portfólio e de `/pilulabs*` para os subdomínios), o `lib/pilutech-dominios.ts` e a chave `PILUTECH_SUBDOMINIOS`. A variável saiu da Production do projeto antes da troca dos domínios (passo 5 do "Deploy" em `apps/pilutech-site/CLAUDE.md`: com ela ligada, o 308 de `/pilulabs` levaria à landing nova); se voltar, não muda nada (o E2E da vitrine e da home roda também com ela no ambiente).
 - **Trava do catálogo (`lib/pilulabs-conteudo.test.ts`):** lê o YAML sem o Keystatic, pelo `lerYamlsDoConteudo`/`lerItensDoConteudo`, porque o reader é ESM puro e exige `server-only`. Ela exige que:
   - todo item com `paginaPropria` tenha `app/(site)/pilulabs/<slug>/page.tsx`, e também `privacidade/page.tsx` se for extensão;
@@ -295,15 +294,14 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
   - `CollectionPage` em `/pilulabs`, com o `linkDoItem` de cada listado em `hasPart`;
   - `url` é `/pilulabs` no site canônico, e o `publisher` é a PiluTech no site dela (`https://pilutech.com.br`, `@id` `https://pilutech.com.br/#organizacao`, o mesmo do `apps/pilutech-site` e da landing do Botaí);
   - `serializarJsonLd` troca `<` por `\u003c`, para um texto do YAML com `</script>` não fechar a tag.
-- **Componentes (`components/pilulabs/` e `components/secao-pilulabs.tsx`, todos com story e teste):**
+- **Componentes (`components/pilulabs/`, todos com story e teste):**
   - `StatusProduto`;
   - `ProdutoCard`:
     - link interno na mesma aba, externo em aba nova;
     - sem link, vira `<article>`;
     - o logo por URL sai sem o otimizador do `next/image`;
     - sem logo, mostra a sigla;
-  - `Vitrine`, que agrupa por tipo;
-  - `SecaoPiluLabs`.
+  - `Vitrine`, que agrupa por tipo.
 
   ⚠️ Componentes e stories não importam valor de `lib/pilulabs-conteudo.ts` (que importa `node:fs`) nem de `lib/site-content.ts` (o reader do Keystatic): os dois quebram o bundle do Storybook e o do cliente. Dado de runtime chega por prop, vindo da página, ou vem de `@piluvitu/tools/pilulabs`, como os `TIPOS` do formulário do admin.
 

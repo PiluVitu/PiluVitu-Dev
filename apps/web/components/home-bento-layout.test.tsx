@@ -1,54 +1,55 @@
 import { renderEstatico } from '@/lib/render-estatico'
+import { APPS_PILUTECH } from '@/lib/home/catalogo-pilutech'
 import { HomeBentoLayout } from './home-bento-layout'
 
 describe('HomeBentoLayout', () => {
-  it('seções na ordem Carreira, PiluLabs e Artigos; Projetos saiu', () => {
-    const raiz = renderEstatico(
+  const raiz = () =>
+    renderEstatico(
       <HomeBentoLayout
+        appsPiluTech={APPS_PILUTECH}
         carreiraList={[]}
-        piluLabs={{ itens: [], total: 0, hrefVitrine: '/pilulabs' }}
         initialBlogPosts={[]}
       />,
     )
-    expect([...raiz.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
-      'Carreira',
-      'PiluLabs',
-      'Artigos',
+
+  it('seções PiluTech, Carreira, Stack e Artigos; o Laboratório saiu', () => {
+    expect(
+      [...raiz().querySelectorAll('h2')].map((h) => h.textContent),
+    ).toEqual([
+      'Meus apps agora moram na PiluTech',
+      'CARREIRA · git log',
+      'STACK',
+      '~/blog · ls -t',
+    ])
+    expect(
+      raiz().querySelector('[aria-labelledby="pilulabs-heading"]'),
+    ).toBeNull()
+    expect(raiz().textContent).not.toMatch(/Laborat[oó]rio|Live PRs/)
+  })
+
+  it('os 6 apps linkam a página deles na PiluTech', () => {
+    const hrefs = [...raiz().querySelectorAll('#servicos a')].map((a) =>
+      a.getAttribute('href'),
+    )
+    expect(hrefs).toEqual([
+      'https://pilutech.com.br/apps',
+      ...['orai', 'listai', 'sombrai', 'apurai', 'botai', 'toolkit'].map(
+        (s) => `https://pilutech.com.br/apps/${s}`,
+      ),
     ])
   })
 
-  it('repassa os itens e o link da vitrine à seção PiluLabs', () => {
-    const raiz = renderEstatico(
-      <HomeBentoLayout
-        carreiraList={[]}
-        piluLabs={{
-          itens: [
-            {
-              id: 'pilulabs-botai',
-              projectName: 'Botaí',
-              subtitle: '',
-              projectLogo: '',
-              description: 'd',
-              tags: [],
-              deployLink: '/pilulabs/botai',
-              deployLabel: 'Acessar',
-              altImage: 'BO',
-            },
-          ],
-          total: 3,
-          hrefVitrine: '/pilulabs',
-        }}
-        initialBlogPosts={[]}
-      />,
-    )
-    const secao = raiz.querySelector(
-      'section[aria-labelledby="pilulabs-heading"]',
-    )
-    expect(secao?.querySelector('h3')?.textContent).toBe('Botaí')
-    expect(
-      [...(secao?.querySelectorAll('a') ?? [])].map((a) =>
-        a.getAttribute('href'),
-      ),
-    ).toEqual(['/pilulabs/botai', '/pilulabs'])
+  it('o stack.yaml lista os três grupos', () => {
+    const texto = raiz().textContent ?? ''
+    expect(texto).toContain('cat stack.yaml')
+    for (const item of [
+      'AWS',
+      'Cloudflare',
+      'Grafana',
+      'Sentry',
+      'Go',
+      'React',
+    ])
+      expect(texto).toContain(item)
   })
 })
