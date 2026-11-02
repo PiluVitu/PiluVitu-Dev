@@ -106,7 +106,7 @@ Versão do Radix: `@radix-ui/react-popover@^1.1.15` — fixada no mesmo valor ex
 - **Reduced motion:** com `prefers-reduced-motion: reduce`, ou `data-reduzir-movimento` num ancestral (atalho para as stories, porque os componentes abrem em portal), a animação troca para `ui-entrar-reduzido`/`ui-sair-reduzido`: só opacidade, 120/100 ms, sem deslize nem zoom.
 - **Só existem as classes que os componentes usam.** Uma variante nova (por exemplo `slide-in-from-top-2`) precisa de `@utility` nova aqui, ou não vira CSS. Não instalar o tw-animate por cima: ele redefiniria as mesmas classes.
 - **Botão:** "afunda" a 97% ao pressionar (`motion-safe:active:scale-[0.97]`, 150 ms). O `motion-safe` desliga a escala com reduced-motion.
-- **Troca de tema:** `trocarTemaComTransicao(aplicar)` (`transicao-de-tema.ts`) faz um crossfade de 250 ms com a View Transitions API. Pula a transição quando o navegador não suporta ou o sistema pede menos movimento. A captura do estado novo espera dois quadros, porque o next-themes troca a classe num efeito depois do render. Usado pelo `ModeToggle` do web e pelo botão de tema do finanças.
+- **Troca de tema:** `trocarTemaComTransicao(aplicar)` (`transicao-de-tema.ts`) faz um crossfade de 150 ms (`ease-out`) com a View Transitions API. Pula a transição quando o navegador não suporta ou o sistema pede menos movimento. A captura do estado novo espera um quadro (`requestAnimationFrame`), porque o next-themes 0.4 só troca a classe num `useEffect` depois do render. Enquanto a transição roda, a classe `transicao-de-tema` no `<html>` pausa todas as animações da página (kubectl, cursor) e sai no `finished`. Usado pelo `ModeToggle` do web e pelo botão de tema do finanças.
 
 Travas:
 

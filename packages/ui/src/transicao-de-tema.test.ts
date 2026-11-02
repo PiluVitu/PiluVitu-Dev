@@ -5,11 +5,14 @@ function ambiente({
   suporta = true,
 }: { reduzir?: boolean; suporta?: boolean } = {}) {
   const chamadas: Array<() => unknown> = []
+  let terminar = () => {}
+  const finished = new Promise<void>((r) => (terminar = r))
   const documento = {
+    documentElement: document.createElement('html'),
     startViewTransition: suporta
       ? jest.fn((cb: () => unknown) => {
           chamadas.push(cb)
-          return {}
+          return { finished }
         })
       : undefined,
   } as unknown as Document
@@ -22,7 +25,7 @@ function ambiente({
       return 0
     },
   } as unknown as Window
-  return { documento, janela, chamadas }
+  return { documento, janela, chamadas, terminar }
 }
 
 describe('trocarTemaComTransicao', () => {
@@ -40,7 +43,7 @@ describe('trocarTemaComTransicao', () => {
 
   // next-themes troca a classe num efeito depois do render: a captura do
   // estado novo precisa esperar o próximo quadro, senão anima o tema velho.
-  it('a captura do estado novo espera um quadro depois de aplicar', async () => {
+  it('a captura do estado novo espera um único quadro depois de aplicar', async () => {
     const { documento, janela, chamadas } = ambiente()
     const ordem: string[] = []
     const raf = jest.fn((cb: FrameRequestCallback) => {
@@ -55,8 +58,22 @@ describe('trocarTemaComTransicao', () => {
     trocarTemaComTransicao(() => ordem.push('aplicar'), { documento, janela })
     await chamadas[0]()
 
-    expect(ordem[0]).toBe('aplicar')
-    expect(ordem.slice(1)).toContain('quadro')
+    expect(ordem).toEqual(['aplicar', 'quadro'])
+  })
+
+  // As animações infinitas da página (kubectl, cursor, pulso) entrariam na
+  // captura; pausadas, o crossfade fica leve.
+  it('pausa as animações da página enquanto a transição roda', async () => {
+    const { documento, janela, chamadas, terminar } = ambiente()
+    const html = documento.documentElement
+
+    trocarTemaComTransicao(() => {}, { documento, janela })
+    expect(html.classList.contains('transicao-de-tema')).toBe(true)
+
+    await chamadas[0]()
+    terminar()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(html.classList.contains('transicao-de-tema')).toBe(false)
   })
 
   it('com prefers-reduced-motion troca na hora, sem transição', () => {

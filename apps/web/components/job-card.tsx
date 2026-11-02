@@ -28,16 +28,18 @@ function LinhaDoLog({
     <button
       {...botao}
       type="button"
-      className="hover:bg-accent flex min-h-11 w-full cursor-pointer items-center gap-3.5 rounded-xl p-2.5 text-left font-mono text-[13px] transition-colors"
+      className="hover:bg-accent flex min-h-11 w-full cursor-pointer flex-col items-start gap-1 rounded-xl p-2.5 text-left font-mono text-[13px] transition-colors md:flex-row md:items-center md:gap-3.5"
     >
-      <span className="text-warn shrink-0">{data}</span>
-      <span
-        aria-hidden
-        className={`hidden shrink-0 sm:inline ${props.head ? 'text-primary' : 'text-muted-foreground'}`}
-      >
-        {props.head ? 'HEAD' : '····'}
+      <span className="flex shrink-0 items-center gap-3.5">
+        <span className="text-warn">{data}</span>
+        <span
+          aria-hidden
+          className={props.head ? 'text-primary' : 'text-muted-foreground'}
+        >
+          {props.head ? 'HEAD' : '····'}
+        </span>
       </span>
-      <span className="flex min-w-0 flex-1 flex-col font-sans">
+      <span className="flex w-full min-w-0 flex-col font-sans md:flex-1">
         <b className="text-sm">
           {props.title} · {props.orgName}
         </b>
@@ -46,7 +48,7 @@ function LinhaDoLog({
           {props.location ? ` · ${props.location.toLowerCase()}` : ''}
         </span>
       </span>
-      <span className="text-primary hidden shrink-0 sm:inline">detalhes →</span>
+      <span className="text-primary hidden shrink-0 md:inline">detalhes →</span>
     </button>
   )
 }

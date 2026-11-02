@@ -51,7 +51,7 @@ export function HomePiluTech({
           pilutech.com.br/apps →
         </a>
       </div>
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-2.5">
         {apps.map((app) => (
           <a
             key={app.slug}
@@ -74,17 +74,20 @@ export function HomePiluTech({
                 {app.nome[0]}
               </span>
             )}
-            <span className="flex flex-1 flex-col gap-0.5">
-              <b className="text-sm">{app.nome}</b>
-              <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <b className="truncate text-sm">{app.nome}</b>
+              <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
                 <span
                   aria-hidden
-                  className={cn('size-[7px] rounded-full', PONTO[app.estado])}
+                  className={cn(
+                    'size-[7px] shrink-0 rounded-full',
+                    PONTO[app.estado],
+                  )}
                 />
-                {app.status}
+                <span className="truncate">{app.status}</span>
               </span>
             </span>
-            <span aria-hidden className="text-primary">
+            <span aria-hidden className="text-primary shrink-0">
               →
             </span>
           </a>
