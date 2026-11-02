@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { cn } from '@piluvitu/ui/cn'
 
 const PILUTECH = 'https://pilutech.com.br'
@@ -9,49 +10,50 @@ export const APPS_PILUTECH: {
   nome: string
   status: string
   tipo: Status
-  cor: string
+  /** Sem ícone em public/pilutech/apps, mostra a inicial. */
+  icone: boolean
 }[] = [
   {
     slug: 'orai',
     nome: 'Oraí',
     status: 'teste aberto',
     tipo: 'ativo',
-    cor: 'bg-[#8b5a2b] text-white',
+    icone: true,
   },
   {
     slug: 'listai',
     nome: 'Listaí',
     status: 'em revisão',
     tipo: 'revisao',
-    cor: 'bg-[#e8792b] text-white',
+    icone: true,
   },
   {
     slug: 'sombrai',
     nome: 'Sombraí',
     status: 'beta no Android',
     tipo: 'ativo',
-    cor: 'bg-[#2f7a4f] text-white',
+    icone: true,
   },
   {
     slug: 'apurai',
     nome: 'Apuraí',
     status: 'no ar',
     tipo: 'ativo',
-    cor: 'bg-[#43d39e] text-[#04140e]',
+    icone: true,
   },
   {
     slug: 'botai',
     nome: 'Botaí',
     status: 'publicada',
     tipo: 'ativo',
-    cor: 'bg-[#3b5bdb] text-white',
+    icone: true,
   },
   {
     slug: 'toolkit',
     nome: 'Toolkit',
     status: 'em desenvolvimento',
     tipo: 'desenvolvimento',
-    cor: 'bg-secondary text-foreground',
+    icone: false,
   },
 ]
 
@@ -103,15 +105,22 @@ export function HomePiluTech({ className }: { className?: string }) {
             href={`${PILUTECH}/apps/${app.slug}`}
             className="border-border bg-background hover:bg-accent flex min-h-11 items-center gap-3 rounded-2xl border p-3 transition-colors"
           >
-            <span
-              aria-hidden
-              className={cn(
-                'grid size-[38px] place-items-center rounded-xl font-extrabold',
-                app.cor,
-              )}
-            >
-              {app.nome[0]}
-            </span>
+            {app.icone ? (
+              <Image
+                src={`/pilutech/apps/${app.slug}.png`}
+                alt=""
+                width={38}
+                height={38}
+                className="size-[38px] shrink-0 rounded-xl"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="bg-secondary text-foreground grid size-[38px] shrink-0 place-items-center rounded-xl font-extrabold"
+              >
+                {app.nome[0]}
+              </span>
+            )}
             <span className="flex flex-1 flex-col gap-0.5">
               <b className="text-sm">{app.nome}</b>
               <span className="text-muted-foreground flex items-center gap-1.5 text-xs">

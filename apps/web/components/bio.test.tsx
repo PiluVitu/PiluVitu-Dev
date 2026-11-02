@@ -35,6 +35,16 @@ describe('Bio', () => {
     expect(r.textContent).toContain('Brasil · Remoto · SRE · DevOps · Cloud')
   })
 
+  it('cada pod do kubectl tem um atraso diferente (escalonado)', () => {
+    const linhas = [
+      ...raiz().querySelectorAll('[data-testid="home-kubectl"] > div'),
+    ].slice(2)
+    const atrasos = linhas.map(
+      (l) => l.className.match(/\[--atraso-pod:([^\]]+)\]/)?.[1] ?? '0s',
+    )
+    expect(atrasos).toEqual(['0s', '.8s', '1.6s', '2.4s', '3.2s'])
+  })
+
   it('cargo com o link da empresa', () => {
     const link = raiz().querySelector('a[href="https://reapho.app/en"]')
     expect(link?.textContent).toBe('Reapho')

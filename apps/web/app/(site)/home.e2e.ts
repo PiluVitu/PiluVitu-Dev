@@ -24,7 +24,9 @@ test.describe('Home V2', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'PiluLabs' }),
     ).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: 'Artigos' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '~/blog · ls -t' }),
+    ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Projetos' })).toHaveCount(0)
 
     await page

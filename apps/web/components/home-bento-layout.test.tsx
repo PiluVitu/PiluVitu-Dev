@@ -10,9 +10,9 @@ describe('HomeBentoLayout', () => {
       [...raiz().querySelectorAll('h2')].map((h) => h.textContent),
     ).toEqual([
       'Meus apps agora moram na PiluTech',
-      'Carreira',
+      'CARREIRA · git log',
       'STACK',
-      'Artigos',
+      '~/blog · ls -t',
     ])
     expect(
       raiz().querySelector('[aria-labelledby="pilulabs-heading"]'),

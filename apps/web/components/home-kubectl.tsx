@@ -1,9 +1,9 @@
 const PODS = [
   { nome: 'orai', atraso: '' },
-  { nome: 'listai', atraso: '[animation-delay:.8s]' },
-  { nome: 'sombrai', atraso: '[animation-delay:1.6s]' },
-  { nome: 'apurai', atraso: '[animation-delay:2.4s]' },
-  { nome: 'botai', atraso: '[animation-delay:3.2s]' },
+  { nome: 'listai', atraso: '[--atraso-pod:.8s]' },
+  { nome: 'sombrai', atraso: '[--atraso-pod:1.6s]' },
+  { nome: 'apurai', atraso: '[--atraso-pod:2.4s]' },
+  { nome: 'botai', atraso: '[--atraso-pod:3.2s]' },
 ]
 
 const linha = 'grid grid-cols-[1.3fr_1.1fr_.6fr]'
@@ -24,11 +24,11 @@ export function HomeKubectl() {
         <span>RST</span>
       </div>
       {PODS.map((pod) => (
-        <div key={pod.nome} className={linha}>
+        <div key={pod.nome} className={`${linha} ${pod.atraso}`}>
           <span>{pod.nome}</span>
           <span className="relative">
-            <span className={`home-pod-pendente ${pod.atraso}`}>Pending</span>
-            <span className={`home-pod-rodando ${pod.atraso}`}>Running</span>
+            <span className="home-pod-pendente">Pending</span>
+            <span className="home-pod-rodando">Running</span>
           </span>
           <span className="text-muted-foreground">0</span>
         </div>

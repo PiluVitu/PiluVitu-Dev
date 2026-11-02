@@ -374,10 +374,10 @@ code[data-theme*=' '] span {
 @media (prefers-reduced-motion: no-preference) {
   .home-pod-pendente {
     display: inline;
-    animation: home-pendente 6s ease infinite both;
+    animation: home-pendente 6s ease var(--atraso-pod, 0s) infinite both;
   }
   .home-pod-rodando {
-    animation: home-rodando 6s ease infinite both;
+    animation: home-rodando 6s ease var(--atraso-pod, 0s) infinite both;
   }
   .home-digitando {
     animation: home-digitar 1.6s steps(22, end) 0.4s both;
