@@ -87,7 +87,7 @@ export function HomeBentoLayout({
           comando="ls -t"
           total={posts.length}
         />
-        <ol className="grid grid-cols-1 gap-x-4 gap-y-1 md:grid-cols-2">
+        <ol className="grid grid-cols-1 gap-x-4 gap-y-1 xl:grid-cols-2">
           {posts.map((post, i) => (
             <li key={post.id}>
               <Link
@@ -97,11 +97,13 @@ export function HomeBentoLayout({
                 <span className="text-muted-foreground font-mono text-xs">
                   {dois(i + 1)}
                 </span>
-                <span className="flex-1 text-[15px] font-semibold">
-                  {post.title}
-                </span>
-                <span className="text-primary font-mono text-xs whitespace-nowrap">
-                  {post.readingTimeMinutes} min · ler →
+                <span className="flex min-w-0 flex-1 flex-col gap-1 xl:flex-row xl:items-baseline xl:gap-3">
+                  <span className="text-[15px] font-semibold break-words xl:flex-1">
+                    {post.title}
+                  </span>
+                  <span className="text-primary font-mono text-xs whitespace-nowrap">
+                    {post.readingTimeMinutes} min · ler →
+                  </span>
                 </span>
               </Link>
             </li>

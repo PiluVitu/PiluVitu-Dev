@@ -1,12 +1,14 @@
 type ComViewTransition = Document & {
-  startViewTransition?: (atualizar: () => unknown) => unknown
+  startViewTransition?: (atualizar: () => unknown) => {
+    finished?: Promise<unknown>
+  }
 }
+
+const PAUSANDO = 'transicao-de-tema'
 
 function proximoQuadro(janela: Window): Promise<void> {
   return new Promise((resolver) =>
-    janela.requestAnimationFrame(() =>
-      janela.requestAnimationFrame(() => resolver()),
-    ),
+    janela.requestAnimationFrame(() => resolver()),
   )
 }
 
@@ -27,8 +29,13 @@ export function trocarTemaComTransicao(
     aplicar()
     return
   }
-  doc.startViewTransition(async () => {
+  const html = doc.documentElement
+  html.classList.add(PAUSANDO)
+  const transicao = doc.startViewTransition(async () => {
     aplicar()
     await proximoQuadro(janela)
   })
+  const soltar = () => html.classList.remove(PAUSANDO)
+  if (transicao?.finished) transicao.finished.then(soltar, soltar)
+  else soltar()
 }

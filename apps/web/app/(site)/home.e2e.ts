@@ -110,3 +110,31 @@ test.describe('PiluLabs fora da home, no rodapé', () => {
       ).toHaveAttribute('href', '/pilulabs')
   })
 })
+
+// Prints do Paulo em tela estreita: cards dos apps em 2 colunas apertadas com
+// a seta vazando, blog em 2 colunas saindo do card. Nada pode passar da borda.
+test.describe('Home no celular e no tablet: sem overflow horizontal', () => {
+  for (const width of [390, 768]) {
+    test(`${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      await expect(page.locator('#servicos')).toBeVisible()
+
+      const pagina = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }))
+      expect(pagina.scroll).toBeLessThanOrEqual(pagina.client)
+
+      for (const secao of ['#servicos', '#carreira', '#artigos']) {
+        const vazados = await page.locator(secao).evaluate((s) => {
+          const borda = s.getBoundingClientRect().right + 1
+          return [...s.querySelectorAll('*')]
+            .filter((el) => el.getBoundingClientRect().right > borda)
+            .map((el) => el.textContent?.trim().slice(0, 30))
+        })
+        expect(vazados, secao).toEqual([])
+      }
+    })
+  }
+})

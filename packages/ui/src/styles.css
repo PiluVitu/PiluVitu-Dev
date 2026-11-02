@@ -327,5 +327,14 @@
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 250ms;
+  animation-duration: 150ms;
+  animation-timing-function: ease-out;
+}
+
+/* Enquanto o tema troca, as animações infinitas da página param: a captura da
+   View Transition fica leve. A classe sai quando a transição termina. */
+.transicao-de-tema *,
+.transicao-de-tema *::before,
+.transicao-de-tema *::after {
+  animation-play-state: paused !important;
 }
