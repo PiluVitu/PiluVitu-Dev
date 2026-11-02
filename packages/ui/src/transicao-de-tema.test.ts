@@ -41,24 +41,21 @@ describe('trocarTemaComTransicao', () => {
     expect(aplicar).toHaveBeenCalledTimes(1)
   })
 
-  // next-themes troca a classe num efeito depois do render: a captura do
-  // estado novo precisa esperar o próximo quadro, senão anima o tema velho.
-  it('a captura do estado novo espera um único quadro depois de aplicar', async () => {
+  // O navegador suspende a renderização durante o callback: esperar um
+  // requestAnimationFrame ali travava a troca até o timeout de 4 s.
+  it('aplica dentro do callback sem esperar quadro', () => {
     const { documento, janela, chamadas } = ambiente()
-    const ordem: string[] = []
-    const raf = jest.fn((cb: FrameRequestCallback) => {
-      ordem.push('quadro')
-      cb(0)
-      return 0
-    })
+    const raf = jest.fn()
     ;(
       janela as unknown as { requestAnimationFrame: unknown }
     ).requestAnimationFrame = raf
+    const aplicar = jest.fn()
 
-    trocarTemaComTransicao(() => ordem.push('aplicar'), { documento, janela })
-    await chamadas[0]()
+    trocarTemaComTransicao(aplicar, { documento, janela })
+    chamadas[0]()
 
-    expect(ordem).toEqual(['aplicar', 'quadro'])
+    expect(aplicar).toHaveBeenCalledTimes(1)
+    expect(raf).not.toHaveBeenCalled()
   })
 
   // As animações infinitas da página (kubectl, cursor, pulso) entrariam na

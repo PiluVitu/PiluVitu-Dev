@@ -1,6 +1,7 @@
 'use client'
 
 import { MoonIcon, SunIcon } from '@radix-ui/react-icons'
+import { flushSync } from 'react-dom'
 import { useTheme } from 'next-themes'
 
 import { NoSSR } from '@/components/no-ssr'
@@ -17,7 +18,9 @@ const triggerClass = 'flex w-fit items-center gap-2 rounded-full px-4'
 
 export function ModeToggle() {
   const { setTheme } = useTheme()
-  const trocar = (tema: string) => trocarTemaComTransicao(() => setTheme(tema))
+  // flushSync: a classe do next-themes entra no DOM antes da captura nova.
+  const trocar = (tema: string) =>
+    trocarTemaComTransicao(() => flushSync(() => setTheme(tema)))
 
   return (
     <NoSSR
