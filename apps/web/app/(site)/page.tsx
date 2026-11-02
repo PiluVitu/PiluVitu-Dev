@@ -1,21 +1,14 @@
 import { Bio } from '@/components/bio'
 import { HomeBentoLayout } from '@/components/home-bento-layout'
 import { HomeFooter } from '@/components/home-footer'
-import { getLatestDevToArticleUrl } from '@/lib/dev-to'
 import {
   getCarreiras,
   getPiluLabs,
   getSiteProfile,
   getSocials,
-  getVisitCard,
-  VISIT_CARD_FALLBACK,
   type SiteProfileContent,
 } from '@/lib/site-content'
-import {
-  itemParaProject,
-  itensListados,
-  selecionarParaHome,
-} from '@/lib/pilulabs'
+import { itensListados } from '@/lib/pilulabs'
 import { getBlogPosts } from '@/lib/blog-posts'
 import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
@@ -37,34 +30,20 @@ const fallbackProfile: SiteProfileContent = {
 }
 
 export default async function Home() {
-  const [
-    profile,
-    socials,
-    carreiras,
-    latestDevArticleUrl,
-    visitCardRaw,
-    blogPosts,
-    piluLabs,
-  ] = await Promise.all([
+  const [profile, socials, carreiras, blogPosts, piluLabs] = await Promise.all([
     getSiteProfile(),
     getSocials(),
     getCarreiras(),
-    getLatestDevToArticleUrl(),
-    getVisitCard(),
     getBlogPosts(),
     getPiluLabs(),
   ])
 
   const siteProfile = profile ?? fallbackProfile
-  const visitCard = visitCardRaw ?? VISIT_CARD_FALLBACK
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
   const initialBlogPosts = blogPosts.map(blogPostToView)
   const hrefPiluLabs = '/pilulabs'
   const totalPiluLabs = itensListados(piluLabs).length
-  const naHome = selecionarParaHome(piluLabs).map((item) =>
-    itemParaProject(item),
-  )
 
   return (
     <div className="min-h-screen px-6 pt-2 pb-4 sm:px-8 xl:px-14 xl:pt-10 xl:pb-4 2xl:mx-auto 2xl:max-w-[1180px]">
@@ -81,15 +60,10 @@ export default async function Home() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-16 xl:mx-0 xl:grid xl:max-w-none xl:grid-cols-12 xl:items-start xl:gap-10">
         <main
           id="profile"
-          className="flex flex-col items-start xl:sticky xl:top-10 xl:col-span-4 xl:self-start"
+          className="flex flex-col items-start xl:sticky xl:top-6 xl:col-span-4 xl:max-h-[calc(100dvh-3rem)] xl:self-start xl:overflow-y-auto"
           suppressHydrationWarning
         >
-          <Bio
-            profile={siteProfile}
-            socials={socialList}
-            latestDevArticleUrl={latestDevArticleUrl}
-            visitCard={visitCard}
-          />
+          <Bio profile={siteProfile} socials={socialList} />
         </main>
         <aside
           id="content"
@@ -98,11 +72,6 @@ export default async function Home() {
         >
           <HomeBentoLayout
             carreiraList={carreiraList}
-            piluLabs={{
-              itens: naHome,
-              total: totalPiluLabs,
-              hrefVitrine: hrefPiluLabs,
-            }}
             initialBlogPosts={initialBlogPosts}
           />
         </aside>
