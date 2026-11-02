@@ -1,9 +1,16 @@
 import { renderEstatico } from '@/lib/render-estatico'
+import { APPS_PILUTECH } from '@/lib/home/catalogo-pilutech'
 import { HomeBentoLayout } from './home-bento-layout'
 
 describe('HomeBentoLayout', () => {
   const raiz = () =>
-    renderEstatico(<HomeBentoLayout carreiraList={[]} initialBlogPosts={[]} />)
+    renderEstatico(
+      <HomeBentoLayout
+        appsPiluTech={APPS_PILUTECH}
+        carreiraList={[]}
+        initialBlogPosts={[]}
+      />,
+    )
 
   it('seções PiluTech, Carreira, Stack e Artigos; o Laboratório saiu', () => {
     expect(

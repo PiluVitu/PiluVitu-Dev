@@ -2,9 +2,11 @@ import Link from 'next/link'
 import { HomeContato, HomePiluTech, HomeStack } from '@/components/home-cards'
 import { JobCard } from '@/components/job-card'
 import type { ArticleCardView } from '@/lib/article-feed'
+import type { AppPiluTech } from '@/lib/home/catalogo-pilutech'
 import type { Carreira } from '@/mocks/carreira'
 
 type HomeBentoLayoutProps = {
+  appsPiluTech: AppPiluTech[]
   carreiraList: Carreira[]
   initialBlogPosts: ArticleCardView[]
 }
@@ -41,13 +43,14 @@ const card = 'border-border bg-card flex flex-col gap-1 rounded-3xl border p-6'
 // No celular a ordem é PiluTech, carreira, blog, stack, contato; no grid do
 // desktop o stack sobe para o lado da carreira.
 export function HomeBentoLayout({
+  appsPiluTech,
   carreiraList,
   initialBlogPosts,
 }: HomeBentoLayoutProps) {
   const posts = initialBlogPosts.slice(0, 6)
   return (
     <div className="flex min-h-0 flex-col gap-4 xl:grid xl:grid-cols-6">
-      <HomePiluTech className="xl:col-span-6" />
+      <HomePiluTech apps={appsPiluTech} className="xl:col-span-6" />
 
       <section
         id="carreira"

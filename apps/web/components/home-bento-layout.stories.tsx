@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
+import { APPS_PILUTECH } from '@/lib/home/catalogo-pilutech'
 import { HomeBentoLayout } from './home-bento-layout'
 
 const meta = {
@@ -13,6 +14,7 @@ type Story = StoryObj<typeof meta>
 
 export const SemConteudoDoCms: Story = {
   args: {
+    appsPiluTech: APPS_PILUTECH,
     carreiraList: [],
     initialBlogPosts: [],
   },

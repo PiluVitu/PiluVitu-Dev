@@ -10,6 +10,7 @@ import {
 } from '@/lib/site-content'
 import { itensListados } from '@/lib/pilulabs'
 import { getBlogPosts } from '@/lib/blog-posts'
+import { buscarAppsPiluTech } from '@/lib/home/catalogo-pilutech'
 import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
 import type { Social } from '@/mocks/social'
@@ -30,13 +31,15 @@ const fallbackProfile: SiteProfileContent = {
 }
 
 export default async function Home() {
-  const [profile, socials, carreiras, blogPosts, piluLabs] = await Promise.all([
-    getSiteProfile(),
-    getSocials(),
-    getCarreiras(),
-    getBlogPosts(),
-    getPiluLabs(),
-  ])
+  const [profile, socials, carreiras, blogPosts, piluLabs, appsPiluTech] =
+    await Promise.all([
+      getSiteProfile(),
+      getSocials(),
+      getCarreiras(),
+      getBlogPosts(),
+      getPiluLabs(),
+      buscarAppsPiluTech(),
+    ])
 
   const siteProfile = profile ?? fallbackProfile
   const socialList: Social[] = socials
@@ -71,6 +74,7 @@ export default async function Home() {
           suppressHydrationWarning
         >
           <HomeBentoLayout
+            appsPiluTech={appsPiluTech}
             carreiraList={carreiraList}
             initialBlogPosts={initialBlogPosts}
           />

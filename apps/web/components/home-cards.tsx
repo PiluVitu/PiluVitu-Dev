@@ -1,61 +1,8 @@
 import Image from 'next/image'
 import { cn } from '@piluvitu/ui/cn'
+import type { AppPiluTech, EstadoApp } from '@/lib/home/catalogo-pilutech'
 
 const PILUTECH = 'https://pilutech.com.br'
-
-type Status = 'ativo' | 'revisao' | 'desenvolvimento'
-
-export const APPS_PILUTECH: {
-  slug: string
-  nome: string
-  status: string
-  tipo: Status
-  /** Sem ícone em public/pilutech/apps, mostra a inicial. */
-  icone: boolean
-}[] = [
-  {
-    slug: 'orai',
-    nome: 'Oraí',
-    status: 'teste aberto',
-    tipo: 'ativo',
-    icone: true,
-  },
-  {
-    slug: 'listai',
-    nome: 'Listaí',
-    status: 'em revisão',
-    tipo: 'revisao',
-    icone: true,
-  },
-  {
-    slug: 'sombrai',
-    nome: 'Sombraí',
-    status: 'beta no Android',
-    tipo: 'ativo',
-    icone: true,
-  },
-  {
-    slug: 'apurai',
-    nome: 'Apuraí',
-    status: 'no ar',
-    tipo: 'ativo',
-    icone: true,
-  },
-  {
-    slug: 'botai',
-    nome: 'Botaí',
-    status: 'publicada',
-    tipo: 'ativo',
-    icone: true,
-  },
-  {
-    slug: 'toolkit',
-    nome: 'Toolkit',
-    status: 'em desenvolvimento',
-    tipo: 'desenvolvimento',
-    icone: false,
-  },
-]
 
 export const STACK: { grupo: string; itens: string[] }[] = [
   { grupo: 'infra', itens: ['AWS', 'Cloudflare', 'Docker', 'GitHub Actions'] },
@@ -63,7 +10,7 @@ export const STACK: { grupo: string; itens: string[] }[] = [
   { grupo: 'código', itens: ['Go', 'Next.js', 'React'] },
 ]
 
-const PONTO: Record<Status, string> = {
+const PONTO: Record<EstadoApp, string> = {
   ativo: 'bg-ok',
   revisao: 'bg-warn',
   desenvolvimento: 'bg-muted-foreground',
@@ -72,7 +19,13 @@ const PONTO: Record<Status, string> = {
 const overline =
   'font-mono text-[11px] font-semibold tracking-[.2em] text-muted-foreground'
 
-export function HomePiluTech({ className }: { className?: string }) {
+export function HomePiluTech({
+  apps,
+  className,
+}: {
+  apps: AppPiluTech[]
+  className?: string
+}) {
   return (
     <section
       id="servicos"
@@ -85,7 +38,7 @@ export function HomePiluTech({ className }: { className?: string }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <p className={cn(overline, 'text-primary')}>
-            PILUTECH · {String(APPS_PILUTECH.length).padStart(2, '0')} SERVIÇOS
+            PILUTECH · {String(apps.length).padStart(2, '0')} SERVIÇOS
           </p>
           <h2 id="pilutech-heading" className="text-2xl font-extrabold">
             Meus apps agora moram na PiluTech
@@ -99,15 +52,15 @@ export function HomePiluTech({ className }: { className?: string }) {
         </a>
       </div>
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-        {APPS_PILUTECH.map((app) => (
+        {apps.map((app) => (
           <a
             key={app.slug}
-            href={`${PILUTECH}/apps/${app.slug}`}
+            href={app.url}
             className="border-border bg-background hover:bg-accent flex min-h-11 items-center gap-3 rounded-2xl border p-3 transition-colors"
           >
             {app.icone ? (
               <Image
-                src={`/pilutech/apps/${app.slug}.png`}
+                src={app.icone}
                 alt=""
                 width={38}
                 height={38}
@@ -126,7 +79,7 @@ export function HomePiluTech({ className }: { className?: string }) {
               <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
                 <span
                   aria-hidden
-                  className={cn('size-[7px] rounded-full', PONTO[app.tipo])}
+                  className={cn('size-[7px] rounded-full', PONTO[app.estado])}
                 />
                 {app.status}
               </span>
