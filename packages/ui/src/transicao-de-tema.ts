@@ -6,12 +6,6 @@ type ComViewTransition = Document & {
 
 const PAUSANDO = 'transicao-de-tema'
 
-function proximoQuadro(janela: Window): Promise<void> {
-  return new Promise((resolver) =>
-    janela.requestAnimationFrame(() => resolver()),
-  )
-}
-
 /** Troca o tema com um crossfade (View Transitions API), ou na hora quando o
  * navegador não suporta ou o sistema pede menos movimento. */
 export function trocarTemaComTransicao(
@@ -31,10 +25,10 @@ export function trocarTemaComTransicao(
   }
   const html = doc.documentElement
   html.classList.add(PAUSANDO)
-  const transicao = doc.startViewTransition(async () => {
-    aplicar()
-    await proximoQuadro(janela)
-  })
+  // Sem esperar quadro: o navegador suspende a renderização durante este
+  // callback, então um requestAnimationFrame aqui só volta no timeout (4 s).
+  // `aplicar` precisa mudar o DOM de forma síncrona.
+  const transicao = doc.startViewTransition(() => aplicar())
   const soltar = () => html.classList.remove(PAUSANDO)
   if (transicao?.finished) transicao.finished.then(soltar, soltar)
   else soltar()

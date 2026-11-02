@@ -100,3 +100,25 @@ test.describe('troca de tema', () => {
     expect(await escolherTemaClaro(page)).toBe(0)
   })
 })
+
+// Em produção a troca levava 4 s: o helper esperava um requestAnimationFrame
+// dentro do callback da View Transition, onde o navegador suspende a
+// renderização; o rAF nunca vinha e o Chrome abortava por timeout.
+test('a troca de tema termina rápido e sem abortar a View Transition', async ({
+  page,
+}) => {
+  const erros: string[] = []
+  page.on('pageerror', (e) => erros.push(e.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Tema' }).first().click()
+  await page.getByRole('menuitem', { name: 'Light' }).click()
+  const inicio = Date.now()
+  await page.waitForFunction(
+    () => !document.documentElement.classList.contains('transicao-de-tema'),
+    null,
+    { timeout: 6000 },
+  )
+  expect(Date.now() - inicio).toBeLessThan(1000)
+  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+  expect(erros.filter((m) => /Transition was aborted/.test(m))).toEqual([])
+})
