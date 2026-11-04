@@ -13,6 +13,10 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3333',
     trace: 'on-first-retry',
+    // Local: o Chrome instalado (com os patches em dia) e com sandbox; o CI
+    // segue no Chromium baixado pelo Playwright (ver "E2E" no CLAUDE.md da raiz).
+    channel: process.env.CI ? undefined : 'chrome',
+    launchOptions: { chromiumSandbox: !process.env.CI },
   },
   projects: [
     {

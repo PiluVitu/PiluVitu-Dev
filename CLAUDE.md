@@ -96,6 +96,8 @@ Todos os comandos rodam da raiz do monorepo usando **pnpm** ou **make**.
 
 > ⚠️ **`pnpm -r <script>` (test/lint/etc.) pula silenciosamente qualquer workspace cujo `package.json` não declare esse script** — sem erro, sem aviso, só ausente do output (`Scope: N of 6 workspace projects` mostra menos que o total). Ao criar um workspace novo (ou copiar um `package.json` de outro), conferir se `lint`/`test` estão de fato declarados — não assumir que "não apareceu erro" significa "passou". Esse foi exatamente o defeito achado e corrigido no fix round 1 da Task 3 do design system (`packages/ui` migrou 14 componentes React sem nenhum `lint` script por um tempo, e `pnpm -r lint` seguia saindo verde).
 
+**E2E (Playwright) com o Chrome instalado:** fora do CI, os `playwright.config*.ts` do `apps/web` e do `apps/pilutech-site` usam `channel: 'chrome'` e `chromiumSandbox: true`, porque o Chromium baixado pelo Playwright fica atrás do Chrome nos patches de segurança e roda sem sandbox por padrão. No CI (`CI` definido) segue o Chromium do Playwright, sem sandbox. Atenção: o `make test-e2e-pilutech-site` passa `CI=1` e por isso roda no Chromium baixado; para o Chrome local, rode `pnpm --filter @pilutech/site test:e2e`.
+
 **Type checking without full build:** `pnpm exec tsc --noEmit` (from `apps/web/`)
 
 **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
