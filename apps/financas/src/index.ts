@@ -8,6 +8,7 @@ import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
 import { categoriesRoutes } from './routes/categories'
 import { debtsRoutes } from './routes/debts'
+import { goalsRoutes } from './routes/goals'
 import { importRoutes } from './routes/import'
 import { installmentPlansRoutes } from './routes/installments'
 import { insightsRoutes } from './routes/insights'
@@ -62,6 +63,7 @@ app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
 app.route('/api/reports', reportsRoutes)
 app.route('/api/budgets', budgetsRoutes)
+app.route('/api/goals', goalsRoutes)
 app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)

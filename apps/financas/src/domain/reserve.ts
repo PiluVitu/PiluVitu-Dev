@@ -80,7 +80,7 @@ const MAX_DESIGNATED_ACCOUNTS = 100
  * linha corrompida não pode derrubar a tela, só faz a reserva parecer
  * "sem conta designada").
  */
-async function designatedAccountIds(db: D1Database): Promise<string[]> {
+export async function designatedAccountIds(db: D1Database): Promise<string[]> {
   const raw = await getSetting(db, EMERGENCY_ACCOUNTS_KEY)
   if (!raw) return []
   try {
