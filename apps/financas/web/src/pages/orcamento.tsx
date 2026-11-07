@@ -202,21 +202,28 @@ export function OrcamentoPage({ mesInicial }: { mesInicial?: string }) {
   const [aviso, setAviso] = useState<string | null>(null)
   const [copiando, setCopiando] = useState(false)
   const pedido = useRef(0)
+  const mesAtual = useRef(mes)
 
-  const carregar = useCallback(async () => {
+  // Recarrega o mês `m` e descarta o resultado se o mês selecionado mudou
+  // enquanto a mutação ou a leitura estava em voo.
+  const carregarMes = useCallback(async (m: string) => {
+    if (mesAtual.current !== m) return
     const meu = ++pedido.current
-    const dados = await api<RelatorioOrcamento>(`/api/budgets?month=${mes}`)
-    if (meu === pedido.current) setRelatorio(dados)
-  }, [mes])
+    const dados = await api<RelatorioOrcamento>(`/api/budgets?month=${m}`)
+    if (meu === pedido.current && mesAtual.current === m) setRelatorio(dados)
+  }, [])
 
   useEffect(() => {
+    mesAtual.current = mes
     setRelatorio(null)
     setErroCarga(null)
     setAviso(null)
-    carregar().catch((e: unknown) =>
-      setErroCarga(e instanceof ApiError ? e.message : String(e)),
-    )
-  }, [carregar])
+    setCopiando(false)
+    carregarMes(mes).catch((e: unknown) => {
+      if (mesAtual.current === mes)
+        setErroCarga(e instanceof ApiError ? e.message : String(e))
+    })
+  }, [mes, carregarMes])
 
   const salvar: Salvar = async (categoryId, cents) => {
     const r = await mutarERecarregar(
@@ -225,7 +232,7 @@ export function OrcamentoPage({ mesInicial }: { mesInicial?: string }) {
           method: 'PUT',
           body: JSON.stringify({ amount_cents: cents }),
         }),
-      carregar,
+      () => carregarMes(mes),
     )
     return r.ok ? null : r.mensagem
   }
@@ -233,21 +240,26 @@ export function OrcamentoPage({ mesInicial }: { mesInicial?: string }) {
   const remover: Remover = async (categoryId) => {
     const r = await mutarERecarregar(
       () => api(`/api/budgets/${mes}/${categoryId}`, { method: 'DELETE' }),
-      carregar,
+      () => carregarMes(mes),
     )
     return r.ok ? null : r.mensagem
   }
 
   async function copiar() {
+    const m = mes
     setAviso(null)
     setCopiando(true)
     let resultado: { copied: number; skipped: number } | null = null
-    const r = await mutarERecarregar(async () => {
-      resultado = await api<{ copied: number; skipped: number }>(
-        `/api/budgets/${mes}/copy-previous`,
-        { method: 'POST' },
-      )
-    }, carregar)
+    const r = await mutarERecarregar(
+      async () => {
+        resultado = await api<{ copied: number; skipped: number }>(
+          `/api/budgets/${m}/copy-previous`,
+          { method: 'POST' },
+        )
+      },
+      () => carregarMes(m),
+    )
+    if (mesAtual.current !== m) return
     setAviso(
       r.ok && resultado
         ? mensagemDeCopia(

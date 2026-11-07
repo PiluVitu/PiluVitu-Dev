@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../api'
@@ -256,6 +256,120 @@ describe('OrcamentoPage', () => {
     expect(
       await screen.findByText(/Nenhuma categoria de despesa/),
     ).toBeInTheDocument()
+  })
+})
+
+describe('mutação lenta com troca de mês', () => {
+  const setembro = relatorio({
+    month: '2026-09',
+    rows: [
+      {
+        category_id: 'c-mercado',
+        category_name: 'Mercado',
+        parent_name: null,
+        budget_cents: 10000,
+        spent_cents: 0,
+        budgetable: true,
+      },
+    ],
+    total_budget_cents: 10000,
+    budgeted_spent_cents: 0,
+    uncategorized_spent_cents: 0,
+  })
+
+  function suspensa<T>() {
+    let resolver!: (v: T) => void
+    const promessa = new Promise<T>((r) => {
+      resolver = r
+    })
+    return { promessa, resolver }
+  }
+
+  // GET responde por mês; a mutação fica pendurada até o teste soltar.
+  function mockLento(pendente: Promise<unknown>) {
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'GET')
+          return path.endsWith('2026-09') ? setembro : relatorio()
+        return pendente
+      },
+    )
+  }
+
+  async function irParaSetembroEConcluir(
+    resolver: () => void,
+    user: ReturnType<typeof userEvent.setup>,
+  ) {
+    await user.click(screen.getByRole('button', { name: 'Próximo mês' }))
+    expect(await screen.findByText('setembro de 2026')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        within(linha('Mercado')).getByText(/de R\$ 100,00/),
+      ).toBeInTheDocument(),
+    )
+    await act(async () => {
+      resolver()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+  }
+
+  function setembroContinuaNaTela() {
+    expect(screen.getByText('setembro de 2026')).toBeInTheDocument()
+    expect(
+      within(linha('Mercado')).getByText(/de R\$ 100,00/),
+    ).toBeInTheDocument()
+    expect(
+      within(linha('Mercado')).queryByText('Estourado'),
+    ).not.toBeInTheDocument()
+    const recargasDeAgosto = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) => path === '/api/budgets?month=2026-08')
+    expect(recargasDeAgosto).toHaveLength(1)
+  }
+
+  it('salvar em agosto e trocar para setembro não publica agosto sob setembro', async () => {
+    const { promessa, resolver } = suspensa<unknown>()
+    mockLento(promessa)
+    const user = userEvent.setup()
+    render(<OrcamentoPage mesInicial="2026-08" />)
+    await screen.findByText('agosto de 2026')
+    const luz = linha('Casa › Luz')
+    await user.type(within(luz).getByLabelText('Orçamento de Luz'), '150,00')
+    await user.click(within(luz).getByRole('button', { name: 'Salvar' }))
+    await irParaSetembroEConcluir(() => resolver({ ok: true }), user)
+    setembroContinuaNaTela()
+  })
+
+  it('remover em agosto e trocar para setembro não publica agosto sob setembro', async () => {
+    const { promessa, resolver } = suspensa<unknown>()
+    mockLento(promessa)
+    const user = userEvent.setup()
+    render(<OrcamentoPage mesInicial="2026-08" />)
+    await screen.findByText('agosto de 2026')
+    await user.click(
+      within(linha('Lazer')).getByRole('button', { name: 'Remover' }),
+    )
+    await irParaSetembroEConcluir(() => resolver({ ok: true }), user)
+    setembroContinuaNaTela()
+  })
+
+  it('copiar em agosto e trocar para setembro não publica agosto nem o aviso sob setembro', async () => {
+    const { promessa, resolver } = suspensa<unknown>()
+    mockLento(promessa)
+    const user = userEvent.setup()
+    render(<OrcamentoPage mesInicial="2026-08" />)
+    await screen.findByText('agosto de 2026')
+    await user.click(
+      screen.getByRole('button', { name: 'Copiar do mês anterior' }),
+    )
+    await irParaSetembroEConcluir(
+      () => resolver({ copied: 1, skipped: 0 }),
+      user,
+    )
+    setembroContinuaNaTela()
+    expect(
+      screen.queryByText('1 copiado, 0 ignorados.'),
+    ).not.toBeInTheDocument()
   })
 })
 
