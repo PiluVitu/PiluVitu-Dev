@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016 — tabelas', () => {
-  it('cria exatamente as 20 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017 — tabelas', () => {
+  it('cria exatamente as 21 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -184,6 +184,7 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016 — tabelas', () =>
     expect(results.map((r) => r.name)).toEqual([
       'account',
       'accounts',
+      'budgets',
       'categories',
       'debt_items',
       'debt_payment_allocations',
@@ -1014,5 +1015,75 @@ describe('migration 0015_uso_ia', () => {
          VALUES ('x', 'insight', '2026-10', 'claude-sonnet-5-5', 'pago', 1, '2026-10-24T00:00:00Z')`,
       ).run(),
     ).rejects.toThrow(/CHECK/)
+  })
+})
+
+describe('migration 0017 — budgets (STRICT, CHECKs, UNIQUE por mês e categoria)', () => {
+  const CAT = '00000000-0000-4000-8000-000000000002'
+
+  async function inserir(
+    id: string,
+    month: string,
+    amount: number | string,
+    categoryId = CAT,
+  ) {
+    return DB.prepare(
+      `INSERT INTO budgets (id, category_id, month, amount_cents, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(id, categoryId, month, amount, NOW, NOW)
+      .run()
+  }
+
+  it('aceita um orçamento válido', async () => {
+    await inserir('b1', '2026-08', 50000)
+    const row = await DB.prepare(
+      'SELECT amount_cents FROM budgets WHERE id = ?',
+    )
+      .bind('b1')
+      .first<{ amount_cents: number }>()
+    expect(row?.amount_cents).toBe(50000)
+  })
+
+  it('barra duplicata de categoria no mesmo mês, mas aceita em outro mês', async () => {
+    await inserir('b1', '2026-08', 50000)
+    await expect(inserir('b2', '2026-08', 70000)).rejects.toThrow(
+      /UNIQUE|constraint/i,
+    )
+    await inserir('b3', '2026-09', 70000)
+  })
+
+  it('barra valor zero, negativo e fracionário', async () => {
+    await expect(inserir('b1', '2026-08', 0)).rejects.toThrow(
+      /CHECK|constraint/i,
+    )
+    await expect(inserir('b2', '2026-08', -1)).rejects.toThrow(
+      /CHECK|constraint/i,
+    )
+    await expect(inserir('b3', '2026-08', 1.5)).rejects.toThrow(
+      /CHECK|constraint|datatype/i,
+    )
+  })
+
+  it.each(['2026-13', '2026-00', '26-08', '2026-8', '2026-08-01', ''])(
+    'barra o mês %j',
+    async (mes) => {
+      await expect(inserir('b1', mes, 1000)).rejects.toThrow(
+        /CHECK|constraint/i,
+      )
+    },
+  )
+
+  it('barra categoria inexistente (FK)', async () => {
+    await expect(inserir('b1', '2026-08', 1000, 'nao-existe')).rejects.toThrow(
+      /FOREIGN KEY|constraint/i,
+    )
+  })
+
+  it('não deixa apagar a categoria que tem orçamento (RESTRICT)', async () => {
+    await inserir('b1', '2026-08', 1000)
+    await expect(
+      DB.prepare('DELETE FROM categories WHERE id = ?').bind(CAT).run(),
+    ).rejects.toThrow(/FOREIGN KEY|constraint/i)
   })
 })

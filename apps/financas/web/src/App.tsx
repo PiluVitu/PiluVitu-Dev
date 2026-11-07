@@ -17,6 +17,7 @@ import {
   Sparkles,
   Sun,
   Tags,
+  Target,
   TrendingUp,
   Wallet,
 } from 'lucide-react'
@@ -52,6 +53,7 @@ import { InsightPage } from './pages/insight'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
 import { RegrasPage } from './pages/regras'
+import { OrcamentoPage } from './pages/orcamento'
 import { ReservaPage } from './pages/reserva'
 import { TransferirPage } from './pages/transferir'
 
@@ -82,6 +84,7 @@ type RouteKey =
   | 'extrato'
   | 'comprometido'
   | 'fluxo'
+  | 'orcamento'
   | 'insight'
   | 'lancar'
   | 'recorrentes'
@@ -97,6 +100,7 @@ export function resolveRoute(hash: string): RouteKey {
   if (hash === '#/extrato' || hash === '#/extrato/') return 'extrato'
   if (hash.startsWith('#/comprometido')) return 'comprometido'
   if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
+  if (hash === '#/orcamento' || hash === '#/orcamento/') return 'orcamento'
   if (hash === '#/insight' || hash === '#/insight/') return 'insight'
   if (hash.startsWith('#/lancar')) return 'lancar'
   if (hash === '#/recorrentes' || hash === '#/recorrentes/')
@@ -138,6 +142,7 @@ export const TITULO_DA_ROTA: Record<RouteKey, string> = {
   extrato: 'Extrato',
   comprometido: 'Comprometido',
   fluxo: 'Fluxo de caixa',
+  orcamento: 'Orçamento',
   insight: 'Insight',
   lancar: 'Lançar',
   recorrentes: 'Recorrentes',
@@ -217,6 +222,12 @@ const GRUPOS: NavGrupo[] = [
         label: 'Fluxo de caixa',
         route: 'fluxo',
         icon: TrendingUp,
+      },
+      {
+        href: '#/orcamento',
+        label: 'Orçamento',
+        route: 'orcamento',
+        icon: Target,
       },
       { href: '#/insight', label: 'Insight', route: 'insight', icon: Sparkles },
       {
@@ -675,6 +686,8 @@ function Tela({
       return <RecorrentesPage />
     case 'regras':
       return <RegrasPage />
+    case 'orcamento':
+      return <OrcamentoPage />
     case 'reserva':
       return <ReservaPage />
     case 'importar':
