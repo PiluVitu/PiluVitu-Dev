@@ -18,6 +18,8 @@ export type BudgetRow = {
   parent_name: string | null
   budget_cents: number | null
   spent_cents: number
+  /** Só categoria de despesa ativa aceita orçamento (`setBudget`). */
+  budgetable: boolean
 }
 
 export type BudgetReport = {
@@ -154,6 +156,7 @@ export async function budgetReport(
         c.parent_id === null ? null : (nameOf.get(c.parent_id) ?? null),
       budget_cents: budgetOf.get(c.id) ?? null,
       spent_cents: spentOf.get(c.id) ?? 0,
+      budgetable: c.kind === 'expense' && c.archived_at === null,
     }))
     .sort((a, b) => a.category_name.localeCompare(b.category_name, 'pt-BR'))
 

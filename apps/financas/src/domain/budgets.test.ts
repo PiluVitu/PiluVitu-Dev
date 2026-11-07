@@ -235,6 +235,26 @@ describe('budgetReport', () => {
     expect(row?.spent_cents).toBe(1500)
   })
 
+  it('marca como não orçável a categoria arquivada e a que não é de despesa', async () => {
+    const c = await conta()
+    const velha = await despesa('Antiga')
+    await setBudget(db, '2026-08', velha.id, 5000)
+    await archiveCategory(db, velha.id)
+    const quitacao = '00000000-0000-4000-8000-000000000007'
+    await gasto({
+      account_id: c.id,
+      category_id: quitacao,
+      amount_cents: -2500,
+      purchase_date: '2026-08-02',
+    })
+    const ativa = await despesa('Mercado')
+
+    const rows = (await budgetReport(db, '2026-08')).rows
+    expect(rows.find((r) => r.category_id === velha.id)?.budgetable).toBe(false)
+    expect(rows.find((r) => r.category_id === quitacao)?.budgetable).toBe(false)
+    expect(rows.find((r) => r.category_id === ativa.id)?.budgetable).toBe(true)
+  })
+
   it('separa o gasto sem categoria e soma os totais só do que tem orçamento', async () => {
     const c = await conta()
     const mercado = await despesa('Mercado')

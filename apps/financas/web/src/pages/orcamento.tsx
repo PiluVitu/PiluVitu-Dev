@@ -37,7 +37,7 @@ function mensagemDeCopia(copied: number, skipped: number): string {
   return `${plural(copied, 'copiado', 'copiados')}, ${plural(skipped, 'ignorado', 'ignorados')}.`
 }
 
-function LinhaDoOrcamento({
+export function LinhaDoOrcamento({
   linha,
   onSalvar,
   onRemover,
@@ -84,6 +84,20 @@ function LinhaDoOrcamento({
     setErro(await onRemover(linha.category_id))
     setOcupado(false)
   }
+
+  const botaoRemover =
+    orcado !== null ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="min-h-11"
+        disabled={ocupado}
+        onClick={remover}
+      >
+        Remover
+      </Button>
+    ) : null
 
   return (
     <li
@@ -143,31 +157,35 @@ function LinhaDoOrcamento({
         </p>
       ) : null}
 
-      <form onSubmit={salvar} className="flex flex-wrap items-center gap-2">
-        <Input
-          aria-label={`Orçamento de ${linha.category_name}`}
-          inputMode="decimal"
-          placeholder="R$ 0,00"
-          value={rascunho}
-          onChange={(e) => setRascunho(e.target.value)}
-          className="h-11 w-36"
-        />
-        <Button type="submit" size="sm" className="min-h-11" disabled={ocupado}>
-          Salvar
-        </Button>
-        {orcado !== null ? (
+      {linha.budgetable ? (
+        <form onSubmit={salvar} className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label={`Orçamento de ${linha.category_name}`}
+            inputMode="decimal"
+            placeholder="R$ 0,00"
+            value={rascunho}
+            onChange={(e) => setRascunho(e.target.value)}
+            className="h-11 w-36"
+          />
           <Button
-            type="button"
-            variant="ghost"
+            type="submit"
             size="sm"
             className="min-h-11"
             disabled={ocupado}
-            onClick={remover}
           >
-            Remover
+            Salvar
           </Button>
-        ) : null}
-      </form>
+          {botaoRemover}
+        </form>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-muted-foreground text-xs">
+            Categoria arquivada ou que não é de despesa: não aceita novo
+            orçamento.
+          </p>
+          {botaoRemover}
+        </div>
+      )}
       {erro ? (
         <p role="alert" className={FAIXA_ALERTA}>
           {erro}

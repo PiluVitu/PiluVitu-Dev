@@ -59,6 +59,7 @@ describe('ordenarLinhas', () => {
     parent_name: null,
     budget_cents: b,
     spent_cents: g,
+    budgetable: true,
   })
   it('estourados primeiro, depois os orçados por % e por fim os sem orçamento por gasto', () => {
     const ordem = ordenarLinhas([

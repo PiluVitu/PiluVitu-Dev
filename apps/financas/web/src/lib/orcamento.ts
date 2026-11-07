@@ -7,6 +7,7 @@ export type LinhaOrcamento = {
   parent_name: string | null
   budget_cents: number | null
   spent_cents: number
+  budgetable: boolean
 }
 
 export type RelatorioOrcamento = {
