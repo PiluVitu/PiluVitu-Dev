@@ -11,6 +11,7 @@ import { debtsRoutes } from './routes/debts'
 import { importRoutes } from './routes/import'
 import { installmentPlansRoutes } from './routes/installments'
 import { insightsRoutes } from './routes/insights'
+import { budgetsRoutes } from './routes/budgets'
 import { payeesRoutes } from './routes/payees'
 import { pluggyRoutes } from './routes/pluggy'
 import { recurringRoutes } from './routes/recurring'
@@ -60,6 +61,7 @@ app.route('/api', transfersRoutes)
 app.route('/api/installment-plans', installmentPlansRoutes)
 app.route('/api/debts', debtsRoutes)
 app.route('/api/reports', reportsRoutes)
+app.route('/api/budgets', budgetsRoutes)
 app.route('/api/payees', payeesRoutes)
 app.route('/api/categories', categoriesRoutes)
 app.route('/api/recurring', recurringRoutes)

@@ -266,6 +266,15 @@ describe('App — roteamento por hash com Gate autenticado', () => {
     )
   })
 
+  test('#/orcamento mostra a tela Orçamento', async () => {
+    mockFetchVazio()
+    window.location.hash = '#/orcamento'
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Orçamento' })).toBeDefined(),
+    )
+  })
+
   test('#/comprometido mostra a tela Comprometido', async () => {
     mockFetchVazio()
     window.location.hash = '#/comprometido'
@@ -567,6 +576,7 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       'Recorrentes',
       'Regras',
       'Fluxo de caixa',
+      'Orçamento',
       'Insight',
       'Reserva',
       'Configurações',
@@ -574,9 +584,9 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
   })
 
   // A sidebar do desktop é a TERCEIRA superfície alimentada pela mesma lista
-  // — e a única que mostra os 14 de uma vez. Sem este caso, um destino que
+  // — e a única que mostra os 15 de uma vez. Sem este caso, um destino que
   // sumisse SÓ dela passaria batido (o teste acima roda a 390px).
-  test('no desktop, a sidebar lista os 14 destinos e não existe tab bar', async () => {
+  test('no desktop, a sidebar lista os 15 destinos e não existe tab bar', async () => {
     mockFetchVazio()
     render(<App />)
     await waitFor(() =>
@@ -603,6 +613,7 @@ describe('App — nav: estado ativo segue a rota corrente', () => {
       'Recorrentes',
       'Regras',
       'Fluxo de caixa',
+      'Orçamento',
       'Insight',
       'Reserva',
       'Configurações',

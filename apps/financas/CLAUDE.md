@@ -179,6 +179,16 @@ Aplicada só **localmente**; produção é ação manual do dono, **antes** do d
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0016_passkey
 ```
 
+### `0017_budgets.sql` — orçamento mensal por categoria
+
+Tabela `budgets` (STRICT): `category_id` (FK `RESTRICT`), `month` `'YYYY-MM'` (CHECK de formato e de 01–12), `amount_cents` inteiro `> 0` e `UNIQUE (month, category_id)`, com o mês primeiro para servir a leitura "todos os orçamentos do mês". Que a categoria seja de despesa e esteja ativa é validado em TS (`domain/budgets.ts`), porque um CHECK não enxerga outra tabela. Sem dimensão PF/PJ: o orçamento é um só por categoria e mês.
+
+Aplicada só **localmente**; produção é ação manual do dono, **antes** do deploy do Worker com a rota (sem a tabela, `GET /api/budgets` dá 500):
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0017_budgets
+```
+
 ### Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
 
 - **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `IaBindings` (`src/lib/ia.ts`), somado ao `Bindings` em `src/index.ts`.
@@ -2224,6 +2234,14 @@ Convenções específicas desta rota (mais estreitas que o resto do módulo, de 
 - Toda rota de sucesso e todo 404 do teste são verificados contra a linha real do D1 (`SELECT`/`COUNT`), e todo 404 usa um id real gerado por `newId()` (diferente do criado), não um placeholder tipo `'id-que-nao-existe'` — a suíte pegaria um handler que sempre devolve 200.
 
 Testes: `pnpm --filter @piluvitu/financas exec vitest run src/routes/recurring.test.ts` (15 casos).
+
+## Orçamento por categoria e mês (`src/domain/budgets.ts`, `src/routes/budgets.ts`, `web/src/pages/orcamento.tsx`)
+
+- **Rotas** (atrás da guarda de sessão, como o resto de `/api/*`): `GET /api/budgets?month=YYYY-MM`, `PUT` e `DELETE /api/budgets/:month/:categoryId`, `POST /api/budgets/:month/copy-previous`. Mês malformado na query ou no caminho é `400 invalid_query`; corpo ou categoria inválidos, `422`; `DELETE` de orçamento inexistente, `404`.
+- **Gasto = `byCategory()`**, a mesma função do bloco Categorias: só linhas com `amount_cents < 0`, sem perna de transferência nem filha de rateio, por `purchase_date`. Consequência deliberada: um estorno (linha positiva) **não libera orçamento**. O gasto sem categoria aparece só como informação.
+- **Categoria exata:** o orçamento vale para o `category_id` em si; o gasto de uma filha não sobe para a mãe (nenhuma tela do app faz esse rollup). A tela mostra "Mãe › Filha".
+- **Copiar do mês anterior** não sobrescreve o que já existe no mês e pula categoria arquivada; devolve `{copied, skipped}`.
+- **SPA:** rota `#/orcamento`, no grupo "Análise" da navegação (a tab bar do celular, que usa os 4 primeiros itens de "Dia a dia", não muda). Estado puro em `web/src/lib/orcamento.ts`: `sem_orcamento`, `dentro` (100% exato ainda é dentro) e `estourado`, sempre com texto além da cor. Sem Storybook nem Playwright: o `apps/financas/web` não tem nenhum dos dois, e a tela é coberta por `orcamento.test.tsx`.
 
 ## Reserva de emergência (`src/domain/reserve.ts`, Task 1 da fatia ⑦)
 
