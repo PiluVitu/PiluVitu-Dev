@@ -38,6 +38,22 @@ describe('goalProgress', () => {
     })
   })
 
+  it('perto do alvo não mostra 100% enquanto falta dinheiro', () => {
+    const p = goalProgress({ ...base, balance_cents: 99600, target_date: null })
+    expect(p).toMatchObject({
+      status: 'em_andamento',
+      pct: 99,
+      missing_cents: 400,
+    })
+    const terco = goalProgress({
+      target_cents: 3,
+      balance_cents: 1,
+      target_date: null,
+      today: HOJE,
+    })
+    expect(terco.pct).toBe(33)
+  })
+
   it('saldo negativo zera o progresso sem inflar o que falta', () => {
     const p = goalProgress({ ...base, balance_cents: -5000, target_date: null })
     expect(p.pct).toBe(0)

@@ -321,8 +321,14 @@ export function MetasPage() {
   const [metas, setMetas] = useState<MetaView[] | null>(null)
   const [contas, setContas] = useState<AccountView[]>([])
   const [erroCarga, setErroCarga] = useState<string | null>(null)
-  const [criando, setCriando] = useState(false)
-  const [editandoId, setEditandoId] = useState<string | null>(null)
+  // Cada abertura de formulário ganha um número; salvar só fecha o formulário
+  // da abertura que o iniciou, nunca um reaberto (ou outro) depois.
+  const [criando, setCriando] = useState<number | null>(null)
+  const [editando, setEditando] = useState<{
+    id: string
+    sessao: number
+  } | null>(null)
+  const sessoes = useRef(0)
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [emVoo, setEmVoo] = useState<string[]>([])
   const [errosDeExclusao, setErrosDeExclusao] = useState<
@@ -349,7 +355,7 @@ export function MetasPage() {
     )
   }, [carregar])
 
-  async function salvar(id: string | null, dados: Dados) {
+  async function salvar(id: string | null, dados: Dados, sessao: number) {
     const r = await mutarERecarregar(
       () =>
         api(id ? `/api/goals/${id}` : '/api/goals', {
@@ -359,10 +365,8 @@ export function MetasPage() {
       carregar,
     )
     if (r.ok) {
-      // Só fecha o editor que esta mutação abriu; outro aberto nesse meio
-      // tempo continua como está.
-      if (id) setEditandoId((atual) => (atual === id ? null : atual))
-      else setCriando(false)
+      if (id) setEditando((atual) => (atual?.sessao === sessao ? null : atual))
+      else setCriando((atual) => (atual === sessao ? null : atual))
     }
     return r.ok ? null : r.mensagem
   }
@@ -393,13 +397,13 @@ export function MetasPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {criando ? (
+      {criando !== null ? (
         <FormularioDaMeta
           titulo="Nova meta"
           inicial={null}
           contas={contasLivres}
-          onSalvar={(d) => salvar(null, d)}
-          onCancelar={() => setCriando(false)}
+          onSalvar={(d) => salvar(null, d, criando)}
+          onCancelar={() => setCriando(null)}
         />
       ) : (
         <div>
@@ -407,7 +411,7 @@ export function MetasPage() {
             type="button"
             size="sm"
             className="min-h-11"
-            onClick={() => setCriando(true)}
+            onClick={() => setCriando(++sessoes.current)}
           >
             Nova meta
           </Button>
@@ -430,22 +434,20 @@ export function MetasPage() {
                   confirmando={confirmandoId === m.id}
                   ocupado={emVoo.includes(m.id)}
                   erro={errosDeExclusao[m.id] ?? null}
-                  onEditar={() => setEditandoId(m.id)}
+                  onEditar={() =>
+                    setEditando({ id: m.id, sessao: ++sessoes.current })
+                  }
                   onExcluir={() => setConfirmandoId(m.id)}
                   onConfirmarExclusao={() => excluir(m.id)}
                   onCancelarExclusao={() => setConfirmandoId(null)}
                 >
-                  {editandoId === m.id ? (
+                  {editando?.id === m.id ? (
                     <FormularioDaMeta
                       titulo={`Editar ${m.name}`}
                       inicial={m}
                       contas={contasParaEditar(m)}
-                      onSalvar={(d) => salvar(m.id, d)}
-                      onCancelar={() =>
-                        setEditandoId((atual) =>
-                          atual === m.id ? null : atual,
-                        )
-                      }
+                      onSalvar={(d) => salvar(m.id, d, editando.sessao)}
+                      onCancelar={() => setEditando(null)}
                     />
                   ) : null}
                 </CartaoDaMeta>

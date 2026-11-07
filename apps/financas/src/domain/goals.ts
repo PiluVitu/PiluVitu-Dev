@@ -63,7 +63,11 @@ export function goalProgress(input: {
 }): GoalProgress {
   const { balance_cents, target_cents, target_date, today } = input
   const guardado = Math.max(0, balance_cents)
-  const pct = Math.round((guardado / target_cents) * 100)
+  // Enquanto falta dinheiro o percentual fica abaixo de 100 (99,6% mostra 99%).
+  const pct =
+    guardado >= target_cents
+      ? Math.round((guardado / target_cents) * 100)
+      : Math.floor((guardado * 100) / target_cents)
 
   if (guardado >= target_cents) {
     return {

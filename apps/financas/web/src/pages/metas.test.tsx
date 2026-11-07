@@ -405,6 +405,79 @@ describe('mutação lenta com outra seleção', () => {
     ).toBeInTheDocument()
   })
 
+  it('salvar uma meta nova em voo não fecha o formulário reaberto depois de Cancelar', async () => {
+    const { promessa, resolver } = suspensa<unknown>()
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && path === '/api/accounts') return contas
+        if (method === 'GET') return []
+        return promessa
+      },
+    )
+    const user = userEvent.setup()
+    render(<MetasPage />)
+    await screen.findByText(/Nenhuma meta ainda/)
+    await user.click(screen.getByRole('button', { name: 'Nova meta' }))
+    const primeiro = screen.getByRole('form', { name: 'Nova meta' })
+    await user.type(within(primeiro).getByLabelText('Nome'), 'Primeira')
+    await user.type(within(primeiro).getByLabelText('Valor da meta'), '100')
+    await user.selectOptions(
+      within(primeiro).getByLabelText('Conta'),
+      'a-poupanca',
+    )
+    await user.click(within(primeiro).getByRole('button', { name: 'Salvar' }))
+    await user.click(within(primeiro).getByRole('button', { name: 'Cancelar' }))
+
+    await user.click(screen.getByRole('button', { name: 'Nova meta' }))
+    const segundo = screen.getByRole('form', { name: 'Nova meta' })
+    await user.type(within(segundo).getByLabelText('Nome'), 'Segunda')
+
+    await act(async () => {
+      resolver({ ok: true })
+    })
+    await liberar()
+
+    const aindaAberto = screen.getByRole('form', { name: 'Nova meta' })
+    expect(within(aindaAberto).getByLabelText('Nome')).toHaveValue('Segunda')
+  })
+
+  it('salvar a meta A em voo não fecha o editor da própria A reaberto depois de Cancelar', async () => {
+    const { promessa, resolver } = suspensa<unknown>()
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET'
+        if (method === 'GET' && path === '/api/accounts') return contas
+        if (method === 'GET') return duas
+        return promessa
+      },
+    )
+    const user = userEvent.setup()
+    render(<MetasPage />)
+    const viagem = await screen.findByRole('listitem', { name: 'Viagem' })
+    await user.click(within(viagem).getByRole('button', { name: 'Editar' }))
+    const antigo = screen.getByRole('form', { name: 'Editar Viagem' })
+    await user.click(within(antigo).getByRole('button', { name: 'Salvar' }))
+    await user.click(within(antigo).getByRole('button', { name: 'Cancelar' }))
+
+    await user.click(
+      within(cartao('Viagem')).getByRole('button', { name: 'Editar' }),
+    )
+    const novo = screen.getByRole('form', { name: 'Editar Viagem' })
+    await user.clear(within(novo).getByLabelText('Nome'))
+    await user.type(within(novo).getByLabelText('Nome'), 'Viagem nova')
+
+    await act(async () => {
+      resolver({ ok: true })
+    })
+    await liberar()
+
+    const aindaAberto = screen.getByRole('form', { name: 'Editar Viagem' })
+    expect(within(aindaAberto).getByLabelText('Nome')).toHaveValue(
+      'Viagem nova',
+    )
+  })
+
   it('uma leitura antiga que responde depois da nova não sobrescreve a lista', async () => {
     const leituras: Array<ReturnType<typeof suspensa<unknown>>> = []
     vi.mocked(api).mockImplementation(

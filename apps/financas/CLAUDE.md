@@ -2260,7 +2260,7 @@ Testes: `pnpm --filter @piluvitu/financas exec vitest run src/routes/recurring.t
 - **Uma meta por conta** (`UNIQUE`), para duas metas não contarem o mesmo saldo. Se a conta também está na reserva de emergência (`emergency_accounts`), a lista marca `reserve_overlap` e a tela avisa que o dinheiro aparece nos dois lugares; não é bloqueado.
 - **Progresso** (`goalProgress`, pura, com `today` injetado): `concluida` (saldo ≥ alvo, mesmo com prazo vencido), `em_andamento` ou `atrasada` (prazo antes de hoje e alvo não atingido). Saldo negativo zera o percentual sem aumentar o que falta. Os meses até o prazo contam por mês de calendário, no mínimo 1, e o aporte mensal é o `ceil(falta / meses)`.
 - **Conta arquivada:** a meta continua na lista com `editable: false` (sem Editar, só Excluir).
-- **SPA:** `#/metas`, grupo "Análise", ao lado de Reserva. Cada seleção é amarrada ao id da meta: terminar um salvar ou excluir da meta A não fecha o editor nem a confirmação de exclusão da B, e a leitura mais nova da lista vence a antiga. Story CSF do cartão em `metas.stories.tsx` (padrão do insight).
+- **SPA:** `#/metas`, grupo "Análise", ao lado de Reserva. Cada abertura de formulário ganha um número (sessão) e cada confirmação de exclusão é amarrada ao id: terminar um salvar ou excluir não fecha o formulário reaberto nem o da outra meta, e a leitura mais nova da lista vence a antiga. O percentual fica abaixo de 100 enquanto falta dinheiro (floor). Story CSF do cartão em `metas.stories.tsx` (padrão do insight).
 
 ## Reserva de emergência (`src/domain/reserve.ts`, Task 1 da fatia ⑦)
 
