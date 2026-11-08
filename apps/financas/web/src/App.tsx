@@ -2,6 +2,7 @@ import {
   CircleUser,
   Download,
   Filter,
+  Flag,
   Gauge,
   HandCoins,
   House,
@@ -53,6 +54,7 @@ import { InsightPage } from './pages/insight'
 import { NewEntryPage } from './pages/new-entry'
 import { RecorrentesPage } from './pages/recorrentes'
 import { RegrasPage } from './pages/regras'
+import { MetasPage } from './pages/metas'
 import { OrcamentoPage } from './pages/orcamento'
 import { ReservaPage } from './pages/reserva'
 import { TransferirPage } from './pages/transferir'
@@ -85,6 +87,7 @@ type RouteKey =
   | 'comprometido'
   | 'fluxo'
   | 'orcamento'
+  | 'metas'
   | 'insight'
   | 'lancar'
   | 'recorrentes'
@@ -101,6 +104,7 @@ export function resolveRoute(hash: string): RouteKey {
   if (hash.startsWith('#/comprometido')) return 'comprometido'
   if (hash === '#/fluxo' || hash === '#/fluxo/') return 'fluxo'
   if (hash === '#/orcamento' || hash === '#/orcamento/') return 'orcamento'
+  if (hash === '#/metas' || hash === '#/metas/') return 'metas'
   if (hash === '#/insight' || hash === '#/insight/') return 'insight'
   if (hash.startsWith('#/lancar')) return 'lancar'
   if (hash === '#/recorrentes' || hash === '#/recorrentes/')
@@ -143,6 +147,7 @@ export const TITULO_DA_ROTA: Record<RouteKey, string> = {
   comprometido: 'Comprometido',
   fluxo: 'Fluxo de caixa',
   orcamento: 'Orçamento',
+  metas: 'Metas',
   insight: 'Insight',
   lancar: 'Lançar',
   recorrentes: 'Recorrentes',
@@ -230,6 +235,7 @@ const GRUPOS: NavGrupo[] = [
         icon: Target,
       },
       { href: '#/insight', label: 'Insight', route: 'insight', icon: Sparkles },
+      { href: '#/metas', label: 'Metas', route: 'metas', icon: Flag },
       {
         href: '#/reserva',
         label: 'Reserva',
@@ -688,6 +694,8 @@ function Tela({
       return <RegrasPage />
     case 'orcamento':
       return <OrcamentoPage />
+    case 'metas':
+      return <MetasPage />
     case 'reserva':
       return <ReservaPage />
     case 'importar':

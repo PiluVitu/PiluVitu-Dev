@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017 — tabelas', () => {
-  it('cria exatamente as 21 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018 — tabelas', () => {
+  it('cria exatamente as 22 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -197,6 +197,7 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017 — tabelas', 
       'payees',
       'recurring_expenses',
       'rules',
+      'savings_goals',
       'session',
       'settings',
       'transactions',
@@ -1084,6 +1085,95 @@ describe('migration 0017 — budgets (STRICT, CHECKs, UNIQUE por mês e categori
     await inserir('b1', '2026-08', 1000)
     await expect(
       DB.prepare('DELETE FROM categories WHERE id = ?').bind(CAT).run(),
+    ).rejects.toThrow(/FOREIGN KEY|constraint/i)
+  })
+})
+
+describe('migration 0018 — savings_goals (STRICT, CHECKs, UNIQUE por conta)', () => {
+  async function inserir(
+    id: string,
+    patch: {
+      name?: string
+      target?: number | string
+      date?: string | null
+      account?: string
+    } = {},
+  ) {
+    const account = patch.account ?? 'conta-meta'
+    await DB.prepare(
+      `INSERT OR IGNORE INTO accounts
+         (id, name, scope, kind, currency, opening_balance_cents, created_at, updated_at)
+       VALUES (?, 'Conta teste', 'PF', 'savings', 'BRL', 0, ?, ?)`,
+    )
+      .bind(account, NOW, NOW)
+      .run()
+    return DB.prepare(
+      `INSERT INTO savings_goals
+         (id, name, target_cents, target_date, account_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        patch.name ?? 'Viagem',
+        patch.target ?? 500000,
+        patch.date === undefined ? null : patch.date,
+        account,
+        NOW,
+        NOW,
+      )
+      .run()
+  }
+
+  it('aceita meta com e sem prazo', async () => {
+    await inserir('g1', { date: '2027-06-30' })
+    await inserir('g2', { account: 'outra-conta', date: null })
+    const { results } = await DB.prepare('SELECT id FROM savings_goals').all()
+    expect(results).toHaveLength(2)
+  })
+
+  it('barra uma segunda meta na mesma conta', async () => {
+    await inserir('g1')
+    await expect(inserir('g2')).rejects.toThrow(/UNIQUE|constraint/i)
+  })
+
+  it.each([0, -1, 1.5])('barra valor alvo %j', async (alvo) => {
+    await expect(inserir('g1', { target: alvo })).rejects.toThrow(
+      /CHECK|constraint|datatype/i,
+    )
+  })
+
+  it.each(['', '   ', 'x'.repeat(81)])('barra nome %j', async (nome) => {
+    await expect(inserir('g1', { name: nome })).rejects.toThrow(
+      /CHECK|constraint/i,
+    )
+  })
+
+  it.each([
+    '2027-13-01',
+    '2027-00-10',
+    '27-06-30',
+    '2027-6-30',
+    '2027-06-3',
+    'amanhã',
+    '2027-06-32',
+  ])('barra prazo %j', async (data) => {
+    await expect(inserir('g1', { date: data })).rejects.toThrow(
+      /CHECK|constraint/i,
+    )
+  })
+
+  it('barra conta inexistente e impede apagar conta com meta', async () => {
+    await inserir('g1')
+    await expect(
+      DB.prepare('DELETE FROM accounts WHERE id = ?').bind('conta-meta').run(),
+    ).rejects.toThrow(/FOREIGN KEY|constraint/i)
+    await expect(
+      DB.prepare(
+        `INSERT INTO savings_goals (id, name, target_cents, account_id, created_at, updated_at)
+         VALUES ('g9', 'Fantasma', 1000, 'nao-existe', ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
     ).rejects.toThrow(/FOREIGN KEY|constraint/i)
   })
 })

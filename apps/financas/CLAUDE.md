@@ -189,6 +189,16 @@ Aplicada **localmente** (`db:migrate:local`). Em produção o `deploy-financas.y
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0017_budgets
 ```
 
+### `0018_savings_goals.sql` — metas de economia
+
+Tabela `savings_goals` (STRICT): `name` (1–80), `target_cents` inteiro `> 0`, `target_date` opcional (CHECK de formato `AAAA-MM-DD`), `account_id` (FK `RESTRICT`) e `UNIQUE (account_id)`. O progresso **não é gravado**: vem do saldo da conta vinculada. Conta de cartão ou benefício, inexistente ou arquivada é recusada em TS (`domain/goals.ts`).
+
+Aplicada **localmente** (`db:migrate:local`). Em produção o `deploy-financas.yml` a aplica sozinho, como a `0017` (é aditiva). Comando manual, se o deploy automático estiver parado:
+
+```bash
+pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0017 e 0018
+```
+
 ### Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
 
 - **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `IaBindings` (`src/lib/ia.ts`), somado ao `Bindings` em `src/index.ts`.
@@ -2242,6 +2252,15 @@ Testes: `pnpm --filter @piluvitu/financas exec vitest run src/routes/recurring.t
 - **Categoria exata:** o orçamento vale para o `category_id` em si; o gasto de uma filha não sobe para a mãe (nenhuma tela do app faz esse rollup). A tela mostra "Mãe › Filha".
 - **Copiar do mês anterior** não sobrescreve o que já existe no mês e pula categoria arquivada; devolve `{copied, skipped}`.
 - **SPA:** rota `#/orcamento`, no grupo "Análise" da navegação (a tab bar do celular, que usa os 4 primeiros itens de "Dia a dia", não muda). Estado puro em `web/src/lib/orcamento.ts`: `sem_orcamento`, `dentro` (100% exato ainda é dentro) e `estourado`, sempre com texto além da cor. `GET /api/budgets` marca cada linha com `budgetable` (despesa ativa); a tela só mostra campo e Salvar nessas, e mantém Remover quando há orçamento. Story CSF da linha em `orcamento.stories.tsx`, no padrão do insight (sem Storybook instalado; `orcamento.test.tsx` renderiza cada story). Sem Playwright: o `apps/financas/web` não tem.
+
+## Metas de economia (`src/domain/goals.ts`, `src/routes/goals.ts`, `web/src/pages/metas.tsx`)
+
+- **Rotas** (atrás da guarda de sessão): `GET`, `POST`, `PUT /:id` e `DELETE /:id` em `/api/goals`. Corpo ou conta inválidos são `422`, meta inexistente `404`, JSON malformado `400`.
+- **Modelo:** a meta aponta para **uma conta** e o progresso é o saldo dela (`accountBalances()`, o mesmo de `GET /api/accounts`). Aportes são lançamentos/transferências para a conta, então não há tabela de aportes: seria um segundo registro do mesmo dinheiro. O dinheiro que já estava na conta conta como progresso desde o início.
+- **Uma meta por conta** (`UNIQUE`), para duas metas não contarem o mesmo saldo. Se a conta também está na reserva de emergência (`emergency_accounts`), a lista marca `reserve_overlap` e a tela avisa que o dinheiro aparece nos dois lugares; não é bloqueado.
+- **Progresso** (`goalProgress`, pura, com `today` injetado): `concluida` (saldo ≥ alvo, mesmo com prazo vencido), `em_andamento` ou `atrasada` (prazo antes de hoje e alvo não atingido). Saldo negativo zera o percentual sem aumentar o que falta. Os meses até o prazo contam por mês de calendário, no mínimo 1, e o aporte mensal é o `ceil(falta / meses)`.
+- **Conta arquivada:** a meta continua na lista com `editable: false` (sem Editar, só Excluir).
+- **SPA:** `#/metas`, grupo "Análise", ao lado de Reserva. Cada abertura de formulário ganha um número (sessão) e cada confirmação de exclusão é amarrada ao id: terminar um salvar ou excluir não fecha o formulário reaberto nem o da outra meta, e a leitura mais nova da lista vence a antiga. O percentual fica abaixo de 100 enquanto falta dinheiro (floor). Story CSF do cartão em `metas.stories.tsx` (padrão do insight).
 
 ## Reserva de emergência (`src/domain/reserve.ts`, Task 1 da fatia ⑦)
 
