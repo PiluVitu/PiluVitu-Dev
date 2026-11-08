@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { Check } from 'lucide-react'
 import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { badgeVariants } from '@piluvitu/ui/badge'
@@ -284,6 +292,47 @@ function formDe(t: TransactionView): FormEdicao {
     pj: t.is_business === 1,
   }
 }
+
+function contagemDe(n: number, um: string, varios: string): string {
+  return `${n} ${n === 1 ? um : varios}`
+}
+
+/** O rótulo da pílula de período: "Período", "10/07/2026 a 31/07/2026"… */
+function rotuloDoPeriodo(de: string, ate: string): string {
+  if (de !== '' && ate !== '')
+    return `${formatarData(de)} a ${formatarData(ate)}`
+  if (de !== '') return `desde ${formatarData(de)}`
+  if (ate !== '') return `até ${formatarData(ate)}`
+  return 'Período'
+}
+
+/**
+ * Uma pílula de filtro de 44 px. O estado vai em `aria-pressed` e em texto
+ * (o rótulo muda para o nome da conta ou para o período), nunca só na cor.
+ */
+export const PilulaDeFiltro = forwardRef<
+  HTMLButtonElement,
+  { ativa: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>
+>(function PilulaDeFiltro({ ativa, className, children, ...props }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-pressed={ativa}
+      className={cn(
+        'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors duration-200 motion-reduce:transition-none',
+        ativa
+          ? 'bg-primary text-primary-foreground border-primary font-semibold'
+          : 'bg-card font-medium',
+        className,
+      )}
+      {...props}
+    >
+      {ativa ? <Check aria-hidden className="size-3.5" /> : null}
+      {children}
+    </button>
+  )
+})
 
 export function ExtratoPage() {
   const [linhas, setLinhas] = useState<TransactionView[] | null>(null)
@@ -974,46 +1023,54 @@ export function ExtratoPage() {
         nenhum filtro, chip e contador simplesmente não existem.
       */}
       <Sheet open={filtrosAbertos} onOpenChange={setFiltrosAbertos}>
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="group"
+          aria-label="Filtros do extrato"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <div className="min-w-44 flex-1">
+            <Label htmlFor="busca" className="sr-only">
+              Buscar no que já carregou
+            </Label>
+            <Input
+              id="busca"
+              className="h-11 rounded-2xl"
+              value={busca}
+              placeholder="Buscar descrição…"
+              onChange={(e) => aplicarFiltros({ busca: e.target.value })}
+            />
+          </div>
+          <PilulaDeFiltro
+            data-testid="filtro-nao-pagos"
+            ativa={somenteNaoPagos}
+            onClick={() =>
+              aplicarFiltros({ somenteNaoPagos: !somenteNaoPagos })
+            }
+          >
+            Falta pagar
+          </PilulaDeFiltro>
           <SheetTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={cn(ALVO_LINHA, 'gap-2')}
-              data-testid="abrir-filtros"
-            >
-              Filtros
-              {resumo.length > 0 ? (
-                <span
-                  className={cn(badgeVariants({ variant: 'default' }), 'px-2')}
-                  data-testid="filtros-contador"
-                >
-                  {resumo.length}
-                </span>
-              ) : null}
-            </Button>
+            <PilulaDeFiltro data-testid="abrir-filtros" ativa={contaId !== ''}>
+              {contaId === '' ? 'Todas as contas' : nomeConta(contaId)}
+            </PilulaDeFiltro>
           </SheetTrigger>
-
+          <SheetTrigger asChild>
+            <PilulaDeFiltro
+              data-testid="abrir-periodo"
+              ativa={de !== '' || ate !== ''}
+            >
+              {rotuloDoPeriodo(de, ate)}
+            </PilulaDeFiltro>
+          </SheetTrigger>
           {resumo.length > 0 ? (
-            <>
-              <span
-                className={cn(badgeVariants({ variant: 'secondary' }))}
-                data-testid="filtros-resumo"
-              >
-                {resumo.join(' · ')}
-              </span>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className={cn('h-auto p-0 text-xs no-underline', ALVO_LINK)}
-                data-testid="limpar-filtros"
-                onClick={() => aplicarFiltros(FILTROS_VAZIOS)}
-              >
-                limpar
-              </Button>
-            </>
+            <button
+              type="button"
+              data-testid="limpar-filtros"
+              className="text-muted-foreground hover:bg-accent inline-flex min-h-11 items-center rounded-full px-3 text-[13px] font-medium"
+              onClick={() => aplicarFiltros(FILTROS_VAZIOS)}
+            >
+              Limpar ({resumo.length})
+            </button>
           ) : null}
         </div>
 
@@ -1023,10 +1080,10 @@ export function ExtratoPage() {
           data-testid="painel-filtros"
         >
           <SheetHeader>
-            <SheetTitle>Filtros</SheetTitle>
+            <SheetTitle>Conta e período</SheetTitle>
             <SheetDescription>
-              Conta, período e situação decidem o que é BUSCADO no servidor. A
-              busca por texto roda só sobre o que já carregou.
+              Conta e período decidem o que é BUSCADO no servidor. "Falta pagar"
+              e a busca por texto ficam na faixa de cima.
             </SheetDescription>
           </SheetHeader>
 
@@ -1081,32 +1138,6 @@ export function ExtratoPage() {
             </p>
           ) : null}
 
-          {/* O alvo real é o `<label>` inteiro (ele embrulha o input), não o
-              quadradinho de 13,6×16 px — `ALVO_LINHA` só garante que a faixa
-              tenha os 44 px de altura. */}
-          <label className={cn(ALVO_LINHA, 'gap-2 text-sm')}>
-            <input
-              type="checkbox"
-              className={CHECKBOX_CLASSNAME}
-              data-testid="filtro-nao-pagos"
-              checked={somenteNaoPagos}
-              onChange={(e) =>
-                aplicarFiltros({ somenteNaoPagos: e.target.checked })
-              }
-            />
-            Só o que falta marcar como pago
-          </label>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="busca">Buscar (no que já carregou)</Label>
-            <Input
-              id="busca"
-              value={busca}
-              placeholder="descrição, conta ou categoria"
-              onChange={(e) => aplicarFiltros({ busca: e.target.value })}
-            />
-          </div>
-
           <SheetFooter className="gap-2">
             <Button
               type="button"
@@ -1146,27 +1177,41 @@ export function ExtratoPage() {
           {linhas !== null && linhas.length > 0 ? (
             <FaixaKpi className="mb-4 sm:grid-cols-3">
               {somenteNaoPagos ? (
-                <div className={CARTAO_KPI}>
-                  <p className={OVERLINE}>Pendente</p>
-                  <p
-                    className="text-foreground mt-1.5 text-sm font-semibold"
-                    data-testid="total-pendente"
-                  >
-                    Falta pagar{' '}
-                    <span className="tabular-nums">
+                <>
+                  <div className={CARTAO_KPI}>
+                    <p className={OVERLINE}>Falta sair</p>
+                    <p
+                      className="mt-1.5 text-[28px] leading-none font-bold tracking-[-0.02em] tabular-nums"
+                      data-testid="total-falta-sair"
+                    >
                       {formatBRL(pendentes.falta_sair_cents)}
-                    </span>
-                    {pendentes.falta_entrar_cents > 0 ? (
-                      <>
-                        {' '}
-                        · falta entrar{' '}
-                        <span className="tabular-nums">
-                          {formatBRL(pendentes.falta_entrar_cents)}
-                        </span>
-                      </>
-                    ) : null}
-                  </p>
-                </div>
+                    </p>
+                    <p className="text-muted-foreground mt-2 text-xs leading-snug">
+                      {contagemDe(
+                        visiveis.filter((t) => t.amount_cents < 0).length,
+                        'lançamento',
+                        'lançamentos',
+                      )}{' '}
+                      sem marcação de pago
+                    </p>
+                  </div>
+                  <div className={CARTAO_KPI}>
+                    <p className={OVERLINE}>Falta entrar</p>
+                    <p
+                      className="mt-1.5 text-[28px] leading-none font-bold tracking-[-0.02em] tabular-nums"
+                      data-testid="total-falta-entrar"
+                    >
+                      {formatBRL(pendentes.falta_entrar_cents)}
+                    </p>
+                    <p className="text-muted-foreground mt-2 text-xs leading-snug">
+                      {contagemDe(
+                        visiveis.filter((t) => t.amount_cents > 0).length,
+                        'recebimento previsto',
+                        'recebimentos previstos',
+                      )}
+                    </p>
+                  </div>
+                </>
               ) : null}
               <div className={CARTAO_KPI}>
                 <p className={OVERLINE}>Carregados</p>

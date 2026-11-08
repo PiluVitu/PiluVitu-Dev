@@ -279,23 +279,21 @@ describe('ExtratoPage — lista', () => {
     await screen.findByTestId('linha-t1')
     const antes = vi.mocked(api).mock.calls.length
 
-    await comFiltros(user, async () => {
-      const campo = screen.getByLabelText(/Buscar/)
-      await user.type(campo, 'starlink')
-      await waitFor(() =>
-        expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
-      )
-      expect(screen.getByTestId('linha-t1')).toBeInTheDocument()
+    const campo = screen.getByLabelText(/Buscar/)
+    await user.type(campo, 'starlink')
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('linha-t1')).toBeInTheDocument()
 
-      // O termo também alcança o nome da CONTA e o da CATEGORIA, não só a
-      // descrição — nenhum dos dois aparece literalmente na linha do banco.
-      await user.clear(campo)
-      await user.type(campo, 'cofre')
-      await waitFor(() =>
-        expect(screen.queryByTestId('linha-t1')).not.toBeInTheDocument(),
-      )
-      expect(screen.getByTestId('linha-t2')).toBeInTheDocument()
-    })
+    // O termo também alcança o nome da CONTA e o da CATEGORIA, não só a
+    // descrição — nenhum dos dois aparece literalmente na linha do banco.
+    await user.clear(campo)
+    await user.type(campo, 'cofre')
+    await waitFor(() =>
+      expect(screen.queryByTestId('linha-t1')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('linha-t2')).toBeInTheDocument()
 
     // Nenhuma das duas buscas foi ao servidor.
     expect(vi.mocked(api).mock.calls.length).toBe(antes)
@@ -314,9 +312,7 @@ describe('ExtratoPage — filtro "falta marcar como pago"', () => {
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t2')
 
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
 
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t2')).not.toBeInTheDocument(),
@@ -355,9 +351,7 @@ describe('ExtratoPage — marcar como pago', () => {
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t3')
 
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t3')).not.toBeInTheDocument(),
     )
@@ -960,22 +954,23 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
-    expect(screen.queryByTestId('total-pendente')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('total-falta-sair')).not.toBeInTheDocument()
 
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
     // a linha já paga some — sinal observável de que a lista filtrada chegou
     await waitFor(() =>
       expect(screen.queryByTestId('linha-t3')).not.toBeInTheDocument(),
     )
     // 189,00 + 1.200,50 = 1.389,50 — nunca os 5.000,00 da linha já paga
-    expect(screen.getByTestId('total-pendente')).toHaveTextContent(
-      'Falta pagar R$ 1.389,50',
+    expect(screen.getByTestId('total-falta-sair')).toHaveTextContent(
+      'R$ 1.389,50',
     )
-    expect(screen.getByTestId('total-pendente')).not.toHaveTextContent(
+    expect(screen.getByTestId('total-falta-sair')).not.toHaveTextContent(
       'R$ 6.389,50',
     )
+    expect(
+      screen.getByText('2 lançamentos sem marcação de pago'),
+    ).toBeInTheDocument()
   })
 
   it('receita pendente aparece SEPARADA, nunca abatendo o que falta pagar', async () => {
@@ -988,22 +983,19 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('total-pendente')).toHaveTextContent(
-        'Falta pagar R$ 300,00',
+      expect(screen.getByTestId('total-falta-sair')).toHaveTextContent(
+        'R$ 300,00',
       ),
     )
-    expect(screen.getByTestId('total-pendente')).toHaveTextContent(
-      'falta entrar R$ 200,00',
+    expect(screen.getByTestId('total-falta-entrar')).toHaveTextContent(
+      'R$ 200,00',
     )
+    expect(screen.getByText('1 recebimento previsto')).toBeInTheDocument()
     // o líquido (R$ 100,00) não pode aparecer em lugar nenhum
-    expect(screen.getByTestId('total-pendente')).not.toHaveTextContent(
-      'R$ 100,00',
-    )
+    expect(screen.queryByText('R$ 100,00')).not.toBeInTheDocument()
   })
 
   it('⚠️ a lista é PAGINADA: com mais páginas por vir, a soma se declara parcial', async () => {
@@ -1020,9 +1012,7 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     montarApi({ linhas })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t0')
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
 
     await waitFor(() =>
       expect(screen.getByTestId('carregar-mais')).toBeInTheDocument(),
@@ -1040,9 +1030,7 @@ describe('ExtratoPage — quanto falta pagar (o filtro respondia com CONTAGEM)',
     montarApi({ linhas: [tx({ id: 't1', amount_cents: -18900 })] })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
-    await comFiltros(user, async () => {
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
-    })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
 
     await waitFor(() =>
       expect(screen.getByTestId('resumo-carregado')).toHaveTextContent(
@@ -1194,23 +1182,28 @@ describe('resumoDosFiltros / queryDoExtrato — puros', () => {
 })
 
 describe('ExtratoPage — filtros no painel', () => {
-  it('a tela abre sem formulário de filtro: só o botão, e sem contador', async () => {
+  it('a tela abre com as pílulas de filtro todas desligadas e sem "Limpar"', async () => {
     comRelogio()
     montarApi({ linhas: [tx({ id: 't1' })] })
     render(<ExtratoPage />)
     await screen.findByTestId('linha-t1')
 
-    expect(screen.getByTestId('abrir-filtros')).toBeInTheDocument()
+    // A faixa de pílulas está sempre na tela; o painel de conta e período, não.
+    expect(screen.getByTestId('abrir-filtros')).toHaveTextContent(
+      'Todas as contas',
+    )
+    expect(screen.getByTestId('abrir-periodo')).toHaveTextContent('Período')
+    expect(screen.getByTestId('filtro-nao-pagos')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(screen.getByLabelText(/Buscar/)).toBeInTheDocument()
     expect(screen.queryByTestId('painel-filtros')).not.toBeInTheDocument()
-    // Nenhum controle de filtro ocupa a tela antes do dono pedir.
-    expect(screen.queryByTestId('filtro-nao-pagos')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/Buscar/)).not.toBeInTheDocument()
-    // Sem filtro não há chip nem número — ruído zero no caso comum.
-    expect(screen.queryByTestId('filtros-contador')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('filtros-resumo')).not.toBeInTheDocument()
+    // Sem filtro não há "Limpar" — ruído zero no caso comum.
+    expect(screen.queryByTestId('limpar-filtros')).not.toBeInTheDocument()
   })
 
-  it('com o painel FECHADO, o chip diz o que está filtrado e o botão diz quantos', async () => {
+  it('com o painel FECHADO, as pílulas dizem o que está filtrado e o Limpar diz quantos', async () => {
     const user = comRelogio()
     montarApi({
       linhas: [
@@ -1223,15 +1216,47 @@ describe('ExtratoPage — filtros no painel', () => {
 
     await comFiltros(user, async () => {
       await user.selectOptions(screen.getByTestId('filtro-conta'), 'a1')
-      await user.click(screen.getByTestId('filtro-nao-pagos'))
     })
+    await user.click(screen.getByTestId('filtro-nao-pagos'))
 
     // O painel está fechado — e o estado do filtro continua na tela.
     expect(screen.queryByTestId('painel-filtros')).not.toBeInTheDocument()
-    expect(screen.getByTestId('filtros-resumo')).toHaveTextContent(
-      'Nubank · falta pagar',
+    expect(screen.getByTestId('abrir-filtros')).toHaveTextContent('Nubank')
+    expect(screen.getByTestId('abrir-filtros')).toHaveAttribute(
+      'aria-pressed',
+      'true',
     )
-    expect(screen.getByTestId('filtros-contador')).toHaveTextContent('2')
+    expect(screen.getByTestId('filtro-nao-pagos')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByTestId('limpar-filtros')).toHaveTextContent('Limpar (2)')
+  })
+
+  it('a pílula de período mostra o recorte e a de conta volta a "Todas as contas" ao limpar', async () => {
+    const user = comRelogio()
+    montarApi({ linhas: [tx({ id: 't1' })] })
+    render(<ExtratoPage />)
+    await screen.findByTestId('linha-t1')
+
+    await comFiltros(user, async () => {
+      fireEvent.change(screen.getByTestId('filtro-de'), {
+        target: { value: '2026-07-01' },
+      })
+      fireEvent.change(screen.getByTestId('filtro-ate'), {
+        target: { value: '2026-07-31' },
+      })
+    })
+    expect(screen.getByTestId('abrir-periodo')).toHaveTextContent(
+      '01/07/2026 a 31/07/2026',
+    )
+    expect(screen.getByTestId('limpar-filtros')).toHaveTextContent('Limpar (1)')
+
+    await user.click(screen.getByTestId('limpar-filtros'))
+    expect(screen.getByTestId('abrir-periodo')).toHaveTextContent('Período')
+    expect(screen.getByTestId('abrir-filtros')).toHaveTextContent(
+      'Todas as contas',
+    )
   })
 
   it('filtrar por conta muda o que é BUSCADO (?account_id=), não só o que é exibido', async () => {
@@ -1368,8 +1393,10 @@ describe('ExtratoPage — filtros no painel', () => {
     await user.click(screen.getByTestId('limpar-filtros'))
 
     await screen.findByTestId('linha-t2')
-    expect(screen.queryByTestId('filtros-resumo')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('filtros-contador')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('limpar-filtros')).not.toBeInTheDocument()
+    expect(screen.getByTestId('abrir-filtros')).toHaveTextContent(
+      'Todas as contas',
+    )
   })
 
   it('data inicial depois da final é avisada — lista vazia ali não significa "não há nada"', async () => {
@@ -1421,5 +1448,31 @@ describe('ExtratoPage — filtros no painel', () => {
         /—.*Nubank/,
       ),
     )
+  })
+})
+
+// ---------------------------------------------------------------------
+// Stories da pílula de filtro (UI aprovada).
+// ---------------------------------------------------------------------
+import * as historiasExtrato from './extrato.stories'
+import { PilulaDeFiltro } from './extrato'
+
+describe('extrato.stories — a pílula de filtro', () => {
+  const { default: _meta, ...historias } = historiasExtrato
+  it('cada story mostra o estado que o nome promete, com 44 px e texto', () => {
+    const esperado: Record<string, boolean> = {
+      Desligada: false,
+      Ligada: true,
+      ComContaEscolhida: true,
+    }
+    expect(Object.keys(historias).sort()).toEqual(Object.keys(esperado).sort())
+    for (const [nome, h] of Object.entries(historias)) {
+      const { container, unmount } = render(<PilulaDeFiltro {...h.args} />)
+      const botao = container.querySelector('button') as HTMLButtonElement
+      expect(botao).toHaveAttribute('aria-pressed', String(esperado[nome]))
+      expect(botao.className).toContain('min-h-11')
+      expect(botao).toHaveTextContent(h.args.children)
+      unmount()
+    }
   })
 })

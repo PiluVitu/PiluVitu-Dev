@@ -82,6 +82,9 @@ function mockApi(
     post?: () => unknown
     put?: () => unknown
     archive?: () => unknown
+    budgets?: () => unknown
+    budgetPut?: () => unknown
+    budgetDelete?: () => unknown
   } = {},
 ) {
   vi.mocked(api).mockImplementation(
@@ -89,6 +92,16 @@ function mockApi(
       const method = init?.method ?? 'GET'
       if (method === 'GET' && path === '/api/categories') {
         return opts.lista ? opts.lista() : categorias
+      }
+      if (method === 'GET' && path.startsWith('/api/budgets')) {
+        if (opts.budgets) return opts.budgets()
+        throw new Error('orçamento indisponível')
+      }
+      if (method === 'PUT' && path.startsWith('/api/budgets/')) {
+        return opts.budgetPut ? opts.budgetPut() : { ok: true }
+      }
+      if (method === 'DELETE' && path.startsWith('/api/budgets/')) {
+        return opts.budgetDelete ? opts.budgetDelete() : { ok: true }
       }
       if (method === 'POST' && path === '/api/categories') {
         return opts.post ? opts.post() : cat({ id: 'c-nova', name: 'Mercado' })
@@ -565,6 +578,355 @@ describe('CategoriasPage — grupos por tipo', () => {
     for (const id of ['categoria-c-das', 'categoria-c-contador']) {
       expect(screen.getByTestId(id)).toHaveAttribute('data-nivel', '1')
       expect(screen.getByTestId(id).className).toContain('ml-4')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------
+// Orçamento na tela de Categorias (UI aprovada): coluna de limite por
+// despesa e o campo "Limite mensal" no formulário.
+// ---------------------------------------------------------------------
+const linhaOrc = (id: string, orcado: number | null, gasto: number) => ({
+  category_id: id,
+  category_name: id,
+  parent_name: null,
+  budget_cents: orcado,
+  spent_cents: gasto,
+  budgetable: true,
+  average_3m_cents: 0,
+})
+
+const orcamento = (rows: ReturnType<typeof linhaOrc>[]) => ({
+  month: '2026-08',
+  rows,
+  total_budget_cents: 0,
+  budgeted_spent_cents: 0,
+  uncategorized_spent_cents: 0,
+})
+
+const comLimites = () =>
+  orcamento([
+    linhaOrc('c-pj', 210000, 198000),
+    linhaOrc('c-contador', 60000, 70000),
+    linhaOrc('c-das', null, 1200),
+  ])
+
+describe('CategoriasPage — orçamento', () => {
+  it('despesa com limite mostra a barra e o valor, com link para o Orçamento', async () => {
+    mockApi({ budgets: comLimites })
+    render(<CategoriasPage />)
+    const link = await screen.findByRole('link', {
+      name: 'Orçamento de Custos da PJ: R$ 2.100,00',
+    })
+    expect(link).toHaveAttribute('href', '#/orcamento')
+    const barra = within(link).getByRole('progressbar')
+    expect(barra).toHaveAttribute('aria-valuenow', '94')
+    // estourada: a barra enche e o valor segue legível
+    const estourada = screen.getByRole('link', {
+      name: 'Orçamento de Contador: R$ 600,00',
+    })
+    expect(within(estourada).getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '100',
+    )
+  })
+
+  it('despesa sem limite oferece "Definir limite"; entrada e estrutural não têm coluna', async () => {
+    mockApi({ budgets: comLimites })
+    render(<CategoriasPage />)
+    const definir = await screen.findByRole('link', {
+      name: 'Definir limite de DAS — Simples Nacional',
+    })
+    expect(definir).toHaveAttribute('href', '#/orcamento')
+    const quitacao = screen.getByTestId('categoria-c-quitacao')
+    expect(within(quitacao).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('o cabeçalho do grupo diz de onde vem o orçamento e o que é estrutural', async () => {
+    mockApi({ budgets: comLimites })
+    render(<CategoriasPage />)
+    await screen.findByRole('link', { name: /Orçamento de Custos da PJ/ })
+    expect(
+      within(screen.getByTestId('grupo-expense')).getByText(
+        'orçamento · ago/26',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('grupo-debt_settlement')).getByText(
+        'estrutural · sem orçamento',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('orçamento fora do ar: a lista continua inteira, sem coluna e sem alerta', async () => {
+    mockApi()
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    expect(
+      screen.queryByRole('link', { name: /limite/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+describe('CategoriasPage — Limite mensal no formulário', () => {
+  it('despesa mostra o campo com a dica do mês; entrada não mostra', async () => {
+    mockApi({ budgets: comLimites })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    expect(
+      screen.getByLabelText('Limite mensal (opcional)'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Vale a partir de agosto. Dá para mudar mês a mês em Orçamento.',
+      ),
+    ).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Tipo'), 'income')
+    expect(
+      screen.queryByLabelText('Limite mensal (opcional)'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('cria a categoria e, em seguida, o limite do mês corrente', async () => {
+    mockApi({ budgets: comLimites })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+    await user.type(screen.getByLabelText('Limite mensal (opcional)'), '250,00')
+    await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith('/api/budgets/2026-08/c-nova', {
+        method: 'PUT',
+        body: JSON.stringify({ amount_cents: 25000 }),
+      }),
+    )
+  })
+
+  it('sem limite digitado, nenhuma chamada de orçamento é feita', async () => {
+    mockApi({ budgets: comLimites })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+    await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+    await waitFor(() =>
+      expect(corpoDaChamada('POST', '/api/categories')).toBeDefined(),
+    )
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([p, i]) => String(p).startsWith('/api/budgets/') && i?.method,
+        ),
+    ).toHaveLength(0)
+  })
+
+  it.each([['abc'], ['0']])(
+    'limite %j é recusado antes de criar a categoria',
+    async (digitado) => {
+      mockApi({ budgets: comLimites })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      render(<CategoriasPage />)
+      await screen.findByTestId('categoria-c-pj')
+      await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+      await user.type(
+        screen.getByLabelText('Limite mensal (opcional)'),
+        digitado,
+      )
+      await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(/limite/i)
+      expect(
+        vi.mocked(api).mock.calls.filter(([, i]) => i?.method === 'POST'),
+      ).toHaveLength(0)
+    },
+  )
+
+  it('se o limite falhar depois de criar, avisa que a categoria existe e não manda criar de novo', async () => {
+    mockApi({
+      budgets: comLimites,
+      budgetPut: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'categoria arquivada não aceita orçamento',
+        )
+      },
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+    await user.type(screen.getByLabelText('Limite mensal (opcional)'), '100')
+    await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('A categoria "Farmácia" foi criada')
+    expect(alerta).toHaveTextContent('o limite não foi salvo')
+    expect(alerta).toHaveTextContent('categoria arquivada não aceita orçamento')
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([p, i]) => p === '/api/categories' && i?.method === 'POST',
+        ),
+    ).toHaveLength(1)
+  })
+
+  it('POST ok, limite falha E a recarga cai: os dois avisos aparecem, o formulário fica limpo e não repete o POST', async () => {
+    let leituras = 0
+    mockApi({
+      budgets: comLimites,
+      lista: () => {
+        // a primeira leitura (abertura da tela) funciona; a recarga pós-POST cai
+        if (++leituras > 1) throw new ApiError(0, 'rede', 'sem conexão')
+        return categorias
+      },
+      budgetPut: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'categoria arquivada não aceita orçamento',
+        )
+      },
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+    await user.type(screen.getByLabelText('Limite mensal (opcional)'), '100')
+    await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+
+    const alerta = await screen.findByRole('alert')
+    // a recarga que caiu
+    expect(alerta).toHaveTextContent('A categoria "Farmácia" foi criada')
+    expect(alerta).toHaveTextContent('não consegui recarregar a lista')
+    expect(alerta).toHaveTextContent('Não envie de novo')
+    // E o limite que NÃO foi salvo, com a causa
+    expect(alerta).toHaveTextContent('o limite mensal não foi salvo')
+    expect(alerta).toHaveTextContent('categoria arquivada não aceita orçamento')
+    expect(alerta).toHaveTextContent('Defina em Orçamento')
+    // formulário limpo e nenhum segundo POST
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+    expect(screen.getByLabelText('Limite mensal (opcional)')).toHaveValue('')
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([p, i]) => p === '/api/categories' && i?.method === 'POST',
+        ),
+    ).toHaveLength(1)
+  })
+
+  it('editar traz o limite atual; mudar salva, esvaziar remove e manter não chama nada', async () => {
+    mockApi({ budgets: comLimites })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    const li = await screen.findByTestId('categoria-c-contador')
+    await user.click(within(li).getByRole('button', { name: 'Editar' }))
+    const campo = screen.getByLabelText('Limite mensal (opcional)')
+    expect(campo).toHaveValue('R$ 600,00')
+
+    // manter: nenhuma chamada de orçamento
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() =>
+      expect(corpoDaChamada('PUT', '/api/categories/c-contador')).toBeDefined(),
+    )
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([p, i]) => String(p).startsWith('/api/budgets/') && i?.method,
+        ),
+    ).toHaveLength(0)
+
+    // mudar
+    await user.click(
+      within(await screen.findByTestId('categoria-c-contador')).getByRole(
+        'button',
+        { name: 'Editar' },
+      ),
+    )
+    const campo2 = screen.getByLabelText('Limite mensal (opcional)')
+    await user.clear(campo2)
+    await user.type(campo2, '700,00')
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith('/api/budgets/2026-08/c-contador', {
+        method: 'PUT',
+        body: JSON.stringify({ amount_cents: 70000 }),
+      }),
+    )
+
+    // esvaziar
+    await user.click(
+      within(await screen.findByTestId('categoria-c-contador')).getByRole(
+        'button',
+        { name: 'Editar' },
+      ),
+    )
+    await user.clear(screen.getByLabelText('Limite mensal (opcional)'))
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith('/api/budgets/2026-08/c-contador', {
+        method: 'DELETE',
+      }),
+    )
+  })
+
+  it('editar uma entrada não mostra o campo de limite', async () => {
+    mockApi({
+      budgets: comLimites,
+      lista: () => [
+        ...categorias,
+        cat({ id: 'c-salario', name: 'Salário', kind: 'income' }),
+      ],
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    const li = await screen.findByTestId('categoria-c-salario')
+    await user.click(within(li).getByRole('button', { name: 'Editar' }))
+    expect(
+      screen.queryByLabelText('Limite mensal (opcional)'),
+    ).not.toBeInTheDocument()
+  })
+})
+
+import * as historiasCategorias from './categorias.stories'
+import { ColunaDeOrcamento } from './categorias'
+
+describe('categorias.stories — a coluna de orçamento', () => {
+  const { default: _meta, ...historias } = historiasCategorias
+  it('cada story mostra o estado que o nome promete', () => {
+    const esperado: Record<string, (c: HTMLElement) => void> = {
+      SemLimite: (c) =>
+        expect(
+          within(c).getByRole('link', { name: 'Definir limite de Mercado' }),
+        ).toBeInTheDocument(),
+      DentroDoLimite: (c) => {
+        expect(within(c).getByRole('progressbar')).toHaveAttribute(
+          'aria-valuenow',
+          '25',
+        )
+        expect(within(c).getByText('R$ 1.200,00')).toBeInTheDocument()
+      },
+      EmAtencao: (c) =>
+        expect(within(c).getByRole('progressbar')).toHaveAttribute(
+          'aria-valuenow',
+          '83',
+        ),
+      Estourada: (c) =>
+        expect(within(c).getByRole('progressbar')).toHaveAttribute(
+          'aria-valuenow',
+          '100',
+        ),
+    }
+    expect(Object.keys(historias).sort()).toEqual(Object.keys(esperado).sort())
+    for (const [nome, h] of Object.entries(historias)) {
+      const { container, unmount } = render(<ColunaDeOrcamento {...h.args} />)
+      esperado[nome](container)
+      unmount()
     }
   })
 })
