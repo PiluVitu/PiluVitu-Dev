@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { formatBRL, parseBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { badgeVariants } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
@@ -22,9 +23,19 @@ import {
   type CategoryView,
   type NoDeCategoria,
 } from '../lib/categories'
+import { rotuloCompetencia } from '../lib/commitments'
+import { competenciaAtual } from '../lib/dates'
 import { SELECT_CLASSNAME } from '../lib/form-classes'
+import {
+  estadoDoOrcamento,
+  larguraDaBarra,
+  mesPorExtenso,
+  type EstadoOrcamento,
+  type LinhaOrcamento,
+  type RelatorioOrcamento,
+} from '../lib/orcamento'
 import { mutarERecarregar } from '../lib/mutar-e-recarregar'
-import { CARTAO_SECAO } from '../lib/superficie'
+import { CARTAO_SECAO, TRILHO_BARRA } from '../lib/superficie'
 import { ROTULO, ROTULO_SECAO, SUBTITULO_PAGINA } from '../lib/tipografia'
 import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
 
@@ -125,6 +136,63 @@ export function agruparPorTipo(
   }))
 }
 
+const COR_BARRA_LIMITE: Record<EstadoOrcamento, string> = {
+  estourado: 'bg-destructive',
+  atencao: 'bg-warn',
+  dentro: 'bg-primary',
+  sem_orcamento: 'bg-primary',
+}
+
+/** A coluna de orçamento de uma despesa: a barra e o limite, ou "Definir limite". */
+export function ColunaDeOrcamento({
+  nome,
+  linha,
+}: {
+  nome: string
+  linha: LinhaOrcamento
+}) {
+  if (linha.budget_cents === null)
+    return (
+      <a
+        href="#/orcamento"
+        aria-label={`Definir limite de ${nome}`}
+        className="text-primary inline-flex min-h-9 items-center gap-1.5 rounded-[14px] border border-dashed px-2.5 text-xs font-semibold"
+      >
+        + Definir limite
+      </a>
+    )
+  const estado = estadoDoOrcamento(linha.budget_cents, linha.spent_cents)
+  return (
+    <a
+      href="#/orcamento"
+      aria-label={`Orçamento de ${nome}: ${formatBRL(linha.budget_cents)}`}
+      className="-mx-2 grid min-h-11 grid-cols-[96px_auto] items-center gap-2.5 rounded-xl px-2"
+    >
+      <span
+        role="progressbar"
+        aria-label={`Uso do orçamento de ${nome}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={larguraDaBarra(linha.budget_cents, linha.spent_cents)}
+        className={cn(TRILHO_BARRA, 'block h-1.5')}
+      >
+        <span
+          className={cn(
+            'block h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none',
+            COR_BARRA_LIMITE[estado],
+          )}
+          style={{
+            width: `${larguraDaBarra(linha.budget_cents, linha.spent_cents)}%`,
+          }}
+        />
+      </span>
+      <span className="text-right text-xs whitespace-nowrap tabular-nums">
+        {formatBRL(linha.budget_cents)}
+      </span>
+    </a>
+  )
+}
+
 type ConfirmacaoPendente = {
   titulo: string
   mensagem: string
@@ -133,6 +201,9 @@ type ConfirmacaoPendente = {
 
 export function CategoriasPage() {
   const [categorias, setCategorias] = useState<CategoryView[] | null>(null)
+  // Falha do orçamento não derruba a tela: sem ele, só some a coluna.
+  const [orcamento, setOrcamento] = useState<RelatorioOrcamento | null>(null)
+  const [limite, setLimite] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [editandoId, setEditandoId] = useState<string | null>(null)
@@ -155,9 +226,15 @@ export function CategoriasPage() {
     // Sem `?kind=`: esta é a tela de GESTÃO, mostra tudo que existe. A rota
     // já esconde arquivada (não há parâmetro pra incluí-las, nem rota de
     // desarquivar — ver a mensagem do diálogo).
-    const cats = await api<CategoryView[]>('/api/categories')
+    const [cats, orc] = await Promise.all([
+      api<CategoryView[]>('/api/categories'),
+      api<RelatorioOrcamento>(`/api/budgets?month=${competenciaAtual()}`).catch(
+        () => null,
+      ),
+    ])
     if (!vivo()) return
     setCategorias(cats)
+    setOrcamento(orc)
   }, [])
 
   useEffect(() => {
@@ -176,6 +253,7 @@ export function CategoriasPage() {
     setKind('expense')
     setMaeId(NENHUMA)
     setEscopo(NENHUMA)
+    setLimite('')
     setFormError(null)
   }
 
@@ -185,6 +263,8 @@ export function CategoriasPage() {
     setKind(c.kind)
     setMaeId(c.parent_id ?? NENHUMA)
     setEscopo(c.default_scope ?? NENHUMA)
+    const atual = orcamento?.rows.find((l) => l.category_id === c.id)
+    setLimite(atual?.budget_cents != null ? formatBRL(atual.budget_cents) : '')
     setFormError(null)
   }
 
@@ -197,8 +277,30 @@ export function CategoriasPage() {
       return
     }
 
+    // O limite é validado antes de qualquer chamada: nada é criado se ele
+    // estiver errado.
+    let limiteCents: number | null = null
+    if (kind === 'expense' && limite.trim() !== '') {
+      try {
+        limiteCents = parseBRL(limite)
+      } catch {
+        setFormError('Digite o limite em reais, como 250,00.')
+        return
+      }
+      if (limiteCents <= 0) {
+        setFormError('O limite mensal precisa ser maior que zero.')
+        return
+      }
+    }
+    const limiteAnterior =
+      editandoId !== null
+        ? (orcamento?.rows.find((l) => l.category_id === editandoId)
+            ?.budget_cents ?? null)
+        : null
+
     setSalvando(true)
     const editando = editandoId !== null
+    let avisoDoLimite: string | null = null
     // Salvar e recarregar são sucessos INDEPENDENTES (ver
     // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um 201 seguido
     // de um GET que cai mostrava o erro do GET como se a categoria não
@@ -211,6 +313,7 @@ export function CategoriasPage() {
           parent_id: maeId || null,
           default_scope: escopo || null,
         }
+        let categoriaId: string
         if (editandoId) {
           // ⚠️ `kind` NUNCA vai no corpo do PUT: a rota o recusa com 422
           // `protected_field` — e a recusa vale pro CORPO INTEIRO, então
@@ -219,11 +322,31 @@ export function CategoriasPage() {
             method: 'PUT',
             body: JSON.stringify(comum),
           })
+          categoriaId = editandoId
         } else {
-          await api('/api/categories', {
+          const criada = await api<{ id: string }>('/api/categories', {
             method: 'POST',
             body: JSON.stringify({ ...comum, kind }),
           })
+          categoriaId = criada.id
+        }
+        // O limite é uma segunda gravação: se falhar, a categoria JÁ existe,
+        // então o erro vira aviso e o formulário não manda criar de novo.
+        if (kind === 'expense' && limiteCents !== limiteAnterior) {
+          const mes = competenciaAtual()
+          try {
+            if (limiteCents === null)
+              await api(`/api/budgets/${mes}/${categoriaId}`, {
+                method: 'DELETE',
+              })
+            else
+              await api(`/api/budgets/${mes}/${categoriaId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ amount_cents: limiteCents }),
+              })
+          } catch (err) {
+            avisoDoLimite = `A categoria "${nome.trim()}" foi ${editando ? 'salva' : 'criada'}, mas o limite não foi salvo: ${err instanceof ApiError ? err.message : String(err)}. Defina em Orçamento.`
+          }
         }
         limparFormulario()
       },
@@ -233,6 +356,7 @@ export function CategoriasPage() {
         : `A categoria "${nome}" foi criada, mas não consegui recarregar a lista — atualize a página pra vê-la. Não envie de novo: criaria uma segunda categoria com o mesmo nome, e o relatório por categoria mostraria o mesmo gasto partido em duas linhas.`,
     )
     if (!resultado.ok) setFormError(resultado.mensagem)
+    else if (avisoDoLimite) setFormError(avisoDoLimite)
     setSalvando(false)
   }
 
@@ -307,11 +431,26 @@ export function CategoriasPage() {
             */
             <div className="space-y-6" data-testid="lista-categorias">
               {agruparPorTipo(nos).map((grupo) => (
-                <div key={grupo.kind} data-testid={`grupo-${grupo.kind}`}>
+                <div
+                  key={grupo.kind}
+                  data-testid={`grupo-${grupo.kind}`}
+                  className="grid grid-cols-[1fr_auto] items-baseline gap-x-3"
+                >
                   <p className={cn(ROTULO_SECAO, 'mb-2')}>
                     {ROTULO_KIND[grupo.kind]} · {grupo.nos.length}
                   </p>
-                  <ul className="space-y-2">
+                  {grupo.kind === 'expense' && orcamento ? (
+                    <span className="text-muted-foreground font-mono text-[10px] tracking-[0.12em] uppercase">
+                      orçamento · {rotuloCompetencia(competenciaAtual())}
+                    </span>
+                  ) : ESTRUTURAIS.includes(grupo.kind) ? (
+                    <span className="text-muted-foreground font-mono text-[10px] tracking-[0.12em] uppercase">
+                      estrutural · sem orçamento
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <ul className="col-span-2 space-y-2">
                     {grupo.nos.map(({ categoria: c, nivel }) => (
                       <li
                         key={c.id}
@@ -377,6 +516,21 @@ export function CategoriasPage() {
                               {c.default_scope ? ` · ${c.default_scope}` : ''}
                             </span>
                           </div>
+                          {c.kind === 'expense' && orcamento
+                            ? (() => {
+                                const linha = orcamento.rows.find(
+                                  (l) => l.category_id === c.id,
+                                )
+                                return linha ? (
+                                  <div className="mt-2">
+                                    <ColunaDeOrcamento
+                                      nome={c.name}
+                                      linha={linha}
+                                    />
+                                  </div>
+                                ) : null
+                              })()
+                            : null}
                           {/* Mesma regra do extrato: alvo de 44 px e o
                               destrutivo empurrado pra outra ponta
                               (`ml-auto`), em vez de colado no botão de uso
@@ -515,6 +669,26 @@ export function CategoriasPage() {
                 <option value="PF">PF</option>
               </select>
             </div>
+
+            {kind === 'expense' ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="categoria-limite">
+                  Limite mensal (opcional)
+                </Label>
+                <Input
+                  id="categoria-limite"
+                  inputMode="decimal"
+                  placeholder="R$ 0,00"
+                  value={limite}
+                  onChange={(e) => setLimite(e.target.value)}
+                />
+                <p className="text-muted-foreground text-xs">
+                  Vale a partir de{' '}
+                  {mesPorExtenso(competenciaAtual()).split(' de ')[0]}. Dá para
+                  mudar mês a mês em Orçamento.
+                </p>
+              </div>
+            ) : null}
 
             {formError ? (
               <p role="alert" className="text-destructive text-sm">
