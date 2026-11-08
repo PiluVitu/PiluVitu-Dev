@@ -246,6 +246,23 @@ describe('createGoal e listGoals', () => {
     )
   })
 
+  it.each([
+    ['omitido', undefined],
+    ['nulo', null],
+    ['objeto', { id: 'x' }],
+    ['número', 42],
+    ['vazio', ''],
+    ['só espaços', '   '],
+  ])('conta %s é RangeError, não erro de binding', async (_titulo, valor) => {
+    const entrada = { name: 'Viagem', target_cents: 500000, account_id: valor }
+    await expect(createGoal(db, entrada as never)).rejects.toThrow(RangeError)
+    const c = await conta()
+    const meta = await createGoal(db, nova(c.id))
+    await expect(updateGoal(db, meta.id, entrada as never)).rejects.toThrow(
+      RangeError,
+    )
+  })
+
   it('apara o nome', async () => {
     const c = await conta()
     expect(

@@ -66,6 +66,20 @@ describe('POST /api/goals', () => {
     )
   })
 
+  it.each([
+    ['omitido', undefined],
+    ['nulo', null],
+    ['objeto', { id: 'x' }],
+    ['vazio', ''],
+  ])('conta %s é 422, não 500', async (_titulo, valor) => {
+    const base = { name: 'Viagem', target_cents: 500000, account_id: valor }
+    const res = await chamar('', 'POST', base)
+    expect(res.status).toBe(422)
+    expect(((await res.json()) as Envelope<null>).notifications[0].code).toBe(
+      'constraint_violation',
+    )
+  })
+
   it('segunda meta na mesma conta é 422', async () => {
     const c = await conta()
     await chamar('', 'POST', corpo(c.id))
@@ -117,6 +131,23 @@ describe('PUT /api/goals/:id', () => {
       'Carro',
     )
     expect((await chamar('/nao-existe', 'PUT', corpo(c.id))).status).toBe(404)
+  })
+
+  it.each([
+    ['omitido', undefined],
+    ['nulo', null],
+    ['objeto', { id: 'x' }],
+  ])('PUT com conta %s é 422, não 500', async (_titulo, valor) => {
+    const c = await conta()
+    const criada = (await (
+      await chamar('', 'POST', corpo(c.id))
+    ).json()) as Envelope<{ id: string }>
+    const res = await chamar(`/${criada.data?.id}`, 'PUT', {
+      name: 'Viagem',
+      target_cents: 500000,
+      account_id: valor,
+    })
+    expect(res.status).toBe(422)
   })
 
   it('corpo inválido é 422', async () => {

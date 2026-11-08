@@ -137,6 +137,8 @@ async function validar(
     throw new RangeError('prazo precisa ser uma data válida (AAAA-MM-DD)')
 
   const account_id = input.account_id
+  if (typeof account_id !== 'string' || account_id.trim() === '')
+    throw new RangeError('escolha a conta onde o dinheiro fica guardado')
   const conta = await db
     .prepare('SELECT kind, archived_at FROM accounts WHERE id = ?')
     .bind(account_id)
