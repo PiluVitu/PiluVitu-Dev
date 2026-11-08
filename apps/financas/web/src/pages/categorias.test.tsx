@@ -774,6 +774,51 @@ describe('CategoriasPage — Limite mensal no formulário', () => {
     ).toHaveLength(1)
   })
 
+  it('POST ok, limite falha E a recarga cai: os dois avisos aparecem, o formulário fica limpo e não repete o POST', async () => {
+    let leituras = 0
+    mockApi({
+      budgets: comLimites,
+      lista: () => {
+        // a primeira leitura (abertura da tela) funciona; a recarga pós-POST cai
+        if (++leituras > 1) throw new ApiError(0, 'rede', 'sem conexão')
+        return categorias
+      },
+      budgetPut: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'categoria arquivada não aceita orçamento',
+        )
+      },
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<CategoriasPage />)
+    await screen.findByTestId('categoria-c-pj')
+    await user.type(screen.getByLabelText('Nome'), 'Farmácia')
+    await user.type(screen.getByLabelText('Limite mensal (opcional)'), '100')
+    await user.click(screen.getByRole('button', { name: 'Criar categoria' }))
+
+    const alerta = await screen.findByRole('alert')
+    // a recarga que caiu
+    expect(alerta).toHaveTextContent('A categoria "Farmácia" foi criada')
+    expect(alerta).toHaveTextContent('não consegui recarregar a lista')
+    expect(alerta).toHaveTextContent('Não envie de novo')
+    // E o limite que NÃO foi salvo, com a causa
+    expect(alerta).toHaveTextContent('o limite mensal não foi salvo')
+    expect(alerta).toHaveTextContent('categoria arquivada não aceita orçamento')
+    expect(alerta).toHaveTextContent('Defina em Orçamento')
+    // formulário limpo e nenhum segundo POST
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+    expect(screen.getByLabelText('Limite mensal (opcional)')).toHaveValue('')
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([p, i]) => p === '/api/categories' && i?.method === 'POST',
+        ),
+    ).toHaveLength(1)
+  })
+
   it('editar traz o limite atual; mudar salva, esvaziar remove e manter não chama nada', async () => {
     mockApi({ budgets: comLimites })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })

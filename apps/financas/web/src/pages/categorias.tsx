@@ -300,7 +300,9 @@ export function CategoriasPage() {
 
     setSalvando(true)
     const editando = editandoId !== null
-    let avisoDoLimite: string | null = null
+    // Causa de o limite não ter sido salvo (a categoria já existe nesse ponto).
+    let falhaDoLimite: string | null = null
+    const nomeSalvo = nome.trim()
     // Salvar e recarregar são sucessos INDEPENDENTES (ver
     // lib/mutar-e-recarregar.ts): com os dois no mesmo `try`, um 201 seguido
     // de um GET que cai mostrava o erro do GET como se a categoria não
@@ -345,7 +347,7 @@ export function CategoriasPage() {
                 body: JSON.stringify({ amount_cents: limiteCents }),
               })
           } catch (err) {
-            avisoDoLimite = `A categoria "${nome.trim()}" foi ${editando ? 'salva' : 'criada'}, mas o limite não foi salvo: ${err instanceof ApiError ? err.message : String(err)}. Defina em Orçamento.`
+            falhaDoLimite = err instanceof ApiError ? err.message : String(err)
           }
         }
         limparFormulario()
@@ -355,8 +357,18 @@ export function CategoriasPage() {
         ? `A categoria "${nome}" foi salva, mas não consegui recarregar a lista — atualize a página pra ver a alteração.`
         : `A categoria "${nome}" foi criada, mas não consegui recarregar a lista — atualize a página pra vê-la. Não envie de novo: criaria uma segunda categoria com o mesmo nome, e o relatório por categoria mostraria o mesmo gasto partido em duas linhas.`,
     )
-    if (!resultado.ok) setFormError(resultado.mensagem)
-    else if (avisoDoLimite) setFormError(avisoDoLimite)
+    // Os dois avisos se compõem: a recarga que caiu não pode esconder que o
+    // limite não foi salvo (nem o contrário).
+    if (!resultado.ok)
+      setFormError(
+        falhaDoLimite
+          ? `${resultado.mensagem} Além disso, o limite mensal não foi salvo: ${falhaDoLimite}. Defina em Orçamento.`
+          : resultado.mensagem,
+      )
+    else if (falhaDoLimite)
+      setFormError(
+        `A categoria "${nomeSalvo}" foi ${editando ? 'salva' : 'criada'}, mas o limite não foi salvo: ${falhaDoLimite}. Defina em Orçamento.`,
+      )
     setSalvando(false)
   }
 
