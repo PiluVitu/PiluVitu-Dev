@@ -250,6 +250,30 @@ afterEach(() => {
 })
 
 describe('TransferirPage — o formulário que faltava pra POST /api/transfers', () => {
+  describe('?para=<conta> (Registrar aporte, de Metas)', () => {
+    afterEach(() => {
+      window.location.hash = ''
+    })
+
+    it('já deixa a conta do aporte como destino e escolhe outra como origem', async () => {
+      window.location.hash = '#/lancar/transferir?para=a-pj'
+      await montar()
+      expect(screen.getByLabelText(/^Para \(/)).toHaveValue('a-pj')
+      expect(screen.getByLabelText(/^De \(/)).toHaveValue('a-pf')
+    })
+
+    it.each([
+      ['conta inexistente', 'nao-existe'],
+      ['cartão de crédito, que a tela não oferece', 'a-cartao'],
+      ['valor vazio', ''],
+    ])('ignora %s e mantém o padrão', async (_titulo, para) => {
+      window.location.hash = `#/lancar/transferir?para=${para}`
+      await montar()
+      expect(screen.getByLabelText(/^De \(/)).toHaveValue('a-pj')
+      expect(screen.getByLabelText(/^Para \(/)).toHaveValue('a-pf')
+    })
+  })
+
   it('cria a transferência num ÚNICO POST /api/transfers, nunca dois lançamentos soltos', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const fetchMock = await montar()

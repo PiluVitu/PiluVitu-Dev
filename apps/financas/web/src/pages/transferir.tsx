@@ -148,8 +148,22 @@ export function TransferirPage() {
     if (!vivo()) return
     setContas(cs)
     setCategorias(cats)
-    setOrigemId((atual) => atual || cs[0]?.id || '')
-    setDestinoId((atual) => atual || cs[1]?.id || '')
+    // `#/lancar/transferir?para=<conta>` (Registrar aporte, de Metas) já traz
+    // o destino; valor que a tela não oferece (inexistente, cartão) é ignorado.
+    const oferecidas = cs.filter((c) => c.kind !== 'credit_card')
+    const para = new URLSearchParams(
+      window.location.hash.split('?')[1] ?? '',
+    ).get('para')
+    const destinoPadrao =
+      oferecidas.find((c) => c.id === para)?.id ?? cs[1]?.id ?? ''
+    setDestinoId((atual) => atual || destinoPadrao)
+    setOrigemId(
+      (atual) =>
+        atual ||
+        (para === destinoPadrao
+          ? (oferecidas.find((c) => c.id !== para)?.id ?? '')
+          : (cs[0]?.id ?? '')),
+    )
   }, [])
 
   useEffect(() => {
