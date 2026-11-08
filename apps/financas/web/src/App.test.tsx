@@ -64,6 +64,17 @@ function mockFetchVazio() {
       if (url.includes('/api/reports/cashflow')) {
         return respond({ meses: [], linhas: [] })
       }
+      // BlocoOrcamento / KPI do orçamento (objeto) e BlocoMetas (lista).
+      if (url.includes('/api/budgets')) {
+        return respond({
+          month: '',
+          rows: [],
+          total_budget_cents: 0,
+          budgeted_spent_cents: 0,
+          uncategorized_spent_cents: 0,
+        })
+      }
+      if (url.includes('/api/goals')) return respond([])
       // BlocoCategorias (Task 8) — objeto, não lista.
       if (url.includes('/api/reports/by-category')) {
         return respond({ competence: '', rows: [], total_cents: 0 })

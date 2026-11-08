@@ -59,6 +59,28 @@ const reserva = {
   goal_months: 6,
 }
 
+const linhaOrc = (id: string, orcado: number | null, gasto: number) => ({
+  category_id: id,
+  category_name: id,
+  parent_name: null,
+  budget_cents: orcado,
+  spent_cents: gasto,
+  budgetable: true,
+  average_3m_cents: 0,
+})
+
+const orcamento = {
+  month: '2026-09',
+  rows: [
+    linhaOrc('Mercado', 100000, 134000),
+    linhaOrc('Lazer', 40000, 5000),
+    linhaOrc('Pets', null, 9000),
+  ],
+  total_budget_cents: 140000,
+  budgeted_spent_cents: 139000,
+  uncategorized_spent_cents: 0,
+}
+
 function mockRotas(over: Record<string, unknown> = {}) {
   vi.mocked(api).mockImplementation((path: string) => {
     if (path.startsWith('/api/reports/commitments'))
@@ -69,6 +91,8 @@ function mockRotas(over: Record<string, unknown> = {}) {
       return Promise.resolve(over.dividas ?? dividas)
     if (path.startsWith('/api/reserve'))
       return Promise.resolve(over.reserva ?? reserva)
+    if (path.startsWith('/api/budgets'))
+      return Promise.resolve(over.orcamento ?? orcamento)
     return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
   })
 }
@@ -180,6 +204,7 @@ describe('FaixaKpiInicio', () => {
       if (path.startsWith('/api/insights/numbers'))
         return Promise.resolve(numeros)
       if (path.startsWith('/api/debts')) return Promise.resolve(dividas)
+      if (path.startsWith('/api/budgets')) return Promise.resolve(orcamento)
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -304,5 +329,61 @@ describe('escopo PJ/PF no KPI de gasto', () => {
       ),
     )
     expect(screen.queryByTestId('kpi-gasto-pj')).toBeNull()
+  })
+
+  it('o quinto número é o orçamento do mês, com as categorias estouradas', async () => {
+    mockRotas()
+    render(<FaixaKpiInicio />)
+    await waitFor(() =>
+      expect(screen.getByTestId('kpi-orcamento-valor')).toHaveTextContent(
+        '99%',
+      ),
+    )
+    expect(screen.getByTestId('kpi-orcamento')).toHaveTextContent(
+      'R$ 1.390,00 de R$ 1.400,00 · 1 categoria estourada',
+    )
+  })
+
+  it('sem nenhum limite definido o orçamento diz isso e não inventa percentual', async () => {
+    mockRotas({
+      orcamento: {
+        ...orcamento,
+        rows: [linhaOrc('Pets', null, 9000)],
+        total_budget_cents: 0,
+        budgeted_spent_cents: 0,
+      },
+    })
+    render(<FaixaKpiInicio />)
+    await waitFor(() =>
+      expect(screen.getByTestId('kpi-orcamento')).toHaveTextContent(
+        'sem limite definido neste mês',
+      ),
+    )
+    expect(screen.getByTestId('kpi-orcamento-valor')).toHaveTextContent('—')
+  })
+
+  it('rota do orçamento fora do ar: o card vira traço, sem alerta, e os outros seguem', async () => {
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path.startsWith('/api/budgets'))
+        return Promise.reject(new Error('orçamento caiu'))
+      if (path.startsWith('/api/reports/commitments'))
+        return Promise.resolve(comprometido)
+      if (path.startsWith('/api/insights/numbers'))
+        return Promise.resolve(numeros)
+      if (path.startsWith('/api/debts')) return Promise.resolve(dividas)
+      if (path.startsWith('/api/reserve')) return Promise.resolve(reserva)
+      return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
+    })
+    render(<FaixaKpiInicio />)
+    await waitFor(() =>
+      expect(screen.getByTestId('kpi-orcamento')).toHaveTextContent(
+        'sem dado ainda',
+      ),
+    )
+    expect(screen.getByTestId('kpi-orcamento-valor')).toHaveTextContent('—')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByTestId('kpi-devo-valor')).toHaveTextContent(
+      'R$ 4.200,00',
+    )
   })
 })
