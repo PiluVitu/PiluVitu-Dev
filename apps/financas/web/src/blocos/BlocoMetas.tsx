@@ -2,8 +2,13 @@ import { useEffect, useState } from 'react'
 import { formatBRL } from '@piluvitu/tools/money'
 import { cn } from '@piluvitu/ui/cn'
 import { ApiError } from '../api'
-import { guardadoEmMetas, notaNoInicio } from '../lib/inicio-metas'
-import { larguraDaBarra, plural, type MetaView } from '../lib/metas'
+import {
+  larguraDaBarra,
+  notaNoInicio,
+  plural,
+  resumoDasMetas,
+  type MetaView,
+} from '../lib/metas'
 import { buscarUmaVez } from '../lib/requisicao-unica'
 import { TRILHO_BARRA } from '../lib/superficie'
 import { ALVO_LINK } from '../lib/touch'
@@ -99,7 +104,7 @@ export function BlocoMetas() {
       titulo="Metas"
       descricao={
         metas && !vazio
-          ? `${formatBRL(guardadoEmMetas(metas))} guardados em ${plural(metas.length, 'meta', 'metas')}`
+          ? `${formatBRL(resumoDasMetas(metas).guardado_cents)} guardados em ${plural(metas.length, 'meta', 'metas')}`
           : 'o que estou guardando'
       }
       acao={
