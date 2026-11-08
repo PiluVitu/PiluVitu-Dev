@@ -7,17 +7,17 @@ type Story = { args: Partial<CartaoDaMetaProps> }
 
 const base: MetaView = {
   id: 'meta-exemplo',
-  name: 'Viagem',
-  target_cents: 500000,
+  name: 'Viagem de julho',
+  target_cents: 800000,
   target_date: '2027-06-30',
   account_id: 'conta-exemplo',
   account_name: 'Poupança',
-  balance_cents: 125000,
-  pct: 25,
+  balance_cents: 465000,
+  pct: 58,
   status: 'em_andamento',
-  missing_cents: 375000,
-  months_left: 10,
-  monthly_needed_cents: 37500,
+  missing_cents: 335000,
+  months_left: 8,
+  monthly_needed_cents: 41875,
   editable: true,
   reserve_overlap: false,
 }
@@ -39,7 +39,7 @@ const meta = {
 
 export default meta
 
-export const EmAndamento: Story = { args: {} }
+export const NoRitmo: Story = { args: {} }
 
 export const SemPrazo: Story = {
   args: {
@@ -56,7 +56,7 @@ export const Concluida: Story = {
   args: {
     meta: {
       ...base,
-      balance_cents: 500000,
+      balance_cents: 800000,
       pct: 100,
       status: 'concluida',
       missing_cents: 0,

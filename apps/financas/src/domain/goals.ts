@@ -51,8 +51,8 @@ const ym = (date: string) =>
   Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7))
 
 /**
- * Meses até o prazo contam por mês de calendário e nunca menos que 1: prazo no
- * mês corrente pede o que falta neste mês. Saldo negativo zera o progresso sem
+ * Os meses contam por mês de calendário, o atual e o do prazo inclusos (de
+ * novembro a junho são 8): prazo no mês corrente pede o que falta neste mês. Saldo negativo zera o progresso sem
  * aumentar o que falta.
  */
 export function goalProgress(input: {
@@ -97,7 +97,7 @@ export function goalProgress(input: {
       monthly_needed_cents: null,
     }
   }
-  const months_left = Math.max(1, ym(target_date) - ym(today))
+  const months_left = ym(target_date) - ym(today) + 1
   return {
     status: 'em_andamento',
     pct,
