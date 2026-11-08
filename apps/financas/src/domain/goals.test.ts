@@ -104,28 +104,28 @@ describe('goalProgress', () => {
     const p = goalProgress({
       target_cents: 1000,
       balance_cents: 0,
-      target_date: '2026-11-20',
+      target_date: '2026-10-20',
       today: HOJE,
     })
     expect(p.months_left).toBe(3)
     expect(p.monthly_needed_cents).toBe(334)
   })
 
-  it('conta os meses na virada de dezembro para janeiro', () => {
+  it('conta o mês atual e o do prazo, inclusive na virada de dezembro para janeiro', () => {
     const jan = goalProgress({
       ...base,
       balance_cents: 0,
       target_date: '2027-01-31',
       today: '2026-12-15',
     })
-    expect(jan.months_left).toBe(1)
+    expect(jan.months_left).toBe(2)
     const mar = goalProgress({
       ...base,
       balance_cents: 0,
       target_date: '2027-03-10',
       today: '2026-12-15',
     })
-    expect(mar.months_left).toBe(3)
+    expect(mar.months_left).toBe(4)
   })
 })
 
