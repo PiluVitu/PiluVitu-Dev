@@ -3,7 +3,9 @@ import {
   faltaDaMeta,
   formatPrazo,
   larguraDaBarra,
+  notaNoInicio,
   plural,
+  prazoCurto,
   previaDoRitmo,
   ritmoDaMeta,
   rotuloDoStatus,
@@ -199,5 +201,35 @@ describe('previaDoRitmo', () => {
   it('sem valor ou sem conta não inventa número', () => {
     expect(previaDoRitmo({ ...base, alvo_cents: null })).toBeNull()
     expect(previaDoRitmo({ ...base, saldo_cents: null })).toBeNull()
+  })
+})
+
+describe('prazoCurto e notaNoInicio', () => {
+  it('prazo curto é mês abreviado e ano de dois dígitos', () => {
+    expect(prazoCurto('2027-06-30')).toBe('jun/27')
+    expect(prazoCurto('2026-10-31')).toBe('out/26')
+  })
+
+  it('a nota do bloco do Início depende do estado da meta', () => {
+    expect(notaNoInicio(meta())).toBe('R$ 418,75 por mês até jun/27')
+    expect(
+      notaNoInicio(
+        meta({
+          status: 'atrasada',
+          target_date: '2026-10-31',
+          monthly_needed_cents: null,
+          months_left: null,
+        }),
+      ),
+    ).toBe('Atrasada · prazo era out/26')
+    expect(
+      notaNoInicio(
+        meta({
+          target_date: null,
+          monthly_needed_cents: null,
+          months_left: null,
+        }),
+      ),
+    ).toBe('sem prazo')
   })
 })
