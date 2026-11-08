@@ -54,12 +54,20 @@ const numeros = {
   biggest_increase: null,
 }
 
+const orcamentoVazio = {
+  month: '2026-07',
+  rows: [],
+  total_budget_cents: 0,
+  budgeted_spent_cents: 0,
+  uncategorized_spent_cents: 0,
+}
+
 afterEach(() => {
   vi.clearAllMocks()
 })
 
 describe('HomePage', () => {
-  it('mostra o título Início e monta os quatro blocos', async () => {
+  it('mostra o título Início e monta os seis blocos', async () => {
     vi.mocked(api).mockImplementation((path: string) => {
       if (path.startsWith('/api/reports/commitments'))
         return Promise.resolve(reportVazio)
@@ -74,6 +82,9 @@ describe('HomePage', () => {
       if (path.startsWith('/api/reserve')) return Promise.resolve(reserva)
       if (path.startsWith('/api/insights/numbers'))
         return Promise.resolve(numeros)
+      if (path.startsWith('/api/budgets'))
+        return Promise.resolve(orcamentoVazio)
+      if (path.startsWith('/api/goals')) return Promise.resolve([])
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 
@@ -81,6 +92,10 @@ describe('HomePage', () => {
 
     expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
     await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Orçamento' }),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Metas' })).toBeInTheDocument()
       expect(
         screen.getByRole('heading', { name: 'Comprometido' }),
       ).toBeInTheDocument()
@@ -96,13 +111,13 @@ describe('HomePage', () => {
     })
   })
 
-  it('todos os blocos em erro: a home continua de pé (título + os 4 cards contidos)', async () => {
+  it('todos os blocos em erro: a home continua de pé (título + os 6 cards contidos)', async () => {
     vi.mocked(api).mockRejectedValue(new Error('falhou'))
 
     render(<HomePage />)
 
     expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(6))
     // o título continua no ar — o erro ficou contido nos cards dos blocos
     expect(screen.getByTestId('pagina-inicio')).toBeInTheDocument()
   })
@@ -152,6 +167,9 @@ describe('HomePage', () => {
       if (path.startsWith('/api/reserve')) return Promise.resolve(reserva)
       if (path.startsWith('/api/insights/numbers'))
         return Promise.resolve(numeros)
+      if (path.startsWith('/api/budgets'))
+        return Promise.resolve(orcamentoVazio)
+      if (path.startsWith('/api/goals')) return Promise.resolve([])
       return Promise.reject(new Error(`rota inesperada em teste: ${path}`))
     })
 

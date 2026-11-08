@@ -1,6 +1,8 @@
 import { BlocoCategorias } from '../blocos/BlocoCategorias'
 import { BlocoComprometido } from '../blocos/BlocoComprometido'
 import { BlocoDividas } from '../blocos/BlocoDividas'
+import { BlocoMetas } from '../blocos/BlocoMetas'
+import { BlocoOrcamento } from '../blocos/BlocoOrcamento'
 import { BlocoSaldos } from '../blocos/BlocoSaldos'
 import { FaixaKpiInicio } from '../blocos/FaixaKpiInicio'
 import { GRID_BLOCOS } from '../lib/superficie'
@@ -8,7 +10,7 @@ import { SUBTITULO_PAGINA } from '../lib/tipografia'
 
 /**
  * Casca da home (`#/`). Faixa de KPIs (a régua "como eu estou") e depois os
- * quatro blocos, cada um dono do próprio carregamento/erro/vazio via
+ * seis blocos, cada um dono do próprio carregamento/erro/vazio via
  * `Bloco` — um bloco que falhe não derruba os demais nem a faixa (ver
  * `home.test.tsx`).
  */
@@ -19,13 +21,15 @@ export function HomePage() {
     // página do desktop. Ver `TITULO_DA_ROTA` lá pro porquê.
     <section className="space-y-5" data-testid="pagina-inicio">
       <p className={SUBTITULO_PAGINA}>
-        Visão geral das suas finanças — Comprometido, saldos, dívidas em aberto
-        e pra onde foi o dinheiro este mês.
+        Visão geral das suas finanças — Comprometido, saldos, dívidas em aberto,
+        pra onde foi o dinheiro este mês, e agora o orçamento e as metas.
       </p>
       <FaixaKpiInicio />
       <div className={GRID_BLOCOS}>
         <BlocoComprometido />
+        <BlocoOrcamento />
         <BlocoSaldos />
+        <BlocoMetas />
         <BlocoDividas />
         <BlocoCategorias />
       </div>

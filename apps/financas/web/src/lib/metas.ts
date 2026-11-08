@@ -1,4 +1,5 @@
 import { formatBRL } from '@piluvitu/tools/money'
+import { rotuloCompetencia } from './commitments'
 
 export type StatusDaMeta = 'concluida' | 'em_andamento' | 'atrasada'
 
@@ -48,6 +49,20 @@ export function ritmoDaMeta(meta: MetaView): string {
   if (meta.monthly_needed_cents === null || meta.months_left === null)
     return 'sem prazo'
   return `${formatBRL(meta.monthly_needed_cents)} por mês · ${plural(meta.months_left, 'mês', 'meses')}`
+}
+
+/** 'AAAA-MM-DD' vira 'jun/27'. */
+export function prazoCurto(date: string): string {
+  return rotuloCompetencia(date.slice(0, 7))
+}
+
+/** A linha de ritmo de uma meta em aberto, curta, para o bloco do Início. */
+export function notaNoInicio(meta: MetaView): string {
+  if (meta.status === 'atrasada' && meta.target_date)
+    return `Atrasada · prazo era ${prazoCurto(meta.target_date)}`
+  if (meta.monthly_needed_cents !== null && meta.target_date)
+    return `${formatBRL(meta.monthly_needed_cents)} por mês até ${prazoCurto(meta.target_date)}`
+  return 'sem prazo'
 }
 
 export function faltaDaMeta(meta: MetaView): string {

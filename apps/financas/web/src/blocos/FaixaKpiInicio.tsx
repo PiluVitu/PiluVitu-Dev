@@ -11,6 +11,7 @@ import type { CommitmentReportView } from '../lib/commitments'
 import type { EmergencyStatusView } from '../lib/reserve'
 import { abaixoDaMeta, formatMeses } from '../lib/reserve'
 import type { InsightNumbersView } from '../lib/insight'
+import { resumoDoMes, type RelatorioOrcamento } from '../lib/orcamento'
 import type { DebtProgressView } from './BlocoDividas'
 import { FaixaKpi, KpiCard } from './KpiCard'
 
@@ -54,6 +55,7 @@ export function FaixaKpiInicio() {
   const [numeros, setNumeros] = useState<InsightNumbersView | null>(null)
   const [dividas, setDividas] = useState<DebtProgressView[] | null>(null)
   const [reserva, setReserva] = useState<EmergencyStatusView | null>(null)
+  const [orcamento, setOrcamento] = useState<RelatorioOrcamento | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -82,6 +84,9 @@ export function FaixaKpiInicio() {
     buscarUmaVez<EmergencyStatusView>('/api/reserve')
       .then(guardar(setReserva))
       .catch(silenciar(setReserva))
+    buscarUmaVez<RelatorioOrcamento>(`/api/budgets?month=${mes}`)
+      .then(guardar(setOrcamento))
+      .catch(silenciar(setOrcamento))
 
     return () => {
       vivo = false
@@ -95,6 +100,9 @@ export function FaixaKpiInicio() {
   const emAberto = dividas
     ? dividas.filter((d) => d.remaining_cents > 0).length
     : 0
+
+  const orcamentoResumo = orcamento ? resumoDoMes(orcamento.rows) : null
+  const orcamentoPct = orcamentoResumo?.pct ?? null
 
   return (
     <FaixaKpi data-testid="faixa-kpi-inicio">
@@ -149,6 +157,18 @@ export function FaixaKpiInicio() {
               : abaixoDaMeta(reserva.meses, reserva.goal_months)
                 ? `abaixo da meta de ${reserva.goal_months} meses`
                 : `meta de ${reserva.goal_months} meses alcançada`
+        }
+      />
+      <KpiCard
+        data-testid="kpi-orcamento"
+        rotulo="Orçamento"
+        valor={orcamentoPct === null ? '—' : `${orcamentoPct}%`}
+        contexto={
+          orcamento === null
+            ? 'sem dado ainda'
+            : orcamentoResumo && orcamentoResumo.pct === null
+              ? 'sem limite definido neste mês'
+              : `${formatBRL(orcamentoResumo?.gasto_cents ?? 0)} de ${formatBRL(orcamentoResumo?.orcado_cents ?? 0)}${orcamentoResumo && orcamentoResumo.estourado_count > 0 ? ` · ${orcamentoResumo.estourado_count} ${orcamentoResumo.estourado_count === 1 ? 'categoria estourada' : 'categorias estouradas'}` : ''}`
         }
       />
     </FaixaKpi>
