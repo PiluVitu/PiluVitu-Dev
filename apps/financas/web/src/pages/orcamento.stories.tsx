@@ -1,10 +1,9 @@
 import type { LinhaOrcamento } from '../lib/orcamento'
-import { LinhaDoOrcamento } from './orcamento'
+import { LinhaDoOrcamento, type LinhaDoOrcamentoProps } from './orcamento'
 
 // CSF puro, no padrão de insight.stories.tsx: o apps/financas/web não tem
 // Storybook instalado. orcamento.test.tsx renderiza cada story.
-type Story = { args: Partial<Props> }
-type Props = React.ComponentProps<typeof LinhaDoOrcamento>
+type Story = { args: Partial<LinhaDoOrcamentoProps> }
 
 const base: LinhaOrcamento = {
   category_id: 'cat-exemplo',
@@ -13,6 +12,7 @@ const base: LinhaOrcamento = {
   budget_cents: 40000,
   spent_cents: 10000,
   budgetable: true,
+  average_3m_cents: 35000,
 }
 
 const meta = {
@@ -20,14 +20,20 @@ const meta = {
   component: LinhaDoOrcamento,
   args: {
     linha: base,
-    onSalvar: async () => null,
-    onRemover: async () => null,
-  } satisfies Props,
+    ocupado: false,
+    erro: null,
+    onEditar: () => {},
+    onRemover: () => {},
+  } satisfies LinhaDoOrcamentoProps,
 }
 
 export default meta
 
 export const Dentro: Story = { args: {} }
+
+export const Atencao: Story = {
+  args: { linha: { ...base, spent_cents: 34000 } },
+}
 
 export const ExatamenteCem: Story = {
   args: { linha: { ...base, spent_cents: 40000 } },
@@ -35,10 +41,6 @@ export const ExatamenteCem: Story = {
 
 export const Estourado: Story = {
   args: { linha: { ...base, spent_cents: 52000 } },
-}
-
-export const SemOrcamento: Story = {
-  args: { linha: { ...base, budget_cents: null, spent_cents: 12000 } },
 }
 
 export const NaoOrcavel: Story = {
