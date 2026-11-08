@@ -299,6 +299,74 @@ describe('budgetReport', () => {
     expect(row?.parent_name).toBe('Casa')
   })
 
+  it('traz a média de gasto dos 3 meses anteriores por categoria', async () => {
+    const c = await conta()
+    const mercado = await despesa('Mercado')
+    const lazer = await despesa('Lazer')
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -3000,
+      purchase_date: '2026-07-10',
+    })
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -6000,
+      purchase_date: '2026-06-10',
+    })
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -1000,
+      purchase_date: '2026-05-31',
+    })
+    // fora da janela: o mês corrente e o quarto mês para trás
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -99000,
+      purchase_date: '2026-08-05',
+    })
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -77000,
+      purchase_date: '2026-04-30',
+    })
+    // transferência não conta
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -50000,
+      purchase_date: '2026-07-11',
+      transfer_id: 't9',
+    })
+
+    const rows = (await budgetReport(db, '2026-08')).rows
+    expect(
+      rows.find((r) => r.category_id === mercado.id)?.average_3m_cents,
+    ).toBe(3333)
+    expect(rows.find((r) => r.category_id === lazer.id)?.average_3m_cents).toBe(
+      0,
+    )
+  })
+
+  it('a média atravessa a virada do ano', async () => {
+    const c = await conta()
+    const mercado = await despesa('Mercado')
+    await gasto({
+      account_id: c.id,
+      category_id: mercado.id,
+      amount_cents: -9000,
+      purchase_date: '2025-12-15',
+    })
+    const row = (await budgetReport(db, '2026-01')).rows.find(
+      (r) => r.category_id === mercado.id,
+    )
+    expect(row?.average_3m_cents).toBe(3000)
+  })
+
   it('recusa mês malformado', async () => {
     await expect(budgetReport(db, '2026-13')).rejects.toThrow(RangeError)
   })

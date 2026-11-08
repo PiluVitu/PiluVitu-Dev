@@ -20,6 +20,8 @@ export type BudgetRow = {
   spent_cents: number
   /** Só categoria de despesa ativa aceita orçamento (`setBudget`). */
   budgetable: boolean
+  /** Média mensal do gasto nos 3 meses anteriores (sugestão de limite). */
+  average_3m_cents: number
 }
 
 export type BudgetReport = {
@@ -120,7 +122,8 @@ export async function budgetReport(
   month: string,
 ): Promise<BudgetReport> {
   checkMonth(month)
-  const [spend, budgets, cats] = await Promise.all([
+  const anteriores = [1, 2, 3].map((n) => addMonthsToCompetence(month, -n))
+  const [spend, budgets, cats, ...historico] = await Promise.all([
     byCategory(db, { competence: month }),
     db
       .prepare('SELECT category_id, amount_cents FROM budgets WHERE month = ?')
@@ -129,7 +132,17 @@ export async function budgetReport(
     db
       .prepare('SELECT id, parent_id, name, kind, archived_at FROM categories')
       .all<CategoryRow>(),
+    ...anteriores.map((competence) => byCategory(db, { competence })),
   ])
+
+  const gastoAnterior = new Map<string, number>()
+  for (const mes of historico)
+    for (const r of mes.rows)
+      if (r.category_id !== null)
+        gastoAnterior.set(
+          r.category_id,
+          (gastoAnterior.get(r.category_id) ?? 0) - r.total_cents,
+        )
 
   const budgetOf = new Map(
     budgets.results.map((b) => [b.category_id, b.amount_cents]),
@@ -157,6 +170,7 @@ export async function budgetReport(
       budget_cents: budgetOf.get(c.id) ?? null,
       spent_cents: spentOf.get(c.id) ?? 0,
       budgetable: c.kind === 'expense' && c.archived_at === null,
+      average_3m_cents: Math.round((gastoAnterior.get(c.id) ?? 0) / 3),
     }))
     .sort((a, b) => a.category_name.localeCompare(b.category_name, 'pt-BR'))
 
