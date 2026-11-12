@@ -1,7 +1,20 @@
+/// <reference types="vitest/jsdom" />
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeAll, vi } from 'vitest'
 import { limparRequisicoesEmVoo } from '../lib/em-voo'
+
+// Node 25+ já traz localStorage/sessionStorage no global (webstorage
+// experimental), e o ambiente jsdom do Vitest não sobrescreve chave que o Node
+// já tem. Sem isto, no Node 26 o Storage é o do Node, não o do jsdom. Ver
+// "Testes no Node 25+" no CLAUDE.md; travado por setup.test.ts.
+for (const chave of ['localStorage', 'sessionStorage'] as const) {
+  Object.defineProperty(globalThis, chave, {
+    value: jsdom.window[chave],
+    configurable: true,
+    writable: true,
+  })
+}
 
 // Sem `globals: true` o auto-cleanup da Testing Library não se registra.
 afterEach(() => {
