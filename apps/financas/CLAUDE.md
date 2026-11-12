@@ -3254,14 +3254,20 @@ O mesmo deploy passa a registrar o segundo Cron (`"0 9 * * *"`, em `wrangler.jso
 
 **Alertas por e-mail (`0021_alertas_email.sql`): passos do dono, nesta ordem.** Só informados; nenhum agente roda.
 
-1. Habilitar o envio no domínio (onboarding do Email Service):
+1. Habilitar o envio, por um dos dois caminhos. O código é o mesmo nos dois. A página de preços do Email Service (lida em 2026-11-11) diz que "Sending to arbitrary recipients requires the Workers Paid plan" e que "Sending to verified destination addresses in your account is free on all plans, including when only Email Routing is configured".
 
-   ```bash
-   npx wrangler email sending enable piluvitu.com.br
-   npx wrangler email sending dns get piluvitu.com.br
-   ```
+   - **Conta no Workers Paid:** onboarding do Email Sending no domínio.
 
-   Conferir no painel (Email Service → Email Sending) os registros DNS que ele cria (SPF e DKIM) e se convivem com o e-mail que o domínio já tiver (um MX ou SPF existente, Email Routing). Sem isso o envio falha com `E_SENDER_NOT_VERIFIED`/`E_SENDER_DOMAIN_NOT_AVAILABLE`, que aparece no log do Cron como `status=falhou … codigo=…`, e os alertas tentam de novo no dia seguinte.
+     ```bash
+     npx wrangler email sending enable piluvitu.com.br
+     npx wrangler email sending dns get piluvitu.com.br
+     ```
+
+     Conferir no painel (Email Service → Email Sending) os registros DNS que ele cria (SPF e DKIM) e se convivem com o e-mail que o domínio já tiver (um MX ou SPF existente).
+
+   - **Conta no Workers Free:** ligar o Email Routing no `piluvitu.com.br` e cadastrar o endereço do `ALLOWED_EMAIL` em Email Routing → Destination addresses, clicando no link de verificação que chega nele. Ligar o Email Routing troca os MX do domínio: conferir antes se ele já recebe e-mail em outro lugar.
+
+   Sem nenhum dos dois, o envio falha com um código `E_*` (`E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`…), que aparece no log do Cron como `status=falhou … codigo=…`, e os alertas tentam de novo no dia seguinte.
 
 2. Aplicar a migration antes de publicar (o Cron diário passa a ler e gravar `alert_log`):
 
