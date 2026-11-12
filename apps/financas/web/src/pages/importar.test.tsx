@@ -176,6 +176,9 @@ function mockRede(opts: {
     total: number
     imported: number
     skipped: number
+    // Item 3: linhas que viraram UPDATE do pendente gerado por uma
+    // recorrente. Ausente nos fixtures antigos (= 0).
+    reconciled?: number
   }
   // Mapa de colunas já salvo pra conta 'a1' — simula uma importação
   // anterior daquele banco (GET /api/settings/:key devolve isso em vez de
@@ -3024,5 +3027,110 @@ describe('ImportarPage — a conferência de 530 linhas tem que ser usável', ()
     const grade = screen.getByTestId('payee-0').closest('div')?.parentElement
 
     expect(grade?.className).toContain('sm:grid-cols-2')
+  })
+})
+
+// Item 3 — conciliação recorrente × importação (D6/D8). `imported` conta só
+// as linhas INSERIDAS; `reconciled` conta as que atualizaram o pendente que
+// a recorrente gerou. A tela soma os dois por lote e diz cada um.
+describe('ImportarPage — conciliação com recorrentes (item 3)', () => {
+  test('reconciled > 0: o resultado diz quantas linhas foram conciliadas, sem mexer na contagem de importadas', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      resultadoImport: (rows) => ({
+        total: rows.length,
+        imported: rows.length - 1,
+        skipped: 0,
+        reconciled: 1,
+      }),
+    })
+    const usuario = await irParaConferencia(chamadas)
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    expect(screen.getByTestId('resultado-resumo')).toHaveTextContent(
+      '1 importadas, 0 já existiam',
+    )
+    const conciliadas = screen.getByTestId('resultado-conciliadas')
+    expect(conciliadas).toHaveTextContent(
+      /1 linha conciliada com uma recorrente/,
+    )
+    expect(conciliadas).toHaveTextContent(
+      /pendente.*atualizado.*sem linha nova/,
+    )
+  })
+
+  test('soma as conciliadas de todos os lotes', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({
+      chamadas,
+      resultadoImport: (rows) => ({
+        total: rows.length,
+        imported: rows.length - 1,
+        skipped: 0,
+        reconciled: 1,
+      }),
+    })
+    render(<ImportarPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-importar')).toBeInTheDocument(),
+    )
+    const usuario = userEvent.setup()
+    await usuario.upload(
+      screen.getByLabelText(/Arquivo/i),
+      arquivoOfx(ofxComNTransacoes(IMPORT_BATCH_SIZE + 1)),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Conferir importação' }),
+      ).toBeInTheDocument(),
+    )
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    // Dois lotes (40 + 1), cada um com 1 conciliada.
+    expect(screen.getByTestId('resultado-conciliadas')).toHaveTextContent(
+      /2 linhas conciliadas com recorrentes/,
+    )
+    expect(screen.getByTestId('resultado-conciliadas')).toHaveTextContent(
+      /pendentes.*atualizados.*sem linha nova/,
+    )
+  })
+
+  test('sem conciliação (0 ou campo ausente), nenhuma frase a mais', async () => {
+    const chamadas: Chamada[] = []
+    mockRede({ chamadas })
+    const usuario = await irParaConferencia(chamadas)
+
+    await usuario.click(
+      screen.getByRole('button', { name: /Confirmar importação/i }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Importação concluída/i }),
+      ).toBeInTheDocument(),
+    )
+
+    expect(screen.getByTestId('resultado-resumo')).toHaveTextContent(
+      '2 importadas, 0 já existiam',
+    )
+    expect(
+      screen.queryByTestId('resultado-conciliadas'),
+    ).not.toBeInTheDocument()
   })
 })

@@ -1,7 +1,12 @@
 import type { LinhaImportada } from '@piluvitu/tools/import'
 import { billCompetence, isRealCalendarDate, nowIsoUtc } from '../lib/dates'
 import { newId } from '../lib/ids'
-import { parearTransferencias } from './transfer-pairing'
+import { occurrenceMatchWindow, type Frequency } from './recurring'
+import {
+  contraparteEhPropria,
+  getNomesProprios,
+  parearTransferencias,
+} from './transfer-pairing'
 
 /**
  * Fatia ② (docs/superpowers/specs/2026-07-27-financas-import-design.md).
@@ -24,10 +29,16 @@ export type ImportRequest = {
   rows: ImportRow[]
 }
 
+/**
+ * `imported` conta só as linhas inseridas; `reconciled`, as que atualizaram
+ * o pendente gerado por uma recorrente (sem linha nova). `total` é a soma
+ * das três.
+ */
 export type ImportResult = {
   total: number
   imported: number
   skipped: number
+  reconciled: number
 }
 
 export class ImportError extends Error {
@@ -102,6 +113,115 @@ function insertStatements(
       .prepare(head + group.map(() => TX_TUPLE).join(', '))
       .bind(...group.flat()),
   )
+}
+
+// Pendente já liquidado (a fatura paga) mantém a liquidação e a fatura.
+const UPDATE_GENERATED_PENDING = `UPDATE transactions
+   SET amount_cents = ?, purchase_date = ?,
+       bill_competence = CASE WHEN settled_at IS NULL THEN ? ELSE bill_competence END,
+       settled_at = COALESCE(?, settled_at),
+       description = ?, imported_id = ?, import_source = ?,
+       payee_id = COALESCE(?, payee_id),
+       is_business = COALESCE(?, is_business),
+       category_id = COALESCE(category_id, ?),
+       updated_at = ?
+ WHERE id = ? AND account_id = ? AND imported_id IS NULL`
+
+const INSERT_IF_STILL_MISSING = `INSERT INTO transactions (${TX_COLUMNS.join(', ')})
+  SELECT ${TX_TUPLE.slice(1, -1)}
+   WHERE NOT EXISTS (
+     SELECT 1 FROM transactions WHERE account_id = ? AND imported_id = ?
+   )`
+
+const PENDING_CANDIDATES_LIMIT = 500
+
+type PendingCandidate = {
+  id: string
+  due_date: string
+  frequency: Frequency
+  amount_min_cents: number
+  amount_max_cents: number
+}
+
+function maxDate(a: string, b: string): string {
+  return a > b ? a : b
+}
+
+function minDate(a: string, b: string): string {
+  return a < b ? a : b
+}
+
+/**
+ * imported_id da linha → id do pendente gerado que ela atualiza. Ver
+ * "Conciliação recorrente × importação" no CLAUDE.md.
+ */
+async function reconciliationMatches(
+  db: D1Database,
+  accountId: string,
+  rows: ImportRow[],
+): Promise<Map<string, string>> {
+  const matches = new Map<string, string>()
+  const outgoing = rows.filter((row) => row.amount_cents < 0)
+  if (outgoing.length === 0) return matches
+
+  const dates = outgoing.map((row) => row.purchase_date).sort()
+  const first = dates[0]
+  const last = dates[dates.length - 1]
+  const from = minDate(
+    occurrenceMatchWindow('monthly', first).from,
+    occurrenceMatchWindow('weekly', first).from,
+  )
+  const to = maxDate(
+    occurrenceMatchWindow('monthly', last).to,
+    occurrenceMatchWindow('weekly', last).to,
+  )
+  const pending = await db
+    .prepare(
+      `SELECT t.id, o.due_date, r.frequency, r.amount_min_cents, r.amount_max_cents
+         FROM recurring_occurrences o
+         JOIN transactions t ON t.id = o.transaction_id
+         JOIN recurring_expenses r ON r.id = o.recurring_expense_id
+        WHERE o.origin = 'gerado'
+          AND o.due_date >= ?
+          AND o.due_date <= ?
+          AND t.account_id = ?
+          AND t.imported_id IS NULL
+        LIMIT ?`,
+    )
+    .bind(from, to, accountId, PENDING_CANDIDATES_LIMIT)
+    .all<PendingCandidate>()
+  if (pending.results.length === 0) return matches
+
+  const ownNames = await getNomesProprios(db)
+  const pendingsByRow = new Map<string, string[]>()
+  const rowsByPending = new Map<string, number>()
+  for (const row of outgoing) {
+    if (contraparteEhPropria(row.description, ownNames)) continue
+    const magnitude = -row.amount_cents
+    const hits = pending.results.filter((p) => {
+      const window = occurrenceMatchWindow(p.frequency, p.due_date)
+      return (
+        magnitude >= p.amount_min_cents &&
+        magnitude <= p.amount_max_cents &&
+        row.purchase_date >= window.from &&
+        row.purchase_date <= window.to
+      )
+    })
+    pendingsByRow.set(
+      row.imported_id,
+      hits.map((p) => p.id),
+    )
+    for (const p of hits) {
+      rowsByPending.set(p.id, (rowsByPending.get(p.id) ?? 0) + 1)
+    }
+  }
+
+  for (const [importedId, ids] of pendingsByRow) {
+    if (ids.length === 1 && rowsByPending.get(ids[0]) === 1) {
+      matches.set(importedId, ids[0])
+    }
+  }
+  return matches
 }
 
 /**
@@ -204,7 +324,7 @@ export async function importTransactions(
     }
   })
 
-  if (total === 0) return { total: 0, imported: 0, skipped: 0 }
+  if (total === 0) return { total: 0, imported: 0, skipped: 0, reconciled: 0 }
 
   // Sem IN (...) por linha: um extrato de 200 linhas estouraria os 100 params
   // por statement só nesta checagem. account_id sozinho usa o índice parcial
@@ -219,7 +339,7 @@ export async function importTransactions(
 
   const now = nowIsoUtc()
   const seenInThisRequest = new Set<string>()
-  const txRows: unknown[][] = []
+  const fresh: { row: ImportRow; values: unknown[] }[] = []
   let skipped = 0
 
   for (const row of rows) {
@@ -246,42 +366,93 @@ export async function importTransactions(
     // (ver o ⚠️ de localCompetence em domain/cashflow.ts).
     const settledAtValue =
       account.kind === 'credit_card' ? null : row.purchase_date
-    txRows.push([
-      newId(),
-      input.account_id,
-      row.amount_cents,
-      'BRL',
-      null, // amount_original_cents
-      null, // fx_rate_ppm
-      row.purchase_date,
-      billCompetenceValue,
-      settledAtValue,
-      row.description,
-      row.payee_id ?? null,
-      row.category_id ?? null,
-      row.is_business ?? (account.scope === 'PJ' ? 1 : 0),
-      null, // transfer_id
-      null, // parent_id
-      row.imported_id,
-      input.import_source,
-      now,
-      now,
-    ])
-  }
-
-  if (txRows.length > 0) {
-    await db.batch(insertStatements(db, txRows))
-    // A perna que fecha a transferencia chega em OUTRA chamada (uma
-    // account_id por requisicao), entao quem pareia e sempre a segunda a
-    // ser importada. Janela restrita as datas desta remessa: no D1 "rows
-    // read" cobra linha ESCANEADA, e uma varredura do ledger inteiro a
-    // cada import sairia da cota. Ver domain/transfer-pairing.ts.
-    const datas = txRows.map((r) => r[6] as string).sort()
-    await parearTransferencias(db, {
-      from: datas[0],
-      to: diaSeguinte(datas[datas.length - 1]),
+    fresh.push({
+      row,
+      values: [
+        newId(),
+        input.account_id,
+        row.amount_cents,
+        'BRL',
+        null, // amount_original_cents
+        null, // fx_rate_ppm
+        row.purchase_date,
+        billCompetenceValue,
+        settledAtValue,
+        row.description,
+        row.payee_id ?? null,
+        row.category_id ?? null,
+        row.is_business ?? (account.scope === 'PJ' ? 1 : 0),
+        null, // transfer_id
+        null, // parent_id
+        row.imported_id,
+        input.import_source,
+        now,
+        now,
+      ],
     })
   }
 
-  return { total, imported: txRows.length, skipped }
+  if (fresh.length === 0) return { total, imported: 0, skipped, reconciled: 0 }
+
+  const matches = await reconciliationMatches(
+    db,
+    input.account_id,
+    fresh.map((f) => f.row),
+  )
+  const plainRows: unknown[][] = []
+  const reconcileStatements: D1PreparedStatement[] = []
+  for (const { row, values } of fresh) {
+    const pendingId = matches.get(row.imported_id)
+    if (pendingId === undefined) {
+      plainRows.push(values)
+      continue
+    }
+    reconcileStatements.push(
+      db
+        .prepare(UPDATE_GENERATED_PENDING)
+        .bind(
+          row.amount_cents,
+          row.purchase_date,
+          values[7],
+          values[8],
+          row.description,
+          row.imported_id,
+          input.import_source,
+          row.payee_id ?? null,
+          row.is_business ?? null,
+          row.category_id ?? null,
+          now,
+          pendingId,
+          input.account_id,
+        ),
+      db
+        .prepare(INSERT_IF_STILL_MISSING)
+        .bind(...values, input.account_id, row.imported_id),
+    )
+  }
+
+  const results = await db.batch([
+    ...reconcileStatements,
+    ...insertStatements(db, plainRows),
+  ])
+  let imported = plainRows.length
+  let reconciled = 0
+  for (let i = 0; i < reconcileStatements.length; i += 2) {
+    if (results[i].meta.changes > 0) reconciled++
+    else if (results[i + 1].meta.changes > 0) imported++
+    else skipped++
+  }
+
+  // A perna que fecha a transferencia chega em OUTRA chamada (uma
+  // account_id por requisicao), entao quem pareia e sempre a segunda a
+  // ser importada. Janela restrita as datas desta remessa: no D1 "rows
+  // read" cobra linha ESCANEADA, e uma varredura do ledger inteiro a
+  // cada import sairia da cota. Ver domain/transfer-pairing.ts.
+  const datas = fresh.map((f) => f.row.purchase_date).sort()
+  await parearTransferencias(db, {
+    from: datas[0],
+    to: diaSeguinte(datas[datas.length - 1]),
+  })
+
+  return { total, imported, skipped, reconciled }
 }

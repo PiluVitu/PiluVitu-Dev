@@ -1,7 +1,9 @@
 /**
- * Cron do dia 1 (`"0 12 1 * *"`, 09:00 em Teresina): gera o insight do mês
- * que acabou de fechar. O `fetch` global é trocado: nenhum teste alcança a
- * API de verdade.
+ * Dois Crons no mesmo handler, despachados por `controller.cron`:
+ *  - `"0 12 1 * *"` (dia 1, 09:00 em Teresina): o insight do mês que fechou;
+ *  - `"0 9 * * *"` (todo dia, 06:00 em Teresina): a recorrência que lança
+ *    sozinha (migration 0019).
+ * O `fetch` global é trocado: nenhum teste alcança a API de verdade.
  */
 import {
   createExecutionContext,
@@ -11,6 +13,8 @@ import {
 } from 'cloudflare:test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import wranglerJsonc from '../wrangler.jsonc?raw'
+import { nowIsoUtc } from './lib/dates'
+import { newId } from './lib/ids'
 import worker from './index'
 import { scheduled } from './scheduled'
 
@@ -46,13 +50,17 @@ function apiResponde(responder: () => Response) {
   })
 }
 
-async function rodarCron(scheduledTime: number, chave: string | undefined) {
+const CRON_INSIGHT = '0 12 1 * *'
+const CRON_RECORRENCIA = '0 9 * * *'
+
+async function rodarCron(
+  scheduledTime: number,
+  chave: string | undefined,
+  cron: string = CRON_INSIGHT,
+) {
   // O relógio acompanha o disparo: o `generated_at` gravado é o do Cron.
   vi.setSystemTime(scheduledTime)
-  const controller = createScheduledController({
-    scheduledTime,
-    cron: '0 12 1 * *',
-  })
+  const controller = createScheduledController({ scheduledTime, cron })
   const ctx = createExecutionContext()
   await scheduled(controller, { ...env, ANTHROPIC_API_KEY: chave }, ctx)
   await waitOnExecutionContext(ctx)
@@ -86,9 +94,10 @@ afterEach(() => {
 })
 
 describe('cron do insight mensal', () => {
-  it('está registrado no wrangler.jsonc para o dia 1 às 12:00 UTC', () => {
+  // Desde a 0019 a lista tem também o diário da recorrência.
+  it('o wrangler.jsonc registra o do dia 1 às 12:00 UTC e o diário das 09:00 UTC', () => {
     expect(wranglerJsonc).toMatch(
-      /"triggers":\s*\{\s*"crons":\s*\[\s*"0 12 1 \* \*"\s*\]\s*\}/,
+      /"triggers":\s*\{\s*"crons":\s*\[\s*"0 12 1 \* \*",\s*"0 9 \* \* \*"\s*\]\s*\}/,
     )
   })
 
@@ -281,5 +290,141 @@ describe('cron do insight mensal', () => {
         args.map(comoTexto).join(' ').includes('claude_desligado'),
       ),
     ).toBe(true)
+  })
+})
+
+// Recorrência que lança sozinha (migration 0019): o diário cria o pendente
+// de cada ocorrência vencida; a regra mora em domain/recurring-auto.ts.
+describe('cron diário da recorrência automática', () => {
+  async function recorrenteQueLancaSozinha(dayOfMonth: number) {
+    const conta = newId()
+    const recorrente = newId()
+    const now = nowIsoUtc()
+    await env.DB.prepare(
+      `INSERT INTO accounts
+         (id, name, scope, kind, currency, opening_balance_cents, created_at, updated_at)
+       VALUES (?, 'Conta de teste', 'PF', 'checking', 'BRL', 0, ?, ?)`,
+    )
+      .bind(conta, now, now)
+      .run()
+    await env.DB.prepare(
+      `INSERT INTO recurring_expenses
+         (id, description, account_id, scope, frequency, day_of_month,
+          amount_min_cents, amount_max_cents, starts_on, active,
+          generate_since, created_at, updated_at)
+       VALUES (?, 'Internet fibra', ?, 'PF', 'monthly', ?, 9990, 12990,
+               '2026-01-01', 1, '2026-08-01', ?, ?)`,
+    )
+      .bind(recorrente, conta, dayOfMonth, now, now)
+      .run()
+    return recorrente
+  }
+
+  async function gerados(recorrente: string) {
+    const res = await env.DB.prepare(
+      `SELECT purchase_date, amount_cents, settled_at FROM transactions
+        WHERE recurring_expense_id = ?`,
+    )
+      .bind(recorrente)
+      .all()
+    return res.results
+  }
+
+  it('"0 9 * * *" gera o pendente do dia, sem chamar a Claude nem gerar insight', async () => {
+    const r = await recorrenteQueLancaSozinha(10)
+    apiResponde(() => respostaClaude('x'))
+
+    await rodarCron(Date.parse('2026-08-10T09:00:00Z'), CHAVE, CRON_RECORRENCIA)
+
+    expect(await gerados(r)).toEqual([
+      { purchase_date: '2026-08-10', amount_cents: -12990, settled_at: null },
+    ])
+    expect(urlsChamadas).toHaveLength(0)
+    const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM insights').first<{
+      n: number
+    }>()
+    expect(n?.n).toBe(0)
+  })
+
+  it('o dia é o de Fortaleza: 02:00 UTC de 11/08 ainda é 10/08 lá', async () => {
+    const r = await recorrenteQueLancaSozinha(11)
+
+    await rodarCron(Date.parse('2026-08-11T02:00:00Z'), CHAVE, CRON_RECORRENCIA)
+
+    expect(await gerados(r)).toEqual([])
+  })
+
+  it('duas rodadas no mesmo dia geram um lançamento só', async () => {
+    const r = await recorrenteQueLancaSozinha(10)
+    const quando = Date.parse('2026-08-10T09:00:00Z')
+
+    await rodarCron(quando, CHAVE, CRON_RECORRENCIA)
+    await rodarCron(quando, CHAVE, CRON_RECORRENCIA)
+
+    expect(await gerados(r)).toHaveLength(1)
+  })
+
+  it('o cron do dia 1 não roda a geração', async () => {
+    const r = await recorrenteQueLancaSozinha(1)
+    apiResponde(() => respostaClaude('Leitura.'))
+
+    await rodarCron(Date.parse('2026-09-01T12:00:00Z'), CHAVE, CRON_INSIGHT)
+
+    expect(await gerados(r)).toEqual([])
+    expect(urlsChamadas).toHaveLength(1)
+  })
+
+  it('D1 falhando não lança: console.error só com o código, sem descrição nem valor', async () => {
+    await recorrenteQueLancaSozinha(10)
+    const dbQueFalha = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            if (sql.includes('FROM recurring_expenses')) {
+              throw new Error(
+                'D1_ERROR: no such table: recurring_expenses: SQLITE_ERROR',
+              )
+            }
+            return alvo.prepare(sql)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-08-10T09:00:00Z'),
+      cron: CRON_RECORRENCIA,
+    })
+    const ctx = createExecutionContext()
+
+    await expect(
+      scheduled(controller, { ...env, DB: dbQueFalha }, ctx),
+    ).resolves.toBeUndefined()
+    await waitOnExecutionContext(ctx)
+
+    const tudo = saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
+    const falha = tudo.find((linha) =>
+      linha.includes('cron da recorrência falhou'),
+    )
+    expect(falha).toContain('SQLITE_ERROR')
+    expect(falha).not.toMatch(/no such table/)
+    for (const linha of tudo) {
+      expect(linha).not.toMatch(/Internet fibra|12990/)
+    }
+  })
+
+  it('cron desconhecido: console.error e não faz nada', async () => {
+    const r = await recorrenteQueLancaSozinha(10)
+    apiResponde(() => respostaClaude('x'))
+
+    await expect(
+      rodarCron(Date.parse('2026-08-10T09:00:00Z'), CHAVE, '*/5 * * * *'),
+    ).resolves.toBeUndefined()
+
+    expect(await gerados(r)).toEqual([])
+    expect(urlsChamadas).toHaveLength(0)
+    const tudo = saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
+    expect(tudo.some((linha) => linha.includes('cron desconhecido'))).toBe(true)
   })
 })

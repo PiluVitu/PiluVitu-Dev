@@ -5,6 +5,7 @@ import {
   deleteRecurring,
   listRecurring,
   updateRecurring,
+  type Frequency,
   type RecurringPatch,
 } from '../domain/recurring'
 import { errJson, okJson } from '../lib/envelope'
@@ -100,6 +101,8 @@ recurringRoutes.post('/', async (c) => {
     ends_on,
     active,
     notes,
+    frequency,
+    auto_generate,
   } = body
 
   if (typeof description !== 'string' || description.trim() === '')
@@ -129,18 +132,18 @@ recurringRoutes.post('/', async (c) => {
       category_id: category_id ?? null,
       account_id: account_id ?? null,
       scope,
-      // day_of_month/amount_min_cents/amount_max_cents: o dominio
-      // (validateDayOfMonth/validateAmounts) confere Number.isInteger e
-      // devolve RangeError com mensagem legivel pra qualquer tipo errado
-      // (string, undefined, float) — duplicar o typeof aqui so
-      // divergiria da mensagem canonica sem ganhar nada.
-      day_of_month: day_of_month as number,
+      // day_of_month/amount_*/frequency/auto_generate: o dominio confere
+      // tipo e faixa e devolve RangeError com a mensagem canonica —
+      // duplicar o typeof aqui so divergiria dela sem ganhar nada.
+      day_of_month: day_of_month as number | undefined,
       amount_min_cents: amount_min_cents as number,
       amount_max_cents: amount_max_cents as number,
       starts_on,
       ends_on: (ends_on as string | null | undefined) ?? null,
       active: active as 0 | 1 | undefined,
       notes: notes ?? null,
+      frequency: frequency as Frequency | undefined,
+      auto_generate: auto_generate as boolean | undefined,
     })
     return okJson(created, 201)
   } catch (err) {
@@ -225,6 +228,12 @@ recurringRoutes.put('/:id', async (c) => {
     if (!isNullableString(body.notes))
       return errJson(422, 'constraint_violation', 'notes invalido')
     patch.notes = body.notes
+  }
+  if ('frequency' in body) {
+    patch.frequency = body.frequency as Frequency
+  }
+  if ('auto_generate' in body) {
+    patch.auto_generate = body.auto_generate as boolean
   }
 
   try {

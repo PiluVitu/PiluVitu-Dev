@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import {
+  addDays,
   addMonthsToCompetence,
   billCompetence,
   competenceDueDate,
+  daysBetween,
   nowIsoUtc,
   todayInTeresina,
 } from './dates'
@@ -129,5 +131,50 @@ describe('competenceDueDate', () => {
   test('rejeita competência e dia inválidos', () => {
     expect(() => competenceDueDate('2026-00', 5)).toThrow(RangeError)
     expect(() => competenceDueDate('2026-08', 0)).toThrow(RangeError)
+  })
+})
+
+// A recorrência semanal/quinzenal anda em passos de 7/14 dias e a geração
+// olha 31 dias para trás: a soma de dias precisa virar mês, ano e fevereiro
+// de ano bissexto sem passar por fuso (mesma técnica de daysInMonth).
+describe('addDays', () => {
+  test('soma dentro do mês', () => {
+    expect(addDays('2026-08-03', 7)).toBe('2026-08-10')
+  })
+
+  test('vira o mês e o ano', () => {
+    expect(addDays('2026-08-31', 1)).toBe('2026-09-01')
+    expect(addDays('2026-12-25', 14)).toBe('2027-01-08')
+  })
+
+  test('fevereiro de ano bissexto tem 29, o de ano comum não', () => {
+    expect(addDays('2028-02-28', 1)).toBe('2028-02-29')
+    expect(addDays('2027-02-28', 1)).toBe('2027-03-01')
+  })
+
+  test('aceita n negativo', () => {
+    expect(addDays('2026-08-01', -31)).toBe('2026-07-01')
+  })
+
+  test('rejeita data malformada e n fracionário', () => {
+    expect(() => addDays('01/08/2026', 1)).toThrow(RangeError)
+    expect(() => addDays('2026-08-01', 1.5)).toThrow(RangeError)
+  })
+})
+
+describe('daysBetween', () => {
+  test('conta dias inteiros de uma data para a outra, com sinal', () => {
+    expect(daysBetween('2026-08-03', '2026-08-17')).toBe(14)
+    expect(daysBetween('2026-08-17', '2026-08-03')).toBe(-14)
+    expect(daysBetween('2026-08-03', '2026-08-03')).toBe(0)
+  })
+
+  test('atravessa ano bissexto', () => {
+    expect(daysBetween('2028-02-01', '2028-03-01')).toBe(29)
+    expect(daysBetween('2027-02-01', '2027-03-01')).toBe(28)
+  })
+
+  test('rejeita data malformada', () => {
+    expect(() => daysBetween('2026-8-1', '2026-08-03')).toThrow(RangeError)
   })
 })

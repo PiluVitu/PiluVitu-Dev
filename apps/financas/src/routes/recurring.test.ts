@@ -1,6 +1,7 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { nowIsoUtc, todayInTeresina } from '../lib/dates'
 import { newId } from '../lib/ids'
 import { errJson } from '../lib/envelope'
 import { recurringRoutes } from './recurring'
@@ -356,5 +357,204 @@ describe('rotas de despesas recorrentes', () => {
       const body = (await segunda.json()) as Envelope
       expect(body.notifications[0].code).toBe('not_found')
     })
+  })
+})
+
+// Recorrencia automatica (migration 0019): o contrato que a SPA usa.
+describe('rotas de despesas recorrentes — frequency e auto_generate', () => {
+  async function novaConta(): Promise<string> {
+    const id = newId()
+    const now = nowIsoUtc()
+    await env.DB.prepare(
+      `INSERT INTO accounts
+         (id, name, scope, kind, currency, opening_balance_cents, created_at, updated_at)
+       VALUES (?, 'Conta de teste', 'PF', 'checking', 'BRL', 0, ?, ?)`,
+    )
+      .bind(id, now, now)
+      .run()
+    return id
+  }
+
+  async function lerLinha(id: string) {
+    return env.DB.prepare(
+      'SELECT frequency, generate_since, account_id, day_of_month FROM recurring_expenses WHERE id = ?',
+    )
+      .bind(id)
+      .first<{
+        frequency: string
+        generate_since: string | null
+        account_id: string | null
+        day_of_month: number
+      }>()
+  }
+
+  it('GET devolve frequency e generate_since de cada recorrente', async () => {
+    await post('/api/recurring', validPayload)
+    const res = await app().request('/api/recurring', {}, { DB: env.DB })
+    const body = (await res.json()) as Envelope
+    expect(body.data[0]).toMatchObject({
+      frequency: 'monthly',
+      generate_since: null,
+    })
+  })
+
+  it('POST semanal sem day_of_month cria com o dia de starts_on', async () => {
+    const { day_of_month: _omit, ...semDia } = validPayload
+    const res = await post('/api/recurring', {
+      ...semDia,
+      description: 'Academia',
+      frequency: 'weekly',
+      starts_on: '2026-08-03',
+    })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Envelope
+    expect(await lerLinha(body.data.id)).toMatchObject({
+      frequency: 'weekly',
+      day_of_month: 3,
+    })
+  })
+
+  it('POST com frequency fora da lista devolve 422 constraint_violation, sem gravar nada', async () => {
+    const res = await post('/api/recurring', {
+      ...validPayload,
+      frequency: 'daily',
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    expect(body.notifications[0].message).not.toMatch(
+      /frequency|recurring_expenses/i,
+    )
+    expect(await countRows()).toBe(0)
+  })
+
+  // Ausente vira mensal; null e um valor fora da lista, como no PUT.
+  it('POST com frequency null devolve 422 constraint_violation, sem gravar nada', async () => {
+    const res = await post('/api/recurring', {
+      ...validPayload,
+      frequency: null,
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    expect(await countRows()).toBe(0)
+  })
+
+  it('POST auto_generate nao booleano devolve 422, sem gravar nada', async () => {
+    const res = await post('/api/recurring', {
+      ...validPayload,
+      auto_generate: 'sim',
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    expect(await countRows()).toBe(0)
+  })
+
+  it('POST auto_generate com conta grava generate_since = hoje em Teresina', async () => {
+    const accountId = await novaConta()
+    const antes = todayInTeresina()
+    const res = await post('/api/recurring', {
+      ...validPayload,
+      account_id: accountId,
+      auto_generate: true,
+    })
+    const depois = todayInTeresina()
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as Envelope
+    expect([antes, depois]).toContain(body.data.generate_since)
+    expect((await lerLinha(body.data.id))?.generate_since).toBe(
+      body.data.generate_since,
+    )
+  })
+
+  it('POST auto_generate sem conta devolve 422 com o motivo, sem gravar nada', async () => {
+    const res = await post('/api/recurring', {
+      ...validPayload,
+      auto_generate: true,
+    })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].code).toBe('constraint_violation')
+    expect(body.notifications[0].message).toBe(
+      'para lançar sozinha, a recorrente precisa de uma conta',
+    )
+    expect(await countRows()).toBe(0)
+  })
+
+  it('PUT liga mantendo a data se ja estava ligada, e desliga com false', async () => {
+    const accountId = await novaConta()
+    const criada = await post('/api/recurring', {
+      ...validPayload,
+      account_id: accountId,
+    })
+    const { data } = (await criada.json()) as Envelope
+
+    const ligar = await put(`/api/recurring/${data.id}`, {
+      auto_generate: true,
+    })
+    expect(ligar.status).toBe(200)
+    expect((await lerLinha(data.id))?.generate_since).not.toBeNull()
+
+    await env.DB.prepare(
+      `UPDATE recurring_expenses SET generate_since = '2026-01-05' WHERE id = ?`,
+    )
+      .bind(data.id)
+      .run()
+    const religar = await put(`/api/recurring/${data.id}`, {
+      auto_generate: true,
+    })
+    expect(religar.status).toBe(200)
+    expect((await lerLinha(data.id))?.generate_since).toBe('2026-01-05')
+
+    const desligar = await put(`/api/recurring/${data.id}`, {
+      auto_generate: false,
+    })
+    expect(desligar.status).toBe(200)
+    const body = (await desligar.json()) as Envelope
+    expect(body.data.generate_since).toBeNull()
+    expect((await lerLinha(data.id))?.generate_since).toBeNull()
+  })
+
+  it('PUT com frequency fora da lista ou auto_generate nao booleano devolve 422, sem alterar a linha', async () => {
+    const criada = await post('/api/recurring', validPayload)
+    const { data } = (await criada.json()) as Envelope
+
+    const freq = await put(`/api/recurring/${data.id}`, { frequency: 'daily' })
+    expect(freq.status).toBe(422)
+    const auto = await put(`/api/recurring/${data.id}`, { auto_generate: 1 })
+    expect(auto.status).toBe(422)
+
+    expect(await lerLinha(data.id)).toMatchObject({
+      frequency: 'monthly',
+      generate_since: null,
+    })
+  })
+
+  it('PUT que deixaria a geracao ligada sem conta devolve 422, sem alterar a linha', async () => {
+    const accountId = await novaConta()
+    const criada = await post('/api/recurring', {
+      ...validPayload,
+      account_id: accountId,
+      auto_generate: true,
+    })
+    const { data } = (await criada.json()) as Envelope
+
+    const res = await put(`/api/recurring/${data.id}`, { account_id: null })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as Envelope
+    expect(body.notifications[0].message).toBe(
+      'para lançar sozinha, a recorrente precisa de uma conta',
+    )
+    expect((await lerLinha(data.id))?.account_id).toBe(accountId)
+  })
+
+  it('PUT muda a frequencia para anual', async () => {
+    const criada = await post('/api/recurring', validPayload)
+    const { data } = (await criada.json()) as Envelope
+
+    const res = await put(`/api/recurring/${data.id}`, { frequency: 'annual' })
+    expect(res.status).toBe(200)
+    expect((await lerLinha(data.id))?.frequency).toBe('annual')
   })
 })

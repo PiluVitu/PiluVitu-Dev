@@ -115,6 +115,29 @@ export function addMonthsToCompetence(competence: string, n: number): string {
   return `${String(Math.floor(total / 12)).padStart(4, '0')}-${pad2((total % 12) + 1)}`
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function dateToUtcMs(value: string): number {
+  assertDate(value)
+  return Date.UTC(
+    Number(value.slice(0, 4)),
+    Number(value.slice(5, 7)) - 1,
+    Number(value.slice(8, 10)),
+  )
+}
+
+export function addDays(date: string, n: number): string {
+  if (!Number.isInteger(n)) {
+    throw new RangeError(`n inválido (esperado inteiro): ${n}`)
+  }
+  return new Date(dateToUtcMs(date) + n * DAY_MS).toISOString().slice(0, 10)
+}
+
+/** Dias de `from` até `to` (negativo se `to` vem antes). */
+export function daysBetween(from: string, to: string): number {
+  return (dateToUtcMs(to) - dateToUtcMs(from)) / DAY_MS
+}
+
 /** Dia de vencimento dentro da competência, aparado ao tamanho do mês. */
 export function competenceDueDate(competence: string, dueDay: number): string {
   assertCompetence(competence)

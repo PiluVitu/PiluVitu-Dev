@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { formatBRL, parseBRL, sumCents } from '@piluvitu/tools/money'
+import { formatBRL, parseBRL } from '@piluvitu/tools/money'
 import { Ajuda } from '@piluvitu/ui/ajuda'
 import { Badge } from '@piluvitu/ui/badge'
 import { Button } from '@piluvitu/ui/button'
@@ -30,7 +30,17 @@ import {
   ROTULO_SECAO,
   SUBTITULO_PAGINA,
 } from '../lib/tipografia'
-import { ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
+import { ALVO_LINHA, ALVO_LINK, ALVO_LINK_FIM } from '../lib/touch'
+import {
+  FREQUENCIAS,
+  custoDoMes,
+  diaDaSemanaCurto,
+  ehPorDiaDaSemana,
+  nomeDoMes,
+  proximoVencimento,
+  quandoVence,
+  type Frequencia,
+} from '../lib/recorrencia'
 import type { AccountView } from './accounts'
 
 /**
@@ -52,6 +62,8 @@ export type RecurringExpenseView = {
   ends_on: string | null
   active: number
   notes: string | null
+  frequency: Frequencia
+  generate_since: string | null
   created_at: string
   updated_at: string
 }
@@ -78,6 +90,20 @@ type ConfirmacaoPendente = {
 
 function dd(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+function dataBR(iso: string): string {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+}
+
+const DICA_FREQUENCIA: Record<Frequencia, string> = {
+  monthly:
+    'Todo mês, no dia escolhido. Dia 31 vira o último dia nos meses mais curtos.',
+  weekly: 'A cada 7 dias, a partir da primeira ocorrência.',
+  biweekly:
+    'A cada 14 dias, a partir da primeira ocorrência (não é dia 1 e dia 15).',
+  annual:
+    'Uma vez por ano, no dia escolhido do mês em que a recorrente começa.',
 }
 
 // Sem prefixo 'R$ ' no campo — mesmo padrão de pages/config.tsx#paraCampo.
@@ -131,11 +157,195 @@ function FaixaValor({ min, max }: { min: number; max: number }) {
   )
 }
 
+export type CampoLancarSozinhoProps = {
+  ligado: boolean
+  temConta: boolean
+  /** `generate_since` da recorrente em edição; null numa nova. */
+  ligadoDesde: string | null
+  onChange: (ligado: boolean) => void
+}
+
+export function CampoLancarSozinho({
+  ligado,
+  temConta,
+  ligadoDesde,
+  onChange,
+}: CampoLancarSozinhoProps) {
+  const marcado = ligado && temConta
+  const nota = !temConta
+    ? 'Escolha a conta acima para ligar: o pendente nasce na conta da recorrente.'
+    : marcado && ligadoDesde !== null
+      ? `Ligado desde ${dataBR(ligadoDesde)}.`
+      : null
+  return (
+    <div className="space-y-0.5" data-testid="campo-lancar-sozinho">
+      <div className="flex items-center gap-2">
+        <label
+          className={cn(
+            ALVO_LINHA,
+            'gap-2 text-sm',
+            !temConta && 'text-muted-foreground',
+          )}
+        >
+          <input
+            type="checkbox"
+            className={CHECKBOX_CLASSNAME}
+            checked={marcado}
+            disabled={!temConta}
+            aria-describedby={
+              nota === null ? undefined : 'recorrente-lancar-nota'
+            }
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          Lançar sozinho como pendente
+        </label>
+        <Ajuda rotulo="Lançar sozinho">
+          No dia do vencimento, o app cria o lançamento pendente na conta desta
+          recorrente, com o valor máximo da faixa. Se a importação do extrato ou
+          da fatura trouxer esse lançamento com valor dentro da faixa, a mesma
+          linha é atualizada em vez de duplicar. Apagar o pendente não o faz
+          voltar. Vale a partir do dia em que você liga, e só enquanto a
+          recorrente estiver ativa. O pendente já conta no saldo da conta e no
+          gasto da categoria; no fluxo de caixa, só depois de pago.
+        </Ajuda>
+      </div>
+      {nota === null ? null : (
+        <p
+          id="recorrente-lancar-nota"
+          className="text-muted-foreground text-xs"
+        >
+          {nota}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export type LinhaDaRecorrenteProps = {
+  recorrente: RecurringExpenseView
+  categoria: string | null
+  conta: string | null
+  excluindo: boolean
+  onEditar: () => void
+  onExcluir: () => void
+}
+
+export function LinhaDaRecorrente({
+  recorrente: r,
+  categoria,
+  conta,
+  excluindo,
+  onEditar,
+  onExcluir,
+}: LinhaDaRecorrenteProps) {
+  return (
+    <li
+      data-testid={`recorrente-${r.id}`}
+      className={cn(
+        'flex gap-3 rounded-xl border p-3',
+        r.active !== 1 && 'bg-background',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        data-testid={`bloco-dia-${r.id}`}
+        className={cn(
+          'grid size-11 shrink-0 place-items-center rounded-[14px] border font-mono text-sm font-semibold tabular-nums',
+          r.active === 1
+            ? 'text-foreground'
+            : 'text-muted-foreground border-dashed',
+        )}
+      >
+        {ehPorDiaDaSemana(r.frequency)
+          ? diaDaSemanaCurto(r.starts_on)
+          : dd(r.day_of_month)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold">{r.description}</span>
+          {r.active === 0 ? (
+            <Badge variant="secondary" data-testid={`status-${r.id}`}>
+              Pausada
+            </Badge>
+          ) : null}
+          {r.active === 1 && r.generate_since !== null ? (
+            <Badge
+              variant="outline"
+              data-testid={`lanca-sozinha-${r.id}`}
+              className={cn(r.account_id === null && 'text-destructive')}
+            >
+              {r.account_id === null ? 'sem conta, não lança' : 'lança sozinha'}
+            </Badge>
+          ) : null}
+        </div>
+        {/*
+        ⚠️ A faixa saiu da ponta direita da linha e virou
+        LINHA PRÓPRIA, em `NUMERO_GRID` (24px) — antes era
+        `text-sm` (14px) espremida contra a descrição, com
+        `whitespace-nowrap` como única defesa.
+
+        É a linha própria que paga o aumento de escala:
+        MEDIDO em Chrome real a 390, sozinha ela tem os
+        **306 px** úteis inteiros em vez de dividi-los com
+        a descrição, e a faixa mais longa que o dado
+        permite mede **282 px** — cabe, em uma linha só.
+      */}
+        <p data-testid={`faixa-${r.id}`} className={cn('mt-1', NUMERO_GRID)}>
+          <FaixaValor min={r.amount_min_cents} max={r.amount_max_cents} />
+        </p>
+        <p className={cn(META_MONO, 'mt-1')}>
+          {r.scope} · {quandoVence(r)}
+          {categoria ? ` · ${categoria}` : ''}
+          {conta ? ` · ${conta}` : ''}
+        </p>
+        {/*
+        ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a
+        **34×16 px** e `Excluir` a **38,6×16 px**,
+        separados por **12 px**. Os 16 px de altura ficam
+        abaixo até do mínimo de 24×24 do WCAG 2.5.8 (AA),
+        e o par (destrutivo colado no rotineiro) é o mesmo
+        defeito já medido e corrigido em `extrato` e
+        `categorias` — com ~34 px de contato o polegar
+        cobre os dois, e errar aqui apaga a recorrente que
+        alimenta o Comprometido.
+
+        `ALVO_LINK`/`ALVO_LINK_FIM` levam os dois aos 44 px
+        SEM mexer na fonte (`text-xs` intacto) nem no x do
+        texto, e o `ml-auto` do destrutivo troca os 12 px
+        por toda a sobra da linha.
+      */}
+        <div className="mt-2 flex items-center gap-3">
+          <Button
+            type="button"
+            variant="link"
+            data-testid={`editar-${r.id}`}
+            className={cn('h-auto p-0 text-xs', ALVO_LINK)}
+            onClick={onEditar}
+          >
+            Editar
+          </Button>
+          <Button
+            type="button"
+            variant="link"
+            data-testid={`excluir-${r.id}`}
+            className={cn('text-destructive h-auto p-0 text-xs', ALVO_LINK_FIM)}
+            disabled={excluindo}
+            onClick={onExcluir}
+          >
+            {excluindo ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
 const FORM_INICIAL = {
   descricao: '',
   categoryId: NENHUMA,
   accountId: NENHUMA,
   scope: 'PJ' as 'PJ' | 'PF',
+  frequencia: 'monthly' as Frequencia,
   diaDoMes: '1',
   varia: false,
   valorMin: '',
@@ -143,6 +353,7 @@ const FORM_INICIAL = {
   terminaEm: '',
   notas: '',
   ativa: true,
+  lancarSozinho: false,
 }
 
 export function RecorrentesPage() {
@@ -158,6 +369,9 @@ export function RecorrentesPage() {
   const [categoryId, setCategoryId] = useState(FORM_INICIAL.categoryId)
   const [accountId, setAccountId] = useState(FORM_INICIAL.accountId)
   const [scope, setScope] = useState<'PJ' | 'PF'>(FORM_INICIAL.scope)
+  const [frequencia, setFrequencia] = useState<Frequencia>(
+    FORM_INICIAL.frequencia,
+  )
   const [diaDoMes, setDiaDoMes] = useState(FORM_INICIAL.diaDoMes)
   const [varia, setVaria] = useState(FORM_INICIAL.varia)
   const [valorMin, setValorMin] = useState(FORM_INICIAL.valorMin)
@@ -166,6 +380,8 @@ export function RecorrentesPage() {
   const [terminaEm, setTerminaEm] = useState(FORM_INICIAL.terminaEm)
   const [notas, setNotas] = useState(FORM_INICIAL.notas)
   const [ativa, setAtiva] = useState(FORM_INICIAL.ativa)
+  const [lancarSozinho, setLancarSozinho] = useState(FORM_INICIAL.lancarSozinho)
+  const [ligadoDesde, setLigadoDesde] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -209,6 +425,7 @@ export function RecorrentesPage() {
     setCategoryId(FORM_INICIAL.categoryId)
     setAccountId(FORM_INICIAL.accountId)
     setScope(FORM_INICIAL.scope)
+    setFrequencia(FORM_INICIAL.frequencia)
     setDiaDoMes(FORM_INICIAL.diaDoMes)
     setVaria(FORM_INICIAL.varia)
     setValorMin(FORM_INICIAL.valorMin)
@@ -217,6 +434,8 @@ export function RecorrentesPage() {
     setTerminaEm(FORM_INICIAL.terminaEm)
     setNotas(FORM_INICIAL.notas)
     setAtiva(FORM_INICIAL.ativa)
+    setLancarSozinho(FORM_INICIAL.lancarSozinho)
+    setLigadoDesde(null)
     setFormError(null)
   }
 
@@ -227,6 +446,7 @@ export function RecorrentesPage() {
     setCategoryId(r.category_id ?? NENHUMA)
     setAccountId(r.account_id ?? NENHUMA)
     setScope(r.scope)
+    setFrequencia(r.frequency)
     setDiaDoMes(String(r.day_of_month))
     setVaria(temFaixa)
     setValorMin(paraCampo(r.amount_min_cents))
@@ -235,6 +455,8 @@ export function RecorrentesPage() {
     setTerminaEm(r.ends_on ?? '')
     setNotas(r.notes ?? '')
     setAtiva(r.active === 1)
+    setLancarSozinho(r.generate_since !== null)
+    setLigadoDesde(r.generate_since)
     setFormError(null)
   }
 
@@ -246,15 +468,21 @@ export function RecorrentesPage() {
       setFormError('Dê uma descrição para a recorrente.')
       return
     }
-    const dia = Number(diaDoMes)
-    if (!Number.isInteger(dia) || dia < 1 || dia > 31) {
+    const porDiaDaSemana = ehPorDiaDaSemana(frequencia)
+    let dia = Number(diaDoMes)
+    if (!porDiaDaSemana && (!Number.isInteger(dia) || dia < 1 || dia > 31)) {
       setFormError('Dia do mês precisa ser um número inteiro entre 1 e 31.')
       return
     }
     if (comecaEm.trim() === '') {
-      setFormError('Informe a partir de quando a recorrente vale.')
+      setFormError(
+        porDiaDaSemana
+          ? 'Informe a data da primeira ocorrência.'
+          : 'Informe a partir de quando a recorrente vale.',
+      )
       return
     }
+    if (porDiaDaSemana) dia = Number(comecaEm.slice(8, 10))
 
     let minCents: number
     try {
@@ -307,6 +535,8 @@ export function RecorrentesPage() {
           ends_on: terminaEm || null,
           active: ativa ? 1 : 0,
           notes: notas || null,
+          frequency: frequencia,
+          auto_generate: lancarSozinho && accountId !== NENHUMA,
         }
         if (editandoId) {
           await api(`/api/recurring/${editandoId}`, {
@@ -393,37 +623,42 @@ export function RecorrentesPage() {
   // O custo fixo do mês é a FAIXA das ativas somadas, nunca uma média: o DAS
   // varia de R$ 12 a R$ 600, e a média (R$ 306) é o número que nunca
   // acontece — a mesma regra que o resto do módulo já aplica.
-  const custoMin = sumCents(ativas.map((r) => r.amount_min_cents))
-  const custoMax = sumCents(ativas.map((r) => r.amount_max_cents))
-  // O próximo dia de vencimento a partir de hoje; se todos já passaram no
-  // mês corrente, o menor dia volta (é o primeiro do mês que vem).
-  const hoje = Number(todayInTeresina().slice(8, 10))
-  const dias = ativas.map((r) => r.day_of_month).sort((a, b) => a - b)
-  const proximoDia = dias.find((d) => d >= hoje) ?? dias[0]
+  const hoje = todayInTeresina()
+  const competencia = hoje.slice(0, 7)
+  const custo = custoDoMes(ativas, competencia)
+  const proximo = proximoVencimento(ativas, hoje)
 
   return (
     <section className="space-y-5" data-testid="pagina-recorrentes">
       <p className={SUBTITULO_PAGINA}>
-        O que se repete todo mês. É daqui que sai o custo fixo usado no
-        Comprometido e na Reserva.
+        O que se repete toda semana, a cada 14 dias, todo mês ou todo ano. É
+        daqui que sai o custo fixo usado no Comprometido e na Reserva.
       </p>
 
       {recorrentes.length > 0 ? (
         <FaixaKpi>
           <KpiCard
             data-testid="kpi-custo-fixo"
-            rotulo="Custo fixo mensal"
-            valor={<FaixaValor min={custoMin} max={custoMax} />}
-            contexto={`${ativas.length} recorrente(s) ativa(s)`}
+            rotulo="Custo fixo do mês"
+            valor={<FaixaValor min={custo.min} max={custo.max} />}
+            contexto={`${ativas.length} recorrente(s) ativa(s) · vencimentos de ${nomeDoMes(competencia)}`}
           />
           <KpiCard
             data-testid="kpi-proximo"
             rotulo="Próximo vencimento"
-            valor={proximoDia === undefined ? '—' : `dia ${dd(proximoDia)}`}
+            valor={
+              proximo === null
+                ? '—'
+                : `${proximo.data.slice(8, 10)}/${proximo.data.slice(5, 7)}`
+            }
             contexto={
-              proximoDia === undefined
-                ? 'nenhuma recorrente ativa'
-                : 'o dia do mês mais próximo entre as ativas'
+              proximo === null
+                ? ativas.length === 0
+                  ? 'nenhuma recorrente ativa'
+                  : 'nenhum vencimento nos próximos 12 meses'
+                : proximo.descricoes.length === 1
+                  ? proximo.descricoes[0]
+                  : `${proximo.descricoes[0]} e mais ${proximo.descricoes.length - 1}`
             }
           />
           <KpiCard
@@ -456,117 +691,15 @@ export function RecorrentesPage() {
                     </p>
                     <ul className="space-y-3">
                       {grupo.itens.map((r) => (
-                        <li
+                        <LinhaDaRecorrente
                           key={r.id}
-                          data-testid={`recorrente-${r.id}`}
-                          className={cn(
-                            'flex gap-3 rounded-xl border p-3',
-                            r.active !== 1 && 'bg-background',
-                          )}
-                        >
-                          {/* O dia do mês vira um bloco próprio à esquerda —
-                              é a informação que organiza a leitura ("o que
-                              cai quando"), e antes vivia no meio da linha de
-                              meta, indistinguível do resto. */}
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'grid size-11 shrink-0 place-items-center rounded-[14px] border font-mono text-sm font-semibold tabular-nums',
-                              r.active === 1
-                                ? 'text-foreground'
-                                : 'text-muted-foreground border-dashed',
-                            )}
-                          >
-                            {dd(r.day_of_month)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-semibold">
-                                {r.description}
-                              </span>
-                              {r.active === 0 ? (
-                                <Badge
-                                  variant="secondary"
-                                  data-testid={`status-${r.id}`}
-                                >
-                                  Pausada
-                                </Badge>
-                              ) : null}
-                            </div>
-                            {/*
-                            ⚠️ A faixa saiu da ponta direita da linha e virou
-                            LINHA PRÓPRIA, em `NUMERO_GRID` (24px) — antes era
-                            `text-sm` (14px) espremida contra a descrição, com
-                            `whitespace-nowrap` como única defesa.
-
-                            É a linha própria que paga o aumento de escala:
-                            MEDIDO em Chrome real a 390, sozinha ela tem os
-                            **306 px** úteis inteiros em vez de dividi-los com
-                            a descrição, e a faixa mais longa que o dado
-                            permite mede **282 px** — cabe, em uma linha só.
-                          */}
-                            <p
-                              data-testid={`faixa-${r.id}`}
-                              className={cn('mt-1', NUMERO_GRID)}
-                            >
-                              <FaixaValor
-                                min={r.amount_min_cents}
-                                max={r.amount_max_cents}
-                              />
-                            </p>
-                            <p className={cn(META_MONO, 'mt-1')}>
-                              {r.scope} · dia {dd(r.day_of_month)}
-                              {nomeCategoria(r.category_id)
-                                ? ` · ${nomeCategoria(r.category_id)}`
-                                : ''}
-                              {nomeConta(r.account_id)
-                                ? ` · ${nomeConta(r.account_id)}`
-                                : ''}
-                            </p>
-                            {/*
-                            ⚠️ MEDIDO em Chrome real a 390×844: `Editar` a
-                            **34×16 px** e `Excluir` a **38,6×16 px**,
-                            separados por **12 px**. Os 16 px de altura ficam
-                            abaixo até do mínimo de 24×24 do WCAG 2.5.8 (AA),
-                            e o par (destrutivo colado no rotineiro) é o mesmo
-                            defeito já medido e corrigido em `extrato` e
-                            `categorias` — com ~34 px de contato o polegar
-                            cobre os dois, e errar aqui apaga a recorrente que
-                            alimenta o Comprometido.
-
-                            `ALVO_LINK`/`ALVO_LINK_FIM` levam os dois aos 44 px
-                            SEM mexer na fonte (`text-xs` intacto) nem no x do
-                            texto, e o `ml-auto` do destrutivo troca os 12 px
-                            por toda a sobra da linha.
-                          */}
-                            <div className="mt-2 flex items-center gap-3">
-                              <Button
-                                type="button"
-                                variant="link"
-                                data-testid={`editar-${r.id}`}
-                                className={cn('h-auto p-0 text-xs', ALVO_LINK)}
-                                onClick={() => editar(r)}
-                              >
-                                Editar
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="link"
-                                data-testid={`excluir-${r.id}`}
-                                className={cn(
-                                  'text-destructive h-auto p-0 text-xs',
-                                  ALVO_LINK_FIM,
-                                )}
-                                disabled={processando === r.id}
-                                onClick={() => excluir(r)}
-                              >
-                                {processando === r.id
-                                  ? 'Excluindo…'
-                                  : 'Excluir'}
-                              </Button>
-                            </div>
-                          </div>
-                        </li>
+                          recorrente={r}
+                          categoria={nomeCategoria(r.category_id)}
+                          conta={nomeConta(r.account_id)}
+                          excluindo={processando === r.id}
+                          onEditar={() => editar(r)}
+                          onExcluir={() => excluir(r)}
+                        />
                       ))}
                     </ul>
                   </div>
@@ -621,7 +754,10 @@ export function RecorrentesPage() {
                   id="recorrente-conta"
                   className={SELECT_CLASSNAME}
                   value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
+                  onChange={(e) => {
+                    setAccountId(e.target.value)
+                    if (e.target.value === NENHUMA) setLancarSozinho(false)
+                  }}
                 >
                   <option value={NENHUMA}>— nenhuma —</option>
                   {contas.map((c) => (
@@ -631,6 +767,29 @@ export function RecorrentesPage() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="recorrente-frequencia">Frequência</Label>
+              <select
+                id="recorrente-frequencia"
+                className={SELECT_CLASSNAME}
+                value={frequencia}
+                aria-describedby="recorrente-frequencia-dica"
+                onChange={(e) => setFrequencia(e.target.value as Frequencia)}
+              >
+                {FREQUENCIAS.map((f) => (
+                  <option key={f.valor} value={f.valor}>
+                    {f.rotulo}
+                  </option>
+                ))}
+              </select>
+              <p
+                id="recorrente-frequencia-dica"
+                className="text-muted-foreground text-xs"
+              >
+                {DICA_FREQUENCIA[frequencia]}
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -649,17 +808,19 @@ export function RecorrentesPage() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="recorrente-dia">Dia do mês</Label>
-                <Input
-                  id="recorrente-dia"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={diaDoMes}
-                  onChange={(e) => setDiaDoMes(e.target.value)}
-                />
-              </div>
+              {ehPorDiaDaSemana(frequencia) ? null : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="recorrente-dia">Dia do mês</Label>
+                  <Input
+                    id="recorrente-dia"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={diaDoMes}
+                    onChange={(e) => setDiaDoMes(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -709,7 +870,11 @@ export function RecorrentesPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="recorrente-inicio">Começa em</Label>
+                <Label htmlFor="recorrente-inicio">
+                  {ehPorDiaDaSemana(frequencia)
+                    ? 'Primeira ocorrência'
+                    : 'Começa em'}
+                </Label>
                 <Input
                   id="recorrente-inicio"
                   type="date"
@@ -746,6 +911,13 @@ export function RecorrentesPage() {
               />
               Ativa
             </label>
+
+            <CampoLancarSozinho
+              ligado={lancarSozinho}
+              temConta={accountId !== NENHUMA}
+              ligadoDesde={ligadoDesde}
+              onChange={setLancarSozinho}
+            />
 
             {formError ? (
               <p role="alert" className="text-destructive text-sm">
