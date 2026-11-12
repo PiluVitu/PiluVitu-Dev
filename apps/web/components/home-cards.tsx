@@ -151,7 +151,7 @@ export function HomeContato({ className }: { className?: string }) {
       </p>
       <div className="flex flex-wrap gap-2.5">
         <a
-          href="mailto:pilutechinformatica@gmail.com"
+          href="mailto:help@pilutech.com.br"
           className="bg-primary text-primary-foreground inline-flex min-h-11 items-center rounded-2xl px-4 text-sm font-bold"
         >
           Falar comigo →

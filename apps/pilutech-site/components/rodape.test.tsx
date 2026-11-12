@@ -12,7 +12,7 @@ describe('Rodape', () => {
     const { rerender } = render(<Rodape ano={2026} />)
     expect(
       screen.getByText(
-        '© 2026 PiluTech · Paulo Victor T S · pilutechinformatica@gmail.com',
+        '© 2026 PiluTech · Paulo Victor T S · help@pilutech.com.br',
       ),
     ).toBeInTheDocument()
     rerender(<Rodape ano={2027} />)

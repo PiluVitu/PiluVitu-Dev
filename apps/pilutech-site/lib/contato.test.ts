@@ -65,15 +65,15 @@ describe('WhatsApp', () => {
 
 describe('e-mail', () => {
   it('o contato do site vai para o e-mail da PiluTech com [PiluTech] no assunto', () => {
-    expect(EMAIL_DA_PILUTECH).toBe('pilutechinformatica@gmail.com')
+    expect(EMAIL_DA_PILUTECH).toBe('help@pilutech.com.br')
     expect(MAILTO_DO_SITE).toBe(
-      'mailto:pilutechinformatica@gmail.com?subject=%5BPiluTech%5D%20Contato%20pelo%20site',
+      'mailto:help@pilutech.com.br?subject=%5BPiluTech%5D%20Contato%20pelo%20site',
     )
   })
 
   it('o da política de privacidade leva [PiluTech] Privacidade no assunto', () => {
     expect(MAILTO_DA_PRIVACIDADE).toBe(
-      'mailto:pilutechinformatica@gmail.com?subject=%5BPiluTech%5D%20Privacidade',
+      'mailto:help@pilutech.com.br?subject=%5BPiluTech%5D%20Privacidade',
     )
   })
 })

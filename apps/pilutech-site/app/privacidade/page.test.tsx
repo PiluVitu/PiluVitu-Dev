@@ -46,7 +46,7 @@ describe('/privacidade', () => {
     const responsavel = secao('Quem é o responsável')
     expect(responsavel).toHaveTextContent('PiluTech')
     const email = within(responsavel).getByRole('link', {
-      name: 'pilutechinformatica@gmail.com',
+      name: 'help@pilutech.com.br',
     })
     expect(email).toHaveAttribute('href', MAILTO_DA_PRIVACIDADE)
   })
@@ -98,7 +98,7 @@ describe('/privacidade', () => {
     expect(direitos).toHaveTextContent('art. 18')
     expect(
       within(direitos).getByRole('link', {
-        name: 'pilutechinformatica@gmail.com',
+        name: 'help@pilutech.com.br',
       }),
     ).toHaveAttribute('href', MAILTO_DA_PRIVACIDADE)
     expect(

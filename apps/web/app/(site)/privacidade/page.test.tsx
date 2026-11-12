@@ -2,7 +2,7 @@ import { renderEstatico } from '@/lib/render-estatico'
 import PrivacidadePage, { metadata } from './page'
 
 const MAILTO_DA_PRIVACIDADE =
-  'mailto:pilutechinformatica@gmail.com?subject=%5BPiluVitu%5D%20Privacidade'
+  'mailto:help@pilutech.com.br?subject=%5BPiluVitu%5D%20Privacidade'
 
 const pagina = () => renderEstatico(<PrivacidadePage />)
 
@@ -61,7 +61,7 @@ describe('/privacidade', () => {
       'não vende dados',
     ])
     expect(
-      link(responsavel, 'pilutechinformatica@gmail.com').getAttribute('href'),
+      link(responsavel, 'help@pilutech.com.br').getAttribute('href'),
     ).toBe(MAILTO_DA_PRIVACIDADE)
   })
 
@@ -172,7 +172,7 @@ describe('/privacidade', () => {
     const direitos = secao(pagina(), 'Seus direitos')
     expect(texto(direitos)).toContain('art. 18')
     expect(
-      link(direitos, 'pilutechinformatica@gmail.com').getAttribute('href'),
+      link(direitos, 'help@pilutech.com.br').getAttribute('href'),
     ).toBe(MAILTO_DA_PRIVACIDADE)
     expect(
       link(

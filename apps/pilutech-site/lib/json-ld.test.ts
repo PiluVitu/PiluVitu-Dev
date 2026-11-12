@@ -11,7 +11,7 @@ import {
 import { DESCRICAO_DA_HOME } from './seo'
 
 const SITE = 'https://pilutech.com.br'
-const EMAIL = 'pilutechinformatica@gmail.com'
+const EMAIL = 'help@pilutech.com.br'
 const TELEFONE = '+55 86 98173-7625'
 
 function no(id: string, grafo: NoJsonLd[]): NoJsonLd | undefined {
