@@ -31,7 +31,7 @@ describe('Contato', () => {
   it('o e-mail vai com [PiluTech] Contato pelo site no assunto', () => {
     render(<Contato />)
     const link = screen.getByRole('link', {
-      name: 'E-mail pilutechinformatica@gmail.com',
+      name: 'E-mail help@pilutech.com.br',
     })
     expect(link).toHaveAttribute('href', MAILTO_DO_SITE)
     expect(link).not.toHaveAttribute('target')
@@ -42,7 +42,7 @@ describe('Contato', () => {
     render(<Contato />)
     expect(
       screen.getByRole('link', {
-        name: 'E-mail pilutechinformatica@gmail.com',
+        name: 'E-mail help@pilutech.com.br',
       }),
     ).toHaveClass('wrap-anywhere', 'whitespace-normal', 'max-w-full', 'h-auto')
   })
@@ -52,7 +52,7 @@ describe('Contato', () => {
     render(<Contato />)
     for (const nome of [
       'WhatsApp (86) 98173-7625',
-      'E-mail pilutechinformatica@gmail.com',
+      'E-mail help@pilutech.com.br',
     ])
       expect(screen.getByRole('link', { name: nome })).toHaveClass(
         'focus-visible:ring-2',

@@ -64,7 +64,7 @@ it('os links do site usam a origem recebida', () => {
 })
 
 it('contato com e-mail e WhatsApp, sem Votaí nem Finanças', () => {
-  expect(texto).toContain('pilutechinformatica@gmail.com')
+  expect(texto).toContain('help@pilutech.com.br')
   expect(texto).toContain('https://wa.me/5586981737625')
   expect(texto).not.toMatch(/Votaí|Finanças|piluvitu/i)
 })
