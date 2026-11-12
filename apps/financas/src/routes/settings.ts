@@ -1,5 +1,10 @@
 import { Hono } from 'hono'
 import {
+  ALERTAS_EMAIL_ENVIO_KEY,
+  type ConfigDeEnvio,
+  estadoDoEnvio,
+} from '../domain/alertas-envio'
+import {
   ALERTAS_EMAIL_KEY,
   alertasLigados,
   getFixedNetCents,
@@ -15,16 +20,18 @@ import { errJson, okJson } from '../lib/envelope'
 // genérico `/settings/:key` abaixo, que trataria `value` como string opaca
 // e deixaria qualquer lixo "salvo" nessa chave sem passar pelo RangeError
 // que protege o denominador do % de Comprometido. Mesma regra para o
-// liga/desliga dos alertas. Valor = a rota que a chave usa.
+// liga/desliga dos alertas e o registro do envio (escrito só pelo Cron).
+// Valor = a rota que a chave usa.
 const RESERVED_KEYS = new Map([
   ['fixed_net_cents', '/api/settings'],
   [ALERTAS_EMAIL_KEY, '/api/settings/alertas'],
+  [ALERTAS_EMAIL_ENVIO_KEY, '/api/settings/alertas'],
 ])
 
 // Convenção de módulo (accounts.ts/transactions.ts/installments.ts/debts.ts/
 // reports.ts/payees.ts/categories.ts): type Env LOCAL, nunca import de
 // Bindings de ../index — evita ciclo de import valor↔tipo.
-type Env = { Bindings: { DB: D1Database } }
+type Env = { Bindings: { DB: D1Database } & ConfigDeEnvio }
 
 export const settingsRoutes = new Hono<Env>()
 
@@ -68,7 +75,10 @@ settingsRoutes.put('/settings', async (c) => {
 
 // Antes da genérica `/settings/:key`: no Hono a ordem de registro decide.
 settingsRoutes.get('/settings/alertas', async (c) => {
-  return okJson({ ligado: await alertasLigados(c.env.DB) })
+  return okJson({
+    ligado: await alertasLigados(c.env.DB),
+    envio: await estadoDoEnvio(c.env.DB, c.env),
+  })
 })
 
 settingsRoutes.put('/settings/alertas', async (c) => {
@@ -91,7 +101,10 @@ settingsRoutes.put('/settings/alertas', async (c) => {
       'ligado',
     )
   }
-  return okJson({ ligado: await setAlertasLigados(c.env.DB, ligado) })
+  return okJson({
+    ligado: await setAlertasLigados(c.env.DB, ligado),
+    envio: await estadoDoEnvio(c.env.DB, c.env),
+  })
 })
 
 // Genérico (fatia ②, Tasks 4-5) — `key` livre, exceto as reservadas acima.

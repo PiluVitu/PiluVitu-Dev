@@ -486,6 +486,28 @@ describe('enviarAlertas — falha no envio', () => {
     expect(r).toEqual({ status: 'falhou', enviados: 0, codigo: 'TypeError' })
   })
 
+  // Códigos do adaptador do Email Routing (lib/envio-email.ts e lib/mime.ts):
+  // passam como código para a tela dizer "não configurado", como os E_*.
+  it.each(['destino_nao_verificado', 'alertas_endereco_invalido'])(
+    'code próprio do envio (%s) passa como código, e as chaves são soltas',
+    async (code) => {
+      await orcamentoCom('Mercado', 10_000, 9_000)
+      const erro = Object.assign(new Error(`detalhe com ${PARA}`), { code })
+
+      const r = await rodada('2026-11-20', enviarFalso(erro))
+      expect(r).toEqual({ status: 'falhou', enviados: 0, codigo: code })
+      expect(await chavesNoLog()).toEqual([])
+    },
+  )
+
+  it('code minúsculo desconhecido não passa: cai no nome do erro', async () => {
+    await orcamentoCom('Mercado', 10_000, 9_000)
+    const erro = Object.assign(new Error('x'), { code: 'outro_codigo' })
+
+    const r = await rodada('2026-11-20', enviarFalso(erro))
+    expect(r.codigo).toBe('Error')
+  })
+
   it('code com formato estranho não vaza: cai no nome do erro', async () => {
     await orcamentoCom('Mercado', 10_000, 9_000)
     const erro = Object.assign(new Error('x'), {

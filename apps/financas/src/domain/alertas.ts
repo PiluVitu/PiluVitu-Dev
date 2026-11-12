@@ -7,6 +7,7 @@ import {
   nowIsoUtc,
 } from '../lib/dates'
 import { errorCode } from '../lib/errors'
+import { CODIGOS_PROPRIOS_DO_ENVIO } from './alertas-envio'
 import { budgetReport } from './budgets'
 import { listOpenBills } from './transactions'
 
@@ -226,7 +227,12 @@ function codigoDoEnvio(err: unknown): string {
     typeof err === 'object' && err !== null && 'code' in err
       ? err.code
       : undefined
-  if (typeof code === 'string' && /^E_[A-Z0-9_]{1,60}$/.test(code)) return code
+  if (
+    typeof code === 'string' &&
+    (/^E_[A-Z0-9_]{1,60}$/.test(code) || CODIGOS_PROPRIOS_DO_ENVIO.has(code))
+  ) {
+    return code
+  }
   return errorCode(err)
 }
 
