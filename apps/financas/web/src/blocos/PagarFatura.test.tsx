@@ -10,6 +10,7 @@ import {
   vi,
 } from 'vitest'
 import type { AccountView } from '../pages/accounts'
+import type { BillPaymentView } from './PagamentosFeitos'
 import { PagarFatura, type OpenBillView } from './PagarFatura'
 
 /**
@@ -71,16 +72,65 @@ const FATURA: OpenBillView = {
   line_count: 40,
 }
 
+/** Um pagamento registrado (`GET /api/bills/payments`), valores fictícios. */
+const PAGAMENTO: BillPaymentView = {
+  transfer_id: 'tr1',
+  competence: '2026-08',
+  paid_on: '2026-09-05',
+  amount_cents: 184790,
+  line_count: 40,
+  from_account_id: 'a1',
+  from_account_name: 'Nubank PF',
+}
+
+function envelope(data: unknown) {
+  return {
+    status: 200,
+    json: async () => ({ ok: true, data, notifications: [] }),
+  }
+}
+
 function mockApi(
   opts: {
     bills?: OpenBillView[]
     pay?: { status: number; body: unknown }
     /** Faz o GET de /api/bills rejeitar a partir da N-ésima chamada. */
     getFalhaApartirDe?: number
+    /** Respostas sucessivas de GET /api/bills/payments (a última se repete). */
+    pagamentos?: BillPaymentView[][]
+    pagamentosFalham?: boolean
+    undo?: { status: number; body: unknown }
   } = {},
 ) {
   let getCount = 0
+  let pagamentosCount = 0
   const fn = vi.fn(async (path: string, init?: RequestInit) => {
+    // Rotas do desfazer roteadas por PATH e FORA de `getCount`: o
+    // `getFalhaApartirDe` dos testes de pagar conta só as leituras da fatura.
+    if (path.startsWith('/api/bills/payments/')) {
+      const undo = opts.undo ?? {
+        status: 200,
+        body: {
+          ok: true,
+          data: {
+            transfer_id: 'tr1',
+            competence: '2026-08',
+            amount_cents: 184790,
+            unsettled_count: 40,
+          },
+          notifications: [],
+        },
+      }
+      return { status: undo.status, json: async () => undo.body }
+    }
+    if (path.startsWith('/api/bills/payments')) {
+      if (opts.pagamentosFalham) throw new TypeError('Failed to fetch')
+      const respostas = opts.pagamentos ?? [[]]
+      const data =
+        respostas[Math.min(pagamentosCount, respostas.length - 1)] ?? []
+      pagamentosCount++
+      return envelope(data)
+    }
     if (init?.method === 'POST') {
       const pay = opts.pay ?? {
         status: 201,
@@ -281,7 +331,7 @@ describe('PagarFatura', () => {
     ).toBe(false)
   })
 
-  it('o dialogo diz que LIQUIDA N lancamentos E move o dinheiro, e que nao ha desfazer', async () => {
+  it('o dialogo diz que LIQUIDA N lancamentos E move o dinheiro, e onde se desfaz', async () => {
     const usuario = userEvent.setup()
     mockApi()
     montar()
@@ -296,7 +346,12 @@ describe('PagarFatura', () => {
     expect(descricao).toHaveTextContent('liquida 40 lançamentos')
     expect(descricao).toHaveTextContent('move R$ 1.847,90')
     expect(descricao).toHaveTextContent('de "Nubank PF" para "Nubank cartao"')
-    expect(descricao).toHaveTextContent('Não há como desfazer em lote')
+    // Desde o registro do pagamento (migration 0020) existe desfazer em lote,
+    // e o texto antigo ("não há como desfazer") passaria a ser mentira.
+    expect(descricao).not.toHaveTextContent('Não há como desfazer')
+    expect(descricao).toHaveTextContent(
+      'Dá para desfazer depois, em "Pagamentos feitos" neste painel',
+    )
   })
 
   /**
@@ -320,7 +375,7 @@ describe('PagarFatura', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_path: string, init?: RequestInit) => {
+      vi.fn(async (path: string, init?: RequestInit) => {
         if (init?.method === 'POST') {
           await emVoo
           return {
@@ -328,6 +383,7 @@ describe('PagarFatura', () => {
             json: async () => ({ ok: true, data: {}, notifications: [] }),
           }
         }
+        if (path.startsWith('/api/bills/payments')) return envelope([])
         return {
           status: 200,
           json: async () => ({ ok: true, data: [FATURA], notifications: [] }),
@@ -562,5 +618,302 @@ describe('PagarFatura', () => {
       ).toBeInTheDocument(),
     )
     expect(screen.getByTestId('revisar-pagamento')).toBeDisabled()
+  })
+})
+
+function posts(fetchMock: ReturnType<typeof mockApi>) {
+  return fetchMock.mock.calls.filter(
+    ([, init]) => (init as RequestInit)?.method === 'POST',
+  )
+}
+
+function chamadasA(fetchMock: ReturnType<typeof mockApi>, prefixo: string) {
+  return fetchMock.mock.calls.filter(([path]) =>
+    (path as string).startsWith(prefixo),
+  ).length
+}
+
+/** Abre o painel, espera a lista de pagamentos e toca em desfazer `tr1`. */
+async function abrirDesfazer(usuario: ReturnType<typeof userEvent.setup>) {
+  await abrir(usuario)
+  await usuario.click(await screen.findByTestId('desfazer-tr1'))
+  return within(await screen.findByTestId('confirmar-desfazer'))
+}
+
+describe('PagarFatura — desfazer o pagamento', () => {
+  it('lista os pagamentos feitos DAQUELE cartao, na ordem do servidor', async () => {
+    const usuario = userEvent.setup()
+    const julho: BillPaymentView = {
+      ...PAGAMENTO,
+      transfer_id: 'tr0',
+      competence: '2026-07',
+      paid_on: '2026-08-04',
+      amount_cents: 3000,
+      line_count: 1,
+    }
+    const fetchMock = mockApi({ pagamentos: [[PAGAMENTO, julho]] })
+    montar()
+    await abrir(usuario)
+
+    const secao = within(await screen.findByTestId('pagamentos-feitos'))
+    expect(secao.getByText('Pagamentos feitos')).toBeInTheDocument()
+    const itens = secao.getAllByRole('listitem')
+    // O servidor já ordena (paid_on DESC, created_at DESC); a tela não reordena.
+    expect(itens.map((li) => li.dataset.testid)).toEqual([
+      'pagamento-tr1',
+      'pagamento-tr0',
+    ])
+    expect(within(itens[0]).getByText('Fatura de ago/26')).toBeInTheDocument()
+    expect(within(itens[0]).getByText('R$ 1.847,90')).toBeInTheDocument()
+    expect(screen.getByTestId('pagamento-tr1-detalhe')).toHaveTextContent(
+      'Pago em 05/09/2026 · de "Nubank PF" · 40 lançamentos',
+    )
+    expect(
+      fetchMock.mock.calls.some(
+        ([path]) => path === '/api/bills/payments?card_account_id=card1',
+      ),
+    ).toBe(true)
+  })
+
+  it('cartao sem pagamento registrado nao mostra a secao', async () => {
+    const usuario = userEvent.setup()
+    mockApi({ pagamentos: [[]] })
+    montar()
+    await abrir(usuario)
+
+    await screen.findByTestId('fatura-total')
+    expect(screen.queryByTestId('pagamentos-feitos')).not.toBeInTheDocument()
+  })
+
+  it('a lista de pagamentos que nao carrega nao derruba o pagar', async () => {
+    const usuario = userEvent.setup()
+    mockApi({ pagamentosFalham: true })
+    montar()
+    await abrir(usuario)
+
+    expect(await screen.findByTestId('pagamentos-erro')).toHaveTextContent(
+      'Não consegui carregar os pagamentos feitos',
+    )
+    // A fatura em aberto chega por outra leitura e continua pagável.
+    expect(screen.getByTestId('fatura-total-valor')).toHaveTextContent(
+      'R$ 1.847,90',
+    )
+    expect(screen.queryByTestId('fatura-erro')).not.toBeInTheDocument()
+  })
+
+  it('o dialogo diz as DUAS metades, e cancelar nao chama a API', async () => {
+    const usuario = userEvent.setup()
+    const fetchMock = mockApi({ pagamentos: [[PAGAMENTO]] })
+    montar()
+    const dialogo = await abrirDesfazer(usuario)
+
+    expect(
+      dialogo.getByText('Desfazer o pagamento da fatura de ago/26?'),
+    ).toBeInTheDocument()
+    const descricao = dialogo.getByText(/Isto apaga a transferência/)
+    // Metade 1: o dinheiro volta (a transferência some).
+    expect(descricao).toHaveTextContent(
+      'apaga a transferência de R$ 1.847,90 que saiu de "Nubank PF"',
+    )
+    // Metade 2: as compras voltam a dever — e NÃO somem.
+    expect(descricao).toHaveTextContent('volta 40 lançamentos para "em aberto"')
+    expect(descricao).toHaveTextContent('Os lançamentos não são apagados')
+
+    await usuario.click(dialogo.getByTestId('cancelar-desfazer'))
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('confirmar-desfazer'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(posts(fetchMock)).toHaveLength(0)
+    // Cancelar fecha só o diálogo: o painel segue aberto atrás.
+    expect(screen.getByTestId('painel-pagar-fatura')).toBeInTheDocument()
+  })
+
+  it('confirmar posta no transfer_id certo e recarrega fatura, pagamentos e contas', async () => {
+    const usuario = userEvent.setup()
+    const fetchMock = mockApi({
+      pagamentos: [[PAGAMENTO], []],
+      // Uma linha desmarcada à mão entre a leitura da lista e o toque: o
+      // servidor reabre 39, não os 40 que a lista mostrava.
+      undo: {
+        status: 200,
+        body: {
+          ok: true,
+          data: {
+            transfer_id: 'tr1',
+            competence: '2026-08',
+            amount_cents: 184790,
+            unsettled_count: 39,
+          },
+          notifications: [],
+        },
+      },
+    })
+    const { recarregarContas } = montar()
+    const dialogo = await abrirDesfazer(usuario)
+
+    await usuario.click(dialogo.getByTestId('confirmar-desfazer-botao'))
+
+    await waitFor(() => expect(recarregarContas).toHaveBeenCalledTimes(1))
+    const enviados = posts(fetchMock)
+    expect(enviados).toHaveLength(1)
+    expect(enviados[0][0]).toBe('/api/bills/payments/tr1/undo')
+    // As três leituras que o desfazer muda: a fatura volta a ficar em aberto,
+    // o pagamento sai da lista e os DOIS saldos (corrente e cartão) mudam.
+    expect(chamadasA(fetchMock, '/api/bills?')).toBe(2)
+    expect(chamadasA(fetchMock, '/api/bills/payments?')).toBe(2)
+
+    // O N do aviso é o do SERVIDOR (`unsettled_count`), não o da lista.
+    expect(await screen.findByTestId('desfazer-aviso')).toHaveTextContent(
+      'Pagamento da fatura de ago/26 desfeito: 39 lançamentos voltaram para "em aberto"',
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('confirmar-desfazer'),
+      ).not.toBeInTheDocument(),
+    )
+    // Diferente de pagar, o painel FICA aberto: a fatura reaberta está ali,
+    // pronta para ser paga de novo (com outra conta ou outra data).
+    expect(screen.getByTestId('painel-pagar-fatura')).toBeInTheDocument()
+    expect(screen.queryByTestId('pagamentos-feitos')).not.toBeInTheDocument()
+    expect(screen.getByTestId('revisar-pagamento')).not.toBeDisabled()
+  })
+
+  it('pagamento inexistente ou ja desfeito: a recusa do servidor aparece e rola ate a vista', async () => {
+    const usuario = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scrollIntoView
+
+    try {
+      mockApi({
+        pagamentos: [[PAGAMENTO]],
+        undo: {
+          status: 404,
+          body: {
+            ok: false,
+            data: null,
+            notifications: [
+              {
+                type: 'error',
+                code: 'not_found',
+                message: 'Esse pagamento não existe ou já foi desfeito.',
+              },
+            ],
+          },
+        },
+      })
+      const { recarregarContas } = montar()
+      const dialogo = await abrirDesfazer(usuario)
+      await usuario.click(dialogo.getByTestId('confirmar-desfazer-botao'))
+
+      const alerta = await screen.findByTestId('desfazer-erro')
+      expect(alerta).toHaveAttribute('role', 'alert')
+      expect(alerta).toHaveTextContent(
+        'Esse pagamento não existe ou já foi desfeito.',
+      )
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId('confirmar-desfazer'),
+        ).not.toBeInTheDocument(),
+      )
+      expect(screen.getByTestId('painel-pagar-fatura')).toBeInTheDocument()
+      // Recusa não move nada: nem recarga, nem trava.
+      expect(recarregarContas).not.toHaveBeenCalled()
+      expect(screen.queryByTestId('desfazer-aviso')).not.toBeInTheDocument()
+      expect(screen.getByTestId('desfazer-tr1')).not.toBeDisabled()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  it('recarga falhou depois de desfazer: diz que FOI DESFEITO e trava os botoes', async () => {
+    const usuario = userEvent.setup()
+    // 1ª leitura da fatura (abertura) passa; a 2ª (recarga pós-desfazer) cai.
+    mockApi({ pagamentos: [[PAGAMENTO]], getFalhaApartirDe: 2 })
+    montar()
+    const dialogo = await abrirDesfazer(usuario)
+    await usuario.click(dialogo.getByTestId('confirmar-desfazer-botao'))
+
+    const alerta = await screen.findByTestId('desfazer-erro')
+    // ⚠️ Nunca pode ler como falha: a transferência JÁ foi apagada.
+    expect(alerta).toHaveTextContent('FOI DESFEITO')
+    expect(alerta).toHaveTextContent('R$ 1.847,90')
+    expect(alerta).toHaveTextContent('"Nubank PF"')
+    expect(alerta).toHaveTextContent('atualize a página')
+    // A tela mostra o estado de ANTES: desfazer de novo daria 404, e pagar
+    // usaria o total velho. As duas ações ficam travadas até recarregar.
+    expect(screen.getByTestId('desfazer-tr1')).toBeDisabled()
+    expect(screen.getByTestId('revisar-pagamento')).toBeDisabled()
+    expect(screen.queryByTestId('desfazer-aviso')).not.toBeInTheDocument()
+  })
+
+  it('o dialogo de desfazer so fecha DEPOIS da resposta, e nao escapa no meio', async () => {
+    const usuario = userEvent.setup()
+    let responder: () => void = () => {}
+    const emVoo = new Promise<void>((r) => {
+      responder = r
+    })
+    const base = mockApi({ pagamentos: [[PAGAMENTO], []] })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path: string, init?: RequestInit) => {
+        if (path.endsWith('/undo')) await emVoo
+        return base(path, init)
+      }),
+    )
+
+    montar()
+    const dialogo = await abrirDesfazer(usuario)
+    await usuario.click(dialogo.getByTestId('confirmar-desfazer-botao'))
+
+    // Mesmo defeito medido no pagar (CLAUDE.md, "A tela de pagar fatura"):
+    // fechar dentro do gesto deixa o `click` cair no overlay do painel.
+    await waitFor(() =>
+      expect(screen.getByTestId('confirmar-desfazer-botao')).toBeDisabled(),
+    )
+    expect(screen.getByTestId('confirmar-desfazer')).toBeInTheDocument()
+    expect(screen.getByTestId('confirmar-desfazer-botao')).toHaveTextContent(
+      'Desfazendo…',
+    )
+    expect(screen.getByTestId('cancelar-desfazer')).toBeDisabled()
+    await usuario.keyboard('{Escape}')
+    expect(screen.getByTestId('confirmar-desfazer')).toBeInTheDocument()
+
+    responder()
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('confirmar-desfazer'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(await screen.findByTestId('desfazer-aviso')).toBeInTheDocument()
+  })
+
+  it('desfazer que deu certo limpa o erro antigo do pagar: nada de alerta velho ao lado do aviso', async () => {
+    const usuario = userEvent.setup()
+    mockApi({ pagamentos: [[PAGAMENTO], []] })
+    montar()
+    await abrir(usuario)
+    await screen.findByTestId('fatura-total')
+    await screen.findByTestId('desfazer-tr1')
+
+    // Um erro do pagar fica na tela (pagar sem escolher a origem)...
+    await usuario.click(screen.getByTestId('revisar-pagamento'))
+    expect(screen.getByTestId('fatura-erro')).toHaveTextContent(
+      'Escolha a conta de onde o dinheiro sai.',
+    )
+
+    // ...e o desfazer bem-sucedido o tira, como pagar tira as mensagens do
+    // desfazer. Um role=alert velho ao lado do role=status de sucesso diria
+    // ao leitor de tela que algo falhou agora.
+    await usuario.click(screen.getByTestId('desfazer-tr1'))
+    const dialogo = within(await screen.findByTestId('confirmar-desfazer'))
+    await usuario.click(dialogo.getByTestId('confirmar-desfazer-botao'))
+
+    expect(await screen.findByTestId('desfazer-aviso')).toBeInTheDocument()
+    expect(screen.queryByTestId('fatura-erro')).not.toBeInTheDocument()
   })
 })

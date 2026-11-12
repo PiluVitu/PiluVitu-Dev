@@ -461,6 +461,7 @@ export type TransactionClass =
   | 'debt_payment_line' // pagamento de dívida (RESTRICT cru)
   | 'split_child_line' // filha de rateio
   | 'split_parent_line' // pai de rateio (apagar levaria as filhas junto)
+  | 'bill_payment_leg' // perna de pagamento de fatura registrado (só o desfazer)
   | 'transfer_leg' // perna de transferência (a outra perna existe)
   | 'debt_item_line' // compra que virou item de dívida (SET NULL)
   | 'free' // ninguém aponta pra ela
@@ -502,14 +503,15 @@ type OwnerProbeRow = {
   de_pagamento: number | null
   de_item: number | null
   de_pai_de_rateio: number | null
+  de_pagamento_de_fatura: number | null
 }
 
 /**
  * UMA query. Cada subconsulta bate em índice único
- * (uq_installments_tx / uq_debt_payments_tx / uq_debt_items_tx) ou parcial
- * (idx_tx_parent) — zero scan, mesmo com o livro-caixa crescido. Fazer isto
- * em 4 round-trips seria 4x o custo de "rows read" pra responder uma
- * pergunta só.
+ * (uq_installments_tx / uq_debt_payments_tx / uq_debt_items_tx / PK de
+ * bill_payments) ou parcial (idx_tx_parent) — zero scan, mesmo com o
+ * livro-caixa crescido. Fazer isto em 5 round-trips seria 5x o custo de
+ * "rows read" pra responder uma pergunta só.
  */
 async function probeOwner(
   db: D1Database,
@@ -521,7 +523,8 @@ async function probeOwner(
               (SELECT 1 FROM installments  WHERE transaction_id = t.id) AS de_parcela,
               (SELECT 1 FROM debt_payments WHERE transaction_id = t.id) AS de_pagamento,
               (SELECT 1 FROM debt_items    WHERE transaction_id = t.id) AS de_item,
-              (SELECT 1 FROM transactions  WHERE parent_id      = t.id) AS de_pai_de_rateio
+              (SELECT 1 FROM transactions  WHERE parent_id      = t.id) AS de_pai_de_rateio,
+              (SELECT 1 FROM bill_payments WHERE transfer_id    = t.transfer_id) AS de_pagamento_de_fatura
          FROM transactions t
         WHERE t.id = ?`,
     )
@@ -530,12 +533,13 @@ async function probeOwner(
 }
 
 function classify(row: OwnerProbeRow): TransactionClass {
-  // Ordem = severidade. As três primeiras recusam tudo que é estrutural;
+  // Ordem = severidade. Até bill_payment_leg recusam tudo que é estrutural;
   // transfer_leg cascateia; debt_item_line passa avisando.
   if (row.de_parcela) return 'installment_line'
   if (row.de_pagamento) return 'debt_payment_line'
   if (row.parent_id !== null) return 'split_child_line'
   if (row.de_pai_de_rateio) return 'split_parent_line'
+  if (row.de_pagamento_de_fatura) return 'bill_payment_leg'
   if (row.transfer_id !== null) return 'transfer_leg'
   if (row.de_item) return 'debt_item_line'
   return 'free'
@@ -560,6 +564,9 @@ export async function inspectTransaction(
   }
 }
 
+const ALCANCE_DO_DESFAZER =
+  'O painel mostra os 12 pagamentos mais recentes de cada cartão ativo; um pagamento mais antigo, ou de um cartão arquivado, ainda não tem o botão na tela.'
+
 const RECUSA_DELETE: Partial<Record<TransactionClass, string>> = {
   installment_line:
     'Este lançamento é uma parcela de um parcelamento. Apagar só ela abriria um buraco no plano (ficaria faltando uma parcela do meio) e o total do parcelamento passaria a mentir, sem nenhum aviso. Cancele o parcelamento inteiro.',
@@ -569,6 +576,7 @@ const RECUSA_DELETE: Partial<Record<TransactionClass, string>> = {
     'Este lançamento é uma parte de um rateio. Apague o lançamento pai — apagar só a parte deixaria o rateio sem bater com o valor cheio.',
   split_parent_line:
     'Este lançamento é o pai de um rateio: apagá-lo apagaria junto, em silêncio, todas as partes rateadas. Apague as partes primeiro.',
+  bill_payment_leg: `Este lançamento é o pagamento de uma fatura de cartão. Apagar só a transferência deixaria as compras da fatura marcadas como pagas sem o dinheiro ter saído. Use "Desfazer pagamento" no painel de pagar fatura do cartão, em Contas: ele apaga a transferência e volta as compras para "em aberto". ${ALCANCE_DO_DESFAZER}`,
 }
 
 const RECUSA_EDICAO: Record<TransactionClass, string> = {
@@ -580,6 +588,7 @@ const RECUSA_EDICAO: Record<TransactionClass, string> = {
     'Valor, data e conta de uma parte de rateio não podem ser editados: a soma das partes tem que continuar igual ao lançamento pai.',
   split_parent_line:
     'Valor, data e conta do pai de um rateio não podem ser editados: as partes já foram distribuídas a partir dele.',
+  bill_payment_leg: `Valor, data e conta do pagamento de uma fatura não podem ser editados: ele tem que continuar batendo com as compras que liquidou. Use "Desfazer pagamento" no painel de pagar fatura do cartão, em Contas, e pague de novo. ${ALCANCE_DO_DESFAZER} Descrição, pessoa, categoria e PJ/PF continuam editáveis.`,
   transfer_leg:
     'Valor, data e conta de uma transferência não podem ser editados por aqui: as duas pernas têm que continuar espelhadas. Apague a transferência e registre de novo. Descrição, pessoa, categoria e PJ/PF continuam editáveis.',
   debt_item_line:
@@ -752,18 +761,26 @@ export async function settleTransaction(
   return res.meta.changes > 0
 }
 
-/** Desmarcar: a linha volta a ser PREVISTA (volta pro Comprometido, sai do fluxo). */
+/**
+ * Desmarcar: a linha volta a ser PREVISTA (volta pro Comprometido, sai do
+ * fluxo) e deixa de fazer parte do pagamento de fatura que a liquidou — uma
+ * liquidação manual posterior não pode ser desfeita pelo botão do pagamento.
+ */
 export async function unsettleTransaction(
   db: D1Database,
   id: string,
 ): Promise<boolean> {
   const now = nowIsoUtc()
-  const res = await db
-    .prepare(
-      'UPDATE transactions SET settled_at = NULL, updated_at = ? WHERE id = ? AND settled_at IS NOT NULL',
-    )
-    .bind(now, id)
-    .run()
+  const [res] = await db.batch([
+    db
+      .prepare(
+        'UPDATE transactions SET settled_at = NULL, updated_at = ? WHERE id = ? AND settled_at IS NOT NULL',
+      )
+      .bind(now, id),
+    db
+      .prepare('DELETE FROM bill_payment_lines WHERE transaction_id = ?')
+      .bind(id),
+  ])
   return res.meta.changes > 0
 }
 
@@ -897,6 +914,14 @@ export type PayBillResult = {
   out: Transaction
   inbound: Transaction
 }
+
+// O registro das linhas pagas e a liquidação usam este MESMO WHERE: a linha
+// registrada tem de ser exatamente a liquidada, ou o desfazer erra o alvo.
+const LINHAS_EM_ABERTO_DA_FATURA = `WHERE account_id      = ?
+            AND bill_competence = ?
+            AND settled_at      IS NULL
+            AND transfer_id     IS NULL
+            AND parent_id       IS NULL`
 
 /**
  * Paga a fatura de UMA competência: transfere `from_account_id -> cartão` e
@@ -1065,15 +1090,36 @@ export async function payBill(
       card_account_id,
       competence,
     ),
+    // O registro só nasce se as pernas nasceram: quem perde a corrida acima
+    // não pode deixar um pagamento apontando para transferência nenhuma.
+    db
+      .prepare(
+        `INSERT INTO bill_payments
+           (transfer_id, card_account_id, competence, paid_on, amount_cents, created_at)
+         SELECT ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (SELECT 1 FROM transactions WHERE transfer_id = ?)`,
+      )
+      .bind(
+        transfer_id,
+        card_account_id,
+        competence,
+        paid_on,
+        amount_cents,
+        now,
+        transfer_id,
+      ),
+    db
+      .prepare(
+        `INSERT INTO bill_payment_lines (transfer_id, transaction_id)
+         SELECT ?, id FROM transactions
+          ${LINHAS_EM_ABERTO_DA_FATURA}`,
+      )
+      .bind(transfer_id, card_account_id, competence),
     db
       .prepare(
         `UPDATE transactions
             SET settled_at = ?, updated_at = ?
-          WHERE account_id      = ?
-            AND bill_competence = ?
-            AND settled_at      IS NULL
-            AND transfer_id     IS NULL
-            AND parent_id       IS NULL`,
+          ${LINHAS_EM_ABERTO_DA_FATURA}`,
       )
       .bind(paid_on, now, card_account_id, competence),
     db
@@ -1089,7 +1135,7 @@ export async function payBill(
   // `INSERT ... WHERE EXISTS` protege o DINHEIRO em silêncio: sem este guard,
   // a 2ª chamada não grava nada e mesmo assim responde SUCESSO, e a tela diria
   // ao dono que pagou de novo uma fatura em que não tocou.
-  if (res[3].results.length === 0) {
+  if (res[5].results.length === 0) {
     throw new PayBillError(
       'already_paid',
       `a fatura de ${competence} já foi paga`,
@@ -1097,11 +1143,11 @@ export async function payBill(
   }
 
   // ORDER BY amount_cents: a perna negativa (saída da corrente) vem primeiro.
-  const [out, inbound] = res[3].results
+  const [out, inbound] = res[5].results
   return {
     transfer_id,
     amount_cents,
-    settled_count: res[2].meta.changes,
+    settled_count: res[4].meta.changes,
     competence,
     out,
     inbound,
@@ -1175,4 +1221,107 @@ export async function listOpenBills(
     .bind(card_account_id)
     .all<OpenBill>()
   return res.results
+}
+
+// ---------------------------------------------------------------------------
+// DESFAZER O PAGAMENTO DA FATURA — ver "Desfazer o pagamento da fatura" no
+// apps/financas/CLAUDE.md.
+// ---------------------------------------------------------------------------
+
+export type BillPayment = {
+  transfer_id: string
+  competence: string
+  paid_on: string
+  amount_cents: number
+  /** Quantos lançamentos o desfazer volta para "em aberto". */
+  line_count: number
+  from_account_id: string
+  from_account_name: string
+}
+
+/** Pagamentos registrados de um cartão, do mais recente para o mais antigo. */
+export async function listBillPayments(
+  db: D1Database,
+  card_account_id: string,
+): Promise<BillPayment[]> {
+  const res = await db
+    .prepare(
+      `SELECT bp.transfer_id,
+              bp.competence,
+              bp.paid_on,
+              bp.amount_cents,
+              (SELECT COUNT(*)
+                 FROM bill_payment_lines l
+                 JOIN transactions t ON t.id = l.transaction_id
+                WHERE l.transfer_id = bp.transfer_id
+                  AND t.settled_at IS NOT NULL) AS line_count,
+              saida.account_id AS from_account_id,
+              origem.name      AS from_account_name
+         FROM bill_payments bp
+         JOIN transactions saida
+           ON saida.transfer_id = bp.transfer_id AND saida.amount_cents < 0
+         JOIN accounts origem ON origem.id = saida.account_id
+        WHERE bp.card_account_id = ?
+        ORDER BY bp.paid_on DESC, bp.created_at DESC
+        LIMIT 12`,
+    )
+    .bind(card_account_id)
+    .all<BillPayment>()
+  return res.results
+}
+
+export type UndoBillPaymentResult = {
+  transfer_id: string
+  competence: string
+  amount_cents: number
+  unsettled_count: number
+}
+
+/**
+ * Desfaz um pagamento registrado por `payBill`, as duas metades num batch:
+ * as linhas que ele liquidou (e que continuam liquidadas) voltam para "em
+ * aberto", e a transferência some. `null` quando não há pagamento registrado
+ * com esse `transfer_id` — inclusive quando outro desfazer chegou antes.
+ */
+export async function undoBillPayment(
+  db: D1Database,
+  transfer_id: string,
+): Promise<UndoBillPaymentResult | null> {
+  const pagamento = await db
+    .prepare(
+      'SELECT competence, amount_cents FROM bill_payments WHERE transfer_id = ?',
+    )
+    .bind(transfer_id)
+    .first<{ competence: string; amount_cents: number }>()
+  if (!pagamento) return null
+
+  const now = nowIsoUtc()
+  const [voltaram, , apagado] = await db.batch([
+    db
+      .prepare(
+        `UPDATE transactions
+            SET settled_at = NULL, updated_at = ?
+          WHERE id IN (SELECT transaction_id FROM bill_payment_lines WHERE transfer_id = ?)
+            AND settled_at IS NOT NULL`,
+      )
+      .bind(now, transfer_id),
+    db
+      .prepare(
+        `DELETE FROM transactions
+          WHERE transfer_id = ?
+            AND EXISTS (SELECT 1 FROM bill_payments WHERE transfer_id = ?)`,
+      )
+      .bind(transfer_id, transfer_id),
+    db
+      .prepare('DELETE FROM bill_payments WHERE transfer_id = ?')
+      .bind(transfer_id),
+  ])
+  if (apagado.meta.changes === 0) return null
+
+  return {
+    transfer_id,
+    competence: pagamento.competence,
+    amount_cents: pagamento.amount_cents,
+    unsettled_count: voltaram.meta.changes,
+  }
 }

@@ -199,6 +199,23 @@ Aplicada **localmente** (`db:migrate:local`). Em produção o `deploy-financas.y
 pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-financas --remote   # 0017 e 0018
 ```
 
+### `0020_desfazer_fatura.sql` — registro dos pagamentos de fatura
+
+A `0019` fica reservada para a recorrência automática (outro PR); esta usa `0020` mesmo assim. O wrangler aplica pelo nome o que ainda não está em `d1_migrations`, então uma `0019` que chegue depois ainda é aplicada.
+
+- **`bill_payments`** (STRICT): `transfer_id` (PK, o mesmo das duas pernas), `card_account_id` (FK `RESTRICT`), `competence`, `paid_on`, `amount_cents` (`CHECK > 0`), `created_at`. Índice `idx_bill_payments_card_paid_on (card_account_id, paid_on)`, o da lista do painel.
+- **`bill_payment_lines`** (STRICT): `(transfer_id, transaction_id)` como PK; `transfer_id` → `bill_payments` `CASCADE` (desfazer leva o registro junto) e `transaction_id` → `transactions` `CASCADE` (apagar uma compra a tira do pagamento sem travar o `DELETE` dela). Índice `idx_bill_payment_lines_tx (transaction_id)`, o do `unsettle`.
+- **Sem backfill.** Os pagamentos anteriores não registraram quais linhas liquidaram, e reconstruir pela data seria heurística. Eles continuam desfazíveis só à mão (ver _Desfazer o pagamento da fatura_).
+- Nenhuma coluna nova em `transactions`.
+
+⚠️ **Aplicar ANTES de publicar o Worker.** Sem as tabelas, `payBill`, o `unsettle` e todo `DELETE`/`PATCH` de lançamento dão 500 (`probeOwner` consulta `bill_payments`). O dono aplica do Mac, depois da revisão:
+
+```bash
+pnpm --filter @piluvitu/financas db:migrate:remote   # 0020_desfazer_fatura
+```
+
+Coberta em `src/schema.test.ts` (colunas, STRICT, `ON DELETE` por `pragma_foreign_key_list`, CHECK, cascatas e índices; a contagem de tabelas foi a 24).
+
 ### Claude (`@piluvitu/ia`, IA fase 1): chave, tetos e erros
 
 - **`ANTHROPIC_API_KEY`** é secret, nunca `vars` do `wrangler.jsonc` nem `.dev.vars` commitado. O dono cadastra com `pnpm --filter @piluvitu/financas exec wrangler secret put ANTHROPIC_API_KEY`; local, vai no `.dev.vars` (fora do git). Sem ela, a rota responde `503 claude_desligado` sem tocar a API nem gravar em `uso_ia`. O tipo está em `IaBindings` (`src/lib/ia.ts`), somado ao `Bindings` em `src/index.ts`.
@@ -646,6 +663,7 @@ Mutação e recarga em `try` separados (`lib/mutar-e-recarregar.ts`). Aqui a reg
 | `installment_line`                       | **recusa**                   | o CASCADE faria sumir em silêncio — mensagem manda cancelar o plano                     |
 | `debt_payment_line`                      | **recusa**                   | aponta `DELETE /api/debts/:id/payments/:paymentId`                                      |
 | `split_child_line` / `split_parent_line` | **recusa** (defensivo)       | 0 escritores hoje; o pai levaria as filhas junto por CASCADE                            |
+| `bill_payment_leg`                       | **recusa**                   | perna de pagamento de fatura registrado: só o "Desfazer pagamento" (migration `0020`)   |
 | `debt_item_line`                         | **permite**, a tela avisa    | SET NULL, o item sobrevive sem o elo                                                    |
 | (`imported`)                             | **permite**, a tela avisa    | dedupe é `(account_id, imported_id)` — reimportar o MESMO arquivo TRAZ A LINHA DE VOLTA |
 
@@ -741,7 +759,7 @@ Corpo **ausente** é o caso normal ("paguei hoje"), não erro — só corpo pres
 
 ### DELETE
 
-⚠️ **UM código (`transaction_has_owner`) para as quatro recusas, com a CLASSE em `field`** — `installment_line`, `debt_payment_line`, `split_child_line`, `split_parent_line`. Cinco códigos obrigariam o cliente a conhecer um catálogo que muda a cada tipo novo de vínculo; um código + discriminador deixa a tela rotear ("cancelar o plano" × "apagar o pagamento") sem catálogo novo. `field` aqui carrega a classe, não um campo de formulário — alargamento deliberado, porque é exatamente o slot que o envelope tem pra discriminar um erro. A mensagem é a do domínio, repassada crua (asserção NEGATIVA de `SQLITE`/`D1_ERROR` no teste).
+⚠️ **UM código (`transaction_has_owner`) para todas as recusas, com a CLASSE em `field`** — `installment_line`, `debt_payment_line`, `split_child_line`, `split_parent_line` e, desde a `0020`, `bill_payment_leg`. Um código por classe obrigaria o cliente a conhecer um catálogo que muda a cada tipo novo de vínculo; um código + discriminador deixa a tela rotear ("cancelar o plano" × "apagar o pagamento") sem catálogo novo. `field` aqui carrega a classe, não um campo de formulário — alargamento deliberado, porque é exatamente o slot que o envelope tem pra discriminar um erro. A mensagem é a do domínio, repassada crua (asserção NEGATIVA de `SQLITE`/`D1_ERROR` no teste).
 
 ⚠️ **Transferência: os ids das DUAS pernas são lidos ANTES do `DELETE`** — depois dele não há mais o que consultar, e a resposta sairia com `deleted_ids: []` (mutação confirmada). A rota faz esse `SELECT` direto no D1 (precedente: `routes/reserve.ts`), só no caso da transferência, por `idx_tx_transfer`, 2 linhas. Ordem `ORDER BY amount_cents` — saída (negativa) primeiro, mesma convenção que `createTransfer` já usa pra devolver `out`/`inbound`.
 
@@ -1023,7 +1041,7 @@ Vive em `transactionsRoutes` (já montado em `app.route('/api', ...)`, acima do 
 
 ⚠️ **A última mutação NÃO matava nada na primeira tentativa, e o TESTE foi corrigido em vez de aceito** — sem relógio fixo, a data UTC e a de Teresina coincidem na maior parte do dia. O teste passou a fixar `2026-09-06T01:00:00Z` (22h de 05/09 em Teresina); com isso a mutação mata.
 
-✅ **A TELA chegou na fatia seguinte** — ver _A tela de pagar fatura_ logo abaixo. Continua não havendo **desfazer** um pagamento de fatura (seria apagar a transferência — o `DELETE` já cascateia as duas pernas — e `unsettle` linha a linha), nem pagamento **parcial**, que exige a entidade Bill.
+✅ **A TELA chegou na fatia seguinte** — ver _A tela de pagar fatura_ logo abaixo. ✅ **O desfazer do pagamento inteiro também chegou** (migration `0020`), ver _Desfazer o pagamento da fatura_. Pagamento **parcial** continua fora: exige a entidade Bill.
 
 ## A tela de pagar fatura (`web/src/blocos/PagarFatura.tsx` + `GET /api/bills`)
 
@@ -1065,9 +1083,9 @@ Corrigido fechando o diálogo **depois do `await`** — o desmonte cai numa tare
 
 ### Confirmação, recarga e a trava
 
-⚠️ **`Dialog` de `@piluvitu/ui/dialog`, nunca `window.confirm()`** (o Chrome Android devolve `false` em silêncio depois de "impedir caixas de diálogo adicionais"). O texto diz as **duas** metades — liquida N lançamentos **E** move o dinheiro — porque só uma seria mentira por omissão, e diz que **não há desfazer em lote**. Fica FORA do `SheetContent` (irmão): empilha por cima do painel, que continua aberto atrás.
+⚠️ **`Dialog` de `@piluvitu/ui/dialog`, nunca `window.confirm()`** (o Chrome Android devolve `false` em silêncio depois de "impedir caixas de diálogo adicionais"). O texto diz as **duas** metades — liquida N lançamentos **E** move o dinheiro — porque só uma seria mentira por omissão, e diz que **dá para desfazer** pelo próprio painel (ver _Desfazer o pagamento da fatura_). Fica FORA do `SheetContent` (irmão): empilha por cima do painel, que continua aberto atrás.
 
-⚠️ **`mutarERecarregar` (10º call site)**, mutação e recarga em `try` separados. Aqui a regra vale mais que em qualquer outra tela: um POST 201 seguido de um GET que cai faria a tela dizer "falhou" para um pagamento que ACONTECEU — e o reenvio é a fatura paga **duas vezes**. A mensagem nomeia o estrago, e um estado `pago` **trava o botão** depois que só a recarga falhou: a mensagem avisa, a trava impede.
+⚠️ **`mutarERecarregar` (10º call site; o desfazer é o 11º)**, mutação e recarga em `try` separados. Aqui a regra vale mais que em qualquer outra tela: um POST 201 seguido de um GET que cai faria a tela dizer "falhou" para um pagamento que ACONTECEU — e o reenvio é a fatura paga **duas vezes**. A mensagem nomeia o estrago, e um estado `travado` **trava pagar e desfazer** depois que só a recarga falhou, em qualquer das duas ações: a mensagem avisa, a trava impede (ver _A tela: seção "Pagamentos feitos"_).
 
 ### Mobile — MEDIDO em Chrome real a 390×844 (`hasTouch`/`isMobile`)
 
@@ -1106,7 +1124,67 @@ Corrigido fechando o diálogo **depois do `await`** — o desmonte cai numa tare
 
 **Bundle (`vite build`):** JS principal **156,40 kB gzip**; CSS **8,08 kB gzip**; chunk lazy `GraficoComprometido` **113,31 kB gzip, intocado**. Nenhuma dependência nova.
 
-**Fora de escopo, registrado:** continua não havendo **desfazer** um pagamento nem pagamento **parcial** (exige a entidade Bill). A tela não oferece pagar fatura de competência FUTURA que ainda não fechou — só o que `listOpenBills` devolve.
+**Fora de escopo, registrado:** pagamento **parcial** (exige a entidade Bill). A tela não oferece pagar fatura de competência FUTURA que ainda não fechou — só o que `listOpenBills` devolve. O desfazer chegou depois, na seção seguinte.
+
+## Desfazer o pagamento da fatura (`undoBillPayment` + `GET /api/bills/payments` + `POST /api/bills/payments/:transfer_id/undo`)
+
+Antes, desfazer um pagamento era apagar a transferência (o `DELETE` cascateava as duas pernas) e, à parte, desmarcar as compras uma a uma. Apagar só a transferência deixava as compras liquidadas: o Comprometido dizia "pago" sem o dinheiro ter saído (as "duas vozes"). E não havia registro de **quais** linhas um pagamento liquidou; desfazer por `settled_at = paid_on` desfaria junto uma compra liquidada à mão na mesma data.
+
+### O que é registrado (migration `0020`)
+
+`payBill` grava, **no mesmo `db.batch`**, a linha de `bill_payments` e, **antes** do `UPDATE` de liquidação, `INSERT INTO bill_payment_lines SELECT <transfer_id>, id FROM transactions` com o **mesmo** `WHERE` da liquidação (a constante `LINHAS_EM_ABERTO_DA_FATURA`, usada pelos dois). O contrato "`WHERE` de `payBill` = `WHERE` de `listOpenBills`" não mudou.
+
+⚠️ **O registro segue a guarda de corrida das pernas.** `bill_payments` só nasce `WHERE EXISTS` a perna daquele `transfer_id`; quem perde a corrida não grava perna nem registro. As linhas não precisam de guarda própria: se as pernas não nasceram é porque não havia linha em aberto, e o `SELECT` delas volta vazio.
+
+### O que o desfazer faz
+
+`undoBillPayment(db, transfer_id)` devolve `null` se não há pagamento registrado com esse id (a rota traduz em 404). Senão, num `db.batch`: volta `settled_at = NULL` (e `updated_at`) das linhas registradas que **ainda** estão liquidadas, apaga as duas pernas e apaga a linha de `bill_payments` (o `CASCADE` leva as linhas). Guarda de corrida: se o registro sumiu entre a leitura e o batch (outro desfazer), nada muda e devolve `null`. Retorno: `{ transfer_id, competence, amount_cents, unsettled_count }`.
+
+`listBillPayments(db, card_account_id)`: os pagamentos registrados do cartão, `paid_on DESC, created_at DESC`, no máximo 12, com a conta de origem (perna negativa) e `line_count` = quantas linhas o desfazer voltaria para "em aberto" (registradas e ainda liquidadas).
+
+### Testes de estado (`src/domain/transactions.test.ts`)
+
+- Pagar e desfazer volta saldo do cartão, saldo da corrente, consolidado, `commitments()`, `cashflow()` e `byCategory()` **exatamente** ao estado de antes (um `retrato` pelas funções de verdade, comparado com `toEqual`).
+- Desfazer duas vezes: a segunda devolve `null` e não muda nenhuma linha. Duas chamadas concorrentes: uma desfaz, a outra devolve `null`.
+- Compra que entrou na mesma competência depois do pagamento fica intocada, em aberto **ou liquidada à mão na mesma data do pagamento** (o caso que derruba a heurística pela data).
+- Depois de desfazer, pagar a mesma fatura de novo funciona e registra as mesmas linhas.
+- As linhas que voltam para "em aberto" ganham `updated_at` novo.
+- As linhas registradas são exatamente as liquidadas: nem a fatura de outro mês, nem linha já liquidada antes, nem perna de transferência, nem filha de rateio.
+- ⚠️ **Desfazer UM pagamento não mexe nos outros**: três registrados ao mesmo tempo (julho e agosto no mesmo cartão, agosto em outro); desfazer agosto deixa as linhas dos outros liquidadas, o `bill_payments`/`bill_payment_lines` deles idêntico, a lista dos dois cartões com os outros e as pernas deles `bill_payment_leg`; compra do cartão pago (registrada ou nova) segue `free`. Sem esse teste, com um pagamento só na base, três mutações passavam na suíte inteira (164 de 164): o desfazer reabrindo as linhas de **todos** os pagamentos, o desfazer apagando o registro de **todos**, e `bill_payment_leg` decidido pela conta do cartão (toda compra de cartão já pago virava perna, com `DELETE` e edição recusados).
+
+### Linha que sai do pagamento (`unsettleTransaction`)
+
+Desmarcar uma linha apaga, no mesmo batch, a linha dela em `bill_payment_lines`: ela deixou de ser parte daquele pagamento, e uma liquidação manual posterior não pode ser desfeita pelo botão do pagamento.
+
+### A perna do pagamento registrado (`bill_payment_leg`)
+
+Classe nova em `classify`, decidida antes de `transfer_leg` (`probeOwner` consulta `bill_payments` pela PK). `DELETE` da perna é **recusado** (`422 transaction_has_owner`, classe em `field`) com mensagem que manda usar "Desfazer pagamento" no painel de pagar fatura do cartão, em Contas. Valor, data e conta da perna também são recusados (`422 protected_field`, citando o desfazer); rótulo continua editável. A SPA não tipa a classe: mostra a mensagem do servidor crua. A confirmação de apagar do extrato (`mensagemDeExclusao`, ramo da transferência) não sabe a classe, então avisa antes: se for o pagamento de uma fatura feito pelo painel, o servidor recusa e indica o "Desfazer pagamento".
+
+⚠️ **Onde o botão não alcança.** O painel lista só os **12** pagamentos mais recentes do cartão (`LIMIT 12`), e um cartão arquivado some de Contas (`listAccounts` filtra `archived_at IS NULL`, e não há rota de desarquivar). Nos dois casos a perna segue recusada e o botão não aparece. As duas recusas (`DELETE` e edição) terminam com a mesma frase, `ALCANCE_DO_DESFAZER`, que diz isso em vez de mandar o dono procurar um botão que não está lá (teste: 13º pagamento e cartão arquivado). O desfazer em si não tem limite: `undoBillPayment` alcança o 13º e o cartão arquivado (os mesmos testes provam). Para desfazer um desses à mão, logado no app e no console do navegador na origem dele: pegar o `transfer_id` da perna (vem em `GET /api/transactions`) e chamar `fetch('/api/bills/payments/<transfer_id>/undo', { method: 'POST' })`. Paginar a lista ou mostrar cartão arquivado no painel fica para quando aparecer o caso.
+
+### Pagamentos antigos (sem registro)
+
+Os feitos antes da `0020` seguem como antes: as pernas são `transfer_leg` e o `DELETE` leva as duas. Para desfazer um deles à mão: apagar a transferência pelo extrato e desmarcar cada compra daquela fatura (`POST /api/transactions/:id/unsettle`), conferindo pela data e pela competência quais foram liquidadas pelo pagamento.
+
+### As rotas
+
+- `GET /api/bills/payments?card_account_id=` → `[{ transfer_id, competence, paid_on, amount_cents, line_count, from_account_id, from_account_name }]`; parâmetro ausente → `400 invalid_query` (mesma convenção de `GET /api/bills`); cartão sem pagamento → `[]`.
+- `POST /api/bills/payments/:transfer_id/undo` → `200` com o retorno de `undoBillPayment`; inexistente ou já desfeito → `404 not_found` ("não existe ou já foi desfeito").
+- As duas em `transactionsRoutes`, acima do catch-all e atrás da sessão; `src/routes/transactions.test.ts` confere a ordem em `app.routes` do `src/index.ts` real, por execução com o catch-all montado e o `401 not_authenticated` sem cookie (o desfazer sem sessão não toca no registro).
+
+### A tela: seção "Pagamentos feitos" (`web/src/blocos/PagamentosFeitos.tsx` + `PagarFatura.tsx`)
+
+No mesmo `Sheet` de pagar fatura, abaixo do botão "Pagar fatura". A lista vem de `GET /api/bills/payments?card_account_id=` numa leitura **separada** da fatura em aberto: se a lista não carregar, o erro aparece dentro da seção e o botão de pagar continua disponível. Cada pagamento mostra "Fatura de <competência>" (o mesmo `rotuloCompetencia` do painel), o valor, "Pago em DD/MM/AAAA · de \"<conta>\" · N lançamentos" e o botão "Desfazer pagamento". O botão usa `ALVO_LINHA` (44 px, nunca o `-mx-2` do `ALVO_LINK`) e tem um `aria-label` com a fatura e o valor, porque com 12 itens o nome repetido não diria qual é qual. O `aria-label` **começa pelo texto visível** ("Desfazer pagamento da fatura de ago/26 (R$ …)", WCAG 2.5.3): com um "o" no meio, quem usa controle por voz diz "tocar Desfazer pagamento" e nada acontece. Sem pagamento registrado, ou enquanto carrega, a seção não aparece: num cartão que só tem pagamentos anteriores à `0020`, uma seção vazia diria que ele nunca foi pago.
+
+⚠️ A confirmação é um segundo `Dialog` de `@piluvitu/ui/dialog` (nunca `window.confirm()`), irmão do diálogo de pagar. O texto diz as duas metades: apaga a transferência de R$ X que saiu de "<conta>" e volta N lançamentos para "em aberto"; os lançamentos não são apagados. As lições da tela de pagar valem igual. O diálogo fecha **depois** do `await`. Com o envio em voo, Esc e Cancelar ficam travados. A operação usa `mutarERecarregar` (11º call site) e recarrega a fatura, a lista de pagamentos e as contas. Se só a recarga falhar, a mensagem diz que o pagamento FOI DESFEITO, com valor e conta de origem, e o estado `travado` (o antigo `pago`, que agora vale para as duas ações) trava pagar e desfazer até a página ser atualizada. A recusa do servidor (`404` "não existe ou já foi desfeito") aparece num `role="alert"` com `scrollIntoView`. No sucesso o painel **continua aberto**, ao contrário do pagar, com um aviso `role="status"` que usa o `unsettled_count` do servidor (não o N da lista) e com a fatura reaberta pronta para ser paga de novo. O sucesso também limpa o erro antigo do pagar (`setErro(null)`, espelho do `revisar()`, que limpa as mensagens do desfazer): sem isso, um `role="alert"` velho como "Escolha a conta de onde o dinheiro sai." ficava ao lado do aviso de sucesso. A limpeza é só no sucesso, nunca ao abrir o diálogo: se a fatura não tinha carregado, apagar o erro dela antes da recarga deixaria o painel em "Carregando…". A confirmação de pagar passou a dizer que dá para desfazer em "Pagamentos feitos".
+
+Story CSF em `PagamentosFeitos.stories.tsx` (UmPagamento, VariosPagamentos, Travado, ErroAoCarregar, SemPagamentos), renderizada uma a uma pelo teste. Verificado por mutação: diálogo fechado antes do `await`; diálogo fechando com envio em voo; sem trava depois de falhar a recarga (no botão de pagar e na seção); N do aviso tirado da lista; sem recarregar os pagamentos; sem `scrollIntoView`; erro da lista jogado no erro da fatura; diálogo sem "não são apagados"; confirmação de pagar com o texto antigo; POST com o id errado; botão sem 44 px. Todas foram pegas pelos testes. Depois da revisão, mais dois testes nasceram vermelhos contra o código de então: `aria-label` que não começa pelo texto visível, e erro do pagar que sobrevive ao desfazer bem-sucedido.
+
+### Mutação no Worker
+
+**Verificado por mutação** (cada uma aplicada, testada e revertida por cópia): `unsettle` sem tirar a linha do registro; `bill_payment_leg` decidido depois de `transfer_leg`; registro sem a guarda de corrida; desfazer sem a guarda do `DELETE FROM bill_payments`; `WHERE` do registro sem `parent_id IS NULL`; desempate `created_at ASC`; desfazer sem `updated_at`; origem lida da perna positiva; `LIMIT 13`; desfazer sem apagar as pernas; as duas rotas abertas sem sessão; o desfazer reabrindo as linhas de todos os pagamentos (`transfer_id = ? OR 1` na subquery); o desfazer apagando o registro de todos (`OR 1` no `DELETE FROM bill_payments`); `bill_payment_leg` pela conta do cartão (`OR card_account_id = t.account_id`). Todas mataram; as três últimas só depois do teste dos três pagamentos convivendo.
+
+Suítes no fim do item: Worker **1146**, SPA **990**; `tsc --noEmit` limpo nos dois lados e o build da SPA com os dois gates (`@source` e lazy-chart) em exit 0.
 
 ## Import de fatura e extrato (fatia ②, Task 3 — `src/domain/import.ts` + `src/routes/import.ts`)
 
@@ -2896,6 +2974,12 @@ pnpm --filter @piluvitu/financas exec wrangler d1 migrations apply piluvitu-fina
 ```
 
 ⚠️ **Rodar `list --remote` antes de acreditar nesta seção.** Toda migration nova nasce pendente em produção, e o texto acima só vale até a próxima — é o `list` que é a verdade, não o parágrafo.
+
+**`0020_desfazer_fatura.sql` (desfazer o pagamento da fatura) nasce pendente** e tem de ser aplicada **antes** de publicar o Worker que a usa (ver _Migrations_ → `0020`). Só informado aqui; quem aplica é o dono, do Mac:
+
+```bash
+pnpm --filter @piluvitu/financas db:migrate:remote
+```
 
 ### 3. Secrets em produção (`wrangler secret put`, rodar manualmente)
 

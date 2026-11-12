@@ -86,6 +86,14 @@ function mockRoutes(opts: {
     // `GET /api/bills` é do painel de pagar fatura (`blocos/PagarFatura.tsx`),
     // roteado por PATH e FORA da contagem de `getCount` — ele não é uma
     // recarga da lista de contas, e misturá-lo faria o "depois" chegar cedo.
+    // `GET /api/bills/payments` (seção "Pagamentos feitos" do mesmo painel)
+    // tem outro shape: sem esta rota ela receberia a lista de faturas.
+    if (path.startsWith('/api/bills/payments')) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, data: [], notifications: [] }),
+      }
+    }
     if (path.startsWith('/api/bills')) {
       return {
         status: 200,
