@@ -1,7 +1,7 @@
 /**
  * Tema claro/escuro/sistema, sem provider — alterna `.dark` em `<html>` e
- * persiste em `localStorage`. `index.html` duplica a leitura inicial (script
- * síncrono no `<head>`) pra evitar flash antes do bundle React carregar;
+ * persiste em `localStorage`. `public/tema.js` duplica a leitura inicial
+ * (síncrono no `<head>`) pra evitar flash antes do bundle React carregar;
  * mantenha a chave `CHAVE_STORAGE` em sincronia com aquele script.
  */
 export type Tema = 'claro' | 'escuro' | 'sistema'

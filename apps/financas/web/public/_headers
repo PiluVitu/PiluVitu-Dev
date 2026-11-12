@@ -1,0 +1,10 @@
+# Cabeçalhos da SPA, aplicados pelo Static Assets. A API (/api/*) tem os dela no
+# Worker (src/lib/cabecalhos.ts). O motivo de cada exceção da CSP está no
+# CLAUDE.md do app, "Cabeçalhos de segurança e limite de taxa".
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-get=(self), publickey-credentials-create=(self)
+  Strict-Transport-Security: max-age=15552000; includeSubDomains

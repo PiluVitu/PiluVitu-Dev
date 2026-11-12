@@ -337,7 +337,7 @@ const ROTULO_TEMA: Record<Tema, string> = {
  *
  * ⚠️ `temaSalvo()` lê `localStorage`, que **lança** (não só devolve `null`)
  * em storage particionado/privado — mesmo achado M5 já pago em
- * `index.html`/`main.tsx`. Aqui a exceção seria no render da top bar, ou
+ * `public/tema.js`/`main.tsx`. Aqui a exceção seria no render da top bar, ou
  * seja, o app inteiro em branco por causa de um botão de tema.
  */
 function BotaoTema() {

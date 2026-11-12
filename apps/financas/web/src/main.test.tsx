@@ -18,9 +18,9 @@ vi.mock('./App', () => ({
  * Sem o try/catch em volta dessa chamada, a exceção é síncrona e
  * interrompe o módulo antes mesmo de chegar no `createRoot` — não é
  * "perde o tema", é a tela inteira em branco, sem nenhum React montado.
- * `index.html` tem o mesmo risco (script inline síncrono no `<head>`,
- * também corrigido) — coberto por leitura de texto, já que não há DOM
- * de verdade pra montar antes do bundle carregar.
+ * `public/tema.js` (síncrono no `<head>`) tem o mesmo risco, também
+ * corrigido — coberto em `cabecalhos.test.ts`, que roda o arquivo com
+ * `localStorage` lançando.
  */
 describe('main.tsx — boot resiliente a localStorage indisponível (M5, fix final)', () => {
   beforeEach(() => {
