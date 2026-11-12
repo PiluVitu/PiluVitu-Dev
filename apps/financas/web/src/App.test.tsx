@@ -86,6 +86,10 @@ function mockFetchVazio() {
       if (url.includes('/api/debts')) return respond([])
       // DividasPage (`carregar`, Promise.all com /api/debts acima) — lista.
       if (url.includes('/api/payees')) return respond([])
+      // Cartão de alertas da ConfigPage — antes de '/api/settings', que o
+      // engoliria e entregaria `{fixed_net_cents}` onde ele espera `{ligado}`.
+      if (url.includes('/api/settings/alertas'))
+        return respond({ ligado: true })
       // ConfigPage (Task 10) — objeto, não lista.
       if (url.includes('/api/settings')) return respond({ fixed_net_cents: 0 })
       // RecorrentesPage (Task 5, fatia ⑥) — três listas.

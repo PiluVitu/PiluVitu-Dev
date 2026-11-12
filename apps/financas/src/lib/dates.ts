@@ -148,3 +148,19 @@ export function competenceDueDate(competence: string, dueDay: number): string {
 
   return `${competence}-${pad2(Math.min(dueDay, daysInMonth(year, month)))}`
 }
+
+/**
+ * Vencimento real da fatura que FECHA na competência. Não é o
+ * `competenceDueDate` cru das parcelas: quem vence até o dia do fechamento
+ * (fecha 28, vence 5) vence no mês seguinte.
+ */
+export function billDueDate(
+  competence: string,
+  closingDay: number,
+  dueDay: number,
+): string {
+  assertDayOfMonth(closingDay, 'dia de fechamento')
+  const mes =
+    dueDay > closingDay ? competence : addMonthsToCompetence(competence, 1)
+  return competenceDueDate(mes, dueDay)
+}

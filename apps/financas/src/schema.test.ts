@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019+0020 — tabelas', () => {
-  it('cria exatamente as 25 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018 + 1 recurring_occurrences do 0019 + 2 do registro de pagamento de fatura do 0020)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019+0020+0021 — tabelas', () => {
+  it('cria exatamente as 26 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018 + 1 recurring_occurrences do 0019 + 2 do registro de pagamento de fatura do 0020 + 1 alert_log do 0021)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -184,6 +184,7 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019+0020
     expect(results.map((r) => r.name)).toEqual([
       'account',
       'accounts',
+      'alert_log',
       'bill_payment_lines',
       'bill_payments',
       'budgets',
@@ -1560,5 +1561,80 @@ describe('migration 0020 — bill_payments e bill_payment_lines (STRICT, FKs, í
     expect(await indices('bill_payment_lines')).toEqual([
       { name: 'idx_bill_payment_lines_tx', colunas: ['transaction_id'] },
     ])
+  })
+})
+
+// Alertas por e-mail: uma linha por alerta reivindicado pelo Cron diário. A
+// chave é a idempotência (no máximo um e-mail por alerta na vida), e não há FK
+// de propósito: apagar a categoria ou o cartão não pode reabrir o alerta nem
+// travar o DELETE.
+describe('migration 0021 — alert_log (STRICT, CHECK de kind, sem FK)', () => {
+  function reivindicar(chave: string | null, kind = 'orcamento_perto') {
+    return DB.prepare(
+      'INSERT INTO alert_log (alert_key, kind, claimed_at) VALUES (?, ?, ?)',
+    )
+      .bind(chave, kind, NOW)
+      .run()
+  }
+
+  it('cria a tabela STRICT com as colunas do desenho', async () => {
+    const { results } = await DB.prepare('PRAGMA table_info(alert_log)').all<{
+      name: string
+      type: string
+      notnull: number
+      pk: number
+    }>()
+    expect(
+      results.map(({ name, type, notnull, pk }) => ({
+        name,
+        type,
+        notnull,
+        pk,
+      })),
+    ).toEqual([
+      { name: 'alert_key', type: 'TEXT', notnull: 1, pk: 1 },
+      { name: 'kind', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'claimed_at', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'sent_at', type: 'TEXT', notnull: 0, pk: 0 },
+    ])
+    const row = await DB.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'alert_log'",
+    ).first<{ sql: string }>()
+    expect(row?.sql).toMatch(/\)\s*STRICT$/)
+  })
+
+  it('aceita os três kinds e recusa outro', async () => {
+    await reivindicar('orcamento:c1:2026-11:80', 'orcamento_perto')
+    await reivindicar('orcamento:c1:2026-11:100', 'orcamento_estourado')
+    await reivindicar('fatura:k1:2026-11', 'fatura_vencendo')
+    await expect(reivindicar('outro:1', 'fatura_vencida')).rejects.toThrow(
+      /CHECK|constraint/i,
+    )
+  })
+
+  it('a chave é única: INSERT OR IGNORE da mesma chave não muda nada', async () => {
+    await reivindicar('fatura:k1:2026-11', 'fatura_vencendo')
+    await expect(
+      reivindicar('fatura:k1:2026-11', 'fatura_vencendo'),
+    ).rejects.toThrow(/UNIQUE|PRIMARY KEY|constraint/i)
+    const ignorado = await DB.prepare(
+      `INSERT OR IGNORE INTO alert_log (alert_key, kind, claimed_at)
+       VALUES ('fatura:k1:2026-11', 'fatura_vencendo', ?)`,
+    )
+      .bind(NOW)
+      .run()
+    expect(ignorado.meta.changes).toBe(0)
+  })
+
+  it('chave nula é recusada', async () => {
+    await expect(reivindicar(null)).rejects.toThrow(/NOT NULL|constraint/i)
+  })
+
+  it('sem FK: a chave pode citar categoria ou conta que não existe', async () => {
+    await reivindicar('orcamento:categoria-apagada:2026-11:80')
+    const fks = await DB.prepare(
+      "SELECT COUNT(*) AS n FROM pragma_foreign_key_list('alert_log')",
+    ).first<{ n: number }>()
+    expect(fks?.n).toBe(0)
   })
 })

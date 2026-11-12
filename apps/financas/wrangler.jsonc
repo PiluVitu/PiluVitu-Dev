@@ -54,6 +54,15 @@
     },
   ],
 
+  // Alertas por e-mail do Cron diário (src/scheduled.ts). O destinatário é
+  // sempre o ALLOWED_EMAIL, lido pelo código: não fica preso aqui.
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["alertas@piluvitu.com.br"],
+    },
+  ],
+
   // Limite por IP nas escritas de /api (src/lib/limite.ts). namespace_id é da
   // CONTA, não do Worker: repetir um (o 1001 é do ramielle) somaria os
   // contadores. Medição dos números no CLAUDE.md.
@@ -79,5 +88,8 @@
     // Single-user. Vazio barra todo mundo (fail closed), igual ao
     // ACCESS_ALLOWED_EMAILS que saiu.
     "ALLOWED_EMAIL": "paulo.tspi@gmail.com",
+
+    // Remetente dos alertas; tem que estar em allowed_sender_addresses.
+    "ALERTAS_REMETENTE": "alertas@piluvitu.com.br",
   },
 }

@@ -144,3 +144,26 @@ export async function setSetting(
     .bind(key, value, nowIsoUtc())
     .run()
 }
+
+/** Liga/desliga dos alertas por e-mail; ver "Alertas por e-mail" no CLAUDE.md. */
+export const ALERTAS_EMAIL_KEY = 'alertas_email'
+
+/** Ausente = ligado; fora isso só '1' liga. Falha do D1 propaga. */
+export async function alertasLigados(db: D1Database): Promise<boolean> {
+  const row = await db
+    .prepare(`SELECT value FROM settings WHERE key = ?`)
+    .bind(ALERTAS_EMAIL_KEY)
+    .first<{ value: string }>()
+  return row === null || row.value === '1'
+}
+
+export async function setAlertasLigados(
+  db: D1Database,
+  ligado: boolean,
+): Promise<boolean> {
+  if (typeof ligado !== 'boolean') {
+    throw new RangeError('ligado precisa ser verdadeiro ou falso')
+  }
+  await setSetting(db, ALERTAS_EMAIL_KEY, ligado ? '1' : '0')
+  return ligado
+}

@@ -1,7 +1,10 @@
 import { Hono } from 'hono'
 import {
+  ALERTAS_EMAIL_KEY,
+  alertasLigados,
   getFixedNetCents,
   getSetting,
+  setAlertasLigados,
   setFixedNetCents,
   setSetting,
 } from '../domain/settings'
@@ -11,8 +14,12 @@ import { errJson, okJson } from '../lib/envelope'
 // (valida FAIXA numérica via `setFixedNetCents`) — nunca pelo caminho
 // genérico `/settings/:key` abaixo, que trataria `value` como string opaca
 // e deixaria qualquer lixo "salvo" nessa chave sem passar pelo RangeError
-// que protege o denominador do % de Comprometido.
-const RESERVED_KEYS = new Set(['fixed_net_cents'])
+// que protege o denominador do % de Comprometido. Mesma regra para o
+// liga/desliga dos alertas. Valor = a rota que a chave usa.
+const RESERVED_KEYS = new Map([
+  ['fixed_net_cents', '/api/settings'],
+  [ALERTAS_EMAIL_KEY, '/api/settings/alertas'],
+])
 
 // Convenção de módulo (accounts.ts/transactions.ts/installments.ts/debts.ts/
 // reports.ts/payees.ts/categories.ts): type Env LOCAL, nunca import de
@@ -59,17 +66,46 @@ settingsRoutes.put('/settings', async (c) => {
   }
 })
 
+// Antes da genérica `/settings/:key`: no Hono a ordem de registro decide.
+settingsRoutes.get('/settings/alertas', async (c) => {
+  return okJson({ ligado: await alertasLigados(c.env.DB) })
+})
+
+settingsRoutes.put('/settings/alertas', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return errJson(400, 'invalid_json', 'corpo da requisicao nao e JSON valido')
+  }
+
+  const ligado =
+    typeof body === 'object' && body !== null && 'ligado' in body
+      ? body.ligado
+      : undefined
+  if (typeof ligado !== 'boolean') {
+    return errJson(
+      422,
+      'invalid_setting',
+      'ligado precisa ser verdadeiro ou falso',
+      'ligado',
+    )
+  }
+  return okJson({ ligado: await setAlertasLigados(c.env.DB, ligado) })
+})
+
 // Genérico (fatia ②, Tasks 4-5) — `key` livre, exceto as reservadas acima.
 // `value` é sempre string opaca: o chamador (SPA) decide o formato (aqui,
 // JSON.stringify de um MapaColunas) — mesmo raciocínio de `getSetting`/
 // `setSetting` no domínio.
 settingsRoutes.get('/settings/:key', async (c) => {
   const key = c.req.param('key')
-  if (RESERVED_KEYS.has(key)) {
+  const reservada = RESERVED_KEYS.get(key)
+  if (reservada) {
     return errJson(
       422,
       'reserved_setting_key',
-      `'${key}' é reservada — use GET /api/settings`,
+      `'${key}' é reservada — use GET ${reservada}`,
       'key',
     )
   }
@@ -79,11 +115,12 @@ settingsRoutes.get('/settings/:key', async (c) => {
 
 settingsRoutes.put('/settings/:key', async (c) => {
   const key = c.req.param('key')
-  if (RESERVED_KEYS.has(key)) {
+  const reservada = RESERVED_KEYS.get(key)
+  if (reservada) {
     return errJson(
       422,
       'reserved_setting_key',
-      `'${key}' é reservada — use PUT /api/settings`,
+      `'${key}' é reservada — use PUT ${reservada}`,
       'key',
     )
   }

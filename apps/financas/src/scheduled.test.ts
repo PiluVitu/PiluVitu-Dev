@@ -2,8 +2,10 @@
  * Dois Crons no mesmo handler, despachados por `controller.cron`:
  *  - `"0 12 1 * *"` (dia 1, 09:00 em Teresina): o insight do mês que fechou;
  *  - `"0 9 * * *"` (todo dia, 06:00 em Teresina): a recorrência que lança
- *    sozinha (migration 0019).
- * O `fetch` global é trocado: nenhum teste alcança a API de verdade.
+ *    sozinha (migration 0019) e, depois dela, os alertas por e-mail (0021).
+ * O `fetch` global é trocado: nenhum teste alcança a API de verdade. O
+ * binding EMAIL é sempre um falso que grava as mensagens, e o destinatário é
+ * um endereço fictício: nenhum teste chega perto de envio real.
  */
 import {
   createExecutionContext,
@@ -13,6 +15,12 @@ import {
 } from 'cloudflare:test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import wranglerJsonc from '../wrangler.jsonc?raw'
+import { createAccount } from './domain/accounts'
+import type { MensagemDeAlerta } from './domain/alertas'
+import { setBudget } from './domain/budgets'
+import { createCategory } from './domain/categories'
+import { setAlertasLigados } from './domain/settings'
+import { createTransaction } from './domain/transactions'
 import { nowIsoUtc } from './lib/dates'
 import { newId } from './lib/ids'
 import worker from './index'
@@ -24,6 +32,31 @@ const PRIMEIRO_DE_NOVEMBRO = Date.parse('2026-11-01T12:00:00Z')
 
 let urlsChamadas: string[]
 let saidasDoConsole: unknown[][]
+let emails: MensagemDeAlerta[]
+
+const PARA = 'dono@exemplo.test'
+const REMETENTE = 'alertas@exemplo.test'
+const APP = 'https://financas.exemplo.test'
+
+function emailFalso(falha?: unknown): SendEmail {
+  const falso = {
+    async send(msg: MensagemDeAlerta) {
+      if (falha !== undefined) throw falha
+      emails.push(msg)
+      return { messageId: `msg-${emails.length}` }
+    },
+  }
+  return falso as unknown as SendEmail
+}
+
+function envDeAlertas() {
+  return {
+    EMAIL: emailFalso(),
+    ALLOWED_EMAIL: PARA,
+    ALERTAS_REMETENTE: REMETENTE,
+    BETTER_AUTH_URL: APP,
+  }
+}
 
 function respostaClaude(texto: string): Response {
   return Response.json({
@@ -57,12 +90,17 @@ async function rodarCron(
   scheduledTime: number,
   chave: string | undefined,
   cron: string = CRON_INSIGHT,
+  extra: Record<string, unknown> = {},
 ) {
   // O relógio acompanha o disparo: o `generated_at` gravado é o do Cron.
   vi.setSystemTime(scheduledTime)
   const controller = createScheduledController({ scheduledTime, cron })
   const ctx = createExecutionContext()
-  await scheduled(controller, { ...env, ANTHROPIC_API_KEY: chave }, ctx)
+  await scheduled(
+    controller,
+    { ...env, ...envDeAlertas(), ANTHROPIC_API_KEY: chave, ...extra },
+    ctx,
+  )
   await waitOnExecutionContext(ctx)
 }
 
@@ -81,6 +119,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   urlsChamadas = []
   saidasDoConsole = []
+  emails = []
   for (const metodo of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     vi.spyOn(console, metodo).mockImplementation((...args: unknown[]) => {
       saidasDoConsole.push(args)
@@ -399,7 +438,7 @@ describe('cron diário da recorrência automática', () => {
     const ctx = createExecutionContext()
 
     await expect(
-      scheduled(controller, { ...env, DB: dbQueFalha }, ctx),
+      scheduled(controller, { ...env, ...envDeAlertas(), DB: dbQueFalha }, ctx),
     ).resolves.toBeUndefined()
     await waitOnExecutionContext(ctx)
 
@@ -426,5 +465,313 @@ describe('cron diário da recorrência automática', () => {
     expect(urlsChamadas).toHaveLength(0)
     const tudo = saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
     expect(tudo.some((linha) => linha.includes('cron desconhecido'))).toBe(true)
+  })
+})
+
+// Alertas por e-mail (migration 0021) no mesmo Cron diário, DEPOIS da
+// geração: o pendente gerado hoje já entra no gasto do orçamento. Cada um tem
+// o próprio try/catch. A regra dos alertas mora em domain/alertas.ts.
+describe('cron diário: alertas por e-mail', () => {
+  const DIA_10_DE_AGOSTO = Date.parse('2026-08-10T09:00:00Z')
+
+  async function categoriaComOrcamento(nome: string, orcamento: number) {
+    const cat = await createCategory(env.DB, { name: nome, kind: 'expense' })
+    await setBudget(env.DB, '2026-08', cat.id, orcamento)
+    return cat
+  }
+
+  async function gastoAvulso(categoryId: string, cents: number, dia: string) {
+    const conta = await createAccount(env.DB, {
+      name: 'Conta Teste',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    await createTransaction(env.DB, {
+      account_id: conta.id,
+      category_id: categoryId,
+      amount_cents: -cents,
+      purchase_date: dia,
+      description: 'Compra de teste',
+    })
+  }
+
+  async function recorrenteNaCategoria(categoryId: string | null) {
+    const conta = newId()
+    const recorrente = newId()
+    const now = nowIsoUtc()
+    await env.DB.prepare(
+      `INSERT INTO accounts
+         (id, name, scope, kind, currency, opening_balance_cents, created_at, updated_at)
+       VALUES (?, 'Conta Teste', 'PF', 'checking', 'BRL', 0, ?, ?)`,
+    )
+      .bind(conta, now, now)
+      .run()
+    await env.DB.prepare(
+      `INSERT INTO recurring_expenses
+         (id, description, category_id, account_id, scope, frequency, day_of_month,
+          amount_min_cents, amount_max_cents, starts_on, active,
+          generate_since, created_at, updated_at)
+       VALUES (?, 'Assinatura', ?, ?, 'PF', 'monthly', 10, 8000, 9000,
+               '2026-01-01', 1, '2026-08-01', ?, ?)`,
+    )
+      .bind(recorrente, categoryId, conta, now, now)
+      .run()
+    return recorrente
+  }
+
+  function dbQueFalhaEm(trecho: string) {
+    return new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            if (sql.includes(trecho)) {
+              throw new Error(
+                `D1_ERROR: no such table: ${trecho}: SQLITE_ERROR`,
+              )
+            }
+            return alvo.prepare(sql)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+  }
+
+  function linhasDoConsole() {
+    return saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
+  }
+
+  function linhaDosAlertas() {
+    return saidasDoConsole.find((args) => args[0] === 'alertas por e-mail')
+  }
+
+  function semDadoSensivelNoConsole() {
+    for (const linha of linhasDoConsole()) {
+      expect(linha).not.toContain(PARA)
+      expect(linha).not.toMatch(/Mercado|Assinatura|90,00|100,00/)
+    }
+  }
+
+  it('a geração roda antes: o pendente gerado hoje entra no orçamento e dispara o alerta', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await recorrenteNaCategoria(cat.id)
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(emails).toHaveLength(1)
+    expect(emails[0].to).toBe(PARA)
+    expect(emails[0].from).toEqual({ name: 'Finanças', email: REMETENTE })
+    expect(emails[0].text).toContain(
+      '- Mercado: R$ 90,00 de R$ 100,00 (90%). Perto do limite.',
+    )
+    expect(emails[0].text).toContain(`${APP}/#/orcamento`)
+    expect(urlsChamadas).toHaveLength(0)
+  })
+
+  it('sucesso loga só status e contagem, sem e-mail, nome nem valor', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(linhaDosAlertas()).toEqual([
+      'alertas por e-mail',
+      '2026-08-10',
+      'status=enviado enviados=1',
+    ])
+    semDadoSensivelNoConsole()
+  })
+
+  it('duas rodadas no mesmo dia: um e-mail só', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(emails).toHaveLength(1)
+  })
+
+  it('o dia é o de Teresina: 02:00 UTC de 01/09 ainda é 31/08 lá', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+
+    await rodarCron(Date.parse('2026-09-01T02:00:00Z'), CHAVE, CRON_RECORRENCIA)
+
+    expect(emails).toHaveLength(1)
+    expect(emails[0].text).toContain('Orçamento de agosto de 2026')
+  })
+
+  it('geração falhando não impede os alertas', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+    await recorrenteNaCategoria(null)
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      DB: dbQueFalhaEm('FROM recurring_expenses'),
+    })
+
+    expect(
+      linhasDoConsole().some((l) => l.includes('cron da recorrência falhou')),
+    ).toBe(true)
+    expect(emails).toHaveLength(1)
+  })
+
+  it('alertas falhando não lançam nem desfazem a geração; o log leva só o código', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+    const r = await recorrenteNaCategoria(null)
+    const controller = createScheduledController({
+      scheduledTime: DIA_10_DE_AGOSTO,
+      cron: CRON_RECORRENCIA,
+    })
+    const ctx = createExecutionContext()
+
+    await expect(
+      scheduled(
+        controller,
+        { ...env, ...envDeAlertas(), DB: dbQueFalhaEm('alert_log') },
+        ctx,
+      ),
+    ).resolves.toBeUndefined()
+    await waitOnExecutionContext(ctx)
+
+    const gerado = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM transactions WHERE recurring_expense_id = ?',
+    )
+      .bind(r)
+      .first<{ n: number }>()
+    expect(gerado?.n).toBe(1)
+    expect(emails).toHaveLength(0)
+    const falha = linhasDoConsole().find((l) =>
+      l.includes('cron dos alertas falhou'),
+    )
+    expect(falha).toContain('SQLITE_ERROR')
+    expect(falha).not.toMatch(/no such table/)
+    semDadoSensivelNoConsole()
+  })
+
+  // Sem conseguir ler o liga/desliga, o Cron não pode presumir "ligado": o
+  // dono pode ter desligado, e o e-mail sairia contra a escolha dele.
+  it('leitura do liga/desliga falhando: nenhum e-mail, nada reivindicado e log só com o código', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      DB: dbQueFalhaEm('FROM settings'),
+    })
+
+    expect(emails).toHaveLength(0)
+    const log = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM alert_log',
+    ).first<{ n: number }>()
+    expect(log?.n).toBe(0)
+    const falha = linhasDoConsole().find((l) =>
+      l.includes('cron dos alertas falhou'),
+    )
+    expect(falha).toContain('SQLITE_ERROR')
+    expect(falha).not.toMatch(/no such table/)
+    semDadoSensivelNoConsole()
+  })
+
+  it('envio recusado: log com status e o code do Email Service, e nada fica reivindicado', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+    const erro = Object.assign(new Error(`remetente recusado para ${PARA}`), {
+      code: 'E_SENDER_NOT_VERIFIED',
+    })
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      EMAIL: emailFalso(erro),
+    })
+
+    expect(linhaDosAlertas()).toEqual([
+      'alertas por e-mail',
+      '2026-08-10',
+      'status=falhou enviados=0 codigo=E_SENDER_NOT_VERIFIED',
+    ])
+    semDadoSensivelNoConsole()
+    const log = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM alert_log',
+    ).first<{ n: number }>()
+    expect(log?.n).toBe(0)
+  })
+
+  it('desligado nas Configurações: não envia', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 9_000, '2026-08-02')
+    await setAlertasLigados(env.DB, false)
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(emails).toHaveLength(0)
+    expect(
+      linhasDoConsole().some((l) => l.includes('status=desligado enviados=0')),
+    ).toBe(true)
+  })
+
+  it.each([
+    ['EMAIL', 'alertas_sem_binding'],
+    ['ALLOWED_EMAIL', 'alertas_sem_destinatario'],
+    ['ALERTAS_REMETENTE', 'alertas_sem_remetente'],
+  ])(
+    'sem %s: não lança, avisa %s e a geração roda',
+    async (binding, codigo) => {
+      const cat = await categoriaComOrcamento('Mercado', 10_000)
+      await gastoAvulso(cat.id, 9_000, '2026-08-02')
+      const r = await recorrenteNaCategoria(null)
+
+      await expect(
+        rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+          [binding]: undefined,
+        }),
+      ).resolves.toBeUndefined()
+
+      expect(emails).toHaveLength(0)
+      expect(linhasDoConsole().some((l) => l.includes(codigo))).toBe(true)
+      const gerado = await env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM transactions WHERE recurring_expense_id = ?',
+      )
+        .bind(r)
+        .first<{ n: number }>()
+      expect(gerado?.n).toBe(1)
+    },
+  )
+
+  it('o cron mensal do insight não envia alertas', async () => {
+    const cat = await categoriaComOrcamento('Mercado', 10_000)
+    await gastoAvulso(cat.id, 12_000, '2026-08-02')
+    apiResponde(() => respostaClaude('Leitura.'))
+
+    await rodarCron(Date.parse('2026-09-01T12:00:00Z'), CHAVE, CRON_INSIGHT)
+
+    expect(emails).toHaveLength(0)
+    const log = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM alert_log',
+    ).first<{ n: number }>()
+    expect(log?.n).toBe(0)
+  })
+
+  // Binding de envio: o remetente é o da var, e o destinatário NÃO fica
+  // preso no binding (seria uma segunda cópia do e-mail do dono no repo; o
+  // código sempre usa env.ALLOWED_EMAIL). Sem `remote: true`: `wrangler dev`
+  // simula o envio em vez de mandar de verdade.
+  it('o wrangler.jsonc declara o EMAIL com o remetente da var, sem destinatário fixo nem envio remoto', () => {
+    const bloco = /"send_email":\s*\[([\s\S]*?)\n {2}\],/.exec(
+      wranglerJsonc,
+    )?.[1]
+    expect(bloco).toBeDefined()
+    expect(bloco).toMatch(/"name":\s*"EMAIL"/)
+    const permitidos = /"allowed_sender_addresses":\s*\[([^\]]*)\]/.exec(
+      bloco ?? '',
+    )?.[1]
+    const remetente = /"ALERTAS_REMETENTE":\s*"([^"]+)"/.exec(
+      wranglerJsonc,
+    )?.[1]
+    expect(remetente).toBe('alertas@piluvitu.com.br')
+    expect(permitidos?.trim()).toBe(`"${remetente}"`)
+    expect(wranglerJsonc).not.toMatch(/destination_address/)
+    expect(wranglerJsonc).not.toMatch(/"remote":\s*true/)
   })
 })

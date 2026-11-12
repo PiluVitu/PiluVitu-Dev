@@ -3,6 +3,7 @@ import {
   addDays,
   addMonthsToCompetence,
   billCompetence,
+  billDueDate,
   competenceDueDate,
   daysBetween,
   nowIsoUtc,
@@ -131,6 +132,45 @@ describe('competenceDueDate', () => {
   test('rejeita competência e dia inválidos', () => {
     expect(() => competenceDueDate('2026-00', 5)).toThrow(RangeError)
     expect(() => competenceDueDate('2026-08', 0)).toThrow(RangeError)
+  })
+})
+
+// O vencimento REAL da fatura, usado pelo alerta de fatura. Diferente do
+// competenceDueDate cru (o das parcelas): a competência é o mês em que a
+// fatura FECHA, e um cartão que fecha 28 e vence 5 vence no mês SEGUINTE.
+describe('billDueDate', () => {
+  test('vence depois do fechamento: mesmo mês da competência', () => {
+    expect(billDueDate('2026-11', 1, 10)).toBe('2026-11-10')
+  })
+
+  test('vence antes do fechamento: mês seguinte (fecha 28, vence 5)', () => {
+    expect(billDueDate('2026-11', 28, 5)).toBe('2026-12-05')
+  })
+
+  test('mesmo dia de fechamento e vencimento: mês seguinte', () => {
+    expect(billDueDate('2026-11', 10, 10)).toBe('2026-12-10')
+  })
+
+  test('virada de ano: fatura que fecha em dezembro vence em janeiro', () => {
+    expect(billDueDate('2026-12', 25, 5)).toBe('2027-01-05')
+  })
+
+  test('dia 31 é aparado no mês do vencimento, não no da competência', () => {
+    // Fecha em agosto (31 dias) e vence em setembro (30 dias).
+    expect(billDueDate('2026-08', 31, 31)).toBe('2026-09-30')
+    expect(billDueDate('2026-09', 20, 31)).toBe('2026-09-30')
+  })
+
+  test('fevereiro: aparo em ano comum e bissexto', () => {
+    expect(billDueDate('2027-02', 20, 31)).toBe('2027-02-28')
+    expect(billDueDate('2028-02', 20, 31)).toBe('2028-02-29')
+    expect(billDueDate('2027-01', 31, 30)).toBe('2027-02-28')
+  })
+
+  test('rejeita competência e dias inválidos', () => {
+    expect(() => billDueDate('2026-13', 28, 5)).toThrow(RangeError)
+    expect(() => billDueDate('2026-11', 0, 5)).toThrow(RangeError)
+    expect(() => billDueDate('2026-11', 28, 32)).toThrow(RangeError)
   })
 })
 
