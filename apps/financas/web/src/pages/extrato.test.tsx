@@ -205,6 +205,16 @@ describe('ExtratoPage — helpers puros', () => {
     ).toMatch(/reimportar o mesmo arquivo traz a linha de volta/i)
     expect(mensagemDeExclusao(tx({ id: 't3' }))).toMatch(/o servidor recusa/i)
   })
+
+  it('a transferência avisa que, se for pagamento de fatura feito pelo painel, o servidor recusa e aponta o desfazer', () => {
+    // A perna de um pagamento registrado também tem transfer_id, e o DELETE
+    // dela é recusado (bill_payment_leg). Prometer "as DUAS pernas somem"
+    // sem essa ressalva é o "vai apagar" seguido de 422 que a função evita.
+    const msg = mensagemDeExclusao(tx({ id: 't1', transfer_id: 'tr1' }))
+    expect(msg).toMatch(/pagamento de uma fatura de cartão/)
+    expect(msg).toMatch(/o servidor recusa/i)
+    expect(msg).toContain('"Desfazer pagamento"')
+  })
 })
 
 describe('ExtratoPage — lista', () => {

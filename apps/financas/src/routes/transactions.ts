@@ -4,6 +4,7 @@ import {
   createTransfer,
   deleteTransaction,
   inspectTransaction,
+  listBillPayments,
   listOpenBills,
   listTransactions,
   payBill,
@@ -11,6 +12,7 @@ import {
   RecurringOccurrencePendingError,
   settleTransaction,
   TransactionHasOwnerError,
+  undoBillPayment,
   unsettleTransaction,
   updateTransaction,
   type NewTransaction,
@@ -430,9 +432,9 @@ transactionsRoutes.post('/transactions/:id/unsettle', async (c) => {
 // DELETE — a política por classe mora no domínio (deleteTransaction); a rota
 // só traduz.
 //
-// ⚠️ UM código só (`transaction_has_owner`) para as quatro recusas, com a
-// CLASSE em `field` e a mensagem específica vinda do domínio. Cinco códigos
-// obrigariam o cliente a conhecer um catálogo que muda a cada tipo novo de
+// ⚠️ UM código só (`transaction_has_owner`) para todas as recusas, com a
+// CLASSE em `field` e a mensagem específica vinda do domínio. Um código por
+// classe obrigaria o cliente a conhecer um catálogo que muda a cada tipo novo de
 // vínculo; um código + discriminador deixa a tela rotear ("cancelar o plano"
 // x "apagar o pagamento") sem catálogo novo. `field` aqui carrega a CLASSE,
 // não um campo de formulário — alargamento deliberado, porque é exatamente o
@@ -643,6 +645,42 @@ transactionsRoutes.post('/bills/pay', async (c) => {
     if (e instanceof RangeError)
       return errJson(422, 'constraint_violation', e.message)
     if (isConstraint(e)) return constraintResponse('POST /bills/pay', e)
+    throw e
+  }
+})
+
+// ---------------------------------------------------------------------------
+// DESFAZER O PAGAMENTO DA FATURA — a lista de pagamentos registrados de um
+// cartão e o desfazer de um deles (ver "Desfazer o pagamento da fatura" no
+// apps/financas/CLAUDE.md). Mesmas convenções de GET /bills e do módulo.
+// ---------------------------------------------------------------------------
+
+transactionsRoutes.get('/bills/payments', async (c) => {
+  const card_account_id = c.req.query('card_account_id')
+  if (card_account_id === undefined || card_account_id === '') {
+    return errJson(
+      400,
+      'invalid_query',
+      'card_account_id e obrigatorio',
+      'card_account_id',
+    )
+  }
+  return okJson(await listBillPayments(c.env.DB, card_account_id))
+})
+
+transactionsRoutes.post('/bills/payments/:transfer_id/undo', async (c) => {
+  try {
+    const desfeito = await undoBillPayment(c.env.DB, c.req.param('transfer_id'))
+    if (!desfeito)
+      return errJson(
+        404,
+        'not_found',
+        'este pagamento de fatura não existe ou já foi desfeito — recarregue a tela',
+      )
+    return okJson(desfeito)
+  } catch (e) {
+    if (isConstraint(e))
+      return constraintResponse('POST /bills/payments/:transfer_id/undo', e)
     throw e
   }
 })

@@ -239,7 +239,7 @@ export function queryDoExtrato(
  */
 export function mensagemDeExclusao(t: TransactionView): string {
   if (t.transfer_id !== null) {
-    return `Apagar "${t.description}"? É uma transferência: as DUAS pernas somem juntas — a saída e a entrada. Apagar só um lado deixaria a outra órfã e os saldos errados, então não é oferecido.`
+    return `Apagar "${t.description}"? É uma transferência: as DUAS pernas somem juntas — a saída e a entrada. Apagar só um lado deixaria a outra órfã e os saldos errados, então não é oferecido. Se for o pagamento de uma fatura de cartão feito pelo painel de pagar fatura, o servidor recusa e indica o "Desfazer pagamento".`
   }
   if (t.imported_id !== null) {
     return `Apagar "${t.description}"? Esta linha veio de um import, e apagar NÃO a bloqueia: reimportar o mesmo arquivo traz a linha de volta (a deduplicação é por conta + id do arquivo, e o id some junto com a linha).`

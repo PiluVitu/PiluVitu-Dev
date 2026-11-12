@@ -1,6 +1,12 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { accountBalances, createAccount } from './accounts'
+import { addMonthsToCompetence } from '../lib/dates'
+import {
+  accountBalances,
+  archiveAccount,
+  createAccount,
+  listAccounts,
+} from './accounts'
 import { cashflow } from './cashflow'
 import { archiveCategory, createCategory } from './categories'
 import { addDebtItem, createDebt, payDebt } from './debts'
@@ -14,6 +20,7 @@ import {
   createTransfer,
   deleteTransaction,
   inspectTransaction,
+  listBillPayments,
   listOpenBills,
   listTransactions,
   payBill,
@@ -21,6 +28,7 @@ import {
   RecurringOccurrencePendingError,
   settleTransaction,
   TransactionHasOwnerError,
+  undoBillPayment,
   unsettleTransaction,
   updateTransaction,
 } from './transactions'
@@ -2016,5 +2024,784 @@ describe('listOpenBills', () => {
   it('cartao sem fatura aberta devolve lista vazia, nao erro', async () => {
     const card = await cartao('Cartao zerado', 25)
     expect(await listOpenBills(env.DB, card.id)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// DESFAZER O PAGAMENTO DA FATURA (migration 0020).
+//
+// payBill passa a registrar QUAIS linhas liquidou (bill_payment_lines). Sem
+// esse registro, desfazer teria de adivinhar pela data (`settled_at =
+// paid_on`), e uma compra da mesma competência liquidada à mão na mesma data
+// seria desfeita junto, em silêncio. Os testes abaixo provam o registro, o
+// desfazer medido pelos relatórios de verdade e as duas portas que deixam de
+// ser o caminho (DELETE da perna e unsettle da linha).
+// ---------------------------------------------------------------------------
+
+/** Cartão que fecha dia 25: três compras na fatura de 2026-08 (R$ 250). */
+async function cenarioDeFatura(sufixo: string) {
+  const card = await cartao(`Cartao desfazer ${sufixo}`, 25)
+  const conta = await contaCorrente(`Corrente desfazer ${sufixo}`, 500000)
+  const ids: string[] = []
+  for (const [desc, cents, dia] of [
+    ['Mercado', 12000, '2026-07-28'],
+    ['Posto', 8000, '2026-07-29'],
+    ['Farmacia', 5000, '2026-08-02'],
+  ] as const) {
+    const tx = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -cents,
+      purchase_date: dia,
+      description: desc,
+    })
+    ids.push(tx.id)
+  }
+  return { card, conta, ids }
+}
+
+function pagarAgosto(card: { id: string }, conta: { id: string }) {
+  return payBill(env.DB, {
+    card_account_id: card.id,
+    competence: '2026-08',
+    paid_on: '2026-09-05',
+    from_account_id: conta.id,
+  })
+}
+
+async function linhasRegistradas(transfer_id: string): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT transaction_id FROM bill_payment_lines WHERE transfer_id = ? ORDER BY transaction_id',
+  )
+    .bind(transfer_id)
+    .all<{ transaction_id: string }>()
+  return results.map((r) => r.transaction_id)
+}
+
+async function settledAtDe(id: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    'SELECT settled_at FROM transactions WHERE id = ?',
+  )
+    .bind(id)
+    .first<{ settled_at: string | null }>()
+  return row?.settled_at ?? null
+}
+
+async function contar(sql: string, ...binds: unknown[]): Promise<number> {
+  const row = await env.DB.prepare(sql)
+    .bind(...binds)
+    .first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+/**
+ * O que o dono enxerga — saldos, consolidado e os três relatórios — sempre
+ * pelas funções de verdade, nunca pela linha crua: é o mesmo critério dos
+ * testes de payBill, aplicado agora à volta.
+ */
+async function retrato(card: { id: string }, conta: { id: string }) {
+  const saldos = await accountBalances(env.DB)
+  const saldo = (id: string) =>
+    saldos.find((s) => s.account_id === id)?.balance_cents
+  return {
+    cartao: saldo(card.id),
+    corrente: saldo(conta.id),
+    consolidado: saldos.reduce((a, s) => a + s.balance_cents, 0),
+    comprometido: await commitments(env.DB, {
+      from: '2026-07',
+      months: 3,
+      fixed_net_cents: DEFAULT_FIXED_NET_CENTS,
+    }),
+    fluxo: await cashflow(env.DB, { from: '2026-07', months: 4 }),
+    categorias: await Promise.all(
+      ['2026-07', '2026-08', '2026-09'].map((competence) =>
+        byCategory(env.DB, { competence }),
+      ),
+    ),
+  }
+}
+
+describe('payBill registra o pagamento (bill_payments)', () => {
+  it('grava cartão, competência, data e valor do pagamento', async () => {
+    const { card, conta } = await cenarioDeFatura('registro')
+    const pago = await pagarAgosto(card, conta)
+
+    const { results } = await env.DB.prepare(
+      'SELECT transfer_id, card_account_id, competence, paid_on, amount_cents FROM bill_payments',
+    ).all()
+    expect(results).toEqual([
+      {
+        transfer_id: pago.transfer_id,
+        card_account_id: card.id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        amount_cents: 25000,
+      },
+    ])
+  })
+
+  it('as linhas registradas são EXATAMENTE as que o pagamento liquidou', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('exatas')
+
+    // Tudo que mora no mesmo cartão e NÃO pode entrar no registro:
+    const julho = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -3000,
+      purchase_date: '2026-07-10',
+      description: 'Outra fatura',
+    })
+    const jaPaga = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -4000,
+      purchase_date: '2026-08-01',
+      description: 'Paga antes',
+    })
+    await settleTransaction(env.DB, jaPaga.id, '2026-08-10')
+    const filha = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -2000,
+      purchase_date: '2026-08-03',
+      description: 'Parte de rateio',
+    })
+    await env.DB.prepare('UPDATE transactions SET parent_id = ? WHERE id = ?')
+      .bind(ids[0], filha.id)
+      .run()
+    const pernaForjada = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -6000,
+      purchase_date: '2026-08-04',
+      description: 'Perna com competencia',
+    })
+    await env.DB.prepare(
+      "UPDATE transactions SET transfer_id = 'transferencia-forjada' WHERE id = ?",
+    )
+      .bind(pernaForjada.id)
+      .run()
+
+    const estado = async () =>
+      new Map(
+        (
+          await env.DB.prepare('SELECT id, settled_at FROM transactions').all<{
+            id: string
+            settled_at: string | null
+          }>()
+        ).results.map((r) => [r.id, r.settled_at]),
+      )
+    const antes = await estado()
+    const pago = await pagarAgosto(card, conta)
+    const depois = await estado()
+
+    const liquidadasAgora = [...antes]
+      .filter(([id, s]) => s === null && depois.get(id) !== null)
+      .map(([id]) => id)
+      .sort()
+
+    expect(await linhasRegistradas(pago.transfer_id)).toEqual(liquidadasAgora)
+    expect(liquidadasAgora).toEqual([...ids].sort())
+    expect(liquidadasAgora).toHaveLength(pago.settled_count)
+    for (const fora of [julho.id, jaPaga.id, filha.id, pernaForjada.id]) {
+      expect(liquidadasAgora).not.toContain(fora)
+    }
+  })
+
+  it('⚠️ duas chamadas CONCORRENTES registram UM pagamento só, com as 3 linhas', async () => {
+    // A guarda de corrida de payBill (INSERT ... WHERE EXISTS) protege as
+    // pernas; o registro tem de seguir a mesma guarda. Sem ela, a chamada que
+    // perde a corrida não grava perna nenhuma mas deixaria um pagamento
+    // registrado apontando para uma transferência que não existe.
+    const { card, conta, ids } = await cenarioDeFatura('corrida registro')
+
+    const resultados = await Promise.allSettled([
+      pagarAgosto(card, conta),
+      pagarAgosto(card, conta),
+    ])
+    const ok = resultados.filter((r) => r.status === 'fulfilled')
+    expect(ok).toHaveLength(1)
+    const vencedor = (ok[0] as PromiseFulfilledResult<{ transfer_id: string }>)
+      .value
+
+    const { results } = await env.DB.prepare(
+      'SELECT transfer_id FROM bill_payments',
+    ).all<{ transfer_id: string }>()
+    expect(results.map((r) => r.transfer_id)).toEqual([vencedor.transfer_id])
+    expect(await linhasRegistradas(vencedor.transfer_id)).toEqual(
+      [...ids].sort(),
+    )
+    expect(await contar('SELECT COUNT(*) AS n FROM bill_payment_lines')).toBe(3)
+  })
+})
+
+describe('undoBillPayment', () => {
+  it('volta saldos, consolidado, commitments(), cashflow() e byCategory() EXATAMENTE ao estado de antes do pagamento', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('estado')
+    const antes = await retrato(card, conta)
+
+    const pago = await pagarAgosto(card, conta)
+    // O pagamento mexeu de fato no que o dono vê — senão a volta não prova nada.
+    expect(await retrato(card, conta)).not.toEqual(antes)
+
+    const desfeito = await undoBillPayment(env.DB, pago.transfer_id)
+    expect(desfeito).toEqual({
+      transfer_id: pago.transfer_id,
+      competence: '2026-08',
+      amount_cents: 25000,
+      unsettled_count: 3,
+    })
+
+    expect(await retrato(card, conta)).toEqual(antes)
+    for (const id of ids) expect(await settledAtDe(id)).toBeNull()
+    expect(
+      await contar(
+        'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id = ?',
+        pago.transfer_id,
+      ),
+    ).toBe(0)
+    expect(await contar('SELECT COUNT(*) AS n FROM bill_payments')).toBe(0)
+    expect(await contar('SELECT COUNT(*) AS n FROM bill_payment_lines')).toBe(0)
+  })
+
+  it('desfazer duas vezes: a segunda devolve null e não mexe em nada', async () => {
+    const { card, conta } = await cenarioDeFatura('duas vezes')
+    const pago = await pagarAgosto(card, conta)
+    expect(await undoBillPayment(env.DB, pago.transfer_id)).not.toBeNull()
+
+    const linhas = async () =>
+      (await env.DB.prepare('SELECT * FROM transactions ORDER BY id').all())
+        .results
+    const depoisDoPrimeiro = await linhas()
+
+    expect(await undoBillPayment(env.DB, pago.transfer_id)).toBeNull()
+    expect(await linhas()).toEqual(depoisDoPrimeiro)
+  })
+
+  it('⚠️ duas chamadas CONCORRENTES desfazem uma vez só', async () => {
+    const { card, conta } = await cenarioDeFatura('corrida desfazer')
+    const antes = await retrato(card, conta)
+    const pago = await pagarAgosto(card, conta)
+
+    const resultados = await Promise.allSettled([
+      undoBillPayment(env.DB, pago.transfer_id),
+      undoBillPayment(env.DB, pago.transfer_id),
+    ])
+    expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true)
+    const valores = resultados.map(
+      (r) => (r as PromiseFulfilledResult<unknown>).value,
+    )
+    // Uma resposta diz o que desfez; a outra diz que não havia o que desfazer.
+    expect(valores.filter((v) => v !== null)).toHaveLength(1)
+    expect(await retrato(card, conta)).toEqual(antes)
+  })
+
+  it('id sem pagamento registrado devolve null — e uma transferência comum fica intacta', async () => {
+    expect(await undoBillPayment(env.DB, 'nao-existe')).toBeNull()
+
+    const de = await contaCorrente('Origem comum', 100000)
+    const para = await contaCorrente('Destino comum')
+    const t = await createTransfer(env.DB, {
+      from_account_id: de.id,
+      to_account_id: para.id,
+      amount_cents: 30000,
+      date: '2026-09-01',
+      description: 'PIX interno',
+    })
+    expect(await undoBillPayment(env.DB, t.transfer_id)).toBeNull()
+    expect(
+      await contar(
+        'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id = ?',
+        t.transfer_id,
+      ),
+    ).toBe(2)
+  })
+
+  it('compra que entrou na MESMA competência DEPOIS do pagamento fica intocada — em aberto ou liquidada à mão na MESMA data', async () => {
+    // A segunda compra é o caso que derruba a heurística "desfaz o que tem
+    // settled_at = paid_on": mesma fatura, mesma data, e não foi o pagamento
+    // que a liquidou.
+    const { card, conta } = await cenarioDeFatura('compra nova')
+    const pago = await pagarAgosto(card, conta)
+
+    const aberta = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -1500,
+      purchase_date: '2026-08-03',
+      description: 'Padaria',
+    })
+    const liquidadaAMao = await createTransaction(env.DB, {
+      account_id: card.id,
+      amount_cents: -2500,
+      purchase_date: '2026-08-04',
+      description: 'Cinema',
+    })
+    await settleTransaction(env.DB, liquidadaAMao.id, '2026-09-05')
+    // updated_at antigo: qualquer UPDATE que encostasse nelas o trocaria.
+    await env.DB.prepare(
+      "UPDATE transactions SET updated_at = '2000-01-01T00:00:00Z' WHERE id IN (?, ?)",
+    )
+      .bind(aberta.id, liquidadaAMao.id)
+      .run()
+
+    const desfeito = await undoBillPayment(env.DB, pago.transfer_id)
+    expect(desfeito?.unsettled_count).toBe(3)
+
+    const { results } = await env.DB.prepare(
+      'SELECT id, settled_at, updated_at FROM transactions WHERE id IN (?, ?) ORDER BY amount_cents',
+    )
+      .bind(aberta.id, liquidadaAMao.id)
+      .all()
+    expect(results).toEqual([
+      {
+        id: liquidadaAMao.id,
+        settled_at: '2026-09-05',
+        updated_at: '2000-01-01T00:00:00Z',
+      },
+      { id: aberta.id, settled_at: null, updated_at: '2000-01-01T00:00:00Z' },
+    ])
+    // A fatura volta a ter as 3 compras do pagamento mais a nova em aberto.
+    expect(await listOpenBills(env.DB, card.id)).toEqual([
+      { competence: '2026-08', amount_cents: 26500, line_count: 4 },
+    ])
+  })
+
+  it('linha desmarcada à mão depois do pagamento e liquidada de novo à mão NÃO é desfeita pelo pagamento', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('remarcada')
+    const pago = await pagarAgosto(card, conta)
+
+    expect(await unsettleTransaction(env.DB, ids[0])).toBe(true)
+    // Ao desmarcar, a linha sai do registro daquele pagamento (D4).
+    expect(await linhasRegistradas(pago.transfer_id)).toEqual(
+      [ids[1], ids[2]].sort(),
+    )
+    expect(await settleTransaction(env.DB, ids[0], '2026-09-05')).toBe(true)
+    expect(await linhasRegistradas(pago.transfer_id)).toEqual(
+      [ids[1], ids[2]].sort(),
+    )
+
+    const desfeito = await undoBillPayment(env.DB, pago.transfer_id)
+    expect(desfeito?.unsettled_count).toBe(2)
+    expect(await settledAtDe(ids[0])).toBe('2026-09-05')
+    expect(await settledAtDe(ids[1])).toBeNull()
+    expect(await settledAtDe(ids[2])).toBeNull()
+  })
+
+  it('as linhas que voltam para "em aberto" ganham updated_at novo', async () => {
+    // Uma linha reaberta com o updated_at do pagamento mentiria sobre quando
+    // foi mexida pela última vez (mesma regra de updateTransaction).
+    const { card, conta, ids } = await cenarioDeFatura('updated_at')
+    const pago = await pagarAgosto(card, conta)
+    await env.DB.prepare(
+      "UPDATE transactions SET updated_at = '2000-01-01T00:00:00Z' WHERE id IN (?, ?, ?)",
+    )
+      .bind(...ids)
+      .run()
+
+    await undoBillPayment(env.DB, pago.transfer_id)
+
+    const { results } = await env.DB.prepare(
+      'SELECT updated_at FROM transactions WHERE id IN (?, ?, ?)',
+    )
+      .bind(...ids)
+      .all<{ updated_at: string }>()
+    expect(results).toHaveLength(3)
+    for (const { updated_at } of results) {
+      expect(updated_at).not.toBe('2000-01-01T00:00:00Z')
+    }
+  })
+
+  it('depois de desfazer, pagar a mesma fatura de novo funciona', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('pagar de novo')
+    const primeiro = await pagarAgosto(card, conta)
+    await undoBillPayment(env.DB, primeiro.transfer_id)
+
+    const segundo = await pagarAgosto(card, conta)
+    expect(segundo.transfer_id).not.toBe(primeiro.transfer_id)
+    expect(segundo.amount_cents).toBe(25000)
+    expect(segundo.settled_count).toBe(3)
+    expect(await linhasRegistradas(segundo.transfer_id)).toEqual(
+      [...ids].sort(),
+    )
+
+    const saldos = await accountBalances(env.DB)
+    const saldo = (id: string) =>
+      saldos.find((s) => s.account_id === id)?.balance_cents
+    expect(saldo(card.id)).toBe(0)
+    expect(saldo(conta.id)).toBe(475000)
+  })
+
+  it('desfazer UM pagamento não mexe nos outros: outra fatura do mesmo cartão e a de outro cartão seguem pagas e registradas', async () => {
+    // Com um pagamento só na base, um desfazer que reabrisse as linhas de
+    // TODOS os pagamentos (subquery sem o transfer_id) ou apagasse o registro
+    // de todos passaria em todos os testes acima. Aqui há três registrados ao
+    // mesmo tempo: julho e agosto no mesmo cartão, agosto em outro cartão.
+    const card = await cartao('Cartao tres pagamentos', 25)
+    const outro = await cartao('Outro cartao tres pagamentos', 25)
+    const conta = await contaCorrente('Corrente tres pagamentos', 500000)
+    const compra = (
+      account_id: string,
+      cents: number,
+      purchase_date: string,
+      description: string,
+    ) =>
+      createTransaction(env.DB, {
+        account_id,
+        amount_cents: -cents,
+        purchase_date,
+        description,
+      })
+    const deJulho = await compra(card.id, 3000, '2026-07-10', 'Livraria')
+    const deAgosto = await compra(card.id, 5000, '2026-07-28', 'Restaurante')
+    const doOutro = await compra(outro.id, 7000, '2026-07-28', 'Academia')
+
+    const pagar = (
+      card_account_id: string,
+      competence: string,
+      paid_on: string,
+    ) =>
+      payBill(env.DB, {
+        card_account_id,
+        competence,
+        paid_on,
+        from_account_id: conta.id,
+      })
+    const pJulho = await pagar(card.id, '2026-07', '2026-08-05')
+    const pAgosto = await pagar(card.id, '2026-08', '2026-09-05')
+    const pOutro = await pagar(outro.id, '2026-08', '2026-09-05')
+
+    // bill_payment_leg é só das PERNAS: uma compra do cartão pago, registrada
+    // num pagamento ou nova, continua 'free' (apagável e editável).
+    const nova = await compra(card.id, 900, '2026-09-01', 'Banca')
+    for (const id of [deJulho.id, deAgosto.id, nova.id, doOutro.id]) {
+      expect((await inspectTransaction(env.DB, id))?.class).toBe('free')
+    }
+
+    const registroDosOutros = async () => {
+      const ids = [pJulho.transfer_id, pOutro.transfer_id]
+      return {
+        pagamentos: (
+          await env.DB.prepare(
+            'SELECT * FROM bill_payments WHERE transfer_id IN (?, ?) ORDER BY transfer_id',
+          )
+            .bind(...ids)
+            .all()
+        ).results,
+        linhas: (
+          await env.DB.prepare(
+            'SELECT * FROM bill_payment_lines WHERE transfer_id IN (?, ?) ORDER BY transfer_id, transaction_id',
+          )
+            .bind(...ids)
+            .all()
+        ).results,
+      }
+    }
+    const antes = await registroDosOutros()
+    expect(antes.pagamentos).toHaveLength(2)
+    expect(antes.linhas).toHaveLength(2)
+
+    expect(
+      (await undoBillPayment(env.DB, pAgosto.transfer_id))?.unsettled_count,
+    ).toBe(1)
+
+    expect(await settledAtDe(deAgosto.id)).toBeNull()
+    expect(await settledAtDe(deJulho.id)).toBe('2026-08-05')
+    expect(await settledAtDe(doOutro.id)).toBe('2026-09-05')
+    expect(await registroDosOutros()).toEqual(antes)
+    expect(
+      (await listBillPayments(env.DB, card.id)).map((p) => p.transfer_id),
+    ).toEqual([pJulho.transfer_id])
+    expect(
+      (await listBillPayments(env.DB, outro.id)).map((p) => p.transfer_id),
+    ).toEqual([pOutro.transfer_id])
+    for (const perna of [
+      pJulho.out,
+      pJulho.inbound,
+      pOutro.out,
+      pOutro.inbound,
+    ]) {
+      expect((await inspectTransaction(env.DB, perna.id))?.class).toBe(
+        'bill_payment_leg',
+      )
+    }
+  })
+})
+
+describe('listBillPayments', () => {
+  /** Duas faturas abertas no mesmo cartão: julho (R$ 30) e agosto (R$ 200). */
+  async function cartaoComDuasFaturasPagas() {
+    const card = await cartao('Cartao historico', 25)
+    const corrente = await contaCorrente('Corrente historico', 500000)
+    const reserva = await contaCorrente('Reserva historico', 500000)
+    for (const [desc, cents, dia] of [
+      ['Padaria', 3000, '2026-07-10'],
+      ['Mercado', 12000, '2026-07-28'],
+      ['Posto', 8000, '2026-08-02'],
+    ] as const) {
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -cents,
+        purchase_date: dia,
+        description: desc,
+      })
+    }
+    // Agosto é pago PRIMEIRO, com data mais nova: a ordem da lista é a da
+    // data do pagamento, não a da gravação.
+    const agosto = await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: reserva.id,
+    })
+    const julho = await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-07',
+      paid_on: '2026-08-05',
+      from_account_id: corrente.id,
+    })
+    return { card, corrente, reserva, agosto, julho }
+  }
+
+  it('lista do pagamento mais recente para o mais antigo, com origem, valor e número de lançamentos', async () => {
+    const { card, corrente, reserva, agosto, julho } =
+      await cartaoComDuasFaturasPagas()
+
+    // Pagamento de OUTRO cartão nunca aparece.
+    const outro = await cartao('Outro cartao historico', 25)
+    await createTransaction(env.DB, {
+      account_id: outro.id,
+      amount_cents: -7700,
+      purchase_date: '2026-07-28',
+      description: 'Compra do outro',
+    })
+    await payBill(env.DB, {
+      card_account_id: outro.id,
+      competence: '2026-08',
+      paid_on: '2026-09-10',
+      from_account_id: corrente.id,
+    })
+
+    expect(await listBillPayments(env.DB, card.id)).toEqual([
+      {
+        transfer_id: agosto.transfer_id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        amount_cents: 20000,
+        line_count: 2,
+        from_account_id: reserva.id,
+        from_account_name: 'Reserva historico',
+      },
+      {
+        transfer_id: julho.transfer_id,
+        competence: '2026-07',
+        paid_on: '2026-08-05',
+        amount_cents: 3000,
+        line_count: 1,
+        from_account_id: corrente.id,
+        from_account_name: 'Corrente historico',
+      },
+    ])
+  })
+
+  it('no mesmo dia, o pagamento gravado por último vem primeiro', async () => {
+    const { card, agosto, julho } = await cartaoComDuasFaturasPagas()
+    await env.DB.prepare(
+      'UPDATE bill_payments SET paid_on = ?, created_at = ? WHERE transfer_id = ?',
+    )
+      .bind('2026-09-05', '2026-09-05T09:00:00Z', agosto.transfer_id)
+      .run()
+    await env.DB.prepare(
+      'UPDATE bill_payments SET paid_on = ?, created_at = ? WHERE transfer_id = ?',
+    )
+      .bind('2026-09-05', '2026-09-05T10:00:00Z', julho.transfer_id)
+      .run()
+
+    expect(
+      (await listBillPayments(env.DB, card.id)).map((p) => p.transfer_id),
+    ).toEqual([julho.transfer_id, agosto.transfer_id])
+  })
+
+  it('devolve no máximo os 12 mais recentes', async () => {
+    const card = await cartao('Cartao treze faturas', 25)
+    const conta = await contaCorrente('Corrente treze faturas', 5000000)
+    const competencias: string[] = []
+    for (let i = 0; i < 13; i++) {
+      const competence = addMonthsToCompetence('2025-01', i)
+      competencias.push(competence)
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -1000 - i,
+        purchase_date: `${competence}-10`,
+        description: `Compra ${competence}`,
+      })
+      await payBill(env.DB, {
+        card_account_id: card.id,
+        competence,
+        paid_on: `${addMonthsToCompetence(competence, 1)}-05`,
+        from_account_id: conta.id,
+      })
+    }
+
+    const lista = await listBillPayments(env.DB, card.id)
+    expect(lista).toHaveLength(12)
+    expect(lista.map((p) => p.competence)).toEqual(
+      competencias.slice(1).reverse(),
+    )
+  })
+
+  it('cartão sem pagamento registrado devolve lista vazia, e o pagamento desfeito sai da lista', async () => {
+    const card = await cartao('Cartao sem historico', 25)
+    expect(await listBillPayments(env.DB, card.id)).toEqual([])
+
+    const { card: pago, conta } = await cenarioDeFatura('some da lista')
+    const res = await pagarAgosto(pago, conta)
+    expect(await listBillPayments(env.DB, pago.id)).toHaveLength(1)
+    await undoBillPayment(env.DB, res.transfer_id)
+    expect(await listBillPayments(env.DB, pago.id)).toEqual([])
+  })
+})
+
+describe('pernas de pagamento de fatura registrado', () => {
+  it('inspectTransaction classifica as duas pernas como bill_payment_leg', async () => {
+    const { card, conta } = await cenarioDeFatura('classe')
+    const pago = await pagarAgosto(card, conta)
+    for (const perna of [pago.out, pago.inbound]) {
+      expect((await inspectTransaction(env.DB, perna.id))?.class).toBe(
+        'bill_payment_leg',
+      )
+    }
+  })
+
+  it('apagar uma perna é RECUSADO apontando para "Desfazer pagamento" — nada muda', async () => {
+    // Era o defeito das duas vozes: o DELETE cascateava as pernas e deixava as
+    // compras liquidadas, então o Comprometido dizia "pago" sem o dinheiro ter
+    // saído. Agora a única porta é o desfazer, que faz as duas metades.
+    const { card, conta, ids } = await cenarioDeFatura('apagar perna')
+    const pago = await pagarAgosto(card, conta)
+
+    for (const perna of [pago.out, pago.inbound]) {
+      const erro = (await deleteTransaction(env.DB, perna.id).catch(
+        (e: Error) => e,
+      )) as TransactionHasOwnerError
+      expect(erro).toBeInstanceOf(TransactionHasOwnerError)
+      expect(erro.code).toBe('bill_payment_leg')
+      expect(erro.message).toContain('Desfazer pagamento')
+      expect(erro.message).not.toMatch(
+        /SQLITE|D1_ERROR|FOREIGN KEY|bill_payment|transfer_id/i,
+      )
+    }
+
+    expect(
+      await contar(
+        'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id = ?',
+        pago.transfer_id,
+      ),
+    ).toBe(2)
+    for (const id of ids) expect(await settledAtDe(id)).toBe('2026-09-05')
+    expect(await contar('SELECT COUNT(*) AS n FROM bill_payments')).toBe(1)
+  })
+
+  it('valor/data/conta da perna são recusados citando o desfazer; rótulo continua editável', async () => {
+    const { card, conta } = await cenarioDeFatura('editar perna')
+    const pago = await pagarAgosto(card, conta)
+
+    const erro = (await updateTransaction(env.DB, pago.out.id, {
+      amount_cents: -100,
+    }).catch((e: Error) => e)) as TransactionHasOwnerError
+    expect(erro).toBeInstanceOf(TransactionHasOwnerError)
+    expect(erro.code).toBe('bill_payment_leg')
+    expect(erro.message).toContain('Desfazer pagamento')
+
+    const editada = await updateTransaction(env.DB, pago.out.id, {
+      description: 'Fatura de agosto',
+    })
+    expect(editada?.description).toBe('Fatura de agosto')
+    expect(editada?.amount_cents).toBe(-25000)
+  })
+
+  it('perna de pagamento ANTIGO (sem registro) segue como hoje: transfer_leg, e o DELETE leva as duas', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('pagamento antigo')
+    const pago = await pagarAgosto(card, conta)
+    // Simula um pagamento feito antes da migration 0020: sem registro.
+    await env.DB.prepare('DELETE FROM bill_payments WHERE transfer_id = ?')
+      .bind(pago.transfer_id)
+      .run()
+
+    expect((await inspectTransaction(env.DB, pago.out.id))?.class).toBe(
+      'transfer_leg',
+    )
+    expect(await deleteTransaction(env.DB, pago.out.id)).toBe(true)
+    expect(
+      await contar(
+        'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id = ?',
+        pago.transfer_id,
+      ),
+    ).toBe(0)
+    // As compras seguem liquidadas: sem registro, voltá-las é à mão, linha a
+    // linha (POST /api/transactions/:id/unsettle).
+    for (const id of ids) expect(await settledAtDe(id)).toBe('2026-09-05')
+  })
+
+  it('a recusa não promete um botão que não existe: o 13º pagamento fica fora do painel, e a mensagem diz até onde o painel alcança', async () => {
+    // O painel lista só os 12 mais recentes (LIMIT 12 de listBillPayments).
+    // Do 13º para trás a perna segue recusada e o botão não aparece; uma
+    // recusa que mandasse "use Desfazer pagamento no painel" sem dizer isso
+    // mandaria o dono procurar o que não está lá.
+    const card = await cartao('Cartao treze pernas', 25)
+    const conta = await contaCorrente('Corrente treze pernas', 5000000)
+    const pagos: Awaited<ReturnType<typeof payBill>>[] = []
+    for (let i = 0; i < 13; i++) {
+      const competence = addMonthsToCompetence('2025-01', i)
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -1000 - i,
+        purchase_date: `${competence}-10`,
+        description: `Compra ${competence}`,
+      })
+      pagos.push(
+        await payBill(env.DB, {
+          card_account_id: card.id,
+          competence,
+          paid_on: `${addMonthsToCompetence(competence, 1)}-05`,
+          from_account_id: conta.id,
+        }),
+      )
+    }
+    const maisAntigo = pagos[0]
+    expect(
+      (await listBillPayments(env.DB, card.id)).map((p) => p.transfer_id),
+    ).not.toContain(maisAntigo.transfer_id)
+
+    const recusaApagar = (await deleteTransaction(
+      env.DB,
+      maisAntigo.out.id,
+    ).catch((e: Error) => e)) as TransactionHasOwnerError
+    const recusaEditar = (await updateTransaction(env.DB, maisAntigo.out.id, {
+      amount_cents: -1,
+    }).catch((e: Error) => e)) as TransactionHasOwnerError
+    for (const erro of [recusaApagar, recusaEditar]) {
+      expect(erro).toBeInstanceOf(TransactionHasOwnerError)
+      expect(erro.message).toContain('12 pagamentos mais recentes')
+      expect(erro.message).toContain('arquivado')
+    }
+
+    // O desfazer em si não tem limite: a porta que sobra (POST
+    // /api/bills/payments/:transfer_id/undo, ver CLAUDE.md) alcança o 13º.
+    expect(
+      (await undoBillPayment(env.DB, maisAntigo.transfer_id))?.unsettled_count,
+    ).toBe(1)
+  })
+
+  it('cartão arquivado sai de Contas, a perna segue recusada, e o desfazer pela função ainda funciona', async () => {
+    const { card, conta, ids } = await cenarioDeFatura('arquivado')
+    const pago = await pagarAgosto(card, conta)
+    expect(await archiveAccount(env.DB, card.id)).toBe(true)
+    expect((await listAccounts(env.DB)).map((c) => c.id)).not.toContain(card.id)
+
+    const erro = (await deleteTransaction(env.DB, pago.out.id).catch(
+      (e: Error) => e,
+    )) as TransactionHasOwnerError
+    expect(erro).toBeInstanceOf(TransactionHasOwnerError)
+    expect(erro.message).toContain('arquivado')
+
+    expect(
+      (await undoBillPayment(env.DB, pago.transfer_id))?.unsettled_count,
+    ).toBe(3)
+    for (const id of ids) expect(await settledAtDe(id)).toBeNull()
   })
 })

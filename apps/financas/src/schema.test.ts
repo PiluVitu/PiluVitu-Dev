@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019 — tabelas', () => {
-  it('cria exatamente as 23 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018 + 1 recurring_occurrences do 0019)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019+0020 — tabelas', () => {
+  it('cria exatamente as 25 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018 + 1 recurring_occurrences do 0019 + 2 do registro de pagamento de fatura do 0020)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -184,6 +184,8 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019 — 
     expect(results.map((r) => r.name)).toEqual([
       'account',
       'accounts',
+      'bill_payment_lines',
+      'bill_payments',
       'budgets',
       'categories',
       'debt_items',
@@ -1358,5 +1360,205 @@ describe('migration 0019 — recorrência automática (frequency, generate_since
     const detalhe = plano.results.map((r) => r.detail).join(' | ')
     expect(detalhe).toMatch(/USING (COVERING )?INDEX/)
     expect(detalhe).not.toMatch(/^SCAN recurring_occurrences$/)
+  })
+})
+
+// O registro de QUAIS linhas um pagamento de fatura liquidou. A FK do cartão é
+// RESTRICT (conta se arquiva, não se apaga); as duas das linhas são CASCADE:
+// desfazer o pagamento leva o registro junto, e apagar uma compra a tira do
+// pagamento sem travar o DELETE dela.
+describe('migration 0020 — bill_payments e bill_payment_lines (STRICT, FKs, índices)', () => {
+  const CARTAO = 'c-cartao-0020'
+
+  async function base(): Promise<void> {
+    await novaConta(CARTAO, 'credit_card', 25, 5)
+    await stmtTx(
+      't-0020-a',
+      CARTAO,
+      -12000,
+      '2026-07-28',
+      '2026-09-05',
+      null,
+      null,
+    ).run()
+  }
+
+  function pagamento(
+    transferId: string,
+    cents: number | string = 25000,
+    cardId = CARTAO,
+  ) {
+    return DB.prepare(
+      `INSERT INTO bill_payments
+         (transfer_id, card_account_id, competence, paid_on, amount_cents, created_at)
+       VALUES (?, ?, '2026-08', '2026-09-05', ?, ?)`,
+    )
+      .bind(transferId, cardId, cents, NOW)
+      .run()
+  }
+
+  function linha(transferId: string, transactionId: string) {
+    return DB.prepare(
+      'INSERT INTO bill_payment_lines (transfer_id, transaction_id) VALUES (?, ?)',
+    )
+      .bind(transferId, transactionId)
+      .run()
+  }
+
+  async function colunas(tabela: string) {
+    const { results } = await DB.prepare(`PRAGMA table_info(${tabela})`).all<{
+      name: string
+      type: string
+      notnull: number
+      pk: number
+    }>()
+    return results.map(({ name, type, notnull, pk }) => ({
+      name,
+      type,
+      notnull,
+      pk,
+    }))
+  }
+
+  it('cria as duas tabelas STRICT com as colunas do desenho', async () => {
+    expect(await colunas('bill_payments')).toEqual([
+      { name: 'transfer_id', type: 'TEXT', notnull: 1, pk: 1 },
+      { name: 'card_account_id', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'competence', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'paid_on', type: 'TEXT', notnull: 1, pk: 0 },
+      { name: 'amount_cents', type: 'INTEGER', notnull: 1, pk: 0 },
+      { name: 'created_at', type: 'TEXT', notnull: 1, pk: 0 },
+    ])
+    expect(await colunas('bill_payment_lines')).toEqual([
+      { name: 'transfer_id', type: 'TEXT', notnull: 1, pk: 1 },
+      { name: 'transaction_id', type: 'TEXT', notnull: 1, pk: 2 },
+    ])
+
+    for (const tabela of ['bill_payments', 'bill_payment_lines']) {
+      const row = await DB.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+        .bind(tabela)
+        .first<{ sql: string }>()
+      expect(row?.sql).toMatch(/\)\s*STRICT$/)
+    }
+  })
+
+  it('as regras de ON DELETE são as do desenho', async () => {
+    const fks = async (tabela: string) =>
+      (
+        await DB.prepare(
+          `SELECT "table", "from", on_delete FROM pragma_foreign_key_list('${tabela}') ORDER BY "from"`,
+        ).all()
+      ).results
+    expect(await fks('bill_payments')).toEqual([
+      { table: 'accounts', from: 'card_account_id', on_delete: 'RESTRICT' },
+    ])
+    expect(await fks('bill_payment_lines')).toEqual([
+      { table: 'transactions', from: 'transaction_id', on_delete: 'CASCADE' },
+      { table: 'bill_payments', from: 'transfer_id', on_delete: 'CASCADE' },
+    ])
+  })
+
+  it('amount_cents > 0: barra zero, negativo e fracionário', async () => {
+    await base()
+    await pagamento('tf-ok')
+    await expect(pagamento('tf-zero', 0)).rejects.toThrow(/CHECK|constraint/i)
+    await expect(pagamento('tf-neg', -1)).rejects.toThrow(/CHECK|constraint/i)
+    await expect(pagamento('tf-frac', 1.5)).rejects.toThrow(
+      /CHECK|constraint|datatype/i,
+    )
+  })
+
+  it('o cartão é RESTRICT: barra conta inexistente e não deixa apagar o cartão com pagamento', async () => {
+    await novaConta('c-sem-tx-0020', 'credit_card', 25, 5)
+    await pagamento('tf-1', 1000, 'c-sem-tx-0020')
+    await expect(
+      DB.prepare('DELETE FROM accounts WHERE id = ?')
+        .bind('c-sem-tx-0020')
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY|constraint/i)
+    await expect(pagamento('tf-2', 1000, 'nao-existe')).rejects.toThrow(
+      /FOREIGN KEY|constraint/i,
+    )
+  })
+
+  it('a linha barra pagamento e lançamento inexistentes, e a mesma linha duas vezes no mesmo pagamento', async () => {
+    await base()
+    await pagamento('tf-1')
+    await linha('tf-1', 't-0020-a')
+    await expect(linha('tf-1', 't-0020-a')).rejects.toThrow(
+      /UNIQUE|PRIMARY KEY|constraint/i,
+    )
+    await expect(linha('tf-nao-existe', 't-0020-a')).rejects.toThrow(
+      /FOREIGN KEY|constraint/i,
+    )
+    await expect(linha('tf-1', 't-nao-existe')).rejects.toThrow(
+      /FOREIGN KEY|constraint/i,
+    )
+  })
+
+  it('apagar o pagamento leva as linhas junto, e o lançamento continua vivo', async () => {
+    await base()
+    await pagamento('tf-1')
+    await linha('tf-1', 't-0020-a')
+
+    await DB.prepare(
+      "DELETE FROM bill_payments WHERE transfer_id = 'tf-1'",
+    ).run()
+
+    const linhas = await DB.prepare(
+      'SELECT COUNT(*) AS n FROM bill_payment_lines',
+    ).first<{ n: number }>()
+    expect(linhas?.n).toBe(0)
+    const tx = await DB.prepare(
+      "SELECT COUNT(*) AS n FROM transactions WHERE id = 't-0020-a'",
+    ).first<{ n: number }>()
+    expect(tx?.n).toBe(1)
+  })
+
+  it('apagar o lançamento o tira do registro, e o pagamento continua', async () => {
+    await base()
+    await pagamento('tf-1')
+    await linha('tf-1', 't-0020-a')
+
+    await DB.prepare("DELETE FROM transactions WHERE id = 't-0020-a'").run()
+
+    const linhas = await DB.prepare(
+      'SELECT COUNT(*) AS n FROM bill_payment_lines',
+    ).first<{ n: number }>()
+    expect(linhas?.n).toBe(0)
+    const pg = await DB.prepare(
+      'SELECT COUNT(*) AS n FROM bill_payments',
+    ).first<{ n: number }>()
+    expect(pg?.n).toBe(1)
+  })
+
+  it('índices: (card_account_id, paid_on) no pagamento e transaction_id na linha', async () => {
+    const indices = async (tabela: string) =>
+      Promise.all(
+        (
+          await DB.prepare(
+            `SELECT name FROM pragma_index_list('${tabela}') WHERE origin = 'c' ORDER BY name`,
+          ).all<{ name: string }>()
+        ).results.map(async ({ name }) => ({
+          name,
+          colunas: (
+            await DB.prepare(
+              `SELECT name FROM pragma_index_info('${name}') ORDER BY seqno`,
+            ).all<{ name: string }>()
+          ).results.map((c) => c.name),
+        })),
+      )
+
+    expect(await indices('bill_payments')).toEqual([
+      {
+        name: 'idx_bill_payments_card_paid_on',
+        colunas: ['card_account_id', 'paid_on'],
+      },
+    ])
+    expect(await indices('bill_payment_lines')).toEqual([
+      { name: 'idx_bill_payment_lines_tx', colunas: ['transaction_id'] },
+    ])
   })
 })
