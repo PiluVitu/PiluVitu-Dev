@@ -33,6 +33,11 @@ import { ROTULO } from '../lib/tipografia'
 import { ALVO_LINHA, ALVO_LINK } from '../lib/touch'
 import type { AccountView } from '../pages/accounts'
 import { NumeroCard } from './NumeroCard'
+import {
+  lancamentos,
+  PagamentosFeitos,
+  type BillPaymentView,
+} from './PagamentosFeitos'
 
 /**
  * ⚠️ ONDE ESTA TELA MORA, e por quê: um `Sheet` a partir da LINHA DO CARTÃO
@@ -73,6 +78,14 @@ export type OpenBillView = {
   line_count: number
 }
 
+/** Shape de `POST /api/bills/payments/:transfer_id/undo` (Worker: `undoBillPayment`). */
+export type UndoBillPaymentView = {
+  transfer_id: string
+  competence: string
+  amount_cents: number
+  unsettled_count: number
+}
+
 export type PagarFaturaProps = {
   /** A conta `credit_card` cuja fatura está sendo paga. */
   cartao: AccountView
@@ -96,17 +109,32 @@ export function PagarFatura({
   const [confirmando, setConfirmando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   /**
-   * ⚠️ Trava o botão depois que o dinheiro JÁ SE MOVEU e só a recarga falhou.
-   * Sem isto, a tela fica mostrando o painel com o botão ativo ao lado de uma
-   * mensagem dizendo "não reenvie" — e o segundo toque pagaria a fatura duas
-   * vezes. A mensagem avisa; isto impede.
+   * ⚠️ Trava os botões depois que o dinheiro JÁ SE MOVEU (pagar ou desfazer)
+   * e só a recarga falhou. Sem isto, a tela fica mostrando o painel com o
+   * botão ativo ao lado de uma mensagem dizendo "não reenvie" — e o segundo
+   * toque pagaria a fatura duas vezes. A mensagem avisa; isto impede.
    */
-  const [pago, setPago] = useState(false)
+  const [travado, setTravado] = useState(false)
+  const [pagamentos, setPagamentos] = useState<BillPaymentView[] | null>(null)
+  const [erroPagamentos, setErroPagamentos] = useState<string | null>(null)
+  const [alvo, setAlvo] = useState<BillPaymentView | null>(null)
+  const [confirmandoDesfazer, setConfirmandoDesfazer] = useState(false)
+  const [desfazendo, setDesfazendo] = useState(false)
+  const [erroDesfazer, setErroDesfazer] = useState<string | null>(null)
+  const [avisoDesfazer, setAvisoDesfazer] = useState<string | null>(null)
 
   const buscar = useCallback(
     () =>
       api<OpenBillView[]>(
         `/api/bills?card_account_id=${encodeURIComponent(cartao.id)}`,
+      ),
+    [cartao.id],
+  )
+
+  const buscarPagamentos = useCallback(
+    () =>
+      api<BillPaymentView[]>(
+        `/api/bills/payments?card_account_id=${encodeURIComponent(cartao.id)}`,
       ),
     [cartao.id],
   )
@@ -119,7 +147,11 @@ export function PagarFatura({
     let vivo = true
     setFaturas(null)
     setErro(null)
-    setPago(false)
+    setTravado(false)
+    setPagamentos(null)
+    setErroPagamentos(null)
+    setErroDesfazer(null)
+    setAvisoDesfazer(null)
     // A data volta pro default a cada abertura: um painel reaberto no dia
     // seguinte não pode oferecer a data de ontem já preenchida.
     setPagoEm(todayInTeresina())
@@ -132,10 +164,20 @@ export function PagarFatura({
       .catch((e: unknown) => {
         if (vivo) setErro(e instanceof ApiError ? e.message : String(e))
       })
+    // Leitura separada da fatura: uma lista de pagamentos que não carrega
+    // não pode tirar do dono o botão de pagar.
+    buscarPagamentos()
+      .then((dados) => {
+        if (vivo) setPagamentos(dados)
+      })
+      .catch((e: unknown) => {
+        if (vivo)
+          setErroPagamentos(e instanceof ApiError ? e.message : String(e))
+      })
     return () => {
       vivo = false
     }
-  }, [aberto, buscar])
+  }, [aberto, buscar, buscarPagamentos])
 
   const recarregarFaturas = useCallback(async () => {
     const dados = await buscar()
@@ -146,6 +188,10 @@ export function PagarFatura({
         : (dados[0]?.competence ?? ''),
     )
   }, [buscar])
+
+  const recarregarPagamentos = useCallback(async () => {
+    setPagamentos(await buscarPagamentos())
+  }, [buscarPagamentos])
 
   const fatura = faturas?.find((f) => f.competence === competencia) ?? null
 
@@ -170,6 +216,8 @@ export function PagarFatura({
 
   function revisar() {
     setErro(null)
+    setErroDesfazer(null)
+    setAvisoDesfazer(null)
     if (fatura === null) {
       setErro('Não há fatura em aberto neste cartão.')
       return
@@ -255,8 +303,57 @@ export function PagarFatura({
       return
     }
     // Só a recarga falhou => o dinheiro se moveu. Trava o botão.
-    if (resultado.fase === 'recarga') setPago(true)
+    if (resultado.fase === 'recarga') setTravado(true)
     setErro(resultado.mensagem)
+  }
+
+  function pedirDesfazer(pagamento: BillPaymentView) {
+    setErroDesfazer(null)
+    setAvisoDesfazer(null)
+    setAlvo(pagamento)
+    setConfirmandoDesfazer(true)
+  }
+
+  async function desfazer() {
+    if (alvo === null) return
+    setDesfazendo(true)
+    setErroDesfazer(null)
+    setAvisoDesfazer(null)
+
+    const quanto = formatBRL(alvo.amount_cents)
+    const quando = rotuloCompetencia(alvo.competence)
+    const desfeito: { dados: UndoBillPaymentView | null } = { dados: null }
+
+    const resultado = await mutarERecarregar(
+      async () => {
+        desfeito.dados = await api<UndoBillPaymentView>(
+          `/api/bills/payments/${encodeURIComponent(alvo.transfer_id)}/undo`,
+          { method: 'POST' },
+        )
+      },
+      async () => {
+        await recarregarFaturas()
+        await recarregarPagamentos()
+        await recarregarContas()
+      },
+      `O pagamento da fatura de ${quando} FOI DESFEITO: a transferência de ${quanto} que saiu de "${alvo.from_account_name}" foi apagada e os lançamentos voltaram para "em aberto". Não consegui recarregar a tela — atualize a página pra ver os saldos novos antes de pagar ou desfazer de novo.`,
+    )
+
+    setDesfazendo(false)
+    // DEPOIS do await, pelo mesmo motivo de `pagar()`.
+    setConfirmandoDesfazer(false)
+    if (resultado.ok) {
+      setErro(null)
+      const n = desfeito.dados?.unsettled_count ?? alvo.line_count
+      setAvisoDesfazer(
+        `Pagamento da fatura de ${quando} desfeito: ${lancamentos(n)} ${
+          n === 1 ? 'voltou' : 'voltaram'
+        } para "em aberto" e a transferência de ${quanto} foi apagada.`,
+      )
+      return
+    }
+    if (resultado.fase === 'recarga') setTravado(true)
+    setErroDesfazer(resultado.mensagem)
   }
 
   return (
@@ -445,12 +542,45 @@ export function PagarFatura({
               type="button"
               className={ALVO_LINHA}
               data-testid="revisar-pagamento"
-              disabled={fatura === null || enviando || pago}
+              disabled={fatura === null || enviando || travado}
               onClick={revisar}
             >
               {enviando ? 'Pagando…' : 'Pagar fatura'}
             </Button>
           </SheetFooter>
+
+          <PagamentosFeitos
+            pagamentos={pagamentos}
+            erro={erroPagamentos}
+            desabilitado={enviando || desfazendo || travado}
+            onDesfazer={pedirDesfazer}
+          />
+
+          {erroDesfazer !== null ? (
+            <p
+              role="alert"
+              className="text-destructive text-sm"
+              data-testid="desfazer-erro"
+              ref={(el) => {
+                el?.scrollIntoView({ block: 'nearest' })
+              }}
+            >
+              {erroDesfazer}
+            </p>
+          ) : null}
+
+          {avisoDesfazer !== null ? (
+            <p
+              role="status"
+              className="text-sm"
+              data-testid="desfazer-aviso"
+              ref={(el) => {
+                el?.scrollIntoView({ block: 'nearest' })
+              }}
+            >
+              {avisoDesfazer}
+            </p>
+          ) : null}
         </SheetContent>
       </Sheet>
 
@@ -487,7 +617,7 @@ export function PagarFatura({
             {/*
               ⚠️ O texto diz o que a operação FAZ — as duas metades, porque só
               uma delas seria uma mentira por omissão: liquida N lançamentos E
-              move o dinheiro. E diz o que não existe: desfazer em lote.
+              move o dinheiro. E diz onde se desfaz.
             */}
             <DialogDescription>
               {fatura !== null && origem !== null
@@ -495,7 +625,7 @@ export function PagarFatura({
                     fatura.line_count === 1 ? 'lançamento' : 'lançamentos'
                   } da fatura de ${rotuloCompetencia(fatura.competence)} e move ${formatBRL(
                     fatura.amount_cents,
-                  )} de "${origem.name}" para "${cartao.name}", com data de ${pagoEm}. Não há como desfazer em lote: seria preciso apagar a transferência e reabrir cada lançamento, um por um.`
+                  )} de "${origem.name}" para "${cartao.name}", com data de ${pagoEm}. Dá para desfazer depois, em "Pagamentos feitos" neste painel: a transferência é apagada e os lançamentos voltam para "em aberto".`
                 : ''}
             </DialogDescription>
           </DialogHeader>
@@ -519,6 +649,56 @@ export function PagarFatura({
               onClick={pagar}
             >
               {enviando ? 'Pagando…' : 'Pagar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={confirmandoDesfazer}
+        onOpenChange={(aberto) => {
+          if (!desfazendo) setConfirmandoDesfazer(aberto)
+        }}
+      >
+        <DialogContent data-testid="confirmar-desfazer">
+          <DialogHeader>
+            <DialogTitle>
+              Desfazer o pagamento da fatura de{' '}
+              {alvo !== null ? rotuloCompetencia(alvo.competence) : ''}?
+            </DialogTitle>
+            <DialogDescription>
+              {alvo !== null
+                ? `Isto apaga a transferência de ${formatBRL(
+                    alvo.amount_cents,
+                  )} que saiu de "${alvo.from_account_name}" para "${cartao.name}" e volta ${lancamentos(
+                    alvo.line_count,
+                  )} para "em aberto". Os lançamentos não são apagados: voltam a contar na fatura de ${rotuloCompetencia(
+                    alvo.competence,
+                  )}.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className={ALVO_LINHA}
+                data-testid="cancelar-desfazer"
+                disabled={desfazendo}
+              >
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              className={ALVO_LINHA}
+              data-testid="confirmar-desfazer-botao"
+              disabled={desfazendo}
+              onClick={desfazer}
+            >
+              {desfazendo ? 'Desfazendo…' : 'Desfazer pagamento'}
             </Button>
           </DialogFooter>
         </DialogContent>

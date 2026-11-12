@@ -9,9 +9,12 @@ import {
   buildListTransactionsQuery,
   createTransaction,
   createTransfer,
+  payBill,
   type Transaction,
 } from '../domain/transactions'
+import { app as appReal } from '../index'
 import { todayInTeresina } from '../lib/dates'
+import { errJson } from '../lib/envelope'
 import { transactionsRoutes } from './transactions'
 
 beforeAll(async () => {
@@ -1354,5 +1357,229 @@ describe('GET /api/bills', () => {
     const res = await get('/api/bills?card_account_id=nao-existe')
     expect(res.status).toBe(200)
     expect((await envelope<unknown[]>(res)).data).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Desfazer o pagamento da fatura — GET /api/bills/payments e
+// POST /api/bills/payments/:transfer_id/undo (migration 0020).
+// ---------------------------------------------------------------------------
+describe('pagamentos de fatura registrados (listar e desfazer)', () => {
+  async function cenarioPago() {
+    const card = await createAccount(env.DB, {
+      name: 'Cartao rota desfazer',
+      scope: 'PF',
+      kind: 'credit_card',
+      closing_day: 25,
+      due_day: 5,
+    })
+    const conta = await createAccount(env.DB, {
+      name: 'Corrente rota desfazer',
+      scope: 'PF',
+      kind: 'checking',
+      opening_balance_cents: 500000,
+    })
+    for (const [desc, cents, dia] of [
+      ['Mercado', 12000, '2026-07-28'],
+      ['Posto', 8000, '2026-07-29'],
+    ] as const) {
+      await createTransaction(env.DB, {
+        account_id: card.id,
+        amount_cents: -cents,
+        purchase_date: dia,
+        description: desc,
+      })
+    }
+    const pago = await payBill(env.DB, {
+      card_account_id: card.id,
+      competence: '2026-08',
+      paid_on: '2026-09-05',
+      from_account_id: conta.id,
+    })
+    return { card, conta, pago }
+  }
+
+  type PagamentoFeito = {
+    transfer_id: string
+    competence: string
+    paid_on: string
+    amount_cents: number
+    line_count: number
+    from_account_id: string
+    from_account_name: string
+  }
+
+  it('as duas rotas estão registradas ACIMA do catch-all de src/index.ts', () => {
+    // '/api/*' aparece duas vezes (guarda de sessão e catch-all): vale a última.
+    const catchAll = appReal.routes.reduce(
+      (ultimo, r, i) => (r.path === '/api/*' ? i : ultimo),
+      -1,
+    )
+    expect(catchAll).toBeGreaterThanOrEqual(0)
+    for (const [method, path] of [
+      ['GET', '/api/bills/payments'],
+      ['POST', '/api/bills/payments/:transfer_id/undo'],
+    ]) {
+      const i = appReal.routes.findIndex(
+        (r) => r.method === method && r.path === path,
+      )
+      expect(i).toBeGreaterThanOrEqual(0)
+      expect(i).toBeLessThan(catchAll)
+    }
+  })
+
+  it.each([
+    ['GET', '/api/bills/payments?card_account_id=qualquer'],
+    ['POST', '/api/bills/payments/qualquer/undo'],
+  ])(
+    '%s %s sem cookie de sessão responde 401 e não mexe em nada',
+    async (method, path) => {
+      // Desfazer apaga dinheiro movido: a guarda de sessão do app real tem de
+      // ficar na frente, mesmo sem exceção nenhuma escrita para estas rotas.
+      const { pago } = await cenarioPago()
+      const res = await appReal.request(
+        path.replace('qualquer', pago.transfer_id),
+        { method },
+        env,
+      )
+      expect(res.status).toBe(401)
+      expect((await envelope<null>(res)).notifications[0].code).toBe(
+        'not_authenticated',
+      )
+      const registro = await env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM bill_payments WHERE transfer_id = ?',
+      )
+        .bind(pago.transfer_id)
+        .first<{ n: number }>()
+      expect(registro?.n).toBe(1)
+    },
+  )
+
+  it('montadas como em src/index.ts, as duas alcançam o handler e não o 404 genérico', async () => {
+    const { card, pago } = await cenarioPago()
+    const hono = new Hono()
+    hono.route('/api', transactionsRoutes)
+    hono.all('/api/*', () => errJson(404, 'not_found', 'rota nao encontrada'))
+
+    const lista = await hono.request(
+      `/api/bills/payments?card_account_id=${card.id}`,
+      {},
+      { DB: env.DB },
+    )
+    expect(lista.status).toBe(200)
+    expect((await envelope<PagamentoFeito[]>(lista)).data).toHaveLength(1)
+
+    const desfeito = await hono.request(
+      `/api/bills/payments/${pago.transfer_id}/undo`,
+      { method: 'POST' },
+      { DB: env.DB },
+    )
+    expect(desfeito.status).toBe(200)
+  })
+
+  it('GET lista o pagamento com competência, data, valor, origem e número de lançamentos', async () => {
+    const { card, conta, pago } = await cenarioPago()
+    const res = await get(`/api/bills/payments?card_account_id=${card.id}`)
+    expect(res.status).toBe(200)
+
+    const body = await envelope<PagamentoFeito[]>(res)
+    expect(body.ok).toBe(true)
+    expect(body.data).toEqual([
+      {
+        transfer_id: pago.transfer_id,
+        competence: '2026-08',
+        paid_on: '2026-09-05',
+        amount_cents: 20000,
+        line_count: 2,
+        from_account_id: conta.id,
+        from_account_name: 'Corrente rota desfazer',
+      },
+    ])
+  })
+
+  it('GET sem card_account_id devolve 400 invalid_query nomeando o parâmetro', async () => {
+    const res = await get('/api/bills/payments')
+    expect(res.status).toBe(400)
+    const body = await envelope<null>(res)
+    expect(body.notifications[0].code).toBe('invalid_query')
+    expect(body.notifications[0].field).toBe('card_account_id')
+  })
+
+  it('GET de cartão sem pagamento registrado devolve lista vazia', async () => {
+    const res = await get('/api/bills/payments?card_account_id=nao-existe')
+    expect(res.status).toBe(200)
+    expect((await envelope<unknown[]>(res)).data).toEqual([])
+  })
+
+  it('POST undo devolve 200 com o que desfez; a fatura volta a ficar em aberto e sai da lista de pagamentos', async () => {
+    const { card, pago } = await cenarioPago()
+    const res = await send(
+      `/api/bills/payments/${pago.transfer_id}/undo`,
+      'POST',
+    )
+    expect(res.status).toBe(200)
+    expect((await envelope<unknown>(res)).data).toEqual({
+      transfer_id: pago.transfer_id,
+      competence: '2026-08',
+      amount_cents: 20000,
+      unsettled_count: 2,
+    })
+
+    expect(
+      (
+        await envelope<unknown[]>(
+          await get(`/api/bills?card_account_id=${card.id}`),
+        )
+      ).data,
+    ).toEqual([{ competence: '2026-08', amount_cents: 20000, line_count: 2 }])
+    expect(
+      (
+        await envelope<unknown[]>(
+          await get(`/api/bills/payments?card_account_id=${card.id}`),
+        )
+      ).data,
+    ).toEqual([])
+  })
+
+  it('POST undo de novo devolve 404 dizendo que o pagamento não existe ou já foi desfeito', async () => {
+    const { pago } = await cenarioPago()
+    const caminho = `/api/bills/payments/${pago.transfer_id}/undo`
+    expect((await send(caminho, 'POST')).status).toBe(200)
+
+    const res = await send(caminho, 'POST')
+    expect(res.status).toBe(404)
+    const nota = (await envelope<null>(res)).notifications[0]
+    expect(nota.code).toBe('not_found')
+    expect(nota.message).toMatch(/não existe ou já foi desfeito/)
+    expect(nota.message).not.toMatch(/SQLITE|D1_ERROR|bill_payment/i)
+  })
+
+  it('DELETE de uma perna devolve 422 transaction_has_owner com a classe bill_payment_leg, sem apagar nada', async () => {
+    const { pago } = await cenarioPago()
+    const res = await send(`/api/transactions/${pago.out.id}`, 'DELETE')
+    expect(res.status).toBe(422)
+    const nota = (await envelope<null>(res)).notifications[0]
+    expect(nota.code).toBe('transaction_has_owner')
+    expect(nota.field).toBe('bill_payment_leg')
+    expect(nota.message).toContain('Desfazer pagamento')
+
+    const pernas = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM transactions WHERE transfer_id = ?',
+    )
+      .bind(pago.transfer_id)
+      .first<{ n: number }>()
+    expect(pernas?.n).toBe(2)
+  })
+
+  it('PATCH de valor numa perna devolve 422 protected_field citando o desfazer', async () => {
+    const { pago } = await cenarioPago()
+    const res = await send(`/api/transactions/${pago.inbound.id}`, 'PATCH', {
+      amount_cents: 100,
+    })
+    expect(res.status).toBe(422)
+    const nota = (await envelope<null>(res)).notifications[0]
+    expect(nota.code).toBe('protected_field')
+    expect(nota.field).toBe('amount_cents')
+    expect(nota.message).toContain('Desfazer pagamento')
   })
 })
