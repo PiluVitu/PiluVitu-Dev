@@ -548,6 +548,55 @@ describe('NewEntryPage', () => {
     }
   })
 
+  // Item 3 (D7): lançar à mão uma ocorrência que a recorrente já lançou
+  // sozinha como pendente é recusado com 422 recurring_occurrence_pending.
+  // A recusa aparece como qualquer outra, e o formulário fica preenchido
+  // (nada foi gravado, então não há o que limpar).
+  it('recusa recurring_occurrence_pending aparece no alerta e mantém o formulário', async () => {
+    const mensagem =
+      'Esta ocorrência já tem um lançamento pendente criado pela recorrente. Marque o pendente como pago no extrato (ou edite o valor) em vez de lançar de novo.'
+    mockRoutes({
+      status: 422,
+      json: async () => ({
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'recurring_occurrence_pending',
+            message: mensagem,
+          },
+        ],
+      }),
+    })
+
+    render(<NewEntryPage />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Recorrente')).toBeInTheDocument(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Descrição'), {
+      target: { value: 'Internet fibra' },
+    })
+    fireEvent.change(screen.getByLabelText('Valor'), {
+      target: { value: '99,90' },
+    })
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a1' },
+    })
+    fireEvent.change(screen.getByLabelText('Recorrente'), {
+      target: { value: 'r1' },
+    })
+    fireEvent.submit(screen.getByTestId('form-lancamento'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(mensagem),
+    )
+    expect(screen.queryByText('Lançamento gravado.')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Descrição')).toHaveValue('Internet fibra')
+    expect(screen.getByLabelText('Recorrente')).toHaveValue('r1')
+  })
+
   it('mostra o erro da API no submit', async () => {
     mockRoutes({
       status: 422,

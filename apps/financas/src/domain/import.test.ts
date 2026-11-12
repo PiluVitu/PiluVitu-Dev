@@ -1,8 +1,13 @@
 import type { LinhaImportada } from '@piluvitu/tools/import'
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createCategory } from './categories'
 import { ImportError, importTransactions } from './import'
+import { createPayee } from './payees'
+import { createRecurring, type Frequency } from './recurring'
+import { generateRecurringOccurrences } from './recurring-auto'
 import { commitments } from './reports'
+import { payBill } from './transactions'
 import { setNomesProprios } from './transfer-pairing'
 
 async function seedAccount(
@@ -70,7 +75,7 @@ describe('importTransactions', () => {
     const after = await countTransactions(accountId)
 
     expect(after - before).toBe(3)
-    expect(result).toEqual({ total: 3, imported: 3, skipped: 0 })
+    expect(result).toEqual({ total: 3, imported: 3, skipped: 0, reconciled: 0 })
   })
 
   it('reimportar as MESMAS linhas não cria nenhuma linha nova (contado no D1)', async () => {
@@ -97,7 +102,7 @@ describe('importTransactions', () => {
 
     // A contagem no D1, não a resposta, é a prova real de idempotência.
     expect(afterSecond).toBe(afterFirst)
-    expect(result).toEqual({ total: 2, imported: 0, skipped: 2 })
+    expect(result).toEqual({ total: 2, imported: 0, skipped: 2, reconciled: 0 })
   })
 
   it('o mesmo imported_id em OUTRA conta é aceito (o índice é por conta)', async () => {
@@ -116,7 +121,7 @@ describe('importTransactions', () => {
       rows: [row],
     })
 
-    expect(result).toEqual({ total: 1, imported: 1, skipped: 0 })
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
     expect(await countTransactions(accountA)).toBe(1)
     expect(await countTransactions(accountB)).toBe(1)
   })
@@ -216,7 +221,12 @@ describe('importTransactions', () => {
         import_source: 'ofx',
         rows,
       })
-      expect(result).toEqual({ total: 2, imported: 2, skipped: 0 })
+      expect(result).toEqual({
+        total: 2,
+        imported: 2,
+        skipped: 0,
+        reconciled: 0,
+      })
 
       const gravadas = await env.DB.prepare(
         'SELECT imported_id, bill_competence FROM transactions WHERE account_id = ? ORDER BY imported_id',
@@ -278,7 +288,12 @@ describe('importTransactions', () => {
       })
       // As linhas importadas nascem com settled_at NULL (fatura ainda em
       // aberto) — é exatamente o que commitments() soma como "previsto".
-      expect(result).toEqual({ total: 2, imported: 2, skipped: 0 })
+      expect(result).toEqual({
+        total: 2,
+        imported: 2,
+        skipped: 0,
+        reconciled: 0,
+      })
       const settled = await env.DB.prepare(
         'SELECT COUNT(*) AS n FROM transactions WHERE account_id = ? AND settled_at IS NOT NULL',
       )
@@ -532,5 +547,576 @@ describe('settled_at no import', () => {
       ],
     })
     expect(await settledDe('compra')).toBeNull()
+  })
+})
+
+// Item 3 (D6): a recorrente que lança sozinha cria o pendente no vencimento;
+// quando o extrato traz o mesmo pagamento, a linha importada ATUALIZA o
+// pendente em vez de virar uma segunda linha. Só com casamento único dos dois
+// lados — ambíguo, insere e deixa o pendente para o dono resolver.
+describe('conciliação recorrente × importação', () => {
+  type Pendente = {
+    id: string
+    account_id: string
+    amount_cents: number
+    purchase_date: string
+    bill_competence: string | null
+    settled_at: string | null
+    description: string
+    payee_id: string | null
+    category_id: string | null
+    is_business: number
+    imported_id: string | null
+    import_source: string | null
+    recurring_expense_id: string | null
+    transfer_id: string | null
+  }
+
+  async function recorrenteComPendente(
+    accountId: string,
+    opts: {
+      frequency?: Frequency
+      dayOfMonth?: number
+      startsOn?: string
+      today?: string
+      categoryId?: string | null
+      min?: number
+      max?: number
+    } = {},
+  ) {
+    const recorrente = await createRecurring(
+      env.DB,
+      {
+        description: 'Internet fibra',
+        scope: 'PF',
+        account_id: accountId,
+        category_id: opts.categoryId ?? null,
+        frequency: opts.frequency ?? 'monthly',
+        day_of_month: opts.dayOfMonth ?? 10,
+        amount_min_cents: opts.min ?? 9990,
+        amount_max_cents: opts.max ?? 12990,
+        starts_on: opts.startsOn ?? '2026-01-10',
+        auto_generate: true,
+      },
+      { today: '2026-07-01' },
+    )
+    await generateRecurringOccurrences(env.DB, {
+      today: opts.today ?? '2026-07-10',
+    })
+    const pendente = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE recurring_expense_id = ? ORDER BY purchase_date DESC',
+    )
+      .bind(recorrente.id)
+      .first<{ id: string }>()
+    if (!pendente) throw new Error('a geração não criou o pendente')
+    return { recorrente, pendenteId: pendente.id }
+  }
+
+  async function lerLancamento(id: string): Promise<Pendente> {
+    const row = await env.DB.prepare(
+      `SELECT id, account_id, amount_cents, purchase_date, bill_competence,
+              settled_at, description, payee_id, category_id, is_business,
+              imported_id, import_source, recurring_expense_id, transfer_id
+         FROM transactions WHERE id = ?`,
+    )
+      .bind(id)
+      .first<Pendente>()
+    if (!row) throw new Error(`lançamento ${id} sumiu`)
+    return row
+  }
+
+  const SEM_MUDANCA = {
+    amount_cents: -12990,
+    purchase_date: '2026-07-10',
+    settled_at: null,
+    imported_id: null,
+    import_source: null,
+  }
+
+  function importar(accountId: string, rows: LinhaImportada[]) {
+    return importTransactions(env.DB, {
+      account_id: accountId,
+      import_source: 'ofx',
+      rows,
+    })
+  }
+
+  it('casa e atualiza o pendente com os dados da importação, sem linha nova', async () => {
+    const acc = await seedAccount('acc-1')
+    const { recorrente, pendenteId } = await recorrenteComPendente(acc)
+
+    const result = await importar(acc, [
+      linha({
+        imported_id: 'fitid-net-07',
+        purchase_date: '2026-07-12',
+        amount_cents: -10990,
+        description: 'NET FIBRA 07/26',
+      }),
+    ])
+
+    expect(result).toEqual({ total: 1, imported: 0, skipped: 0, reconciled: 1 })
+    expect(await countTransactions(acc)).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject({
+      account_id: acc,
+      amount_cents: -10990,
+      purchase_date: '2026-07-12',
+      bill_competence: null,
+      settled_at: '2026-07-12',
+      description: 'NET FIBRA 07/26',
+      imported_id: 'fitid-net-07',
+      import_source: 'ofx',
+      recurring_expense_id: recorrente.id,
+    })
+  })
+
+  it('categoria: fica a do pendente; sem ela, vale a da linha. Favorecido e is_business da linha quando vierem', async () => {
+    const casa = await createCategory(env.DB, { name: 'Casa', kind: 'expense' })
+    const lazer = await createCategory(env.DB, {
+      name: 'Lazer',
+      kind: 'expense',
+    })
+    const operadora = await createPayee(env.DB, {
+      name: 'Operadora Teste',
+      kind: 'merchant',
+    })
+    const comCategoria = await seedAccount('acc-1')
+    const semCategoria = await seedAccount('acc-2')
+    const a = await recorrenteComPendente(comCategoria, { categoryId: casa.id })
+    const b = await recorrenteComPendente(semCategoria)
+
+    await importTransactions(env.DB, {
+      account_id: comCategoria,
+      import_source: 'ofx',
+      rows: [
+        {
+          ...linha({ imported_id: 'fitid-a', amount_cents: -10990 }),
+          category_id: lazer.id,
+          payee_id: operadora.id,
+          is_business: 1,
+        },
+      ],
+    })
+    await importTransactions(env.DB, {
+      account_id: semCategoria,
+      import_source: 'ofx',
+      rows: [
+        {
+          ...linha({ imported_id: 'fitid-b', amount_cents: -10990 }),
+          category_id: lazer.id,
+        },
+      ],
+    })
+
+    expect(await lerLancamento(a.pendenteId)).toMatchObject({
+      category_id: casa.id,
+      payee_id: operadora.id,
+      is_business: 1,
+    })
+    expect(await lerLancamento(b.pendenteId)).toMatchObject({
+      category_id: lazer.id,
+      payee_id: null,
+      is_business: 0,
+    })
+  })
+
+  it.each([
+    ['valor acima da faixa', { amount_cents: -13000 }],
+    ['valor abaixo da faixa', { amount_cents: -9989 }],
+    ['entrada, não saída', { amount_cents: 10990 }],
+    ['outra competência', { purchase_date: '2026-08-02' }],
+  ])(
+    '%s: não concilia, insere a linha e deixa o pendente como está',
+    async (_caso, over) => {
+      const acc = await seedAccount('acc-1')
+      const { pendenteId } = await recorrenteComPendente(acc)
+
+      const result = await importar(acc, [
+        linha({ imported_id: 'fitid-x', amount_cents: -10990, ...over }),
+      ])
+
+      expect(result).toEqual({
+        total: 1,
+        imported: 1,
+        skipped: 0,
+        reconciled: 0,
+      })
+      expect(await countTransactions(acc)).toBe(2)
+      expect(await lerLancamento(pendenteId)).toMatchObject(SEM_MUDANCA)
+    },
+  )
+
+  // A busca dos candidatos é por intervalo de datas largo (cobre as duas
+  // janelas); quem decide a competência é a janela da ocorrência.
+  it('mensal: um dia antes do vencimento, mas na competência anterior, não concilia', async () => {
+    const acc = await seedAccount('acc-1')
+    // Começa em agosto: sem o pendente de julho, que casaria de verdade.
+    const { pendenteId } = await recorrenteComPendente(acc, {
+      dayOfMonth: 1,
+      startsOn: '2026-08-01',
+      today: '2026-08-01',
+    })
+
+    const result = await importar(acc, [
+      linha({
+        imported_id: 'fitid-x',
+        amount_cents: -10990,
+        purchase_date: '2026-07-31',
+      }),
+    ])
+
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
+    expect((await lerLancamento(pendenteId)).imported_id).toBeNull()
+  })
+
+  it('o pendente de outra conta não concilia', async () => {
+    const daRecorrente = await seedAccount('acc-1')
+    const outra = await seedAccount('acc-2')
+    const { pendenteId } = await recorrenteComPendente(daRecorrente)
+
+    const result = await importar(outra, [
+      linha({ imported_id: 'fitid-x', amount_cents: -10990 }),
+    ])
+
+    expect(result.reconciled).toBe(0)
+    expect(await countTransactions(outra)).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject(SEM_MUDANCA)
+  })
+
+  it('dois pendentes candidatos para a mesma linha: não concilia nenhum', async () => {
+    const acc = await seedAccount('acc-1')
+    const a = await recorrenteComPendente(acc)
+    const b = await recorrenteComPendente(acc, { dayOfMonth: 5 })
+
+    const result = await importar(acc, [
+      linha({ imported_id: 'fitid-x', amount_cents: -10990 }),
+    ])
+
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
+    expect((await lerLancamento(a.pendenteId)).imported_id).toBeNull()
+    expect((await lerLancamento(b.pendenteId)).imported_id).toBeNull()
+  })
+
+  it('duas linhas candidatas para o mesmo pendente: não concilia nenhuma', async () => {
+    const acc = await seedAccount('acc-1')
+    const { pendenteId } = await recorrenteComPendente(acc)
+
+    const result = await importar(acc, [
+      linha({ imported_id: 'fitid-x', amount_cents: -10990 }),
+      linha({
+        imported_id: 'fitid-y',
+        amount_cents: -11990,
+        purchase_date: '2026-07-20',
+      }),
+    ])
+
+    expect(result).toEqual({ total: 2, imported: 2, skipped: 0, reconciled: 0 })
+    expect(await countTransactions(acc)).toBe(3)
+    expect(await lerLancamento(pendenteId)).toMatchObject(SEM_MUDANCA)
+  })
+
+  it('a linha que o dedupe descartou não conta na unicidade', async () => {
+    const acc = await seedAccount('acc-1')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    // A linha antiga entra numa importação ambígua (duas candidatas), então
+    // fica solta sem conciliar. Importada ANTES do pendente, a geração a
+    // vincularia à ocorrência e não haveria pendente para este teste.
+    const ambigua = await importar(acc, [
+      linha({
+        imported_id: 'fitid-antigo',
+        amount_cents: -10990,
+        purchase_date: '2026-07-02',
+      }),
+      linha({
+        imported_id: 'fitid-outro',
+        amount_cents: -10990,
+        purchase_date: '2026-07-03',
+      }),
+    ])
+    expect(ambigua.reconciled).toBe(0)
+
+    const result = await importar(acc, [
+      linha({
+        imported_id: 'fitid-antigo',
+        amount_cents: -10990,
+        purchase_date: '2026-07-02',
+      }),
+      linha({ imported_id: 'fitid-novo', amount_cents: -11990 }),
+    ])
+
+    expect(result).toEqual({ total: 2, imported: 0, skipped: 1, reconciled: 1 })
+    expect((await lerLancamento(pendenteId)).imported_id).toBe('fitid-novo')
+  })
+
+  it('pendente já liquidado à mão também concilia (a data de liquidação passa a ser a do extrato)', async () => {
+    const acc = await seedAccount('acc-1')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    await env.DB.prepare(
+      "UPDATE transactions SET settled_at = '2026-07-11' WHERE id = ?",
+    )
+      .bind(pendenteId)
+      .run()
+
+    const result = await importar(acc, [
+      linha({
+        imported_id: 'fitid-x',
+        amount_cents: -10990,
+        purchase_date: '2026-07-13',
+      }),
+    ])
+
+    expect(result.reconciled).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject({
+      settled_at: '2026-07-13',
+      imported_id: 'fitid-x',
+    })
+  })
+
+  it('reimportar o mesmo arquivo depois não duplica nem concilia de novo', async () => {
+    const acc = await seedAccount('acc-1')
+    await recorrenteComPendente(acc)
+    const rows = [linha({ imported_id: 'fitid-x', amount_cents: -10990 })]
+
+    await importar(acc, rows)
+    const segunda = await importar(acc, rows)
+
+    expect(segunda).toEqual({
+      total: 1,
+      imported: 0,
+      skipped: 1,
+      reconciled: 0,
+    })
+    expect(await countTransactions(acc)).toBe(1)
+  })
+
+  it('perna de transferência (contraparte própria) não concilia, e o pareamento continua', async () => {
+    await setNomesProprios(env.DB, ['Fulano de Teste'])
+    const acc = await seedAccount('acc-1')
+    const outra = await seedAccount('acc-2')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    await importar(outra, [
+      linha({
+        imported_id: 'entrada-1',
+        amount_cents: 10990,
+        purchase_date: '2026-07-12',
+        description: 'Pix recebido - Fulano de Teste',
+      }),
+    ])
+
+    const result = await importar(acc, [
+      linha({
+        imported_id: 'saida-1',
+        amount_cents: -10990,
+        purchase_date: '2026-07-12',
+        description: 'Pix enviado - Fulano de Teste',
+      }),
+    ])
+
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
+    expect(await lerLancamento(pendenteId)).toMatchObject(SEM_MUDANCA)
+    const saida = await env.DB.prepare(
+      "SELECT transfer_id FROM transactions WHERE imported_id = 'saida-1'",
+    ).first<{ transfer_id: string | null }>()
+    expect(saida?.transfer_id).not.toBeNull()
+  })
+
+  it('semanal: casa até 3 dias do vencimento, não com 4', async () => {
+    const tres = await seedAccount('acc-1')
+    const quatro = await seedAccount('acc-2')
+    const semanal = {
+      frequency: 'weekly' as const,
+      dayOfMonth: 6,
+      startsOn: '2026-07-06',
+      today: '2026-07-06',
+    }
+    const a = await recorrenteComPendente(tres, semanal)
+    const b = await recorrenteComPendente(quatro, semanal)
+
+    const casou = await importar(tres, [
+      linha({
+        imported_id: 'fitid-a',
+        amount_cents: -10990,
+        purchase_date: '2026-07-09',
+      }),
+    ])
+    const naoCasou = await importar(quatro, [
+      linha({
+        imported_id: 'fitid-b',
+        amount_cents: -10990,
+        purchase_date: '2026-07-10',
+      }),
+    ])
+
+    expect(casou.reconciled).toBe(1)
+    expect((await lerLancamento(a.pendenteId)).purchase_date).toBe('2026-07-09')
+    expect(naoCasou.reconciled).toBe(0)
+    expect((await lerLancamento(b.pendenteId)).imported_id).toBeNull()
+  })
+
+  it('cartão: o conciliado ganha bill_competence e settled_at como a importação calcularia', async () => {
+    const cartao = await seedAccount('acc-cartao', 'credit_card', 25, 5)
+    const { pendenteId } = await recorrenteComPendente(cartao, {
+      dayOfMonth: 28,
+      today: '2026-07-28',
+    })
+    expect((await lerLancamento(pendenteId)).bill_competence).toBe('2026-08')
+
+    const result = await importar(cartao, [
+      linha({
+        imported_id: 'fitid-x',
+        amount_cents: -10990,
+        purchase_date: '2026-07-20',
+      }),
+    ])
+
+    expect(result.reconciled).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject({
+      purchase_date: '2026-07-20',
+      bill_competence: '2026-07',
+      settled_at: null,
+    })
+  })
+
+  // A importação calcula settled_at NULL para linha de cartão. Gravar isso
+  // por cima de um pendente que o pagamento da fatura já liquidou reabriria a
+  // fatura paga: payBill voltaria a ver saldo aberto e deixaria pagar de novo
+  // (o dinheiro sairia duas vezes), e commitments() voltaria a somá-la.
+  it('cartão: pendente já liquidado pelo pagamento da fatura continua liquidado e na mesma fatura', async () => {
+    const cartao = await seedAccount('acc-cartao', 'credit_card', 25, 5)
+    const corrente = await seedAccount('acc-corrente')
+    const { pendenteId } = await recorrenteComPendente(cartao)
+    expect((await lerLancamento(pendenteId)).bill_competence).toBe('2026-07')
+    await payBill(env.DB, {
+      card_account_id: cartao,
+      competence: '2026-07',
+      paid_on: '2026-08-05',
+      from_account_id: corrente,
+    })
+
+    // 27/07 passa do fechamento (dia 25): a importação jogaria a linha na
+    // fatura de agosto.
+    const result = await importTransactions(env.DB, {
+      account_id: cartao,
+      import_source: 'pdf',
+      rows: [
+        linha({
+          imported_id: 'fitid-x',
+          amount_cents: -10990,
+          purchase_date: '2026-07-27',
+        }),
+      ],
+    })
+
+    expect(result.reconciled).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject({
+      amount_cents: -10990,
+      imported_id: 'fitid-x',
+      settled_at: '2026-08-05',
+      bill_competence: '2026-07',
+    })
+    await expect(
+      payBill(env.DB, {
+        card_account_id: cartao,
+        competence: '2026-07',
+        paid_on: '2026-08-06',
+        from_account_id: corrente,
+      }),
+    ).rejects.toMatchObject({ code: 'already_paid' })
+  })
+
+  it('corrida: pendente que mudou de conta entre a leitura e a escrita não é conciliado, e a linha entra normalmente', async () => {
+    const acc = await seedAccount('acc-1')
+    const outra = await seedAccount('acc-2')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    const mudouDeConta = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'batch') {
+          return async (stmts: D1PreparedStatement[]) => {
+            await alvo
+              .prepare('UPDATE transactions SET account_id = ? WHERE id = ?')
+              .bind(outra, pendenteId)
+              .run()
+            return alvo.batch(stmts)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+
+    const result = await importTransactions(mudouDeConta, {
+      account_id: acc,
+      import_source: 'ofx',
+      rows: [linha({ imported_id: 'fitid-x', amount_cents: -10990 })],
+    })
+
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
+    expect(await countTransactions(acc)).toBe(1)
+    expect(await lerLancamento(pendenteId)).toMatchObject({
+      account_id: outra,
+      imported_id: null,
+    })
+  })
+
+  it('corrida: pendente que ganhou outro imported_id entre a leitura e a escrita fica como está, e a linha entra normalmente', async () => {
+    const acc = await seedAccount('acc-1')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    const outroImport = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'batch') {
+          return async (stmts: D1PreparedStatement[]) => {
+            await alvo
+              .prepare(
+                "UPDATE transactions SET imported_id = 'fitid-outro' WHERE id = ?",
+              )
+              .bind(pendenteId)
+              .run()
+            return alvo.batch(stmts)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+
+    const result = await importTransactions(outroImport, {
+      account_id: acc,
+      import_source: 'ofx',
+      rows: [linha({ imported_id: 'fitid-x', amount_cents: -10990 })],
+    })
+
+    expect(result).toEqual({ total: 1, imported: 1, skipped: 0, reconciled: 0 })
+    expect(await countTransactions(acc)).toBe(2)
+    expect((await lerLancamento(pendenteId)).imported_id).toBe('fitid-outro')
+  })
+
+  it('corrida com a mesma linha (outra importação do mesmo arquivo já conciliou): nada novo, conta como pulada', async () => {
+    const acc = await seedAccount('acc-1')
+    const { pendenteId } = await recorrenteComPendente(acc)
+    const mesmoArquivo = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'batch') {
+          return async (stmts: D1PreparedStatement[]) => {
+            await alvo
+              .prepare(
+                "UPDATE transactions SET imported_id = 'fitid-x' WHERE id = ?",
+              )
+              .bind(pendenteId)
+              .run()
+            return alvo.batch(stmts)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+
+    const result = await importTransactions(mesmoArquivo, {
+      account_id: acc,
+      import_source: 'ofx',
+      rows: [linha({ imported_id: 'fitid-x', amount_cents: -10990 })],
+    })
+
+    expect(result).toEqual({ total: 1, imported: 0, skipped: 1, reconciled: 0 })
+    expect(await countTransactions(acc)).toBe(1)
   })
 })

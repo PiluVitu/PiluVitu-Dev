@@ -170,8 +170,8 @@ function stmtTx(
 
 // --------------------------------------------------------------------------
 
-describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018 — tabelas', () => {
-  it('cria exatamente as 22 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018)', async () => {
+describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018+0019 — tabelas', () => {
+  it('cria exatamente as 23 tabelas do modelo (10 do 0001 + 4 do better auth + 1 settings do 0005 + 1 recurring_expenses do 0006 + 1 insights do 0007 + 1 rules do 0009 + 1 uso_ia do 0015 + 1 passkey do 0016 + 1 budgets do 0017 + 1 savings_goals do 0018 + 1 recurring_occurrences do 0019)', async () => {
     const { results } = await DB.prepare(
       `SELECT name FROM sqlite_master
         WHERE type = 'table'
@@ -196,6 +196,7 @@ describe('migrations 0001+0002+0005+0006+0007+0009+0015+0016+0017+0018 — tabel
       'passkey',
       'payees',
       'recurring_expenses',
+      'recurring_occurrences',
       'rules',
       'savings_goals',
       'session',
@@ -1175,5 +1176,187 @@ describe('migration 0018 — savings_goals (STRICT, CHECKs, UNIQUE por conta)', 
         .bind(NOW, NOW)
         .run(),
     ).rejects.toThrow(/FOREIGN KEY|constraint/i)
+  })
+})
+
+describe('migration 0019 — recorrência automática (frequency, generate_since, recurring_occurrences)', () => {
+  async function novaTx(id: string, accountId: string): Promise<void> {
+    await DB.prepare(
+      `INSERT INTO transactions
+         (id, account_id, amount_cents, currency, purchase_date, description,
+          is_business, recurring_expense_id, created_at, updated_at)
+       VALUES (?, ?, -9990, 'BRL', '2026-08-10', 'Internet fibra', 0, NULL, ?, ?)`,
+    )
+      .bind(id, accountId, NOW, NOW)
+      .run()
+  }
+
+  function stmtOcorrencia(
+    recorrente: string,
+    chave: string,
+    txId: string | null,
+    origem = 'gerado',
+  ): D1PreparedStatement {
+    return DB.prepare(
+      `INSERT INTO recurring_occurrences
+         (recurring_expense_id, occurrence_key, due_date, transaction_id,
+          origin, created_at)
+       VALUES (?, ?, '2026-08-10', ?, ?, ?)`,
+    ).bind(recorrente, chave, txId, origem, NOW)
+  }
+
+  it('recorrente existente (INSERT sem as colunas novas) fica mensal e sem geração — o deploy não muda nada', async () => {
+    await novaRecorrente('r-antiga')
+    const row = await DB.prepare(
+      `SELECT frequency, generate_since FROM recurring_expenses WHERE id = 'r-antiga'`,
+    ).first<{ frequency: string; generate_since: string | null }>()
+    expect(row).toEqual({ frequency: 'monthly', generate_since: null })
+  })
+
+  it('CHECK frequency aceita as quatro e recusa qualquer outra', async () => {
+    for (const f of ['weekly', 'biweekly', 'monthly', 'annual']) {
+      await DB.prepare(
+        `INSERT INTO recurring_expenses
+           (id, description, scope, day_of_month, amount_min_cents,
+            amount_max_cents, starts_on, frequency, created_at, updated_at)
+         VALUES (?, 'Academia', 'PF', 10, 9990, 9990, '2026-01-01', ?, ?, ?)`,
+      )
+        .bind(`r-${f}`, f, NOW, NOW)
+        .run()
+    }
+    await expect(
+      DB.prepare(
+        `INSERT INTO recurring_expenses
+           (id, description, scope, day_of_month, amount_min_cents,
+            amount_max_cents, starts_on, frequency, created_at, updated_at)
+         VALUES ('r-daily', 'Academia', 'PF', 10, 9990, 9990, '2026-01-01',
+                 'daily', ?, ?)`,
+      )
+        .bind(NOW, NOW)
+        .run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('PK (recorrente, chave) barra a mesma ocorrência duas vezes — é a idempotência da geração', async () => {
+    await novaRecorrente('r-net')
+    await stmtOcorrencia('r-net', '2026-08', null).run()
+    await expect(
+      stmtOcorrencia('r-net', '2026-08', null).run(),
+    ).rejects.toThrow(/UNIQUE constraint failed|PRIMARY KEY/)
+    // outra competência da mesma recorrente entra normalmente
+    await stmtOcorrencia('r-net', '2026-09', null).run()
+  })
+
+  it('PK violada aborta o db.batch inteiro: o lançamento do mesmo batch não fica', async () => {
+    // A geração grava [lançamento, ocorrência] num batch só. Se outra
+    // execução já gravou a ocorrência, o batch inteiro volta e nenhum
+    // lançamento duplicado sobra.
+    await novaConta('c-net')
+    await novaRecorrente('r-net')
+    await stmtOcorrencia('r-net', '2026-08', null).run()
+
+    await expect(
+      DB.batch([
+        DB.prepare(
+          `INSERT INTO transactions
+             (id, account_id, amount_cents, currency, purchase_date,
+              description, is_business, recurring_expense_id, created_at,
+              updated_at)
+           VALUES ('t-dup', 'c-net', -9990, 'BRL', '2026-08-10',
+                   'Internet fibra', 0, 'r-net', ?, ?)`,
+        ).bind(NOW, NOW),
+        stmtOcorrencia('r-net', '2026-08', 't-dup'),
+      ]),
+    ).rejects.toThrow(/UNIQUE constraint failed|PRIMARY KEY/)
+
+    const tx = await DB.prepare(
+      `SELECT count(*) AS n FROM transactions WHERE id = 't-dup'`,
+    ).first<{ n: number }>()
+    expect(tx?.n).toBe(0)
+  })
+
+  it("CHECK origin aceita 'gerado' e 'vinculado' e recusa outra", async () => {
+    await novaRecorrente('r-net')
+    await stmtOcorrencia('r-net', '2026-08', null, 'gerado').run()
+    await stmtOcorrencia('r-net', '2026-09', null, 'vinculado').run()
+    await expect(
+      stmtOcorrencia('r-net', '2026-10', null, 'manual').run(),
+    ).rejects.toThrow(/CHECK constraint failed/)
+  })
+
+  it('recurring_occurrences é STRICT', async () => {
+    const t = await DB.prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'recurring_occurrences'`,
+    ).first<{ sql: string }>()
+    expect(t?.sql).toMatch(/\)\s*STRICT\s*$/)
+  })
+
+  it('⚠️ apagar o lançamento gerado deixa a ocorrência com transaction_id NULO — é o que impede o Cron de recriá-lo', async () => {
+    await novaConta('c-net')
+    await novaRecorrente('r-net')
+    await novaTx('t-gerado', 'c-net')
+    await stmtOcorrencia('r-net', '2026-08', 't-gerado').run()
+
+    await DB.prepare(`DELETE FROM transactions WHERE id = 't-gerado'`).run()
+
+    const row = await DB.prepare(
+      `SELECT occurrence_key, transaction_id, origin FROM recurring_occurrences
+        WHERE recurring_expense_id = 'r-net'`,
+    ).first()
+    expect(row).toEqual({
+      occurrence_key: '2026-08',
+      transaction_id: null,
+      origin: 'gerado',
+    })
+  })
+
+  it('apagar a recorrente apaga as ocorrências dela (CASCADE) e deixa o lançamento vivo', async () => {
+    await novaConta('c-net')
+    await novaRecorrente('r-net')
+    await novaTx('t-gerado', 'c-net')
+    await stmtOcorrencia('r-net', '2026-08', 't-gerado').run()
+
+    await DB.prepare(`DELETE FROM recurring_expenses WHERE id = 'r-net'`).run()
+
+    const occ = await DB.prepare(
+      `SELECT count(*) AS n FROM recurring_occurrences`,
+    ).first<{ n: number }>()
+    expect(occ?.n).toBe(0)
+    const tx = await DB.prepare(
+      `SELECT count(*) AS n FROM transactions WHERE id = 't-gerado'`,
+    ).first<{ n: number }>()
+    expect(tx?.n).toBe(1)
+  })
+
+  it('FK barra ocorrência de recorrente inexistente e de lançamento inexistente', async () => {
+    await expect(
+      stmtOcorrencia('r-fantasma', '2026-08', null).run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+    await novaRecorrente('r-net')
+    await expect(
+      stmtOcorrencia('r-net', '2026-08', 't-fantasma').run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+  })
+
+  it('índice parcial em transaction_id existe e a busca por lançamento o usa', async () => {
+    const idx = await DB.prepare(
+      `SELECT sql FROM sqlite_master
+        WHERE type = 'index' AND tbl_name = 'recurring_occurrences'
+          AND sql IS NOT NULL`,
+    ).all<{ sql: string }>()
+    expect(idx.results).toHaveLength(1)
+    expect(idx.results[0].sql).toContain('(transaction_id)')
+    expect(idx.results[0].sql).toContain('WHERE transaction_id IS NOT NULL')
+
+    // A mesma busca que o ON DELETE SET NULL faz ao apagar um lançamento.
+    const plano = await DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT rowid FROM recurring_occurrences WHERE transaction_id = ?`,
+    )
+      .bind('t-qualquer')
+      .all<{ detail: string }>()
+    const detalhe = plano.results.map((r) => r.detail).join(' | ')
+    expect(detalhe).toMatch(/USING (COVERING )?INDEX/)
+    expect(detalhe).not.toMatch(/^SCAN recurring_occurrences$/)
   })
 })

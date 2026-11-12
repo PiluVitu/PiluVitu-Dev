@@ -5,6 +5,7 @@ import { createAccount } from '../domain/accounts'
 import { archiveCategory, createCategory } from '../domain/categories'
 import { createInstallmentPlan } from '../domain/installments'
 import { createRecurring } from '../domain/recurring'
+import { generateRecurringOccurrences } from '../domain/recurring-auto'
 import {
   buildListTransactionsQuery,
   createTransaction,
@@ -364,6 +365,51 @@ describe('rotas de lancamentos', () => {
       .bind(acc.id)
       .all()
     expect(results).toHaveLength(0)
+  })
+
+  // Item 3 (D7): a recorrente que lança sozinha já criou o pendente desta
+  // ocorrência; lançar de novo à mão é recusado com um código próprio, que a
+  // tela Lançar mostra como as outras recusas.
+  it('POST /api/transactions vinculado a uma ocorrência que já tem pendente gerado devolve 422 recurring_occurrence_pending, sem gravar', async () => {
+    const acc = await contaCorrente('Conta rota pendente gerado')
+    const recorrente = await createRecurring(
+      env.DB,
+      {
+        description: 'Internet fibra',
+        scope: 'PJ',
+        account_id: acc.id,
+        day_of_month: 10,
+        amount_min_cents: 9990,
+        amount_max_cents: 12990,
+        starts_on: '2026-01-10',
+        auto_generate: true,
+      },
+      { today: '2026-08-01' },
+    )
+    await generateRecurringOccurrences(env.DB, { today: '2026-08-10' })
+
+    const res = await post('/api/transactions', {
+      account_id: acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-08-11',
+      description: 'Internet fibra',
+      settled_at: '2026-08-11',
+      recurring_expense_id: recorrente.id,
+    })
+
+    expect(res.status).toBe(422)
+    const body = await envelope<null>(res)
+    expect(body.ok).toBe(false)
+    expect(body.notifications[0].code).toBe('recurring_occurrence_pending')
+    expect(body.notifications[0].message).toBe(
+      'Esta ocorrência já tem um lançamento pendente criado pela recorrente. Marque o pendente como pago no extrato (ou edite o valor) em vez de lançar de novo.',
+    )
+    const { results } = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE account_id = ?',
+    )
+      .bind(acc.id)
+      .all()
+    expect(results).toHaveLength(1)
   })
 
   it('GET /api/transactions com limit invalido devolve 422', async () => {

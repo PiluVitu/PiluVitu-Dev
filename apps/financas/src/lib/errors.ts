@@ -40,3 +40,13 @@ export function friendlyConstraintMessage(raw: string): string {
 export function logConstraintError(context: string, raw: string): void {
   console.error(`[financas] ${context}: ${raw}`)
 }
+
+/** Só o código do erro (`SQLITE_*`, `D1_*` ou o nome), para log sem texto livre. */
+export function errorCode(err: unknown): string {
+  if (!(err instanceof Error)) return 'erro'
+  return (
+    /\bSQLITE_[A-Z_]+/.exec(err.message)?.[0] ??
+    /\bD1_[A-Z_]+/.exec(err.message)?.[0] ??
+    err.name
+  )
+}

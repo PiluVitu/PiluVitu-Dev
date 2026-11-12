@@ -5,6 +5,7 @@ import {
   nowIsoUtc,
 } from '../lib/dates'
 import { newId } from '../lib/ids'
+import { occurrenceMatchWindow, type Frequency } from './recurring'
 
 export type Transaction = {
   id: string
@@ -75,7 +76,7 @@ const TX_COLUMNS = `id, account_id, amount_cents, currency, amount_original_cent
 // multi-row so aparece no plano de parcelas (Task 8).
 const TX_VALUES = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 
-const INSERT_TX = `INSERT INTO transactions (${TX_COLUMNS}) VALUES ${TX_VALUES}`
+export const INSERT_TX = `INSERT INTO transactions (${TX_COLUMNS}) VALUES ${TX_VALUES}`
 
 /**
  * Mesmo INSERT, mas **condicionado a ainda existir fatura a pagar**.
@@ -106,7 +107,7 @@ const INSERT_TX_SE_HA_FATURA = `INSERT INTO transactions (${TX_COLUMNS})
         AND parent_id       IS NULL
    )`
 
-function txBinds(
+export function txBinds(
   id: string,
   input: NewTransaction,
   transfer_id: string | null,
@@ -136,6 +137,46 @@ function txBinds(
   ]
 }
 
+export class RecurringOccurrencePendingError extends Error {
+  readonly code = 'recurring_occurrence_pending'
+  constructor() {
+    super(
+      'Esta ocorrência já tem um lançamento pendente criado pela recorrente. Marque o pendente como pago no extrato (ou edite o valor) em vez de lançar de novo.',
+    )
+    this.name = 'RecurringOccurrencePendingError'
+  }
+}
+
+/** Ver "Conciliação recorrente × importação" no CLAUDE.md (D7). */
+async function assertNoGeneratedPending(
+  db: D1Database,
+  recurringId: string,
+  purchaseDate: string,
+): Promise<void> {
+  const recurring = await db
+    .prepare('SELECT frequency FROM recurring_expenses WHERE id = ?')
+    .bind(recurringId)
+    .first<{ frequency: Frequency }>()
+  if (!recurring) return
+
+  const { from, to } = occurrenceMatchWindow(recurring.frequency, purchaseDate)
+  const pending = await db
+    .prepare(
+      `SELECT 1 AS found
+         FROM recurring_occurrences o
+         JOIN transactions t ON t.id = o.transaction_id
+        WHERE o.recurring_expense_id = ?
+          AND o.origin = 'gerado'
+          AND o.due_date >= ?
+          AND o.due_date <= ?
+          AND t.imported_id IS NULL
+        LIMIT 1`,
+    )
+    .bind(recurringId, from, to)
+    .first()
+  if (pending) throw new RecurringOccurrencePendingError()
+}
+
 export async function createTransaction(
   db: D1Database,
   input: NewTransaction,
@@ -145,6 +186,13 @@ export async function createTransaction(
     .bind(input.account_id)
     .first<{ kind: string; closing_day: number | null }>()
   if (!account) throw new RangeError(`conta ${input.account_id} nao existe`)
+  if (input.recurring_expense_id) {
+    await assertNoGeneratedPending(
+      db,
+      input.recurring_expense_id,
+      input.purchase_date,
+    )
+  }
 
   // A regra de fechamento mora na CONTA, nunca no chamador: compra 28/07 num
   // cartao que fecha dia 25 cai na fatura '2026-08'. Fora de credit_card,

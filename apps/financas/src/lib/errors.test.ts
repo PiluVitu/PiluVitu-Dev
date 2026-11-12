@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { friendlyConstraintMessage, logConstraintError } from './errors'
+import {
+  errorCode,
+  friendlyConstraintMessage,
+  logConstraintError,
+} from './errors'
 
 describe('friendlyConstraintMessage', () => {
   it('traduz gatilho de teto de alocacao (I1/I2)', () => {
@@ -50,5 +54,27 @@ describe('logConstraintError', () => {
       '[financas] POST /accounts: D1_ERROR: algo cru',
     )
     spy.mockRestore()
+  })
+})
+
+// O Cron loga só o código: a mensagem crua é texto livre, e o log de
+// produção não pode levar descrição nem valor de lançamento.
+describe('errorCode', () => {
+  it('extrai o código SQLITE_* ou D1_* da mensagem, sem o resto do texto', () => {
+    expect(
+      errorCode(
+        new Error('D1_ERROR: UNIQUE constraint failed: x.y: SQLITE_CONSTRAINT'),
+      ),
+    ).toBe('SQLITE_CONSTRAINT')
+    expect(
+      errorCode(new Error('D1_ERROR: no such table: recurring_expenses')),
+    ).toBe('D1_ERROR')
+  })
+
+  it('sem código na mensagem, devolve só o nome do erro', () => {
+    expect(errorCode(new RangeError('Internet fibra 129,90'))).toBe(
+      'RangeError',
+    )
+    expect(errorCode('texto solto')).toBe('erro')
   })
 })

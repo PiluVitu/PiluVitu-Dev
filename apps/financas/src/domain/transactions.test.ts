@@ -7,6 +7,7 @@ import { addDebtItem, createDebt, payDebt } from './debts'
 import { createInstallmentPlan } from './installments'
 import { createPayee } from './payees'
 import { createRecurring } from './recurring'
+import { generateRecurringOccurrences } from './recurring-auto'
 import { byCategory, commitments, DEFAULT_FIXED_NET_CENTS } from './reports'
 import {
   createTransaction,
@@ -17,6 +18,7 @@ import {
   listTransactions,
   payBill,
   PayBillError,
+  RecurringOccurrencePendingError,
   settleTransaction,
   TransactionHasOwnerError,
   unsettleTransaction,
@@ -217,6 +219,194 @@ describe('createTransaction', () => {
       .bind(acc.id)
       .all()
     expect(results).toHaveLength(0)
+  })
+})
+
+// Item 3 (D7): a recorrente que lança sozinha já criou o pendente desta
+// ocorrência. Lançar o mesmo pagamento à mão, vinculado a ela, contaria duas
+// vezes; a recusa manda o dono marcar o pendente como pago (ou editar o
+// valor) no extrato.
+describe('createTransaction — ocorrência com pendente gerado (recorrência automática)', () => {
+  async function recorrenteComPendente(
+    frequency: 'monthly' | 'weekly' = 'monthly',
+  ) {
+    const acc = await contaCorrente('Conta da recorrente')
+    const recorrente = await createRecurring(
+      env.DB,
+      {
+        description: 'Internet fibra',
+        scope: 'PF',
+        account_id: acc.id,
+        frequency,
+        day_of_month: 10,
+        amount_min_cents: 9990,
+        amount_max_cents: 12990,
+        starts_on: '2026-01-10',
+        auto_generate: true,
+      },
+      { today: '2026-08-01' },
+    )
+    // 10/08/2026 é segunda; a semanal também vence nesse dia.
+    if (frequency === 'weekly') {
+      await env.DB.prepare(
+        "UPDATE recurring_expenses SET starts_on = '2026-08-10' WHERE id = ?",
+      )
+        .bind(recorrente.id)
+        .run()
+    }
+    await generateRecurringOccurrences(env.DB, { today: '2026-08-10' })
+    const pendente = await env.DB.prepare(
+      'SELECT id FROM transactions WHERE recurring_expense_id = ?',
+    )
+      .bind(recorrente.id)
+      .first<{ id: string }>()
+    if (!pendente) throw new Error('a geração não criou o pendente')
+    return { acc, recorrente, pendenteId: pendente.id }
+  }
+
+  async function contarDaRecorrente(recurringId: string): Promise<number> {
+    const row = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM transactions WHERE recurring_expense_id = ?',
+    )
+      .bind(recurringId)
+      .first<{ n: number }>()
+    return row?.n ?? 0
+  }
+
+  it('lançar à mão a mesma ocorrência é recusado com recurring_occurrence_pending, sem gravar', async () => {
+    const { acc, recorrente } = await recorrenteComPendente()
+
+    const tentativa = createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-08-25',
+      description: 'Internet fibra',
+      settled_at: '2026-08-25',
+      recurring_expense_id: recorrente.id,
+    })
+
+    await expect(tentativa).rejects.toBeInstanceOf(
+      RecurringOccurrencePendingError,
+    )
+    await expect(tentativa).rejects.toMatchObject({
+      code: 'recurring_occurrence_pending',
+      message: expect.stringMatching(/Marque o pendente como pago/),
+    })
+    expect(await contarDaRecorrente(recorrente.id)).toBe(1)
+  })
+
+  it('outra competência, ou sem vínculo com a recorrente, segue como hoje', async () => {
+    const { acc, recorrente } = await recorrenteComPendente()
+
+    const setembro = await createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-09-10',
+      description: 'Internet fibra',
+      recurring_expense_id: recorrente.id,
+    })
+    const semVinculo = await createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-08-10',
+      description: 'Internet fibra',
+    })
+
+    expect(setembro.recurring_expense_id).toBe(recorrente.id)
+    expect(semVinculo.recurring_expense_id).toBeNull()
+  })
+
+  it('pendente apagado, ou já conciliado pela importação, não bloqueia mais', async () => {
+    const apagado = await recorrenteComPendente()
+    await deleteTransaction(env.DB, apagado.pendenteId)
+    const depoisDeApagar = await createTransaction(env.DB, {
+      account_id: apagado.acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-08-10',
+      description: 'Internet fibra',
+      recurring_expense_id: apagado.recorrente.id,
+    })
+    expect(depoisDeApagar.recurring_expense_id).toBe(apagado.recorrente.id)
+
+    const conciliado = await recorrenteComPendente()
+    await env.DB.prepare(
+      "UPDATE transactions SET imported_id = 'fitid-1', import_source = 'ofx' WHERE id = ?",
+    )
+      .bind(conciliado.pendenteId)
+      .run()
+    await expect(
+      createTransaction(env.DB, {
+        account_id: conciliado.acc.id,
+        amount_cents: -11990,
+        purchase_date: '2026-08-12',
+        description: 'Internet fibra',
+        recurring_expense_id: conciliado.recorrente.id,
+      }),
+    ).resolves.toMatchObject({ recurring_expense_id: conciliado.recorrente.id })
+  })
+
+  // Só o pendente que a recorrente criou bloqueia. A ocorrência 'vinculado'
+  // aponta para um lançamento que o próprio dono fez; um segundo lançamento
+  // vinculado na mesma competência é escolha dele, e a mensagem "já tem um
+  // pendente criado pela recorrente" seria falsa.
+  it('ocorrência vinculada a um lançamento manual não bloqueia outro lançamento vinculado', async () => {
+    const acc = await contaCorrente('Conta da recorrente')
+    const recorrente = await createRecurring(
+      env.DB,
+      {
+        description: 'Internet fibra',
+        scope: 'PF',
+        account_id: acc.id,
+        day_of_month: 10,
+        amount_min_cents: 9990,
+        amount_max_cents: 12990,
+        starts_on: '2026-01-10',
+        auto_generate: true,
+      },
+      { today: '2026-08-01' },
+    )
+    await createTransaction(env.DB, {
+      account_id: acc.id,
+      amount_cents: -11990,
+      purchase_date: '2026-08-05',
+      description: 'Internet fibra',
+      recurring_expense_id: recorrente.id,
+    })
+    expect(
+      await generateRecurringOccurrences(env.DB, { today: '2026-08-10' }),
+    ).toMatchObject({ gerados: 0, vinculados: 1 })
+
+    await expect(
+      createTransaction(env.DB, {
+        account_id: acc.id,
+        amount_cents: -2000,
+        purchase_date: '2026-08-20',
+        description: 'Internet fibra',
+        recurring_expense_id: recorrente.id,
+      }),
+    ).resolves.toMatchObject({ recurring_expense_id: recorrente.id })
+  })
+
+  it('semanal: a mesma ocorrência é o vencimento ±3 dias', async () => {
+    const { acc, recorrente } = await recorrenteComPendente('weekly')
+    const lancar = (purchase_date: string) =>
+      createTransaction(env.DB, {
+        account_id: acc.id,
+        amount_cents: -11990,
+        purchase_date,
+        description: 'Internet fibra',
+        recurring_expense_id: recorrente.id,
+      })
+
+    await expect(lancar('2026-08-13')).rejects.toBeInstanceOf(
+      RecurringOccurrencePendingError,
+    )
+    await expect(lancar('2026-08-07')).rejects.toBeInstanceOf(
+      RecurringOccurrencePendingError,
+    )
+    await expect(lancar('2026-08-14')).resolves.toMatchObject({
+      purchase_date: '2026-08-14',
+    })
   })
 })
 

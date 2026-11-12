@@ -28,8 +28,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // Insight do mês que fechou, todo dia 1 às 09:00 de Teresina (src/scheduled.ts).
-  "triggers": { "crons": ["0 12 1 * *"] },
+  // src/scheduled.ts despacha por controller.cron: o insight do mês que
+  // fechou (dia 1, 09:00 em Teresina) e a recorrência que lança sozinha
+  // (todo dia, 06:00 em Teresina).
+  "triggers": { "crons": ["0 12 1 * *", "0 9 * * *"] },
 
   // Static Assets é GRÁTIS, ilimitado e FORA da cota de 100.000 requests/dia.
   // 'run_worker_first' é o que garante, de forma documentada, que /api/* chega

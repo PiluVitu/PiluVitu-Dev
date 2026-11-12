@@ -8,6 +8,7 @@ import {
   listTransactions,
   payBill,
   PayBillError,
+  RecurringOccurrencePendingError,
   settleTransaction,
   TransactionHasOwnerError,
   unsettleTransaction,
@@ -158,6 +159,8 @@ transactionsRoutes.post('/transactions', async (c) => {
   try {
     return okJson(await createTransaction(c.env.DB, body), 201)
   } catch (e) {
+    if (e instanceof RecurringOccurrencePendingError)
+      return errJson(422, e.code, e.message)
     if (e instanceof RangeError) return errJson(422, 'invalid_entry', e.message)
     if (isConstraint(e)) return constraintResponse('POST /transactions', e)
     throw e

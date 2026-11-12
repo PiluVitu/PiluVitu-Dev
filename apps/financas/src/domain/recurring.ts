@@ -1,7 +1,11 @@
 import {
+  addDays,
   addMonthsToCompetence,
   competenceDueDate,
+  daysBetween,
+  isRealCalendarDate,
   nowIsoUtc,
+  todayInTeresina,
 } from '../lib/dates'
 import { newId } from '../lib/ids'
 import type { Scope } from './accounts'
@@ -13,13 +17,21 @@ import type { Scope } from './accounts'
  * nunca acontece. Valor fixo (Starlink R$ 189) é só o caso `min = max`, sem
  * um tipo "fixo" separado — duplicaria caminho de código pra nada.
  *
- * `recurring_expenses` (migration 0006) guarda só a DEFINIÇÃO. Este arquivo
- * NUNCA escreve em `transactions` — a recorrente é uma EXPECTATIVA, nunca um
- * fato (§3). `projectRecurring` calcula na LEITURA, dentro da janela pedida;
- * quando o dinheiro sai de verdade, existe um `transaction` real, lançado à
- * mão ou importado (fatia ②), opcionalmente vinculado via
- * `transactions.recurring_expense_id`.
+ * `recurring_expenses` (migration 0006) guarda só a DEFINIÇÃO, e este
+ * arquivo nunca escreve em `transactions`: `projectRecurring` calcula na
+ * leitura. O lançamento pendente da recorrente que "lança sozinha"
+ * (migration 0019) é escrito por `recurring-auto.ts`.
  */
+
+const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'annual'] as const
+export type Frequency = (typeof FREQUENCIES)[number]
+
+function isFrequency(value: unknown): value is Frequency {
+  return (
+    typeof value === 'string' &&
+    (FREQUENCIES as readonly string[]).includes(value)
+  )
+}
 
 export type RecurringExpense = {
   id: string
@@ -27,6 +39,7 @@ export type RecurringExpense = {
   category_id: string | null
   account_id: string | null
   scope: Scope
+  frequency: Frequency
   day_of_month: number
   amount_min_cents: number
   amount_max_cents: number
@@ -34,6 +47,7 @@ export type RecurringExpense = {
   ends_on: string | null
   active: number
   notes: string | null
+  generate_since: string | null
   created_at: string
   updated_at: string
 }
@@ -43,13 +57,16 @@ export type NewRecurringExpense = {
   category_id?: string | null
   account_id?: string | null
   scope: Scope
-  day_of_month: number
+  frequency?: Frequency
+  /** Obrigatório em mensal e anual; em semanal e quinzenal, ausente vira o dia de `starts_on`. */
+  day_of_month?: number
   amount_min_cents: number
   amount_max_cents: number
   starts_on: string
   ends_on?: string | null
   active?: 0 | 1
   notes?: string | null
+  auto_generate?: boolean
 }
 
 export type RecurringPatch = Partial<{
@@ -57,6 +74,7 @@ export type RecurringPatch = Partial<{
   category_id: string | null
   account_id: string | null
   scope: Scope
+  frequency: Frequency
   day_of_month: number
   amount_min_cents: number
   amount_max_cents: number
@@ -64,11 +82,14 @@ export type RecurringPatch = Partial<{
   ends_on: string | null
   active: 0 | 1
   notes: string | null
+  auto_generate: boolean
 }>
 
-const COLUMNS = `id, description, category_id, account_id, scope, day_of_month,
-  amount_min_cents, amount_max_cents, starts_on, ends_on, active, notes,
-  created_at, updated_at`
+type WriteOptions = { today?: string }
+
+const COLUMNS = `id, description, category_id, account_id, scope, frequency,
+  day_of_month, amount_min_cents, amount_max_cents, starts_on, ends_on,
+  active, notes, generate_since, created_at, updated_at`
 
 // Mesmo raciocínio de idx_tx_recurring/migration 0006: a tabela tem no
 // máximo uma dezena de linhas em regime normal (Starlink, DAS, contador,
@@ -76,6 +97,21 @@ const COLUMNS = `id, description, category_id, account_id, scope, day_of_month,
 // cobra por linha ESCANEADA, então toda query fica bounded por princípio,
 // mesmo quando o dado real nunca deveria chegar perto do teto.
 const RECURRING_LIST_LIMIT = 500
+
+const NEEDS_ACCOUNT_MESSAGE =
+  'para lançar sozinha, a recorrente precisa de uma conta'
+
+const MATCH_TOLERANCE_DAYS = 3
+
+function stepDays(frequency: Frequency): number | null {
+  if (frequency === 'weekly') return 7
+  if (frequency === 'biweekly') return 14
+  return null
+}
+
+function dayOf(date: string): number {
+  return Number(date.slice(8, 10))
+}
 
 function validateAmounts(minCents: number, maxCents: number): void {
   if (!Number.isInteger(minCents) || minCents <= 0) {
@@ -90,11 +126,36 @@ function validateAmounts(minCents: number, maxCents: number): void {
   }
 }
 
-function validateDayOfMonth(day: number): void {
-  if (!Number.isInteger(day) || day < 1 || day > 31) {
+function validateDayOfMonth(day: unknown): asserts day is number {
+  if (
+    typeof day !== 'number' ||
+    !Number.isInteger(day) ||
+    day < 1 ||
+    day > 31
+  ) {
     throw new RangeError(
       `day_of_month inválido: ${day} (esperado inteiro entre 1 e 31)`,
     )
+  }
+}
+
+function validateFrequency(value: unknown): asserts value is Frequency {
+  if (!isFrequency(value)) {
+    throw new RangeError(
+      'frequência inválida: use semanal, quinzenal, mensal ou anual',
+    )
+  }
+}
+
+function validateAutoGenerate(value: unknown): void {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new RangeError('"lançar sozinha" precisa ser verdadeiro ou falso')
+  }
+}
+
+function validateDate(value: string, label: string): void {
+  if (!isRealCalendarDate(value)) {
+    throw new RangeError(`${label} inválida (esperado AAAA-MM-DD): ${value}`)
   }
 }
 
@@ -106,24 +167,42 @@ function validateDayOfMonth(day: number): void {
 export async function createRecurring(
   db: D1Database,
   input: NewRecurringExpense,
+  opts: WriteOptions = {},
 ): Promise<RecurringExpense> {
-  validateDayOfMonth(input.day_of_month)
+  const frequency = input.frequency === undefined ? 'monthly' : input.frequency
+  validateFrequency(frequency)
+  validateAutoGenerate(input.auto_generate)
+  validateDate(input.starts_on, 'data de início')
+  if (input.ends_on != null) validateDate(input.ends_on, 'data de fim')
+  const dayOfMonth =
+    input.day_of_month === undefined && stepDays(frequency) !== null
+      ? dayOf(input.starts_on)
+      : input.day_of_month
+  validateDayOfMonth(dayOfMonth)
   validateAmounts(input.amount_min_cents, input.amount_max_cents)
+
+  const accountId = input.account_id ?? null
+  if (input.auto_generate === true && accountId === null) {
+    throw new RangeError(NEEDS_ACCOUNT_MESSAGE)
+  }
 
   const now = nowIsoUtc()
   const row: RecurringExpense = {
     id: newId(),
     description: input.description,
     category_id: input.category_id ?? null,
-    account_id: input.account_id ?? null,
+    account_id: accountId,
     scope: input.scope,
-    day_of_month: input.day_of_month,
+    frequency,
+    day_of_month: dayOfMonth,
     amount_min_cents: input.amount_min_cents,
     amount_max_cents: input.amount_max_cents,
     starts_on: input.starts_on,
     ends_on: input.ends_on ?? null,
     active: input.active ?? 1,
     notes: input.notes ?? null,
+    generate_since:
+      input.auto_generate === true ? (opts.today ?? todayInTeresina()) : null,
     created_at: now,
     updated_at: now,
   }
@@ -131,7 +210,7 @@ export async function createRecurring(
   await db
     .prepare(
       `INSERT INTO recurring_expenses (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       row.id,
@@ -139,6 +218,7 @@ export async function createRecurring(
       row.category_id,
       row.account_id,
       row.scope,
+      row.frequency,
       row.day_of_month,
       row.amount_min_cents,
       row.amount_max_cents,
@@ -146,6 +226,7 @@ export async function createRecurring(
       row.ends_on,
       row.active,
       row.notes,
+      row.generate_since,
       row.created_at,
       row.updated_at,
     )
@@ -183,6 +264,7 @@ const PATCHABLE_FIELDS = [
   'category_id',
   'account_id',
   'scope',
+  'frequency',
   'day_of_month',
   'amount_min_cents',
   'amount_max_cents',
@@ -192,63 +274,121 @@ const PATCHABLE_FIELDS = [
   'notes',
 ] as const satisfies readonly (keyof RecurringPatch)[]
 
+async function getRecurring(
+  db: D1Database,
+  id: string,
+): Promise<RecurringExpense | null> {
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM recurring_expenses WHERE id = ?`)
+    .bind(id)
+    .first<RecurringExpense>()
+}
+
+function nextGenerateSince(
+  current: string | null,
+  on: boolean,
+  reactivating: boolean,
+  today: string,
+): string | null {
+  if (!on) return null
+  if (current === null || (reactivating && current < today)) return today
+  return current
+}
+
 /**
- * Update parcial por whitelist de colunas — só os campos presentes em
- * `patch` entram no SET. Devolve `null` para id inexistente (mesma
- * convenção de archiveAccount/deleteDebt: id-não-encontrado numa transição
- * de estado é resultado esperado do domínio, não exceção de programação; a
- * rota traduz em 404).
+ * Update parcial: só os campos presentes em `patch` entram no SET; `null`
+ * para id inexistente. `auto_generate` e a reativação mexem em
+ * `generate_since` (ver "CRUD de frequency e auto_generate" no CLAUDE.md).
  */
 export async function updateRecurring(
   db: D1Database,
   id: string,
   patch: RecurringPatch,
+  opts: WriteOptions = {},
 ): Promise<RecurringExpense | null> {
-  const fields = PATCHABLE_FIELDS.filter((f) => f in patch)
+  const current = await getRecurring(db, id)
+  if (!current) return null
 
-  if (fields.length === 0) {
-    return db
-      .prepare(`SELECT ${COLUMNS} FROM recurring_expenses WHERE id = ?`)
-      .bind(id)
-      .first<RecurringExpense>()
+  const values: RecurringPatch = { ...patch }
+  const touchesGeneration = 'auto_generate' in patch
+  if (!touchesGeneration && !PATCHABLE_FIELDS.some((f) => f in values)) {
+    return current
   }
 
-  if (patch.day_of_month !== undefined) validateDayOfMonth(patch.day_of_month)
+  if ('frequency' in values) validateFrequency(values.frequency)
+  validateAutoGenerate(values.auto_generate)
+  if (values.starts_on !== undefined)
+    validateDate(values.starts_on, 'data de início')
+  if (values.ends_on != null) validateDate(values.ends_on, 'data de fim')
+
+  const frequency = values.frequency ?? current.frequency
+  const startsOn = values.starts_on ?? current.starts_on
   if (
-    patch.amount_min_cents !== undefined ||
-    patch.amount_max_cents !== undefined
+    stepDays(frequency) !== null &&
+    !('day_of_month' in values) &&
+    ('starts_on' in values || 'frequency' in values)
+  ) {
+    validateDate(startsOn, 'data de início')
+    values.day_of_month = dayOf(startsOn)
+  }
+
+  if ('day_of_month' in values) validateDayOfMonth(values.day_of_month)
+  if (
+    values.amount_min_cents !== undefined ||
+    values.amount_max_cents !== undefined
   ) {
     // Faixa parcial (só um dos dois no patch) validaria contra o valor
-    // NOVO cruzado com o valor ATUAL — não suportado hoje (nenhum chamador
-    // precisa disso ainda); exige os dois juntos quando qualquer um muda,
-    // mesma disciplina simples de não duplicar caminho de código à toa.
+    // NOVO cruzado com o valor ATUAL — exige os dois juntos.
     if (
-      patch.amount_min_cents === undefined ||
-      patch.amount_max_cents === undefined
+      values.amount_min_cents === undefined ||
+      values.amount_max_cents === undefined
     ) {
       throw new RangeError(
         'amount_min_cents e amount_max_cents devem ser atualizados juntos',
       )
     }
-    validateAmounts(patch.amount_min_cents, patch.amount_max_cents)
+    validateAmounts(values.amount_min_cents, values.amount_max_cents)
   }
 
-  const set = fields.map((f) => `${f} = ?`).join(', ')
-  const values = fields.map((f) => patch[f] ?? null)
-  const now = nowIsoUtc()
+  const accountId =
+    'account_id' in values ? (values.account_id ?? null) : current.account_id
+  const generationOn = touchesGeneration
+    ? values.auto_generate === true
+    : current.generate_since !== null
+  if (
+    ('account_id' in values || touchesGeneration) &&
+    generationOn &&
+    accountId === null
+  ) {
+    throw new RangeError(NEEDS_ACCOUNT_MESSAGE)
+  }
+
+  const fields = PATCHABLE_FIELDS.filter((f) => f in values)
+  const assignments = fields.map((f) => `${f} = ?`)
+  const binds: unknown[] = fields.map((f) => values[f] ?? null)
+  const reactivating = current.active === 0 && values.active === 1
+  if (touchesGeneration || reactivating) {
+    assignments.push('generate_since = ?')
+    binds.push(
+      nextGenerateSince(
+        current.generate_since,
+        generationOn,
+        reactivating,
+        opts.today ?? todayInTeresina(),
+      ),
+    )
+  }
 
   const res = await db
     .prepare(
-      `UPDATE recurring_expenses SET ${set}, updated_at = ? WHERE id = ?`,
+      `UPDATE recurring_expenses SET ${assignments.join(', ')}, updated_at = ?
+        WHERE id = ?`,
     )
-    .bind(...values, now, id)
+    .bind(...binds, nowIsoUtc(), id)
     .run()
   if (res.meta.changes === 0) return null
 
-  return db
-    .prepare(`SELECT ${COLUMNS} FROM recurring_expenses WHERE id = ?`)
-    .bind(id)
-    .first<RecurringExpense>()
+  return getRecurring(db, id)
 }
 
 /**
@@ -269,15 +409,84 @@ export async function deleteRecurring(
   return res.meta.changes > 0
 }
 
+export type RecurringSchedule = Pick<
+  RecurringExpense,
+  'frequency' | 'day_of_month' | 'starts_on' | 'ends_on'
+>
+
+/**
+ * Datas de vencimento de `r` dentro de `[from, to]` (inclusive), já
+ * cortadas por `starts_on`/`ends_on` no nível do dia. Mensal e anual usam
+ * `competenceDueDate` (dia aparado); semanal e quinzenal andam 7/14 dias a
+ * partir de `starts_on`.
+ */
+export function occurrencesBetween(
+  r: RecurringSchedule,
+  from: string,
+  to: string,
+): string[] {
+  const start = from > r.starts_on ? from : r.starts_on
+  const end = r.ends_on !== null && r.ends_on < to ? r.ends_on : to
+  if (start > end) return []
+
+  const dates: string[] = []
+  const step = stepDays(r.frequency)
+  if (step !== null) {
+    const k = Math.ceil(daysBetween(r.starts_on, start) / step)
+    for (
+      let d = addDays(r.starts_on, k * step);
+      d <= end;
+      d = addDays(d, step)
+    ) {
+      dates.push(d)
+    }
+    return dates
+  }
+
+  const startMonth = r.starts_on.slice(5, 7)
+  const lastCompetence = end.slice(0, 7)
+  for (
+    let c = start.slice(0, 7);
+    c <= lastCompetence;
+    c = addMonthsToCompetence(c, 1)
+  ) {
+    if (r.frequency === 'annual' && c.slice(5, 7) !== startMonth) continue
+    const due = competenceDueDate(c, r.day_of_month)
+    if (due >= start && due <= end) dates.push(due)
+  }
+  return dates
+}
+
+/** Chave de idempotência de `recurring_occurrences` (migration 0019). */
+export function occurrenceKey(frequency: Frequency, dueDate: string): string {
+  return stepDays(frequency) === null ? dueDate.slice(0, 7) : dueDate
+}
+
+/**
+ * Janela de `purchase_date` em que um lançamento é "o desta ocorrência":
+ * a competência inteira em mensal e anual, o vencimento ±3 dias em semanal e
+ * quinzenal (inclusive nas duas pontas).
+ */
+export function occurrenceMatchWindow(
+  frequency: Frequency,
+  dueDate: string,
+): { from: string; to: string } {
+  if (stepDays(frequency) !== null) {
+    return {
+      from: addDays(dueDate, -MATCH_TOLERANCE_DAYS),
+      to: addDays(dueDate, MATCH_TOLERANCE_DAYS),
+    }
+  }
+  const competence = dueDate.slice(0, 7)
+  return { from: `${competence}-01`, to: competenceDueDate(competence, 31) }
+}
+
 export type ProjectedRange = { min: number; max: number }
 
-type ActiveRecurringRow = {
+type ActiveRecurringRow = RecurringSchedule & {
   id: string
-  day_of_month: number
   amount_min_cents: number
   amount_max_cents: number
-  starts_on: string
-  ends_on: string | null
 }
 
 type LinkedTxRow = { recurring_expense_id: string; purchase_date: string }
@@ -285,30 +494,13 @@ type LinkedTxRow = { recurring_expense_id: string; purchase_date: string }
 const MAX_PROJECT_MONTHS = 24
 // Mesmo raciocínio de RECURRING_LIST_LIMIT acima.
 const ACTIVE_RECURRING_LIMIT = 500
-// months (<=24) x recorrentes ativas (dezena) nunca deveria chegar perto
-// disso em uso real — teto de defesa, não regra de negócio.
+// months (<=24) x recorrentes ativas (dezena) x ocorrências (até 5) nunca
+// deveria chegar perto disso em uso real — teto de defesa, não regra.
 const LINKED_TX_LIMIT = 5000
 
 /**
- * Projeta despesas recorrentes ativas dentro da janela `[from, from+months)`,
- * competência a competência. NUNCA escreve em `transactions` (§3 do spec) —
- * é leitura pura.
- *
- * Regras, cada uma com teste dedicado em recurring.test.ts:
- *  1. `day_of_month` é APARADO por `competenceDueDate` (dia 31 -> 28 em
- *     fevereiro), a mesma aritmética do fechamento/vencimento de cartão —
- *     reusada, nunca reimplementada aqui.
- *  2. `starts_on`/`ends_on` cortam a projeção no nível do DIA (comparando
- *     a data de vencimento APARADA da competência contra as duas colunas),
- *     não no nível da competência — um `starts_on` no meio do mês pode
- *     empurrar a primeira ocorrência pra competência seguinte.
- *  3. `active = 0` nunca entra (filtro no próprio SQL).
- *  4. SUPRESSÃO É EXATA E POR COMPETÊNCIA (§3.1): a projeção de uma
- *     competência some quando existe `transaction.recurring_expense_id`
- *     apontando pra esta recorrente com `purchase_date` NAQUELA
- *     competência — nunca por categoria+valor aproximado (heurística que
- *     erra em silêncio), e nunca "qualquer vínculo suprime tudo" (vincular
- *     agosto não pode suprimir setembro).
+ * Faixa `{min, max}` por competência em `[from, from+months)`, uma por
+ * ocorrência não suprimida (ver "Regra 2" em "Despesas recorrentes" no CLAUDE.md).
  */
 export async function projectRecurring(
   db: D1Database,
@@ -316,10 +508,6 @@ export async function projectRecurring(
 ): Promise<Map<string, ProjectedRange>> {
   const { from, months } = opts
 
-  // addMonthsToCompetence(from, 0) valida o formato 'YYYY-MM' (lança
-  // RangeError se ausente/malformado) e devolve a mesma competência —
-  // reusa a validação central de lib/dates.ts em vez de duplicar regex
-  // aqui (mesmo truque de byCategory em domain/reports.ts).
   const firstCompetence = addMonthsToCompetence(from, 0)
   if (!Number.isInteger(months) || months < 1 || months > MAX_PROJECT_MONTHS) {
     throw new RangeError(
@@ -330,11 +518,13 @@ export async function projectRecurring(
   const competences = Array.from({ length: months }, (_, i) =>
     addMonthsToCompetence(firstCompetence, i),
   )
+  const lastCompetence = competences[competences.length - 1]
   const map = new Map<string, ProjectedRange>()
 
   const activeRes = await db
     .prepare(
-      `SELECT id, day_of_month, amount_min_cents, amount_max_cents, starts_on, ends_on
+      `SELECT id, frequency, day_of_month, amount_min_cents, amount_max_cents,
+              starts_on, ends_on
          FROM recurring_expenses
         WHERE active = 1
         LIMIT ?`,
@@ -344,20 +534,8 @@ export async function projectRecurring(
   const active = activeRes.results
   if (active.length === 0) return map
 
-  // UMA única query busca todo lançamento VINCULADO dentro da janela
-  // pedida inteira — idx_tx_recurring (migration 0006) cobre igualdade em
-  // recurring_expense_id + range em purchase_date, o mesmo padrão sargable
-  // de byCategory (domain/reports.ts). A competência de cada vínculo vem
-  // do próprio purchase_date (fatia 'YYYY-MM' dos 10 primeiros chars),
-  // NUNCA da competência "esperada" da recorrente — é isso que faz a
-  // supressão ser POR COMPETÊNCIA: se agrupássemos só por
-  // recurring_expense_id (ignorando a data do vínculo), um único
-  // lançamento vinculado apagaria a recorrente da janela INTEIRA.
-  const windowStart = `${competences[0]}-01`
-  const windowEndExclusive = `${addMonthsToCompetence(
-    competences[competences.length - 1],
-    1,
-  )}-01`
+  const windowStart = `${firstCompetence}-01`
+  const windowEnd = competenceDueDate(lastCompetence, 31)
   const ids = active.map((r) => r.id)
   const placeholders = ids.map(() => '?').join(',')
   const linkedRes = await db
@@ -366,35 +544,36 @@ export async function projectRecurring(
          FROM transactions
         WHERE recurring_expense_id IN (${placeholders})
           AND purchase_date >= ?
-          AND purchase_date <  ?
+          AND purchase_date <= ?
+          AND (settled_at IS NOT NULL OR bill_competence IS NOT NULL)
         LIMIT ?`,
     )
-    .bind(...ids, windowStart, windowEndExclusive, LINKED_TX_LIMIT)
+    .bind(...ids, windowStart, windowEnd, LINKED_TX_LIMIT)
     .all<LinkedTxRow>()
 
-  const suppressedCompetences = new Map<string, Set<string>>()
+  const linked = new Map<string, Map<string, number>>()
   for (const row of linkedRes.results) {
     const competence = row.purchase_date.slice(0, 7)
-    let set = suppressedCompetences.get(row.recurring_expense_id)
-    if (!set) {
-      set = new Set()
-      suppressedCompetences.set(row.recurring_expense_id, set)
-    }
-    set.add(competence)
+    const byCompetence = linked.get(row.recurring_expense_id) ?? new Map()
+    byCompetence.set(competence, (byCompetence.get(competence) ?? 0) + 1)
+    linked.set(row.recurring_expense_id, byCompetence)
   }
 
   for (const r of active) {
+    const occurrences = new Map<string, number>()
+    for (const due of occurrencesBetween(r, windowStart, windowEnd)) {
+      const competence = due.slice(0, 7)
+      occurrences.set(competence, (occurrences.get(competence) ?? 0) + 1)
+    }
+
     for (const competence of competences) {
-      // Dia aparado (31 -> 28 em fevereiro) pela mesma aritmética do
-      // fechamento/vencimento de cartão (competenceDueDate, lib/dates.ts).
-      const dueDate = competenceDueDate(competence, r.day_of_month)
-      if (dueDate < r.starts_on) continue // ainda não começou nesta competência
-      if (r.ends_on !== null && dueDate > r.ends_on) continue // já encerrada
-      if (suppressedCompetences.get(r.id)?.has(competence)) continue // lançamento vinculado NESTA competência
+      const n = occurrences.get(competence) ?? 0
+      const projected = n - (linked.get(r.id)?.get(competence) ?? 0)
+      if (projected <= 0) continue
 
       const cell = map.get(competence) ?? { min: 0, max: 0 }
-      cell.min += r.amount_min_cents
-      cell.max += r.amount_max_cents
+      cell.min += projected * r.amount_min_cents
+      cell.max += projected * r.amount_max_cents
       map.set(competence, cell)
     }
   }

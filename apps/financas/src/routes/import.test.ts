@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createRecurring } from '../domain/recurring'
+import { generateRecurringOccurrences } from '../domain/recurring-auto'
 import { importRoutes } from './import'
 
 async function seedAccount(id: string) {
@@ -37,7 +39,12 @@ async function countTransactions(accountId: string): Promise<number> {
 
 type Envelope = {
   ok: boolean
-  data: { total: number; imported: number; skipped: number } | null
+  data: {
+    total: number
+    imported: number
+    skipped: number
+    reconciled: number
+  } | null
   notifications: { type: string; code?: string; message?: string }[]
 }
 
@@ -75,7 +82,12 @@ describe('POST /api/transactions/import', () => {
     expect(res.status).toBe(201)
     expect(body.ok).toBe(true)
     expect(body.notifications).toEqual([])
-    expect(body.data).toEqual({ total: 2, imported: 2, skipped: 0 })
+    expect(body.data).toEqual({
+      total: 2,
+      imported: 2,
+      skipped: 0,
+      reconciled: 0,
+    })
     expect(await countTransactions(accountId)).toBe(2)
   })
 
@@ -102,7 +114,12 @@ describe('POST /api/transactions/import', () => {
     const body = (await res.json()) as Envelope
 
     expect(res.status).toBe(201)
-    expect(body.data).toEqual({ total: 1, imported: 0, skipped: 1 })
+    expect(body.data).toEqual({
+      total: 1,
+      imported: 0,
+      skipped: 1,
+      reconciled: 0,
+    })
     // A prova real de idempotência é a contagem no D1, não confiar no corpo.
     expect(await countTransactions(accountId)).toBe(countAfterFirst)
   })
@@ -191,7 +208,12 @@ describe('POST /api/transactions/import', () => {
     const body = (await res.json()) as Envelope
 
     expect(res.status).toBe(201)
-    expect(body.data).toEqual({ total: 1, imported: 1, skipped: 0 })
+    expect(body.data).toEqual({
+      total: 1,
+      imported: 1,
+      skipped: 0,
+      reconciled: 0,
+    })
     expect(await countTransactions(accountA)).toBe(1)
     expect(await countTransactions(accountB)).toBe(1)
   })
@@ -213,7 +235,12 @@ describe('POST /api/transactions/import', () => {
     const body = (await res.json()) as Envelope
 
     expect(res.status).toBe(201)
-    expect(body.data).toEqual({ total: 12, imported: 12, skipped: 0 })
+    expect(body.data).toEqual({
+      total: 12,
+      imported: 12,
+      skipped: 0,
+      reconciled: 0,
+    })
     expect(await countTransactions(accountId)).toBe(12)
   })
 
@@ -232,5 +259,52 @@ describe('POST /api/transactions/import', () => {
 
     expect(res.status).toBe(400)
     expect(body.notifications[0].code).toBe('invalid_json')
+  })
+})
+
+// Item 3 (D6): a linha que casa com o pendente gerado por uma recorrente
+// atualiza esse pendente; a resposta conta à parte (`reconciled`), e
+// `imported` continua sendo só as linhas inseridas.
+describe('POST /api/transactions/import — conciliação com recorrente', () => {
+  it('devolve reconciled e não cria linha nova quando a linha casa com o pendente gerado', async () => {
+    const accountId = await seedAccount('acc-1')
+    await createRecurring(
+      env.DB,
+      {
+        description: 'Internet fibra',
+        scope: 'PF',
+        account_id: accountId,
+        day_of_month: 10,
+        amount_min_cents: 9990,
+        amount_max_cents: 12990,
+        starts_on: '2026-01-10',
+        auto_generate: true,
+      },
+      { today: '2026-07-01' },
+    )
+    await generateRecurringOccurrences(env.DB, { today: '2026-07-10' })
+
+    const res = await post({
+      account_id: accountId,
+      import_source: 'ofx',
+      rows: [
+        {
+          imported_id: 'fitid-net',
+          purchase_date: '2026-07-12',
+          amount_cents: -10990,
+          description: 'NET FIBRA',
+        },
+      ],
+    })
+    const body = (await res.json()) as Envelope
+
+    expect(res.status).toBe(201)
+    expect(body.data).toEqual({
+      total: 1,
+      imported: 0,
+      skipped: 0,
+      reconciled: 1,
+    })
+    expect(await countTransactions(accountId)).toBe(1)
   })
 })

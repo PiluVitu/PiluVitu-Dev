@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError } from '../api'
 import { RecorrentesPage } from './recorrentes'
+import * as todasAsHistorias from './recorrentes.stories'
 
 // Mockar `api` (não a rede) — mesmo padrão de config.test.tsx/
 // debt-detail.test.tsx: `api` já traduz envelope/erro, testar aqui prova o
@@ -32,6 +33,8 @@ const recorrentes = [
     ends_on: null,
     active: 1,
     notes: null,
+    frequency: 'monthly',
+    generate_since: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -48,6 +51,8 @@ const recorrentes = [
     ends_on: null,
     active: 0,
     notes: null,
+    frequency: 'monthly',
+    generate_since: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -193,7 +198,10 @@ describe('RecorrentesPage', () => {
     expect(await screen.findByText(/nunca acontece/i)).toBeInTheDocument()
   })
 
-  it('cria recorrente FIXA (sem marcar "varia?"): amount_max_cents === amount_min_cents', async () => {
+  // Item 3 (recorrência automática): o corpo ganhou `frequency` e
+  // `auto_generate`, sempre explícitos — o padrão do formulário é mensal e
+  // desligado, o mesmo comportamento de antes da frequência existir.
+  it('cria recorrente FIXA (sem marcar "varia?"): amount_max_cents === amount_min_cents, mensal e sem lançar sozinha', async () => {
     mockApi()
 
     render(<RecorrentesPage />)
@@ -229,6 +237,8 @@ describe('RecorrentesPage', () => {
         ends_on: null,
         active: 1,
         notes: null,
+        frequency: 'monthly',
+        auto_generate: false,
       })
     })
   })
@@ -785,5 +795,477 @@ describe('RecorrentesPage — alvos de toque de Editar/Excluir', () => {
       expect(faixa).not.toHaveTextContent('R$ 189 ')
       expect(faixa.querySelectorAll('span.whitespace-nowrap')).toHaveLength(1)
     })
+  })
+})
+
+// Item 3 — recorrência automática. Fixtures fictícias: nenhum dado real.
+const contaFicticia = {
+  id: 'a-cc',
+  name: 'Conta corrente',
+  scope: 'PF',
+  kind: 'checking',
+  closing_day: null,
+  due_day: null,
+  balance_cents: 0,
+}
+
+function recorrenteFicticia(patch: Record<string, unknown> = {}) {
+  return {
+    id: 'r-internet',
+    description: 'Internet fibra',
+    category_id: null,
+    account_id: 'a-cc',
+    scope: 'PF',
+    day_of_month: 10,
+    amount_min_cents: 9990,
+    amount_max_cents: 9990,
+    starts_on: '2026-01-01',
+    ends_on: null,
+    active: 1,
+    notes: null,
+    frequency: 'monthly',
+    generate_since: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...patch,
+  }
+}
+
+const academia = recorrenteFicticia({
+  id: 'r-academia',
+  description: 'Academia',
+  frequency: 'weekly',
+  // 2026-11-02 é uma segunda: dia 2 é o que o formulário deriva.
+  starts_on: '2026-11-02',
+  day_of_month: 2,
+  amount_min_cents: 4000,
+  amount_max_cents: 6000,
+  generate_since: '2026-11-05',
+})
+
+async function abrirComFicticias(
+  lista: unknown[] = [recorrenteFicticia(), academia],
+) {
+  mockApi({ recurring: () => lista, contas: () => [contaFicticia] })
+  render(<RecorrentesPage />)
+  await waitFor(() =>
+    expect(screen.getByTestId('pagina-recorrentes')).toBeInTheDocument(),
+  )
+}
+
+function preencherBasico(descricao = 'Academia', valor = '40,00') {
+  fireEvent.change(screen.getByLabelText('Descrição'), {
+    target: { value: descricao },
+  })
+  fireEvent.change(screen.getByLabelText('Valor'), {
+    target: { value: valor },
+  })
+}
+
+describe('RecorrentesPage — frequência (item 3)', () => {
+  it('o select Frequência começa em Mensal, com as quatro opções na ordem', async () => {
+    await abrirComFicticias()
+
+    const select = screen.getByLabelText('Frequência') as HTMLSelectElement
+    expect(select).toHaveValue('monthly')
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      'Mensal',
+      'Semanal',
+      'Quinzenal — a cada 14 dias',
+      'Anual',
+    ])
+  })
+
+  it.each([
+    ['weekly', 'Semanal', /a cada 7 dias/i],
+    [
+      'biweekly',
+      'Quinzenal — a cada 14 dias',
+      /a cada 14 dias.*não é dia 1 e dia 15/i,
+    ],
+  ])(
+    '%s esconde "Dia do mês", o início vira "Primeira ocorrência" e o dia vai derivado dela',
+    async (valor, _rotulo, dica) => {
+      await abrirComFicticias()
+
+      preencherBasico()
+      // Um dia inválido digitado ANTES de trocar a frequência não pode
+      // travar o envio: o campo some e o valor dele deixa de valer.
+      fireEvent.change(screen.getByLabelText('Dia do mês'), {
+        target: { value: '99' },
+      })
+      fireEvent.change(screen.getByLabelText('Frequência'), {
+        target: { value: valor },
+      })
+
+      expect(screen.queryByLabelText('Dia do mês')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Começa em')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Frequência')).toHaveAccessibleDescription(
+        dica,
+      )
+
+      fireEvent.change(screen.getByLabelText('Primeira ocorrência'), {
+        target: { value: '2026-11-02' },
+      })
+      fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+      await waitFor(() => {
+        const body = corpoDaChamada('POST', '/api/recurring')
+        expect(body.frequency).toBe(valor)
+        expect(body.starts_on).toBe('2026-11-02')
+        expect(body.day_of_month).toBe(2)
+      })
+    },
+  )
+
+  it('anual mantém "Dia do mês" e explica que o mês é o do início', async () => {
+    await abrirComFicticias()
+
+    fireEvent.change(screen.getByLabelText('Frequência'), {
+      target: { value: 'annual' },
+    })
+
+    expect(screen.getByLabelText('Dia do mês')).toBeInTheDocument()
+    expect(screen.getByLabelText('Começa em')).toBeInTheDocument()
+    expect(screen.getByLabelText('Frequência')).toHaveAccessibleDescription(
+      /uma vez por ano.*mês em que a recorrente começa/i,
+    )
+
+    preencherBasico('Anuidade', '120,00')
+    fireEvent.change(screen.getByLabelText('Dia do mês'), {
+      target: { value: '5' },
+    })
+    fireEvent.change(screen.getByLabelText('Começa em'), {
+      target: { value: '2026-03-01' },
+    })
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    await waitFor(() => {
+      const body = corpoDaChamada('POST', '/api/recurring')
+      expect(body.frequency).toBe('annual')
+      expect(body.day_of_month).toBe(5)
+    })
+  })
+
+  it('editar uma semanal preenche a frequência e o PUT a reenvia', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    await user.click(
+      within(screen.getByTestId('recorrente-r-academia')).getByRole('button', {
+        name: 'Editar',
+      }),
+    )
+
+    expect(screen.getByLabelText('Frequência')).toHaveValue('weekly')
+    expect(screen.getByLabelText('Primeira ocorrência')).toHaveValue(
+      '2026-11-02',
+    )
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    await waitFor(() => {
+      const body = corpoDaChamada('PUT', '/api/recurring/r-academia')
+      expect(body.frequency).toBe('weekly')
+      expect(body.day_of_month).toBe(2)
+    })
+  })
+
+  it('a linha diz a frequência; a semanal mostra o dia da semana no bloco, não um dia do mês', async () => {
+    await abrirComFicticias([
+      recorrenteFicticia(),
+      academia,
+      recorrenteFicticia({
+        id: 'r-anuidade',
+        description: 'Anuidade',
+        frequency: 'annual',
+        day_of_month: 5,
+        starts_on: '2026-03-01',
+      }),
+    ])
+
+    const internet = screen.getByTestId('recorrente-r-internet')
+    expect(internet).toHaveTextContent(/mensal, dia 10/)
+    expect(screen.getByTestId('bloco-dia-r-internet')).toHaveTextContent('10')
+
+    expect(screen.getByTestId('recorrente-r-academia')).toHaveTextContent(
+      /semanal, às segundas/,
+    )
+    expect(screen.getByTestId('bloco-dia-r-academia')).toHaveTextContent('seg')
+
+    expect(screen.getByTestId('recorrente-r-anuidade')).toHaveTextContent(
+      /anual, 5 de março/,
+    )
+  })
+})
+
+describe('RecorrentesPage — lançar sozinho como pendente (item 3)', () => {
+  it('sem conta, o checkbox fica desabilitado e o motivo está em texto', async () => {
+    await abrirComFicticias()
+
+    const caixa = screen.getByRole('checkbox', {
+      name: 'Lançar sozinho como pendente',
+    })
+    expect(screen.getByLabelText('Conta')).toHaveValue('')
+    expect(caixa).toBeDisabled()
+    expect(caixa).not.toBeChecked()
+    // Cor não é o único sinal: o porquê vem escrito e ligado ao controle.
+    expect(caixa).toHaveAccessibleDescription(/escolha a conta/i)
+  })
+
+  it('com conta, liga e o POST manda auto_generate: true', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    preencherBasico('Internet fibra', '99,90')
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a-cc' },
+    })
+    const caixa = screen.getByRole('checkbox', {
+      name: 'Lançar sozinho como pendente',
+    })
+    expect(caixa).toBeEnabled()
+    await user.click(caixa)
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    await waitFor(() => {
+      const body = corpoDaChamada('POST', '/api/recurring')
+      expect(body.auto_generate).toBe(true)
+      expect(body.account_id).toBe('a-cc')
+    })
+  })
+
+  it('tirar a conta desliga o checkbox: nunca manda auto_generate true sem conta', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    preencherBasico('Internet fibra', '99,90')
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a-cc' },
+    })
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Lançar sozinho como pendente' }),
+    )
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: '' } })
+    // Voltar a escolher a conta não religa por baixo dos panos.
+    fireEvent.change(screen.getByLabelText('Conta'), {
+      target: { value: 'a-cc' },
+    })
+    expect(
+      screen.getByRole('checkbox', { name: 'Lançar sozinho como pendente' }),
+    ).not.toBeChecked()
+
+    fireEvent.change(screen.getByLabelText('Conta'), { target: { value: '' } })
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+    await waitFor(() => {
+      const body = corpoDaChamada('POST', '/api/recurring')
+      expect(body.auto_generate).toBe(false)
+      expect(body.account_id).toBeNull()
+    })
+  })
+
+  it('a ajuda explica o valor máximo, a conciliação com a importação e que apagar não volta', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Lançar sozinho' }),
+    )
+
+    const texto = (await screen.findByText(/no dia do vencimento/i)).textContent
+    expect(texto).toMatch(/pendente/i)
+    expect(texto).toMatch(/valor máximo da faixa/i)
+    expect(texto).toMatch(/importação.*dentro da faixa.*atualizad/i)
+    expect(texto).toMatch(/apagar o pendente não o faz voltar/i)
+  })
+
+  it('editar uma que já lança sozinha marca o checkbox, diz desde quando, e o PUT mantém ligado', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    await user.click(
+      within(screen.getByTestId('recorrente-r-academia')).getByRole('button', {
+        name: 'Editar',
+      }),
+    )
+
+    const caixa = screen.getByRole('checkbox', {
+      name: 'Lançar sozinho como pendente',
+    })
+    expect(caixa).toBeChecked()
+    expect(caixa).toHaveAccessibleDescription(/ligado desde 05\/11\/2026/i)
+
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+    await waitFor(() => {
+      const body = corpoDaChamada('PUT', '/api/recurring/r-academia')
+      expect(body.auto_generate).toBe(true)
+    })
+  })
+
+  it('desligar na edição manda auto_generate: false', async () => {
+    await abrirComFicticias()
+    const user = userEvent.setup()
+
+    await user.click(
+      within(screen.getByTestId('recorrente-r-academia')).getByRole('button', {
+        name: 'Editar',
+      }),
+    )
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Lançar sozinho como pendente' }),
+    )
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    await waitFor(() => {
+      const body = corpoDaChamada('PUT', '/api/recurring/r-academia')
+      expect(body.auto_generate).toBe(false)
+    })
+  })
+
+  it('selo "lança sozinha" só na ativa com generate_since; pausada não ganha selo', async () => {
+    await abrirComFicticias([
+      recorrenteFicticia(),
+      academia,
+      recorrenteFicticia({
+        id: 'r-pausada',
+        description: 'Curso pausado',
+        active: 0,
+        generate_since: '2026-10-01',
+      }),
+    ])
+
+    expect(screen.getByTestId('lanca-sozinha-r-academia')).toHaveTextContent(
+      'lança sozinha',
+    )
+    expect(
+      screen.queryByTestId('lanca-sozinha-r-internet'),
+    ).not.toBeInTheDocument()
+    // Pausada não gera (só active = 1 entra na geração): o selo mentiria.
+    expect(
+      screen.queryByTestId('lanca-sozinha-r-pausada'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('ligada mas sem conta (conta apagada depois): o selo diz que não lança', async () => {
+    await abrirComFicticias([
+      recorrenteFicticia({ account_id: null, generate_since: '2026-11-01' }),
+    ])
+
+    expect(screen.getByTestId('lanca-sozinha-r-internet')).toHaveTextContent(
+      'sem conta, não lança',
+    )
+  })
+
+  it('o rótulo do checkbox é um alvo de 44 px', async () => {
+    await abrirComFicticias()
+
+    const rotulo = screen
+      .getByRole('checkbox', { name: 'Lançar sozinho como pendente' })
+      .closest('label') as HTMLElement
+    expect(rotulo.className).toContain('min-h-11')
+  })
+
+  it('recusa do servidor (422) aparece no alerta do formulário', async () => {
+    mockApi({
+      contas: () => [contaFicticia],
+      post: () => {
+        throw new ApiError(
+          422,
+          'constraint_violation',
+          'para lançar sozinha, a recorrente precisa de uma conta',
+        )
+      },
+    })
+    render(<RecorrentesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('pagina-recorrentes')).toBeInTheDocument(),
+    )
+
+    preencherBasico('Internet fibra', '99,90')
+    fireEvent.submit(screen.getByTestId('form-recorrente'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'para lançar sozinha, a recorrente precisa de uma conta',
+    )
+  })
+})
+
+describe('RecorrentesPage — KPIs contam as ocorrências do mês (item 3)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('custo do mês: a semanal pesa uma vez por ocorrência; o próximo vencimento é a data mais próxima', async () => {
+    // Só o relógio é falso: userEvent/waitFor continuam com timers reais.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    // 12:00 em Teresina de uma quarta, 2026-11-11.
+    vi.setSystemTime(new Date('2026-11-11T15:00:00Z'))
+
+    await abrirComFicticias([
+      recorrenteFicticia(),
+      academia,
+      recorrenteFicticia({
+        id: 'r-pausada',
+        description: 'Curso pausado',
+        active: 0,
+        amount_min_cents: 18900,
+        amount_max_cents: 18900,
+      }),
+    ])
+
+    // Internet 99,90 (dia 10) + Academia 40–60 × 5 segundas de novembro.
+    expect(screen.getByTestId('kpi-custo-fixo-valor')).toHaveTextContent(
+      'R$ 299,90 a R$ 399,90',
+    )
+    expect(screen.getByTestId('kpi-custo-fixo')).toHaveTextContent(/novembro/)
+
+    // Internet já venceu dia 10; a próxima segunda é 16/11.
+    expect(screen.getByTestId('kpi-proximo-valor')).toHaveTextContent('16/11')
+    expect(screen.getByTestId('kpi-proximo')).toHaveTextContent('Academia')
+  })
+})
+
+const { default: _meta, ...historias } = todasAsHistorias
+
+describe('recorrentes.stories — os estados da linha e do "lançar sozinho"', () => {
+  it('cada story mostra o estado que o nome promete', () => {
+    const esperado: Record<string, (c: HTMLElement) => void> = {
+      LinhaMensal: (c) => {
+        expect(c).toHaveTextContent(/mensal, dia 10/)
+        expect(within(c).queryByText(/lança sozinha/)).not.toBeInTheDocument()
+      },
+      LinhaSemanal: (c) => {
+        expect(c).toHaveTextContent(/semanal, às segundas/)
+        expect(within(c).getByText('seg')).toBeInTheDocument()
+      },
+      LinhaQuinzenal: (c) =>
+        expect(c).toHaveTextContent(/quinzenal, a cada 14 dias, às segundas/),
+      LinhaAnual: (c) => expect(c).toHaveTextContent(/anual, 5 de março/),
+      LinhaLancaSozinha: (c) =>
+        expect(within(c).getByText('lança sozinha')).toBeInTheDocument(),
+      LinhaSemConta: (c) =>
+        expect(within(c).getByText('sem conta, não lança')).toBeInTheDocument(),
+      CampoDesligado: (c) => {
+        const caixa = within(c).getByRole('checkbox')
+        expect(caixa).toBeEnabled()
+        expect(caixa).not.toBeChecked()
+      },
+      CampoLigadoDesde: (c) => {
+        expect(within(c).getByRole('checkbox')).toBeChecked()
+        expect(c).toHaveTextContent(/ligado desde 05\/11\/2026/i)
+      },
+      CampoSemConta: (c) => {
+        expect(within(c).getByRole('checkbox')).toBeDisabled()
+        expect(c).toHaveTextContent(/escolha a conta/i)
+      },
+    }
+    expect(Object.keys(historias).sort()).toEqual(Object.keys(esperado).sort())
+    for (const [nome, h] of Object.entries(historias)) {
+      const Componente = h.render as unknown as (
+        p: Record<string, unknown>,
+      ) => React.ReactElement
+      const { container, unmount } = render(<Componente {...h.args} />)
+      esperado[nome](container)
+      unmount()
+    }
   })
 })

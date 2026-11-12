@@ -414,6 +414,7 @@ export function ImportarPage() {
     total: number
     imported: number
     skipped: number
+    reconciled: number
   } | null>(null)
   const [envioErro, setEnvioErro] = useState<string | null>(null)
 
@@ -933,7 +934,7 @@ export function ImportarPage() {
     setProgresso({ enviado: 0, total: confirmadas.length })
 
     const lotes = chunk(confirmadas, IMPORT_BATCH_SIZE)
-    const acumulado = { total: 0, imported: 0, skipped: 0 }
+    const acumulado = { total: 0, imported: 0, skipped: 0, reconciled: 0 }
 
     for (const lote of lotes) {
       try {
@@ -941,6 +942,7 @@ export function ImportarPage() {
           total: number
           imported: number
           skipped: number
+          reconciled?: number
         }>('/api/transactions/import', {
           method: 'POST',
           body: JSON.stringify({
@@ -964,6 +966,7 @@ export function ImportarPage() {
         acumulado.total += resultadoLote.total
         acumulado.imported += resultadoLote.imported
         acumulado.skipped += resultadoLote.skipped
+        acumulado.reconciled += resultadoLote.reconciled ?? 0
         setProgresso((p) =>
           p ? { enviado: p.enviado + lote.length, total: p.total } : p,
         )
@@ -1984,6 +1987,13 @@ export function ImportarPage() {
               {resultado.imported} importadas, {resultado.skipped} já existiam
               (puladas).
             </p>
+            {resultado.reconciled > 0 ? (
+              <p data-testid="resultado-conciliadas" className="text-sm">
+                {resultado.reconciled === 1
+                  ? '1 linha conciliada com uma recorrente: o lançamento pendente que o app tinha criado foi atualizado com os dados importados, sem linha nova.'
+                  : `${resultado.reconciled} linhas conciliadas com recorrentes: os lançamentos pendentes que o app tinha criado foram atualizados com os dados importados, sem linha nova.`}
+              </p>
+            ) : null}
             {filaIndice + 1 < fila.length ? (
               <div className="space-y-2">
                 <Button
