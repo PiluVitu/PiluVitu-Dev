@@ -91,5 +91,9 @@
 
     // Remetente dos alertas; tem que estar em allowed_sender_addresses.
     "ALERTAS_REMETENTE": "alertas@piluvitu.com.br",
+
+    // Caminho do envio: "email_routing" (grátis, só para o destino verificado
+    // no Email Routing) ou "email_sending" (Workers Paid). Outro valor não envia.
+    "ALERTAS_ENVIO": "email_routing",
   },
 }

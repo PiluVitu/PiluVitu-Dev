@@ -12,6 +12,11 @@ const meta = {
   component: CartaoAlertasEmail,
   args: {
     ligado: true,
+    envio: {
+      estado: 'pronto',
+      modo: 'email_routing',
+      em: '2026-11-10T09:00:12.000Z',
+    },
     erroCarga: null,
     salvando: false,
     recusa: null,
@@ -22,7 +27,7 @@ const meta = {
 
 export default meta
 
-export const Carregando: Story = { args: { ligado: null } }
+export const Carregando: Story = { args: { ligado: null, envio: null } }
 
 export const Ligado: Story = { args: {} }
 
@@ -38,5 +43,41 @@ export const Recusado: Story = {
 }
 
 export const ErroAoCarregar: Story = {
-  args: { ligado: null, erroCarga: 'O servidor não respondeu.' },
+  args: { ligado: null, envio: null, erroCarga: 'O servidor não respondeu.' },
+}
+
+export const Pronto: Story = {
+  args: {
+    envio: {
+      estado: 'pronto',
+      modo: 'email_routing',
+      em: '2026-11-11T09:00:07.000Z',
+    },
+  },
+}
+
+export const Aguardando: Story = {
+  args: { envio: { estado: 'aguardando', modo: 'email_routing' } },
+}
+
+export const NaoConfigurado: Story = {
+  args: {
+    envio: {
+      estado: 'nao_configurado',
+      modo: 'email_routing',
+      codigo: 'E_SENDER_NOT_VERIFIED',
+      em: '2026-11-11T09:00:03.000Z',
+    },
+  },
+}
+
+export const Falhou: Story = {
+  args: {
+    envio: {
+      estado: 'falhou',
+      modo: 'email_routing',
+      codigo: 'E_DELIVERY_FAILED',
+      em: '2026-11-11T09:00:05.000Z',
+    },
+  },
 }
