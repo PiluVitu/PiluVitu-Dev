@@ -5,9 +5,9 @@ const assuntoDe = (mailto: string) =>
 
 describe('mailtoDaPilutech', () => {
   it('todo projeto escreve para o mesmo e-mail', () => {
-    expect(EMAIL_DA_PILUTECH).toBe('pilutechinformatica@gmail.com')
+    expect(EMAIL_DA_PILUTECH).toBe('help@pilutech.com.br')
     expect(new URL(mailtoDaPilutech('Botaí', 'Suporte')).pathname).toBe(
-      'pilutechinformatica@gmail.com',
+      'help@pilutech.com.br',
     )
   })
 
@@ -24,7 +24,7 @@ describe('mailtoDaPilutech', () => {
   // RFC 6068: UTF-8 em percent-encoding. Em mailto o + é literal, e o URLSearchParams poria + no espaço.
   it('codifica em UTF-8, com %20 no espaço e nunca +', () => {
     expect(mailtoDaPilutech('Botaí', 'Suporte')).toBe(
-      'mailto:pilutechinformatica@gmail.com?subject=%5BBota%C3%AD%5D%20Suporte',
+      'mailto:help@pilutech.com.br?subject=%5BBota%C3%AD%5D%20Suporte',
     )
     expect(mailtoDaPilutech('PiluTech', 'Contato pelo site')).not.toContain('+')
   })

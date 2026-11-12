@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import Image from 'next/image'
 import Link from 'next/link'
 
-const CONTACT_EMAIL = 'pilutechinformatica@gmail.com'
+const CONTACT_EMAIL = 'help@pilutech.com.br'
 
 const squircleClass =
   'inline-flex size-12 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'

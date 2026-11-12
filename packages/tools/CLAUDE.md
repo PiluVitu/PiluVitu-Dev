@@ -84,7 +84,7 @@ Exposto via subpaths próprios no `exports` do `package.json` (`@piluvitu/tools/
 
 ## Módulo `contato` (e-mail dos projetos PiluTech)
 
-`contato.ts`, exposto só por `@piluvitu/tools/contato`. Todo contato de projeto vai para `EMAIL_DA_PILUTECH` (`pilutechinformatica@gmail.com`), e `mailtoDaPilutech(projeto, assunto)` monta o `mailto:` com o assunto `[Projeto] Assunto`, para o dono filtrar no Gmail com `subject:Botaí`, `subject:Sombraí` ou `subject:PiluTech` (spec `docs/superpowers/specs/2026-10-02-pilutech-site-design.md` §6).
+`contato.ts`, exposto só por `@piluvitu/tools/contato`. Todo contato de projeto vai para `EMAIL_DA_PILUTECH` (`help@pilutech.com.br`), e `mailtoDaPilutech(projeto, assunto)` monta o `mailto:` com o assunto `[Projeto] Assunto`, para o dono filtrar no Gmail com `subject:Botaí`, `subject:Sombraí` ou `subject:PiluTech` (spec `docs/superpowers/specs/2026-10-02-pilutech-site-design.md` §6).
 
 - O assunto vai por `encodeURIComponent`: UTF-8 em percent-encoding, espaço como `%20` (RFC 6068). Em `mailto:` o `+` é literal, e o `URLSearchParams` codificaria o espaço como `+`: não troque.
 - Usado pelo `apps/pilutech-site` (`[PiluTech] Contato pelo site`) e, numa cópia, pela landing do Botaí (repo `PiluVitu/Botai`). Texto que só cita o endereço (a política, os termos e os textos das lojas, no repo do Botaí) continua com o e-mail puro.
