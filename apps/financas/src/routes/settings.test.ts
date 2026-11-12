@@ -1,6 +1,7 @@
 import { applyD1Migrations, env } from 'cloudflare:test'
 import { Hono } from 'hono'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { registrarEnvio } from '../domain/alertas-envio'
 import { app } from '../index'
 import { settingsRoutes } from './settings'
 
@@ -264,11 +265,40 @@ describe('GET/PUT /api/settings/:key — genérico', () => {
 // genérica /settings/:key: sem isso, '/settings/alertas' cairia nela como a
 // chave 'alertas' e o PUT gravaria uma string opaca qualquer.
 describe('GET/PUT /api/settings/alertas', () => {
-  function getAlertas() {
-    return router().request('/api/settings/alertas', {}, { DB: env.DB })
+  const PARA = 'dono@exemplo.test'
+  const REMETENTE = 'alertas@exemplo.test'
+  const ENVIO = { modo: 'email_routing', de: REMETENTE, para: PARA } as const
+  const SEM_BINDING = {
+    estado: 'nao_configurado',
+    modo: null,
+    codigo: 'alertas_sem_binding',
   }
 
-  function putAlertas(body: unknown, cru = false) {
+  type Alertas = {
+    ligado: boolean
+    envio: { estado: string; modo: string | null; codigo?: string; em?: string }
+  }
+
+  function configCompleta(parcial: Record<string, unknown> = {}) {
+    return {
+      DB: env.DB,
+      EMAIL: {} as SendEmail,
+      ALLOWED_EMAIL: PARA,
+      ALERTAS_REMETENTE: REMETENTE,
+      ALERTAS_ENVIO: 'email_routing',
+      ...parcial,
+    }
+  }
+
+  function getAlertas(bindings: Record<string, unknown> = { DB: env.DB }) {
+    return router().request('/api/settings/alertas', {}, bindings)
+  }
+
+  function putAlertas(
+    body: unknown,
+    cru = false,
+    bindings: Record<string, unknown> = { DB: env.DB },
+  ) {
     return router().request(
       '/api/settings/alertas',
       {
@@ -276,7 +306,7 @@ describe('GET/PUT /api/settings/alertas', () => {
         headers: { 'content-type': 'application/json' },
         body: cru ? (body as string) : JSON.stringify(body),
       },
-      { DB: env.DB },
+      bindings,
     )
   }
 
@@ -286,31 +316,32 @@ describe('GET/PUT /api/settings/alertas', () => {
       .first<{ value: string }>()
   }
 
-  it('nada salvo: 200 { ligado: true }', async () => {
+  it('nada salvo e sem binding: 200 { ligado: true, envio não configurado }', async () => {
     const res = await getAlertas()
     expect(res.status).toBe(200)
-    const body = (await res.json()) as Envelope<{ ligado: boolean }>
+    const body = (await res.json()) as Envelope<Alertas>
     expect(body.ok).toBe(true)
     expect(body.notifications).toEqual([])
-    expect(body.data).toEqual({ ligado: true })
+    expect(body.data).toEqual({ ligado: true, envio: SEM_BINDING })
   })
 
   it('PUT desliga e religa, e o GET relê', async () => {
     const desliga = await putAlertas({ ligado: false })
     expect(desliga.status).toBe(200)
+    expect(((await desliga.json()) as Envelope<Alertas>).data).toEqual({
+      ligado: false,
+      envio: SEM_BINDING,
+    })
     expect(
-      ((await desliga.json()) as Envelope<{ ligado: boolean }>).data,
-    ).toEqual({ ligado: false })
-    expect(
-      ((await (await getAlertas()).json()) as Envelope<{ ligado: boolean }>)
-        .data,
-    ).toEqual({ ligado: false })
+      ((await (await getAlertas()).json()) as Envelope<Alertas>).data,
+    ).toEqual({ ligado: false, envio: SEM_BINDING })
     expect(await linhaSalva('alertas_email')).toEqual({ value: '0' })
 
     const liga = await putAlertas({ ligado: true })
-    expect(((await liga.json()) as Envelope<{ ligado: boolean }>).data).toEqual(
-      { ligado: true },
-    )
+    expect(((await liga.json()) as Envelope<Alertas>).data).toEqual({
+      ligado: true,
+      envio: SEM_BINDING,
+    })
     expect(await linhaSalva('alertas_email')).toEqual({ value: '1' })
   })
 
@@ -344,10 +375,10 @@ describe('GET/PUT /api/settings/alertas', () => {
     expect(body.notifications[0].code).toBe('invalid_json')
   })
 
-  it('a genérica não engole a rota: GET devolve { ligado } e PUT com { value } não grava a chave "alertas"', async () => {
+  it('a genérica não engole a rota: GET devolve { ligado, envio } e PUT com { value } não grava a chave "alertas"', async () => {
     const res = await getAlertas()
     const body = (await res.json()) as Envelope<Record<string, unknown>>
-    expect(Object.keys(body.data)).toEqual(['ligado'])
+    expect(Object.keys(body.data)).toEqual(['ligado', 'envio'])
 
     const put = await putAlertas({ value: 'qualquer' })
     expect(put.status).toBe(422)
@@ -368,6 +399,183 @@ describe('GET/PUT /api/settings/alertas', () => {
     const bodyPut = (await resPut.json()) as Envelope<null>
     expect(bodyPut.notifications[0].code).toBe('reserved_setting_key')
     expect(await linhaSalva('alertas_email')).toEqual({ value: '0' })
+  })
+
+  // Estado REAL do envio (E3/E4): a tela nunca diz "Ligado" sem e-mail
+  // saindo. As regras moram em domain/alertas-envio.ts; aqui, o contrato.
+  it('configurado e sem tentativa ainda: aguardando, no modo do ALERTAS_ENVIO', async () => {
+    const body = (await (
+      await getAlertas(configCompleta())
+    ).json()) as Envelope<Alertas>
+    expect(body.data).toEqual({
+      ligado: true,
+      envio: { estado: 'aguardando', modo: 'email_routing' },
+    })
+  })
+
+  it('último envio deu certo: pronto, com a data', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'enviado',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const body = (await (
+      await getAlertas(configCompleta())
+    ).json()) as Envelope<Alertas>
+    expect(body.data.envio).toEqual({
+      estado: 'pronto',
+      modo: 'email_routing',
+      em: '2026-08-10T09:00:00Z',
+    })
+  })
+
+  it('última tentativa recusada por configuração: nao_configurado com código e data', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'falhou',
+      codigo: 'E_SENDER_NOT_VERIFIED',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const body = (await (
+      await getAlertas(configCompleta())
+    ).json()) as Envelope<Alertas>
+    expect(body.data.envio).toEqual({
+      estado: 'nao_configurado',
+      modo: 'email_routing',
+      codigo: 'E_SENDER_NOT_VERIFIED',
+      em: '2026-08-10T09:00:00Z',
+    })
+  })
+
+  it('última tentativa falhou por motivo passageiro: falhou com código e data', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'falhou',
+      codigo: 'E_RATE_LIMIT_EXCEEDED',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const body = (await (
+      await getAlertas(configCompleta())
+    ).json()) as Envelope<Alertas>
+    expect(body.data.envio).toEqual({
+      estado: 'falhou',
+      modo: 'email_routing',
+      codigo: 'E_RATE_LIMIT_EXCEEDED',
+      em: '2026-08-10T09:00:00Z',
+    })
+  })
+
+  it('PUT devolve a mesma forma do GET, com o estado do envio', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'enviado',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const res = await putAlertas({ ligado: false }, false, configCompleta())
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as Envelope<Alertas>).data).toEqual({
+      ligado: false,
+      envio: {
+        estado: 'pronto',
+        modo: 'email_routing',
+        em: '2026-08-10T09:00:00Z',
+      },
+    })
+  })
+
+  it.each([
+    [
+      'sem destinatário',
+      { ALLOWED_EMAIL: undefined },
+      'alertas_sem_destinatario',
+    ],
+    [
+      'sem remetente',
+      { ALERTAS_REMETENTE: undefined },
+      'alertas_sem_remetente',
+    ],
+    ['sem modo', { ALERTAS_ENVIO: undefined }, 'alertas_sem_modo'],
+  ])(
+    '%s: nao_configurado com o código da falta',
+    async (_rotulo, parcial, codigo) => {
+      const body = (await (
+        await getAlertas(configCompleta(parcial))
+      ).json()) as Envelope<Alertas>
+      expect(body.data.envio.estado).toBe('nao_configurado')
+      expect(body.data.envio.codigo).toBe(codigo)
+    },
+  )
+
+  it('a resposta nunca traz o endereço de destino nem o do remetente', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'falhou',
+      codigo: 'destino_nao_verificado',
+      em: '2026-08-10T09:00:00Z',
+    })
+    for (const res of [
+      await getAlertas(configCompleta()),
+      await putAlertas({ ligado: true }, false, configCompleta()),
+      await getAlertas(configCompleta({ ALERTAS_ENVIO: 'smtp' })),
+    ]) {
+      const texto = await res.text()
+      expect(texto).not.toContain(PARA)
+      expect(texto).not.toContain(REMETENTE)
+      expect(texto).not.toContain('@')
+    }
+  })
+
+  // Só a leitura do registro do envio falha (o liga/desliga lê bem): prova
+  // que é o estado do envio que propaga, sem cair num estado inventado.
+  it('leitura do estado falhando no D1: a rota não inventa estado (propaga, 500)', async () => {
+    const delega = <T extends object>(alvo: T, prop: string | symbol) => {
+      const valor = Reflect.get(alvo, prop)
+      return typeof valor === 'function' ? valor.bind(alvo) : valor
+    }
+    const dbQueFalha = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop !== 'prepare') return delega(alvo, prop)
+        return (sql: string) =>
+          new Proxy(alvo.prepare(sql), {
+            get(stmt, p) {
+              if (p !== 'bind') return delega(stmt, p)
+              return (...args: unknown[]) => {
+                if (!args.includes('alertas_email_envio')) {
+                  return stmt.bind(...args)
+                }
+                return {
+                  first: async () => {
+                    throw new Error('D1_ERROR: falhou: SQLITE_ERROR')
+                  },
+                }
+              }
+            },
+          })
+      },
+    })
+    const res = await getAlertas(configCompleta({ DB: dbQueFalha }))
+    expect(res.status).toBe(500)
+  })
+
+  it('a chave alertas_email_envio é reservada: a genérica recusa ler e escrever, apontando a rota dos alertas', async () => {
+    await registrarEnvio(env.DB, ENVIO, {
+      resultado: 'enviado',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const antes = await linhaSalva('alertas_email_envio')
+
+    const resGet = await getKey('alertas_email_envio')
+    expect(resGet.status).toBe(422)
+    const bodyGet = (await resGet.json()) as Envelope<null>
+    expect(bodyGet.notifications[0].code).toBe('reserved_setting_key')
+    expect(bodyGet.notifications[0].message).toContain('/api/settings/alertas')
+
+    const resPut = await putKey('alertas_email_envio', {
+      value: JSON.stringify({
+        resultado: 'enviado',
+        modo: 'email_routing',
+        em: '2030-01-01T00:00:00Z',
+      }),
+    })
+    expect(resPut.status).toBe(422)
+    const bodyPut = (await resPut.json()) as Envelope<null>
+    expect(bodyPut.notifications[0].code).toBe('reserved_setting_key')
+    expect(await linhaSalva('alertas_email_envio')).toEqual(antes)
   })
 
   it('no app montado, /api/settings/alertas vem antes de /api/settings/:key', () => {

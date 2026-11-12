@@ -9,11 +9,50 @@ vi.mock('../auth-client', () => ({
   authClient: { $store: { notify: vi.fn() } },
 }))
 
-import { AlertasEmailCard, CartaoAlertasEmail } from './alertas-email'
+import {
+  AlertasEmailCard,
+  CartaoAlertasEmail,
+  type EnvioView,
+} from './alertas-email'
 import metaHistorias, * as todasAsHistorias from './alertas-email.stories'
 
 const ROTA = '/api/settings/alertas'
 const NOME = 'Receber alertas por e-mail'
+
+const SELO_PRONTO = 'Ligado'
+const SELO_AGUARDANDO = 'Aguardando o primeiro envio'
+const SELO_NAO_CONFIGURADO = 'Envio de e-mail não configurado'
+const SELO_FALHOU = 'A última tentativa falhou'
+
+const FRASE_AGUARDANDO =
+  'Nenhum e-mail saiu ainda. O estado se confirma no primeiro alerta.'
+const FRASE_NAO_CONFIGURADO =
+  'O Finanças ainda não consegue mandar e-mail: falta configurar o envio na Cloudflare.'
+const FRASE_FALHOU = 'Tenta de novo no próximo dia com alerta.'
+
+const PRONTO: EnvioView = {
+  estado: 'pronto',
+  modo: 'email_routing',
+  em: '2026-11-10T09:00:12.000Z',
+}
+const AGUARDANDO: EnvioView = { estado: 'aguardando', modo: 'email_routing' }
+const SEM_BINDING: EnvioView = {
+  estado: 'nao_configurado',
+  modo: 'email_routing',
+  codigo: 'alertas_sem_binding',
+}
+const REMETENTE_NAO_VERIFICADO: EnvioView = {
+  estado: 'nao_configurado',
+  modo: 'email_routing',
+  codigo: 'E_SENDER_NOT_VERIFIED',
+  em: '2026-11-10T09:00:03.000Z',
+}
+const FALHOU: EnvioView = {
+  estado: 'falhou',
+  modo: 'email_routing',
+  codigo: 'E_DELIVERY_FAILED',
+  em: '2026-11-10T09:00:05.000Z',
+}
 
 type Resposta = { status: number; body: unknown }
 type Passo = Resposta | Promise<Resposta> | Error
@@ -80,23 +119,39 @@ describe('AlertasEmailCard', () => {
     expect(screen.getByText(/Carregando/)).toHaveAttribute('aria-busy', 'true')
     expect(screen.queryByRole('switch')).toBeNull()
 
-    leitura.responder(ok({ ligado: true }))
+    leitura.responder(ok({ ligado: true, envio: PRONTO }))
     expect(await screen.findByRole('switch', { name: NOME })).toBeChecked()
   })
 
-  it('carrega ligado: interruptor marcado e o estado escrito, não só na cor', async () => {
-    const chamadas = servidor([ok({ ligado: true })])
+  it('carrega ligado com o envio pronto: interruptor marcado e o estado escrito, não só na cor', async () => {
+    const chamadas = servidor([ok({ ligado: true, envio: PRONTO })])
     render(<AlertasEmailCard />)
 
     const interruptor = await screen.findByRole('switch', { name: NOME })
     expect(interruptor).toBeChecked()
     expect(interruptor).toBeEnabled()
-    expect(interruptor).toHaveAccessibleDescription('Ligado')
+    expect(interruptor).toHaveAccessibleDescription(SELO_PRONTO)
+    expect(screen.getByText('Último e-mail em 10/11/2026')).toBeInTheDocument()
     expect(chamadas).toEqual([{ path: ROTA, method: 'GET', body: undefined }])
   })
 
+  it('carrega ligado sem o envio configurado: o selo diz isso, nunca "Ligado"', async () => {
+    // A preferência está ligada, mas nenhum e-mail sai: um "Ligado" aqui
+    // diria ao dono que ele vai ser avisado quando não vai.
+    servidor([ok({ ligado: true, envio: REMETENTE_NAO_VERIFICADO })])
+    render(<AlertasEmailCard />)
+
+    const interruptor = await screen.findByRole('switch', { name: NOME })
+    expect(interruptor).toBeChecked()
+    expect(interruptor).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+    const cartao = screen.getByTestId('cartao-alertas-email')
+    expect(cartao).toHaveTextContent(FRASE_NAO_CONFIGURADO)
+    expect(cartao).toHaveTextContent('código: E_SENDER_NOT_VERIFIED')
+    expect(cartao).not.toHaveTextContent(/Ligado/)
+  })
+
   it('carrega desligado', async () => {
-    servidor([ok({ ligado: false })])
+    servidor([ok({ ligado: false, envio: PRONTO })])
     render(<AlertasEmailCard />)
 
     const interruptor = await screen.findByRole('switch', { name: NOME })
@@ -110,7 +165,10 @@ describe('AlertasEmailCard', () => {
     // recusar diria ao dono que os e-mails pararam sem ter parado.
     const usuario = userEvent.setup()
     const gravacao = adiada()
-    const chamadas = servidor([ok({ ligado: true }), gravacao.promessa])
+    const chamadas = servidor([
+      ok({ ligado: true, envio: PRONTO }),
+      gravacao.promessa,
+    ])
     render(<AlertasEmailCard />)
 
     const interruptor = await screen.findByRole('switch', { name: NOME })
@@ -125,15 +183,20 @@ describe('AlertasEmailCard', () => {
     expect(interruptor).toBeChecked()
     expect(interruptor).toHaveAccessibleDescription('Salvando…')
 
-    gravacao.responder(ok({ ligado: false }))
+    gravacao.responder(ok({ ligado: false, envio: PRONTO }))
     await waitFor(() => expect(interruptor).toBeEnabled())
     expect(interruptor).not.toBeChecked()
     expect(interruptor).toHaveAccessibleDescription('Desligado')
   })
 
-  it('ligar manda PUT com ligado true', async () => {
+  it('ligar manda PUT com ligado true e o selo segue o envio que a resposta trouxe', async () => {
+    // A leitura disse "aguardando"; a resposta do PUT diz "não configurado".
+    // O selo tem que seguir a resposta, não o estado lido antes.
     const usuario = userEvent.setup()
-    const chamadas = servidor([ok({ ligado: false }), ok({ ligado: true })])
+    const chamadas = servidor([
+      ok({ ligado: false, envio: AGUARDANDO }),
+      ok({ ligado: true, envio: SEM_BINDING }),
+    ])
     render(<AlertasEmailCard />)
 
     const interruptor = await screen.findByRole('switch', { name: NOME })
@@ -145,13 +208,34 @@ describe('AlertasEmailCard', () => {
       method: 'PUT',
       body: { ligado: true },
     })
-    expect(interruptor).toHaveAccessibleDescription('Ligado')
+    expect(interruptor).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+    expect(screen.getByTestId('cartao-alertas-email')).toHaveTextContent(
+      'código: alertas_sem_binding',
+    )
+  })
+
+  it('ligar com o envio pronto mostra "Ligado" e a data do último e-mail', async () => {
+    const usuario = userEvent.setup()
+    servidor([
+      ok({ ligado: false, envio: PRONTO }),
+      ok({ ligado: true, envio: PRONTO }),
+    ])
+    render(<AlertasEmailCard />)
+
+    const interruptor = await screen.findByRole('switch', { name: NOME })
+    expect(screen.queryByText(/Último e-mail/)).toBeNull()
+    await usuario.click(interruptor)
+
+    await waitFor(() =>
+      expect(interruptor).toHaveAccessibleDescription(SELO_PRONTO),
+    )
+    expect(screen.getByText('Último e-mail em 10/11/2026')).toBeInTheDocument()
   })
 
   it('a recusa do servidor aparece e o interruptor fica no valor salvo', async () => {
     const usuario = userEvent.setup()
     servidor([
-      ok({ ligado: true }),
+      ok({ ligado: true, envio: PRONTO }),
       recusa(422, 'invalid_body', 'Envie ligado como verdadeiro ou falso.'),
     ])
     render(<AlertasEmailCard />)
@@ -164,14 +248,15 @@ describe('AlertasEmailCard', () => {
     )
     expect(interruptor).toBeChecked()
     expect(interruptor).toBeEnabled()
+    expect(interruptor).toHaveAccessibleDescription(SELO_PRONTO)
   })
 
   it('uma tentativa nova apaga a recusa anterior', async () => {
     const usuario = userEvent.setup()
     servidor([
-      ok({ ligado: true }),
+      ok({ ligado: true, envio: PRONTO }),
       recusa(429, 'rate_limited', 'Muitas gravações em pouco tempo.'),
-      ok({ ligado: false }),
+      ok({ ligado: false, envio: PRONTO }),
     ])
     render(<AlertasEmailCard />)
 
@@ -186,7 +271,10 @@ describe('AlertasEmailCard', () => {
 
   it('falha de rede ao salvar vira frase em português, não o erro cru do navegador', async () => {
     const usuario = userEvent.setup()
-    servidor([ok({ ligado: true }), new TypeError('Failed to fetch')])
+    servidor([
+      ok({ ligado: true, envio: PRONTO }),
+      new TypeError('Failed to fetch'),
+    ])
     render(<AlertasEmailCard />)
 
     await usuario.click(await screen.findByRole('switch', { name: NOME }))
@@ -202,7 +290,7 @@ describe('AlertasEmailCard', () => {
     const usuario = userEvent.setup()
     const chamadas = servidor([
       recusa(503, 'db_unavailable', 'O banco não respondeu.'),
-      ok({ ligado: false }),
+      ok({ ligado: false, envio: AGUARDANDO }),
     ])
     render(<AlertasEmailCard />)
 
@@ -226,6 +314,7 @@ describe('AlertasEmailCard', () => {
 describe('CartaoAlertasEmail', () => {
   const base = {
     ligado: true,
+    envio: PRONTO,
     erroCarga: null,
     salvando: false,
     recusa: null,
@@ -233,27 +322,146 @@ describe('CartaoAlertasEmail', () => {
     onTentarDeNovo: () => {},
   }
 
+  const interruptor = () => screen.getByRole('switch', { name: NOME })
+  const cartao = () => screen.getByTestId('cartao-alertas-email')
+
   it('explica o que dispara, o limite de um e-mail por alerta e o destino, sem mostrar o endereço', () => {
     render(<CartaoAlertasEmail {...base} />)
 
     expect(
       screen.getByRole('heading', { name: 'Alertas por e-mail' }),
     ).toBeInTheDocument()
-    const cartao = screen.getByTestId('cartao-alertas-email')
-    expect(cartao).toHaveTextContent(/80% do orçamento do mês/)
-    expect(cartao).toHaveTextContent(/quando estoura/)
-    expect(cartao).toHaveTextContent(/3 dias antes do vencimento/)
-    expect(cartao).toHaveTextContent(/fatura de cartão em aberto/)
-    expect(cartao).toHaveTextContent(/no máximo um e-mail por alerta/i)
-    expect(cartao).toHaveTextContent(/conta Google/)
+    expect(cartao()).toHaveTextContent(/80% do orçamento do mês/)
+    expect(cartao()).toHaveTextContent(/quando estoura/)
+    expect(cartao()).toHaveTextContent(/3 dias antes do vencimento/)
+    expect(cartao()).toHaveTextContent(/fatura de cartão em aberto/)
+    expect(cartao()).toHaveTextContent(/no máximo um e-mail por alerta/i)
+    expect(cartao()).toHaveTextContent(/conta Google/)
     // O endereço mora só na config do Worker; a tela não o conhece nem o
     // mostra.
-    expect(cartao).not.toHaveTextContent('@')
+    expect(cartao()).not.toHaveTextContent('@')
+  })
+
+  it('pronto: "Ligado" e o dia do último e-mail em Teresina, não em UTC', () => {
+    // 01:30 UTC de 11/11 ainda é 22:30 de 10/11 em Teresina (UTC−3). Cortar
+    // a string ISO daria 11/11, o dia errado.
+    render(
+      <CartaoAlertasEmail
+        {...base}
+        envio={{ ...PRONTO, em: '2026-11-11T01:30:00.000Z' }}
+      />,
+    )
+    expect(interruptor()).toHaveAccessibleDescription(SELO_PRONTO)
+    expect(cartao()).toHaveTextContent('Último e-mail em 10/11/2026')
+    expect(cartao()).not.toHaveTextContent('11/11/2026')
+  })
+
+  it('pronto com a data ausente ou ilegível não quebra o cartão nem inventa um dia', () => {
+    for (const em of [undefined, 'ontem']) {
+      const { unmount } = render(
+        <CartaoAlertasEmail {...base} envio={{ ...PRONTO, em }} />,
+      )
+      expect(interruptor()).toHaveAccessibleDescription(SELO_PRONTO)
+      expect(cartao()).not.toHaveTextContent(/Último e-mail/)
+      unmount()
+    }
+  })
+
+  it('aguardando: diz que nenhum e-mail saiu ainda', () => {
+    render(<CartaoAlertasEmail {...base} envio={AGUARDANDO} />)
+    expect(interruptor()).toHaveAccessibleDescription(SELO_AGUARDANDO)
+    expect(cartao()).toHaveTextContent(FRASE_AGUARDANDO)
+    expect(cartao()).not.toHaveTextContent(/código/)
+  })
+
+  it('não configurado: frase, código em texto pequeno e o dia da tentativa, sem endereço', () => {
+    render(<CartaoAlertasEmail {...base} envio={REMETENTE_NAO_VERIFICADO} />)
+    expect(interruptor()).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+    expect(cartao()).toHaveTextContent(FRASE_NAO_CONFIGURADO)
+    const codigo = screen.getByText(/código: E_SENDER_NOT_VERIFIED/)
+    expect(codigo.className).toContain('text-xs')
+    expect(codigo).toHaveTextContent('tentativa em 10/11/2026')
+    expect(cartao()).not.toHaveTextContent('@')
+  })
+
+  it('não configurado pela config do Worker (sem tentativa): código sem data', () => {
+    render(<CartaoAlertasEmail {...base} envio={SEM_BINDING} />)
+    expect(interruptor()).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+    expect(cartao()).toHaveTextContent(FRASE_NAO_CONFIGURADO)
+    expect(
+      screen.getByText(/código: alertas_sem_binding/),
+    ).not.toHaveTextContent(/tentativa/)
+  })
+
+  it('não configurado sem código: só a frase, sem uma linha de código vazia', () => {
+    render(
+      <CartaoAlertasEmail
+        {...base}
+        envio={{ estado: 'nao_configurado', modo: null }}
+      />,
+    )
+    expect(interruptor()).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+    expect(cartao()).toHaveTextContent(FRASE_NAO_CONFIGURADO)
+    expect(cartao()).not.toHaveTextContent(/código/)
+  })
+
+  it('falhou: diz quando tenta de novo, o código e o dia da tentativa', () => {
+    render(<CartaoAlertasEmail {...base} envio={FALHOU} />)
+    expect(interruptor()).toHaveAccessibleDescription(SELO_FALHOU)
+    expect(cartao()).toHaveTextContent(FRASE_FALHOU)
+    expect(cartao()).toHaveTextContent('código: E_DELIVERY_FAILED')
+    expect(cartao()).toHaveTextContent('tentativa em 10/11/2026')
+  })
+
+  it('em todo estado que não é "pronto", o selo NÃO diz "Ligado"', () => {
+    // A regra do pedido: nunca "Ligado" sem e-mail saindo. Inclui o envio
+    // ausente e um estado que esta versão da tela não conhece.
+    const naoProntos: Array<EnvioView | null> = [
+      AGUARDANDO,
+      SEM_BINDING,
+      REMETENTE_NAO_VERIFICADO,
+      { estado: 'nao_configurado', modo: null },
+      FALHOU,
+      { estado: 'desconhecido', modo: 'email_routing' } as unknown as EnvioView,
+      null,
+    ]
+    for (const envio of naoProntos) {
+      const { unmount } = render(<CartaoAlertasEmail {...base} envio={envio} />)
+      const selo = document.getElementById(
+        interruptor().getAttribute('aria-describedby')!,
+      )
+      expect(selo).not.toBeNull()
+      expect(selo).not.toHaveTextContent(/Ligado/)
+      expect(interruptor()).not.toHaveAccessibleDescription(SELO_PRONTO)
+      expect(cartao()).not.toHaveTextContent(/Ligado/)
+      expect(cartao()).not.toHaveTextContent(/Último e-mail/)
+      unmount()
+    }
+  })
+
+  it('desligado diz só "Desligado", sem o estado do envio', () => {
+    for (const envio of [PRONTO, AGUARDANDO, SEM_BINDING, FALHOU]) {
+      const { unmount } = render(
+        <CartaoAlertasEmail {...base} ligado={false} envio={envio} />,
+      )
+      expect(interruptor()).toHaveAccessibleDescription('Desligado')
+      expect(cartao()).not.toHaveTextContent(/Último e-mail/)
+      expect(cartao()).not.toHaveTextContent(FRASE_AGUARDANDO)
+      expect(cartao()).not.toHaveTextContent(FRASE_NAO_CONFIGURADO)
+      expect(cartao()).not.toHaveTextContent(FRASE_FALHOU)
+      expect(cartao()).not.toHaveTextContent(/código/)
+      unmount()
+    }
+  })
+
+  it('salvando, o selo diz "Salvando…" em qualquer estado do envio', () => {
+    render(<CartaoAlertasEmail {...base} salvando envio={FALHOU} />)
+    expect(interruptor()).toHaveAccessibleDescription('Salvando…')
   })
 
   it('o rótulo inteiro é o alvo de 44 px, não só o quadradinho', () => {
     render(<CartaoAlertasEmail {...base} />)
-    const rotulo = screen.getByRole('switch', { name: NOME }).closest('label')
+    const rotulo = interruptor().closest('label')
     expect(rotulo).not.toBeNull()
     expect(rotulo!.className).toContain('min-h-11')
   })
@@ -265,6 +473,7 @@ describe('CartaoAlertasEmail', () => {
       <CartaoAlertasEmail
         {...base}
         ligado={null}
+        envio={null}
         erroCarga="O servidor não respondeu."
         onTentarDeNovo={onTentarDeNovo}
       />,
@@ -279,7 +488,7 @@ describe('CartaoAlertasEmail', () => {
     const usuario = userEvent.setup()
     const onAlternar = vi.fn()
     render(<CartaoAlertasEmail {...base} onAlternar={onAlternar} />)
-    await usuario.click(screen.getByRole('switch', { name: NOME }))
+    await usuario.click(interruptor())
     expect(onAlternar).toHaveBeenCalledWith(false)
   })
 })
@@ -299,7 +508,7 @@ describe('alertas-email.stories — os estados do cartão', () => {
         const s = within(c).getByRole('switch', { name: NOME })
         expect(s).toBeChecked()
         expect(s).toBeEnabled()
-        expect(s).toHaveAccessibleDescription('Ligado')
+        expect(s).toHaveAccessibleDescription(SELO_PRONTO)
       },
       Desligado: (c) => {
         const s = within(c).getByRole('switch', { name: NOME })
@@ -324,6 +533,32 @@ describe('alertas-email.stories — os estados do cartão', () => {
           within(alerta).getByRole('button', { name: 'Tentar de novo' }),
         ).toBeInTheDocument()
         expect(within(c).queryByRole('switch')).toBeNull()
+      },
+      Pronto: (c) => {
+        const s = within(c).getByRole('switch', { name: NOME })
+        expect(s).toBeChecked()
+        expect(s).toHaveAccessibleDescription(SELO_PRONTO)
+        expect(c).toHaveTextContent(/Último e-mail em \d{2}\/\d{2}\/\d{4}/)
+      },
+      Aguardando: (c) => {
+        const s = within(c).getByRole('switch', { name: NOME })
+        expect(s).toBeChecked()
+        expect(s).toHaveAccessibleDescription(SELO_AGUARDANDO)
+        expect(c).toHaveTextContent(FRASE_AGUARDANDO)
+      },
+      NaoConfigurado: (c) => {
+        const s = within(c).getByRole('switch', { name: NOME })
+        expect(s).toBeChecked()
+        expect(s).toHaveAccessibleDescription(SELO_NAO_CONFIGURADO)
+        expect(c).toHaveTextContent(FRASE_NAO_CONFIGURADO)
+        expect(c).toHaveTextContent(/código: E_/)
+      },
+      Falhou: (c) => {
+        const s = within(c).getByRole('switch', { name: NOME })
+        expect(s).toBeChecked()
+        expect(s).toHaveAccessibleDescription(SELO_FALHOU)
+        expect(c).toHaveTextContent(FRASE_FALHOU)
+        expect(c).toHaveTextContent(/código: E_/)
       },
     }
     expect(Object.keys(historias).sort()).toEqual(Object.keys(esperado).sort())

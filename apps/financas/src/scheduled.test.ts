@@ -6,6 +6,11 @@
  * O `fetch` global é trocado: nenhum teste alcança a API de verdade. O
  * binding EMAIL é sempre um falso que grava as mensagens, e o destinatário é
  * um endereço fictício: nenhum teste chega perto de envio real.
+ *
+ * Os casos do #102 conferem o objeto estruturado, então o env deles fixa
+ * ALERTAS_ENVIO = "email_sending"; os do Email Routing trocam o modo e leem o
+ * raw da EmailMessage, que no pool é a do miniflare (um objeto com from, to
+ * e a chave "EmailMessage::raw"; ver lib/envio-email.test.ts).
  */
 import {
   createExecutionContext,
@@ -17,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import wranglerJsonc from '../wrangler.jsonc?raw'
 import { createAccount } from './domain/accounts'
 import type { MensagemDeAlerta } from './domain/alertas'
+import { estadoDoEnvio, impressaoDoEnvio } from './domain/alertas-envio'
 import { setBudget } from './domain/budgets'
 import { createCategory } from './domain/categories'
 import { setAlertasLigados } from './domain/settings'
@@ -54,6 +60,7 @@ function envDeAlertas() {
     EMAIL: emailFalso(),
     ALLOWED_EMAIL: PARA,
     ALERTAS_REMETENTE: REMETENTE,
+    ALERTAS_ENVIO: 'email_sending',
     BETTER_AUTH_URL: APP,
   }
 }
@@ -131,6 +138,13 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
+
+async function registroDoEnvio(): Promise<unknown> {
+  const linha = await env.DB.prepare(
+    "SELECT value FROM settings WHERE key = 'alertas_email_envio'",
+  ).first<{ value: string }>()
+  return linha === null ? null : JSON.parse(linha.value)
+}
 
 describe('cron do insight mensal', () => {
   // Desde a 0019 a lista tem também o diário da recorrência.
@@ -712,24 +726,32 @@ describe('cron diário: alertas por e-mail', () => {
   })
 
   it.each([
-    ['EMAIL', 'alertas_sem_binding'],
-    ['ALLOWED_EMAIL', 'alertas_sem_destinatario'],
-    ['ALERTAS_REMETENTE', 'alertas_sem_remetente'],
+    ['EMAIL', undefined, 'alertas_sem_binding'],
+    ['ALLOWED_EMAIL', undefined, 'alertas_sem_destinatario'],
+    ['ALERTAS_REMETENTE', undefined, 'alertas_sem_remetente'],
+    ['ALERTAS_ENVIO', undefined, 'alertas_sem_modo'],
+    ['ALERTAS_ENVIO', 'smtp', 'alertas_sem_modo'],
   ])(
-    'sem %s: não lança, avisa %s e a geração roda',
-    async (binding, codigo) => {
+    '%s = %s: não lança, não envia, avisa %s e a geração roda',
+    async (binding, valor, codigo) => {
       const cat = await categoriaComOrcamento('Mercado', 10_000)
       await gastoAvulso(cat.id, 9_000, '2026-08-02')
       const r = await recorrenteNaCategoria(null)
 
       await expect(
         rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
-          [binding]: undefined,
+          [binding]: valor,
         }),
       ).resolves.toBeUndefined()
 
       expect(emails).toHaveLength(0)
-      expect(linhasDoConsole().some((l) => l.includes(codigo))).toBe(true)
+      expect(
+        linhasDoConsole().some(
+          (l) =>
+            l.includes('alertas por e-mail não rodaram') && l.includes(codigo),
+        ),
+      ).toBe(true)
+      expect(await registroDoEnvio()).toBeNull()
       const gerado = await env.DB.prepare(
         'SELECT COUNT(*) AS n FROM transactions WHERE recurring_expense_id = ?',
       )
@@ -773,5 +795,289 @@ describe('cron diário: alertas por e-mail', () => {
     expect(permitidos?.trim()).toBe(`"${remetente}"`)
     expect(wranglerJsonc).not.toMatch(/destination_address/)
     expect(wranglerJsonc).not.toMatch(/"remote":\s*true/)
+  })
+
+  // Decisão do dono (2026-11-11): o caminho grátis, Email Routing com o
+  // destino verificado. O Email Sending fica atrás da mesma var.
+  it('o wrangler.jsonc liga o caminho Email Routing em ALERTAS_ENVIO', () => {
+    expect(/"ALERTAS_ENVIO":\s*"([^"]+)"/.exec(wranglerJsonc)?.[1]).toBe(
+      'email_routing',
+    )
+  })
+})
+
+// O caminho do envio (ALERTAS_ENVIO) e o registro que a tela de
+// Configurações lê para mostrar o estado real ('alertas_email_envio').
+describe('cron diário: caminho do envio e o registro do estado', () => {
+  const DIA_10_DE_AGOSTO = Date.parse('2026-08-10T09:00:00Z')
+
+  async function alertaDeOrcamentoNoDia() {
+    const cat = await createCategory(env.DB, {
+      name: 'Mercado',
+      kind: 'expense',
+    })
+    await setBudget(env.DB, '2026-08', cat.id, 10_000)
+    const conta = await createAccount(env.DB, {
+      name: 'Conta Teste',
+      scope: 'PF',
+      kind: 'checking',
+    })
+    await createTransaction(env.DB, {
+      account_id: conta.id,
+      category_id: cat.id,
+      amount_cents: -9_000,
+      purchase_date: '2026-08-02',
+      description: 'Compra de teste',
+    })
+  }
+
+  function emailMessage(x: unknown) {
+    const m = x as Record<string, unknown>
+    return {
+      from: m.from,
+      to: m.to,
+      raw: String(m['EmailMessage::raw']),
+    }
+  }
+
+  function decodificar(b64: string): string {
+    return new TextDecoder().decode(
+      Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)),
+    )
+  }
+
+  function cabecalho(raw: string, nome: string): string {
+    const topo = raw.slice(0, raw.indexOf('\r\n\r\n')).replace(/\r\n /g, ' ')
+    const linha = topo.split('\r\n').find((l) => l.startsWith(`${nome}: `))
+    return linha?.slice(nome.length + 2) ?? ''
+  }
+
+  function linhasDoConsole() {
+    return saidasDoConsole.map((args) => args.map(comoTexto).join(' '))
+  }
+
+  it('email_routing: envia uma EmailMessage do remetente para o destinatário, com Subject em encoded-word e as duas partes', async () => {
+    await alertaDeOrcamentoNoDia()
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      ALERTAS_ENVIO: 'email_routing',
+    })
+
+    expect(emails).toHaveLength(1)
+    const m = emailMessage(emails[0])
+    expect(m.from).toBe(REMETENTE)
+    expect(m.to).toBe(PARA)
+    expect(emails[0]).not.toHaveProperty('subject')
+
+    const assunto = cabecalho(m.raw, 'Subject')
+    expect(assunto).toMatch(/^=\?UTF-8\?B\?/)
+    const decodificado = assunto
+      .split(' ')
+      .map((p) => decodificar(/^=\?UTF-8\?B\?(.*)\?=$/.exec(p)?.[1] ?? ''))
+      .join('')
+    expect(decodificado).toBe('Orçamento: Mercado chegou a 90% do limite')
+    expect(cabecalho(m.raw, 'From')).toBe(
+      `=?UTF-8?B?RmluYW7Dp2Fz?= <${REMETENTE}>`,
+    )
+    expect(cabecalho(m.raw, 'To')).toBe(PARA)
+    expect(cabecalho(m.raw, 'Date')).toBe('Mon, 10 Aug 2026 09:00:00 +0000')
+    expect(cabecalho(m.raw, 'Message-ID')).toMatch(
+      /^<[0-9a-f-]{36}@exemplo\.test>$/,
+    )
+
+    const partes = [
+      ...m.raw.matchAll(
+        /Content-Type: (text\/(?:plain|html)); charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n--/g,
+      ),
+    ].map(([, tipo, b64]) => [tipo, decodificar(b64.replace(/\r\n/g, ''))])
+    expect(partes.map(([tipo]) => tipo)).toEqual(['text/plain', 'text/html'])
+    expect(partes[0][1]).toContain(
+      '- Mercado: R$ 90,00 de R$ 100,00 (90%). Perto do limite.',
+    )
+    expect(partes[1][1]).toContain('<li>Mercado: R$ 90,00 de R$ 100,00 (90%).')
+  })
+
+  it('email_sending: envia o objeto estruturado, sem EmailMessage', async () => {
+    await alertaDeOrcamentoNoDia()
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      ALERTAS_ENVIO: 'email_sending',
+    })
+
+    expect(emails).toHaveLength(1)
+    expect(emails[0]).not.toHaveProperty('EmailMessage::raw')
+    expect(emails[0]).toMatchObject({
+      to: PARA,
+      from: { name: 'Finanças', email: REMETENTE },
+      subject: 'Orçamento: Mercado chegou a 90% do limite',
+    })
+  })
+
+  it('enviado: grava o registro com o modo e a hora do Cron, e a tela passa a dizer pronto', async () => {
+    await alertaDeOrcamentoNoDia()
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      ALERTAS_ENVIO: 'email_routing',
+    })
+
+    expect(await registroDoEnvio()).toEqual({
+      resultado: 'enviado',
+      modo: 'email_routing',
+      impressao: await impressaoDoEnvio({
+        modo: 'email_routing',
+        de: REMETENTE,
+        para: PARA,
+      }),
+      em: '2026-08-10T09:00:00Z',
+    })
+    expect(
+      await estadoDoEnvio(env.DB, {
+        ...envDeAlertas(),
+        ALERTAS_ENVIO: 'email_routing',
+      }),
+    ).toEqual({
+      estado: 'pronto',
+      modo: 'email_routing',
+      em: '2026-08-10T09:00:00Z',
+    })
+  })
+
+  it('falhou por configuração (E_SENDER_NOT_VERIFIED): registro com o código, e a tela diz não configurado', async () => {
+    await alertaDeOrcamentoNoDia()
+    const erro = Object.assign(new Error(`recusado para ${PARA}`), {
+      code: 'E_SENDER_NOT_VERIFIED',
+    })
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      EMAIL: emailFalso(erro),
+    })
+
+    expect(await registroDoEnvio()).toEqual({
+      resultado: 'falhou',
+      modo: 'email_sending',
+      impressao: await impressaoDoEnvio({
+        modo: 'email_sending',
+        de: REMETENTE,
+        para: PARA,
+      }),
+      codigo: 'E_SENDER_NOT_VERIFIED',
+      em: '2026-08-10T09:00:00Z',
+    })
+    expect((await estadoDoEnvio(env.DB, envDeAlertas())).estado).toBe(
+      'nao_configurado',
+    )
+  })
+
+  it('falhou por motivo passageiro (E_RATE_LIMIT_EXCEEDED): registro com o código, e a tela diz falhou', async () => {
+    await alertaDeOrcamentoNoDia()
+    const erro = Object.assign(new Error('x'), {
+      code: 'E_RATE_LIMIT_EXCEEDED',
+    })
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      EMAIL: emailFalso(erro),
+    })
+
+    expect(await registroDoEnvio()).toEqual({
+      resultado: 'falhou',
+      modo: 'email_sending',
+      impressao: await impressaoDoEnvio({
+        modo: 'email_sending',
+        de: REMETENTE,
+        para: PARA,
+      }),
+      codigo: 'E_RATE_LIMIT_EXCEEDED',
+      em: '2026-08-10T09:00:00Z',
+    })
+    expect((await estadoDoEnvio(env.DB, envDeAlertas())).estado).toBe('falhou')
+  })
+
+  it('email_routing com o destino recusado (sem code): registro destino_nao_verificado, sem o endereço em lugar nenhum', async () => {
+    await alertaDeOrcamentoNoDia()
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, {
+      ALERTAS_ENVIO: 'email_routing',
+      EMAIL: emailFalso(new Error(`email to ${PARA} not allowed`)),
+    })
+
+    expect(await registroDoEnvio()).toEqual({
+      resultado: 'falhou',
+      modo: 'email_routing',
+      impressao: await impressaoDoEnvio({
+        modo: 'email_routing',
+        de: REMETENTE,
+        para: PARA,
+      }),
+      codigo: 'destino_nao_verificado',
+      em: '2026-08-10T09:00:00Z',
+    })
+    const linha = await env.DB.prepare(
+      "SELECT value FROM settings WHERE key = 'alertas_email_envio'",
+    ).first<{ value: string }>()
+    expect(linha?.value).not.toContain(PARA)
+    for (const l of linhasDoConsole()) expect(l).not.toContain(PARA)
+    expect(
+      linhasDoConsole().some((l) =>
+        l.includes('status=falhou enviados=0 codigo=destino_nao_verificado'),
+      ),
+    ).toBe(true)
+  })
+
+  it('sem alerta no dia: não grava registro', async () => {
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(linhasDoConsole().some((l) => l.includes('status=sem_alerta'))).toBe(
+      true,
+    )
+    expect(await registroDoEnvio()).toBeNull()
+  })
+
+  it('desligado: não grava registro', async () => {
+    await alertaDeOrcamentoNoDia()
+    await setAlertasLigados(env.DB, false)
+
+    await rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA)
+
+    expect(linhasDoConsole().some((l) => l.includes('status=desligado'))).toBe(
+      true,
+    )
+    expect(await registroDoEnvio()).toBeNull()
+  })
+
+  it('falha ao gravar o registro: só console.error com o código, e o envio e o alert_log ficam como estão', async () => {
+    await alertaDeOrcamentoNoDia()
+    const dbQueFalha = new Proxy(env.DB, {
+      get(alvo, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            if (sql.includes('INSERT INTO settings')) {
+              throw new Error('D1_ERROR: database is locked: SQLITE_BUSY')
+            }
+            return alvo.prepare(sql)
+          }
+        }
+        const valor = Reflect.get(alvo, prop)
+        return typeof valor === 'function' ? valor.bind(alvo) : valor
+      },
+    })
+
+    await expect(
+      rodarCron(DIA_10_DE_AGOSTO, CHAVE, CRON_RECORRENCIA, { DB: dbQueFalha }),
+    ).resolves.toBeUndefined()
+
+    expect(emails).toHaveLength(1)
+    const enviados = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM alert_log WHERE sent_at IS NOT NULL',
+    ).first<{ n: number }>()
+    expect(enviados?.n).toBe(1)
+    const falha = linhasDoConsole().find((l) =>
+      l.includes('estado do envio não gravado'),
+    )
+    expect(falha).toContain('SQLITE_BUSY')
+    expect(falha).not.toMatch(/database is locked/)
+    expect(
+      linhasDoConsole().some((l) => l.includes('status=enviado enviados=1')),
+    ).toBe(true)
+    expect(await registroDoEnvio()).toBeNull()
   })
 })

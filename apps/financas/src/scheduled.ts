@@ -1,11 +1,13 @@
 import { codigoDoErro } from '@piluvitu/ia/erros'
 import { mesFortaleza } from '@piluvitu/ia/uso'
-import { enviarAlertas } from './domain/alertas'
+import { enviarAlertas, type ResultadoDosAlertas } from './domain/alertas'
+import { configuracaoDoEnvio, registrarEnvio } from './domain/alertas-envio'
 import { gerarInsight } from './domain/insight-gerar'
 import { existeInsightDoMesFechado } from './domain/insights'
 import { generateRecurringOccurrences } from './domain/recurring-auto'
 import { alertasLigados } from './domain/settings'
-import { addMonthsToCompetence, todayInTeresina } from './lib/dates'
+import { addMonthsToCompetence, nowIsoUtc, todayInTeresina } from './lib/dates'
+import { enviadorDeAlertas } from './lib/envio-email'
 import { errorCode } from './lib/errors'
 import type { IaBindings } from './lib/ia'
 
@@ -13,6 +15,7 @@ import type { IaBindings } from './lib/ia'
 export type AlertasBindings = {
   EMAIL?: SendEmail
   ALERTAS_REMETENTE?: string
+  ALERTAS_ENVIO?: string
 }
 
 type Env = {
@@ -82,18 +85,16 @@ function alertasNaoRodaram(today: string, codigo: string): void {
 }
 
 async function alertasPorEmail(env: Env, today: string): Promise<void> {
-  const { DB, EMAIL, ALLOWED_EMAIL, ALERTAS_REMETENTE } = env
-  if (!EMAIL) return alertasNaoRodaram(today, 'alertas_sem_binding')
-  if (!ALLOWED_EMAIL)
-    return alertasNaoRodaram(today, 'alertas_sem_destinatario')
-  if (!ALERTAS_REMETENTE)
-    return alertasNaoRodaram(today, 'alertas_sem_remetente')
+  const { DB } = env
+  const config = configuracaoDoEnvio(env)
+  if (config.falta) return alertasNaoRodaram(today, config.falta)
+  let r: ResultadoDosAlertas
   try {
-    const r = await enviarAlertas(DB, {
+    r = await enviarAlertas(DB, {
       today,
-      enviar: EMAIL,
-      para: ALLOWED_EMAIL,
-      de: ALERTAS_REMETENTE,
+      enviar: enviadorDeAlertas(config),
+      para: config.para,
+      de: config.de,
       appUrl: env.BETTER_AUTH_URL ?? '',
       ligado: await alertasLigados(DB),
     })
@@ -104,5 +105,16 @@ async function alertasPorEmail(env: Env, today: string): Promise<void> {
     )
   } catch (err) {
     console.error('cron dos alertas falhou', today, errorCode(err))
+    return
+  }
+  if (r.status !== 'enviado' && r.status !== 'falhou') return
+  try {
+    await registrarEnvio(DB, config, {
+      resultado: r.status,
+      codigo: r.codigo,
+      em: nowIsoUtc(),
+    })
+  } catch (err) {
+    console.error('alertas: estado do envio não gravado', today, errorCode(err))
   }
 }
