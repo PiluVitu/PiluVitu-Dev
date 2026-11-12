@@ -142,6 +142,35 @@ describe('api', () => {
     expect(notifyFake).not.toHaveBeenCalled()
   })
 
+  it('429 rate_limited do limite de escritas vira ApiError com a mensagem do servidor, sem re-gatear a sessão', async () => {
+    mockFetch(
+      envelopeResponse(429, {
+        ok: false,
+        data: null,
+        notifications: [
+          {
+            type: 'error',
+            code: 'rate_limited',
+            message:
+              'Muitas gravações em pouco tempo. Espere 10 segundos e tente de novo.',
+          },
+        ],
+      }),
+    )
+
+    const err = (await api('/api/transactions', { method: 'POST' }).catch(
+      (e) => e,
+    )) as ApiError
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(429)
+    expect(err.code).toBe('rate_limited')
+    expect(err.message).toBe(
+      'Muitas gravações em pouco tempo. Espere 10 segundos e tente de novo.',
+    )
+    expect(notifyFake).not.toHaveBeenCalled()
+  })
+
   it('repassa method e body', async () => {
     const fetchMock = mockFetch(
       envelopeResponse(200, { ok: true, data: { id: 'x' }, notifications: [] }),

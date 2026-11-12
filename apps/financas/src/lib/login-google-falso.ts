@@ -34,6 +34,10 @@ export async function tentarLoginGoogle(
   // 203.0.113.0/24 é TEST-NET-3 (RFC 5737). Miniflare não simula a borda da
   // Cloudflare: sem cf-connecting-ip o rate limit cai no balde compartilhado.
   ip = '203.0.113.7',
+  // O callback vai direto ao auth.handler; quem quer o app montado (middlewares
+  // inclusos) passa o app.request aqui.
+  entregar: (req: Request) => Response | Promise<Response> = (req) =>
+    auth.handler(req),
 ): Promise<Response> {
   const iniciar = await auth.api.signInSocial({
     body: { provider: 'google', callbackURL: '/', errorCallbackURL: '/login' },
@@ -74,7 +78,7 @@ export async function tentarLoginGoogle(
 
   try {
     const callbackUrl = `${baseURL}/api/auth/callback/google?code=codigo-fake&state=${encodeURIComponent(state ?? '')}`
-    return await auth.handler(
+    return await entregar(
       new Request(callbackUrl, {
         headers: { cookie: cookiesDeState, 'cf-connecting-ip': ip },
       }),
