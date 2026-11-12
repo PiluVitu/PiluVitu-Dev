@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { type AuthBindings, getAuth } from './lib/auth'
+import { cabecalhosDeSeguranca } from './lib/cabecalhos'
 import { errJson, okJson } from './lib/envelope'
 import type { IaBindings } from './lib/ia'
+import { type LimiteBindings, limitarEscritas } from './lib/limite'
 import type { PluggyBindings } from './lib/pluggy'
 import { isRotaDeAuth, requireSession } from './lib/session'
 import { accountsRoutes } from './routes/accounts'
@@ -31,9 +33,18 @@ import { scheduled } from './scheduled'
 // `settings` publicaria a credencial em 30 arquivos que rotacionar a chave
 // depois não apagaria. `itemId`/`accountId` NÃO são credencial e vão em
 // `settings` normalmente.
-export type Bindings = AuthBindings & PluggyBindings & IaBindings
+export type Bindings = AuthBindings &
+  PluggyBindings &
+  IaBindings &
+  LimiteBindings
 
 export const app = new Hono<{ Bindings: Bindings }>()
+
+// A ordem dos três é o contrato: os cabeçalhos por fora decoram toda resposta
+// (429, 401, onError); o limite antes da guarda impede que uma enxurrada de
+// escritas consulte a sessão no D1.
+app.use('/api/*', cabecalhosDeSeguranca)
+app.use('/api/*', limitarEscritas<Bindings>())
 
 /**
  * Duas exceções à guarda de sessão, ambas explícitas:

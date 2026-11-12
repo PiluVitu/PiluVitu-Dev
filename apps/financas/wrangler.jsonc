@@ -54,6 +54,22 @@
     },
   ],
 
+  // Limite por IP nas escritas de /api (src/lib/limite.ts). namespace_id é da
+  // CONTA, não do Worker: repetir um (o 1001 é do ramielle) somaria os
+  // contadores. Medição dos números no CLAUDE.md.
+  "ratelimits": [
+    {
+      "name": "ESCRITAS_LIMITE",
+      "namespace_id": "1002",
+      "simple": { "limit": 30, "period": 10 },
+    },
+    {
+      "name": "IMPORTACAO_LIMITE",
+      "namespace_id": "1003",
+      "simple": { "limit": 120, "period": 60 },
+    },
+  ],
+
   "vars": {
     // Não é conveniência: no Worker isProduction é sempre falso (não há
     // NODE_ENV), então é o https:// deste valor que liga o `secure` e o
