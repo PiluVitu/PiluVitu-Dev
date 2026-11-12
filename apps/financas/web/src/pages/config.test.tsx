@@ -26,6 +26,12 @@ vi.mock('../Passkeys', () => ({
   PasskeysCard: () => <section aria-label="Passkeys" />,
 }))
 
+// Idem para os alertas (alertas-email.test.tsx). Mockado, ele também não
+// disputa o `api` mockado nem o role="alert" dos outros cartões.
+vi.mock('./alertas-email', () => ({
+  AlertasEmailCard: () => <section aria-label="Alertas por e-mail" />,
+}))
+
 // jsdom não implementa matchMedia — só o clique em "Sistema" chama
 // aplicarTema('sistema'), que lê window.matchMedia. Mock mínimo, sem
 // simular mudança de SO (isso já é coberto por lib/theme.test.ts).
@@ -56,6 +62,15 @@ describe('ConfigPage', () => {
     vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
     render(<ConfigPage />)
     expect(screen.getByRole('region', { name: 'Passkeys' })).toBeInTheDocument()
+    await waitFor(() => expect(api).toHaveBeenCalled())
+  })
+
+  it('mostra o cartão de alertas por e-mail', async () => {
+    vi.mocked(api).mockResolvedValue({ fixed_net_cents: 360000 })
+    render(<ConfigPage />)
+    expect(
+      screen.getByRole('region', { name: 'Alertas por e-mail' }),
+    ).toBeInTheDocument()
     await waitFor(() => expect(api).toHaveBeenCalled())
   })
 

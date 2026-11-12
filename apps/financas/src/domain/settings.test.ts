@@ -2,9 +2,11 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { DEFAULT_FIXED_NET_CENTS } from './reports'
 import {
+  alertasLigados,
   getFixedNetCents,
   getSetting,
   MAX_FIXED_NET_CENTS,
+  setAlertasLigados,
   setFixedNetCents,
   setSetting,
 } from './settings'
@@ -178,5 +180,50 @@ describe('getSetting/setSetting — chave-valor genérico', () => {
   it('tabela settings ausente: getSetting devolve null em vez de propagar o erro do D1', async () => {
     await env.DB.prepare('DROP TABLE settings').run()
     await expect(getSetting(env.DB, 'import_map:conta-1')).resolves.toBeNull()
+  })
+})
+
+// Liga/desliga dos alertas por e-mail (chave 'alertas_email'). O dono pediu a
+// opção de DESLIGAR, então a ausência da linha é "ligado". Fora isso só '1'
+// liga: um valor estranho (escrito por fora, `wrangler d1 execute`) desliga,
+// porque mandar e-mail que o dono talvez tenha recusado é o erro pior.
+describe('alertasLigados/setAlertasLigados', () => {
+  it('nada salvo: ligado', async () => {
+    expect(await alertasLigados(env.DB)).toBe(true)
+  })
+
+  it('desligar grava "0" e relê desligado; religar grava "1"', async () => {
+    expect(await setAlertasLigados(env.DB, false)).toBe(false)
+    expect(await alertasLigados(env.DB)).toBe(false)
+    expect(await getSetting(env.DB, 'alertas_email')).toBe('0')
+
+    expect(await setAlertasLigados(env.DB, true)).toBe(true)
+    expect(await alertasLigados(env.DB)).toBe(true)
+    expect(await getSetting(env.DB, 'alertas_email')).toBe('1')
+  })
+
+  it.each(['lixo', '', 'true', '01'])(
+    'valor %j escrito por fora conta como desligado',
+    async (valor) => {
+      await setSetting(env.DB, 'alertas_email', valor)
+      expect(await alertasLigados(env.DB)).toBe(false)
+    },
+  )
+
+  it.each([1, 'true', null, undefined])(
+    'recusa %j antes de gravar',
+    async (valor) => {
+      await expect(
+        setAlertasLigados(env.DB, valor as unknown as boolean),
+      ).rejects.toThrow(RangeError)
+      expect(await getSetting(env.DB, 'alertas_email')).toBeNull()
+    },
+  )
+
+  // Ao contrário de getSetting, a leitura NÃO degrada para o padrão: o Cron
+  // não pode concluir "ligado" (e mandar e-mail) quando não conseguiu ler.
+  it('falha do D1 propaga em vez de virar "ligado"', async () => {
+    await env.DB.prepare('DROP TABLE settings').run()
+    await expect(alertasLigados(env.DB)).rejects.toThrow()
   })
 })

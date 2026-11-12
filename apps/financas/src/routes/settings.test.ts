@@ -259,3 +259,125 @@ describe('GET/PUT /api/settings/:key — genérico', () => {
     expect(bodySemValorCorrompido.data.fixed_net_cents).toBe(250000)
   })
 })
+
+// Liga/desliga dos alertas por e-mail. Rotas próprias, registradas ANTES da
+// genérica /settings/:key: sem isso, '/settings/alertas' cairia nela como a
+// chave 'alertas' e o PUT gravaria uma string opaca qualquer.
+describe('GET/PUT /api/settings/alertas', () => {
+  function getAlertas() {
+    return router().request('/api/settings/alertas', {}, { DB: env.DB })
+  }
+
+  function putAlertas(body: unknown, cru = false) {
+    return router().request(
+      '/api/settings/alertas',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: cru ? (body as string) : JSON.stringify(body),
+      },
+      { DB: env.DB },
+    )
+  }
+
+  async function linhaSalva(key: string) {
+    return env.DB.prepare('SELECT value FROM settings WHERE key = ?')
+      .bind(key)
+      .first<{ value: string }>()
+  }
+
+  it('nada salvo: 200 { ligado: true }', async () => {
+    const res = await getAlertas()
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Envelope<{ ligado: boolean }>
+    expect(body.ok).toBe(true)
+    expect(body.notifications).toEqual([])
+    expect(body.data).toEqual({ ligado: true })
+  })
+
+  it('PUT desliga e religa, e o GET relê', async () => {
+    const desliga = await putAlertas({ ligado: false })
+    expect(desliga.status).toBe(200)
+    expect(
+      ((await desliga.json()) as Envelope<{ ligado: boolean }>).data,
+    ).toEqual({ ligado: false })
+    expect(
+      ((await (await getAlertas()).json()) as Envelope<{ ligado: boolean }>)
+        .data,
+    ).toEqual({ ligado: false })
+    expect(await linhaSalva('alertas_email')).toEqual({ value: '0' })
+
+    const liga = await putAlertas({ ligado: true })
+    expect(((await liga.json()) as Envelope<{ ligado: boolean }>).data).toEqual(
+      { ligado: true },
+    )
+    expect(await linhaSalva('alertas_email')).toEqual({ value: '1' })
+  })
+
+  it.each([
+    ['sem o campo', {}],
+    ['string', { ligado: 'false' }],
+    ['número', { ligado: 0 }],
+    ['null', { ligado: null }],
+    ['corpo null', null],
+    ['corpo lista', [false]],
+  ])(
+    'corpo %s: 422 invalid_setting no campo ligado, nada gravado',
+    async (_label, corpo) => {
+      const res = await putAlertas(corpo)
+      expect(res.status).toBe(422)
+      const body = (await res.json()) as Envelope<null>
+      expect(body.ok).toBe(false)
+      expect(body.notifications[0].code).toBe('invalid_setting')
+      expect(body.notifications[0].field).toBe('ligado')
+      expect(body.notifications[0].message).toBe(
+        'ligado precisa ser verdadeiro ou falso',
+      )
+      expect(await linhaSalva('alertas_email')).toBeNull()
+    },
+  )
+
+  it('JSON malformado: 400 invalid_json', async () => {
+    const res = await putAlertas('{nao-e-json', true)
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as Envelope<null>
+    expect(body.notifications[0].code).toBe('invalid_json')
+  })
+
+  it('a genérica não engole a rota: GET devolve { ligado } e PUT com { value } não grava a chave "alertas"', async () => {
+    const res = await getAlertas()
+    const body = (await res.json()) as Envelope<Record<string, unknown>>
+    expect(Object.keys(body.data)).toEqual(['ligado'])
+
+    const put = await putAlertas({ value: 'qualquer' })
+    expect(put.status).toBe(422)
+    expect(await linhaSalva('alertas')).toBeNull()
+  })
+
+  it('a chave alertas_email é reservada: a genérica recusa ler e escrever', async () => {
+    await putAlertas({ ligado: false })
+
+    const resGet = await getKey('alertas_email')
+    expect(resGet.status).toBe(422)
+    const bodyGet = (await resGet.json()) as Envelope<null>
+    expect(bodyGet.notifications[0].code).toBe('reserved_setting_key')
+    expect(bodyGet.notifications[0].message).toContain('/api/settings/alertas')
+
+    const resPut = await putKey('alertas_email', { value: '1' })
+    expect(resPut.status).toBe(422)
+    const bodyPut = (await resPut.json()) as Envelope<null>
+    expect(bodyPut.notifications[0].code).toBe('reserved_setting_key')
+    expect(await linhaSalva('alertas_email')).toEqual({ value: '0' })
+  })
+
+  it('no app montado, /api/settings/alertas vem antes de /api/settings/:key', () => {
+    const indice = (metodo: string, path: string) =>
+      app.routes.findIndex((r) => r.method === metodo && r.path === path)
+    for (const metodo of ['GET', 'PUT']) {
+      const alertas = indice(metodo, '/api/settings/alertas')
+      const generica = indice(metodo, '/api/settings/:key')
+      expect(alertas).toBeGreaterThanOrEqual(0)
+      expect(generica).toBeGreaterThan(alertas)
+    }
+  })
+})

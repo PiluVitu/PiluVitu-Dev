@@ -24,7 +24,7 @@ import { rulesRoutes } from './routes/rules'
 import { settingsRoutes } from './routes/settings'
 import { transactionsRoutes } from './routes/transactions'
 import { transfersRoutes } from './routes/transfers'
-import { scheduled } from './scheduled'
+import { type AlertasBindings, scheduled } from './scheduled'
 
 // PLUGGY_CLIENT_ID/PLUGGY_CLIENT_SECRET (fatia ④): credenciais do app no
 // Meu Pluggy, lidas SÓ por routes/pluggy.ts (via lib/pluggy.ts). Também
@@ -36,7 +36,8 @@ import { scheduled } from './scheduled'
 export type Bindings = AuthBindings &
   PluggyBindings &
   IaBindings &
-  LimiteBindings
+  LimiteBindings &
+  AlertasBindings
 
 export const app = new Hono<{ Bindings: Bindings }>()
 
