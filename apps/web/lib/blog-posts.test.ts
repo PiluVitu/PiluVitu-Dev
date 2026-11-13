@@ -37,7 +37,11 @@ jest.mock('@octokit/rest', () => ({
   },
 }))
 
-import { getAllBlogPosts } from './blog-posts'
+import {
+  getAllBlogPosts,
+  getBlogPostSlugs,
+  getPublishedBlogPosts,
+} from './blog-posts'
 
 describe('lib/blog-posts', () => {
   beforeEach(() => {
@@ -91,6 +95,60 @@ describe('lib/blog-posts', () => {
     const [post] = await getAllBlogPosts()
     expect(post?.tldr).toBe('')
     expect(post?.metaDescription).toBe('')
+  })
+})
+
+// O sitemap e o llms.txt leem por aqui: rascunho nunca entra, nem em draft mode.
+describe('getPublishedBlogPosts', () => {
+  beforeEach(() => {
+    for (const k of Object.keys(mockArquivos)) delete mockArquivos[k]
+  })
+
+  function arquivo(slug: string, extras: string[] = []): string {
+    return [
+      '---',
+      `title: ${slug}`,
+      `slug: ${slug}`,
+      ...extras,
+      '---',
+      '',
+      'corpo',
+    ].join('\n')
+  }
+
+  it('devolve só os publicados, do mais novo para o mais antigo', async () => {
+    mockArquivos['velho.mdx'] = arquivo('velho', ["publishedAt: '2024-01-01'"])
+    mockArquivos['novo.mdx'] = arquivo('novo', ["publishedAt: '2025-01-01'"])
+    mockArquivos['rascunho.mdx'] = arquivo('rascunho', [
+      "publishedAt: '2026-01-01'",
+      'draft: true',
+    ])
+    const posts = await getPublishedBlogPosts()
+    expect(posts.map(({ slug }) => slug)).toEqual(['novo', 'velho'])
+  })
+
+  it('getBlogPostSlugs usa a mesma lista', async () => {
+    mockArquivos['publicado.mdx'] = arquivo('publicado', [
+      "publishedAt: '2025-01-01'",
+    ])
+    mockArquivos['rascunho.mdx'] = arquivo('rascunho', [
+      "publishedAt: '2025-01-01'",
+      'draft: true',
+    ])
+    expect(await getBlogPostSlugs()).toEqual(['publicado'])
+  })
+
+  // Sem publishedAt o reader usa a hora do build, que não é data do post.
+  it('marca o post sem publishedAt no frontmatter', async () => {
+    mockArquivos['sem-data.mdx'] = arquivo('sem-data')
+    mockArquivos['com-data.mdx'] = arquivo('com-data', [
+      "publishedAt: '2025-01-01'",
+    ])
+    const posts = await getPublishedBlogPosts()
+    expect(posts.find(({ slug }) => slug === 'sem-data')?.semData).toBe(true)
+    expect(posts.find(({ slug }) => slug === 'com-data')).not.toHaveProperty(
+      'semData',
+    )
   })
 })
 

@@ -1,14 +1,9 @@
 import Image from 'next/image'
 import { cn } from '@piluvitu/ui/cn'
 import type { AppPiluTech, EstadoApp } from '@/lib/home/catalogo-pilutech'
+import { STACK } from '@/lib/home/stack'
 
 const PILUTECH = 'https://pilutech.com.br'
-
-export const STACK: { grupo: string; itens: string[] }[] = [
-  { grupo: 'infra', itens: ['AWS', 'Cloudflare', 'Docker', 'GitHub Actions'] },
-  { grupo: 'observabilidade', itens: ['Grafana', 'Prometheus', 'Sentry'] },
-  { grupo: 'código', itens: ['Go', 'Next.js', 'React'] },
-]
 
 const PONTO: Record<EstadoApp, string> = {
   ativo: 'bg-ok',

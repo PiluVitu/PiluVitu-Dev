@@ -1,6 +1,9 @@
+import type { Metadata } from 'next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { ReactQueryProvider } from '@/utils/providers/react-query-provider'
+
+export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 export default function AdminGroupLayout({
   children,

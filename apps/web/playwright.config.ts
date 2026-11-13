@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testMatch: ['**/*.e2e.ts'],
+  // Precisa do build de produção: roda pelo playwright.seo.config.ts.
+  testIgnore: ['**/app/seo.e2e.ts'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

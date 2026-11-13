@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { EMAIL_DA_PILUTECH, mailtoDaPilutech } from '@piluvitu/tools/contato'
 import { PageTopBar } from '@/components/page-top-bar'
 import { metadataDaPagina } from '@/lib/pilulabs'
+import { PAGINA_PRIVACIDADE } from '@/lib/rotas-publicas'
 
 const VIGENCIA = { iso: '2026-10-26', texto: '26 de outubro de 2026' }
 const MAILTO_DA_PRIVACIDADE = mailtoDaPilutech('PiluVitu', 'Privacidade')
@@ -15,10 +16,9 @@ const ABRE_EM_ABA_NOVA = {
 const LINK = 'text-primary font-medium underline underline-offset-4'
 
 export const metadata: Metadata = metadataDaPagina({
-  caminho: '/privacidade',
+  caminho: PAGINA_PRIVACIDADE.caminho,
   titulo: 'Política de privacidade | Paulo Victor Torres Silva',
-  descricao:
-    'O que o piluvitu.com.br registra: estatísticas de visita sem cookie, o login da votação de filmes, o formulário de contato e os seus direitos na LGPD.',
+  descricao: PAGINA_PRIVACIDADE.descricao,
 })
 
 function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {

@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build && node ../../scripts/check-tailwind-source.mjs .next",
-    "build:ci": "next build && node ../../scripts/check-tailwind-source.mjs .next",
+    "build": "next build && node ../../scripts/check-tailwind-source.mjs .next && node scripts/conferir-rotas-seo.mjs",
+    "build:ci": "next build && node ../../scripts/check-tailwind-source.mjs .next && node scripts/conferir-rotas-seo.mjs",
     "build-storybook": "storybook build",
     "dev": "next dev --webpack -p 3333",
     "dev:turbo": "next dev -p 3333",
@@ -14,9 +14,10 @@
     "style-fix": "eslint . --fix",
     "prettier:check": "prettier --check \"**/*.{js,ts,tsx,json,md,css}\"",
     "prettier:fix": "prettier --write \"**/*.{js,ts,tsx,json,md,css}\"",
-    "test": "jest --passWithNoTests",
+    "test": "jest --passWithNoTests && node --test scripts/*.test.mjs",
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
+    "test:e2e:seo": "playwright test -c playwright.seo.config.ts",
     "prepare": "husky"
   },
   "lint-staged": {

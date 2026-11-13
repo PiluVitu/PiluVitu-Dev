@@ -1,7 +1,14 @@
+import type { Metadata } from 'next'
+import { PAGINA_FERRAMENTAS } from '@/lib/rotas-publicas'
 import { TOOLS, TOOL_GROUPS } from '@/lib/tools-registry'
 import { ToolCard } from '@/components/tools/tool-card'
 import { SectionHeader } from '@/components/section-header'
 import { PageTopBar } from '@/components/page-top-bar'
+
+export const metadata: Metadata = {
+  description: PAGINA_FERRAMENTAS.descricao,
+  alternates: { canonical: PAGINA_FERRAMENTAS.caminho },
+}
 
 export default function ToolsPage() {
   return (

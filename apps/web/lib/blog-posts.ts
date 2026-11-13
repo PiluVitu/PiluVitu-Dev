@@ -19,6 +19,8 @@ export type BlogPost = {
   draft: boolean
   tldr: string
   metaDescription: string
+  /** Frontmatter sem `publishedAt`: o `publishedAt` acima é a hora da leitura, não a data do post. */
+  semData?: true
 }
 
 const BLOG_OWNER = process.env.BLOG_REPO_OWNER ?? 'PiluVitu'
@@ -104,6 +106,7 @@ async function _fetchAllPosts(): Promise<BlogPost[]> {
         draft: (fm.draft as boolean | undefined) ?? false,
         tldr: texto(fm.tldr),
         metaDescription: texto(fm.metaDescription),
+        ...(fm.publishedAt == null ? { semData: true as const } : {}),
       } satisfies BlogPost
     }),
   )
@@ -123,12 +126,17 @@ const _cachedFetchAll = unstable_cache(_fetchAllPosts, ['blog-posts'], {
 })
 
 /**
- * Returns all published post slugs — safe to call in generateStaticParams
- * (no draftMode/headers access, just the ISR-cached fetch).
+ * Published posts only, never drafts (not even in draft mode) — for
+ * generateStaticParams, the sitemap and the llms.txt (no draftMode access).
  */
-export async function getBlogPostSlugs(): Promise<string[]> {
+export async function getPublishedBlogPosts(): Promise<BlogPost[]> {
   const posts = await _cachedFetchAll()
-  return posts.filter((p) => !p.draft).map((p) => p.slug)
+  return posts.filter((p) => !p.draft)
+}
+
+/** Slugs of {@link getPublishedBlogPosts} — safe in generateStaticParams. */
+export async function getBlogPostSlugs(): Promise<string[]> {
+  return (await getPublishedBlogPosts()).map((p) => p.slug)
 }
 
 /** All posts INCLUDING drafts — for admin counts/listing. Callers exposing this over

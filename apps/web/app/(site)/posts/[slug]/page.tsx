@@ -1,6 +1,7 @@
 import { getBlogPost, getBlogPostSlugs } from '@/lib/blog-posts'
 import { mdxComponents } from '@/lib/mdx/mdx-components'
 import { MDX_REMARK_PLUGINS, MDX_REHYPE_PLUGINS } from '@/lib/mdx/mdx-plugins'
+import { caminhoDoPost, descricaoDoPost } from '@/lib/rotas-publicas'
 import { PageTopBar } from '@/components/page-top-bar'
 import { PostTldr } from '@/components/posts/post-tldr'
 import { Button } from '@piluvitu/ui/button'
@@ -28,11 +29,12 @@ export async function generateMetadata({
   if (!post) return {}
 
   const ogImage = post.coverImage ?? undefined
-  const description = post.metaDescription.trim() || post.excerpt || undefined
+  const description = descricaoDoPost(post) || undefined
 
   return {
     title: post.title,
     description,
+    alternates: { canonical: caminhoDoPost(post.slug) },
     openGraph: {
       title: post.title,
       description,

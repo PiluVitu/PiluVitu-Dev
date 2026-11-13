@@ -2,6 +2,8 @@
 
 Guidance for the **Next.js web app** (`@piluvitu/web`). O Claude Code carrega este arquivo **junto** com o `CLAUDE.md` da raiz — aqui ficam só os detalhes do frontend; orquestração/monorepo/CI estão na raiz.
 
+Padrões: skill `padroes-produto-pilutech`.
+
 ## Tech Stack
 
 - **Next.js 16** (App Router), **React 19**, **TypeScript** strict mode
@@ -17,6 +19,7 @@ Guidance for the **Next.js web app** (`@piluvitu/web`). O Claude Code carrega es
 Os comandos canônicos (`make dev-web`, `pnpm --filter @piluvitu/web …`) estão na raiz. Específico do web:
 
 - **Type checking without full build:** `pnpm exec tsc --noEmit` (de `apps/web/`)
+- **E2E de SEO (build de produção):** `pnpm --filter @piluvitu/web test:e2e:seo` (ver _SEO_)
 - **Recommended order before commit/PR:** `pnpm prettier:fix` → `pnpm lint` → `make test` → `pnpm --filter @piluvitu/web build`
 
 **⚠️ Gotcha — Vercel é mais estrita que o build local com `implicit-any` em callbacks de libs de terceiro.** O `tsc`/`next build` LOCAL pode passar, mas o **install fresco da Vercel** (`--frozen-lockfile`) resolve o tipo do param como `any` quando ele vem de um `.d.ts` de terceiro — e aí `next build` quebra com `Parameter 'x' implicitly has an 'any' type` (já mordeu 2×: `onCreateEditor` do `@uiw/react-codemirror`/`@codemirror/*`, e a camera story). **Regra:** sempre **anote explicitamente** o param desses callbacks (ex.: `onCreateEditor={(view: EditorView) => …}`), não confie na inferência. Build local verde NÃO garante o da Vercel nesse caso.
@@ -194,7 +197,7 @@ A votação de filmes virou o **Votaí** (nome com acento na interface; sem acen
   2. Criar `components/tools/<slug>-tool.tsx` (UI React)
   3. Criar `components/tools/<slug>-tool.stories.tsx`
   4. Adicionar entrada em `lib/tools-registry.ts`
-  5. Criar `app/(site)/tools/<slug>/page.tsx`
+  5. Criar `app/(site)/tools/<slug>/page.tsx` com `export const metadata: Metadata = metadataDaFerramenta(tool)` (título, descrição e canonical; o `page.test.ts` de `tools/` cobra, e a ferramenta entra sozinha no sitemap e no `llms.txt`, ver _SEO_)
   6. Adicionar casos no `e2e/tools.spec.ts`
 
 #### Módulo de entropia + roleta (UI)
@@ -324,7 +327,7 @@ O Botaí e o Sombraí não têm rota aqui: `botai.pilutech.com.br` é a landing 
 - **Fora:**
   - página do Botaí e do Sombraí no `apps/web`: os dois têm landing própria;
   - lojas de app mobile (Play Store e App Store) no modelo;
-  - `sitemap.ts`/`robots.ts`, que vão para a fatia de SEO global.
+  - SEO global (sitemap, robots, `llms.txt`): ver _SEO_. O `/pilulabs` entra no sitemap e no `llms.txt`, e cada listado aparece com o `linkDoItem`.
 
 ### Admin unificado (`/admin`)
 
@@ -417,6 +420,38 @@ Como na landing do Botaí (`PiluVitu/Botai`, PR #47) e no `apps/pilutech-site`: 
 - **Produção em `piluvitu.com.br` (medido em 2026-10-12):** o chunk de cliente traz a config com caminhos com hash, diferentes dos do `pilutech-site`; o HTML não cita `/_vercel/`. A config traz o `speedInsights` mesmo com o Speed Insights desligado desde 2026-09-16 (deploy de produção do `d0732c8`, 2026-10-11): ela não acompanha o toggle. Os `/<hash>/script.js` e os `/_vercel/*/script.js` respondem 200, inclusive o do Speed Insights: script respondendo não é sinal de medição.
 - **Conferir:** `VERCEL_ENV=production pnpm build` passa e `grep -rho '_vercel/[a-z-]*/script.js' .next/static/chunks | sort -u` acha os dois: é o fallback do pacote, empacotado sempre, e só prova que as bibliotecas entraram no bundle. Sem o `VERCEL_ENV=production`, o `grep` nos chunks acha os dois do mesmo jeito (o Next empacota todo componente de cliente importado, renderizado ou não); a conferência fora da produção é o RSC payload do HTML sem a referência de cliente `MedicaoForaDaVotacao` (`grep -c MedicaoForaDaVotacao .next/server/app/index.html`; a produção tem 1) e o `medicao.e2e.ts`, que reprova qualquer pedido a `/_vercel/` ou a `vercel-scripts.com` (fora da Vercel não há a config com hash: no `next dev`, onde este E2E roda, o pacote pediria o `script.debug.js` de `va.vercel-scripts.com`; num build de produção local, o fallback `/_vercel/*`). Em produção, ver "Conferir que mede" no `apps/pilutech-site/CLAUDE.md`. Aqui o `hasData` da API não serve: no `pilu-vitu-dev` ele é `true` nos dois, inclusive no Speed Insights, desligado desde 2026-09-16.
 
+## SEO (sitemap, robots, `llms.txt`, description e canonical)
+
+Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, robots sem a linha `Sitemap`, sem `llms.txt`). O `llms.txt` segue a seção 3 da skill `padroes-produto-pilutech`.
+
+- **Fonte única das rotas públicas: `lib/rotas-publicas.ts`.** `rotasPublicas({ posts, piluLabs })` devolve as páginas fixas (`/`, `/pilulabs`, `/tools`, `/tasks`, `/privacidade`), uma por ferramenta do `TOOLS`, a página própria de item listado do PiluLabs (hoje nenhum) e uma por post publicado, cada uma com `caminho`, `nome` (o título que a página mostra) e `descricao`. O sitemap, o `llms.txt`, a metadata das páginas e os testes leem daqui. Descrição de página nova entra aqui, não na página.
+- **Fora, de propósito:**
+  - `/admin/*`: `robots: noindex, nofollow` no `app/(admin)/layout.tsx` e `Disallow` no robots;
+  - `/api/*` e `/preview/*` (draft mode): `Disallow`;
+  - a votação (`/votacao*`): em produção é 308 para o Votaí, outro host, com o próprio SEO (seção _Votaí_); a lista e as sessões já são `noindex`, e as sessões são de usuários;
+  - `/feed`: `noindex, follow` no `app/(site)/feed/layout.tsx`. É componente de cliente que só agrega posts de outros sites (o HTML do servidor é "Carregando feeds…") e não tem link no site;
+  - rascunho: os dados vêm de `getPublishedBlogPosts` (`lib/blog-posts.ts`), que nunca devolve rascunho, nem em draft mode.
+- **Dados:** `lib/dados-publicos.ts` (`lerDadosPublicos`, server-only) junta o perfil (ou o `PERFIL_PADRAO` de `lib/perfil-padrao.ts`, o mesmo da home), as redes, a carreira, o PiluLabs e os posts publicados.
+- **`/sitemap.xml`** (`app/sitemap.ts`, `entradasDoSitemap`): URLs absolutas na `getCanonicalSiteUrl()`, as rotas públicas mais `/llms.txt` e `/llms-full.txt` (a skill pede o `llms.txt` no sitemap e no robots). `lastModified` só nos posts, com a data do frontmatter. Post sem `publishedAt` sai sem data: o reader põe a hora do build e marca `semData`. O Next escreve o `<loc>` sem escapar o XML (`resolveSitemap`), então o `&` no caminho vai como `&amp;`, que quem lê o XML recebe de volta como `&`: a URL fica igual à do canonical e à do `llms.txt`. Trocar por `%26` daria outra URL para a busca. O slug vem do repo do blog, que pode ser editado por fora do admin (o admin barra o `&`).
+- **`/robots.txt`** (`app/robots.txt/route.ts`, texto de `robotsTxt`): route handler, e não `app/robots.ts`, porque o `MetadataRoute.Robots` não escreve comentário e o `llms.txt` vai numa linha `# llms.txt: <origem>/llms.txt`. Libera `/`, bloqueia `ROTAS_FORA_DO_ROBOTS` (`/admin`, `/api`, `/preview`) e tem a linha `Sitemap:`.
+- **`/llms.txt` e `/llms-full.txt`** (`app/llms.txt/route.ts`, `app/llms-full.txt/route.ts`; texto em `lib/llms.ts`), no formato do llmstxt.org, em pt-BR:
+  - `# <nome do perfil>`, `> DESCRICAO_DO_SITE` (a description do layout raiz e da home), um parágrafo (cargo e empresa do perfil, o que o site reúne e o link do `llms-full.txt`);
+  - seções Páginas (as fixas), Ferramentas (`TOOLS`), PiluLabs (os listados, com o link do card, `linkDoItem`; sem link, sem link inventado), Posts (descrição = `metaDescription` ou `excerpt`, a mesma da página; sem post, a seção some) e Perfis (só as redes `https`, título = host e caminho, descrição = o texto do site; nada de e-mail, `mailto:`, `tel:` nem WhatsApp);
+  - o `llms-full.txt` traz em Markdown o perfil (cargo, bio, local e disciplinas, stack, perfis), a carreira, o PiluLabs, as ferramentas, a lista de posts (título, link, data e descrição) e as outras páginas. Sem o corpo dos posts: o MDX tem componentes (mermaid, imagens) e vem do repo do blog; a página do post é a fonte;
+  - não há versão en/es do site; quando houver, os dois ganham o link delas.
+- ⚠️ **Estático x ISR (medido no build):** o robots é estático; o sitemap e os dois `llms` saem pré-renderizados, mas com o revalidate de 1800 s e a tag `blog-posts` do `unstable_cache` dos posts. É de propósito: o blog mora em outro repositório, publicar um post não faz deploy do site, e só o ISR (ou o `revalidateTag('blog-posts')` do admin) põe o post novo no sitemap e no `llms.txt`. `scripts/conferir-rotas-seo.mjs`, no `build` e no `build:ci`, falha se uma das quatro rotas sair do `prerender-manifest.json` (virou dinâmica) ou se o robots ganhar revalidate.
+- **Description e canonical:** toda rota pública tem `description` e `alternates.canonical` relativo, resolvido pelo `metadataBase`. Os títulos não mudaram.
+  - home: `metadata` na própria `app/(site)/page.tsx`. No layout raiz, o canonical valeria para toda página sem o seu e a apontaria para a home;
+  - ferramentas: `metadataDaFerramenta(tool)`, com a descrição composta do `TOOLS`;
+  - posts: `generateMetadata` com `descricaoDoPost` e canonical `/posts/<slug>`;
+  - `/pilulabs`, `/privacidade`, `/tools` e `/tasks`: a `descricao` da fonte única.
+- **Testes:**
+  - Jest: `lib/rotas-publicas.test.ts`, `lib/llms.test.ts`, `lib/dados-publicos.test.ts`, os `route.test.ts`, `app/sitemap.test.ts` e a metadata das páginas (`page.test.tsx`, `tools/page.test.ts`, `feed/layout.test.tsx`, `(admin)/layout.test.tsx`);
+  - `node --test scripts/*.test.mjs`, dentro do `pnpm test`;
+  - E2E `app/seo.e2e.ts`, contra o build de produção: `pnpm --filter @piluvitu/web test:e2e:seo` (`playwright.seo.config.ts`: `pnpm build` com `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` e `next start` na porta 3045; o `playwright.config.ts` padrão, do `next dev`, ignora o arquivo). Confere o robots, o XML do sitemap (exatamente as rotas públicas e os dois `llms`; os posts batem com os do `llms.txt`), cada link do site no sitemap e nos `llms` respondendo 200 sem redirecionar, os links de fora (`https`, os mesmos da home e do `/pilulabs`, sem pedido para fora), description e canonical de cada rota e o `noindex` de `/admin` e `/feed`;
+  - sem `BLOG_REPO_TOKEN` (CI, build local) o blog vem vazio e os posts ficam de fora do build; o E2E confere os que vierem.
+- **Depois do deploy (dono):** enviar `https://piluvitu.com.br/sitemap.xml` no Search Console.
+
 ## Política de privacidade (`/privacidade`)
 
 `app/(site)/privacidade/page.tsx`, em vigor desde 2026-10-26 (a versão de 2026-10-11 ganhou o Votaí: o domínio `votai.piluvitu.com.br`, o histórico público só com contagens e número de participantes, e o cookie descrito como do `ramielle.piluvitu.com.br`), com o texto aprovado pelo dono. O responsável é ele, pessoa física, e o e-mail leva `[PiluVitu] Privacidade` no assunto (`mailtoDaPilutech`, de `@piluvitu/tools/contato`). O link fica no `HomeFooter`, sempre visível, depois dos links públicos e antes dos de login.
@@ -434,7 +469,8 @@ Como na landing do Botaí (`PiluVitu/Botai`, PR #47) e no `apps/pilutech-site`: 
   - o `page.test.tsx` cobre a estrutura, os fatos, os links e a metadata;
   - o `privacidade.e2e.ts` cobre o caminho rodapé → política → home, o console limpo e a página a 320 px;
   - o `medicao.e2e.ts` inclui a rota.
-- **Fica de fora:** sem sitemap, porque o web não tem um, e sem axe, porque o web não tem o `@axe-core/playwright`, ao contrário do `apps/pilutech-site`.
+- **Sitemap:** a página está no `sitemap.xml` e no `llms.txt` (ver _SEO_).
+- **Fica de fora:** sem axe, porque o web não tem o `@axe-core/playwright`, ao contrário do `apps/pilutech-site`.
 
 ## Import alias
 

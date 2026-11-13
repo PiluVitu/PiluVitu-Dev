@@ -1,4 +1,5 @@
 import { renderEstatico } from '@/lib/render-estatico'
+import { PAGINA_PRIVACIDADE } from '@/lib/rotas-publicas'
 import PrivacidadePage, { metadata } from './page'
 
 const MAILTO_DA_PRIVACIDADE =
@@ -60,9 +61,9 @@ describe('/privacidade', () => {
       'Teresina (PI)',
       'não vende dados',
     ])
-    expect(
-      link(responsavel, 'help@pilutech.com.br').getAttribute('href'),
-    ).toBe(MAILTO_DA_PRIVACIDADE)
+    expect(link(responsavel, 'help@pilutech.com.br').getAttribute('href')).toBe(
+      MAILTO_DA_PRIVACIDADE,
+    )
   })
 
   // O que cada ferramenta registra vem das políticas da Vercel (conferidas em 2026-10-11):
@@ -171,9 +172,9 @@ describe('/privacidade', () => {
   it('os direitos da LGPD, com o e-mail e a ANPD', () => {
     const direitos = secao(pagina(), 'Seus direitos')
     expect(texto(direitos)).toContain('art. 18')
-    expect(
-      link(direitos, 'help@pilutech.com.br').getAttribute('href'),
-    ).toBe(MAILTO_DA_PRIVACIDADE)
+    expect(link(direitos, 'help@pilutech.com.br').getAttribute('href')).toBe(
+      MAILTO_DA_PRIVACIDADE,
+    )
     expect(
       link(
         direitos,
@@ -198,6 +199,7 @@ describe('/privacidade', () => {
       absolute: 'Política de privacidade | Paulo Victor Torres Silva',
     })
     expect(metadata.description).toMatch(/^.{50,160}$/)
+    expect(metadata.description).toBe(PAGINA_PRIVACIDADE.descricao)
     expect(metadata.alternates?.canonical).toBe('/privacidade')
   })
 })

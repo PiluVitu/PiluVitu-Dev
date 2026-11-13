@@ -10,14 +10,14 @@ import {
   siglaDoItem,
 } from '@/lib/pilulabs'
 import { jsonLdVitrine } from '@/lib/pilulabs-json-ld'
+import { PAGINA_PILULABS } from '@/lib/rotas-publicas'
 import { getPiluLabs } from '@/lib/site-content'
 import { getCanonicalSiteUrl } from '@/lib/site-url'
 
 export const metadata: Metadata = metadataDaPagina({
-  caminho: '/pilulabs',
+  caminho: PAGINA_PILULABS.caminho,
   titulo: 'PiluLabs | produtos da PiluTech',
-  descricao:
-    'Produtos e apps que o Paulo Victor faz e mantém. Powered by PiluTech.',
+  descricao: PAGINA_PILULABS.descricao,
 })
 
 export default async function PiluLabsPage() {
