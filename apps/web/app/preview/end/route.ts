@@ -1,4 +1,13 @@
-import { cookies, draftMode } from 'next/headers'
+import { desligarPreview } from '@/lib/preview'
+import { NextResponse } from 'next/server'
+
+function voltaPara(referer: string, origem: string): URL {
+  try {
+    const destino = new URL(referer)
+    if (destino.origin === origem) return destino
+  } catch {}
+  return new URL('/', origem)
+}
 
 export async function POST(request: Request) {
   const url = new URL(request.url)
@@ -12,9 +21,11 @@ export async function POST(request: Request) {
     return new Response('Missing Referer', { status: 400 })
   }
 
-  const draft = await draftMode()
-  draft.disable()
-  ;(await cookies()).delete('ks-branch')
+  // Sem exigirAdmin de propósito: desligar só apaga os cookies de quem pede, e exigir admin
+  // prendia o preview no navegador depois do unlink ou com o GitHub fora do ar.
+  await desligarPreview()
 
-  return Response.redirect(referrer, 303)
+  const res = NextResponse.redirect(voltaPara(referrer, url.origin), 303)
+  res.headers.set('Cache-Control', 'private, no-store')
+  return res
 }
