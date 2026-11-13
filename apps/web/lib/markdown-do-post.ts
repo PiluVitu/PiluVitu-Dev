@@ -28,6 +28,10 @@ const PONTUACAO = /[!-/:-@[-`{-~]/
 const PREFIXO_DE_BLOCO =
   /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*$/
 const ROTULO = /\[((?:[^[\]\\]|\\.)*)\]/y
+const VALOR_SEM_ASPAS = /[^\s"'=<>`]+/y
+// Autolinks do CommonMark: URI (esquema de 2 a 32 caracteres) e e-mail.
+const AUTOLINK =
+  /<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>\u0000-\u001f\u007f]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>/y
 
 const ehHttp = ({ protocol }: URL) =>
   protocol === 'https:' || protocol === 'http:'
@@ -143,15 +147,19 @@ function lerTag(fonte: string, inicio: number): Tag | null {
       continue
     }
     j = pularEspacos(fonte, j + 1)
-    const fim =
-      fonte[j] === '"' || fonte[j] === "'"
-        ? fimDaString(fonte, j)
-        : fonte[j] === '{'
-          ? fimDaExpressao(fonte, j)
-          : -1
-    if (fim < 0) return null
-    if (fonte[j] !== '{') atributos.set(atributo, fonte.slice(j + 1, fim - 1))
-    j = fim
+    if (fonte[j] === '{' || fonte[j] === '"' || fonte[j] === "'") {
+      const fim =
+        fonte[j] === '{' ? fimDaExpressao(fonte, j) : fimDaString(fonte, j)
+      if (fim < 0) return null
+      if (fonte[j] !== '{') atributos.set(atributo, fonte.slice(j + 1, fim - 1))
+      j = fim
+      continue
+    }
+    VALOR_SEM_ASPAS.lastIndex = j
+    const valor = VALOR_SEM_ASPAS.exec(fonte)?.[0]
+    if (!valor) return null
+    atributos.set(atributo, valor)
+    j += valor.length
   }
   return null
 }
@@ -355,6 +363,17 @@ function analisar(
     return true
   }
 
+  const lerAutolink = (): boolean => {
+    AUTOLINK.lastIndex = i
+    const autolink = AUTOLINK.exec(fonte)
+    if (!autolink) return false
+    i += autolink[0].length
+    const destino = autolink[1]
+    const url = destino.includes(':') ? urlSegura(destino, urlDoPost) : null
+    saida += url ? `<${url}>` : destino
+    return true
+  }
+
   const ficarSoComOTexto = (colchete: Colchete) => {
     if (colchete.imagem) apagarDesde(colchete.posicao)
     else
@@ -458,9 +477,10 @@ function analisar(
         descartar(fonte.slice(i, fim))
         i = fim
       }
-    } else if (c === '<' && /[A-Za-z/>]/.test(fonte[i + 1] ?? '')) {
-      if (!lerTagJsx()) {
-        saida += c
+    } else if (c === '<') {
+      const tag = /[A-Za-z/>]/.test(fonte[i + 1] ?? '')
+      if (!lerAutolink() && !(tag && lerTagJsx())) {
+        saida += '\\<'
         i++
       }
     } else if (c === '!' && fonte[i + 1] === '[') {

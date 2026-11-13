@@ -397,6 +397,71 @@ describe('markdownDoPost: links e imagens', () => {
   })
 })
 
+// Revisão da Lupa no #105: o '<' que o conversor não reconhecia passava cru, e
+// HTML com atributo sem aspas e autolinks do CommonMark chegavam inteiros ao
+// llms-full.txt. Autolink só fica se for http(s), como os links; o resto vira
+// texto, e todo '<' não reconhecido fora de código sai escapado.
+describe('markdownDoPost: HTML cru e autolinks', () => {
+  it('<img> com atributo sem aspas é tag: sem alt, some com o onerror', () => {
+    expect(converter('Antes.\n\n<img src=x onerror=alert(1)>\n\nDepois.')).toBe(
+      'Antes.\n\nDepois.',
+    )
+  })
+
+  it('autolink javascript:, mailto: e tel: vira só texto', () => {
+    expect(converter('Veja <javascript:alert(1)> aqui.')).toBe(
+      'Veja javascript:alert(1) aqui.',
+    )
+    expect(converter('Escreva para <mailto:alguem@example.com>.')).toBe(
+      'Escreva para mailto:alguem@example.com.',
+    )
+    expect(converter('Ligue <tel:+5586999990000>.')).toBe(
+      'Ligue tel:+5586999990000.',
+    )
+  })
+
+  it('autolink de e-mail sem esquema também vira só texto', () => {
+    expect(converter('Ou <alguem@example.com>.')).toBe('Ou alguem@example.com.')
+  })
+
+  it('autolink http(s) fica como está', () => {
+    const md = 'Site: <https://exemplo.com/a?b=1> e <http://exemplo.com>.'
+    expect(converter(md)).toBe(md)
+  })
+
+  it('todo < não reconhecido fora de código sai escapado', () => {
+    expect(converter('Se a < b e x <3, <!-- nota --> e <a b=> no fim <')).toBe(
+      'Se a \\< b e x \\<3, \\<!-- nota --> e \\<a b=> no fim \\<',
+    )
+  })
+
+  it('nenhum dos quatro exemplos sobra como HTML ou autolink', () => {
+    const md = converter(
+      [
+        '<img src=x onerror=alert(1)>',
+        '',
+        '<javascript:alert(1)> <mailto:alguem@example.com> <tel:+5586999990000>',
+      ].join('\n'),
+    )
+    expect(md).not.toMatch(/(^|[^\\])</)
+    expect(md).not.toContain('onerror')
+  })
+
+  it('cerca e código inline ficam como estão, e link https também', () => {
+    const md = [
+      'Em `<img src=x onerror=alert(1)>` e `<javascript:alert(1)>` nada muda.',
+      '',
+      '```html',
+      '<img src=x onerror=alert(1)>',
+      '<mailto:alguem@example.com> <tel:+5586999990000> a < b',
+      '```',
+      '',
+      'Veja o [site](https://exemplo.com/docs).',
+    ].join('\n')
+    expect(converter(md)).toBe(md)
+  })
+})
+
 describe('markdownDoPost: títulos', () => {
   it('o maior título do corpo vira o primeiro nível pedido, e os outros acompanham até o 6', () => {
     const md = converter(

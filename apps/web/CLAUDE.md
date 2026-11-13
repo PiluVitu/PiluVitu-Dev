@@ -466,6 +466,9 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
     - Componente JSX vira o texto de dentro, sem o recuo; sem texto, some. `<img>`/`<Image>` com `alt` vira `![alt](url)`; `<a href>` vira link.
     - Imagem sem `alt` some. O `src` passa pelo `srcDaImagem`, o mesmo da página.
     - Link relativo e âncora viram absolutos na URL do post. Link que não é `http(s)` (`mailto:`, `tel:`, `javascript:`) fica só com o texto.
+    - Autolink do CommonMark (`<esquema:…>` e `<e-mail>`) segue a mesma regra: só `http(s)` fica como `<url>`. O resto vira o texto de dentro, sem os `<>` (`<javascript:alert(1)>` vira `javascript:alert(1)`).
+    - HTML com atributo sem aspas (`<img src=x onerror=…>`) é lido como tag, igual ao JSX: o `<img>` sem `alt` some, e os outros viram o texto de dentro.
+    - Todo `<` que não for tag reconhecida nem autolink, fora de cerca e de código inline, sai escapado como `\<`. Assim nada chega ao `llms-full.txt` como HTML cru. Isso veio da revisão da Lupa no #105, e as travas estão no describe `HTML cru e autolinks`.
     - Definição de referência (`[rótulo]: destino "título"`), inclusive dentro de citação e de item de lista: destino absoluto. A que não é `http(s)` sai, e a referência a ela (`[texto][rótulo]`, `[rótulo][]`, `[rótulo]`) fica só com o texto, como no link. Pelo CommonMark, só é definição a linha que acaba no destino ou no título; `[^1]:` (nota de rodapé do GFM) e `[Atualização]: texto` ficam como estão.
     - Mantém títulos, listas, tabelas, citações e código. A cerca de código passa intacta, inclusive em item de lista, e cerca sem fechamento é fechada no fim, para não engolir o próximo post.
     - Os títulos do corpo começam no nível 4, abaixo do `###` do post, e os outros acompanham até o 6. Título sublinhado (setext) vira `#`.
