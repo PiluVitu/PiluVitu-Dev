@@ -18,7 +18,7 @@ jest.mock('@/lib/dados-publicos', () => ({
 }))
 
 import { TOOLS } from '@/lib/tools-registry'
-import sitemap from './sitemap'
+import sitemap, { dynamic } from './sitemap'
 
 // Origem diferente do fallback do site-url.ts: prova que a URL vem do getCanonicalSiteUrl.
 const ORIGEM = 'https://exemplo.test'
@@ -54,4 +54,9 @@ it('a data só vem do post', async () => {
       lastModified: '2025-01-01T00:00:00.000Z',
     },
   ])
+})
+
+// Como os dois llms: sai no build e não lê draftMode nem cookies do pedido.
+it('é gerado no build', () => {
+  expect(dynamic).toBe('force-static')
 })

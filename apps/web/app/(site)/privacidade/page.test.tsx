@@ -1,3 +1,7 @@
+import {
+  POLITICA_DE_PRIVACIDADE,
+  textoDoParagrafo,
+} from '@/lib/politica-de-privacidade'
 import { renderEstatico } from '@/lib/render-estatico'
 import { PAGINA_PRIVACIDADE } from '@/lib/rotas-publicas'
 import PrivacidadePage, { metadata } from './page'
@@ -201,5 +205,31 @@ describe('/privacidade', () => {
     expect(metadata.description).toMatch(/^.{50,160}$/)
     expect(metadata.description).toBe(PAGINA_PRIVACIDADE.descricao)
     expect(metadata.alternates?.canonical).toBe('/privacidade')
+  })
+
+  // O llms-full.txt lê a mesma fonte: o que a página mostra é o que ele traz.
+  it('o texto sai da fonte única (lib/politica-de-privacidade.ts): mesmo título, vigência, resumo, seções e parágrafos, na ordem', () => {
+    const artigo = pagina().querySelector('article') as HTMLElement
+    const politica = POLITICA_DE_PRIVACIDADE
+    expect(texto(artigo.querySelector('h1'))).toBe(politica.titulo)
+    expect(
+      [...artigo.querySelectorAll(':scope > p')].map((p) => texto(p).trim()),
+    ).toEqual([
+      `Em vigor desde ${politica.vigencia.texto}`,
+      textoDoParagrafo(politica.resumo),
+    ])
+    expect(
+      [...artigo.querySelectorAll('section')].map((secao) => ({
+        titulo: texto(secao.querySelector('h2')),
+        paragrafos: [...secao.querySelectorAll('p')].map((p) =>
+          texto(p).trim(),
+        ),
+      })),
+    ).toEqual(
+      politica.secoes.map(({ titulo, paragrafos }) => ({
+        titulo,
+        paragrafos: paragrafos.map(textoDoParagrafo),
+      })),
+    )
   })
 })

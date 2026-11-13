@@ -1,4 +1,7 @@
+import { EMAIL_DA_PILUTECH } from '@piluvitu/tools/contato'
 import { expect, test, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { itensListados, linkDoItem } from '../lib/pilulabs'
 import { lerItensDoConteudo } from '../lib/pilulabs-conteudo'
@@ -106,6 +109,43 @@ test('sitemap.xml: XML válido com exatamente as rotas públicas, os posts publi
   expect(locs.filter(ehPost)).toEqual(postsDoLlms)
 })
 
+// O cookie de draft mode verdadeiro é o previewModeId deste build. O ks-branch
+// aponta um ramo de trabalho do Keystatic: com ele, uma leitura que seguisse o
+// preview iria ao GitHub (e o pedido daria 500 com a rede bloqueada).
+// A igualdade de hash pressupõe o blog vazio (build sem BLOG_REPO_TOKEN) ou sem
+// mudança desde o build: em draft mode o Next pula o unstable_cache e relê o
+// main do blog, e um post publicado depois da última regeneração ISR apareceria
+// só na resposta em draft mode. O ramo de preview do CMS não entra em nenhuma.
+test('com draft mode ligado e o cookie ks-branch, o sitemap, os dois llms e o robots saem iguais aos anônimos', async ({
+  page,
+}) => {
+  const { preview } = JSON.parse(
+    readFileSync(
+      join(__dirname, '..', '.next', 'prerender-manifest.json'),
+      'utf8',
+    ),
+  )
+  const cookie = `__prerender_bypass=${preview.previewModeId}; ks-branch=ramo-de-preview`
+  const hash = (corpo: Buffer) =>
+    createHash('sha256').update(corpo).digest('hex')
+
+  for (const rota of [
+    '/sitemap.xml',
+    '/llms.txt',
+    '/llms-full.txt',
+    '/robots.txt',
+  ]) {
+    const anonima = await page.request.get(rota)
+    const emPreview = await page.request.get(rota, { headers: { cookie } })
+    expect(anonima.status(), rota).toBe(200)
+    expect(emPreview.status(), rota).toBe(200)
+    // Prova de que o Next aceitou o draft mode: a resposta não sai do cache.
+    expect(emPreview.headers()['cache-control'], rota).toContain('no-store')
+    expect(anonima.headers()['cache-control'], rota).not.toContain('no-store')
+    expect(hash(await emPreview.body()), rota).toBe(hash(await anonima.body()))
+  }
+})
+
 for (const arquivo of ['/llms.txt', '/llms-full.txt'])
   test(`${arquivo}: 200 em texto puro, no formato do llmstxt.org`, async ({
     page,
@@ -117,8 +157,33 @@ for (const arquivo of ['/llms.txt', '/llms-full.txt'])
     const linhas = texto.split('\n')
     expect(linhas[0]).toBe('# Paulo Victor Torres Silva')
     expect(linhas[2]).toMatch(/^> \S/)
-    expect(texto).not.toMatch(/@|mailto:|\btel:|wa\.me|whatsapp/i)
+    // O único e-mail é o público da PiluTech, que a política mostra na página.
+    expect(texto.replaceAll(EMAIL_DA_PILUTECH, '')).not.toMatch(
+      /[\w.+-]+@[\w-]+\.[\w.]+|mailto:|\btel:|wa\.me|whatsapp/i,
+    )
   })
+
+test('llms-full.txt: a política de privacidade com os mesmos títulos e parágrafos da página', async ({
+  page,
+}) => {
+  const texto = await lerTexto(page, '/llms-full.txt')
+  const politica = secao(texto, 'Política de privacidade')
+  const semMarcacao = politica
+    .replace(/\[([^\]]+)\]\([^)\s]+\)/g, '$1')
+    .replaceAll('`', '')
+  await page.goto('/privacidade', { waitUntil: 'domcontentloaded' })
+  const titulos = await page.locator('article h2').allTextContents()
+  expect(titulos.length).toBeGreaterThan(0)
+  expect(
+    politica
+      .split('\n')
+      .filter((linha) => linha.startsWith('### '))
+      .map((linha) => linha.slice(4)),
+  ).toEqual(titulos)
+  const paragrafos = await page.locator('article p').allTextContents()
+  for (const paragrafo of paragrafos)
+    expect(semMarcacao).toContain(paragrafo.replace(/\s+/g, ' ').trim())
+})
 
 test('todo link do site no llms.txt, no llms-full.txt e no sitemap responde 200, sem redirecionar', async ({
   page,

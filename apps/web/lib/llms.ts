@@ -1,8 +1,15 @@
 import { ehHttps } from '@piluvitu/tools/pilulabs'
 import type { Carreira } from '../mocks/carreira'
 import type { Social } from '../mocks/social'
+import type { BlogPost } from './blog-posts'
 import { STACK } from './home/stack'
+import { markdownDoPost } from './markdown-do-post'
 import { itensListados, linkDoItem, type ItemPiluLabs } from './pilulabs'
+import {
+  POLITICA_DE_PRIVACIDADE,
+  textoDoTrecho,
+  type Paragrafo,
+} from './politica-de-privacidade'
 import {
   DESCRICAO_DO_SITE,
   PAGINA_FERRAMENTAS,
@@ -22,12 +29,14 @@ import {
 import type { SiteProfileContent } from './site-content'
 import { TOOLS } from './tools-registry'
 
+export type PostComCorpo = PostPublico & Pick<BlogPost, 'bodyMdx'>
+
 export type DadosPublicos = {
   perfil: SiteProfileContent
   socials: readonly Social[]
   carreiras: readonly Carreira[]
   piluLabs: readonly ItemPiluLabs[]
-  posts: readonly PostPublico[]
+  posts: readonly PostComCorpo[]
   ferramentas?: readonly Ferramenta[]
 }
 
@@ -199,6 +208,45 @@ function blocoDoPiluLabs(item: ItemPiluLabs, origem: string): string[] {
   ]
 }
 
+function blocoDoPost(post: PostComCorpo, origem: string): string[] {
+  const url = urlAbsoluta(caminhoDoPost(post.slug), origem)
+  return [
+    `### ${umaLinha(post.title)}`,
+    bloco([
+      `- Link: ${url}`,
+      ...(post.semData
+        ? []
+        : [`- Publicado em: ${dataDoPost.format(new Date(post.publishedAt))}`]),
+    ]),
+    markdownDoPost(post.bodyMdx, { urlDoPost: url, primeiroNivel: 4 }),
+  ]
+}
+
+function markdownDoParagrafo(paragrafo: Paragrafo): string {
+  return umaLinha(
+    paragrafo
+      .map((trecho) => {
+        if (typeof trecho === 'string') return trecho
+        if (trecho.tipo === 'link') return link(trecho.texto, trecho.href)
+        if (trecho.tipo === 'codigo') return `\`${trecho.texto}\``
+        return textoDoTrecho(trecho)
+      })
+      .join(''),
+  )
+}
+
+function blocosDaPolitica(): string[] {
+  const { vigencia, resumo, secoes } = POLITICA_DE_PRIVACIDADE
+  return [
+    `Em vigor desde ${vigencia.texto}`,
+    markdownDoParagrafo(resumo),
+    ...secoes.flatMap(({ titulo, paragrafos }) => [
+      `### ${titulo}`,
+      ...paragrafos.map(markdownDoParagrafo),
+    ]),
+  ]
+}
+
 function linhaDoPostCompleta(post: PostPublico, origem: string): string {
   const url = urlAbsoluta(caminhoDoPost(post.slug), origem)
   const quando = post.semData
@@ -253,6 +301,7 @@ export function llmsFullTxt(dados: DadosPublicos, origem: string): string {
     ...secao(
       'Posts',
       bloco(dados.posts.map((post) => linhaDoPostCompleta(post, origem))),
+      ...dados.posts.flatMap((post) => blocoDoPost(post, origem)),
     ),
     ...secao(
       'Outras páginas',
@@ -262,5 +311,6 @@ export function llmsFullTxt(dados: DadosPublicos, origem: string): string {
         ),
       ),
     ),
+    ...secao(POLITICA_DE_PRIVACIDADE.titulo, ...blocosDaPolitica()),
   ])
 }

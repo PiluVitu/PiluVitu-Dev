@@ -430,31 +430,59 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
   - `/api/*` e `/preview/*` (draft mode): `Disallow`;
   - a votação (`/votacao*`): em produção é 308 para o Votaí, outro host, com o próprio SEO (seção _Votaí_); a lista e as sessões já são `noindex`, e as sessões são de usuários;
   - `/feed`: `noindex, follow` no `app/(site)/feed/layout.tsx`. É componente de cliente que só agrega posts de outros sites (o HTML do servidor é "Carregando feeds…") e não tem link no site;
-  - rascunho: os dados vêm de `getPublishedBlogPosts` (`lib/blog-posts.ts`), que nunca devolve rascunho, nem em draft mode.
-- **Dados:** `lib/dados-publicos.ts` (`lerDadosPublicos`, server-only) junta o perfil (ou o `PERFIL_PADRAO` de `lib/perfil-padrao.ts`, o mesmo da home), as redes, a carreira, o PiluLabs e os posts publicados.
+  - rascunho: os dados vêm de `getPublishedBlogPosts` (`lib/blog-posts.ts`), que nunca devolve rascunho, nem em draft mode, e não lê `draftMode()` nem cookies;
+  - o conteúdo do ramo de preview do Keystatic (ver _Dados_).
+- **Dados:** `lib/dados-publicos.ts` (`lerDadosPublicos`, server-only) junta o conteúdo do CMS e os posts publicados.
+  - O CMS vem do **reader público** `lib/conteudo-publico.ts` (`lerConteudoPublico`, server-only): `createReader(process.cwd(), keystaticConfig)` direto, o conteúdo do deploy, sem `draftMode()`, `cookies()` nem `createGitHubReader`. Traz o perfil (ou o `PERFIL_PADRAO` de `lib/perfil-padrao.ts`, o mesmo da home), as redes, a carreira e só os listados do PiluLabs, na ordem da vitrine (`itensListados`).
+  - ⚠️ **As saídas de SEO não usam o `getKeystaticReader` das páginas.** Em draft mode com o cookie `ks-branch`, ele lê o ramo de trabalho no GitHub. Medido no build anterior a esta correção (2026-11-12), com o `__prerender_bypass` verdadeiro (o `previewModeId` do `prerender-manifest.json`) e `ks-branch`: o `/sitemap.xml` deu 500, porque foi ao GitHub (rede bloqueada no teste). Com acesso à rede, listaria um item do PiluLabs que só existe no ramo.
+  - A normalização das entradas (cor, rótulo, ordem, ícone padrão das redes) mora em `lib/conteudo-do-cms.ts`, função pura. O `lib/site-content.ts` ainda tem a própria cópia, porque o PR do preview (#106) mexe nele. O `conteudo-do-cms.test.ts` passa a mesma entrada pelos dois e exige o mesmo resultado; quando o #106 entrar, o `site-content.ts` pode passar a usar o módulo puro.
 - **`/sitemap.xml`** (`app/sitemap.ts`, `entradasDoSitemap`): URLs absolutas na `getCanonicalSiteUrl()`, as rotas públicas mais `/llms.txt` e `/llms-full.txt` (a skill pede o `llms.txt` no sitemap e no robots). `lastModified` só nos posts, com a data do frontmatter. Post sem `publishedAt` sai sem data: o reader põe a hora do build e marca `semData`. O Next escreve o `<loc>` sem escapar o XML (`resolveSitemap`), então o `&` no caminho vai como `&amp;`, que quem lê o XML recebe de volta como `&`: a URL fica igual à do canonical e à do `llms.txt`. Trocar por `%26` daria outra URL para a busca. O slug vem do repo do blog, que pode ser editado por fora do admin (o admin barra o `&`).
 - **`/robots.txt`** (`app/robots.txt/route.ts`, texto de `robotsTxt`): route handler, e não `app/robots.ts`, porque o `MetadataRoute.Robots` não escreve comentário e o `llms.txt` vai numa linha `# llms.txt: <origem>/llms.txt`. Libera `/`, bloqueia `ROTAS_FORA_DO_ROBOTS` (`/admin`, `/api`, `/preview`) e tem a linha `Sitemap:`.
 - **`/llms.txt` e `/llms-full.txt`** (`app/llms.txt/route.ts`, `app/llms-full.txt/route.ts`; texto em `lib/llms.ts`), no formato do llmstxt.org, em pt-BR:
   - `# <nome do perfil>`, `> DESCRICAO_DO_SITE` (a description do layout raiz e da home), um parágrafo (cargo e empresa do perfil, o que o site reúne e o link do `llms-full.txt`);
   - seções Páginas (as fixas), Ferramentas (`TOOLS`), PiluLabs (os listados, com o link do card, `linkDoItem`; sem link, sem link inventado), Posts (descrição = `metaDescription` ou `excerpt`, a mesma da página; sem post, a seção some) e Perfis (só as redes `https`, título = host e caminho, descrição = o texto do site; nada de e-mail, `mailto:`, `tel:` nem WhatsApp);
-  - o `llms-full.txt` traz em Markdown o perfil (cargo, bio, local e disciplinas, stack, perfis), a carreira, o PiluLabs, as ferramentas, a lista de posts (título, link, data e descrição) e as outras páginas. Sem o corpo dos posts: o MDX tem componentes (mermaid, imagens) e vem do repo do blog; a página do post é a fonte;
+  - o `llms-full.txt` traz em Markdown:
+    - o perfil (cargo, bio, local e disciplinas, stack, perfis), a carreira, o PiluLabs e as ferramentas;
+    - os posts: o índice (título, link, data e descrição) e, para cada post, `### <título>`, o link, a data e o **corpo**;
+    - as outras páginas: o Kanban só com o link e a descrição, nada do estado local;
+    - a **política de privacidade inteira**: a vigência, o resumo e cada seção (`### <título>`) com os parágrafos. O texto vem de `lib/politica-de-privacidade.ts`, a mesma fonte que a página renderiza. Os links viram links do Markdown, o cookie vira código, e o e-mail sai como texto, sem `mailto:`. É o `help@pilutech.com.br`, o público da PiluTech, que a página mostra. É o único e-mail nos dois arquivos;
+  - **corpo do post** (`lib/markdown-do-post.ts`, `markdownDoPost`): conversor pequeno e puro. O parser do render (`@mdx-js/mdx`, dentro do `next-mdx-remote`) é ESM, e o Jest daqui não o importa; ele também não é dependência direta.
+    - Remove `import`/`export` e expressões `{…}`, como o `blockJS` do `next-mdx-remote` faz na página. O bloco de `import`/`export` vai até a primeira linha em branco em que o código já fechou, a regra do MDX 3: chave, parêntese, colchete, string, template ou comentário abertos seguram a linha em branco dentro do bloco, e o resto dele não vaza para o texto.
+    - Componente JSX vira o texto de dentro, sem o recuo; sem texto, some. `<img>`/`<Image>` com `alt` vira `![alt](url)`; `<a href>` vira link.
+    - Imagem sem `alt` some. O `src` passa pelo `srcDaImagem`, o mesmo da página.
+    - Link relativo e âncora viram absolutos na URL do post. Link que não é `http(s)` (`mailto:`, `tel:`, `javascript:`) fica só com o texto.
+    - Definição de referência (`[rótulo]: destino "título"`), inclusive dentro de citação e de item de lista: destino absoluto. A que não é `http(s)` sai, e a referência a ela (`[texto][rótulo]`, `[rótulo][]`, `[rótulo]`) fica só com o texto, como no link. Pelo CommonMark, só é definição a linha que acaba no destino ou no título; `[^1]:` (nota de rodapé do GFM) e `[Atualização]: texto` ficam como estão.
+    - Mantém títulos, listas, tabelas, citações e código. A cerca de código passa intacta, inclusive em item de lista, e cerca sem fechamento é fechada no fim, para não engolir o próximo post.
+    - Os títulos do corpo começam no nível 4, abaixo do `###` do post, e os outros acompanham até o 6. Título sublinhado (setext) vira `#`.
+    - O frontmatter não entra (o `gray-matter` o tira no `blog-posts.ts`).
+    - Medido nos cinco artigos de `apps/ramielle/scripts/__fixtures__/avaliacao`: cerca, tabela, `<Callout>`, citação com imagem relativa e cerca aberta;
   - não há versão en/es do site; quando houver, os dois ganham o link delas.
-- ⚠️ **Estático x ISR (medido no build):** o robots é estático; o sitemap e os dois `llms` saem pré-renderizados, mas com o revalidate de 1800 s e a tag `blog-posts` do `unstable_cache` dos posts. É de propósito: o blog mora em outro repositório, publicar um post não faz deploy do site, e só o ISR (ou o `revalidateTag('blog-posts')` do admin) põe o post novo no sitemap e no `llms.txt`. `scripts/conferir-rotas-seo.mjs`, no `build` e no `build:ci`, falha se uma das quatro rotas sair do `prerender-manifest.json` (virou dinâmica) ou se o robots ganhar revalidate.
+- ⚠️ **Estático x ISR (medido no build):** as quatro rotas têm `dynamic = 'force-static'`. O robots é estático; o sitemap e os dois `llms` saem pré-renderizados, mas com o revalidate de 1800 s e a tag `blog-posts` do `unstable_cache` dos posts. É de propósito: o blog mora em outro repositório, publicar um post não faz deploy do site, e só o ISR (ou o `revalidateTag('blog-posts')` do admin) põe o post novo no sitemap e no `llms.txt`. `scripts/conferir-rotas-seo.mjs`, no `build` e no `build:ci`, falha se uma das quatro rotas sair do `prerender-manifest.json` (virou dinâmica) ou se o robots ganhar revalidate.
+- **Em draft mode (medido no build):** com o `__prerender_bypass` válido, o Next renderiza as quatro rotas na hora, sem cache (`Cache-Control: private, no-cache, no-store`). Ele também pula o `unstable_cache` dos posts e relê o `main` do blog, de onde saem só os publicados. No CMS, a saída é a anônima: o ramo de preview não entra. Os posts são os publicados no `main`, lidos na hora, e podem estar à frente do ISR: com `BLOG_REPO_TOKEN`, um post publicado depois da última regeneração aparece em draft mode antes de aparecer na resposta anônima. O E2E compara o hash com `ks-branch`, e a igualdade pressupõe o blog vazio (build sem token) ou sem mudança desde o build.
 - **Description e canonical:** toda rota pública tem `description` e `alternates.canonical` relativo, resolvido pelo `metadataBase`. Os títulos não mudaram.
   - home: `metadata` na própria `app/(site)/page.tsx`. No layout raiz, o canonical valeria para toda página sem o seu e a apontaria para a home;
   - ferramentas: `metadataDaFerramenta(tool)`, com a descrição composta do `TOOLS`;
   - posts: `generateMetadata` com `descricaoDoPost` e canonical `/posts/<slug>`;
   - `/pilulabs`, `/privacidade`, `/tools` e `/tasks`: a `descricao` da fonte única.
 - **Testes:**
-  - Jest: `lib/rotas-publicas.test.ts`, `lib/llms.test.ts`, `lib/dados-publicos.test.ts`, os `route.test.ts`, `app/sitemap.test.ts` e a metadata das páginas (`page.test.tsx`, `tools/page.test.ts`, `feed/layout.test.tsx`, `(admin)/layout.test.tsx`);
+  - Jest: `lib/rotas-publicas.test.ts`, `lib/llms.test.ts`, os `route.test.ts`, `app/sitemap.test.ts` e a metadata das páginas (`page.test.tsx`, `tools/page.test.ts`, `feed/layout.test.tsx`, `(admin)/layout.test.tsx`);
+  - `lib/dados-publicos.test.ts`: com draft mode ligado, `ks-branch` e um item listado só no ramo de preview (um reader do GitHub falso), as quatro saídas saem iguais às anônimas. O teste confere que o ramo não aparece, que nada chama `draftMode`, `cookies` nem o reader do GitHub, e que o rascunho do blog fica de fora (o `blog-posts.ts` de verdade, só o Octokit falso);
+  - `lib/conteudo-do-cms.test.ts` (paridade com o `site-content.ts`) e `lib/markdown-do-post.test.ts`;
   - `node --test scripts/*.test.mjs`, dentro do `pnpm test`;
-  - E2E `app/seo.e2e.ts`, contra o build de produção: `pnpm --filter @piluvitu/web test:e2e:seo` (`playwright.seo.config.ts`: `pnpm build` com `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` e `next start` na porta 3045; o `playwright.config.ts` padrão, do `next dev`, ignora o arquivo). Confere o robots, o XML do sitemap (exatamente as rotas públicas e os dois `llms`; os posts batem com os do `llms.txt`), cada link do site no sitemap e nos `llms` respondendo 200 sem redirecionar, os links de fora (`https`, os mesmos da home e do `/pilulabs`, sem pedido para fora), description e canonical de cada rota e o `noindex` de `/admin` e `/feed`;
+  - E2E `app/seo.e2e.ts`, contra o build de produção: `pnpm --filter @piluvitu/web test:e2e:seo` (`playwright.seo.config.ts`: `pnpm build` com `NEXT_PUBLIC_SITE_URL=https://piluvitu.com.br` e `next start` na porta 3045, ou na de `PORTA_DO_E2E_DE_SEO`; o `playwright.config.ts` padrão, do `next dev`, ignora o arquivo). O E2E confere:
+    - o robots e o XML do sitemap (exatamente as rotas públicas e os dois `llms`; os posts batem com os do `llms.txt`);
+    - cada link do site no sitemap e nos `llms` respondendo 200 sem redirecionar;
+    - os links de fora (`https`, os mesmos da home e do `/pilulabs`, sem pedido para fora);
+    - a política no `llms-full.txt` com os mesmos títulos e parágrafos da página;
+    - o draft mode: com o `__prerender_bypass` verdadeiro e `ks-branch`, as quatro rotas saem com o mesmo hash das anônimas, e a resposta é `no-store`, prova de que o Next aceitou o cookie;
+    - description e canonical de cada rota e o `noindex` de `/admin` e `/feed`;
+  - para rodar sem rede de saída, como na revisão: `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 NO_PROXY=localhost,127.0.0.1`;
   - sem `BLOG_REPO_TOKEN` (CI, build local) o blog vem vazio e os posts ficam de fora do build; o E2E confere os que vierem.
 - **Depois do deploy (dono):** enviar `https://piluvitu.com.br/sitemap.xml` no Search Console.
 
 ## Política de privacidade (`/privacidade`)
 
-`app/(site)/privacidade/page.tsx`, em vigor desde 2026-10-26 (a versão de 2026-10-11 ganhou o Votaí: o domínio `votai.piluvitu.com.br`, o histórico público só com contagens e número de participantes, e o cookie descrito como do `ramielle.piluvitu.com.br`), com o texto aprovado pelo dono. O responsável é ele, pessoa física, e o e-mail leva `[PiluVitu] Privacidade` no assunto (`mailtoDaPilutech`, de `@piluvitu/tools/contato`). O link fica no `HomeFooter`, sempre visível, depois dos links públicos e antes dos de login.
+`app/(site)/privacidade/page.tsx`, com o texto em `lib/politica-de-privacidade.ts` (`POLITICA_DE_PRIVACIDADE`: título, vigência, resumo e seções com parágrafos de trechos, que são texto, link, e-mail ou código). A página renderiza esse texto e o `llms-full.txt` o serializa (ver _SEO_). Em vigor desde 2026-10-26 (a versão de 2026-10-11 ganhou o Votaí: o domínio `votai.piluvitu.com.br`, o histórico público só com contagens e número de participantes, e o cookie descrito como do `ramielle.piluvitu.com.br`), com o texto aprovado pelo dono. O responsável é ele, pessoa física, e o e-mail leva `[PiluVitu] Privacidade` no assunto (`mailtoDaPilutech`, de `@piluvitu/tools/contato`). O link fica no `HomeFooter`, sempre visível, depois dos links públicos e antes dos de login.
 
 - **O que ela descreve:**
   - a medição da Vercel (seção acima);
@@ -464,12 +492,12 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
   - o que o navegador pede a terceiros (a API do dev.to, as imagens de fora);
   - o que fica só no navegador (o tema, o `/tasks`, a câmera do `/tools`).
 - **A duração do cookie da votação é o padrão do Better Auth** (7 dias, renovados a cada dia de uso), porque `apps/ramielle/src/lib/auth.ts` não define `session`. Conferido no 1.6.25 e de novo no 1.7.13 (`expiresIn` 604800, `updateAge` 86400).
-- **Quando mudar um desses pontos, a página muda junto.** Isso vale para o que o ramielle guarda, o prazo da sessão, um serviço novo chamado pelo navegador, a medição ou a hospedagem. Atualize o texto, a data de vigência e o `page.test.tsx`, que trava cada fato.
+- **Quando mudar um desses pontos, a página muda junto.** Isso vale para o que o ramielle guarda, o prazo da sessão, um serviço novo chamado pelo navegador, a medição ou a hospedagem. Atualize o texto e a data de vigência em `lib/politica-de-privacidade.ts` e o `page.test.tsx`, que trava cada fato. O `llms-full.txt` acompanha sozinho.
 - **Testes:**
-  - o `page.test.tsx` cobre a estrutura, os fatos, os links e a metadata;
+  - o `page.test.tsx` cobre a estrutura, os fatos, os links e a metadata, e confere que o título, a vigência, o resumo, as seções e os parágrafos da página são os de `POLITICA_DE_PRIVACIDADE`. Quando o texto saiu do JSX para o módulo, o HTML estático da página ficou idêntico byte a byte (sha256 igual antes e depois);
   - o `privacidade.e2e.ts` cobre o caminho rodapé → política → home, o console limpo e a página a 320 px;
   - o `medicao.e2e.ts` inclui a rota.
-- **Sitemap:** a página está no `sitemap.xml` e no `llms.txt` (ver _SEO_).
+- **Sitemap:** a página está no `sitemap.xml` e no `llms.txt`, e o texto inteiro está no `llms-full.txt` (ver _SEO_).
 - **Fica de fora:** sem axe, porque o web não tem o `@axe-core/playwright`, ao contrário do `apps/pilutech-site`.
 
 ## Import alias

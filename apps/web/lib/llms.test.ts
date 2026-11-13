@@ -1,13 +1,22 @@
+import { EMAIL_DA_PILUTECH } from '@piluvitu/tools/contato'
 import type { Carreira } from '@/mocks/carreira'
 import type { Social } from '@/mocks/social'
-import { llmsFullTxt, llmsTxt, type DadosPublicos } from './llms'
+import {
+  llmsFullTxt,
+  llmsTxt,
+  type DadosPublicos,
+  type PostComCorpo,
+} from './llms'
 import type { ItemPiluLabs } from './pilulabs'
+import {
+  POLITICA_DE_PRIVACIDADE,
+  textoDoParagrafo,
+} from './politica-de-privacidade'
 import {
   DESCRICAO_DO_SITE,
   PAGINA_FERRAMENTAS,
   PAGINA_PILULABS,
   rotasPublicas,
-  type PostPublico,
 } from './rotas-publicas'
 import { TOOLS } from './tools-registry'
 
@@ -50,13 +59,14 @@ function item(parcial: Partial<ItemPiluLabs> = {}): ItemPiluLabs {
   }
 }
 
-function post(parcial: Partial<PostPublico> = {}): PostPublico {
+function post(parcial: Partial<PostComCorpo> = {}): PostComCorpo {
   return {
     slug: 'husky',
     title: 'Como usar o Husky',
     excerpt: 'O excerpt do post.',
     metaDescription: 'Git hooks com o Husky em dois passos.',
     publishedAt: '2025-01-01T00:00:00.000Z',
+    bodyMdx: '',
     ...parcial,
   }
 }
@@ -279,10 +289,12 @@ describe('llms.txt: dados das páginas', () => {
     }
     for (const gerar of [llmsTxt, llmsFullTxt]) {
       const outro = gerar(dados({ perfil }), ORIGEM)
+      // A política nomeia o responsável no próprio texto, que não vem do perfil.
+      const foraDaPolitica = outro.split('## Política de privacidade')[0]
       expect(outro.split('\n')[0]).toBe('# Outro Nome')
       expect(outro).toContain('Platform Engineering na ')
       expect(outro).toContain('Outra Empresa')
-      expect(outro).not.toContain('Paulo Victor Torres Silva')
+      expect(foraDaPolitica).not.toContain('Paulo Victor Torres Silva')
     }
     expect(llmsTxt(dados({ perfil }), ORIGEM).split('\n')[4]).toMatch(
       /^Platform Engineering na Outra Empresa \(Brasil · Remoto\)\. /,
@@ -357,7 +369,7 @@ describe('llms-full.txt', () => {
     expect(completo.endsWith('\n')).toBe(true)
   })
 
-  it('seções: Perfil, Carreira, PiluLabs, Ferramentas, Posts e Outras páginas', () => {
+  it('seções: Perfil, Carreira, PiluLabs, Ferramentas, Posts, Outras páginas e Política de privacidade', () => {
     expect(completo.split('\n').filter((l) => l.startsWith('## '))).toEqual([
       '## Perfil',
       '## Carreira',
@@ -365,6 +377,7 @@ describe('llms-full.txt', () => {
       '## Ferramentas',
       '## Posts',
       '## Outras páginas',
+      '## Política de privacidade',
     ])
   })
 
@@ -415,17 +428,108 @@ describe('llms-full.txt', () => {
       )
   })
 
-  it('Posts: título, link, data (a do frontmatter) e descrição, sem o corpo', () => {
-    const comCorpo = llmsFullTxt(
-      dados({
-        posts: [{ ...post(), bodyMdx: 'CORPO DO POST' } as PostPublico],
-      }),
-      ORIGEM,
-    )
-    expect(comCorpo).toContain(
+  it('Posts: o índice com título, link, data (a do frontmatter) e descrição', () => {
+    expect(completo).toContain(
       '- [Como usar o Husky](https://piluvitu.com.br/posts/husky) (1 de janeiro de 2025): Git hooks com o Husky em dois passos.',
     )
-    expect(comCorpo).not.toContain('CORPO DO POST')
+  })
+
+  it('Posts: depois do índice, cada post com o link, a data e o corpo convertido do MDX', () => {
+    const corpo = [
+      "import { Aviso } from '../components/aviso'",
+      '',
+      '## Instalação',
+      '',
+      'Rode no terminal, como na [documentação](/tools/json):',
+      '',
+      '- `npm i -D husky`',
+      '- `npx husky init`',
+      '',
+      '```bash',
+      'echo "{ chave }" > .husky/pre-commit',
+      '```',
+      '',
+      '<Aviso tipo="dica">',
+      '  Funciona com o pnpm também.',
+      '</Aviso>',
+      '',
+      '<YouTube id="x" />',
+      '',
+      'Total de {2 + 2} passos.',
+    ].join('\n')
+    const comCorpo = llmsFullTxt(
+      dados({ posts: [post({ bodyMdx: corpo })] }),
+      ORIGEM,
+    )
+    const secaoDoPost = comCorpo.slice(
+      comCorpo.indexOf('### Como usar o Husky'),
+      comCorpo.indexOf('## Outras páginas'),
+    )
+    expect(secaoDoPost).toBe(
+      [
+        '### Como usar o Husky',
+        '',
+        '- Link: https://piluvitu.com.br/posts/husky',
+        '- Publicado em: 1 de janeiro de 2025',
+        '',
+        '#### Instalação',
+        '',
+        'Rode no terminal, como na [documentação](https://piluvitu.com.br/tools/json):',
+        '',
+        '- `npm i -D husky`',
+        '- `npx husky init`',
+        '',
+        '```bash',
+        'echo "{ chave }" > .husky/pre-commit',
+        '```',
+        '',
+        'Funciona com o pnpm também.',
+        '',
+        'Total de  passos.',
+        '',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  // A página não mostra nada do bloco ESM, nem o que vem depois da linha em
+  // branco de dentro dele; o arquivo é público.
+  it('Posts: import ou export com linha em branco no meio não vaza para o corpo', () => {
+    const corpo = [
+      'Intro.',
+      '',
+      'export const config = {',
+      '  rota: "/admin",',
+      '',
+      '  chave: "nao-renderizada",',
+      '}',
+      '',
+      'import {',
+      '  Aviso,',
+      '',
+      '  Dica,',
+      "} from '../components/x'",
+      '',
+      'Texto depois.',
+    ].join('\n')
+    const comCorpo = llmsFullTxt(
+      dados({ posts: [post({ bodyMdx: corpo })] }),
+      ORIGEM,
+    )
+    const secaoDoPost = comCorpo.slice(
+      comCorpo.indexOf('### Como usar o Husky'),
+      comCorpo.indexOf('## Outras páginas'),
+    )
+    expect(secaoDoPost).toContain('Intro.\n\nTexto depois.\n')
+    for (const vazado of ['chave', 'nao-renderizada', 'Dica', "from '", '}'])
+      expect(secaoDoPost).not.toContain(vazado)
+  })
+
+  it('Posts: sem post, sem seção; sem corpo, só o link e a data', () => {
+    expect(llmsFullTxt(dados({ posts: [] }), ORIGEM)).not.toContain('## Posts')
+    expect(completo).toContain(
+      '### Post sem descrição\n\n- Link: https://piluvitu.com.br/posts/sem-descricao\n- Publicado em: 1 de janeiro de 2025\n\n',
+    )
   })
 
   it('Posts: sem data real, sem data', () => {
@@ -436,6 +540,7 @@ describe('llms-full.txt', () => {
     expect(semData).toContain(
       '- [Como usar o Husky](https://piluvitu.com.br/posts/husky): Git hooks com o Husky em dois passos.',
     )
+    expect(semData).not.toContain('Publicado em')
   })
 
   it('Outras páginas: o Kanban e a privacidade', () => {
@@ -446,8 +551,55 @@ describe('llms-full.txt', () => {
     )
   })
 
+  it('Política de privacidade: o texto da página, com os mesmos títulos e parágrafos', () => {
+    const politica = completo.slice(
+      completo.indexOf('## Política de privacidade'),
+    )
+    const semMarcacao = politica
+      .replace(/\[([^\]]+)\]\([^)\s]+\)/g, '$1')
+      .replaceAll('`', '')
+    expect(politica).toContain(
+      `Em vigor desde ${POLITICA_DE_PRIVACIDADE.vigencia.texto}`,
+    )
+    expect(semMarcacao).toContain(
+      textoDoParagrafo(POLITICA_DE_PRIVACIDADE.resumo),
+    )
+    expect(politica.split('\n').filter((l) => l.startsWith('### '))).toEqual(
+      POLITICA_DE_PRIVACIDADE.secoes.map(({ titulo }) => `### ${titulo}`),
+    )
+    for (const { paragrafos } of POLITICA_DE_PRIVACIDADE.secoes)
+      for (const paragrafo of paragrafos)
+        expect(semMarcacao).toContain(textoDoParagrafo(paragrafo))
+  })
+
+  it('Política de privacidade: links em Markdown, o cookie como código e o e-mail público da PiluTech sem mailto', () => {
+    expect(completo).toContain(
+      '(veja a [política de privacidade da Vercel](https://vercel.com/legal/privacy-policy)).',
+    )
+    expect(completo).toContain(
+      '[Autoridade Nacional de Proteção de Dados (ANPD)](https://www.gov.br/anpd/pt-br).',
+    )
+    expect(completo).toContain('o cookie `__Secure-better-auth.session_token`,')
+    expect(completo).toContain(
+      `Dúvidas e pedidos sobre os seus dados: ${EMAIL_DA_PILUTECH}.`,
+    )
+    const antesDaPolitica = completo.slice(
+      0,
+      completo.indexOf('## Política de privacidade'),
+    )
+    expect(antesDaPolitica).not.toContain(EMAIL_DA_PILUTECH)
+  })
+
+  // O único e-mail é o público da PiluTech, que a política mostra na página.
   it.each(SEM_CONTATO_PRIVADO)('sem %s', (_nome, padrao) => {
-    expect(completo).not.toMatch(padrao)
+    expect(completo.replaceAll(EMAIL_DA_PILUTECH, '')).not.toMatch(padrao)
+  })
+
+  it('o Kanban entra só com o link e a descrição, sem seção própria', () => {
+    expect(
+      completo.match(/\(https:\/\/piluvitu\.com\.br\/tasks\)/g),
+    ).toHaveLength(1)
+    expect(completo).not.toContain('### Mini Kanban')
   })
 
   it('carreira com link que não é https fica sem link', () => {
