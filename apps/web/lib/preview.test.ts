@@ -49,10 +49,13 @@ describe('selarPreview / abrirPreview', () => {
 
   it('adulterado, lixo ou vazio não abre', () => {
     const selado = selarPreview({ branch: 'main', login: 'dona' }, AGORA)
-    const adulterado =
-      selado.slice(0, -2) +
-      (selado.endsWith('A') ? 'B' : 'A') +
-      selado.slice(-1)
+    // Trocar um caractere do base64 por 'A' falhava ~1 vez em 64: quando ele já
+    // era 'A', o "adulterado" saía igual ao original. Inverter um bit do último
+    // byte do texto cifrado adultera sempre.
+    const bytes = Buffer.from(selado, 'base64url')
+    bytes[bytes.length - 1] ^= 0x01
+    const adulterado = bytes.toString('base64url')
+    expect(adulterado).not.toBe(selado)
     expect(abrirPreview(adulterado, AGORA)).toBeNull()
     expect(abrirPreview('lixo!!', AGORA)).toBeNull()
     expect(abrirPreview('', AGORA)).toBeNull()
