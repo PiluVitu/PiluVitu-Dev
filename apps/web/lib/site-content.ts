@@ -6,7 +6,7 @@ import { normalizarItem, type ItemPiluLabs } from '@/lib/pilulabs'
 import type { FeedSource } from '@/mocks/feeds'
 import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
 import type { Social, SocialIconMode } from '@/mocks/social'
-import { draftMode } from 'next/headers'
+import { previewAtivo } from '@/lib/preview'
 import { unstable_noStore as noStore } from 'next/cache'
 
 const HEX_COLOR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
@@ -20,8 +20,7 @@ function normalizeHexColor(
 }
 
 async function skipCacheWhenDraft(): Promise<void> {
-  const { isEnabled } = await draftMode()
-  if (isEnabled) {
+  if (await previewAtivo()) {
     noStore()
   }
 }

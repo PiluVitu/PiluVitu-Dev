@@ -1,8 +1,7 @@
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { exigirAdmin } from '@/lib/admin/exigir-admin'
 import { getAllBlogPosts } from '@/lib/blog-posts'
 import { getPiluLabs, getCarreiras } from '@/lib/site-content'
-import { openToken, ADMIN_GH_COOKIE } from '@/lib/admin/token-cookie'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,19 +22,15 @@ export interface AdminStats {
 }
 
 export async function GET() {
-  // Aggregate counts are public; draft titles/slugs are private — only a linked
-  // admin (whose sealed GitHub cookie decrypts) sees draft entries in recentPosts.
-  const jar = await cookies()
-  const sealed = jar.get(ADMIN_GH_COOKIE)?.value
-  const linked = sealed ? openToken(sealed) !== null : false
-
-  const [posts, pilulabs, careers] = await Promise.all([
+  // As contagens são públicas; título e slug de rascunho, só para quem escreve no repo do blog.
+  const [admin, posts, pilulabs, careers] = await Promise.all([
+    exigirAdmin(),
     getAllBlogPosts(),
     getPiluLabs(),
     getCarreiras(),
   ])
   const drafts = posts.filter((p) => p.draft).length
-  const visiblePosts = linked ? posts : posts.filter((p) => !p.draft)
+  const visiblePosts = admin ? posts : posts.filter((p) => !p.draft)
   const body: AdminStats = {
     posts: posts.length,
     drafts,

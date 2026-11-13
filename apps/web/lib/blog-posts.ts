@@ -4,8 +4,9 @@ import { Octokit } from '@octokit/rest'
 import matter from 'gray-matter'
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
-import { draftMode } from 'next/headers'
 import { unstable_noStore as noStore } from 'next/cache'
+import { repoDoBlog } from '@/lib/blog-repo'
+import { previewAtivo } from '@/lib/preview'
 
 export type BlogPost = {
   slug: string
@@ -21,8 +22,6 @@ export type BlogPost = {
   metaDescription: string
 }
 
-const BLOG_OWNER = process.env.BLOG_REPO_OWNER ?? 'PiluVitu'
-const BLOG_REPO = process.env.BLOG_REPO_NAME ?? 'piluvitu-blog'
 const BLOG_BRANCH = 'main'
 
 function getOctokit(): Octokit {
@@ -41,13 +40,16 @@ function texto(valor: unknown): string {
   return typeof valor === 'string' ? valor : ''
 }
 
-async function skipCacheWhenDraft(): Promise<void> {
-  const { isEnabled } = await draftMode()
-  if (isEnabled) noStore()
+/** Rascunhos só com o preview selado de um admin, nunca só com o draft mode. */
+async function mostraRascunhos(): Promise<boolean> {
+  const preview = await previewAtivo()
+  if (preview) noStore()
+  return preview !== null
 }
 
 async function _fetchAllPosts(): Promise<BlogPost[]> {
   const octokit = getOctokit()
+  const { owner: BLOG_OWNER, repo: BLOG_REPO } = repoDoBlog()
 
   let files: { name: string; type: string }[]
   try {
@@ -137,23 +139,21 @@ export async function getAllBlogPosts(): Promise<BlogPost[]> {
   return _cachedFetchAll()
 }
 
-/** Returns published posts (drafts filtered unless draft mode is active). */
+/** Returns published posts (drafts only with an active admin preview). */
 export const getBlogPosts = cache(async (): Promise<BlogPost[]> => {
-  await skipCacheWhenDraft()
+  const rascunhos = await mostraRascunhos()
   const all = await _cachedFetchAll()
-  const { isEnabled: isDraft } = await draftMode()
-  return isDraft ? all : all.filter((p) => !p.draft)
+  return rascunhos ? all : all.filter((p) => !p.draft)
 })
 
 /** Returns a single post by slug. Null if not found. */
 export const getBlogPost = cache(
   async (slug: string): Promise<BlogPost | null> => {
-    await skipCacheWhenDraft()
+    const rascunhos = await mostraRascunhos()
     const all = await _cachedFetchAll()
-    const { isEnabled: isDraft } = await draftMode()
     const post = all.find((p) => p.slug === slug) ?? null
     if (!post) return null
-    if (post.draft && !isDraft) return null
+    if (post.draft && !rascunhos) return null
     return post
   },
 )
