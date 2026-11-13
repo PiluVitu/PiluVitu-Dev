@@ -466,6 +466,10 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
     - Componente JSX vira o texto de dentro, sem o recuo; sem texto, some. `<img>`/`<Image>` com `alt` vira `![alt](url)`; `<a href>` vira link.
     - Imagem sem `alt` some. O `src` passa pelo `srcDaImagem`, o mesmo da página.
     - Link relativo e âncora viram absolutos na URL do post. Link que não é `http(s)` (`mailto:`, `tel:`, `javascript:`) fica só com o texto.
+    - Antes da allowlist, o destino é decodificado como o CommonMark e o JSX fazem: o escape (`javascript\:`) e as referências de caractere (`&#58;`, `&colon;`). Referência nomeada fora da tabela (`ENTIDADES`) recusa o link, e ele fica só com o texto.
+    - Todo destino emitido, de link, imagem, `<a>`, `<img>` ou definição, sai por `destinoEmitido`. Ele codifica em `%XX` o espaço, `(`, `)`, `<`, `>`, `\`, aspas, crase, os caracteres de controle e o `&` que abriria uma referência. Assim um `)` no href não fecha o link nem deixa HTML fora dele. A Wikipédia `Teste_(desambiguação)` sai como `Teste_%28desambiguação%29`, que é o mesmo endereço.
+    - No título do link e no `alt` da imagem, o `<` sai escapado; no `alt`, os colchetes e a barra invertida também.
+    - Entidade no texto (`&lt;script&gt;`, `&#x3C;`) fica como está: é texto neutro no Markdown.
     - Autolink do CommonMark (`<esquema:…>` e `<e-mail>`) segue a mesma regra: só `http(s)` fica como `<url>`. O resto vira o texto de dentro, sem os `<>` (`<javascript:alert(1)>` vira `javascript:alert(1)`).
     - HTML com atributo sem aspas (`<img src=x onerror=…>`) é lido como tag, igual ao JSX: o `<img>` sem `alt` some, e os outros viram o texto de dentro.
     - Todo `<` que não for tag reconhecida nem autolink, fora de cerca e de código inline, sai escapado como `\<`. Assim nada chega ao `llms-full.txt` como HTML cru. Isso veio da revisão da Lupa no #105, e as travas estão no describe `HTML cru e autolinks`.

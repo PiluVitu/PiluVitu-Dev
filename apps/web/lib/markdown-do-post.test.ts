@@ -462,6 +462,93 @@ describe('markdownDoPost: HTML cru e autolinks', () => {
   })
 })
 
+// Revisão da Lupa no #105 (b94a09d): o destino saía como veio, e um href com
+// ')' fechava o link antes da hora e deixava o resto, com um <script>, fora
+// dele e sem o escape do '<'. Agora todo destino emitido (link e imagem) sai
+// codificado, e o destino é decodificado como o CommonMark faz (escape e
+// referência de caractere) antes da allowlist.
+const SEM_HTML_ATIVO = /(^|[^\\])<[A-Za-z!/?]/
+
+describe('markdownDoPost: destino dos links e imagens', () => {
+  it('href com ) e <script> vira um link íntegro, sem HTML fora dele', () => {
+    const md = converter(
+      '<a href="https://exemplo.com/)<script>alert(1)</script>">x</a>',
+    )
+    expect(md).toBe(
+      '[x](https://exemplo.com/%29%3Cscript%3Ealert%281%29%3C/script%3E)',
+    )
+    expect(md).not.toMatch(SEM_HTML_ATIVO)
+  })
+
+  it('o mesmo destino entre <> num link do Markdown não deixa HTML ativo', () => {
+    const md = converter(
+      '[x](<https://exemplo.com/)<script>alert(1)</script>>)',
+    )
+    expect(md).not.toMatch(SEM_HTML_ATIVO)
+  })
+
+  it('parênteses legítimos continuam no mesmo endereço, codificados', () => {
+    const url = 'https://pt.wikipedia.org/wiki/Teste_(desambiguação)'
+    const esperado =
+      '[Teste](https://pt.wikipedia.org/wiki/Teste_%28desambiguação%29)'
+    expect(converter(`[Teste](${url})`)).toBe(esperado)
+    expect(converter(`<a href="${url}">Teste</a>`)).toBe(esperado)
+    expect(decodeURI(esperado.slice(8, -1))).toBe(url)
+    expect(converter('![foto](https://exemplo.com/x(1).png)')).toBe(
+      '![foto](https://exemplo.com/x%281%29.png)',
+    )
+  })
+
+  it('query com & e link https comum ficam como estão', () => {
+    const md =
+      'Veja [a busca](https://exemplo.com/?a=1&b=2) e [o site](https://exemplo.com/docs).'
+    expect(converter(md)).toBe(md)
+  })
+
+  it('título do link com < sai escapado', () => {
+    expect(converter('[x](https://exemplo.com "a <b> c")')).toBe(
+      '[x](https://exemplo.com "a \\<b> c")',
+    )
+  })
+
+  it('alt da imagem com HTML e barra invertida sai escapado', () => {
+    expect(
+      converter('<img alt="<b>oi</b> a\\b" src="https://exemplo.com/x.png" />'),
+    ).toBe('![\\<b>oi\\</b> a\\\\b](https://exemplo.com/x.png)')
+  })
+
+  it('entidades no texto ficam como texto neutro, sem HTML ativo', () => {
+    const md =
+      'Texto com &lt;script&gt;alert(1)&lt;/script&gt;, &#x3C;script> e &#60;b>.'
+    expect(converter(md)).toBe(md)
+    expect(converter(md)).not.toMatch(SEM_HTML_ATIVO)
+  })
+
+  it('[texto](<javascript:…>) e o esquema escondido por escape ou entidade ficam só com o texto', () => {
+    expect(converter('Veja [texto](<javascript:alert(1)>).')).toBe(
+      'Veja texto.',
+    )
+    expect(converter('Veja [texto](javascript\\:alert(1)).')).toBe(
+      'Veja texto.',
+    )
+    expect(converter('Veja [texto](javascript&#58;alert(1)).')).toBe(
+      'Veja texto.',
+    )
+    expect(converter('Veja [texto](javascript&colon;alert(1)).')).toBe(
+      'Veja texto.',
+    )
+    expect(
+      converter('Veja <a href="javascript&#x3A;alert(1)">texto</a>.'),
+    ).toBe('Veja texto.')
+  })
+
+  it('entidade que o conversor não conhece no destino: fica só com o texto', () => {
+    expect(converter('Veja [texto](https://exemplo.com/&desconhecida;).')).toBe(
+      'Veja texto.',
+    )
+  })
+})
+
 describe('markdownDoPost: títulos', () => {
   it('o maior título do corpo vira o primeiro nível pedido, e os outros acompanham até o 6', () => {
     const md = converter(

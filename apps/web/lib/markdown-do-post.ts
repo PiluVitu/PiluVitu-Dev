@@ -53,6 +53,66 @@ function urlSegura(destino: string, base: string): string | null {
   return /\s/.test(limpo) ? absoluta.href : limpo
 }
 
+const ENTIDADES: Readonly<Record<string, string>> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  colon: ':',
+  sol: '/',
+  bsol: '\\',
+  lpar: '(',
+  rpar: ')',
+  num: '#',
+  percnt: '%',
+  period: '.',
+  quest: '?',
+  equals: '=',
+  Tab: '\t',
+  NewLine: '\n',
+  nbsp: '\u00a0',
+}
+const REFERENCIA =
+  /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g
+const ESCAPE_DO_MARKDOWN = /\\([!-/:-@[-`{-~])/g
+const PEDE_CODIFICACAO =
+  /[\s()<>\\"'`\u0000-\u001f\u007f]|&(?=#?[A-Za-z0-9]+;)/g
+
+/** Decodifica as referências de caractere, como o CommonMark e o JSX fazem com
+ * o destino; uma nomeada fora da tabela recusa o destino (falha fechada). */
+function semReferencias(texto: string): string | null {
+  let desconhecida = false
+  const decodificado = texto.replace(
+    REFERENCIA,
+    (ref, decimal?: string, hexa?: string, nome?: string) => {
+      if (nome) {
+        if (Object.hasOwn(ENTIDADES, nome)) return ENTIDADES[nome]
+        desconhecida = true
+        return ref
+      }
+      const ponto = decimal ? Number(decimal) : parseInt(hexa ?? '', 16)
+      const valido =
+        ponto > 0 && ponto <= 0x10ffff && (ponto < 0xd800 || ponto > 0xdfff)
+      return valido ? String.fromCodePoint(ponto) : '\ufffd'
+    },
+  )
+  return desconhecida ? null : decodificado
+}
+
+const destinoDoMarkdown = (destino: string) =>
+  semReferencias(destino.replace(ESCAPE_DO_MARKDOWN, '$1'))
+
+/** O destino emitido em `[texto](…)`: nada nele fecha o link, abre HTML ou
+ * vira referência de caractere. */
+function destinoEmitido(url: string): string {
+  return url.replace(PEDE_CODIFICACAO, (c) =>
+    c.charCodeAt(0) < 0x80
+      ? `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`
+      : encodeURIComponent(c),
+  )
+}
+
 function umaLinha(texto: string): string {
   return texto.replace(/\s+/g, ' ').trim()
 }
@@ -342,11 +402,13 @@ function analisar(
     const bruto = fonte.slice(i, tag.fim)
     i = tag.fim
     if (tag.nome === 'img' || tag.nome === 'Image') {
-      const alt = umaLinha(tag.atributos.get('alt') ?? '')
-      const src = srcDaImagem(tag.atributos.get('src'))
+      const alt = umaLinha(semReferencias(tag.atributos.get('alt') ?? '') ?? '')
+      const srcBruto = semReferencias(tag.atributos.get('src') ?? '')
+      const src = srcBruto ? srcDaImagem(srcBruto) : undefined
       const url = alt && src ? urlSegura(src, urlDoPost) : null
       descartar(bruto)
-      if (url) saida += `![${alt.replace(/[[\]]/g, '\\$&')}](${url})`
+      if (url)
+        saida += `![${alt.replace(/[\\[\]<]/g, '\\$&')}](${destinoEmitido(url)})`
     } else if (tag.nome === 'br') {
       descartar(bruto)
       saida += ' '
@@ -354,10 +416,16 @@ function analisar(
       descartar(bruto)
       if (tag.fechamento) fecharAte(tag.nome)
       else if (!tag.autoFechada) {
-        const href = tag.nome === 'a' ? tag.atributos.get('href') : undefined
+        const href =
+          tag.nome === 'a'
+            ? semReferencias(tag.atributos.get('href') ?? '')
+            : null
         const url = href ? urlSegura(href, urlDoPost) : null
         if (url) saida += '['
-        abertas.push({ nome: tag.nome, fechar: url ? `](${url})` : '' })
+        abertas.push({
+          nome: tag.nome,
+          fechar: url ? `](${destinoEmitido(url)})` : '',
+        })
       }
     }
     return true
@@ -386,20 +454,24 @@ function analisar(
     const fimDestino = fimDoDestino(fonte, inicioDoDestino)
     const fim = fimDestino < 0 ? -1 : fimDoRecurso(fonte, fimDestino)
     if (fim < 0) return
-    const destino = fonte
-      .slice(inicioDoDestino, fimDestino)
-      .replace(/^<|>$/g, '')
+    const destino = destinoDoMarkdown(
+      fonte.slice(inicioDoDestino, fimDestino).replace(/^<|>$/g, ''),
+    )
     const alt = saida.slice(colchete.posicao + 2, -1).trim()
-    const src = colchete.imagem ? srcDaImagem(destino) : undefined
-    const url = colchete.imagem
-      ? alt && src
-        ? urlSegura(src, urlDoPost)
-        : null
-      : urlSegura(destino, urlDoPost)
+    const src = colchete.imagem && destino ? srcDaImagem(destino) : undefined
+    const url =
+      destino === null
+        ? null
+        : colchete.imagem
+          ? alt && src
+            ? urlSegura(src, urlDoPost)
+            : null
+          : urlSegura(destino, urlDoPost)
     const recurso = fonte.slice(i, fim)
     if (url) {
+      const titulo = fonte.slice(fimDestino, fim).replace(/</g, '\\<')
       escrever(
-        `${fonte.slice(i, inicioDoDestino)}${url}${fonte.slice(fimDestino, fim)}`,
+        `${fonte.slice(i, inicioDoDestino)}${destinoEmitido(url)}${titulo}`,
       )
       i = fim
       return
@@ -415,12 +487,12 @@ function analisar(
     const partes = lerPartesDaDefinicao(fonte, i + 1)
     if (!partes) return false
     const [inicioDoDestino, fimDestino] = partes.destino
-    const destino = fonte
-      .slice(inicioDoDestino, fimDestino)
-      .replace(/^<|>$/g, '')
-    const url = urlSegura(destino, urlDoPost)
+    const destino = destinoDoMarkdown(
+      fonte.slice(inicioDoDestino, fimDestino).replace(/^<|>$/g, ''),
+    )
+    const url = destino === null ? null : urlSegura(destino, urlDoPost)
     if (url) {
-      escrever(`${fonte.slice(i, inicioDoDestino)}${url}`)
+      escrever(`${fonte.slice(i, inicioDoDestino)}${destinoEmitido(url)}`)
       i = fimDestino
       return true
     }
