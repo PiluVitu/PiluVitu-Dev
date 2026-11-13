@@ -4,30 +4,24 @@ import { createReader } from '@keystatic/core/reader'
 import { createGitHubReader } from '@keystatic/core/reader/github'
 import { cache } from 'react'
 import keystaticConfig, { getGithubRepoSlash } from '../keystatic.config'
-import { cookies, draftMode } from 'next/headers'
+import { cookies } from 'next/headers'
+import { previewAtivo } from '@/lib/preview'
 
 /**
- * Em draft mode com cookie `ks-branch`, lê conteúdo direto do GitHub (ramo de
- * trabalho do Keystatic). Caso contrário usa ficheiros do deploy — ver:
- * https://keystatic.com/docs/recipes/real-time-previews
+ * Com o preview de um admin ativo (ver lib/preview.ts), lê o conteúdo do GitHub no ramo selado.
+ * Fora dele, os arquivos do deploy.
  */
 export const getKeystaticReader = cache(async () => {
-  const { isEnabled } = await draftMode()
-  if (!isEnabled) {
+  const preview = await previewAtivo()
+  if (!preview) {
     return createReader(process.cwd(), keystaticConfig)
   }
 
-  const cookieStore = await cookies()
-  const branch = cookieStore.get('ks-branch')?.value
-  if (!branch) {
-    return createReader(process.cwd(), keystaticConfig)
-  }
-
-  const token = cookieStore.get('keystatic-gh-access-token')?.value
+  const token = (await cookies()).get('keystatic-gh-access-token')?.value
 
   return createGitHubReader(keystaticConfig, {
     repo: getGithubRepoSlash(),
-    ref: branch,
+    ref: preview.branch,
     token,
   })
 })

@@ -27,38 +27,55 @@ function key(): Buffer {
   return createHash('sha256').update(secret).digest()
 }
 
-/** Encrypts the payload into a URL-safe cookie value: base64url(iv ‖ tag ‖ ciphertext). */
-export function sealToken(payload: AdminGithubToken): string {
+/**
+ * Cifra qualquer JSON no formato base64url(iv ‖ tag ‖ cifra). O `contexto` entra como AAD do GCM:
+ * um valor selado para um cookie não abre como outro, mesmo com a mesma chave.
+ */
+export function selar(dados: unknown, contexto?: string): string {
   const iv = randomBytes(12)
   const cipher = createCipheriv(ALGO, key(), iv)
-  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8')
+  if (contexto !== undefined) cipher.setAAD(Buffer.from(contexto, 'utf8'))
+  const plaintext = Buffer.from(JSON.stringify(dados), 'utf8')
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
   const tag = cipher.getAuthTag()
   return Buffer.concat([iv, tag, ciphertext]).toString('base64url')
 }
 
-/** Decrypts a sealed cookie. Returns null on any tamper/parse/auth failure. */
-export function openToken(sealed: string): AdminGithubToken | null {
+/** Abre o que `selar` cifrou com o mesmo `contexto`. Null em qualquer falha. */
+export function abrir(selado: string, contexto?: string): unknown {
   try {
-    const raw = Buffer.from(sealed, 'base64url')
+    const raw = Buffer.from(selado, 'base64url')
     if (raw.length < 28) return null
     const iv = raw.subarray(0, 12)
     const tag = raw.subarray(12, 28)
     const ciphertext = raw.subarray(28)
     const decipher = createDecipheriv(ALGO, key(), iv)
+    if (contexto !== undefined) decipher.setAAD(Buffer.from(contexto, 'utf8'))
     decipher.setAuthTag(tag)
     const plaintext = Buffer.concat([
       decipher.update(ciphertext),
       decipher.final(),
     ])
-    const parsed = JSON.parse(
-      plaintext.toString('utf8'),
-    ) as Partial<AdminGithubToken>
-    if (typeof parsed.token !== 'string' || typeof parsed.login !== 'string') {
-      return null
-    }
-    return parsed as AdminGithubToken
+    return JSON.parse(plaintext.toString('utf8')) as unknown
   } catch {
     return null
   }
+}
+
+/** Encrypts the payload into a URL-safe cookie value: base64url(iv ‖ tag ‖ ciphertext). */
+export function sealToken(payload: AdminGithubToken): string {
+  return selar(payload)
+}
+
+/** Decrypts a sealed cookie. Returns null on any tamper/parse/auth failure. */
+export function openToken(sealed: string): AdminGithubToken | null {
+  const parsed = abrir(sealed) as Partial<AdminGithubToken> | null
+  if (
+    !parsed ||
+    typeof parsed.token !== 'string' ||
+    typeof parsed.login !== 'string'
+  ) {
+    return null
+  }
+  return parsed as AdminGithubToken
 }

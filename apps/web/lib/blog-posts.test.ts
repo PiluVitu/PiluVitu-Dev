@@ -9,9 +9,10 @@ jest.mock('next/cache', () => ({
   unstable_cache: (fn: unknown) => fn,
   unstable_noStore: () => {},
 }))
-jest.mock('next/headers', () => ({
-  draftMode: async () => ({ isEnabled: false }),
-}))
+jest.mock(
+  'next/headers',
+  () => jest.requireActual('@/lib/next-headers-falso').modulo,
+)
 jest.mock('@octokit/rest', () => ({
   Octokit: class {
     repos = {
@@ -37,15 +38,19 @@ jest.mock('@octokit/rest', () => ({
   },
 }))
 
+import { nextHeadersFalso, selarPreviewDeTeste } from '@/lib/next-headers-falso'
 import {
   getAllBlogPosts,
+  getBlogPost,
   getBlogPostSlugs,
+  getBlogPosts,
   getPublishedBlogPosts,
 } from './blog-posts'
 
 describe('lib/blog-posts', () => {
   beforeEach(() => {
     for (const k of Object.keys(mockArquivos)) delete mockArquivos[k]
+    nextHeadersFalso.reiniciar()
   })
 
   it('lê tldr e metaDescription do frontmatter', async () => {
@@ -149,6 +154,68 @@ describe('getPublishedBlogPosts', () => {
     expect(posts.find(({ slug }) => slug === 'com-data')).not.toHaveProperty(
       'semData',
     )
+  })
+})
+
+// Achado de 2026-11-12: o /preview/start ligava o draft mode para qualquer visitante, e o draft
+// mode sozinho bastava para a home e /posts/<slug> mostrarem os rascunhos do blog no site.
+describe('rascunhos só com o preview selado e válido', () => {
+  function post(slug: string, draft: boolean) {
+    return [
+      '---',
+      `title: ${slug}`,
+      `slug: ${slug}`,
+      "publishedAt: '2025-01-01'",
+      `draft: ${draft}`,
+      '---',
+      '',
+      'corpo',
+    ].join('\n')
+  }
+
+  beforeEach(() => {
+    process.env.ADMIN_TOKEN_SECRET =
+      'segredo-de-teste-com-mais-de-32-caracteres'
+    for (const k of Object.keys(mockArquivos)) delete mockArquivos[k]
+    mockArquivos['publicado.mdx'] = post('publicado', false)
+    mockArquivos['rascunho.mdx'] = post('rascunho', true)
+  })
+
+  it('sem draft mode, só os publicados', async () => {
+    nextHeadersFalso.reiniciar()
+    expect((await getBlogPosts()).map((p) => p.slug)).toEqual(['publicado'])
+    expect(await getBlogPost('rascunho')).toBeNull()
+  })
+
+  it('draft mode ligado sem o cookie selado não mostra rascunho', async () => {
+    nextHeadersFalso.reiniciar({ 'ks-branch': 'main' }, true)
+    expect((await getBlogPosts()).map((p) => p.slug)).toEqual(['publicado'])
+    expect(await getBlogPost('rascunho')).toBeNull()
+  })
+
+  it('draft mode ligado com selado forjado não mostra rascunho', async () => {
+    nextHeadersFalso.reiniciar({ piluvitu_preview: 'forjado' }, true)
+    expect((await getBlogPosts()).map((p) => p.slug)).toEqual(['publicado'])
+    expect(await getBlogPost('rascunho')).toBeNull()
+  })
+
+  it('com o preview selado e válido, os rascunhos aparecem', async () => {
+    nextHeadersFalso.reiniciar(
+      { piluvitu_preview: selarPreviewDeTeste('main') },
+      true,
+    )
+    expect((await getBlogPosts()).map((p) => p.slug).sort()).toEqual([
+      'publicado',
+      'rascunho',
+    ])
+    expect((await getBlogPost('rascunho'))?.slug).toBe('rascunho')
+  })
+
+  it('o selado sozinho, sem o draft mode, não mostra rascunho', async () => {
+    nextHeadersFalso.reiniciar({
+      piluvitu_preview: selarPreviewDeTeste('main'),
+    })
+    expect((await getBlogPosts()).map((p) => p.slug)).toEqual(['publicado'])
   })
 })
 

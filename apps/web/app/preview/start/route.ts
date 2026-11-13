@@ -1,26 +1,50 @@
+import { exigirAdmin } from '@/lib/admin/exigir-admin'
+import { ramoDoSiteExiste } from '@/lib/admin/ramo-do-site'
+import {
+  COOKIE_ANTIGO_DO_PREVIEW,
+  COOKIE_DO_DRAFT_MODE,
+  PREVIEW_COOKIE,
+  branchValido,
+  destinoDoPreview,
+  navegacaoDoProprioSite,
+  opcoesDosCookiesDoPreview,
+  selarPreview,
+} from '@/lib/preview'
 import { cookies, draftMode } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { NextResponse } from 'next/server'
 
-/**
- * Ativa o Draft Mode e grava o ramo Keystatic em cookie para o reader GitHub.
- * Requer `branch` (o UI do Keystatic preenche `{branch}` no previewUrl).
- * @see https://keystatic.com/docs/recipes/real-time-previews
- */
 export async function GET(request: Request) {
-  const url = new URL(request.url)
-  const to = url.searchParams.get('to')
-  const branch = url.searchParams.get('branch')
-
-  if (!to || !branch) {
-    return new Response('Missing to or branch param', { status: 400 })
+  const admin = await exigirAdmin()
+  if (!admin) return new Response('Não autorizado', { status: 401 })
+  if (!navegacaoDoProprioSite(request.headers)) {
+    return new Response('Pedido de outro site', { status: 403 })
   }
 
-  const draft = await draftMode()
-  draft.enable()
-  ;(await cookies()).set('ks-branch', branch)
+  const url = new URL(request.url)
+  const branch = url.searchParams.get('branch') ?? ''
+  const destino = destinoDoPreview(url.searchParams.get('to') ?? '', url.origin)
+  if (!destino || !branchValido(branch)) {
+    return new Response('Parâmetros inválidos', { status: 400 })
+  }
+  if (!(await ramoDoSiteExiste(branch))) {
+    return new Response('Ramo não encontrado no repo do site', { status: 400 })
+  }
 
-  const toUrl = new URL(to, url.origin)
-  toUrl.protocol = url.protocol
-  toUrl.host = url.host
-  redirect(toUrl.toString())
+  ;(await draftMode()).enable()
+  const jar = await cookies()
+  const opcoes = opcoesDosCookiesDoPreview()
+  // O Next grava o __prerender_bypass sem prazo e com SameSite=None; regravar dá a ele o
+  // mesmo prazo curto e o Lax do selado.
+  const bypass = jar.get(COOKIE_DO_DRAFT_MODE)?.value
+  if (bypass) jar.set(COOKIE_DO_DRAFT_MODE, bypass, opcoes)
+  jar.set(
+    PREVIEW_COOKIE,
+    selarPreview({ branch, login: admin.login }, Date.now()),
+    opcoes,
+  )
+  jar.delete(COOKIE_ANTIGO_DO_PREVIEW)
+
+  const res = NextResponse.redirect(destino, 307)
+  res.headers.set('Cache-Control', 'private, no-store')
+  return res
 }

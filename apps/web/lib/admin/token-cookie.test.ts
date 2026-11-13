@@ -1,5 +1,12 @@
 /** @jest-environment node */
-import { sealToken, openToken, ADMIN_GH_COOKIE } from './token-cookie'
+import { createDecipheriv, createHash } from 'crypto'
+import {
+  sealToken,
+  openToken,
+  selar,
+  abrir,
+  ADMIN_GH_COOKIE,
+} from './token-cookie'
 
 const PAYLOAD = {
   token: 'gho_abc123',
@@ -66,5 +73,42 @@ describe('token-cookie', () => {
       typeof sealToken
     >[0])
     expect(openToken(sealed)).toBeNull()
+  })
+
+  it('o formato do piluvitu_admin_gh não muda: base64url(iv ‖ tag ‖ cifra), sem AAD', () => {
+    const sealed = sealToken(PAYLOAD)
+    const raw = Buffer.from(sealed, 'base64url')
+    const chave = createHash('sha256')
+      .update(process.env.ADMIN_TOKEN_SECRET!)
+      .digest()
+    const decipher = createDecipheriv('aes-256-gcm', chave, raw.subarray(0, 12))
+    decipher.setAuthTag(raw.subarray(12, 28))
+    const texto = Buffer.concat([
+      decipher.update(raw.subarray(28)),
+      decipher.final(),
+    ]).toString('utf8')
+    expect(JSON.parse(texto)).toEqual(PAYLOAD)
+  })
+})
+
+describe('selar / abrir', () => {
+  it('ida e volta de qualquer JSON', () => {
+    expect(abrir(selar({ a: 1, b: ['x'] }))).toEqual({ a: 1, b: ['x'] })
+  })
+
+  it('com contexto, só abre com o mesmo contexto', () => {
+    const selado = selar({ a: 1 }, 'contexto-a')
+    expect(abrir(selado, 'contexto-a')).toEqual({ a: 1 })
+    expect(abrir(selado, 'contexto-b')).toBeNull()
+    expect(abrir(selado)).toBeNull()
+  })
+
+  it('o selado sem contexto não abre com contexto', () => {
+    expect(abrir(selar({ a: 1 }), 'contexto-a')).toBeNull()
+  })
+
+  it('lixo é null', () => {
+    expect(abrir('')).toBeNull()
+    expect(abrir('nao-base64url!!', 'x')).toBeNull()
   })
 })
