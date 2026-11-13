@@ -1,5 +1,7 @@
 # CLAUDE.md — apps/financas
 
+Padrões: skill `padroes-produto-pilutech` (acessibilidade WCAG 2.2 AA, localização pt-BR/en/es e llms.txt).
+
 ## Migrations (D1)
 
 O schema vive em `migrations/`, aplicado pelo `wrangler d1 migrations`. O

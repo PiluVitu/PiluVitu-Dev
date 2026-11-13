@@ -18,6 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **Regra de manutenção (global):** sempre que implementar uma nova tecnologia ou mudar um fluxo, atualize o `CLAUDE.md` **do workspace onde mexeu** (ou este, se for transversal) pra mantê-lo sempre atualizado.
 
+Padrões: skill `padroes-produto-pilutech` (acessibilidade WCAG 2.2 AA, localização pt-BR/en/es e llms.txt). A auditoria está em `docs/auditoria-a11y-l10n.md`.
+
 ## Tech Stack (visão geral)
 
 Monorepo **pnpm** (workspaces) + **Go workspace** (`go.work`) com nove frentes:

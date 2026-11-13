@@ -2,6 +2,8 @@
 
 Guidance for the **shared design system package**. O Claude Code carrega este arquivo **junto** com o `CLAUDE.md` da raiz. Consumido por `apps/web` (Task 3 do plano `docs/superpowers/plans/2026-07-26-financas-ui-design-system.md`), desde a Task 4, por `apps/financas/web` (SPA Vite) e por `apps/pilutech-site` (Next); o Botaí (repo `PiluVitu/Botai`) o consome do npm — ver `apps/financas/CLAUDE.md` § _SPA_ para os detalhes do lado Vite.
 
+Padrões: skill `padroes-produto-pilutech` (acessibilidade WCAG 2.2 AA, localização pt-BR/en/es e llms.txt).
+
 ## Propósito
 
 `@piluvitu/ui` centraliza o **design system** compartilhado: tokens (cores, radius, fontes, keyframes — `src/styles.css`), o helper `cn()`, os **14 componentes shadcn/ui** (New York style, sobre Radix primitives) que eram exclusivos de `apps/web/components/ui/`, e componentes **não-shadcn** construídos direto sobre Radix primitives quando o caso de uso pede (ver `ajuda.tsx` abaixo).
