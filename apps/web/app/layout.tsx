@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google'
+import { DESCRICAO_DO_SITE } from '@/lib/rotas-publicas'
 import { getCanonicalSiteUrl } from '@/lib/site-url'
 import './globals.css'
 
@@ -22,9 +23,6 @@ const siteHostname = (() => {
     return 'piluvitu.com.br'
   }
 })()
-
-const siteDescription =
-  'DevOps Engineer com 3 anos de experiência focado em sistemas em nuvem com alta disponibilidade e custo eficiente. Especialista em automatizar operações com ferramentas de mercado, monitorar a saúde das aplicações em tempo real e antecipar falhas antes que afetem o usuário final.'
 
 const defaultTitle =
   'Paulo Victor Torres Silva | SRE, DevOps & Cloud & Platform Engineering'
@@ -76,19 +74,19 @@ export const metadata: Metadata = {
     default: defaultTitle,
   },
   metadataBase: new URL(`${siteUrl}/`),
-  description: siteDescription,
+  description: DESCRICAO_DO_SITE,
   openGraph: {
     type: 'website',
     locale: 'pt_BR',
     siteName: siteHostname,
     url: `${siteUrl}/`,
     title: defaultTitle,
-    description: siteDescription,
+    description: DESCRICAO_DO_SITE,
   },
   twitter: {
     card: 'summary_large_image',
     title: defaultTitle,
-    description: siteDescription,
+    description: DESCRICAO_DO_SITE,
   },
 }
 

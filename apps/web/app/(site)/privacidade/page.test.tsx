@@ -1,4 +1,9 @@
+import {
+  POLITICA_DE_PRIVACIDADE,
+  textoDoParagrafo,
+} from '@/lib/politica-de-privacidade'
 import { renderEstatico } from '@/lib/render-estatico'
+import { PAGINA_PRIVACIDADE } from '@/lib/rotas-publicas'
 import PrivacidadePage, { metadata } from './page'
 
 const MAILTO_DA_PRIVACIDADE =
@@ -60,9 +65,9 @@ describe('/privacidade', () => {
       'Teresina (PI)',
       'não vende dados',
     ])
-    expect(
-      link(responsavel, 'help@pilutech.com.br').getAttribute('href'),
-    ).toBe(MAILTO_DA_PRIVACIDADE)
+    expect(link(responsavel, 'help@pilutech.com.br').getAttribute('href')).toBe(
+      MAILTO_DA_PRIVACIDADE,
+    )
   })
 
   // O que cada ferramenta registra vem das políticas da Vercel (conferidas em 2026-10-11):
@@ -171,9 +176,9 @@ describe('/privacidade', () => {
   it('os direitos da LGPD, com o e-mail e a ANPD', () => {
     const direitos = secao(pagina(), 'Seus direitos')
     expect(texto(direitos)).toContain('art. 18')
-    expect(
-      link(direitos, 'help@pilutech.com.br').getAttribute('href'),
-    ).toBe(MAILTO_DA_PRIVACIDADE)
+    expect(link(direitos, 'help@pilutech.com.br').getAttribute('href')).toBe(
+      MAILTO_DA_PRIVACIDADE,
+    )
     expect(
       link(
         direitos,
@@ -198,6 +203,33 @@ describe('/privacidade', () => {
       absolute: 'Política de privacidade | Paulo Victor Torres Silva',
     })
     expect(metadata.description).toMatch(/^.{50,160}$/)
+    expect(metadata.description).toBe(PAGINA_PRIVACIDADE.descricao)
     expect(metadata.alternates?.canonical).toBe('/privacidade')
+  })
+
+  // O llms-full.txt lê a mesma fonte: o que a página mostra é o que ele traz.
+  it('o texto sai da fonte única (lib/politica-de-privacidade.ts): mesmo título, vigência, resumo, seções e parágrafos, na ordem', () => {
+    const artigo = pagina().querySelector('article') as HTMLElement
+    const politica = POLITICA_DE_PRIVACIDADE
+    expect(texto(artigo.querySelector('h1'))).toBe(politica.titulo)
+    expect(
+      [...artigo.querySelectorAll(':scope > p')].map((p) => texto(p).trim()),
+    ).toEqual([
+      `Em vigor desde ${politica.vigencia.texto}`,
+      textoDoParagrafo(politica.resumo),
+    ])
+    expect(
+      [...artigo.querySelectorAll('section')].map((secao) => ({
+        titulo: texto(secao.querySelector('h2')),
+        paragrafos: [...secao.querySelectorAll('p')].map((p) =>
+          texto(p).trim(),
+        ),
+      })),
+    ).toEqual(
+      politica.secoes.map(({ titulo, paragrafos }) => ({
+        titulo,
+        paragrafos: paragrafos.map(textoDoParagrafo),
+      })),
+    )
   })
 })

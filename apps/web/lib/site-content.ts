@@ -2,10 +2,15 @@ import 'server-only'
 
 import { getKeystaticReader } from '@/lib/keystatic-reader'
 import type { Carreira } from '@/mocks/carreira'
-import { normalizarItem, type ItemPiluLabs } from '@/lib/pilulabs'
+import type { ItemPiluLabs } from '@/lib/pilulabs'
 import type { FeedSource } from '@/mocks/feeds'
-import { SOCIAL_SLUG_DEFAULT_FA } from '@/lib/social-default-fa'
-import type { Social, SocialIconMode } from '@/mocks/social'
+import type { Social } from '@/mocks/social'
+import {
+  carreirasDoCms,
+  perfilDoCms,
+  piluLabsDoCms,
+  socialsDoCms,
+} from '@/lib/conteudo-do-cms'
 import { previewAtivo } from '@/lib/preview'
 import { unstable_noStore as noStore } from 'next/cache'
 
@@ -82,23 +87,7 @@ export async function getSiteProfile(): Promise<SiteProfileContent | null> {
   await skipCacheWhenDraft()
   const reader = await getKeystaticReader()
   const data = await reader.singletons.siteProfile.read()
-  if (!data) return null
-  const entry = data as typeof data & { companyLinkColor?: string }
-  return {
-    displayName: entry.displayName,
-    avatarSrc: entry.avatarSrc,
-    avatarAlt: entry.avatarAlt,
-    roleHighlight: entry.roleHighlight,
-    companyName: entry.companyName,
-    companyLink: entry.companyLink,
-    companyLinkColor: normalizeHexColor(entry.companyLinkColor, '#4a65fc'),
-    bio: entry.bio,
-    availabilityOpen: entry.availabilityOpen ?? true,
-    availabilityLabel:
-      (entry.availabilityLabel ?? '').trim() || 'Disponível para oportunidades',
-    location: (entry.location ?? '').trim(),
-    disciplines: [...(entry.disciplines ?? [])].filter((d) => d.trim()),
-  }
+  return data ? perfilDoCms(data) : null
 }
 
 export async function getVisitCard(): Promise<VisitCardContent | null> {
@@ -136,77 +125,13 @@ export async function getVisitCard(): Promise<VisitCardContent | null> {
 export async function getSocials(): Promise<Social[]> {
   await skipCacheWhenDraft()
   const reader = await getKeystaticReader()
-  const items = await reader.collections.socials.all()
-  const mapped = items.map(({ slug, entry }) => {
-    const image = (entry.image ?? '').trim()
-    const iconMode = (
-      entry.iconMode === 'image' ? 'image' : 'fontawesome'
-    ) as SocialIconMode
-    const faRaw = (entry.fontawesomeIcon ?? '').trim()
-    const fontawesomeIcon =
-      faRaw || SOCIAL_SLUG_DEFAULT_FA[slug] || 'solid__link'
-    return {
-      id: slug,
-      socialDescription: entry.socialDescription,
-      socialLink: entry.socialLink,
-      image: image ? image : undefined,
-      altImage: entry.altImage,
-      iconMode,
-      fontawesomeIcon,
-      order: entry.order ?? 0,
-    }
-  })
-  return sortByOrder(mapped).map(
-    (row): Social => ({
-      id: row.id,
-      socialDescription: row.socialDescription,
-      socialLink: row.socialLink,
-      image: row.image,
-      altImage: row.altImage,
-      iconMode: row.iconMode,
-      fontawesomeIcon: row.fontawesomeIcon,
-    }),
-  )
+  return socialsDoCms(await reader.collections.socials.all())
 }
 
 export async function getCarreiras(): Promise<Carreira[]> {
   await skipCacheWhenDraft()
   const reader = await getKeystaticReader()
-  const items = await reader.collections.carreiras.all()
-  const mapped = items.map(({ slug, entry }) => {
-    const image = (entry.image ?? '').trim()
-    return {
-      id: slug,
-      orgName: entry.orgName,
-      orgDescription: entry.orgDescription,
-      orgLink: entry.orgLink,
-      image: image ? image : undefined,
-      altImage: entry.altImage,
-      title: entry.title,
-      location: entry.location,
-      date: entry.date,
-      atribuitions: [...entry.atribuitions],
-      current: entry.current ?? false,
-      tags: [...(entry.tags ?? [])].filter((t) => t.trim()),
-      order: entry.order ?? 0,
-    }
-  })
-  return sortByOrder(mapped).map(
-    (row): Carreira => ({
-      id: row.id,
-      orgName: row.orgName,
-      orgDescription: row.orgDescription,
-      orgLink: row.orgLink,
-      image: row.image,
-      altImage: row.altImage,
-      title: row.title,
-      location: row.location,
-      date: row.date,
-      atribuitions: row.atribuitions,
-      current: row.current,
-      tags: row.tags,
-    }),
-  )
+  return carreirasDoCms(await reader.collections.carreiras.all())
 }
 
 export async function getFeeds(): Promise<FeedSource[]> {
@@ -229,8 +154,5 @@ export async function getFeeds(): Promise<FeedSource[]> {
 export async function getPiluLabs(): Promise<ItemPiluLabs[]> {
   await skipCacheWhenDraft()
   const reader = await getKeystaticReader()
-  const items = await reader.collections.pilulabs.all()
-  return sortByOrder(
-    items.map(({ slug, entry }) => normalizarItem(slug, entry)),
-  )
+  return piluLabsDoCms(await reader.collections.pilulabs.all())
 }

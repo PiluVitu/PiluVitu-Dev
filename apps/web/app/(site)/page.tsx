@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { Bio } from '@/components/bio'
 import { HomeBentoLayout } from '@/components/home-bento-layout'
 import { HomeFooter } from '@/components/home-footer'
@@ -6,8 +7,9 @@ import {
   getPiluLabs,
   getSiteProfile,
   getSocials,
-  type SiteProfileContent,
 } from '@/lib/site-content'
+import { PERFIL_PADRAO } from '@/lib/perfil-padrao'
+import { PAGINA_INICIAL } from '@/lib/rotas-publicas'
 import { itensListados } from '@/lib/pilulabs'
 import { getBlogPosts } from '@/lib/blog-posts'
 import { buscarAppsPiluTech } from '@/lib/home/catalogo-pilutech'
@@ -15,19 +17,9 @@ import { blogPostToView } from '@/lib/article-feed'
 import type { Carreira } from '@/mocks/carreira'
 import type { Social } from '@/mocks/social'
 
-const fallbackProfile: SiteProfileContent = {
-  displayName: 'Paulo Victor Torres Silva',
-  avatarSrc: '/profile-2.jpg',
-  avatarAlt: 'Paulo Victor Profile Pic',
-  roleHighlight: 'Site Reliability Engineer (SRE)',
-  companyName: 'ViralizePlus',
-  companyLink: 'https://www.viralizeplus.com.br/',
-  companyLinkColor: '#4a65fc',
-  bio: 'DevOps Engineer com 3 anos de experiência focado em garantir que sistemas em nuvem operem com alta disponibilidade e custo eficiente. Especialista em transformar operações manuais em processos automatizados e seguros, utilizando ferramentas de mercado para monitorar a saúde das aplicações em tempo real e antecipar falhas antes que afetem o usuário final.',
-  availabilityOpen: true,
-  availabilityLabel: 'Disponível para oportunidades',
-  location: 'Brasil · Remoto',
-  disciplines: ['SRE', 'DevOps', 'Cloud'],
+export const metadata: Metadata = {
+  description: PAGINA_INICIAL.descricao,
+  alternates: { canonical: PAGINA_INICIAL.caminho },
 }
 
 export default async function Home() {
@@ -41,7 +33,7 @@ export default async function Home() {
       buscarAppsPiluTech(),
     ])
 
-  const siteProfile = profile ?? fallbackProfile
+  const siteProfile = profile ?? PERFIL_PADRAO
   const socialList: Social[] = socials
   const carreiraList: Carreira[] = carreiras
   const initialBlogPosts = blogPosts.map(blogPostToView)
