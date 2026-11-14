@@ -146,3 +146,15 @@ describe('posts/[slug] — TL;DR', () => {
     expect(raiz.querySelector('[aria-label="TL;DR"]')).toBeNull()
   })
 })
+
+describe('posts/[slug] — corpo do post', () => {
+  // `prose-invert` sem o `dark:` pinta o tema claro com as cores do escuro:
+  // texto #d1d5dc e títulos #fff sobre #f7f9fc (1,39:1 e 1,05:1, WEB-01 da auditoria).
+  it('só inverte as cores da prosa no tema escuro', async () => {
+    mockPost.atual = base
+    const raiz = renderEstatico(await PostPage({ params }))
+    const classes = [...(raiz.querySelector('.prose')?.classList ?? [])]
+    expect(classes).toContain('dark:prose-invert')
+    expect(classes).not.toContain('prose-invert')
+  })
+})

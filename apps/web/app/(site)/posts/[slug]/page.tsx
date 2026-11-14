@@ -113,7 +113,7 @@ export default async function PostPage({ params }: PostPageProps) {
 
         <PostTldr texto={post.tldr} />
 
-        <div className="prose prose-invert post-prose mt-10 max-w-none">
+        <div className="prose dark:prose-invert post-prose mt-10 max-w-none">
           <MDXRemote
             source={post.bodyMdx}
             components={mdxComponents}
