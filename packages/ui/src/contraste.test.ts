@@ -225,6 +225,20 @@ describe.each(CADA_TEMA)(
       expect(razao).toBeGreaterThanOrEqual(MINIMO_AA_GRAFICO)
     })
 
+    it('o anel do item focado (--ring) passa de 3:1 contra o menu e contra o fundo do item', () => {
+      // O fundo --accent sozinho media 1,19:1 (claro) e 1,14:1 (escuro) contra
+      // --popover (UI-01 da auditoria); o anel inset de dropdown-menu.tsx e
+      // command.tsx encosta nas duas superfícies.
+      const razoes = Object.fromEntries(
+        ['popover', 'accent'].map((fundo) => [
+          fundo,
+          contrasteEntreTokens(tokens, 'ring', fundo) >= MINIMO_AA_GRAFICO,
+        ]),
+      )
+
+      expect(razoes).toEqual({ popover: true, accent: true })
+    })
+
     it('--primary e --destructive continuam distinguíveis ENTRE SI', () => {
       // Os dois carregam significados opostos (ação × risco) e aparecem lado a
       // lado (barras do gráfico de Comprometido, botão de ação × botão de
