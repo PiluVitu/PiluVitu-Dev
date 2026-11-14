@@ -13,7 +13,7 @@ export const MDX_REHYPE_PLUGINS: any[] = [
   [
     rehypePrettyCode,
     {
-      theme: { dark: 'github-dark', light: 'github-light' },
+      theme: { dark: 'github-dark-default', light: 'github-light-default' },
       keepBackground: false,
     },
   ],
