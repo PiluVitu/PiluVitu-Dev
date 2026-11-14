@@ -16,7 +16,7 @@ export function MdxPreview(props: { mdx: string }) {
         </p>
       ) : (
         <div
-          className="prose prose-invert post-prose max-w-none"
+          className="prose dark:prose-invert post-prose max-w-none"
           aria-busy={loading}
         >
           <MDXRemote {...serialized} components={mdxComponents} />
