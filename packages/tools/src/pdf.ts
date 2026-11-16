@@ -1,7 +1,18 @@
-import { PDFDocument, ParseSpeeds } from 'pdf-lib'
-import type { MotivoDoErroDePdf } from './pdf-regras'
+import {
+  PDFDocument,
+  PDFName,
+  ParseSpeeds,
+  degrees,
+  type PDFPage,
+} from 'pdf-lib'
+import {
+  GIROS,
+  giroNormalizado,
+  type MotivoDoErroDePdf,
+  type PaginaDoPlano,
+} from './pdf-regras'
 
-export type { MotivoDoErroDePdf } from './pdf-regras'
+export type { Giro, MotivoDoErroDePdf, PaginaDoPlano } from './pdf-regras'
 
 export class ErroDePdf extends Error {
   readonly motivo: MotivoDoErroDePdf
@@ -105,5 +116,79 @@ export async function mesclarPdfs(
     }
   }
   aoAvancar?.({ salvando: true })
+  return destino.save({ objectsPerTick: Infinity })
+}
+
+function conferirPlano(plano: readonly PaginaDoPlano[]): void {
+  if (plano.length === 0) throw new RangeError('o plano não tem página')
+  const vistos = new Set<number>()
+  for (const { indice, giro } of plano) {
+    if (!Number.isInteger(indice) || indice < 0) {
+      throw new RangeError(`índice de página inválido: ${indice}`)
+    }
+    if (vistos.has(indice)) {
+      throw new RangeError(`página repetida no plano: ${indice}`)
+    }
+    if (!GIROS.includes(giro)) throw new RangeError(`giro inválido: ${giro}`)
+    vistos.add(indice)
+  }
+}
+
+// Como o pdf.js, que desenhou a miniatura: /Rotate que não é múltiplo de 90 vale 0.
+function rotacaoAtual(pagina: PDFPage): number {
+  let graus: number
+  try {
+    graus = pagina.getRotation().angle
+  } catch {
+    return 0
+  }
+  return Number.isInteger(graus) && graus % 90 === 0 ? graus : 0
+}
+
+// Um link ou anotação de uma página que fica pode apontar para uma que saiu, e o copyPages
+// levaria o conteúdo dela junto, solto no arquivo. Vazia, só sobra o /Type.
+function esvaziarPaginasForaDoPlano(
+  origem: PDFDocument,
+  plano: readonly PaginaDoPlano[],
+): void {
+  const paginas = origem.getPages()
+  const ficam = new Set(plano.map(({ indice }) => paginas[indice].node))
+  for (const { node } of paginas) {
+    if (ficam.has(node)) continue
+    for (const chave of node.keys()) {
+      if (chave !== PDFName.Type) node.delete(chave)
+    }
+  }
+}
+
+export async function organizarPaginas(
+  bytes: Uint8Array,
+  plano: readonly PaginaDoPlano[],
+): Promise<Uint8Array> {
+  conferirPlano(plano)
+  const origem = await abrir(bytes)
+  const total = origem.getPageCount()
+  for (const { indice } of plano) {
+    if (indice >= total) {
+      throw new RangeError(`página fora do documento: ${indice} de ${total}`)
+    }
+  }
+  const destino = await PDFDocument.create({ updateMetadata: false })
+  let copiadas: PDFPage[]
+  try {
+    esvaziarPaginasForaDoPlano(origem, plano)
+    copiadas = await destino.copyPages(
+      origem,
+      plano.map(({ indice }) => indice),
+    )
+  } catch {
+    throw new ErroDePdf('corrompido')
+  }
+  copiadas.forEach((pagina, posicao) => {
+    pagina.setRotation(
+      degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
+    )
+    destino.addPage(pagina)
+  })
   return destino.save({ objectsPerTick: Infinity })
 }

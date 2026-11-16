@@ -54,7 +54,10 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 **O que entra:** abrir um PDF, ver as páginas em miniatura e organizar: girar (90° para cada lado), apagar, reordenar e extrair as páginas escolhidas num PDF novo. Baixar o resultado.
 
 - **Mesmas regras de leitura do mesclar:** PDF protegido (senha ou contra cópia), corrompido ou que não é PDF é recusado com a mesma mensagem. Como o organizar também copia páginas para um documento novo, a tela leva o mesmo aviso de alcance do PR 1: os marcadores não passam, e os campos de formulário podem deixar de ser editáveis.
-- **Lógica (packages/tools, pdf-lib):** `organizarPaginas(bytes, plano)` monta um documento novo a partir de uma lista `{ indice, rotacao }` na ordem final. Uma função cobre reordenar, apagar (fora do plano), girar (somada ao `/Rotate` que a página já tem) e extrair (um plano com só as escolhidas). Como no mesclar, faz um `copyPages` só, para não duplicar fonte e imagem.
+- **Lógica (packages/tools, pdf-lib):** `organizarPaginas(bytes, plano)` monta um documento novo a partir de uma lista `{ indice, giro }` na ordem final. O campo é `giro`, não `rotacao`, porque guarda o que a pessoa pediu (0, 90, 180 ou 270), e a rotação final é o `/Rotate` que a página já tem mais o giro. Uma função cobre reordenar, apagar (fora do plano), girar e extrair (um plano com só as escolhidas). Como no mesclar, faz um `copyPages` só, para não duplicar fonte e imagem.
+  - **As páginas fora do plano são esvaziadas antes da cópia.** Um link de uma página que fica para uma que saiu levava o conteúdo da que saiu para o arquivo, solto e invisível, mas legível por quem abrir o PDF (medido no teste). Apagar página tem que apagar o conteúdo dela.
+  - Link interno deixa de levar à página, mesmo quando ela fica: entra no aviso de alcance, junto com os marcadores.
+  - O estado da tela (girar, mover, apagar e extrair as escolhidas) são funções puras no `pdf-regras`, sobre posições no plano atual. Mover com seleção não contígua: a que encosta na ponta fica, e as outras andam até encostar nela, sem trocar de ordem.
 - **Miniaturas (pdf.js):**
   - desenhadas sob demanda, só as que aparecem na tela (`IntersectionObserver`), uma por vez e com folga entre elas para a página não travar, a 160 px de largura × `devicePixelRatio`;
   - cada miniatura vira um JPEG (`canvas.toBlob`), e o canvas é solto em seguida. Uma miniatura fica em torno de 10 a 20 KB, contra 130 KB do canvas;
@@ -68,7 +71,7 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
   - **Desfazer** (Ctrl/⌘+Z e botão) volta a última ação, porque apagar sem volta é ruim para todo mundo.
 - **Celular:** grade de 2 colunas a 390 px. Arrastar para reordenar usa o dnd-kit com `TouchSensor` de espera curta (250 ms, tolerância de 5 px), para a rolagem da página continuar livre. Os botões são a alternativa.
 - **Testes:**
-  - Jest de `organizarPaginas`: ordem, rotação somada a uma página que já tinha `/Rotate`, apagar, extrair, plano vazio recusado e índice fora do documento recusado;
+  - Jest de `organizarPaginas`: ordem, rotação somada a uma página que já tinha `/Rotate` (própria e herdada), apagar, extrair, plano vazio recusado, índice fora do documento recusado, a página apagada que não vai junto por um link interno e a imagem compartilhada que não duplica;
   - motor e componente com renderizador falso;
   - E2E: girar a página 2, apagar a 3, mover a 1 para o fim, baixar, e conferir no PDF baixado a ordem (pelo lado de cada página) e o `/Rotate`;
   - E2E de extrair, de que miniatura aparece (`img` com `naturalWidth` > 0), de só GET na mesma origem, do redirecionamento 308, de 320 px e do contraste.
@@ -178,3 +181,4 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - O quadro de objetos é `role=application`, com teste manual em VoiceOver e NVDA.
 - Assinatura sem guardar no navegador e com o aviso de que não é assinatura digital.
 - Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`.
+- No organizar, as páginas que saem do plano são esvaziadas antes da cópia, para o conteúdo delas não ir junto por um link interno; e mover com seleção não contígua deixa a que encostou na ponta parada e leva as outras até ela.
