@@ -7,11 +7,12 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 - **Nada sai do aparelho.** Sem rota de API, sem upload, sem guardar o documento no navegador (nada de IndexedDB ou localStorage com PDF). A tela diz isso, e cada modo tem um E2E que confere que o fluxo inteiro só faz GET na própria origem.
 - **Duas bibliotecas, cada uma no seu Worker e só quando o modo precisa:**
   - **pdf-lib 1.17.1** (já no PR 1) escreve o PDF: mesclar, girar, apagar, reordenar, extrair, desenhar por cima, preencher formulário. Fica no `pdf.worker.ts`.
-  - **pdfjs-dist 6.3.289** (a partir da fase 2) só lê e desenha as páginas na tela. É a mesma versão exata que o `apps/financas` já usa (Apache-2.0, sem script de instalação), então não entra pacote novo no lock. Tem Worker próprio, o `pdf.worker.min.mjs` do pacote, apontado por `GlobalWorkerOptions.workerPort`.
+  - **pdfjs-dist 6.3.289** (a partir da fase 2) só lê e desenha as páginas na tela. É a mesma versão exata que o `apps/financas` já usa (Apache-2.0, sem script de instalação), então não entra pacote novo no lock (no PR da fase 2, o lock ganhou só a linha do importer `apps/web`). Tem Worker próprio, o `pdf.worker.min.mjs` do pacote, um por documento aberto, ligado por `PDFWorker.create({ port })` e não pelo `GlobalWorkerOptions.workerPort`: o global seria um Worker só para a aba inteira, e fechar o documento não o derrubaria. Fechar destrói a tarefa e derruba o Worker, que guarda a cópia do arquivo.
 - **Peso medido (min / gzip):**
   - pdf-lib no chunk do Worker: 424 KB / 174 KB (PR 1, conferido no build);
   - pdf.js `pdf.min.mjs`: 458 KB / 131 KB;
   - worker do pdf.js `pdf.worker.min.mjs`: 1.265 KB / 373 KB.
+  - no build da fase 2 (Turbopack, Next 16.4.5): chunk do pdf.js 433 KB / 128 KB, Worker do pdf.js 1.183 KB / 363 KB e Worker do pdf-lib 426 KB / 176 KB.
 
   Nenhum deles entra no bundle das outras páginas do site. Cada PR confere no `.next` do build e registra no `apps/web/CLAUDE.md`.
 
@@ -42,12 +43,12 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
 ## Rota
 
-- Hoje (PR 1): `/tools/mesclar-pdf`.
-- **Na fase 2**, quando chega o segundo modo: `/tools/pdf` vira o "Editor de PDF". A página escolhe o modo, e cada modo tem a sua rota: `/tools/pdf/mesclar`, `/tools/pdf/organizar` e, depois, `/tools/pdf/editar` e `/tools/pdf/assinar`.
+- No PR 1: `/tools/mesclar-pdf`.
+- **Desde a fase 2**: `/tools/pdf` é o "Editor de PDF". A página escolhe o modo, e cada modo tem a sua rota: `/tools/pdf/mesclar`, `/tools/pdf/organizar` e, depois, `/tools/pdf/editar` e `/tools/pdf/assinar`.
   - Uma rota por modo dá metadata e canonical próprios e separa o código: o pdf.js só desce nos modos que mostram página.
   - `/tools/mesclar-pdf` passa a redirecionar com 308 para `/tools/pdf/mesclar` (`redirects()` do `next.config.mjs`, como o `/pilulabs/botai`).
-  - No `TOOLS`, o slug `mesclar-pdf` vira `pdf` ("Editor de PDF"). Os modos entram no sitemap e no `llms.txt` pelas rotas públicas.
-- O documento aberto passa de um modo para outro pela memória: um provider no `app/(site)/tools/pdf/layout.tsx` guarda os bytes enquanto a pessoa navega entre os modos e solta tudo ao sair de `/tools/pdf`.
+  - No `TOOLS`, o slug `mesclar-pdf` vira `pdf` ("Editor de PDF"), com os modos no campo `modos` do registro (`slug`, título, descrição e ícone). Cada modo tem `metadataDoModo` e entra no sitemap e no `llms.txt` pelas rotas públicas, logo depois da ferramenta.
+- O documento aberto passa de um modo para outro pela memória: o `DocumentoPdfProvider`, no `app/(site)/tools/pdf/layout.tsx`, guarda o `File` enquanto a pessoa navega entre os modos e solta tudo ao sair de `/tools/pdf` (o layout desmonta). O mesclar, com o PDF pronto, oferece "Organizar as páginas deste PDF": põe o resultado no provider com o nome final e navega para o organizar.
 
 ## Fase 2: miniaturas e organizar páginas
 
@@ -58,6 +59,10 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
   - **As páginas fora do plano são esvaziadas antes da cópia.** Um link de uma página que fica para uma que saiu levava o conteúdo da que saiu para o arquivo, solto e invisível, mas legível por quem abrir o PDF (medido no teste). Apagar página tem que apagar o conteúdo dela.
   - Link interno deixa de levar à página, mesmo quando ela fica: entra no aviso de alcance, junto com os marcadores.
   - O estado da tela (girar, mover, apagar e extrair as escolhidas) são funções puras no `pdf-regras`, sobre posições no plano atual. Mover com seleção não contígua: a que encosta na ponta fica, e as outras andam até encostar nela, sem trocar de ordem.
+- **Motor e renderizador (infraestrutura, primeira etapa da fase 2):**
+  - o motor do pdf-lib ganhou `organizar(arquivo, plano)`, que devolve o `Blob` do PDF. `mesclar` e `organizar` viraram **operações**: uma por vez, e uma nova, de qualquer tipo, derruba o Worker da pendente. A falha virou `FalhaDaOperacao`, e a resposta do Worker com o PDF, `pronto`;
+  - o pdf.js fica atrás da interface `RenderizadorDePdf` (`components/tools/pdf/renderizador.ts`): `abrir(arquivo)` devolve `{ paginas, rotacoes, miniatura(indice, larguraCss), fechar() }`. A fila de uma miniatura por vez mora no renderizador, não na tela, e o canvas tem altura de no máximo 4 larguras, para uma página estreita e comprida não estourar o limite de canvas;
+  - **em aberto para a etapa das miniaturas:** sem `wasmUrl`, o pdf.js 6.3.289 não decodifica imagem JPX (JPEG 2000) nem JBIG2, comuns em PDF escaneado, e a miniatura sai sem essa imagem. Lido no código do worker: sem a URL, ele ainda tenta um `import()` relativo (`nullopenjpeg_nowasm_fallback.js`), que dá 404 na própria origem. A etapa decide se serve os `.wasm` do pacote (`openjpeg.wasm` 246 KB, `jbig2.wasm` 102 KB, `qcms_bg.wasm` 94 KB) da própria origem, como a fase 3 decide as fontes.
 - **Miniaturas (pdf.js):**
   - desenhadas sob demanda, só as que aparecem na tela (`IntersectionObserver`), uma por vez e com folga entre elas para a página não travar, a 160 px de largura × `devicePixelRatio`;
   - cada miniatura vira um JPEG (`canvas.toBlob`), e o canvas é solto em seguida. Uma miniatura fica em torno de 10 a 20 KB, contra 130 KB do canvas;
@@ -181,4 +186,5 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - O quadro de objetos é `role=application`, com teste manual em VoiceOver e NVDA.
 - Assinatura sem guardar no navegador e com o aviso de que não é assinatura digital.
 - Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`.
+- Um Worker do pdf.js por documento aberto (`PDFWorker.create({ port })`), não o `GlobalWorkerOptions.workerPort` global, para fechar o documento soltar a memória dele.
 - No organizar, as páginas que saem do plano são esvaziadas antes da cópia, para o conteúdo delas não ir junto por um link interno; e mover com seleção não contígua deixa a que encostou na ponta parada e leva as outras até ela.

@@ -1,12 +1,28 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { caminhoDoModo } from '@/lib/rotas-publicas'
+import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { MesclarPdf } from './mesclar'
 import { criarMotorFalso } from './motor-falso'
 
 // O motor real usa import.meta (Worker), que o Jest não compila; aqui ele sempre vem injetado.
 jest.mock('./novo-worker', () => ({ novoWorkerDePdf: jest.fn() }))
+
+const mockPush = jest.fn()
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }))
+
+let documentoDoEditor: File | null = null
+const ver = (arquivo: File | null) => {
+  documentoDoEditor = arquivo
+}
+
+function Espiao() {
+  const { arquivo } = useDocumentoPdf()
+  useEffect(() => ver(arquivo))
+  return null
+}
 
 let container: HTMLDivElement
 let root: Root
@@ -25,6 +41,8 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  mockPush.mockClear()
+  documentoDoEditor = null
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -36,7 +54,14 @@ afterEach(() => {
 })
 
 function montar(motor = criarMotorFalso()) {
-  act(() => root.render(<MesclarPdf motor={motor} />))
+  act(() =>
+    root.render(
+      <DocumentoPdfProvider>
+        <MesclarPdf motor={motor} />
+        <Espiao />
+      </DocumentoPdfProvider>,
+    ),
+  )
   return motor
 }
 
@@ -280,6 +305,33 @@ it('Mesclar manda os arquivos na ordem da tela e oferece o download com o nome e
   expect(q('mesclar-pdf-resultado')!.textContent).toContain('5 páginas')
   expect(anuncio()).toMatch(/^PDF pronto: 5 páginas, 8 bytes\.$/)
   expect(document.activeElement).toBe(baixar)
+})
+
+it('pronto o PDF, Organizar as páginas leva o resultado, com o nome final, para o modo organizar', async () => {
+  montar()
+  await escolher(pdf('a-2p.pdf'), pdf('b-3p.pdf'))
+  digitar(q<HTMLInputElement>('mesclar-pdf-nome')!, 'contrato')
+  await clicar(mesclarBotao())
+  await esperar()
+  expect(documentoDoEditor).toBeNull()
+
+  const organizar = q<HTMLButtonElement>('mesclar-pdf-organizar')!
+  expect(organizar.tagName).toBe('BUTTON')
+  expect(organizar.textContent).toBe('Organizar as páginas deste PDF')
+  await clicar(organizar)
+
+  expect(documentoDoEditor).toBeInstanceOf(File)
+  expect(documentoDoEditor!.name).toBe('contrato.pdf')
+  expect(documentoDoEditor!.type).toBe('application/pdf')
+  expect(documentoDoEditor!.size).toBe(8)
+  expect(mockPush).toHaveBeenCalledWith(caminhoDoModo('pdf', 'organizar'))
+})
+
+it('antes de mesclar não há o que organizar', async () => {
+  montar()
+  await escolher(pdf('a.pdf'), pdf('b.pdf'))
+
+  expect(q('mesclar-pdf-organizar')).toBeNull()
 })
 
 it('o nome vazio vira mesclado.pdf', async () => {

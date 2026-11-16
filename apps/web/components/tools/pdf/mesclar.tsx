@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   DndContext,
   PointerSensor,
@@ -32,6 +33,7 @@ import {
   faDownload,
   faFilePdf,
   faGripVertical,
+  faTableCellsLarge,
   faTrashCan,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -46,9 +48,10 @@ import {
   type MotivoDoErroDePdf,
 } from '@piluvitu/tools/pdf-regras'
 import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
+import { useDocumentoPdf } from './documento-pdf'
 import {
   criarMotorComWorker,
-  ehFalhaDaMesclagem,
+  ehFalhaDaOperacao,
   type MotivoDaRecusa,
   type MotorDePdf,
 } from './motor'
@@ -72,7 +75,7 @@ type Item = {
 type Mesclagem =
   | { estado: 'parada' }
   | { estado: 'mesclando'; fracao: number; arquivo: number | null }
-  | { estado: 'pronta'; url: string; bytes: number; paginas: number }
+  | { estado: 'pronta'; pdf: Blob; url: string; paginas: number }
   | { estado: 'falhou'; mensagem: string }
 
 type Botao = 'subir' | 'descer' | 'remover'
@@ -87,6 +90,8 @@ type Props = {
 
 export function MesclarPdf({ motor: motorInjetado }: Props) {
   const ids = useId()
+  const router = useRouter()
+  const documento = useDocumentoPdf()
   const motorRef = useRef<MotorDePdf | null>(motorInjetado ?? null)
   const proximoId = useRef(0)
   const escolherRef = useRef<HTMLButtonElement>(null)
@@ -260,14 +265,14 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
       )
       setMesclagem({
         estado: 'pronta',
+        pdf,
         url: URL.createObjectURL(pdf),
-        bytes: pdf.size,
         paginas: totalDePaginas,
       })
       anunciar(TEXTOS.anuncios.pronto(totalDePaginas, pdf.size))
       focar(() => baixarRef.current)
     } catch (erro) {
-      const falha = ehFalhaDaMesclagem(erro) ? erro : { motivo: 'inesperado' }
+      const falha = ehFalhaDaOperacao(erro) ? erro : { motivo: 'inesperado' }
       if (falha.motivo === 'cancelado') {
         setMesclagem({ estado: 'parada' })
         anunciar(TEXTOS.anuncios.cancelado)
@@ -290,6 +295,11 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
       })
       focar(() => mesclarRef.current)
     }
+  }
+
+  function organizarResultado(pdf: Blob) {
+    documento.guardar(new File([pdf], nomeFinal, { type: 'application/pdf' }))
+    router.push('/tools/pdf/organizar')
   }
 
   function aoSoltarNaLista({ active, over }: DragEndEvent) {
@@ -535,7 +545,7 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
             <div className="min-w-0 flex-1 basis-48 space-y-0.5">
               <p className="font-semibold">{TEXTOS.resultado.titulo}</p>
               <p className="text-muted-foreground text-sm">
-                {TEXTOS.resultado.resumo(mesclagem.paginas, mesclagem.bytes)}
+                {TEXTOS.resultado.resumo(mesclagem.paginas, mesclagem.pdf.size)}
               </p>
             </div>
             <Button asChild className="h-11 gap-2 px-5">
@@ -554,6 +564,22 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
                   {TEXTOS.acoes.baixar(nomeFinal)}
                 </span>
               </a>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 px-5"
+              onClick={() => organizarResultado(mesclagem.pdf)}
+              data-testid="mesclar-pdf-organizar"
+            >
+              <FontAwesomeIcon
+                icon={faTableCellsLarge}
+                className="size-4"
+                aria-hidden
+              />
+              <span className="whitespace-normal">
+                {TEXTOS.acoes.organizarResultado}
+              </span>
             </Button>
           </div>
         )}

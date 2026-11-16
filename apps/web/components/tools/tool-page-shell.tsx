@@ -3,14 +3,19 @@ import type { ToolMeta } from '@/lib/tools-registry'
 import { PageTopBar } from '@/components/page-top-bar'
 
 type Props = {
-  tool: ToolMeta
+  tool: Pick<ToolMeta, 'icon' | 'title' | 'description'>
+  voltar?: { href: string; rotulo: string }
   children: React.ReactNode
 }
 
-export function ToolPageShell({ tool, children }: Props) {
+export function ToolPageShell({
+  tool,
+  voltar = { href: '/tools', rotulo: 'Ferramentas' },
+  children,
+}: Props) {
   return (
     <div className="mx-auto min-h-screen w-full max-w-3xl px-6 py-8 sm:px-8 xl:py-10">
-      <PageTopBar backHref="/tools" backLabel="Ferramentas" />
+      <PageTopBar backHref={voltar.href} backLabel={voltar.rotulo} />
 
       <div className="mt-10 mb-8 flex items-center gap-4">
         <div className="bg-accent-soft text-primary flex size-12 items-center justify-center rounded-xl">

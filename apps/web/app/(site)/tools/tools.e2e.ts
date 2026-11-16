@@ -19,7 +19,7 @@ test.describe('/tools landing', () => {
       'jwt',
       'uuid',
       'roleta',
-      'mesclar-pdf',
+      'pdf',
     ]) {
       await expect(page.locator(`a[href="/tools/${slug}"]`)).toBeVisible()
     }
@@ -312,7 +312,7 @@ test.describe('Mesclar PDF', () => {
   test('mescla na ordem escolhida pelo teclado e baixa o PDF com as páginas certas', async ({
     page,
   }) => {
-    await page.goto('/tools/mesclar-pdf')
+    await page.goto('/tools/pdf/mesclar')
     await expect(
       page.getByText('Seus arquivos não saem do aparelho'),
     ).toBeVisible()
@@ -359,7 +359,7 @@ test.describe('Mesclar PDF', () => {
     page.on('request', (r) =>
       pedidos.push({ metodo: r.method(), url: r.url() }),
     )
-    await page.goto('/tools/mesclar-pdf')
+    await page.goto('/tools/pdf/mesclar')
     const origem = new URL(page.url()).origin
     pedidos.length = 0
 
@@ -385,7 +385,7 @@ test.describe('Mesclar PDF', () => {
   }) => {
     const workers: string[] = []
     page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/mesclar-pdf')
+    await page.goto('/tools/pdf/mesclar')
     await expect(page.getByTestId('pdf-zona')).toBeVisible()
     expect(workers).toEqual([])
 
@@ -397,7 +397,7 @@ test.describe('Mesclar PDF', () => {
   test('PDF protegido e arquivo que não é PDF ficam com o erro escrito e travam o Mesclar', async ({
     page,
   }) => {
-    await page.goto('/tools/mesclar-pdf')
+    await page.goto('/tools/pdf/mesclar')
     await escolherPdfs(page, [
       await pdfDeTeste('ok.pdf', [100]),
       await pdfProtegido('com-senha.pdf'),
@@ -420,7 +420,7 @@ test.describe('Mesclar PDF', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/mesclar-pdf')
+    await page.goto('/tools/pdf/mesclar')
     await escolherPdfs(page, [
       await pdfDeTeste(
         'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
@@ -450,7 +450,7 @@ test.describe('Mesclar PDF', () => {
       page,
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
-      await page.goto('/tools/mesclar-pdf')
+      await page.goto('/tools/pdf/mesclar')
       await escolherPdfs(page, [
         await pdfDeTeste('ok.pdf', [100]),
         await pdfProtegido('com-senha.pdf'),
@@ -462,6 +462,116 @@ test.describe('Mesclar PDF', () => {
         '[data-testid="mesclar-pdf"]',
       )
       expect(medidas.length).toBeGreaterThan(8)
+      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+    })
+})
+
+test.describe('Editor de PDF', () => {
+  test('/tools/mesclar-pdf responde 308 para /tools/pdf/mesclar', async ({
+    page,
+  }) => {
+    const resposta = await page.request.get('/tools/mesclar-pdf', {
+      maxRedirects: 0,
+    })
+    expect(resposta.status()).toBe(308)
+    expect(resposta.headers()['location']).toBe('/tools/pdf/mesclar')
+  })
+
+  test('/tools/pdf: aviso de privacidade e um cartão por modo, de 44 px, que o teclado alcança', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf')
+    await expect(
+      page.getByText('Seus arquivos não saem do aparelho'),
+    ).toBeVisible()
+    const modos = page.getByTestId('pdf-modo')
+    await expect(modos).toHaveCount(2)
+    await expect(modos.nth(0)).toHaveAttribute('href', '/tools/pdf/mesclar')
+    await expect(modos.nth(1)).toHaveAttribute('href', '/tools/pdf/organizar')
+    for (const modo of await modos.all()) {
+      const caixa = await modo.boundingBox()
+      expect(caixa!.height).toBeGreaterThanOrEqual(44)
+    }
+
+    await modos.nth(1).focus()
+    await expect(modos.nth(1)).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL('/tools/pdf/organizar')
+  })
+
+  test('do mesclar para o organizar: o PDF passa pela memória, e o pdf.js só nasce no organizar', async ({
+    page,
+  }) => {
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    const pedidos: { metodo: string; url: string }[] = []
+    page.on('request', (r) =>
+      pedidos.push({ metodo: r.method(), url: r.url() }),
+    )
+    await page.goto('/tools/pdf/mesclar')
+    const origem = new URL(page.url()).origin
+
+    await escolherPdfs(page, [
+      await pdfDeTeste('a.pdf', [100, 101]),
+      await pdfDeTeste('b.pdf', [200]),
+    ])
+    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
+    await expect(
+      page.getByRole('link', { name: 'Baixar mesclado.pdf' }),
+    ).toBeVisible({ timeout: 30_000 })
+    expect(workers).toHaveLength(1)
+
+    await page
+      .getByRole('button', { name: 'Organizar as páginas deste PDF' })
+      .click()
+    await expect(page).toHaveURL('/tools/pdf/organizar')
+    await expect(page.getByTestId('organizar-pdf-documento')).toHaveText(
+      'mesclado.pdf · 3 páginas',
+      { timeout: 30_000 },
+    )
+    expect(workers).toHaveLength(2)
+
+    const deFora = pedidos.filter(
+      (p) =>
+        p.metodo !== 'GET' ||
+        !(p.url.startsWith(origem) || p.url.startsWith('blob:')),
+    )
+    expect(deFora).toEqual([])
+  })
+
+  test('organizar: abre um PDF escolhido ali mesmo, com o pdf.js de verdade', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/organizar')
+    await escolherPdfs(page, [await pdfDeTeste('contrato.pdf', [100, 200])])
+    await expect(page.getByTestId('organizar-pdf-documento')).toHaveText(
+      'contrato.pdf · 2 páginas',
+      { timeout: 30_000 },
+    )
+  })
+})
+
+test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
+  test('a 320 px, o hub não rola para o lado', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf')
+    await expect(page.getByTestId('pdf-modo')).toHaveCount(2)
+    const largura = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    )
+    expect(largura).toBeLessThanOrEqual(320)
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    test(`todo texto do hub passa de 4,5:1 no tema ${tema}`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf')
+      await expect(page.getByTestId('pdf-modo')).toHaveCount(2)
+
+      const medidas = await page.evaluate(medirContrasteDoTexto, 'main')
+      expect(medidas.length).toBeGreaterThan(6)
       expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
     })
 })

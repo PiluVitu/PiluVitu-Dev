@@ -89,6 +89,7 @@ export const TEXTOS = {
     mesclando: 'Mesclando…',
     cancelar: 'Cancelar',
     baixar: (nome: string) => `Baixar ${nome}`,
+    organizarResultado: 'Organizar as páginas deste PDF',
   },
   nome: {
     rotulo: 'Nome do arquivo final',
@@ -130,6 +131,17 @@ export const TEXTOS = {
     cancelado: 'Mesclagem cancelada.',
     pronto: (totalDePaginas: number, bytes: number) =>
       `PDF pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
+  },
+  editor: {
+    modos: 'O que você quer fazer?',
+  },
+  organizar: {
+    rotulo: 'Abrir PDF',
+    abrindo: (nome: string) => `Abrindo ${nome}…`,
+    aberto: (nome: string, totalDePaginas: number) =>
+      `${nome} · ${paginas(totalDePaginas)}`,
+    recusado: (nome: string, motivo: MotivoDaRecusa) =>
+      `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
   },
   arrastar: {
     alca: (nome: string) => `Arrastar ${nome}`,
