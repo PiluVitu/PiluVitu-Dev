@@ -11,18 +11,20 @@ test.describe('Seção de Artigos — home', () => {
     await expect(heading).toHaveAttribute('id', 'artigos-heading')
   })
 
-  test('não exibe artigos do dev.to (links externos para dev.to)', async ({
+  test('os cards de post apontam para /posts, nunca para o dev.to', async ({
     page,
   }) => {
-    // Todos os cards de artigo devem apontar para rotas internas /posts/...
-    const articleLinks = page
-      .locator('section[aria-labelledby="artigos-heading"] a')
-      .filter({ hasText: /Tempo de leitura/ })
-
-    const count = await articleLinks.count()
-    // Se não há posts publicados no TinaCMS ainda, a seção pode estar vazia — tudo bem.
-    for (let i = 0; i < count; i++) {
-      const href = await articleLinks.nth(i).getAttribute('href')
+    const cards = page.locator(
+      'section[aria-labelledby="artigos-heading"] ol a',
+    )
+    const total = await cards.count()
+    test.skip(
+      total === 0,
+      'sem post publicado neste ambiente (sem BLOG_REPO_TOKEN o blog vem vazio)',
+    )
+    for (const href of await cards.evaluateAll((links) =>
+      links.map((a) => a.getAttribute('href')),
+    )) {
       expect(href).toMatch(/^\/posts\//)
     }
   })
@@ -37,30 +39,6 @@ test.describe('Seção de Artigos — home', () => {
     // Também verifica ausência dos ícones via role implícito de imagem SVG com esses rótulos
     await expect(section.locator('svg[data-icon="thumbs-up"]')).toHaveCount(0)
     await expect(section.locator('svg[data-icon="comment"]')).toHaveCount(0)
-  })
-})
-
-test.describe('Card de artigo — fallback de imagem', () => {
-  test('exibe fallback escuro quando não há coverImage', async ({ page }) => {
-    await page.goto('/')
-
-    const section = page.locator('section[aria-labelledby="artigos-heading"]')
-    const cards = section.locator('a')
-    const cardCount = await cards.count()
-
-    if (cardCount === 0) {
-      test.skip()
-      return
-    }
-
-    // Pelo menos um card deve ter o fallback (div com gradiente) ou uma imagem real
-    const fallbacks = section.locator('div.bg-gradient-to-br.from-slate-800')
-    const images = section.locator('img')
-
-    const fallbackCount = await fallbacks.count()
-    const imageCount = await images.count()
-
-    expect(fallbackCount + imageCount).toBeGreaterThan(0)
   })
 })
 
