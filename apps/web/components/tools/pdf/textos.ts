@@ -116,6 +116,8 @@ export const TEXTOS = {
     cancelar: 'Cancelar',
     baixar: (nome: string) => `Baixar ${nome}`,
     organizarResultado: 'Organizar as páginas deste PDF',
+    organizarForaDoTeto: (tetoDeBytes: number, tetoDePaginas: number) =>
+      `Para organizar as páginas, o PDF precisa ter até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)}, e este passou disso.`,
   },
   nome: {
     rotulo: 'Nome do arquivo final',
@@ -163,6 +165,8 @@ export const TEXTOS = {
   },
   organizar: {
     rotulo: 'Abrir PDF',
+    miniaturasSemImagem:
+      'Imagens em JPEG 2000 ou JBIG2, comuns em PDF escaneado, podem não aparecer nas miniaturas. No PDF final elas vão inteiras.',
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>
       `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,

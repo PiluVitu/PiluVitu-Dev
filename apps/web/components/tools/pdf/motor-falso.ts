@@ -14,6 +14,8 @@ type Opcoes = {
   atraso?: number
   mesclagem?: Desfecho
   organizacao?: Desfecho
+  /** Tamanho que o PDF entregue diz ter, para testar os tetos sem alocar o arquivo. */
+  tamanhoDoResultado?: number
 }
 
 // Para stories e testes: o nome do arquivo decide o resultado da leitura.
@@ -31,9 +33,17 @@ export function criarMotorFalso({
   atraso = 0,
   mesclagem,
   organizacao,
+  tamanhoDoResultado,
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let cancelar: (() => void) | null = null
+  const resultado = () => {
+    const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
+    if (tamanhoDoResultado !== undefined) {
+      Object.defineProperty(pdf, 'size', { value: tamanhoDoResultado })
+    }
+    return pdf
+  }
 
   function operar(desfecho: Desfecho, passos: (() => void)[]): Promise<Blob> {
     cancelar?.()
@@ -47,7 +57,7 @@ export function criarMotorFalso({
         if (desfecho === 'nunca') return
         await espera()
         if (desfecho) rejeitar(desfecho)
-        else resolver(new Blob(['%PDF-1.7'], { type: 'application/pdf' }))
+        else resolver(resultado())
       })()
     })
   }

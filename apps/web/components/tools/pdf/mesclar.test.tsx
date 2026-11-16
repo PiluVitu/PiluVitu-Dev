@@ -327,6 +327,31 @@ it('pronto o PDF, Organizar as páginas leva o resultado, com o nome final, para
   expect(mockPush).toHaveBeenCalledWith(caminhoDoModo('pdf', 'organizar'))
 })
 
+it('PDF mesclado com mais de 500 páginas: sem o botão de organizar, com o porquê', async () => {
+  montar()
+  await escolher(pdf('a-300p.pdf'), pdf('b-201p.pdf'))
+
+  await clicar(mesclarBotao())
+  await esperar()
+
+  expect(q('mesclar-pdf-baixar')).not.toBeNull()
+  expect(q('mesclar-pdf-organizar')).toBeNull()
+  expect(q('mesclar-pdf-organizar-fora-do-teto')!.textContent).toBe(
+    'Para organizar as páginas, o PDF precisa ter até 50 MB e 500 páginas, e este passou disso.',
+  )
+})
+
+it('PDF mesclado com mais de 50 MB: sem o botão de organizar, com o porquê', async () => {
+  montar(criarMotorFalso({ tamanhoDoResultado: 60_000_000 }))
+  await escolher(pdf('a-2p.pdf'), pdf('b-3p.pdf'))
+
+  await clicar(mesclarBotao())
+  await esperar()
+
+  expect(q('mesclar-pdf-organizar')).toBeNull()
+  expect(q('mesclar-pdf-organizar-fora-do-teto')).not.toBeNull()
+})
+
 it('antes de mesclar não há o que organizar', async () => {
   montar()
   await escolher(pdf('a.pdf'), pdf('b.pdf'))

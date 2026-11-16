@@ -169,9 +169,23 @@ async function escolher(arquivo: File) {
   await esperar()
 }
 
+// Espera a abertura terminar (pdf-lib e pdf.js) por condição, não por tempo: com o Mac carregado,
+// os 20 ms fixos de antes às vezes não bastavam (intermitência vista na revisão do #118).
+async function esperarAte(condicao: () => boolean, prazoMs = 2_000) {
+  for (let passado = 0; !condicao(); passado += 10) {
+    if (passado >= prazoMs) throw new Error('a condição não chegou no prazo')
+    await esperar(10)
+  }
+}
+
 async function abrir(nome: string, opcoes: Parameters<typeof montar>[0] = {}) {
   const montado = montar({ ...opcoes, arquivoInicial: pdf(nome) })
-  await esperar()
+  await esperarAte(
+    () =>
+      anuncio() !== `Abrindo ${nome}…` &&
+      (montado.motor.analisadas.includes(nome) ||
+        q('organizar-pdf-erro') !== null),
+  )
   return montado
 }
 
@@ -892,6 +906,14 @@ describe('baixar e extrair', () => {
 
     expect(container.textContent).toContain(
       'Os marcadores (o índice lateral) não passam para o PDF final, os links para outra página do mesmo PDF deixam de funcionar',
+    )
+  })
+
+  it('avisa que imagem em JPEG 2000 ou JBIG2 pode faltar na miniatura, mas vai inteira para o PDF', async () => {
+    await abrir('a-2p.pdf')
+
+    expect(q('organizar-pdf-miniaturas-sem-imagem')!.textContent).toBe(
+      'Imagens em JPEG 2000 ou JBIG2, comuns em PDF escaneado, podem não aparecer nas miniaturas. No PDF final elas vão inteiras.',
     )
   })
 })

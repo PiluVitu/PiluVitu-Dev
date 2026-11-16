@@ -754,6 +754,12 @@ export function OrganizarPdf({
             >
               {TEXTOS.alcance}
             </p>
+            <p
+              className="text-muted-foreground text-xs leading-relaxed"
+              data-testid="organizar-pdf-miniaturas-sem-imagem"
+            >
+              {T.miniaturasSemImagem}
+            </p>
 
             {montando ? (
               <div className="flex flex-wrap items-center gap-3">
