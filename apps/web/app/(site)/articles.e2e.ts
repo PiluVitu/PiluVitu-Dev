@@ -5,9 +5,10 @@ test.describe('Seção de Artigos — home', () => {
     await page.goto('/')
   })
 
-  test('exibe o título "Artigos"', async ({ page }) => {
-    const heading = page.getByRole('heading', { name: 'Artigos' })
+  test('exibe o título "~/blog" da seção', async ({ page }) => {
+    const heading = page.getByRole('heading', { name: /^~\/blog\b/ })
     await expect(heading).toBeVisible()
+    await expect(heading).toHaveAttribute('id', 'artigos-heading')
   })
 
   test('não exibe artigos do dev.to (links externos para dev.to)', async ({
