@@ -24,7 +24,9 @@
     "./import/id": "./src/import/id.ts",
     "./pilulabs": "./src/pilulabs.ts",
     "./contato": "./src/contato.ts",
-    "./ico": "./src/ico.ts"
+    "./ico": "./src/ico.ts",
+    "./pdf": "./src/pdf.ts",
+    "./pdf-regras": "./src/pdf-regras.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
@@ -36,6 +38,7 @@
   },
   "dependencies": {
     "@zxing/browser": "^0.2.0",
+    "pdf-lib": "1.17.1",
     "qrcode": "^1.5.4"
   },
   "scripts": {
