@@ -275,13 +275,23 @@ async function escolherPdfs(
   await page.getByTestId('pdf-input').setInputFiles(arquivos)
 }
 
-// Em produção a borda da Cloudflare injeta dois POST na própria origem (/cdn-cgi/rum e
-// /cdn-cgi/challenge-platform): o que importa é que nenhum pedido sai da origem e nenhum
-// corpo leva o PDF, nem o cabeçalho nem um trecho do meio de cada arquivo.
+// Em produção a borda da Cloudflare injeta o script do Web Analytics (um GET de outra origem, sem
+// corpo) e POST na própria origem (/cdn-cgi/rum e /cdn-cgi/challenge-platform). O que importa:
+// fora esse GET, nenhum pedido sai da origem, e nenhum corpo leva o PDF (nem o cabeçalho nem um
+// trecho do meio de cada arquivo).
 function vigiarPedidos(page: Page) {
   const pedidos: Request[] = []
   page.on('request', (pedido) => pedidos.push(pedido))
   return pedidos
+}
+
+const SCRIPT_DA_CLOUDFLARE =
+  'https://static.cloudflareinsights.com/beacon.min.js'
+
+function ehOScriptDaCloudflare(pedido: Request) {
+  return (
+    pedido.method() === 'GET' && pedido.url().startsWith(SCRIPT_DA_CLOUDFLARE)
+  )
 }
 
 function conferirQueNadaSaiu(
@@ -290,13 +300,16 @@ function conferirQueNadaSaiu(
   arquivos: Buffer[],
 ) {
   const deOutraOrigem = pedidos
-    .map((pedido) => pedido.url())
-    .filter(
-      (url) =>
+    .filter((pedido) => {
+      const url = pedido.url()
+      return (
         !url.startsWith(`${origem}/`) &&
         !url.startsWith('blob:') &&
-        !url.startsWith('data:'),
-    )
+        !url.startsWith('data:') &&
+        !ehOScriptDaCloudflare(pedido)
+      )
+    })
+    .map((pedido) => `${pedido.method()} ${pedido.url()}`)
   expect(deOutraOrigem).toEqual([])
   const trechos = [
     Buffer.from('%PDF-'),

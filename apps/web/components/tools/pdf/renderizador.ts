@@ -6,8 +6,6 @@ export type FalhaDaAbertura = { motivo: MotivoDaRecusa }
 
 export type DocumentoAberto = {
   paginas: number
-  /** O `/Rotate` de cada página como o pdf.js leu: 0, 90, 180 ou 270. */
-  rotacoes: readonly number[]
   /** Desenha uma página por vez (a fila é daqui, não de quem chama) e solta o canvas depois do JPEG. */
   miniatura(indice: number, larguraCss: number): Promise<Blob>
   /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo, depois de o pdf.js limpar a página (fontes e cache). */
@@ -140,18 +138,9 @@ export function criarRenderizadorComPdfjs(
         if (documento.numPages === 0) {
           throw { motivo: 'sem_paginas' } satisfies FalhaDaAbertura
         }
-        const rotacoes = await Promise.race([
-          Promise.all(
-            Array.from({ length: documento.numPages }, (_, i) =>
-              documento.getPage(i + 1).then((pagina) => pagina.rotate),
-            ),
-          ),
-          quebrou,
-        ])
         let fila: Promise<unknown> = Promise.resolve()
         return {
           paginas: documento.numPages,
-          rotacoes,
           miniatura(indice, larguraCss) {
             const vez = fila.then(() => desenhar(documento, indice, larguraCss))
             fila = vez.catch(() => {})

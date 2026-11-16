@@ -894,4 +894,12 @@ describe('baixar e extrair', () => {
       'Os marcadores (o índice lateral) não passam para o PDF final, os links para outra página do mesmo PDF deixam de funcionar',
     )
   })
+
+  it('avisa que imagem em JPEG 2000 ou JBIG2 pode faltar na miniatura, mas vai inteira para o PDF', async () => {
+    await abrir('a-2p.pdf')
+
+    expect(q('organizar-pdf-miniaturas-sem-imagem')!.textContent).toBe(
+      'Imagens em JPEG 2000 ou JBIG2, comuns em PDF escaneado, podem não aparecer nas miniaturas. No PDF final elas vão inteiras.',
+    )
+  })
 })

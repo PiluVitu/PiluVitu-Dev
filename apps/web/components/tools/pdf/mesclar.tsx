@@ -42,6 +42,8 @@ import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import {
   NOME_PADRAO_DO_PDF_FINAL,
+  TETO_DE_BYTES_COM_MINIATURAS,
+  TETO_DE_PAGINAS,
   TETO_TOTAL_EM_BYTES,
   cabemNoTeto,
   nomeDoPdfFinal,
@@ -565,22 +567,35 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
                 </span>
               </a>
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 gap-2 px-5"
-              onClick={() => organizarResultado(mesclagem.pdf)}
-              data-testid="mesclar-pdf-organizar"
-            >
-              <FontAwesomeIcon
-                icon={faTableCellsLarge}
-                className="size-4"
-                aria-hidden
-              />
-              <span className="whitespace-normal">
-                {TEXTOS.acoes.organizarResultado}
-              </span>
-            </Button>
+            {mesclagem.pdf.size <= TETO_DE_BYTES_COM_MINIATURAS &&
+            mesclagem.paginas <= TETO_DE_PAGINAS ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 gap-2 px-5"
+                onClick={() => organizarResultado(mesclagem.pdf)}
+                data-testid="mesclar-pdf-organizar"
+              >
+                <FontAwesomeIcon
+                  icon={faTableCellsLarge}
+                  className="size-4"
+                  aria-hidden
+                />
+                <span className="whitespace-normal">
+                  {TEXTOS.acoes.organizarResultado}
+                </span>
+              </Button>
+            ) : (
+              <p
+                className="text-muted-foreground basis-full text-sm"
+                data-testid="mesclar-pdf-organizar-fora-do-teto"
+              >
+                {TEXTOS.acoes.organizarForaDoTeto(
+                  TETO_DE_BYTES_COM_MINIATURAS,
+                  TETO_DE_PAGINAS,
+                )}
+              </p>
+            )}
           </div>
         )}
       </div>

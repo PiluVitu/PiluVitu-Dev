@@ -118,17 +118,15 @@ describe('abrir', () => {
     expect(new TextDecoder().decode(opcoes.data)).toBe('%PDF-1.7 conteudo')
   })
 
-  it('devolve o número de páginas e o /Rotate de cada uma', async () => {
-    prepararDocumento([
-      paginaFalsa(),
-      paginaFalsa({ rotate: 90 }),
-      paginaFalsa({ rotate: 270 }),
-    ])
+  it('abre só com a contagem: nenhuma página vai e volta do Worker antes da primeira miniatura', async () => {
+    const getPage = jest.fn(async () => paginaFalsa({ rotate: 90 }))
+    prepararTarefa(Promise.resolve({ numPages: 3, getPage }))
 
     const documento = await abrir()
 
     expect(documento.paginas).toBe(3)
-    expect(documento.rotacoes).toEqual([0, 90, 270])
+    expect(documento).not.toHaveProperty('rotacoes')
+    expect(getPage).not.toHaveBeenCalled()
   })
 
   it('PDF com senha é recusado como protegido, e o Worker cai', async () => {

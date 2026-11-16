@@ -35,7 +35,7 @@ function folha(numero: number, deitada: boolean): Blob {
 }
 
 // Para stories e testes: o nome do arquivo decide, como no motor falso. "-12p" dá 12 páginas,
-// "senha" vem protegido, "quebrado" vem corrompido e "girado" põe /Rotate 90 nas páginas pares.
+// "senha" vem protegido, "quebrado" vem corrompido e "girado" deita a miniatura das páginas pares, como um /Rotate 90.
 export function criarRenderizadorFalso({
   atraso = 0,
   miniaturasQueFalham = [],
@@ -55,13 +55,13 @@ export function criarRenderizadorFalso({
         throw { motivo: analise.motivo } satisfies FalhaDaAbertura
       }
       const total = paginas ?? analise.paginas
-      const rotacoes = Array.from({ length: total }, (_, i) =>
-        /girado/i.test(nome) && i % 2 === 1 ? 90 : 0,
+      const deitadas = Array.from(
+        { length: total },
+        (_, i) => /girado/i.test(nome) && i % 2 === 1,
       )
       let fechado = false
       return {
         paginas: total,
-        rotacoes,
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })
           await espera()
@@ -69,7 +69,7 @@ export function criarRenderizadorFalso({
           if (miniaturasQueFalham.includes(indice)) {
             throw new Error('Rendering cancelled')
           }
-          return folha(indice + 1, rotacoes[indice] % 180 !== 0)
+          return folha(indice + 1, deitadas[indice])
         },
         fechar() {
           if (fechado) return
