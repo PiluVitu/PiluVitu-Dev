@@ -17,7 +17,7 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
 - **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1: o pdf-lib usa umas 3,5 vezes a entrada. As fases que desenham páginas somam um teto de páginas e de canvas, descrito em cada uma.
 - **pdf.js com a configuração segura:**
-  - `isEvalSupported: false` (a classe do CVE-2024-4367);
+  - a versão 6 já não tem o caminho com `eval` do CVE-2024-4367: a opção `isEvalSupported` saiu da biblioteca, e o `pdf.mjs` e o worker do 6.3.289 não têm `new Function` (conferido em 2026-11-16);
   - `enableXfa: false`;
   - `disableAutoFetch: true`;
   - o arquivo entra como `data: Uint8Array`, nunca por URL.
