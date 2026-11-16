@@ -1,5 +1,6 @@
 import {
   NOME_PADRAO_DO_PDF_FINAL,
+  TETO_DE_BYTES_COM_MINIATURAS,
   TETO_DE_PAGINAS,
   TETO_TOTAL_EM_BYTES,
   apagar,
@@ -8,6 +9,7 @@ import {
   fracaoDaMesclagem,
   girar,
   moverSelecionadas,
+  nomeDoPdfDerivado,
   nomeDoPdfFinal,
   planoInicial,
   type PaginaDoPlano,
@@ -71,9 +73,45 @@ describe('nomeDoPdfFinal', () => {
   })
 })
 
-describe('TETO_DE_PAGINAS', () => {
-  it('é de 500 páginas', () => {
+describe('nomeDoPdfDerivado', () => {
+  it('põe o sufixo depois do nome original, sem repetir o .pdf', () => {
+    expect(nomeDoPdfDerivado('contrato.pdf', 'organizado')).toBe(
+      'contrato-organizado.pdf',
+    )
+    expect(nomeDoPdfDerivado('Relatório Final.PDF', 'paginas')).toBe(
+      'Relatório Final-paginas.pdf',
+    )
+    expect(nomeDoPdfDerivado('mesclado.pdf', 'organizado')).toBe(
+      'mesclado-organizado.pdf',
+    )
+  })
+
+  it('passa pelo nomeDoPdfFinal: tira o que não pode ir no nome do arquivo', () => {
+    expect(nomeDoPdfDerivado('../a:b*c.pdf', 'organizado')).toBe(
+      'a b c-organizado.pdf',
+    )
+  })
+
+  it('nome longo: corta o original e mantém o sufixo inteiro', () => {
+    const nome = nomeDoPdfDerivado(`${'x'.repeat(300)}.pdf`, 'organizado')
+    expect(nome).toBe(`${'x'.repeat(109)}-organizado.pdf`)
+    expect(nome.length).toBe(124)
+  })
+
+  it('o corte não deixa ponto nem espaço colado no sufixo', () => {
+    const nome = nomeDoPdfDerivado(`${'x'.repeat(110)}. fim.pdf`, 'paginas')
+    expect(nome).toBe(`${'x'.repeat(110)}-paginas.pdf`)
+  })
+})
+
+describe('tetos do modo com miniaturas', () => {
+  it('TETO_DE_PAGINAS é de 500 páginas', () => {
     expect(TETO_DE_PAGINAS).toBe(500)
+  })
+
+  it('TETO_DE_BYTES_COM_MINIATURAS é de 50 MB, metade do mesclar', () => {
+    expect(TETO_DE_BYTES_COM_MINIATURAS).toBe(50_000_000)
+    expect(TETO_DE_BYTES_COM_MINIATURAS).toBeLessThan(TETO_TOTAL_EM_BYTES)
   })
 })
 

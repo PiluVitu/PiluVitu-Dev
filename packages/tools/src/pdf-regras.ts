@@ -52,7 +52,18 @@ export function nomeDoPdfFinal(entrada: string): string {
   return base ? `${base}.pdf` : NOME_PADRAO_DO_PDF_FINAL
 }
 
+export function nomeDoPdfDerivado(original: string, sufixo: string): string {
+  const base = nomeDoPdfFinal(original)
+    .replace(/\.pdf$/, '')
+    .slice(0, LIMITE_DO_NOME - sufixo.length - 1)
+    .replace(/[.\s]+$/, '')
+  return nomeDoPdfFinal(`${base}-${sufixo}`)
+}
+
 export const TETO_DE_PAGINAS = 500
+
+// Com miniaturas o PDF fica no pdf.js e no pdf-lib ao mesmo tempo: ver "Medições do organizar" no apps/web/CLAUDE.md.
+export const TETO_DE_BYTES_COM_MINIATURAS = 50_000_000
 
 export type Giro = 0 | 90 | 180 | 270
 
