@@ -15,7 +15,7 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
   Nenhum deles entra no bundle das outras páginas do site. Cada PR confere no `.next` do build e registra no `apps/web/CLAUDE.md`.
 
-- **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1: o pdf-lib usa umas 3,5 vezes a entrada. As fases que desenham páginas somam um teto de páginas e de canvas, descrito em cada uma.
+- **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1. O pdf-lib usa umas 3,5 vezes a entrada e o Blob do resultado soma mais uma, por isso a tela fala em "umas 4 vezes esse tamanho". Essa medida vale só para o pdf-lib sozinho. Nos modos com miniatura (fase 2 em diante), o mesmo documento fica na memória em até três lugares ao mesmo tempo: o provider do layout, a cópia que o pdf.js recebe em `data` e o pico do pdf-lib ao salvar. Por isso o teto de bytes **volta a ser medido na fase 2, com o pdf.js aberto**, e pode baixar nesses modos se a medida pedir. As fases que desenham páginas também têm um teto de páginas e de canvas, descrito em cada uma.
 - **pdf.js com a configuração segura:**
   - a versão 6 já não tem o caminho com `eval` do CVE-2024-4367: a opção `isEvalSupported` saiu da biblioteca, e o `pdf.mjs` e o worker do 6.3.289 não têm `new Function` (conferido em 2026-11-16);
   - `enableXfa: false`;
@@ -53,12 +53,13 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
 **O que entra:** abrir um PDF, ver as páginas em miniatura e organizar: girar (90° para cada lado), apagar, reordenar e extrair as páginas escolhidas num PDF novo. Baixar o resultado.
 
+- **Mesmas regras de leitura do mesclar:** PDF protegido (senha ou contra cópia), corrompido ou que não é PDF é recusado com a mesma mensagem. Como o organizar também copia páginas para um documento novo, a tela leva o mesmo aviso de alcance do PR 1: os marcadores não passam, e os campos de formulário podem deixar de ser editáveis.
 - **Lógica (packages/tools, pdf-lib):** `organizarPaginas(bytes, plano)` monta um documento novo a partir de uma lista `{ indice, rotacao }` na ordem final. Uma função cobre reordenar, apagar (fora do plano), girar (somada ao `/Rotate` que a página já tem) e extrair (um plano com só as escolhidas). Como no mesclar, faz um `copyPages` só, para não duplicar fonte e imagem.
 - **Miniaturas (pdf.js):**
   - desenhadas sob demanda, só as que aparecem na tela (`IntersectionObserver`), uma por vez e com folga entre elas para a página não travar, a 160 px de largura × `devicePixelRatio`;
   - cada miniatura vira um JPEG (`canvas.toBlob`), e o canvas é solto em seguida. Uma miniatura fica em torno de 10 a 20 KB, contra 130 KB do canvas;
   - a rotação aparece girando a imagem, sem redesenhar.
-- **Teto:** 100 MB e **500 páginas**. Acima de 500, a tela explica e sugere dividir. O número final sai de uma medida no PR: memória e tempo de 500 miniaturas num PDF real, registrados no CLAUDE.md.
+- **Teto:** **500 páginas**, e os 100 MB revistos com o pdf.js aberto (ver "Teto" acima). Acima do teto, a tela explica e sugere dividir. Os dois números saem de medida no PR, registrada no CLAUDE.md: pico de memória com o documento no provider, no pdf.js e no pdf-lib ao salvar, e memória e tempo de 500 miniaturas num PDF real.
 - **Teclado e leitor de tela:**
   - as páginas são uma lista (`<ol>`), e cada página tem um nome ("Página 3 de 12, girada 90°");
   - em cada página: caixa "Selecionar", Girar à esquerda, Girar à direita, Mover para antes, Mover para depois e Apagar, todos de 44 px e com nome;
@@ -87,19 +88,28 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
 
 **Editar o texto que já existe no PDF não é confiável e não vai ser feito.** No PDF, o texto não é um parágrafo: são glifos posicionados um a um, com fontes cortadas só para as letras que o arquivo usa, sem quebra de linha nem reflow. Trocar uma palavra quebra o espaçamento, perde letras que a fonte cortada não tem e muda de PDF para PDF. O caminho é **cobrir com o retângulo branco e escrever por cima**. A tela diz isso quando a pessoa clica num texto da página.
 
-- **Cobrir não apaga.** O retângulo branco esconde o texto na tela e na impressão, mas o texto continua no arquivo: dá para selecionar, copiar e buscar. Para dado sensível (CPF, conta, endereço), entra a opção **"Apagar de verdade o que está embaixo"**. A página coberta é desenhada pelo pdf.js como imagem (200 dpi, JPEG) e entra no lugar da original. Assim o texto some do arquivo, ao custo de a página perder a seleção de texto e ficar maior. A tela explica a troca antes de a pessoa confirmar.
+- **Cobrir não apaga.** O retângulo branco esconde o texto na tela e na impressão, mas o texto continua no arquivo: dá para selecionar, copiar e buscar. Para dado sensível (CPF, conta, endereço), entra a opção **"Apagar de verdade o que está embaixo"**:
+  - o pdf.js desenha a página coberta num canvas (200 dpi);
+  - **os retângulos de cobrir são pintados nesse canvas antes do `toBlob`**, queimados na imagem. Se ficassem como objeto vetorial por cima, o JPEG ainda teria o CPF em pixels, e bastaria extrair a imagem para ler;
+  - o JPEG entra no lugar da página original, e só os outros objetos (texto, formas, imagens inseridas) são desenhados por cima, em vetor;
+  - a página nova não leva as anotações da original (`/Annots`: links e campos), porque um link ou um campo pode carregar o mesmo dado. Os metadados do documento (título, autor) continuam, e a tela diz isso.
+
+  O texto some do arquivo, ao custo de a página perder a seleção de texto e ficar maior. A tela explica a troca antes de a pessoa confirmar.
+
 - **Fontes:** só as padrão do PDF (Helvetica, Times e Courier, com negrito e itálico), que o pdf-lib embute sem pacote extra e que cobrem os acentos do português e do espanhol (WinAnsi). O `@pdf-lib/fontkit` (fonte própria e qualquer caractere) custaria 326 KB gzip a mais e fica de fora. Caractere fora do WinAnsi (emoji, CJK) é recusado no campo, com aviso.
 - **Desenho à mão livre:** `perfect-freehand` 1.2.3 (MIT, sem dependência, 2 KB gzip) suaviza os pontos do ponteiro, e o traço vira caminho SVG desenhado pelo `drawSvgPath` do pdf-lib. Marca-texto: retângulo com opacidade 0,35 e `blendMode: Multiply`.
 - **Coordenadas:** a tela usa o canto superior esquerdo; o PDF usa o inferior esquerdo, a página pode ter `/Rotate` (0, 90, 180, 270) e o `CropBox` pode não começar no zero. A conversão mora no `packages/tools` como função pura, com teste para as quatro rotações e para o `CropBox` deslocado. Errar aqui põe o texto no lugar errado sem dar erro.
 - **Teclado e leitor de tela (mover e redimensionar):**
-  - Cada objeto é focável, com nome ("Texto 'Paulo Victor', em 120 por 340, 200 por 40 pontos") e `aria-roledescription` "objeto do PDF".
+  - O quadro dos objetos de uma página é um `role=application` com nome ("Objetos da página 3"). Sem um papel assim, NVDA e JAWS no modo de navegação ficam com as setas, e mover e redimensionar pelo teclado falharia justo para quem usa leitor de tela.
+  - Cada objeto é focável, com `role=button`, `aria-roledescription` "objeto do PDF", nome ("Texto 'Paulo Victor', em 120 por 340, 200 por 40 pontos") e `aria-describedby` apontando para as instruções de teclado.
   - **Setas movem** 1 ponto, e Shift+setas movem 10.
-  - **Alt+setas redimensionam** 1 ponto (Alt+Shift+setas, 10), puxando o canto de baixo à direita.
+  - **Alt+setas redimensionam** 1 ponto (Alt+Shift+setas, 10), puxando o canto de baixo à direita. As setas, e o Alt+← e o Alt+→ em especial (voltar e avançar do Chrome e do Firefox no Windows e no Linux), têm `preventDefault` quando um objeto está focado.
   - Delete apaga, Enter edita o texto, Esc solta a seleção.
   - A posição e o tamanho novos são anunciados depois de uma pausa curta (`role=status`), para não falar a cada passo.
   - Um painel de propriedades mostra X, Y, largura e altura em campos numéricos, mais fonte, tamanho e cor (lista de cores com nome, além do seletor). É o jeito exato e acessível de posicionar.
   - As ferramentas ficam numa `role=toolbar` com `aria-pressed` e setas entre os botões.
   - **Desfazer e refazer**: Ctrl/⌘+Z e Ctrl/⌘+Shift+Z, com botões.
+  - O painel numérico é o caminho garantido. Mesmo assim, o PR da fase 3 traz o teste manual com VoiceOver (macOS e iOS) e NVDA (Windows): mover e redimensionar pelas setas, e o anúncio da posição.
   - O desenho à mão livre é um gesto de caminho, que o WCAG 2.5.1 isenta por ser essencial. Quem não usa ponteiro tem as formas e o texto.
 - **Celular (toque):**
   - Arrastar um objeto move só o objeto: `touch-action: none` nele e nas alças.
@@ -116,7 +126,8 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
 - **Imagem aceita:** só PNG e JPEG, conferidos pelos bytes iniciais, não pela extensão. SVG fica de fora (pode carregar script).
 - **Testes:**
   - Jest da conversão de coordenadas, cobrindo as quatro rotações e o CropBox;
-  - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz. O "apagar de verdade" é conferido pelo texto que deixou de existir na página;
+  - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz;
+  - "apagar de verdade" conferido de três jeitos: o texto deixou de existir na página (`getTextContent`), a página não tem mais `/Annots`, e os pixels da imagem embutida sob o retângulo são brancos. Esta última conferência decodifica o JPEG no navegador (E2E, `createImageBitmap`) e lê o canvas;
   - motor e componente: mover e redimensionar pelo teclado, anúncio e painel numérico;
   - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e só GET na mesma origem.
 
@@ -162,6 +173,8 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Teto de 100 MB por documento (medido) e de 500 páginas para miniaturas (a confirmar com a medida da fase 2).
 - Só as fontes padrão do PDF; sem fontkit.
 - perfect-freehand para traço e assinatura; sem signature_pad.
-- Editar o texto existente fica fora; o caminho é cobrir e escrever. Cobrir avisa que não apaga, e "apagar de verdade" transforma a página em imagem.
+- Editar o texto existente fica fora; o caminho é cobrir e escrever. Cobrir avisa que não apaga, e "apagar de verdade" transforma a página em imagem com os retângulos queimados nela e sem as anotações da página.
+- Teto de bytes medido de novo na fase 2, com o pdf.js aberto.
+- O quadro de objetos é `role=application`, com teste manual em VoiceOver e NVDA.
 - Assinatura sem guardar no navegador e com o aviso de que não é assinatura digital.
 - Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`.
