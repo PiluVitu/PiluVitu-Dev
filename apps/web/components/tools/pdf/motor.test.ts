@@ -84,7 +84,7 @@ it('mesclar repassa o andamento e entrega um Blob de PDF', async () => {
   >
   ultimo().responder({ tipo: 'andamento', id, fracao: 0, arquivo: 0 })
   ultimo().responder({ tipo: 'andamento', id, fracao: 0.9, arquivo: null })
-  ultimo().responder({ tipo: 'mesclado', id, bytes: new ArrayBuffer(8) })
+  ultimo().responder({ tipo: 'pronto', id, bytes: new ArrayBuffer(8) })
 
   const pdf = await pronto
   expect(andamentos).toEqual([
@@ -202,12 +202,12 @@ it('dois mesclar seguidos: o primeiro é cancelado, o Worker antigo cai e respos
   expect(pedidoNovo.id).not.toBe(pedidoAntigo.id)
 
   novo.responder({
-    tipo: 'mesclado',
+    tipo: 'pronto',
     id: pedidoAntigo.id,
     bytes: new ArrayBuffer(1),
   })
   novo.responder({
-    tipo: 'mesclado',
+    tipo: 'pronto',
     id: pedidoNovo.id,
     bytes: new ArrayBuffer(3),
   })
@@ -222,4 +222,120 @@ it('encerrar derruba o Worker', () => {
   motor.encerrar()
 
   expect(ultimo().encerrado).toBe(true)
+})
+
+describe('organizar', () => {
+  type PedidoDeOrganizar = Extract<PedidoAoWorker, { tipo: 'organizar' }>
+  const plano = [
+    { indice: 2, giro: 90 },
+    { indice: 0, giro: 0 },
+  ] as const
+
+  it('manda o arquivo e o plano com id e entrega um Blob de PDF', async () => {
+    const motor = novoMotor()
+    const doc = arquivo('contrato.pdf')
+    const pronto = motor.organizar(doc, plano)
+
+    const pedido = ultimo().recebidos[0] as PedidoDeOrganizar
+    expect(pedido).toEqual({
+      tipo: 'organizar',
+      id: expect.any(Number),
+      arquivo: doc,
+      plano,
+    })
+    ultimo().responder({
+      tipo: 'pronto',
+      id: pedido.id,
+      bytes: new ArrayBuffer(5),
+    })
+
+    const pdf = await pronto
+    expect(pdf.type).toBe('application/pdf')
+    expect(pdf.size).toBe(5)
+  })
+
+  it('rejeita com o motivo do arquivo, sem índice', async () => {
+    const motor = novoMotor()
+    const pronto = motor.organizar(arquivo('a.pdf'), plano)
+    const { id } = ultimo().recebidos[0] as PedidoDeOrganizar
+
+    ultimo().responder({ tipo: 'falhou', id, motivo: 'protegido' })
+
+    await expect(pronto).rejects.toEqual({ motivo: 'protegido' })
+  })
+
+  it('uma organização nova cancela a pendente, derruba o Worker e ignora a resposta velha', async () => {
+    const motor = novoMotor()
+    const primeira = motor.organizar(arquivo('a.pdf'), plano)
+    const antigo = ultimo()
+    const { id: idAntigo } = antigo.recebidos[0] as PedidoDeOrganizar
+
+    const segunda = motor.organizar(arquivo('a.pdf'), [plano[1]])
+
+    await expect(primeira).rejects.toEqual({ motivo: 'cancelado' })
+    expect(antigo.encerrado).toBe(true)
+    const novo = ultimo()
+    expect(novo).not.toBe(antigo)
+    const { id: idNovo } = novo.recebidos[0] as PedidoDeOrganizar
+    novo.responder({ tipo: 'pronto', id: idAntigo, bytes: new ArrayBuffer(1) })
+    novo.responder({ tipo: 'pronto', id: idNovo, bytes: new ArrayBuffer(4) })
+
+    expect((await segunda).size).toBe(4)
+  })
+
+  it('mesclar com uma organização pendente cancela a organização, e o contrário também', async () => {
+    const motor = novoMotor()
+    const organizacao = motor.organizar(arquivo('a.pdf'), plano)
+    const mesclagem = motor.mesclar([arquivo('b.pdf')], () => {})
+
+    await expect(organizacao).rejects.toEqual({ motivo: 'cancelado' })
+    expect(WorkerFalso.criados).toHaveLength(2)
+
+    const outra = motor.organizar(arquivo('a.pdf'), plano)
+
+    await expect(mesclagem).rejects.toEqual({ motivo: 'cancelado' })
+    expect(WorkerFalso.criados).toHaveLength(3)
+    const { id } = ultimo().recebidos[0] as PedidoDeOrganizar
+    ultimo().responder({ tipo: 'pronto', id, bytes: new ArrayBuffer(2) })
+    expect((await outra).size).toBe(2)
+  })
+
+  it('falha de outro id não rejeita a organização em curso', async () => {
+    const motor = novoMotor()
+    const pronto = motor.organizar(arquivo('a.pdf'), plano)
+    const { id } = ultimo().recebidos[0] as PedidoDeOrganizar
+
+    ultimo().responder({ tipo: 'falhou', id: id + 7, motivo: 'corrompido' })
+    ultimo().responder({ tipo: 'pronto', id, bytes: new ArrayBuffer(3) })
+
+    expect((await pronto).size).toBe(3)
+  })
+
+  it('cancelar rejeita a organização e manda as leituras pendentes para um Worker novo', async () => {
+    const motor = novoMotor()
+    const leitura = motor.analisar(arquivo('b.pdf'))
+    const organizacao = motor.organizar(arquivo('a.pdf'), plano)
+    const primeiro = ultimo()
+
+    motor.cancelar()
+
+    await expect(organizacao).rejects.toEqual({ motivo: 'cancelado' })
+    expect(primeiro.encerrado).toBe(true)
+    const reenviado = ultimo().recebidos[0] as Extract<
+      PedidoAoWorker,
+      { tipo: 'analisar' }
+    >
+    expect(reenviado.tipo).toBe('analisar')
+    ultimo().responder({ tipo: 'analisado', id: reenviado.id, paginas: 6 })
+    await expect(leitura).resolves.toEqual({ ok: true, paginas: 6 })
+  })
+
+  it('se o Worker quebra no meio, a organização falha como inesperada', async () => {
+    const motor = novoMotor()
+    const organizacao = motor.organizar(arquivo('a.pdf'), plano)
+
+    ultimo().quebrar()
+
+    await expect(organizacao).rejects.toEqual({ motivo: 'inesperado' })
+  })
 })

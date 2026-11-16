@@ -19,6 +19,11 @@ const nextConfig = {
         destination: 'https://botai.pilutech.com.br/privacidade',
         permanent: true,
       },
+      {
+        source: '/tools/mesclar-pdf',
+        destination: '/tools/pdf/mesclar',
+        permanent: true,
+      },
     ]
   },
   // mermaid + langium têm deep imports de vscode-jsonrpc/languageserver-* que

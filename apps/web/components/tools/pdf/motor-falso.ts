@@ -1,15 +1,19 @@
+import type { PaginaDoPlano } from '@piluvitu/tools/pdf-regras'
 import type {
   AndamentoDaMesclagem,
-  FalhaDaMesclagem,
+  FalhaDaOperacao,
   MotorDePdf,
   ResultadoDaAnalise,
 } from './motor'
 
+/** `undefined` entrega o PDF; uma falha rejeita; `'nunca'` deixa a operação pendurada. */
+type Desfecho = FalhaDaOperacao | 'nunca' | undefined
+
 type Opcoes = {
-  /** Milissegundos de cada leitura e de cada passo da mesclagem. */
+  /** Milissegundos de cada leitura e de cada passo das operações. */
   atraso?: number
-  /** `undefined` mescla; uma falha rejeita; `'nunca'` deixa a mesclagem pendurada. */
-  mesclagem?: FalhaDaMesclagem | 'nunca'
+  mesclagem?: Desfecho
+  organizacao?: Desfecho
 }
 
 // Para stories e testes: o nome do arquivo decide o resultado da leitura.
@@ -23,12 +27,35 @@ export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
   return { ok: true, paginas }
 }
 
-export function criarMotorFalso({ atraso = 0, mesclagem }: Opcoes = {}) {
+export function criarMotorFalso({
+  atraso = 0,
+  mesclagem,
+  organizacao,
+}: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let cancelar: (() => void) | null = null
+
+  function operar(desfecho: Desfecho, passos: (() => void)[]): Promise<Blob> {
+    cancelar?.()
+    return new Promise<Blob>((resolver, rejeitar) => {
+      cancelar = () => rejeitar({ motivo: 'cancelado' })
+      void (async () => {
+        for (const passo of passos) {
+          passo()
+          await espera()
+        }
+        if (desfecho === 'nunca') return
+        await espera()
+        if (desfecho) rejeitar(desfecho)
+        else resolver(new Blob(['%PDF-1.7'], { type: 'application/pdf' }))
+      })()
+    })
+  }
+
   const motor = {
     analisadas: [] as string[],
     mescladas: [] as string[][],
+    organizadas: [] as { nome: string; plano: readonly PaginaDoPlano[] }[],
     encerrado: false,
     async analisar(arquivo: Blob) {
       motor.analisadas.push((arquivo as File).name)
@@ -40,20 +67,19 @@ export function criarMotorFalso({ atraso = 0, mesclagem }: Opcoes = {}) {
       aoAndar: (andamento: AndamentoDaMesclagem) => void,
     ) {
       motor.mescladas.push(arquivos.map((a) => (a as File).name))
-      return new Promise<Blob>((resolver, rejeitar) => {
-        cancelar = () => rejeitar({ motivo: 'cancelado' })
-        void (async () => {
-          for (const [i] of arquivos.entries()) {
-            aoAndar({ fracao: (0.9 * i) / arquivos.length, arquivo: i })
-            await espera()
-          }
-          if (mesclagem === 'nunca') return
-          aoAndar({ fracao: 0.9, arquivo: null })
-          await espera()
-          if (mesclagem) rejeitar(mesclagem)
-          else resolver(new Blob(['%PDF-1.7'], { type: 'application/pdf' }))
-        })()
-      })
+      return operar(mesclagem, [
+        ...arquivos.map(
+          (_, i) => () =>
+            aoAndar({ fracao: (0.9 * i) / arquivos.length, arquivo: i }),
+        ),
+        ...(mesclagem === 'nunca'
+          ? []
+          : [() => aoAndar({ fracao: 0.9, arquivo: null })]),
+      ])
+    },
+    organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]) {
+      motor.organizadas.push({ nome: (arquivo as File).name, plano })
+      return operar(organizacao, [])
     },
     cancelar() {
       cancelar?.()

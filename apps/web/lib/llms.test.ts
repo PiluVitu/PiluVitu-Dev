@@ -263,6 +263,18 @@ describe('llms.txt: dados das páginas', () => {
       )
   })
 
+  it('Ferramentas: cada modo do Editor de PDF logo depois dele, com a rota própria', () => {
+    const editor = linhas.indexOf(
+      '- [Editor de PDF](https://piluvitu.com.br/tools/pdf): Mesclar e organizar páginas de PDF',
+    )
+    expect(editor).toBeGreaterThan(-1)
+    expect(linhas.slice(editor + 1, editor + 3)).toEqual([
+      '- [Mesclar PDF](https://piluvitu.com.br/tools/pdf/mesclar): Junta vários PDFs em um só arquivo',
+      '- [Organizar páginas](https://piluvitu.com.br/tools/pdf/organizar): Gira, apaga, reordena e extrai páginas de um PDF',
+    ])
+    expect(texto).not.toContain('/tools/mesclar-pdf')
+  })
+
   it('mudou a fonte, muda o llms.txt', () => {
     const outra = llmsTxt(
       dados({
@@ -420,12 +432,17 @@ describe('llms-full.txt', () => {
     expect(completo).not.toContain('Escondido')
   })
 
-  it('Ferramentas: a descrição da página e cada ferramenta', () => {
+  it('Ferramentas: a descrição da página e cada ferramenta, com os modos', () => {
     expect(completo).toContain(PAGINA_FERRAMENTAS.descricao)
-    for (const { slug, title, description } of TOOLS)
+    for (const { slug, title, description, modos = [] } of TOOLS) {
       expect(completo).toContain(
         `- [${title}](https://piluvitu.com.br/tools/${slug}): ${description}`,
       )
+      for (const modo of modos)
+        expect(completo).toContain(
+          `- [${modo.title}](https://piluvitu.com.br/tools/${slug}/${modo.slug}): ${modo.description}`,
+        )
+    }
   })
 
   it('Posts: o índice com título, link, data (a do frontmatter) e descrição', () => {

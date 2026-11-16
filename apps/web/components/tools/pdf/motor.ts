@@ -1,14 +1,23 @@
-import type { MotivoDoErroDePdf } from '@piluvitu/tools/pdf-regras'
+import type {
+  MotivoDoErroDePdf,
+  PaginaDoPlano,
+} from '@piluvitu/tools/pdf-regras'
 
 export type PedidoAoWorker =
   | { tipo: 'analisar'; id: number; arquivo: Blob }
   | { tipo: 'mesclar'; id: number; arquivos: Blob[] }
+  | {
+      tipo: 'organizar'
+      id: number
+      arquivo: Blob
+      plano: readonly PaginaDoPlano[]
+    }
 
 export type RespostaDoWorker =
   | { tipo: 'analisado'; id: number; paginas: number }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
   | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
-  | { tipo: 'mesclado'; id: number; bytes: ArrayBuffer }
+  | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
   | {
       tipo: 'falhou'
       id: number
@@ -25,31 +34,34 @@ export type ResultadoDaAnalise =
 
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
-export type FalhaDaMesclagem = {
+/** Como `mesclar` e `organizar` rejeitam. `indice` é o arquivo culpado, só na mesclagem. */
+export type FalhaDaOperacao = {
   motivo: MotivoDoErroDePdf | 'inesperado' | 'cancelado'
   indice?: number
 }
 
 export interface MotorDePdf {
   analisar(arquivo: Blob): Promise<ResultadoDaAnalise>
-  /** Rejeita com {@link FalhaDaMesclagem}. */
+  /** Rejeita com {@link FalhaDaOperacao}. */
   mesclar(
     arquivos: Blob[],
     aoAndar: (andamento: AndamentoDaMesclagem) => void,
   ): Promise<Blob>
+  /** Rejeita com {@link FalhaDaOperacao}. */
+  organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]): Promise<Blob>
   cancelar(): void
   encerrar(): void
 }
 
-export function ehFalhaDaMesclagem(erro: unknown): erro is FalhaDaMesclagem {
+export function ehFalhaDaOperacao(erro: unknown): erro is FalhaDaOperacao {
   return typeof erro === 'object' && erro !== null && 'motivo' in erro
 }
 
-type MesclagemPendente = {
+type OperacaoPendente = {
   id: number
   resolver: (pdf: Blob) => void
-  rejeitar: (falha: FalhaDaMesclagem) => void
-  aoAndar: (andamento: AndamentoDaMesclagem) => void
+  rejeitar: (falha: FalhaDaOperacao) => void
+  aoAndar?: (andamento: AndamentoDaMesclagem) => void
 }
 
 // O pdf-lib só é baixado quando o Worker nasce, na primeira análise: o resto do site não paga por ele.
@@ -64,11 +76,11 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
       resolver: (r: ResultadoDaAnalise) => void
     }
   >()
-  let mesclagem: MesclagemPendente | null = null
+  let operacao: OperacaoPendente | null = null
 
   function aoResponder({ data }: MessageEvent<RespostaDoWorker>) {
     if (data.tipo !== 'analisado' && data.tipo !== 'recusado') {
-      if (data.id !== mesclagem?.id) return
+      if (data.id !== operacao?.id) return
     }
     switch (data.tipo) {
       case 'analisado':
@@ -83,15 +95,15 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         return
       }
       case 'andamento':
-        mesclagem?.aoAndar({ fracao: data.fracao, arquivo: data.arquivo })
+        operacao?.aoAndar?.({ fracao: data.fracao, arquivo: data.arquivo })
         return
-      case 'mesclado':
-        mesclagem?.resolver(new Blob([data.bytes], { type: 'application/pdf' }))
-        mesclagem = null
+      case 'pronto':
+        operacao?.resolver(new Blob([data.bytes], { type: 'application/pdf' }))
+        operacao = null
         return
       case 'falhou':
-        mesclagem?.rejeitar({ motivo: data.motivo, indice: data.indice })
-        mesclagem = null
+        operacao?.rejeitar({ motivo: data.motivo, indice: data.indice })
+        operacao = null
     }
   }
 
@@ -106,15 +118,15 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     }
   }
 
-  function abandonarMesclagem(motivo: 'cancelado' | 'inesperado') {
-    mesclagem?.rejeitar({ motivo })
-    mesclagem = null
+  function abandonarOperacao(motivo: 'cancelado' | 'inesperado') {
+    operacao?.rejeitar({ motivo })
+    operacao = null
   }
 
   // O Worker lê na ordem de chegada: a leitura mais antiga é a que estava em curso quando ele caiu.
   function aoQuebrar() {
     derrubar()
-    abandonarMesclagem('inesperado')
+    abandonarOperacao('inesperado')
     const [emCurso] = analises
     if (emCurso) {
       const [id, analise] = emCurso
@@ -127,11 +139,11 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     reenviarLeituras()
   }
 
-  // A fila do Worker não larga um pedido no meio: parar uma mesclagem é derrubar o Worker.
+  // A fila do Worker não larga um pedido no meio: parar uma operação é derrubar o Worker.
   function cancelar() {
-    if (!mesclagem) return
+    if (!operacao) return
     derrubar()
-    abandonarMesclagem('cancelado')
+    abandonarOperacao('cancelado')
     reenviarLeituras()
   }
 
@@ -144,6 +156,18 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     worker.postMessage(pedido)
   }
 
+  function comecar(
+    pedido: (id: number) => PedidoAoWorker,
+    aoAndar?: (andamento: AndamentoDaMesclagem) => void,
+  ): Promise<Blob> {
+    return new Promise((resolver, rejeitar) => {
+      cancelar()
+      const id = proximoId++
+      operacao = { id, resolver, rejeitar, aoAndar }
+      enviar(pedido(id))
+    })
+  }
+
   return {
     analisar(arquivo) {
       return new Promise((resolver) => {
@@ -153,18 +177,16 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
       })
     },
     mesclar(arquivos, aoAndar) {
-      return new Promise((resolver, rejeitar) => {
-        cancelar()
-        const id = proximoId++
-        mesclagem = { id, resolver, rejeitar, aoAndar }
-        enviar({ tipo: 'mesclar', id, arquivos })
-      })
+      return comecar((id) => ({ tipo: 'mesclar', id, arquivos }), aoAndar)
+    },
+    organizar(arquivo, plano) {
+      return comecar((id) => ({ tipo: 'organizar', id, arquivo, plano }))
     },
     cancelar,
     encerrar() {
       derrubar()
       analises.clear()
-      mesclagem = null
+      operacao = null
     },
   }
 }

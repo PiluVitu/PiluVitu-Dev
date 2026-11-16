@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { expect, userEvent, waitFor } from 'storybook/test'
+import { DocumentoPdfProvider } from './documento-pdf'
 import { MesclarPdf } from './mesclar'
 import { criarMotorFalso } from './motor-falso'
 
@@ -8,12 +9,15 @@ const meta = {
   title: 'Tools/PDF/Mesclar',
   component: MesclarPdf,
   tags: ['autodocs'],
-  parameters: { layout: 'padded' },
+  // O botão "Organizar as páginas deste PDF" usa o router do App Router e o provider do layout /tools/pdf.
+  parameters: { layout: 'padded', nextjs: { appDirectory: true } },
   decorators: [
     (Story) => (
-      <div className="max-w-3xl">
-        <Story />
-      </div>
+      <DocumentoPdfProvider>
+        <div className="max-w-3xl">
+          <Story />
+        </div>
+      </DocumentoPdfProvider>
     ),
   ],
 } satisfies Meta<typeof MesclarPdf>
@@ -92,6 +96,9 @@ export const Pronto: Story = {
     await expect(
       await canvas.findByRole('link', { name: 'Baixar mesclado.pdf' }),
     ).toHaveFocus()
+    await expect(
+      canvas.getByRole('button', { name: 'Organizar as páginas deste PDF' }),
+    ).toBeVisible()
   },
 }
 

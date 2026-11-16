@@ -1,7 +1,7 @@
 import type { Metadata, MetadataRoute } from 'next'
 import type { BlogPost } from './blog-posts'
 import { itensListados, linkDoItem, type ItemPiluLabs } from './pilulabs'
-import { TOOLS, type ToolMeta } from './tools-registry'
+import { TOOLS, type ModoDaFerramenta, type ToolMeta } from './tools-registry'
 
 export type PaginaPublica = {
   caminho: string
@@ -15,7 +15,14 @@ export type PostPublico = Pick<
   'slug' | 'title' | 'excerpt' | 'metaDescription' | 'publishedAt' | 'semData'
 >
 
-export type Ferramenta = Pick<ToolMeta, 'slug' | 'title' | 'description'>
+export type ModoPublico = Pick<
+  ModoDaFerramenta,
+  'slug' | 'title' | 'description'
+>
+
+export type Ferramenta = Pick<ToolMeta, 'slug' | 'title' | 'description'> & {
+  modos?: readonly ModoPublico[]
+}
 
 export const DESCRICAO_DO_SITE =
   'DevOps Engineer com 3 anos de experiência focado em sistemas em nuvem com alta disponibilidade e custo eficiente. Especialista em automatizar operações com ferramentas de mercado, monitorar a saúde das aplicações em tempo real e antecipar falhas antes que afetem o usuário final.'
@@ -37,7 +44,7 @@ export function descricaoDasFerramentas(
 export function descricaoDaFerramenta({
   title,
   description,
-}: Ferramenta): string {
+}: Pick<Ferramenta, 'title' | 'description'>): string {
   return `${title}: ${description}. Utilitário para desenvolvedores que roda direto no navegador.`
 }
 
@@ -90,6 +97,10 @@ export function caminhoDaFerramenta(slug: string): string {
   return `/tools/${slug}`
 }
 
+export function caminhoDoModo(ferramenta: string, modo: string): string {
+  return `${caminhoDaFerramenta(ferramenta)}/${modo}`
+}
+
 export function caminhoDoPost(slug: string): string {
   return `/posts/${slug}`
 }
@@ -101,12 +112,19 @@ export function descricaoDoPost({
   return metaDescription.trim() || excerpt.trim()
 }
 
-function paginaDaFerramenta(ferramenta: Ferramenta): PaginaPublica {
-  return {
-    caminho: caminhoDaFerramenta(ferramenta.slug),
-    nome: ferramenta.title,
-    descricao: descricaoDaFerramenta(ferramenta),
-  }
+function paginasDaFerramenta(ferramenta: Ferramenta): PaginaPublica[] {
+  return [
+    {
+      caminho: caminhoDaFerramenta(ferramenta.slug),
+      nome: ferramenta.title,
+      descricao: descricaoDaFerramenta(ferramenta),
+    },
+    ...(ferramenta.modos ?? []).map((modo) => ({
+      caminho: caminhoDoModo(ferramenta.slug, modo.slug),
+      nome: modo.title,
+      descricao: descricaoDaFerramenta(modo),
+    })),
+  ]
 }
 
 function paginasDoPiluLabs(itens: readonly ItemPiluLabs[]): PaginaPublica[] {
@@ -144,7 +162,7 @@ export function rotasPublicas({
 }): PaginaPublica[] {
   return [
     ...PAGINAS_FIXAS,
-    ...ferramentas.map(paginaDaFerramenta),
+    ...ferramentas.flatMap(paginasDaFerramenta),
     ...paginasDoPiluLabs(piluLabs),
     ...posts.map(paginaDoPost),
   ]
@@ -188,5 +206,16 @@ export function metadataDaFerramenta(ferramenta: Ferramenta): Metadata {
     title: ferramenta.title,
     description: descricaoDaFerramenta(ferramenta),
     alternates: { canonical: caminhoDaFerramenta(ferramenta.slug) },
+  }
+}
+
+export function metadataDoModo(
+  ferramenta: Pick<Ferramenta, 'slug'>,
+  modo: ModoPublico,
+): Metadata {
+  return {
+    title: modo.title,
+    description: descricaoDaFerramenta(modo),
+    alternates: { canonical: caminhoDoModo(ferramenta.slug, modo.slug) },
   }
 }

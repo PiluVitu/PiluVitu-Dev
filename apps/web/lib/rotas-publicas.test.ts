@@ -9,10 +9,12 @@ import {
   PAGINA_PILULABS,
   PAGINA_PRIVACIDADE,
   ROTAS_FORA_DO_ROBOTS,
+  caminhoDoModo,
   caminhoDoPost,
   descricaoDoPost,
   entradasDoSitemap,
   metadataDaFerramenta,
+  metadataDoModo,
   robotsTxt,
   rotasPublicas,
   urlAbsoluta,
@@ -58,7 +60,13 @@ function post(parcial: Partial<PostPublico> = {}): PostPublico {
   }
 }
 
-const caminhosDasFerramentas = TOOLS.map(({ slug }) => `/tools/${slug}`)
+const caminhosDasFerramentas = TOOLS.flatMap(({ slug, modos = [] }) => [
+  `/tools/${slug}`,
+  ...modos.map((modo) => `/tools/${slug}/${modo.slug}`),
+])
+
+const pdf = TOOLS.find(({ slug }) => slug === 'pdf') as ToolMeta
+const modosDoPdf = pdf.modos ?? []
 
 describe('páginas fixas', () => {
   it('são a home, o PiluLabs, as ferramentas, o Kanban e a privacidade', () => {
@@ -97,7 +105,7 @@ describe('páginas fixas', () => {
 
   it('a descrição das ferramentas sai do TOOLS, na ordem do registro', () => {
     expect(PAGINA_FERRAMENTAS.descricao).toBe(
-      'Utilitários para o dia a dia do desenvolvedor: Leitor de QR, Gerador de QR, CPF, CNPJ, JSON, Base64, JWT, UUID, Roleta / Sorteio e Mesclar PDF.',
+      'Utilitários para o dia a dia do desenvolvedor: Leitor de QR, Gerador de QR, CPF, CNPJ, JSON, Base64, JWT, UUID, Roleta / Sorteio e Editor de PDF.',
     )
   })
 
@@ -156,6 +164,62 @@ describe('rotasPublicas', () => {
       descricao:
         'Hash: Calcula SHA-256. Utilitário para desenvolvedores que roda direto no navegador.',
     })
+  })
+
+  it('o Editor de PDF entra com a página dele e uma por modo, e o /tools/mesclar-pdf saiu', () => {
+    const caminhos = rotasPublicas({ posts: [], piluLabs: [] }).map(
+      ({ caminho }) => caminho,
+    )
+    expect(caminhos.filter((c) => c.startsWith('/tools/pdf'))).toEqual([
+      '/tools/pdf',
+      '/tools/pdf/mesclar',
+      '/tools/pdf/organizar',
+    ])
+    expect(caminhos).not.toContain('/tools/mesclar-pdf')
+  })
+
+  it('cada modo leva o título e a descrição dele', () => {
+    const rotas = rotasPublicas({ posts: [], piluLabs: [] })
+    expect(rotas).toContainEqual({
+      caminho: '/tools/pdf',
+      nome: 'Editor de PDF',
+      descricao:
+        'Editor de PDF: Mesclar e organizar páginas de PDF. Utilitário para desenvolvedores que roda direto no navegador.',
+    })
+    expect(rotas).toContainEqual({
+      caminho: '/tools/pdf/organizar',
+      nome: 'Organizar páginas',
+      descricao:
+        'Organizar páginas: Gira, apaga, reordena e extrai páginas de um PDF. Utilitário para desenvolvedores que roda direto no navegador.',
+    })
+  })
+
+  it('modo novo no registro entra sozinho, logo depois da ferramenta', () => {
+    const comModos: ToolMeta = {
+      slug: 'imagem',
+      title: 'Imagem',
+      description: 'Edita imagens',
+      icon: TOOLS[0].icon,
+      group: 'dev',
+      modos: [
+        {
+          slug: 'cortar',
+          title: 'Cortar',
+          description: 'Corta uma imagem',
+          icon: TOOLS[0].icon,
+        },
+      ],
+    }
+    const caminhos = rotasPublicas({
+      posts: [],
+      piluLabs: [],
+      ferramentas: [comModos, TOOLS[0]],
+    }).map(({ caminho }) => caminho)
+    expect(caminhos.slice(5, 8)).toEqual([
+      '/tools/imagem',
+      '/tools/imagem/cortar',
+      `/tools/${TOOLS[0].slug}`,
+    ])
   })
 
   it('o post leva o título, a descrição e a data dele', () => {
@@ -260,6 +324,28 @@ describe('metadataDaFerramenta', () => {
     '%s: descrição entre 50 e 160 caracteres',
     (_slug, tool) => {
       const { description } = metadataDaFerramenta(tool)
+      expect((description as string).length).toBeGreaterThanOrEqual(50)
+      expect((description as string).length).toBeLessThanOrEqual(160)
+    },
+  )
+})
+
+describe('metadataDoModo', () => {
+  it('título e descrição do modo, com o canonical na rota do modo', () => {
+    const mesclar = modosDoPdf.find(({ slug }) => slug === 'mesclar')!
+    expect(metadataDoModo(pdf, mesclar)).toEqual({
+      title: 'Mesclar PDF',
+      description:
+        'Mesclar PDF: Junta vários PDFs em um só arquivo. Utilitário para desenvolvedores que roda direto no navegador.',
+      alternates: { canonical: '/tools/pdf/mesclar' },
+    })
+    expect(caminhoDoModo('pdf', 'mesclar')).toBe('/tools/pdf/mesclar')
+  })
+
+  it.each(modosDoPdf.map((modo) => [modo.slug, modo] as const))(
+    'pdf/%s: descrição entre 50 e 160 caracteres',
+    (_slug, modo) => {
+      const { description } = metadataDoModo(pdf, modo)
       expect((description as string).length).toBeGreaterThanOrEqual(50)
       expect((description as string).length).toBeLessThanOrEqual(160)
     },

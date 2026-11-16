@@ -51,3 +51,110 @@ export function nomeDoPdfFinal(entrada: string): string {
     .trim()
   return base ? `${base}.pdf` : NOME_PADRAO_DO_PDF_FINAL
 }
+
+export function nomeDoPdfDerivado(original: string, sufixo: string): string {
+  const base = nomeDoPdfFinal(original)
+    .replace(/\.pdf$/, '')
+    .slice(0, LIMITE_DO_NOME - sufixo.length - 1)
+    .replace(/[.\s]+$/, '')
+  return nomeDoPdfFinal(`${base}-${sufixo}`)
+}
+
+export const TETO_DE_PAGINAS = 500
+
+// Com miniaturas o PDF fica no pdf.js e no pdf-lib ao mesmo tempo: ver "Medições do organizar" no apps/web/CLAUDE.md.
+export const TETO_DE_BYTES_COM_MINIATURAS = 50_000_000
+
+export type Giro = 0 | 90 | 180 | 270
+
+export const GIROS: readonly Giro[] = [0, 90, 180, 270]
+
+export type PaginaDoPlano = { readonly indice: number; readonly giro: Giro }
+
+export type SentidoDoGiro = 'esquerda' | 'direita'
+
+export type LadoDoMovimento = 'antes' | 'depois'
+
+export function giroNormalizado(graus: number): Giro {
+  return (((graus % 360) + 360) % 360) as Giro
+}
+
+export function planoInicial(totalDePaginas: number): PaginaDoPlano[] {
+  if (!Number.isInteger(totalDePaginas) || totalDePaginas < 0) {
+    throw new RangeError(`total de páginas inválido: ${totalDePaginas}`)
+  }
+  return Array.from({ length: totalDePaginas }, (_, indice) => ({
+    indice,
+    giro: 0,
+  }))
+}
+
+function selecao(
+  plano: readonly PaginaDoPlano[],
+  posicoes: Iterable<number>,
+): Set<number> {
+  const escolhidas = new Set(posicoes)
+  for (const posicao of escolhidas) {
+    if (!Number.isInteger(posicao) || posicao < 0 || posicao >= plano.length) {
+      throw new RangeError(`posição fora do plano: ${posicao}`)
+    }
+  }
+  return escolhidas
+}
+
+export function girar(
+  plano: readonly PaginaDoPlano[],
+  posicoesSelecionadas: Iterable<number>,
+  sentido: SentidoDoGiro,
+): PaginaDoPlano[] {
+  const escolhidas = selecao(plano, posicoesSelecionadas)
+  const passo = sentido === 'direita' ? 90 : -90
+  return plano.map((pagina, posicao) =>
+    escolhidas.has(posicao)
+      ? { ...pagina, giro: giroNormalizado(pagina.giro + passo) }
+      : pagina,
+  )
+}
+
+export function moverSelecionadas(
+  plano: readonly PaginaDoPlano[],
+  posicoes: Iterable<number>,
+  lado: LadoDoMovimento,
+): PaginaDoPlano[] {
+  const escolhidas = selecao(plano, posicoes)
+  if (lado === 'depois') {
+    const ultima = plano.length - 1
+    return moverSelecionadas(
+      [...plano].reverse(),
+      [...escolhidas].map((posicao) => ultima - posicao),
+      'antes',
+    ).reverse()
+  }
+  const novo = [...plano]
+  let primeiraLivre = 0
+  for (const posicao of [...escolhidas].sort((a, b) => a - b)) {
+    if (posicao > primeiraLivre) {
+      ;[novo[posicao - 1], novo[posicao]] = [novo[posicao], novo[posicao - 1]]
+      primeiraLivre = posicao
+    } else {
+      primeiraLivre = posicao + 1
+    }
+  }
+  return novo
+}
+
+export function apagar(
+  plano: readonly PaginaDoPlano[],
+  posicoes: Iterable<number>,
+): PaginaDoPlano[] {
+  const escolhidas = selecao(plano, posicoes)
+  return plano.filter((_, posicao) => !escolhidas.has(posicao))
+}
+
+export function extrair(
+  plano: readonly PaginaDoPlano[],
+  posicoes: Iterable<number>,
+): PaginaDoPlano[] {
+  const escolhidas = selecao(plano, posicoes)
+  return plano.filter((_, posicao) => escolhidas.has(posicao))
+}

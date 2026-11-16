@@ -39,7 +39,10 @@ it('lista as rotas pÃºblicas, os posts publicados e os dois llms, na origem canÃ
     `${ORIGEM}/tools`,
     `${ORIGEM}/tasks`,
     `${ORIGEM}/privacidade`,
-    ...TOOLS.map(({ slug }) => `${ORIGEM}/tools/${slug}`),
+    ...TOOLS.flatMap(({ slug, modos = [] }) => [
+      `${ORIGEM}/tools/${slug}`,
+      ...modos.map((modo) => `${ORIGEM}/tools/${slug}/${modo.slug}`),
+    ]),
     `${ORIGEM}/posts/husky`,
     `${ORIGEM}/llms.txt`,
     `${ORIGEM}/llms-full.txt`,

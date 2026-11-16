@@ -4,18 +4,19 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
 ## O que vale para todas as fases
 
-- **Nada sai do aparelho.** Sem rota de API, sem upload, sem guardar o documento no navegador (nada de IndexedDB ou localStorage com PDF). A tela diz isso, e cada modo tem um E2E que confere que o fluxo inteiro só faz GET na própria origem.
+- **Nada sai do aparelho.** Sem rota de API, sem upload, sem guardar o documento no navegador (nada de IndexedDB ou localStorage com PDF). A tela diz isso, e cada modo tem um E2E que confere que, no fluxo inteiro, nenhum pedido vai para outra origem e nenhum corpo de pedido leva o PDF (o `%PDF-` nem um trecho do meio de cada arquivo). Até a fase 2 a regra era "só GET na própria origem", que reprova em produção: a borda da Cloudflare injeta dois POST na mesma origem (`/cdn-cgi/rum` e `/cdn-cgi/challenge-platform`).
 - **Duas bibliotecas, cada uma no seu Worker e só quando o modo precisa:**
   - **pdf-lib 1.17.1** (já no PR 1) escreve o PDF: mesclar, girar, apagar, reordenar, extrair, desenhar por cima, preencher formulário. Fica no `pdf.worker.ts`.
-  - **pdfjs-dist 6.3.289** (a partir da fase 2) só lê e desenha as páginas na tela. É a mesma versão exata que o `apps/financas` já usa (Apache-2.0, sem script de instalação), então não entra pacote novo no lock. Tem Worker próprio, o `pdf.worker.min.mjs` do pacote, apontado por `GlobalWorkerOptions.workerPort`.
+  - **pdfjs-dist 6.3.289** (a partir da fase 2) só lê e desenha as páginas na tela. É a mesma versão exata que o `apps/financas` já usa (Apache-2.0, sem script de instalação), então não entra pacote novo no lock (no PR da fase 2, o lock ganhou só a linha do importer `apps/web`). Tem Worker próprio, o `pdf.worker.min.mjs` do pacote, um por documento aberto, ligado por `PDFWorker.create({ port })` e não pelo `GlobalWorkerOptions.workerPort`: o global seria um Worker só para a aba inteira, e fechar o documento não o derrubaria. Fechar espera a tarefa terminar (é ela que tira as fontes do pdf.js da página) e então derruba o Worker, que guarda a cópia do arquivo.
 - **Peso medido (min / gzip):**
   - pdf-lib no chunk do Worker: 424 KB / 174 KB (PR 1, conferido no build);
   - pdf.js `pdf.min.mjs`: 458 KB / 131 KB;
   - worker do pdf.js `pdf.worker.min.mjs`: 1.265 KB / 373 KB.
+  - no build da fase 2 (Turbopack, Next 16.4.5): chunk do pdf.js 433 KB / 128 KB, Worker do pdf.js 1.183 KB / 363 KB e Worker do pdf-lib 426 KB / 176 KB.
 
   Nenhum deles entra no bundle das outras páginas do site. Cada PR confere no `.next` do build e registra no `apps/web/CLAUDE.md`.
 
-- **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1. O pdf-lib usa umas 3,5 vezes a entrada e o Blob do resultado soma mais uma, por isso a tela fala em "umas 4 vezes esse tamanho". Essa medida vale só para o pdf-lib sozinho. Nos modos com miniatura (fase 2 em diante), o mesmo documento fica na memória em até três lugares ao mesmo tempo: o provider do layout, a cópia que o pdf.js recebe em `data` e o pico do pdf-lib ao salvar. Por isso o teto de bytes **volta a ser medido na fase 2, com o pdf.js aberto**, e pode baixar nesses modos se a medida pedir. As fases que desenham páginas também têm um teto de páginas e de canvas, descrito em cada uma.
+- **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1. O pdf-lib usa umas 3,5 vezes a entrada e o Blob do resultado soma mais uma, por isso a tela fala em "umas 4 vezes esse tamanho". Essa medida vale só para o pdf-lib sozinho. Nos modos com miniatura (fase 2 em diante), o mesmo documento fica na memória em até três lugares ao mesmo tempo: o provider do layout, a cópia que o pdf.js recebe em `data` e o pico do pdf-lib ao salvar. Por isso o teto de bytes foi medido de novo na fase 2, com o pdf.js aberto: com 98 MB o pico passou de 7 vezes o arquivo (+690 a +740 MB), e **nos modos com miniatura o teto é de 50 MB** (`TETO_DE_BYTES_COM_MINIATURAS`), que fica perto de +300 MB, dentro do que o teto do mesclar aceita. O mesclar segue com 100 MB. As fases que desenham páginas também têm um teto de páginas e de canvas, descrito em cada uma.
 - **pdf.js com a configuração segura:**
   - a versão 6 já não tem o caminho com `eval` do CVE-2024-4367: a opção `isEvalSupported` saiu da biblioteca, e o `pdf.mjs` e o worker do 6.3.289 não têm `new Function` (conferido em 2026-11-16);
   - `enableXfa: false`;
@@ -42,36 +43,48 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
 ## Rota
 
-- Hoje (PR 1): `/tools/mesclar-pdf`.
-- **Na fase 2**, quando chega o segundo modo: `/tools/pdf` vira o "Editor de PDF". A página escolhe o modo, e cada modo tem a sua rota: `/tools/pdf/mesclar`, `/tools/pdf/organizar` e, depois, `/tools/pdf/editar` e `/tools/pdf/assinar`.
+- No PR 1: `/tools/mesclar-pdf`.
+- **Desde a fase 2**: `/tools/pdf` é o "Editor de PDF". A página escolhe o modo, e cada modo tem a sua rota: `/tools/pdf/mesclar`, `/tools/pdf/organizar` e, depois, `/tools/pdf/editar` e `/tools/pdf/assinar`.
   - Uma rota por modo dá metadata e canonical próprios e separa o código: o pdf.js só desce nos modos que mostram página.
   - `/tools/mesclar-pdf` passa a redirecionar com 308 para `/tools/pdf/mesclar` (`redirects()` do `next.config.mjs`, como o `/pilulabs/botai`).
-  - No `TOOLS`, o slug `mesclar-pdf` vira `pdf` ("Editor de PDF"). Os modos entram no sitemap e no `llms.txt` pelas rotas públicas.
-- O documento aberto passa de um modo para outro pela memória: um provider no `app/(site)/tools/pdf/layout.tsx` guarda os bytes enquanto a pessoa navega entre os modos e solta tudo ao sair de `/tools/pdf`.
+  - No `TOOLS`, o slug `mesclar-pdf` vira `pdf` ("Editor de PDF"), com os modos no campo `modos` do registro (`slug`, título, descrição e ícone). Cada modo tem `metadataDoModo` e entra no sitemap e no `llms.txt` pelas rotas públicas, logo depois da ferramenta.
+- O documento aberto passa de um modo para outro pela memória: o `DocumentoPdfProvider`, no `app/(site)/tools/pdf/layout.tsx`, guarda o `File` enquanto a pessoa navega entre os modos e solta tudo ao sair de `/tools/pdf` (o layout desmonta). O mesclar, com o PDF pronto, oferece "Organizar as páginas deste PDF": põe o resultado no provider com o nome final e navega para o organizar.
 
 ## Fase 2: miniaturas e organizar páginas
 
 **O que entra:** abrir um PDF, ver as páginas em miniatura e organizar: girar (90° para cada lado), apagar, reordenar e extrair as páginas escolhidas num PDF novo. Baixar o resultado.
 
 - **Mesmas regras de leitura do mesclar:** PDF protegido (senha ou contra cópia), corrompido ou que não é PDF é recusado com a mesma mensagem. Como o organizar também copia páginas para um documento novo, a tela leva o mesmo aviso de alcance do PR 1: os marcadores não passam, e os campos de formulário podem deixar de ser editáveis.
-- **Lógica (packages/tools, pdf-lib):** `organizarPaginas(bytes, plano)` monta um documento novo a partir de uma lista `{ indice, rotacao }` na ordem final. Uma função cobre reordenar, apagar (fora do plano), girar (somada ao `/Rotate` que a página já tem) e extrair (um plano com só as escolhidas). Como no mesclar, faz um `copyPages` só, para não duplicar fonte e imagem.
+- **O pdf-lib e o pdf.js têm que contar as mesmas páginas.** A tela mostra as páginas do pdf.js e o PDF sai com as do pdf-lib. O pdf-lib percorre a árvore de páginas inteira, e o pdf.js confia no `/Count` de cada nó: com um `/Count` errado, os dois discordam, e o PDF gerado sairia com outra página no lugar da que a pessoa viu, ou sem as últimas, sem erro nenhum (achado da revisão da fase 2, medido em Node com as duas bibliotecas). Quando a contagem não bate, o pdf.js fecha e o arquivo é recusado como corrompido, com a mesma mensagem.
+- **Lógica (packages/tools, pdf-lib):** `organizarPaginas(bytes, plano)` monta um documento novo a partir de uma lista `{ indice, giro }` na ordem final. O campo é `giro`, não `rotacao`, porque guarda o que a pessoa pediu (0, 90, 180 ou 270), e a rotação final é o `/Rotate` que a página já tem mais o giro. Uma função cobre reordenar, apagar (fora do plano), girar e extrair (um plano com só as escolhidas). Como no mesclar, faz um `copyPages` só, para não duplicar fonte e imagem.
+  - **As páginas fora do plano são esvaziadas antes da cópia.** Um link de uma página que fica para uma que saiu levava o conteúdo da que saiu para o arquivo, solto e invisível, mas legível por quem abrir o PDF (medido no teste). Apagar página tem que apagar o conteúdo dela.
+  - Link interno deixa de levar à página, mesmo quando ela fica, e o mesmo vale para o mesclar (conferido no PR da fase 2): o aviso de alcance das duas telas fala dos links, junto com os marcadores.
+  - O estado da tela (girar, mover, apagar e extrair as escolhidas) são funções puras no `pdf-regras`, sobre posições no plano atual. Mover com seleção não contígua: a que encosta na ponta fica, e as outras andam até encostar nela, sem trocar de ordem.
+- **Motor e renderizador (infraestrutura, primeira etapa da fase 2):**
+  - o motor do pdf-lib ganhou `organizar(arquivo, plano)`, que devolve o `Blob` do PDF. `mesclar` e `organizar` viraram **operações**: uma por vez, e uma nova, de qualquer tipo, derruba o Worker da pendente. A falha virou `FalhaDaOperacao`, e a resposta do Worker com o PDF, `pronto`;
+  - o pdf.js fica atrás da interface `RenderizadorDePdf` (`components/tools/pdf/renderizador.ts`): `abrir(arquivo)` devolve `{ paginas, rotacoes, miniatura(indice, larguraCss), fechar() }`. A fila de uma miniatura por vez mora no renderizador, não na tela, e o canvas tem altura de no máximo 4 larguras, para uma página estreita e comprida não estourar o limite de canvas;
+  - fechar o documento espera o `destroy` da tarefa antes de destruir o `PDFWorker` e encerrar o Worker: é esse `destroy` que manda o `Terminate` e, quando o Worker responde, tira da página as `FontFace` que o pdf.js pôs em `document.fonts` (e limpa o cache de objetos e os filtros). Com o Worker encerrado antes, a resposta não vinha, e as fontes de cada PDF aberto ficavam na aba até recarregar, mesmo depois de sair de `/tools/pdf` (achado da revisão da fase 2, medido no Chromium e coberto por um E2E). Um Worker que caiu ou travou não responde: depois de 2 s ele é encerrado assim mesmo;
+  - **decidido na fase 2: os `.wasm` do pdf.js ficam para a fase 3**, junto com as fontes e os cmaps. Sem `wasmUrl`, o pdf.js 6.3.289 não decodifica imagem JPX (JPEG 2000) nem JBIG2, comuns em PDF escaneado, e a miniatura sai sem essa imagem (o resto da página aparece). Lido no código do worker: sem a URL, ele pede o `.wasm` à página, que recusa sem ir à rede, e cai num `import()` relativo (`nullopenjpeg_nowasm_fallback.js` ou `nulljbig2_nowasm_fallback.js`), um GET que dá 404 na própria origem. Esse pedido não leva o arquivo, então a regra "nada sai do aparelho" se mantém. Miniatura de 160 px sem a imagem escaneada é um defeito pequeno; a página grande da fase 3 não pode sair sem ela, e por isso a fase 3 decide se serve os `.wasm` do pacote (`openjpeg.wasm` 246 KB, `jbig2.wasm` 102 KB, `qcms_bg.wasm` 94 KB) da própria origem.
 - **Miniaturas (pdf.js):**
-  - desenhadas sob demanda, só as que aparecem na tela (`IntersectionObserver`), uma por vez e com folga entre elas para a página não travar, a 160 px de largura × `devicePixelRatio`;
+  - desenhadas sob demanda, só as que aparecem na tela ou estão a até 400 px dela (`IntersectionObserver`, no `use-miniaturas.ts`), uma por vez e com um `setTimeout(0)` entre elas para o toque e a rolagem não esperarem, a 160 px de largura × `devicePixelRatio`. Página que sai da tela antes da vez sai da fila, e a apagada também: o cartão que desmonta tira a página da fila, porque o `unobserve` não chama o callback do observador;
   - cada miniatura vira um JPEG (`canvas.toBlob`), e o canvas é solto em seguida. Uma miniatura fica em torno de 10 a 20 KB, contra 130 KB do canvas;
   - a rotação aparece girando a imagem, sem redesenhar.
-- **Teto:** **500 páginas**, e os 100 MB revistos com o pdf.js aberto (ver "Teto" acima). Acima do teto, a tela explica e sugere dividir. Os dois números saem de medida no PR, registrada no CLAUDE.md: pico de memória com o documento no provider, no pdf.js e no pdf-lib ao salvar, e memória e tempo de 500 miniaturas num PDF real.
-- **Teclado e leitor de tela:**
-  - as páginas são uma lista (`<ol>`), e cada página tem um nome ("Página 3 de 12, girada 90°");
-  - em cada página: caixa "Selecionar", Girar à esquerda, Girar à direita, Mover para antes, Mover para depois e Apagar, todos de 44 px e com nome;
-  - as ações em lote (girar, apagar, extrair as selecionadas) ficam numa barra `role=toolbar`;
-  - o foco acompanha a página movida, como no mesclar, e cada ação é anunciada ("Página 3 girada para 180°", "2 páginas apagadas");
-  - **Desfazer** (Ctrl/⌘+Z e botão) volta a última ação, porque apagar sem volta é ruim para todo mundo.
-- **Celular:** grade de 2 colunas a 390 px. Arrastar para reordenar usa o dnd-kit com `TouchSensor` de espera curta (250 ms, tolerância de 5 px), para a rolagem da página continuar livre. Os botões são a alternativa.
+- **Teto:** **500 páginas e 50 MB**. Acima de qualquer um, a tela explica e sugere dividir; o arquivo grande demais nem é lido, e o de páginas demais é lido pelo pdf-lib, mas não chega ao pdf.js. Medido no PR (Chromium do Playwright no build de produção, `deviceScaleFactor` 2, soma do RSS de todos os processos do Chromium menos a linha de base; tabela e método em "Medições do organizar" no `apps/web/CLAUDE.md`):
+  - 49 MB (20 páginas com imagem sem compressão): pico de +291 MB; 59 MB: +497 MB; 98 MB: +686 a +741 MB. O pico vem do PDF no Worker do pdf.js, do pdf-lib lendo e montando e do `Blob` do resultado ao mesmo tempo, e chega logo depois do "pronto";
+  - 500 páginas de texto com imagem (790 KB): 500 miniaturas em 24,5 s rolando uma tela por vez (49 ms cada), pico de +373 MB (+333 MB com `deviceScaleFactor` 1, então quase nada é pixel de miniatura). As 500 páginas ficam.
+- **Teclado e leitor de tela** (desenho do PR da fase 2: botões rápidos por página e o resto na barra):
+  - as páginas são uma lista (`<ol>`); cada página mostra "Página N" (o número no arquivo original, que não muda ao mover) e "girada X°" quando há giro;
+  - em cada página, só o que se usa a toda hora: a caixa "Selecionar página N" e dois botões, "Girar a página N à direita" e "Apagar a página N", todos com 44 px. Seis botões por página seriam 3.000 paradas de Tab num PDF de 500 páginas;
+  - todo o resto age sobre a seleção, numa barra `role=toolbar` ("Ações nas páginas selecionadas") com um ponto só no Tab e setas entre os botões: Girar à esquerda, Girar à direita, Mover para antes, Mover para depois, Apagar, Extrair as selecionadas, Selecionar todas ou Limpar seleção, e Desfazer. Botão que não se aplica fica desabilitado com o motivo escrito perto (`aria-describedby`);
+  - "Gerar PDF organizado", o aviso de alcance e o resultado (Cancelar, falha e link de download) ficam logo depois da barra, antes da lista. Com o Gerar depois das páginas, cada uma com 3 paradas de Tab, um PDF de 500 páginas pedia 1.500 Tabs até ele (achado da revisão da fase 2);
+  - o foco acompanha a ação: mover deixa o foco no botão usado (na ponta, no do outro sentido); apagar leva à caixa da página seguinte, ou da anterior, ou ao "Escolher PDF"; cada ação é anunciada ("Página 3 girada para 180°.", "2 páginas apagadas.", "Desfeito.");
+  - **Desfazer** (Ctrl/⌘+Z e botão) volta a última ação, porque apagar sem volta é ruim para todo mundo. O atalho não dispara dentro de campo de texto. Como o atalho escuta a janela inteira, o foco pode estar em qualquer lugar: ele fica onde estava se o elemento continua na tela e habilitado; se o desfazer o tirou da tela (o Limpar seleção, o link de download) ou o desabilitou (um botão da barra), vai ao Desfazer ou, sem mais nada para desfazer, ao primeiro botão habilitado da barra. Nunca cai no `body`.
+- **Celular:** grade de 2 colunas até 640 px (3 no `sm`, 4 no `md`). Arrastar para reordenar usa o dnd-kit com `TouchSensor` de espera curta (250 ms, tolerância de 5 px), para a rolagem da página continuar livre, e um `PointerSensor` que recusa o toque (distância de 6 px, para mouse e caneta). A miniatura é a alça, fora do Tab; os botões são a alternativa.
 - **Testes:**
-  - Jest de `organizarPaginas`: ordem, rotação somada a uma página que já tinha `/Rotate`, apagar, extrair, plano vazio recusado e índice fora do documento recusado;
+  - Jest de `organizarPaginas`: ordem, rotação somada a uma página que já tinha `/Rotate` (própria e herdada), apagar, extrair, plano vazio recusado, índice fora do documento recusado, a página apagada que não vai junto por um link interno e a imagem compartilhada que não duplica;
   - motor e componente com renderizador falso;
   - E2E: girar a página 2, apagar a 3, mover a 1 para o fim, baixar, e conferir no PDF baixado a ordem (pelo lado de cada página) e o `/Rotate`;
-  - E2E de extrair, de que miniatura aparece (`img` com `naturalWidth` > 0), de só GET na mesma origem, do redirecionamento 308, de 320 px e do contraste.
+  - E2E de extrair, de que miniatura aparece (`img` com `naturalWidth` > 0), de o Tab da barra cair no Gerar, de as fontes do pdf.js saírem de `document.fonts` ao trocar de PDF, de nada sair do aparelho nos dois modos, dos Workers só depois do arquivo, do redirecionamento 308, de 320 px e do contraste.
 
 ## Fase 3: inserir por cima da página
 
@@ -129,7 +142,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz;
   - "apagar de verdade" conferido de três jeitos: o texto deixou de existir na página (`getTextContent`), a página não tem mais `/Annots`, e os pixels da imagem embutida sob o retângulo são brancos. Esta última conferência decodifica o JPEG no navegador (E2E, `createImageBitmap`) e lê o canvas;
   - motor e componente: mover e redimensionar pelo teclado, anúncio e painel numérico;
-  - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e só GET na mesma origem.
+  - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima).
 
 ## Fase 4: assinatura e formulário
 
@@ -154,7 +167,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
 - **Testes:**
   - Jest com formulário gerado no teste (`createTextField`, `createCheckBox`, `createRadioGroup`, `createDropdown`): preencher, conferir os valores lidos de volta, achatar (não sobra campo) e detectar XFA;
   - a assinatura desenhada vira imagem na posição certa;
-  - E2E: preencher e baixar, conferir os valores no PDF baixado; assinar por desenho com o ponteiro do Playwright; 320 px, contraste e só GET na mesma origem.
+  - E2E: preencher e baixar, conferir os valores no PDF baixado; assinar por desenho com o ponteiro do Playwright; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima).
 
 ## Ordem e entrega
 
@@ -170,11 +183,19 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 
 - pdf-lib 1.17.1 (parado desde 2021, mas maduro) em vez do fork `@cantoo/pdf-lib`, que pede faixas abertas de versão.
 - pdfjs-dist 6.3.289, a mesma versão do `apps/financas`, em vez da 6.5. A troca para uma mais nova vale para os dois apps juntos, num PR próprio.
-- Teto de 100 MB por documento (medido) e de 500 páginas para miniaturas (a confirmar com a medida da fase 2).
+- Teto de 100 MB por documento no mesclar (medido) e, nos modos com miniatura, de 50 MB e 500 páginas (medidos na fase 2).
 - Só as fontes padrão do PDF; sem fontkit.
 - perfect-freehand para traço e assinatura; sem signature_pad.
 - Editar o texto existente fica fora; o caminho é cobrir e escrever. Cobrir avisa que não apaga, e "apagar de verdade" transforma a página em imagem com os retângulos queimados nela e sem as anotações da página.
-- Teto de bytes medido de novo na fase 2, com o pdf.js aberto.
+- Teto de bytes medido de novo na fase 2, com o pdf.js aberto: 50 MB nos modos com miniatura.
 - O quadro de objetos é `role=application`, com teste manual em VoiceOver e NVDA.
 - Assinatura sem guardar no navegador e com o aviso de que não é assinatura digital.
 - Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`.
+- Um Worker do pdf.js por documento aberto (`PDFWorker.create({ port })`), não o `GlobalWorkerOptions.workerPort` global, para fechar o documento soltar a memória dele.
+- No organizar, as páginas que saem do plano são esvaziadas antes da cópia, para o conteúdo delas não ir junto por um link interno; e mover com seleção não contígua deixa a que encostou na ponta parada e leva as outras até ela.
+- No organizar, o pdf-lib lê o arquivo antes do pdf.js abrir: os erros têm as mesmas mensagens do mesclar, e um PDF recusado ou com páginas demais não chega ao pdf.js. Se os dois contam um número diferente de páginas, o arquivo é recusado como corrompido.
+- Fechar um documento do pdf.js espera o `destroy` da tarefa (no máximo 2 s) antes de encerrar o Worker, para as fontes saírem de `document.fonts`.
+- Os `.wasm` do pdf.js (JPX, JBIG2, cor ICC) ficam para a fase 3: na fase 2, a miniatura de um PDF com essas imagens sai sem elas, e a tentativa do pdf.js gera um GET de 404 na própria origem, sem o arquivo.
+- No organizar, o "Gerar PDF organizado" e o resultado ficam antes da lista de páginas, logo depois da barra.
+- Botões rápidos por página (selecionar, girar à direita, apagar) e o resto na barra da seleção, com o número original da página no rótulo.
+- O E2E de privacidade passou de "só GET na própria origem" para "nada vai a outra origem e nenhum corpo leva o PDF".
