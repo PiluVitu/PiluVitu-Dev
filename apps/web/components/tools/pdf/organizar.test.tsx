@@ -169,9 +169,23 @@ async function escolher(arquivo: File) {
   await esperar()
 }
 
+// Espera a abertura terminar (pdf-lib e pdf.js) por condição, não por tempo: com o Mac carregado,
+// os 20 ms fixos de antes às vezes não bastavam (intermitência vista na revisão do #118).
+async function esperarAte(condicao: () => boolean, prazoMs = 2_000) {
+  for (let passado = 0; !condicao(); passado += 10) {
+    if (passado >= prazoMs) throw new Error('a condição não chegou no prazo')
+    await esperar(10)
+  }
+}
+
 async function abrir(nome: string, opcoes: Parameters<typeof montar>[0] = {}) {
   const montado = montar({ ...opcoes, arquivoInicial: pdf(nome) })
-  await esperar()
+  await esperarAte(
+    () =>
+      anuncio() !== `Abrindo ${nome}…` &&
+      (montado.motor.analisadas.includes(nome) ||
+        q('organizar-pdf-erro') !== null),
+  )
   return montado
 }
 

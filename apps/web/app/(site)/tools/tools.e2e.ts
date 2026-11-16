@@ -285,12 +285,16 @@ function vigiarPedidos(page: Page) {
   return pedidos
 }
 
-const SCRIPT_DA_CLOUDFLARE =
-  'https://static.cloudflareinsights.com/beacon.min.js'
-
+// Host, caminho e query exatos: um GET não tem corpo, então a própria URL é o único jeito de dado
+// sair por ele. O caminho de produção leva um sufixo de versão (/beacon.min.js/vce70…).
 function ehOScriptDaCloudflare(pedido: Request) {
+  if (pedido.method() !== 'GET') return false
+  const url = new URL(pedido.url())
   return (
-    pedido.method() === 'GET' && pedido.url().startsWith(SCRIPT_DA_CLOUDFLARE)
+    url.origin === 'https://static.cloudflareinsights.com' &&
+    url.search === '' &&
+    url.hash === '' &&
+    /^\/beacon\.min\.js(\/[A-Za-z0-9]+)?$/.test(url.pathname)
   )
 }
 
