@@ -2,22 +2,26 @@ import type { MotivoDoErroDePdf } from '@piluvitu/tools/pdf-regras'
 
 export type PedidoAoWorker =
   | { tipo: 'analisar'; id: number; arquivo: Blob }
-  | { tipo: 'mesclar'; arquivos: Blob[] }
+  | { tipo: 'mesclar'; id: number; arquivos: Blob[] }
 
 export type RespostaDoWorker =
   | { tipo: 'analisado'; id: number; paginas: number }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
-  | { tipo: 'andamento'; fracao: number; arquivo: number | null }
-  | { tipo: 'mesclado'; bytes: ArrayBuffer }
+  | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
+  | { tipo: 'mesclado'; id: number; bytes: ArrayBuffer }
   | {
       tipo: 'falhou'
+      id: number
       motivo: MotivoDoErroDePdf | 'inesperado'
       indice?: number
     }
 
+/** `falha_do_navegador`: o Worker caiu duas vezes lendo o arquivo (memória, script); não diz nada do PDF. */
+export type MotivoDaRecusa = MotivoDoErroDePdf | 'falha_do_navegador'
+
 export type ResultadoDaAnalise =
   | { ok: true; paginas: number }
-  | { ok: false; motivo: MotivoDoErroDePdf }
+  | { ok: false; motivo: MotivoDaRecusa }
 
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
@@ -42,6 +46,7 @@ export function ehFalhaDaMesclagem(erro: unknown): erro is FalhaDaMesclagem {
 }
 
 type MesclagemPendente = {
+  id: number
   resolver: (pdf: Blob) => void
   rejeitar: (falha: FalhaDaMesclagem) => void
   aoAndar: (andamento: AndamentoDaMesclagem) => void
@@ -53,11 +58,18 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
   let proximoId = 0
   const analises = new Map<
     number,
-    { arquivo: Blob; resolver: (r: ResultadoDaAnalise) => void }
+    {
+      arquivo: Blob
+      quedas: number
+      resolver: (r: ResultadoDaAnalise) => void
+    }
   >()
   let mesclagem: MesclagemPendente | null = null
 
   function aoResponder({ data }: MessageEvent<RespostaDoWorker>) {
+    if (data.tipo !== 'analisado' && data.tipo !== 'recusado') {
+      if (data.id !== mesclagem?.id) return
+    }
     switch (data.tipo) {
       case 'analisado':
       case 'recusado': {
@@ -88,14 +100,39 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     worker = null
   }
 
+  function reenviarLeituras() {
+    for (const [id, { arquivo }] of analises) {
+      enviar({ tipo: 'analisar', id, arquivo })
+    }
+  }
+
+  function abandonarMesclagem(motivo: 'cancelado' | 'inesperado') {
+    mesclagem?.rejeitar({ motivo })
+    mesclagem = null
+  }
+
+  // O Worker lê na ordem de chegada: a leitura mais antiga é a que estava em curso quando ele caiu.
   function aoQuebrar() {
     derrubar()
-    for (const { resolver } of analises.values()) {
-      resolver({ ok: false, motivo: 'corrompido' })
+    abandonarMesclagem('inesperado')
+    const [emCurso] = analises
+    if (emCurso) {
+      const [id, analise] = emCurso
+      analise.quedas += 1
+      if (analise.quedas > 1) {
+        analises.delete(id)
+        analise.resolver({ ok: false, motivo: 'falha_do_navegador' })
+      }
     }
-    analises.clear()
-    mesclagem?.rejeitar({ motivo: 'inesperado' })
-    mesclagem = null
+    reenviarLeituras()
+  }
+
+  // A fila do Worker não larga um pedido no meio: parar uma mesclagem é derrubar o Worker.
+  function cancelar() {
+    if (!mesclagem) return
+    derrubar()
+    abandonarMesclagem('cancelado')
+    reenviarLeituras()
   }
 
   function enviar(pedido: PedidoAoWorker) {
@@ -111,26 +148,19 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     analisar(arquivo) {
       return new Promise((resolver) => {
         const id = proximoId++
-        analises.set(id, { arquivo, resolver })
+        analises.set(id, { arquivo, quedas: 0, resolver })
         enviar({ tipo: 'analisar', id, arquivo })
       })
     },
     mesclar(arquivos, aoAndar) {
       return new Promise((resolver, rejeitar) => {
-        mesclagem?.rejeitar({ motivo: 'cancelado' })
-        mesclagem = { resolver, rejeitar, aoAndar }
-        enviar({ tipo: 'mesclar', arquivos })
+        cancelar()
+        const id = proximoId++
+        mesclagem = { id, resolver, rejeitar, aoAndar }
+        enviar({ tipo: 'mesclar', id, arquivos })
       })
     },
-    cancelar() {
-      if (!mesclagem) return
-      derrubar()
-      mesclagem.rejeitar({ motivo: 'cancelado' })
-      mesclagem = null
-      for (const [id, { arquivo }] of analises) {
-        enviar({ tipo: 'analisar', id, arquivo })
-      }
-    },
+    cancelar,
     encerrar() {
       derrubar()
       analises.clear()

@@ -332,6 +332,37 @@ it('falha sem arquivo culpado (memória, Worker) explica e sugere o que tentar',
   )
 })
 
+it('ao começar a mesclagem o foco vai para o Cancelar, sem cair no body', async () => {
+  montar(criarMotorFalso({ mesclagem: 'nunca' }))
+  await escolher(pdf('a.pdf'), pdf('b.pdf'))
+  mesclarBotao().focus()
+
+  await clicar(mesclarBotao())
+
+  expect(document.activeElement).toBe(q('mesclar-pdf-cancelar'))
+})
+
+it('se a mesclagem falha, o foco volta ao Mesclar, com o alerta logo depois', async () => {
+  montar(criarMotorFalso({ mesclagem: { motivo: 'corrompido', indice: 0 } }))
+  await escolher(pdf('a.pdf'), pdf('b.pdf'))
+
+  await clicar(mesclarBotao())
+  await esperar()
+
+  expect(q('mesclar-pdf-falha')).not.toBeNull()
+  expect(document.activeElement).toBe(mesclarBotao())
+})
+
+it('arquivo que o navegador não conseguiu ler não é acusado de corrompido', async () => {
+  montar()
+
+  await escolher(pdf('a.pdf'), pdf('enorme-pesado.pdf'))
+
+  const erro = q('mesclar-pdf-erro-do-item')!.textContent!
+  expect(erro).toMatch(/navegador não conseguiu ler/)
+  expect(erro).not.toMatch(/corrompido/)
+})
+
 it('durante a mesclagem: barra de progresso com valor, lista travada e Cancelar devolve o foco', async () => {
   montar(criarMotorFalso({ mesclagem: 'nunca' }))
   await escolher(pdf('a.pdf'), pdf('b.pdf'))

@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -42,6 +49,7 @@ import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import {
   criarMotorComWorker,
   ehFalhaDaMesclagem,
+  type MotivoDaRecusa,
   type MotorDePdf,
 } from './motor'
 import {
@@ -58,7 +66,7 @@ type Item = {
   id: string
   arquivo: File
   paginas?: number
-  erro?: MotivoDoErroDePdf
+  erro?: MotivoDaRecusa
 }
 
 type Mesclagem =
@@ -83,6 +91,7 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
   const proximoId = useRef(0)
   const escolherRef = useRef<HTMLButtonElement>(null)
   const mesclarRef = useRef<HTMLButtonElement>(null)
+  const cancelarRef = useRef<HTMLButtonElement>(null)
   const baixarRef = useRef<HTMLAnchorElement>(null)
   const botoes = useRef(new Map<string, HTMLButtonElement>())
   const focoPendente = useRef<(() => HTMLElement | null | undefined) | null>(
@@ -242,6 +251,7 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
     setAvisos([])
     setMesclagem({ estado: 'mesclando', fracao: 0, arquivo: 0 })
     anunciar(TEXTOS.anuncios.comecou)
+    focar(() => cancelarRef.current)
     try {
       const pdf = await motor().mesclar(
         fila.map((item) => item.arquivo),
@@ -278,6 +288,7 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
                 falha.motivo as MotivoDoErroDePdf,
               ),
       })
+      focar(() => mesclarRef.current)
     }
   }
 
@@ -473,6 +484,7 @@ export function MesclarPdf({ motor: motorInjetado }: Props) {
                   )
             }
             aoCancelar={() => motor().cancelar()}
+            cancelarRef={cancelarRef}
           />
         ) : (
           <div className="space-y-2">
@@ -650,10 +662,12 @@ function Andamento({
   fracao,
   texto,
   aoCancelar,
+  cancelarRef,
 }: {
   fracao: number
   texto: string
   aoCancelar: () => void
+  cancelarRef: RefObject<HTMLButtonElement | null>
 }) {
   const id = useId()
   const porcento = Math.round(fracao * 100)
@@ -682,6 +696,7 @@ function Andamento({
         />
       </div>
       <Button
+        ref={cancelarRef}
         type="button"
         variant="outline"
         className="h-11"

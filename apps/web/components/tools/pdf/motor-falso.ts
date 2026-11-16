@@ -16,6 +16,8 @@ type Opcoes = {
 export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
   if (/senha/i.test(arquivo.name)) return { ok: false, motivo: 'protegido' }
   if (/quebrado/i.test(arquivo.name)) return { ok: false, motivo: 'corrompido' }
+  if (/pesado/i.test(arquivo.name))
+    return { ok: false, motivo: 'falha_do_navegador' }
   if (!/\.pdf$/i.test(arquivo.name)) return { ok: false, motivo: 'nao_e_pdf' }
   const paginas = Number(/(\d+)p/.exec(arquivo.name)?.[1] ?? 1)
   return { ok: true, paginas }

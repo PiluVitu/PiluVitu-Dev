@@ -78,9 +78,13 @@ it('mesclar repassa o andamento e entrega um Blob de PDF', async () => {
   const andamentos: unknown[] = []
   const pronto = motor.mesclar([arquivo('a.pdf')], (a) => andamentos.push(a))
 
-  ultimo().responder({ tipo: 'andamento', fracao: 0, arquivo: 0 })
-  ultimo().responder({ tipo: 'andamento', fracao: 0.9, arquivo: null })
-  ultimo().responder({ tipo: 'mesclado', bytes: new ArrayBuffer(8) })
+  const { id } = ultimo().recebidos[0] as Extract<
+    PedidoAoWorker,
+    { tipo: 'mesclar' }
+  >
+  ultimo().responder({ tipo: 'andamento', id, fracao: 0, arquivo: 0 })
+  ultimo().responder({ tipo: 'andamento', id, fracao: 0.9, arquivo: null })
+  ultimo().responder({ tipo: 'mesclado', id, bytes: new ArrayBuffer(8) })
 
   const pdf = await pronto
   expect(andamentos).toEqual([
@@ -94,8 +98,12 @@ it('mesclar repassa o andamento e entrega um Blob de PDF', async () => {
 it('mesclar rejeita com o motivo e o índice do arquivo que falhou', async () => {
   const motor = novoMotor()
   const pronto = motor.mesclar([arquivo('a.pdf')], () => {})
+  const { id } = ultimo().recebidos[0] as Extract<
+    PedidoAoWorker,
+    { tipo: 'mesclar' }
+  >
 
-  ultimo().responder({ tipo: 'falhou', motivo: 'corrompido', indice: 1 })
+  ultimo().responder({ tipo: 'falhou', id, motivo: 'corrompido', indice: 1 })
 
   await expect(pronto).rejects.toEqual({ motivo: 'corrompido', indice: 1 })
 })
@@ -131,17 +139,80 @@ it('cancelar sem mesclagem em curso não derruba nada', () => {
   expect(WorkerFalso.criados).toHaveLength(1)
 })
 
-it('se o Worker quebra, as leituras viram corrompido e a mesclagem falha como inesperada', async () => {
+it('se o Worker quebra, as leituras pendentes vão uma vez para um Worker novo e a mesclagem falha como inesperada', async () => {
   const motor = novoMotor()
   const leitura = motor.analisar(arquivo('a.pdf'))
   const mesclagem = motor.mesclar([arquivo('b.pdf')], () => {})
+  const primeiro = ultimo()
+
+  primeiro.quebrar()
+
+  await expect(mesclagem).rejects.toEqual({ motivo: 'inesperado' })
+  expect(primeiro.encerrado).toBe(true)
+  expect(WorkerFalso.criados).toHaveLength(2)
+  const reenviado = ultimo().recebidos[0] as Extract<
+    PedidoAoWorker,
+    { tipo: 'analisar' }
+  >
+  ultimo().responder({ tipo: 'analisado', id: reenviado.id, paginas: 4 })
+  await expect(leitura).resolves.toEqual({ ok: true, paginas: 4 })
+})
+
+it('se o Worker quebra de novo, só a leitura em curso desiste, sem acusar o arquivo, e as outras seguem', async () => {
+  const motor = novoMotor()
+  const emCurso = motor.analisar(arquivo('pesado.pdf'))
+  const depois = motor.analisar(arquivo('leve.pdf'))
 
   ultimo().quebrar()
+  ultimo().quebrar()
 
-  await expect(leitura).resolves.toEqual({ ok: false, motivo: 'corrompido' })
-  await expect(mesclagem).rejects.toEqual({ motivo: 'inesperado' })
-  void motor.analisar(arquivo('c.pdf'))
-  expect(WorkerFalso.criados).toHaveLength(2)
+  await expect(emCurso).resolves.toEqual({
+    ok: false,
+    motivo: 'falha_do_navegador',
+  })
+  const pedidos = ultimo().recebidos as Extract<
+    PedidoAoWorker,
+    { tipo: 'analisar' }
+  >[]
+  expect(pedidos).toHaveLength(1)
+  expect((pedidos[0].arquivo as File).name).toBe('leve.pdf')
+  ultimo().responder({ tipo: 'analisado', id: pedidos[0].id, paginas: 1 })
+  await expect(depois).resolves.toEqual({ ok: true, paginas: 1 })
+})
+
+it('dois mesclar seguidos: o primeiro é cancelado, o Worker antigo cai e resposta velha não resolve o novo', async () => {
+  const motor = novoMotor()
+  const primeira = motor.mesclar([arquivo('a.pdf')], () => {})
+  const antigo = ultimo()
+  const pedidoAntigo = antigo.recebidos[0] as Extract<
+    PedidoAoWorker,
+    { tipo: 'mesclar' }
+  >
+
+  const segunda = motor.mesclar([arquivo('b.pdf')], () => {})
+
+  await expect(primeira).rejects.toEqual({ motivo: 'cancelado' })
+  expect(antigo.encerrado).toBe(true)
+  const novo = ultimo()
+  expect(novo).not.toBe(antigo)
+  const pedidoNovo = novo.recebidos[0] as Extract<
+    PedidoAoWorker,
+    { tipo: 'mesclar' }
+  >
+  expect(pedidoNovo.id).not.toBe(pedidoAntigo.id)
+
+  novo.responder({
+    tipo: 'mesclado',
+    id: pedidoAntigo.id,
+    bytes: new ArrayBuffer(1),
+  })
+  novo.responder({
+    tipo: 'mesclado',
+    id: pedidoNovo.id,
+    bytes: new ArrayBuffer(3),
+  })
+
+  expect((await segunda).size).toBe(3)
 })
 
 it('encerrar derruba o Worker', () => {

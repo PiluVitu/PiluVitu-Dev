@@ -27,7 +27,7 @@ async function analisar(id: number, arquivo: Blob) {
   }
 }
 
-async function mesclar(arquivos: Blob[]) {
+async function mesclar(id: number, arquivos: Blob[]) {
   const tamanhos = arquivos.map((a) => a.size)
   try {
     const pdf = await mesclarPdfs(
@@ -35,6 +35,7 @@ async function mesclar(arquivos: Blob[]) {
       (etapa) =>
         escopo.postMessage({
           tipo: 'andamento',
+          id,
           ...('salvando' in etapa
             ? { fracao: fracaoDaMesclagem(tamanhos, 0, true), arquivo: null }
             : {
@@ -47,12 +48,12 @@ async function mesclar(arquivos: Blob[]) {
       pdf.byteOffset === 0 && pdf.byteLength === pdf.buffer.byteLength
         ? (pdf.buffer as ArrayBuffer)
         : pdf.slice().buffer
-    escopo.postMessage({ tipo: 'mesclado', bytes }, [bytes])
+    escopo.postMessage({ tipo: 'mesclado', id, bytes }, [bytes])
   } catch (erro) {
     escopo.postMessage(
       erro instanceof ErroDePdf
-        ? { tipo: 'falhou', motivo: erro.motivo, indice: erro.indice }
-        : { tipo: 'falhou', motivo: 'inesperado' },
+        ? { tipo: 'falhou', id, motivo: erro.motivo, indice: erro.indice }
+        : { tipo: 'falhou', id, motivo: 'inesperado' },
     )
   }
 }
@@ -64,6 +65,6 @@ escopo.onmessage = ({ data }) => {
   fila = fila.then(() =>
     data.tipo === 'analisar'
       ? analisar(data.id, data.arquivo)
-      : mesclar(data.arquivos),
+      : mesclar(data.id, data.arquivos),
   )
 }

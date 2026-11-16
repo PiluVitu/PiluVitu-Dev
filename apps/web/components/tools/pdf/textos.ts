@@ -1,4 +1,5 @@
 import type { MotivoDoErroDePdf } from '@piluvitu/tools/pdf-regras'
+import type { MotivoDaRecusa } from './motor'
 
 // O site ainda não tem catálogo por idioma (WEB-17 em docs/auditoria-a11y-l10n.md): os textos das
 // ferramentas de PDF ficam juntos aqui, com chaves estáveis, para migrarem inteiros quando ele existir.
@@ -42,13 +43,15 @@ export function arquivos(n: number): string {
   return contagem(n, 'arquivo', 'arquivos')
 }
 
-export const ERROS_DO_ARQUIVO: Record<MotivoDoErroDePdf, string> = {
+export const ERROS_DO_ARQUIVO: Record<MotivoDaRecusa, string> = {
   nao_e_pdf: 'Não é um PDF. Escolha um arquivo .pdf.',
   protegido:
     'Está protegido por senha ou contra cópia. Tire a proteção no programa que criou o PDF e adicione de novo.',
   corrompido:
     'Está corrompido ou incompleto. Baixe o arquivo de novo e tente outra vez.',
   sem_paginas: 'Não tem nenhuma página.',
+  falha_do_navegador:
+    'O navegador não conseguiu ler este arquivo, talvez por falta de memória. Feche outras abas ou tente com menos arquivos.',
 }
 
 export const TEXTOS = {
@@ -117,7 +120,7 @@ export const TEXTOS = {
   anuncios: {
     adicionados: (qtd: number) =>
       qtd === 1 ? '1 arquivo adicionado.' : `${arquivos(qtd)} adicionados.`,
-    recusado: (nome: string, motivo: MotivoDoErroDePdf) =>
+    recusado: (nome: string, motivo: MotivoDaRecusa) =>
       `${nome}: ${ERROS_DO_ARQUIVO[motivo]}`,
     movido: (nome: string, posicao: number, total: number) =>
       `${nome} agora está na posição ${posicao} de ${total}.`,

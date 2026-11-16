@@ -47,10 +47,12 @@ it('o limite diz o teto e o porquê', () => {
 it('todo erro de arquivo diz o que houve e, quando dá, o que fazer', () => {
   expect(Object.keys(ERROS_DO_ARQUIVO).sort()).toEqual([
     'corrompido',
+    'falha_do_navegador',
     'nao_e_pdf',
     'protegido',
     'sem_paginas',
   ])
+  expect(ERROS_DO_ARQUIVO.falha_do_navegador).not.toMatch(/corrompido/)
   expect(ERROS_DO_ARQUIVO.protegido).toMatch(/senha.*Tire a proteção/)
   expect(ERROS_DO_ARQUIVO.nao_e_pdf).toMatch(/Escolha um arquivo \.pdf/)
 })

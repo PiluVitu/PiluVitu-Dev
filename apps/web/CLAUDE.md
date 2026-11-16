@@ -207,7 +207,7 @@ Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload),
 - **Pasta:** `components/tools/pdf/`.
   - `mesclar.tsx` (`MesclarPdf`): o modo mesclar.
   - `zona-de-arquivos.tsx` (`ZonaDeArquivos` e `AvisoDePrivacidade`): escolher ou arrastar PDFs, com a zona destacada por borda sólida e texto, não só cor. Ela também impede que um PDF solto fora da zona faça o navegador abrir o arquivo e perder a lista.
-  - `motor.ts` (`criarMotorComWorker`): o protocolo com o Worker (`analisar`, `mesclar`, `cancelar`, `encerrar`).
+  - `motor.ts` (`criarMotorComWorker`): o protocolo com o Worker (`analisar`, `mesclar`, `cancelar`, `encerrar`). Todo pedido tem id, e resposta de outro id é ignorada. Uma mesclagem nova derruba o Worker da anterior, como o Cancelar, porque a fila do Worker não larga um pedido no meio. Se o Worker cai, a mesclagem falha como inesperada e as leituras pendentes vão para um Worker novo. Se ele cai de novo, só a leitura que estava em curso (a mais antiga, porque o Worker lê na ordem) desiste, com `falha_do_navegador`, uma mensagem que não acusa o PDF.
   - `pdf.worker.ts`: o Worker, único que importa `@piluvitu/tools/pdf` (pdf-lib). Atende um pedido por vez, para duas leituras grandes não dobrarem o pico de memória.
   - `novo-worker.ts`: fica sozinho porque o Jest (CommonJS) não compila `import.meta`.
   - `textos.ts`: os textos pt-BR das ferramentas de PDF, com chaves estáveis, mais `formatarTamanho`, plural e porcentagem pelo `Intl`. Sai daqui para o catálogo quando o WEB-17 da auditoria for feito.
@@ -216,6 +216,7 @@ Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload),
 - **Fluxo:**
   - cada arquivo é lido no Worker ao entrar e fica na lista com páginas e tamanho, ou com o erro escrito na linha (não é PDF, protegido por senha ou contra cópia, corrompido, sem páginas);
   - o Mesclar só habilita com 2 ou mais PDFs lidos e sem erro, e a dica do porquê fica ligada ao botão por `aria-describedby`;
+  - ao começar a mesclagem o foco vai para o Cancelar (o Mesclar some da tela); se ela falha, o foco volta ao Mesclar, com o alerta logo depois;
   - acima de 100 MB somados, o arquivo não entra e um `role=alert` diz o tamanho e o que fazer (o porquê do teto está em `packages/tools/CLAUDE.md`);
   - a mesclagem mostra uma barra `role=progressbar` com o arquivo em leitura e tem Cancelar, que derruba o Worker;
   - no fim aparece o link de download (`Blob` + `download`, nome padrão `mesclado.pdf`, editável e saneado por `nomeDoPdfFinal`). O foco vai para esse link, e a URL é revogada quando a lista muda ou a página sai.
@@ -226,7 +227,7 @@ Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload),
 - **Movimento:** transições curtas (150 a 200 ms). Com reduzir movimento, o dnd-kit fica sem transição (`hooks/use-reduzir-movimento.ts`, `useSyncExternalStore` sobre o `matchMedia`), e a barra e a zona usam `motion-safe:`.
 - **O que não vai para o PDF final:** os marcadores (o índice lateral) e, às vezes, a edição dos campos de formulário (o pdf-lib copia as páginas, não o AcroForm). A tela avisa.
 - **Testes:**
-  - Jest: `motor.test.ts` (Worker falso: ids, andamento, falha, cancelar reenviando leituras, Worker que quebra), `mesclar.test.tsx` (19 casos de fluxo, foco, anúncios e travas; a remoção do `focus()` derruba 6, verificado por mutação), `textos.test.ts` e o do hook.
+  - Jest: `motor.test.ts` (Worker falso: ids, andamento, falha, cancelar reenviando leituras, duas mesclagens seguidas, Worker que quebra uma e duas vezes), `mesclar.test.tsx` (22 casos de fluxo, foco, anúncios e travas; a remoção do `focus()` derruba 6, verificado por mutação), `textos.test.ts` e o do hook.
   - Stories: `Tools/PDF/Mesclar` (Vazia, ComArquivos, ComErros, Mesclando, Pronto, FalhaNaMesclagem) e `Tools/PDF/ZonaDeArquivos`.
   - E2E: casos em `app/(site)/tools/tools.e2e.ts`. Cobrem a ordem pelo teclado e o PDF baixado conferido página a página pelo pdf-lib (`pdf-lib` exato nas devDependencies do web só para isso), só GET na própria origem durante o fluxo, Worker só depois de escolher arquivo, protegido e não-PDF, 320 px sem rolagem lateral com alvos de 44 px e contraste de 4,5:1 nos dois temas.
 
