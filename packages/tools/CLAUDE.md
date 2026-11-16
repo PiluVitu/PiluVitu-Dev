@@ -6,7 +6,7 @@ Guidance for the **pure-logic package**. O Claude Code carrega este arquivo **ju
 
 `@piluvitu/tools` é **TypeScript puro, sem React/Next/DOM** — funções determinísticas testáveis em Jest e portáveis (CLI futura). É a camada de lógica por trás do dashboard `/tools` do web.
 
-- **Fonte:** `packages/tools/src/*` — `base64`, `json-format`, `jwt-decode`, `uuid`, `qr-encode`, `qr-decode`, e o módulo de entropia/roleta (`prng`, `entropy`, `roleta`). Barrel em `index.ts`; alguns expostos por subpaths. CPF e CNPJ saíram para o `@pilutech/botai-core` (npm, repo `PiluVitu/Botai`), que o `/tools` usa com versão exata.
+- **Fonte:** `packages/tools/src/*` — `base64`, `json-format`, `jwt-decode`, `uuid`, `qr-encode`, `qr-decode`, o módulo de entropia/roleta (`prng`, `entropy`, `roleta`) e o de PDF (`pdf`, `pdf-regras`). Barrel em `index.ts`; alguns expostos por subpaths. CPF e CNPJ saíram para o `@pilutech/botai-core` (npm, repo `PiluVitu/Botai`), que o `/tools` usa com versão exata.
 - **Testes colocated:** `*.test.ts` ao lado do fonte (lei de colocation na raiz). `jest.config.ts` + `jest.setup.ts` (jsdom; `jest.setup.ts` injeta `webcrypto` pra `crypto.subtle`).
 - **Rodar:** `pnpm --filter @piluvitu/tools test` ou `pnpm -r test` / `make test` na raiz.
 - **Tipos:** `pnpm --filter @piluvitu/tools lint` (`tsc --noEmit`), que também roda no job `web` do CI. Até 2026-10 o pacote não tinha `lint`: só era checado pelos apps que o importam, e o `pnpm -r lint` o pulava em silêncio.
@@ -95,6 +95,27 @@ Exposto via subpaths próprios no `exports` do `package.json` (`@piluvitu/tools/
 
 - Devolve `Uint8Array<ArrayBuffer>`: com o `Uint8Array` genérico do TypeScript 5.7, um `Uint8Array<ArrayBufferLike>` não entra no `new Response(...)`.
 
+## Módulo `pdf` (ferramentas de PDF do `/tools`, base do editor)
+
+Dois subpaths, separados de propósito pelo peso:
+
+- **`@piluvitu/tools/pdf`** (`pdf.ts`), o único que importa o **pdf-lib** (1.17.1, versão exata): `contarPaginas(bytes)`, `mesclarPdfs(fontes, aoAvancar)`, `temCabecalhoDePdf(bytes)` e `ErroDePdf` (`motivo` + `indice` do arquivo). No `apps/web` só o Web Worker (`components/tools/pdf/pdf.worker.ts`) importa este subpath; um teste do web reprova qualquer outro import, porque ele poria o pdf-lib no bundle da página.
+- **`@piluvitu/tools/pdf-regras`** (`pdf-regras.ts`), sem dependência: `TETO_TOTAL_EM_BYTES` (100 MB), `NOME_PADRAO_DO_PDF_FINAL`, o tipo `MotivoDoErroDePdf`, `cabemNoTeto` (aceita em ordem até o teto e segue tentando os menores), `fracaoDaMesclagem` (90% pela soma dos bytes já lidos, 10% para salvar) e `nomeDoPdfFinal` (tira barra, controle e os proibidos no Windows, põe `.pdf`, corta em 120). É o que a UI importa.
+
+**Como o arquivo é lido:**
+
+- `nao_e_pdf` quando o `%PDF-` não aparece nos primeiros 1024 bytes (ISO 32000, anexo H). A extensão e o MIME não contam.
+- `protegido` por `isEncrypted` depois do `load` com `ignoreEncryption: true`. A classe `EncryptedPDFError` do pdf-lib perde o nome na transpilação (sai `Error`), então não serve para `instanceof`. Se o parser quebra antes (object streams cifrados), o `/Encrypt` cru no arquivo decide entre `protegido` e `corrompido`. Conferido em 2026-11-16 com PDFs reais do PDFKit da Apple: com senha de abrir e só com senha de dono, os dois saem `protegido`.
+- `corrompido` para qualquer outra falha do parser, do catálogo ou do `copyPages`; `sem_paginas` para PDF válido sem página. Ao salvar um documento vazio, o pdf-lib põe uma página em branco: o teste usa `addDefaultPage: false` para gerar o caso.
+- `parseSpeed: Fastest` e `objectsPerTick: Infinity`: dentro do Worker não há tela para liberar, e o padrão do pdf-lib cede a vez a cada 100 objetos com `setTimeout`.
+- **Um `copyPages` por arquivo**, nunca página a página: cada chamada tem o próprio cache de objetos, e copiar uma página por vez duplicaria fontes e imagens compartilhadas. O teste "não duplica a imagem…" pega a regressão (verificado por mutação).
+
+**O teto de 100 MB vem de medida:** mesclar 4 PDFs de 25 MB (imagens sem compressão) no Node 22 deu 353 MB de pico (`/usr/bin/time -l`, peak memory footprint), cerca de 3,5 vezes a entrada; no navegador ainda entra o Blob do resultado. Com 100 MB o pico fica perto de 400–500 MB, que celular aguenta; acima disso a aba costuma ser fechada pelo sistema. O número aparece na tela com esse porquê.
+
+**Testes:** `pdf.test.ts` gera os PDFs com o próprio pdf-lib (lado da página diferente por página, para conferir a ordem) e cobre ordem, contagem, criptografado (tabela de xref e object streams), inválido, cortado, sem página, fontes preguiçosas e a imagem compartilhada; `pdf-regras.test.ts` cobre teto, fração e nome.
+
 ## Dependency policy
 
 Adição de deps segue a política da raiz (pnpm ≥ 11, `allowBuilds`, `minimumReleaseAge`). Manter o pacote **sem React/DOM** — se precisar de browser API, isso é UI e mora no web.
+
+- **`pdf-lib` 1.17.1** (MIT; deps `@pdf-lib/standard-fonts`, `@pdf-lib/upng`, `pako` 1.0.11 e `tslib` 1.14.1, todos MIT/Zlib/0BSD e sem script de instalação). A última versão é de 2021-11 e o projeto está parado, mas é a base madura para montar PDF no navegador. O fork `@cantoo/pdf-lib` (ativo) foi descartado por pedir faixas abertas (`tslib >=2`, `culori >=4`, `node-html-better-parser >=1.5.9`), que aceitariam qualquer major futura. Como o pdf-lib lê arquivo que o usuário escolheu, só no aparelho dele e dentro de um Worker com botão de cancelar (que derruba o Worker), o pior caso de um PDF malicioso é travar ou estourar a memória da própria aba.

@@ -4,13 +4,14 @@ import {
   faBuilding,
   faCode,
   faDharmachakra,
+  faFilePdf,
   faFingerprint,
   faIdCard,
   faKey,
   faQrcode,
 } from '@fortawesome/free-solid-svg-icons'
 
-export type ToolGroup = 'qr' | 'geradores' | 'dev'
+export type ToolGroup = 'qr' | 'geradores' | 'dev' | 'documentos'
 
 export type ToolMeta = {
   slug: string
@@ -84,10 +85,18 @@ export const TOOLS: ToolMeta[] = [
     icon: faDharmachakra,
     group: 'geradores',
   },
+  {
+    slug: 'mesclar-pdf',
+    title: 'Mesclar PDF',
+    description: 'Junta vários PDFs em um só arquivo',
+    icon: faFilePdf,
+    group: 'documentos',
+  },
 ]
 
 export const TOOL_GROUPS: { id: ToolGroup; label: string }[] = [
   { id: 'qr', label: 'QR Code' },
   { id: 'geradores', label: 'Geradores' },
   { id: 'dev', label: 'Utilitários Dev' },
+  { id: 'documentos', label: 'Documentos' },
 ]

@@ -190,15 +190,45 @@ A votação de filmes virou o **Votaí** (nome com acento na interface; sem acen
 - **Registro central:** `lib/tools-registry.ts` — array `TOOLS` com `{ slug, title, description, icon, group }`. Adicionar ferramenta = 1 entrada no registry + 1 página + 1 componente.
 - **Separação lógica/UI:** `lib/tools/*` contém **TypeScript puro, sem React/Next/DOM**. Funções puras testáveis em Jest e portáveis para CLI futura. `components/tools/*` contém os componentes React que usam as libs.
 - **Testes:** Jest cobre `lib/tools/*` (algoritmos CPF/CNPJ, Base64, JWT, JSON, UUID). Rodar com `pnpm test`.
-- **E2E:** `e2e/tools.spec.ts` cobre fluxos críticos de cada ferramenta.
-- **Ferramentas v1:** QR Reader (câmera, `@zxing/browser`), QR Generator (`qrcode`), CPF, CNPJ, JSON, Base64, JWT decode, UUID v4, **Roleta / Sorteio** (`/tools/roleta` — sorteio com entropia da câmera).
+- **E2E:** `app/(site)/tools/tools.e2e.ts` cobre fluxos críticos de cada ferramenta.
+- **Ferramentas v1:** QR Reader (câmera, `@zxing/browser`), QR Generator (`qrcode`), CPF, CNPJ, JSON, Base64, JWT decode, UUID v4, **Roleta / Sorteio** (`/tools/roleta` — sorteio com entropia da câmera), **Mesclar PDF** (`/tools/mesclar-pdf`, grupo "Documentos"; ver _Ferramentas de PDF_ abaixo).
 - **Como adicionar uma nova ferramenta:**
   1. Criar `lib/tools/<slug>.ts` com lógica pura + `lib/tools/<slug>.test.ts`
   2. Criar `components/tools/<slug>-tool.tsx` (UI React)
   3. Criar `components/tools/<slug>-tool.stories.tsx`
   4. Adicionar entrada em `lib/tools-registry.ts`
   5. Criar `app/(site)/tools/<slug>/page.tsx` com `export const metadata: Metadata = metadataDaFerramenta(tool)` (título, descrição e canonical; o `page.test.ts` de `tools/` cobra, e a ferramenta entra sozinha no sitemap e no `llms.txt`, ver _SEO_)
-  6. Adicionar casos no `e2e/tools.spec.ts`
+  6. Adicionar casos no `app/(site)/tools/tools.e2e.ts`
+
+#### Ferramentas de PDF (`/tools/mesclar-pdf`, base do editor de PDF)
+
+Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload), e a tela diz isso. Hoje o modo é só **mesclar**; a pasta e o motor são genéricos porque a ferramenta vai virar um editor de PDF em fases (plano em `docs/plano-editor-pdf.md`, quando o PR do plano entrar).
+
+- **Pasta:** `components/tools/pdf/`.
+  - `mesclar.tsx` (`MesclarPdf`): o modo mesclar.
+  - `zona-de-arquivos.tsx` (`ZonaDeArquivos` e `AvisoDePrivacidade`): escolher ou arrastar PDFs, com a zona destacada por borda sólida e texto, não só cor. Ela também impede que um PDF solto fora da zona faça o navegador abrir o arquivo e perder a lista.
+  - `motor.ts` (`criarMotorComWorker`): o protocolo com o Worker (`analisar`, `mesclar`, `cancelar`, `encerrar`).
+  - `pdf.worker.ts`: o Worker, único que importa `@piluvitu/tools/pdf` (pdf-lib). Atende um pedido por vez, para duas leituras grandes não dobrarem o pico de memória.
+  - `novo-worker.ts`: fica sozinho porque o Jest (CommonJS) não compila `import.meta`.
+  - `textos.ts`: os textos pt-BR das ferramentas de PDF, com chaves estáveis, mais `formatarTamanho`, plural e porcentagem pelo `Intl`. Sai daqui para o catálogo quando o WEB-17 da auditoria for feito.
+  - `motor-falso.ts`: o motor das stories e dos testes; o nome do arquivo decide o resultado (`-3p` dá 3 páginas, `senha`, `quebrado`).
+- **Peso:** o pdf-lib só é baixado quando o Worker nasce, na primeira leitura de arquivo. A página e o resto do site não o carregam. O `mesclar.test.tsx` reprova qualquer import de `@piluvitu/tools/pdf` fora do Worker, e o E2E confere que nenhum Worker existe antes de a pessoa escolher um arquivo. A UI usa só `@piluvitu/tools/pdf-regras`, que não tem dependência.
+- **Fluxo:**
+  - cada arquivo é lido no Worker ao entrar e fica na lista com páginas e tamanho, ou com o erro escrito na linha (não é PDF, protegido por senha ou contra cópia, corrompido, sem páginas);
+  - o Mesclar só habilita com 2 ou mais PDFs lidos e sem erro, e a dica do porquê fica ligada ao botão por `aria-describedby`;
+  - acima de 100 MB somados, o arquivo não entra e um `role=alert` diz o tamanho e o que fazer (o porquê do teto está em `packages/tools/CLAUDE.md`);
+  - a mesclagem mostra uma barra `role=progressbar` com o arquivo em leitura e tem Cancelar, que derruba o Worker;
+  - no fim aparece o link de download (`Blob` + `download`, nome padrão `mesclado.pdf`, editável e saneado por `nomeDoPdfFinal`). O foco vai para esse link, e a URL é revogada quando a lista muda ou a página sai.
+- **Teclado e leitor de tela:**
+  - Subir, Descer e Remover são botões de 44×44 com nome ("Subir contrato.pdf"). Depois de mover, o foco fica no mesmo botão do arquivo movido; na ponta, passa para o botão do outro sentido. Remover leva o foco ao vizinho e, sem vizinho, ao "Escolher PDFs".
+  - Uma região `role=status` anuncia adição, erro de leitura, nova posição, remoção, início, cancelamento e o PDF pronto.
+  - Arrastar para reordenar (dnd-kit, `PointerSensor`, alça com `touch-none` para funcionar no toque) é só para ponteiro: a alça fica fora do Tab, e os botões Subir e Descer são a alternativa de um toque (WCAG 2.5.7). Os anúncios e as instruções do dnd-kit estão em pt-BR (WEB-19 da auditoria).
+- **Movimento:** transições curtas (150 a 200 ms). Com reduzir movimento, o dnd-kit fica sem transição (`hooks/use-reduzir-movimento.ts`, `useSyncExternalStore` sobre o `matchMedia`), e a barra e a zona usam `motion-safe:`.
+- **O que não vai para o PDF final:** os marcadores (o índice lateral) e, às vezes, a edição dos campos de formulário (o pdf-lib copia as páginas, não o AcroForm). A tela avisa.
+- **Testes:**
+  - Jest: `motor.test.ts` (Worker falso: ids, andamento, falha, cancelar reenviando leituras, Worker que quebra), `mesclar.test.tsx` (19 casos de fluxo, foco, anúncios e travas; a remoção do `focus()` derruba 6, verificado por mutação), `textos.test.ts` e o do hook.
+  - Stories: `Tools/PDF/Mesclar` (Vazia, ComArquivos, ComErros, Mesclando, Pronto, FalhaNaMesclagem) e `Tools/PDF/ZonaDeArquivos`.
+  - E2E: casos em `app/(site)/tools/tools.e2e.ts`. Cobrem a ordem pelo teclado e o PDF baixado conferido página a página pelo pdf-lib (`pdf-lib` exato nas devDependencies do web só para isso), só GET na própria origem durante o fluxo, Worker só depois de escolher arquivo, protegido e não-PDF, 320 px sem rolagem lateral com alvos de 44 px e contraste de 4,5:1 nos dois temas.
 
 #### Módulo de entropia + roleta (UI)
 

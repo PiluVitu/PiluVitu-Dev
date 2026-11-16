@@ -97,7 +97,7 @@ describe('páginas fixas', () => {
 
   it('a descrição das ferramentas sai do TOOLS, na ordem do registro', () => {
     expect(PAGINA_FERRAMENTAS.descricao).toBe(
-      'Utilitários para o dia a dia do desenvolvedor: Leitor de QR, Gerador de QR, CPF, CNPJ, JSON, Base64, JWT, UUID e Roleta / Sorteio.',
+      'Utilitários para o dia a dia do desenvolvedor: Leitor de QR, Gerador de QR, CPF, CNPJ, JSON, Base64, JWT, UUID, Roleta / Sorteio e Mesclar PDF.',
     )
   })
 

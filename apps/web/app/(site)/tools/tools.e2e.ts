@@ -1,10 +1,13 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { PDFDocument } from 'pdf-lib'
+import { contarPaginas } from '@piluvitu/tools/pdf'
 
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 test.describe('/tools landing', () => {
-  test('exibe os 9 cards agrupados', async ({ page }) => {
+  test('exibe os 10 cards agrupados', async ({ page }) => {
     await page.goto('/tools')
     for (const slug of [
       'qr-reader',
@@ -16,6 +19,7 @@ test.describe('/tools landing', () => {
       'jwt',
       'uuid',
       'roleta',
+      'mesclar-pdf',
     ]) {
       await expect(page.locator(`a[href="/tools/${slug}"]`)).toBeVisible()
     }
@@ -222,4 +226,242 @@ test.describe('Roleta', () => {
       ['Pizza', 'Sushi', 'Hambúrguer', 'Tapioca'].some((o) => text.includes(o)),
     ).toBe(true)
   })
+})
+
+// Cada página com um lado diferente: o PDF baixado diz a ordem em que as páginas entraram.
+async function pdfDeTeste(nome: string, lados: number[]) {
+  const documento = await PDFDocument.create()
+  for (const lado of lados) documento.addPage([lado, lado])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+async function pdfProtegido(nome: string) {
+  const documento = await PDFDocument.load(
+    (await pdfDeTeste(nome, [100])).buffer,
+  )
+  documento.context.trailerInfo.Encrypt = documento.context.register(
+    documento.context.obj({ Filter: 'Standard', V: 1, R: 2, P: -4 }),
+  )
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save({ useObjectStreams: false })),
+  }
+}
+
+async function escolherPdfs(
+  page: Page,
+  arquivos: { name: string; mimeType: string; buffer: Buffer }[],
+) {
+  await page.getByTestId('pdf-input').setInputFiles(arquivos)
+}
+
+function medirContrasteDoTexto(seletor: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const rgba = (cor: string) => {
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillStyle = cor
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+    return [r, g, b, a / 255]
+  }
+  const sobre = (de: number[], fundo: number[]) =>
+    [0, 1, 2].map((i) => de[i] * de[3] + fundo[i] * (1 - de[3]))
+  const fundoDe = (el: Element) => {
+    const camadas: number[][] = []
+    for (let no: Element | null = el; no; no = no.parentElement) {
+      const cor = rgba(getComputedStyle(no).backgroundColor)
+      if (cor[3] > 0) camadas.push(cor)
+      if (cor[3] >= 1) break
+    }
+    return camadas.reduceRight((f, c) => sobre(c, f), [255, 255, 255])
+  }
+  const luminancia = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((c) => {
+      const v = c / 255
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const folhas = [...document.querySelectorAll(`${seletor} *`)].filter(
+    (el) =>
+      [...el.childNodes].some(
+        (n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim(),
+      ) && !el.closest('.sr-only'),
+  )
+  return folhas.map((el) => {
+    const fundo = fundoDe(el)
+    const texto = sobre(rgba(getComputedStyle(el).color), fundo)
+    const [claro, escuro] = [luminancia(texto), luminancia(fundo)].sort(
+      (a, b) => b - a,
+    )
+    return {
+      texto: el.textContent!.trim().slice(0, 30),
+      razao: Math.round(((claro + 0.05) / (escuro + 0.05)) * 100) / 100,
+    }
+  })
+}
+
+test.describe('Mesclar PDF', () => {
+  test('mescla na ordem escolhida pelo teclado e baixa o PDF com as páginas certas', async ({
+    page,
+  }) => {
+    await page.goto('/tools/mesclar-pdf')
+    await expect(
+      page.getByText('Seus arquivos não saem do aparelho'),
+    ).toBeVisible()
+
+    await escolherPdfs(page, [
+      await pdfDeTeste('a.pdf', [100, 101]),
+      await pdfDeTeste('b.pdf', [200, 201, 202]),
+    ])
+    await expect(page.getByTestId('mesclar-pdf-resumo')).toHaveText(
+      /^2 arquivos · 5 páginas · /,
+    )
+
+    await page.getByRole('button', { name: 'Subir b.pdf' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('mesclar-pdf-nome-do-item')).toHaveText([
+      'b.pdf',
+      'a.pdf',
+    ])
+    await expect(
+      page.getByRole('button', { name: 'Descer b.pdf' }),
+    ).toBeFocused()
+
+    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
+    const baixar = page.getByRole('link', { name: 'Baixar mesclado.pdf' })
+    await expect(baixar).toBeFocused({ timeout: 30_000 })
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.keyboard.press('Enter'),
+    ])
+    expect(download.suggestedFilename()).toBe('mesclado.pdf')
+    const bytes = new Uint8Array(readFileSync((await download.path())!))
+    expect(await contarPaginas(bytes)).toBe(5)
+    const final = await PDFDocument.load(bytes)
+    expect(final.getPages().map((p) => p.getWidth())).toEqual([
+      200, 201, 202, 100, 101,
+    ])
+  })
+
+  test('nada sai do aparelho: o fluxo inteiro só faz GET na própria origem', async ({
+    page,
+  }) => {
+    const pedidos: { metodo: string; url: string }[] = []
+    page.on('request', (r) =>
+      pedidos.push({ metodo: r.method(), url: r.url() }),
+    )
+    await page.goto('/tools/mesclar-pdf')
+    const origem = new URL(page.url()).origin
+    pedidos.length = 0
+
+    await escolherPdfs(page, [
+      await pdfDeTeste('a.pdf', [100]),
+      await pdfDeTeste('b.pdf', [200]),
+    ])
+    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
+    await expect(
+      page.getByRole('link', { name: 'Baixar mesclado.pdf' }),
+    ).toBeVisible({ timeout: 30_000 })
+
+    const deFora = pedidos.filter(
+      (p) =>
+        p.metodo !== 'GET' ||
+        !(p.url.startsWith(origem) || p.url.startsWith('blob:')),
+    )
+    expect(deFora).toEqual([])
+  })
+
+  test('o pdf-lib só chega com o Worker, depois que a pessoa escolhe um arquivo', async ({
+    page,
+  }) => {
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await page.goto('/tools/mesclar-pdf')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    expect(workers).toEqual([])
+
+    await escolherPdfs(page, [await pdfDeTeste('a.pdf', [100])])
+    await expect(page.getByTestId('mesclar-pdf-item')).toContainText('1 página')
+    expect(workers).toHaveLength(1)
+  })
+
+  test('PDF protegido e arquivo que não é PDF ficam com o erro escrito e travam o Mesclar', async ({
+    page,
+  }) => {
+    await page.goto('/tools/mesclar-pdf')
+    await escolherPdfs(page, [
+      await pdfDeTeste('ok.pdf', [100]),
+      await pdfProtegido('com-senha.pdf'),
+      { name: 'notas.txt', mimeType: 'text/plain', buffer: Buffer.from('oi') },
+    ])
+
+    await expect(page.getByTestId('mesclar-pdf-erro-do-item')).toHaveText([
+      /protegido por senha/,
+      /Não é um PDF/,
+    ])
+    await expect(
+      page.getByRole('button', { name: 'Mesclar PDFs' }),
+    ).toBeDisabled()
+    await expect(
+      page.getByText('Remova os arquivos com erro para mesclar.'),
+    ).toBeVisible()
+  })
+
+  test('a 320 px, nome comprido não faz a página rolar para o lado e os botões têm 44 px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/mesclar-pdf')
+    await escolherPdfs(page, [
+      await pdfDeTeste(
+        'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
+        [100],
+      ),
+      await pdfDeTeste('b.pdf', [100]),
+    ])
+    await expect(page.getByTestId('mesclar-pdf-item').first()).toContainText(
+      '1 página',
+    )
+
+    const largura = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    )
+    expect(largura).toBeLessThanOrEqual(320)
+    for (const nome of ['Subir', 'Descer', 'Remover']) {
+      const caixa = await page
+        .getByRole('button', { name: `${nome} b.pdf` })
+        .boundingBox()
+      expect(caixa!.width).toBeGreaterThanOrEqual(44)
+      expect(caixa!.height).toBeGreaterThanOrEqual(44)
+    }
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    test(`todo texto da ferramenta passa de 4,5:1 no tema ${tema}, erros inclusos`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/mesclar-pdf')
+      await escolherPdfs(page, [
+        await pdfDeTeste('ok.pdf', [100]),
+        await pdfProtegido('com-senha.pdf'),
+      ])
+      await expect(page.getByTestId('mesclar-pdf-erro-do-item')).toBeVisible()
+
+      const medidas = await page.evaluate(
+        medirContrasteDoTexto,
+        '[data-testid="mesclar-pdf"]',
+      )
+      expect(medidas.length).toBeGreaterThan(8)
+      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+    })
 })
