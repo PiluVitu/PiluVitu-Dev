@@ -10,6 +10,8 @@ type Opcoes = {
   atraso?: number
   /** Índices (a partir de 0) cuja miniatura falha. */
   miniaturasQueFalham?: readonly number[]
+  /** Quantas páginas o pdf.js conta, quando ele discorda do pdf-lib (árvore de páginas com `/Count` errado). */
+  paginas?: number
 }
 
 // Folha A4 com o número da página. SVG, não JPEG: o jsdom não tem canvas, e a story só precisa da imagem.
@@ -37,6 +39,7 @@ function folha(numero: number, deitada: boolean): Blob {
 export function criarRenderizadorFalso({
   atraso = 0,
   miniaturasQueFalham = [],
+  paginas,
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   const renderizador = {
@@ -51,12 +54,13 @@ export function criarRenderizadorFalso({
       if (!analise.ok) {
         throw { motivo: analise.motivo } satisfies FalhaDaAbertura
       }
-      const rotacoes = Array.from({ length: analise.paginas }, (_, i) =>
+      const total = paginas ?? analise.paginas
+      const rotacoes = Array.from({ length: total }, (_, i) =>
         /girado/i.test(nome) && i % 2 === 1 ? 90 : 0,
       )
       let fechado = false
       return {
-        paginas: analise.paginas,
+        paginas: total,
         rotacoes,
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })

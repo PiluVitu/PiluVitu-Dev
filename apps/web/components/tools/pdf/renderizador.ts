@@ -10,7 +10,7 @@ export type DocumentoAberto = {
   rotacoes: readonly number[]
   /** Desenha uma página por vez (a fila é daqui, não de quem chama) e solta o canvas depois do JPEG. */
   miniatura(indice: number, larguraCss: number): Promise<Blob>
-  /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo. */
+  /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo, depois de o pdf.js limpar a página (fontes e cache). */
   fechar(): void
 }
 
@@ -25,6 +25,7 @@ export function ehFalhaDaAbertura(erro: unknown): erro is FalhaDaAbertura {
 
 const QUALIDADE_DO_JPEG = 0.8
 const ALTURA_MAXIMA_EM_LARGURAS = 4
+const PRAZO_PARA_FECHAR_MS = 2_000
 
 function motivoDoErro(erro: unknown): MotivoDaRecusa {
   if (ehFalhaDaAbertura(erro)) return erro.motivo
@@ -76,12 +77,24 @@ export function criarRenderizadorComPdfjs(
       })
       let fechado = false
 
+      // O destroy da tarefa só limpa a página (as FontFace em document.fonts) quando o Worker responde ao
+      // Terminate; encerrado antes, a resposta não vem. O prazo cobre o Worker que caiu ou travou.
       function fechar() {
         if (fechado) return
         fechado = true
-        void tarefa.destroy().catch(() => {})
-        pdfWorker.destroy()
-        worker.terminate()
+        let prazo: ReturnType<typeof setTimeout> | undefined
+        void Promise.race([
+          tarefa.destroy(),
+          new Promise<void>((resolver) => {
+            prazo = setTimeout(resolver, PRAZO_PARA_FECHAR_MS)
+          }),
+        ])
+          .catch(() => {})
+          .finally(() => {
+            clearTimeout(prazo)
+            pdfWorker.destroy()
+            worker.terminate()
+          })
       }
 
       async function desenhar(

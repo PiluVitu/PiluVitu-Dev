@@ -25,6 +25,7 @@ const folga = () => new Promise((resolver) => setTimeout(resolver, 0))
 export function useMiniaturas(documento: DocumentoAberto | null) {
   const elementos = useRef(new Map<Element, number>())
   const observador = useRef<IntersectionObserver | null>(null)
+  const sairDaFila = useRef<((indice: number) => void) | null>(null)
   const [estado, setEstado] = useState<Miniaturas>(NENHUMA)
 
   useEffect(() => {
@@ -75,11 +76,13 @@ export function useMiniaturas(documento: DocumentoAberto | null) {
     )
     for (const elemento of elementos.current.keys()) io.observe(elemento)
     observador.current = io
+    sairDaFila.current = (indice) => visiveis.delete(indice)
 
     return () => {
       ativo = false
       io.disconnect()
       observador.current = null
+      sairDaFila.current = null
       for (const url of urls.values()) URL.revokeObjectURL(url)
     }
   }, [documento])
@@ -87,9 +90,11 @@ export function useMiniaturas(documento: DocumentoAberto | null) {
   const observar = useCallback((elemento: Element, indice: number) => {
     elementos.current.set(elemento, indice)
     observador.current?.observe(elemento)
+    // O unobserve não chama o callback do observador: sem isto, a página que saiu da tela seguiria na fila.
     return () => {
       elementos.current.delete(elemento)
       observador.current?.unobserve(elemento)
+      sairDaFila.current?.(indice)
     }
   }, [])
 

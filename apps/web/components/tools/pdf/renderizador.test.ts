@@ -72,6 +72,8 @@ function arquivo(conteudo: string): Blob {
   })
 }
 
+const umaVolta = () => new Promise((r) => setTimeout(r, 0))
+
 function abrir(conteudo = '%PDF-1.7 bytes') {
   return criarRenderizadorComPdfjs(() => worker as unknown as Worker).abrir(
     arquivo(conteudo),
@@ -139,6 +141,7 @@ describe('abrir', () => {
     )
 
     await expect(abrir()).rejects.toEqual({ motivo: 'protegido' })
+    await umaVolta()
     expect(worker.encerrado).toBe(true)
     expect(pdfWorker.destroy).toHaveBeenCalled()
   })
@@ -153,6 +156,7 @@ describe('abrir', () => {
     )
 
     await expect(abrir()).rejects.toEqual({ motivo: 'corrompido' })
+    await umaVolta()
     expect(worker.encerrado).toBe(true)
   })
 
@@ -160,6 +164,7 @@ describe('abrir', () => {
     prepararDocumento([])
 
     await expect(abrir()).rejects.toEqual({ motivo: 'sem_paginas' })
+    await umaVolta()
     expect(worker.encerrado).toBe(true)
   })
 
@@ -171,6 +176,7 @@ describe('abrir', () => {
     worker.quebrar()
 
     await expect(aberto).rejects.toEqual({ motivo: 'falha_do_navegador' })
+    await umaVolta()
     expect(worker.encerrado).toBe(true)
   })
 
@@ -280,10 +286,65 @@ describe('fechar', () => {
 
     documento.fechar()
     documento.fechar()
+    await umaVolta()
 
     expect(worker.encerrado).toBe(true)
     expect(pdfWorker.destroy).toHaveBeenCalledTimes(1)
     expect(tarefa.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  // O destroy da tarefa manda o Terminate ao Worker e só limpa a página (as FontFace em document.fonts,
+  // o cache de objetos, os filtros) quando ele responde. Com o Worker já encerrado, a resposta não chega.
+  it('espera a tarefa terminar (a limpeza da página) antes de destruir o PDFWorker e encerrar o Worker', async () => {
+    prepararDocumento([paginaFalsa()])
+    const documento = await abrir()
+    let terminar!: () => void
+    tarefa.destroy.mockImplementation(
+      () => new Promise<void>((r) => (terminar = r)),
+    )
+
+    documento.fechar()
+    await umaVolta()
+    expect(tarefa.destroy).toHaveBeenCalledTimes(1)
+    expect(pdfWorker.destroy).not.toHaveBeenCalled()
+    expect(worker.encerrado).toBe(false)
+
+    terminar()
+    await umaVolta()
+    expect(pdfWorker.destroy).toHaveBeenCalledTimes(1)
+    expect(worker.encerrado).toBe(true)
+  })
+
+  it('com o Worker travado ou caído, a tarefa nunca termina: o Worker é encerrado depois de 2 s', async () => {
+    prepararDocumento([paginaFalsa()])
+    const documento = await abrir()
+    tarefa.destroy.mockImplementation(() => new Promise<void>(() => {}))
+    jest.useFakeTimers()
+    try {
+      documento.fechar()
+      await jest.advanceTimersByTimeAsync(1_999)
+      expect(worker.encerrado).toBe(false)
+
+      await jest.advanceTimersByTimeAsync(1)
+      expect(worker.encerrado).toBe(true)
+      expect(pdfWorker.destroy).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('a tarefa que falha ao terminar não impede de encerrar o Worker', async () => {
+    prepararDocumento([paginaFalsa()])
+    const documento = await abrir()
+    tarefa.destroy.mockImplementation(async () => {
+      throw new Error('Worker was destroyed')
+    })
+
+    documento.fechar()
+    await umaVolta()
+
+    expect(worker.encerrado).toBe(true)
+    expect(pdfWorker.destroy).toHaveBeenCalledTimes(1)
   })
 
   it('miniatura pedida depois de fechar é recusada', async () => {

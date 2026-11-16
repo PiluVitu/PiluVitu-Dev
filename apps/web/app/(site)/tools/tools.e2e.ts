@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Request } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { contarPaginas } from '@piluvitu/tools/pdf'
 
 const UUID_V4_REGEX =
@@ -232,6 +232,21 @@ test.describe('Roleta', () => {
 async function pdfDeTeste(nome: string, lados: number[]) {
   const documento = await PDFDocument.create()
   for (const lado of lados) documento.addPage([lado, lado])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+async function pdfComTexto(nome: string) {
+  const documento = await PDFDocument.create()
+  const fonte = await documento.embedFont(StandardFonts.Helvetica)
+  for (const texto of ['Contrato', 'Anexo']) {
+    documento
+      .addPage([300, 300])
+      .drawText(texto, { x: 40, y: 150, size: 32, font: fonte })
+  }
   return {
     name: nome,
     mimeType: 'application/pdf',
@@ -665,7 +680,12 @@ test.describe('Organizar páginas de PDF', () => {
       page.getByRole('button', { name: 'Mover para antes' }),
     ).toBeFocused()
 
-    await page.getByRole('button', { name: 'Gerar PDF organizado' }).click()
+    // A barra é um ponto só no Tab, e o Gerar vem logo depois dela, antes das páginas.
+    await page.keyboard.press('Tab')
+    await expect(
+      page.getByRole('button', { name: 'Gerar PDF organizado' }),
+    ).toBeFocused()
+    await page.keyboard.press('Enter')
     const baixar = page.getByRole('link', {
       name: 'Baixar contrato-organizado.pdf',
     })
@@ -755,6 +775,33 @@ test.describe('Organizar páginas de PDF', () => {
       .getByRole('button', { name: 'Girar a página 1 à direita' })
       .click()
     await expect(miniaturas.first()).toHaveAttribute('style', /rotate\(90deg\)/)
+  })
+
+  // O pdf.js põe em document.fonts uma FontFace para cada fonte que desenha, e só as tira quando o
+  // Worker dele responde ao Terminate. Encerrado antes disso, as fontes ficavam na aba até recarregar.
+  test('trocar de PDF tira da página as fontes que o pdf.js carregou para o anterior', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/organizar')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    const fontes = () => page.evaluate(() => document.fonts.size)
+    const antes = await fontes()
+
+    await abrirNoOrganizar(page, await pdfComTexto('contrato.pdf'), 2)
+    await expect(page.getByTestId('organizar-pdf-miniatura')).toHaveCount(2, {
+      timeout: 30_000,
+    })
+    await expect.poll(fontes).toBeGreaterThan(antes)
+
+    await abrirNoOrganizar(
+      page,
+      await pdfDeTeste('branco.pdf', [100, 200, 300]),
+      3,
+    )
+    await expect(page.getByTestId('organizar-pdf-miniatura')).toHaveCount(3, {
+      timeout: 30_000,
+    })
+    await expect.poll(fontes).toBe(antes)
   })
 
   test('nenhum Worker antes de escolher o PDF; depois, o do pdf-lib e o do pdf.js', async ({

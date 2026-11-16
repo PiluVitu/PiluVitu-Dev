@@ -294,6 +294,24 @@ describe('abrir o PDF', () => {
     expect(renderizador.abertos).toEqual([])
   })
 
+  // Com um /Count errado na árvore de páginas, o pdf-lib (que percorre a árvore) e o pdf.js (que confia
+  // no /Count) contam diferente. A tela mostraria as páginas do pdf.js, e o PDF gerado sairia com as do
+  // pdf-lib: outra página no lugar da que a pessoa viu, sem erro nenhum.
+  it('pdf-lib e pdf.js contando páginas diferentes: recusado como corrompido, sem páginas na tela, e o pdf.js fecha', async () => {
+    const renderizador = criarRenderizadorFalso({ paginas: 3 })
+    const { motor } = await abrir('arvore-torta-4p.pdf', { renderizador })
+
+    const alerta = q('organizar-pdf-erro')!
+    expect(alerta.getAttribute('role')).toBe('alert')
+    expect(alerta.textContent).toBe(
+      `Não deu para abrir arvore-torta-4p.pdf. ${ERROS_DO_ARQUIVO.corrompido}`,
+    )
+    expect(q('organizar-pdf-paginas')).toBeNull()
+    expect(renderizador.abertos).toEqual(['arvore-torta-4p.pdf'])
+    expect(renderizador.fechados).toBe(1)
+    expect(motor.organizadas).toEqual([])
+  })
+
   it('trocar de PDF fecha o anterior, e sair da página fecha o aberto', async () => {
     const { renderizador } = await abrir('a.pdf')
 
@@ -353,6 +371,29 @@ describe('miniaturas', () => {
     expect(imagens).toHaveLength(3)
     expect(imagens.map((img) => img.getAttribute('alt'))).toEqual(['', '', ''])
     expect(imagens[0].getAttribute('src')).toMatch(/^blob:/)
+  })
+
+  // O unobserve não chama o callback do IntersectionObserver: sem tirar a página da fila ao desmontar
+  // o cartão, a apagada seria desenhada (canvas, JPEG e URL) antes das que subiram para o lugar dela.
+  it('página apagada antes da vez sai da fila e não é desenhada', async () => {
+    ObservadorFalso.automatico = false
+    const { renderizador } = await abrir('a-6p.pdf', {
+      renderizador: criarRenderizadorFalso({ atraso: 30 }),
+    })
+    await esperar(60)
+    const paginas = todos('organizar-pdf-pagina')
+    expect(paginas).toHaveLength(6)
+    await act(async () => {
+      for (const observador of ObservadorFalso.todos) {
+        observador.avisar(paginas.slice(0, 3))
+      }
+    })
+    expect(renderizador.miniaturas.map((m) => m.indice)).toEqual([0])
+
+    await clicar('Apagar a página 2')
+    await esperar(200)
+
+    expect(renderizador.miniaturas.map((m) => m.indice)).toEqual([0, 2])
   })
 
   it('a rotação aparece girando a imagem, sem desenhar de novo', async () => {
@@ -673,9 +714,83 @@ describe('desfazer', () => {
     await teclar(document.body, { key: 'Z', metaKey: true })
     expect(ordem()).toEqual(['Página 1', 'Página 2', 'Página 3'])
   })
+
+  // O Ctrl+Z escuta a janela inteira, então quase sempre roda com o foco fora do botão Desfazer. Quando
+  // o desfazer tira da tela ou desabilita o que estava focado, o foco não pode cair no body.
+  describe('Ctrl+Z com o foco fora do botão Desfazer', () => {
+    async function focarEm(nome: string) {
+      await act(async () => porNome(nome).focus())
+    }
+
+    it('o botão focado sai da tela (Limpar seleção): o foco vai ao primeiro botão habilitado da barra', async () => {
+      await abrir('a-3p.pdf')
+      await clicar('Girar a página 1 à direita')
+      await clicar('Selecionar página 2')
+      await focarEm('Limpar seleção')
+
+      await teclar(document.activeElement!, { key: 'z', ctrlKey: true })
+
+      expect(existe('Limpar seleção')).toBe(false)
+      expect(document.activeElement).not.toBe(document.body)
+      expect(focado()).toBe('Selecionar todas')
+    })
+
+    it('o botão focado da barra fica desabilitado: o foco vai a um botão habilitado', async () => {
+      await abrir('a-3p.pdf')
+      await clicar('Girar a página 1 à direita')
+      await clicar('Selecionar página 2')
+      await focarEm('Girar à direita')
+
+      await teclar(document.activeElement!, { key: 'z', ctrlKey: true })
+
+      expect(porNome('Girar à direita').disabled).toBe(true)
+      expect(document.activeElement).not.toBe(porNome('Girar à direita'))
+      expect(focado()).toBe('Selecionar todas')
+    })
+
+    it('o link de download some: com mais o que desfazer, o foco vai ao Desfazer', async () => {
+      await abrir('a-3p.pdf')
+      await clicar('Girar a página 1 à direita')
+      await clicar('Girar a página 2 à direita')
+      await clicar('Gerar PDF organizado')
+      expect(focado()).toBe('Baixar a-3p-organizado.pdf')
+
+      await teclar(document.activeElement!, { key: 'z', ctrlKey: true })
+
+      expect(existe('Baixar a-3p-organizado.pdf')).toBe(false)
+      expect(focado()).toBe('Desfazer')
+    })
+
+    it('o elemento focado continua na tela e habilitado: o foco fica onde está', async () => {
+      await abrir('a-3p.pdf')
+      await clicar('Girar a página 1 à direita')
+      await focarEm('Selecionar página 3')
+
+      await teclar(document.activeElement!, { key: 'z', ctrlKey: true })
+
+      expect(anuncio()).toBe('Desfeito.')
+      expect(focado()).toBe('Selecionar página 3')
+    })
+  })
 })
 
 describe('baixar e extrair', () => {
+  // Cada página tem 3 paradas de Tab: com o Gerar depois da lista, um PDF de 500 páginas pediria 1.500 Tabs.
+  it('Gerar PDF organizado, o aviso de alcance e o resultado vêm antes da lista de páginas', async () => {
+    await abrir('a-3p.pdf')
+    const lista = q('organizar-pdf-paginas')!
+    const antesDaLista = (el: Element) =>
+      Boolean(
+        el.compareDocumentPosition(lista) & Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+
+    expect(antesDaLista(porNome('Gerar PDF organizado'))).toBe(true)
+    expect(antesDaLista(q('organizar-pdf-alcance')!)).toBe(true)
+
+    await clicar('Gerar PDF organizado')
+    expect(antesDaLista(q('organizar-pdf-resultado')!)).toBe(true)
+  })
+
   it('Gerar PDF organizado manda o plano ao pdf-lib e foca o link com o nome -organizado', async () => {
     const { motor } = await abrir('contrato-4p.pdf')
     await clicar('Girar a página 2 à direita')

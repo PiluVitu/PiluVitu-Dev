@@ -190,6 +190,16 @@ const TIPOS_SEM_TEXTO = new Set([
   'submit',
 ])
 
+function podeTerFoco(
+  elemento: Element | null | undefined,
+): elemento is HTMLElement {
+  return (
+    elemento instanceof HTMLElement &&
+    elemento.isConnected &&
+    !(elemento as HTMLButtonElement).disabled
+  )
+}
+
 function ehCampoDeTexto(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false
   if (alvo.isContentEditable || alvo instanceof HTMLTextAreaElement) {
@@ -301,6 +311,12 @@ export function OrganizarPdf({
       try {
         const doPdfjs = await renderizador.abrir(arquivo)
         if (!ativo) return doPdfjs.fechar()
+        // A tela mostra as páginas do pdf.js e o PDF sai com as do pdf-lib: se contam diferente (árvore
+        // de páginas com /Count errado), o arquivo gerado teria outras páginas no lugar das que a pessoa viu.
+        if (doPdfjs.paginas !== analise.paginas) {
+          doPdfjs.fechar()
+          return recusar(T.recusado(arquivo.name, 'corrompido'))
+        }
         aberto = doPdfjs
         setLeitura({ arquivo, ok: true, documento: doPdfjs })
         setEdicao({
@@ -484,12 +500,15 @@ export function OrganizarPdf({
   function desfazer() {
     const anterior = passado.at(-1)
     if (montando || !documento || !anterior) return
-    const estavaNoBotao =
-      document.activeElement === botoesDaBarra.current.get('desfazer')
+    const focadoAntes = document.activeElement
     setEdicao({ documento, ...anterior, passado: passado.slice(0, -1) })
     descartarResultado()
     anunciar(T.anuncios.desfeito)
-    if (estavaNoBotao && passado.length === 1) focar(primeiroBotaoDaBarra)
+    focar(() => {
+      if (podeTerFoco(focadoAntes)) return focadoAntes
+      const botaoDesfazer = botoesDaBarra.current.get('desfazer')
+      return podeTerFoco(botaoDesfazer) ? botaoDesfazer : primeiroBotaoDaBarra()
+    })
   }
 
   async function gerar(tipo: TipoDoResultado, planoDoPdf: PaginaDoPlano[]) {
@@ -728,48 +747,14 @@ export function OrganizarPdf({
             </ul>
           </div>
 
-          <DndContext
-            sensors={sensores}
-            collisionDetection={closestCenter}
-            onDragEnd={aoSoltar}
-            accessibility={{
-              announcements: anunciosDoArraste,
-              screenReaderInstructions: { draggable: T.arrastar.instrucoes },
-            }}
-          >
-            <SortableContext
-              items={plano.map((pagina) => idDaPagina(pagina.indice))}
-              strategy={rectSortingStrategy}
-            >
-              <ol
-                aria-labelledby={idDoTitulo}
-                className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4"
-                data-testid="organizar-pdf-paginas"
-              >
-                {plano.map((pagina) => (
-                  <CartaoDaPagina
-                    key={pagina.indice}
-                    pagina={pagina}
-                    selecionada={selecionadas.has(pagina.indice)}
-                    url={miniaturas.urls.get(pagina.indice)}
-                    falhou={miniaturas.falhas.has(pagina.indice)}
-                    bloqueado={montando}
-                    unica={unica}
-                    idDaDicaUnica={idDaDica('ultimaPagina')}
-                    aoAgir={aoAgir}
-                    registrarCaixa={registrarCaixa}
-                    observar={miniaturas.observar}
-                  />
-                ))}
-              </ol>
-            </SortableContext>
-          </DndContext>
-
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            {TEXTOS.alcance}
-          </p>
-
           <div className="space-y-4">
+            <p
+              className="text-muted-foreground text-xs leading-relaxed"
+              data-testid="organizar-pdf-alcance"
+            >
+              {TEXTOS.alcance}
+            </p>
+
             {montando ? (
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm">{T.montando}</p>
@@ -847,6 +832,43 @@ export function OrganizarPdf({
               </div>
             )}
           </div>
+
+          <DndContext
+            sensors={sensores}
+            collisionDetection={closestCenter}
+            onDragEnd={aoSoltar}
+            accessibility={{
+              announcements: anunciosDoArraste,
+              screenReaderInstructions: { draggable: T.arrastar.instrucoes },
+            }}
+          >
+            <SortableContext
+              items={plano.map((pagina) => idDaPagina(pagina.indice))}
+              strategy={rectSortingStrategy}
+            >
+              <ol
+                aria-labelledby={idDoTitulo}
+                className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4"
+                data-testid="organizar-pdf-paginas"
+              >
+                {plano.map((pagina) => (
+                  <CartaoDaPagina
+                    key={pagina.indice}
+                    pagina={pagina}
+                    selecionada={selecionadas.has(pagina.indice)}
+                    url={miniaturas.urls.get(pagina.indice)}
+                    falhou={miniaturas.falhas.has(pagina.indice)}
+                    bloqueado={montando}
+                    unica={unica}
+                    idDaDicaUnica={idDaDica('ultimaPagina')}
+                    aoAgir={aoAgir}
+                    registrarCaixa={registrarCaixa}
+                    observar={miniaturas.observar}
+                  />
+                ))}
+              </ol>
+            </SortableContext>
+          </DndContext>
         </section>
       )}
 
