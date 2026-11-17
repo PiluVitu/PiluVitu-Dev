@@ -213,6 +213,242 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - a assinatura desenhada vira imagem na posição certa;
   - E2E: preencher e baixar, conferir os valores no PDF baixado; assinar por desenho com o ponteiro do Playwright; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima).
 
+### Decidido no desenho
+
+Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o que já estava decidido: a rota, a tela, os três jeitos de assinar, o aviso, o formulário, o XFA, os dois menores da revisão do #120 e os testes. A fase sai num PR só, em quatro etapas, nesta ordem, cada uma num commit com os testes dela. Os tetos são os da fase 3: 50 MB e 500 páginas por PDF, e 50 MB somando as imagens, com a assinatura.
+
+**Etapa 1: lógica no `packages/tools`, começando pelos menores do Crivo**
+
+- **Nomes de destino das páginas apagadas (menor (a) do #120).** Teste vermelho antes. Função nova `tirarDestinosDasApagadas(documento, apagadas)` no `pdf.ts`, chamada pelo `aplicarEdicoes` depois do `tirarMarcadoresDasApagadas`, que ainda precisa dos nomes para achar a página de cada marcador.
+  - No `/Dests` antigo do catálogo, sai o nome cujo destino (array, `<< /D [...] >>` ou referência a um deles) leva a uma página apagada. O dicionário que fica vazio sai do catálogo.
+  - Na árvore `/Names /Dests`, sai o par da folha que leva a uma página apagada. A folha sem par sai dos `/Kids` do pai, e assim para cima. Os `/Limits` de cada nó que fica são refeitos com o primeiro e o último nome que sobraram, porque o nome que saiu ficaria no `/Limits`. A raiz vazia sai do `/Names`, e o `/Names` vazio sai do catálogo.
+  - O nome que leva a uma página que fica, fica.
+  - Quem usava um nome que saiu passa a usar o destino explícito que ele guardava: o `/Dest` de um link ou marcador e o `/D` de uma ação `GoTo` em qualquer lugar do documento (o `/OpenAction`, o `/A` e o `/AA` das anotações das páginas que ficam). A página apagada continua no documento, como imagem, então o link continua indo para ela, só sem o nome.
+  - Sem apagar de verdade, nada disso muda.
+- **Marcador que não leva a uma página do documento (menor (b)).** Não muda código. O marcador com ação que não é `GoTo` (URI, Launch, JavaScript, GoToR, GoToE, Named) não leva a página nenhuma do documento, então não é o marcador da página apagada e fica, com o título. Um teste trava isso (verde desde o começo, porque é o comportamento de hoje). A regra entra no `packages/tools/CLAUDE.md` e na lista do que fica, na fase 3 deste plano, que também perde "os nomes dos destinos nomeados".
+- **Tipos do formulário**, no `pdf-regras`, porque a tela também usa:
+
+  ```ts
+  export type WidgetDoCampo = {
+    readonly pagina: number
+    readonly caixa: Caixa // em pontos da tela
+    readonly opcao?: string // caixa de marcar e botão de opção: a opção que o widget liga
+  }
+
+  export type MotivoDeNaoPreencher =
+    | 'assinatura_digital'
+    | 'botao'
+    | 'somente_leitura'
+    | 'seletor_de_arquivo'
+    | 'fora_do_winansi'
+
+  type BaseDoCampo = {
+    readonly id: number // a posição no form.getFields() do pdf-lib
+    readonly nome: string // o nome completo (getName)
+    readonly rotulo: string // o /TU; sem ele, o nome
+    readonly obrigatorio: boolean
+    readonly widgets: readonly WidgetDoCampo[] // só os visíveis, numa página
+    readonly naoPreenchivel?: MotivoDeNaoPreencher
+  }
+
+  export type CampoDoFormulario = BaseDoCampo &
+    (
+      | {
+          readonly tipo: 'texto'
+          readonly valor: string
+          readonly multilinha: boolean
+          readonly tamanhoMaximo: number | null
+        }
+      | { readonly tipo: 'caixa'; readonly marcada: boolean }
+      | {
+          readonly tipo: 'opcoes' | 'suspensa'
+          readonly valor: string | null
+          readonly opcoes: readonly string[]
+        }
+      | {
+          readonly tipo: 'lista'
+          readonly valores: readonly string[]
+          readonly opcoes: readonly string[]
+          readonly multipla: boolean
+        }
+      | { readonly tipo: 'assinatura'; readonly assinada: boolean }
+      | { readonly tipo: 'botao' }
+    )
+
+  export type Formulario =
+    | { readonly tipo: 'nenhum' }
+    | { readonly tipo: 'xfa' } // só XFA (dinâmico): o pdf-lib não preenche
+    | { readonly tipo: 'ilegivel' } // tem /AcroForm, e o pdf-lib não o lê
+    | {
+        readonly tipo: 'acroform'
+        readonly hibrido: boolean // também tem /XFA
+        readonly assinadoDigitalmente: boolean // algum /Sig com /V
+        readonly campos: readonly CampoDoFormulario[] // na ordem de Tab
+      }
+
+  export type ValorDoCampo = { readonly id: number; readonly nome: string } & (
+    | { readonly tipo: 'texto'; readonly valor: string }
+    | { readonly tipo: 'caixa'; readonly marcada: boolean }
+    | { readonly tipo: 'opcoes' | 'suspensa'; readonly valor: string | null }
+    | { readonly tipo: 'lista'; readonly valores: readonly string[] }
+  )
+
+  export type PreenchimentoDoFormulario = {
+    readonly valores: readonly ValorDoCampo[]
+    readonly achatar: boolean
+  }
+
+  export type MotivoDoErroNoCampo =
+    | 'texto_fora_do_winansi'
+    | 'acima_do_tamanho_maximo'
+    | 'aparencia_do_campo'
+  ```
+
+- **Funções puras novas no `pdf-regras`:**
+  - `caixaNaTela(geometria, retangulo)`: o retângulo de um widget (espaço do PDF) na tela, pelos dois cantos no `pdfParaTela`. É o que põe o destaque e o clique em cima do campo. Errar aqui destaca o lugar errado sem dar erro, então tem o teste das quatro rotações com CropBox deslocado, como a conversão da fase 3.
+  - `matrizDaAparencia(retangulo, bbox, matriz)`: a matriz que leva a aparência do widget ao retângulo dele, como o PDF manda (ISO 32000, 12.5.5): a `/BBox` passa pela `/Matrix`, e a caixa resultante é esticada e levada até o `/Rect`. Devolve `null` com a `/BBox` vazia.
+  - `compararPelaOrdemDeTab(ordem)`, com `ordem` `'linhas' | 'colunas' | 'anotacoes'`: o `/Tabs` da página (`/R`, `/C`); `/S` e sem `/Tabs` seguem a ordem do `/Annots`, como o Acrobat sem estrutura.
+  - `tirarFundoBranco(pixels)`: muda no lugar um `Uint8ClampedArray` RGBA (o `ImageData.data` do canvas) e devolve quantos pixels mudaram. Pela luminância (Rec. 601), de 240 para cima (`LUMINANCIA_DO_BRANCO`) o pixel fica transparente, abaixo de 200 fica como está, e entre os dois o alfa cai em linha reta, para a borda do traço não ficar serrilhada nem com um halo branco. O alfa que já era menor fica.
+  - `LARGURA_MAXIMA_DA_ASSINATURA` (1200) e `escalaDaAssinatura(recorte)`: a escala do PNG da assinatura desenhada, até 4 pixels por unidade do quadro e até 1200 px de largura, passando pelo `limitarAoCanvas`.
+- **`pdf-traco`:** `caixaDosTracos(tracos, espessura)`, a caixa que contém os contornos do perfect-freehand de todos os traços (com a espessura), ou `null` sem traço. É o recorte da assinatura desenhada.
+- **`pdf.ts`:**
+  - `lerFormulario(bytes): Promise<{ paginas: number; formulario: Formulario }>`: abre com as regras do `contarPaginas` (os mesmos `ErroDePdf`) e lê páginas e campos de uma vez, para a abertura do assinar não ler o arquivo duas vezes.
+    - Sem `/AcroForm`: `nenhum`. Com `/XFA` e nenhum campo: `xfa`. Com os dois: `acroform` com `hibrido`. O `getForm()` do pdf-lib 1.17.1 tira o `/XFA` e avisa no console, e cria um `/AcroForm` vazio quando falta (lido no código do pacote). Por isso a leitura confere o dicionário cru antes, só chama o `getForm()` quando há `/AcroForm` e tira o `/XFA` da cópia em memória, que não é salva. O `getFields()` que lança vira `ilegivel`, sem recusar o PDF.
+    - Cada campo: o tipo pela classe do pdf-lib (`PDFTextField`, `PDFCheckBox`, `PDFRadioGroup`, `PDFDropdown`, `PDFOptionList`, `PDFSignature`, `PDFButton`); o valor (`getText`, que lança com texto formatado e aí vale vazio; `isChecked`; `getSelected`); as opções (`getOptions`); `isRequired`, `isMultiline`, `getMaxLength` e `isMultiselect`. O `/TU` vem do dicionário do campo, porque o pdf-lib não tem leitor para ele.
+    - Não preenchível: `/Sig` (`assinatura_digital`, com `assinada` quando tem `/V`), botão (`botao`), `isReadOnly` (`somente_leitura`), `isFileSelector` (`seletor_de_arquivo`) e lista ou suspensa com opção fora do WinAnsi (`fora_do_winansi`: a aparência escreve as opções com a Helvetica).
+    - Widgets: a página pela referência no `/Annots` de cada página (um mapa montado uma vez), a caixa por `caixaNaTela` com a `geometriaDaPagina` da fase 3, e a opção pelo `getOnValues()` na mesma posição. Widget escondido (`/F` com Hidden ou NoView) e widget fora de toda página não entram.
+    - Ordem: pela página do primeiro widget e, dentro da página, por `compararPelaOrdemDeTab`. Campo sem widget visível vai para o fim, na ordem do `getFields()`.
+  - `aplicarEdicoes(bytes, edicoes, formulario?: PreenchimentoDoFormulario)`: preencher e desenhar no mesmo carregar e salvar. A ordem:
+    1. confere tudo antes de carregar (`RangeError` para valor malformado, como nos objetos);
+    2. formulário com `fundo` em alguma página é `RangeError`: a tela nunca manda os dois (o assinar não tem Cobrir, e o editar não preenche), e o apagar de verdade tiraria os campos da página;
+    3. com valor ou `achatar`, e com `/AcroForm`: tira o `/XFA` e o `/NeedsRendering` antes do `getForm()` (sem o aviso no console) e preenche. Cada valor confere o campo pelo `id` e pelo `nome` (outro nome no mesmo `id` é `RangeError`), o tipo, o somente leitura e a opção, que tem que existir. Texto fora do WinAnsi e acima do tamanho máximo são `ErroNoCampo`;
+    4. a aparência nova só nos campos que mudaram, com a mesma Helvetica que o texto dos objetos usa (`Recursos.fonte`, uma vez no arquivo): `updateAppearances(fonte)` nos que escrevem texto e `updateAppearances()` na caixa e nos botões de opção, campo a campo. O erro de um vira `ErroNoCampo` com o motivo `aparencia_do_campo`. O `save` segue com `updateFieldAppearances: false`, para os campos que a pessoa não mudou guardarem a aparência deles;
+    5. com `achatar`, o `achatarFormulario` (abaixo);
+    6. os objetos de cada página, como na fase 3: a assinatura fica por cima do campo achatado. Sem achatar, o campo continua anotação, e o leitor de PDF o desenha por cima do conteúdo da página;
+    7. o que nada alcança sai, e o documento é salvo.
+  - `achatarFormulario` (interno) não usa o `flatten()` do pdf-lib. No 1.17.1, ele lança com widget sem aparência, ignora a `/BBox` e só translada até o canto do `/Rect` e, no `removeField`, procura no `/Annots` a referência da aparência e não a do widget, deixando o widget pendurado na página (lido no código; o teste confirma). Em vez disso:
+    - o campo sem aparência ganha uma, como no `flatten`, e o que não dá para gerar vira `ErroNoCampo` (`aparencia_do_campo`), com a tela sugerindo gerar sem achatar;
+    - cada widget visível desenha a aparência normal dele (na caixa de marcar e no botão de opção, a do `/AS`) como XObject, com `matrizDaAparencia`, entre `q` e `Q`;
+    - os widgets saem por `desligar` e `camposSemWidget`, a mesma limpeza do apagar de verdade: somem do `/Annots`, dos `/Kids`, do `/Fields`, do `/CO` e da estrutura, e o campo sem widget sai em rodadas;
+    - o `/Sig` não é achatado nem sai;
+    - sem campo nenhum, o `/AcroForm` sai do catálogo; com campo, sai o `/NeedAppearances`.
+  - `ErroNoCampo`, com `motivo` (`MotivoDoErroNoCampo`), `campo` (o `id`), `nome` e `caracteres`.
+- **Testes.** No `pdf.test.ts`, com o formulário gerado no teste (`createTextField`, `createCheckBox`, `createRadioGroup`, `createDropdown` e `createOptionList`, com o `/TU` posto no dicionário):
+  - destinos, vermelho antes: o `SEGREDOS` ganha um nome do `/Dests` antigo e um da árvore que levam à página apagada, e um nome que leva à página 2 fica; árvore com `/Kids` (a folha que esvazia sai, os `/Limits` refeitos sem o nome, a raiz vazia sai); o link da página que fica e o `/OpenAction` passam ao destino explícito; sem apagar de verdade, os nomes ficam;
+  - o marcador com URI, Launch, JavaScript e GoToR fica, ao lado de um que sai;
+  - `lerFormulario`: os sete tipos com nome, rótulo (com e sem `/TU`), valor, opções, obrigatório, multilinha e tamanho máximo; os não preenchíveis com o motivo; os widgets conferidos contra o pdf.js (`getAnnotations`, com o `rect` levado à vista) nos cinco formatos de página da fase 3; a ordem de Tab (`/Tabs /R`, `/C` e sem `/Tabs`); o widget escondido e o que está fora de página; XFA puro, híbrido, sem formulário e ilegível; nenhum `console.warn`;
+  - preencher: os cinco tipos que têm valor, lidos de volta pelo `lerFormulario` e pelo pdf.js (`fieldValue`); só o campo mudado ganha aparência nova; WinAnsi, tamanho máximo, opção que não existe, `id` com outro nome, somente leitura e tipo errado; formulário com fundo; sem valor, o arquivo não ganha `/AcroForm` nem perde o `/XFA`;
+  - achatar: não sobra campo (`getFields()` vazio, nenhum widget no `/Annots`, nenhuma referência para objeto que saiu); o texto do campo no conteúdo da página, na caixa do widget (`getTextContent`); a aparência com `/BBox` deslocada no lugar certo; o widget sem aparência não quebra; o `/Sig` fica;
+  - o XFA híbrido preenchido sai sem `/XFA` e sem `/NeedsRendering`;
+  - a assinatura desenhada (um PNG com transparência, como o que a tela gera) cai na caixa da tela nos cinco formatos de página, no mesmo `aplicarEdicoes` que preenche o formulário, e por cima do campo achatado (pela ordem dos operadores).
+
+  No `pdf-regras.test.ts`: `caixaNaTela` nas quatro rotações com CropBox deslocado, `matrizDaAparencia` (identidade, `/BBox` deslocada, de outro tamanho, `/Matrix` girada, vazia), `compararPelaOrdemDeTab`, `tirarFundoBranco` (branco, tinta, o degradê, o alfa que já era menor) e `escalaDaAssinatura`. No `pdf-traco.test.ts`: `caixaDosTracos`. O `pdf.leitor-pdfjs.cjs` passa a devolver também os campos de cada página (`getAnnotations`: nome, valor e caixa na tela). Cada peça nova é verificada por mutação, como na fase 3.
+
+- **Docs da etapa:** `packages/tools/CLAUDE.md` (formulário, achatar, destinos, as duas funções da assinatura) e a fase 3 deste plano (o que fica depois do apagar de verdade).
+
+**Etapa 2: infraestrutura do web**
+
+- **Rota e registro:** o modo `assinar` ("Assinar PDF", "Põe sua assinatura e preenche formulários de PDF", ícone `faSignature`) é o quarto do `TOOLS`, e a descrição do Editor de PDF passa a "Mesclar, organizar, editar e assinar PDF". `app/(site)/tools/pdf/assinar/page.tsx` é igual ao do editar, com `<EditarPdf modo="assinar" />`. Metadata, canonical, sitemap, `llms.txt` e o cartão do hub saem do registro. Mudam junto o `app/(site)/tools/page.test.ts` (os quatro modos), o `lib/rotas-publicas.test.ts`, o `lib/llms.test.ts` e os cartões do hub no `tools.e2e.ts` (de 3 para 4; o E2E roda na etapa 4).
+- **Motor (`motor.ts`):**
+  - `analisar(arquivo, opcoes?: { formulario?: boolean })`: com `formulario`, o pedido leva a marca, e o `ResultadoDaAnalise` de sucesso traz `formulario: Formulario`. A leitura que o motor reenvia quando o Worker cai leva a mesma marca;
+  - `editar(arquivo, pedido: PedidoDeEdicao)`: os quatro argumentos viram o objeto que o pedido ao Worker já usa, e o `PedidoDeEdicao` ganha `formulario?: PreenchimentoDoFormulario`. Os testes da fase 3 mudam junto;
+  - `FalhaDaOperacao` ganha `campo?: number` (o `id`), e o motivo passa a aceitar `MotivoDoErroNoCampo`.
+- **Worker (`pdf.worker.ts`):** o `analisar` chama o `lerFormulario` com a marca (sem ela, o `contarPaginas`); o `editar` passa o `formulario` ao `aplicarEdicoes`; o `ErroNoCampo` vira `falhou` com `motivo`, `campo` e `caracteres`; o `RangeError` continua `inesperado`.
+- **Abrir (`use-abrir-pdf.ts`):** `Ferramentas` ganha `formulario?: boolean`, que o hook passa ao `analisar`, e o `aoAbrir(documento, arquivo, formulario?)` recebe a leitura. O editar não lê o formulário: o custo fica só no assinar.
+- **O modo no `EditarPdf`:** prop `modo?: ModoDaTela` (`'editar' | 'assinar'`, padrão `'editar'`). O componente é um só, e o que muda por modo fica em dados, no `objetos.ts`: `FERRAMENTAS_DO_MODO` (a barra; nesta etapa o assinar tem Selecionar e mover e Texto, e a Assinatura chega na etapa 3) e `SUFIXO_DO_MODO` (`editado`, `assinado`). Os textos que mudam saem de `TEXTOS.editar` ou `TEXTOS.assinar` pelo tipo `TextosDoModo`, que os dois satisfazem: os dois tetos, o motivo do Gerar desabilitado (`gerar.semMudancas`, o `semObjetos` de hoje com outro nome), o botão, o pronto e o anúncio do pronto. O `EditarPdf` guarda o formulário lido, por documento, para a etapa 3. A `BarraDeFerramentas` ganha `ferramentas: readonly Ferramenta[]`, e as setas, o Home e o End andam só nelas.
+- **Dublês:** no `motor-falso.ts`, o nome do arquivo decide o formulário: `formulario` dá um campo de cada tipo nas páginas 1 e 2 (`FORMULARIO_DE_TESTE`, exportado para os testes e as stories), `xfa` dá o XFA puro, `hibrido` o híbrido e `assinado` o assinado digitalmente. O `editar` falso guarda o pedido inteiro e falha num campo com `falhaNoCampo`.
+- **Testes:** `motor.test.ts` (a marca, a leitura reenviada com ela, o pedido do editar com o formulário, a falha com `campo`); `pdf.worker.test.ts` (o pdf-lib de verdade: analisar com formulário, editar com o formulário lido de volta, `ErroNoCampo` como falha com campo, formulário com fundo como `inesperado`); `editar.test.tsx` (o assinar abre com a marca e o editar sem; a barra do assinar; "Gerar PDF assinado" e o nome `-assinado.pdf`; os casos da fase 3 com o `editar` em objeto); `textos.test.ts`; e os testes do registro.
+- **Docs da etapa:** rota, motor e Worker no `apps/web/CLAUDE.md`.
+
+**Etapa 3: a tela, com Jest e stories**
+
+- **Ferramenta Assinatura (`objetos.ts`):** `'assinatura'` entra em `FERRAMENTAS` depois de Imagem (o editar fica com onze) e no `FERRAMENTAS_DO_MODO.assinar` (`selecionar`, `assinatura`, `texto`), com o ícone `faSignature`. `criarObjeto('assinatura', lugar, pagina, estilos, { assinatura })`, com `assinatura` `{ tipo: 'imagem'; imagem: ImagemParaInserir } | { tipo: 'texto'; nome: string; cor: Cor }`:
+  - a imagem nasce no centro com `LARGURA_DA_ASSINATURA_NA_PAGINA` (180 pontos, a altura pela proporção), ou na caixa do arraste com a proporção, como a imagem da fase 3;
+  - o nome digitado vira um `texto` em Times itálico de `TAMANHO_DA_ASSINATURA_DIGITADA` (28) pontos.
+
+  Depois de criada, a assinatura é um objeto da fase 3. A leitura do ponto e da pressão do ponteiro (`pontoDoEvento`) sai do `QuadroDeObjetos` para o `objetos.ts`, para os dois quadros lerem igual.
+
+- **Assinatura desenhada (`assinatura-desenhada.ts`):** `desenharAssinatura(tracos, { cor, espessura }): Promise<ImagemPreparada>`. Recorta pela `caixaDosTracos`, escala pela `escalaDaAssinatura`, pinta cada contorno (`caminhoSvgDoContorno` num `Path2D`) num canvas transparente, sai PNG (`toBlob`) e solta o canvas. Rejeita sem traço.
+- **Imagem enviada:** `prepararImagem(arquivo, { tirarFundoBranco })`, no `imagem-inserida.ts`. Com a opção, a imagem é sempre desenhada de novo, passa pelo `tirarFundoBranco` (`getImageData` e `putImageData`) e sai PNG, também a que veio JPEG. As recusas são as da fase 3.
+- **Componentes novos:**
+  - `quadro-de-assinatura.tsx` (`QuadroDeAssinatura`; props `tracos`, `aoTracar(traco)`, `cor`, `espessura`, `idDaDica`): um quadro de 600 × 200 unidades (o traço não depende da largura na tela), na largura do painel e até 600 px, com a altura pela proporção.
+    - `role="img"`, com o nome "Quadro da assinatura" e a dica ligada ("Desenhe com o dedo, o mouse ou a caneta. Sem ponteiro, use Digitar o nome.").
+    - Fora do Tab: é um gesto de caminho, que o WCAG 2.5.1 isenta, e Digitar o nome é a alternativa.
+    - `touch-action: none` só nele, com captura do ponteiro, os `getCoalescedEvents` e a pressão só da caneta, como o desenho da fase 3. Uma linha tracejada decorativa marca onde assinar.
+  - `criar-assinatura.tsx` (`CriarAssinatura`, com as props `aoCriar(assinatura: AssinaturaPronta)`, `aoAnunciar(texto)` e `aoCancelar?`; e `AvisoDeAssinaturaVisual`): o aviso no topo, um `fieldset` "Como assinar" com três botões de opção nativos (Desenhar, Enviar imagem, Digitar o nome; as setas trocam, sem tabindex à mão) e a área do jeito escolhido:
+    - Desenhar: o quadro, "Cor da tinta" (Preto, Azul), "Limpar" e "Usar esta assinatura";
+    - Enviar imagem: "Escolher imagem da assinatura", "Tirar o fundo branco" (marcada), a prévia sobre um xadrez decorativo e "Usar esta assinatura". As recusas vêm em `role=alert`, com as mensagens da imagem da fase 3;
+    - Digitar o nome: "Seu nome" (`autocomplete="name"`), a prévia em Times itálico, a cor e "Usar esta assinatura". Caractere fora do WinAnsi nem entra, com o `role=alert` da fase 3.
+
+    "Limpar" e "Usar esta assinatura" ficam com `aria-disabled` e o motivo escrito ("O quadro está vazio."), e não `disabled`: assim, limpar com o foco no botão não derruba o foco no `body`. Ao abrir, o foco vai à opção marcada, e "Quadro limpo." é anunciado.
+
+  - `painel-do-formulario.tsx` (`PainelDoFormulario`; props `formulario`, `valores`, `erros`, `desabilitado`, `registrar(id, elemento)`, `aoMudar(valor)` e `aoFocar(foco)`, com `foco` `{ campo, widget } | null`): um `<form>` de verdade (`noValidate`, sem envio), titulado por "Formulário do PDF" (`h2`) e com o resumo ("12 campos em 3 páginas").
+    - Um `fieldset` por página, com a `legend` "Página N", e os campos na ordem de Tab do PDF.
+    - Cada campo tem `label` ligado, "obrigatório" escrito no rótulo e `aria-required`, e `aria-describedby` para "Na página N", o contador ("12 de 14 caracteres", com `maxLength`) e o erro.
+    - Texto vira `input`, ou `textarea` quando é multilinha; caixa de marcar, `checkbox`; botões de opção, um `fieldset` com `legend` e um `radio` por opção (sem repetir, na ordem dos widgets), mais "Limpar a escolha" quando não é obrigatório; suspensa e lista de escolha única, `select` com "(nenhuma)"; lista múltipla, um `fieldset` de `checkbox`. O valor que o arquivo tem e que não está nas opções aparece como mais uma opção, para não se perder.
+    - O não preenchível aparece no lugar dele, com o motivo, e o somente leitura como campo `readOnly` com o valor.
+    - Focar um controle chama `aoFocar` com o widget dele (no botão de opção, o da opção), e o foco que sai do formulário chama `aoFocar(null)`.
+    - No topo, conforme o caso: "não tem campos", o XFA puro explicado (sem formulário), o híbrido ("Ao gerar, a versão XFA sai…"), o ilegível, o assinado digitalmente ("O PDF gerado aqui é um arquivo novo, e essa assinatura deixa de valer nele.") e a frase de que a página mostra os campos como estão no arquivo.
+  - `destaque-do-campo.tsx` (`DestaqueDoCampo`; props `caixas` e `tamanho`): o contorno por cima da folha, em porcentagem da página como os objetos, `aria-hidden` e sem ponteiro, com anel na cor primária e borda branca (aparece em página clara e escura), sem animação.
+
+- **Lógica sem React (`formulario.ts`):** `valoresIniciais(campos)`, `valoresMudados(campos, valores)` (só o que difere do arquivo; a lista é comparada sem ordem), `obrigatoriosVazios(campos, valores)`, `campoNoPonto(campos, pagina, ponto)` (o widget de menor área que contém o ponto), `caixasDoFoco(campos, foco, pagina)` e `rolagemParaMostrar(caixa, vista, margem)`. O estado mora no hook `useFormularioDoPdf(formulario)` (`use-formulario-do-pdf.ts`): valores, erros, foco e achatar, recomeçando a cada documento. Fica fora do histórico do desfazer: cada controle já mostra o valor, e o campo de texto tem o desfazer do navegador.
+- **No `EditarPdf`:**
+  - no assinar, o `AvisoDeAssinaturaVisual` fica logo depois do aviso de privacidade, sempre (com e sem arquivo). A partir de `lg`, duas colunas: a página à esquerda, o painel do objeto e o formulário à direita; antes, uma coluna. A ordem no DOM é barra, página, painel do objeto, formulário e gerar;
+  - ligar a Assinatura sem assinatura pronta abre o `CriarAssinatura` nas opções da ferramenta. Com ela pronta, as opções mostram a prévia ("Assinatura pronta" e a descrição em texto), "Inserir no centro" e "Criar outra assinatura";
+  - "Usar esta assinatura" guarda a assinatura (o PNG entra no `imagens` como as imagens da fase 3, conta no teto e fica enquanto ela estiver pronta ou algum passo do histórico a usar), anuncia "Assinatura pronta. Clique na página…" e leva o foco ao "Inserir no centro". Pôr segue a imagem (clique, arraste ou centro) e depois volta para Selecionar e mover, com o foco no objeto. A assinatura continua pronta para a próxima página, até a tela sair. Nada vai para `localStorage`, `sessionStorage` ou IndexedDB;
+  - focar um campo de outra página abre a página dele sem anúncio (o "Na página N" do campo já diz) e sem tirar o foco do campo. O destaque aparece quando a página fica pronta, e a área rola até ele (`rolagemParaMostrar`, sem suavizar com reduzir movimento);
+  - com Selecionar, o clique num widget da página leva o foco ao controle dele, antes da dica do texto do PDF;
+  - o anúncio do PDF aberto ganha, no assinar, o resumo do formulário (`TEXTOS.formulario.aoAbrir`);
+  - gerar habilita com objeto, campo mudado ou achatar. "Achatar o formulário" (caixa, com a explicação ligada) fica na área de gerar, só com formulário. Campos obrigatórios vazios são avisados ali, sem travar, com "Ir para o campo". O `motor.editar` recebe `formulario: { valores: valoresMudados(...), achatar }` só quando há o que mandar. O resumo conta objetos e campos, e o PDF sai como `<nome>-assinado.pdf`. Mudar um valor descarta o resultado, como mudar a cena. A falha num campo vem em `role=alert` com "Mostrar o campo", que leva o foco ao controle.
+- **Textos (`textos.ts`):**
+  - `TEXTOS.editar.ferramentas`: `nomes.assinatura`, `dicas.assinatura` e `semAssinatura`;
+  - `TEXTOS.assinatura` (os dois modos): `aviso`, `jeitos` (rotulo, desenhar, enviar, digitar), `quadro` (rotulo, dica, limpar, vazio, limpo), `cor` (rotulo, preto, azul), `enviar` (escolher, outra, tirarFundo, dicaDoFundo, pronta), `digitar` (rotulo, dica), `usar`, `semImagem`, `semNome`, `pronta` (titulo, descricao, criarOutra), `nomes` (desenhada, enviada, digitada: o nome da imagem no nome do objeto para o leitor de tela) e `anuncios.pronta`;
+  - `TEXTOS.assinar`: o `TextosDoModo` e mais `gerar` (resumo, achatar, dicaDoAchatar, obrigatoriosVazios, irParaOCampo, mostrarCampo) e `falhaNoCampo(falha, rotulo)`;
+  - `TEXTOS.formulario`: `titulo`, `resumo`, `aoAbrir`, `pagina`, `naPagina`, `obrigatorio`, `caracteres`, `nenhuma`, `limparEscolha`, `semFormulario`, `xfa`, `hibrido`, `ilegivel`, `assinadoDigitalmente`, `paginaMostraOriginal` e `naoPreenchivel[motivo]`.
+
+  Números, listas e plural pelo `Intl`, como os outros.
+
+- **Testes:**
+  - `objetos.test.ts`: as ferramentas de cada modo; `criarObjeto('assinatura')` com a imagem no centro e no arraste, e o texto em Times itálico;
+  - `formulario.test.ts`: cada função;
+  - `assinatura-desenhada.test.ts` (canvas dublado): o recorte, até 1200 px, um `fill` por traço, PNG, o canvas solto, sem traço;
+  - `imagem-inserida.test.ts`: o fundo tirado redesenha sempre, sai PNG mesmo do JPEG, e o `putImageData` leva o alfa novo;
+  - `criar-assinatura.test.tsx`: os três jeitos, o aviso, o traço pelo ponteiro, o `touch-none` só no quadro, Limpar e Usar com o motivo e o foco, a recusa da imagem, o WinAnsi do nome e o que o `aoCriar` recebe;
+  - `painel-do-formulario.test.tsx`: cada tipo pelo rótulo, `fieldset` e `legend` por página, obrigatório, somente leitura, contador, os não preenchíveis com o motivo, o widget de cada opção no `aoFocar` e os avisos do topo;
+  - `editar.test.tsx`: a barra de 3 e a de 11; o aviso sempre no assinar; criar e pôr cada jeito; a assinatura reusada noutra página; o formulário do `motor-falso`; o campo da página 2, que abre a página sem anúncio e põe o destaque; o clique no widget; o pedido ao motor só com os mudados e o achatar; a falha com "Mostrar o campo"; o XFA e o híbrido; o resultado descartado ao mudar um valor; nada no `Storage` nem no IndexedDB.
+
+  Verificado por mutação, como na fase 3.
+
+- **Stories:** `Tools/PDF/QuadroDeAssinatura` (Vazio, ComTracos), `Tools/PDF/CriarAssinatura` (Desenhar, EnviarImagem, DigitarONome, ImagemRecusada), `Tools/PDF/PainelDoFormulario` (TodosOsTipos, Hibrido, Xfa, AssinadoDigitalmente, SemFormulario, ComErro), `Tools/PDF/DestaqueDoCampo` e, no `Tools/PDF/Editar`, ModoAssinar, AssinarComFormulario e AssinaturaPronta. A `Tools/PDF/BarraDeFerramentas` ganha ModoAssinar. Nenhuma usa `appDirectory`: o `useRouter` quebra no Storybook com o Next 16.4.5 (ver "Testes" no `apps/web/CLAUDE.md`).
+- **Docs da etapa:** a seção do assinar no `apps/web/CLAUDE.md`.
+
+**Etapa 4: E2E, axe, peso, memória e docs**
+
+- **E2E** no `tools.e2e.ts` (`describe('Assinar PDF')`), contra o build de produção, com o PDF baixado lido pelo pdf-lib e pelo pdf.js em Node. Os PDFs são gerados no teste: um formulário de duas páginas com um campo de cada tipo, `/TU`, obrigatório, tamanho máximo, um `/Sig` e um somente leitura; o XFA puro; o híbrido; e o PNG de assinatura com fundo branco (`pngDeTeste`). Casos:
+  - preencher pelo teclado (o Tab na ordem do PDF) e baixar: os valores no `getForm()` do PDF baixado, e o híbrido sem `/XFA`;
+  - achatar: nenhum campo, e o texto preenchido na caixa do widget;
+  - focar um campo da página 2 abre a página, e o destaque cobre a caixa do widget na tela;
+  - desenhar com o ponteiro do Playwright, usar, inserir no centro e mover pelas setas: a imagem no PDF na caixa do painel, com `/SMask`;
+  - o nome digitado sai em `Times-Italic` (nas fontes da página) e na posição da tela;
+  - a imagem com o fundo tirado sai com a `/SMask` em 0 no canto e 255 no traço;
+  - o XFA puro explicado, sem formulário; o `/Sig` listado como não preenchível; o aviso de assinatura visual sem arquivo, com arquivo e no painel;
+  - 320 px sem rolagem lateral, com o quadro na largura, o formulário numa coluna e os alvos de 44 px;
+  - contraste nos dois temas (os avisos, o formulário, o painel da assinatura, o PDF pronto);
+  - axe (WCAG 2.0, 2.1 e 2.2 A e AA, sem violação séria nem crítica) a 1280 e a 320 px, com o formulário, o painel da assinatura aberto e o PDF pronto; e o `toMatchAriaSnapshot` do formulário e da escolha do jeito;
+  - nada sai do aparelho no fluxo inteiro (`vigiarPedidos` e `conferirQueNadaSaiu`, com o PDF e a imagem), e nada no `localStorage`, no `sessionStorage` e no `indexedDB.databases()` depois de criar a assinatura; nenhum Worker antes do arquivo e dois depois;
+  - no editar, a Assinatura na barra e o nome digitado no PDF.
+- **Peso:** o chunk do `/tools/pdf/assinar` (o mesmo `EditarPdf`), o Worker do pdf-lib (que já leva o código de formulário do pdf-lib) e nenhum dos três pesados no HTML de nenhuma página, comparados com os números da fase 3.
+- **Memória:** no teto do modo (49 MB, 20 páginas), com um campo de texto por página: abrir, preencher os 20, pôr a assinatura em 3 páginas e gerar, com e sem achatar. Método de "Medições do editar", no headless shell 1234 enquanto o Chromium 1217 não voltar ao cache.
+- **Docs:** "Feito na quarta etapa" aqui; "Medições do assinar" e os testes no `apps/web/CLAUDE.md`; o `packages/tools/CLAUDE.md`. No PR, o roteiro de leitor de tela (VoiceOver no macOS e no iOS, NVDA no Windows: o formulário pelo Tab, os rótulos, o destaque calado, os três jeitos de assinar) e a linha de segurança (sem dependência nova, nada guardado no navegador, imagem conferida pelos bytes).
+
+**Fica de fora, de propósito:**
+
+- Os valores na página grande antes de gerar. O pdf.js desenha os campos com a aparência do arquivo; mostrar o que a pessoa digitou pediria o `annotationStorage` dele e um desenho novo a cada tecla, e a aparência sairia diferente da que o pdf-lib grava. A tela diz que os valores entram no PDF ao gerar.
+- Assinatura digital com certificado, e preencher o `/Sig`.
+- Preencher XFA dinâmico.
+- Texto livre na suspensa editável: só as opções do arquivo.
+- Guardar a assinatura entre visitas.
+
 ## Ordem e entrega
 
 1. **PR 1, mesclar** (#112): Worker, pdf-lib só na página, teto medido.
@@ -249,3 +485,7 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Os recursos do pdf.js vêm de uma cópia em `public/pdfjs/<versão>/`, conferida por hash contra o pacote: só os decodificadores de JPEG 2000 e JBIG2 e as fontes Symbol e ZapfDingbats, buscados pela página por uma fábrica com lista fechada. Sem perfil de cor ICC, cmaps nem Liberation.
 - Na fase 3, a foto JPEG com o EXIF girando é desenhada de novo em pé antes de entrar, e o apagar de verdade é marcado por página.
 - Na fase 3, passos seguidos do mesmo objeto pelo teclado ou pelo painel viram um passo só do desfazer, e a dica de cobrir e escrever por cima só aparece quando o clique cai num texto do PDF.
+- Na fase 4, o apagar de verdade tira também os nomes de destino que levam às páginas apagadas (revisão do #120), e quem usava o nome passa ao destino explícito. O marcador cuja ação não leva a uma página do documento fica.
+- Na fase 4, o assinar é o `EditarPdf` com `modo="assinar"`: a barra só com Selecionar e mover, Assinatura e Texto, e o formulário só nesse modo. Preencher e assinar saem num carregar e salvar só.
+- Na fase 4, achatar é uma função própria, e não o `flatten()` do pdf-lib 1.17.1, que quebra com widget sem aparência, ignora a `/BBox` e deixa o widget no `/Annots`.
+- Na fase 4, a página grande mostra os campos como estão no arquivo, e os valores entram no PDF ao gerar.
