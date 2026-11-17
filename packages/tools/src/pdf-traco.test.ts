@@ -4,7 +4,6 @@ import {
   type PontoDoTraco,
 } from './pdf-regras'
 import {
-  caixaDosTracos,
   caminhoDoTraco,
   caminhoSvgDoContorno,
   contornoDoTraco,
@@ -115,43 +114,5 @@ describe('caminhoDoTraco', () => {
     )
     expect(depois.x1 - antes.x1).toBeCloseTo(100, 1)
     expect(depois.y1 - antes.y1).toBeCloseTo(200, 1)
-  })
-})
-
-describe('caixaDosTracos (o recorte da assinatura desenhada)', () => {
-  it('contém o contorno de cada traço, com a espessura', () => {
-    const caixa = caixaDosTracos([ZIGUEZAGUE], 4)!
-    const contorno = caixaDe(contornoDoTraco(ZIGUEZAGUE, 4))
-    expect(caixa).toEqual({
-      x: contorno.x1,
-      y: contorno.y1,
-      largura: contorno.x2 - contorno.x1,
-      altura: contorno.y2 - contorno.y1,
-    })
-    expect(caixa.x).toBeLessThan(10)
-    expect(caixa.x + caixa.largura).toBeGreaterThan(50 - 4)
-  })
-
-  it('junta todos os traços (o nome e o sobrenome, o pingo do i)', () => {
-    const pingo: PontoDoTraco[] = [[300, 150]]
-    const caixa = caixaDosTracos([ZIGUEZAGUE, pingo], 6)!
-    expect(caixa.x).toBeLessThan(10)
-    expect(caixa.y).toBeLessThan(10)
-    expect(caixa.x + caixa.largura).toBeGreaterThan(300)
-    expect(caixa.x + caixa.largura).toBeLessThanOrEqual(306)
-    expect(caixa.y + caixa.altura).toBeGreaterThan(150)
-  })
-
-  it('aguenta um traço longo (sem passar do limite de argumentos de uma chamada)', () => {
-    const longo: PontoDoTraco[] = Array.from({ length: 200_000 }, (_, i) => [
-      i % 600,
-      (i * 7) % 200,
-    ])
-    expect(caixaDosTracos([longo], 3)).not.toBeNull()
-  })
-
-  it('sem traço não há recorte', () => {
-    expect(caixaDosTracos([], 4)).toBeNull()
-    expect(caixaDosTracos([[]], 4)).toBeNull()
   })
 })

@@ -2,37 +2,25 @@ import {
   BlendMode,
   LineCapStyle,
   PDFArray,
-  PDFBool,
-  PDFButton,
-  PDFCheckBox,
   PDFContentStream,
   PDFContext,
   PDFDict,
   PDFDocument,
-  PDFDropdown,
   PDFHexString,
   PDFName,
   PDFNumber,
-  PDFOptionList,
-  PDFRadioGroup,
   PDFRawStream,
   PDFRef,
-  PDFSignature,
   PDFStream,
   PDFString,
-  PDFTextField,
   ParseSpeeds,
   StandardFonts,
   concatTransformationMatrix,
   decodePDFRawStream,
-  defaultDropdownAppearanceProvider,
-  defaultOptionListAppearanceProvider,
   degrees,
-  drawObject,
   popGraphicsState,
   pushGraphicsState,
   rgb,
-  type PDFField,
   type PDFFont,
   type PDFImage,
   type PDFObject,
@@ -44,53 +32,31 @@ import {
   GIROS,
   OPACIDADE_DO_MARCA_TEXTO,
   TIPOS_DE_OBJETO,
-  cabeNoWinAnsi,
-  caixaNaTela,
   caracteresForaDoWinAnsi,
-  compararPelaOrdemDeTab,
   componentesDaCor,
   corValida,
   extremosDaLinha,
   geometriaDaSeta,
   giroNormalizado,
   linhasDeBase,
-  matrizDaAparencia,
   matrizDaTelaParaPdf,
   tamanhoNaTela,
   tipoDaImagem,
-  type CampoDoFormulario,
   type FamiliaDaFonte,
-  type Formulario,
   type GeometriaDaPagina,
-  type Matriz,
-  type MotivoDeNaoPreencher,
   type MotivoDoErroDePdf,
   type MotivoDoErroNaEdicao,
-  type MotivoDoErroNoCampo,
   type ObjetoDaPagina,
-  type OrdemDeTab,
   type PaginaDoPlano,
-  type PosicaoNaOrdemDeTab,
-  type PreenchimentoDoFormulario,
-  type Retangulo,
-  type ValorDoCampo,
-  type WidgetDoCampo,
 } from './pdf-regras'
 import { caminhoDoTraco } from './pdf-traco'
 
 export type {
-  CampoDoFormulario,
-  Formulario,
   Giro,
-  MotivoDeNaoPreencher,
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
-  MotivoDoErroNoCampo,
   ObjetoDaPagina,
   PaginaDoPlano,
-  PreenchimentoDoFormulario,
-  ValorDoCampo,
-  WidgetDoCampo,
 } from './pdf-regras'
 
 export class ErroDePdf extends Error {
@@ -1332,682 +1298,8 @@ function tirarMarcadoresDasApagadas(
   )
 }
 
-export class ErroNoCampo extends Error {
-  readonly motivo: MotivoDoErroNoCampo
-  readonly campo: number
-  readonly nome: string
-  readonly caracteres: readonly string[]
-
-  constructor(
-    motivo: MotivoDoErroNoCampo,
-    campo: number,
-    nome: string,
-    caracteres: readonly string[] = [],
-  ) {
-    super(
-      `${motivo} (campo ${campo}, ${nome})${caracteres.length ? `: ${caracteres.join(' ')}` : ''}`,
-    )
-    this.name = 'ErroNoCampo'
-    this.motivo = motivo
-    this.campo = campo
-    this.nome = nome
-    this.caracteres = caracteres
-  }
-}
-
 const ACROFORM = PDFName.of('AcroForm')
 const XFA = PDFName.of('XFA')
-const ESCONDIDO = 1 << 1
-const SEM_VISTA = 1 << 5
-
-type LugarDoWidget = { pagina: number; anotacao: number }
-
-// A chave é o dicionário, que o pdf-lib devolve igual pela referência do /Annots e pelos /Kids do campo.
-function lugaresDasAnotacoes(
-  documento: PDFDocument,
-): Map<PDFDict, LugarDoWidget> {
-  const { context } = documento
-  const lugares = new Map<PDFDict, LugarDoWidget>()
-  documento.getPages().forEach((pagina, indice) => {
-    const anotacoes = context.lookup(pagina.node.get(PDFName.Annots))
-    if (!(anotacoes instanceof PDFArray)) return
-    anotacoes.asArray().forEach((item, anotacao) => {
-      const dict = context.lookup(item)
-      if (dict instanceof PDFDict && !lugares.has(dict)) {
-        lugares.set(dict, { pagina: indice, anotacao })
-      }
-    })
-  })
-  return lugares
-}
-
-function escondido(contexto: PDFContext, widget: PDFDict): boolean {
-  const bandeiras = contexto.lookup(widget.get(PDFName.of('F')))
-  return (
-    bandeiras instanceof PDFNumber &&
-    (bandeiras.asNumber() & (ESCONDIDO | SEM_VISTA)) !== 0
-  )
-}
-
-function ordemDeTab(pagina: PDFPage): OrdemDeTab {
-  const tabs = pagina.doc.context.lookup(pagina.node.get(PDFName.of('Tabs')))
-  if (tabs === PDFName.of('R')) return 'linhas'
-  if (tabs === PDFName.of('C')) return 'colunas'
-  return 'anotacoes'
-}
-
-function motivoDeNaoPreencher(
-  campo: PDFField,
-): MotivoDeNaoPreencher | undefined {
-  if (campo instanceof PDFSignature) return 'assinatura_digital'
-  if (campo instanceof PDFButton) return 'botao'
-  if (campo.isReadOnly()) return 'somente_leitura'
-  if (campo instanceof PDFTextField && campo.isFileSelector()) {
-    return 'seletor_de_arquivo'
-  }
-  // A aparência da lista e da suspensa escreve as opções com a Helvetica.
-  if (
-    (campo instanceof PDFDropdown || campo instanceof PDFOptionList) &&
-    !campo.getOptions().every(cabeNoWinAnsi)
-  ) {
-    return 'fora_do_winansi'
-  }
-  return undefined
-}
-
-function rotuloDe(campo: PDFField, nome: string): string {
-  const rotulo = campo.acroField.dict.lookup(PDFName.of('TU'))
-  const texto =
-    rotulo instanceof PDFString || rotulo instanceof PDFHexString
-      ? rotulo.decodeText().trim()
-      : ''
-  return texto || nome
-}
-
-function textoDe(campo: PDFTextField): string {
-  try {
-    return campo.getText() ?? ''
-  } catch {
-    // Com a bandeira RichText e sem /V, o getText do pdf-lib lança.
-    return ''
-  }
-}
-
-type WidgetLido = WidgetDoCampo & PosicaoNaOrdemDeTab
-
-type LeituraDosWidgets = {
-  lugares: Map<PDFDict, LugarDoWidget>
-  paginas: PDFPage[]
-  geometrias: Map<number, GeometriaDaPagina>
-  ordens: Map<number, OrdemDeTab>
-}
-
-const compararWidgets =
-  (leitura: LeituraDosWidgets) => (a: WidgetLido, b: WidgetLido) =>
-    a.pagina - b.pagina ||
-    compararPelaOrdemDeTab(leitura.ordens.get(a.pagina)!)(a, b)
-
-function widgetsDoCampo(
-  campo: PDFField,
-  leitura: LeituraDosWidgets,
-): WidgetLido[] {
-  const { context } = campo.doc
-  const exportacao =
-    campo instanceof PDFRadioGroup
-      ? campo.acroField.getExportValues()
-      : undefined
-  let ligados = 0
-  const widgets: WidgetLido[] = []
-  for (const widget of campo.acroField.getWidgets()) {
-    const ligado =
-      campo instanceof PDFRadioGroup || campo instanceof PDFCheckBox
-        ? widget.getOnValue()
-        : undefined
-    // Como o getSelected do pdf-lib: a opção é o valor de exportação na posição do widget entre os que ligam.
-    const opcao =
-      ligado && (exportacao?.[ligados++]?.decodeText() ?? ligado.decodeText())
-    const lugar = leitura.lugares.get(widget.dict)
-    const retangulo = numerosDe(context, widget.dict.get(PDFName.of('Rect')), 4)
-    if (!lugar || !retangulo || escondido(context, widget.dict)) continue
-    let geometria = leitura.geometrias.get(lugar.pagina)
-    if (!geometria) {
-      const pagina = leitura.paginas[lugar.pagina]
-      geometria = geometriaDaPagina(pagina)
-      leitura.geometrias.set(lugar.pagina, geometria)
-      leitura.ordens.set(lugar.pagina, ordemDeTab(pagina))
-    }
-    widgets.push({
-      pagina: lugar.pagina,
-      caixa: caixaNaTela(geometria, retangulo as unknown as Retangulo),
-      anotacao: lugar.anotacao,
-      ...(opcao ? { opcao } : {}),
-    })
-  }
-  return widgets.sort(compararWidgets(leitura))
-}
-
-type CampoDeEscolha = PDFDropdown | PDFOptionList
-
-function opcoesDeEscolha(
-  campo: CampoDeEscolha,
-): { exportacao: string; texto: string }[] {
-  return campo.acroField.getOptions().map(({ value, display }) => ({
-    exportacao: value.decodeText(),
-    texto: (display ?? value).decodeText(),
-  }))
-}
-
-// O /V guarda a exportação da opção (o pdf-lib lê e grava o texto). O que não é exportação de nenhuma fica
-// como está: o texto que o pdf-lib gravou ou o valor que não está nas opções.
-function textosEscolhidos(campo: CampoDeEscolha): string[] {
-  const opcoes = opcoesDeEscolha(campo)
-  return campo.acroField.getValues().map((valor) => {
-    const lido = valor.decodeText()
-    return opcoes.find(({ exportacao }) => exportacao === lido)?.texto ?? lido
-  })
-}
-
-// Caixas com o mesmo nome e um valor de ligar em cada widget se excluem (Sim/Não, M/F, como a ajuda do
-// Acrobat ensina): o check() do pdf-lib só conhece o do primeiro widget.
-function ligadosDaCaixa(campo: PDFCheckBox): PDFName[] {
-  const ligados: PDFName[] = []
-  for (const widget of campo.acroField.getWidgets()) {
-    const ligado = widget.getOnValue()
-    if (ligado && !ligados.includes(ligado)) ligados.push(ligado)
-  }
-  return ligados
-}
-
-const ehGrupoDeCaixas = (campo: PDFCheckBox): boolean =>
-  ligadosDaCaixa(campo).length > 1
-
-function lerCampo(
-  campo: PDFField,
-  id: number,
-  widgets: readonly WidgetDoCampo[],
-): CampoDoFormulario {
-  const nome = campo.getName()
-  const naoPreenchivel = motivoDeNaoPreencher(campo)
-  const base = {
-    id,
-    nome,
-    rotulo: rotuloDe(campo, nome),
-    obrigatorio: campo.isRequired(),
-    widgets,
-    ...(naoPreenchivel ? { naoPreenchivel } : {}),
-  }
-  if (campo instanceof PDFTextField) {
-    return {
-      ...base,
-      tipo: 'texto',
-      valor: textoDe(campo),
-      multilinha: campo.isMultiline(),
-      tamanhoMaximo: campo.getMaxLength() ?? null,
-    }
-  }
-  if (campo instanceof PDFCheckBox && ehGrupoDeCaixas(campo)) {
-    const valor = campo.acroField.getValue()
-    return {
-      ...base,
-      tipo: 'opcoes',
-      valor: valor === PDFName.of('Off') ? null : valor.decodeText(),
-      opcoes: ligadosDaCaixa(campo).map((ligado) => ligado.decodeText()),
-    }
-  }
-  if (campo instanceof PDFCheckBox) {
-    return { ...base, tipo: 'caixa', marcada: campo.isChecked() }
-  }
-  if (campo instanceof PDFRadioGroup) {
-    return {
-      ...base,
-      tipo: 'opcoes',
-      valor: campo.getSelected() ?? null,
-      opcoes: campo.getOptions(),
-    }
-  }
-  if (campo instanceof PDFDropdown) {
-    return {
-      ...base,
-      tipo: 'suspensa',
-      valor: textosEscolhidos(campo)[0] ?? null,
-      opcoes: opcoesDeEscolha(campo).map(({ texto }) => texto),
-    }
-  }
-  if (campo instanceof PDFOptionList) {
-    return {
-      ...base,
-      tipo: 'lista',
-      valores: textosEscolhidos(campo),
-      opcoes: opcoesDeEscolha(campo).map(({ texto }) => texto),
-      multipla: campo.isMultiselect(),
-    }
-  }
-  if (campo instanceof PDFSignature) {
-    return {
-      ...base,
-      tipo: 'assinatura',
-      assinada: campo.acroField.V() instanceof PDFDict,
-    }
-  }
-  return { ...base, tipo: 'botao' }
-}
-
-function lerCampos(documento: PDFDocument): CampoDoFormulario[] {
-  const leitura: LeituraDosWidgets = {
-    lugares: lugaresDasAnotacoes(documento),
-    paginas: documento.getPages(),
-    geometrias: new Map(),
-    ordens: new Map(),
-  }
-  const lidos = documento
-    .getForm()
-    .getFields()
-    .map((campo, id) => {
-      const widgets = widgetsDoCampo(campo, leitura)
-      return {
-        primeiro: widgets[0] as WidgetLido | undefined,
-        campo: lerCampo(
-          campo,
-          id,
-          widgets.map(({ pagina, caixa, opcao }) =>
-            opcao === undefined ? { pagina, caixa } : { pagina, caixa, opcao },
-          ),
-        ),
-      }
-    })
-  const comparar = compararWidgets(leitura)
-  return lidos
-    .sort((a, b) => {
-      if (!a.primeiro || !b.primeiro) {
-        return (
-          Number(!a.primeiro) - Number(!b.primeiro) || a.campo.id - b.campo.id
-        )
-      }
-      return comparar(a.primeiro, b.primeiro) || a.campo.id - b.campo.id
-    })
-    .map(({ campo }) => campo)
-}
-
-// O getForm() do pdf-lib 1.17.1 tira o /XFA (avisando no console) e cria um /AcroForm vazio quando falta:
-// o dicionário cru é conferido antes, e o /XFA sai só desta cópia, que não é salva.
-export async function lerFormulario(
-  bytes: Uint8Array,
-): Promise<{ paginas: number; formulario: Formulario }> {
-  const documento = await abrir(bytes)
-  const paginas = documento.getPageCount()
-  const acroForm = dicionario(
-    documento.context,
-    documento.catalog.get(ACROFORM),
-  )
-  if (!acroForm) return { paginas, formulario: { tipo: 'nenhum' } }
-  const hibrido = acroForm.has(XFA)
-  acroForm.delete(XFA)
-  let campos: CampoDoFormulario[]
-  try {
-    campos = lerCampos(documento)
-  } catch {
-    return { paginas, formulario: { tipo: 'ilegivel' } }
-  }
-  if (campos.length === 0) {
-    return { paginas, formulario: { tipo: hibrido ? 'xfa' : 'nenhum' } }
-  }
-  return {
-    paginas,
-    formulario: {
-      tipo: 'acroform',
-      hibrido,
-      assinadoDigitalmente: campos.some(
-        (campo) => campo.tipo === 'assinatura' && campo.assinada,
-      ),
-      campos,
-    },
-  }
-}
-
-// O preenchimento chega ao Worker por postMessage, como os objetos.
-function conferirPreenchimento(
-  formulario: PreenchimentoDoFormulario | undefined,
-  edicoes: readonly EdicaoDaPagina[],
-): void {
-  if (formulario === undefined) return
-  const falhar = (campo: string): never => {
-    throw new RangeError(`preenchimento inválido: ${campo}`)
-  }
-  if (typeof formulario !== 'object' || formulario === null) falhar('objeto')
-  if (typeof formulario.achatar !== 'boolean') falhar('achatar')
-  if (!Array.isArray(formulario.valores)) falhar('valores')
-  // A tela nunca manda os dois, e o apagar de verdade tiraria os campos da página.
-  if (edicoes.some(({ fundo }) => fundo !== undefined)) {
-    falhar('formulário junto com apagar de verdade')
-  }
-  const ids = new Set<number>()
-  for (const valor of formulario.valores as readonly ValorDoCampo[]) {
-    if (typeof valor !== 'object' || valor === null) falhar('valor')
-    if (!Number.isInteger(valor.id) || valor.id < 0) falhar(`id ${valor.id}`)
-    if (ids.has(valor.id)) falhar(`campo repetido ${valor.id}`)
-    ids.add(valor.id)
-    if (typeof valor.nome !== 'string') falhar(`nome do campo ${valor.id}`)
-    switch (valor.tipo) {
-      case 'texto': {
-        if (typeof valor.valor !== 'string')
-          falhar(`texto do campo ${valor.id}`)
-        const fora = caracteresForaDoWinAnsi(valor.valor)
-        if (fora.length) {
-          throw new ErroNoCampo(
-            'texto_fora_do_winansi',
-            valor.id,
-            valor.nome,
-            fora,
-          )
-        }
-        break
-      }
-      case 'caixa':
-        if (typeof valor.marcada !== 'boolean') falhar(`campo ${valor.id}`)
-        break
-      case 'opcoes':
-      case 'suspensa':
-        if (valor.valor !== null && typeof valor.valor !== 'string') {
-          falhar(`opção do campo ${valor.id}`)
-        }
-        break
-      case 'lista':
-        if (
-          !Array.isArray(valor.valores) ||
-          !valor.valores.every((opcao) => typeof opcao === 'string') ||
-          new Set(valor.valores).size !== valor.valores.length
-        ) {
-          falhar(`opções do campo ${valor.id}`)
-        }
-        break
-      default:
-        falhar(`tipo do campo ${(valor as ValorDoCampo).id}`)
-    }
-  }
-}
-
-function exigirOpcoes(
-  opcoes: readonly string[],
-  escolhidas: readonly string[],
-  id: number,
-): void {
-  for (const escolhida of escolhidas) {
-    if (!opcoes.includes(escolhida)) {
-      throw new RangeError(`opção que o campo ${id} não tem: ${escolhida}`)
-    }
-  }
-}
-
-function marcarNoGrupoDeCaixas(
-  campo: PDFCheckBox,
-  opcao: string | null,
-  id: number,
-): void {
-  const escolhido =
-    opcao === null
-      ? PDFName.of('Off')
-      : ligadosDaCaixa(campo).find((ligado) => ligado.decodeText() === opcao)
-  if (!escolhido) {
-    throw new RangeError(`opção que o campo ${id} não tem: ${opcao}`)
-  }
-  campo.acroField.dict.set(PDFName.of('V'), escolhido)
-  for (const widget of campo.acroField.getWidgets()) {
-    widget.setAppearanceState(
-      widget.getOnValue() === escolhido ? escolhido : PDFName.of('Off'),
-    )
-  }
-}
-
-// Grava a exportação no /V (o select do pdf-lib gravaria o texto), e o /I da lista múltipla. O valor do
-// arquivo que não está nas opções é aceito como veio: a tela o mostra como mais uma opção.
-function escolherOpcoes(
-  campo: CampoDeEscolha,
-  textos: readonly string[],
-  id: number,
-): void {
-  const opcoes = opcoesDeEscolha(campo)
-  const doArquivo = textosEscolhidos(campo)
-  const indices: number[] = []
-  const valores = textos.map((texto) => {
-    const indice = opcoes.findIndex((opcao) => opcao.texto === texto)
-    if (indice >= 0) {
-      indices.push(indice)
-      return PDFHexString.fromText(opcoes[indice].exportacao)
-    }
-    if (doArquivo.includes(texto)) return PDFHexString.fromText(texto)
-    throw new RangeError(`opção que o campo ${id} não tem: ${texto}`)
-  })
-  const { dict } = campo.acroField
-  if (valores.length === 0) dict.delete(PDFName.of('V'))
-  else if (valores.length === 1) dict.set(PDFName.of('V'), valores[0])
-  else dict.set(PDFName.of('V'), dict.context.obj(valores))
-  const multipla = campo instanceof PDFOptionList && campo.isMultiselect()
-  if (multipla && indices.length > 0 && indices.length === valores.length) {
-    dict.set(PDFName.of('I'), dict.context.obj(indices.sort((a, b) => a - b)))
-  } else {
-    dict.delete(PDFName.of('I'))
-  }
-}
-
-function escreverValor(campo: PDFField, valor: ValorDoCampo): void {
-  const { id, nome } = valor
-  if (valor.tipo === 'texto' && campo instanceof PDFTextField) {
-    const maximo = campo.getMaxLength()
-    if (maximo !== undefined && valor.valor.length > maximo) {
-      throw new ErroNoCampo('acima_do_tamanho_maximo', id, nome)
-    }
-    campo.setText(valor.valor)
-  } else if (
-    valor.tipo === 'opcoes' &&
-    campo instanceof PDFCheckBox &&
-    ehGrupoDeCaixas(campo)
-  ) {
-    marcarNoGrupoDeCaixas(campo, valor.valor, id)
-  } else if (
-    valor.tipo === 'caixa' &&
-    campo instanceof PDFCheckBox &&
-    !ehGrupoDeCaixas(campo)
-  ) {
-    if (valor.marcada) campo.check()
-    else campo.uncheck()
-  } else if (valor.tipo === 'opcoes' && campo instanceof PDFRadioGroup) {
-    if (valor.valor === null) {
-      campo.clear()
-    } else {
-      exigirOpcoes(campo.getOptions(), [valor.valor], id)
-      campo.select(valor.valor)
-    }
-  } else if (valor.tipo === 'suspensa' && campo instanceof PDFDropdown) {
-    escolherOpcoes(campo, valor.valor === null ? [] : [valor.valor], id)
-  } else if (valor.tipo === 'lista' && campo instanceof PDFOptionList) {
-    if (valor.valores.length > 1 && !campo.isMultiselect()) {
-      throw new RangeError(`o campo ${id} aceita uma opção só`)
-    }
-    escolherOpcoes(campo, valor.valores, id)
-  } else {
-    throw new RangeError(`o campo ${id} não é do tipo ${valor.tipo}`)
-  }
-}
-
-// A caixa de marcar e os botões de opção já têm a aparência de cada estado: o valor novo só troca o /AS,
-// e a aparência que o arquivo tem fica. Só ganham uma nova quando falta a do estado. Devolve se usou a fonte.
-function atualizarAparencia(campo: PDFField, fonte: () => PDFFont): boolean {
-  if (campo instanceof PDFCheckBox || campo instanceof PDFRadioGroup) {
-    if (campo.needsAppearancesUpdate()) campo.updateAppearances()
-    return false
-  }
-  if (campo instanceof PDFDropdown) {
-    campo.updateAppearances(fonte(), (c, widget, f) =>
-      defaultDropdownAppearanceProvider(comOsTextos(c), widget, f),
-    )
-    return true
-  }
-  if (campo instanceof PDFOptionList) {
-    campo.updateAppearances(fonte(), (c, widget, f) =>
-      defaultOptionListAppearanceProvider(comOsTextos(c), widget, f),
-    )
-    return true
-  }
-  if (campo instanceof PDFTextField || campo instanceof PDFButton) {
-    campo.updateAppearances(fonte())
-    return true
-  }
-  return false
-}
-
-// A aparência padrão do pdf-lib escreve o /V cru, que é a exportação: a página tem que mostrar o texto.
-function comOsTextos<T extends CampoDeEscolha>(campo: T): T {
-  return Object.assign(Object.create(campo) as T, {
-    getSelected: () => textosEscolhidos(campo),
-  })
-}
-
-// O /DA novo do campo pede a fonte pelo nome: sem ela no /DR, o leitor que refaz a aparência não a acha.
-function registrarFonteNoFormulario(acroForm: PDFDict, fonte: PDFFont): void {
-  const { context } = acroForm
-  let recursos = dicionario(context, acroForm.get(PDFName.of('DR')))
-  if (!recursos) {
-    recursos = context.obj({})
-    acroForm.set(PDFName.of('DR'), recursos)
-  }
-  let fontes = dicionario(context, recursos.get(PDFName.Font))
-  if (!fontes) {
-    fontes = context.obj({})
-    recursos.set(PDFName.Font, fontes)
-  }
-  const nome = PDFName.of(fonte.name)
-  if (!fontes.has(nome)) fontes.set(nome, fonte.ref)
-}
-
-function preencherFormulario(
-  documento: PDFDocument,
-  { valores, achatar }: PreenchimentoDoFormulario,
-  recursos: Recursos,
-): void {
-  if (valores.length === 0 && !achatar) return
-  const acroForm = dicionario(
-    documento.context,
-    documento.catalog.get(ACROFORM),
-  )
-  if (!acroForm) {
-    if (valores.length > 0) throw new RangeError('o PDF não tem formulário')
-    return
-  }
-  // O Acrobat mostraria os valores antigos guardados no XFA.
-  acroForm.delete(XFA)
-  documento.catalog.delete(PDFName.of('NeedsRendering'))
-  const campos = documento.getForm().getFields()
-  const fonte = () => recursos.fonte('helvetica', false, false)
-  let usouFonte = false
-  for (const valor of valores) {
-    const campo = campos[valor.id]
-    if (!campo) throw new RangeError(`campo fora do formulário: ${valor.id}`)
-    if (campo.getName() !== valor.nome) {
-      throw new RangeError(`o campo ${valor.id} não se chama ${valor.nome}`)
-    }
-    const motivo = motivoDeNaoPreencher(campo)
-    if (motivo) {
-      throw new RangeError(`o campo ${valor.id} não se preenche (${motivo})`)
-    }
-    escreverValor(campo, valor)
-    try {
-      usouFonte = atualizarAparencia(campo, fonte) || usouFonte
-    } catch {
-      throw new ErroNoCampo('aparencia_do_campo', valor.id, valor.nome)
-    }
-  }
-  if (usouFonte) registrarFonteNoFormulario(acroForm, fonte())
-  if (achatar) achatarFormulario(documento, campos, fonte)
-}
-
-function desenharAparencia(pagina: PDFPage, widget: PDFDict): void {
-  const { context } = pagina.doc
-  const aparencias = dicionario(context, widget.get(PDFName.of('AP')))
-  let normal = aparencias?.get(PDFName.of('N'))
-  let alvo = context.lookup(normal)
-  if (alvo instanceof PDFDict) {
-    // Caixa de marcar e botão de opção: uma aparência por estado, e o /AS diz qual está ligada.
-    const estado = context.lookup(widget.get(PDFName.of('AS')))
-    normal = estado instanceof PDFName ? alvo.get(estado) : undefined
-    alvo = context.lookup(normal)
-  }
-  if (!(alvo instanceof PDFStream)) return
-  const retangulo = numerosDe(context, widget.get(PDFName.of('Rect')), 4)
-  const bbox = numerosDe(context, alvo.dict.get(PDFName.of('BBox')), 4)
-  const matriz = (numerosDe(
-    context,
-    alvo.dict.get(PDFName.of('Matrix')),
-    6,
-  ) ?? [1, 0, 0, 1, 0, 0]) as unknown as Matriz
-  if (!retangulo || !bbox) return
-  const final = matrizDaAparencia(
-    retangulo as unknown as Retangulo,
-    bbox,
-    matriz,
-  )
-  if (!final) return
-  alvo.dict.set(PDFName.Type, PDFName.of('XObject'))
-  alvo.dict.set(PDFName.of('Subtype'), PDFName.of('Form'))
-  const nome = pagina.node.newXObject(
-    'Campo',
-    normal instanceof PDFRef ? normal : context.register(alvo),
-  )
-  pagina.pushOperators(
-    pushGraphicsState(),
-    concatTransformationMatrix(...final),
-    drawObject(nome),
-    popGraphicsState(),
-  )
-}
-
-// Sem o flatten() do pdf-lib 1.17.1: ele lança com widget sem aparência, ignora a /BBox e deixa o widget
-// no /Annots (ver "Achatar" no packages/tools/CLAUDE.md).
-function achatarFormulario(
-  documento: PDFDocument,
-  campos: readonly PDFField[],
-  fonte: () => PDFFont,
-): void {
-  const { context, catalog } = documento
-  const lugares = lugaresDasAnotacoes(documento)
-  const paginas = documento.getPages()
-  const pedeAparencias =
-    dicionario(context, catalog.get(ACROFORM))?.lookup(
-      PDFName.of('NeedAppearances'),
-    ) === PDFBool.True
-  let removidos = new Set<PDFRef>()
-  campos.forEach((campo, id) => {
-    if (campo instanceof PDFSignature) return
-    // Com o /NeedAppearances, a aparência guardada pode estar velha: o leitor a refaz ao abrir, e a tela
-    // mostra o /V. Achatar com ela apagaria o valor.
-    const escreveTexto =
-      campo instanceof PDFTextField ||
-      campo instanceof PDFDropdown ||
-      campo instanceof PDFOptionList
-    try {
-      if ((pedeAparencias && escreveTexto) || campo.needsAppearancesUpdate()) {
-        atualizarAparencia(campo, fonte)
-      }
-    } catch {
-      throw new ErroNoCampo('aparencia_do_campo', id, campo.getName())
-    }
-    const filhos = campo.acroField.Kids()
-    for (const item of filhos ? filhos.asArray() : [campo.ref]) {
-      const widget = context.lookup(item)
-      if (item instanceof PDFRef) removidos.add(item)
-      if (!(widget instanceof PDFDict) || escondido(context, widget)) continue
-      const lugar = lugares.get(widget)
-      if (lugar) desenharAparencia(paginas[lugar.pagina], widget)
-    }
-  })
-  do {
-    const mexidos = desligar(context, removidos, new Set())
-    removidos = camposSemWidget(documento, mexidos)
-  } while (removidos.size > 0)
-  const acroForm = dicionario(context, catalog.get(ACROFORM))
-  const restantes = acroForm?.lookupMaybe(PDFName.of('Fields'), PDFArray)
-  if (!restantes || restantes.size() === 0) catalog.delete(ACROFORM)
-  else acroForm?.delete(PDFName.of('NeedAppearances'))
-}
 
 // Os recursos estendidos do Reader (/UR3, comuns em formulário de governo) e a certificação (/DocMDP) são
 // assinaturas do arquivo inteiro, que deixam de valer quando o pdf-lib o escreve de novo.
@@ -2033,10 +1325,8 @@ function tirarXfaDoHibrido({ context, catalog }: PDFDocument): void {
 export async function aplicarEdicoes(
   bytes: Uint8Array,
   edicoes: readonly EdicaoDaPagina[],
-  formulario?: PreenchimentoDoFormulario,
 ): Promise<Uint8Array> {
   conferirEdicoes(edicoes)
-  conferirPreenchimento(formulario, edicoes)
   const documento = await abrir(bytes)
   const paginas = documento.getPages()
   for (const { indice } of edicoes) {
@@ -2050,8 +1340,6 @@ export async function aplicarEdicoes(
   if (edicoes.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
     tirarXfaDoHibrido(documento)
   }
-  // A assinatura fica por cima do campo achatado.
-  if (formulario) preencherFormulario(documento, formulario, recursos)
   const apagadas = new Set<PDFRef>()
   const anotacoesRemovidas = new Set<PDFRef>()
   const xobjetosDasApagadas = new Set<PDFRef>()

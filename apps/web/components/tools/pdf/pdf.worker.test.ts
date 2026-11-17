@@ -1,14 +1,7 @@
 /**
  * @jest-environment node
  */
-import {
-  PDFDict,
-  PDFDocument,
-  PDFName,
-  PDFRawStream,
-  PDFString,
-  decodePDFRawStream,
-} from 'pdf-lib'
+import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import type {
   ObjetoNaTela,
   PedidoAoWorker,
@@ -183,111 +176,6 @@ it('analisar segue contando as páginas e recusando o que não é PDF ou está p
   expect(recusado).toMatchObject({ tipo: 'recusado', motivo: 'protegido' })
 })
 
-// Um campo de texto (com /TU e tamanho máximo) e uma caixa de marcar, na página 2 de duas.
-async function comFormulario({ xfa = false } = {}): Promise<Blob> {
-  const documento = await PDFDocument.create({ updateMetadata: false })
-  const form = documento.getForm()
-  documento.addPage([300, 300])
-  const pagina = documento.addPage([300, 300])
-  const nome = form.createTextField('pessoa.nome')
-  nome.setMaxLength(10)
-  nome.acroField.dict.set(PDFName.of('TU'), PDFString.of('Nome completo'))
-  nome.addToPage(pagina, {
-    x: 20,
-    y: 250,
-    width: 200,
-    height: 20,
-    borderWidth: 0,
-  })
-  form
-    .createCheckBox('aceito')
-    .addToPage(pagina, { x: 20, y: 200, width: 15, height: 15 })
-  let bytes = await documento.save()
-  if (xfa) {
-    // Num segundo save, sem as aparências: o save padrão passa pelo getForm(), que tira o XFA.
-    const hibrido = await PDFDocument.load(bytes, { updateMetadata: false })
-    hibrido.catalog
-      .lookup(PDFName.of('AcroForm'), PDFDict)
-      .set(PDFName.of('XFA'), PDFString.of('<xdp:xdp/>'))
-    bytes = await hibrido.save({ updateFieldAppearances: false })
-  }
-  return new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
-}
-
-describe('analisar com a marca do formulário', () => {
-  it('lê as páginas e os campos de uma vez, com o rótulo do /TU e a caixa na tela', async () => {
-    const formulario = await comFormulario()
-    const [resposta] = await pedir((id) => ({
-      tipo: 'analisar',
-      id,
-      arquivo: formulario,
-      formulario: true,
-    }))
-
-    expect(resposta).toMatchObject({
-      tipo: 'analisado',
-      paginas: 2,
-      formulario: {
-        tipo: 'acroform',
-        hibrido: false,
-        assinadoDigitalmente: false,
-        campos: [
-          {
-            id: 0,
-            nome: 'pessoa.nome',
-            rotulo: 'Nome completo',
-            tipo: 'texto',
-            valor: '',
-            tamanhoMaximo: 10,
-            widgets: [
-              {
-                pagina: 1,
-                caixa: { x: 20, y: 30, largura: 200, altura: 20 },
-              },
-            ],
-          },
-          { id: 1, nome: 'aceito', rotulo: 'aceito', tipo: 'caixa' },
-        ],
-      },
-    })
-  })
-
-  it('PDF sem formulário: nenhum; e sem a marca, só as páginas', async () => {
-    const [vazio, formulario] = [await pdf([100, 200]), await comFormulario()]
-    const [semCampos] = await pedir((id) => ({
-      tipo: 'analisar',
-      id,
-      arquivo: vazio,
-      formulario: true,
-    }))
-    const [semMarca] = await pedir((id) => ({
-      tipo: 'analisar',
-      id,
-      arquivo: formulario,
-    }))
-
-    expect(semCampos).toEqual({
-      tipo: 'analisado',
-      id: semCampos.id,
-      paginas: 2,
-      formulario: { tipo: 'nenhum' },
-    })
-    expect(semMarca).toEqual({ tipo: 'analisado', id: semMarca.id, paginas: 2 })
-  })
-
-  it('com a marca, o PDF protegido é recusado como sem ela', async () => {
-    const arquivo = await protegido()
-    const [resposta] = await pedir((id) => ({
-      tipo: 'analisar',
-      id,
-      arquivo,
-      formulario: true,
-    }))
-
-    expect(resposta).toMatchObject({ tipo: 'recusado', motivo: 'protegido' })
-  })
-})
-
 describe('editar', () => {
   const deBase64 = (texto: string) =>
     Uint8Array.from(atob(texto), (c) => c.charCodeAt(0))
@@ -454,90 +342,6 @@ describe('editar', () => {
     expect(respostasDoPedido).toEqual([
       { tipo: 'falhou', id: respostasDoPedido[0].id, motivo: 'inesperado' },
     ])
-  })
-
-  describe('com o formulário', () => {
-    const nome = (valor: string) =>
-      ({ id: 0, nome: 'pessoa.nome', tipo: 'texto', valor }) as const
-
-    it('preenche e desenha no mesmo pedido, e os valores se leem de volta no PDF', async () => {
-      const [resposta] = await editar(await comFormulario(), {
-        objetosPorPagina: new Map([[1, [texto('t1', 'OLA')]]]),
-        formulario: {
-          valores: [
-            nome('Ana Lúcia'),
-            { id: 1, nome: 'aceito', tipo: 'caixa', marcada: true },
-          ],
-          achatar: false,
-        },
-      })
-
-      if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
-      const form = (await PDFDocument.load(resposta.bytes)).getForm()
-      expect(form.getTextField('pessoa.nome').getText()).toBe('Ana Lúcia')
-      expect(form.getCheckBox('aceito').isChecked()).toBe(true)
-      expect((await conteudoDe(resposta)).texto.toUpperCase()).toContain(
-        emHexa('OLA'),
-      )
-    })
-
-    it('achatar: o PDF sai sem campo nenhum', async () => {
-      const [resposta] = await editar(await comFormulario(), {
-        formulario: { valores: [nome('Ana')], achatar: true },
-      })
-
-      if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
-      const documento = await PDFDocument.load(resposta.bytes)
-      expect(documento.catalog.has(PDFName.of('AcroForm'))).toBe(false)
-      expect(documento.getPage(1).node.Annots()?.size() ?? 0).toBe(0)
-    })
-
-    it('o XFA do formulário híbrido sai ao preencher', async () => {
-      const [resposta] = await editar(await comFormulario({ xfa: true }), {
-        formulario: { valores: [nome('Ana')], achatar: false },
-      })
-
-      if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
-      const documento = await PDFDocument.load(resposta.bytes)
-      expect(
-        documento.catalog
-          .lookup(PDFName.of('AcroForm'), PDFDict)
-          .has(PDFName.of('XFA')),
-      ).toBe(false)
-    })
-
-    it.each([
-      [
-        'texto fora do WinAnsi',
-        nome('Ana 😀'),
-        { motivo: 'texto_fora_do_winansi', campo: 0, caracteres: ['😀'] },
-      ],
-      [
-        'acima do tamanho máximo',
-        nome('Ana Lúcia Souza'),
-        { motivo: 'acima_do_tamanho_maximo', campo: 0, caracteres: [] },
-      ],
-    ])('%s: falha com o motivo e o id do campo', async (_, valor, esperado) => {
-      const respostasDoPedido = await editar(await comFormulario(), {
-        formulario: { valores: [valor], achatar: false },
-      })
-
-      expect(respostasDoPedido).toEqual([
-        { tipo: 'falhou', id: respostasDoPedido[0].id, ...esperado },
-      ])
-    })
-
-    // A tela nunca manda os dois: o assinar não tem Cobrir, e o editar não preenche.
-    it('formulário junto com o apagar de verdade: inesperado', async () => {
-      const respostasDoPedido = await editar(await comFormulario(), {
-        paginasRasterizadas: new Map([[1, new Blob([JPEG])]]),
-        formulario: { valores: [nome('Ana')], achatar: false },
-      })
-
-      expect(respostasDoPedido).toEqual([
-        { tipo: 'falhou', id: respostasDoPedido[0].id, motivo: 'inesperado' },
-      ])
-    })
   })
 
   it('PDF protegido: o motivo do arquivo', async () => {

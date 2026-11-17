@@ -1,12 +1,9 @@
 import type {
-  Formulario,
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
-  MotivoDoErroNoCampo,
   ObjetoDaPagina,
   ObjetoImagem,
   PaginaDoPlano,
-  PreenchimentoDoFormulario,
 } from '@piluvitu/tools/pdf-regras'
 
 /** A imagem aponta pelo id para o arquivo em `imagens`, para o histórico do desfazer não copiar os bytes. */
@@ -23,13 +20,10 @@ export type PedidoDeEdicao = {
   imagens: ReadonlyMap<string, Blob>
   /** Apagar de verdade: o JPEG de cada página, com os retângulos de cobrir já pintados nele. */
   paginasRasterizadas: ReadonlyMap<number, Blob>
-  formulario?: PreenchimentoDoFormulario
 }
 
-export type OpcoesDaAnalise = { formulario?: boolean }
-
 export type PedidoAoWorker =
-  | { tipo: 'analisar'; id: number; arquivo: Blob; formulario?: true }
+  | { tipo: 'analisar'; id: number; arquivo: Blob }
   | { tipo: 'mesclar'; id: number; arquivos: Blob[] }
   | {
       tipo: 'organizar'
@@ -40,12 +34,7 @@ export type PedidoAoWorker =
   | ({ tipo: 'editar'; id: number; arquivo: Blob } & PedidoDeEdicao)
 
 export type RespostaDoWorker =
-  | {
-      tipo: 'analisado'
-      id: number
-      paginas: number
-      formulario?: Formulario
-    }
+  | { tipo: 'analisado'; id: number; paginas: number }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
   | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
   | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
@@ -56,33 +45,26 @@ export type RespostaDoWorker =
 /** `falha_do_navegador`: o Worker caiu duas vezes lendo o arquivo (memória, script); não diz nada do PDF. */
 export type MotivoDaRecusa = MotivoDoErroDePdf | 'falha_do_navegador'
 
-/** `formulario` vem só quando a análise pediu ({@link OpcoesDaAnalise}). */
 export type ResultadoDaAnalise =
-  | { ok: true; paginas: number; formulario?: Formulario }
+  | { ok: true; paginas: number }
   | { ok: false; motivo: MotivoDaRecusa }
 
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
 /**
  * Como as operações rejeitam. `indice` é o arquivo culpado, só na mesclagem; `pagina` (índice), `objeto`
- * (o id), `campo` (o id do campo do formulário) e `caracteres` vêm só da edição.
+ * (o id) e `caracteres` vêm só da edição.
  */
 export type FalhaDaOperacao = {
-  motivo:
-    | MotivoDoErroDePdf
-    | MotivoDoErroNaEdicao
-    | MotivoDoErroNoCampo
-    | 'inesperado'
-    | 'cancelado'
+  motivo: MotivoDoErroDePdf | MotivoDoErroNaEdicao | 'inesperado' | 'cancelado'
   indice?: number
   pagina?: number
   objeto?: string
-  campo?: number
   caracteres?: readonly string[]
 }
 
 export interface MotorDePdf {
-  analisar(arquivo: Blob, opcoes?: OpcoesDaAnalise): Promise<ResultadoDaAnalise>
+  analisar(arquivo: Blob): Promise<ResultadoDaAnalise>
   /** Rejeita com {@link FalhaDaOperacao}. */
   mesclar(
     arquivos: Blob[],
@@ -115,7 +97,6 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     number,
     {
       arquivo: Blob
-      formulario: boolean
       quedas: number
       resolver: (r: ResultadoDaAnalise) => void
     }
@@ -132,11 +113,9 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         const analise = analises.get(data.id)
         analises.delete(data.id)
         analise?.resolver(
-          data.tipo === 'recusado'
-            ? { ok: false, motivo: data.motivo }
-            : data.formulario
-              ? { ok: true, paginas: data.paginas, formulario: data.formulario }
-              : { ok: true, paginas: data.paginas },
+          data.tipo === 'analisado'
+            ? { ok: true, paginas: data.paginas }
+            : { ok: false, motivo: data.motivo },
         )
         return
       }
@@ -148,15 +127,8 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         operacao = null
         return
       case 'falhou': {
-        const { motivo, indice, pagina, objeto, campo, caracteres } = data
-        operacao?.rejeitar({
-          motivo,
-          indice,
-          pagina,
-          objeto,
-          campo,
-          caracteres,
-        })
+        const { motivo, indice, pagina, objeto, caracteres } = data
+        operacao?.rejeitar({ motivo, indice, pagina, objeto, caracteres })
         operacao = null
       }
     }
@@ -167,18 +139,9 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     worker = null
   }
 
-  function pedirAnalise(id: number, arquivo: Blob, formulario: boolean) {
-    enviar({
-      tipo: 'analisar',
-      id,
-      arquivo,
-      ...(formulario ? { formulario: true } : {}),
-    })
-  }
-
   function reenviarLeituras() {
-    for (const [id, { arquivo, formulario }] of analises) {
-      pedirAnalise(id, arquivo, formulario)
+    for (const [id, { arquivo }] of analises) {
+      enviar({ tipo: 'analisar', id, arquivo })
     }
   }
 
@@ -233,12 +196,11 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
   }
 
   return {
-    analisar(arquivo, opcoes) {
-      const formulario = opcoes?.formulario === true
+    analisar(arquivo) {
       return new Promise((resolver) => {
         const id = proximoId++
-        analises.set(id, { arquivo, formulario, quedas: 0, resolver })
-        pedirAnalise(id, arquivo, formulario)
+        analises.set(id, { arquivo, quedas: 0, resolver })
+        enviar({ tipo: 'analisar', id, arquivo })
       })
     },
     mesclar(arquivos, aoAndar) {
