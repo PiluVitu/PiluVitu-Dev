@@ -1,7 +1,14 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { PIXELS_MAXIMOS_DO_CANVAS } from '@piluvitu/tools/pdf-regras'
-import { PaginaSuperada, criarRenderizadorComPdfjs } from './renderizador'
+import {
+  PIXELS_MAXIMOS_DO_CANVAS,
+  pixelsDoFundo,
+} from '@piluvitu/tools/pdf-regras'
+import {
+  PaginaSuperada,
+  criarRenderizadorComPdfjs,
+  pontoNoTexto,
+} from './renderizador'
 
 // O pdf.js de verdade só roda no E2E (precisa de canvas e Worker de navegador). Aqui ele é um
 // dublê, para conferir o que o renderizador pede a ele e como trata o que volta.
@@ -473,6 +480,181 @@ describe('pagina (a página grande)', () => {
     expect([canvas.width, canvas.height]).toEqual([0, 0])
     await expect(emCurso).rejects.toThrow()
     await expect(documento.pagina(0, 300)).rejects.toThrow('fechado')
+  })
+})
+
+describe('fundo (apagar de verdade)', () => {
+  let pintados: { x: number; y: number; largura: number; altura: number }[]
+  let corDaTinta: string[]
+
+  beforeEach(() => {
+    pintados = []
+    corDaTinta = []
+    HTMLCanvasElement.prototype.getContext = jest.fn(() => {
+      const contexto = {
+        fillStyle: '',
+        fillRect: (x: number, y: number, largura: number, altura: number) => {
+          pintados.push({ x, y, largura, altura })
+          corDaTinta.push(contexto.fillStyle)
+        },
+      }
+      return contexto
+    }) as unknown as HTMLCanvasElement['getContext']
+  })
+
+  it('desenha a página a 200 dpi, pinta os cobrir de branco no canvas antes do JPEG e solta tudo', async () => {
+    const pagina = paginaFalsa({ largura: 600, altura: 800 })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+    const esperado = pixelsDoFundo({ largura: 600, altura: 800 })
+
+    const jpeg = await documento.fundo(0, [
+      { x: 10.2, y: 20.7, largura: 100, altura: 30.1 },
+    ])
+
+    expect(jpeg.type).toBe('image/jpeg')
+    expect(pagina.render).toHaveBeenCalledWith({
+      canvas: pagina.canvases[0],
+      viewport: {
+        width: 600 * esperado.escala,
+        height: 800 * esperado.escala,
+      },
+    })
+    expect(jpegs).toEqual([
+      {
+        largura: esperado.largura,
+        altura: esperado.altura,
+        tipo: 'image/jpeg',
+        q: 0.9,
+      },
+    ])
+    const e = esperado.escala
+    expect(pintados).toEqual([
+      {
+        x: Math.floor(10.2 * e),
+        y: Math.floor(20.7 * e),
+        largura: Math.ceil(110.2 * e) - Math.floor(10.2 * e),
+        altura: Math.ceil(50.8 * e) - Math.floor(20.7 * e),
+      },
+    ])
+    expect(corDaTinta).toEqual(['#ffffff'])
+    expect([pagina.canvases[0].width, pagina.canvases[0].height]).toEqual([
+      0, 0,
+    ])
+    expect(pagina.cleanup).toHaveBeenCalled()
+  })
+
+  // Arredondado para dentro, a borda do retângulo ficaria meio pintada, com um resto da letra embaixo.
+  it('os retângulos são arredondados para fora: cobrem pelo menos a caixa inteira', async () => {
+    prepararDocumento([paginaFalsa({ largura: 595, altura: 842 })])
+    const documento = await abrir()
+    const { escala } = pixelsDoFundo({ largura: 595, altura: 842 })
+    // Com 200 dpi, 10,3 e 44,5 pontos caem em 28,6 e 123,6 pixels: arredondar ao mais perto cortaria a borda.
+    const caixa = { x: 10.3, y: 44.5, largura: 55.5, altura: 6.6 }
+
+    await documento.fundo(0, [caixa])
+
+    const [pintado] = pintados
+    expect(pintado.x).toBeLessThanOrEqual(caixa.x * escala)
+    expect(pintado.y).toBeLessThanOrEqual(caixa.y * escala)
+    expect(pintado.x + pintado.largura).toBeGreaterThanOrEqual(
+      (caixa.x + caixa.largura) * escala,
+    )
+    expect(pintado.y + pintado.altura).toBeGreaterThanOrEqual(
+      (caixa.y + caixa.altura) * escala,
+    )
+  })
+
+  it('não mexe na página grande da tela: ela continua inteira, e nenhum pedido dela é superado', async () => {
+    prepararDocumento([paginaFalsa(), paginaFalsa()])
+    const documento = await abrir()
+    const naTela = await documento.pagina(0, 300)
+
+    await documento.fundo(1, [{ x: 0, y: 0, largura: 1, altura: 1 }])
+
+    expect(naTela.canvas.width).toBe(300)
+    await expect(documento.pagina(0, 300)).resolves.toBeDefined()
+  })
+
+  it('o desenho que falha solta o canvas e rejeita; depois de fechar, é recusado', async () => {
+    const pagina = paginaFalsa()
+    pagina.render.mockImplementation(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      return {
+        promise: Promise.reject(new Error('sem memória')),
+        cancel: jest.fn(),
+      }
+    })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+
+    await expect(documento.fundo(0, [])).rejects.toThrow('sem memória')
+    expect(pagina.canvases[0].width).toBe(0)
+
+    documento.fechar()
+    await expect(documento.fundo(0, [])).rejects.toThrow('fechado')
+  })
+})
+
+describe('textoNoPonto (a dica de cobrir e escrever por cima)', () => {
+  // Texto de 12 pt em (100, 700) no PDF, com 50 pt de largura: na tela de uma página de 800 pt de altura,
+  // a linha de base fica em y = 100.
+  const ITEM = {
+    str: 'Contrato',
+    transform: [12, 0, 0, 12, 100, 700],
+    width: 50,
+  }
+  const RETA = [1, 0, 0, -1, 0, 800]
+  const DEITADA = [0, 1, 1, 0, 0, 0]
+
+  it.each([
+    [{ x: 120, y: 95 }, true],
+    [{ x: 151, y: 92 }, true],
+    [{ x: 120, y: 110 }, false],
+    [{ x: 160, y: 95 }, false],
+    [{ x: 120, y: 80 }, false],
+  ])('página sem giro: %o está no texto? %s', (ponto, dentro) => {
+    expect(pontoNoTexto(RETA, [ITEM], ponto)).toBe(dentro)
+  })
+
+  it('página girada 90°: o texto corre para baixo e as letras sobem para a direita', () => {
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 705, y: 120 })).toBe(true)
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 690, y: 120 })).toBe(false)
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 705, y: 200 })).toBe(false)
+  })
+
+  it('trecho só de espaço, marcação de conteúdo e trecho sem largura não contam', () => {
+    const ponto = { x: 120, y: 95 }
+    expect(pontoNoTexto(RETA, [{ ...ITEM, str: '   ' }], ponto)).toBe(false)
+    expect(pontoNoTexto(RETA, [{}], ponto)).toBe(false)
+    expect(pontoNoTexto(RETA, [{ ...ITEM, width: 0 }], ponto)).toBe(false)
+  })
+
+  it('pergunta ao pdf.js pela camada de texto da página, na vista com escala 1', async () => {
+    const pagina = {
+      ...paginaFalsa(),
+      getViewport: jest.fn(() => ({
+        width: 600,
+        height: 800,
+        transform: RETA,
+      })),
+      getTextContent: jest.fn(async () => ({ items: [ITEM] })),
+    }
+    prepararDocumento([pagina as unknown as PaginaFalsa])
+    const documento = await abrir()
+
+    await expect(documento.textoNoPonto(0, { x: 120, y: 95 })).resolves.toBe(
+      true,
+    )
+    await expect(documento.textoNoPonto(0, { x: 400, y: 400 })).resolves.toBe(
+      false,
+    )
+    expect(pagina.getViewport).toHaveBeenCalledWith({ scale: 1 })
+
+    documento.fechar()
+    await expect(documento.textoNoPonto(0, { x: 120, y: 95 })).resolves.toBe(
+      false,
+    )
   })
 })
 

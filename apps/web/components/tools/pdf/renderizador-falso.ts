@@ -1,4 +1,8 @@
-import { limitarAoCanvas } from '@piluvitu/tools/pdf-regras'
+import {
+  limitarAoCanvas,
+  type Caixa,
+  type Ponto,
+} from '@piluvitu/tools/pdf-regras'
 import { analiseDeExemplo } from './motor-falso'
 import {
   PaginaSuperada,
@@ -16,7 +20,15 @@ type Opcoes = {
   paginasQueFalham?: readonly number[]
   /** Quantas páginas o pdf.js conta, quando ele discorda do pdf-lib (árvore de páginas com `/Count` errado). */
   paginas?: number
+  /** Índices (a partir de 0) cujo fundo do apagar de verdade falha. */
+  fundosQueFalham?: readonly number[]
 }
+
+// As linhas cinzas e o número da folha falsa: onde a página "tem texto" para a dica do editar.
+const temTextoNaFolhaFalsa = ({ y }: Ponto) => (y >= 60 && y <= 340) || y >= 680
+
+// Os bytes iniciais de um JPEG, que é o que o motor confere no fundo.
+const JPEG_FALSO = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0, 0x10)
 
 // Folha A4 com o número da página. SVG, não JPEG: o jsdom não tem canvas, e a story só precisa da imagem.
 function folha(numero: number, deitada: boolean): Blob {
@@ -68,6 +80,7 @@ export function criarRenderizadorFalso({
   miniaturasQueFalham = [],
   paginasQueFalham = [],
   paginas,
+  fundosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   const renderizador = {
@@ -79,6 +92,7 @@ export function criarRenderizadorFalso({
       larguraCss: number
       canvas?: HTMLCanvasElement
     }[],
+    fundos: [] as { indice: number; cobrir: readonly Caixa[] }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
@@ -133,6 +147,18 @@ export function criarRenderizadorFalso({
           atual = canvas
           pedido.canvas = canvas
           return { canvas, tamanho }
+        },
+        async fundo(indice, cobrir) {
+          renderizador.fundos.push({ indice, cobrir })
+          await espera()
+          if (fechado) throw new Error('o documento já foi fechado')
+          if (fundosQueFalham.includes(indice)) {
+            throw new Error('falta de memória')
+          }
+          return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
+        },
+        async textoNoPonto(_indice, ponto) {
+          return !fechado && temTextoNaFolhaFalsa(ponto)
         },
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })

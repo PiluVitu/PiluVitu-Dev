@@ -97,3 +97,86 @@ export const AcimaDoTeto: Story = {
     )
   },
 }
+
+// Fase 3: as ferramentas. A página falsa é uma folha A4 com o número; os objetos entram pelo
+// "Inserir no centro", o mesmo caminho de quem não arrasta.
+export const ComObjetos: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Retângulo' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.keyboard('{Shift>}{ArrowUp}{ArrowUp}{/Shift}')
+    await userEvent.click(canvas.getByRole('button', { name: 'Texto' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.keyboard('Paulo Victor')
+    await expect(
+      canvas.getByRole('button', { name: /^Texto 'Paulo Victor'/ }),
+    ).toBeVisible()
+    // O centro é o da parte da página que aparece na área, que depende da altura da janela.
+    await expect(
+      canvas.getByRole('button', {
+        name: /^Retângulo, em \d+ por \d+, 120 por 80 pontos$/,
+      }),
+    ).toBeVisible()
+  },
+}
+
+export const DesenhoLigado: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Desenhar' }))
+    await expect(canvas.getByText(/^Desenho ligado/)).toBeVisible()
+  },
+}
+
+export const ApagarDeVerdade: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  parameters: { arquivoInicial: pdf('extrato-2p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Cobrir' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('button', {
+        name: 'Apagar de verdade o que está embaixo',
+      }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: 'Apagar de verdade nesta página' }),
+    ).toHaveFocus()
+    await expect(canvas.getByText(/A página vira uma imagem/)).toBeVisible()
+  },
+}
+
+export const PdfEditadoPronto: Story = {
+  args: {
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({ atraso: 150 }),
+  },
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Marca-texto' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Gerar PDF editado' }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('link', { name: 'Baixar contrato-3p-editado.pdf' }),
+      ).toHaveFocus(),
+    )
+  },
+}

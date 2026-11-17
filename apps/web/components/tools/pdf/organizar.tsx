@@ -65,6 +65,7 @@ import {
 } from '@piluvitu/tools/pdf-regras'
 import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import { useDocumentoPdf } from './documento-pdf'
+import { ehCampoDeTexto, podeTerFoco } from './foco'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
@@ -177,36 +178,6 @@ function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
   return 'paginasDemais' in recusa
     ? T.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
     : T.recusado(nome, recusa.motivo)
-}
-
-const TIPOS_SEM_TEXTO = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-])
-
-function podeTerFoco(
-  elemento: Element | null | undefined,
-): elemento is HTMLElement {
-  return (
-    elemento instanceof HTMLElement &&
-    elemento.isConnected &&
-    !(elemento as HTMLButtonElement).disabled
-  )
-}
-
-function ehCampoDeTexto(alvo: EventTarget | null): boolean {
-  if (!(alvo instanceof HTMLElement)) return false
-  if (alvo.isContentEditable || alvo instanceof HTMLTextAreaElement) {
-    return true
-  }
-  return alvo instanceof HTMLInputElement && !TIPOS_SEM_TEXTO.has(alvo.type)
 }
 
 // Só mouse e caneta: o toque fica com o TouchSensor, que espera 250 ms para arrastar não brigar com a rolagem.

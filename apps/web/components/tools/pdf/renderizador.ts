@@ -1,5 +1,11 @@
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
-import { limitarAoCanvas, type Tamanho } from '@piluvitu/tools/pdf-regras'
+import {
+  limitarAoCanvas,
+  pixelsDoFundo,
+  type Caixa,
+  type Ponto,
+  type Tamanho,
+} from '@piluvitu/tools/pdf-regras'
 import type { MotivoDaRecusa } from './motor'
 import { novoWorkerDoPdfjs } from './novo-worker-pdfjs'
 import { criarFabricaDeRecursos } from './recursos-pdfjs'
@@ -22,6 +28,13 @@ export type DocumentoAberto = {
    * o canvas da página anterior só é esvaziado quando o novo fica pronto, para a tela não piscar.
    */
   pagina(indice: number, larguraCss: number): Promise<PaginaDesenhada>
+  /**
+   * Apagar de verdade: a página a 200 dpi (`pixelsDoFundo`) num canvas, com os retângulos de cobrir (em
+   * pontos da tela) pintados de branco nele antes do JPEG. Na mesma fila, sem mexer na página grande.
+   */
+  fundo(indice: number, cobrir: readonly Caixa[]): Promise<Blob>
+  /** Se há texto do próprio PDF no ponto (em pontos da tela), pela camada de texto do pdf.js. */
+  textoNoPonto(indice: number, ponto: Ponto): Promise<boolean>
   /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo, depois de o pdf.js limpar a página (fontes e cache). */
   fechar(): void
 }
@@ -43,6 +56,8 @@ export class PaginaSuperada extends Error {
 }
 
 const QUALIDADE_DO_JPEG = 0.8
+// O fundo vira a página no PDF final: com menos que isso, letra pequena borra.
+const QUALIDADE_DO_FUNDO = 0.9
 const ALTURA_MAXIMA_EM_LARGURAS = 4
 const PRAZO_PARA_FECHAR_MS = 2_000
 
@@ -65,17 +80,85 @@ function conferirLargura(larguraCss: number) {
   }
 }
 
-function jpegDo(canvas: HTMLCanvasElement): Promise<Blob> {
+function jpegDo(
+  canvas: HTMLCanvasElement,
+  qualidade = QUALIDADE_DO_JPEG,
+): Promise<Blob> {
   return new Promise((resolver, rejeitar) =>
     canvas.toBlob(
       (jpeg) =>
         jpeg
           ? resolver(jpeg)
-          : rejeitar(new Error('o navegador não gerou a miniatura')),
+          : rejeitar(new Error('o navegador não gerou o JPEG')),
       'image/jpeg',
-      QUALIDADE_DO_JPEG,
+      qualidade,
     ),
   )
+}
+
+type ItemDeTexto = {
+  str?: string
+  transform?: readonly number[]
+  width?: number
+}
+
+const FOLGA_DO_TEXTO = 2
+
+// A caixa de cada trecho como a camada de texto do pdf.js a monta: da linha de base para cima, na direção
+// do texto, com a altura da fonte (mais um quarto para baixo, das letras que descem).
+export function pontoNoTexto(
+  vista: readonly number[],
+  itens: readonly ItemDeTexto[],
+  { x, y }: Ponto,
+): boolean {
+  const [a, b, c, d, e, f] = vista
+  return itens.some((item) => {
+    if (!item.str?.trim() || !item.transform || !item.width) return false
+    const [ia, ib, ic, id, ie, iff] = item.transform
+    const tx = [
+      a * ia + c * ib,
+      b * ia + d * ib,
+      a * ic + c * id,
+      b * ic + d * id,
+      a * ie + c * iff + e,
+      b * ie + d * iff + f,
+    ]
+    const angulo = Math.atan2(tx[1], tx[0])
+    const altura = Math.hypot(tx[2], tx[3])
+    const largura = item.width * Math.hypot(a, b)
+    const dx = x - tx[4]
+    const dy = y - tx[5]
+    const aoLongo = dx * Math.cos(angulo) + dy * Math.sin(angulo)
+    const acima = dx * Math.sin(angulo) - dy * Math.cos(angulo)
+    return (
+      aoLongo >= -FOLGA_DO_TEXTO &&
+      aoLongo <= largura + FOLGA_DO_TEXTO &&
+      acima >= -altura / 4 - FOLGA_DO_TEXTO &&
+      acima <= altura + FOLGA_DO_TEXTO
+    )
+  })
+}
+
+// Arredondado para fora: a borda do retângulo não fica meio pintada, com um resto da letra embaixo.
+function pintarCobrir(
+  canvas: HTMLCanvasElement,
+  cobrir: readonly Caixa[],
+  escala: number,
+) {
+  if (!cobrir.length) return
+  const contexto = canvas.getContext('2d')
+  if (!contexto) throw new Error('o navegador não deu o canvas para pintar')
+  contexto.fillStyle = '#ffffff'
+  for (const { x, y, largura, altura } of cobrir) {
+    const esquerda = Math.floor(x * escala)
+    const topo = Math.floor(y * escala)
+    contexto.fillRect(
+      esquerda,
+      topo,
+      Math.ceil((x + largura) * escala) - esquerda,
+      Math.ceil((y + altura) * escala) - topo,
+    )
+  }
 }
 
 // O pdf.js só desce no modo que mostra página: o import() abre um chunk próprio.
@@ -220,6 +303,58 @@ export function criarRenderizadorComPdfjs(
         return { canvas, tamanho }
       }
 
+      async function desenharFundo(
+        documento: PDFDocumentProxy,
+        indice: number,
+        cobrir: readonly Caixa[],
+      ): Promise<Blob> {
+        if (fechado) throw new Error('o documento já foi fechado')
+        const pagina = await Promise.race([
+          documento.getPage(indice + 1),
+          quebrou,
+        ])
+        const natural = pagina.getViewport({ scale: 1 })
+        const { largura, altura, escala } = pixelsDoFundo({
+          largura: natural.width,
+          altura: natural.height,
+        })
+        const canvas = document.createElement('canvas')
+        canvas.width = largura
+        canvas.height = altura
+        try {
+          await Promise.race([
+            pagina.render({
+              canvas,
+              viewport: pagina.getViewport({ scale: escala }),
+            }).promise,
+            quebrou,
+          ])
+          pintarCobrir(canvas, cobrir, escala)
+          return await jpegDo(canvas, QUALIDADE_DO_FUNDO)
+        } finally {
+          soltar(canvas)
+          pagina.cleanup()
+        }
+      }
+
+      async function textoEm(
+        documento: PDFDocumentProxy,
+        indice: number,
+        ponto: Ponto,
+      ): Promise<boolean> {
+        if (fechado) return false
+        const pagina = await Promise.race([
+          documento.getPage(indice + 1),
+          quebrou,
+        ])
+        const { items } = await Promise.race([pagina.getTextContent(), quebrou])
+        return pontoNoTexto(
+          pagina.getViewport({ scale: 1 }).transform,
+          items as ItemDeTexto[],
+          ponto,
+        )
+      }
+
       try {
         const documento = await Promise.race([tarefa.promise, quebrou])
         if (documento.numPages === 0) {
@@ -247,6 +382,12 @@ export function criarRenderizadorComPdfjs(
             return naFila(() =>
               desenharPagina(documento, indice, larguraCss, vez),
             )
+          },
+          fundo(indice, cobrir) {
+            return naFila(() => desenharFundo(documento, indice, cobrir))
+          },
+          textoNoPonto(indice, ponto) {
+            return textoEm(documento, indice, ponto)
           },
           fechar,
         }

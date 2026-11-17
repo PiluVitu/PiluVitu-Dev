@@ -1,9 +1,13 @@
 import type {
+  Caixa,
+  FamiliaDaFonte,
   LadoDoMovimento,
   MotivoDoErroDePdf,
   SentidoDoGiro,
+  TipoDeObjeto,
 } from '@piluvitu/tools/pdf-regras'
-import type { FalhaDaOperacao, MotivoDaRecusa } from './motor'
+import type { FalhaDaOperacao, MotivoDaRecusa, ObjetoNaTela } from './motor'
+import type { Ferramenta, NomeDaCor } from './objetos'
 
 // O site ainda não tem catálogo por idioma (WEB-17 em docs/auditoria-a11y-l10n.md): os textos das
 // ferramentas de PDF ficam juntos aqui, com chaves estáveis, para migrarem inteiros quando ele existir.
@@ -95,6 +99,97 @@ function falhaAoSalvar(falha: FalhaDaOperacao): string {
       return 'O navegador não conseguiu salvar o PDF, talvez por falta de memória. Feche outras abas ou recarregue a página e tente de novo.'
   }
 }
+
+const TIPOS_DE_OBJETO: Record<TipoDeObjeto, string> = {
+  texto: 'Texto',
+  imagem: 'Imagem',
+  traco: 'Desenho',
+  retangulo: 'Retângulo',
+  elipse: 'Elipse',
+  linha: 'Linha',
+  seta: 'Seta',
+  'marca-texto': 'Marca-texto',
+  cobrir: 'Retângulo de cobrir',
+}
+
+const pontos = (n: number) => numero(Math.round(n))
+
+function posicaoDoObjeto({ x, y, largura, altura }: Caixa): string {
+  return `em ${pontos(x)} por ${pontos(y)}, ${pontos(largura)} por ${pontos(altura)} pontos`
+}
+
+const LIMITE_DO_RESUMO = 40
+
+function resumoDoTexto(conteudo: string): string {
+  const linha = conteudo.replace(/\s+/g, ' ').trim()
+  if (!linha) return 'vazio'
+  const resumo =
+    linha.length > LIMITE_DO_RESUMO
+      ? `${linha.slice(0, LIMITE_DO_RESUMO - 1)}…`
+      : linha
+  return `'${resumo}'`
+}
+
+// "Texto 'Paulo Victor', em 120 por 340, 200 por 40 pontos": o tipo, o que é e onde está.
+function nomeDoObjeto(objeto: ObjetoNaTela, nomeDaImagem?: string): string {
+  const detalhe =
+    objeto.tipo === 'texto'
+      ? ` ${resumoDoTexto(objeto.conteudo)}`
+      : objeto.tipo === 'imagem' && nomeDaImagem
+        ? ` ${nomeDaImagem}`
+        : ''
+  return `${TIPOS_DE_OBJETO[objeto.tipo]}${detalhe}, ${posicaoDoObjeto(objeto)}`
+}
+
+function posicaoAnunciada(objeto: ObjetoNaTela): string {
+  const posicao = posicaoDoObjeto(objeto)
+  const letra =
+    objeto.tipo === 'texto' ? `, letra de ${pontos(objeto.tamanho)} pontos` : ''
+  return `${posicao.charAt(0).toUpperCase()}${posicao.slice(1)}${letra}.`
+}
+
+function foraDoWinAnsi(caracteres: readonly string[]): string {
+  const n = caracteres.length
+  return `${concordar(n, 'Este caractere não entra', 'Estes caracteres não entram')}, porque as fontes do PDF não ${concordar(n, 'o', 'os')} escrevem: ${lista.format(caracteres)}. Use letras, números e sinais comuns.`
+}
+
+const NOMES_DAS_FERRAMENTAS: Record<Ferramenta, string> = {
+  selecionar: 'Selecionar e mover',
+  texto: 'Texto',
+  imagem: 'Imagem',
+  desenho: 'Desenhar',
+  retangulo: 'Retângulo',
+  elipse: 'Elipse',
+  linha: 'Linha',
+  seta: 'Seta',
+  'marca-texto': 'Marca-texto',
+  cobrir: 'Cobrir',
+}
+
+const NOMES_DAS_CORES: Record<NomeDaCor, string> = {
+  preto: 'Preto',
+  cinza: 'Cinza',
+  branco: 'Branco',
+  vermelho: 'Vermelho',
+  laranja: 'Laranja',
+  amarelo: 'Amarelo',
+  verde: 'Verde',
+  azul: 'Azul',
+  roxo: 'Roxo',
+  rosa: 'Rosa',
+}
+
+const NOMES_DAS_FONTES: Record<FamiliaDaFonte, string> = {
+  helvetica: 'Helvetica',
+  times: 'Times',
+  courier: 'Courier',
+}
+
+const AVISO_DO_COBRIR =
+  'Cobrir esconde o trecho na tela e na impressão, mas o texto continua no arquivo: dá para selecionar, copiar e buscar. Para dado sensível (CPF, conta, endereço), apague de verdade o que está embaixo.'
+
+const listaDePaginas = (numeros: readonly number[]) =>
+  `${concordar(numeros.length, 'a página', 'as páginas')} ${lista.format(numeros.map(numero))}`
 
 const SENTIDOS: Record<SentidoDoGiro, string> = {
   esquerda: 'para a esquerda',
@@ -327,10 +422,146 @@ export const TEXTOS = {
       `Não deu para desenhar a página ${numero(numeroDaPagina)}, talvez por falta de memória. Feche outras abas e tente de novo.`,
     tentarDeNovo: 'Tentar de novo',
     falhaAoSalvar,
+    ferramentas: {
+      rotulo: 'Ferramentas',
+      nomes: NOMES_DAS_FERRAMENTAS,
+      inserirNoCentro: 'Inserir no centro',
+      dicas: {
+        selecionar:
+          'Clique num objeto para escolher, arraste para mover e puxe a alça do canto para mudar o tamanho. Pelo teclado, chegue no objeto pelo Tab.',
+        texto:
+          'Clique na página onde o texto vai ficar, ou use Inserir no centro. Depois, escreva no campo Texto.',
+        imagem:
+          'Escolha uma imagem PNG ou JPEG. Depois, clique ou arraste na página para pôr, ou use Inserir no centro.',
+        desenho: 'Desenhe na página com o dedo, o mouse ou a caneta.',
+        forma:
+          'Clique ou arraste na página para pôr, ou use Inserir no centro.',
+      },
+      desenhoAtivo:
+        'Desenho ligado: a página não rola enquanto ele estiver ativo. Para rolar, escolha Selecionar e mover.',
+      corDoDesenho: 'Cor do desenho',
+      espessuraDoDesenho: 'Espessura do desenho (pontos)',
+      semImagem: 'Escolha a imagem primeiro.',
+    },
+    historico: {
+      rotulo: 'Desfazer e refazer',
+      desfazer: 'Desfazer',
+      refazer: 'Refazer',
+      nadaParaDesfazer: 'Ainda não há nada para desfazer.',
+      nadaParaRefazer: 'Não há nada para refazer.',
+      atalho: 'Ctrl+Z (⌘+Z no Mac) desfaz, e Ctrl+Shift+Z (⌘+Shift+Z) refaz.',
+    },
+    imagem: {
+      escolher: 'Escolher imagem',
+      outra: 'Escolher outra imagem',
+      preparando: (nome: string) => `Preparando ${nome}…`,
+      pronta: (nome: string, largura: number, altura: number) =>
+        `${nome}, ${numero(largura)} por ${numero(altura)} pixels.`,
+      reduzida: (nome: string, largura: number, altura: number) =>
+        `${nome} foi reduzida para ${numero(largura)} por ${numero(altura)} pixels, para o PDF não ficar pesado.`,
+      naoAceita: (nome: string) =>
+        `${nome} não é PNG nem JPEG. Escolha uma imagem PNG ou JPEG.`,
+      corrompida: (nome: string) =>
+        `Não deu para ler ${nome}: a imagem pode estar corrompida. Escolha outra.`,
+      falhaDoNavegador: (nome: string) =>
+        `O navegador não conseguiu preparar ${nome}, talvez por falta de memória. Feche outras abas ou escolha uma imagem menor.`,
+      teto: (nome: string, bytes: number, teto: number) =>
+        `${nome} (${formatarTamanho(bytes)}) não entrou: as imagens passariam de ${formatarTamanho(teto)} somando todas. Apague alguma imagem ou escolha uma menor.`,
+    },
+    objetos: {
+      quadro: (numeroDaPagina: number) =>
+        `Objetos da página ${numero(numeroDaPagina)}`,
+      papel: 'objeto do PDF',
+      nome: nomeDoObjeto,
+      instrucoes:
+        'Num objeto escolhido, as setas movem 1 ponto, e com Shift, 10. Alt com as setas muda o tamanho pelo canto de baixo à direita (no texto, a letra). Delete apaga, Enter edita o texto e Esc solta o objeto.',
+      textoInicial: 'Texto',
+    },
+    painel: {
+      titulo: 'Objeto escolhido',
+      tipo: (tipo: TipoDeObjeto) => TIPOS_DE_OBJETO[tipo],
+      nenhum:
+        'Nenhum objeto escolhido. Clique num objeto da página, ou chegue nele pelo Tab, para ver e mudar a posição, o tamanho e a cor.',
+      posicao: 'Em pontos, a partir do canto de cima à esquerda da página.',
+      x: 'X',
+      y: 'Y',
+      largura: 'Largura',
+      altura: 'Altura',
+      texto: 'Texto',
+      voltar: 'Esc volta para o objeto.',
+      foraDoWinAnsi,
+      fonte: 'Fonte',
+      fontes: NOMES_DAS_FONTES,
+      negrito: 'Negrito',
+      italico: 'Itálico',
+      tamanho: 'Tamanho da letra (pontos)',
+      cor: 'Cor',
+      cores: NOMES_DAS_CORES,
+      personalizada: 'Outra (a do seletor)',
+      outraCor: 'Escolher outra cor',
+      espessura: 'Espessura (pontos)',
+      apagar: 'Apagar objeto',
+    },
+    textoExistente:
+      'Esse texto já faz parte do PDF, e editar o texto que já existe não é confiável: as letras se desalinham ou somem. Cubra o trecho com a ferramenta Cobrir e escreva por cima com a ferramenta Texto.',
+    usarCobrir: 'Usar Cobrir',
+    cobrir: {
+      titulo: 'Cobrir nesta página',
+      aviso: AVISO_DO_COBRIR,
+      apagarDeVerdade: 'Apagar de verdade o que está embaixo',
+      antes: 'Antes de confirmar, o que muda nesta página:',
+      consequencias: [
+        'A página vira uma imagem, com os retângulos de cobrir pintados nela: o que estava embaixo some do arquivo.',
+        'O texto da página deixa de ser selecionável e de aparecer na busca.',
+        'O PDF fica maior.',
+        'Os links e os campos de formulário desta página saem.',
+        'Os metadados do documento (título, autor) continuam.',
+      ],
+      confirmar: 'Apagar de verdade nesta página',
+      cancelar: 'Cancelar',
+      ligado: (numeroDaPagina: number) =>
+        `Na página ${numero(numeroDaPagina)}, o que está embaixo dos retângulos de cobrir vai ser apagado de verdade quando você gerar o PDF.`,
+      desligar: 'Só cobrir, sem apagar',
+    },
+    gerar: {
+      botao: 'Gerar PDF editado',
+      semObjetos:
+        'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
+      resumo: (objetos: number, paginasComObjetos: number) =>
+        `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
+      apagando: (numeros: readonly number[]) =>
+        `Para apagar de verdade, ${listaDePaginas(numeros)} ${concordar(numeros.length, 'vai virar imagem', 'vão virar imagem')}.`,
+      montando: 'Montando o PDF…',
+      cancelar: 'Cancelar',
+      pronto: 'PDF editado pronto',
+      resumoDoPronto: (totalDePaginas: number, bytes: number) =>
+        `${paginas(totalDePaginas)} · ${formatarTamanho(bytes)}`,
+      baixar: (nome: string) => `Baixar ${nome}`,
+      mostrarObjeto: 'Mostrar o objeto',
+    },
     anuncios: {
       pagina: (numeroDaPagina: number, total: number) =>
         `Página ${numero(numeroDaPagina)} de ${numero(total)}.`,
       zoom: (fracao: number) => `Zoom em ${formatarPorcentagem(fracao)}.`,
+      inserido: (objeto: ObjetoNaTela, nomeDaImagem?: string) =>
+        `Inserido: ${nomeDoObjeto(objeto, nomeDaImagem)}.`,
+      apagado: (tipo: TipoDeObjeto) => `Apagado: ${TIPOS_DE_OBJETO[tipo]}.`,
+      posicao: posicaoAnunciada,
+      solto: 'Nenhum objeto escolhido.',
+      desfeito: 'Desfeito.',
+      refeito: 'Refeito.',
+      desfeitoNaPagina: (numeroDaPagina: number) =>
+        `Desfeito na página ${numero(numeroDaPagina)}.`,
+      refeitoNaPagina: (numeroDaPagina: number) =>
+        `Refeito na página ${numero(numeroDaPagina)}.`,
+      apagarLigado: (numeroDaPagina: number) =>
+        `A página ${numero(numeroDaPagina)} vai ser apagada de verdade embaixo dos retângulos de cobrir.`,
+      apagarDesligado: (numeroDaPagina: number) =>
+        `A página ${numero(numeroDaPagina)} volta a só cobrir.`,
+      montando: 'Montando o PDF…',
+      cancelado: 'Cancelado.',
+      pronto: (totalDePaginas: number, bytes: number) =>
+        `PDF editado pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
     },
   },
   arrastar: {
