@@ -40,14 +40,18 @@ import {
   giroNormalizado,
   linhasDeBase,
   matrizDaTelaParaPdf,
+  saiPorCopia,
   tamanhoNaTela,
+  tamanhoValido,
   tipoDaImagem,
   type AvisoDoPdf,
   type FamiliaDaFonte,
   type GeometriaDaPagina,
+  type Giro,
   type MotivoDoErroDePdf,
   type MotivoDoErroNaEdicao,
   type ObjetoDaPagina,
+  type PaginaDaMontagem,
   type PaginaDoPlano,
 } from './pdf-regras'
 import { caminhoDoTraco } from './pdf-traco'
@@ -58,6 +62,8 @@ export type {
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
   ObjetoDaPagina,
+  OrigemDaPagina,
+  PaginaDaMontagem,
   PaginaDoPlano,
 } from './pdf-regras'
 
@@ -196,10 +202,10 @@ function rotacaoAtual(pagina: PDFPage): number {
 // levaria o conteúdo dela junto, solto no arquivo. Vazia, só sobra o /Type.
 function esvaziarPaginasForaDoPlano(
   origem: PDFDocument,
-  plano: readonly PaginaDoPlano[],
+  indicesQueFicam: readonly number[],
 ): void {
   const paginas = origem.getPages()
-  const ficam = new Set(plano.map(({ indice }) => paginas[indice].node))
+  const ficam = new Set(indicesQueFicam.map((indice) => paginas[indice].node))
   for (const { node } of paginas) {
     if (ficam.has(node)) continue
     for (const chave of node.keys()) {
@@ -223,7 +229,10 @@ export async function organizarPaginas(
   const destino = await PDFDocument.create({ updateMetadata: false })
   let copiadas: PDFPage[]
   try {
-    esvaziarPaginasForaDoPlano(origem, plano)
+    esvaziarPaginasForaDoPlano(
+      origem,
+      plano.map(({ indice }) => indice),
+    )
     copiadas = await destino.copyPages(
       origem,
       plano.map(({ indice }) => indice),
@@ -1391,30 +1400,103 @@ export async function aplicarEdicoes(
 ): Promise<Uint8Array> {
   conferirEdicoes(edicoes)
   const documento = await abrir(bytes)
-  const paginas = documento.getPages()
-  for (const { indice } of edicoes) {
-    if (indice >= paginas.length) {
+  conferirQueExistem(
+    documento,
+    edicoes.map(({ indice }) => indice),
+  )
+  await editarNoLugar(
+    documento,
+    edicoes.map((edicao) => ({
+      ...edicao,
+      rotulo: edicao.indice,
+      giro: 0,
+      moldura: 0,
+    })),
+  )
+  return salvarNoLugar(documento)
+}
+
+function conferirQueExistem(
+  documento: PDFDocument,
+  indices: readonly number[],
+  arquivo?: number,
+): void {
+  const total = documento.getPageCount()
+  for (const indice of indices) {
+    if (indice >= total) {
       throw new RangeError(
-        `página fora do documento: ${indice} de ${paginas.length}`,
+        `página fora do documento${arquivo === undefined ? '' : ` ${arquivo}`}: ${indice} de ${total}`,
       )
     }
   }
+}
+
+// `rotulo` é o que o ErroNaEdicao diz: a página no arquivo (aplicarEdicoes) ou a posição no plano.
+type PaginaEditada = {
+  readonly indice: number
+  readonly rotulo: number
+  readonly objetos: readonly ObjetoDaPagina[]
+  readonly fundo?: Uint8Array
+  readonly giro: Giro
+  readonly moldura: Giro
+}
+
+// A moldura (D2): os objetos foram postos na página como a tela a mostrava, com o /Rotate e a moldura, e
+// giram com ela. Para trocar por "bloquear girar com objetos", basta a moldura ser o giro.
+function giros(
+  rotacao: number,
+  { giro, moldura }: Pick<PaginaEditada, 'giro' | 'moldura'>,
+) {
+  return {
+    doDesenho: giroNormalizado(rotacao + moldura),
+    final: giroNormalizado(rotacao + giro),
+    daApagada: giroNormalizado(giro - moldura),
+  }
+}
+
+async function desenharEGirar(
+  pagina: PDFPage,
+  editada: Omit<PaginaEditada, 'indice'>,
+  recursos: Recursos,
+): Promise<void> {
+  const geometria = geometriaDaPagina(pagina)
+  const { doDesenho, final } = giros(geometria.rotacao, editada)
+  await desenharNaPagina(
+    pagina,
+    { ...geometria, rotacao: doDesenho },
+    editada.objetos,
+    recursos,
+    editada.rotulo,
+  )
+  if (editada.giro !== 0) pagina.setRotation(degrees(final))
+}
+
+async function editarNoLugar(
+  documento: PDFDocument,
+  editadas: readonly PaginaEditada[],
+): Promise<void> {
+  const paginas = documento.getPages()
   const recursos = new Recursos(documento)
-  if (edicoes.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
+  if (editadas.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
     tirarXfaDoHibrido(documento)
   }
   const apagadas = new Set<PDFRef>()
   const anotacoesRemovidas = new Set<PDFRef>()
   const xobjetosDasApagadas = new Set<PDFRef>()
-  for (const { indice, objetos, fundo } of edicoes) {
+  for (const editada of editadas) {
+    const { indice, rotulo, objetos, fundo } = editada
     const pagina = paginas[indice]
-    let geometria = geometriaDaPagina(pagina)
     if (fundo === undefined) {
-      await desenharNaPagina(pagina, geometria, objetos, recursos, indice)
+      await desenharEGirar(pagina, editada, recursos)
       continue
     }
-    const imagem = await recursos.imagem(fundo, indice)
-    const { largura, altura } = tamanhoNaTela(geometria)
+    const imagem = await recursos.imagem(fundo, rotulo)
+    const geometria = geometriaDaPagina(pagina)
+    const { doDesenho, daApagada } = giros(geometria.rotacao, editada)
+    const { largura, altura } = tamanhoNaTela({
+      ...geometria,
+      rotacao: doDesenho,
+    })
     for (const referencia of referenciasDasAnotacoes(pagina)) {
       anotacoesRemovidas.add(referencia)
     }
@@ -1426,13 +1508,16 @@ export async function aplicarEdicoes(
     }
     esvaziarPagina(pagina, largura, altura)
     apagadas.add(pagina.ref)
-    geometria = {
-      caixa: { x: 0, y: 0, largura, altura },
-      rotacao: 0,
-      unidade: 1,
-    }
     pagina.drawImage(imagem, { x: 0, y: 0, width: largura, height: altura })
-    await desenharNaPagina(pagina, geometria, objetos, recursos, indice, true)
+    await desenharNaPagina(
+      pagina,
+      { caixa: { x: 0, y: 0, largura, altura }, rotacao: 0, unidade: 1 },
+      objetos,
+      recursos,
+      rotulo,
+      true,
+    )
+    pagina.setRotation(degrees(daApagada))
     pagina.node.delete(PDFName.Annots)
   }
   if (apagadas.size > 0) {
@@ -1453,9 +1538,168 @@ export async function aplicarEdicoes(
     } while (removidos.size > 0)
   }
   tirarRecursosEstendidos(documento)
+}
+
+async function salvarNoLugar(documento: PDFDocument): Promise<Uint8Array> {
   await documento.flush()
   soltarInalcancaveis(documento.context)
   return documento.save({
+    objectsPerTick: Infinity,
+    updateFieldAppearances: false,
+  })
+}
+
+export type EdicaoNaMontagem = {
+  readonly posicao: number
+  readonly objetos: readonly ObjetoDaPagina[]
+  // Apagar de verdade, como em EdicaoDaPagina; não vale para a página em branco.
+  readonly fundo?: Uint8Array
+}
+
+function conferirMontagem(
+  plano: readonly PaginaDaMontagem[],
+  quantosArquivos: number,
+): void {
+  if (!Array.isArray(plano) || plano.length === 0) {
+    throw new RangeError('o plano não tem página')
+  }
+  const vistas = new Set<string>()
+  plano.forEach(({ origem, giro, moldura }, posicao) => {
+    const falhar = (motivo: string): never => {
+      throw new RangeError(`plano inválido na posição ${posicao}: ${motivo}`)
+    }
+    if (!GIROS.includes(giro)) falhar(`giro ${giro}`)
+    if (!GIROS.includes(moldura)) falhar(`moldura ${moldura}`)
+    if (typeof origem !== 'object' || origem === null) falhar('origem')
+    if ('branca' in origem) {
+      const { branca } = origem
+      if (
+        typeof branca !== 'object' ||
+        branca === null ||
+        !tamanhoValido(branca)
+      ) {
+        falhar('tamanho da página em branco')
+      }
+      return
+    }
+    const { arquivo, indice } = origem
+    if (
+      !Number.isInteger(arquivo) ||
+      arquivo < 0 ||
+      arquivo >= quantosArquivos
+    ) {
+      falhar(`arquivo ${arquivo}`)
+    }
+    if (!Number.isInteger(indice) || indice < 0) falhar(`índice ${indice}`)
+    const chave = `${arquivo}:${indice}`
+    if (vistas.has(chave)) falhar(`página repetida (${chave})`)
+    vistas.add(chave)
+  })
+}
+
+function conferirEdicoesDaMontagem(
+  plano: readonly PaginaDaMontagem[],
+  edicoes: readonly EdicaoNaMontagem[],
+): Map<number, EdicaoNaMontagem> {
+  if (!Array.isArray(edicoes)) throw new RangeError('edições inválidas')
+  conferirEdicoes(
+    edicoes.map(({ posicao, objetos, fundo }) => ({
+      indice: posicao,
+      objetos,
+      fundo,
+    })),
+  )
+  for (const { posicao, fundo } of edicoes) {
+    if (posicao >= plano.length) {
+      throw new RangeError(`edição fora do plano: ${posicao}`)
+    }
+    if (fundo !== undefined && 'branca' in plano[posicao].origem) {
+      throw new RangeError(`apagar de verdade na página em branco ${posicao}`)
+    }
+  }
+  return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
+}
+
+export async function montarDocumento(
+  fontes: readonly FonteDePdf[],
+  plano: readonly PaginaDaMontagem[],
+  edicoes: readonly EdicaoNaMontagem[],
+): Promise<Uint8Array> {
+  conferirMontagem(plano, fontes.length)
+  const edicaoDa = conferirEdicoesDaMontagem(plano, edicoes)
+  const edicaoDe = (posicao: number): Omit<PaginaEditada, 'indice'> => ({
+    rotulo: posicao,
+    objetos: edicaoDa.get(posicao)?.objetos ?? [],
+    fundo: edicaoDa.get(posicao)?.fundo,
+    giro: plano[posicao].giro,
+    moldura: plano[posicao].moldura,
+  })
+  const editadas = (paginas: readonly { posicao: number; indice: number }[]) =>
+    paginas.map(({ posicao, indice }) => ({ ...edicaoDe(posicao), indice }))
+  const carregar = async (arquivo: number): Promise<PDFDocument> => {
+    const fonte = fontes[arquivo]
+    try {
+      return await abrir(typeof fonte === 'function' ? await fonte() : fonte)
+    } catch (erro) {
+      if (erro instanceof ErroDePdf) throw new ErroDePdf(erro.motivo, arquivo)
+      throw erro
+    }
+  }
+  const porArquivo = new Map<number, { posicao: number; indice: number }[]>()
+  plano.forEach(({ origem }, posicao) => {
+    if ('branca' in origem) return
+    const doArquivo = porArquivo.get(origem.arquivo) ?? []
+    doArquivo.push({ posicao, indice: origem.indice })
+    porArquivo.set(origem.arquivo, doArquivo)
+  })
+
+  const doPrimeiro = porArquivo.get(0)
+  let primeiro: PDFDocument | undefined
+  if (doPrimeiro?.length === plano.length) {
+    primeiro = await carregar(0)
+    if (!saiPorCopia(plano, primeiro.getPageCount())) {
+      await editarNoLugar(primeiro, editadas(doPrimeiro))
+      return salvarNoLugar(primeiro)
+    }
+  }
+
+  const destino = await PDFDocument.create({ updateMetadata: false })
+  const copiadas = new Map<number, PDFPage>()
+  for (const arquivo of [...porArquivo.keys()].sort((a, b) => a - b)) {
+    const paginas = porArquivo.get(arquivo)!
+    const origem =
+      arquivo === 0 && primeiro ? primeiro : await carregar(arquivo)
+    primeiro = undefined
+    const indices = paginas.map(({ indice }) => indice)
+    conferirQueExistem(origem, indices, arquivo)
+    // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
+    try {
+      esvaziarPaginasForaDoPlano(origem, indices)
+    } catch {
+      throw new ErroDePdf('corrompido', arquivo)
+    }
+    await editarNoLugar(origem, editadas(paginas))
+    let deste: PDFPage[]
+    try {
+      deste = await destino.copyPages(origem, indices)
+    } catch {
+      throw new ErroDePdf('corrompido', arquivo)
+    }
+    paginas.forEach(({ posicao }, i) => copiadas.set(posicao, deste[i]))
+  }
+  const recursos = new Recursos(destino)
+  for (const [posicao, { origem }] of plano.entries()) {
+    if (!('branca' in origem)) {
+      destino.addPage(copiadas.get(posicao)!)
+      continue
+    }
+    const pagina = destino.addPage([
+      origem.branca.largura,
+      origem.branca.altura,
+    ])
+    await desenharEGirar(pagina, edicaoDe(posicao), recursos)
+  }
+  return destino.save({
     objectsPerTick: Infinity,
     updateFieldAppearances: false,
   })

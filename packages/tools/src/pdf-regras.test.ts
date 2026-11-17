@@ -8,6 +8,7 @@ import {
   PASSO_CURTO,
   PASSO_LONGO,
   PIXELS_MAXIMOS_DO_CANVAS,
+  TAMANHO_A4,
   TAMANHO_MAXIMO_DO_TEXTO,
   TAMANHO_MINIMO_DO_TEXTO,
   TETO_DE_BYTES_COM_MINIATURAS,
@@ -16,6 +17,7 @@ import {
   alturaDoTexto,
   apagar,
   aplicarMatriz,
+  cabeNoDocumento,
   cabeNoWinAnsi,
   cabemNoTeto,
   caracteresForaDoWinAnsi,
@@ -30,6 +32,7 @@ import {
   geometriaDaVista,
   girar,
   historicoInicial,
+  inserirPaginas,
   limitarAPagina,
   limitarAoCanvas,
   linhaEntre,
@@ -46,9 +49,12 @@ import {
   podeDesfazer,
   podeRefazer,
   pontosDoTracoNaTela,
+  posicaoDeInsercao,
   redimensionarObjeto,
   refazer,
   registrarNoHistorico,
+  saiPorCopia,
+  tamanhoDaBranca,
   tamanhoNaTela,
   telaParaPdf,
   tipoDaImagem,
@@ -60,6 +66,8 @@ import {
   type ObjetoLinha,
   type ObjetoTexto,
   type ObjetoTraco,
+  type OrigemDaPagina,
+  type PaginaDaMontagem,
   type PaginaDoPlano,
   type Ponto,
 } from './pdf-regras'
@@ -1100,4 +1108,323 @@ describe('limitarAoCanvas (a página grande da tela)', () => {
       ).toThrow(RangeError)
     },
   )
+})
+
+// Editor único: o documento que junta páginas de vários arquivos e páginas em branco.
+
+type PaginaComId = PaginaDaMontagem & { readonly id: string }
+
+const doArquivo = (
+  arquivo: number,
+  indice: number,
+  extra: Partial<PaginaDaMontagem> = {},
+): PaginaComId => ({
+  id: `a${arquivo}p${indice}`,
+  origem: { arquivo, indice },
+  giro: 0,
+  moldura: 0,
+  ...extra,
+})
+
+const ids = (paginas: readonly { id: string }[]) => paginas.map((p) => p.id)
+
+describe('as funções do organizar na página da montagem', () => {
+  const montagem = (): PaginaComId[] => [
+    doArquivo(0, 0),
+    doArquivo(1, 0, { moldura: 90 }),
+    {
+      id: 'b0',
+      origem: { branca: { largura: 300, altura: 400 } },
+      giro: 0,
+      moldura: 0,
+    },
+  ]
+
+  it('girar muda só o giro: o id, a origem e a moldura ficam', () => {
+    const girado: PaginaComId[] = girar(montagem(), [1, 2], 'direita')
+    expect(girado).toEqual([
+      montagem()[0],
+      { ...montagem()[1], giro: 90 },
+      { ...montagem()[2], giro: 90 },
+    ])
+  })
+
+  it('mover, apagar e extrair levam a página inteira', () => {
+    const movido: PaginaComId[] = moverSelecionadas(montagem(), [2], 'antes')
+    expect(movido).toEqual([montagem()[0], montagem()[2], montagem()[1]])
+    const semA: PaginaComId[] = apagar(montagem(), [0])
+    expect(ids(semA)).toEqual(['a1p0', 'b0'])
+    const soB: PaginaComId[] = extrair(montagem(), [2])
+    expect(soB).toEqual([montagem()[2]])
+  })
+
+  it('o PaginaDoPlano de hoje continua servindo', () => {
+    const plano: PaginaDoPlano[] = girar(planoInicial(2), [0], 'direita')
+    expect(plano).toEqual([
+      { indice: 0, giro: 90 },
+      { indice: 1, giro: 0 },
+    ])
+  })
+
+  it('a origem é de arquivo ou em branco', () => {
+    const origens: OrigemDaPagina[] = montagem().map((p) => p.origem)
+    expect(origens.map((o) => ('branca' in o ? 'branca' : o.arquivo))).toEqual([
+      0,
+      1,
+      'branca',
+    ])
+  })
+})
+
+describe('TAMANHO_A4', () => {
+  it('é o A4 em pontos, de pé', () => {
+    expect(TAMANHO_A4).toEqual({ largura: 595.28, altura: 841.89 })
+  })
+})
+
+describe('posicaoDeInsercao (P3: o que entra vai depois da última marcada)', () => {
+  const paginas = ['a', 'b', 'c', 'd'].map((id) => ({ id }))
+
+  it('sem seleção, no fim', () => {
+    expect(posicaoDeInsercao(paginas, [])).toBe(4)
+  })
+
+  it('depois da última que a pessoa marcou, não da última na ordem do documento', () => {
+    expect(posicaoDeInsercao(paginas, ['c', 'a'])).toBe(1)
+    expect(posicaoDeInsercao(paginas, ['a', 'c'])).toBe(3)
+    expect(posicaoDeInsercao(paginas, ['d'])).toBe(4)
+  })
+
+  it('a última marcada foi apagada: vale a marcada anterior', () => {
+    expect(posicaoDeInsercao(paginas, ['b', 'x'])).toBe(2)
+    expect(posicaoDeInsercao(paginas, ['c', 'b', 'x', 'y'])).toBe(2)
+  })
+
+  it('todas as marcadas foram apagadas: no fim', () => {
+    expect(posicaoDeInsercao(paginas, ['x', 'y'])).toBe(4)
+  })
+
+  it('documento sem página: na posição 0', () => {
+    expect(posicaoDeInsercao([], ['a'])).toBe(0)
+  })
+})
+
+describe('tamanhoDaBranca (P2: o tamanho da última marcada, como ela aparece)', () => {
+  const retrato = { largura: 600, altura: 800 }
+
+  it('sem marcada, A4', () => {
+    expect(tamanhoDaBranca(null)).toEqual(TAMANHO_A4)
+  })
+
+  it('o tamanho da marcada sem giro', () => {
+    expect(tamanhoDaBranca({ tamanho: retrato, giro: 0 })).toEqual(retrato)
+    expect(tamanhoDaBranca({ tamanho: retrato, giro: 180 })).toEqual(retrato)
+  })
+
+  it('a marcada girada de 90 ou 270 aparece deitada: a branca sai deitada', () => {
+    const deitada = { largura: 800, altura: 600 }
+    expect(tamanhoDaBranca({ tamanho: retrato, giro: 90 })).toEqual(deitada)
+    expect(tamanhoDaBranca({ tamanho: retrato, giro: 270 })).toEqual(deitada)
+  })
+
+  it.each([
+    { largura: 0, altura: 800 },
+    { largura: 600, altura: -1 },
+    { largura: Number.NaN, altura: 800 },
+    { largura: 600, altura: Number.POSITIVE_INFINITY },
+  ])('recusa o tamanho %p com RangeError', (tamanho) => {
+    expect(() => tamanhoDaBranca({ tamanho, giro: 0 })).toThrow(RangeError)
+  })
+})
+
+describe('inserirPaginas', () => {
+  const paginas = ['a', 'b', 'c'].map((id) => ({ id }))
+  const novas = ['x', 'y'].map((id) => ({ id }))
+
+  it('entram juntas na posição, na ordem recebida', () => {
+    expect(ids(inserirPaginas(paginas, 1, novas))).toEqual([
+      'a',
+      'x',
+      'y',
+      'b',
+      'c',
+    ])
+    expect(ids(inserirPaginas(paginas, 0, novas))).toEqual([
+      'x',
+      'y',
+      'a',
+      'b',
+      'c',
+    ])
+    expect(ids(inserirPaginas(paginas, 3, novas))).toEqual([
+      'a',
+      'b',
+      'c',
+      'x',
+      'y',
+    ])
+  })
+
+  it('com a posição de posicaoDeInsercao', () => {
+    const posicao = posicaoDeInsercao(paginas, ['a'])
+    expect(ids(inserirPaginas(paginas, posicao, novas))).toEqual([
+      'a',
+      'x',
+      'y',
+      'b',
+      'c',
+    ])
+  })
+
+  it('não muda a lista recebida', () => {
+    const congelada = Object.freeze([...paginas])
+    expect(inserirPaginas(congelada, 1, novas)).not.toBe(congelada)
+    expect(ids(congelada)).toEqual(['a', 'b', 'c'])
+  })
+
+  it.each([-1, 4, 1.5, Number.NaN])(
+    'recusa a posição %p com RangeError',
+    (posicao) => {
+      expect(() => inserirPaginas(paginas, posicao, novas)).toThrow(RangeError)
+    },
+  )
+})
+
+describe('saiPorCopia (o caminho por cópia perde marcadores, links e formulário)', () => {
+  const todas = (total: number, extra: Partial<PaginaDaMontagem> = {}) =>
+    Array.from({ length: total }, (_, i) => doArquivo(0, i, extra))
+
+  it('todas as páginas do primeiro arquivo, na ordem: no lugar, mesmo com giro e moldura', () => {
+    expect(saiPorCopia(todas(3), 3)).toBe(false)
+    expect(saiPorCopia(todas(3, { giro: 90, moldura: 270 }), 3)).toBe(false)
+  })
+
+  it.each<[string, PaginaDaMontagem[]]>([
+    ['página reordenada', [doArquivo(0, 1), doArquivo(0, 0), doArquivo(0, 2)]],
+    ['página apagada', [doArquivo(0, 0), doArquivo(0, 2)]],
+    ['a última apagada (extrair)', [doArquivo(0, 0), doArquivo(0, 1)]],
+    [
+      'página de outro arquivo',
+      [doArquivo(0, 0), doArquivo(0, 1), doArquivo(0, 2), doArquivo(1, 0)],
+    ],
+    [
+      'página em branco',
+      [
+        doArquivo(0, 0),
+        doArquivo(0, 1),
+        doArquivo(0, 2),
+        {
+          origem: { branca: { largura: 100, altura: 100 } },
+          giro: 0,
+          moldura: 0,
+        },
+      ],
+    ],
+    [
+      'só o segundo arquivo',
+      [doArquivo(1, 0), doArquivo(1, 1), doArquivo(1, 2)],
+    ],
+    ['plano vazio', []],
+  ])('%s: por cópia', (_nome, plano) => {
+    expect(saiPorCopia(plano, 3)).toBe(true)
+  })
+})
+
+describe('cabeNoDocumento (tetos somando os arquivos abertos e as brancas)', () => {
+  const MB = 1_000_000
+
+  it('cabe: diz o que ainda cabia antes do novo', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 10 * MB, paginas: 100 },
+        { bytes: 5 * MB, paginas: 10 },
+      ),
+    ).toEqual({ cabe: true, restam: { bytes: 40 * MB, paginas: 400 } })
+  })
+
+  it('no limite exato, cabe', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 40 * MB, paginas: 490 },
+        { bytes: 10 * MB, paginas: 10 },
+      ).cabe,
+    ).toBe(true)
+  })
+
+  it('passa dos 50 MB somados: não cabe pelos bytes', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 45 * MB, paginas: 10 },
+        { bytes: 5 * MB + 1, paginas: 1 },
+      ),
+    ).toEqual({
+      cabe: false,
+      passou: 'bytes',
+      restam: { bytes: 5 * MB, paginas: 490 },
+    })
+  })
+
+  it('passa das 500 páginas somadas: não cabe pelas páginas', () => {
+    expect(
+      cabeNoDocumento({ bytes: MB, paginas: 495 }, { bytes: MB, paginas: 6 }),
+    ).toEqual({
+      cabe: false,
+      passou: 'paginas',
+      restam: { bytes: 49 * MB, paginas: 5 },
+    })
+  })
+
+  it('passa dos dois tetos ao mesmo tempo: o motivo é os bytes', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 45 * MB, paginas: 495 },
+        { bytes: 6 * MB, paginas: 6 },
+      ),
+    ).toEqual({
+      cabe: false,
+      passou: 'bytes',
+      restam: { bytes: 5 * MB, paginas: 5 },
+    })
+  })
+
+  it('o arquivo ainda não lido (sem a contagem) é conferido só pelos bytes', () => {
+    expect(
+      cabeNoDocumento({ bytes: 0, paginas: 500 }, { bytes: MB }).cabe,
+    ).toBe(true)
+    expect(
+      cabeNoDocumento({ bytes: 50 * MB, paginas: 0 }, { bytes: 1 }),
+    ).toMatchObject({ cabe: false, passou: 'bytes' })
+  })
+
+  it('a página em branco conta uma página e nenhum byte', () => {
+    const branca = { bytes: 0, paginas: 1 }
+    expect(cabeNoDocumento({ bytes: 50 * MB, paginas: 499 }, branca).cabe).toBe(
+      true,
+    )
+    expect(cabeNoDocumento({ bytes: 0, paginas: 500 }, branca)).toMatchObject({
+      cabe: false,
+      passou: 'paginas',
+    })
+  })
+
+  it('o que resta nunca é negativo', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 60 * MB, paginas: 600 },
+        { bytes: 0, paginas: 0 },
+      ).restam,
+    ).toEqual({ bytes: 0, paginas: 0 })
+  })
+
+  it.each([
+    [{ bytes: -1, paginas: 0 }, { bytes: 0 }],
+    [{ bytes: 0, paginas: 1.5 }, { bytes: 0 }],
+    [{ bytes: 0, paginas: 0 }, { bytes: Number.NaN }],
+    [
+      { bytes: 0, paginas: 0 },
+      { bytes: 0, paginas: -1 },
+    ],
+  ])('recusa número inválido com RangeError (%p, %p)', (abertos, novo) => {
+    expect(() => cabeNoDocumento(abertos, novo)).toThrow(RangeError)
+  })
 })

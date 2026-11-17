@@ -15,15 +15,22 @@ const path = require('node:path')
  */
 
 /**
+ * `girosParaDesfazer[i]`, em graus, vira a vista da página i para trás antes de ler: é como ler a página
+ * como a tela a mostrava antes de ela ser girada (a moldura). `rotate` continua o do PDF.
  * @param {Uint8Array} bytes
+ * @param {number[]} [girosParaDesfazer]
  * @returns {{ paginas: PaginaLida[] }}
  */
-function lerComPdfjs(bytes) {
-  const saida = execFileSync(process.execPath, [__filename], {
-    input: bytes,
-    cwd: __dirname,
-    maxBuffer: 64 * 1024 * 1024,
-  })
+function lerComPdfjs(bytes, girosParaDesfazer = []) {
+  const saida = execFileSync(
+    process.execPath,
+    [__filename, JSON.stringify(girosParaDesfazer)],
+    {
+      input: bytes,
+      cwd: __dirname,
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  )
   return JSON.parse(saida.toString('utf8'))
 }
 
@@ -109,6 +116,7 @@ function desenhosDaPagina(pdfjs, operadores, vista) {
 
 async function principal() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const girosParaDesfazer = JSON.parse(process.argv[2] ?? '[]')
   const partes = []
   for await (const parte of process.stdin) partes.push(parte)
   const tarefa = pdfjs.getDocument({
@@ -124,7 +132,11 @@ async function principal() {
   const paginas = []
   for (let numero = 1; numero <= documento.numPages; numero++) {
     const pagina = await documento.getPage(numero)
-    const vista = pagina.getViewport({ scale: 1 })
+    const desfazer = girosParaDesfazer[numero - 1] ?? 0
+    const vista = pagina.getViewport({
+      scale: 1,
+      rotation: (((pagina.rotate - desfazer) % 360) + 360) % 360,
+    })
     const conteudo = await pagina.getTextContent()
     paginas.push({
       view: pagina.view,

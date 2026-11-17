@@ -2,7 +2,7 @@
 
 Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2026-11-16: a ferramenta Mesclar PDF vira um editor, tudo no navegador. O editor inteiro está aprovado; cada fase entra num PR com revisão do Crivo no SHA exato e CI verde, sem esperar o Paulo. Quando uma fase mudar uma decisão daqui, o PR dela atualiza este arquivo.
 
-> **Estado em 2026-11-17: o Assinar saiu, e o próximo passo é o editor único.** Depois do merge da fase 4 (#121), o Paulo disse que o modo **Assinar PDF não era para existir** (a assinatura é pelo gov.br) e, no mesmo dia, decidiu: tirar. O PR desta remoção tirou o modo, a ferramenta Assinatura do Editar e o formulário AcroForm, que também não tinha sido pedido; `/tools/pdf/assinar` responde 308 para `/tools/pdf` (ver "Fase 4: removida a pedido do Paulo"). Depois dela vem o editor único, que o Paulo escolheu no mesmo dia: a variante A ("Bancada"), em PRs pequenos, cada um com o seu registro neste plano. A medida de novo do teto de 50 MB do organizar continua pendente, e só roda com a carga da máquina abaixo de 20 (ver "Medições do organizar" no `apps/web/CLAUDE.md`).
+> **Estado em 2026-11-17: o editor único está em andamento (PR 1 de 6, a lógica no `packages/tools`).** O Paulo escolheu a variante A ("Bancada"): miniaturas à esquerda, a página aberta no meio e o painel do objeto à direita, com adicionar outro PDF e criar página em branco enquanto edita, e o organizar e o editar de hoje na mesma tela (ver "Editor único"). Antes disso, no mesmo dia, o modo **Assinar PDF** saiu (#123): não era para existir, porque a assinatura é pelo gov.br; `/tools/pdf/assinar` responde 308 para `/tools/pdf` (ver "Fase 4: removida a pedido do Paulo"). A medida de novo do teto de 50 MB do organizar continua pendente, e só roda com a carga da máquina abaixo de 20 (ver "Medições do organizar" no `apps/web/CLAUDE.md`).
 
 ## O que vale para todas as fases
 
@@ -221,6 +221,41 @@ A fase 4 (assinatura e formulário AcroForm, #121, commit 6367482) entrou em 202
 
 No mesmo PR, o menor do Crivo no #123: `temMudancas`, `idSemMudancas` e `TEXTOS.editar.gerar.semMudancas` voltaram aos nomes do #120 (`quantosObjetos === 0`, `idSemObjetos`, `semObjetos`), sem mudar o comportamento.
 
+## Editor único
+
+Decisão do Paulo em 2026-11-17: a variante A ("Bancada") do editor único. No desktop, três colunas: as páginas e as ações à esquerda, a página aberta e as ferramentas no meio, o painel do objeto à direita. No celular, a página com as ferramentas embaixo e a folha "Páginas". Na mesma tela: o organizar e o editar de hoje, adicionar outro PDF enquanto edita e criar página em branco.
+
+**Decisões do Paulo:**
+
+- **P2:** a página em branco tem o tamanho da última página **marcada**, como ela aparece (com o giro; uma página deitada dá uma branca deitada). Sem nenhuma marcada, A4.
+- **P3:** o que entra (o PDF adicionado ou a página em branco) vai logo depois da última página marcada; sem marcada, no fim.
+- **P5:** as rotas `/tools/pdf/mesclar`, `/tools/pdf/organizar`, `/tools/pdf/editar` e `/tools/mesclar-pdf` saem **sem redirecionamento** e passam a dar 404, no PR 6. Fica só o editor em `/tools/pdf`; o sitemap, o `llms.txt` e o cartão do `/tools` mostram só ele. O 308 de `/tools/pdf/assinar` fica.
+- **Fora:** o desfazer único (P1) e duplicar página (P4).
+
+**Dúvidas com o padrão decidido pelo mínimo** (o Paulo pode mudar depois):
+
+- **D2, girar uma página que já tem objetos:** a **moldura**. Os objetos giram com a página, como adesivos numa folha; a página grande continua como estava, com uma nota. A alternativa é bloquear girar (e o desfazer das páginas) nesse caso; a moldura mora numa função só do `pdf.ts`, para tirá-la ser um corte limpo (ver o `packages/tools/CLAUDE.md`).
+- **D3, adições seguidas:** as páginas que entram viram a seleção, e a próxima adição vai depois delas.
+- **D4, "última marcada":** a última que a pessoa marcou, não a última na ordem do documento. A seleção é guardada na ordem em que foi marcada; se a última marcada foi apagada, vale a marcada anterior. A tela diz qual é ("depois da página 4, a última que você marcou").
+- D1 (o Ctrl/⌘+Z com dois donos, pelo foco) e D5 (um PDF por vez no "Adicionar PDF") têm o padrão do plano e entram nos PRs 3 e 4.
+
+**O modelo:**
+
+- Cada página do documento tem uma **origem** (`{ arquivo, indice }`, a posição na lista de arquivos da sessão e a página nele, ou `{ branca: tamanho }`), um **giro** e uma **moldura**. Na tela, cada página ganha um id estável (`a0p3` para página de arquivo, `b0` para branca), e a cena dos objetos passa a ser indexada por ele: mover a página leva os objetos, e a página apagada guarda os objetos para o desfazer das páginas.
+- **A moldura:** os objetos guardam a posição em pontos da página como ela aparecia quando o primeiro objeto entrou. Página comum: desenha com a geometria em `/Rotate + moldura` e termina com `/Rotate + giro`. Página apagada de verdade: o JPEG sai na moldura e a página fica com `/Rotate = giro − moldura`. Sem objetos, a moldura é o giro atual.
+- **O PDF final** sai de `montarDocumento(fontes, plano, edicoes)`, com um carregar por arquivo e um salvar. **No lugar** quando o plano é o primeiro arquivo inteiro, na ordem (giro e objetos permitidos): marcadores, links, formulário, metadados e anexos ficam, como no Editar de hoje. **Por cópia** em qualquer outro caso (outro arquivo, branca, ordem trocada, página fora, extrair): um arquivo por vez, com as páginas fora do plano esvaziadas primeiro (assim elas não seguram no arquivo o que uma página apagada de verdade desenhava), depois o giro e as edições aplicados na origem e um `copyPages` só por arquivo; as brancas entram com `addPage`. Por cópia, o que é do documento não passa, e a tela avisa (`saiPorCopia`).
+- **Tetos:** 50 MB e 500 páginas **somando** os arquivos abertos e as brancas, com a mensagem do que ainda cabe (`cabeNoDocumento`). O teto de 100 MB do mesclar sai com ele no PR 6.
+- As regras de sempre continuam: nada sai do aparelho; pdf-lib 1.17.1 sem `getForm()` (que apaga o `/XFA`).
+
+**Os seis PRs** (cada um com revisão do Crivo no SHA exato e CI verde; só o PR 6 mexe em rotas, e até lá o hub e os três modos continuam no ar):
+
+1. **Lógica do documento único, só no `packages/tools`** (este, em andamento): o modelo e as funções no `pdf-regras`, o `montarDocumento` com os dois caminhos, a moldura, a branca e o `editarNoLugar` extraído do `aplicarEdicoes`, que continua como embrulho com os mesmos testes. Nada muda na tela nem no `apps/web`. Detalhes, testes e mutações no `packages/tools/CLAUDE.md` ("Editor único").
+2. **Encanamento sem mudança visível (web):** a operação `montar` no Worker e no motor, o Gerar do Editar e o Gerar e o Extrair do Organizar por ela, a cena indexada pelo id da página e as peças das duas telas em componentes próprios. Os E2E do Organizar e do Editar passam sem mudança.
+3. **A Bancada com um arquivo, em `/tools/pdf/editar`:** as três colunas, a folha "Páginas" no celular, o cartão e a barra da seleção, a moldura com a nota de giro, o Gerar e o Extrair com os objetos e o apagar de verdade das páginas extraídas, o aviso de alcance condicional e o link "Pular para a página aberta".
+4. **Adicionar outro PDF:** a sessão do renderizador (um Worker do pdf.js, uma fila, uma página grande), "Adicionar PDF" (P3), os tetos somados e a recusa do adicionado sem mexer no documento. Antes dele, as medidas M1 (teto de 50 MB) e M2 (vários documentos do pdf.js), com a carga abaixo de 20.
+5. **Página em branco:** o botão "Página em branco" com P2 e P3, sem pdf.js e sem apagar de verdade, contando no teto de páginas.
+6. **Rota única e limpeza:** o editor em `/tools/pdf`, as quatro URLs dando 404 (P5), o 308 do assinar mantido, e o que ficou órfão (mesclar, organizar, `modos` do registro, `mesclarPdfs` e o teto de 100 MB) sai.
+
 ## Ordem e entrega
 
 1. **PR 1, mesclar** (#112): Worker, pdf-lib só na página, teto medido.
@@ -228,6 +263,7 @@ No mesmo PR, o menor do Crivo no #123: `temMudancas`, `idSemMudancas` e `TEXTOS.
 3. **Fase 2**: rota `/tools/pdf`, redirecionamento do `/tools/mesclar-pdf`, miniaturas (pdf.js) e organizar.
 4. **Fase 3**: inserir por cima, com cobrir e apagar de verdade.
 5. **Fase 4**: assinatura e formulário (#121), removida a pedido do Paulo no mesmo dia (ver "Fase 4: removida a pedido do Paulo").
+6. **Editor único**: seis PRs, o primeiro em andamento (ver "Editor único").
 
 Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commit`, deploy da Vercel conferido, a página aberta em produção e o resultado mandado ao Pilutech Maestro. Depois do merge, a worktree sai, e o `apps/web/CLAUDE.md` e o `packages/tools/CLAUDE.md` ficam com o que a fase mudou.
 
@@ -259,3 +295,4 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Desde o #121, o apagar de verdade tira também os nomes de destino que levam às páginas apagadas (revisão do #120), e quem usava o nome passa ao destino explícito. O marcador cuja ação não leva a uma página do documento fica.
 - Desde o #121, a área da página do Editar entra no Tab (`role=group`, "Área da página N"), para o teclado rolar a página que não cabe nela (achado do axe).
 - Desde o #121 (revisão interna e do Crivo), o `/UR3`, o `/UR` e o `/DocMDP` saem do `/Perms` de todo PDF editado, e o XFA do híbrido sai quando alguma página ganha objeto ou fundo.
+- No PR 1 do editor único, onde o plano deixava espaço: a inserção recebe a seleção na ordem em que foi marcada (para o D4 achar a marcada anterior); a branca recebe o tamanho do pdf.js e o giro à parte; o teto confere os bytes antes das páginas e diz o que ainda cabia antes do novo; as edições do `montarDocumento` vão pela posição no plano, que o `ErroNaEdicao` devolve, e o `ErroDePdf` diz sempre o arquivo; o arquivo que o plano não usa nem é lido; apagar de verdade numa página em branco é erro de programação; e, no caminho no lugar, a página sem giro e sem edição não é tocada.
