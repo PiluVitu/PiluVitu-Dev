@@ -37,8 +37,14 @@ export const Desabilitada: Story = { args: { desabilitada: true } }
 export const ModoAssinar: Story = {
   args: { ferramentas: FERRAMENTAS_DO_MODO.assinar },
   play: async ({ canvas }) => {
-    await expect(canvas.getAllByRole('button')).toHaveLength(2)
+    await expect(
+      canvas.getAllByRole('button').map((botao) => botao.textContent),
+    ).toEqual(['Selecionar e mover', 'Assinatura', 'Texto'])
     canvas.getByRole('button', { name: 'Selecionar e mover' }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(
+      canvas.getByRole('button', { name: 'Assinatura' }),
+    ).toHaveFocus()
     await userEvent.keyboard('{End}')
     await expect(canvas.getByRole('button', { name: 'Texto' })).toHaveFocus()
     await userEvent.keyboard('{ArrowRight}')

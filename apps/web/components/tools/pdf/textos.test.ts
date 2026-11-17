@@ -209,3 +209,134 @@ describe('assinar', () => {
     )
   })
 })
+
+describe('assinatura e formulário (fase 4)', () => {
+  const { assinatura, assinar, formulario, editar } = TEXTOS
+
+  it('a ferramenta Assinatura tem nome, dica e o aviso de criar antes', () => {
+    expect(editar.ferramentas.nomes.assinatura).toBe('Assinatura')
+    expect(editar.ferramentas.dicas.assinatura).toMatch(/Inserir no centro/)
+    expect(editar.ferramentas.semAssinatura).toBe('Crie a assinatura primeiro.')
+  })
+
+  it('o aviso diz que assinatura visual não substitui a com certificado (ICP-Brasil, gov.br)', () => {
+    expect(assinatura.aviso.titulo).toBe(
+      'Assinatura visual não é assinatura digital',
+    )
+    expect(assinatura.aviso.texto).toMatch(/certificado digital/)
+    expect(assinatura.aviso.texto).toMatch(/ICP-Brasil/)
+    expect(assinatura.aviso.texto).toMatch(/gov\.br/)
+  })
+
+  it('os três jeitos, o quadro, a cor e o que falta para usar', () => {
+    expect(assinatura.jeitos).toEqual({
+      rotulo: 'Como assinar',
+      desenhar: 'Desenhar',
+      enviar: 'Enviar imagem',
+      digitar: 'Digitar o nome',
+    })
+    expect(assinatura.quadro.rotulo).toBe('Quadro da assinatura')
+    expect(assinatura.quadro.dica).toBe(
+      'Desenhe com o dedo, o mouse ou a caneta. Sem ponteiro, use Digitar o nome.',
+    )
+    expect(assinatura.quadro.vazio).toBe('O quadro está vazio.')
+    expect(assinatura.quadro.limpo).toBe('Quadro limpo.')
+    expect(assinatura.cor).toEqual({
+      rotulo: 'Cor da tinta',
+      preto: 'Preto',
+      azul: 'Azul',
+    })
+    expect(assinatura.usar).toBe('Usar esta assinatura')
+    expect(assinatura.enviar.pronta('foto.png', 1200, 400)).toBe(
+      'foto.png, 1.200 por 400 pixels.',
+    )
+  })
+
+  it('a assinatura pronta tem descrição em texto, e o nome dela entra no nome do objeto', () => {
+    expect(assinatura.pronta.descricao({ jeito: 'desenhada' })).toBe(
+      'Desenhada no quadro.',
+    )
+    expect(
+      assinatura.pronta.descricao({ jeito: 'enviada', arquivo: 'minha.png' }),
+    ).toBe('Imagem minha.png.')
+    expect(
+      assinatura.pronta.descricao({ jeito: 'digitada', nome: 'Ana Souza' }),
+    ).toBe('O nome Ana Souza, em Times itálico.')
+    expect(assinatura.nomes.desenhada).toBe('assinatura desenhada')
+    expect(assinatura.nomes.enviada('minha.png')).toBe('assinatura minha.png')
+    expect(assinatura.anuncios.pronta).toMatch(/^Assinatura pronta\./)
+  })
+
+  it('o resumo do gerar conta objetos e campos, e só o que tem', () => {
+    expect(assinar.gerar.resumo(2, 1, 0)).toBe('2 objetos em 1 página.')
+    expect(assinar.gerar.resumo(0, 0, 3)).toBe('3 campos preenchidos.')
+    expect(assinar.gerar.resumo(1, 1, 1)).toBe(
+      '1 objeto em 1 página e 1 campo preenchido.',
+    )
+  })
+
+  it('obrigatórios vazios: os rótulos pelo Intl, sem travar', () => {
+    expect(assinar.gerar.obrigatoriosVazios(['Nome'])).toBe(
+      'O campo obrigatório Nome está vazio. Dá para gerar assim mesmo.',
+    )
+    expect(
+      assinar.gerar.obrigatoriosVazios(['Nome', 'CPF', 'Aceito os termos']),
+    ).toBe(
+      'Os campos obrigatórios Nome, CPF e Aceito os termos estão vazios. Dá para gerar assim mesmo.',
+    )
+  })
+
+  it('a falha num campo diz o campo, o que houve e o que fazer', () => {
+    expect(
+      assinar.falhaNoCampo(
+        { motivo: 'texto_fora_do_winansi', campo: 0, caracteres: ['😀'] },
+        'Nome',
+      ),
+    ).toBe(
+      'O campo Nome tem um caractere que as fontes do PDF não escrevem: 😀. Apague esse caractere e gere de novo.',
+    )
+    expect(
+      assinar.falhaNoCampo(
+        { motivo: 'acima_do_tamanho_maximo', campo: 0 },
+        'CPF',
+      ),
+    ).toBe(
+      'O campo CPF passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.',
+    )
+    expect(
+      assinar.falhaNoCampo({ motivo: 'aparencia_do_campo', campo: 0 }, 'UF'),
+    ).toMatch(/^Não deu para desenhar o campo UF no PDF\. Gere sem achatar/)
+  })
+
+  it('o formulário: resumo, página, contador e o anúncio ao abrir, pelo Intl', () => {
+    expect(formulario.resumo(12, 3)).toBe('12 campos em 3 páginas.')
+    expect(formulario.resumo(1, 1)).toBe('1 campo em 1 página.')
+    expect(formulario.naPagina(2)).toBe('Na página 2.')
+    expect(formulario.caracteres(12, 1400)).toBe('12 de 1.400 caracteres')
+    expect(formulario.aoAbrir({ tipo: 'nenhum' })).toBe('')
+    expect(formulario.aoAbrir({ tipo: 'xfa' })).toMatch(/XFA/)
+    expect(
+      formulario.aoAbrir({
+        tipo: 'acroform',
+        hibrido: false,
+        assinadoDigitalmente: false,
+        campos: [],
+      }),
+    ).toBe('')
+  })
+
+  it('cada motivo de não preencher tem o porquê, e o /Sig fala do certificado', () => {
+    expect(Object.keys(formulario.naoPreenchivel).sort()).toEqual([
+      'assinatura_digital',
+      'botao',
+      'fora_do_winansi',
+      'seletor_de_arquivo',
+      'somente_leitura',
+    ])
+    expect(formulario.naoPreenchivel.assinatura_digital).toMatch(/certificado/)
+    expect(formulario.assinadoDigitalmente).toMatch(
+      /essa assinatura deixa de valer/,
+    )
+    expect(formulario.hibrido).toMatch(/versão XFA sai/)
+  })
+})

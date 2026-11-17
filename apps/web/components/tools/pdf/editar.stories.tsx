@@ -15,7 +15,8 @@ const meta = {
   decorators: [
     (Story, { parameters }) => (
       <DocumentoPdfProvider arquivoInicial={parameters.arquivoInicial ?? null}>
-        <div className="max-w-3xl">
+        {/* "larga": a página do assinar, com as duas colunas a partir de lg (ToolPageShell larga). */}
+        <div className={parameters.larga ? 'max-w-6xl' : 'max-w-3xl'}>
           <Story />
         </div>
       </DocumentoPdfProvider>
@@ -185,22 +186,25 @@ export const PdfEditadoPronto: Story = {
 }
 
 // Fase 4: o assinar é esta mesma tela com modo="assinar". O motor falso lê o formulário pelo nome do
-// arquivo ("formulario" dá um campo de cada tipo); a tela dele chega na etapa seguinte.
+// arquivo ("formulario" dá um campo de cada tipo nas páginas 1 e 2).
 export const ModoAssinar: Story = {
   args: {
     modo: 'assinar',
     renderizador: criarRenderizadorFalso(),
     motor: criarMotorFalso({ atraso: 150 }),
   },
-  parameters: { arquivoInicial: pdf('formulario-2p.pdf') },
+  parameters: { arquivoInicial: pdf('contrato-2p.pdf'), larga: true },
   play: async ({ canvas }) => {
     await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await expect(
+      canvas.getByText('Assinatura visual não é assinatura digital'),
+    ).toBeVisible()
     const barra = canvas.getByRole('toolbar', { name: 'Ferramentas' })
     await expect(
       within(barra)
         .getAllByRole('button')
         .map((botao) => botao.textContent),
-    ).toEqual(['Selecionar e mover', 'Texto'])
+    ).toEqual(['Selecionar e mover', 'Assinatura', 'Texto'])
     await userEvent.click(within(barra).getByRole('button', { name: 'Texto' }))
     await userEvent.click(
       canvas.getByRole('button', { name: 'Inserir no centro' }),
@@ -211,8 +215,62 @@ export const ModoAssinar: Story = {
     )
     await waitFor(() =>
       expect(
-        canvas.getByRole('link', { name: 'Baixar formulario-2p-assinado.pdf' }),
+        canvas.getByRole('link', { name: 'Baixar contrato-2p-assinado.pdf' }),
       ).toHaveFocus(),
     )
+  },
+}
+
+export const AssinarComFormulario: Story = {
+  args: {
+    modo: 'assinar',
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({ atraso: 150 }),
+  },
+  parameters: { arquivoInicial: pdf('formulario-2p.pdf'), larga: true },
+  play: async ({ canvas }) => {
+    const estado = await canvas.findByRole('combobox', { name: 'Estado' })
+    await userEvent.click(estado)
+    // O campo da página 2 abre a página dele, e o destaque mostra onde ele fica.
+    await waitFor(() => expect(canvas.getByText('Página 2 de 2')).toBeVisible())
+    await expect(estado).toHaveFocus()
+    await userEvent.type(
+      canvas.getByRole('textbox', { name: 'Nome completo (obrigatório)' }),
+      'Ana Souza',
+    )
+    await expect(canvas.getByText('1 campo preenchido.')).toBeVisible()
+  },
+}
+
+export const AssinaturaPronta: Story = {
+  args: {
+    modo: 'assinar',
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso(),
+  },
+  parameters: { arquivoInicial: pdf('contrato-2p.pdf'), larga: true },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Assinatura' }))
+    await userEvent.click(canvas.getByRole('radio', { name: 'Digitar o nome' }))
+    await userEvent.type(
+      canvas.getByRole('textbox', { name: 'Seu nome' }),
+      'Paulo Victor',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Usar esta assinatura' }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: 'Inserir no centro' }),
+      ).toHaveFocus(),
+    )
+    await expect(canvas.getByText('Assinatura pronta')).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: /^Texto 'Paulo Victor'/ }),
+    ).toHaveFocus()
   },
 }

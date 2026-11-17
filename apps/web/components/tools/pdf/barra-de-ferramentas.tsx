@@ -11,6 +11,7 @@ import {
   faImage,
   faMinus,
   faPenNib,
+  faSignature,
   faSquareFull,
   type IconDefinition,
 } from '@fortawesome/free-solid-svg-icons'
@@ -25,6 +26,7 @@ const ICONES: Record<Ferramenta, IconDefinition> = {
   selecionar: faArrowPointer,
   texto: faFont,
   imagem: faImage,
+  assinatura: faSignature,
   desenho: faPenNib,
   retangulo: faDrawPolygon,
   elipse: faCircle,

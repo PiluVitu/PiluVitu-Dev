@@ -1,8 +1,11 @@
 import type {
   Caixa,
   FamiliaDaFonte,
+  Formulario,
   LadoDoMovimento,
+  MotivoDeNaoPreencher,
   MotivoDoErroDePdf,
+  MotivoDoErroNoCampo,
   SentidoDoGiro,
   TipoDeObjeto,
 } from '@piluvitu/tools/pdf-regras'
@@ -157,6 +160,7 @@ const NOMES_DAS_FERRAMENTAS: Record<Ferramenta, string> = {
   selecionar: 'Selecionar e mover',
   texto: 'Texto',
   imagem: 'Imagem',
+  assinatura: 'Assinatura',
   desenho: 'Desenhar',
   retangulo: 'Retângulo',
   elipse: 'Elipse',
@@ -199,6 +203,79 @@ const SENTIDOS: Record<SentidoDoGiro, string> = {
 const LADOS: Record<LadoDoMovimento, string> = {
   antes: 'para antes',
   depois: 'para depois',
+}
+
+function falhaNoCampo(
+  falha: {
+    motivo: MotivoDoErroNoCampo
+    campo?: number
+    caracteres?: readonly string[]
+  },
+  rotulo: string,
+): string {
+  const caracteres = falha.caracteres ?? []
+  switch (falha.motivo) {
+    case 'texto_fora_do_winansi':
+      return `O campo ${rotulo} tem ${concordar(caracteres.length, 'um caractere', 'caracteres')} que as fontes do PDF não escrevem: ${lista.format(caracteres)}. Apague ${concordar(caracteres.length, 'esse caractere', 'esses caracteres')} e gere de novo.`
+    case 'acima_do_tamanho_maximo':
+      return `O campo ${rotulo} passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.`
+    case 'aparencia_do_campo':
+      return `Não deu para desenhar o campo ${rotulo} no PDF. Gere sem achatar o formulário, ou deixe o campo como estava no arquivo.`
+  }
+}
+
+function resumoDoFormulario(campos: number, paginasComCampos: number): string {
+  const quantos = contagem(campos, 'campo', 'campos')
+  return paginasComCampos > 0
+    ? `${quantos} em ${paginas(paginasComCampos)}.`
+    : `${quantos}.`
+}
+
+function formularioAoAbrir(formulario: Formulario): string {
+  switch (formulario.tipo) {
+    case 'xfa':
+      return 'Tem um formulário XFA, que não dá para preencher aqui.'
+    case 'ilegivel':
+      return 'Não deu para ler os campos do formulário.'
+    case 'acroform': {
+      if (!formulario.campos.length) return ''
+      const paginasComCampos = new Set(
+        formulario.campos.flatMap((campo) =>
+          campo.widgets.slice(0, 1).map((widget) => widget.pagina),
+        ),
+      ).size
+      return `Formulário com ${resumoDoFormulario(formulario.campos.length, paginasComCampos)}`
+    }
+    default:
+      return ''
+  }
+}
+
+type JeitoDaAssinaturaPronta =
+  | { jeito: 'desenhada' }
+  | { jeito: 'enviada'; arquivo: string }
+  | { jeito: 'digitada'; nome: string }
+
+function descricaoDaAssinatura(assinatura: JeitoDaAssinaturaPronta): string {
+  switch (assinatura.jeito) {
+    case 'desenhada':
+      return 'Desenhada no quadro.'
+    case 'enviada':
+      return `Imagem ${assinatura.arquivo}.`
+    case 'digitada':
+      return `O nome ${assinatura.nome}, em Times itálico.`
+  }
+}
+
+const NAO_PREENCHIVEL: Record<MotivoDeNaoPreencher, string> = {
+  assinatura_digital:
+    'Campo de assinatura digital: não é preenchido aqui, porque pede um certificado (ICP-Brasil, gov.br). A ferramenta Assinatura põe a assinatura visual por cima dele.',
+  botao: 'Botão do formulário: não tem valor para preencher.',
+  somente_leitura: 'Somente leitura: o PDF não deixa mudar este campo.',
+  seletor_de_arquivo:
+    'Campo de anexar arquivo: não é preenchido aqui, porque o arquivo não sai do aparelho.',
+  fora_do_winansi:
+    'As opções deste campo têm caracteres que as fontes do PDF não escrevem, então ele não é preenchido aqui.',
 }
 
 export const TEXTOS = {
@@ -434,6 +511,8 @@ export const TEXTOS = {
         imagem:
           'Escolha uma imagem PNG ou JPEG. Depois, clique ou arraste na página para pôr, ou use Inserir no centro.',
         desenho: 'Desenhe na página com o dedo, o mouse ou a caneta.',
+        assinatura:
+          'Crie a assinatura aqui embaixo. Depois, clique ou arraste na página para pôr, ou use Inserir no centro.',
         forma:
           'Clique ou arraste na página para pôr, ou use Inserir no centro.',
       },
@@ -442,6 +521,7 @@ export const TEXTOS = {
       corDoDesenho: 'Cor do desenho',
       espessuraDoDesenho: 'Espessura do desenho (pontos)',
       semImagem: 'Escolha a imagem primeiro.',
+      semAssinatura: 'Crie a assinatura primeiro.',
     },
     historico: {
       rotulo: 'Desfazer e refazer',
@@ -575,11 +655,112 @@ export const TEXTOS = {
       semMudancas:
         'Ponha a assinatura ou um texto numa página, ou preencha um campo do formulário, para gerar o PDF assinado.',
       pronto: 'PDF assinado pronto',
+      resumo: (objetos: number, paginasComObjetos: number, campos: number) => {
+        const partes = [
+          objetos > 0 &&
+            `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}`,
+          campos > 0 &&
+            `${contagem(campos, 'campo', 'campos')} ${concordar(campos, 'preenchido', 'preenchidos')}`,
+        ].filter((parte): parte is string => Boolean(parte))
+        return partes.length ? `${lista.format(partes)}.` : ''
+      },
+      achatar: 'Achatar o formulário',
+      dicaDoAchatar:
+        'Os campos viram parte do desenho da página e deixam de ser editáveis, em qualquer leitor de PDF. Sem achatar, quem receber o PDF ainda pode mudar os valores.',
+      obrigatoriosVazios: (rotulos: readonly string[]) => {
+        const n = rotulos.length
+        return `${concordar(n, 'O campo obrigatório', 'Os campos obrigatórios')} ${lista.format(rotulos)} ${concordar(n, 'está vazio', 'estão vazios')}. Dá para gerar assim mesmo.`
+      },
+      irParaOCampo: 'Ir para o campo',
+      mostrarCampo: 'Mostrar o campo',
     },
+    falhaNoCampo,
     anuncios: {
       pronto: (totalDePaginas: number, bytes: number) =>
         `PDF assinado pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
     },
+  },
+  assinatura: {
+    aviso: {
+      titulo: 'Assinatura visual não é assinatura digital',
+      texto:
+        'O desenho, a imagem ou o nome digitado aparecem no PDF, mas não substituem uma assinatura com certificado digital (ICP-Brasil, gov.br). Quando o documento pedir assinatura digital, use o assinador do gov.br ou o do seu certificado.',
+    },
+    jeitos: {
+      rotulo: 'Como assinar',
+      desenhar: 'Desenhar',
+      enviar: 'Enviar imagem',
+      digitar: 'Digitar o nome',
+    },
+    quadro: {
+      rotulo: 'Quadro da assinatura',
+      dica: 'Desenhe com o dedo, o mouse ou a caneta. Sem ponteiro, use Digitar o nome.',
+      limpar: 'Limpar',
+      vazio: 'O quadro está vazio.',
+      limpo: 'Quadro limpo.',
+    },
+    cor: { rotulo: 'Cor da tinta', preto: 'Preto', azul: 'Azul' },
+    enviar: {
+      escolher: 'Escolher imagem da assinatura',
+      outra: 'Escolher outra imagem',
+      tirarFundo: 'Tirar o fundo branco',
+      dicaDoFundo:
+        'O que é quase branco fica transparente, para a assinatura não tapar o que está embaixo. Funciona melhor com a foto da assinatura em papel branco.',
+      preparando: (nome: string) => `Preparando ${nome}…`,
+      pronta: (nome: string, largura: number, altura: number) =>
+        `${nome}, ${numero(largura)} por ${numero(altura)} pixels.`,
+    },
+    digitar: {
+      rotulo: 'Seu nome',
+      dica: 'Sai em Times itálico, como na prévia.',
+    },
+    usar: 'Usar esta assinatura',
+    cancelar: 'Cancelar',
+    semImagem: 'Escolha a imagem da assinatura primeiro.',
+    semNome: 'Escreva o seu nome primeiro.',
+    falha:
+      'O navegador não conseguiu preparar a assinatura, talvez por falta de memória. Feche outras abas e tente de novo.',
+    pronta: {
+      titulo: 'Assinatura pronta',
+      descricao: descricaoDaAssinatura,
+      criarOutra: 'Criar outra assinatura',
+    },
+    nomes: {
+      desenhada: 'assinatura desenhada',
+      enviada: (arquivo: string) => `assinatura ${arquivo}`,
+    },
+    anuncios: {
+      pronta:
+        'Assinatura pronta. Clique ou arraste na página para pôr, ou use Inserir no centro.',
+    },
+  },
+  formulario: {
+    titulo: 'Formulário do PDF',
+    resumo: resumoDoFormulario,
+    aoAbrir: formularioAoAbrir,
+    pagina: (numeroDaPagina: number) => `Página ${numero(numeroDaPagina)}`,
+    semPagina: 'Fora das páginas',
+    naPagina: (numeroDaPagina: number) =>
+      `Na página ${numero(numeroDaPagina)}.`,
+    semLugar: 'Não aparece em nenhuma página.',
+    obrigatorio: 'obrigatório',
+    caracteres: (usados: number, maximo: number) =>
+      `${numero(usados)} de ${numero(maximo)} caracteres`,
+    nenhuma: '(nenhuma)',
+    limparEscolha: 'Limpar a escolha',
+    foraDoWinAnsi,
+    semFormulario:
+      'Este PDF não tem campos de formulário. Dá para pôr a assinatura e escrever por cima das páginas com as ferramentas acima.',
+    xfa: 'Este PDF tem um formulário XFA (dinâmico), que só o Adobe Acrobat e o Reader preenchem. Aqui dá para pôr a assinatura e escrever por cima das páginas, mas não para preencher os campos.',
+    hibrido:
+      'Este formulário tem também uma versão XFA, que alguns leitores (como o Adobe Reader) mostram no lugar dos campos. Ao gerar, a versão XFA sai, para todos os leitores mostrarem o que você preencheu aqui.',
+    ilegivel:
+      'Não deu para ler os campos do formulário deste PDF. Dá para pôr a assinatura e escrever por cima das páginas, mas não para preencher os campos aqui.',
+    assinadoDigitalmente:
+      'Este PDF já tem uma assinatura digital. O PDF gerado aqui é um arquivo novo, e essa assinatura deixa de valer nele.',
+    paginaMostraOriginal:
+      'A página mostra os campos como estão no arquivo: o que você preencher aqui entra no PDF quando você gerar. Ao chegar num campo, a página mostra onde ele fica.',
+    naoPreenchivel: NAO_PREENCHIVEL,
   },
   arrastar: {
     alca: (nome: string) => `Arrastar ${nome}`,
