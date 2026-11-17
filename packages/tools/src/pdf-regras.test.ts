@@ -1,5 +1,6 @@
 import {
   ALTURA_DA_LINHA,
+  LADO_MAXIMO_DA_PAGINA,
   LADO_MAXIMO_DO_CANVAS,
   LADO_MINIMO,
   LIMITE_DO_HISTORICO,
@@ -56,6 +57,7 @@ import {
   saiPorCopia,
   tamanhoDaBranca,
   tamanhoNaTela,
+  tamanhoValido,
   telaParaPdf,
   tipoDaImagem,
   tracoDosPontos,
@@ -1234,6 +1236,39 @@ describe('tamanhoDaBranca (P2: o tamanho da última marcada, como ela aparece)',
     { largura: 600, altura: Number.POSITIVE_INFINITY },
   ])('recusa o tamanho %p com RangeError', (tamanho) => {
     expect(() => tamanhoDaBranca({ tamanho, giro: 0 })).toThrow(RangeError)
+  })
+
+  it('recusa a marcada com lado acima do limite dos leitores de PDF', () => {
+    expect(() =>
+      tamanhoDaBranca({
+        tamanho: { largura: 600, altura: LADO_MAXIMO_DA_PAGINA + 1 },
+        giro: 90,
+      }),
+    ).toThrow(RangeError)
+  })
+})
+
+describe('tamanhoValido (o lado da página, em pontos)', () => {
+  it('o limite é o dos leitores de PDF: 14.400 pontos (200 polegadas)', () => {
+    expect(LADO_MAXIMO_DA_PAGINA).toBe(14_400)
+  })
+
+  it.each([
+    { largura: 1, altura: 1 },
+    { largura: 14_400, altura: 14_400 },
+    { largura: 0.5, altura: 14_400 },
+  ])('aceita %p', (tamanho) => {
+    expect(tamanhoValido(tamanho)).toBe(true)
+  })
+
+  it.each([
+    { largura: 14_400.01, altura: 800 },
+    { largura: 600, altura: 14_401 },
+    { largura: 20_000, altura: 20_000 },
+    { largura: 0, altura: 800 },
+    { largura: Number.NaN, altura: 800 },
+  ])('recusa %p', (tamanho) => {
+    expect(tamanhoValido(tamanho)).toBe(false)
   })
 })
 

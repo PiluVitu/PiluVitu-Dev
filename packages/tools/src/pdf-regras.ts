@@ -185,9 +185,13 @@ export function posicaoDeInsercao(
   return paginas.length
 }
 
+// O limite dos leitores de PDF (200 polegadas); acima disso o Acrobat recusa a página.
+export const LADO_MAXIMO_DA_PAGINA = 14_400
+
 export function tamanhoValido(tamanho: Tamanho): boolean {
   return [tamanho.largura, tamanho.altura].every(
-    (lado) => Number.isFinite(lado) && lado > 0,
+    (lado) =>
+      Number.isFinite(lado) && lado > 0 && lado <= LADO_MAXIMO_DA_PAGINA,
   )
 }
 

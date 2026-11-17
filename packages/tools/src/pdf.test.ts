@@ -3295,6 +3295,7 @@ describe('montarDocumento: plano ou edição errados são erro de programação 
     ['branca com lado zero', [branca(0, 100)], []],
     ['branca com lado NaN', [branca(100, Number.NaN)], []],
     ['branca com lado negativo', [branca(-100, 100)], []],
+    ['branca com lado acima de 14.400 pontos', [branca(14_401, 100)], []],
     [
       'branca sem tamanho',
       [{ origem: { branca: {} }, giro: 0, moldura: 0 } as PaginaDaMontagem],
