@@ -22,9 +22,11 @@ import {
   aplicarEdicoes,
   contarPaginas,
   mesclarPdfs,
+  montarDocumento,
   organizarPaginas,
   temCabecalhoDePdf,
   type EdicaoDaPagina,
+  type EdicaoNaMontagem,
 } from './pdf'
 import { lerComPdfjs } from './pdf.leitor-pdfjs.cjs'
 import {
@@ -41,6 +43,7 @@ import {
   tracoDosPontos,
   type ObjetoDaPagina,
   type ObjetoTexto,
+  type PaginaDaMontagem,
   type PaginaDoPlano,
 } from './pdf-regras'
 
@@ -733,23 +736,14 @@ async function erroNaEdicao(promessa: Promise<unknown>): Promise<ErroNaEdicao> {
   throw new Error('era para ter falhado')
 }
 
-describe('aplicarEdicoes: posição conferida pelo pdf.js', () => {
-  // Uma leitura só pelo pdf.js (um processo do Node) para os cinco formatos.
-  let leitura: ReturnType<typeof lerComPdfjs>
+type Leitura = ReturnType<typeof lerComPdfjs>
 
-  beforeAll(async () => {
-    const pdf = await gerarPdfComFormatos(FORMATOS)
-    const editado = await aplicarEdicoes(
-      pdf,
-      FORMATOS.map((_, indice) => ({ indice, objetos: umDeCada() })),
-    )
-    leitura = lerComPdfjs(editado)
-  })
-
+// Os cinco formatos, a partir da página `primeira` da leitura: o que a tela pôs cai onde ela mostrou.
+function conferirFormatos(leitura: () => Leitura, primeira = 0) {
   describe.each(
     FORMATOS.map((formato, indice) => [formato.nome, formato, indice] as const),
   )('%s', (_, formato, indice) => {
-    const pagina = () => leitura.paginas[indice]
+    const pagina = () => leitura().paginas[primeira + indice]
 
     it('a geometria da página bate com a vista do pdf.js', () => {
       const { view, rotate, userUnit, largura, altura } = pagina()
@@ -839,6 +833,22 @@ describe('aplicarEdicoes: posição conferida pelo pdf.js', () => {
       expect(y2).toBeLessThanOrEqual(350 + 4)
     })
   })
+}
+
+describe('aplicarEdicoes: posição conferida pelo pdf.js', () => {
+  // Uma leitura só pelo pdf.js (um processo do Node) para os cinco formatos.
+  let leitura: Leitura
+
+  beforeAll(async () => {
+    const pdf = await gerarPdfComFormatos(FORMATOS)
+    const editado = await aplicarEdicoes(
+      pdf,
+      FORMATOS.map((_, indice) => ({ indice, objetos: umDeCada() })),
+    )
+    leitura = lerComPdfjs(editado)
+  })
+
+  conferirFormatos(() => leitura)
 })
 
 it('rotação e caixas herdadas da árvore de páginas contam, como no pdf.js', async () => {
@@ -2781,5 +2791,713 @@ describe('analisarPdf: os avisos do editar', () => {
     expect((await analisarPdf(await comAtalho(false))).avisos).toEqual([
       'assinatura_digital',
     ])
+  })
+})
+
+// Editor único: montarDocumento junta páginas de vários arquivos e páginas em branco, no lugar ou por cópia.
+
+const daMontagem = (
+  arquivo: number,
+  indice: number,
+  extra: Partial<PaginaDaMontagem> = {},
+): PaginaDaMontagem => ({
+  origem: { arquivo, indice },
+  giro: 0,
+  moldura: 0,
+  ...extra,
+})
+
+const branca = (
+  largura: number,
+  altura: number,
+  extra: Partial<PaginaDaMontagem> = {},
+): PaginaDaMontagem => ({
+  origem: { branca: { largura, altura } },
+  giro: 0,
+  moldura: 0,
+  ...extra,
+})
+
+const deUmArquivo = (plano: readonly PaginaDoPlano[]) =>
+  plano.map(({ indice, giro }) => daMontagem(0, indice, { giro }))
+
+async function alturasDasPaginas(bytes: Uint8Array): Promise<number[]> {
+  const documento = await PDFDocument.load(bytes)
+  return documento.getPages().map((p) => p.getHeight())
+}
+
+// Conta as leituras, os copyPages e os salvamentos do pdf-lib. Liga depois de gerar os arquivos de entrada.
+function contarChamadas() {
+  const load = jest.spyOn(PDFDocument, 'load')
+  const copyPages = jest.spyOn(PDFDocument.prototype, 'copyPages')
+  const save = jest.spyOn(PDFDocument.prototype, 'save')
+  return () => ({
+    load: load.mock.calls.length,
+    copyPages: copyPages.mock.calls.length,
+    save: save.mock.calls.length,
+  })
+}
+
+const ASCENDENTE = METRICAS_DAS_FONTES.helvetica.ascendente
+
+describe('montarDocumento: no lugar (o primeiro arquivo inteiro, na ordem)', () => {
+  it('mantém título, formulário e marcadores, agora também com giro, com um carregar e um salvar', async () => {
+    const documento = await PDFDocument.create({ updateMetadata: false })
+    documento.setTitle('Contrato')
+    documento.addPage([300, 300])
+    documento.addPage([400, 400])
+    const campo = documento.getForm().createTextField('nome')
+    campo.setText('Paulo')
+    campo.addToPage(documento.getPage(1))
+    documento.catalog.set(
+      PDFName.of('Outlines'),
+      documento.context.register(
+        documento.context.obj({ Type: 'Outlines', Count: 0 }),
+      ),
+    )
+    const pdf = await documento.save()
+    const chamadas = contarChamadas()
+
+    const final = await montarDocumento(
+      [pdf],
+      [daMontagem(0, 0), daMontagem(0, 1, { giro: 90 })],
+      [{ posicao: 0, objetos: [objetoTexto({ conteudo: 'Assinado' })] }],
+    )
+
+    expect(chamadas()).toEqual({ load: 1, copyPages: 0, save: 1 })
+    const lido = await PDFDocument.load(final, { updateMetadata: false })
+    expect(lido.getTitle()).toBe('Contrato')
+    expect(lido.getProducer()).toBe(undefined)
+    expect(lido.getForm().getTextField('nome').getText()).toBe('Paulo')
+    expect(lido.catalog.has(PDFName.of('Outlines'))).toBe(true)
+    expect(await ladosDasPaginas(final)).toEqual([300, 400])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+    const [{ matriz }] = lerComPdfjs(final).paginas[0].textos
+    expect(matriz[4]).toBeCloseTo(40, 2)
+    expect(matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+  })
+
+  it('o /UR3 e o /DocMDP saem, como no Editar', async () => {
+    const documento = await PDFDocument.create()
+    documento.addPage([300, 300])
+    documento.catalog.set(
+      PDFName.of('Perms'),
+      documento.context.obj({ UR3: {}, DocMDP: {} }),
+    )
+    const final = await montarDocumento(
+      [await documento.save()],
+      [daMontagem(0, 0)],
+      [],
+    )
+    expect(
+      (await PDFDocument.load(final)).catalog.has(PDFName.of('Perms')),
+    ).toBe(false)
+  })
+})
+
+describe('montarDocumento: por cópia', () => {
+  it('dois arquivos intercalados e uma página em branco, na ordem do plano', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(3, 100), await gerarPdf(2, 200)],
+      [
+        daMontagem(0, 0),
+        daMontagem(1, 1),
+        branca(300, 400),
+        daMontagem(0, 2),
+        daMontagem(1, 0),
+      ],
+      [],
+    )
+
+    expect(await ladosDasPaginas(final)).toEqual([100, 201, 300, 102, 200])
+    expect(await alturasDasPaginas(final)).toEqual([100, 201, 400, 102, 200])
+  })
+
+  it('lê cada arquivo uma vez, em sequência, só os que o plano usa, com um copyPages por arquivo e um salvar', async () => {
+    const lidas: string[] = []
+    const fonte = (nome: string, paginas: number, base: number) => {
+      const bytes = gerarPdf(paginas, base)
+      return async () => {
+        lidas.push(nome)
+        return bytes
+      }
+    }
+    const fontes = [fonte('a', 3, 100), fonte('b', 1, 200), fonte('c', 2, 300)]
+    await Promise.all(fontes.map((f) => f()))
+    lidas.length = 0
+    const chamadas = contarChamadas()
+
+    const final = await montarDocumento(
+      fontes,
+      [daMontagem(2, 1), daMontagem(0, 0), daMontagem(2, 0), daMontagem(0, 2)],
+      [],
+    )
+
+    expect(lidas).toEqual(['a', 'c'])
+    expect(chamadas()).toEqual({ load: 2, copyPages: 2, save: 1 })
+    expect(await ladosDasPaginas(final)).toEqual([301, 100, 300, 102])
+  })
+
+  it('não duplica a imagem que as páginas de um arquivo compartilham, com páginas de outro arquivo no meio', async () => {
+    const origem = await gerarPdfComImagemCompartilhada()
+
+    const final = await montarDocumento(
+      [await gerarPdf(2, 50), origem],
+      [
+        daMontagem(1, 9),
+        daMontagem(0, 0),
+        daMontagem(1, 0),
+        daMontagem(1, 3),
+        daMontagem(0, 1),
+        daMontagem(1, 5),
+      ],
+      [],
+    )
+
+    expect(await contarPaginas(final)).toBe(6)
+    expect(final.length).toBeLessThan(origem.length * 1.5)
+  })
+
+  it('a mesma imagem inserida em páginas do mesmo arquivo entra uma vez', async () => {
+    const imagem = (): ObjetoDaPagina => ({
+      id: id(),
+      tipo: 'imagem',
+      x: 10,
+      y: 10,
+      largura: 40,
+      altura: 30,
+      bytes: JPEG_8X8,
+    })
+    const final = await montarDocumento(
+      [await gerarPdf(1, 100), await gerarPdf(2, 600)],
+      [daMontagem(1, 1), daMontagem(0, 0), daMontagem(1, 0)],
+      [
+        { posicao: 0, objetos: [imagem()] },
+        { posicao: 2, objetos: [imagem()] },
+      ],
+    )
+    const documento = await PDFDocument.load(final)
+    const imagens = documento.context
+      .enumerateIndirectObjects()
+      .filter(
+        ([, objeto]) =>
+          objeto instanceof PDFRawStream &&
+          objeto.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'),
+      )
+    expect(imagens).toHaveLength(1)
+  })
+
+  it('o conteúdo de uma página do segundo arquivo que ficou fora não vai junto pelo link que apontava para ela', async () => {
+    const documento = await PDFDocument.create()
+    const paginas = [0, 1, 2].map((i) => documento.addPage([100 + i, 100 + i]))
+    paginas[2].node.set(
+      PDFName.of('Contents'),
+      documento.context.register(
+        documento.context.stream('BT (SEGREDO-DA-PAGINA-3) Tj ET'),
+      ),
+    )
+    const link = documento.context.register(
+      documento.context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [0, 0, 10, 10],
+        Dest: [paginas[2].ref, 'Fit'],
+      }),
+    )
+    paginas[0].node.set(PDFName.of('Annots'), documento.context.obj([link]))
+    const segundo = await documento.save()
+    const primeiro = await gerarPdf(1, 50)
+
+    const semAPagina3 = await montarDocumento(
+      [primeiro, segundo],
+      [daMontagem(0, 0), daMontagem(1, 0), daMontagem(1, 1)],
+      [],
+    )
+    const comAPagina3 = await montarDocumento(
+      [primeiro, segundo],
+      [daMontagem(1, 2), daMontagem(0, 0), daMontagem(1, 0)],
+      [],
+    )
+
+    expect(comoTexto(semAPagina3)).not.toContain('SEGREDO-DA-PAGINA-3')
+    expect(await ladosDasPaginas(semAPagina3)).toEqual([50, 100, 101])
+    expect(comoTexto(comAPagina3)).toContain('SEGREDO-DA-PAGINA-3')
+    expect(await ladosDasPaginas(comAPagina3)).toEqual([102, 50, 100])
+  })
+
+  it('a página em branco sai do tamanho pedido, com os objetos onde a tela os pôs e o giro', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(1, 100)],
+      [
+        daMontagem(0, 0),
+        branca(600, 800),
+        branca(500, 700, { giro: 90, moldura: 90 }),
+      ],
+      [{ posicao: 1, objetos: [objetoTexto({ conteudo: 'NA-BRANCA' })] }],
+    )
+
+    expect(await ladosDasPaginas(final)).toEqual([100, 600, 500])
+    expect(await alturasDasPaginas(final)).toEqual([100, 800, 700])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 0, 90])
+    const [, pagina] = lerComPdfjs(final).paginas
+    expect(pagina.textos.map(({ str }) => str)).toEqual(['NA-BRANCA'])
+    expect(pagina.textos[0].matriz[4]).toBeCloseTo(40, 2)
+    expect(pagina.textos[0].matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+  })
+
+  it('o PDF novo não ganha os metadados do pdf-lib nem o título do arquivo', async () => {
+    const primeiro = await PDFDocument.create({ updateMetadata: false })
+    primeiro.setTitle('Título do primeiro')
+    primeiro.addPage([100, 100])
+    const final = await montarDocumento(
+      [await primeiro.save(), await gerarPdf(1, 200)],
+      [daMontagem(0, 0), daMontagem(1, 0)],
+      [],
+    )
+    const documento = await PDFDocument.load(final, { updateMetadata: false })
+
+    expect(documento.getTitle()).toBeUndefined()
+    expect(documento.getProducer()).toBeUndefined()
+    expect(documento.getCreator()).toBeUndefined()
+    expect(documento.getCreationDate()).toBeUndefined()
+  })
+
+  describe('objetos nas páginas do segundo arquivo, nos cinco formatos', () => {
+    let leitura: Leitura
+
+    beforeAll(async () => {
+      const final = await montarDocumento(
+        [await gerarPdf(1, 100), await gerarPdfComFormatos(FORMATOS)],
+        [daMontagem(0, 0), ...FORMATOS.map((_, i) => daMontagem(1, i))],
+        FORMATOS.map((_, i) => ({ posicao: i + 1, objetos: umDeCada() })),
+      )
+      leitura = lerComPdfjs(final)
+    })
+
+    conferirFormatos(() => leitura, 1)
+  })
+
+  describe('apagar de verdade numa página do segundo arquivo', () => {
+    let final: Uint8Array
+
+    beforeAll(async () => {
+      final = await montarDocumento(
+        [await gerarPdf(1, 100), await gerarPdfComSegredos()],
+        [daMontagem(0, 0), daMontagem(1, 0), daMontagem(1, 1)],
+        [
+          {
+            posicao: 1,
+            objetos: [
+              {
+                id: id(),
+                tipo: 'cobrir',
+                x: 40,
+                y: 90,
+                largura: 200,
+                altura: 30,
+              },
+              objetoTexto({ conteudo: 'NOVO' }),
+            ],
+            fundo: JPEG_8X8,
+          },
+        ],
+      )
+    })
+
+    it('nenhum segredo da página apagada sobra no arquivo', async () => {
+      const conteudo = await todoOConteudo(final)
+      expect(SEGREDOS.filter((segredo) => contem(conteudo, segredo))).toEqual(
+        [],
+      )
+    })
+
+    it('a página vira a imagem com o texto novo, e a outra página do arquivo fica', () => {
+      const [, apagada, outra] = lerComPdfjs(final).paginas
+      expect(apagada.textos.map(({ str }) => str)).toEqual(['NOVO'])
+      acharDesenho(apagada.desenhos, [0, 0, 600, 800], 'imagem')
+      expect(outra.textos.map(({ str }) => str)).toEqual(['FICA-NA-PAGINA-2'])
+    })
+  })
+})
+
+describe('montarDocumento: plano ou edição errados são erro de programação (RangeError)', () => {
+  const valido = () => objetoTexto()
+  it.each<[string, PaginaDaMontagem[], EdicaoNaMontagem[]]>([
+    ['plano vazio', [], []],
+    ['página repetida', [daMontagem(0, 0), daMontagem(0, 0)], []],
+    ['índice negativo', [daMontagem(0, -1)], []],
+    ['índice não inteiro', [daMontagem(0, 1.5)], []],
+    ['índice NaN', [daMontagem(0, Number.NaN)], []],
+    ['índice depois da última página', [daMontagem(0, 3)], []],
+    [
+      'índice fora do segundo arquivo',
+      [daMontagem(0, 0), daMontagem(1, 2)],
+      [],
+    ],
+    ['arquivo inexistente', [daMontagem(2, 0)], []],
+    ['arquivo negativo', [daMontagem(-1, 0)], []],
+    ['branca com lado zero', [branca(0, 100)], []],
+    ['branca com lado NaN', [branca(100, Number.NaN)], []],
+    ['branca com lado negativo', [branca(-100, 100)], []],
+    [
+      'branca sem tamanho',
+      [{ origem: { branca: {} }, giro: 0, moldura: 0 } as PaginaDaMontagem],
+      [],
+    ],
+    [
+      'origem desconhecida',
+      [{ origem: {}, giro: 0, moldura: 0 } as PaginaDaMontagem],
+      [],
+    ],
+    ['giro inválido', [daMontagem(0, 0, { giro: 45 as 0 })], []],
+    ['moldura inválida', [daMontagem(0, 0, { moldura: 360 as 0 })], []],
+    ['edição fora do plano', [daMontagem(0, 0)], [{ posicao: 1, objetos: [] }]],
+    ['edição negativa', [daMontagem(0, 0)], [{ posicao: -1, objetos: [] }]],
+    [
+      'edição repetida',
+      [daMontagem(0, 0)],
+      [
+        { posicao: 0, objetos: [] },
+        { posicao: 0, objetos: [] },
+      ],
+    ],
+    [
+      'apagar de verdade numa página em branco',
+      [branca(100, 100)],
+      [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+    ],
+    [
+      'objeto inválido',
+      [daMontagem(0, 0)],
+      [{ posicao: 0, objetos: [{ ...valido(), x: Number.NaN }] }],
+    ],
+  ])('%s', async (_, plano, edicoes) => {
+    await expect(
+      montarDocumento(
+        [await gerarPdf(3, 100), await gerarPdf(2, 200)],
+        plano,
+        edicoes,
+      ),
+    ).rejects.toThrow(RangeError)
+  })
+
+  it('o plano é conferido antes de ler qualquer arquivo', async () => {
+    const fonte = jest.fn(async () => gerarPdf(1, 100))
+    await expect(
+      montarDocumento([fonte], [daMontagem(0, 0), daMontagem(1, 0)], []),
+    ).rejects.toThrow(RangeError)
+    expect(fonte).not.toHaveBeenCalled()
+  })
+})
+
+describe('montarDocumento: o erro diz o arquivo ou a posição', () => {
+  it('ErroDePdf com o índice do arquivo', async () => {
+    const valido = await gerarPdf(1, 100)
+    const ambos = [daMontagem(0, 0), daMontagem(1, 0)]
+
+    expect(
+      await motivo(
+        montarDocumento([valido, await gerarPdfProtegido(false)], ambos, []),
+      ),
+    ).toEqual({ motivo: 'protegido', indice: 1 })
+    expect(
+      await motivo(montarDocumento([texto('não é PDF'), valido], ambos, [])),
+    ).toEqual({ motivo: 'nao_e_pdf', indice: 0 })
+    expect(
+      await motivo(
+        montarDocumento(
+          [valido, texto('%PDF-1.7\nlixo lixo\n%%EOF\n')],
+          ambos,
+          [],
+        ),
+      ),
+    ).toEqual({ motivo: 'corrompido', indice: 1 })
+  })
+
+  it('para no primeiro arquivo com erro, sem ler os seguintes nem salvar', async () => {
+    const depois = jest.fn(async () => gerarPdf(1, 300))
+    const fontes = [await gerarPdf(1, 100), texto('nada'), depois]
+    const chamadas = contarChamadas()
+
+    const falha = await motivo(
+      montarDocumento(
+        fontes,
+        [daMontagem(0, 0), daMontagem(1, 0), daMontagem(2, 0)],
+        [],
+      ),
+    )
+
+    expect(falha).toEqual({ motivo: 'nao_e_pdf', indice: 1 })
+    expect(depois).not.toHaveBeenCalled()
+    expect(chamadas().save).toBe(0)
+  })
+
+  it('ErroNaEdicao com a posição no plano, numa página do segundo arquivo e numa branca', async () => {
+    const quebrado = new Uint8Array([...PNG_2X2.slice(0, 8), 1, 2, 3, 4, 5])
+    const imagemQuebrada = (): ObjetoDaPagina => ({
+      id: id(),
+      tipo: 'imagem',
+      x: 10,
+      y: 10,
+      largura: 40,
+      altura: 30,
+      bytes: quebrado,
+    })
+    const fontes = [await gerarPdf(1, 600), await gerarPdf(2, 600)]
+    const plano = [daMontagem(0, 0), branca(600, 600), daMontagem(1, 1)]
+
+    expect(
+      await erroNaEdicao(
+        montarDocumento(fontes, plano, [
+          {
+            posicao: 2,
+            objetos: [
+              objetoTexto({ conteudo: 'ok' }),
+              objetoTexto({ conteudo: 'Oi 中' }),
+            ],
+          },
+        ]),
+      ),
+    ).toMatchObject({ motivo: 'texto_fora_do_winansi', pagina: 2, objeto: 1 })
+    expect(
+      await erroNaEdicao(
+        montarDocumento(fontes, plano, [
+          { posicao: 2, objetos: [objetoTexto(), imagemQuebrada()] },
+        ]),
+      ),
+    ).toMatchObject({ motivo: 'imagem_corrompida', pagina: 2, objeto: 1 })
+    expect(
+      await erroNaEdicao(
+        montarDocumento(fontes, plano, [
+          { posicao: 1, objetos: [imagemQuebrada()] },
+        ]),
+      ),
+    ).toMatchObject({ motivo: 'imagem_corrompida', pagina: 1, objeto: 0 })
+    expect(
+      await erroNaEdicao(
+        montarDocumento(fontes, plano, [
+          { posicao: 2, objetos: [], fundo: PNG_2X2 },
+        ]),
+      ),
+    ).toMatchObject({ motivo: 'imagem_nao_aceita', pagina: 2 })
+  })
+})
+
+// Os mesmos casos do organizarPaginas, pelo montarDocumento com um arquivo só.
+describe('montarDocumento: os casos do organizarPaginas', () => {
+  const plano = (...itens: [number, PaginaDoPlano['giro']?][]) =>
+    deUmArquivo(itens.map(([indice, giro = 0]) => ({ indice, giro })))
+
+  it('monta as páginas na ordem do plano', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(4, 100)],
+      plano([3], [0], [2], [1]),
+      [],
+    )
+
+    expect(await ladosDasPaginas(final)).toEqual([103, 100, 102, 101])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 0, 0, 0])
+  })
+
+  it('soma o giro à rotação que a página já tinha e dá a volta em 360', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(3, 100))
+    documento.getPage(0).setRotation(degrees(90))
+    documento.getPage(1).setRotation(degrees(270))
+    const bytes = await documento.save()
+
+    const noLugar = await montarDocumento(
+      [bytes],
+      plano([0, 90], [1, 180], [2]),
+      [],
+    )
+    const porCopia = await montarDocumento(
+      [bytes],
+      plano([2], [0, 90], [1, 180]),
+      [],
+    )
+
+    expect(await rotacoesDasPaginas(noLugar)).toEqual([180, 90, 0])
+    expect(await rotacoesDasPaginas(porCopia)).toEqual([0, 180, 90])
+  })
+
+  it('a rotação herdada da árvore de páginas também conta', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(2, 100))
+    documento.catalog.Pages().set(PDFName.of('Rotate'), PDFNumber.of(90))
+    const bytes = await documento.save()
+
+    const porCopia = await montarDocumento([bytes], plano([1, 90], [0]), [])
+    const noLugar = await montarDocumento([bytes], plano([0], [1, 90]), [])
+
+    expect(await rotacoesDasPaginas(porCopia)).toEqual([180, 90])
+    expect(lerComPdfjs(noLugar).paginas.map(({ rotate }) => rotate)).toEqual([
+      90, 180,
+    ])
+  })
+
+  it('/Rotate fora do padrão: o que o pdf.js mostra é o mesmo do organizarPaginas, no lugar e por cópia', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(4, 100))
+    const valores = [
+      PDFNumber.of(-90),
+      PDFNumber.of(450),
+      PDFNumber.of(45),
+      PDFName.of('Noventa'),
+    ]
+    valores.forEach((valor, i) =>
+      documento.getPage(i).node.set(PDFName.of('Rotate'), valor),
+    )
+    const bytes = await documento.save()
+    const rotacoesNoPdfjs = (final: Uint8Array) =>
+      lerComPdfjs(final).paginas.map(({ rotate }) => rotate)
+
+    const noLugar = await montarDocumento(
+      [bytes],
+      plano([0], [1], [2, 90], [3, 90]),
+      [],
+    )
+    const porCopia = await montarDocumento(
+      [bytes],
+      plano([0], [1], [2, 90], [3, 90]).slice(0, 3),
+      [],
+    )
+
+    expect(rotacoesNoPdfjs(noLugar)).toEqual([270, 90, 90, 90])
+    expect(rotacoesNoPdfjs(porCopia)).toEqual([270, 90, 90])
+  })
+
+  it('girar à esquerda a partir de 0 sai com /Rotate 270 no PDF', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(2, 100)],
+      deUmArquivo(girar(planoInicial(2), [0], 'esquerda')),
+      [],
+    )
+
+    expect(await rotacoesDasPaginas(final)).toEqual([270, 0])
+  })
+
+  it('apagar: a página fora do plano não vai para o arquivo', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(3, 100)],
+      deUmArquivo(apagar(planoInicial(3), [1])),
+      [],
+    )
+
+    expect(await contarPaginas(final)).toBe(2)
+    expect(await ladosDasPaginas(final)).toEqual([100, 102])
+  })
+
+  it('extrair: só as escolhidas, na ordem em que estão no plano e com o giro', async () => {
+    const organizado = girar(
+      moverSelecionadas(planoInicial(4), [3], 'antes'),
+      [2],
+      'direita',
+    )
+
+    const final = await montarDocumento(
+      [await gerarPdf(4, 100)],
+      deUmArquivo(extrair(organizado, [0, 2])),
+      [],
+    )
+
+    expect(await ladosDasPaginas(final)).toEqual([100, 103])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+  })
+
+  it('o conteúdo de uma página apagada não vai junto por um link interno que apontava para ela', async () => {
+    const documento = await PDFDocument.create()
+    const paginas = [0, 1, 2].map((i) => documento.addPage([100 + i, 100 + i]))
+    paginas[2].node.set(
+      PDFName.of('Contents'),
+      documento.context.register(
+        documento.context.stream('BT (SEGREDO-DA-PAGINA-3) Tj ET'),
+      ),
+    )
+    const link = documento.context.register(
+      documento.context.obj({
+        Type: 'Annot',
+        Subtype: 'Link',
+        Rect: [0, 0, 10, 10],
+        Dest: [paginas[2].ref, 'Fit'],
+      }),
+    )
+    paginas[0].node.set(PDFName.of('Annots'), documento.context.obj([link]))
+    const bytes = await documento.save()
+
+    const semAPagina3 = await montarDocumento([bytes], plano([0], [1]), [])
+    const comAPagina3 = await montarDocumento([bytes], plano([2], [0]), [])
+
+    expect(comoTexto(semAPagina3)).not.toContain('SEGREDO-DA-PAGINA-3')
+    expect(await ladosDasPaginas(semAPagina3)).toEqual([100, 101])
+    expect(comoTexto(comAPagina3)).toContain('SEGREDO-DA-PAGINA-3')
+    expect(await ladosDasPaginas(comAPagina3)).toEqual([102, 100])
+  })
+
+  it('PDF que repete a mesma página no /Kids: apagar a repetida não esvazia a que fica', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(2, 100))
+    const arvore = documento.catalog.Pages()
+    arvore.Kids().push(documento.getPage(0).ref)
+    arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+    const bytes = await documento.save()
+
+    const final = await montarDocumento([bytes], plano([0], [1]), [])
+
+    expect(await ladosDasPaginas(final)).toEqual([100, 101])
+  })
+
+  it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {
+    const origem = await gerarPdfComImagemCompartilhada()
+    const organizado = apagar(
+      moverSelecionadas(planoInicial(10), [9], 'antes'),
+      [0, 5],
+    )
+
+    const final = await montarDocumento([origem], deUmArquivo(organizado), [])
+
+    expect(await contarPaginas(final)).toBe(8)
+    expect(final.length).toBeLessThan(origem.length * 1.5)
+  })
+
+  it('o PDF novo não ganha os metadados do pdf-lib', async () => {
+    const final = await montarDocumento(
+      [await gerarPdf(2, 100)],
+      plano([1]),
+      [],
+    )
+    const documento = await PDFDocument.load(final, { updateMetadata: false })
+
+    expect(documento.getProducer()).toBeUndefined()
+    expect(documento.getCreator()).toBeUndefined()
+    expect(documento.getCreationDate()).toBeUndefined()
+  })
+
+  it.each([
+    ['tabela de xref', false],
+    ['object streams', true],
+  ])(
+    'PDF protegido (%s): recusado como protegido, com o arquivo',
+    async (_nome, objectStreams) => {
+      const bytes = await gerarPdfProtegido(objectStreams)
+      expect(await motivo(montarDocumento([bytes], plano([0]), []))).toEqual({
+        motivo: 'protegido',
+        indice: 0,
+      })
+    },
+  )
+
+  it('arquivo que não é PDF ou corrompido: mesmas regras do contarPaginas', async () => {
+    expect(
+      (await motivo(montarDocumento([texto('não é PDF')], plano([0]), [])))
+        .motivo,
+    ).toBe('nao_e_pdf')
+    expect(
+      (
+        await motivo(
+          montarDocumento(
+            [texto('%PDF-1.7\nlixo lixo\n%%EOF\n')],
+            plano([0]),
+            [],
+          ),
+        )
+      ).motivo,
+    ).toBe('corrompido')
   })
 })
