@@ -1358,14 +1358,14 @@ describe('imagem', () => {
     expect(abriu).toHaveBeenCalledTimes(1)
     expect(input.accept).toBe('image/png,image/jpeg,.png,.jpg,.jpeg')
 
-    await escolherImagem(png('assinatura.png'))
+    await escolherImagem(png('carimbo.png'))
     expect(q('editar-pdf-estado-imagem')!.textContent).toBe(
-      'assinatura.png, 400 por 200 pixels.',
+      'carimbo.png, 400 por 200 pixels.',
     )
     await clicar(porNome('Inserir no centro'))
 
     expect(nomesDosObjetos()).toEqual([
-      'Imagem assinatura.png, em 148 por 346, 300 por 150 pontos',
+      'Imagem carimbo.png, em 148 por 346, 300 por 150 pontos',
     ])
     expect(quadro().querySelector('image')!.getAttribute('href')).toMatch(
       /^blob:url-/,
