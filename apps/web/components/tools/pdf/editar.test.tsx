@@ -8,23 +8,13 @@ import {
 import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { EditarPdf, ZOOMS } from './editar'
 import type { ObjetoNaTela } from './motor'
-import { FORMULARIO_DE_TESTE, criarMotorFalso } from './motor-falso'
-import type { ModoDaTela } from './objetos'
+import { criarMotorFalso } from './motor-falso'
 import { criarRenderizadorFalso } from './renderizador-falso'
 import { ERROS_DO_ARQUIVO, TEXTOS } from './textos'
 
 // O motor e o renderizador reais criam Workers com import.meta; aqui os dois vêm injetados.
 jest.mock('./novo-worker', () => ({ novoWorkerDePdf: jest.fn() }))
 jest.mock('./novo-worker-pdfjs', () => ({ novoWorkerDoPdfjs: jest.fn() }))
-// Sem canvas no jsdom: a assinatura desenhada vira um PNG de 1200 × 400 (o recorte é do assinatura-desenhada.test).
-jest.mock('./assinatura-desenhada', () => ({
-  desenharAssinatura: jest.fn(async () => ({
-    blob: new Blob(['png da assinatura'], { type: 'image/png' }),
-    largura: 1200,
-    altura: 400,
-    reduzida: false,
-  })),
-}))
 
 // O jsdom não tem IntersectionObserver: o falso diz "apareceu" assim que observa, ou só quando o
 // teste chama mostrar(), para conferir que só as miniaturas na tela são desenhadas.
@@ -100,12 +90,6 @@ beforeAll(() => {
   window.IntersectionObserver =
     ObservadorFalso as unknown as typeof IntersectionObserver
   window.ResizeObserver = MedidorFalso as unknown as typeof ResizeObserver
-  // Nem matchMedia: reduzir movimento desligado, como no padrão dos navegadores.
-  window.matchMedia = (() => ({
-    matches: false,
-    addEventListener() {},
-    removeEventListener() {},
-  })) as unknown as typeof window.matchMedia
   // Sem canvas no jsdom: a largura do texto sai da média da fonte, e a imagem do bitmap falso.
   HTMLCanvasElement.prototype.getContext = jest.fn(
     () => null,
@@ -161,12 +145,11 @@ function montar({
   renderizador = criarRenderizadorFalso(),
   motor = criarMotorFalso(),
   arquivoInicial = null as File | null,
-  modo = undefined as ModoDaTela | undefined,
 } = {}) {
   act(() =>
     root.render(
       <DocumentoPdfProvider arquivoInicial={arquivoInicial}>
-        <EditarPdf renderizador={renderizador} motor={motor} modo={modo} />
+        <EditarPdf renderizador={renderizador} motor={motor} />
         <Espiao />
       </DocumentoPdfProvider>,
     ),
@@ -555,7 +538,7 @@ describe('a página grande', () => {
   })
 
   // Sem objeto na página, nada dentro da área recebe o foco: sem ela no Tab, quem usa o teclado não
-  // rola até o resto da página (no assinar, a coluna estreita deixa a página mais alta que a área).
+  // rola até o resto da página quando a página passa da área (com zoom, ou numa tela estreita).
   it('a área da página entra no Tab, com o nome da página aberta, para o teclado rolar a página', async () => {
     await abrir('livro-3p.pdf')
     const area = q('editar-pdf-area')!
@@ -828,7 +811,7 @@ async function inserirNoCentro(nomeDaFerramenta: string) {
 const campo = (testId: string) => q(testId) as HTMLInputElement
 
 describe('a barra de ferramentas', () => {
-  it('é uma toolbar com as onze ferramentas, uma ligada por vez (aria-pressed), começando em Selecionar e mover', async () => {
+  it('é uma toolbar com as dez ferramentas, uma ligada por vez (aria-pressed), começando em Selecionar e mover', async () => {
     await abrirParaEditar()
     const barra = container.querySelector('[role="toolbar"]')!
 
@@ -841,7 +824,6 @@ describe('a barra de ferramentas', () => {
       'Selecionar e mover',
       'Texto',
       'Imagem',
-      'Assinatura',
       'Desenhar',
       'Retângulo',
       'Elipse',
@@ -1376,14 +1358,14 @@ describe('imagem', () => {
     expect(abriu).toHaveBeenCalledTimes(1)
     expect(input.accept).toBe('image/png,image/jpeg,.png,.jpg,.jpeg')
 
-    await escolherImagem(png('assinatura.png'))
+    await escolherImagem(png('carimbo.png'))
     expect(q('editar-pdf-estado-imagem')!.textContent).toBe(
-      'assinatura.png, 400 por 200 pixels.',
+      'carimbo.png, 400 por 200 pixels.',
     )
     await clicar(porNome('Inserir no centro'))
 
     expect(nomesDosObjetos()).toEqual([
-      'Imagem assinatura.png, em 148 por 346, 300 por 150 pontos',
+      'Imagem carimbo.png, em 148 por 346, 300 por 150 pontos',
     ])
     expect(quadro().querySelector('image')!.getAttribute('href')).toMatch(
       /^blob:url-/,
@@ -1410,6 +1392,29 @@ describe('imagem', () => {
       document.getElementById(inserirNoMeio.getAttribute('aria-describedby')!)!
         .textContent,
     ).toBe('Escolha a imagem primeiro.')
+  })
+
+  // Inserir outro objeto antes não pode soltar a imagem escolhida: ela ainda vai entrar.
+  it('a imagem escolhida que espera para entrar sobrevive à inserção de um Texto', async () => {
+    await abrirParaEditar()
+    const input = q('editar-pdf-input-imagem') as HTMLInputElement
+    const abriu = jest.fn()
+    input.addEventListener('click', abriu)
+    await clicar(ferramenta('Imagem'))
+    await escolherImagem(png('logo.png'))
+    expect(abriu).toHaveBeenCalledTimes(1)
+
+    await inserirNoCentro('Texto')
+    await clicar(ferramenta('Imagem'))
+    expect(abriu).toHaveBeenCalledTimes(1)
+    await clicar(porNome('Inserir no centro'))
+
+    expect(q('editar-pdf-aviso-imagem')).toBeNull()
+    expect(nomesDosObjetos()).toEqual([
+      expect.stringMatching(/^Texto /),
+      'Imagem logo.png, em 148 por 346, 300 por 150 pontos',
+    ])
+    expect(anuncio()).toMatch(/logo\.png/)
   })
 
   it(`acima de ${TETO_DAS_IMAGENS_EM_BYTES / 1e6} MB somando as imagens, a nova não entra`, async () => {
@@ -1696,139 +1701,6 @@ describe('gerar o PDF editado', () => {
   })
 })
 
-describe('o modo assinar (a mesma tela, com outro modo)', () => {
-  const abrirParaAssinar = (
-    nome = 'contrato-3p.pdf',
-    opcoes: Parameters<typeof montar>[0] = {},
-  ) => abrirParaEditar(nome, { ...opcoes, modo: 'assinar' })
-
-  const painel = () => q('editar-pdf-formulario')
-
-  it('o assinar lê o formulário ao abrir; o editar não lê', async () => {
-    const { motor } = await abrirParaAssinar()
-    expect(motor.analisadas).toEqual(['contrato-3p.pdf'])
-    expect(motor.analisadasComFormulario).toEqual(['contrato-3p.pdf'])
-    expect(painel()!.textContent).toContain(TEXTOS.formulario.semFormulario)
-
-    act(() => root.unmount())
-    root = createRoot(container)
-    const doEditar = await abrirParaEditar()
-    expect(doEditar.motor.analisadas).toEqual(['contrato-3p.pdf'])
-    expect(doEditar.motor.analisadasComFormulario).toEqual([])
-    expect(painel()).toBeNull()
-  })
-
-  it('o formulário lido fica com o documento aberto, e um PDF novo traz o dele', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    expect(painel()!.querySelector('form')).not.toBeNull()
-
-    await escolher(pdf('xfa-3p.pdf'))
-    await esperarAte(() => miniaturas().length === 3)
-    expect(painel()!.querySelector('form')).toBeNull()
-    expect(q('formulario-aviso-xfa')!.textContent).toBe(TEXTOS.formulario.xfa)
-
-    // O recusado não chega a abrir: o formulário do anterior não pode ficar valendo para ele.
-    await escolher(pdf('formulario-senha.pdf'))
-    await esperarAte(() => q('editar-pdf-erro') !== null)
-    expect(painel()).toBeNull()
-  })
-
-  it('a barra tem Selecionar e mover, Assinatura e Texto, e as setas, Home e End andam só nelas', async () => {
-    await abrirParaAssinar()
-    const barra = container.querySelector('[role="toolbar"]')!
-
-    expect(
-      Array.from(barra.querySelectorAll('button')).map((b) =>
-        b.textContent?.trim(),
-      ),
-    ).toEqual(['Selecionar e mover', 'Assinatura', 'Texto'])
-    await act(async () => ferramenta('Selecionar e mover').focus())
-    await tecla(barra, 'ArrowRight')
-    expect(focado()).toBe('Assinatura')
-    await tecla(barra, 'End')
-    expect(focado()).toBe('Texto')
-    await tecla(barra, 'ArrowRight')
-    expect(focado()).toBe('Selecionar e mover')
-    await tecla(barra, 'Home')
-    expect(focado()).toBe('Selecionar e mover')
-    expect(pressionada()).toEqual(['Selecionar e mover'])
-  })
-
-  // No editar, o mesmo clique mostra a dica (caso "clicar num texto do PDF com Selecionar").
-  it('sem Cobrir na barra, o clique num texto do PDF não manda usar Cobrir', async () => {
-    await abrirParaAssinar()
-
-    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
-    await ponteiro(quadro(), 'pointerup', { x: 100, y: 100 })
-    await esperar(60)
-
-    expect(q('editar-pdf-dica-texto')).toBeNull()
-    expect(anuncio()).not.toBe(TEXTOS.editar.textoExistente)
-  })
-
-  it('gerar: "Gerar PDF assinado", parado com o motivo, e o download como -assinado.pdf', async () => {
-    const { motor } = await abrirParaAssinar()
-    const gerar = porNome('Gerar PDF assinado')
-    expect(gerar.disabled).toBe(true)
-    expect(
-      document.getElementById(gerar.getAttribute('aria-describedby')!)!
-        .textContent,
-    ).toBe(TEXTOS.assinar.gerar.semMudancas)
-
-    await inserirNoCentro('Texto')
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-
-    expect(motor.editadas).toHaveLength(1)
-    expect(motor.editadas[0].objetosPorPagina.get(0)).toHaveLength(1)
-    expect(q('editar-pdf-resultado')!.textContent).toContain(
-      'PDF assinado pronto',
-    )
-    const baixar = q('editar-pdf-baixar') as HTMLAnchorElement
-    expect(baixar.getAttribute('download')).toBe('contrato-3p-assinado.pdf')
-    expect(anuncio()).toMatch(/^PDF assinado pronto: 3 páginas, /)
-  })
-
-  it('acima dos tetos, diz assinar', async () => {
-    const grande = pdf('scan-3p.pdf')
-    Object.defineProperty(grande, 'size', {
-      value: TETO_DE_BYTES_COM_MINIATURAS + 1,
-    })
-    montar({ arquivoInicial: grande, modo: 'assinar' })
-    await esperar()
-    expect(q('editar-pdf-erro')!.textContent).toContain(
-      'que dá para assinar no navegador',
-    )
-
-    act(() => root.unmount())
-    root = createRoot(container)
-    await abrir('livro-600p.pdf', { modo: 'assinar' })
-    expect(q('editar-pdf-erro')!.textContent).toContain(
-      'mais que as 500 que dá para assinar de uma vez',
-    )
-  })
-
-  it('o formulário de teste do motor falso tem um campo de cada tipo, nas páginas 1 e 2', () => {
-    if (FORMULARIO_DE_TESTE.tipo !== 'acroform') throw new Error('sem campos')
-    const { campos } = FORMULARIO_DE_TESTE
-    expect(new Set(campos.map((c) => c.tipo))).toEqual(
-      new Set([
-        'texto',
-        'caixa',
-        'opcoes',
-        'suspensa',
-        'lista',
-        'assinatura',
-        'botao',
-      ]),
-    )
-    expect(
-      new Set(campos.flatMap((c) => c.widgets.map((w) => w.pagina))),
-    ).toEqual(new Set([0, 1]))
-    expect(campos.map((c) => c.id)).toEqual(campos.map((_, i) => i))
-  })
-})
-
 it('todo controle novo tem 44 px e nome', async () => {
   await abrirParaEditar()
   for (const botao of container.querySelectorAll<HTMLButtonElement>(
@@ -1844,643 +1716,4 @@ it('todo controle novo tem 44 px e nome', async () => {
   )) {
     expect(entrada.className).toContain('h-11')
   }
-})
-
-// ---- Fase 4: a assinatura e o formulário ----
-
-const abrirParaAssinar = (
-  nome = 'contrato-3p.pdf',
-  opcoes: Parameters<typeof montar>[0] = {},
-) => abrirParaEditar(nome, { ...opcoes, modo: 'assinar' })
-
-function botaoComTexto(texto: string) {
-  const achado = Array.from(
-    container.querySelectorAll<HTMLElement>('button, label'),
-  ).find((el) => el.textContent?.trim() === texto)
-  if (!achado) throw new Error(`nada com o texto "${texto}"`)
-  return achado as HTMLButtonElement
-}
-
-async function tracarNoQuadroDaAssinatura() {
-  const quadroDaAssinatura = q('quadro-assinatura')!
-  quadroDaAssinatura.getBoundingClientRect = () =>
-    ({
-      left: 0,
-      top: 0,
-      right: 600,
-      bottom: 200,
-      width: 600,
-      height: 200,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    }) as DOMRect
-  await ponteiro(quadroDaAssinatura, 'pointerdown', { x: 100, y: 120 })
-  await ponteiro(quadroDaAssinatura, 'pointermove', { x: 200, y: 90 })
-  await ponteiro(quadroDaAssinatura, 'pointerup', { x: 300, y: 130 })
-}
-
-async function criarAssinaturaDesenhada() {
-  await clicar(ferramenta('Assinatura'))
-  await tracarNoQuadroDaAssinatura()
-  await clicar(botaoComTexto('Usar esta assinatura'))
-}
-
-async function criarAssinaturaDigitada(nome: string) {
-  await clicar(ferramenta('Assinatura'))
-  await act(async () => {
-    botaoComTexto('Digitar o nome').querySelector('input')!.click()
-  })
-  const rotulo = botaoComTexto('Seu nome') as unknown as HTMLLabelElement
-  await digitar(
-    document.getElementById(rotulo.htmlFor) as HTMLInputElement,
-    nome,
-  )
-  await clicar(botaoComTexto('Usar esta assinatura'))
-}
-
-const avisoDaAssinatura = () => todos('aviso-assinatura-visual')
-
-const textoDaDescricao = (el: Element) =>
-  (el.getAttribute('aria-describedby') ?? '')
-    .split(' ')
-    .filter(Boolean)
-    .map((id) => document.getElementById(id)?.textContent)
-    .join(' ')
-
-describe('a assinatura (fase 4)', () => {
-  it('no assinar, o aviso de que assinatura visual não é digital fica logo depois do de privacidade, com e sem arquivo', async () => {
-    montar({ modo: 'assinar' })
-    const privacidade = Array.from(container.querySelectorAll('p')).find(
-      (p) => p.textContent === TEXTOS.privacidade.titulo,
-    )!
-    const [aviso] = avisoDaAssinatura()
-    expect(aviso.textContent).toContain(
-      'Assinatura visual não é assinatura digital',
-    )
-    expect(
-      privacidade.compareDocumentPosition(aviso) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-    expect(
-      aviso.compareDocumentPosition(q('pdf-escolher')!) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-
-    act(() => root.unmount())
-    root = createRoot(container)
-    await abrirParaAssinar()
-    expect(avisoDaAssinatura()).toHaveLength(1)
-
-    act(() => root.unmount())
-    root = createRoot(container)
-    await abrirParaEditar()
-    expect(avisoDaAssinatura()).toHaveLength(0)
-  })
-
-  it('ligar a Assinatura sem assinatura pronta abre o criar nas opções, com o aviso e o foco no jeito marcado', async () => {
-    await abrirParaAssinar()
-    await clicar(ferramenta('Assinatura'))
-    const opcoes = q('editar-pdf-opcoes')!
-    expect(
-      opcoes.querySelector('[data-testid="criar-assinatura"]'),
-    ).not.toBeNull()
-    expect(
-      opcoes.querySelector('[data-testid="aviso-assinatura-visual"]'),
-    ).not.toBeNull()
-    expect(document.activeElement).toBe(
-      botaoComTexto('Desenhar').querySelector('input'),
-    )
-    expect(q('editar-pdf-inserir-no-centro')).toBeNull()
-  })
-
-  it('desenhar e usar: anuncia, leva o foco ao Inserir no centro, e a assinatura entra como imagem, escolhida e com o foco', async () => {
-    const { motor } = await abrirParaAssinar()
-    await criarAssinaturaDesenhada()
-
-    expect(anuncio()).toBe(TEXTOS.assinatura.anuncios.pronta)
-    const pronta = q('editar-pdf-assinatura-pronta')!
-    expect(pronta.textContent).toContain('Assinatura pronta')
-    expect(pronta.textContent).toContain('Desenhada no quadro.')
-    expect(
-      pronta.querySelector('[data-testid="aviso-assinatura-visual"]'),
-    ).not.toBeNull()
-    expect(focado()).toBe('Inserir no centro')
-    // O foco cai no Inserir no centro, depois do aviso: ele vem na descrição do botão.
-    expect(textoDaDescricao(porNome('Inserir no centro'))).toBe(
-      `${TEXTOS.assinatura.aviso.titulo} ${TEXTOS.assinatura.aviso.texto}`,
-    )
-
-    await clicar(porNome('Inserir no centro'))
-    expect(nomesDosObjetos()).toEqual([
-      'Imagem assinatura desenhada, em 208 por 391, 180 por 60 pontos',
-    ])
-    expect(document.activeElement).toBe(objetos()[0])
-    expect(pressionada()).toEqual(['Selecionar e mover'])
-    expect(anuncio()).toBe(
-      'Inserido: Imagem assinatura desenhada, em 208 por 391, 180 por 60 pontos.',
-    )
-
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    const [pedido] = motor.editadas
-    const objeto = pedido.objetosPorPagina.get(0)![0] as Extract<
-      ObjetoNaTela,
-      { tipo: 'imagem' }
-    >
-    const png = pedido.imagens.get(objeto.imagem)!
-    expect(png.type).toBe('image/png')
-    expect(png.size).toBe('png da assinatura'.length)
-    expect(pedido.formulario).toBeUndefined()
-  })
-
-  it('a assinatura pronta é reutilizada em outra página, sem criar de novo', async () => {
-    const { motor } = await abrirParaAssinar()
-    await criarAssinaturaDesenhada()
-    await clicar(porNome('Inserir no centro'))
-    await clicar(porNome('Próxima página'))
-    await esperarAte(
-      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 3',
-    )
-    await esperarAte(() => q('editar-pdf-quadro') !== null)
-    medirQuadro()
-
-    await clicar(ferramenta('Assinatura'))
-    expect(q('criar-assinatura')).toBeNull()
-    // Pôr por clique, como a imagem: centrada no ponto.
-    await ponteiro(quadro(), 'pointerdown', { x: 300, y: 600 })
-    await ponteiro(quadro(), 'pointerup', { x: 300, y: 600 })
-    await esperar()
-    expect(nomesDosObjetos()).toEqual([
-      'Imagem assinatura desenhada, em 210 por 570, 180 por 60 pontos',
-    ])
-
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    const [pedido] = motor.editadas
-    const ids = [0, 1].map(
-      (pagina) =>
-        (
-          pedido.objetosPorPagina.get(pagina)![0] as Extract<
-            ObjetoNaTela,
-            { tipo: 'imagem' }
-          >
-        ).imagem,
-    )
-    expect(ids[0]).toBe(ids[1])
-    expect([...pedido.imagens.keys()]).toEqual([ids[0]])
-  })
-
-  it('o nome digitado vira texto em Times itálico, que se move como os outros objetos', async () => {
-    const { motor } = await abrirParaAssinar()
-    await criarAssinaturaDigitada('Ana Souza')
-    expect(q('editar-pdf-assinatura-pronta')!.textContent).toContain(
-      'O nome Ana Souza, em Times itálico.',
-    )
-    await clicar(porNome('Inserir no centro'))
-
-    const [objeto] = objetos()
-    expect(objeto.getAttribute('aria-label')).toMatch(/^Texto 'Ana Souza', em /)
-    expect(document.activeElement).toBe(objeto)
-    await tecla(objeto, 'ArrowRight', { shiftKey: true })
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    expect(motor.editadas[0].objetosPorPagina.get(0)![0]).toMatchObject({
-      tipo: 'texto',
-      conteudo: 'Ana Souza',
-      fonte: 'times',
-      italico: true,
-      negrito: false,
-      tamanho: 28,
-    })
-  })
-
-  it('a imagem enviada, com o fundo branco tirado, entra como a desenhada', async () => {
-    HTMLCanvasElement.prototype.toBlob = function (aoTerminar, tipo) {
-      aoTerminar(new Blob(['sem fundo'], { type: tipo }))
-    }
-    const getContext = HTMLCanvasElement.prototype.getContext
-    HTMLCanvasElement.prototype.getContext = jest.fn(() => ({
-      drawImage() {},
-      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
-      putImageData() {},
-    })) as unknown as HTMLCanvasElement['getContext']
-    try {
-      await abrirParaAssinar()
-      await clicar(ferramenta('Assinatura'))
-      await act(async () => {
-        botaoComTexto('Enviar imagem').querySelector('input')!.click()
-      })
-      const input = q('criar-assinatura-input') as HTMLInputElement
-      const imagem = png('minha-assinatura.png')
-      Object.defineProperty(input, 'files', {
-        value: Object.assign([imagem], { item: () => imagem }),
-        configurable: true,
-      })
-      await act(async () => {
-        input.dispatchEvent(new Event('change', { bubbles: true }))
-      })
-      await esperarAte(() => q('criar-assinatura-previa') !== null)
-      await clicar(botaoComTexto('Usar esta assinatura'))
-    } finally {
-      HTMLCanvasElement.prototype.getContext = getContext
-    }
-    expect(q('editar-pdf-assinatura-pronta')!.textContent).toContain(
-      'Imagem minha-assinatura.png.',
-    )
-    await clicar(porNome('Inserir no centro'))
-    expect(nomesDosObjetos()[0]).toMatch(
-      /^Imagem assinatura minha-assinatura\.png, em /,
-    )
-  })
-
-  it('com a página ainda sem desenho, o Inserir no centro fica parado, e o foco vai para Criar outra assinatura', async () => {
-    montar({
-      modo: 'assinar',
-      arquivoInicial: pdf('contrato-3p.pdf'),
-      renderizador: criarRenderizadorFalso({ paginasQueFalham: [0] }),
-    })
-    await esperarAte(() => q('editar-pdf-falha') !== null)
-    await criarAssinaturaDigitada('Ana')
-    expect(porNome('Inserir no centro').disabled).toBe(true)
-    expect(focado()).toBe('Criar outra assinatura')
-  })
-
-  it('Criar outra assinatura volta ao criar; Cancelar devolve a pronta, com o foco no botão', async () => {
-    await abrirParaAssinar()
-    await criarAssinaturaDesenhada()
-    await clicar(porNome('Criar outra assinatura'))
-    expect(q('criar-assinatura')).not.toBeNull()
-    expect(q('editar-pdf-assinatura-pronta')).toBeNull()
-
-    await clicar(botaoComTexto('Cancelar'))
-    expect(q('editar-pdf-assinatura-pronta')).not.toBeNull()
-    expect(focado()).toBe('Criar outra assinatura')
-  })
-
-  it('a assinatura que nenhum passo usa sai da memória quando outra a substitui', async () => {
-    await abrirParaAssinar()
-    await criarAssinaturaDesenhada()
-    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
-    await clicar(porNome('Criar outra assinatura'))
-    await act(async () => {
-      botaoComTexto('Digitar o nome').querySelector('input')!.click()
-    })
-    const rotulo = botaoComTexto('Seu nome') as unknown as HTMLLabelElement
-    await digitar(
-      document.getElementById(rotulo.htmlFor) as HTMLInputElement,
-      'Ana',
-    )
-    await clicar(botaoComTexto('Usar esta assinatura'))
-    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1)
-  })
-
-  it('a assinatura pronta fica guardada enquanto a cena muda e quando outro PDF abre, mesmo antes de ir para a página', async () => {
-    const { motor } = await abrirParaAssinar()
-    await criarAssinaturaDesenhada()
-    const urlDaAssinatura = q('editar-pdf-assinatura-pronta')!
-      .querySelector('img')!
-      .getAttribute('src')
-    await inserirNoCentro('Texto')
-    await escolher(pdf('outro-2p.pdf'))
-    await esperarAte(() => miniaturas().length === 2)
-    await esperarAte(() => q('editar-pdf-quadro') !== null)
-    medirQuadro()
-    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(urlDaAssinatura)
-
-    await clicar(ferramenta('Assinatura'))
-    expect(q('editar-pdf-assinatura-pronta')).not.toBeNull()
-    await clicar(porNome('Inserir no centro'))
-    expect(nomesDosObjetos()).toEqual([
-      'Imagem assinatura desenhada, em 208 por 391, 180 por 60 pontos',
-    ])
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    expect(motor.editadas.at(-1)!.imagens.size).toBe(1)
-  })
-
-  it('no editar, a Assinatura também está na barra e põe a assinatura do mesmo jeito', async () => {
-    await abrirParaEditar()
-    await criarAssinaturaDigitada('Paulo')
-    await clicar(porNome('Inserir no centro'))
-    expect(nomesDosObjetos()[0]).toMatch(/^Texto 'Paulo', em /)
-  })
-
-  it('nada da assinatura nem do formulário vai para o Storage ou o IndexedDB', async () => {
-    const gravar = jest.spyOn(Storage.prototype, 'setItem')
-    const abrirBanco = jest.fn()
-    Object.defineProperty(window, 'indexedDB', {
-      value: { open: abrirBanco },
-      configurable: true,
-    })
-    try {
-      await abrirParaAssinar('formulario-2p.pdf')
-      await criarAssinaturaDesenhada()
-      await clicar(porNome('Inserir no centro'))
-      await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana Souza')
-      await clicar(porNome('Gerar PDF assinado'))
-      await esperarAte(() => q('editar-pdf-baixar') !== null)
-      expect(gravar).not.toHaveBeenCalled()
-      expect(abrirBanco).not.toHaveBeenCalled()
-      expect(localStorage.length).toBe(0)
-      expect(sessionStorage.length).toBe(0)
-    } finally {
-      gravar.mockRestore()
-      Reflect.deleteProperty(window, 'indexedDB')
-    }
-  })
-})
-
-function controleDoCampo<T extends HTMLElement = HTMLInputElement>(
-  rotulo: string,
-): T {
-  const label = Array.from(
-    container.querySelectorAll<HTMLLabelElement>(
-      '[data-testid="editar-pdf-formulario"] label',
-    ),
-  ).find((l) => l.textContent?.trim() === rotulo)
-  if (!label) throw new Error(`sem o campo "${rotulo}"`)
-  return (
-    label.htmlFor
-      ? document.getElementById(label.htmlFor)
-      : label.querySelector('input')
-  ) as T
-}
-
-// "calc(12.1008% - 3px)" dá 12.1008.
-const porcentagem = (calc: string) => parseFloat(calc.replace('calc(', ''))
-
-const caixaDoAchatar = () => {
-  const label = Array.from(container.querySelectorAll('label')).find(
-    (l) => l.textContent?.trim() === 'Achatar o formulário',
-  )!
-  return document.getElementById(label.htmlFor) as HTMLInputElement
-}
-
-describe('o formulário (fase 4)', () => {
-  it('o painel mostra os campos do PDF, e o anúncio do aberto diz quantos', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    expect(anuncio()).toBe(
-      'formulario-2p.pdf · 2 páginas. Formulário com 9 campos em 2 páginas.',
-    )
-    expect(controleDoCampo('Nome completo (obrigatório)').tagName).toBe('INPUT')
-    expect(controleDoCampo<HTMLSelectElement>('Estado').tagName).toBe('SELECT')
-  })
-
-  it('focar um campo da página 2 abre a página sem anúncio, sem tirar o foco, e põe o destaque quando ela fica pronta', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    const antes = anuncio()
-    const estado = controleDoCampo<HTMLSelectElement>('Estado')
-
-    await act(async () => estado.focus())
-    await esperarAte(
-      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 2',
-    )
-    await esperarAte(() => q('editar-pdf-destaque') !== null)
-
-    expect(document.activeElement).toBe(estado)
-    expect(anuncio()).toBe(antes)
-    const destaque = q('editar-pdf-destaque')!
-    expect(destaque.getAttribute('aria-hidden')).toBe('true')
-    expect(destaque.className).toContain('pointer-events-none')
-    const [caixa] = todos('editar-pdf-destaque-caixa')
-    expect(porcentagem(caixa.style.left)).toBeCloseTo((72 / 595) * 100, 3)
-    expect(porcentagem(caixa.style.top)).toBeCloseTo((100 / 842) * 100, 3)
-    expect(caixa.style.left).toMatch(/ - 3px\)$/)
-
-    // Sair do formulário tira o destaque.
-    await act(async () => porNome('Página anterior').focus())
-    expect(q('editar-pdf-destaque')).toBeNull()
-  })
-
-  it('no botão de opção, o destaque é o widget da opção focada', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    await act(async () => controleDoCampo('Completo').focus())
-    await esperarAte(() => q('editar-pdf-destaque') !== null)
-    const caixas = todos('editar-pdf-destaque-caixa')
-    expect(caixas).toHaveLength(1)
-    expect(porcentagem(caixas[0].style.left)).toBeCloseTo((200 / 595) * 100, 3)
-  })
-
-  it('com Selecionar, o clique num widget da página leva o foco ao controle dele', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    await ponteiro(quadro(), 'pointerdown', { x: 80, y: 130 })
-    await ponteiro(quadro(), 'pointerup', { x: 80, y: 130 })
-    await esperar()
-    expect(document.activeElement).toBe(
-      controleDoCampo('Nome completo (obrigatório)'),
-    )
-
-    await ponteiro(quadro(), 'pointerdown', { x: 205, y: 295 })
-    await ponteiro(quadro(), 'pointerup', { x: 205, y: 295 })
-    await esperar()
-    expect(document.activeElement).toBe(controleDoCampo('Completo'))
-  })
-
-  it('gerar habilita com um campo mudado, e o pedido leva só os mudados, com o achatar', async () => {
-    const { motor } = await abrirParaAssinar('formulario-2p.pdf')
-    const gerar = () => porNome('Gerar PDF assinado')
-    expect(gerar().disabled).toBe(true)
-
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana Souza')
-    expect(gerar().disabled).toBe(false)
-    expect(q('editar-pdf-gerar-area')!.textContent).toContain(
-      '1 campo preenchido.',
-    )
-
-    const achatar = caixaDoAchatar()
-    expect(
-      achatar.closest('[data-testid="editar-pdf-gerar-area"]'),
-    ).not.toBeNull()
-    expect(
-      document.getElementById(achatar.getAttribute('aria-describedby')!)!
-        .textContent,
-    ).toBe(TEXTOS.assinar.gerar.dicaDoAchatar)
-    await clicar(achatar)
-
-    await clicar(gerar())
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    expect(motor.editadas[0].formulario).toEqual({
-      valores: [
-        { id: 0, nome: 'pessoa.nome', tipo: 'texto', valor: 'Ana Souza' },
-      ],
-      achatar: true,
-    })
-    expect(motor.editadas[0].objetosPorPagina.size).toBe(0)
-  })
-
-  it('só achatar, sem mudar nada, também habilita, e o pedido vai sem valores', async () => {
-    const { motor } = await abrirParaAssinar('formulario-2p.pdf')
-    await clicar(caixaDoAchatar())
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-    expect(motor.editadas[0].formulario).toEqual({ valores: [], achatar: true })
-  })
-
-  it('obrigatórios vazios são avisados sem travar, com o botão que diz para qual campo vai e por quê', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    const aviso = q('editar-pdf-obrigatorios')!
-    const frase =
-      'Os campos obrigatórios “Nome completo” e “Aceito os termos” ainda estão sem resposta. Dá para gerar assim mesmo.'
-    expect(aviso.textContent).toContain(frase)
-    const ir = porNome('Ir para “Nome completo”')
-    expect(textoDaDescricao(ir)).toBe(frase)
-    await clicar(ir)
-    expect(document.activeElement).toBe(
-      controleDoCampo('Nome completo (obrigatório)'),
-    )
-
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    await clicar(controleDoCampo('Aceito os termos (obrigatório)'))
-    expect(q('editar-pdf-obrigatorios')).toBeNull()
-  })
-
-  it('mudar um valor depois de pronto descarta o resultado', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana S')
-    expect(q('editar-pdf-resultado')).toBeNull()
-  })
-
-  it('ligar o Achatar depois de pronto também descarta o resultado, e o Gerar continua habilitado', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-baixar') !== null)
-
-    await clicar(caixaDoAchatar())
-    expect(q('editar-pdf-resultado')).toBeNull()
-    expect(q('editar-pdf-baixar')).toBeNull()
-    expect(porNome<HTMLButtonElement>('Gerar PDF assinado').disabled).toBe(
-      false,
-    )
-  })
-
-  // A falha ao achatar pode vir de qualquer campo, até de um que a pessoa não mexeu: aqui, um da página 2,
-  // que não é o primeiro, com a tela na página 1.
-  it('a falha num campo diz qual, em role=alert, e Mostrar o campo leva até ele (abrindo a página)', async () => {
-    const motor = criarMotorFalso({
-      falhaNoCampo: { campo: 5, motivo: 'aparencia_do_campo' },
-    })
-    await abrirParaAssinar('formulario-2p.pdf', { motor })
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    expect(q('editar-pdf-posicao')!.textContent).toBe('Página 1 de 2')
-
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
-    const falha = q('editar-pdf-falha-ao-gerar')!
-    expect(falha.getAttribute('role')).toBe('alert')
-    expect(falha.textContent).toContain(
-      'Não deu para desenhar o campo “Estado” no PDF.',
-    )
-    await clicar(porNome('Mostrar o campo'))
-    expect(document.activeElement).toBe(controleDoCampo('Estado'))
-    await esperarAte(
-      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 2',
-    )
-  })
-
-  it('o caractere fora das fontes, num campo, também aparece entre aspas', async () => {
-    const motor = criarMotorFalso({
-      falhaNoCampo: {
-        campo: 0,
-        motivo: 'texto_fora_do_winansi',
-        caracteres: ['ŧ'],
-      },
-    })
-    await abrirParaAssinar('formulario-2p.pdf', { motor })
-    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    await clicar(porNome('Gerar PDF assinado'))
-    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
-    expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
-      'O campo “Nome completo” tem um caractere que as fontes do PDF não escrevem: ŧ. Apague esse caractere e gere de novo.',
-    )
-  })
-
-  describe('a área rola até o destaque do campo focado', () => {
-    // A área mostra 500 × 300 px da página A4 desenhada com 500 px de largura; o Protocolo fica perto do pé.
-    async function focarOProtocolo() {
-      await abrirParaAssinar('formulario-2p.pdf')
-      const area = q('editar-pdf-area')!
-      const rolar = jest.fn()
-      area.scrollTo = rolar as unknown as typeof area.scrollTo
-      Object.defineProperties(area, {
-        clientWidth: { value: 500, configurable: true },
-        clientHeight: { value: 300, configurable: true },
-      })
-      await act(async () => controleDoCampo('Protocolo').focus())
-      await esperarAte(() => q('editar-pdf-destaque') !== null)
-      return rolar
-    }
-
-    const escala = 500 / 595
-    const topo = (330 + 22) * escala + 24 - 300
-
-    it('sem reduzir movimento, rola suave até o campo aparecer com a margem', async () => {
-      const rolar = await focarOProtocolo()
-      expect(rolar).toHaveBeenCalledTimes(1)
-      const [{ left, top, behavior }] = rolar.mock.calls[0]
-      expect(left).toBe(0)
-      expect(top).toBeCloseTo(topo, 6)
-      expect(behavior).toBe('smooth')
-    })
-
-    it('com reduzir movimento, rola sem animar', async () => {
-      const matchMedia = window.matchMedia
-      window.matchMedia = (() => ({
-        matches: true,
-        addEventListener() {},
-        removeEventListener() {},
-      })) as unknown as typeof window.matchMedia
-      try {
-        const rolar = await focarOProtocolo()
-        expect(rolar.mock.calls[0][0]).toMatchObject({ behavior: 'auto' })
-      } finally {
-        window.matchMedia = matchMedia
-      }
-    })
-  })
-
-  it('XFA puro: explica e não oferece o formulário; híbrido: diz que a versão XFA sai', async () => {
-    await abrirParaAssinar('xfa-2p.pdf')
-    expect(q('formulario-aviso-xfa')).not.toBeNull()
-    expect(q('editar-pdf-formulario')!.querySelector('form')).toBeNull()
-    expect(q('editar-pdf-gerar-area')!.textContent).not.toContain(
-      'Achatar o formulário',
-    )
-
-    await escolher(pdf('hibrido-2p.pdf'))
-    await esperarAte(() => q('formulario-aviso-hibrido') !== null)
-    expect(q('editar-pdf-formulario')!.querySelector('form')).not.toBeNull()
-  })
-
-  it('o PDF assinado digitalmente avisa que a assinatura deixa de valer', async () => {
-    await abrirParaAssinar('assinado-2p.pdf')
-    expect(q('formulario-aviso-assinado')!.textContent).toBe(
-      TEXTOS.formulario.assinadoDigitalmente,
-    )
-  })
-
-  it('a partir de lg, duas colunas: a página à esquerda; o painel do objeto e o formulário à direita, nessa ordem no DOM', async () => {
-    await abrirParaAssinar('formulario-2p.pdf')
-    const colunas = q('editar-pdf-colunas')!
-    expect(colunas.className).toContain('lg:grid-cols-')
-    const [daPagina, doLado] = Array.from(colunas.children)
-    expect(daPagina.contains(q('editar-pdf-area'))).toBe(true)
-    expect(doLado.contains(q('editar-pdf-painel-vazio'))).toBe(true)
-    expect(doLado.contains(q('editar-pdf-formulario'))).toBe(true)
-    expect(
-      q('editar-pdf-painel-vazio')!.compareDocumentPosition(
-        q('editar-pdf-formulario')!,
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-
-    act(() => root.unmount())
-    root = createRoot(container)
-    await abrirParaEditar()
-    expect(q('editar-pdf-colunas')!.className).not.toContain('lg:grid-cols-')
-  })
 })

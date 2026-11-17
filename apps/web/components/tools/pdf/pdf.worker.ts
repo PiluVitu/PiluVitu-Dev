@@ -1,10 +1,8 @@
 import {
   ErroDePdf,
   ErroNaEdicao,
-  ErroNoCampo,
   aplicarEdicoes,
   contarPaginas,
-  lerFormulario,
   mesclarPdfs,
   organizarPaginas,
   type EdicaoDaPagina,
@@ -44,15 +42,13 @@ function falhar(id: number, erro: unknown) {
   )
 }
 
-// O formulário só é lido quando a tela pede: o custo fica só no modo que o preenche.
-async function analisar(id: number, arquivo: Blob, formulario: boolean) {
+async function analisar(id: number, arquivo: Blob) {
   try {
-    const bytes = await bytesDe(arquivo)
-    escopo.postMessage(
-      formulario
-        ? { tipo: 'analisado', id, ...(await lerFormulario(bytes)) }
-        : { tipo: 'analisado', id, paginas: await contarPaginas(bytes) },
-    )
+    escopo.postMessage({
+      tipo: 'analisado',
+      id,
+      paginas: await contarPaginas(await bytesDe(arquivo)),
+    })
   } catch (erro) {
     escopo.postMessage({
       tipo: 'recusado',
@@ -137,22 +133,9 @@ async function editar(id: number, arquivo: Blob, pedido: PedidoDeEdicao) {
   try {
     entregar(
       id,
-      await aplicarEdicoes(
-        await bytesDe(arquivo),
-        await edicoesDo(pedido),
-        pedido.formulario,
-      ),
+      await aplicarEdicoes(await bytesDe(arquivo), await edicoesDo(pedido)),
     )
   } catch (erro) {
-    if (erro instanceof ErroNoCampo) {
-      return escopo.postMessage({
-        tipo: 'falhou',
-        id,
-        motivo: erro.motivo,
-        campo: erro.campo,
-        caracteres: [...erro.caracteres],
-      })
-    }
     if (!(erro instanceof ErroNaEdicao)) return falhar(id, erro)
     const objetos = pedido.objetosPorPagina.get(erro.pagina) ?? []
     const objeto =
@@ -176,7 +159,7 @@ async function editar(id: number, arquivo: Blob, pedido: PedidoDeEdicao) {
 function atender(pedido: PedidoAoWorker): Promise<void> {
   switch (pedido.tipo) {
     case 'analisar':
-      return analisar(pedido.id, pedido.arquivo, pedido.formulario === true)
+      return analisar(pedido.id, pedido.arquivo)
     case 'mesclar':
       return mesclar(pedido.id, pedido.arquivos)
     case 'organizar':

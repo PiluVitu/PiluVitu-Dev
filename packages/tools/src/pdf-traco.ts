@@ -1,7 +1,6 @@
 import { getStroke } from 'perfect-freehand'
 import {
   pontosDoTracoNaTela,
-  type Caixa,
   type ObjetoTraco,
   type PontoDoTraco,
 } from './pdf-regras'
@@ -57,22 +56,4 @@ export function caminhoDoTraco(objeto: ObjetoTraco): string {
   return caminhoSvgDoContorno(
     contornoDoTraco(pontosDoTracoNaTela(objeto), objeto.espessura),
   )
-}
-
-export function caixaDosTracos(
-  tracos: readonly (readonly PontoDoTraco[])[],
-  espessura: number,
-): Caixa | null {
-  let [x1, y1, x2, y2] = [Infinity, Infinity, -Infinity, -Infinity]
-  for (const pontos of tracos) {
-    if (pontos.length === 0) continue
-    for (const [x, y] of contornoDoTraco(pontos, espessura)) {
-      x1 = Math.min(x1, x)
-      y1 = Math.min(y1, y)
-      x2 = Math.max(x2, x)
-      y2 = Math.max(y2, y)
-    }
-  }
-  if (x1 > x2 || y1 > y2) return null
-  return { x: x1, y: y1, largura: x2 - x1, altura: y2 - y1 }
 }

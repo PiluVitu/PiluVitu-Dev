@@ -40,27 +40,21 @@ it.each(
   },
 )
 
-it('o Editor de PDF tem os modos mesclar, organizar, editar e assinar', () => {
+it('o Editor de PDF tem os modos mesclar, organizar e editar', () => {
   const pdf = TOOLS.find(({ slug }) => slug === 'pdf')
   expect(pdf?.modos?.map(({ slug }) => slug)).toEqual([
     'mesclar',
     'organizar',
     'editar',
-    'assinar',
   ])
-})
-
-it('o assinar é a tela do editar no modo assinar', () => {
-  const fonte = readFileSync(
-    join(__dirname, 'pdf', 'assinar', 'page.tsx'),
-    'utf8',
-  )
-  expect(fonte).toContain('<EditarPdf modo="assinar" />')
-  // A página e o formulário ficam lado a lado a partir de lg, e não cabem na largura de leitura.
-  expect(fonte).toMatch(/<ToolPageShell\s[^>]*\blarga\b/)
 })
 
 // O caminho antigo responde pelo redirects() do next.config (308), conferido no E2E.
 it('/tools/mesclar-pdf não tem mais página própria', () => {
   expect(existsSync(join(__dirname, 'mesclar-pdf'))).toBe(false)
+})
+
+// O Assinar saiu a pedido do dono; o caminho antigo responde pelo redirects() do next.config (308 para /tools/pdf), conferido no E2E.
+it('/tools/pdf/assinar não tem mais página própria', () => {
+  expect(existsSync(join(__dirname, 'pdf', 'assinar'))).toBe(false)
 })

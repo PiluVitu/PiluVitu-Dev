@@ -2,10 +2,7 @@ import {
   ALTURA_DA_LINHA,
   LADO_MAXIMO_DO_CANVAS,
   LADO_MINIMO,
-  LARGURA_MAXIMA_DA_ASSINATURA,
   LIMITE_DO_HISTORICO,
-  LUMINANCIA_DA_TINTA,
-  LUMINANCIA_DO_BRANCO,
   METRICAS_DAS_FONTES,
   NOME_PADRAO_DO_PDF_FINAL,
   PASSO_CURTO,
@@ -21,14 +18,11 @@ import {
   aplicarMatriz,
   cabeNoWinAnsi,
   cabemNoTeto,
-  caixaNaTela,
   caracteresForaDoWinAnsi,
-  compararPelaOrdemDeTab,
   comTamanhoDeFonte,
   componentesDaCor,
   corValida,
   desfazer,
-  escalaDaAssinatura,
   extremosDaLinha,
   extrair,
   fracaoDaMesclagem,
@@ -41,7 +35,6 @@ import {
   linhaEntre,
   linhasDeBase,
   linhasDoTexto,
-  matrizDaAparencia,
   matrizDaTelaParaPdf,
   moverObjeto,
   moverSelecionadas,
@@ -59,17 +52,14 @@ import {
   tamanhoNaTela,
   telaParaPdf,
   tipoDaImagem,
-  tirarFundoBranco,
   tracoDosPontos,
   type Canto,
   type Direcao,
   type GeometriaDaPagina,
-  type Matriz,
   type ObjetoDaPagina,
   type ObjetoLinha,
   type ObjetoTexto,
   type ObjetoTraco,
-  type OrdemDeTab,
   type PaginaDoPlano,
   type Ponto,
 } from './pdf-regras'
@@ -1110,207 +1100,4 @@ describe('limitarAoCanvas (a página grande da tela)', () => {
       ).toThrow(RangeError)
     },
   )
-})
-
-// Fase 4: formulário e assinatura.
-
-describe('caixaNaTela (o retângulo de um widget, do PDF para a tela)', () => {
-  // O /Rect [60 120 160 170] dentro do CropBox [50 100 450 700]. Contas à mão a partir da conversão acima
-  // (o pdf.test.ts confere o mesmo contra o getAnnotations do pdf.js).
-  it.each([
-    [0, { x: 10, y: 530, largura: 100, altura: 50 }],
-    [90, { x: 20, y: 10, largura: 50, altura: 100 }],
-    [180, { x: 290, y: 20, largura: 100, altura: 50 }],
-    [270, { x: 530, y: 290, largura: 50, altura: 100 }],
-  ] as const)('/Rotate %i com CropBox deslocado', (rotacao, esperada) => {
-    const caixa = caixaNaTela(comCorte(rotacao), [60, 120, 160, 170])
-    for (const chave of ['x', 'y', 'largura', 'altura'] as const) {
-      expect(caixa[chave]).toBeCloseTo(esperada[chave], 9)
-    }
-  })
-
-  it('aceita os cantos em qualquer ordem, como o /Rect', () => {
-    expect(caixaNaTela(comCorte(0), [160, 170, 60, 120])).toEqual(
-      caixaNaTela(comCorte(0), [60, 120, 160, 170]),
-    )
-  })
-
-  it('a /UserUnit aumenta a caixa na tela', () => {
-    expect(
-      caixaNaTela({ ...comCorte(0), unidade: 2 }, [60, 120, 160, 170]),
-    ).toEqual({ x: 20, y: 1060, largura: 200, altura: 100 })
-  })
-})
-
-describe('matrizDaAparencia (ISO 32000, 12.5.5)', () => {
-  const RECT = [100, 200, 300, 250] as const
-
-  // A /Matrix da aparência fica com o Do, que a aplica; a matriz devolvida leva a caixa já transformada
-  // pela /Matrix até o /Rect.
-  const levaAoRect = (bbox: readonly number[], matriz: Matriz) => {
-    const final = matrizDaAparencia(RECT, bbox, matriz)!
-    const [x1, y1, x2, y2] = bbox
-    const cantos = [
-      { x: x1, y: y1 },
-      { x: x2, y: y1 },
-      { x: x1, y: y2 },
-      { x: x2, y: y2 },
-    ].map((p) => aplicarMatriz(final, aplicarMatriz(matriz, p)))
-    const xs = cantos.map((p) => p.x)
-    const ys = cantos.map((p) => p.y)
-    expect(Math.min(...xs)).toBeCloseTo(100, 9)
-    expect(Math.min(...ys)).toBeCloseTo(200, 9)
-    expect(Math.max(...xs)).toBeCloseTo(300, 9)
-    expect(Math.max(...ys)).toBeCloseTo(250, 9)
-    return final
-  }
-
-  const IDENTIDADE: Matriz = [1, 0, 0, 1, 0, 0]
-
-  it('/BBox do tamanho do /Rect: só desloca', () => {
-    expect(levaAoRect([0, 0, 200, 50], IDENTIDADE)).toEqual([
-      1, 0, 0, 1, 100, 200,
-    ])
-  })
-
-  it('/BBox que não começa no zero', () => {
-    expect(levaAoRect([10, 20, 210, 70], IDENTIDADE)).toEqual([
-      1, 0, 0, 1, 90, 180,
-    ])
-  })
-
-  it('/BBox de outro tamanho é esticada até o /Rect', () => {
-    expect(levaAoRect([0, 0, 100, 25], IDENTIDADE)).toEqual([
-      2, 0, 0, 2, 100, 200,
-    ])
-  })
-
-  it('/Matrix girada (widget com /R 90): a caixa girada é que vai ao /Rect', () => {
-    expect(levaAoRect([0, 0, 50, 200], [0, 1, -1, 0, 0, 0])).toEqual([
-      1, 0, 0, 1, 300, 200,
-    ])
-  })
-
-  it('/BBox vazia não tem como ir ao /Rect', () => {
-    expect(matrizDaAparencia(RECT, [0, 0, 0, 10], IDENTIDADE)).toBeNull()
-    expect(matrizDaAparencia(RECT, [5, 5, 5, 5], IDENTIDADE)).toBeNull()
-  })
-})
-
-describe('compararPelaOrdemDeTab', () => {
-  const widget = (x: number, y: number, anotacao: number) => ({
-    caixa: { x, y, largura: 10, altura: 10 },
-    anotacao,
-  })
-  const a = widget(300, 100, 0)
-  const b = widget(50, 100, 1)
-  const c = widget(50, 400, 2)
-  const d = widget(300, 50, 3)
-  const ordenar = (ordem: OrdemDeTab) =>
-    [a, b, c, d].sort(compararPelaOrdemDeTab(ordem))
-
-  it('/Tabs /R: de cima para baixo e, na mesma linha, da esquerda para a direita', () => {
-    expect(ordenar('linhas')).toEqual([d, b, a, c])
-  })
-
-  it('/Tabs /C: da esquerda para a direita e, na mesma coluna, de cima para baixo', () => {
-    expect(ordenar('colunas')).toEqual([b, c, d, a])
-  })
-
-  it('sem /Tabs (ou /S): a ordem do /Annots', () => {
-    expect(ordenar('anotacoes')).toEqual([a, b, c, d])
-  })
-
-  it('no mesmo lugar, desempata pela ordem do /Annots', () => {
-    const [primeiro, segundo] = [widget(5, 5, 7), widget(5, 5, 2)].sort(
-      compararPelaOrdemDeTab('linhas'),
-    )
-    expect([primeiro.anotacao, segundo.anotacao]).toEqual([2, 7])
-  })
-})
-
-describe('tirarFundoBranco', () => {
-  const pixels = (...rgba: number[][]) => new Uint8ClampedArray(rgba.flat())
-  const alfas = (dados: Uint8ClampedArray) =>
-    Array.from({ length: dados.length / 4 }, (_, i) => dados[i * 4 + 3])
-
-  it('o branco e o quase branco somem; a tinta fica', () => {
-    const dados = pixels(
-      [255, 255, 255, 255],
-      [LUMINANCIA_DO_BRANCO, LUMINANCIA_DO_BRANCO, LUMINANCIA_DO_BRANCO, 255],
-      [20, 20, 80, 255],
-      [199, 199, 199, 255],
-    )
-    expect(tirarFundoBranco(dados)).toBe(2)
-    expect(alfas(dados)).toEqual([0, 0, 255, 255])
-    expect(Array.from(dados.slice(8, 11))).toEqual([20, 20, 80])
-  })
-
-  it('entre a tinta e o branco, o alfa cai em linha reta (a borda do traço não serrilha)', () => {
-    const dados = pixels(
-      [LUMINANCIA_DA_TINTA, LUMINANCIA_DA_TINTA, LUMINANCIA_DA_TINTA, 255],
-      [220, 220, 220, 255],
-      [230, 230, 230, 255],
-    )
-    expect(tirarFundoBranco(dados)).toBe(2)
-    expect(alfas(dados)).toEqual([255, 128, 64])
-  })
-
-  it('pesa as cores pela luminância (Rec. 601): amarelo claro some, azul forte fica', () => {
-    const dados = pixels([255, 255, 200, 255], [120, 160, 255, 255])
-    tirarFundoBranco(dados)
-    expect(alfas(dados)).toEqual([0, 255])
-  })
-
-  it('o alfa que já era menor fica, e não conta como mudado', () => {
-    const dados = pixels(
-      [255, 255, 255, 0],
-      [220, 220, 220, 50],
-      [230, 230, 230, 100],
-    )
-    expect(tirarFundoBranco(dados)).toBe(1)
-    expect(alfas(dados)).toEqual([0, 50, 64])
-  })
-
-  it('recusa o que não é RGBA', () => {
-    expect(() => tirarFundoBranco(new Uint8ClampedArray(5))).toThrow(RangeError)
-  })
-})
-
-describe('escalaDaAssinatura', () => {
-  it('até 4 pixels por unidade do quadro', () => {
-    expect(escalaDaAssinatura({ largura: 100, altura: 40 })).toEqual({
-      largura: 400,
-      altura: 160,
-      escala: 4,
-    })
-  })
-
-  it('até 1200 px de largura', () => {
-    expect(escalaDaAssinatura({ largura: 600, altura: 200 })).toEqual({
-      largura: LARGURA_MAXIMA_DA_ASSINATURA,
-      altura: 400,
-      escala: 2,
-    })
-    expect(
-      escalaDaAssinatura({ largura: 2000, altura: 100 }).largura,
-    ).toBeLessThanOrEqual(LARGURA_MAXIMA_DA_ASSINATURA)
-  })
-
-  it('e dentro dos limites de canvas', () => {
-    const { largura, altura } = escalaDaAssinatura({
-      largura: 300,
-      altura: 10_000,
-    })
-    expect(altura).toBeLessThanOrEqual(LADO_MAXIMO_DO_CANVAS)
-    expect(largura * altura).toBeLessThanOrEqual(PIXELS_MAXIMOS_DO_CANVAS)
-  })
-
-  it.each([
-    { largura: 0, altura: 10 },
-    { largura: 10, altura: -1 },
-    { largura: Number.NaN, altura: 10 },
-  ])('recusa o recorte %j', (recorte) => {
-    expect(() => escalaDaAssinatura(recorte)).toThrow(RangeError)
-  })
 })

@@ -28,7 +28,6 @@ export const FERRAMENTAS = [
   'selecionar',
   'texto',
   'imagem',
-  'assinatura',
   'desenho',
   'retangulo',
   'elipse',
@@ -40,21 +39,9 @@ export const FERRAMENTAS = [
 
 export type Ferramenta = (typeof FERRAMENTAS)[number]
 
-export type ModoDaTela = 'editar' | 'assinar'
-
-export const FERRAMENTAS_DO_MODO: Record<ModoDaTela, readonly Ferramenta[]> = {
-  editar: FERRAMENTAS,
-  assinar: ['selecionar', 'assinatura', 'texto'],
-}
-
-export const SUFIXO_DO_MODO: Record<ModoDaTela, string> = {
-  editar: 'editado',
-  assinar: 'assinado',
-}
-
 export type FerramentaDeForma = Exclude<
   Ferramenta,
-  'selecionar' | 'desenho' | 'imagem' | 'assinatura' | 'texto'
+  'selecionar' | 'desenho' | 'imagem' | 'texto'
 >
 
 export const CORES = {
@@ -251,15 +238,6 @@ export type ImagemParaInserir = {
   altura: number
 }
 
-/** A assinatura pronta: o PNG (desenhada ou enviada), guardado em `imagens`, ou o nome digitado. */
-export type AssinaturaParaInserir =
-  | { tipo: 'imagem'; imagem: ImagemParaInserir }
-  | { tipo: 'texto'; nome: string; cor: Cor }
-
-export const LARGURA_DA_ASSINATURA_NA_PAGINA = 180
-
-export const TAMANHO_DA_ASSINATURA_DIGITADA = 28
-
 const comoDaPagina = (objeto: ObjetoNaTela) =>
   objeto as unknown as ObjetoDaPagina
 
@@ -361,19 +339,6 @@ function caixaDaImagem(
   }
 }
 
-function tamanhoDaAssinatura(
-  imagem: ImagemParaInserir,
-  pagina: Tamanho,
-): Tamanho {
-  const proporcao = imagem.altura / imagem.largura
-  const largura = Math.min(
-    LARGURA_DA_ASSINATURA_NA_PAGINA,
-    pagina.largura,
-    pagina.altura / proporcao,
-  )
-  return { largura, altura: largura * proporcao }
-}
-
 /** O objeto novo de uma ferramenta (menos o desenho, que nasce dos pontos do traço), já dentro da página. */
 export function criarObjeto(
   ferramenta: Exclude<Ferramenta, 'selecionar' | 'desenho'>,
@@ -383,7 +348,6 @@ export function criarObjeto(
   extras: {
     conteudo?: string
     imagem?: ImagemParaInserir
-    assinatura?: AssinaturaParaInserir
     medir?: MedirTexto
   } = {},
   id = novoId(),
@@ -406,38 +370,6 @@ export function criarObjeto(
           tipo: 'imagem',
           imagem: extras.imagem.id,
           ...caixaDaImagem(extras.imagem, lugar, pagina),
-        },
-        pagina,
-      )
-    }
-    case 'assinatura': {
-      const { assinatura } = extras
-      if (!assinatura) throw new RangeError('assinatura sem conteúdo')
-      if (assinatura.tipo === 'texto') {
-        const forma = {
-          conteudo: assinatura.nome,
-          fonte: 'times' as const,
-          negrito: false,
-          italico: true,
-          tamanho: TAMANHO_DA_ASSINATURA_DIGITADA,
-          cor: assinatura.cor,
-        }
-        const tamanho = caixaDoTexto(forma, extras.medir)
-        const caixa =
-          'centro' in lugar
-            ? centrar(tamanho, lugar.centro)
-            : { ...lugar.de, ...tamanho }
-        return limitar({ id, tipo: 'texto', ...forma, ...caixa }, pagina)
-      }
-      const { imagem } = assinatura
-      return limitar(
-        {
-          id,
-          tipo: 'imagem',
-          imagem: imagem.id,
-          ...('centro' in lugar
-            ? centrar(tamanhoDaAssinatura(imagem, pagina), lugar.centro)
-            : caixaDaImagem(imagem, lugar, pagina)),
         },
         pagina,
       )
@@ -774,7 +706,6 @@ export const TIPO_DA_FERRAMENTA: Record<
 > = {
   texto: 'texto',
   imagem: 'imagem',
-  assinatura: 'imagem',
   desenho: 'traco',
   retangulo: 'retangulo',
   elipse: 'elipse',
