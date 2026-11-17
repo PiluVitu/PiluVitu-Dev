@@ -621,7 +621,7 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
     - o robots e o XML do sitemap (exatamente as rotas públicas e os dois `llms`; os posts batem com os do `llms.txt`);
     - cada link do site no sitemap e nos `llms` respondendo 200 sem redirecionar;
     - os links de fora (`https`, os mesmos da home e do `/pilulabs`, sem pedido para fora);
-    - nos dois `llms`, nenhum contato além do e-mail da PiluTech e de e-mail num domínio de exemplo, e nada de `mailto:`, `tel:`, `wa.me` ou WhatsApp, pelo `contatosProibidos` de `app/contatos-no-llms.ts` (com Jest ao lado: os domínios de exemplo passam, `exemplo.com`, `example.com.br`, `notexample.com` e `example.co` reprovam, e o `mailto:` reprova mesmo com e-mail de exemplo);
+    - nos dois `llms`, nenhum contato além do e-mail da PiluTech e de e-mail num domínio de exemplo, e nada de `mailto:`, `tel:`, `wa.me` ou WhatsApp, pelo `contatosProibidos` de `app/contatos-no-llms.ts` (com Jest ao lado: os domínios de exemplo passam, `exemplo.com`, `example.com.br`, `notexample.com` e `example.co` reprovam, o `mailto:` reprova mesmo com e-mail de exemplo, e `wa.me` e WhatsApp reprovam também dentro de um e-mail de exemplo, como `whatsapp@example.com` e `x@whatsapp.example.com`);
     - a política no `llms-full.txt` com os mesmos títulos e parágrafos da página;
     - o draft mode: com o `__prerender_bypass` verdadeiro e `ks-branch`, as quatro rotas saem com o mesmo hash das anônimas, e a resposta é `no-store`, prova de que o Next aceitou o cookie;
     - description e canonical de cada rota e o `noindex` de `/admin` e `/feed`;

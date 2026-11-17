@@ -1320,22 +1320,26 @@ function tirarXfaDoHibrido({ context, catalog }: PDFDocument): void {
 
 const PROFUNDIDADE_MAXIMA_DOS_CAMPOS = 64
 
-// O /FT é herdado do pai (ISO 32000, 12.7.3.1). A árvore vem do arquivo: pode ter ciclo.
+// O /FT é herdado do pai (ISO 32000, 12.7.3.1). A árvore vem do arquivo: pode ter ciclo e o mesmo campo
+// em mais de um lugar. A descida é em largura e lembra o campo com o tipo herdado, para que nem a ordem do
+// /Fields nem o caminho visto primeiro escondam uma assinatura.
 function temCampoAssinado(context: PDFContext, acroForm: PDFDict): boolean {
   const raizes = context.lookup(acroForm.get(PDFName.of('Fields')))
   if (!(raizes instanceof PDFArray)) return false
-  const vistos = new Set<PDFDict>()
-  const pendentes = raizes.asArray().map((no) => ({
+  const vistos = new Map<PDFDict, Set<PDFObject | undefined>>()
+  const fila = raizes.asArray().map((no) => ({
     no,
     tipoDoPai: undefined as PDFObject | undefined,
     profundidade: 0,
   }))
-  while (pendentes.length > 0) {
-    const { no, tipoDoPai, profundidade } = pendentes.pop()!
+  for (let proximo = 0; proximo < fila.length; proximo++) {
+    const { no, tipoDoPai, profundidade } = fila[proximo]
     const campo = dicionario(context, no)
-    if (!campo || vistos.has(campo)) continue
-    vistos.add(campo)
+    if (!campo) continue
     const tipo = context.lookup(campo.get(PDFName.of('FT')) ?? tipoDoPai)
+    const tiposVistos = vistos.get(campo) ?? new Set()
+    if (tiposVistos.has(tipo)) continue
+    vistos.set(campo, tiposVistos.add(tipo))
     if (
       tipo === PDFName.of('Sig') &&
       dicionario(context, campo.get(PDFName.of('V')))
@@ -1350,11 +1354,7 @@ function temCampoAssinado(context: PDFContext, acroForm: PDFDict): boolean {
       continue
     }
     for (const filho of filhos.asArray()) {
-      pendentes.push({
-        no: filho,
-        tipoDoPai: tipo,
-        profundidade: profundidade + 1,
-      })
+      fila.push({ no: filho, tipoDoPai: tipo, profundidade: profundidade + 1 })
     }
   }
   return false

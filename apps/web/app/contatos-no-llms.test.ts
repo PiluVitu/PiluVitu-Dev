@@ -52,4 +52,20 @@ describe('contatosProibidos', () => {
       ),
     ).toEqual(['mailto:', 'tel:', 'wa.me', 'WhatsApp'])
   })
+
+  it('WhatsApp e wa.me seguem proibidos mesmo dentro de um e-mail num domínio de exemplo', () => {
+    const texto = [
+      'fale no whatsapp@example.com',
+      'wa.me@example.org',
+      'x@whatsapp.example.com',
+      'y@wa.me.invalid',
+    ].join(' ')
+
+    expect(contatosProibidos(texto, EMAIL_DA_PILUTECH)).toEqual([
+      'whatsapp@example.com',
+      'wa.me@example.org',
+      'x@whatsapp.example.com',
+      'y@wa.me.invalid',
+    ])
+  })
 })

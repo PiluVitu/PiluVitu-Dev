@@ -2703,18 +2703,83 @@ describe('analisarPdf: os avisos do editar', () => {
     ])
   })
 
-  it('árvore de campos muito funda não estoura a pilha', async () => {
-    const bytes = await montarPdf((documento) => {
-      let filho = registrar(documento, { FT: 'Tx', T: PDFString.of('folha') })
-      for (let i = 0; i < 20_000; i++) {
-        filho = registrar(documento, {
-          T: PDFString.of(`n${i}`),
-          Kids: [filho],
+  // Um filho de campo de assinatura que também está solto no /Fields (arquivo torto, mas há gerador que faz)
+  // é de assinatura pelo pai; a ordem do /Fields não pode decidir se avisa.
+  it('o filho de /Sig que também está na raiz do /Fields avisa, em qualquer ordem', async () => {
+    const comFilhoNaRaiz = (paiPrimeiro: boolean) =>
+      montarPdf((documento) => {
+        const { context } = documento
+        const pai = context.nextRef()
+        const filho = registrar(documento, {
+          Parent: pai,
+          T: PDFString.of('a'),
+          V: valorDaAssinatura(documento),
         })
-      }
-      acroForm(documento, { Fields: [filho] })
-    })
+        context.assign(
+          pai,
+          context.obj({ FT: 'Sig', T: PDFString.of('p'), Kids: [filho] }),
+        )
+        acroForm(documento, {
+          Fields: paiPrimeiro ? [pai, filho] : [filho, pai],
+        })
+      })
 
-    expect((await analisarPdf(bytes)).avisos).toEqual([])
+    expect((await analisarPdf(await comFilhoNaRaiz(true))).avisos).toEqual([
+      'assinatura_digital',
+    ])
+    expect((await analisarPdf(await comFilhoNaRaiz(false))).avisos).toEqual([
+      'assinatura_digital',
+    ])
+  })
+
+  // Cadeia de campos sem tipo, um em cada nível, com a assinatura (/FT /Sig e /V) pendurada no fim.
+  function cadeiaComAssinatura(
+    documento: PDFDocument,
+    nivelDaAssinatura: number,
+  ) {
+    let no = registrar(documento, {
+      FT: 'Sig',
+      T: PDFString.of('assinatura'),
+      V: valorDaAssinatura(documento),
+    })
+    const nos = [no]
+    for (let nivel = nivelDaAssinatura - 1; nivel >= 0; nivel--) {
+      no = registrar(documento, { T: PDFString.of(`n${nivel}`), Kids: [no] })
+      nos.unshift(no)
+    }
+    return nos
+  }
+
+  it('a descida para em 64 níveis: a assinatura no nível 64 avisa, a do 65 não', async () => {
+    const nivel = (n: number) =>
+      montarPdf((documento) => {
+        const [raiz] = cadeiaComAssinatura(documento, n)
+        acroForm(documento, { Fields: [raiz] })
+      })
+
+    expect((await analisarPdf(await nivel(64))).avisos).toEqual([
+      'assinatura_digital',
+    ])
+    expect((await analisarPdf(await nivel(65))).avisos).toEqual([])
+  })
+
+  // O mesmo campo pode estar no fim de um caminho comprido e também perto da raiz: o caminho visto
+  // primeiro não pode esconder o que está abaixo dele.
+  it('o campo que está no nível 64 de um caminho e na raiz de outro tem os filhos lidos, em qualquer ordem', async () => {
+    const comAtalho = (atalhoPrimeiro: boolean) =>
+      montarPdf((documento) => {
+        const nos = cadeiaComAssinatura(documento, 65)
+        const [raiz, noDoNivel64] = [nos[0], nos[64]]
+        acroForm(documento, {
+          Fields: atalhoPrimeiro ? [noDoNivel64, raiz] : [raiz, noDoNivel64],
+        })
+      })
+
+    expect((await analisarPdf(await comAtalho(true))).avisos).toEqual([
+      'assinatura_digital',
+    ])
+    expect((await analisarPdf(await comAtalho(false))).avisos).toEqual([
+      'assinatura_digital',
+    ])
   })
 })

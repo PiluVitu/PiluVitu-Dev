@@ -1,5 +1,6 @@
 const CONTATO =
   /[\w.+-]+@([\w-]+(?:\.[\w-]+)+)|mailto:|\btel:|wa\.me|whatsapp/gi
+const WHATSAPP = /wa\.me|whatsapp/i
 const DOMINIO_DE_EXEMPLO =
   /^(?:[\w-]+\.)*example\.(?:com|org|net)$|^(?:[\w-]+\.)+invalid$/i
 
@@ -9,6 +10,7 @@ export function contatosProibidos(texto: string, permitido: string): string[] {
     .filter(
       ([contato, dominio]) =>
         dominio === undefined ||
+        WHATSAPP.test(contato) ||
         (contato.toLowerCase() !== permitido.toLowerCase() &&
           !DOMINIO_DE_EXEMPLO.test(dominio)),
     )
