@@ -53,6 +53,7 @@ import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import {
   AvisoDeAssinaturaVisual,
   CriarAssinatura,
+  descricaoDoAviso,
   type AssinaturaPronta,
 } from './criar-assinatura'
 import { DestaqueDoCampo } from './destaque-do-campo'
@@ -1234,6 +1235,8 @@ export function EditarPdf({
   const idSemDesfazer = `${ids}-sem-desfazer`
   const idSemRefazer = `${ids}-sem-refazer`
   const idSemMudancas = `${ids}-sem-mudancas`
+  const idDoAvisoDaAssinatura = `${ids}-aviso-assinatura`
+  const idDosObrigatorios = `${ids}-obrigatorios`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const noMinimo = zoom === 0
@@ -1303,7 +1306,11 @@ export function EditarPdf({
         ferramenta === 'imagem' && !imagemParaPor ? true : undefined
       }
       aria-describedby={
-        ferramenta === 'imagem' && !imagemParaPor ? idSemImagem : undefined
+        ferramenta === 'imagem' && !imagemParaPor
+          ? idSemImagem
+          : ferramenta === 'assinatura'
+            ? descricaoDoAviso(idDoAvisoDaAssinatura)
+            : undefined
       }
       onClick={() => {
         if (tamanhoDaPagina) {
@@ -1700,7 +1707,7 @@ export function EditarPdf({
                     className="space-y-3"
                     data-testid="editar-pdf-assinatura-pronta"
                   >
-                    <AvisoDeAssinaturaVisual />
+                    <AvisoDeAssinaturaVisual id={idDoAvisoDaAssinatura} />
                     <div className="space-y-0.5">
                       <p className="text-sm font-semibold">
                         {TA.pronta.titulo}
@@ -2111,7 +2118,10 @@ export function EditarPdf({
                 className="flex flex-wrap items-center gap-3 text-sm"
                 data-testid="editar-pdf-obrigatorios"
               >
-                <p className="min-w-0 flex-1 basis-56">
+                <p
+                  id={idDosObrigatorios}
+                  className="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]"
+                >
                   {TEXTOS.assinar.gerar.obrigatoriosVazios(
                     estadoDoFormulario.vazios.map((campo) => campo.rotulo),
                   )}
@@ -2119,8 +2129,9 @@ export function EditarPdf({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11"
+                  className="h-auto min-h-11 max-w-full [overflow-wrap:anywhere] whitespace-normal"
                   disabled={montando}
+                  aria-describedby={idDosObrigatorios}
                   onClick={() =>
                     focarControle({
                       campo: estadoDoFormulario.vazios[0].id,
@@ -2128,7 +2139,9 @@ export function EditarPdf({
                     })
                   }
                 >
-                  {TEXTOS.assinar.gerar.irParaOCampo}
+                  {TEXTOS.assinar.gerar.irParaOCampo(
+                    estadoDoFormulario.vazios[0].rotulo,
+                  )}
                 </Button>
               </div>
             )}
@@ -2186,7 +2199,9 @@ export function EditarPdf({
                   className="text-destructive size-4 shrink-0"
                   aria-hidden
                 />
-                <p className="min-w-0 flex-1 basis-56">{resultado.mensagem}</p>
+                <p className="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]">
+                  {resultado.mensagem}
+                </p>
                 {resultado.objeto && (
                   <Button
                     type="button"

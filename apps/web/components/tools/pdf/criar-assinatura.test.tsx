@@ -122,6 +122,23 @@ async function escolherJeito(texto: string) {
 
 const quadro = () => q('quadro-assinatura')!
 
+async function escolherTinta(tinta: 'preto' | 'azul') {
+  const cor = container.querySelector<HTMLSelectElement>('select')!
+  await act(async () => {
+    cor.value = tinta
+    cor.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+// O jsdom devolve a cor do style como rgb(): a referência passa pelo mesmo caminho.
+function corNoEstilo(cor: string) {
+  const amostra = document.createElement('span')
+  amostra.style.color = cor
+  return amostra.style.color
+}
+
+const AVISO = `${T.aviso.titulo} ${T.aviso.texto}`
+
 function medirQuadro() {
   quadro().getBoundingClientRect = () =>
     ({
@@ -282,8 +299,10 @@ describe('desenhar', () => {
     for (const botao of [limpar, usar]) {
       expect(botao.getAttribute('aria-disabled')).toBe('true')
       expect(botao.disabled).toBe(false)
-      expect(descricao(botao)).toBe('O quadro está vazio.')
     }
+    expect(descricao(limpar)).toBe('O quadro está vazio.')
+    // Usar também traz o aviso, para quem anda pelo foco ouvi-lo na hora de usar a assinatura.
+    expect(descricao(usar)).toBe(`O quadro está vazio. ${AVISO}`)
     await clicar(usar)
     expect(aoCriar).not.toHaveBeenCalled()
     expect(desenhar).not.toHaveBeenCalled()
@@ -303,6 +322,26 @@ describe('desenhar', () => {
     expect(aoAnunciar).toHaveBeenLastCalledWith('Quadro limpo.')
     expect(document.activeElement).toBe(limpar)
     expect(limpar.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('com o quadro pronto, Usar traz só o aviso na descrição', async () => {
+    montar()
+    medirQuadro()
+    await tracar({ x: 30, y: 50 }, { x: 120, y: 40 })
+    expect(descricao(porTexto('Usar esta assinatura'))).toBe(AVISO)
+  })
+
+  it('Usar com a tinta azul desenha o PNG em azul', async () => {
+    const { aoCriar } = montar()
+    medirQuadro()
+    await tracar({ x: 30, y: 50 }, { x: 120, y: 40 })
+    await escolherTinta('azul')
+    await clicar(porTexto('Usar esta assinatura'))
+    expect(desenhar.mock.calls[0][1]).toEqual({
+      cor: CORES.azul,
+      espessura: ESPESSURA_DA_ASSINATURA,
+    })
+    expect(aoCriar).toHaveBeenCalledTimes(1)
   })
 
   it('Usar desenha o PNG com os traços (em unidades do quadro) e o entrega', async () => {
@@ -419,7 +458,7 @@ describe('digitar o nome', () => {
       'true',
     )
     expect(descricao(porTexto('Usar esta assinatura'))).toBe(
-      'Escreva o seu nome primeiro.',
+      `Escreva o seu nome primeiro. ${AVISO}`,
     )
 
     await digitar(campo, 'Ana Souza ')
@@ -435,6 +474,28 @@ describe('digitar o nome', () => {
       jeito: 'digitada',
       nome: 'Ana Souza',
       cor: CORES.preto,
+    })
+  })
+
+  it('com a tinta azul, a prévia e o nome entregue saem em azul', async () => {
+    const { aoCriar } = montar({ jeitoInicial: 'digitar' })
+    const campo = document.getElementById(
+      porTexto<HTMLLabelElement>('Seu nome').htmlFor,
+    ) as HTMLInputElement
+    await digitar(campo, 'Ana Souza')
+    expect(q('criar-assinatura-nome')!.style.color).toBe(
+      corNoEstilo(CORES.preto),
+    )
+    await escolherTinta('azul')
+    expect(q('criar-assinatura-nome')!.style.color).toBe(
+      corNoEstilo(CORES.azul),
+    )
+    await clicar(porTexto('Usar esta assinatura'))
+    expect(aoCriar).toHaveBeenCalledWith({
+      tipo: 'texto',
+      jeito: 'digitada',
+      nome: 'Ana Souza',
+      cor: CORES.azul,
     })
   })
 

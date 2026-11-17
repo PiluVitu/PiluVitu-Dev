@@ -205,6 +205,9 @@ const LADOS: Record<LadoDoMovimento, string> = {
   depois: 'para depois',
 }
 
+// O rótulo vem do PDF e pode ser uma frase ("Aceito os termos"): entre aspas, não se mistura à nossa.
+const entreAspas = (rotulo: string) => `“${rotulo}”`
+
 function falhaNoCampo(
   falha: {
     motivo: MotivoDoErroNoCampo
@@ -216,11 +219,11 @@ function falhaNoCampo(
   const caracteres = falha.caracteres ?? []
   switch (falha.motivo) {
     case 'texto_fora_do_winansi':
-      return `O campo ${rotulo} tem ${concordar(caracteres.length, 'um caractere', 'caracteres')} que as fontes do PDF não escrevem: ${lista.format(caracteres)}. Apague ${concordar(caracteres.length, 'esse caractere', 'esses caracteres')} e gere de novo.`
+      return `O campo ${entreAspas(rotulo)} tem ${concordar(caracteres.length, 'um caractere', 'caracteres')} que as fontes do PDF não escrevem: ${lista.format(caracteres)}. Apague ${concordar(caracteres.length, 'esse caractere', 'esses caracteres')} e gere de novo.`
     case 'acima_do_tamanho_maximo':
-      return `O campo ${rotulo} passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.`
+      return `O campo ${entreAspas(rotulo)} passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.`
     case 'aparencia_do_campo':
-      return `Não deu para desenhar o campo ${rotulo} no PDF. Gere sem achatar o formulário, ou deixe o campo como estava no arquivo.`
+      return `Não deu para desenhar o campo ${entreAspas(rotulo)} no PDF. Gere sem achatar o formulário, ou deixe o campo como estava no arquivo.`
   }
 }
 
@@ -671,9 +674,9 @@ export const TEXTOS = {
         'Os campos viram parte do desenho da página e deixam de ser editáveis, em qualquer leitor de PDF. Sem achatar, quem receber o PDF ainda pode mudar os valores.',
       obrigatoriosVazios: (rotulos: readonly string[]) => {
         const n = rotulos.length
-        return `${concordar(n, 'O campo obrigatório', 'Os campos obrigatórios')} ${lista.format(rotulos)} ${concordar(n, 'está vazio', 'estão vazios')}. Dá para gerar assim mesmo.`
+        return `${concordar(n, 'O campo obrigatório', 'Os campos obrigatórios')} ${lista.format(rotulos.map(entreAspas))} ${concordar(n, 'ainda está sem resposta', 'ainda estão sem resposta')}. Dá para gerar assim mesmo.`
       },
-      irParaOCampo: 'Ir para o campo',
+      irParaOCampo: (rotulo: string) => `Ir para ${entreAspas(rotulo)}`,
       mostrarCampo: 'Mostrar o campo',
     },
     falhaNoCampo,

@@ -116,7 +116,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - as anotações da página são desligadas de todo o documento: o campo de formulário que fica sem widget sai também (ele guardaria o valor), e saem o `/OBJR` da estrutura e o `/CO`. O `/ActualText`, o `/Alt` e o `/E` dos elementos de estrutura da página também saem;
   - os XObjects que a página desenhava saem dos recursos que outras páginas herdam ou também listam, quando nenhuma página que fica os desenha. Na dúvida (imagem embutida no conteúdo de uma página que fica), nada sai daquele dicionário, para a página que fica não perder um desenho;
   - **mudou na revisão do #120 (o Crivo reproduziu os três no SHA da entrega):** saem também o `/XFA` do AcroForm (com o `/NeedsRendering` do catálogo), porque o XML do XFA guarda o que foi digitado e é alcançável pelo catálogo; o `/T` dos elementos da página; o `/Alt`, o `/T`, o `/ActualText` e o `/E` de todo elemento pai (sem `/Pg`) cujo conteúdo está só em páginas apagadas; e os marcadores que levam a uma página apagada (direto, por `GoTo` ou por nome), com os filhos subindo para o lugar deles;
-  - ficam, de propósito, e a tela diz com todas as letras: os metadados do documento (título, autor, assunto, XMP), os anexos e o texto alternativo de elemento que também descreve uma página que fica;
+  - ficam, de propósito: os metadados do documento (título, autor, assunto, XMP) e os anexos, que a tela diz com todas as letras, e o texto alternativo de elemento que também descreve uma página que fica;
   - **mudou na fase 4 (menores da revisão do Crivo no #120):** saem também os nomes de destino (o `/Dests` antigo do catálogo e a árvore `/Names /Dests`) que levam a uma página apagada, para um nome como `CPF_123` não ficar no arquivo, e quem usava o nome (link, marcador, `/OpenAction`, ação `GoTo` em qualquer lugar) passa ao destino explícito, que continua levando à página, agora imagem. O nome que leva a uma página que fica, fica. E o marcador cuja ação não leva a uma página do documento (URI, Launch, JavaScript, GoToR, GoToE, Named) fica, de propósito, com o título: ele não é o marcador da página apagada;
   - o fundo tem que ser JPEG, e `pixelsDoFundo` dá o canvas: 200 dpi, no máximo 16,7 milhões de pixels e 16.384 de lado.
 
@@ -496,6 +496,18 @@ Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o
 
     Nenhum achado confirmado.
 
+**Revisão interna da fase 4** (antes do PR), com estes ajustes, cada um com o teste que falhava antes:
+
+- **Formulários feitos por outros programas** (`packages/tools`):
+  - suspensa e lista com o `/Opt` em pares `[exportação, texto]`: o `/V` guarda a exportação, e o pdf-lib lê e grava o texto. A leitura passa o `/V` para o texto, e o preenchimento grava a exportação (com o `/I` na lista múltipla) e escreve o texto na aparência. Antes, a tela mostrava a exportação como uma opção a mais, o PDF saía com o texto no `/V` (o pdf.js e o Acrobat não achavam a opção), e a lista múltipla falhava como `inesperado`;
+  - caixas de marcar com o mesmo nome e valores de exportação diferentes (Sim/Não, M/F) viram botões de opção na tela, e cada widget guarda o próprio estado. Antes, a tela mostrava uma caixa só, e marcar gravava sempre o primeiro widget;
+  - achatar com o `/NeedAppearances` ligado refaz a aparência de todo texto, suspensa e lista: pypdf, pdftk e iText deixam a aparência velha, e achatar com ela apagava o valor sem erro;
+  - o `/UR3` e o `/UR` (recursos estendidos do Reader) saem do `/Perms` em toda edição, porque a assinatura deles deixa de valer quando o pdf-lib reescreve o arquivo;
+  - o valor do arquivo que não está nas opções é aceito no preenchimento, como a tela já mostrava. Antes, marcar outra opção na lista múltipla mandava esse valor junto, e o PDF não saía.
+- **Tela:** os rótulos, o aviso dos obrigatórios, o botão "Ir para" e a mensagem da falha quebram em qualquer ponto (o nome técnico de um campo sem `/TU` levava a página a 480 px de largura a 320 px); o anel do destaque tem cor fixa, porque o fundo dele é a página do PDF (no tema escuro, o primário dava 2,1:1 contra a página branca); o aviso de assinatura visual entra na descrição do "Usar esta assinatura" e do "Inserir no centro", onde o foco cai; o aviso dos obrigatórios põe os rótulos entre aspas e diz "ainda estão sem resposta" (serve à caixa e às opções), e o botão diz para qual campo vai ("Ir para “Nome completo”"), com o aviso na descrição; a falha num campo também põe o rótulo entre aspas.
+- **Testes que faltavam:** desmarcar e limpar em todas as camadas (incluindo um E2E), a lista de escolha única, a tinta azul até o PNG e o nome, a rolagem até o destaque (com reduzir movimento), o cursor depois do caractere recusado, o Achatar que descarta o resultado, a falha num campo que não é o primeiro e está noutra página, o `GoToR` com um nome que saiu (o `/D` dele é do outro arquivo e não muda) e o texto formatado sem `/V`. Verificado por mutação: 22 mutantes no `pdf.ts` e 16 na tela, todos derrubados.
+- **Docs:** o `packages/tools/CLAUDE.md` dizia que os nomes de destino "saíam até a fase 3" (ficavam) e que a tela cita o marcador que leva para fora do documento (ela cita só os metadados e os anexos). Corrigido aqui também, na fase 3: o texto alternativo que fica não é dito na tela.
+
 **Fica de fora, de propósito:**
 
 - Os valores na página grande antes de gerar. O pdf.js desenha os campos com a aparência do arquivo; mostrar o que a pessoa digitou pediria o `annotationStorage` dele e um desenho novo a cada tecla, e a aparência sairia diferente da que o pdf-lib grava. A tela diz que os valores entram no PDF ao gerar.
@@ -545,3 +557,4 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Na fase 4, achatar é uma função própria, e não o `flatten()` do pdf-lib 1.17.1, que quebra com widget sem aparência, ignora a `/BBox` e deixa o widget no `/Annots`.
 - Na fase 4, a página grande mostra os campos como estão no arquivo, e os valores entram no PDF ao gerar.
 - Na fase 4, a área da página entra no Tab (`role=group`, "Área da página N"), nos dois modos, para o teclado rolar a página que não cabe nela (achado do axe).
+- Na fase 4 (revisão interna), o formulário de outros programas: o `/V` da suspensa e da lista guarda a exportação da opção e a tela mostra o texto, caixas com o mesmo nome e exportações diferentes viram botões de opção, achatar com `/NeedAppearances` refaz a aparência antes, e o `/UR3` sai de todo PDF editado.

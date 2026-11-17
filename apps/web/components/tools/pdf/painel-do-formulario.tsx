@@ -40,6 +40,9 @@ const OPCAO = 'flex min-h-11 cursor-pointer items-center gap-3 text-sm'
 
 const MARCA = 'accent-primary size-5 shrink-0'
 
+// Sem /TU, o rótulo é o nome técnico, uma palavra só e longa (topmostSubform[0].Page1[0].Nome[0]).
+const ROTULO = 'text-sm font-medium [overflow-wrap:anywhere]'
+
 export type Registrar = (
   id: number,
   elemento: HTMLElement | null,
@@ -261,7 +264,7 @@ function CampoNaTela(props: PropsDoCampo) {
     >
       {campo.tipo === 'texto' && campo.naoPreenchivel === 'somente_leitura' ? (
         <>
-          <label htmlFor={id} className="text-sm font-medium">
+          <label htmlFor={id} className={ROTULO}>
             {campo.rotulo}
           </label>
           <Input
@@ -288,7 +291,7 @@ function CampoNaTela(props: PropsDoCampo) {
         />
       ) : (
         <>
-          <p className="text-sm font-medium">{campo.rotulo}</p>
+          <p className={ROTULO}>{campo.rotulo}</p>
           <p className="text-muted-foreground text-sm">
             {T.naoPreenchivel[campo.naoPreenchivel ?? 'botao']}
           </p>
@@ -332,7 +335,7 @@ function ControleDoCampo({
       const Controle = campo.multilinha ? Textarea : Input
       return (
         <>
-          <label htmlFor={id} className="text-sm font-medium">
+          <label htmlFor={id} className={ROTULO}>
             {rotulo}
           </label>
           <Controle
@@ -398,7 +401,7 @@ function ControleDoCampo({
             />
             <label
               htmlFor={id}
-              className="flex min-h-11 items-center text-sm font-medium"
+              className={cn('flex min-h-11 min-w-0 items-center', ROTULO)}
             >
               {rotulo}
             </label>
@@ -425,7 +428,7 @@ function ControleDoCampo({
           aria-describedby={descrito()}
           className="min-w-0 space-y-1"
         >
-          <legend id={`${id}-legenda`} className="text-sm font-medium">
+          <legend id={`${id}-legenda`} className={ROTULO}>
             {rotulo}
           </legend>
           {opcoes.map((opcao, indice) => (
@@ -478,7 +481,7 @@ function ControleDoCampo({
         ]
         return (
           <fieldset aria-describedby={descrito()} className="min-w-0 space-y-1">
-            <legend className="text-sm font-medium">{rotulo}</legend>
+            <legend className={ROTULO}>{rotulo}</legend>
             {opcoes.map((opcao, indice) => (
               <label key={opcao} className={OPCAO}>
                 <input
@@ -529,7 +532,7 @@ function ControleDoCampo({
       ]
       return (
         <>
-          <label htmlFor={id} className="text-sm font-medium">
+          <label htmlFor={id} className={ROTULO}>
             {rotulo}
           </label>
           <select

@@ -62,7 +62,9 @@ const RECUSAS = {
   falha_do_navegador: TEXTOS.editar.imagem.falhaDoNavegador,
 }
 
-export function AvisoDeAssinaturaVisual() {
+export const descricaoDoAviso = (id: string) => `${id}-titulo ${id}-texto`
+
+export function AvisoDeAssinaturaVisual({ id }: { id?: string }) {
   return (
     <div
       className="bg-card border-border flex gap-3 rounded-lg border p-4"
@@ -74,8 +76,12 @@ export function AvisoDeAssinaturaVisual() {
         aria-hidden
       />
       <div className="space-y-1 text-sm">
-        <p className="font-semibold">{T.aviso.titulo}</p>
-        <p className="text-muted-foreground">{T.aviso.texto}</p>
+        <p id={id && `${id}-titulo`} className="font-semibold">
+          {T.aviso.titulo}
+        </p>
+        <p id={id && `${id}-texto`} className="text-muted-foreground">
+          {T.aviso.texto}
+        </p>
       </div>
     </div>
   )
@@ -140,6 +146,7 @@ export function CriarAssinatura({
           ? null
           : T.semNome
   const idDoMotivo = `${ids}-motivo`
+  const idDoAviso = `${ids}-aviso`
   const idDaDica = `${ids}-dica-quadro`
   const idDaDicaDoFundo = `${ids}-dica-fundo`
   const idDaDicaDoNome = `${ids}-dica-nome`
@@ -247,7 +254,7 @@ export function CriarAssinatura({
 
   return (
     <div className="space-y-4" data-testid="criar-assinatura">
-      <AvisoDeAssinaturaVisual />
+      <AvisoDeAssinaturaVisual id={idDoAviso} />
 
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-semibold">
@@ -481,7 +488,7 @@ export function CriarAssinatura({
             type="button"
             className="h-11 gap-2 px-4"
             aria-disabled={motivo || ocupado ? true : undefined}
-            aria-describedby={motivo ? idDoMotivo : undefined}
+            aria-describedby={`${motivo ? `${idDoMotivo} ` : ''}${descricaoDoAviso(idDoAviso)}`}
             onClick={() => void usar()}
           >
             <FontAwesomeIcon

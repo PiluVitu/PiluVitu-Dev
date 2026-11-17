@@ -210,6 +210,14 @@ describe('cada tipo de campo', () => {
       tipo: 'caixa',
       marcada: true,
     })
+    await clicar(aceito)
+    expect(aceito.checked).toBe(false)
+    expect(mudancas.at(-1)).toEqual({
+      id: 2,
+      nome: 'aceito',
+      tipo: 'caixa',
+      marcada: false,
+    })
   })
 
   it('botões de opção: um fieldset com legend e um radio por opção; "Limpar a escolha" quando não é obrigatório', async () => {
@@ -303,9 +311,47 @@ describe('cada tipo de campo', () => {
       tipo: 'lista',
       valores: ['Azul', 'Verde'],
     })
+    await clicar(caixas[0])
+    expect(caixas[0].checked).toBe(false)
+    expect(mudancas.at(-1)).toEqual({
+      id: 6,
+      nome: 'interesses',
+      tipo: 'lista',
+      valores: ['Verde'],
+    })
   })
 
-  it('lista de escolha única vira select', () => {
+  // O Worker aceita o valor que o arquivo já tinha, mesmo fora das opções: ele vai junto com o novo.
+  it('lista múltipla: o valor do arquivo fora das opções vira mais uma caixa, marcada, e vai junto', async () => {
+    montar({
+      ...FORMULARIO_DE_TESTE,
+      campos: FORMULARIO_DE_TESTE.campos.map((c) =>
+        c.tipo === 'lista' ? { ...c, valores: ['Azul', 'Lilás'] } : c,
+      ),
+    })
+    const caixas = Array.from(
+      grupo('Interesses').querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"]',
+      ),
+    )
+    expect(
+      caixas.map((c) => [c.closest('label')!.textContent, c.checked]),
+    ).toEqual([
+      ['Azul', true],
+      ['Verde', false],
+      ['Vermelho', false],
+      ['Lilás', true],
+    ])
+    await clicar(caixas[1])
+    expect(mudancas.at(-1)).toEqual({
+      id: 6,
+      nome: 'interesses',
+      tipo: 'lista',
+      valores: ['Azul', 'Verde', 'Lilás'],
+    })
+  })
+
+  it('lista de escolha única vira select, e trocar manda uma opção só', async () => {
     montar({
       ...FORMULARIO_DE_TESTE,
       campos: FORMULARIO_DE_TESTE.campos.map((c) =>
@@ -315,6 +361,20 @@ describe('cada tipo de campo', () => {
     const interesses = controle<HTMLSelectElement>('Interesses')
     expect(interesses.tagName).toBe('SELECT')
     expect(interesses.selectedOptions[0].textContent).toBe('Azul')
+    await escolher(interesses, 'Vermelho')
+    expect(mudancas.at(-1)).toEqual({
+      id: 6,
+      nome: 'interesses',
+      tipo: 'lista',
+      valores: ['Vermelho'],
+    })
+    await escolher(interesses, '(nenhuma)')
+    expect(mudancas.at(-1)).toEqual({
+      id: 6,
+      nome: 'interesses',
+      tipo: 'lista',
+      valores: [],
+    })
   })
 
   it('somente leitura: o campo readOnly com o valor e o motivo', () => {
@@ -356,6 +416,23 @@ describe('o que a tela fica sabendo', () => {
 
     await digitar(nome, 'Ana S')
     expect(q('formulario-erro')).toBeNull()
+  })
+
+  it('o caractere tirado no meio do texto deixa o cursor onde a pessoa escrevia', async () => {
+    montar()
+    const nome = controle('Nome completo (obrigatório)')
+    await digitar(nome, 'Ana Souza')
+    // O emoji (dois code units) entra depois de "Ana", com o cursor logo depois dele.
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(nome, 'Ana😀 Souza')
+      nome.setSelectionRange(5, 5)
+      nome.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(nome.value).toBe('Ana Souza')
+    expect([nome.selectionStart, nome.selectionEnd]).toEqual([3, 3])
   })
 
   it('focar um controle chama aoFocar com o widget dele (no radio, o da opção), e sair do form, com null', async () => {

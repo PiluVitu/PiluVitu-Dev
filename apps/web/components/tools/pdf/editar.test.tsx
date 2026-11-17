@@ -1901,6 +1901,13 @@ async function criarAssinaturaDigitada(nome: string) {
 
 const avisoDaAssinatura = () => todos('aviso-assinatura-visual')
 
+const textoDaDescricao = (el: Element) =>
+  (el.getAttribute('aria-describedby') ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent)
+    .join(' ')
+
 describe('a assinatura (fase 4)', () => {
   it('no assinar, o aviso de que assinatura visual não é digital fica logo depois do de privacidade, com e sem arquivo', async () => {
     montar({ modo: 'assinar' })
@@ -1959,6 +1966,10 @@ describe('a assinatura (fase 4)', () => {
       pronta.querySelector('[data-testid="aviso-assinatura-visual"]'),
     ).not.toBeNull()
     expect(focado()).toBe('Inserir no centro')
+    // O foco cai no Inserir no centro, depois do aviso: ele vem na descrição do botão.
+    expect(textoDaDescricao(porNome('Inserir no centro'))).toBe(
+      `${TEXTOS.assinatura.aviso.titulo} ${TEXTOS.assinatura.aviso.texto}`,
+    )
 
     await clicar(porNome('Inserir no centro'))
     expect(nomesDosObjetos()).toEqual([
@@ -2306,13 +2317,15 @@ describe('o formulário (fase 4)', () => {
     expect(motor.editadas[0].formulario).toEqual({ valores: [], achatar: true })
   })
 
-  it('obrigatórios vazios são avisados sem travar, com Ir para o campo', async () => {
+  it('obrigatórios vazios são avisados sem travar, com o botão que diz para qual campo vai e por quê', async () => {
     await abrirParaAssinar('formulario-2p.pdf')
     const aviso = q('editar-pdf-obrigatorios')!
-    expect(aviso.textContent).toContain(
-      'Os campos obrigatórios Nome completo e Aceito os termos estão vazios. Dá para gerar assim mesmo.',
-    )
-    await clicar(porNome('Ir para o campo'))
+    const frase =
+      'Os campos obrigatórios “Nome completo” e “Aceito os termos” ainda estão sem resposta. Dá para gerar assim mesmo.'
+    expect(aviso.textContent).toContain(frase)
+    const ir = porNome('Ir para “Nome completo”')
+    expect(textoDaDescricao(ir)).toBe(frase)
+    await clicar(ir)
     expect(document.activeElement).toBe(
       controleDoCampo('Nome completo (obrigatório)'),
     )
@@ -2332,7 +2345,45 @@ describe('o formulário (fase 4)', () => {
     expect(q('editar-pdf-resultado')).toBeNull()
   })
 
+  it('ligar o Achatar depois de pronto também descarta o resultado, e o Gerar continua habilitado', async () => {
+    await abrirParaAssinar('formulario-2p.pdf')
+    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
+    await clicar(porNome('Gerar PDF assinado'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    await clicar(caixaDoAchatar())
+    expect(q('editar-pdf-resultado')).toBeNull()
+    expect(q('editar-pdf-baixar')).toBeNull()
+    expect(porNome<HTMLButtonElement>('Gerar PDF assinado').disabled).toBe(
+      false,
+    )
+  })
+
+  // A falha ao achatar pode vir de qualquer campo, até de um que a pessoa não mexeu: aqui, um da página 2,
+  // que não é o primeiro, com a tela na página 1.
   it('a falha num campo diz qual, em role=alert, e Mostrar o campo leva até ele (abrindo a página)', async () => {
+    const motor = criarMotorFalso({
+      falhaNoCampo: { campo: 5, motivo: 'aparencia_do_campo' },
+    })
+    await abrirParaAssinar('formulario-2p.pdf', { motor })
+    await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
+    expect(q('editar-pdf-posicao')!.textContent).toBe('Página 1 de 2')
+
+    await clicar(porNome('Gerar PDF assinado'))
+    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
+    const falha = q('editar-pdf-falha-ao-gerar')!
+    expect(falha.getAttribute('role')).toBe('alert')
+    expect(falha.textContent).toContain(
+      'Não deu para desenhar o campo “Estado” no PDF.',
+    )
+    await clicar(porNome('Mostrar o campo'))
+    expect(document.activeElement).toBe(controleDoCampo('Estado'))
+    await esperarAte(
+      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 2',
+    )
+  })
+
+  it('o caractere fora das fontes, num campo, também aparece entre aspas', async () => {
     const motor = criarMotorFalso({
       falhaNoCampo: {
         campo: 0,
@@ -2342,25 +2393,55 @@ describe('o formulário (fase 4)', () => {
     })
     await abrirParaAssinar('formulario-2p.pdf', { motor })
     await digitar(controleDoCampo('Nome completo (obrigatório)'), 'Ana')
-    await clicar(porNome('Próxima página'))
-    await esperarAte(
-      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 2',
-    )
-
     await clicar(porNome('Gerar PDF assinado'))
     await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
-    const falha = q('editar-pdf-falha-ao-gerar')!
-    expect(falha.getAttribute('role')).toBe('alert')
-    expect(falha.textContent).toContain(
-      'O campo Nome completo tem um caractere que as fontes do PDF não escrevem: ŧ. Apague esse caractere e gere de novo.',
+    expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
+      'O campo “Nome completo” tem um caractere que as fontes do PDF não escrevem: ŧ. Apague esse caractere e gere de novo.',
     )
-    await clicar(porNome('Mostrar o campo'))
-    expect(document.activeElement).toBe(
-      controleDoCampo('Nome completo (obrigatório)'),
-    )
-    await esperarAte(
-      () => q('editar-pdf-posicao')!.textContent === 'Página 1 de 2',
-    )
+  })
+
+  describe('a área rola até o destaque do campo focado', () => {
+    // A área mostra 500 × 300 px da página A4 desenhada com 500 px de largura; o Protocolo fica perto do pé.
+    async function focarOProtocolo() {
+      await abrirParaAssinar('formulario-2p.pdf')
+      const area = q('editar-pdf-area')!
+      const rolar = jest.fn()
+      area.scrollTo = rolar as unknown as typeof area.scrollTo
+      Object.defineProperties(area, {
+        clientWidth: { value: 500, configurable: true },
+        clientHeight: { value: 300, configurable: true },
+      })
+      await act(async () => controleDoCampo('Protocolo').focus())
+      await esperarAte(() => q('editar-pdf-destaque') !== null)
+      return rolar
+    }
+
+    const escala = 500 / 595
+    const topo = (330 + 22) * escala + 24 - 300
+
+    it('sem reduzir movimento, rola suave até o campo aparecer com a margem', async () => {
+      const rolar = await focarOProtocolo()
+      expect(rolar).toHaveBeenCalledTimes(1)
+      const [{ left, top, behavior }] = rolar.mock.calls[0]
+      expect(left).toBe(0)
+      expect(top).toBeCloseTo(topo, 6)
+      expect(behavior).toBe('smooth')
+    })
+
+    it('com reduzir movimento, rola sem animar', async () => {
+      const matchMedia = window.matchMedia
+      window.matchMedia = (() => ({
+        matches: true,
+        addEventListener() {},
+        removeEventListener() {},
+      })) as unknown as typeof window.matchMedia
+      try {
+        const rolar = await focarOProtocolo()
+        expect(rolar.mock.calls[0][0]).toMatchObject({ behavior: 'auto' })
+      } finally {
+        window.matchMedia = matchMedia
+      }
+    })
   })
 
   it('XFA puro: explica e não oferece o formulário; híbrido: diz que a versão XFA sai', async () => {

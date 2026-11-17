@@ -275,14 +275,23 @@ describe('assinatura e formulário (fase 4)', () => {
     )
   })
 
-  it('obrigatórios vazios: os rótulos pelo Intl, sem travar', () => {
+  // Os rótulos entre aspas, para um rótulo que é frase não se misturar à frase; e "sem resposta", que
+  // serve ao texto, à caixa de marcar ("Aceito os termos") e aos botões de opção ("Plano").
+  it('obrigatórios vazios: os rótulos entre aspas, pelo Intl, sem travar', () => {
     expect(assinar.gerar.obrigatoriosVazios(['Nome'])).toBe(
-      'O campo obrigatório Nome está vazio. Dá para gerar assim mesmo.',
+      'O campo obrigatório “Nome” ainda está sem resposta. Dá para gerar assim mesmo.',
     )
     expect(
-      assinar.gerar.obrigatoriosVazios(['Nome', 'CPF', 'Aceito os termos']),
+      assinar.gerar.obrigatoriosVazios([
+        'Nome completo',
+        'Aceito os termos',
+        'Plano',
+      ]),
     ).toBe(
-      'Os campos obrigatórios Nome, CPF e Aceito os termos estão vazios. Dá para gerar assim mesmo.',
+      'Os campos obrigatórios “Nome completo”, “Aceito os termos” e “Plano” ainda estão sem resposta. Dá para gerar assim mesmo.',
+    )
+    expect(assinar.gerar.irParaOCampo('Nome completo')).toBe(
+      'Ir para “Nome completo”',
     )
   })
 
@@ -293,7 +302,7 @@ describe('assinatura e formulário (fase 4)', () => {
         'Nome',
       ),
     ).toBe(
-      'O campo Nome tem um caractere que as fontes do PDF não escrevem: 😀. Apague esse caractere e gere de novo.',
+      'O campo “Nome” tem um caractere que as fontes do PDF não escrevem: 😀. Apague esse caractere e gere de novo.',
     )
     expect(
       assinar.falhaNoCampo(
@@ -301,11 +310,11 @@ describe('assinatura e formulário (fase 4)', () => {
         'CPF',
       ),
     ).toBe(
-      'O campo CPF passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.',
+      'O campo “CPF” passou do tamanho que o PDF aceita. Encurte o texto e gere de novo.',
     )
     expect(
       assinar.falhaNoCampo({ motivo: 'aparencia_do_campo', campo: 0 }, 'UF'),
-    ).toMatch(/^Não deu para desenhar o campo UF no PDF\. Gere sem achatar/)
+    ).toMatch(/^Não deu para desenhar o campo “UF” no PDF\. Gere sem achatar/)
   })
 
   it('o formulário: resumo, página, contador e o anúncio ao abrir, pelo Intl', () => {

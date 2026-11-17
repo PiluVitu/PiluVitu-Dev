@@ -2266,6 +2266,8 @@ test.describe('Editar PDF', () => {
 const CAMPO_NOME = { x: 40, y: 430, largura: 220, altura: 24 }
 const CAMPO_CIDADE = { x: 40, y: 430, largura: 200, altura: 24 }
 
+const NOME_TECNICO = 'topmostSubform[0].Page1[0].NomeCompletoDoContribuinte[0]'
+
 const naTela = (campo: typeof CAMPO_NOME) => ({
   ...campo,
   y: 500 - campo.y - campo.altura,
@@ -2289,9 +2291,16 @@ function xfaDe(documento: PDFDocument) {
 // caracteres), a caixa de marcar, os botões de opção, a suspensa e a lista de escolha múltipla. Na 2: um
 // campo sem /TU (o rótulo é o nome técnico), um somente leitura e um de assinatura digital (/Sig). O
 // híbrido ganha o XFA num segundo save: o que gera as aparências passa pelo getForm(), que tira o XFA.
+// `preenchido` traz a caixa marcada e uma escolha em cada campo de opções; `nomesTecnicos` acrescenta na
+// página 2 dois obrigatórios sem /TU, com os nomes longos e sem espaço dos formulários do LiveCycle.
 async function pdfDoFormulario(
   nome: string,
-  { hibrido = false, assinado = false } = {},
+  {
+    hibrido = false,
+    assinado = false,
+    preenchido = false,
+    nomesTecnicos = false,
+  } = {},
 ) {
   const documento = await PDFDocument.create()
   const { context } = documento
@@ -2333,6 +2342,12 @@ async function pdfDoFormulario(
   cores.setOptions(['Azul', 'Verde', 'Vermelho'])
   cores.enableMultiselect()
   cores.addToPage(p1, { x: 40, y: 200, width: 150, height: 60 })
+  if (preenchido) {
+    aceito.check()
+    plano.select('Completo')
+    estado.select('RJ')
+    cores.select(['Azul'])
+  }
 
   form.createTextField('cidade').addToPage(p2, caixa(CAMPO_CIDADE))
   const protocolo = form.createTextField('protocolo')
@@ -2364,6 +2379,16 @@ async function pdfDoFormulario(
   )
   form.acroForm.addField(assinatura)
   p2.node.addAnnot(assinatura)
+  if (nomesTecnicos) {
+    const contribuinte = form.createTextField(NOME_TECNICO)
+    contribuinte.enableRequired()
+    contribuinte.addToPage(p2, { x: 40, y: 300, width: 200, height: 24 })
+    const declaracao = form.createCheckBox(
+      'topmostSubform[0].Page1[0].DeclaracaoDeVeracidade[0]',
+    )
+    declaracao.enableRequired()
+    declaracao.addToPage(p2, { x: 40, y: 260, width: 16, height: 16 })
+  }
 
   let bytes = await documento.save()
   if (hibrido) {
@@ -2717,6 +2742,33 @@ test.describe('Assinar PDF', () => {
     expect(x).toBeLessThan(campo.x + campo.largura)
     expect(y).toBeGreaterThan(campo.y)
     expect(y).toBeLessThanOrEqual(campo.y + campo.altura)
+  })
+
+  test('desmarcar a caixa, Limpar a escolha e (nenhuma) também chegam ao PDF baixado', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { preenchido: true }),
+    )
+    const aceito = page.getByRole('checkbox', { name: 'Aceito os termos' })
+    await expect(aceito).toBeChecked()
+    await aceito.uncheck()
+    await expect(page.getByRole('radio', { name: 'Completo' })).toBeChecked()
+    await page.getByRole('button', { name: 'Limpar a escolha' }).click()
+    await expect(page.getByRole('radio', { name: 'Basico' })).toBeFocused()
+    await page
+      .getByRole('combobox', { name: 'Estado' })
+      .selectOption({ label: '(nenhuma)' })
+    await page.getByRole('checkbox', { name: 'Azul' }).uncheck()
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const form = (await PDFDocument.load(bytes)).getForm()
+    expect(form.getCheckBox('aceito').isChecked()).toBe(false)
+    expect(form.getRadioGroup('plano').getSelected()).toBeUndefined()
+    expect(form.getDropdown('estado').getSelected()).toEqual([])
+    expect(form.getOptionList('cores').getSelected()).toEqual([])
   })
 
   test('focar um campo da página 2 abre a página sem anúncio, e o destaque cobre a caixa do campo na tela', async ({
@@ -3082,7 +3134,18 @@ test.describe('Assinar PDF', () => {
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await page.goto('/tools/pdf/assinar')
-    await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { nomesTecnicos: true }),
+    )
+    // Os rótulos sem /TU são os nomes técnicos, sem espaço para quebrar: no formulário, no aviso dos
+    // obrigatórios e no botão que leva ao primeiro deles.
+    await expect(
+      page.getByRole('textbox', { name: `${NOME_TECNICO} (obrigatório)` }),
+    ).toBeVisible()
+    await expect(page.getByTestId('editar-pdf-obrigatorios')).toContainText(
+      NOME_TECNICO,
+    )
     await page.getByRole('radio', { name: 'Completo' }).check()
     await expect(page.getByTestId('formulario-limpar-escolha')).toBeVisible()
     await escolherFerramenta(page, 'Assinatura')
@@ -3128,7 +3191,7 @@ test.describe('Assinar PDF', () => {
           return { x: left, y: top, altura: height }
         }),
       )
-    expect(campos).toHaveLength(8)
+    expect(campos).toHaveLength(10)
     for (const [i, campo] of campos.entries()) {
       expect(Math.abs(campo.x - campos[0].x)).toBeLessThanOrEqual(1)
       if (i > 0) {
@@ -3149,6 +3212,58 @@ test.describe('Assinar PDF', () => {
       await page.evaluate(alvosPequenos, '[data-testid="editar-pdf"]'),
     ).toEqual([])
   })
+
+  // O fundo do anel é a página do PDF (branca aqui), não o tema do site: 3:1, de componente gráfico.
+  for (const tema of ['light', 'dark'] as const)
+    test(`o anel do destaque passa de 3:1 contra a página no tema ${tema}`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf/assinar')
+      await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+      await page
+        .getByRole('textbox', { name: 'Nome completo (obrigatório)' })
+        .focus()
+      await expect(page.getByTestId('editar-pdf-destaque-caixa')).toHaveCount(1)
+      const { anel, pagina } = await page.evaluate(() => {
+        const caixa = document.querySelector(
+          '[data-testid="editar-pdf-destaque-caixa"]',
+        )!
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          '[data-testid="editar-pdf-canvas"]',
+        )!
+        const r = caixa.getBoundingClientRect()
+        const c = canvas.getBoundingClientRect()
+        const escala = canvas.width / c.width
+        const pixel = canvas
+          .getContext('2d')!
+          .getImageData(
+            Math.round((r.right + 8 - c.left) * escala),
+            Math.round((r.top + r.height / 2 - c.top) * escala),
+            1,
+            1,
+          ).data
+        return {
+          anel: getComputedStyle(caixa).boxShadow.match(
+            /rgba?\(([^)]*)\)\s+0px\s+0px\s+0px\s+3px/,
+          )?.[1],
+          pagina: [pixel[0], pixel[1], pixel[2]],
+        }
+      })
+      expect(pagina).toEqual([255, 255, 255])
+      expect(anel).toBeDefined()
+      const luminancia = (rgb: number[]) => {
+        const [r, g, b] = rgb.map((c) => {
+          const v = c / 255
+          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      const cor = anel!.split(',').slice(0, 3).map(Number)
+      expect(
+        (luminancia(pagina) + 0.05) / (luminancia(cor) + 0.05),
+      ).toBeGreaterThanOrEqual(3)
+    })
 
   for (const tema of ['light', 'dark'] as const)
     test(`todo texto do assinar passa de 4,5:1 no tema ${tema}, com os avisos, o formulário, o painel da assinatura e o PDF pronto`, async ({

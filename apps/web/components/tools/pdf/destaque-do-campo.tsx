@@ -7,7 +7,8 @@ const FOLGA = 3
 
 /**
  * Onde fica o campo focado no formulário, por cima da página. Decorativo para o leitor de tela, que já tem
- * o rótulo e o "Na página N" do campo; o anel primário com a borda branca aparece em página clara e escura.
+ * o rótulo e o "Na página N" do campo. O fundo é a página do PDF, não o tema do site: o anel escuro (o
+ * primário do tema claro, 7,5:1 no branco) com a borda branca por dentro aparece em página clara e escura.
  */
 export function DestaqueDoCampo({
   caixas,
@@ -26,7 +27,7 @@ export function DestaqueDoCampo({
       {caixas.map((caixa, indice) => (
         <div
           key={indice}
-          className="ring-primary absolute rounded-sm border-2 border-white ring-[3px]"
+          className="absolute rounded-sm border-2 border-white ring-[3px] ring-[hsl(198_93%_26%)]"
           style={{
             left: `calc(${pct(caixa.x, tamanho.largura)} - ${FOLGA}px)`,
             top: `calc(${pct(caixa.y, tamanho.altura)} - ${FOLGA}px)`,
