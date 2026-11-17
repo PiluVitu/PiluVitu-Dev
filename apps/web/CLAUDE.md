@@ -204,7 +204,7 @@ A votação de filmes virou o **Votaí** (nome com acento na interface; sem acen
 
 Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload, sem guardar o PDF no navegador), e a tela diz isso. O plano das fases e as decisões estão em `docs/plano-editor-pdf.md`.
 
-> **O Assinar saiu a pedido do Paulo (2026-11-17).** O modo Assinar PDF (fase 4, #121) e o formulário AcroForm que veio com ele não eram para existir (a assinatura é pelo gov.br) e foram tirados; `/tools/pdf/assinar` responde 308 para `/tools/pdf`. Fora essa remoção, o editor de PDF segue parado até nova ordem do Paulo (ver o topo do `docs/plano-editor-pdf.md`).
+> **O Assinar saiu a pedido do Paulo (2026-11-17).** O modo Assinar PDF (fase 4, #121) e o formulário AcroForm que veio com ele não eram para existir (a assinatura é pelo gov.br) e foram tirados; `/tools/pdf/assinar` responde 308 para `/tools/pdf`. O próximo passo é o editor único que o Paulo escolheu (variante A, "Bancada"), em PRs pequenos (ver o topo do `docs/plano-editor-pdf.md`).
 
 - **Rotas** (`app/(site)/tools/pdf/`):
   - `page.tsx`: o hub "Editor de PDF", com o aviso de privacidade e um cartão por modo do registro (`ModosDoEditor`);
