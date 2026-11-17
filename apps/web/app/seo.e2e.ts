@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { itensListados, linkDoItem } from '../lib/pilulabs'
 import { lerItensDoConteudo } from '../lib/pilulabs-conteudo'
 import { rotasPublicas, urlAbsoluta } from '../lib/rotas-publicas'
+import { contatosProibidos } from './contatos-no-llms'
 
 // Roda pelo playwright.seo.config.ts: build de produção com NEXT_PUBLIC_SITE_URL
 // nesta origem e `next start` numa porta local. Os links absolutos apontam para
@@ -157,10 +158,8 @@ for (const arquivo of ['/llms.txt', '/llms-full.txt'])
     const linhas = texto.split('\n')
     expect(linhas[0]).toBe('# Paulo Victor Torres Silva')
     expect(linhas[2]).toMatch(/^> \S/)
-    // O único e-mail é o público da PiluTech, que a política mostra na página.
-    expect(texto.replaceAll(EMAIL_DA_PILUTECH, '')).not.toMatch(
-      /[\w.+-]+@[\w-]+\.[\w.]+|mailto:|\btel:|wa\.me|whatsapp/i,
-    )
+    // Fora o público da PiluTech, que a política mostra na página, só e-mail de exemplo (RFC 2606).
+    expect(contatosProibidos(texto, EMAIL_DA_PILUTECH)).toEqual([])
   })
 
 test('llms-full.txt: a política de privacidade com os mesmos títulos e parágrafos da página', async ({
