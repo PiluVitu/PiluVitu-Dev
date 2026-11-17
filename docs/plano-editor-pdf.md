@@ -109,14 +109,24 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
 
   O texto some do arquivo, ao custo de a página perder a seleção de texto e ficar maior. A tela explica a troca antes de a pessoa confirmar.
 
+  **Decidido na lógica (primeira etapa da fase 3, `aplicarEdicoes` no `packages/tools`):**
+  - o documento é editado no lugar, sem `copyPages`: marcadores, links, formulário e metadados continuam, ao contrário do organizar;
+  - a página apagada fica só com `/Type` e `/Parent` e ganha `/MediaBox` e `/CropBox` do tamanho que a tela mostra, `/Rotate` 0 e recursos próprios (explícitos, para não herdar nada da árvore de páginas). O JPEG cobre a página inteira, e os `cobrir` não são desenhados de novo;
+  - o pdf-lib salva todo objeto que leu, mesmo sem ninguém apontando para ele. Por isso, antes de salvar, sai do arquivo tudo o que não se alcança a partir do catálogo e do `/Info`, em toda edição (não só no apagar de verdade). Sem isso, o conteúdo antigo da página iria inteiro para o PDF novo;
+  - as anotações da página são desligadas de todo o documento: o campo de formulário que fica sem widget sai também (ele guardaria o valor), e saem o `/OBJR` da estrutura e o `/CO`. O `/ActualText`, o `/Alt` e o `/E` dos elementos de estrutura da página também saem;
+  - os XObjects que a página desenhava saem dos recursos que outras páginas herdam ou também listam, quando nenhuma página que fica os desenha. Na dúvida (imagem embutida no conteúdo de uma página que fica), nada sai daquele dicionário, para a página que fica não perder um desenho;
+  - ficam, de propósito: os metadados do documento (título, autor, XMP), os marcadores e o texto alternativo de elemento de estrutura sem `/Pg`;
+  - o fundo tem que ser JPEG, e `pixelsDoFundo` dá o canvas: 200 dpi, no máximo 16,7 milhões de pixels e 16.384 de lado.
+
 - **Fontes:** só as padrão do PDF (Helvetica, Times e Courier, com negrito e itálico), que o pdf-lib embute sem pacote extra e que cobrem os acentos do português e do espanhol (WinAnsi). O `@pdf-lib/fontkit` (fonte própria e qualquer caractere) custaria 326 KB gzip a mais e fica de fora. Caractere fora do WinAnsi (emoji, CJK) é recusado no campo, com aviso.
-- **Desenho à mão livre:** `perfect-freehand` 1.2.3 (MIT, sem dependência, 2 KB gzip) suaviza os pontos do ponteiro, e o traço vira caminho SVG desenhado pelo `drawSvgPath` do pdf-lib. Marca-texto: retângulo com opacidade 0,35 e `blendMode: Multiply`.
-- **Coordenadas:** a tela usa o canto superior esquerdo; o PDF usa o inferior esquerdo, a página pode ter `/Rotate` (0, 90, 180, 270) e o `CropBox` pode não começar no zero. A conversão mora no `packages/tools` como função pura, com teste para as quatro rotações e para o `CropBox` deslocado. Errar aqui põe o texto no lugar errado sem dar erro.
+- **Desenho à mão livre:** `perfect-freehand` 1.2.3 (MIT, sem dependência, 2 KB gzip) suaviza os pontos do ponteiro, e o traço vira caminho SVG desenhado pelo `drawSvgPath` do pdf-lib. Marca-texto: retângulo com opacidade 0,35 e `blendMode: Multiply`. Decidido na lógica: o perfect-freehand fica num subpath próprio, `@piluvitu/tools/pdf-traco`, que a tela usa para mostrar o traço enquanto a pessoa risca e o Worker para o mesmo traço sair igual no PDF; os pontos do traço ficam em fração da caixa, para mover e redimensionar levarem o traço junto.
+- **Coordenadas:** a tela usa o canto superior esquerdo; o PDF usa o inferior esquerdo, a página pode ter `/Rotate` (0, 90, 180, 270) e o `CropBox` pode não começar no zero. A conversão mora no `packages/tools` como função pura, com teste para as quatro rotações e para o `CropBox` deslocado. Errar aqui põe o texto no lugar errado sem dar erro. Decidido na lógica: os objetos guardam a posição em pontos da tela (a página como o pdf.js a mostra, vista com escala 1), e a conversão para o PDF só acontece ao salvar. A geometria é a do pdf.js (`view`, `rotate` e `userUnit`), conferida contra o pdf.js de verdade.
+- **Texto, decidido na lógica:** sem quebra automática; as linhas são as quebras que a pessoa digita. A primeira linha de base fica um ascendente da fonte (dos AFM) abaixo do topo da caixa, e as outras descem 1,2 em. A tela desenha com a mesma regra (`linhasDeBase`), senão o texto sai um pouco deslocado de onde a pessoa viu.
 - **Teclado e leitor de tela (mover e redimensionar):**
   - O quadro dos objetos de uma página é um `role=application` com nome ("Objetos da página 3"). Sem um papel assim, NVDA e JAWS no modo de navegação ficam com as setas, e mover e redimensionar pelo teclado falharia justo para quem usa leitor de tela.
   - Cada objeto é focável, com `role=button`, `aria-roledescription` "objeto do PDF", nome ("Texto 'Paulo Victor', em 120 por 340, 200 por 40 pontos") e `aria-describedby` apontando para as instruções de teclado.
   - **Setas movem** 1 ponto, e Shift+setas movem 10.
-  - **Alt+setas redimensionam** 1 ponto (Alt+Shift+setas, 10), puxando o canto de baixo à direita. As setas, e o Alt+← e o Alt+→ em especial (voltar e avançar do Chrome e do Firefox no Windows e no Linux), têm `preventDefault` quando um objeto está focado.
+  - **Alt+setas redimensionam** 1 ponto (Alt+Shift+setas, 10), puxando o canto de baixo à direita. No texto, mudam o tamanho da fonte em 1 ou 10 pontos, e a caixa acompanha. As setas, e o Alt+← e o Alt+→ em especial (voltar e avançar do Chrome e do Firefox no Windows e no Linux), têm `preventDefault` quando um objeto está focado.
   - Delete apaga, Enter edita o texto, Esc solta a seleção.
   - A posição e o tamanho novos são anunciados depois de uma pausa curta (`role=status`), para não falar a cada passo.
   - Um painel de propriedades mostra X, Y, largura e altura em campos numéricos, mais fonte, tamanho e cor (lista de cores com nome, além do seletor). É o jeito exato e acessível de posicionar.
@@ -139,7 +149,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
 - **Imagem aceita:** só PNG e JPEG, conferidos pelos bytes iniciais, não pela extensão. SVG fica de fora (pode carregar script).
 - **Testes:**
   - Jest da conversão de coordenadas, cobrindo as quatro rotações e o CropBox;
-  - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz;
+  - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz. Feito na primeira etapa: como o Jest do `packages/tools` é CommonJS, o pdf.js roda num processo filho do Node, e as formas e imagens também são conferidas, pela caixa de cada desenho no `getOperatorList`;
   - "apagar de verdade" conferido de três jeitos: o texto deixou de existir na página (`getTextContent`), a página não tem mais `/Annots`, e os pixels da imagem embutida sob o retângulo são brancos. Esta última conferência decodifica o JPEG no navegador (E2E, `createImageBitmap`) e lê o canvas;
   - motor e componente: mover e redimensionar pelo teclado, anúncio e painel numérico;
   - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima).
@@ -199,3 +209,5 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - No organizar, o "Gerar PDF organizado" e o resultado ficam antes da lista de páginas, logo depois da barra.
 - Botões rápidos por página (selecionar, girar à direita, apagar) e o resto na barra da seleção, com o número original da página no rótulo.
 - O E2E de privacidade passou de "só GET na própria origem" para "nada vai a outra origem e nenhum corpo leva o PDF".
+- Na fase 3, os objetos guardam a posição em pontos da tela, e o texto não quebra sozinho. Redimensionar texto pelo teclado muda a fonte.
+- Na fase 3, o apagar de verdade edita o documento no lugar (marcadores, links e formulário ficam) e, em toda edição, o que nada alcança sai do arquivo antes de salvar.
