@@ -211,9 +211,15 @@ A fase 4 (assinatura e formulário AcroForm, #121, commit 6367482) entrou em 202
 - o XFA híbrido (AcroForm com campos e `/XFA`) perde o `/XFA` e o `/NeedsRendering` quando alguma página ganha objeto ou fundo, mesmo sem apagar de verdade, e mantém o AcroForm (`tirarXfaDoHibrido`). O XFA puro, sem campo no AcroForm, fica. No Reader, a versão XFA do híbrido aparece no lugar da página editada, e o XML guarda o que foi digitado;
 - o `/UR3`, o `/UR` e o `/DocMDP` saem do `/Perms` em toda edição, e o `/Perms` vazio sai (`tirarRecursosEstendidos`): a assinatura deles deixa de valer quando o pdf-lib reescreve o arquivo;
 - o `aplicarEdicoes` salva com `updateFieldAppearances: false`, porque o `save()` padrão passa pelo `getForm()` do pdf-lib 1.17.1, que apaga o `/XFA`;
-- no Editar: a área da página no Tab (`role=group`, "Área da página N"), o `pontoDoEvento` no `objetos.ts`, o `editar(arquivo, pedido)` do motor, o nome `TEXTOS.editar.gerar.semMudancas` e a imagem escolhida que espera para entrar e sobrevive à inserção de outro objeto (que ganhou teste na remoção).
+- no Editar: a área da página no Tab (`role=group`, "Área da página N"), o `pontoDoEvento` no `objetos.ts`, o `editar(arquivo, pedido)` do motor e a imagem escolhida que espera para entrar e sobrevive à inserção de outro objeto (que ganhou teste na remoção).
 
-**Pergunta em aberto para o Paulo:** com o painel do formulário saíram os únicos avisos de "PDF assinado ou certificado: a assinatura deixa de valer" e de "XFA puro: o que você puser pode não aparecer no Adobe". O Editar nunca teve esses avisos e limpa em silêncio o XFA do híbrido e o `/UR3`, o `/UR` e o `/DocMDP`. Pôr um aviso no Editar seria comportamento novo, e pediria ler o formulário ao abrir; fica para ele decidir.
+**Decisão do Paulo (2026-11-17), que respondeu a pergunta que ficou em aberto aqui:** o Editar avisa, sem bloquear, sem pedir confirmação e sem mudar o que o Gerar faz; o mesclar e o organizar não avisam. Feito:
+
+- **assinado ou certificado:** "Este PDF tem assinatura digital. Editar invalida a assinatura." Assinado é um campo `/FT /Sig` (com o `/FT` herdado pelo `/Kids`) com `/V` que é dicionário; certificado é o `/DocMDP` no `/Perms`. Só o `/UR3` não avisa;
+- **XFA puro:** "Este PDF é um formulário XFA: o que você escrever por cima pode não aparecer no Adobe Acrobat e no Reader." O critério é o mesmo do `tirarXfaDoHibrido` (`/XFA` sem campo no `/AcroForm`), num predicado só. O híbrido não avisa: perde o XFA ao gerar, como antes;
+- a leitura é a que o Worker já fazia ao abrir (`analisarPdf` no lugar do `contarPaginas`), pelo catálogo e pelos dicionários, sem o `getForm()`, com guarda contra ciclo e profundidade na árvore de campos. Os avisos voltam junto das páginas e só o Editar os mostra: uma lista logo abaixo do nome do PDF, e o texto deles entra uma vez no anúncio do aberto ("contrato.pdf · 2 páginas. Este PDF tem assinatura digital. …"). Os dois podem aparecer juntos. Detalhes no `packages/tools/CLAUDE.md` ("Avisos do editar ao abrir") e no `apps/web/CLAUDE.md`.
+
+No mesmo PR, o menor do Crivo no #123: `temMudancas`, `idSemMudancas` e `TEXTOS.editar.gerar.semMudancas` voltaram aos nomes do #120 (`quantosObjetos === 0`, `idSemObjetos`, `semObjetos`), sem mudar o comportamento.
 
 ## Ordem e entrega
 
