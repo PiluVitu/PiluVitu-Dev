@@ -116,7 +116,8 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - as anotações da página são desligadas de todo o documento: o campo de formulário que fica sem widget sai também (ele guardaria o valor), e saem o `/OBJR` da estrutura e o `/CO`. O `/ActualText`, o `/Alt` e o `/E` dos elementos de estrutura da página também saem;
   - os XObjects que a página desenhava saem dos recursos que outras páginas herdam ou também listam, quando nenhuma página que fica os desenha. Na dúvida (imagem embutida no conteúdo de uma página que fica), nada sai daquele dicionário, para a página que fica não perder um desenho;
   - **mudou na revisão do #120 (o Crivo reproduziu os três no SHA da entrega):** saem também o `/XFA` do AcroForm (com o `/NeedsRendering` do catálogo), porque o XML do XFA guarda o que foi digitado e é alcançável pelo catálogo; o `/T` dos elementos da página; o `/Alt`, o `/T`, o `/ActualText` e o `/E` de todo elemento pai (sem `/Pg`) cujo conteúdo está só em páginas apagadas; e os marcadores que levam a uma página apagada (direto, por `GoTo` ou por nome), com os filhos subindo para o lugar deles;
-  - ficam, de propósito, e a tela diz com todas as letras: os metadados do documento (título, autor, assunto, XMP), os anexos, o texto alternativo de elemento que também descreve uma página que fica e os nomes dos destinos nomeados;
+  - ficam, de propósito, e a tela diz com todas as letras: os metadados do documento (título, autor, assunto, XMP), os anexos e o texto alternativo de elemento que também descreve uma página que fica;
+  - **mudou na fase 4 (menores da revisão do Crivo no #120):** saem também os nomes de destino (o `/Dests` antigo do catálogo e a árvore `/Names /Dests`) que levam a uma página apagada, para um nome como `CPF_123` não ficar no arquivo, e quem usava o nome (link, marcador, `/OpenAction`, ação `GoTo` em qualquer lugar) passa ao destino explícito, que continua levando à página, agora imagem. O nome que leva a uma página que fica, fica. E o marcador cuja ação não leva a uma página do documento (URI, Launch, JavaScript, GoToR, GoToE, Named) fica, de propósito, com o título: ele não é o marcador da página apagada;
   - o fundo tem que ser JPEG, e `pixelsDoFundo` dá o canvas: 200 dpi, no máximo 16,7 milhões de pixels e 16.384 de lado.
 
 - **Infraestrutura do modo editar (segunda etapa da fase 3):**
@@ -345,6 +346,13 @@ Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o
   No `pdf-regras.test.ts`: `caixaNaTela` nas quatro rotações com CropBox deslocado, `matrizDaAparencia` (identidade, `/BBox` deslocada, de outro tamanho, `/Matrix` girada, vazia), `compararPelaOrdemDeTab`, `tirarFundoBranco` (branco, tinta, o degradê, o alfa que já era menor) e `escalaDaAssinatura`. No `pdf-traco.test.ts`: `caixaDosTracos`. O `pdf.leitor-pdfjs.cjs` passa a devolver também os campos de cada página (`getAnnotations`: nome, valor e caixa na tela). Cada peça nova é verificada por mutação, como na fase 3.
 
 - **Docs da etapa:** `packages/tools/CLAUDE.md` (formulário, achatar, destinos, as duas funções da assinatura) e a fase 3 deste plano (o que fica depois do apagar de verdade).
+- **Feito na etapa 1**, com estes ajustes ao desenho:
+  - a caixa de marcar e os botões de opção guardam a aparência do arquivo: o valor novo só troca o `/AS`, e o `updateAppearances()` só roda quando falta a aparência do estado. Regerar sempre trocaria o desenho do autor (um X, um círculo próprio) pelo do pdf-lib, e a página já tem a aparência de cada estado;
+  - a Helvetica que escreve a aparência nova vai também para o `/DR /Font` do `/AcroForm` (se o nome ainda não está lá): o `/DA` novo do campo a pede pelo nome, e o leitor que refaz a aparência depois (o Acrobat, ao editar o campo) não a acharia;
+  - os widgets de cada campo vêm na ordem de Tab (página e `/Tabs`), e a posição do campo na lista é a do primeiro deles;
+  - `/AcroForm` sem campo nenhum e sem `/XFA` é `nenhum`; com valor para preencher num PDF sem `/AcroForm`, `RangeError`;
+  - a armadilha do `getForm()` vale também para o `save()` do pdf-lib com `updateFieldAppearances` ligado (o padrão), que passa por ele: os testes geram o XFA híbrido num segundo `save`, com a opção desligada;
+  - o pdf.js 6.3.289 lê o `/Opt` dos botões de opção (`buttonValue` e `fieldValue` saem com o valor de exportação, não com o nome do estado) e devolve no `getAnnotations` também os widgets escondidos. Os testes comparam a opção de cada widget com a do pdf.js e conferem o escondido só no `lerFormulario`.
 
 **Etapa 2: infraestrutura do web**
 

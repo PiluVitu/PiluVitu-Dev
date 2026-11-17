@@ -11,7 +11,8 @@ const path = require('node:path')
  * @typedef {{ str: string, matriz: number[], fonte: string }} TextoLido
  * @typedef {{ tipo: 'caminho', operacao: string, caixa: CaixaNaTela, preenchimento: string | null, contorno: string | null, opacidade: number, mistura: string | null }} CaminhoLido
  * @typedef {{ tipo: 'imagem', caixa: CaixaNaTela }} ImagemLida
- * @typedef {{ view: number[], rotate: number, userUnit: number, largura: number, altura: number, textos: TextoLido[], desenhos: (CaminhoLido | ImagemLida)[] }} PaginaLida
+ * @typedef {{ nome: string, tipo: string, valor: string | string[] | null, opcao: string | null, caixa: CaixaNaTela }} CampoLido
+ * @typedef {{ view: number[], rotate: number, userUnit: number, largura: number, altura: number, textos: TextoLido[], desenhos: (CaminhoLido | ImagemLida)[], campos: CampoLido[] }} PaginaLida
  */
 
 /**
@@ -107,6 +108,30 @@ function desenhosDaPagina(pdfjs, operadores, vista) {
   return desenhos
 }
 
+// Os widgets que o pdf.js mostra (sem os escondidos), com a caixa na tela.
+function camposDaPagina(anotacoes, vista) {
+  return anotacoes
+    .filter((anotacao) => anotacao.subtype === 'Widget')
+    .map((anotacao) => {
+      const [x1, y1] = vista.convertToViewportPoint(
+        ...anotacao.rect.slice(0, 2),
+      )
+      const [x2, y2] = vista.convertToViewportPoint(...anotacao.rect.slice(2))
+      return {
+        nome: anotacao.fieldName,
+        tipo: anotacao.fieldType,
+        valor: anotacao.fieldValue ?? null,
+        opcao: anotacao.buttonValue ?? anotacao.exportValue ?? null,
+        caixa: [
+          Math.min(x1, x2),
+          Math.min(y1, y2),
+          Math.max(x1, x2),
+          Math.max(y1, y2),
+        ],
+      }
+    })
+}
+
 async function principal() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const partes = []
@@ -140,6 +165,7 @@ async function principal() {
           fonte: conteudo.styles[item.fontName]?.fontFamily ?? '',
         })),
       desenhos: desenhosDaPagina(pdfjs, await pagina.getOperatorList(), vista),
+      campos: camposDaPagina(await pagina.getAnnotations(), vista),
     })
   }
   await tarefa.destroy()

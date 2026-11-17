@@ -1,10 +1,13 @@
 import {
   PDFArray,
+  PDFBool,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFNumber,
   type PDFObject,
+  type PDFPage,
   PDFRawStream,
   PDFRef,
   PDFString,
@@ -17,12 +20,17 @@ import {
 import {
   ErroDePdf,
   ErroNaEdicao,
+  ErroNoCampo,
   aplicarEdicoes,
   contarPaginas,
+  lerFormulario,
   mesclarPdfs,
   organizarPaginas,
   temCabecalhoDePdf,
+  type CampoDoFormulario,
   type EdicaoDaPagina,
+  type PreenchimentoDoFormulario,
+  type ValorDoCampo,
 } from './pdf'
 import { lerComPdfjs } from './pdf.leitor-pdfjs.cjs'
 import {
@@ -37,6 +45,7 @@ import {
   planoInicial,
   tamanhoNaTela,
   tracoDosPontos,
+  type Caixa,
   type ObjetoDaPagina,
   type ObjetoTexto,
   type PaginaDoPlano,
@@ -1395,8 +1404,41 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
       Dest: [pagina1.ref, 'XYZ', 0, 800, 0],
     }),
   )
+  // Links da página que fica que chegam à página 1 por nome (da árvore e do /Dests antigo) e um que
+  // chega à página 2 por nome.
+  const linkPorNome = context.register(
+    context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [0, 60, 50, 110],
+      Dest: PDFString.of('SEGREDO-NOME-ARVORE'),
+    }),
+  )
+  const linkPorAcao = context.register(
+    context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [0, 120, 50, 170],
+      A: { S: 'GoTo', D: 'SEGREDO-NOME-ANTIGO' },
+    }),
+  )
+  const linkQueFica = context.register(
+    context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [0, 180, 50, 230],
+      A: { S: 'GoTo', D: PDFString.of('NOME-QUE-FICA') },
+    }),
+  )
   pagina1.node.set(PDFName.Annots, context.obj([nota, widget, campoUnico]))
-  pagina2.node.set(PDFName.Annots, context.obj([widgetQueFica, link]))
+  pagina2.node.set(
+    PDFName.Annots,
+    context.obj([widgetQueFica, link, linkPorNome, linkPorAcao, linkQueFica]),
+  )
+  documento.catalog.set(
+    PDFName.of('OpenAction'),
+    context.obj({ S: 'GoTo', D: PDFString.of('SEGREDO-NOME-ARVORE') }),
+  )
   // Formulário do LiveCycle (Receita, bancos): o XFA guarda num XML o que a pessoa digitou.
   const xml = (conteudo: string) => context.register(context.stream(conteudo))
   documento.catalog.set(
@@ -1491,13 +1533,13 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
     Title: PDFString.of('SEGREDO-MARCADOR-ACAO'),
     Prev: m1,
     Next: m3,
-    A: { S: 'GoTo', D: PDFString.of('destino-1') },
+    A: { S: 'GoTo', D: PDFString.of('SEGREDO-NOME-ARVORE') },
   })
   marcador(m3, {
     Title: PDFString.of('SEGREDO-MARCADOR-PAI'),
     Prev: m2,
     Next: m4,
-    Dest: 'destino-antigo',
+    Dest: 'SEGREDO-NOME-ANTIGO',
     First: filho,
     Last: filho,
     Count: 1,
@@ -1523,12 +1565,22 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
   documento.catalog.set(
     PDFName.of('Names'),
     context.obj({
-      Dests: { Names: [PDFString.of('destino-1'), [pagina1.ref, 'Fit']] },
+      Dests: {
+        Names: [
+          PDFString.of('NOME-QUE-FICA'),
+          [pagina2.ref, 'Fit'],
+          PDFString.of('SEGREDO-NOME-ARVORE'),
+          [pagina1.ref, 'Fit'],
+        ],
+      },
     }),
   )
   documento.catalog.set(
     PDFName.of('Dests'),
-    context.obj({ 'destino-antigo': { D: [pagina1.ref, 'Fit'] } }),
+    context.obj({
+      'NOME-ANTIGO-QUE-FICA': [pagina2.ref, 'Fit'],
+      'SEGREDO-NOME-ANTIGO': { D: [pagina1.ref, 'Fit'] },
+    }),
   )
   context.register(context.obj({ Sobra: PDFString.of('SEGREDO-SOLTO') }))
   return documento.save()
@@ -1552,6 +1604,8 @@ const SEGREDOS = [
   'SEGREDO-MARCADOR-DIRETO',
   'SEGREDO-MARCADOR-ACAO',
   'SEGREDO-MARCADOR-PAI',
+  'SEGREDO-NOME-ARVORE',
+  'SEGREDO-NOME-ANTIGO',
   'SEGREDO-SOLTO',
 ]
 
@@ -1704,6 +1758,8 @@ describe('aplicarEdicoes: apagar de verdade', () => {
         'ALT-MISTO-FICA',
         'FILHO-QUE-FICA',
         'MARCADOR-QUE-FICA',
+        'NOME-QUE-FICA',
+        'NOME-ANTIGO-QUE-FICA',
       ]) {
         expect([fica, contem(conteudo, fica)]).toEqual([fica, true])
       }
@@ -1728,11 +1784,52 @@ describe('aplicarEdicoes: apagar de verdade', () => {
       ).toBe('(fica)')
       expect(formulario.lookup(PDFName.of('CO'), PDFArray).size()).toBe(0)
       const anotacoes = documento.getPage(1).node.Annots()!
-      expect(anotacoes.size()).toBe(2)
+      expect(anotacoes.size()).toBe(5)
       const link = documento.context.lookup(anotacoes.get(1), PDFDict)
       expect(link.lookup(PDFName.of('Dest'), PDFArray).get(0)).toBe(
         documento.getPage(0).ref,
       )
+    })
+
+    // A página apagada continua no arquivo, como imagem: quem chegava a ela por um nome que saiu passa
+    // a chegar pelo destino explícito que o nome guardava.
+    it('os nomes de destino que levam à página apagada saem, e quem os usava passa ao destino explícito', async () => {
+      const documento = await PDFDocument.load(editado, {
+        updateMetadata: false,
+      })
+      const { context } = documento
+      const apagada = documento.getPage(0).ref
+      const destinoDe = (valor: PDFObject | undefined) =>
+        context.lookup(valor, PDFArray).asArray().map(String)
+      const explicito = [apagada.toString(), '/Fit']
+      const [, , porNome, porAcao, queFica] = documento
+        .getPage(1)
+        .node.Annots()!
+        .asArray()
+        .map((anotacao) => context.lookup(anotacao, PDFDict))
+      expect(destinoDe(porNome.get(PDFName.of('Dest')))).toEqual(explicito)
+      expect(
+        destinoDe(
+          porAcao.lookup(PDFName.of('A'), PDFDict).get(PDFName.of('D')),
+        ),
+      ).toEqual(explicito)
+      expect(
+        queFica.lookup(PDFName.of('A'), PDFDict).get(PDFName.of('D')),
+      ).toEqual(PDFString.of('NOME-QUE-FICA'))
+      expect(
+        destinoDe(
+          documento.catalog
+            .lookup(PDFName.of('OpenAction'), PDFDict)
+            .get(PDFName.of('D')),
+        ),
+      ).toEqual(explicito)
+      const arvore = documento.catalog
+        .lookup(PDFName.of('Names'), PDFDict)
+        .lookup(PDFName.of('Dests'), PDFDict)
+      expect(arvore.lookup(PDFName.of('Names'), PDFArray).size()).toBe(2)
+      expect(
+        documento.catalog.lookup(PDFName.of('Dests'), PDFDict).keys(),
+      ).toEqual([PDFName.of('NOME-ANTIGO-QUE-FICA')])
     })
 
     it('os marcadores que levam à página apagada saem, e o filho que leva à página 2 sobe para o lugar do pai', async () => {
@@ -1759,6 +1856,8 @@ describe('aplicarEdicoes: apagar de verdade', () => {
       'SEGREDO-ALT-PAI',
       'SEGREDO-T-AVO',
       'SEGREDO-MARCADOR-PAI',
+      'SEGREDO-NOME-ARVORE',
+      'SEGREDO-NOME-ANTIGO',
     ]) {
       expect([fica, contem(conteudo, fica)]).toEqual([fica, true])
     }
@@ -1766,6 +1865,11 @@ describe('aplicarEdicoes: apagar de verdade', () => {
       updateMetadata: false,
     })
     expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('OpenAction'), PDFDict)
+        .get(PDFName.of('D')),
+    ).toEqual(PDFString.of('SEGREDO-NOME-ARVORE'))
     expect(lerMarcadores(documento)).toEqual({
       lidos: [
         { titulo: 'SEGREDO-MARCADOR-DIRETO', pai: 'raiz' },
@@ -1836,6 +1940,225 @@ describe('aplicarEdicoes: apagar de verdade', () => {
         { titulo: 'B', pai: 'raiz' },
       ],
       count: 2,
+    })
+  })
+
+  describe('árvore de nomes de destino', () => {
+    // Os nomes ficam em ordem nas folhas, e cada nó abaixo da raiz diz no /Limits o primeiro e o último.
+    async function gerarComArvore(): Promise<Uint8Array> {
+      const documento = await PDFDocument.create()
+      const { context } = documento
+      const [apagada, fica] = [documento.addPage(), documento.addPage()]
+      const s = (texto: string) => PDFString.of(texto)
+      const no = (campos: object) =>
+        context.register(
+          context.obj(campos as Parameters<typeof context.obj>[0]),
+        )
+      const folha1 = no({
+        Limits: [s('a-apagada'), s('b-apagada')],
+        Names: [
+          s('a-apagada'),
+          [apagada.ref, 'Fit'],
+          s('b-apagada'),
+          [apagada.ref, 'Fit'],
+        ],
+      })
+      const folha2 = no({
+        Limits: [s('c-fica'), s('e-apagada')],
+        Names: [
+          s('c-fica'),
+          [fica.ref, 'Fit'],
+          s('d-fica'),
+          { D: [fica.ref, 'Fit'] },
+          s('e-apagada'),
+          no([apagada.ref, 'Fit']),
+        ],
+      })
+      const folha3 = no({
+        Limits: [s('y-fica'), s('z-apagada')],
+        Names: [
+          s('y-fica'),
+          [fica.ref, 'Fit'],
+          s('z-apagada'),
+          { D: [apagada.ref, 'Fit'] },
+        ],
+      })
+      const meio = no({
+        Limits: [s('a-apagada'), s('z-apagada')],
+        Kids: [folha1, folha2, folha3],
+      })
+      documento.catalog.set(
+        PDFName.of('Names'),
+        context.obj({ Dests: no({ Kids: [meio] }) }),
+      )
+      documento.catalog.set(
+        PDFName.of('Dests'),
+        context.obj({ 'antigo-apagada': [apagada.ref, 'Fit'] }),
+      )
+      return documento.save()
+    }
+
+    it('a folha que esvazia sai, e os /Limits são refeitos sem os nomes que saíram', async () => {
+      const editado = await aplicarEdicoes(await gerarComArvore(), [
+        { indice: 0, objetos: [], fundo: JPEG_8X8 },
+      ])
+      const documento = await PDFDocument.load(editado, {
+        updateMetadata: false,
+      })
+      const { context } = documento
+      const texto = (item: PDFObject) => (item as PDFString).decodeText()
+      const raiz = documento.catalog
+        .lookup(PDFName.of('Names'), PDFDict)
+        .lookup(PDFName.of('Dests'), PDFDict)
+      expect(raiz.has(PDFName.of('Limits'))).toBe(false)
+      const [meio] = raiz
+        .lookup(PDFName.of('Kids'), PDFArray)
+        .asArray()
+        .map((item) => context.lookup(item, PDFDict))
+      const limites = (no: PDFDict) =>
+        no.lookup(PDFName.of('Limits'), PDFArray).asArray().map(texto)
+      expect(limites(meio)).toEqual(['c-fica', 'y-fica'])
+      const folhas = meio
+        .lookup(PDFName.of('Kids'), PDFArray)
+        .asArray()
+        .map((item) => context.lookup(item, PDFDict))
+      expect(folhas.map(limites)).toEqual([
+        ['c-fica', 'd-fica'],
+        ['y-fica', 'y-fica'],
+      ])
+      expect(
+        folhas.map((folha) =>
+          folha
+            .lookup(PDFName.of('Names'), PDFArray)
+            .asArray()
+            .filter((_, i) => i % 2 === 0)
+            .map(texto),
+        ),
+      ).toEqual([['c-fica', 'd-fica'], ['y-fica']])
+      // O /Dests antigo que esvaziou sai do catálogo.
+      expect(documento.catalog.has(PDFName.of('Dests'))).toBe(false)
+      expect(contem(await todoOConteudo(editado), 'apagada')).toBe(false)
+    })
+
+    it('a raiz que esvazia sai do /Names, e o /Names vazio sai do catálogo', async () => {
+      const gerar = async (outros: object) => {
+        const documento = await PDFDocument.create()
+        const apagada = documento.addPage()
+        documento.addPage()
+        documento.catalog.set(
+          PDFName.of('Names'),
+          documento.context.obj({
+            Dests: {
+              Names: [PDFString.of('so-apagada'), [apagada.ref, 'Fit']],
+            },
+            ...outros,
+          } as Parameters<typeof documento.context.obj>[0]),
+        )
+        const editado = await aplicarEdicoes(await documento.save(), [
+          { indice: 0, objetos: [], fundo: JPEG_8X8 },
+        ])
+        return PDFDocument.load(editado, { updateMetadata: false })
+      }
+      expect((await gerar({})).catalog.has(PDFName.of('Names'))).toBe(false)
+      const comOutros = await gerar({ JavaScript: { Names: [] } })
+      expect(
+        comOutros.catalog.lookup(PDFName.of('Names'), PDFDict).keys(),
+      ).toEqual([PDFName.of('JavaScript')])
+    })
+
+    // O mesmo nome no /Dests antigo (página apagada) e na árvore (página que fica): o link continua
+    // achando o nome, então fica com ele.
+    it('o nome que sai de um lugar e continua no outro não é trocado pelo destino explícito', async () => {
+      const documento = await PDFDocument.create()
+      const { context } = documento
+      const [apagada, fica] = [documento.addPage(), documento.addPage()]
+      documento.catalog.set(
+        PDFName.of('Dests'),
+        context.obj({ duplo: [apagada.ref, 'Fit'] }),
+      )
+      documento.catalog.set(
+        PDFName.of('Names'),
+        context.obj({
+          Dests: { Names: [PDFString.of('duplo'), [fica.ref, 'Fit']] },
+        }),
+      )
+      fica.node.set(
+        PDFName.Annots,
+        context.obj([
+          context.obj({
+            Type: 'Annot',
+            Subtype: 'Link',
+            Rect: [0, 0, 50, 50],
+            Dest: PDFString.of('duplo'),
+          }),
+        ]),
+      )
+      const editado = await PDFDocument.load(
+        await aplicarEdicoes(await documento.save(), [
+          { indice: 0, objetos: [], fundo: JPEG_8X8 },
+        ]),
+        { updateMetadata: false },
+      )
+      expect(editado.catalog.has(PDFName.of('Dests'))).toBe(false)
+      const [link] = editado.getPage(1).node.Annots()!.asArray()
+      expect(
+        editado.context.lookup(link, PDFDict).get(PDFName.of('Dest')),
+      ).toEqual(PDFString.of('duplo'))
+    })
+  })
+
+  // O marcador cuja ação não leva a uma página do documento não é o marcador da página apagada.
+  it('o marcador com URI, Launch, JavaScript ou GoToR fica, ao lado do que sai', async () => {
+    const documento = await PDFDocument.create()
+    const { context } = documento
+    const [apagada] = [documento.addPage(), documento.addPage()]
+    const raiz = context.nextRef()
+    const acoes: [string, object][] = [
+      ['URI', { S: 'URI', URI: PDFString.of('https://exemplo.com.br') }],
+      ['Launch', { S: 'Launch', F: PDFString.of('programa.exe') }],
+      ['JavaScript', { S: 'JavaScript', JS: PDFString.of('app.alert(1)') }],
+      ['GoToR', { S: 'GoToR', F: PDFString.of('outro.pdf'), D: [0, 'Fit'] }],
+    ]
+    const refs = [...acoes.map(() => context.nextRef()), context.nextRef()]
+    acoes.forEach(([titulo, acao], i) =>
+      context.assign(
+        refs[i],
+        context.obj({
+          Title: PDFString.of(titulo),
+          Parent: raiz,
+          A: acao,
+          ...(i > 0 ? { Prev: refs[i - 1] } : {}),
+          Next: refs[i + 1],
+        } as Parameters<typeof context.obj>[0]),
+      ),
+    )
+    context.assign(
+      refs[acoes.length],
+      context.obj({
+        Title: PDFString.of('SAI'),
+        Parent: raiz,
+        Prev: refs[acoes.length - 1],
+        Dest: [apagada.ref, 'Fit'],
+      }),
+    )
+    context.assign(
+      raiz,
+      context.obj({
+        Type: 'Outlines',
+        First: refs[0],
+        Last: refs[acoes.length],
+        Count: refs.length,
+      }),
+    )
+    documento.catalog.set(PDFName.of('Outlines'), raiz)
+    const editado = await aplicarEdicoes(await documento.save(), [
+      { indice: 0, objetos: [], fundo: JPEG_8X8 },
+    ])
+    expect(
+      lerMarcadores(await PDFDocument.load(editado, { updateMetadata: false })),
+    ).toEqual({
+      lidos: acoes.map(([titulo]) => ({ titulo, pai: 'raiz' })),
+      count: 4,
     })
   })
 
@@ -2014,4 +2337,988 @@ describe('aplicarEdicoes: apagar de verdade', () => {
       objeto: undefined,
     })
   })
+})
+
+// Fase 4: formulário (AcroForm) e assinatura.
+
+const TU = (campo: { acroField: { dict: PDFDict } }, rotulo: string) =>
+  campo.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(rotulo))
+
+function campoDeAssinatura(
+  documento: PDFDocument,
+  pagina: PDFPage,
+  assinada: boolean,
+): void {
+  const { context } = documento
+  const campo = context.register(
+    context.obj({
+      FT: 'Sig',
+      T: PDFString.of('assinatura'),
+      Type: 'Annot',
+      Subtype: 'Widget',
+      Rect: [300, 50, 500, 100],
+      P: pagina.ref,
+      F: 4,
+      ...(assinada
+        ? {
+            V: {
+              Type: 'Sig',
+              Filter: 'Adobe.PPKLite',
+              SubFilter: 'adbe.pkcs7.detached',
+              Contents: PDFHexString.of('00'),
+            },
+          }
+        : {}),
+    } as Parameters<typeof context.obj>[0]),
+  )
+  documento.getForm().acroForm.addField(campo)
+  pagina.node.addAnnot(campo)
+}
+
+const XFA = (documento: PDFDocument) => {
+  const { context } = documento
+  const xml = (conteudo: string) => context.register(context.stream(conteudo))
+  return context.obj([
+    PDFString.of('template'),
+    xml('<template><field name="nome"/></template>'),
+    PDFString.of('datasets'),
+    xml('<xfa:datasets><nome>Paulo</nome></xfa:datasets>'),
+  ])
+}
+
+type OpcoesDoFormulario = {
+  xfa?: boolean
+  assinada?: boolean
+  semAssinatura?: boolean
+}
+
+// Duas páginas com um campo de cada tipo; os ids (posição no getFields) estão nos comentários.
+async function gerarFormulario({
+  xfa = false,
+  assinada = false,
+  semAssinatura = false,
+}: OpcoesDoFormulario = {}): Promise<Uint8Array> {
+  const documento = await PDFDocument.create({ updateMetadata: false })
+  const form = documento.getForm()
+  const [p1, p2] = [
+    documento.addPage([600, 800]),
+    documento.addPage([600, 800]),
+  ]
+  const nome = form.createTextField('pessoa.nome') // 0
+  nome.setText('Paulo')
+  nome.enableRequired()
+  nome.setMaxLength(20)
+  TU(nome, 'Nome completo')
+  nome.addToPage(p1, { x: 50, y: 700, width: 200, height: 20 })
+  const observacoes = form.createTextField('observacoes') // 1
+  observacoes.enableMultiline()
+  observacoes.addToPage(p1, { x: 50, y: 600, width: 300, height: 60 })
+  const aceito = form.createCheckBox('aceito') // 2
+  TU(aceito, 'Aceito os termos')
+  aceito.addToPage(p1, { x: 50, y: 550, width: 15, height: 15 })
+  const plano = form.createRadioGroup('plano') // 3
+  plano.addOptionToPage('Básico', p1, { x: 50, y: 500, width: 15, height: 15 })
+  plano.addOptionToPage('Completo', p1, {
+    x: 150,
+    y: 500,
+    width: 15,
+    height: 15,
+  })
+  plano.select('Completo')
+  const cpf = form.createTextField('cpf') // 4
+  cpf.setText('123')
+  cpf.enableReadOnly()
+  cpf.addToPage(p1, { x: 50, y: 450, width: 100, height: 20 })
+  const estado = form.createDropdown('estado') // 5
+  estado.setOptions(['SP', 'RJ', 'MG'])
+  estado.select('SP')
+  estado.addToPage(p2, { x: 50, y: 700, width: 100, height: 20 })
+  const cores = form.createOptionList('cores') // 6
+  cores.setOptions(['Azul', 'Verde', 'Vermelho'])
+  cores.enableMultiselect()
+  cores.select(['Azul', 'Verde'])
+  cores.addToPage(p2, { x: 50, y: 600, width: 150, height: 60 })
+  if (!semAssinatura) campoDeAssinatura(documento, p2, assinada) // 7
+  form.createButton('enviar').addToPage('Enviar', p2, {
+    x: 50,
+    y: 50,
+    width: 80,
+    height: 20,
+  }) // 8 (7 sem assinatura)
+  const arquivo = form.createTextField('arquivo') // 9
+  arquivo.enableFileSelection()
+  arquivo.addToPage(p2, { x: 50, y: 400, width: 200, height: 20 })
+  const idioma = form.createDropdown('idioma') // 10
+  idioma.setOptions(['Português', '日本語'])
+  idioma.addToPage(p2, { x: 50, y: 350, width: 100, height: 20 })
+  form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
+  const pdf = await documento.save()
+  if (!xfa) return pdf
+  // Depois de salvar: o save que gera as aparências passa pelo getForm(), que tira o XFA.
+  const hibrido = await PDFDocument.load(pdf, { updateMetadata: false })
+  hibrido.catalog
+    .lookup(PDFName.of('AcroForm'), PDFDict)
+    .set(PDFName.of('XFA'), XFA(hibrido))
+  hibrido.catalog.set(PDFName.of('NeedsRendering'), PDFBool.True)
+  return hibrido.save({ updateFieldAppearances: false })
+}
+
+const CAMPOS_DO_FORMULARIO = [
+  {
+    id: 0,
+    nome: 'pessoa.nome',
+    rotulo: 'Nome completo',
+    obrigatorio: true,
+    tipo: 'texto',
+    valor: 'Paulo',
+    multilinha: false,
+    tamanhoMaximo: 20,
+  },
+  {
+    id: 1,
+    nome: 'observacoes',
+    rotulo: 'observacoes',
+    obrigatorio: false,
+    tipo: 'texto',
+    valor: '',
+    multilinha: true,
+    tamanhoMaximo: null,
+  },
+  {
+    id: 2,
+    nome: 'aceito',
+    rotulo: 'Aceito os termos',
+    tipo: 'caixa',
+    marcada: false,
+  },
+  {
+    id: 3,
+    nome: 'plano',
+    rotulo: 'plano',
+    tipo: 'opcoes',
+    valor: 'Completo',
+    opcoes: ['Básico', 'Completo'],
+  },
+  {
+    id: 4,
+    nome: 'cpf',
+    tipo: 'texto',
+    valor: '123',
+    naoPreenchivel: 'somente_leitura',
+  },
+  {
+    id: 5,
+    nome: 'estado',
+    tipo: 'suspensa',
+    valor: 'SP',
+    opcoes: ['SP', 'RJ', 'MG'],
+  },
+  {
+    id: 6,
+    nome: 'cores',
+    tipo: 'lista',
+    valores: ['Azul', 'Verde'],
+    opcoes: ['Azul', 'Verde', 'Vermelho'],
+    multipla: true,
+  },
+  {
+    id: 7,
+    nome: 'assinatura',
+    tipo: 'assinatura',
+    assinada: false,
+    naoPreenchivel: 'assinatura_digital',
+  },
+  { id: 8, nome: 'enviar', tipo: 'botao', naoPreenchivel: 'botao' },
+  {
+    id: 9,
+    nome: 'arquivo',
+    tipo: 'texto',
+    naoPreenchivel: 'seletor_de_arquivo',
+  },
+  {
+    id: 10,
+    nome: 'idioma',
+    tipo: 'suspensa',
+    valor: null,
+    opcoes: ['Português', '日本語'],
+    naoPreenchivel: 'fora_do_winansi',
+  },
+]
+
+async function lerAcroForm(bytes: Uint8Array) {
+  const { formulario } = await lerFormulario(bytes)
+  if (formulario.tipo !== 'acroform') {
+    throw new Error(`era para ser acroform: ${formulario.tipo}`)
+  }
+  return formulario
+}
+
+const campoPeloNome = (
+  campos: readonly CampoDoFormulario[],
+  nome: string,
+): CampoDoFormulario => {
+  const campo = campos.find((c) => c.nome === nome)
+  if (!campo) throw new Error(`sem o campo ${nome}`)
+  return campo
+}
+
+const caixaComoArray = ({ x, y, largura, altura }: Caixa) => [
+  x,
+  y,
+  x + largura,
+  y + altura,
+]
+
+describe('lerFormulario', () => {
+  it('lê os campos de cada tipo, com rótulo, valor, opções e o que não se preenche', async () => {
+    const lido = await lerFormulario(await gerarFormulario())
+    expect(lido.paginas).toBe(2)
+    expect(lido.formulario).toMatchObject({
+      tipo: 'acroform',
+      hibrido: false,
+      assinadoDigitalmente: false,
+      campos: CAMPOS_DO_FORMULARIO,
+    })
+    const [nome] = (lido.formulario as { campos: readonly CampoDoFormulario[] })
+      .campos
+    expect(nome).not.toHaveProperty('naoPreenchivel')
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('os widgets ficam na caixa em que o pdf.js os mostra, com a opção de cada botão', async () => {
+    const pdf = await gerarFormulario()
+    const { campos } = await lerAcroForm(pdf)
+    const paginas = lerComPdfjs(pdf).paginas
+    const vistos = paginas.flatMap((pagina, indice) =>
+      pagina.campos.map((campo) => ({ ...campo, pagina: indice })),
+    )
+    expect(vistos).toHaveLength(12)
+    for (const visto of vistos) {
+      const widget = campoPeloNome(campos, visto.nome).widgets.find(
+        (w) =>
+          w.pagina === visto.pagina &&
+          caixaPerto(caixaComoArray(w.caixa), visto.caixa),
+      )
+      expect([visto.nome, widget?.opcao ?? null]).toEqual([
+        visto.nome,
+        visto.opcao,
+      ])
+    }
+    expect(
+      campoPeloNome(campos, 'plano').widgets.map(({ opcao }) => opcao),
+    ).toEqual(['Básico', 'Completo'])
+    expect(campoPeloNome(campos, 'aceito').widgets[0].opcao).toBe('Yes')
+    expect(campoPeloNome(campos, 'assinatura').widgets[0]).toMatchObject({
+      pagina: 1,
+      caixa: { x: 300, y: 700, largura: 200, altura: 50 },
+    })
+  })
+
+  it('nos cinco formatos de página da fase 3, a caixa bate com a do pdf.js', async () => {
+    const documento = await PDFDocument.load(
+      await gerarPdfComFormatos(FORMATOS),
+    )
+    const form = documento.getForm()
+    documento.getPages().forEach((pagina, i) => {
+      const campo = form.createTextField(`campo-${i}`)
+      campo.setText(`Valor ${i}`)
+      campo.addToPage(pagina, { x: 100, y: 200, width: 120, height: 30 })
+      const caixa = form.createCheckBox(`caixa-${i}`)
+      caixa.addToPage(pagina, { x: 260, y: 250, width: 20, height: 20 })
+    })
+    const pdf = await documento.save()
+    const { campos } = await lerAcroForm(pdf)
+    const paginas = lerComPdfjs(pdf).paginas
+    paginas.forEach((pagina, i) => {
+      expect(pagina.campos).toHaveLength(2)
+      for (const visto of pagina.campos) {
+        const [widget] = campoPeloNome(campos, visto.nome).widgets
+        expect(widget.pagina).toBe(i)
+        expect([visto.nome, caixaComoArray(widget.caixa)]).toEqual([
+          visto.nome,
+          visto.caixa.map((valor) => expect.closeTo(valor, 6)),
+        ])
+      }
+    })
+  })
+
+  it('segue a ordem de Tab de cada página: /R, /C e, sem /Tabs, o /Annots', async () => {
+    const documento = await PDFDocument.create()
+    const form = documento.getForm()
+    // Na tela (y para baixo): a (300, 100), b (50, 100), c (50, 400), d (300, 50).
+    const lugares: [string, number, number][] = [
+      ['a', 300, 100],
+      ['b', 50, 100],
+      ['c', 50, 400],
+      ['d', 300, 50],
+    ]
+    const ordens = ['R', 'C', undefined]
+    ordens.forEach((tabs, i) => {
+      const pagina = documento.addPage([600, 800])
+      if (tabs) pagina.node.set(PDFName.of('Tabs'), PDFName.of(tabs))
+      for (const [nome, x, y] of lugares) {
+        form
+          .createTextField(`p${i}${nome}`)
+          .addToPage(pagina, { x, y: 800 - y - 20, width: 100, height: 20 })
+      }
+    })
+    // O campo sem widget visível vai para o fim, na ordem do getFields.
+    const escondido = form.createTextField('escondido')
+    escondido.addToPage(documento.getPage(0), {
+      x: 400,
+      y: 10,
+      width: 50,
+      height: 20,
+      hidden: true,
+    })
+    const semVista = form.createTextField('semVista')
+    semVista.addToPage(documento.getPage(0), {
+      x: 400,
+      y: 40,
+      width: 50,
+      height: 20,
+    })
+    semVista.acroField
+      .getWidgets()[0]
+      .dict.set(PDFName.of('F'), PDFNumber.of(32))
+    const solto = form.createTextField('solto')
+    solto.addToPage(documento.getPage(0), {
+      x: 400,
+      y: 70,
+      width: 50,
+      height: 20,
+    })
+    const anotacoes = documento.getPage(0).node.Annots()!
+    anotacoes.remove(anotacoes.size() - 1)
+    form.createTextField('semWidget')
+    const pdf = await documento.save()
+    const { campos } = await lerAcroForm(pdf)
+    expect(campos.map(({ nome }) => nome)).toEqual([
+      'p0d',
+      'p0b',
+      'p0a',
+      'p0c',
+      'p1b',
+      'p1c',
+      'p1d',
+      'p1a',
+      'p2a',
+      'p2b',
+      'p2c',
+      'p2d',
+      'escondido',
+      'semVista',
+      'solto',
+      'semWidget',
+    ])
+    for (const nome of ['escondido', 'semVista', 'solto', 'semWidget']) {
+      expect(campoPeloNome(campos, nome).widgets).toEqual([])
+    }
+  })
+
+  it('só XFA (dinâmico): o pdf-lib não preenche, e nada vai para o console', async () => {
+    const documento = await PDFDocument.create()
+    documento.addPage()
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      documento.context.obj({ Fields: [], XFA: XFA(documento) }),
+    )
+    documento.catalog.set(PDFName.of('NeedsRendering'), PDFBool.True)
+    expect(await lerFormulario(await documento.save())).toEqual({
+      paginas: 1,
+      formulario: { tipo: 'xfa' },
+    })
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('XFA com AcroForm (híbrido): lê os campos do AcroForm', async () => {
+    const formulario = await lerAcroForm(await gerarFormulario({ xfa: true }))
+    expect(formulario.hibrido).toBe(true)
+    expect(formulario.campos).toHaveLength(11)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('assinado digitalmente: o /Sig com /V', async () => {
+    const formulario = await lerAcroForm(
+      await gerarFormulario({ assinada: true }),
+    )
+    expect(formulario.assinadoDigitalmente).toBe(true)
+    expect(campoPeloNome(formulario.campos, 'assinatura')).toMatchObject({
+      tipo: 'assinatura',
+      assinada: true,
+    })
+  })
+
+  it('sem /AcroForm, ou com ele sem campo nenhum: nenhum', async () => {
+    expect((await lerFormulario(await gerarPdf(2, 300))).formulario).toEqual({
+      tipo: 'nenhum',
+    })
+    const documento = await PDFDocument.create()
+    documento.addPage()
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      documento.context.obj({ Fields: [] }),
+    )
+    expect((await lerFormulario(await documento.save())).formulario).toEqual({
+      tipo: 'nenhum',
+    })
+  })
+
+  it('formulário que o pdf-lib não lê: ilegível, sem recusar o PDF', async () => {
+    const documento = await PDFDocument.create()
+    documento.addPage()
+    documento.addPage()
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      documento.context.obj({ Fields: [5] }),
+    )
+    expect(await lerFormulario(await documento.save())).toEqual({
+      paginas: 2,
+      formulario: { tipo: 'ilegivel' },
+    })
+  })
+
+  it('o arquivo segue as regras de leitura do mesclar', async () => {
+    expect(await motivo(lerFormulario(texto('não é PDF')))).toEqual({
+      motivo: 'nao_e_pdf',
+      indice: undefined,
+    })
+    expect(await motivo(lerFormulario(await gerarPdfProtegido(false)))).toEqual(
+      { motivo: 'protegido', indice: undefined },
+    )
+  })
+})
+
+async function erroNoCampo(promessa: Promise<unknown>): Promise<ErroNoCampo> {
+  try {
+    await promessa
+  } catch (erro) {
+    if (erro instanceof ErroNoCampo) return erro
+    throw erro
+  }
+  throw new Error('era para ter falhado')
+}
+
+// A aparência normal de um widget, descomprimida (na caixa de marcar, a do estado no /AS).
+function aparenciaDoWidget(documento: PDFDocument, widget: PDFDict): string {
+  const { context } = documento
+  let normal = context.lookup(
+    widget.lookup(PDFName.of('AP'), PDFDict).get(PDFName.of('N')),
+  )
+  if (normal instanceof PDFDict) {
+    normal = context.lookup(normal.get(widget.get(PDFName.of('AS')) as PDFName))
+  }
+  return comoTexto(decodePDFRawStream(normal as PDFRawStream).decode())
+}
+
+const PREENCHIDOS: ValorDoCampo[] = [
+  { id: 0, nome: 'pessoa.nome', tipo: 'texto', valor: 'Ana Luísa' },
+  { id: 1, nome: 'observacoes', tipo: 'texto', valor: 'Linha 1\nLinha 2' },
+  { id: 2, nome: 'aceito', tipo: 'caixa', marcada: true },
+  { id: 3, nome: 'plano', tipo: 'opcoes', valor: 'Básico' },
+  { id: 5, nome: 'estado', tipo: 'suspensa', valor: 'RJ' },
+  { id: 6, nome: 'cores', tipo: 'lista', valores: ['Vermelho'] },
+]
+
+describe('aplicarEdicoes: preencher o formulário', () => {
+  let pdf: Uint8Array
+  let preenchido: Uint8Array
+
+  beforeAll(async () => {
+    pdf = await gerarFormulario()
+    preenchido = await aplicarEdicoes(pdf, [], {
+      valores: PREENCHIDOS,
+      achatar: false,
+    })
+  })
+
+  it('os valores são lidos de volta pelo lerFormulario e pelo pdf.js', async () => {
+    const { campos } = await lerAcroForm(preenchido)
+    expect(campos).toMatchObject([
+      { nome: 'pessoa.nome', valor: 'Ana Luísa' },
+      { nome: 'observacoes', valor: 'Linha 1\nLinha 2' },
+      { nome: 'aceito', marcada: true },
+      { nome: 'plano', valor: 'Básico' },
+      { nome: 'cpf', valor: '123' },
+      { nome: 'estado', valor: 'RJ' },
+      { nome: 'cores', valores: ['Vermelho'] },
+      { nome: 'assinatura' },
+      { nome: 'enviar' },
+      { nome: 'arquivo' },
+      { nome: 'idioma' },
+    ])
+    const vistos = Object.fromEntries(
+      lerComPdfjs(preenchido)
+        .paginas.flatMap((p) => p.campos)
+        .map(({ nome, valor, opcao }) => [`${nome} ${opcao ?? ''}`, valor]),
+    )
+    expect(vistos).toMatchObject({
+      'pessoa.nome ': 'Ana Luísa',
+      'observacoes ': 'Linha 1\nLinha 2',
+      'aceito Yes': 'Yes',
+      'plano Básico': 'Básico',
+      'estado ': ['RJ'],
+      'cores ': ['Vermelho'],
+    })
+  })
+
+  it('a aparência nova mostra o valor, com a Helvetica, que vai também para o /DR', async () => {
+    const documento = await PDFDocument.load(preenchido)
+    const [widget] = documento
+      .getForm()
+      .getTextField('pessoa.nome')
+      .acroField.getWidgets()
+    const aparencia = aparenciaDoWidget(documento, widget.dict)
+    expect(contem(aparencia, 'Ana Lu')).toBe(true)
+    const fontes = documento
+      .getForm()
+      .acroForm.dict.lookup(PDFName.of('DR'), PDFDict)
+      .lookup(PDFName.of('Font'), PDFDict)
+    expect(
+      fontes
+        .values()
+        .map((fonte) =>
+          documento.context.lookup(fonte, PDFDict).get(PDFName.of('BaseFont')),
+        ),
+    ).toContainEqual(PDFName.of('Helvetica'))
+  })
+
+  it('só o campo que mudou ganha aparência nova', async () => {
+    const documento = await PDFDocument.load(pdf)
+    const form = documento.getForm()
+    const [widget] = form.getTextField('observacoes').acroField.getWidgets()
+    const propria = documento.context.register(
+      documento.context.formXObject([], {
+        BBox: [0, 0, 301, 61],
+        Resources: {},
+      }),
+    )
+    widget.dict.lookup(PDFName.of('AP'), PDFDict).set(PDFName.of('N'), propria)
+    const comPropria = await documento.save({ updateFieldAppearances: false })
+    const editado = await PDFDocument.load(
+      await aplicarEdicoes(comPropria, [], {
+        valores: [PREENCHIDOS[0]],
+        achatar: false,
+      }),
+    )
+    const antes = await PDFDocument.load(comPropria)
+    const aparencia = (doc: PDFDocument, nome: string) =>
+      aparenciaDoWidget(
+        doc,
+        doc.getForm().getTextField(nome).acroField.getWidgets()[0].dict,
+      )
+    expect(aparencia(editado, 'observacoes')).toBe(
+      aparencia(antes, 'observacoes'),
+    )
+    expect(aparencia(editado, 'pessoa.nome')).not.toBe(
+      aparencia(antes, 'pessoa.nome'),
+    )
+  })
+
+  it('a caixa de marcar guarda a aparência do arquivo e só troca o estado', async () => {
+    const antes = await PDFDocument.load(pdf)
+    const depois = await PDFDocument.load(preenchido)
+    const ap = (doc: PDFDocument) =>
+      doc
+        .getForm()
+        .getCheckBox('aceito')
+        .acroField.getWidgets()[0]
+        .dict.lookup(PDFName.of('AP'), PDFDict)
+        .lookup(PDFName.of('N'), PDFDict)
+    expect(ap(depois).get(PDFName.of('Yes'))).toBe(
+      ap(antes).get(PDFName.of('Yes')),
+    )
+  })
+
+  it('texto fora do WinAnsi e acima do tamanho máximo são erro no campo', async () => {
+    expect(
+      await erroNoCampo(
+        aplicarEdicoes(pdf, [], {
+          valores: [{ ...PREENCHIDOS[0], valor: 'Ana 日本' } as ValorDoCampo],
+          achatar: false,
+        }),
+      ),
+    ).toMatchObject({
+      motivo: 'texto_fora_do_winansi',
+      campo: 0,
+      nome: 'pessoa.nome',
+      caracteres: ['日', '本'],
+    })
+    expect(
+      await erroNoCampo(
+        aplicarEdicoes(pdf, [], {
+          valores: [
+            { ...PREENCHIDOS[0], valor: 'x'.repeat(21) } as ValorDoCampo,
+          ],
+          achatar: false,
+        }),
+      ),
+    ).toMatchObject({
+      motivo: 'acima_do_tamanho_maximo',
+      campo: 0,
+      nome: 'pessoa.nome',
+    })
+  })
+
+  it.each<[string, unknown]>([
+    [
+      'opção que não existe',
+      { id: 3, nome: 'plano', tipo: 'opcoes', valor: 'Premium' },
+    ],
+    [
+      'lista com opção que não existe',
+      { id: 6, nome: 'cores', tipo: 'lista', valores: ['Rosa'] },
+    ],
+    ['id com outro nome', { id: 0, nome: 'cpf', tipo: 'texto', valor: 'x' }],
+    ['somente leitura', { id: 4, nome: 'cpf', tipo: 'texto', valor: 'x' }],
+    ['tipo errado', { id: 2, nome: 'aceito', tipo: 'texto', valor: 'x' }],
+    [
+      'assinatura digital',
+      { id: 7, nome: 'assinatura', tipo: 'texto', valor: 'x' },
+    ],
+    [
+      'opção fora do WinAnsi',
+      { id: 10, nome: 'idioma', tipo: 'suspensa', valor: 'Português' },
+    ],
+    ['id fora do formulário', { id: 99, nome: 'x', tipo: 'texto', valor: 'x' }],
+    ['id negativo', { id: -1, nome: 'x', tipo: 'texto', valor: 'x' }],
+    [
+      'valor que não é texto',
+      { id: 0, nome: 'pessoa.nome', tipo: 'texto', valor: 3 },
+    ],
+    [
+      'marcada que não é booleano',
+      { id: 2, nome: 'aceito', tipo: 'caixa', marcada: 'sim' },
+    ],
+    ['tipo desconhecido', { id: 8, nome: 'enviar', tipo: 'botao' }],
+  ])('preenchimento errado é RangeError: %s', async (_, valor) => {
+    await expect(
+      aplicarEdicoes(pdf, [], {
+        valores: [valor as ValorDoCampo],
+        achatar: false,
+      }),
+    ).rejects.toThrow(RangeError)
+  })
+
+  it('o mesmo campo duas vezes, achatar que não é booleano e formulário com fundo: RangeError', async () => {
+    const umValor = PREENCHIDOS[0]
+    for (const [edicoes, formulario] of [
+      [[], { valores: [umValor, umValor], achatar: false }],
+      [[], { valores: [], achatar: 'sim' }],
+      [
+        [{ indice: 0, objetos: [], fundo: JPEG_8X8 }],
+        { valores: [], achatar: false },
+      ],
+    ] as [EdicaoDaPagina[], PreenchimentoDoFormulario][]) {
+      await expect(aplicarEdicoes(pdf, edicoes, formulario)).rejects.toThrow(
+        RangeError,
+      )
+    }
+  })
+
+  it('sem valor nem achatar, o arquivo não ganha /AcroForm nem perde o /XFA', async () => {
+    const vazio = { valores: [], achatar: false }
+    const semFormulario = await PDFDocument.load(
+      await aplicarEdicoes(await gerarPdf(1, 300), [], vazio),
+    )
+    expect(semFormulario.catalog.has(PDFName.of('AcroForm'))).toBe(false)
+    const hibrido = await PDFDocument.load(
+      await aplicarEdicoes(await gerarFormulario({ xfa: true }), [], vazio),
+    )
+    expect(
+      hibrido.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(true)
+  })
+
+  it('o híbrido preenchido sai sem o XFA (o Acrobat mostraria os valores antigos dele)', async () => {
+    const editado = await aplicarEdicoes(
+      await gerarFormulario({ xfa: true }),
+      [],
+      {
+        valores: [PREENCHIDOS[0]],
+        achatar: false,
+      },
+    )
+    const documento = await PDFDocument.load(editado)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(contem(await todoOConteudo(editado), 'xfa:datasets')).toBe(false)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+})
+
+// Toda referência que se alcança a partir do catálogo leva a um objeto que existe.
+function referenciasPenduradas(documento: PDFDocument): string[] {
+  const { context } = documento
+  const penduradas: string[] = []
+  const vistos = new Set<PDFObject>()
+  const pilha: (PDFObject | undefined)[] = [context.trailerInfo.Root]
+  while (pilha.length > 0) {
+    const objeto = pilha.pop()
+    if (objeto === undefined || vistos.has(objeto)) continue
+    vistos.add(objeto)
+    if (objeto instanceof PDFRef) {
+      const alvo = context.lookup(objeto)
+      if (alvo === undefined) penduradas.push(objeto.toString())
+      else pilha.push(alvo)
+    } else if (objeto instanceof PDFDict) {
+      pilha.push(...objeto.values())
+    } else if (objeto instanceof PDFArray) {
+      pilha.push(...objeto.asArray())
+    } else if (objeto instanceof PDFRawStream) {
+      pilha.push(objeto.dict)
+    }
+  }
+  return penduradas
+}
+
+const widgetsDasPaginas = (documento: PDFDocument) =>
+  documento
+    .getPages()
+    .flatMap((pagina) => pagina.node.Annots()?.asArray() ?? [])
+    .map((item) => documento.context.lookup(item, PDFDict))
+    .filter(
+      (anotacao) =>
+        anotacao.get(PDFName.of('Subtype')) === PDFName.of('Widget'),
+    )
+
+describe('aplicarEdicoes: achatar o formulário', () => {
+  let antes: CampoDoFormulario[]
+  let achatado: Uint8Array
+
+  beforeAll(async () => {
+    const pdf = await gerarFormulario()
+    antes = [...(await lerAcroForm(pdf)).campos]
+    achatado = await aplicarEdicoes(pdf, [], {
+      valores: [PREENCHIDOS[0]],
+      achatar: true,
+    })
+  })
+
+  it('não sobra campo, a não ser o /Sig, nem widget, nem referência para o que saiu', async () => {
+    const documento = await PDFDocument.load(achatado)
+    const formulario = documento.catalog.lookup(PDFName.of('AcroForm'), PDFDict)
+    expect(formulario.has(PDFName.of('NeedAppearances'))).toBe(false)
+    expect(
+      documento
+        .getForm()
+        .getFields()
+        .map((c) => c.getName()),
+    ).toEqual(['assinatura'])
+    expect(
+      widgetsDasPaginas(documento).map((w) => w.get(PDFName.of('FT'))),
+    ).toEqual([PDFName.of('Sig')])
+    expect(referenciasPenduradas(documento)).toEqual([])
+  })
+
+  it('o texto do campo vira conteúdo da página, na caixa do widget', () => {
+    const [pagina1] = lerComPdfjs(achatado).paginas
+    expect(pagina1.campos).toEqual([])
+    const { caixa } = campoPeloNome(antes, 'pessoa.nome').widgets[0]
+    const texto = pagina1.textos.find(({ str }) => str === 'Ana Luísa')
+    expect(texto).toBeDefined()
+    const [x, y] = texto!.matriz.slice(4)
+    expect(x).toBeGreaterThan(caixa.x)
+    expect(x).toBeLessThan(caixa.x + caixa.largura)
+    expect(y).toBeGreaterThan(caixa.y)
+    expect(y).toBeLessThan(caixa.y + caixa.altura)
+    // O que ninguém mudou também fica desenhado, com a aparência do arquivo.
+    expect(pagina1.textos.map(({ str }) => str)).toContain('123')
+  })
+
+  it('sem campo nenhum, o /AcroForm sai do catálogo', async () => {
+    const editado = await aplicarEdicoes(
+      await gerarFormulario({ semAssinatura: true }),
+      [],
+      { valores: [], achatar: true },
+    )
+    const documento = await PDFDocument.load(editado)
+    expect(documento.catalog.has(PDFName.of('AcroForm'))).toBe(false)
+    expect(widgetsDasPaginas(documento)).toEqual([])
+    expect(referenciasPenduradas(documento)).toEqual([])
+  })
+
+  // Aparências feitas à mão: a /BBox que não começa no zero e a caixa de marcar com uma cor por estado.
+  async function gerarComAparencias(): Promise<Uint8Array> {
+    const documento = await PDFDocument.create()
+    const { context } = documento
+    const pagina = documento.addPage([600, 800])
+    const form = documento.getForm()
+    const aparencia = (conteudo: string, bbox: number[]) =>
+      context.register(
+        context.stream(conteudo, {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: bbox,
+        }),
+      )
+    const deslocada = form.createTextField('deslocada')
+    deslocada.addToPage(pagina, { x: 100, y: 300, width: 200, height: 20 })
+    const [widget] = deslocada.acroField.getWidgets()
+    widget.dict.set(PDFName.of('Rect'), context.obj([100, 300, 300, 320]))
+    widget.setNormalAppearance(
+      aparencia('0 1 0 rg 10 20 200 20 re f', [10, 20, 210, 40]),
+    )
+    const marcar = form.createCheckBox('marcar')
+    marcar.addToPage(pagina, { x: 100, y: 200, width: 20, height: 20 })
+    const [caixa] = marcar.acroField.getWidgets()
+    caixa.dict.set(PDFName.of('Rect'), context.obj([100, 200, 120, 220]))
+    caixa.setNormalAppearance(
+      context.obj({
+        Yes: aparencia('1 0 0 rg 0 0 20 20 re f', [0, 0, 20, 20]),
+        Off: aparencia('0 0 1 rg 0 0 20 20 re f', [0, 0, 20, 20]),
+      }),
+    )
+    marcar.check()
+    const semAparencia = form.createTextField('semAparencia')
+    semAparencia.setText('SEM-AP')
+    semAparencia.addToPage(pagina, { x: 100, y: 100, width: 200, height: 20 })
+    semAparencia.acroField.getWidgets()[0].dict.delete(PDFName.of('AP'))
+    const oculto = form.createTextField('oculto')
+    oculto.addToPage(pagina, {
+      x: 300,
+      y: 100,
+      width: 100,
+      height: 20,
+      hidden: true,
+    })
+    oculto.acroField
+      .getWidgets()[0]
+      .setNormalAppearance(
+        aparencia('1 0 1 rg 0 0 100 20 re f', [0, 0, 100, 20]),
+      )
+    return documento.save({ updateFieldAppearances: false })
+  }
+
+  it('a aparência vai para o /Rect pela /BBox, e a caixa de marcar desenha o estado do /AS', async () => {
+    const editado = await aplicarEdicoes(await gerarComAparencias(), [], {
+      valores: [],
+      achatar: true,
+    })
+    const [pagina] = lerComPdfjs(editado).paginas
+    expect(acharDesenho(pagina.desenhos, [100, 480, 300, 500])).toMatchObject({
+      operacao: 'fill',
+      preenchimento: '#00ff00',
+    })
+    expect(acharDesenho(pagina.desenhos, [100, 580, 120, 600])).toMatchObject({
+      preenchimento: '#ff0000',
+    })
+    expect(
+      pagina.desenhos.some(
+        (d) => d.tipo === 'caminho' && d.preenchimento === '#0000ff',
+      ),
+    ).toBe(false)
+    // O widget sem aparência ganha uma antes de achatar; o escondido não aparece, e sai junto.
+    expect(pagina.textos.map(({ str }) => str)).toContain('SEM-AP')
+    expect(
+      pagina.desenhos.some(
+        (d) => d.tipo === 'caminho' && d.preenchimento === '#ff00ff',
+      ),
+    ).toBe(false)
+    expect(pagina.campos).toEqual([])
+    expect(
+      widgetsDasPaginas(await PDFDocument.load(editado)).map((w) =>
+        w.get(PDFName.of('FT')),
+      ),
+    ).toEqual([])
+  })
+
+  it('a aparência que não dá para gerar é erro no campo, ao preencher e ao achatar', async () => {
+    const documento = await PDFDocument.create()
+    const pagina = documento.addPage([600, 800])
+    const form = documento.getForm()
+    const semRect = form.createTextField('semRect')
+    semRect.addToPage(pagina, { x: 100, y: 300, width: 200, height: 20 })
+    semRect.acroField.getWidgets()[0].dict.delete(PDFName.of('Rect'))
+    const apSemN = form.createTextField('apSemN')
+    apSemN.addToPage(pagina, { x: 100, y: 200, width: 200, height: 20 })
+    apSemN.acroField
+      .getWidgets()[0]
+      .dict.set(PDFName.of('AP'), documento.context.obj({}))
+    const pdf = await documento.save({ updateFieldAppearances: false })
+    expect(
+      await erroNoCampo(
+        aplicarEdicoes(pdf, [], {
+          valores: [{ id: 0, nome: 'semRect', tipo: 'texto', valor: 'x' }],
+          achatar: false,
+        }),
+      ),
+    ).toMatchObject({ motivo: 'aparencia_do_campo', campo: 0, nome: 'semRect' })
+    expect(
+      await erroNoCampo(
+        aplicarEdicoes(pdf, [], { valores: [], achatar: true }),
+      ),
+    ).toMatchObject({ motivo: 'aparencia_do_campo', campo: 1, nome: 'apSemN' })
+  })
+})
+
+describe('aplicarEdicoes: a assinatura desenhada junto com o formulário', () => {
+  // Um PNG com transparência, como o que a tela gera do quadro da assinatura.
+  const assinatura = (): ObjetoDaPagina => ({
+    id: id(),
+    tipo: 'imagem',
+    x: 120,
+    y: 210,
+    largura: 80,
+    altura: 40,
+    bytes: PNG_2X2,
+  })
+
+  let antes: CampoDoFormulario[]
+  let leitura: ReturnType<typeof lerComPdfjs>
+
+  beforeAll(async () => {
+    const documento = await PDFDocument.load(
+      await gerarPdfComFormatos(FORMATOS),
+    )
+    const form = documento.getForm()
+    documento.getPages().forEach((pagina, i) => {
+      form
+        .createTextField(`campo-${i}`)
+        .addToPage(pagina, { x: 100, y: 200, width: 120, height: 30 })
+    })
+    const pdf = await documento.save()
+    antes = [...(await lerAcroForm(pdf)).campos]
+    const editado = await aplicarEdicoes(
+      pdf,
+      FORMATOS.map((_, indice) => ({ indice, objetos: [assinatura()] })),
+      {
+        valores: FORMATOS.map((_, i) => ({
+          id: i,
+          nome: `campo-${i}`,
+          tipo: 'texto' as const,
+          valor: `Valor ${i}`,
+        })),
+        achatar: true,
+      },
+    )
+    leitura = lerComPdfjs(editado)
+  })
+
+  it.each(FORMATOS.map((formato, indice) => [formato.nome, indice] as const))(
+    '%s: a imagem cai na caixa da tela, por cima do campo achatado',
+    (_, indice) => {
+      const { desenhos, textos, campos } = leitura.paginas[indice]
+      expect(campos).toEqual([])
+      expect(textos.map(({ str }) => str)).toContain(`Valor ${indice}`)
+      const imagem = desenhos.findIndex(
+        (d) => d.tipo === 'imagem' && caixaPerto(d.caixa, [120, 210, 200, 250]),
+      )
+      expect(imagem).toBeGreaterThanOrEqual(0)
+      const caixaDoCampo = caixaComoArray(
+        campoPeloNome(antes, `campo-${indice}`).widgets[0].caixa,
+      )
+      const doCampo = desenhos.findIndex(
+        (d) => d.tipo === 'caminho' && caixaPerto(d.caixa, caixaDoCampo, 1.5),
+      )
+      expect(doCampo).toBeGreaterThanOrEqual(0)
+      expect(imagem).toBeGreaterThan(doCampo)
+    },
+  )
 })
