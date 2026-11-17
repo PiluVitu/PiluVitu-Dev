@@ -204,6 +204,8 @@ A votação de filmes virou o **Votaí** (nome com acento na interface; sem acen
 
 Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload, sem guardar o PDF no navegador), e a tela diz isso. O plano das fases e as decisões estão em `docs/plano-editor-pdf.md`.
 
+> **Parado a pedido do Paulo (2026-11-17).** O modo Assinar PDF (`/tools/pdf/assinar`, fase 4, #121) não era para existir: a assinatura é pelo gov.br. Ele segue no ar, sem nada revertido, até o Paulo decidir; até lá, nada muda no editor de PDF (ver o topo do `docs/plano-editor-pdf.md`).
+
 - **Rotas** (`app/(site)/tools/pdf/`):
   - `page.tsx`: o hub "Editor de PDF", com o aviso de privacidade e um cartão por modo do registro (`ModosDoEditor`);
   - `mesclar/page.tsx`, `organizar/page.tsx`, `editar/page.tsx` e `assinar/page.tsx`: um modo cada, com metadata e canonical próprios e o "voltar" para o hub (o organizar está em _Organizar_, o editar em _Editar_ e o assinar em _Assinar_, abaixo). O assinar é a tela do editar com `<EditarPdf modo="assinar" />`, quarto modo do registro ("Assinar PDF", ícone `faSignature`); com ele, a descrição do Editor de PDF passou a "Mesclar, organizar, editar e assinar PDF";
@@ -279,6 +281,12 @@ Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload, 
     | 790 KB, 500 páginas              | 0,3 s, +87 MB                    | 500 em 24,5 s (49 ms cada, rolando uma tela por vez), +373 MB | 0,2 s       | **+373 MB** (+333 MB com `deviceScaleFactor` 1)         |
 
     O pico vem do mesmo PDF em três lugares ao mesmo tempo: a cópia do pdf.js no Worker dele, o pdf-lib lendo e montando (umas 3,5 vezes o arquivo, como no mesclar) e o `Blob` do resultado; e o pico chega depois do "pronto", enquanto o lixo do Worker do pdf-lib ainda não foi recolhido. Com 98 MB passa de 7 vezes o arquivo, bem acima dos 400 a 500 MB que o teto do mesclar aceita para celular. **Por isso o teto de bytes deste modo é 50 MB**, que fica perto de 300 MB. As 500 páginas ficam: o custo quase não muda com a densidade de pixels (é lixo e cache do renderizador, que cresce com memória livre; num celular com pouca memória o recolhimento chega antes), e cada miniatura só é desenhada quando aparece. Esses números são teto, não média: o Mac tinha memória sobrando, e o V8 só recolhe lixo quando precisa.
+
+    **Medida de novo pendente (estado em 2026-11-17).** A tabela acima não se reproduziu. Com o mesmo Chromium (headless shell 1217 do Playwright 1.59) e o mesmo método, somando só a árvore de processos do navegador lançado (`chromium.launchServer`, para não contar o Chromium de outra sessão), o PDF de 49 MB (20 páginas, imagem RGB sem compressão) abriu com pico de +994 MB e +1.250 MB em duas rodadas; com a imagem em degradê no lugar de ruído, +1.006 MB; com o headless shell 1234, +1.296 MB. Só que o Mac estava com carga de 41 a 58 em 10 núcleos (outras sessões rodando E2E), e a abertura levou de 10 a 25 s, contra 2 s na tabela: com a CPU disputada o lixo é recolhido mais tarde, e o pico infla. **Esses números não valem, e o teto de 50 MB fica como está até a medida ser refeita.** Como refazer:
+    - antes de cada rodada, `uptime`: só com a carga abaixo de 20;
+    - build de produção, `next start` numa porta livre, um Chromium por vez (o 1217 do Playwright), `launchServer` e a soma do RSS da árvore de `servidor.process().pid` com `ps -axo pid=,ppid=,rss=` a cada 100 ms; a base é o mínimo das últimas 20 amostras com `/tools/pdf/organizar` aberto;
+    - a curva: 5, 10, 15 e 20 páginas (12, 24, 37 e 49 MB), duas rodadas cada, rolando até todas as miniaturas aparecerem e gerando o PDF;
+    - se o pico de 49 MB passar mesmo dos 400 a 500 MB que o teto do mesclar aceita para celular, o teto desce para onde a curva cruza esse valor, e as medições do editar e do assinar (que têm o mesmo pico de abertura) mudam junto.
 
 - **Editar** (`/tools/pdf/editar`, `editar.tsx`):
   - **Abrir:** o `useAbrirPdf`, com as mesmas regras e mensagens do organizar ("que dá para editar" no lugar de "organizar"). Escolher um PDF ali o guarda no provider, como nos outros modos.
