@@ -539,7 +539,7 @@ export const TEXTOS = {
     },
     gerar: {
       botao: 'Gerar PDF editado',
-      semMudancas:
+      semObjetos:
         'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
       resumo: (objetos: number, paginasComObjetos: number) =>
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,

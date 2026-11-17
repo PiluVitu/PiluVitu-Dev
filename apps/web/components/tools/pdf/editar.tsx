@@ -951,7 +951,7 @@ export function EditarPdf({
   const idSemImagem = `${ids}-sem-imagem`
   const idSemDesfazer = `${ids}-sem-desfazer`
   const idSemRefazer = `${ids}-sem-refazer`
-  const idSemMudancas = `${ids}-sem-mudancas`
+  const idSemObjetos = `${ids}-sem-objetos`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const noMinimo = zoom === 0
@@ -977,7 +977,6 @@ export function EditarPdf({
   const podeVoltar = podeDesfazer(historico)
   const podeAvancar = podeRefazer(historico)
   const quantosObjetos = totalDeObjetos(cena)
-  const temMudancas = quantosObjetos > 0
   const paginasComApagar = paginasParaApagar(cena)
   const cobrirAqui = temCobrir(cena, pagina)
   const apagarAqui = cena.apagar.has(pagina)
@@ -1700,8 +1699,10 @@ export function EditarPdf({
                 ref={gerarRef}
                 type="button"
                 className="h-11 gap-2 px-6"
-                disabled={!temMudancas}
-                aria-describedby={temMudancas ? undefined : idSemMudancas}
+                disabled={quantosObjetos === 0}
+                aria-describedby={
+                  quantosObjetos === 0 ? idSemObjetos : undefined
+                }
                 onClick={() => void gerar()}
                 data-testid="editar-pdf-gerar"
               >
@@ -1713,9 +1714,9 @@ export function EditarPdf({
                 {T.gerar.botao}
               </Button>
             )}
-            {!temMudancas && (
-              <p id={idSemMudancas} className="text-muted-foreground text-xs">
-                {T.gerar.semMudancas}
+            {quantosObjetos === 0 && (
+              <p id={idSemObjetos} className="text-muted-foreground text-xs">
+                {T.gerar.semObjetos}
               </p>
             )}
 

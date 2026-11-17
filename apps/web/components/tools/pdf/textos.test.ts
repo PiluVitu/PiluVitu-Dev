@@ -174,9 +174,9 @@ describe('editar', () => {
     )
   })
 
-  it('o Gerar tem o botão, o motivo de ficar parado (semMudancas) e o anúncio do pronto', () => {
+  it('o Gerar tem o botão, o motivo de ficar parado (semObjetos) e o anúncio do pronto', () => {
     expect(TEXTOS.editar.gerar.botao).toBe('Gerar PDF editado')
-    expect(TEXTOS.editar.gerar.semMudancas).toBe(
+    expect(TEXTOS.editar.gerar.semObjetos).toBe(
       'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
     )
     expect(TEXTOS.editar.anuncios.pronto(1, 500)).toBe(
