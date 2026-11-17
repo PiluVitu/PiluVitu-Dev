@@ -24,9 +24,9 @@ export const POLITICA_DE_PRIVACIDADE: {
   secoes: readonly SecaoDaPolitica[]
 } = {
   titulo: 'Política de privacidade',
-  vigencia: { iso: '2026-10-26', texto: '26 de outubro de 2026' },
+  vigencia: { iso: '2026-11-16', texto: '16 de novembro de 2026' },
   resumo: [
-    'Em resumo: este é o site pessoal de Paulo Victor Torres Silva e não tem anúncios. Ele conta as visitas com o Vercel Web Analytics e mede a velocidade das páginas com o Vercel Speed Insights, sem cookie e sem identificar quem visita. A votação de filmes, o Votaí, pede login com o Google para votar e grava um cookie para manter você conectado; o histórico das votações encerradas é público e só mostra contagens. O formulário de contato passa por um serviço de terceiros.',
+    'Em resumo: este é o site pessoal de Paulo Victor Torres Silva e não tem anúncios. Ele conta as visitas com o Vercel Web Analytics e o Cloudflare Web Analytics e mede a velocidade das páginas com o Vercel Speed Insights, sem cookie e sem identificar quem visita. A Cloudflare, que fica na frente do site, grava um cookie para separar pessoas de robôs. A votação de filmes, o Votaí, pede login com o Google para votar e grava um cookie para manter você conectado; o histórico das votações encerradas é público e só mostra contagens. O formulário de contato passa por um serviço de terceiros.',
   ],
   secoes: [
     {
@@ -52,7 +52,7 @@ export const POLITICA_DE_PRIVACIDADE: {
           'O Vercel Speed Insights mede a velocidade de cada carregamento (as Web Vitals), com a página, a velocidade da conexão, o navegador, o tipo e o sistema do dispositivo e o país, também sem cookie e sem identificar quem visita.',
         ],
         [
-          'Ficam de fora da medição a votação de filmes (o Votaí, em votai.piluvitu.com.br, com o histórico) e o painel de administração. A base legal é o legítimo interesse do responsável em entender o uso do site (LGPD, art. 7º, IX). A Vercel trata esses dados em nome do responsável, e os números somados ficam no painel dela pelo prazo do plano (hoje, até 1 mês).',
+          'Ficam de fora da medição da Vercel a votação de filmes (o Votaí, em votai.piluvitu.com.br, com o histórico) e o painel de administração; a da Cloudflare vale para todas as páginas (veja "A Cloudflare na frente do site"). A base legal é o legítimo interesse do responsável em entender o uso do site (LGPD, art. 7º, IX). A Vercel trata esses dados em nome do responsável, e os números somados ficam no painel dela pelo prazo do plano (hoje, até 1 mês).',
         ],
       ],
     },
@@ -70,6 +70,40 @@ export const POLITICA_DE_PRIVACIDADE: {
         ],
         [
           'Esses registros só servem para manter o site no ar e seguro, por legítimo interesse (LGPD, art. 7º, IX), e não são cruzados com nada para identificar ninguém.',
+        ],
+      ],
+    },
+    {
+      titulo: 'A Cloudflare na frente do site',
+      paragrafos: [
+        [
+          'Os pedidos ao piluvitu.com.br e ao votai.piluvitu.com.br passam antes pela rede da Cloudflare, Inc., empresa dos Estados Unidos, que fica na frente da Vercel para entregar o site mais rápido e protegê-lo de ataques e robôs. Ela recebe cada pedido, com o endereço IP, o navegador e a página pedida, e trata esses dados em nome do responsável, principalmente nos Estados Unidos e no Espaço Econômico Europeu (veja a ',
+          {
+            tipo: 'link',
+            texto: 'política de privacidade da Cloudflare',
+            href: 'https://www.cloudflare.com/privacypolicy/',
+          },
+          ').',
+        ],
+        [
+          'A Cloudflare também conta as visitas, com o Cloudflare Web Analytics, em todas as páginas, inclusive o Votaí e o painel de administração. Um script dela, de ',
+          { tipo: 'codigo', texto: 'static.cloudflareinsights.com' },
+          ', registra a cada página vista a página (sem os parâmetros do endereço), a página de onde você veio, o país, o tipo de dispositivo, o sistema, o navegador e os tempos de carregamento, e manda isso para a própria Cloudflare. Ele não usa cookie nem guarda nada no seu navegador, e a Cloudflare não identifica quem visita pelo endereço IP nem pelo navegador. Os dados completos ficam 7 dias; depois sobra uma amostra, por até 6 meses.',
+        ],
+        [
+          'Para separar pessoas de robôs, a Cloudflare põe em cada página um teste invisível em JavaScript, de ',
+          { tipo: 'codigo', texto: '/cdn-cgi/challenge-platform' },
+          '. O resultado fica no cookie ',
+          { tipo: 'codigo', texto: 'cf_clearance' },
+          ', que ela grava no domínio piluvitu.com.br: ele guarda só a prova de que o teste passou, o site não o usa para mais nada, e vale por 1 ano. Pelos mesmos recursos contra robôs, a Cloudflare pode gravar também o cookie ',
+          { tipo: 'codigo', texto: '__cf_bm' },
+          ', que expira depois de 30 minutos sem uso.',
+        ],
+        [
+          'A Cloudflare ainda esconde dos robôs os endereços de e-mail escritos na página (um script dela os mostra no seu navegador), indica ao navegador páginas que ele pode carregar antes de você clicar e pede que ele avise quando um pedido ao site falhar (o Network Error Logging). Esse aviso descreve a falha de rede, e a Cloudflare diz que não guarda o seu IP nele.',
+        ],
+        [
+          'A base legal é o legítimo interesse do responsável em manter o site no ar, rápido e protegido, e em entender o uso (LGPD, art. 7º, IX).',
         ],
       ],
     },

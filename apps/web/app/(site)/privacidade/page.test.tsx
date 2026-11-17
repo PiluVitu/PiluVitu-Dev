@@ -39,8 +39,8 @@ describe('/privacidade', () => {
     const raiz = pagina()
     expect(texto(raiz.querySelector('h1'))).toBe('Política de privacidade')
     const vigencia = raiz.querySelector('time')
-    expect(vigencia?.getAttribute('datetime')).toBe('2026-10-26')
-    expect(texto(vigencia)).toBe('26 de outubro de 2026')
+    expect(vigencia?.getAttribute('datetime')).toBe('2026-11-16')
+    expect(texto(vigencia)).toBe('16 de novembro de 2026')
     expect(link(raiz, 'Paulo Victor').getAttribute('href')).toBe('/')
   })
 
@@ -49,6 +49,7 @@ describe('/privacidade', () => {
       'Quem é o responsável',
       'Estatísticas de visita',
       'Registros da hospedagem',
+      'A Cloudflare na frente do site',
       'Votação de filmes',
       'Formulário de contato',
       'Conteúdo de outros sites',
@@ -84,7 +85,8 @@ describe('/privacidade', () => {
       'Vercel Speed Insights',
       'as Web Vitals',
       'sem identificar quem visita',
-      'Ficam de fora da medição a votação de filmes (o Votaí, em votai.piluvitu.com.br, com o histórico) e o painel de administração',
+      'Ficam de fora da medição da Vercel a votação de filmes (o Votaí, em votai.piluvitu.com.br, com o histórico) e o painel de administração',
+      'a da Cloudflare vale para todas as páginas',
       'LGPD, art. 7º, IX',
     ])
   })
@@ -102,6 +104,60 @@ describe('/privacidade', () => {
         'href',
       ),
     ).toBe('https://vercel.com/legal/privacy-policy')
+  })
+
+  // Conferido em 2026-11-16 na documentação da Cloudflare:
+  // - papel e país: https://www.cloudflare.com/privacypolicy/ (Cloudflare, Inc., EUA; operadora dos
+  //   "Customer Logs"; dados guardados principalmente nos EUA e no Espaço Econômico Europeu);
+  // - Web Analytics: https://www.cloudflare.com/web-analytics/ (sem cookie nem localStorage, sem
+  //   "fingerprint" por IP ou navegador), https://developers.cloudflare.com/web-analytics/data-metrics/dimensions/
+  //   (país, caminho, referer, dispositivo, navegador, sistema), .../data-origin-and-collection/
+  //   (beacon de static.cloudflareinsights.com, tempos pela Navigation Timing API) e
+  //   https://developers.cloudflare.com/web-analytics/faq/ (sem query string; 7 dias sem amostragem,
+  //   depois cerca de 10%; 6 meses de acesso);
+  // - robôs: https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/
+  //   (script invisível em /cdn-cgi/challenge-platform, resultado no cf_clearance) e
+  //   https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/
+  //   (cf_clearance guarda a prova do teste; __cf_bm, do Bot Management e do Bot Fight Mode, expira
+  //   depois de 30 minutos sem uso);
+  // - Speed Brain (https://developers.cloudflare.com/speed/optimization/content/speed-brain/), e-mail
+  //   escondido (https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
+  //   e Network Error Logging (https://developers.cloudflare.com/network-error-logging/: só falhas,
+  //   sem o IP guardado).
+  // E na produção, só com GET e um Chromium (2026-11-17 UTC): as páginas não devolvem Set-Cookie; o
+  // beacon do Web Analytics entra em todas, inclusive /admin e votai.piluvitu.com.br, que também passa
+  // pela Cloudflare; o POST do /cdn-cgi/challenge-platform/.../jsd/oneshot grava o cf_clearance
+  // (HttpOnly, Secure, SameSite=None, Domain=piluvitu.com.br) com validade de 1 ano; e os
+  // cabeçalhos NEL e Report-To vêm com success_fraction 0.0 (só as falhas).
+  it('a Cloudflare: o proxy, o Web Analytics sem cookie, o teste de robô com o cf_clearance e o resto da borda', () => {
+    const cloudflare = secao(pagina(), 'A Cloudflare na frente do site')
+    esperaTrechos(cloudflare, [
+      'piluvitu.com.br e ao votai.piluvitu.com.br',
+      'Cloudflare, Inc., empresa dos Estados Unidos',
+      'o endereço IP, o navegador e a página pedida',
+      'principalmente nos Estados Unidos e no Espaço Econômico Europeu',
+      'Cloudflare Web Analytics',
+      'inclusive o Votaí e o painel de administração',
+      'static.cloudflareinsights.com',
+      'sem os parâmetros do endereço',
+      'a página de onde você veio, o país, o tipo de dispositivo, o sistema, o navegador e os tempos de carregamento',
+      'não usa cookie nem guarda nada no seu navegador',
+      '7 dias',
+      'até 6 meses',
+      '/cdn-cgi/challenge-platform',
+      'cf_clearance',
+      'vale por 1 ano',
+      '__cf_bm',
+      '30 minutos sem uso',
+      'endereços de e-mail',
+      'Network Error Logging',
+      'LGPD, art. 7º, IX',
+    ])
+    expect(
+      link(cloudflare, 'política de privacidade da Cloudflare').getAttribute(
+        'href',
+      ),
+    ).toBe('https://www.cloudflare.com/privacypolicy/')
   })
 
   // Fatos conferidos no apps/ramielle em 2026-10-11: o D1 guarda user/account/session/votos, sem
@@ -141,6 +197,8 @@ describe('/privacidade', () => {
 
   it('o resumo cita o Votaí e o histórico público só com contagens', () => {
     esperaTrechos(pagina().querySelector('article') as HTMLElement, [
+      'o Vercel Web Analytics e o Cloudflare Web Analytics',
+      'A Cloudflare, que fica na frente do site, grava um cookie para separar pessoas de robôs',
       'o Votaí, pede login com o Google para votar',
       'o histórico das votações encerradas é público e só mostra contagens',
     ])
