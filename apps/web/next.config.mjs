@@ -24,6 +24,11 @@ const nextConfig = {
         destination: '/tools/pdf/mesclar',
         permanent: true,
       },
+      {
+        source: '/tools/pdf/assinar',
+        destination: '/tools/pdf',
+        permanent: true,
+      },
     ]
   },
   // mermaid + langium têm deep imports de vscode-jsonrpc/languageserver-* que

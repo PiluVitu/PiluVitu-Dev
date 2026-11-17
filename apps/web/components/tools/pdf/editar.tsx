@@ -41,31 +41,13 @@ import {
   podeRefazer,
   refazer as refazerNoHistorico,
   registrarNoHistorico,
-  type Cor,
-  type Formulario,
   type Historico,
   type Ponto,
   type PontoDoTraco,
   type Tamanho,
-  type ValorDoCampo,
 } from '@piluvitu/tools/pdf-regras'
-import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
-import {
-  AvisoDeAssinaturaVisual,
-  CriarAssinatura,
-  descricaoDoAviso,
-  type AssinaturaPronta,
-} from './criar-assinatura'
-import { DestaqueDoCampo } from './destaque-do-campo'
 import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
-import {
-  caixasDoFoco,
-  campoNoPonto,
-  paginaDoFoco,
-  rolagemParaMostrar,
-  type FocoNoCampo,
-} from './formulario'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
 import {
@@ -78,11 +60,8 @@ import { novoWorkerDePdf } from './novo-worker'
 import {
   CENA_VAZIA,
   CORES,
-  FAMILIAS_CSS,
   ESPESSURA_MAXIMA,
   ESPESSURA_MINIMA,
-  FERRAMENTAS_DO_MODO,
-  SUFIXO_DO_MODO,
   comApagarDeVerdade,
   comMudanca,
   corDoNome,
@@ -102,15 +81,12 @@ import {
   trocarObjeto,
   ESTILOS_PADRAO,
   type Cena,
-  type AssinaturaParaInserir,
   type Estilos,
   type Ferramenta,
   type Lugar,
-  type ModoDaTela,
   type Mudanca,
   type NomeDaCor,
 } from './objetos'
-import { PainelDoFormulario, type Registrar } from './painel-do-formulario'
 import { PainelDoObjeto } from './painel-do-objeto'
 import { QuadroDeObjetos, type OrigemDaMudanca } from './quadro-de-objetos'
 import {
@@ -118,15 +94,12 @@ import {
   type DocumentoAberto,
   type RenderizadorDePdf,
 } from './renderizador'
-import { TEXTOS, TEXTOS_DO_MODO, type TextosDoModo } from './textos'
+import { TEXTOS } from './textos'
 import { useAbrirPdf, type RecusaDaAbertura } from './use-abrir-pdf'
-import { useFormularioDoPdf } from './use-formulario-do-pdf'
 import { useMiniaturas } from './use-miniaturas'
 import { AvisoDePrivacidade, ZonaDeArquivos } from './zona-de-arquivos'
 
 const T = TEXTOS.editar
-
-const TA = TEXTOS.assinatura
 
 /** Frações da largura da área; 1 é a página na largura da área. */
 export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const
@@ -148,9 +121,6 @@ const JANELA_DA_JUNCAO_MS = 1_000
 
 // A posição só é falada quando a pessoa para de mexer, e não a cada passo.
 const PAUSA_DO_ANUNCIO_MS = 500
-
-// Em pixels: o respiro em volta do campo destacado quando a área rola até ele.
-const MARGEM_DO_DESTAQUE = 24
 
 type Vista = {
   documento: DocumentoAberto | null
@@ -189,15 +159,6 @@ type ImagemGuardada = {
   altura: number
 }
 
-/** A assinatura pronta para pôr: o PNG guardado em `imagens` (pelo id) ou o nome digitado. */
-type AssinaturaGuardada =
-  | {
-      tipo: 'imagem'
-      imagem: string
-      descricao: Parameters<typeof TA.pronta.descricao>[0]
-    }
-  | { tipo: 'texto'; nome: string; cor: Cor }
-
 type EstadoDaImagem =
   | { tipo: 'preparando' | 'pronta'; texto: string }
   | { tipo: 'aviso'; texto: string }
@@ -216,20 +177,15 @@ type Resultado =
       estado: 'falhou'
       mensagem: string
       objeto?: { pagina: number; id: string }
-      campo?: number
     }
 
 type Foco = () => HTMLElement | null | undefined
 
 type SentidoDoHistorico = 'desfazer' | 'refazer'
 
-function mensagemDaRecusa(
-  nome: string,
-  recusa: RecusaDaAbertura,
-  textos: TextosDoModo,
-): string {
+function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
   return 'paginasDemais' in recusa
-    ? textos.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
+    ? T.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
     : T.recusado(nome, recusa.motivo)
 }
 
@@ -262,19 +218,6 @@ function useLarguraDaArea(
   return typeof ResizeObserver === 'undefined' ? LARGURA_SEM_MEDIDA : largura
 }
 
-const chaveDoControle = (id: number, opcao?: string) =>
-  opcao === undefined ? `${id}` : `${id}:${opcao}`
-
-const ehMotivoDoCampo = (
-  motivo: string,
-): motivo is
-  | 'texto_fora_do_winansi'
-  | 'acima_do_tamanho_maximo'
-  | 'aparencia_do_campo' =>
-  motivo === 'texto_fora_do_winansi' ||
-  motivo === 'acima_do_tamanho_maximo' ||
-  motivo === 'aparencia_do_campo'
-
 // As imagens que algum passo do histórico usa: só essas ficam guardadas e contam no teto.
 function imagensDoHistorico(historico: Historico<Cena>): Set<string> {
   const usadas = new Set<string>()
@@ -289,8 +232,6 @@ function imagensDoHistorico(historico: Historico<Cena>): Set<string> {
 }
 
 type Props = {
-  /** O assinar é esta mesma tela, com as ferramentas dele e o formulário lido ao abrir. */
-  modo?: ModoDaTela
   /** Injetável para story e teste; sem ele, o pdf.js é baixado quando o primeiro PDF chega. */
   renderizador?: RenderizadorDePdf
   /** Injetável para story e teste; sem ele, o motor usa um Web Worker com o pdf-lib. */
@@ -298,13 +239,10 @@ type Props = {
 }
 
 export function EditarPdf({
-  modo = 'editar',
   renderizador: renderizadorInjetado,
   motor: motorInjetado,
 }: Props) {
   const ids = useId()
-  const TM = TEXTOS_DO_MODO[modo]
-  const ferramentasDoModo = FERRAMENTAS_DO_MODO[modo]
   const { arquivo, guardar } = useDocumentoPdf()
   const renderizadorRef = useRef<RenderizadorDePdf | null>(
     renderizadorInjetado ?? null,
@@ -327,13 +265,10 @@ export function EditarPdf({
   const apagarDeVerdadeRef = useRef<HTMLButtonElement>(null)
   const desligarApagarRef = useRef<HTMLButtonElement>(null)
   const gerarRef = useRef<HTMLButtonElement>(null)
-  const inserirNoCentroRef = useRef<HTMLButtonElement>(null)
-  const criarOutraRef = useRef<HTMLButtonElement>(null)
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const baixarRef = useRef<HTMLAnchorElement>(null)
   const botoesDasPaginas = useRef(new Map<number, HTMLButtonElement>())
   const elementosDosObjetos = useRef(new Map<string, HTMLElement>())
-  const controlesDosCampos = useRef(new Map<string, HTMLElement>())
   const focoPendente = useRef<Foco | null>(null)
   const juncao = useRef<{ chave: string; quando: number } | null>(null)
   const anuncioAdiado = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -342,7 +277,6 @@ export function EditarPdf({
   const vezDaImagem = useRef(0)
   const vezDoClique = useRef(0)
   const vezDaGeracao = useRef(0)
-  const vezDaAssinatura = useRef(0)
 
   const [vista, setVista] = useState<Vista>(SEM_VISTA)
   const [desenho, setDesenho] = useState<Desenho | null>(null)
@@ -371,24 +305,12 @@ export function EditarPdf({
     null,
   )
   const [resultado, setResultado] = useState<Resultado>({ estado: 'parado' })
-  const [formularioLido, setFormularioLido] = useState<{
-    documento: DocumentoAberto
-    formulario: Formulario
-  } | null>(null)
-  const [assinatura, setAssinatura] = useState<AssinaturaGuardada | null>(null)
-  const [criandoOutra, setCriandoOutra] = useState(false)
-  const [avisoDaAssinatura, setAvisoDaAssinatura] = useState<string | null>(
-    null,
-  )
-  const reduzirMovimento = useReduzirMovimento()
 
   const { atual, documento, grandeDemais } = useAbrirPdf(arquivo, {
     motor,
     renderizador: () =>
       (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
-    formulario: modo === 'assinar',
-    aoAbrir(aberto, doArquivo, formulario) {
-      setFormularioLido(formulario ? { documento: aberto, formulario } : null)
+    aoAbrir(aberto, doArquivo) {
       setVista({ ...SEM_VISTA, documento: aberto })
       setEdicao({ documento: aberto, historico: historicoInicial(CENA_VAZIA) })
       setFerramenta('selecionar')
@@ -398,18 +320,9 @@ export function EditarPdf({
       setDicaDoTexto(null)
       setConfirmandoApagar(null)
       setResultado({ estado: 'parado' })
-      setAvisoDaAssinatura(null)
-      soltarImagens(new Set(idDaAssinatura ? [idDaAssinatura] : []))
+      soltarImagens(new Set())
       juncao.current = null
-      const doFormulario =
-        modo === 'assinar' && formulario
-          ? TEXTOS.formulario.aoAbrir(formulario)
-          : ''
-      anunciar(
-        doFormulario
-          ? `${T.aberto(doArquivo.name, aberto.paginas)}. ${doFormulario}`
-          : T.aberto(doArquivo.name, aberto.paginas),
-      )
+      anunciar(T.aberto(doArquivo.name, aberto.paginas))
     },
     aoRecusar: () => anunciar(''),
   })
@@ -457,33 +370,6 @@ export function EditarPdf({
   const montando = resultado.estado === 'montando'
   const urlDoResultado = resultado.estado === 'pronto' ? resultado.url : null
   const imagemParaPor = imagemPendente ? imagens.get(imagemPendente) : undefined
-  const formulario =
-    formularioLido && formularioLido.documento === documento
-      ? formularioLido.formulario
-      : null
-  const estadoDoFormulario = useFormularioDoPdf(
-    modo === 'assinar' ? formulario : null,
-  )
-  const idDaAssinatura =
-    assinatura?.tipo === 'imagem' ? assinatura.imagem : null
-  const imagemDaAssinatura = idDaAssinatura
-    ? imagens.get(idDaAssinatura)
-    : undefined
-  const assinaturaParaInserir: AssinaturaParaInserir | undefined =
-    assinatura?.tipo === 'texto'
-      ? { tipo: 'texto', nome: assinatura.nome, cor: assinatura.cor }
-      : assinatura && imagemDaAssinatura
-        ? {
-            tipo: 'imagem',
-            imagem: {
-              id: assinatura.imagem,
-              largura: imagemDaAssinatura.largura,
-              altura: imagemDaAssinatura.altura,
-            },
-          }
-        : undefined
-  const camposMudados = estadoDoFormulario.mudados
-  const achatar = estadoDoFormulario.achatar && formulario?.tipo === 'acroform'
 
   useEffect(() => () => motorRef.current?.encerrar(), [])
 
@@ -588,15 +474,13 @@ export function EditarPdf({
     if (sobram.size !== imagens.size) setImagens(sobram)
   }
 
-  // As que algum passo do histórico usa, a que espera para entrar e a da assinatura pronta.
+  // As que algum passo do histórico usa e a que espera para entrar.
   function imagensQueFicam(
     novo: Historico<Cena>,
     pendente: string | null,
-    daAssinatura: string | null = idDaAssinatura,
   ): Set<string> {
     const ficam = imagensDoHistorico(novo)
     if (pendente) ficam.add(pendente)
-    if (daAssinatura) ficam.add(daAssinatura)
     return ficam
   }
 
@@ -637,7 +521,7 @@ export function EditarPdf({
     )
   }
 
-  function irPara(indice: number, { comAnuncio = true } = {}) {
+  function irPara(indice: number) {
     if (!documento || indice === pagina || indice < 0 || indice >= total) {
       return
     }
@@ -645,7 +529,7 @@ export function EditarPdf({
     setSelecionado(null)
     setDicaDoTexto(null)
     setConfirmandoApagar(null)
-    if (comAnuncio) anunciar(T.anuncios.pagina(indice + 1, total))
+    anunciar(T.anuncios.pagina(indice + 1, total))
   }
 
   function passar(sentido: -1 | 1) {
@@ -670,8 +554,6 @@ export function EditarPdf({
   function escolherFerramenta(nova: Ferramenta) {
     setFerramenta(nova)
     setDicaDoTexto(null)
-    setAvisoDaAssinatura(null)
-    setCriandoOutra(false)
     if (nova === 'imagem' && !imagemParaPor) inputDaImagemRef.current?.click()
   }
 
@@ -707,10 +589,6 @@ export function EditarPdf({
       setEstadoDaImagem({ tipo: 'aviso', texto: T.ferramentas.semImagem })
       return
     }
-    if (ferramenta === 'assinatura' && !assinaturaParaInserir) {
-      setAvisoDaAssinatura(T.ferramentas.semAssinatura)
-      return
-    }
     const objeto = criarObjeto(ferramenta, lugar, tamanhoDaPagina, estilos, {
       conteudo: T.objetos.textoInicial,
       imagem:
@@ -721,7 +599,6 @@ export function EditarPdf({
               altura: imagemParaPor.altura,
             }
           : undefined,
-      assinatura: assinaturaParaInserir,
     })
     mudarCena(
       incluirObjeto(cena, pagina, objeto),
@@ -741,7 +618,7 @@ export function EditarPdf({
       ),
     )
     focar(() => {
-      if (ferramenta !== 'texto') {
+      if (objeto.tipo !== 'texto') {
         return elementosDosObjetos.current.get(objeto.id)
       }
       const campo = textoRef.current
@@ -795,28 +672,9 @@ export function EditarPdf({
     focar(() => quadroRef.current)
   }
 
-  function focarControle({ campo, widget }: FocoNoCampo) {
-    const doCampo = estadoDoFormulario.campos.find((c) => c.id === campo)
-    const opcao =
-      doCampo?.tipo === 'opcoes' ? doCampo.widgets[widget]?.opcao : undefined
-    const controle =
-      (opcao !== undefined &&
-        controlesDosCampos.current.get(chaveDoControle(campo, opcao))) ||
-      controlesDosCampos.current.get(chaveDoControle(campo))
-    controle?.focus()
-  }
-
-  // O widget de um campo leva ao controle dele. A dica do texto do PDF manda usar o Cobrir: sem ele na
-  // barra, nem pergunta.
   async function clicarNaPagina(ponto: Ponto) {
     setSelecionado(null)
     if (!documento) return
-    const noCampo = campoNoPonto(estadoDoFormulario.campos, pagina, ponto)
-    if (noCampo) {
-      focarControle(noCampo)
-      return
-    }
-    if (!ferramentasDoModo.includes('cobrir')) return
     const vez = ++vezDoClique.current
     const temTexto = await documento
       .textoNoPonto(pagina, ponto)
@@ -931,65 +789,6 @@ export function EditarPdf({
     else anunciar('')
   }
 
-  function usarAssinatura(pronta: AssinaturaPronta): string | void {
-    const ficam = imagensQueFicam(historico, imagemPendente, null)
-    if (pronta.tipo === 'texto') {
-      setAssinatura({ tipo: 'texto', nome: pronta.nome, cor: pronta.cor })
-      soltarImagens(ficam)
-    } else {
-      const nome =
-        pronta.jeito === 'desenhada'
-          ? TA.nomes.desenhada
-          : TA.nomes.enviada(pronta.arquivo)
-      let usados = 0
-      for (const [id, { blob }] of imagens) {
-        if (ficam.has(id)) usados += blob.size
-      }
-      if (usados + pronta.blob.size > TETO_DAS_IMAGENS_EM_BYTES) {
-        return T.imagem.teto(nome, pronta.blob.size, TETO_DAS_IMAGENS_EM_BYTES)
-      }
-      const id = `assinatura-${++vezDaAssinatura.current}`
-      const novas = new Map<string, ImagemGuardada>()
-      for (const [outro, imagem] of imagens) {
-        if (ficam.has(outro)) novas.set(outro, imagem)
-        else URL.revokeObjectURL(imagem.url)
-      }
-      novas.set(id, {
-        blob: pronta.blob,
-        url: URL.createObjectURL(pronta.blob),
-        nome,
-        largura: pronta.largura,
-        altura: pronta.altura,
-      })
-      setImagens(novas)
-      setAssinatura({
-        tipo: 'imagem',
-        imagem: id,
-        descricao:
-          pronta.jeito === 'desenhada'
-            ? { jeito: 'desenhada' }
-            : { jeito: 'enviada', arquivo: pronta.arquivo },
-      })
-    }
-    setCriandoOutra(false)
-    setAvisoDaAssinatura(null)
-    anunciar(TA.anuncios.pronta)
-    focar(() =>
-      [inserirNoCentroRef.current, criarOutraRef.current].find(podeTerFoco),
-    )
-  }
-
-  function mudarCampo(valor: ValorDoCampo, recusados?: readonly string[]) {
-    estadoDoFormulario.mudar(valor, recusados)
-    descartarResultado()
-  }
-
-  function focarCampo(foco: FocoNoCampo | null) {
-    estadoDoFormulario.focar(foco)
-    const destino = paginaDoFoco(estadoDoFormulario.campos, foco)
-    if (destino !== null) irPara(destino, { comAnuncio: false })
-  }
-
   function mudarApagarDeVerdade(ligado: boolean) {
     mudarCena(comApagarDeVerdade(cena, pagina, ligado))
     setConfirmandoApagar(null)
@@ -1005,10 +804,6 @@ export function EditarPdf({
     if (!atual?.ok || !documento) return
     const origem = atual.arquivo
     const cenaDoPdf = cena
-    const preenchimento =
-      camposMudados.length > 0 || achatar
-        ? { valores: camposMudados, achatar }
-        : undefined
     const vez = ++vezDaGeracao.current
     setResultado({ estado: 'montando' })
     anunciar(T.anuncios.montando)
@@ -1031,41 +826,29 @@ export function EditarPdf({
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
         paginasRasterizadas: rasterizadas,
-        ...(preenchimento ? { formulario: preenchimento } : {}),
       })
       if (vez !== vezDaGeracao.current) return
       setResultado({
         estado: 'pronto',
         url: URL.createObjectURL(pdf),
-        nome: nomeDoPdfDerivado(origem.name, SUFIXO_DO_MODO[modo]),
+        nome: nomeDoPdfDerivado(origem.name, 'editado'),
         paginas: documento.paginas,
         bytes: pdf.size,
       })
-      anunciar(TM.anuncios.pronto(documento.paginas, pdf.size))
+      anunciar(T.anuncios.pronto(documento.paginas, pdf.size))
       focar(() => baixarRef.current)
     } catch (erro) {
       if (vez !== vezDaGeracao.current) return
       const falha = ehFalhaDaOperacao(erro)
         ? erro
         : { motivo: 'inesperado' as const }
-      const campo =
-        falha.campo === undefined
-          ? undefined
-          : estadoDoFormulario.campos.find((c) => c.id === falha.campo)
       setResultado({
         estado: 'falhou',
-        mensagem:
-          campo && ehMotivoDoCampo(falha.motivo)
-            ? TEXTOS.assinar.falhaNoCampo(
-                { motivo: falha.motivo, caracteres: falha.caracteres },
-                campo.rotulo,
-              )
-            : T.falhaAoSalvar(falha),
+        mensagem: T.falhaAoSalvar(falha),
         objeto:
           falha.pagina !== undefined && falha.objeto !== undefined
             ? { pagina: falha.pagina, id: falha.objeto }
             : undefined,
-        campo: campo?.id,
       })
       anunciar('')
       focar(() => gerarRef.current)
@@ -1122,63 +905,6 @@ export function EditarPdf({
     },
     [],
   )
-  const registrarCampo = useCallback<Registrar>((id, elemento, opcao) => {
-    const chave = chaveDoControle(id, opcao)
-    if (elemento) controlesDosCampos.current.set(chave, elemento)
-    else controlesDosCampos.current.delete(chave)
-  }, [])
-
-  const { foco: focoNoCampo, campos: camposDaTela } = estadoDoFormulario
-  useEffect(() => {
-    const area = areaRef.current
-    const folha = folhaRef.current
-    const [caixa] = caixasDoFoco(camposDaTela, focoNoCampo, pagina)
-    if (!caixa || !area || !folha || !tamanhoDaPagina || larguraCss === null) {
-      return
-    }
-    const escala = larguraCss / tamanhoDaPagina.largura
-    const daArea = area.getBoundingClientRect()
-    const daFolha = folha.getBoundingClientRect()
-    const rolagem = rolagemParaMostrar(
-      {
-        x:
-          daFolha.left -
-          daArea.left -
-          area.clientLeft +
-          area.scrollLeft +
-          caixa.x * escala,
-        y:
-          daFolha.top -
-          daArea.top -
-          area.clientTop +
-          area.scrollTop +
-          caixa.y * escala,
-        largura: caixa.largura * escala,
-        altura: caixa.altura * escala,
-      },
-      {
-        x: area.scrollLeft,
-        y: area.scrollTop,
-        largura: area.clientWidth,
-        altura: area.clientHeight,
-      },
-      MARGEM_DO_DESTAQUE,
-    )
-    if (rolagem) {
-      area.scrollTo?.({
-        left: rolagem.x,
-        top: rolagem.y,
-        behavior: reduzirMovimento ? 'auto' : 'smooth',
-      })
-    }
-  }, [
-    camposDaTela,
-    focoNoCampo,
-    pagina,
-    tamanhoDaPagina,
-    larguraCss,
-    reduzirMovimento,
-  ])
 
   useEffect(() => {
     if (!documento) return
@@ -1235,21 +961,15 @@ export function EditarPdf({
   const idSemDesfazer = `${ids}-sem-desfazer`
   const idSemRefazer = `${ids}-sem-refazer`
   const idSemMudancas = `${ids}-sem-mudancas`
-  const idDoAvisoDaAssinatura = `${ids}-aviso-assinatura`
-  const idDosObrigatorios = `${ids}-obrigatorios`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const noMinimo = zoom === 0
   const noMaximo = zoom === ZOOMS.length - 1
   const erro =
     arquivo && grandeDemais
-      ? TM.grandeDemais(
-          arquivo.name,
-          arquivo.size,
-          TETO_DE_BYTES_COM_MINIATURAS,
-        )
+      ? T.grandeDemais(arquivo.name, arquivo.size, TETO_DE_BYTES_COM_MINIATURAS)
       : atual && !atual.ok
-        ? mensagemDaRecusa(atual.arquivo.name, atual.recusa, TM)
+        ? mensagemDaRecusa(atual.arquivo.name, atual.recusa)
         : null
   const textoDoAnuncio =
     !arquivo || grandeDemais
@@ -1266,20 +986,7 @@ export function EditarPdf({
   const podeVoltar = podeDesfazer(historico)
   const podeAvancar = podeRefazer(historico)
   const quantosObjetos = totalDeObjetos(cena)
-  const temMudancas = quantosObjetos > 0 || camposMudados.length > 0 || achatar
-  const resumoDoGerar =
-    modo === 'assinar'
-      ? TEXTOS.assinar.gerar.resumo(
-          quantosObjetos,
-          cena.objetos.size,
-          camposMudados.length,
-        )
-      : quantosObjetos > 0
-        ? T.gerar.resumo(quantosObjetos, cena.objetos.size)
-        : ''
-  const caixasDoDestaque = tamanhoDaPagina
-    ? caixasDoFoco(camposDaTela, focoNoCampo, pagina)
-    : []
+  const temMudancas = quantosObjetos > 0
   const paginasComApagar = paginasParaApagar(cena)
   const cobrirAqui = temCobrir(cena, pagina)
   const apagarAqui = cena.apagar.has(pagina)
@@ -1291,45 +998,13 @@ export function EditarPdf({
     ferramenta === 'selecionar' ||
     ferramenta === 'texto' ||
     ferramenta === 'imagem' ||
-    ferramenta === 'assinatura' ||
     ferramenta === 'desenho'
       ? T.ferramentas.dicas[ferramenta]
       : T.ferramentas.dicas.forma
-  const inserirNoCentro = (
-    <Button
-      ref={inserirNoCentroRef}
-      type="button"
-      variant="outline"
-      className="h-11 gap-2 px-4"
-      disabled={!tamanhoDaPagina}
-      aria-disabled={
-        ferramenta === 'imagem' && !imagemParaPor ? true : undefined
-      }
-      aria-describedby={
-        ferramenta === 'imagem' && !imagemParaPor
-          ? idSemImagem
-          : ferramenta === 'assinatura'
-            ? descricaoDoAviso(idDoAvisoDaAssinatura)
-            : undefined
-      }
-      onClick={() => {
-        if (tamanhoDaPagina) {
-          inserir({ centro: centroVisivel(tamanhoDaPagina) })
-        }
-      }}
-      data-testid="editar-pdf-inserir-no-centro"
-    >
-      <FontAwesomeIcon icon={faCrosshairs} className="size-4" aria-hidden />
-      {T.ferramentas.inserirNoCentro}
-    </Button>
-  )
 
   return (
     <div className="space-y-8" data-testid="editar-pdf">
-      <div className="space-y-3">
-        <AvisoDePrivacidade />
-        {modo === 'assinar' && <AvisoDeAssinaturaVisual />}
-      </div>
+      <AvisoDePrivacidade />
 
       <section aria-label={T.rotulo} className="space-y-3">
         <ZonaDeArquivos
@@ -1520,7 +1195,6 @@ export function EditarPdf({
               <div ref={barraRef} className="min-w-0">
                 <BarraDeFerramentas
                   ativa={ferramenta}
-                  ferramentas={ferramentasDoModo}
                   aoEscolher={escolherFerramenta}
                 />
               </div>
@@ -1701,89 +1375,35 @@ export function EditarPdf({
                 </div>
               )}
 
-              {ferramenta === 'assinatura' &&
-                (assinatura && !criandoOutra ? (
-                  <div
-                    className="space-y-3"
-                    data-testid="editar-pdf-assinatura-pronta"
-                  >
-                    <AvisoDeAssinaturaVisual id={idDoAvisoDaAssinatura} />
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-semibold">
-                        {TA.pronta.titulo}
-                      </p>
-                      <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">
-                        {TA.pronta.descricao(
-                          assinatura.tipo === 'imagem'
-                            ? assinatura.descricao
-                            : { jeito: 'digitada', nome: assinatura.nome },
-                        )}
-                      </p>
-                    </div>
-                    <div
-                      aria-hidden
-                      className="border-border flex min-h-16 max-w-[600px] items-center justify-center overflow-hidden rounded-md border p-2 [background:repeating-conic-gradient(#e5e7eb_0%_25%,#ffffff_0%_50%)_50%/16px_16px]"
-                    >
-                      {assinatura.tipo === 'imagem' ? (
-                        imagemDaAssinatura && (
-                          // eslint-disable-next-line @next/next/no-img-element -- assinatura num Blob gerado no aparelho, sem otimizador
-                          <img
-                            src={imagemDaAssinatura.url}
-                            alt=""
-                            className="max-h-24 max-w-full object-contain"
-                          />
-                        )
-                      ) : (
-                        <span
-                          className="text-[1.75rem] leading-tight [overflow-wrap:anywhere]"
-                          style={{
-                            fontFamily: FAMILIAS_CSS.times,
-                            fontStyle: 'italic',
-                            color: assinatura.cor,
-                          }}
-                        >
-                          {assinatura.nome}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {inserirNoCentro}
-                      <Button
-                        ref={criarOutraRef}
-                        type="button"
-                        variant="outline"
-                        className="h-11 px-4"
-                        onClick={() => setCriandoOutra(true)}
-                      >
-                        {TA.pronta.criarOutra}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <CriarAssinatura
-                    aoCriar={usarAssinatura}
-                    aoAnunciar={anunciar}
-                    aoCancelar={
-                      assinatura
-                        ? () => {
-                            setCriandoOutra(false)
-                            focar(() => criarOutraRef.current)
-                          }
-                        : undefined
+              {criaPorClique && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 gap-2 px-4"
+                  disabled={!tamanhoDaPagina}
+                  aria-disabled={
+                    ferramenta === 'imagem' && !imagemParaPor ? true : undefined
+                  }
+                  aria-describedby={
+                    ferramenta === 'imagem' && !imagemParaPor
+                      ? idSemImagem
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (tamanhoDaPagina) {
+                      inserir({ centro: centroVisivel(tamanhoDaPagina) })
                     }
-                  />
-                ))}
-              {ferramenta === 'assinatura' && avisoDaAssinatura && (
-                <p
-                  role="alert"
-                  className="bg-card border-destructive rounded-md border px-3 py-2 text-sm"
-                  data-testid="editar-pdf-aviso-assinatura"
+                  }}
+                  data-testid="editar-pdf-inserir-no-centro"
                 >
-                  {avisoDaAssinatura}
-                </p>
+                  <FontAwesomeIcon
+                    icon={faCrosshairs}
+                    className="size-4"
+                    aria-hidden
+                  />
+                  {T.ferramentas.inserirNoCentro}
+                </Button>
               )}
-
-              {criaPorClique && ferramenta !== 'assinatura' && inserirNoCentro}
               {ferramenta === 'imagem' && !imagemParaPor && (
                 <p id={idSemImagem} className="sr-only">
                   {T.ferramentas.semImagem}
@@ -1806,344 +1426,244 @@ export function EditarPdf({
             </div>
 
             <div
-              className={cn(
-                'grid gap-4',
-                modo === 'assinar' &&
-                  'lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start',
-              )}
-              data-testid="editar-pdf-colunas"
+              ref={areaRef}
+              role="group"
+              aria-label={T.areaDaPagina(pagina + 1)}
+              tabIndex={0}
+              className="bg-muted/50 border-border focus-visible:ring-ring relative max-h-[75vh] min-h-40 [scrollbar-gutter:stable] overflow-auto rounded-lg border p-2 focus-visible:ring-2 focus-visible:outline-hidden sm:p-4"
+              data-testid="editar-pdf-area"
             >
-              <div
-                className={cn(
-                  'min-w-0 space-y-4',
-                  modo === 'assinar' && 'lg:sticky lg:top-4',
-                )}
-              >
-                <div
-                  ref={areaRef}
-                  role="group"
-                  aria-label={T.areaDaPagina(pagina + 1)}
-                  tabIndex={0}
-                  className="bg-muted/50 border-border focus-visible:ring-ring relative max-h-[75vh] min-h-40 [scrollbar-gutter:stable] overflow-auto rounded-lg border p-2 focus-visible:ring-2 focus-visible:outline-hidden sm:p-4"
-                  data-testid="editar-pdf-area"
-                >
-                  {larguraCss !== null && (
-                    <div className="relative mx-auto w-fit">
-                      <div
-                        ref={folhaRef}
-                        role="img"
-                        aria-label={T.pagina(pagina + 1)}
-                        aria-busy={desenhando}
-                        className="bg-white shadow-sm"
-                        style={{
-                          width: larguraCss,
-                          height: Math.round(larguraCss * proporcao),
-                        }}
-                        data-testid="editar-pdf-folha"
-                      />
-                      {tamanhoDaPagina && (
-                        <QuadroDeObjetos
-                          numeroDaPagina={pagina + 1}
-                          tamanho={tamanhoDaPagina}
-                          objetos={objetosDaPagina}
-                          selecionado={objetoEscolhido?.id ?? null}
-                          ferramenta={ferramenta}
-                          urlsDasImagens={urlsDasImagens}
-                          nomesDasImagens={nomesDasImagens}
-                          estiloDoDesenho={estilos.traco}
-                          idDasInstrucoes={idDasInstrucoes}
-                          quadroRef={quadroRef}
-                          registrar={registrarObjeto}
-                          aoFocar={setSelecionado}
-                          aoMudar={mudarPeloQuadro}
-                          aoApagar={apagarObjeto}
-                          aoEditarTexto={() => textoRef.current?.focus()}
-                          aoSoltar={soltarObjeto}
-                          aoCriar={inserir}
-                          aoDesenhar={desenhar}
-                          aoClicarNaPagina={(ponto) =>
-                            void clicarNaPagina(ponto)
-                          }
-                        />
-                      )}
-                      {tamanhoDaPagina && (
-                        <DestaqueDoCampo
-                          caixas={caixasDoDestaque}
-                          tamanho={tamanhoDaPagina}
-                        />
-                      )}
-                    </div>
-                  )}
-                  {desenhando && (
-                    <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
-                      <p
-                        className="bg-background text-foreground border-border rounded-full border px-3 py-1 text-sm shadow-sm"
-                        data-testid="editar-pdf-desenhando"
-                      >
-                        {T.desenhando}
-                      </p>
-                    </div>
-                  )}
-                  {desenhoDaVez && !desenhoDaVez.ok && (
-                    <div className="absolute inset-x-0 top-4 flex justify-center px-4">
-                      <div
-                        role="alert"
-                        data-testid="editar-pdf-falha"
-                        className="bg-card border-destructive flex max-w-md flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm shadow-sm"
-                      >
-                        <FontAwesomeIcon
-                          icon={faCircleExclamation}
-                          className="text-destructive size-4 shrink-0"
-                          aria-hidden
-                        />
-                        <p className="min-w-0 flex-1 basis-48">
-                          {T.naoDesenhou(pagina + 1)}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-11"
-                          onClick={() => setTentativa((n) => n + 1)}
-                          data-testid="editar-pdf-tentar-de-novo"
-                        >
-                          {T.tentarDeNovo}
-                        </Button>
-                      </div>
-                    </div>
+              {larguraCss !== null && (
+                <div className="relative mx-auto w-fit">
+                  <div
+                    ref={folhaRef}
+                    role="img"
+                    aria-label={T.pagina(pagina + 1)}
+                    aria-busy={desenhando}
+                    className="bg-white shadow-sm"
+                    style={{
+                      width: larguraCss,
+                      height: Math.round(larguraCss * proporcao),
+                    }}
+                    data-testid="editar-pdf-folha"
+                  />
+                  {tamanhoDaPagina && (
+                    <QuadroDeObjetos
+                      numeroDaPagina={pagina + 1}
+                      tamanho={tamanhoDaPagina}
+                      objetos={objetosDaPagina}
+                      selecionado={objetoEscolhido?.id ?? null}
+                      ferramenta={ferramenta}
+                      urlsDasImagens={urlsDasImagens}
+                      nomesDasImagens={nomesDasImagens}
+                      estiloDoDesenho={estilos.traco}
+                      idDasInstrucoes={idDasInstrucoes}
+                      quadroRef={quadroRef}
+                      registrar={registrarObjeto}
+                      aoFocar={setSelecionado}
+                      aoMudar={mudarPeloQuadro}
+                      aoApagar={apagarObjeto}
+                      aoEditarTexto={() => textoRef.current?.focus()}
+                      aoSoltar={soltarObjeto}
+                      aoCriar={inserir}
+                      aoDesenhar={desenhar}
+                      aoClicarNaPagina={(ponto) => void clicarNaPagina(ponto)}
+                    />
                   )}
                 </div>
-                <p
-                  id={idDasInstrucoes}
-                  className="text-muted-foreground text-xs leading-relaxed"
-                >
-                  {T.objetos.instrucoes}
-                </p>
-
-                {mostrarDicaDoTexto && (
+              )}
+              {desenhando && (
+                <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
+                  <p
+                    className="bg-background text-foreground border-border rounded-full border px-3 py-1 text-sm shadow-sm"
+                    data-testid="editar-pdf-desenhando"
+                  >
+                    {T.desenhando}
+                  </p>
+                </div>
+              )}
+              {desenhoDaVez && !desenhoDaVez.ok && (
+                <div className="absolute inset-x-0 top-4 flex justify-center px-4">
                   <div
-                    className="bg-card border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm"
-                    data-testid="editar-pdf-dica-texto"
+                    role="alert"
+                    data-testid="editar-pdf-falha"
+                    className="bg-card border-destructive flex max-w-md flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm shadow-sm"
                   >
                     <FontAwesomeIcon
-                      icon={faCircleInfo}
-                      className="text-primary size-4 shrink-0"
+                      icon={faCircleExclamation}
+                      className="text-destructive size-4 shrink-0"
                       aria-hidden
                     />
-                    <p className="min-w-0 flex-1 basis-56">
-                      {T.textoExistente}
+                    <p className="min-w-0 flex-1 basis-48">
+                      {T.naoDesenhou(pagina + 1)}
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       className="h-11"
-                      onClick={() => escolherFerramenta('cobrir')}
-                      data-testid="editar-pdf-usar-cobrir"
+                      onClick={() => setTentativa((n) => n + 1)}
+                      data-testid="editar-pdf-tentar-de-novo"
                     >
-                      {T.usarCobrir}
+                      {T.tentarDeNovo}
                     </Button>
                   </div>
-                )}
-              </div>
-              <div className="min-w-0 space-y-4">
-                {objetoEscolhido && tamanhoDaPagina ? (
-                  <PainelDoObjeto
-                    key={objetoEscolhido.id}
-                    objeto={objetoEscolhido}
-                    nomeDaImagem={
-                      objetoEscolhido.tipo === 'imagem'
-                        ? imagens.get(objetoEscolhido.imagem)?.nome
-                        : undefined
-                    }
-                    textoRef={textoRef}
-                    aoMudar={mudarPeloPainel}
-                    aoApagar={() => apagarObjeto(objetoEscolhido.id)}
-                    aoVoltar={() =>
-                      elementosDosObjetos.current
-                        .get(objetoEscolhido.id)
-                        ?.focus()
-                    }
-                  />
-                ) : (
-                  <p
-                    className="text-muted-foreground text-sm"
-                    data-testid="editar-pdf-painel-vazio"
-                  >
-                    {T.painel.nenhum}
-                  </p>
-                )}
-
-                {cobrirAqui && (
-                  <div
-                    role="group"
-                    aria-labelledby={`${ids}-cobrir`}
-                    className="bg-card border-border space-y-3 rounded-lg border p-4"
-                    data-testid="editar-pdf-cobrir"
-                  >
-                    <h3 id={`${ids}-cobrir`} className="font-semibold">
-                      {T.cobrir.titulo}
-                    </h3>
-                    <p id={idDoAvisoDoCobrir} className="text-sm">
-                      {T.cobrir.aviso}
-                    </p>
-                    {apagarAqui ? (
-                      <div className="space-y-2">
-                        <p
-                          className="text-sm font-medium"
-                          data-testid="editar-pdf-apagar-ligado"
-                        >
-                          {T.cobrir.ligado(pagina + 1)}
-                        </p>
-                        <Button
-                          ref={desligarApagarRef}
-                          type="button"
-                          variant="outline"
-                          className="h-11"
-                          onClick={() => mudarApagarDeVerdade(false)}
-                          data-testid="editar-pdf-so-cobrir"
-                        >
-                          {T.cobrir.desligar}
-                        </Button>
-                      </div>
-                    ) : confirmandoApagar === pagina ? (
-                      <div
-                        className="space-y-2"
-                        data-testid="editar-pdf-explicacao"
-                      >
-                        <p id={`${ids}-antes`} className="text-sm font-medium">
-                          {T.cobrir.antes}
-                        </p>
-                        <ul
-                          id={idDasConsequencias}
-                          className="list-disc space-y-1 pl-5 text-sm"
-                        >
-                          {T.cobrir.consequencias.map((consequencia) => (
-                            <li key={consequencia}>{consequencia}</li>
-                          ))}
-                        </ul>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            ref={confirmarApagarRef}
-                            type="button"
-                            variant="destructive"
-                            className="h-11"
-                            aria-describedby={`${ids}-antes ${idDasConsequencias}`}
-                            onClick={() => mudarApagarDeVerdade(true)}
-                            data-testid="editar-pdf-confirmar-apagar"
-                          >
-                            {T.cobrir.confirmar}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-11"
-                            onClick={() => {
-                              setConfirmandoApagar(null)
-                              focar(() => apagarDeVerdadeRef.current)
-                            }}
-                            data-testid="editar-pdf-cancelar-apagar"
-                          >
-                            {T.cobrir.cancelar}
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button
-                        ref={apagarDeVerdadeRef}
-                        type="button"
-                        variant="outline"
-                        className="h-11 whitespace-normal"
-                        aria-describedby={idDoAvisoDoCobrir}
-                        onClick={() => {
-                          setConfirmandoApagar(pagina)
-                          focar(() => confirmarApagarRef.current)
-                        }}
-                        data-testid="editar-pdf-apagar-de-verdade"
-                      >
-                        {T.cobrir.apagarDeVerdade}
-                      </Button>
-                    )}
-                  </div>
-                )}
-                {modo === 'assinar' && formulario && (
-                  <PainelDoFormulario
-                    formulario={formulario}
-                    valores={estadoDoFormulario.valores}
-                    erros={estadoDoFormulario.erros}
-                    desabilitado={montando}
-                    registrar={registrarCampo}
-                    aoMudar={mudarCampo}
-                    aoFocar={focarCampo}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3" data-testid="editar-pdf-gerar-area">
-            {resumoDoGerar && (
-              <p className="text-muted-foreground text-sm">{resumoDoGerar}</p>
-            )}
-            {modo === 'assinar' && formulario?.tipo === 'acroform' && (
-              <div className="space-y-1">
-                <div className="flex min-h-11 items-center gap-3">
-                  <input
-                    id={`${ids}-achatar`}
-                    type="checkbox"
-                    checked={estadoDoFormulario.achatar}
-                    disabled={montando}
-                    aria-describedby={`${ids}-dica-achatar`}
-                    onChange={(evento) => {
-                      estadoDoFormulario.mudarAchatar(evento.target.checked)
-                      descartarResultado()
-                    }}
-                    className="accent-primary size-5"
-                  />
-                  <label
-                    htmlFor={`${ids}-achatar`}
-                    className="flex min-h-11 items-center text-sm font-medium"
-                  >
-                    {TEXTOS.assinar.gerar.achatar}
-                  </label>
                 </div>
-                <p
-                  id={`${ids}-dica-achatar`}
-                  className="text-muted-foreground text-xs"
-                >
-                  {TEXTOS.assinar.gerar.dicaDoAchatar}
-                </p>
-              </div>
-            )}
-            {modo === 'assinar' && estadoDoFormulario.vazios.length > 0 && (
+              )}
+            </div>
+            <p
+              id={idDasInstrucoes}
+              className="text-muted-foreground text-xs leading-relaxed"
+            >
+              {T.objetos.instrucoes}
+            </p>
+
+            {mostrarDicaDoTexto && (
               <div
-                className="flex flex-wrap items-center gap-3 text-sm"
-                data-testid="editar-pdf-obrigatorios"
+                className="bg-card border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm"
+                data-testid="editar-pdf-dica-texto"
               >
-                <p
-                  id={idDosObrigatorios}
-                  className="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]"
-                >
-                  {TEXTOS.assinar.gerar.obrigatoriosVazios(
-                    estadoDoFormulario.vazios.map((campo) => campo.rotulo),
-                  )}
-                </p>
+                <FontAwesomeIcon
+                  icon={faCircleInfo}
+                  className="text-primary size-4 shrink-0"
+                  aria-hidden
+                />
+                <p className="min-w-0 flex-1 basis-56">{T.textoExistente}</p>
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-auto min-h-11 max-w-full [overflow-wrap:anywhere] whitespace-normal"
-                  disabled={montando}
-                  aria-describedby={idDosObrigatorios}
-                  onClick={() =>
-                    focarControle({
-                      campo: estadoDoFormulario.vazios[0].id,
-                      widget: 0,
-                    })
-                  }
+                  className="h-11"
+                  onClick={() => escolherFerramenta('cobrir')}
+                  data-testid="editar-pdf-usar-cobrir"
                 >
-                  {TEXTOS.assinar.gerar.irParaOCampo(
-                    estadoDoFormulario.vazios[0].rotulo,
-                  )}
+                  {T.usarCobrir}
                 </Button>
               </div>
+            )}
+
+            {objetoEscolhido && tamanhoDaPagina ? (
+              <PainelDoObjeto
+                key={objetoEscolhido.id}
+                objeto={objetoEscolhido}
+                nomeDaImagem={
+                  objetoEscolhido.tipo === 'imagem'
+                    ? imagens.get(objetoEscolhido.imagem)?.nome
+                    : undefined
+                }
+                textoRef={textoRef}
+                aoMudar={mudarPeloPainel}
+                aoApagar={() => apagarObjeto(objetoEscolhido.id)}
+                aoVoltar={() =>
+                  elementosDosObjetos.current.get(objetoEscolhido.id)?.focus()
+                }
+              />
+            ) : (
+              <p
+                className="text-muted-foreground text-sm"
+                data-testid="editar-pdf-painel-vazio"
+              >
+                {T.painel.nenhum}
+              </p>
+            )}
+
+            {cobrirAqui && (
+              <div
+                role="group"
+                aria-labelledby={`${ids}-cobrir`}
+                className="bg-card border-border space-y-3 rounded-lg border p-4"
+                data-testid="editar-pdf-cobrir"
+              >
+                <h3 id={`${ids}-cobrir`} className="font-semibold">
+                  {T.cobrir.titulo}
+                </h3>
+                <p id={idDoAvisoDoCobrir} className="text-sm">
+                  {T.cobrir.aviso}
+                </p>
+                {apagarAqui ? (
+                  <div className="space-y-2">
+                    <p
+                      className="text-sm font-medium"
+                      data-testid="editar-pdf-apagar-ligado"
+                    >
+                      {T.cobrir.ligado(pagina + 1)}
+                    </p>
+                    <Button
+                      ref={desligarApagarRef}
+                      type="button"
+                      variant="outline"
+                      className="h-11"
+                      onClick={() => mudarApagarDeVerdade(false)}
+                      data-testid="editar-pdf-so-cobrir"
+                    >
+                      {T.cobrir.desligar}
+                    </Button>
+                  </div>
+                ) : confirmandoApagar === pagina ? (
+                  <div
+                    className="space-y-2"
+                    data-testid="editar-pdf-explicacao"
+                  >
+                    <p id={`${ids}-antes`} className="text-sm font-medium">
+                      {T.cobrir.antes}
+                    </p>
+                    <ul
+                      id={idDasConsequencias}
+                      className="list-disc space-y-1 pl-5 text-sm"
+                    >
+                      {T.cobrir.consequencias.map((consequencia) => (
+                        <li key={consequencia}>{consequencia}</li>
+                      ))}
+                    </ul>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        ref={confirmarApagarRef}
+                        type="button"
+                        variant="destructive"
+                        className="h-11"
+                        aria-describedby={`${ids}-antes ${idDasConsequencias}`}
+                        onClick={() => mudarApagarDeVerdade(true)}
+                        data-testid="editar-pdf-confirmar-apagar"
+                      >
+                        {T.cobrir.confirmar}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11"
+                        onClick={() => {
+                          setConfirmandoApagar(null)
+                          focar(() => apagarDeVerdadeRef.current)
+                        }}
+                        data-testid="editar-pdf-cancelar-apagar"
+                      >
+                        {T.cobrir.cancelar}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    ref={apagarDeVerdadeRef}
+                    type="button"
+                    variant="outline"
+                    className="h-11 whitespace-normal"
+                    aria-describedby={idDoAvisoDoCobrir}
+                    onClick={() => {
+                      setConfirmandoApagar(pagina)
+                      focar(() => confirmarApagarRef.current)
+                    }}
+                    data-testid="editar-pdf-apagar-de-verdade"
+                  >
+                    {T.cobrir.apagarDeVerdade}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3" data-testid="editar-pdf-gerar-area">
+            {quantosObjetos > 0 && (
+              <p className="text-muted-foreground text-sm">
+                {T.gerar.resumo(quantosObjetos, cena.objetos.size)}
+              </p>
             )}
             {paginasComApagar.length > 0 && (
               <p className="text-sm" data-testid="editar-pdf-paginas-apagadas">
@@ -2179,12 +1699,12 @@ export function EditarPdf({
                   className="size-4"
                   aria-hidden
                 />
-                {TM.gerar.botao}
+                {T.gerar.botao}
               </Button>
             )}
             {!temMudancas && (
               <p id={idSemMudancas} className="text-muted-foreground text-xs">
-                {TM.gerar.semMudancas}
+                {T.gerar.semMudancas}
               </p>
             )}
 
@@ -2215,20 +1735,6 @@ export function EditarPdf({
                     {T.gerar.mostrarObjeto}
                   </Button>
                 )}
-                {resultado.campo !== undefined && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11"
-                    onClick={() =>
-                      resultado.campo !== undefined &&
-                      focarControle({ campo: resultado.campo, widget: 0 })
-                    }
-                    data-testid="editar-pdf-mostrar-campo"
-                  >
-                    {TEXTOS.assinar.gerar.mostrarCampo}
-                  </Button>
-                )}
               </div>
             )}
 
@@ -2238,7 +1744,7 @@ export function EditarPdf({
                 className="bg-card border-border motion-safe:animate-in motion-safe:fade-in-0 flex flex-wrap items-center gap-4 rounded-lg border p-4 motion-safe:duration-200"
               >
                 <div className="min-w-0 flex-1 basis-48 space-y-0.5">
-                  <p className="font-semibold">{TM.gerar.pronto}</p>
+                  <p className="font-semibold">{T.gerar.pronto}</p>
                   <p className="text-muted-foreground text-sm">
                     {T.gerar.resumoDoPronto(resultado.paginas, resultado.bytes)}
                   </p>
