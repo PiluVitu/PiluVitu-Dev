@@ -1620,8 +1620,6 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
-// Um carregar por arquivo e um salvar. No lugar quando o plano é o primeiro arquivo inteiro, na ordem
-// (saiPorCopia); senão, por cópia, um arquivo por vez, com um copyPages só por arquivo.
 export async function montarDocumento(
   fontes: readonly FonteDePdf[],
   plano: readonly PaginaDaMontagem[],
@@ -1674,10 +1672,15 @@ export async function montarDocumento(
     primeiro = undefined
     const indices = paginas.map(({ indice }) => indice)
     conferirQueExistem(origem, indices, arquivo)
+    // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
+    try {
+      esvaziarPaginasForaDoPlano(origem, indices)
+    } catch {
+      throw new ErroDePdf('corrompido', arquivo)
+    }
     await editarNoLugar(origem, editadas(paginas))
     let deste: PDFPage[]
     try {
-      esvaziarPaginasForaDoPlano(origem, indices)
       deste = await destino.copyPages(origem, indices)
     } catch {
       throw new ErroDePdf('corrompido', arquivo)

@@ -2939,6 +2939,50 @@ describe('montarDocumento: por cópia', () => {
     expect(await ladosDasPaginas(final)).toEqual([301, 100, 300, 102])
   })
 
+  it('só lê o arquivo seguinte depois de copiar o anterior: um arquivo por vez na memória', async () => {
+    let chamadas: () => { copyPages: number } = () => ({ copyPages: -1 })
+    const copiadosAoLer: number[] = []
+    const fonte = (paginas: number, base: number) => {
+      const bytes = gerarPdf(paginas, base)
+      return async () => {
+        copiadosAoLer.push(chamadas().copyPages)
+        return bytes
+      }
+    }
+    const fontes = [fonte(2, 100), fonte(1, 200), fonte(2, 300)]
+    await Promise.all(fontes.map((f) => f()))
+    copiadosAoLer.length = 0
+    chamadas = contarChamadas()
+
+    await montarDocumento(
+      fontes,
+      [daMontagem(2, 0), daMontagem(0, 1), daMontagem(1, 0), daMontagem(0, 0)],
+      [],
+    )
+
+    expect(copiadosAoLer).toEqual([0, 1, 2])
+  })
+
+  it('um arquivo só, com todas as páginas fora da ordem: carregado uma vez, sem ler de novo para copiar', async () => {
+    let lidas = 0
+    const bytes = await gerarPdf(3, 100)
+    const fonte = async () => {
+      lidas += 1
+      return bytes
+    }
+    const chamadas = contarChamadas()
+
+    const final = await montarDocumento(
+      [fonte],
+      [daMontagem(0, 2), daMontagem(0, 0), daMontagem(0, 1)],
+      [],
+    )
+
+    expect(lidas).toBe(1)
+    expect(chamadas()).toEqual({ load: 1, copyPages: 1, save: 1 })
+    expect(await ladosDasPaginas(final)).toEqual([102, 100, 101])
+  })
+
   it('não duplica a imagem que as páginas de um arquivo compartilham, com páginas de outro arquivo no meio', async () => {
     const origem = await gerarPdfComImagemCompartilhada()
 
@@ -2972,6 +3016,35 @@ describe('montarDocumento: por cópia', () => {
     const final = await montarDocumento(
       [await gerarPdf(1, 100), await gerarPdf(2, 600)],
       [daMontagem(1, 1), daMontagem(0, 0), daMontagem(1, 0)],
+      [
+        { posicao: 0, objetos: [imagem()] },
+        { posicao: 2, objetos: [imagem()] },
+      ],
+    )
+    const documento = await PDFDocument.load(final)
+    const imagens = documento.context
+      .enumerateIndirectObjects()
+      .filter(
+        ([, objeto]) =>
+          objeto instanceof PDFRawStream &&
+          objeto.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'),
+      )
+    expect(imagens).toHaveLength(1)
+  })
+
+  it('a mesma imagem inserida em duas páginas em branco entra uma vez', async () => {
+    const imagem = (): ObjetoDaPagina => ({
+      id: id(),
+      tipo: 'imagem',
+      x: 10,
+      y: 10,
+      largura: 40,
+      altura: 30,
+      bytes: JPEG_8X8,
+    })
+    const final = await montarDocumento(
+      [await gerarPdf(1, 100)],
+      [branca(300, 400), daMontagem(0, 0), branca(500, 600)],
       [
         { posicao: 0, objetos: [imagem()] },
         { posicao: 2, objetos: [imagem()] },
@@ -3117,6 +3190,87 @@ describe('montarDocumento: por cópia', () => {
       expect(apagada.textos.map(({ str }) => str)).toEqual(['NOVO'])
       acharDesenho(apagada.desenhos, [0, 0, 600, 800], 'imagem')
       expect(outra.textos.map(({ str }) => str)).toEqual(['FICA-NA-PAGINA-2'])
+    })
+  })
+
+  describe('apagar de verdade com recursos herdados e uma página fora do plano que desenha o mesmo formulário', () => {
+    // Os /Resources moram só na raiz da árvore. A (a apagada) e C (fora do plano) desenham Fx; B, que
+    // fica, herda o mesmo dicionário sem desenhá-lo. Se C contasse como página que usa Fx, o Fx ficaria
+    // no dicionário herdado e o copyPages de B o levaria para o arquivo final.
+    async function gerar(): Promise<Uint8Array> {
+      const documento = await PDFDocument.create({ updateMetadata: false })
+      const { context } = documento
+      const helvetica = documento.embedStandardFont(StandardFonts.Helvetica)
+      const fx = context.register(
+        context.stream('BT /F1 12 Tf 50 650 Td (SEGREDO-FX) Tj ET', {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 600, 800],
+          Resources: { Font: { F1: helvetica.ref } },
+        }),
+      )
+      const paginas = [0, 1, 2].map(() => documento.addPage([600, 800]))
+      documento.catalog
+        .Pages()
+        .set(
+          PDFName.Resources,
+          context.obj({ XObject: { Fx: fx }, Font: { F1: helvetica.ref } }),
+        )
+      const conteudos = [
+        'q /Fx Do Q',
+        'BT /F1 12 Tf 50 700 Td (FICA) Tj ET',
+        'q /Fx Do Q',
+      ]
+      paginas.forEach((pagina, i) => {
+        pagina.node.delete(PDFName.Resources)
+        pagina.node.set(
+          PDFName.Contents,
+          context.register(context.stream(conteudos[i])),
+        )
+      })
+      return documento.save()
+    }
+
+    const apagar = (posicao: number) => [
+      { posicao, objetos: [], fundo: JPEG_8X8 },
+    ]
+
+    it('no segundo arquivo: o formulário de A não sobra no arquivo', async () => {
+      const final = await montarDocumento(
+        [await gerarPdf(1, 100), await gerar()],
+        [daMontagem(0, 0), daMontagem(1, 0), daMontagem(1, 1)],
+        apagar(1),
+      )
+
+      expect(contem(await todoOConteudo(final), 'SEGREDO-FX')).toBe(false)
+      expect(
+        lerComPdfjs(final).paginas[2].textos.map(({ str }) => str),
+      ).toEqual(['FICA'])
+    })
+
+    it('num arquivo só, reordenado: o formulário de A não sobra no arquivo', async () => {
+      const final = await montarDocumento(
+        [await gerar()],
+        [daMontagem(0, 1), daMontagem(0, 0)],
+        apagar(1),
+      )
+
+      expect(contem(await todoOConteudo(final), 'SEGREDO-FX')).toBe(false)
+      expect(
+        lerComPdfjs(final).paginas[0].textos.map(({ str }) => str),
+      ).toEqual(['FICA'])
+    })
+
+    it('no lugar, com C no documento, o formulário fica: C ainda o mostra', async () => {
+      const final = await montarDocumento(
+        [await gerar()],
+        [daMontagem(0, 0), daMontagem(0, 1), daMontagem(0, 2)],
+        apagar(0),
+      )
+
+      expect(
+        lerComPdfjs(final).paginas[2].textos.map(({ str }) => str),
+      ).toEqual(['SEGREDO-FX'])
     })
   })
 })

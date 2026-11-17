@@ -1374,6 +1374,19 @@ describe('cabeNoDocumento (tetos somando os arquivos abertos e as brancas)', () 
     })
   })
 
+  it('passa dos dois tetos ao mesmo tempo: o motivo é os bytes', () => {
+    expect(
+      cabeNoDocumento(
+        { bytes: 45 * MB, paginas: 495 },
+        { bytes: 6 * MB, paginas: 6 },
+      ),
+    ).toEqual({
+      cabe: false,
+      passou: 'bytes',
+      restam: { bytes: 5 * MB, paginas: 5 },
+    })
+  })
+
   it('o arquivo ainda não lido (sem a contagem) é conferido só pelos bytes', () => {
     expect(
       cabeNoDocumento({ bytes: 0, paginas: 500 }, { bytes: MB }).cabe,

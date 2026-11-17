@@ -162,10 +162,6 @@ export function extrair<P>(
   return plano.filter((_, posicao) => escolhidas.has(posicao))
 }
 
-// Editor único: o documento junta páginas de vários arquivos (pela posição na lista de arquivos da
-// sessão) e páginas em branco (em pontos, de pé). A moldura está em "Giro e objetos" no
-// docs/plano-editor-pdf.md.
-
 export type OrigemDaPagina =
   | { readonly arquivo: number; readonly indice: number }
   | { readonly branca: Tamanho }
