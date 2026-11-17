@@ -93,7 +93,7 @@ export function planoInicial(totalDePaginas: number): PaginaDoPlano[] {
 }
 
 function selecao(
-  plano: readonly PaginaDoPlano[],
+  plano: readonly unknown[],
   posicoes: Iterable<number>,
 ): Set<number> {
   const escolhidas = new Set(posicoes)
@@ -105,11 +105,11 @@ function selecao(
   return escolhidas
 }
 
-export function girar(
-  plano: readonly PaginaDoPlano[],
+export function girar<P extends { readonly giro: Giro }>(
+  plano: readonly P[],
   posicoesSelecionadas: Iterable<number>,
   sentido: SentidoDoGiro,
-): PaginaDoPlano[] {
+): P[] {
   const escolhidas = selecao(plano, posicoesSelecionadas)
   const passo = sentido === 'direita' ? 90 : -90
   return plano.map((pagina, posicao) =>
@@ -119,11 +119,11 @@ export function girar(
   )
 }
 
-export function moverSelecionadas(
-  plano: readonly PaginaDoPlano[],
+export function moverSelecionadas<P>(
+  plano: readonly P[],
   posicoes: Iterable<number>,
   lado: LadoDoMovimento,
-): PaginaDoPlano[] {
+): P[] {
   const escolhidas = selecao(plano, posicoes)
   if (lado === 'depois') {
     const ultima = plano.length - 1
@@ -146,20 +146,132 @@ export function moverSelecionadas(
   return novo
 }
 
-export function apagar(
-  plano: readonly PaginaDoPlano[],
+export function apagar<P>(
+  plano: readonly P[],
   posicoes: Iterable<number>,
-): PaginaDoPlano[] {
+): P[] {
   const escolhidas = selecao(plano, posicoes)
   return plano.filter((_, posicao) => !escolhidas.has(posicao))
 }
 
-export function extrair(
-  plano: readonly PaginaDoPlano[],
+export function extrair<P>(
+  plano: readonly P[],
   posicoes: Iterable<number>,
-): PaginaDoPlano[] {
+): P[] {
   const escolhidas = selecao(plano, posicoes)
   return plano.filter((_, posicao) => escolhidas.has(posicao))
+}
+
+// Editor único: o documento junta páginas de vários arquivos (pela posição na lista de arquivos da
+// sessão) e páginas em branco (em pontos, de pé). A moldura está em "Giro e objetos" no
+// docs/plano-editor-pdf.md.
+
+export type OrigemDaPagina =
+  | { readonly arquivo: number; readonly indice: number }
+  | { readonly branca: Tamanho }
+
+export type PaginaDaMontagem = {
+  readonly origem: OrigemDaPagina
+  readonly giro: Giro
+  readonly moldura: Giro
+}
+
+export const TAMANHO_A4: Tamanho = { largura: 595.28, altura: 841.89 }
+
+export function posicaoDeInsercao(
+  paginas: readonly { readonly id: string }[],
+  marcadasNaOrdem: readonly string[],
+): number {
+  for (let i = marcadasNaOrdem.length - 1; i >= 0; i--) {
+    const posicao = paginas.findIndex(({ id }) => id === marcadasNaOrdem[i])
+    if (posicao >= 0) return posicao + 1
+  }
+  return paginas.length
+}
+
+export function tamanhoValido(tamanho: Tamanho): boolean {
+  return [tamanho.largura, tamanho.altura].every(
+    (lado) => Number.isFinite(lado) && lado > 0,
+  )
+}
+
+// `tamanho` é o da página como o pdf.js a mostra (com o /Rotate dela); o giro do documento vem à parte.
+export function tamanhoDaBranca(
+  ultimaMarcada: { readonly tamanho: Tamanho; readonly giro: Giro } | null,
+): Tamanho {
+  if (ultimaMarcada === null) return TAMANHO_A4
+  const { tamanho, giro } = ultimaMarcada
+  if (!tamanhoValido(tamanho)) {
+    throw new RangeError(
+      `tamanho inválido: ${tamanho.largura} × ${tamanho.altura}`,
+    )
+  }
+  return giro === 90 || giro === 270
+    ? { largura: tamanho.altura, altura: tamanho.largura }
+    : { largura: tamanho.largura, altura: tamanho.altura }
+}
+
+export function inserirPaginas<P>(
+  paginas: readonly P[],
+  posicao: number,
+  novas: readonly P[],
+): P[] {
+  if (!Number.isInteger(posicao) || posicao < 0 || posicao > paginas.length) {
+    throw new RangeError(`posição de inserção inválida: ${posicao}`)
+  }
+  return [...paginas.slice(0, posicao), ...novas, ...paginas.slice(posicao)]
+}
+
+// No lugar só quando o plano é o primeiro arquivo inteiro, na ordem: é o que guarda marcadores, links,
+// formulário e metadados. Giro e moldura não contam.
+export function saiPorCopia(
+  plano: readonly { readonly origem: OrigemDaPagina }[],
+  paginasDoPrimeiro: number,
+): boolean {
+  return !(
+    plano.length === paginasDoPrimeiro &&
+    plano.every(
+      ({ origem }, posicao) =>
+        !('branca' in origem) &&
+        origem.arquivo === 0 &&
+        origem.indice === posicao,
+    )
+  )
+}
+
+export type Ocupacao = { readonly bytes: number; readonly paginas: number }
+
+export type Cabimento =
+  | { readonly cabe: true; readonly restam: Ocupacao }
+  | {
+      readonly cabe: false
+      readonly passou: 'bytes' | 'paginas'
+      readonly restam: Ocupacao
+    }
+
+const contagemValida = (valor: unknown) =>
+  typeof valor === 'number' && Number.isInteger(valor) && valor >= 0
+
+// `restam` é o que ainda cabia antes do novo. O arquivo ainda não lido vem sem `paginas`.
+export function cabeNoDocumento(
+  abertos: Ocupacao,
+  novo: { readonly bytes: number; readonly paginas?: number },
+): Cabimento {
+  if (
+    ![abertos.bytes, abertos.paginas, novo.bytes].every(contagemValida) ||
+    (novo.paginas !== undefined && !contagemValida(novo.paginas))
+  ) {
+    throw new RangeError('ocupação inválida')
+  }
+  const restam = {
+    bytes: Math.max(0, TETO_DE_BYTES_COM_MINIATURAS - abertos.bytes),
+    paginas: Math.max(0, TETO_DE_PAGINAS - abertos.paginas),
+  }
+  if (novo.bytes > restam.bytes) return { cabe: false, passou: 'bytes', restam }
+  if ((novo.paginas ?? 0) > restam.paginas) {
+    return { cabe: false, passou: 'paginas', restam }
+  }
+  return { cabe: true, restam }
 }
 
 // Fase 3: objetos por cima da página. Tudo em coordenadas da tela: pontos, origem no canto superior
