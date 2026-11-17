@@ -204,6 +204,8 @@ A votação de filmes virou o **Votaí** (nome com acento na interface; sem acen
 
 Tudo no navegador: nenhum arquivo sai do aparelho (sem rota de API, sem upload, sem guardar o PDF no navegador), e a tela diz isso. O plano das fases e as decisões estão em `docs/plano-editor-pdf.md`.
 
+> **Parado a pedido do Paulo (2026-11-17).** O modo Assinar PDF (`/tools/pdf/assinar`, fase 4, #121) não era para existir: a assinatura é pelo gov.br. Ele segue no ar, sem nada revertido, até o Paulo decidir; até lá, nada muda no editor de PDF (ver o topo do `docs/plano-editor-pdf.md`).
+
 - **Rotas** (`app/(site)/tools/pdf/`):
   - `page.tsx`: o hub "Editor de PDF", com o aviso de privacidade e um cartão por modo do registro (`ModosDoEditor`);
   - `mesclar/page.tsx`, `organizar/page.tsx`, `editar/page.tsx` e `assinar/page.tsx`: um modo cada, com metadata e canonical próprios e o "voltar" para o hub (o organizar está em _Organizar_, o editar em _Editar_ e o assinar em _Assinar_, abaixo). O assinar é a tela do editar com `<EditarPdf modo="assinar" />`, quarto modo do registro ("Assinar PDF", ícone `faSignature`); com ele, a descrição do Editor de PDF passou a "Mesclar, organizar, editar e assinar PDF";

@@ -2,6 +2,8 @@
 
 Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2026-11-16: a ferramenta Mesclar PDF vira um editor, tudo no navegador. O editor inteiro está aprovado; cada fase entra num PR com revisão do Crivo no SHA exato e CI verde, sem esperar o Paulo. Quando uma fase mudar uma decisão daqui, o PR dela atualiza este arquivo.
 
+> **Estado em 2026-11-17: editor parado a pedido do Paulo.** Depois do merge da fase 4 (#121), o Paulo disse que o modo **Assinar PDF não era para existir**: a assinatura é pelo gov.br. O modo continua no ar em `/tools/pdf/assinar`, com a ferramenta Assinatura também no Editar, porque **nada foi revertido**: a ordem foi não reverter por conta própria. Até nova ordem do Paulo, nada roda no editor de PDF: nem mudança de código, nem PR novo, nem a medida de novo do teto de 50 MB do organizar (ver "Medições do organizar" no `apps/web/CLAUDE.md`). O que fazer com o Assinar (tirar, esconder ou manter) é decisão dele.
+
 ## O que vale para todas as fases
 
 - **Nada sai do aparelho.** Sem rota de API, sem upload, sem guardar o documento no navegador (nada de IndexedDB ou localStorage com PDF). A tela diz isso, e cada modo tem um E2E que confere que, no fluxo inteiro, nenhum pedido vai para outra origem e nenhum corpo de pedido leva o PDF (o `%PDF-` nem um trecho do meio de cada arquivo). Até a fase 2 a regra era "só GET na própria origem", que reprova em produção: a borda da Cloudflare injeta dois POST na mesma origem (`/cdn-cgi/rum` e `/cdn-cgi/challenge-platform`) e o script do Web Analytics (`static.cloudflareinsights.com/beacon.min.js`, um GET de outra origem), o único pedido de fora que a regra aceita.
