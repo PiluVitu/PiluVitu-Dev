@@ -42,6 +42,7 @@ import {
   matrizDaTelaParaPdf,
   tamanhoNaTela,
   tipoDaImagem,
+  type AvisoDoPdf,
   type FamiliaDaFonte,
   type GeometriaDaPagina,
   type MotivoDoErroDePdf,
@@ -52,6 +53,7 @@ import {
 import { caminhoDoTraco } from './pdf-traco'
 
 export type {
+  AvisoDoPdf,
   Giro,
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
@@ -1301,14 +1303,86 @@ function tirarRecursosEstendidos({ context, catalog }: PDFDocument): void {
   if (permissoes.keys().length === 0) catalog.delete(PDFName.of('Perms'))
 }
 
+// Com campo no AcroForm, o XFA é híbrido; sem nenhum, é o puro (o LiveCycle dinâmico).
+function temCamposNoAcroForm(context: PDFContext, acroForm: PDFDict): boolean {
+  const campos = context.lookup(acroForm.get(PDFName.of('Fields')))
+  return campos instanceof PDFArray && campos.size() > 0
+}
+
 // No híbrido, o Reader mostra a versão XFA no lugar da página (o que foi posto por cima não aparece), e o
 // XML guarda o que foi digitado. Sem campo no AcroForm, a página sem o XFA seria só o aviso do LiveCycle.
 function tirarXfaDoHibrido({ context, catalog }: PDFDocument): void {
   const acroForm = dicionario(context, catalog.get(ACROFORM))
-  const campos = context.lookup(acroForm?.get(PDFName.of('Fields')))
-  if (!acroForm || !(campos instanceof PDFArray) || campos.size() === 0) return
+  if (!acroForm || !temCamposNoAcroForm(context, acroForm)) return
   acroForm.delete(XFA)
   catalog.delete(PDFName.of('NeedsRendering'))
+}
+
+const PROFUNDIDADE_MAXIMA_DOS_CAMPOS = 64
+
+// O /FT é herdado do pai (ISO 32000, 12.7.3.1). A árvore vem do arquivo: pode ter ciclo e o mesmo campo
+// em mais de um lugar. A descida é em largura e lembra o campo com o tipo herdado, para que nem a ordem do
+// /Fields nem o caminho visto primeiro escondam uma assinatura.
+function temCampoAssinado(context: PDFContext, acroForm: PDFDict): boolean {
+  const raizes = context.lookup(acroForm.get(PDFName.of('Fields')))
+  if (!(raizes instanceof PDFArray)) return false
+  const vistos = new Map<PDFDict, Set<PDFObject | undefined>>()
+  const fila = raizes.asArray().map((no) => ({
+    no,
+    tipoDoPai: undefined as PDFObject | undefined,
+    profundidade: 0,
+  }))
+  for (let proximo = 0; proximo < fila.length; proximo++) {
+    const { no, tipoDoPai, profundidade } = fila[proximo]
+    const campo = dicionario(context, no)
+    if (!campo) continue
+    const tipo = context.lookup(campo.get(PDFName.of('FT')) ?? tipoDoPai)
+    const tiposVistos = vistos.get(campo) ?? new Set()
+    if (tiposVistos.has(tipo)) continue
+    vistos.set(campo, tiposVistos.add(tipo))
+    if (
+      tipo === PDFName.of('Sig') &&
+      dicionario(context, campo.get(PDFName.of('V')))
+    ) {
+      return true
+    }
+    const filhos = context.lookup(campo.get(PDFName.of('Kids')))
+    if (
+      !(filhos instanceof PDFArray) ||
+      profundidade >= PROFUNDIDADE_MAXIMA_DOS_CAMPOS
+    ) {
+      continue
+    }
+    for (const filho of filhos.asArray()) {
+      fila.push({ no: filho, tipoDoPai: tipo, profundidade: profundidade + 1 })
+    }
+  }
+  return false
+}
+
+// Lê só o catálogo e os dicionários: o getForm() do pdf-lib 1.17.1 tira o /XFA. Só o /UR3 (recursos
+// estendidos do Reader) não é assinatura de ninguém e não avisa.
+function avisosDo({ context, catalog }: PDFDocument): AvisoDoPdf[] {
+  const acroForm = dicionario(context, catalog.get(ACROFORM))
+  const certificado = dicionario(
+    context,
+    catalog.get(PDFName.of('Perms')),
+  )?.has(PDFName.of('DocMDP'))
+  const avisos: AvisoDoPdf[] = []
+  if (certificado || (acroForm && temCampoAssinado(context, acroForm))) {
+    avisos.push('assinatura_digital')
+  }
+  if (acroForm?.has(XFA) && !temCamposNoAcroForm(context, acroForm)) {
+    avisos.push('xfa_puro')
+  }
+  return avisos
+}
+
+export async function analisarPdf(
+  bytes: Uint8Array,
+): Promise<{ paginas: number; avisos: AvisoDoPdf[] }> {
+  const documento = await abrir(bytes)
+  return { paginas: documento.getPageCount(), avisos: avisosDo(documento) }
 }
 
 export async function aplicarEdicoes(

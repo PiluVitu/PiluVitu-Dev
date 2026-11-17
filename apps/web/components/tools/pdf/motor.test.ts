@@ -57,7 +57,7 @@ it('só cria o Worker no primeiro pedido, e um só para vários pedidos', () => 
   ])
 })
 
-it('analisar resolve cada pedido pelo seu id, aceito ou recusado', async () => {
+it('analisar resolve cada pedido pelo seu id, aceito (com os avisos do arquivo) ou recusado', async () => {
   const motor = novoMotor()
   const a = motor.analisar(arquivo('a.pdf'))
   const b = motor.analisar(arquivo('b.pdf'))
@@ -67,9 +67,18 @@ it('analisar resolve cada pedido pelo seu id, aceito ou recusado', async () => {
   >[]
 
   ultimo().responder({ tipo: 'recusado', id: pedidoB.id, motivo: 'protegido' })
-  ultimo().responder({ tipo: 'analisado', id: pedidoA.id, paginas: 3 })
+  ultimo().responder({
+    tipo: 'analisado',
+    id: pedidoA.id,
+    paginas: 3,
+    avisos: ['assinatura_digital', 'xfa_puro'],
+  })
 
-  await expect(a).resolves.toEqual({ ok: true, paginas: 3 })
+  await expect(a).resolves.toEqual({
+    ok: true,
+    paginas: 3,
+    avisos: ['assinatura_digital', 'xfa_puro'],
+  })
   await expect(b).resolves.toEqual({ ok: false, motivo: 'protegido' })
 })
 
@@ -125,8 +134,13 @@ it('cancelar derruba o Worker, rejeita a mesclagem e manda as leituras pendentes
   >
   expect(reenviado.tipo).toBe('analisar')
 
-  ultimo().responder({ tipo: 'analisado', id: reenviado.id, paginas: 2 })
-  await expect(leitura).resolves.toEqual({ ok: true, paginas: 2 })
+  ultimo().responder({
+    tipo: 'analisado',
+    id: reenviado.id,
+    paginas: 2,
+    avisos: [],
+  })
+  await expect(leitura).resolves.toEqual({ ok: true, paginas: 2, avisos: [] })
 })
 
 it('cancelar sem mesclagem em curso não derruba nada', () => {
@@ -154,8 +168,13 @@ it('se o Worker quebra, as leituras pendentes vão uma vez para um Worker novo e
     PedidoAoWorker,
     { tipo: 'analisar' }
   >
-  ultimo().responder({ tipo: 'analisado', id: reenviado.id, paginas: 4 })
-  await expect(leitura).resolves.toEqual({ ok: true, paginas: 4 })
+  ultimo().responder({
+    tipo: 'analisado',
+    id: reenviado.id,
+    paginas: 4,
+    avisos: [],
+  })
+  await expect(leitura).resolves.toEqual({ ok: true, paginas: 4, avisos: [] })
 })
 
 it('se o Worker quebra de novo, só a leitura em curso desiste, sem acusar o arquivo, e as outras seguem', async () => {
@@ -176,8 +195,13 @@ it('se o Worker quebra de novo, só a leitura em curso desiste, sem acusar o arq
   >[]
   expect(pedidos).toHaveLength(1)
   expect((pedidos[0].arquivo as File).name).toBe('leve.pdf')
-  ultimo().responder({ tipo: 'analisado', id: pedidos[0].id, paginas: 1 })
-  await expect(depois).resolves.toEqual({ ok: true, paginas: 1 })
+  ultimo().responder({
+    tipo: 'analisado',
+    id: pedidos[0].id,
+    paginas: 1,
+    avisos: [],
+  })
+  await expect(depois).resolves.toEqual({ ok: true, paginas: 1, avisos: [] })
 })
 
 it('dois mesclar seguidos: o primeiro é cancelado, o Worker antigo cai e resposta velha não resolve o novo', async () => {
@@ -326,8 +350,13 @@ describe('organizar', () => {
       { tipo: 'analisar' }
     >
     expect(reenviado.tipo).toBe('analisar')
-    ultimo().responder({ tipo: 'analisado', id: reenviado.id, paginas: 6 })
-    await expect(leitura).resolves.toEqual({ ok: true, paginas: 6 })
+    ultimo().responder({
+      tipo: 'analisado',
+      id: reenviado.id,
+      paginas: 6,
+      avisos: [],
+    })
+    await expect(leitura).resolves.toEqual({ ok: true, paginas: 6, avisos: [] })
   })
 
   it('se o Worker quebra no meio, a organização falha como inesperada', async () => {

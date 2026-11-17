@@ -1,4 +1,5 @@
 import type {
+  AvisoDoPdf,
   Caixa,
   FamiliaDaFonte,
   LadoDoMovimento,
@@ -187,6 +188,16 @@ const NOMES_DAS_FONTES: Record<FamiliaDaFonte, string> = {
 
 const AVISO_DO_COBRIR =
   'Cobrir esconde o trecho na tela e na impressão, mas o texto continua no arquivo: dá para selecionar, copiar e buscar. Para dado sensível (CPF, conta, endereço), apague de verdade o que está embaixo.'
+
+const AVISOS_DO_PDF: Record<AvisoDoPdf, string> = {
+  assinatura_digital:
+    'Este PDF tem assinatura digital. Editar invalida a assinatura.',
+  xfa_puro:
+    'Este PDF é um formulário XFA: o que você escrever por cima pode não aparecer no Adobe Acrobat e no Reader.',
+}
+
+const documentoAberto = (nome: string, totalDePaginas: number) =>
+  `${nome} · ${paginas(totalDePaginas)}`
 
 const listaDePaginas = (numeros: readonly number[]) =>
   `${concordar(numeros.length, 'a página', 'as páginas')} ${lista.format(numeros.map(numero))}`
@@ -389,14 +400,14 @@ export const TEXTOS = {
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>
       `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,
-    aberto: (nome: string, totalDePaginas: number) =>
-      `${nome} · ${paginas(totalDePaginas)}`,
+    aberto: documentoAberto,
     recusado: (nome: string, motivo: MotivoDaRecusa) =>
       `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
     grandeDemais: (nome: string, bytes: number, teto: number) =>
       `${nome} tem ${formatarTamanho(bytes)}, mais que os ${formatarTamanho(teto)} que dá para editar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.`,
     paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
       `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
+    avisos: AVISOS_DO_PDF,
     paginas: 'Páginas',
     escolherPagina: (numeroDaPagina: number) =>
       `Página ${numero(numeroDaPagina)}`,
@@ -528,7 +539,7 @@ export const TEXTOS = {
     },
     gerar: {
       botao: 'Gerar PDF editado',
-      semMudancas:
+      semObjetos:
         'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
       resumo: (objetos: number, paginasComObjetos: number) =>
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
@@ -543,6 +554,15 @@ export const TEXTOS = {
       mostrarObjeto: 'Mostrar o objeto',
     },
     anuncios: {
+      aberto: (
+        nome: string,
+        totalDePaginas: number,
+        avisos: readonly AvisoDoPdf[],
+      ) =>
+        [
+          `${documentoAberto(nome, totalDePaginas)}${avisos.length ? '.' : ''}`,
+          ...avisos.map((aviso) => AVISOS_DO_PDF[aviso]),
+        ].join(' '),
       pagina: (numeroDaPagina: number, total: number) =>
         `Página ${numero(numeroDaPagina)} de ${numero(total)}.`,
       zoom: (fracao: number) => `Zoom em ${formatarPorcentagem(fracao)}.`,

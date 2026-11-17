@@ -101,6 +101,26 @@ export const AcimaDoTeto: Story = {
   },
 }
 
+// "assinado" e "xfa" no nome dão os dois avisos do motor falso, que não bloqueiam nada.
+export const AssinadoComXfa: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  parameters: {
+    arquivoInicial: pdf('requerimento-xfa-assinado-pelo-cartorio-2p.pdf'),
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(
+        canvas.getByText(
+          'Este PDF tem assinatura digital. Editar invalida a assinatura.',
+        ),
+      ).toBeVisible(),
+    )
+    await expect(
+      canvas.getByText(/^Este PDF é um formulário XFA/),
+    ).toBeVisible()
+  },
+}
+
 // Fase 3: as ferramentas. A página falsa é uma folha A4 com o número; os objetos entram pelo
 // "Inserir no centro", o mesmo caminho de quem não arrasta.
 export const ComObjetos: Story = {

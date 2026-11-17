@@ -1717,3 +1717,80 @@ it('todo controle novo tem 44 px e nome', async () => {
     expect(entrada.className).toContain('h-11')
   }
 })
+
+// O motor falso dá os avisos pelo nome: "assinado" e "certificado" são a assinatura digital, "xfa" o XFA puro.
+describe('os avisos do PDF aberto', () => {
+  const avisos = () =>
+    todos('editar-pdf-aviso').map((aviso) => aviso.textContent!.trim())
+
+  it('assinado: diz que editar invalida a assinatura, junto do nome, e o anúncio do aberto leva o aviso', async () => {
+    await abrir('contrato-assinado-2p.pdf')
+
+    expect(avisos()).toEqual([TEXTOS.editar.avisos.assinatura_digital])
+    expect(q('editar-pdf-avisos')!.getAttribute('aria-live')).toBeNull()
+    expect(q('editar-pdf-avisos')!.closest('[role="status"]')).toBeNull()
+    expect(anuncio()).toBe(
+      `contrato-assinado-2p.pdf · 2 páginas. ${TEXTOS.editar.avisos.assinatura_digital}`,
+    )
+  })
+
+  it('certificado: o mesmo aviso da assinatura', async () => {
+    await abrir('termo-certificado.pdf')
+
+    expect(avisos()).toEqual([TEXTOS.editar.avisos.assinatura_digital])
+  })
+
+  it('XFA puro: diz que o que for escrito por cima pode não aparecer no Adobe', async () => {
+    await abrir('cadastro-xfa-3p.pdf')
+
+    expect(avisos()).toEqual([TEXTOS.editar.avisos.xfa_puro])
+    expect(anuncio()).toBe(
+      `cadastro-xfa-3p.pdf · 3 páginas. ${TEXTOS.editar.avisos.xfa_puro}`,
+    )
+  })
+
+  it('assinado e XFA juntos: os dois avisos, a assinatura primeiro, e um anúncio só', async () => {
+    await abrir('formulario-xfa-certificado.pdf')
+
+    expect(avisos()).toEqual([
+      TEXTOS.editar.avisos.assinatura_digital,
+      TEXTOS.editar.avisos.xfa_puro,
+    ])
+    expect(anuncio()).toBe(
+      `formulario-xfa-certificado.pdf · 1 página. ${TEXTOS.editar.avisos.assinatura_digital} ${TEXTOS.editar.avisos.xfa_puro}`,
+    )
+  })
+
+  it('PDF comum: nenhum aviso', async () => {
+    await abrir('contrato-3p.pdf')
+
+    expect(q('editar-pdf-avisos')).toBeNull()
+  })
+
+  it('não bloqueia: com o aviso, o Gerar habilita com um objeto e monta o PDF pelo motor', async () => {
+    const { motor } = await abrirParaEditar('contrato-assinado-2p.pdf')
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Gerar PDF editado'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    expect(motor.editadas.map(({ nome }) => nome)).toEqual([
+      'contrato-assinado-2p.pdf',
+    ])
+    expect(avisos()).toEqual([TEXTOS.editar.avisos.assinatura_digital])
+  })
+
+  it('o aviso é do PDF aberto: o próximo sem assinatura não o herda, nem o recusado', async () => {
+    await abrir('contrato-assinado-2p.pdf')
+
+    await escolher(pdf('nota-2p.pdf'))
+    await esperarAte(() => anuncio() === 'nota-2p.pdf · 2 páginas')
+    expect(q('editar-pdf-avisos')).toBeNull()
+
+    await escolher(pdf('outro-assinado.pdf'))
+    await esperarAte(() => avisos().length === 1)
+    await escolher(pdf('extrato-senha.pdf'))
+    await esperarAte(() => q('editar-pdf-erro') !== null)
+    expect(q('editar-pdf-avisos')).toBeNull()
+  })
+})

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   TETO_DE_BYTES_COM_MINIATURAS,
   TETO_DE_PAGINAS,
+  type AvisoDoPdf,
 } from '@piluvitu/tools/pdf-regras'
 import type { MotivoDaRecusa, MotorDePdf } from './motor'
 import {
@@ -17,7 +18,7 @@ export type RecusaDaAbertura =
   | { paginasDemais: number }
 
 export type Abertura = { arquivo: File } & (
-  | { ok: true; documento: DocumentoAberto }
+  | { ok: true; documento: DocumentoAberto; avisos: readonly AvisoDoPdf[] }
   | { ok: false; recusa: RecusaDaAbertura }
 )
 
@@ -25,7 +26,11 @@ type Ferramentas = {
   /** Chamados só quando chega um arquivo: o motor e o renderizador criam os Workers deles sob demanda. */
   motor: () => MotorDePdf
   renderizador: () => RenderizadorDePdf
-  aoAbrir?: (documento: DocumentoAberto, arquivo: File) => void
+  aoAbrir?: (
+    documento: DocumentoAberto,
+    arquivo: File,
+    avisos: readonly AvisoDoPdf[],
+  ) => void
   aoRecusar?: () => void
 }
 
@@ -68,8 +73,13 @@ export function useAbrirPdf(arquivo: File | null, ferramentas: Ferramentas) {
           return recusar({ motivo: 'corrompido' })
         }
         aberto = doPdfjs
-        setAbertura({ arquivo, ok: true, documento: doPdfjs })
-        ferramentasRef.current.aoAbrir?.(doPdfjs, arquivo)
+        setAbertura({
+          arquivo,
+          ok: true,
+          documento: doPdfjs,
+          avisos: analise.avisos,
+        })
+        ferramentasRef.current.aoAbrir?.(doPdfjs, arquivo, analise.avisos)
       } catch (erro) {
         recusar({
           motivo: ehFalhaDaAbertura(erro) ? erro.motivo : 'falha_do_navegador',
@@ -88,6 +98,7 @@ export function useAbrirPdf(arquivo: File | null, ferramentas: Ferramentas) {
     /** A abertura do arquivo de agora; `null` enquanto abre, sem arquivo ou grande demais. */
     atual,
     documento: atual?.ok ? atual.documento : null,
+    avisos: atual?.ok ? atual.avisos : [],
     grandeDemais:
       arquivo !== null && arquivo.size > TETO_DE_BYTES_COM_MINIATURAS,
   }
