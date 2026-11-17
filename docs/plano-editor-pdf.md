@@ -165,7 +165,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - Um painel de propriedades mostra X, Y, largura e altura em campos numéricos, mais fonte, tamanho e cor (lista de cores com nome, além do seletor). É o jeito exato e acessível de posicionar.
   - As ferramentas ficam numa `role=toolbar` com `aria-pressed` e setas entre os botões.
   - **Desfazer e refazer**: Ctrl/⌘+Z e Ctrl/⌘+Shift+Z, com botões.
-  - O painel numérico é o caminho garantido. Mesmo assim, o PR da fase 3 traz o teste manual com VoiceOver (macOS e iOS) e NVDA (Windows): mover e redimensionar pelas setas, e o anúncio da posição.
+  - O painel numérico é o caminho garantido. Mesmo assim, o PR da fase 3 traz o teste manual com VoiceOver (macOS e iOS) e NVDA (Windows): mover e redimensionar pelas setas, e o anúncio da posição. **Na entrega da fase 3**, o que a máquina confere entrou nos testes (os papéis e nomes pelo `toMatchAriaSnapshot`, o Tab até o objeto, as setas e Alt+setas com o anúncio, o `preventDefault` do Alt+← e o axe sem violação séria). O teste com leitor de tela de verdade ficou com o Paulo, com o roteiro no PR: o agente não liga o VoiceOver no Mac dele, e o NVDA só roda no Windows.
   - O desenho à mão livre é um gesto de caminho, que o WCAG 2.5.1 isenta por ser essencial. Quem não usa ponteiro tem as formas e o texto.
 - **Celular (toque):**
   - Arrastar um objeto move só o objeto: `touch-action: none` nele e nas alças.
@@ -177,7 +177,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - imagem inserida maior que 2400 px no lado maior é reduzida no navegador antes de entrar no PDF (JPEG 0,85, PNG mantém a transparência);
   - teto de 50 MB somando as imagens inseridas.
 
-  A medida de pico de memória ao salvar um PDF de 100 MB com objetos fica registrada no PR.
+  A medida de pico de memória ao salvar um PDF de 100 MB com objetos fica registrada no PR. **Medido na quarta etapa**, no teto do modo (49 MB, porque o editar recusa acima de 50 MB): o pico é o da abertura, igual ao do organizar no mesmo PDF, e salvar fica abaixo dele, com ou sem apagar de verdade (até nas 20 páginas). Os números e o método estão em "Medições do editar" no `apps/web/CLAUDE.md`.
 
 - **Imagem aceita:** só PNG e JPEG, conferidos pelos bytes iniciais, não pela extensão. SVG fica de fora (pode carregar script).
 - **Testes:**
@@ -185,7 +185,7 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - Jest de cada objeto desenhado pelo pdf-lib. O texto é conferido lendo o PDF de volta com o pdf.js em Node (`getTextContent`: texto e posição), como o `apps/financas` já faz. Feito na primeira etapa: como o Jest do `packages/tools` é CommonJS, o pdf.js roda num processo filho do Node, e as formas e imagens também são conferidas, pela caixa de cada desenho no `getOperatorList`;
   - "apagar de verdade" conferido de três jeitos: o texto deixou de existir na página (`getTextContent`), a página não tem mais `/Annots`, e os pixels da imagem embutida sob o retângulo são brancos. Esta última conferência decodifica o JPEG no navegador (E2E, `createImageBitmap`) e lê o canvas;
   - motor e componente: mover e redimensionar pelo teclado, anúncio e painel numérico;
-  - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima). Já entraram, com a infraestrutura: a imagem em JPEG 2000 na página grande e na miniatura (com o decodificador da própria origem e nenhuma resposta 4xx), os Workers só depois do arquivo, nada saindo ao abrir, passar de página e mudar o zoom, 320 px com zoom e o contraste nos dois temas.
+  - E2E: inserir texto, mover pelo teclado, salvar e conferir texto e posição no PDF baixado; inserir imagem; marca-texto; cobrir com e sem apagar de verdade; 320 px, contraste e nada saindo do aparelho (a regra do E2E acima). Já entraram, com a infraestrutura: a imagem em JPEG 2000 na página grande e na miniatura (com o decodificador da própria origem e nenhuma resposta 4xx), os Workers só depois do arquivo, nada saindo ao abrir, passar de página e mudar o zoom, 320 px com zoom e o contraste nos dois temas. **Feito na quarta etapa:** todos os da lista, num PDF de três páginas iguais na tela e guardadas de três jeitos (normal, `/Rotate` 90 e `CropBox` deslocado), com o PDF baixado lido pelo pdf.js em Node (texto e posição, e a caixa, a cor, a opacidade e a mistura de cada desenho); o desenho com o ponteiro; o emoji recusado; o teclado e o leitor de tela pelo `toMatchAriaSnapshot`; e o **axe** (WCAG 2.0, 2.1 e 2.2 A e AA, sem violação séria nem crítica) a 1280 e a 320 px, com a tela cheia de estado. O `axe-core` 4.11.1 (o mesmo do `apps/pilutech-site`, já no lock) entrou exato nas devDependencies do web.
 
 ## Fase 4: assinatura e formulário
 

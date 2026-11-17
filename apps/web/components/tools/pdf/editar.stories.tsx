@@ -46,7 +46,10 @@ export const ComPaginas: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Página 1' }),
     ).toHaveAttribute('aria-current', 'page')
-    await expect(canvas.getByRole('img', { name: 'Página 1' })).toBeVisible()
+    // A folha só aparece depois de a área ser medida, um pouco depois do "Página 1 de 12".
+    await expect(
+      await canvas.findByRole('img', { name: 'Página 1' }),
+    ).toBeVisible()
   },
 }
 
