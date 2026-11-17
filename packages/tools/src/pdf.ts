@@ -1391,6 +1391,14 @@ export async function aplicarEdicoes(
 ): Promise<Uint8Array> {
   conferirEdicoes(edicoes)
   const documento = await abrir(bytes)
+  await editarNoLugar(documento, edicoes)
+  return salvarNoLugar(documento)
+}
+
+async function editarNoLugar(
+  documento: PDFDocument,
+  edicoes: readonly EdicaoDaPagina[],
+): Promise<void> {
   const paginas = documento.getPages()
   for (const { indice } of edicoes) {
     if (indice >= paginas.length) {
@@ -1453,6 +1461,9 @@ export async function aplicarEdicoes(
     } while (removidos.size > 0)
   }
   tirarRecursosEstendidos(documento)
+}
+
+async function salvarNoLugar(documento: PDFDocument): Promise<Uint8Array> {
   await documento.flush()
   soltarInalcancaveis(documento.context)
   return documento.save({
