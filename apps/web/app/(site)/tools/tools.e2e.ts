@@ -12,6 +12,7 @@ import {
   StandardFonts,
   beginText,
   concatTransformationMatrix,
+  decodePDFRawStream,
   degrees,
   drawObject,
   endText,
@@ -1293,6 +1294,102 @@ async function coresDoJpeg(
   )
 }
 
+// Duas páginas; o dado da página 1 também está no XFA (o que foi digitado no formulário), no texto
+// alternativo e no título de um elemento de estrutura pai, sem /Pg, e num marcador que leva a ela.
+async function pdfComOsDadosForaDaPagina(nome: string) {
+  const documento = await PDFDocument.create({ updateMetadata: false })
+  const { context } = documento
+  const fonte = await documento.embedFont(StandardFonts.Helvetica)
+  const [pagina1, pagina2] = [
+    documento.addPage([300, 200]),
+    documento.addPage([300, 200]),
+  ]
+  pagina1.drawText('CPF 123.456.789-00', {
+    x: 40,
+    y: 140,
+    size: 16,
+    font: fonte,
+  })
+  pagina2.drawText('Fica', { x: 40, y: 140, size: 16, font: fonte })
+  documento.catalog.set(
+    PDFName.of('AcroForm'),
+    context.obj({
+      Fields: [],
+      XFA: [
+        PDFString.of('datasets'),
+        context.register(
+          context.stream('<dados><cpf>XFA_CPF_999</cpf></dados>'),
+        ),
+      ],
+    }),
+  )
+  const filho = context.register(
+    context.obj({ Type: 'StructElem', S: 'P', Pg: pagina1.ref }),
+  )
+  const pai = context.register(
+    context.obj({
+      Type: 'StructElem',
+      S: 'Sect',
+      Alt: PDFString.of('ALT_PAI_CPF'),
+      T: PDFString.of('T_PAI_CPF'),
+      K: [filho],
+    }),
+  )
+  documento.catalog.set(
+    PDFName.of('StructTreeRoot'),
+    context.register(context.obj({ Type: 'StructTreeRoot', K: [pai] })),
+  )
+  const raiz = context.nextRef()
+  const [cpf, fica] = [context.nextRef(), context.nextRef()]
+  context.assign(
+    cpf,
+    context.obj({
+      Title: PDFString.of('MARCADOR_CPF'),
+      Parent: raiz,
+      Next: fica,
+      Dest: [pagina1.ref, 'Fit'],
+    }),
+  )
+  context.assign(
+    fica,
+    context.obj({
+      Title: PDFString.of('MARCADOR_FICA'),
+      Parent: raiz,
+      Prev: cpf,
+      Dest: [pagina2.ref, 'Fit'],
+    }),
+  )
+  context.assign(
+    raiz,
+    context.obj({ Type: 'Outlines', First: cpf, Last: fica, Count: 2 }),
+  )
+  documento.catalog.set(PDFName.of('Outlines'), raiz)
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+// Tudo o que o arquivo guarda, com os streams descomprimidos.
+async function todoOConteudoDoPdf(bytes: Uint8Array) {
+  const documento = await PDFDocument.load(bytes, { updateMetadata: false })
+  const partes: string[] = []
+  for (const [, objeto] of documento.context.enumerateIndirectObjects()) {
+    partes.push(objeto.toString())
+    if (objeto instanceof PDFRawStream) {
+      let dados: Uint8Array
+      try {
+        dados = decodePDFRawStream(objeto).decode()
+      } catch {
+        dados = objeto.contents
+      }
+      partes.push(Buffer.from(dados).toString('latin1'))
+    }
+  }
+  return partes.join('\n')
+}
+
 const ehBranco = ([r, g, b]: number[]) => r >= 225 && g >= 225 && b >= 225
 const ehEscuro = ([r, g, b]: number[]) => r <= 70 && g <= 70 && b <= 70
 
@@ -1765,6 +1862,41 @@ test.describe('Editar PDF', () => {
         'branco',
       ])
     }
+  })
+
+  test('apagar de verdade tira também o XFA, os textos do elemento de estrutura pai e o marcador que levam ao dado da página', async ({
+    page,
+  }) => {
+    const original = await pdfComOsDadosForaDaPagina('formulario.pdf')
+    const sentinelas = [
+      'XFA_CPF_999',
+      'ALT_PAI_CPF',
+      'T_PAI_CPF',
+      'MARCADOR_CPF',
+    ]
+    const antes = await todoOConteudoDoPdf(original.buffer)
+    for (const sentinela of sentinelas) expect(antes).toContain(sentinela)
+
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, original)
+    await inserirNoCentro(page, 'Cobrir')
+    await page
+      .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+      .click()
+    await expect(page.getByTestId('editar-pdf-explicacao')).toContainText(
+      'formulário XFA',
+    )
+    await page
+      .getByRole('button', { name: 'Apagar de verdade nesta página' })
+      .click()
+    const { bytes } = await gerarEBaixar(page)
+
+    const depois = await todoOConteudoDoPdf(bytes)
+    expect(sentinelas.filter((s) => depois.includes(s))).toEqual([])
+    expect(depois).toContain('MARCADOR_FICA')
+    const [primeira, segunda] = await lerComPdfjs(bytes)
+    expect(primeira.textos).toEqual([])
+    expect(segunda.textos.map((t) => t.str)).toEqual(['Fica'])
   })
 
   test('texto com emoji: o caractere nem entra no campo, e um alerta diz qual é e o que fazer', async ({

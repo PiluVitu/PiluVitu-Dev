@@ -115,7 +115,8 @@ Dá para mover, redimensionar, apagar e desfazer cada objeto. Salvar desenha tud
   - o pdf-lib salva todo objeto que leu, mesmo sem ninguém apontando para ele. Por isso, antes de salvar, sai do arquivo tudo o que não se alcança a partir do catálogo e do `/Info`, em toda edição (não só no apagar de verdade). Sem isso, o conteúdo antigo da página iria inteiro para o PDF novo;
   - as anotações da página são desligadas de todo o documento: o campo de formulário que fica sem widget sai também (ele guardaria o valor), e saem o `/OBJR` da estrutura e o `/CO`. O `/ActualText`, o `/Alt` e o `/E` dos elementos de estrutura da página também saem;
   - os XObjects que a página desenhava saem dos recursos que outras páginas herdam ou também listam, quando nenhuma página que fica os desenha. Na dúvida (imagem embutida no conteúdo de uma página que fica), nada sai daquele dicionário, para a página que fica não perder um desenho;
-  - ficam, de propósito: os metadados do documento (título, autor, XMP), os marcadores e o texto alternativo de elemento de estrutura sem `/Pg`;
+  - **mudou na revisão do #120 (o Crivo reproduziu os três no SHA da entrega):** saem também o `/XFA` do AcroForm (com o `/NeedsRendering` do catálogo), porque o XML do XFA guarda o que foi digitado e é alcançável pelo catálogo; o `/T` dos elementos da página; o `/Alt`, o `/T`, o `/ActualText` e o `/E` de todo elemento pai (sem `/Pg`) cujo conteúdo está só em páginas apagadas; e os marcadores que levam a uma página apagada (direto, por `GoTo` ou por nome), com os filhos subindo para o lugar deles;
+  - ficam, de propósito, e a tela diz com todas as letras: os metadados do documento (título, autor, assunto, XMP), os anexos, o texto alternativo de elemento que também descreve uma página que fica e os nomes dos destinos nomeados;
   - o fundo tem que ser JPEG, e `pixelsDoFundo` dá o canvas: 200 dpi, no máximo 16,7 milhões de pixels e 16.384 de lado.
 
 - **Infraestrutura do modo editar (segunda etapa da fase 3):**
@@ -243,7 +244,7 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Botões rápidos por página (selecionar, girar à direita, apagar) e o resto na barra da seleção, com o número original da página no rótulo.
 - O E2E de privacidade passou de "só GET na própria origem" para "nada vai a outra origem e nenhum corpo leva o PDF".
 - Na fase 3, os objetos guardam a posição em pontos da tela, e o texto não quebra sozinho. Redimensionar texto pelo teclado muda a fonte.
-- Na fase 3, o apagar de verdade edita o documento no lugar (marcadores, links e formulário ficam) e, em toda edição, o que nada alcança sai do arquivo antes de salvar.
+- Na fase 3, o apagar de verdade edita o documento no lugar (marcadores, links e formulário ficam) e, em toda edição, o que nada alcança sai do arquivo antes de salvar. Depois da revisão do #120, saem também o XFA, os textos dos elementos de estrutura pais que só descrevem páginas apagadas e os marcadores que levam a elas.
 - Na fase 3, o modo se chama "Editar PDF" (`/tools/pdf/editar`), abre com as mesmas regras do organizar (um hook para os dois) e tem zoom por botões, de 50% a 400% da largura da área.
 - Os recursos do pdf.js vêm de uma cópia em `public/pdfjs/<versão>/`, conferida por hash contra o pacote: só os decodificadores de JPEG 2000 e JBIG2 e as fontes Symbol e ZapfDingbats, buscados pela página por uma fábrica com lista fechada. Sem perfil de cor ICC, cmaps nem Liberation.
 - Na fase 3, a foto JPEG com o EXIF girando é desenhada de novo em pé antes de entrar, e o apagar de verdade é marcado por página.

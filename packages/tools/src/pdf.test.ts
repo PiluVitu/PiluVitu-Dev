@@ -4,7 +4,9 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  type PDFObject,
   PDFRawStream,
+  PDFRef,
   PDFString,
   StandardFonts,
   concatTransformationMatrix,
@@ -1395,13 +1397,22 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
   )
   pagina1.node.set(PDFName.Annots, context.obj([nota, widget, campoUnico]))
   pagina2.node.set(PDFName.Annots, context.obj([widgetQueFica, link]))
+  // Formulário do LiveCycle (Receita, bancos): o XFA guarda num XML o que a pessoa digitou.
+  const xml = (conteudo: string) => context.register(context.stream(conteudo))
   documento.catalog.set(
     PDFName.of('AcroForm'),
     context.obj({
       Fields: [campoRef, campoUnico, campoQueFicaRef],
       CO: [campoRef],
+      XFA: [
+        PDFString.of('template'),
+        xml('<template><field name="cpf"/></template>'),
+        PDFString.of('datasets'),
+        xml('<xfa:datasets><cpf>SEGREDO-XFA</cpf></xfa:datasets>'),
+      ],
     }),
   )
+  documento.catalog.set(PDFName.of('NeedsRendering'), context.obj(true))
 
   const elemento = context.register(
     context.obj({
@@ -1409,7 +1420,28 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
       S: 'P',
       Pg: pagina1.ref,
       ActualText: PDFString.of('SEGREDO-ACTUALTEXT'),
+      T: PDFString.of('SEGREDO-TITULO-ELEM'),
       K: [{ Type: 'OBJR', Obj: widget, Pg: pagina1.ref }],
+    }),
+  )
+  // O pai e o avô não têm /Pg: o que descrevem está todo na página 1, só pelos descendentes.
+  const secao = context.register(
+    context.obj({
+      Type: 'StructElem',
+      S: 'Sect',
+      Alt: PDFString.of('SEGREDO-ALT-PAI'),
+      T: PDFString.of('SEGREDO-T-PAI'),
+      ActualText: PDFString.of('SEGREDO-ACTUALTEXT-PAI'),
+      E: PDFString.of('SEGREDO-E-PAI'),
+      K: [elemento, { Type: 'MCR', Pg: pagina1.ref, MCID: 0 }],
+    }),
+  )
+  const parte = context.register(
+    context.obj({
+      Type: 'StructElem',
+      S: 'Part',
+      T: PDFString.of('SEGREDO-T-AVO'),
+      K: secao,
     }),
   )
   const elementoQueFica = context.register(
@@ -1420,11 +1452,83 @@ async function gerarPdfComSegredos(rotacao = 0): Promise<Uint8Array> {
       ActualText: PDFString.of('ALT-QUE-FICA'),
     }),
   )
+  // Descreve as duas páginas: fica, porque a página 2 continua.
+  const misto = context.register(
+    context.obj({
+      Type: 'StructElem',
+      S: 'Div',
+      Alt: PDFString.of('ALT-MISTO-FICA'),
+      K: [{ Type: 'MCR', Pg: pagina1.ref, MCID: 1 }, elementoQueFica],
+    }),
+  )
   documento.catalog.set(
     PDFName.of('StructTreeRoot'),
     context.register(
-      context.obj({ Type: 'StructTreeRoot', K: [elemento, elementoQueFica] }),
+      context.obj({ Type: 'StructTreeRoot', K: [parte, misto] }),
     ),
+  )
+
+  // Marcadores: para a página 1 pelo destino direto, por uma ação GoTo com destino nomeado (na árvore
+  // de nomes) e por um nome do /Dests antigo, este com um filho que leva à página 2.
+  const raizDosMarcadores = context.nextRef()
+  const [m1, m2, m3, m4, filho] = Array.from({ length: 5 }, () =>
+    context.nextRef(),
+  )
+  const marcador = (ref: PDFRef, campos: object) =>
+    context.assign(
+      ref,
+      context.obj({
+        Parent: raizDosMarcadores,
+        ...campos,
+      } as Parameters<typeof context.obj>[0]),
+    )
+  marcador(m1, {
+    Title: PDFString.of('SEGREDO-MARCADOR-DIRETO'),
+    Next: m2,
+    Dest: [pagina1.ref, 'XYZ', 0, 800, 0],
+  })
+  marcador(m2, {
+    Title: PDFString.of('SEGREDO-MARCADOR-ACAO'),
+    Prev: m1,
+    Next: m3,
+    A: { S: 'GoTo', D: PDFString.of('destino-1') },
+  })
+  marcador(m3, {
+    Title: PDFString.of('SEGREDO-MARCADOR-PAI'),
+    Prev: m2,
+    Next: m4,
+    Dest: 'destino-antigo',
+    First: filho,
+    Last: filho,
+    Count: 1,
+  })
+  context.assign(
+    filho,
+    context.obj({
+      Title: PDFString.of('FILHO-QUE-FICA'),
+      Parent: m3,
+      Dest: [pagina2.ref, 'Fit'],
+    }),
+  )
+  marcador(m4, {
+    Title: PDFString.of('MARCADOR-QUE-FICA'),
+    Prev: m3,
+    Dest: [pagina2.ref, 'Fit'],
+  })
+  context.assign(
+    raizDosMarcadores,
+    context.obj({ Type: 'Outlines', First: m1, Last: m4, Count: 5 }),
+  )
+  documento.catalog.set(PDFName.of('Outlines'), raizDosMarcadores)
+  documento.catalog.set(
+    PDFName.of('Names'),
+    context.obj({
+      Dests: { Names: [PDFString.of('destino-1'), [pagina1.ref, 'Fit']] },
+    }),
+  )
+  documento.catalog.set(
+    PDFName.of('Dests'),
+    context.obj({ 'destino-antigo': { D: [pagina1.ref, 'Fit'] } }),
   )
   context.register(context.obj({ Sobra: PDFString.of('SEGREDO-SOLTO') }))
   return documento.save()
@@ -1438,8 +1542,55 @@ const SEGREDOS = [
   'SEGREDO-CAMPO',
   'SEGREDO-CAMPO-UNICO',
   'SEGREDO-ACTUALTEXT',
+  'SEGREDO-TITULO-ELEM',
+  'SEGREDO-ALT-PAI',
+  'SEGREDO-T-PAI',
+  'SEGREDO-ACTUALTEXT-PAI',
+  'SEGREDO-E-PAI',
+  'SEGREDO-T-AVO',
+  'SEGREDO-XFA',
+  'SEGREDO-MARCADOR-DIRETO',
+  'SEGREDO-MARCADOR-ACAO',
+  'SEGREDO-MARCADOR-PAI',
   'SEGREDO-SOLTO',
 ]
+
+// Os títulos dos marcadores na ordem, com o pai de cada um e o /Count de quem tem filhos.
+function lerMarcadores(documento: PDFDocument) {
+  const { context } = documento
+  const raiz = documento.catalog.lookup(PDFName.of('Outlines'), PDFDict)
+  const lidos: { titulo: string; pai: string; count?: number }[] = []
+  const nome = (no: PDFDict) =>
+    no === raiz
+      ? 'raiz'
+      : (no.lookup(PDFName.of('Title'), PDFString) as PDFString).decodeText()
+  const descer = (pai: PDFDict) => {
+    let ref = pai.get(PDFName.of('First'))
+    let anterior: PDFObject | undefined
+    while (ref) {
+      const no = context.lookup(ref, PDFDict)
+      expect(no.get(PDFName.of('Prev'))).toBe(anterior)
+      expect(context.lookup(no.get(PDFName.of('Parent')))).toBe(pai)
+      const count = no.lookupMaybe(PDFName.of('Count'), PDFNumber)?.asNumber()
+      lidos.push({
+        titulo: nome(no),
+        pai: nome(pai),
+        ...(count === undefined ? {} : { count }),
+      })
+      descer(no)
+      if (!no.has(PDFName.of('Next'))) {
+        expect(pai.get(PDFName.of('Last'))).toBe(ref)
+      }
+      anterior = ref
+      ref = no.get(PDFName.of('Next'))
+    }
+  }
+  descer(raiz)
+  return {
+    lidos,
+    count: raiz.lookupMaybe(PDFName.of('Count'), PDFNumber)?.asNumber(),
+  }
+}
 
 describe('aplicarEdicoes: apagar de verdade', () => {
   const novoTexto = () => objetoTexto({ conteudo: 'NOVO' })
@@ -1550,6 +1701,9 @@ describe('aplicarEdicoes: apagar de verdade', () => {
         'FICA-NA-PAGINA-2',
         'CAMPO-QUE-FICA',
         'ALT-QUE-FICA',
+        'ALT-MISTO-FICA',
+        'FILHO-QUE-FICA',
+        'MARCADOR-QUE-FICA',
       ]) {
         expect([fica, contem(conteudo, fica)]).toEqual([fica, true])
       }
@@ -1561,6 +1715,9 @@ describe('aplicarEdicoes: apagar de verdade', () => {
         PDFName.of('AcroForm'),
         PDFDict,
       )
+      // O XFA sai inteiro; o formulário comum (AcroForm) continua valendo.
+      expect(formulario.has(PDFName.of('XFA'))).toBe(false)
+      expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
       const campos = formulario.lookup(PDFName.of('Fields'), PDFArray)
       expect(campos.size()).toBe(1)
       expect(
@@ -1576,6 +1733,109 @@ describe('aplicarEdicoes: apagar de verdade', () => {
       expect(link.lookup(PDFName.of('Dest'), PDFArray).get(0)).toBe(
         documento.getPage(0).ref,
       )
+    })
+
+    it('os marcadores que levam à página apagada saem, e o filho que leva à página 2 sobe para o lugar do pai', async () => {
+      const documento = await PDFDocument.load(editado, {
+        updateMetadata: false,
+      })
+      expect(lerMarcadores(documento)).toEqual({
+        lidos: [
+          { titulo: 'FILHO-QUE-FICA', pai: 'raiz' },
+          { titulo: 'MARCADOR-QUE-FICA', pai: 'raiz' },
+        ],
+        count: 2,
+      })
+    })
+  })
+
+  it('sem apagar de verdade, o XFA, os marcadores e os textos da estrutura ficam como estavam', async () => {
+    const editado = await aplicarEdicoes(await gerarPdfComSegredos(), [
+      { indice: 0, objetos: [cobrir()] },
+    ])
+    const conteudo = await todoOConteudo(editado)
+    for (const fica of [
+      'SEGREDO-XFA',
+      'SEGREDO-ALT-PAI',
+      'SEGREDO-T-AVO',
+      'SEGREDO-MARCADOR-PAI',
+    ]) {
+      expect([fica, contem(conteudo, fica)]).toEqual([fica, true])
+    }
+    const documento = await PDFDocument.load(editado, {
+      updateMetadata: false,
+    })
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
+    expect(lerMarcadores(documento)).toEqual({
+      lidos: [
+        { titulo: 'SEGREDO-MARCADOR-DIRETO', pai: 'raiz' },
+        { titulo: 'SEGREDO-MARCADOR-ACAO', pai: 'raiz' },
+        { titulo: 'SEGREDO-MARCADOR-PAI', pai: 'raiz', count: 1 },
+        { titulo: 'FILHO-QUE-FICA', pai: 'SEGREDO-MARCADOR-PAI' },
+        { titulo: 'MARCADOR-QUE-FICA', pai: 'raiz' },
+      ],
+      count: 5,
+    })
+  })
+
+  it('marcador fechado que perde o pai leva o sinal dele; o que perde todos os filhos fica sem /Count', async () => {
+    const documento = await PDFDocument.create()
+    const { context } = documento
+    const [apagada, fica] = [documento.addPage(), documento.addPage()]
+    const raiz = context.nextRef()
+    const [a, a1, a2, b, b1] = Array.from({ length: 5 }, () =>
+      context.nextRef(),
+    )
+    const item = (titulo: string, pagina: PDFRef, campos: object) =>
+      context.obj({
+        Title: PDFString.of(titulo),
+        Dest: [pagina, 'Fit'],
+        ...campos,
+      } as Parameters<typeof context.obj>[0])
+    // A (página apagada, aberto) > A1 (fica, fechado, com o filho A2); B (fica, aberto) > B1 (apagada).
+    context.assign(
+      a,
+      item('A', apagada.ref, {
+        Parent: raiz,
+        Next: b,
+        First: a1,
+        Last: a1,
+        Count: 1,
+      }),
+    )
+    context.assign(
+      a1,
+      item('A1', fica.ref, { Parent: a, First: a2, Last: a2, Count: -1 }),
+    )
+    context.assign(a2, item('A2', fica.ref, { Parent: a1 }))
+    context.assign(
+      b,
+      item('B', fica.ref, {
+        Parent: raiz,
+        Prev: a,
+        First: b1,
+        Last: b1,
+        Count: 1,
+      }),
+    )
+    context.assign(b1, item('B1', apagada.ref, { Parent: b }))
+    context.assign(
+      raiz,
+      context.obj({ Type: 'Outlines', First: a, Last: b, Count: 4 }),
+    )
+    documento.catalog.set(PDFName.of('Outlines'), raiz)
+    const editado = await aplicarEdicoes(await documento.save(), [
+      { indice: 0, objetos: [], fundo: JPEG_8X8 },
+    ])
+    expect(
+      lerMarcadores(await PDFDocument.load(editado, { updateMetadata: false })),
+    ).toEqual({
+      lidos: [
+        { titulo: 'A1', pai: 'raiz', count: -1 },
+        { titulo: 'A2', pai: 'A1' },
+        { titulo: 'B', pai: 'raiz' },
+      ],
+      count: 2,
     })
   })
 

@@ -6,11 +6,13 @@ import {
   PDFContext,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFNumber,
   PDFRawStream,
   PDFRef,
   PDFStream,
+  PDFString,
   ParseSpeeds,
   StandardFonts,
   concatTransformationMatrix,
@@ -665,7 +667,7 @@ function percorrer(
   return referencias
 }
 
-const TEXTOS_DA_ESTRUTURA = ['ActualText', 'Alt', 'E'].map((nome) =>
+const TEXTOS_DA_ESTRUTURA = ['ActualText', 'Alt', 'E', 'T'].map((nome) =>
   PDFName.of(nome),
 )
 
@@ -960,6 +962,224 @@ function soltarXObjectsDasApagadas(
   }
 }
 
+function dicionario(
+  contexto: PDFContext,
+  valor: PDFObject | undefined,
+): PDFDict | undefined {
+  const alvo = contexto.lookup(valor)
+  return alvo instanceof PDFDict ? alvo : undefined
+}
+
+// Um elemento sem /Pg (seção, capítulo) descreve a página apagada quando tudo o que está abaixo dele
+// está nela: perde os mesmos textos que o elemento da página.
+function limparEstruturaDasApagadas(
+  documento: PDFDocument,
+  apagadas: Set<PDFRef>,
+): void {
+  const { context } = documento
+  const raiz = dicionario(
+    context,
+    documento.catalog.get(PDFName.of('StructTreeRoot')),
+  )
+  if (!raiz) return
+  const conhecidas = new Map<PDFDict, Set<PDFRef | null>>()
+  const emCurso = new Set<PDFDict>()
+  const paginasDe = (
+    valor: PDFObject | undefined,
+    herdada: PDFRef | null,
+  ): Set<PDFRef | null> => {
+    const alvo = context.lookup(valor)
+    if (alvo instanceof PDFNumber) return new Set([herdada])
+    if (alvo instanceof PDFArray) {
+      const todas = new Set<PDFRef | null>()
+      for (const item of alvo.asArray()) {
+        for (const pagina of paginasDe(item, herdada)) todas.add(pagina)
+      }
+      return todas
+    }
+    if (!(alvo instanceof PDFDict)) return new Set()
+    const propria = alvo.get(PDFName.of('Pg'))
+    const pagina = propria instanceof PDFRef ? propria : herdada
+    const tipo = alvo.get(PDFName.Type)
+    if (tipo === PDFName.of('MCR') || tipo === PDFName.of('OBJR')) {
+      return new Set([pagina])
+    }
+    const jaVistas = conhecidas.get(alvo)
+    if (jaVistas) return jaVistas
+    if (emCurso.has(alvo)) return new Set()
+    emCurso.add(alvo)
+    const paginas = new Set(paginasDe(alvo.get(PDFName.of('K')), pagina))
+    if (propria instanceof PDFRef) paginas.add(propria)
+    emCurso.delete(alvo)
+    conhecidas.set(alvo, paginas)
+    if (
+      paginas.size > 0 &&
+      [...paginas].every((p) => p !== null && apagadas.has(p))
+    ) {
+      for (const chave of TEXTOS_DA_ESTRUTURA) alvo.delete(chave)
+    }
+    return paginas
+  }
+  paginasDe(raiz.get(PDFName.of('K')), null)
+}
+
+// Os destinos nomeados, do /Dests antigo do catálogo e da árvore de nomes.
+function destinosNomeados(documento: PDFDocument): Map<string, PDFObject> {
+  const { context } = documento
+  const nomeados = new Map<string, PDFObject>()
+  const antigos = dicionario(
+    context,
+    documento.catalog.get(PDFName.of('Dests')),
+  )
+  for (const [nome, valor] of antigos?.entries() ?? []) {
+    nomeados.set(nome.decodeText(), valor)
+  }
+  const nomes = dicionario(context, documento.catalog.get(PDFName.of('Names')))
+  const pilha: (PDFObject | undefined)[] = [nomes?.get(PDFName.of('Dests'))]
+  const vistos = new Set<PDFDict>()
+  while (pilha.length > 0) {
+    const no = dicionario(context, pilha.pop())
+    if (!no || vistos.has(no)) continue
+    vistos.add(no)
+    const folhas = context.lookup(no.get(PDFName.of('Names')))
+    if (folhas instanceof PDFArray) {
+      for (let i = 0; i + 1 < folhas.size(); i += 2) {
+        const chave = folhas.get(i)
+        if (chave instanceof PDFString || chave instanceof PDFHexString) {
+          nomeados.set(chave.decodeText(), folhas.get(i + 1))
+        }
+      }
+    }
+    const filhos = context.lookup(no.get(PDFName.of('Kids')))
+    if (filhos instanceof PDFArray) pilha.push(...filhos.asArray())
+  }
+  return nomeados
+}
+
+function paginaDoDestino(
+  contexto: PDFContext,
+  destino: PDFObject | undefined,
+  nomeados: Map<string, PDFObject>,
+  saltos = 0,
+): PDFRef | undefined {
+  const alvo = contexto.lookup(destino)
+  if (alvo instanceof PDFArray) {
+    const pagina = alvo.get(0)
+    return pagina instanceof PDFRef ? pagina : undefined
+  }
+  if (saltos > 2) return undefined
+  if (alvo instanceof PDFDict) {
+    return paginaDoDestino(
+      contexto,
+      alvo.get(PDFName.of('D')),
+      nomeados,
+      saltos + 1,
+    )
+  }
+  if (
+    alvo instanceof PDFName ||
+    alvo instanceof PDFString ||
+    alvo instanceof PDFHexString
+  ) {
+    return paginaDoDestino(
+      contexto,
+      nomeados.get(alvo.decodeText()),
+      nomeados,
+      saltos + 1,
+    )
+  }
+  return undefined
+}
+
+type Marcador = {
+  ref: PDFRef
+  item: PDFDict
+  sai: boolean
+  filhos: Marcador[]
+}
+
+// O título do marcador costuma resumir a página: o que leva a uma página apagada sai, e os filhos dele
+// sobem para o lugar dele. O /Count de cada um é contado de novo, guardando aberto ou fechado.
+function tirarMarcadoresDasApagadas(
+  documento: PDFDocument,
+  apagadas: Set<PDFRef>,
+): void {
+  const { context } = documento
+  const referenciaDaRaiz = documento.catalog.get(PDFName.of('Outlines'))
+  const raiz = dicionario(context, referenciaDaRaiz)
+  if (!raiz || !referenciaDaRaiz) return
+  const nomeados = destinosNomeados(documento)
+  const vistos = new Set<PDFDict>()
+  const montar = (pai: PDFDict): Marcador[] => {
+    const marcadores: Marcador[] = []
+    let ref = pai.get(PDFName.of('First'))
+    while (ref instanceof PDFRef) {
+      const item = dicionario(context, ref)
+      if (!item || vistos.has(item)) break
+      vistos.add(item)
+      const acao = dicionario(context, item.get(PDFName.of('A')))
+      const destino =
+        item.get(PDFName.of('Dest')) ??
+        (acao?.get(PDFName.of('S')) === PDFName.of('GoTo')
+          ? acao.get(PDFName.of('D'))
+          : undefined)
+      const pagina = paginaDoDestino(context, destino, nomeados)
+      marcadores.push({
+        ref,
+        item,
+        sai: pagina !== undefined && apagadas.has(pagina),
+        filhos: montar(item),
+      })
+      ref = item.get(PDFName.of('Next'))
+    }
+    return marcadores
+  }
+  const arvore = montar(raiz)
+  const algumSai = (marcadores: Marcador[]): boolean =>
+    marcadores.some(({ sai, filhos }) => sai || algumSai(filhos))
+  if (!algumSai(arvore)) return
+  const queFicam = (marcadores: Marcador[]): Marcador[] =>
+    marcadores.flatMap((marcador) => {
+      marcador.filhos = queFicam(marcador.filhos)
+      return marcador.sai ? marcador.filhos : [marcador]
+    })
+  // Liga os marcadores como filhos de `pai` e devolve quantos aparecem com ele aberto.
+  const ligar = (
+    pai: PDFDict,
+    referenciaDoPai: PDFObject,
+    marcadores: Marcador[],
+  ): number => {
+    pai.delete(PDFName.of('First'))
+    pai.delete(PDFName.of('Last'))
+    if (marcadores.length > 0) {
+      pai.set(PDFName.of('First'), marcadores[0].ref)
+      pai.set(PDFName.of('Last'), marcadores[marcadores.length - 1].ref)
+    }
+    let visiveis = 0
+    marcadores.forEach(({ ref, item, filhos }, i) => {
+      item.set(PDFName.of('Parent'), referenciaDoPai)
+      if (i > 0) item.set(PDFName.of('Prev'), marcadores[i - 1].ref)
+      else item.delete(PDFName.of('Prev'))
+      if (i < marcadores.length - 1) {
+        item.set(PDFName.of('Next'), marcadores[i + 1].ref)
+      } else {
+        item.delete(PDFName.of('Next'))
+      }
+      const count = context.lookup(item.get(PDFName.of('Count')))
+      const aberto = count instanceof PDFNumber && count.asNumber() > 0
+      const deles = ligar(item, ref, filhos)
+      if (deles === 0) item.delete(PDFName.of('Count'))
+      else item.set(PDFName.of('Count'), PDFNumber.of(aberto ? deles : -deles))
+      visiveis += 1 + (aberto ? deles : 0)
+    })
+    return visiveis
+  }
+  raiz.set(
+    PDFName.of('Count'),
+    PDFNumber.of(ligar(raiz, referenciaDaRaiz, queFicam(arvore))),
+  )
+}
+
 export async function aplicarEdicoes(
   bytes: Uint8Array,
   edicoes: readonly EdicaoDaPagina[],
@@ -1009,6 +1229,14 @@ export async function aplicarEdicoes(
   }
   if (apagadas.size > 0) {
     soltarXObjectsDasApagadas(documento, xobjetosDasApagadas, apagadas)
+    limparEstruturaDasApagadas(documento, apagadas)
+    tirarMarcadoresDasApagadas(documento, apagadas)
+    // O XFA guarda num XML o que foi digitado em todo o formulário; o AcroForm comum continua valendo.
+    dicionario(
+      documento.context,
+      documento.catalog.get(PDFName.of('AcroForm')),
+    )?.delete(PDFName.of('XFA'))
+    documento.catalog.delete(PDFName.of('NeedsRendering'))
     let removidos = anotacoesRemovidas
     do {
       const mexidos = desligar(documento.context, removidos, apagadas)

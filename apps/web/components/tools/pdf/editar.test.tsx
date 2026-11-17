@@ -1503,8 +1503,11 @@ describe('cobrir e apagar de verdade', () => {
       'A página vira uma imagem',
       'deixa de ser selecionável',
       'O PDF fica maior',
-      'Os links e os campos de formulário desta página saem',
-      'Os metadados do documento (título, autor) continuam',
+      'Os links e os campos de formulário desta página saem, e também os marcadores que levam a ela',
+      'formulário XFA',
+      'sai do documento inteiro',
+      'Continuam no arquivo, sem mudança: o título, o autor e as outras informações do documento',
+      'o apagar de verdade não o tira',
     ]) {
       expect(explicacao).toContain(trecho)
     }
