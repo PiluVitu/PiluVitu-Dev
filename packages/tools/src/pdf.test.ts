@@ -36,6 +36,7 @@ import {
   extrair,
   geometriaDaVista,
   girar,
+  giroNormalizado,
   linhaEntre,
   moverSelecionadas,
   planoInicial,
@@ -3499,5 +3500,138 @@ describe('montarDocumento: os casos do organizarPaginas', () => {
         )
       ).motivo,
     ).toBe('corrompido')
+  })
+})
+
+// A moldura: os objetos guardam a posição da página como a tela a mostrava (/Rotate + moldura) e giram
+// com ela. Lida com o giro desde então desfeito (giro − moldura), a página tem que mostrar o texto de pé,
+// onde a tela o pôs.
+describe('montarDocumento: giro e moldura (os objetos giram com a página)', () => {
+  const CASOS = [0, 90].flatMap((rotacao) =>
+    ([0, 90] as const).flatMap((moldura) =>
+      ([0, 90, 270] as const).map((giro) => ({ rotacao, moldura, giro })),
+    ),
+  )
+  const giroDesdeOsObjetos = CASOS.map(({ giro, moldura }) =>
+    giroNormalizado(giro - moldura),
+  )
+
+  async function gerarPdfDosCasos(): Promise<Uint8Array> {
+    const documento = await PDFDocument.create()
+    const helvetica = documento.embedStandardFont(StandardFonts.Helvetica)
+    for (const { rotacao } of CASOS) {
+      const pagina = documento.addPage([600, 800])
+      pagina.drawText('ORIGINAL', { x: 300, y: 100, font: helvetica, size: 12 })
+      pagina.setRotation(degrees(rotacao))
+    }
+    return documento.save()
+  }
+
+  const textoDePe = (pagina: Leitura['paginas'][number]) => {
+    const novo = pagina.textos.find(({ str }) => str === 'NOVO')
+    expect(novo).toBeDefined()
+    const [a, b, c, d, e, f] = novo!.matriz
+    expect([a, b, c, d].map((v) => Math.round(v))).toEqual([20, 0, 0, -20])
+    expect(e).toBeCloseTo(40, 2)
+    expect(f).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+  }
+
+  describe.each([
+    ['no lugar', false, false],
+    ['no lugar, com apagar de verdade', false, true],
+    ['por cópia', true, false],
+    ['por cópia, com apagar de verdade', true, true],
+  ])('%s', (_, porCopia, apagarDeVerdade) => {
+    const antes = porCopia ? 1 : 0
+    let leitura: Leitura
+
+    beforeAll(async () => {
+      const casos = await gerarPdfDosCasos()
+      const arquivo = porCopia ? 1 : 0
+      const final = await montarDocumento(
+        porCopia ? [await gerarPdf(1, 100), casos] : [casos],
+        [
+          ...(porCopia ? [daMontagem(0, 0)] : []),
+          ...CASOS.map(({ moldura, giro }, i) =>
+            daMontagem(arquivo, i, { moldura, giro }),
+          ),
+        ],
+        CASOS.map((_, i) => ({
+          posicao: antes + i,
+          objetos: [objetoTexto({ conteudo: 'NOVO' })],
+          ...(apagarDeVerdade ? { fundo: JPEG_8X8 } : {}),
+        })),
+      )
+      leitura = lerComPdfjs(final, [
+        ...(porCopia ? [0] : []),
+        ...giroDesdeOsObjetos,
+      ])
+    })
+
+    it.each(CASOS.map((caso, i) => [caso.rotacao, caso.moldura, caso.giro, i]))(
+      '/Rotate %i, moldura %i, giro %i',
+      (rotacao, moldura, giro, i) => {
+        const pagina = leitura.paginas[antes + i]
+        expect(pagina.rotate).toBe(
+          apagarDeVerdade
+            ? giroNormalizado(giro - moldura)
+            : giroNormalizado(rotacao + giro),
+        )
+        const deitada = (rotacao + moldura) % 180 === 90
+        expect([pagina.largura, pagina.altura]).toEqual(
+          deitada ? [800, 600] : [600, 800],
+        )
+        textoDePe(pagina)
+        if (apagarDeVerdade) {
+          expect(pagina.textos.map(({ str }) => str)).toEqual(['NOVO'])
+          acharDesenho(
+            pagina.desenhos,
+            [0, 0, pagina.largura, pagina.altura],
+            'imagem',
+          )
+        } else {
+          expect(pagina.textos.map(({ str }) => str)).toContain('ORIGINAL')
+        }
+      },
+    )
+  })
+
+  describe('página em branco', () => {
+    const DA_BRANCA = CASOS.filter(({ rotacao }) => rotacao === 0)
+    let leitura: Leitura
+
+    beforeAll(async () => {
+      const final = await montarDocumento(
+        [await gerarPdf(1, 100)],
+        [
+          daMontagem(0, 0),
+          ...DA_BRANCA.map(({ moldura, giro }) =>
+            branca(600, 800, { moldura, giro }),
+          ),
+        ],
+        DA_BRANCA.map((_, i) => ({
+          posicao: 1 + i,
+          objetos: [objetoTexto({ conteudo: 'NOVO' })],
+        })),
+      )
+      leitura = lerComPdfjs(final, [
+        0,
+        ...DA_BRANCA.map(({ giro, moldura }) =>
+          giroNormalizado(giro - moldura),
+        ),
+      ])
+    })
+
+    it.each(DA_BRANCA.map((caso, i) => [caso.moldura, caso.giro, i]))(
+      'moldura %i, giro %i',
+      (moldura, giro, i) => {
+        const pagina = leitura.paginas[1 + i]
+        expect(pagina.rotate).toBe(giro)
+        expect([pagina.largura, pagina.altura]).toEqual(
+          moldura === 90 ? [800, 600] : [600, 800],
+        )
+        textoDePe(pagina)
+      },
+    )
   })
 })

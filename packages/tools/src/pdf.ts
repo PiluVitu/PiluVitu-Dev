@@ -1441,11 +1441,16 @@ type PaginaEditada = {
   readonly moldura: Giro
 }
 
-function giros(rotacao: number, { giro }: Pick<PaginaEditada, 'giro'>) {
+// A moldura (D2): os objetos foram postos na página como a tela a mostrava, com o /Rotate e a moldura, e
+// giram com ela. Para trocar por "bloquear girar com objetos", basta a moldura ser o giro.
+function giros(
+  rotacao: number,
+  { giro, moldura }: Pick<PaginaEditada, 'giro' | 'moldura'>,
+) {
   return {
-    doDesenho: giroNormalizado(rotacao),
+    doDesenho: giroNormalizado(rotacao + moldura),
     final: giroNormalizado(rotacao + giro),
-    daApagada: giro,
+    daApagada: giroNormalizado(giro - moldura),
   }
 }
 
