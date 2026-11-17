@@ -18,6 +18,7 @@ import {
 import {
   ErroDePdf,
   ErroNaEdicao,
+  analisarPdf,
   aplicarEdicoes,
   contarPaginas,
   mesclarPdfs,
@@ -2476,5 +2477,244 @@ describe('aplicarEdicoes: XFA híbrido e recursos estendidos', () => {
     expect(await perms(await aplicarEdicoes(comDocMdp, comObjeto))).toBeNull()
     const soDocMdp = await montar({ DocMDP: true })
     expect(await perms(await aplicarEdicoes(soDocMdp, []))).toBeNull()
+  })
+})
+
+describe('analisarPdf: os avisos do editar', () => {
+  // O /AcroForm e o /Perms vão montados à mão, e o save não gera aparências: o getForm() do pdf-lib
+  // 1.17.1 (que o save com aparências chama) tiraria o /XFA.
+  async function montarPdf(
+    montar: (documento: PDFDocument) => void,
+  ): Promise<Uint8Array> {
+    const documento = await PDFDocument.create({ updateMetadata: false })
+    documento.addPage([300, 300])
+    montar(documento)
+    return documento.save({ updateFieldAppearances: false })
+  }
+
+  type Literal = Parameters<PDFDocument['context']['obj']>[0]
+
+  const registrar = (documento: PDFDocument, dados: Record<string, unknown>) =>
+    documento.context.register(documento.context.obj(dados as Literal))
+
+  const valorDaAssinatura = (documento: PDFDocument) =>
+    registrar(documento, {
+      Type: 'Sig',
+      Filter: 'Adobe.PPKLite',
+      SubFilter: 'adbe.pkcs7.detached',
+    })
+
+  function acroForm(
+    documento: PDFDocument,
+    dados: Record<string, unknown>,
+  ): void {
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      documento.context.obj(dados as Literal),
+    )
+  }
+
+  const XFA_DO_LIVECYCLE = (documento: PDFDocument) =>
+    documento.context.obj([
+      PDFString.of('datasets'),
+      documento.context.register(
+        documento.context.stream('<xfa:datasets></xfa:datasets>'),
+      ),
+    ])
+
+  function permissoes(documento: PDFDocument, chaves: string[]): void {
+    documento.catalog.set(
+      PDFName.of('Perms'),
+      documento.context.obj(
+        Object.fromEntries(
+          chaves.map((chave) => [
+            chave,
+            registrar(documento, {
+              Type: 'Sig',
+              Filter: 'Adobe.PPKLite',
+              Reference: [{ Type: 'SigRef', TransformMethod: chave }],
+            }),
+          ]),
+        ) as Literal,
+      ),
+    )
+  }
+
+  it('PDF comum: as páginas, sem aviso', async () => {
+    expect(await analisarPdf(await gerarPdf(3, 100))).toEqual({
+      paginas: 3,
+      avisos: [],
+    })
+  })
+
+  it('as recusas são as do contarPaginas', async () => {
+    expect(await motivo(analisarPdf(new Uint8Array([1, 2, 3])))).toEqual({
+      motivo: 'nao_e_pdf',
+      indice: undefined,
+    })
+  })
+
+  it('assinado: um campo /Sig com /V, que é o dicionário da assinatura', async () => {
+    const bytes = await montarPdf((documento) =>
+      acroForm(documento, {
+        Fields: [
+          registrar(documento, {
+            FT: 'Sig',
+            T: PDFString.of('assinatura'),
+            V: valorDaAssinatura(documento),
+          }),
+        ],
+      }),
+    )
+
+    expect((await analisarPdf(bytes)).avisos).toEqual(['assinatura_digital'])
+  })
+
+  it('campo /Sig ainda sem assinatura (sem /V, ou com /V que não é dicionário) não avisa', async () => {
+    const semValor = await montarPdf((documento) =>
+      acroForm(documento, {
+        Fields: [
+          registrar(documento, { FT: 'Sig', T: PDFString.of('assinar') }),
+        ],
+      }),
+    )
+    const valorTorto = await montarPdf((documento) =>
+      acroForm(documento, {
+        Fields: [
+          registrar(documento, {
+            FT: 'Sig',
+            T: PDFString.of('assinar'),
+            V: PDFString.of('não é assinatura'),
+          }),
+        ],
+      }),
+    )
+
+    expect((await analisarPdf(semValor)).avisos).toEqual([])
+    expect((await analisarPdf(valorTorto)).avisos).toEqual([])
+  })
+
+  it('o /FT vem do pai: o filho em /Kids com /V é assinatura; com /FT próprio de texto, não', async () => {
+    const comFilho = (tipoDoFilho?: string) =>
+      montarPdf((documento) => {
+        const { context } = documento
+        const pai = context.nextRef()
+        const filho = registrar(documento, {
+          Parent: pai,
+          T: PDFString.of('a'),
+          V: valorDaAssinatura(documento),
+          ...(tipoDoFilho ? { FT: tipoDoFilho } : {}),
+        })
+        context.assign(
+          pai,
+          context.obj({
+            FT: 'Sig',
+            T: PDFString.of('assinaturas'),
+            Kids: [filho],
+          }),
+        )
+        acroForm(documento, { Fields: [pai] })
+      })
+
+    expect((await analisarPdf(await comFilho())).avisos).toEqual([
+      'assinatura_digital',
+    ])
+    expect((await analisarPdf(await comFilho('Tx'))).avisos).toEqual([])
+  })
+
+  it('certificado: o /Perms com /DocMDP avisa, mesmo sem campo', async () => {
+    const bytes = await montarPdf((documento) =>
+      permissoes(documento, ['DocMDP']),
+    )
+
+    expect((await analisarPdf(bytes)).avisos).toEqual(['assinatura_digital'])
+  })
+
+  // Os recursos estendidos do Reader não são assinatura de ninguém: o arquivo só destrava o Reader.
+  it('só o /UR3 no /Perms não avisa', async () => {
+    const bytes = await montarPdf((documento) => permissoes(documento, ['UR3']))
+
+    expect((await analisarPdf(bytes)).avisos).toEqual([])
+  })
+
+  it('XFA puro: /XFA com /Fields vazio ou sem /Fields', async () => {
+    const fieldsVazio = await montarPdf((documento) =>
+      acroForm(documento, { Fields: [], XFA: XFA_DO_LIVECYCLE(documento) }),
+    )
+    const semFields = await montarPdf((documento) =>
+      acroForm(documento, { XFA: XFA_DO_LIVECYCLE(documento) }),
+    )
+
+    expect((await analisarPdf(fieldsVazio)).avisos).toEqual(['xfa_puro'])
+    expect((await analisarPdf(semFields)).avisos).toEqual(['xfa_puro'])
+  })
+
+  // O híbrido perde o XFA ao gerar, em silêncio, como no aplicarEdicoes.
+  it('o híbrido (campo no AcroForm e /XFA) não é XFA puro, e a leitura não escreve no console', async () => {
+    const bytes = await montarPdf((documento) =>
+      acroForm(documento, {
+        Fields: [
+          registrar(documento, { FT: 'Tx', T: PDFString.of('pessoa.nome') }),
+        ],
+        XFA: XFA_DO_LIVECYCLE(documento),
+      }),
+    )
+
+    expect((await analisarPdf(bytes)).avisos).toEqual([])
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('certificado e XFA puro: os dois avisos', async () => {
+    const bytes = await montarPdf((documento) => {
+      acroForm(documento, { Fields: [], XFA: XFA_DO_LIVECYCLE(documento) })
+      permissoes(documento, ['DocMDP', 'UR3'])
+    })
+
+    expect((await analisarPdf(bytes)).avisos).toEqual([
+      'assinatura_digital',
+      'xfa_puro',
+    ])
+  })
+
+  it('árvore de campos com ciclo nos /Kids termina, e acha a assinatura que está nela', async () => {
+    const comCiclo = (assinada: boolean) =>
+      montarPdf((documento) => {
+        const { context } = documento
+        const [a, b] = [context.nextRef(), context.nextRef()]
+        const c = registrar(documento, {
+          Parent: b,
+          T: PDFString.of('c'),
+          ...(assinada ? { V: valorDaAssinatura(documento) } : {}),
+        })
+        context.assign(
+          a,
+          context.obj({ FT: 'Sig', T: PDFString.of('a'), Kids: [b] }),
+        )
+        context.assign(
+          b,
+          context.obj({ Parent: a, T: PDFString.of('b'), Kids: [a, c, b] }),
+        )
+        acroForm(documento, { Fields: [a, a] })
+      })
+
+    expect((await analisarPdf(await comCiclo(false))).avisos).toEqual([])
+    expect((await analisarPdf(await comCiclo(true))).avisos).toEqual([
+      'assinatura_digital',
+    ])
+  })
+
+  it('árvore de campos muito funda não estoura a pilha', async () => {
+    const bytes = await montarPdf((documento) => {
+      let filho = registrar(documento, { FT: 'Tx', T: PDFString.of('folha') })
+      for (let i = 0; i < 20_000; i++) {
+        filho = registrar(documento, {
+          T: PDFString.of(`n${i}`),
+          Kids: [filho],
+        })
+      }
+      acroForm(documento, { Fields: [filho] })
+    })
+
+    expect((await analisarPdf(bytes)).avisos).toEqual([])
   })
 })

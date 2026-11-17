@@ -8,6 +8,9 @@ export type MotivoDoErroDePdf =
   | 'corrompido'
   | 'sem_paginas'
 
+/** O que o editar avisa ao abrir, sem bloquear: `assinatura_digital` vale também para o certificado. */
+export type AvisoDoPdf = 'assinatura_digital' | 'xfa_puro'
+
 const PESO_DA_LEITURA = 0.9
 
 export function fracaoDaMesclagem(

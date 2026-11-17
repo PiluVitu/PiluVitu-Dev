@@ -154,6 +154,26 @@ describe('editar', () => {
     ).toContain('que dá para editar no navegador')
   })
 
+  it('os avisos do PDF aberto: as frases do Paulo, e o anúncio do aberto leva os avisos depois do nome', () => {
+    expect(TEXTOS.editar.avisos.assinatura_digital).toBe(
+      'Este PDF tem assinatura digital. Editar invalida a assinatura.',
+    )
+    expect(TEXTOS.editar.avisos.xfa_puro).toBe(
+      'Este PDF é um formulário XFA: o que você escrever por cima pode não aparecer no Adobe Acrobat e no Reader.',
+    )
+    expect(TEXTOS.editar.anuncios.aberto('a.pdf', 2, [])).toBe(
+      'a.pdf · 2 páginas',
+    )
+    expect(
+      TEXTOS.editar.anuncios.aberto('a.pdf', 1, [
+        'assinatura_digital',
+        'xfa_puro',
+      ]),
+    ).toBe(
+      `a.pdf · 1 página. ${TEXTOS.editar.avisos.assinatura_digital} ${TEXTOS.editar.avisos.xfa_puro}`,
+    )
+  })
+
   it('o Gerar tem o botão, o motivo de ficar parado (semMudancas) e o anúncio do pronto', () => {
     expect(TEXTOS.editar.gerar.botao).toBe('Gerar PDF editado')
     expect(TEXTOS.editar.gerar.semMudancas).toBe(

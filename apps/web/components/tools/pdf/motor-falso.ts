@@ -1,4 +1,4 @@
-import type { PaginaDoPlano } from '@piluvitu/tools/pdf-regras'
+import type { AvisoDoPdf, PaginaDoPlano } from '@piluvitu/tools/pdf-regras'
 import type {
   AndamentoDaMesclagem,
   FalhaDaOperacao,
@@ -20,7 +20,8 @@ type Opcoes = {
   tamanhoDoResultado?: number
 }
 
-// Para stories e testes: o nome do arquivo decide o resultado da leitura.
+// Para stories e testes: o nome do arquivo decide o resultado da leitura. "assinado" e "certificado"
+// dão o aviso da assinatura digital, e "xfa", o do XFA puro.
 export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
   if (/senha/i.test(arquivo.name)) return { ok: false, motivo: 'protegido' }
   if (/quebrado/i.test(arquivo.name)) return { ok: false, motivo: 'corrompido' }
@@ -28,7 +29,12 @@ export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
     return { ok: false, motivo: 'falha_do_navegador' }
   if (!/\.pdf$/i.test(arquivo.name)) return { ok: false, motivo: 'nao_e_pdf' }
   const paginas = Number(/(\d+)p/.exec(arquivo.name)?.[1] ?? 1)
-  return { ok: true, paginas }
+  const avisos: AvisoDoPdf[] = []
+  if (/assinado|certificado/i.test(arquivo.name)) {
+    avisos.push('assinatura_digital')
+  }
+  if (/xfa/i.test(arquivo.name)) avisos.push('xfa_puro')
+  return { ok: true, paginas, avisos }
 }
 
 export function criarMotorFalso({

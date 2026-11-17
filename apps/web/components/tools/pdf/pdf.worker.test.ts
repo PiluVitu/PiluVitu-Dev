@@ -176,6 +176,41 @@ it('analisar segue contando as páginas e recusando o que não é PDF ou está p
   expect(recusado).toMatchObject({ tipo: 'recusado', motivo: 'protegido' })
 })
 
+it('analisar manda os avisos junto das páginas: nenhum no comum, a assinatura no certificado', async () => {
+  const documento = await PDFDocument.create()
+  documento.addPage([100, 100])
+  documento.catalog.set(
+    PDFName.of('Perms'),
+    documento.context.obj({ DocMDP: documento.context.obj({ Type: 'Sig' }) }),
+  )
+  const certificado = new Blob([new Uint8Array(await documento.save())])
+  const simples = await pdf([100])
+
+  const [comum] = await pedir((id) => ({
+    tipo: 'analisar',
+    id,
+    arquivo: simples,
+  }))
+  const [assinado] = await pedir((id) => ({
+    tipo: 'analisar',
+    id,
+    arquivo: certificado,
+  }))
+
+  expect(comum).toEqual({
+    tipo: 'analisado',
+    id: comum.id,
+    paginas: 1,
+    avisos: [],
+  })
+  expect(assinado).toEqual({
+    tipo: 'analisado',
+    id: assinado.id,
+    paginas: 1,
+    avisos: ['assinatura_digital'],
+  })
+})
+
 describe('editar', () => {
   const deBase64 = (texto: string) =>
     Uint8Array.from(atob(texto), (c) => c.charCodeAt(0))

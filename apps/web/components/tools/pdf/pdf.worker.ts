@@ -1,8 +1,8 @@
 import {
   ErroDePdf,
   ErroNaEdicao,
+  analisarPdf,
   aplicarEdicoes,
-  contarPaginas,
   mesclarPdfs,
   organizarPaginas,
   type EdicaoDaPagina,
@@ -47,7 +47,7 @@ async function analisar(id: number, arquivo: Blob) {
     escopo.postMessage({
       tipo: 'analisado',
       id,
-      paginas: await contarPaginas(await bytesDe(arquivo)),
+      ...(await analisarPdf(await bytesDe(arquivo))),
     })
   } catch (erro) {
     escopo.postMessage({

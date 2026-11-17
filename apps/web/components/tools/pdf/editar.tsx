@@ -25,6 +25,7 @@ import {
   faImage,
   faMagnifyingGlassMinus,
   faMagnifyingGlassPlus,
+  faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
@@ -306,11 +307,11 @@ export function EditarPdf({
   )
   const [resultado, setResultado] = useState<Resultado>({ estado: 'parado' })
 
-  const { atual, documento, grandeDemais } = useAbrirPdf(arquivo, {
+  const { atual, documento, grandeDemais, avisos } = useAbrirPdf(arquivo, {
     motor,
     renderizador: () =>
       (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
-    aoAbrir(aberto, doArquivo) {
+    aoAbrir(aberto, doArquivo, avisosDoArquivo) {
       setVista({ ...SEM_VISTA, documento: aberto })
       setEdicao({ documento: aberto, historico: historicoInicial(CENA_VAZIA) })
       setFerramenta('selecionar')
@@ -322,7 +323,9 @@ export function EditarPdf({
       setResultado({ estado: 'parado' })
       soltarImagens(new Set())
       juncao.current = null
-      anunciar(T.aberto(doArquivo.name, aberto.paginas))
+      anunciar(
+        T.anuncios.aberto(doArquivo.name, aberto.paginas, avisosDoArquivo),
+      )
     },
     aoRecusar: () => anunciar(''),
   })
@@ -1033,6 +1036,26 @@ export function EditarPdf({
             >
               {T.aberto(atual.arquivo.name, atual.documento.paginas)}
             </p>
+            {avisos.length > 0 && (
+              <ul className="mt-3 space-y-2" data-testid="editar-pdf-avisos">
+                {avisos.map((aviso) => (
+                  <li
+                    key={aviso}
+                    className="bg-card border-border flex gap-2 rounded-md border px-3 py-3 text-sm"
+                    data-testid="editar-pdf-aviso"
+                  >
+                    <FontAwesomeIcon
+                      icon={faTriangleExclamation}
+                      className="text-primary mt-0.5 size-4 shrink-0"
+                      aria-hidden
+                    />
+                    <p className="min-w-0 [overflow-wrap:anywhere]">
+                      {T.avisos[aviso]}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="space-y-1">

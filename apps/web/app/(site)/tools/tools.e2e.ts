@@ -1547,6 +1547,61 @@ async function pdfHibrido(nome: string) {
   }
 }
 
+// O /AcroForm e o /Perms montados à mão, e o save sem as aparências: o getForm() do pdf-lib tiraria o /XFA.
+async function pdfComAvisos(
+  nome: string,
+  { assinado = false, certificado = false, xfa = false },
+) {
+  const documento = await PDFDocument.create()
+  const { context } = documento
+  documento.addPage([400, 500])
+  const assinatura = () =>
+    context.register(
+      context.obj({
+        Type: 'Sig',
+        Filter: 'Adobe.PPKLite',
+        SubFilter: 'adbe.pkcs7.detached',
+      }),
+    )
+  if (assinado || xfa) {
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      context.obj({
+        Fields: assinado
+          ? [
+              context.register(
+                context.obj({
+                  FT: 'Sig',
+                  T: PDFString.of('assinatura'),
+                  V: assinatura(),
+                }),
+              ),
+            ]
+          : [],
+        ...(xfa ? { XFA: xfaDe(documento) } : {}),
+      }),
+    )
+  }
+  if (certificado) {
+    documento.catalog.set(
+      PDFName.of('Perms'),
+      context.obj({ DocMDP: assinatura(), UR3: assinatura() }),
+    )
+  }
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(
+      await documento.save({ updateFieldAppearances: false }),
+    ),
+  }
+}
+
+const AVISO_DA_ASSINATURA =
+  'Este PDF tem assinatura digital. Editar invalida a assinatura.'
+const AVISO_DO_XFA =
+  'Este PDF é um formulário XFA: o que você escrever por cima pode não aparecer no Adobe Acrobat e no Reader.'
+
 test.describe('Editar PDF', () => {
   test('imagem em JPEG 2000 aparece na página grande e na miniatura, com o decodificador da própria origem, sem 404', async ({
     page,
@@ -1993,6 +2048,129 @@ test.describe('Editar PDF', () => {
         .map((campo) => campo.getName()),
     ).toEqual(['pessoa.nome'])
   })
+
+  for (const [caso, gerar, avisos] of [
+    [
+      'assinado',
+      () => pdfComAvisos('arquivo.pdf', { assinado: true }),
+      [AVISO_DA_ASSINATURA],
+    ],
+    [
+      'certificado',
+      () => pdfComAvisos('arquivo.pdf', { certificado: true }),
+      [AVISO_DA_ASSINATURA],
+    ],
+    [
+      'XFA puro',
+      () => pdfComAvisos('arquivo.pdf', { xfa: true }),
+      [AVISO_DO_XFA],
+    ],
+    [
+      'certificado e XFA puro',
+      () => pdfComAvisos('arquivo.pdf', { certificado: true, xfa: true }),
+      [AVISO_DA_ASSINATURA, AVISO_DO_XFA],
+    ],
+    [
+      'assinado com XFA ao lado do campo (híbrido)',
+      () => pdfComAvisos('arquivo.pdf', { assinado: true, xfa: true }),
+      [AVISO_DA_ASSINATURA],
+    ],
+    ['comum', () => pdfComAvisos('arquivo.pdf', {}), []],
+    ['híbrido', () => pdfHibrido('arquivo.pdf'), []],
+  ] as const)
+    test(`avisos ao abrir, ${caso}: ${avisos.length} na tela e no anúncio do aberto`, async ({
+      page,
+    }) => {
+      await page.goto('/tools/pdf/editar')
+      await abrirNoEditar(page, await gerar())
+
+      await expect(page.getByTestId('editar-pdf-aviso')).toHaveCount(
+        avisos.length,
+      )
+      for (const [i, aviso] of avisos.entries()) {
+        await expect(page.getByTestId('editar-pdf-aviso').nth(i)).toHaveText(
+          aviso,
+        )
+      }
+      await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+        [`arquivo.pdf · 1 página${avisos.length ? '.' : ''}`, ...avisos].join(
+          ' ',
+        ),
+      )
+    })
+
+  test('os avisos não bloqueiam: o certificado com XFA puro gera o PDF com o texto, e o XFA fica como antes', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(
+      page,
+      await pdfComAvisos('requerimento.pdf', {
+        certificado: true,
+        xfa: true,
+      }),
+    )
+    await expect(page.getByTestId('editar-pdf-aviso')).toHaveCount(2)
+    await inserirNoCentro(page, 'Texto')
+    await page.keyboard.type('Ciente')
+    const { nome, bytes } = await gerarEBaixar(page)
+
+    expect(nome).toBe('requerimento-editado.pdf')
+    const documento = await PDFDocument.load(bytes)
+    expect(documento.getPageCount()).toBe(1)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(true)
+  })
+
+  test('a 320 px, com os dois avisos e um nome comprido, nada rola para o lado, e o axe não acha violação séria', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(
+      page,
+      await pdfComAvisos(
+        'requerimento-de-certidao-assinado-pelo-cartorio-de-registro-civil-2026.pdf',
+        { certificado: true, xfa: true },
+      ),
+    )
+    await expect(page.getByTestId('editar-pdf-aviso')).toHaveCount(2)
+
+    const largura = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    )
+    expect(largura).toBeLessThanOrEqual(320)
+    for (const aviso of await page.getByTestId('editar-pdf-aviso').all()) {
+      const caixa = (await aviso.boundingBox())!
+      expect(caixa.x).toBeGreaterThanOrEqual(0)
+      expect(caixa.x + caixa.width).toBeLessThanOrEqual(320)
+    }
+    expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual([])
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    test(`os avisos passam de 4,5:1 no tema ${tema}`, async ({ page }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf/editar')
+      await abrirNoEditar(
+        page,
+        await pdfComAvisos('b.pdf', { certificado: true, xfa: true }),
+      )
+      await expect(page.getByTestId('editar-pdf-aviso')).toHaveCount(2)
+
+      const medidas = await page.evaluate(
+        medirContrasteDoTexto,
+        '[data-testid="editar-pdf-avisos"]',
+      )
+      expect(medidas.map((m) => m.texto)).toEqual([
+        AVISO_DA_ASSINATURA.slice(0, 30),
+        AVISO_DO_XFA.slice(0, 30),
+      ])
+      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+    })
 
   test('texto com emoji: o caractere nem entra no campo, e um alerta diz qual é e o que fazer', async ({
     page,

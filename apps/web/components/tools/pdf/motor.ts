@@ -1,4 +1,5 @@
 import type {
+  AvisoDoPdf,
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
   ObjetoDaPagina,
@@ -34,7 +35,12 @@ export type PedidoAoWorker =
   | ({ tipo: 'editar'; id: number; arquivo: Blob } & PedidoDeEdicao)
 
 export type RespostaDoWorker =
-  | { tipo: 'analisado'; id: number; paginas: number }
+  | {
+      tipo: 'analisado'
+      id: number
+      paginas: number
+      avisos: readonly AvisoDoPdf[]
+    }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
   | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
   | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
@@ -46,7 +52,7 @@ export type RespostaDoWorker =
 export type MotivoDaRecusa = MotivoDoErroDePdf | 'falha_do_navegador'
 
 export type ResultadoDaAnalise =
-  | { ok: true; paginas: number }
+  | { ok: true; paginas: number; avisos: readonly AvisoDoPdf[] }
   | { ok: false; motivo: MotivoDaRecusa }
 
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
@@ -114,7 +120,7 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         analises.delete(data.id)
         analise?.resolver(
           data.tipo === 'analisado'
-            ? { ok: true, paginas: data.paginas }
+            ? { ok: true, paginas: data.paginas, avisos: data.avisos }
             : { ok: false, motivo: data.motivo },
         )
         return
