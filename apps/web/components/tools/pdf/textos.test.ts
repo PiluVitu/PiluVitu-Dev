@@ -1,11 +1,13 @@
 import {
   ERROS_DO_ARQUIVO,
   TEXTOS,
+  TEXTOS_DO_MODO,
   arquivos,
   formatarGraus,
   formatarPorcentagem,
   formatarTamanho,
   paginas,
+  type TextosDoModo,
 } from './textos'
 
 describe('formatarTamanho', () => {
@@ -152,5 +154,58 @@ describe('editar', () => {
     expect(
       TEXTOS.editar.grandeDemais('scan.pdf', 80_000_000, 50_000_000),
     ).toContain('que dá para editar no navegador')
+  })
+})
+
+describe('assinar', () => {
+  const { assinar, editar } = TEXTOS
+
+  it('o que muda do editar: os dois tetos, o botão, o motivo, o pronto e o anúncio', () => {
+    expect(assinar.grandeDemais('scan.pdf', 80_000_000, 50_000_000)).toBe(
+      'scan.pdf tem 80 MB, mais que os 50 MB que dá para assinar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.',
+    )
+    expect(assinar.paginasDemais('livro.pdf', 1200, 500)).toBe(
+      'livro.pdf tem 1.200 páginas, mais que as 500 que dá para assinar de uma vez. Divida o PDF em partes de até 500 páginas no programa que o criou e abra uma de cada vez.',
+    )
+    expect(assinar.gerar.botao).toBe('Gerar PDF assinado')
+    expect(assinar.gerar.pronto).toBe('PDF assinado pronto')
+    expect(assinar.gerar.semMudancas).toBe(
+      'Ponha a assinatura ou um texto numa página, ou preencha um campo do formulário, para gerar o PDF assinado.',
+    )
+    expect(assinar.anuncios.pronto(3, 1_200_000)).toBe(
+      'PDF assinado pronto: 3 páginas, 1,2 MB.',
+    )
+  })
+
+  it('o editar continua com os textos dele, com o motivo do Gerar parado em semMudancas', () => {
+    expect(editar.gerar.botao).toBe('Gerar PDF editado')
+    expect(editar.gerar.semMudancas).toBe(
+      'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
+    )
+    expect(editar.anuncios.pronto(1, 500)).toBe(
+      'PDF editado pronto: 1 página, 500 bytes.',
+    )
+  })
+
+  it('cada modo tem a sua versão de cada texto que muda (TextosDoModo)', () => {
+    const { editar: doEditar, assinar: doAssinar } = TEXTOS_DO_MODO
+    expect(doEditar).toBe(editar)
+    expect(doAssinar).toBe(assinar)
+    for (const chave of ['botao', 'semMudancas', 'pronto'] as const) {
+      expect(doAssinar.gerar[chave]).not.toBe(doEditar.gerar[chave])
+    }
+    const textosDe = ({
+      grandeDemais,
+      paginasDemais,
+      anuncios,
+    }: TextosDoModo) => [
+      grandeDemais('a.pdf', 2, 1),
+      paginasDemais('a.pdf', 2, 1),
+      anuncios.pronto(1, 1),
+    ]
+    const doOutro = textosDe(doEditar)
+    textosDe(doAssinar).forEach((texto, i) =>
+      expect(texto).not.toBe(doOutro[i]),
+    )
   })
 })

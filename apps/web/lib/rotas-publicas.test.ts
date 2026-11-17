@@ -175,6 +175,7 @@ describe('rotasPublicas', () => {
       '/tools/pdf/mesclar',
       '/tools/pdf/organizar',
       '/tools/pdf/editar',
+      '/tools/pdf/assinar',
     ])
     expect(caminhos).not.toContain('/tools/mesclar-pdf')
   })
@@ -185,7 +186,7 @@ describe('rotasPublicas', () => {
       caminho: '/tools/pdf',
       nome: 'Editor de PDF',
       descricao:
-        'Editor de PDF: Mesclar, organizar e editar páginas de PDF. Utilitário para desenvolvedores que roda direto no navegador.',
+        'Editor de PDF: Mesclar, organizar, editar e assinar PDF. Utilitário para desenvolvedores que roda direto no navegador.',
     })
     expect(rotas).toContainEqual({
       caminho: '/tools/pdf/organizar',
@@ -198,6 +199,12 @@ describe('rotasPublicas', () => {
       nome: 'Editar PDF',
       descricao:
         'Editar PDF: Escreve, desenha, põe imagens e cobre trechos por cima das páginas. Utilitário para desenvolvedores que roda direto no navegador.',
+    })
+    expect(rotas).toContainEqual({
+      caminho: '/tools/pdf/assinar',
+      nome: 'Assinar PDF',
+      descricao:
+        'Assinar PDF: Põe sua assinatura e preenche formulários de PDF. Utilitário para desenvolvedores que roda direto no navegador.',
     })
   })
 

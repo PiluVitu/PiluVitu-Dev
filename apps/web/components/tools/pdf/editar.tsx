@@ -41,6 +41,7 @@ import {
   podeRefazer,
   refazer as refazerNoHistorico,
   registrarNoHistorico,
+  type Formulario,
   type Historico,
   type Ponto,
   type PontoDoTraco,
@@ -62,6 +63,8 @@ import {
   CORES,
   ESPESSURA_MAXIMA,
   ESPESSURA_MINIMA,
+  FERRAMENTAS_DO_MODO,
+  SUFIXO_DO_MODO,
   comApagarDeVerdade,
   comMudanca,
   corDoNome,
@@ -84,6 +87,7 @@ import {
   type Estilos,
   type Ferramenta,
   type Lugar,
+  type ModoDaTela,
   type Mudanca,
   type NomeDaCor,
 } from './objetos'
@@ -94,7 +98,7 @@ import {
   type DocumentoAberto,
   type RenderizadorDePdf,
 } from './renderizador'
-import { TEXTOS } from './textos'
+import { TEXTOS, TEXTOS_DO_MODO, type TextosDoModo } from './textos'
 import { useAbrirPdf, type RecusaDaAbertura } from './use-abrir-pdf'
 import { useMiniaturas } from './use-miniaturas'
 import { AvisoDePrivacidade, ZonaDeArquivos } from './zona-de-arquivos'
@@ -183,9 +187,13 @@ type Foco = () => HTMLElement | null | undefined
 
 type SentidoDoHistorico = 'desfazer' | 'refazer'
 
-function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
+function mensagemDaRecusa(
+  nome: string,
+  recusa: RecusaDaAbertura,
+  textos: TextosDoModo,
+): string {
   return 'paginasDemais' in recusa
-    ? T.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
+    ? textos.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
     : T.recusado(nome, recusa.motivo)
 }
 
@@ -232,6 +240,8 @@ function imagensDoHistorico(historico: Historico<Cena>): Set<string> {
 }
 
 type Props = {
+  /** O assinar é esta mesma tela, com as ferramentas dele e o formulário lido ao abrir. */
+  modo?: ModoDaTela
   /** Injetável para story e teste; sem ele, o pdf.js é baixado quando o primeiro PDF chega. */
   renderizador?: RenderizadorDePdf
   /** Injetável para story e teste; sem ele, o motor usa um Web Worker com o pdf-lib. */
@@ -239,10 +249,13 @@ type Props = {
 }
 
 export function EditarPdf({
+  modo = 'editar',
   renderizador: renderizadorInjetado,
   motor: motorInjetado,
 }: Props) {
   const ids = useId()
+  const TM = TEXTOS_DO_MODO[modo]
+  const ferramentasDoModo = FERRAMENTAS_DO_MODO[modo]
   const { arquivo, guardar } = useDocumentoPdf()
   const renderizadorRef = useRef<RenderizadorDePdf | null>(
     renderizadorInjetado ?? null,
@@ -305,12 +318,18 @@ export function EditarPdf({
     null,
   )
   const [resultado, setResultado] = useState<Resultado>({ estado: 'parado' })
+  const [formularioLido, setFormularioLido] = useState<{
+    documento: DocumentoAberto
+    formulario: Formulario
+  } | null>(null)
 
   const { atual, documento, grandeDemais } = useAbrirPdf(arquivo, {
     motor,
     renderizador: () =>
       (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
-    aoAbrir(aberto, doArquivo) {
+    formulario: modo === 'assinar',
+    aoAbrir(aberto, doArquivo, formulario) {
+      setFormularioLido(formulario ? { documento: aberto, formulario } : null)
       setVista({ ...SEM_VISTA, documento: aberto })
       setEdicao({ documento: aberto, historico: historicoInicial(CENA_VAZIA) })
       setFerramenta('selecionar')
@@ -370,6 +389,10 @@ export function EditarPdf({
   const montando = resultado.estado === 'montando'
   const urlDoResultado = resultado.estado === 'pronto' ? resultado.url : null
   const imagemParaPor = imagemPendente ? imagens.get(imagemPendente) : undefined
+  const formulario =
+    formularioLido && formularioLido.documento === documento
+      ? formularioLido.formulario
+      : null
 
   useEffect(() => () => motorRef.current?.encerrar(), [])
 
@@ -651,9 +674,10 @@ export function EditarPdf({
     focar(() => quadroRef.current)
   }
 
+  // A dica do texto do PDF manda usar o Cobrir: sem ele na barra, nem pergunta.
   async function clicarNaPagina(ponto: Ponto) {
     setSelecionado(null)
-    if (!documento) return
+    if (!documento || !ferramentasDoModo.includes('cobrir')) return
     const vez = ++vezDoClique.current
     const temTexto = await documento
       .textoNoPonto(pagina, ponto)
@@ -801,21 +825,20 @@ export function EditarPdf({
         const imagem = imagens.get(id)
         if (imagem) blobs.set(id, imagem.blob)
       }
-      const pdf = await motor().editar(
-        origem,
-        cenaDoPdf.objetos,
-        blobs,
-        rasterizadas,
-      )
+      const pdf = await motor().editar(origem, {
+        objetosPorPagina: cenaDoPdf.objetos,
+        imagens: blobs,
+        paginasRasterizadas: rasterizadas,
+      })
       if (vez !== vezDaGeracao.current) return
       setResultado({
         estado: 'pronto',
         url: URL.createObjectURL(pdf),
-        nome: nomeDoPdfDerivado(origem.name, 'editado'),
+        nome: nomeDoPdfDerivado(origem.name, SUFIXO_DO_MODO[modo]),
         paginas: documento.paginas,
         bytes: pdf.size,
       })
-      anunciar(T.anuncios.pronto(documento.paginas, pdf.size))
+      anunciar(TM.anuncios.pronto(documento.paginas, pdf.size))
       focar(() => baixarRef.current)
     } catch (erro) {
       if (vez !== vezDaGeracao.current) return
@@ -940,16 +963,20 @@ export function EditarPdf({
   const idSemImagem = `${ids}-sem-imagem`
   const idSemDesfazer = `${ids}-sem-desfazer`
   const idSemRefazer = `${ids}-sem-refazer`
-  const idSemObjetos = `${ids}-sem-objetos`
+  const idSemMudancas = `${ids}-sem-mudancas`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const noMinimo = zoom === 0
   const noMaximo = zoom === ZOOMS.length - 1
   const erro =
     arquivo && grandeDemais
-      ? T.grandeDemais(arquivo.name, arquivo.size, TETO_DE_BYTES_COM_MINIATURAS)
+      ? TM.grandeDemais(
+          arquivo.name,
+          arquivo.size,
+          TETO_DE_BYTES_COM_MINIATURAS,
+        )
       : atual && !atual.ok
-        ? mensagemDaRecusa(atual.arquivo.name, atual.recusa)
+        ? mensagemDaRecusa(atual.arquivo.name, atual.recusa, TM)
         : null
   const textoDoAnuncio =
     !arquivo || grandeDemais
@@ -982,7 +1009,11 @@ export function EditarPdf({
       : T.ferramentas.dicas.forma
 
   return (
-    <div className="space-y-8" data-testid="editar-pdf">
+    <div
+      className="space-y-8"
+      data-testid="editar-pdf"
+      data-formulario={formulario?.tipo}
+    >
       <AvisoDePrivacidade />
 
       <section aria-label={T.rotulo} className="space-y-3">
@@ -1174,6 +1205,7 @@ export function EditarPdf({
               <div ref={barraRef} className="min-w-0">
                 <BarraDeFerramentas
                   ativa={ferramenta}
+                  ferramentas={ferramentasDoModo}
                   aoEscolher={escolherFerramenta}
                 />
               </div>
@@ -1667,7 +1699,7 @@ export function EditarPdf({
                 className="h-11 gap-2 px-6"
                 disabled={quantosObjetos === 0}
                 aria-describedby={
-                  quantosObjetos === 0 ? idSemObjetos : undefined
+                  quantosObjetos === 0 ? idSemMudancas : undefined
                 }
                 onClick={() => void gerar()}
                 data-testid="editar-pdf-gerar"
@@ -1677,12 +1709,12 @@ export function EditarPdf({
                   className="size-4"
                   aria-hidden
                 />
-                {T.gerar.botao}
+                {TM.gerar.botao}
               </Button>
             )}
             {quantosObjetos === 0 && (
-              <p id={idSemObjetos} className="text-muted-foreground text-xs">
-                {T.gerar.semObjetos}
+              <p id={idSemMudancas} className="text-muted-foreground text-xs">
+                {TM.gerar.semMudancas}
               </p>
             )}
 
@@ -1720,7 +1752,7 @@ export function EditarPdf({
                 className="bg-card border-border motion-safe:animate-in motion-safe:fade-in-0 flex flex-wrap items-center gap-4 rounded-lg border p-4 motion-safe:duration-200"
               >
                 <div className="min-w-0 flex-1 basis-48 space-y-0.5">
-                  <p className="font-semibold">{T.gerar.pronto}</p>
+                  <p className="font-semibold">{TM.gerar.pronto}</p>
                   <p className="text-muted-foreground text-sm">
                     {T.gerar.resumoDoPronto(resultado.paginas, resultado.bytes)}
                   </p>

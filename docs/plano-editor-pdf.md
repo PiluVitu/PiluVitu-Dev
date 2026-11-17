@@ -367,6 +367,15 @@ Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o
 - **Dublês:** no `motor-falso.ts`, o nome do arquivo decide o formulário: `formulario` dá um campo de cada tipo nas páginas 1 e 2 (`FORMULARIO_DE_TESTE`, exportado para os testes e as stories), `xfa` dá o XFA puro, `hibrido` o híbrido e `assinado` o assinado digitalmente. O `editar` falso guarda o pedido inteiro e falha num campo com `falhaNoCampo`.
 - **Testes:** `motor.test.ts` (a marca, a leitura reenviada com ela, o pedido do editar com o formulário, a falha com `campo`); `pdf.worker.test.ts` (o pdf-lib de verdade: analisar com formulário, editar com o formulário lido de volta, `ErroNoCampo` como falha com campo, formulário com fundo como `inesperado`); `editar.test.tsx` (o assinar abre com a marca e o editar sem; a barra do assinar; "Gerar PDF assinado" e o nome `-assinado.pdf`; os casos da fase 3 com o `editar` em objeto); `textos.test.ts`; e os testes do registro.
 - **Docs da etapa:** rota, motor e Worker no `apps/web/CLAUDE.md`.
+- **Feito na etapa 2**, com estes ajustes ao desenho:
+  - os dois modos satisfazem o `TextosDoModo` no `TEXTOS_DO_MODO` (`Record<ModoDaTela, TextosDoModo>`, no `textos.ts`), que a tela usa. Um `satisfies` no objeto do `TEXTOS.editar` recusaria as chaves que só o editar tem;
+  - `analisar(arquivo, { formulario: false })` é o mesmo que sem a marca: o pedido ao Worker só leva `formulario: true`, e o resultado só traz o `formulario` quando a marca foi;
+  - no assinar, sem Cobrir na barra, o clique num texto do PDF não pergunta ao `textoNoPonto` nem mostra a dica de cobrir e escrever por cima, que mandaria usar uma ferramenta que o modo não tem. Na etapa 3, o clique num widget leva ao controle dele, e no assinar não há dica do texto para vir depois;
+  - o formulário lido fica no estado do `EditarPdf`, preso ao documento aberto: um PDF novo traz o dele, e um recusado não herda o do anterior (teste próprio). Até o painel da etapa 3, o tipo lido aparece só no `data-formulario` da raiz da tela, que o teste confere e a etapa 3 troca pelo painel;
+  - no `motor-falso.ts`, os ids do `FORMULARIO_DE_TESTE` seguem a ordem de Tab (0 a 8), com um campo sem `/TU` (o rótulo é o nome) e um somente leitura, e o `falhaNoCampo` é `{ campo, motivo, caracteres? }`, que rejeita toda edição que leva formulário;
+  - o `TEXTOS.assinar.gerar.semMudancas` já tem o texto final, que fala em preencher um campo, para a etapa 3 só mudar quando o Gerar habilita;
+  - as stories ModoAssinar do `Tools/PDF/Editar` e do `Tools/PDF/BarraDeFerramentas` entraram já nesta etapa, com a prop e o modo novos; a etapa 3 completa a do Editar (aviso, formulário);
+  - o E2E dos cartões do hub (quatro) rodou nesta etapa, contra o build de produção, porque o registro mudou aqui.
 
 **Etapa 3: a tela, com Jest e stories**
 

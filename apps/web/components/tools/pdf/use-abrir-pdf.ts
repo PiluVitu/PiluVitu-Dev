@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   TETO_DE_BYTES_COM_MINIATURAS,
   TETO_DE_PAGINAS,
+  type Formulario,
 } from '@piluvitu/tools/pdf-regras'
 import type { MotivoDaRecusa, MotorDePdf } from './motor'
 import {
@@ -25,7 +26,13 @@ type Ferramentas = {
   /** Chamados só quando chega um arquivo: o motor e o renderizador criam os Workers deles sob demanda. */
   motor: () => MotorDePdf
   renderizador: () => RenderizadorDePdf
-  aoAbrir?: (documento: DocumentoAberto, arquivo: File) => void
+  /** O pdf-lib lê também o formulário, na mesma leitura, e o `aoAbrir` o recebe. */
+  formulario?: boolean
+  aoAbrir?: (
+    documento: DocumentoAberto,
+    arquivo: File,
+    formulario?: Formulario,
+  ) => void
   aoRecusar?: () => void
 }
 
@@ -54,7 +61,9 @@ export function useAbrirPdf(arquivo: File | null, ferramentas: Ferramentas) {
     }
 
     void (async () => {
-      const analise = await motor.analisar(arquivo)
+      const analise = await motor.analisar(arquivo, {
+        formulario: ferramentasRef.current.formulario === true,
+      })
       if (!ativo) return
       if (!analise.ok) return recusar({ motivo: analise.motivo })
       if (analise.paginas > TETO_DE_PAGINAS) {
@@ -69,7 +78,7 @@ export function useAbrirPdf(arquivo: File | null, ferramentas: Ferramentas) {
         }
         aberto = doPdfjs
         setAbertura({ arquivo, ok: true, documento: doPdfjs })
-        ferramentasRef.current.aoAbrir?.(doPdfjs, arquivo)
+        ferramentasRef.current.aoAbrir?.(doPdfjs, arquivo, analise.formulario)
       } catch (erro) {
         recusar({
           motivo: ehFalhaDaAbertura(erro) ? erro.motivo : 'falha_do_navegador',

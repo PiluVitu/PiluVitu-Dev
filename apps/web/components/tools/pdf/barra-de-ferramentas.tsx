@@ -37,18 +37,25 @@ const ICONES: Record<Ferramenta, IconDefinition> = {
 type Props = {
   ativa: Ferramenta
   aoEscolher: (ferramenta: Ferramenta) => void
+  /** As do modo, na ordem da barra. */
+  ferramentas?: readonly Ferramenta[]
   desabilitada?: boolean
 }
 
 /** As ferramentas, uma ligada por vez (`aria-pressed`), com um ponto só no Tab e setas entre os botões. */
-export function BarraDeFerramentas({ ativa, aoEscolher, desabilitada }: Props) {
+export function BarraDeFerramentas({
+  ativa,
+  aoEscolher,
+  ferramentas = FERRAMENTAS,
+  desabilitada,
+}: Props) {
   const botoes = useRef(new Map<Ferramenta, HTMLButtonElement>())
   const [focada, setFocada] = useState<Ferramenta | null>(null)
   const noTab = focada ?? ativa
 
   function aoTeclar(evento: EventoDeTeclado<HTMLDivElement>) {
-    const agora = FERRAMENTAS.indexOf(noTab)
-    const total = FERRAMENTAS.length
+    const agora = ferramentas.indexOf(noTab)
+    const total = ferramentas.length
     const destinos: Record<string, number> = {
       ArrowRight: (agora + 1) % total,
       ArrowDown: (agora + 1) % total,
@@ -60,7 +67,7 @@ export function BarraDeFerramentas({ ativa, aoEscolher, desabilitada }: Props) {
     const destino = destinos[evento.key]
     if (destino === undefined) return
     evento.preventDefault()
-    botoes.current.get(FERRAMENTAS[destino])?.focus()
+    botoes.current.get(ferramentas[destino])?.focus()
   }
 
   return (
@@ -76,7 +83,7 @@ export function BarraDeFerramentas({ ativa, aoEscolher, desabilitada }: Props) {
       className="flex flex-wrap gap-1.5"
       data-testid="editar-pdf-ferramentas"
     >
-      {FERRAMENTAS.map((ferramenta) => {
+      {ferramentas.map((ferramenta) => {
         const ligada = ferramenta === ativa
         return (
           <button

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
-import { expect, userEvent, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { DocumentoPdfProvider } from './documento-pdf'
 import { EditarPdf } from './editar'
 import { criarMotorFalso } from './motor-falso'
@@ -179,6 +179,39 @@ export const PdfEditadoPronto: Story = {
     await waitFor(() =>
       expect(
         canvas.getByRole('link', { name: 'Baixar contrato-3p-editado.pdf' }),
+      ).toHaveFocus(),
+    )
+  },
+}
+
+// Fase 4: o assinar é esta mesma tela com modo="assinar". O motor falso lê o formulário pelo nome do
+// arquivo ("formulario" dá um campo de cada tipo); a tela dele chega na etapa seguinte.
+export const ModoAssinar: Story = {
+  args: {
+    modo: 'assinar',
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({ atraso: 150 }),
+  },
+  parameters: { arquivoInicial: pdf('formulario-2p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    const barra = canvas.getByRole('toolbar', { name: 'Ferramentas' })
+    await expect(
+      within(barra)
+        .getAllByRole('button')
+        .map((botao) => botao.textContent),
+    ).toEqual(['Selecionar e mover', 'Texto'])
+    await userEvent.click(within(barra).getByRole('button', { name: 'Texto' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.keyboard('17/11/2026')
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Gerar PDF assinado' }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('link', { name: 'Baixar formulario-2p-assinado.pdf' }),
       ).toHaveFocus(),
     )
   },

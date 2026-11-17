@@ -265,13 +265,14 @@ describe('llms.txt: dados das páginas', () => {
 
   it('Ferramentas: cada modo do Editor de PDF logo depois dele, com a rota própria', () => {
     const editor = linhas.indexOf(
-      '- [Editor de PDF](https://piluvitu.com.br/tools/pdf): Mesclar, organizar e editar páginas de PDF',
+      '- [Editor de PDF](https://piluvitu.com.br/tools/pdf): Mesclar, organizar, editar e assinar PDF',
     )
     expect(editor).toBeGreaterThan(-1)
-    expect(linhas.slice(editor + 1, editor + 4)).toEqual([
+    expect(linhas.slice(editor + 1, editor + 5)).toEqual([
       '- [Mesclar PDF](https://piluvitu.com.br/tools/pdf/mesclar): Junta vários PDFs em um só arquivo',
       '- [Organizar páginas](https://piluvitu.com.br/tools/pdf/organizar): Gira, apaga, reordena e extrai páginas de um PDF',
       '- [Editar PDF](https://piluvitu.com.br/tools/pdf/editar): Escreve, desenha, põe imagens e cobre trechos por cima das páginas',
+      '- [Assinar PDF](https://piluvitu.com.br/tools/pdf/assinar): Põe sua assinatura e preenche formulários de PDF',
     ])
     expect(texto).not.toContain('/tools/mesclar-pdf')
   })

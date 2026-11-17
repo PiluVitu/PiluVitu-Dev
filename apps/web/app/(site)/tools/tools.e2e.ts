@@ -578,10 +578,11 @@ test.describe('Editor de PDF', () => {
       page.getByText('Seus arquivos não saem do aparelho'),
     ).toBeVisible()
     const modos = page.getByTestId('pdf-modo')
-    await expect(modos).toHaveCount(3)
+    await expect(modos).toHaveCount(4)
     await expect(modos.nth(0)).toHaveAttribute('href', '/tools/pdf/mesclar')
     await expect(modos.nth(1)).toHaveAttribute('href', '/tools/pdf/organizar')
     await expect(modos.nth(2)).toHaveAttribute('href', '/tools/pdf/editar')
+    await expect(modos.nth(3)).toHaveAttribute('href', '/tools/pdf/assinar')
     for (const modo of await modos.all()) {
       const caixa = await modo.boundingBox()
       expect(caixa!.height).toBeGreaterThanOrEqual(44)
@@ -652,7 +653,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
   test('a 320 px, o hub não rola para o lado', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await page.goto('/tools/pdf')
-    await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
+    await expect(page.getByTestId('pdf-modo')).toHaveCount(4)
     const largura = await page.evaluate(
       () => document.documentElement.scrollWidth,
     )
@@ -665,7 +666,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
       await page.goto('/tools/pdf')
-      await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
+      await expect(page.getByTestId('pdf-modo')).toHaveCount(4)
 
       const medidas = await page.evaluate(medirContrasteDoTexto, 'main')
       expect(medidas.length).toBeGreaterThan(6)

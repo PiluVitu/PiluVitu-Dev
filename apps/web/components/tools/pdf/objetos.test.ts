@@ -10,6 +10,9 @@ import {
   CENA_VAZIA,
   CORES,
   ESTILOS_PADRAO,
+  FERRAMENTAS,
+  FERRAMENTAS_DO_MODO,
+  SUFIXO_DO_MODO,
   caixaDoTexto,
   cobrirDa,
   comApagarDeVerdade,
@@ -37,6 +40,20 @@ const A4 = { largura: 595, altura: 842 }
 
 // 10 px por caractere a 100 px: meio em por letra, fácil de conferir.
 const medir: MedirTexto = (texto) => texto.length * 50
+
+describe('o modo da tela', () => {
+  it('o editar tem todas as ferramentas; o assinar, só Selecionar e mover e Texto, na ordem da barra', () => {
+    expect(FERRAMENTAS_DO_MODO.editar).toEqual(FERRAMENTAS)
+    expect(FERRAMENTAS_DO_MODO.assinar).toEqual(['selecionar', 'texto'])
+    for (const ferramenta of FERRAMENTAS_DO_MODO.assinar) {
+      expect(FERRAMENTAS).toContain(ferramenta)
+    }
+  })
+
+  it('o sufixo do PDF gerado em cada modo', () => {
+    expect(SUFIXO_DO_MODO).toEqual({ editar: 'editado', assinar: 'assinado' })
+  })
+})
 
 describe('caixaDoTexto', () => {
   it('a largura é a da linha mais comprida, e a altura vem das métricas da fonte', () => {

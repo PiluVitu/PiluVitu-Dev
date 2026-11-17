@@ -8,7 +8,8 @@ import {
 import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { EditarPdf, ZOOMS } from './editar'
 import type { ObjetoNaTela } from './motor'
-import { criarMotorFalso } from './motor-falso'
+import { FORMULARIO_DE_TESTE, criarMotorFalso } from './motor-falso'
+import type { ModoDaTela } from './objetos'
 import { criarRenderizadorFalso } from './renderizador-falso'
 import { ERROS_DO_ARQUIVO, TEXTOS } from './textos'
 
@@ -145,11 +146,12 @@ function montar({
   renderizador = criarRenderizadorFalso(),
   motor = criarMotorFalso(),
   arquivoInicial = null as File | null,
+  modo = undefined as ModoDaTela | undefined,
 } = {}) {
   act(() =>
     root.render(
       <DocumentoPdfProvider arquivoInicial={arquivoInicial}>
-        <EditarPdf renderizador={renderizador} motor={motor} />
+        <EditarPdf renderizador={renderizador} motor={motor} modo={modo} />
         <Espiao />
       </DocumentoPdfProvider>,
     ),
@@ -1662,6 +1664,137 @@ describe('gerar o PDF editado', () => {
     expect(focado()).toBe('Gerar PDF editado')
     await clicar(porNome('Mostrar o objeto'))
     expect(document.activeElement).toBe(objetos()[0])
+  })
+})
+
+describe('o modo assinar (a mesma tela, com outro modo)', () => {
+  const abrirParaAssinar = (
+    nome = 'contrato-3p.pdf',
+    opcoes: Parameters<typeof montar>[0] = {},
+  ) => abrirParaEditar(nome, { ...opcoes, modo: 'assinar' })
+
+  const formularioLido = () => q('editar-pdf')!.dataset.formulario
+
+  it('o assinar lê o formulário ao abrir; o editar não lê', async () => {
+    const { motor } = await abrirParaAssinar()
+    expect(motor.analisadas).toEqual(['contrato-3p.pdf'])
+    expect(motor.analisadasComFormulario).toEqual(['contrato-3p.pdf'])
+    expect(formularioLido()).toBe('nenhum')
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    const doEditar = await abrirParaEditar()
+    expect(doEditar.motor.analisadas).toEqual(['contrato-3p.pdf'])
+    expect(doEditar.motor.analisadasComFormulario).toEqual([])
+    expect(formularioLido()).toBeUndefined()
+  })
+
+  it('o formulário lido fica com o documento aberto, e um PDF novo traz o dele', async () => {
+    await abrirParaAssinar('formulario-2p.pdf')
+    expect(formularioLido()).toBe('acroform')
+
+    await escolher(pdf('xfa-3p.pdf'))
+    await esperarAte(() => miniaturas().length === 3)
+    expect(formularioLido()).toBe('xfa')
+
+    // O recusado não chega a abrir: o formulário do anterior não pode ficar valendo para ele.
+    await escolher(pdf('formulario-senha.pdf'))
+    await esperarAte(() => q('editar-pdf-erro') !== null)
+    expect(formularioLido()).toBeUndefined()
+  })
+
+  it('a barra tem só Selecionar e mover e Texto, e as setas, Home e End andam só nelas', async () => {
+    await abrirParaAssinar()
+    const barra = container.querySelector('[role="toolbar"]')!
+
+    expect(
+      Array.from(barra.querySelectorAll('button')).map((b) =>
+        b.textContent?.trim(),
+      ),
+    ).toEqual(['Selecionar e mover', 'Texto'])
+    await act(async () => ferramenta('Selecionar e mover').focus())
+    await tecla(barra, 'ArrowRight')
+    expect(focado()).toBe('Texto')
+    await tecla(barra, 'ArrowRight')
+    expect(focado()).toBe('Selecionar e mover')
+    await tecla(barra, 'End')
+    expect(focado()).toBe('Texto')
+    await tecla(barra, 'Home')
+    expect(focado()).toBe('Selecionar e mover')
+  })
+
+  // No editar, o mesmo clique mostra a dica (caso "clicar num texto do PDF com Selecionar").
+  it('sem Cobrir na barra, o clique num texto do PDF não manda usar Cobrir', async () => {
+    await abrirParaAssinar()
+
+    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
+    await ponteiro(quadro(), 'pointerup', { x: 100, y: 100 })
+    await esperar(60)
+
+    expect(q('editar-pdf-dica-texto')).toBeNull()
+    expect(anuncio()).not.toBe(TEXTOS.editar.textoExistente)
+  })
+
+  it('gerar: "Gerar PDF assinado", parado com o motivo, e o download como -assinado.pdf', async () => {
+    const { motor } = await abrirParaAssinar()
+    const gerar = porNome('Gerar PDF assinado')
+    expect(gerar.disabled).toBe(true)
+    expect(
+      document.getElementById(gerar.getAttribute('aria-describedby')!)!
+        .textContent,
+    ).toBe(TEXTOS.assinar.gerar.semMudancas)
+
+    await inserirNoCentro('Texto')
+    await clicar(porNome('Gerar PDF assinado'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    expect(motor.editadas).toHaveLength(1)
+    expect(motor.editadas[0].objetosPorPagina.get(0)).toHaveLength(1)
+    expect(q('editar-pdf-resultado')!.textContent).toContain(
+      'PDF assinado pronto',
+    )
+    const baixar = q('editar-pdf-baixar') as HTMLAnchorElement
+    expect(baixar.getAttribute('download')).toBe('contrato-3p-assinado.pdf')
+    expect(anuncio()).toMatch(/^PDF assinado pronto: 3 páginas, /)
+  })
+
+  it('acima dos tetos, diz assinar', async () => {
+    const grande = pdf('scan-3p.pdf')
+    Object.defineProperty(grande, 'size', {
+      value: TETO_DE_BYTES_COM_MINIATURAS + 1,
+    })
+    montar({ arquivoInicial: grande, modo: 'assinar' })
+    await esperar()
+    expect(q('editar-pdf-erro')!.textContent).toContain(
+      'que dá para assinar no navegador',
+    )
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    await abrir('livro-600p.pdf', { modo: 'assinar' })
+    expect(q('editar-pdf-erro')!.textContent).toContain(
+      'mais que as 500 que dá para assinar de uma vez',
+    )
+  })
+
+  it('o formulário de teste do motor falso tem um campo de cada tipo, nas páginas 1 e 2', () => {
+    if (FORMULARIO_DE_TESTE.tipo !== 'acroform') throw new Error('sem campos')
+    const { campos } = FORMULARIO_DE_TESTE
+    expect(new Set(campos.map((c) => c.tipo))).toEqual(
+      new Set([
+        'texto',
+        'caixa',
+        'opcoes',
+        'suspensa',
+        'lista',
+        'assinatura',
+        'botao',
+      ]),
+    )
+    expect(
+      new Set(campos.flatMap((c) => c.widgets.map((w) => w.pagina))),
+    ).toEqual(new Set([0, 1]))
+    expect(campos.map((c) => c.id)).toEqual(campos.map((_, i) => i))
   })
 })
 

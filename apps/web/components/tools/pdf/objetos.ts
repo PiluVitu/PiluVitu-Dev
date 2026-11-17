@@ -39,6 +39,18 @@ export const FERRAMENTAS = [
 
 export type Ferramenta = (typeof FERRAMENTAS)[number]
 
+export type ModoDaTela = 'editar' | 'assinar'
+
+export const FERRAMENTAS_DO_MODO: Record<ModoDaTela, readonly Ferramenta[]> = {
+  editar: FERRAMENTAS,
+  assinar: ['selecionar', 'texto'],
+}
+
+export const SUFIXO_DO_MODO: Record<ModoDaTela, string> = {
+  editar: 'editado',
+  assinar: 'assinado',
+}
+
 export type FerramentaDeForma = Exclude<
   Ferramenta,
   'selecionar' | 'desenho' | 'imagem' | 'texto'

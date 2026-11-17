@@ -7,7 +7,7 @@ import type {
   TipoDeObjeto,
 } from '@piluvitu/tools/pdf-regras'
 import type { FalhaDaOperacao, MotivoDaRecusa, ObjetoNaTela } from './motor'
-import type { Ferramenta, NomeDaCor } from './objetos'
+import type { Ferramenta, ModoDaTela, NomeDaCor } from './objetos'
 
 // O site ainda não tem catálogo por idioma (WEB-17 em docs/auditoria-a11y-l10n.md): os textos das
 // ferramentas de PDF ficam juntos aqui, com chaves estáveis, para migrarem inteiros quando ele existir.
@@ -526,7 +526,7 @@ export const TEXTOS = {
     },
     gerar: {
       botao: 'Gerar PDF editado',
-      semObjetos:
+      semMudancas:
         'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
       resumo: (objetos: number, paginasComObjetos: number) =>
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
@@ -565,6 +565,22 @@ export const TEXTOS = {
         `PDF editado pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
     },
   },
+  assinar: {
+    grandeDemais: (nome: string, bytes: number, teto: number) =>
+      `${nome} tem ${formatarTamanho(bytes)}, mais que os ${formatarTamanho(teto)} que dá para assinar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.`,
+    paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
+      `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para assinar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
+    gerar: {
+      botao: 'Gerar PDF assinado',
+      semMudancas:
+        'Ponha a assinatura ou um texto numa página, ou preencha um campo do formulário, para gerar o PDF assinado.',
+      pronto: 'PDF assinado pronto',
+    },
+    anuncios: {
+      pronto: (totalDePaginas: number, bytes: number) =>
+        `PDF assinado pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
+    },
+  },
   arrastar: {
     alca: (nome: string) => `Arrastar ${nome}`,
     instrucoes:
@@ -577,3 +593,16 @@ export const TEXTOS = {
     cancelou: (nome: string) => `${nome} voltou para o lugar.`,
   },
 } as const
+
+/** O que muda entre o editar e o assinar, que são a mesma tela. */
+export type TextosDoModo = {
+  grandeDemais: (nome: string, bytes: number, teto: number) => string
+  paginasDemais: (nome: string, totalDePaginas: number, teto: number) => string
+  gerar: { botao: string; semMudancas: string; pronto: string }
+  anuncios: { pronto: (totalDePaginas: number, bytes: number) => string }
+}
+
+export const TEXTOS_DO_MODO: Record<ModoDaTela, TextosDoModo> = {
+  editar: TEXTOS.editar,
+  assinar: TEXTOS.assinar,
+}
