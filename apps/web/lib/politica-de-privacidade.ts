@@ -77,7 +77,7 @@ export const POLITICA_DE_PRIVACIDADE: {
       titulo: 'A Cloudflare na frente do site',
       paragrafos: [
         [
-          'Os pedidos ao piluvitu.com.br e ao votai.piluvitu.com.br passam antes pela rede da Cloudflare, Inc., empresa dos Estados Unidos, que fica na frente da Vercel para entregar o site mais rápido e protegê-lo de ataques e robôs. Ela recebe cada pedido, com o endereço IP, o navegador e a página pedida, e trata esses dados em nome do responsável, principalmente nos Estados Unidos e no Espaço Econômico Europeu (veja a ',
+          'Os pedidos ao piluvitu.com.br e ao votai.piluvitu.com.br passam antes pela rede da Cloudflare, Inc., empresa dos Estados Unidos, que fica na frente da Vercel para entregar o site mais rápido e protegê-lo de ataques e robôs. Ela recebe cada pedido, com o endereço IP, o navegador e a página pedida, e trata esses dados em nome do responsável. Ela guarda esses dados principalmente nos Estados Unidos e no Espaço Econômico Europeu e pode transferi-los e acessá-los de outros países onde opera (veja a ',
           {
             tipo: 'link',
             texto: 'política de privacidade da Cloudflare',
@@ -88,7 +88,7 @@ export const POLITICA_DE_PRIVACIDADE: {
         [
           'A Cloudflare também conta as visitas, com o Cloudflare Web Analytics, em todas as páginas, inclusive o Votaí e o painel de administração. Um script dela, de ',
           { tipo: 'codigo', texto: 'static.cloudflareinsights.com' },
-          ', registra a cada página vista a página (sem os parâmetros do endereço), a página de onde você veio, o país, o tipo de dispositivo, o sistema, o navegador e os tempos de carregamento, e manda isso para a própria Cloudflare. Ele não usa cookie nem guarda nada no seu navegador, e a Cloudflare não identifica quem visita pelo endereço IP nem pelo navegador. Os dados completos ficam 7 dias; depois sobra uma amostra, por até 6 meses.',
+          ', registra a cada página vista a página (sem os parâmetros do endereço), a página de onde você veio, o país, o tipo de dispositivo, o sistema, o navegador e os tempos de carregamento, e manda isso para a própria Cloudflare. Ele não usa cookie nem guarda nada no seu navegador, e a Cloudflare não identifica quem visita pelo endereço IP nem pelo navegador. Os dados completos ficam 7 dias; depois sobra uma amostra, que fica disponível no painel por até 6 meses.',
         ],
         [
           'Para separar pessoas de robôs, a Cloudflare põe em cada página um teste invisível em JavaScript, de ',
@@ -100,7 +100,7 @@ export const POLITICA_DE_PRIVACIDADE: {
           ', que expira depois de 30 minutos sem uso.',
         ],
         [
-          'A Cloudflare ainda esconde dos robôs os endereços de e-mail escritos na página (um script dela os mostra no seu navegador), indica ao navegador páginas que ele pode carregar antes de você clicar e pede que ele avise quando um pedido ao site falhar (o Network Error Logging). Esse aviso descreve a falha de rede, e a Cloudflare diz que não guarda o seu IP nele.',
+          'A Cloudflare ainda esconde dos robôs os endereços de e-mail escritos na página (um script dela os mostra no seu navegador), indica ao navegador páginas que ele pode carregar antes de você clicar e pede que ele avise quando um pedido ao site falhar (o Network Error Logging). Esse aviso descreve a falha de rede; do seu IP, a Cloudflare tira só a rede (ASN), o país e a região metropolitana, e diz que não guarda o IP.',
         ],
         [
           'A base legal é o legítimo interesse do responsável em manter o site no ar, rápido e protegido, e em entender o uso (LGPD, art. 7º, IX).',

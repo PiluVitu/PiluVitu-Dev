@@ -585,8 +585,8 @@ Pedido do dono em 2026-11-12, com o relatório do Search Console (sem sitemap, r
   - a Cloudflare na frente do site e do Votaí:
     - o proxy;
     - o Cloudflare Web Analytics, que a borda injeta em todas as páginas, inclusive `/admin` e o Votaí, sem cookie;
-    - o teste invisível contra robôs (`/cdn-cgi/challenge-platform`), que grava o `cf_clearance` por 1 ano. Medido: é o único cookie que apareceu, gravado pelo POST do `jsd/oneshot`; as páginas não devolvem `Set-Cookie`. A documentação também cita o `__cf_bm`, de 30 minutos;
-    - o e-mail escondido dos robôs, o pré-carregamento (Speed Brain) e o Network Error Logging.
+    - o teste invisível contra robôs (`/cdn-cgi/challenge-platform`), que grava o `cf_clearance`. Medido: é o único cookie que apareceu, gravado pelo POST do `jsd/oneshot`, e as páginas não devolvem `Set-Cookie`. ⚠️ A validade de 1 ano que a política cita é valor **medido em 2026-11-16**, não está em nenhuma página da Cloudflare (a de JavaScript detections fala em 15 minutos de vida da detecção, não do cookie). Pode mudar sem aviso: confira de novo sempre que a política for revista. A documentação também cita o `__cf_bm`, de 30 minutos sem uso;
+    - o e-mail escondido dos robôs, o pré-carregamento (Speed Brain) e o Network Error Logging (só falhas; do IP a Cloudflare tira o ASN, o país e a área metropolitana e não guarda o IP).
 
     As fontes oficiais e a medição estão no comentário do teste dessa seção;
 

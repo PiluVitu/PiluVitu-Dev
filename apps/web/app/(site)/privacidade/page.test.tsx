@@ -108,13 +108,15 @@ describe('/privacidade', () => {
 
   // Conferido em 2026-11-16 na documentação da Cloudflare:
   // - papel e país: https://www.cloudflare.com/privacypolicy/ (Cloudflare, Inc., EUA; operadora dos
-  //   "Customer Logs"; dados guardados principalmente nos EUA e no Espaço Econômico Europeu);
+  //   "Customer Logs"; seção 7: "We primarily store your information in the United States and the
+  //   EEA", com transferência e acesso de outros países onde o grupo opera);
   // - Web Analytics: https://www.cloudflare.com/web-analytics/ (sem cookie nem localStorage, sem
   //   "fingerprint" por IP ou navegador), https://developers.cloudflare.com/web-analytics/data-metrics/dimensions/
-  //   (país, caminho, referer, dispositivo, navegador, sistema), .../data-origin-and-collection/
+  //   (país, caminho, referer, dispositivo, navegador, sistema),
+  //   https://developers.cloudflare.com/web-analytics/data-metrics/data-origin-and-collection/
   //   (beacon de static.cloudflareinsights.com, tempos pela Navigation Timing API) e
   //   https://developers.cloudflare.com/web-analytics/faq/ (sem query string; 7 dias sem amostragem,
-  //   depois cerca de 10%; 6 meses de acesso);
+  //   depois cerca de 10%; "you can access data for the previous six months", sem dizer quando apaga);
   // - robôs: https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/
   //   (script invisível em /cdn-cgi/challenge-platform, resultado no cf_clearance) e
   //   https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/
@@ -122,8 +124,10 @@ describe('/privacidade', () => {
   //   depois de 30 minutos sem uso);
   // - Speed Brain (https://developers.cloudflare.com/speed/optimization/content/speed-brain/), e-mail
   //   escondido (https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
-  //   e Network Error Logging (https://developers.cloudflare.com/network-error-logging/: só falhas,
-  //   sem o IP guardado).
+  //   e Network Error Logging (https://developers.cloudflare.com/network-error-logging/: só falhas;
+  //   do IP saem o ASN, o país e a área metropolitana, e o IP não é guardado).
+  // A validade de 1 ano do cf_clearance não está em nenhuma dessas páginas: é medida (abaixo) e pode
+  // mudar sem aviso; confira de novo quando a política for revista.
   // E na produção, só com GET e um Chromium (2026-11-17 UTC): as páginas não devolvem Set-Cookie; o
   // beacon do Web Analytics entra em todas, inclusive /admin e votai.piluvitu.com.br, que também passa
   // pela Cloudflare; o POST do /cdn-cgi/challenge-platform/.../jsd/oneshot grava o cf_clearance
@@ -135,7 +139,7 @@ describe('/privacidade', () => {
       'piluvitu.com.br e ao votai.piluvitu.com.br',
       'Cloudflare, Inc., empresa dos Estados Unidos',
       'o endereço IP, o navegador e a página pedida',
-      'principalmente nos Estados Unidos e no Espaço Econômico Europeu',
+      'guarda esses dados principalmente nos Estados Unidos e no Espaço Econômico Europeu e pode transferi-los e acessá-los de outros países',
       'Cloudflare Web Analytics',
       'inclusive o Votaí e o painel de administração',
       'static.cloudflareinsights.com',
@@ -143,7 +147,7 @@ describe('/privacidade', () => {
       'a página de onde você veio, o país, o tipo de dispositivo, o sistema, o navegador e os tempos de carregamento',
       'não usa cookie nem guarda nada no seu navegador',
       '7 dias',
-      'até 6 meses',
+      'fica disponível no painel por até 6 meses',
       '/cdn-cgi/challenge-platform',
       'cf_clearance',
       'vale por 1 ano',
@@ -151,6 +155,7 @@ describe('/privacidade', () => {
       '30 minutos sem uso',
       'endereços de e-mail',
       'Network Error Logging',
+      'a rede (ASN), o país e a região metropolitana',
       'LGPD, art. 7º, IX',
     ])
     expect(
