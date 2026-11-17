@@ -1,20 +1,29 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { cn } from '@piluvitu/ui/cn'
 import type { ToolMeta } from '@/lib/tools-registry'
 import { PageTopBar } from '@/components/page-top-bar'
 
 type Props = {
   tool: Pick<ToolMeta, 'icon' | 'title' | 'description'>
   voltar?: { href: string; rotulo: string }
+  /** Mais largo a partir de lg, para a ferramenta que põe duas colunas lado a lado. */
+  larga?: boolean
   children: React.ReactNode
 }
 
 export function ToolPageShell({
   tool,
   voltar = { href: '/tools', rotulo: 'Ferramentas' },
+  larga = false,
   children,
 }: Props) {
   return (
-    <div className="mx-auto min-h-screen w-full max-w-3xl px-6 py-8 sm:px-8 xl:py-10">
+    <div
+      className={cn(
+        'mx-auto min-h-screen w-full max-w-3xl px-6 py-8 sm:px-8 xl:py-10',
+        larga && 'lg:max-w-6xl',
+      )}
+    >
       <PageTopBar backHref={voltar.href} backLabel={voltar.rotulo} />
 
       <div className="mt-10 mb-8 flex items-center gap-4">

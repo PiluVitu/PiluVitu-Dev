@@ -838,3 +838,204 @@ export function limitarAoCanvas(
     escala,
   }
 }
+
+// Fase 4: formulário (AcroForm) e assinatura.
+
+// Um retângulo no espaço do PDF, como o /Rect e a /BBox: [x1 y1 x2 y2], em qualquer ordem de cantos.
+export type Retangulo = readonly [number, number, number, number]
+
+export function caixaNaTela(
+  geometria: GeometriaDaPagina,
+  [x1, y1, x2, y2]: Retangulo,
+): Caixa {
+  const a = pdfParaTela(geometria, { x: x1, y: y1 })
+  const b = pdfParaTela(geometria, { x: x2, y: y2 })
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    largura: Math.abs(b.x - a.x),
+    altura: Math.abs(b.y - a.y),
+  }
+}
+
+// ISO 32000, 12.5.5: a /BBox passa pela /Matrix, e a caixa que sai é esticada e levada até o /Rect. A
+// matriz devolvida é só a desse último passo, porque o Do já aplica a /Matrix do formulário.
+export function matrizDaAparencia(
+  retangulo: Retangulo,
+  bbox: readonly number[],
+  matriz: Matriz,
+): Matriz | null {
+  const [x1, y1, x2, y2] = bbox
+  const cantos = [
+    { x: x1, y: y1 },
+    { x: x2, y: y1 },
+    { x: x1, y: y2 },
+    { x: x2, y: y2 },
+  ].map((ponto) => aplicarMatriz(matriz, ponto))
+  const xs = cantos.map(({ x }) => x)
+  const ys = cantos.map(({ y }) => y)
+  const [esquerda, baixo] = [Math.min(...xs), Math.min(...ys)]
+  const largura = Math.max(...xs) - esquerda
+  const altura = Math.max(...ys) - baixo
+  if (!(largura > 0 && altura > 0)) return null
+  const [rx1, ry1, rx2, ry2] = retangulo
+  const sx = Math.abs(rx2 - rx1) / largura
+  const sy = Math.abs(ry2 - ry1) / altura
+  return [
+    sx,
+    0,
+    0,
+    sy,
+    Math.min(rx1, rx2) - esquerda * sx,
+    Math.min(ry1, ry2) - baixo * sy,
+  ]
+}
+
+// O /Tabs da página: /R (linhas), /C (colunas); /S e sem /Tabs seguem o /Annots, como o Acrobat sem estrutura.
+export type OrdemDeTab = 'linhas' | 'colunas' | 'anotacoes'
+
+export type PosicaoNaOrdemDeTab = {
+  readonly caixa: Caixa // em pontos da tela
+  readonly anotacao: number // a posição no /Annots da página
+}
+
+export function compararPelaOrdemDeTab(
+  ordem: OrdemDeTab,
+): (a: PosicaoNaOrdemDeTab, b: PosicaoNaOrdemDeTab) => number {
+  return (a, b) => {
+    const [primeira, segunda] =
+      ordem === 'linhas'
+        ? [a.caixa.y - b.caixa.y, a.caixa.x - b.caixa.x]
+        : ordem === 'colunas'
+          ? [a.caixa.x - b.caixa.x, a.caixa.y - b.caixa.y]
+          : [0, 0]
+    return primeira || segunda || a.anotacao - b.anotacao
+  }
+}
+
+export type WidgetDoCampo = {
+  readonly pagina: number // índice da página, a partir de 0
+  readonly caixa: Caixa // em pontos da tela
+  readonly opcao?: string // caixa de marcar e botão de opção: a opção que o widget liga
+}
+
+export type MotivoDeNaoPreencher =
+  | 'assinatura_digital'
+  | 'botao'
+  | 'somente_leitura'
+  | 'seletor_de_arquivo'
+  | 'fora_do_winansi'
+
+type BaseDoCampo = {
+  readonly id: number // a posição no form.getFields() do pdf-lib
+  readonly nome: string // o nome completo (getName)
+  readonly rotulo: string // o /TU; sem ele, o nome
+  readonly obrigatorio: boolean
+  readonly widgets: readonly WidgetDoCampo[] // só os visíveis, numa página, na ordem de Tab
+  readonly naoPreenchivel?: MotivoDeNaoPreencher
+}
+
+export type CampoDoFormulario = BaseDoCampo &
+  (
+    | {
+        readonly tipo: 'texto'
+        readonly valor: string
+        readonly multilinha: boolean
+        readonly tamanhoMaximo: number | null
+      }
+    | { readonly tipo: 'caixa'; readonly marcada: boolean }
+    | {
+        readonly tipo: 'opcoes' | 'suspensa'
+        readonly valor: string | null
+        readonly opcoes: readonly string[]
+      }
+    | {
+        readonly tipo: 'lista'
+        readonly valores: readonly string[]
+        readonly opcoes: readonly string[]
+        readonly multipla: boolean
+      }
+    | { readonly tipo: 'assinatura'; readonly assinada: boolean }
+    | { readonly tipo: 'botao' }
+  )
+
+export type TipoDeCampo = CampoDoFormulario['tipo']
+
+export type Formulario =
+  | { readonly tipo: 'nenhum' }
+  | { readonly tipo: 'xfa' } // só XFA (dinâmico): o pdf-lib não preenche
+  | { readonly tipo: 'ilegivel' } // tem /AcroForm, e o pdf-lib não o lê
+  | {
+      readonly tipo: 'acroform'
+      readonly hibrido: boolean // também tem /XFA
+      readonly assinadoDigitalmente: boolean // algum /Sig com /V
+      readonly campos: readonly CampoDoFormulario[] // na ordem de Tab
+    }
+
+export type ValorDoCampo = { readonly id: number; readonly nome: string } & (
+  | { readonly tipo: 'texto'; readonly valor: string }
+  | { readonly tipo: 'caixa'; readonly marcada: boolean }
+  | { readonly tipo: 'opcoes' | 'suspensa'; readonly valor: string | null }
+  | { readonly tipo: 'lista'; readonly valores: readonly string[] }
+)
+
+export type PreenchimentoDoFormulario = {
+  readonly valores: readonly ValorDoCampo[]
+  readonly achatar: boolean
+}
+
+export type MotivoDoErroNoCampo =
+  | 'texto_fora_do_winansi'
+  | 'acima_do_tamanho_maximo'
+  | 'aparencia_do_campo'
+
+// Luminância (Rec. 601) de 0 a 255: daqui para cima o pixel é fundo; abaixo de LUMINANCIA_DA_TINTA, traço.
+export const LUMINANCIA_DO_BRANCO = 240
+
+export const LUMINANCIA_DA_TINTA = 200
+
+// Muda no lugar os pixels RGBA (o ImageData.data do canvas) e devolve quantos mudaram.
+export function tirarFundoBranco(pixels: Uint8ClampedArray): number {
+  if (pixels.length % 4 !== 0) {
+    throw new RangeError(`pixels que não são RGBA: ${pixels.length} bytes`)
+  }
+  const faixa = LUMINANCIA_DO_BRANCO - LUMINANCIA_DA_TINTA
+  let mudados = 0
+  for (let i = 0; i < pixels.length; i += 4) {
+    const luminancia =
+      0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]
+    if (luminancia < LUMINANCIA_DA_TINTA) continue
+    const alfa = Math.round(
+      (255 * Math.max(0, LUMINANCIA_DO_BRANCO - luminancia)) / faixa,
+    )
+    if (alfa < pixels[i + 3]) {
+      pixels[i + 3] = alfa
+      mudados++
+    }
+  }
+  return mudados
+}
+
+export const LARGURA_MAXIMA_DA_ASSINATURA = 1200
+
+const PIXELS_POR_UNIDADE_DA_ASSINATURA = 4
+
+// O tamanho, em pixels, do PNG da assinatura desenhada, a partir do recorte do traço (unidades do quadro).
+export function escalaDaAssinatura(
+  recorte: Tamanho,
+): Tamanho & { escala: number } {
+  const { largura, altura } = recorte
+  if (!(Number.isFinite(largura) && largura > 0)) {
+    throw new RangeError(`largura inválida: ${largura}`)
+  }
+  if (!(Number.isFinite(altura) && altura > 0)) {
+    throw new RangeError(`altura inválida: ${altura}`)
+  }
+  return limitarAoCanvas(
+    recorte,
+    Math.min(
+      PIXELS_POR_UNIDADE_DA_ASSINATURA,
+      LARGURA_MAXIMA_DA_ASSINATURA / largura,
+    ),
+  )
+}

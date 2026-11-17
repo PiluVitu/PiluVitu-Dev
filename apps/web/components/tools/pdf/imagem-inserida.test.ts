@@ -183,6 +183,86 @@ describe('prepararImagem', () => {
     expect(pronta.blob.type).toBe('image/jpeg')
   })
 
+  describe('com "Tirar o fundo branco" (a imagem da assinatura)', () => {
+    let pixelsLidos: Uint8ClampedArray
+    let pixelsPostos: Uint8ClampedArray[]
+
+    beforeEach(() => {
+      // Dois pixels: um branco (vira transparente) e um de tinta (fica).
+      pixelsLidos = Uint8ClampedArray.from([
+        250, 250, 250, 255, 20, 30, 120, 255,
+      ])
+      pixelsPostos = []
+      HTMLCanvasElement.prototype.getContext = jest.fn(function (
+        this: HTMLCanvasElement,
+      ) {
+        return {
+          drawImage: (
+            _: unknown,
+            __: number,
+            ___: number,
+            l: number,
+            a: number,
+          ) => desenhos.push({ largura: l, altura: a }),
+          getImageData: (x: number, y: number, l: number, a: number) => ({
+            data: pixelsLidos,
+            width: l,
+            height: a,
+            x,
+            y,
+          }),
+          putImageData: (dados: { data: Uint8ClampedArray }) =>
+            pixelsPostos.push(Uint8ClampedArray.from(dados.data)),
+        }
+      }) as unknown as HTMLCanvasElement['getContext']
+    })
+
+    it('desenha de novo mesmo pequena, e o putImageData leva o alfa novo', async () => {
+      const pronta = await prepararImagem(arquivo(PNG), {
+        tirarFundoBranco: true,
+      })
+      expect(desenhos).toEqual([{ largura: 800, altura: 600 }])
+      expect(pixelsPostos).toEqual([
+        Uint8ClampedArray.from([250, 250, 250, 0, 20, 30, 120, 255]),
+      ])
+      expect(blobs).toEqual([
+        { tipo: 'image/png', qualidade: undefined, largura: 800 },
+      ])
+      expect(pronta).toMatchObject({
+        largura: 800,
+        altura: 600,
+        reduzida: false,
+      })
+    })
+
+    it('o JPEG sai PNG, porque o JPEG não tem transparência', async () => {
+      const pronta = await prepararImagem(arquivo(JPEG_SEM_EXIF), {
+        tirarFundoBranco: true,
+      })
+      expect(blobs).toEqual([
+        { tipo: 'image/png', qualidade: undefined, largura: 800 },
+      ])
+      expect(pronta.blob.type).toBe('image/png')
+    })
+
+    it('a grande é reduzida e tem o fundo tirado no mesmo canvas', async () => {
+      bitmap = { width: 4800, height: 1200, close: jest.fn() }
+      const pronta = await prepararImagem(arquivo(JPEG_SEM_EXIF), {
+        tirarFundoBranco: true,
+      })
+      expect(desenhos).toEqual([{ largura: 2400, altura: 600 }])
+      expect(pixelsPostos).toHaveLength(1)
+      expect(pronta).toMatchObject({ largura: 2400, reduzida: true })
+    })
+
+    it('sem a opção, nada muda: a pequena entra como veio', async () => {
+      const png = arquivo(PNG)
+      const pronta = await prepararImagem(png, { tirarFundoBranco: false })
+      expect(pronta.blob).toBe(png)
+      expect(pixelsPostos).toEqual([])
+    })
+  })
+
   it('se o navegador não gera a imagem nova, a falha é dele, e o bitmap é solto', async () => {
     bitmap = { width: 5000, height: 5000, close: jest.fn() }
     geraBlob = false

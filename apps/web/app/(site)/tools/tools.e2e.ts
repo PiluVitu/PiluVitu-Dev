@@ -4,9 +4,12 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { crc32, deflateSync } from 'node:zlib'
 import {
+  PDFBool,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
+  PDFNumber,
   PDFRawStream,
   PDFString,
   StandardFonts,
@@ -578,10 +581,11 @@ test.describe('Editor de PDF', () => {
       page.getByText('Seus arquivos não saem do aparelho'),
     ).toBeVisible()
     const modos = page.getByTestId('pdf-modo')
-    await expect(modos).toHaveCount(3)
+    await expect(modos).toHaveCount(4)
     await expect(modos.nth(0)).toHaveAttribute('href', '/tools/pdf/mesclar')
     await expect(modos.nth(1)).toHaveAttribute('href', '/tools/pdf/organizar')
     await expect(modos.nth(2)).toHaveAttribute('href', '/tools/pdf/editar')
+    await expect(modos.nth(3)).toHaveAttribute('href', '/tools/pdf/assinar')
     for (const modo of await modos.all()) {
       const caixa = await modo.boundingBox()
       expect(caixa!.height).toBeGreaterThanOrEqual(44)
@@ -652,7 +656,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
   test('a 320 px, o hub não rola para o lado', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await page.goto('/tools/pdf')
-    await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
+    await expect(page.getByTestId('pdf-modo')).toHaveCount(4)
     const largura = await page.evaluate(
       () => document.documentElement.scrollWidth,
     )
@@ -665,7 +669,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
       await page.goto('/tools/pdf')
-      await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
+      await expect(page.getByTestId('pdf-modo')).toHaveCount(4)
 
       const medidas = await page.evaluate(medirContrasteDoTexto, 'main')
       expect(medidas.length).toBeGreaterThan(6)
@@ -1070,16 +1074,22 @@ async function pdfDosTresFormatos(nome: string) {
   }
 }
 
-// Um PNG RGB com degradê, montado à mão (assinatura, IHDR, IDAT e IEND), para o conteúdo dele ser único.
-function pngDeTeste(nome: string, largura: number, altura: number) {
+// Um PNG RGB montado à mão (assinatura, IHDR, IDAT e IEND). Sem a cor de cada pixel, um degradê, para o
+// conteúdo dele ser único.
+function pngDeTeste(
+  nome: string,
+  largura: number,
+  altura: number,
+  cor: (x: number, y: number) => number[] = (x, y) => [
+    (x * 251) / largura,
+    (y * 251) / altura,
+    128,
+  ],
+) {
   const linhas = Array.from({ length: altura }, (_, y) =>
     Buffer.from([
       0,
-      ...Array.from({ length: largura }, (_, x) => [
-        (x * 251) / largura,
-        (y * 251) / altura,
-        128,
-      ]).flat(),
+      ...Array.from({ length: largura }, (_, x) => cor(x, y)).flat(),
     ]),
   )
   const bloco = (tipo: string, dados: Buffer) => {
@@ -1442,8 +1452,8 @@ async function caixaDoPainel(page: Page) {
   }
 }
 
-async function gerarEBaixar(page: Page) {
-  await page.getByRole('button', { name: 'Gerar PDF editado' }).click()
+async function gerarEBaixar(page: Page, botao = 'Gerar PDF editado') {
+  await page.getByRole('button', { name: botao }).click()
   const baixar = page.getByTestId('editar-pdf-baixar')
   await expect(baixar).toBeFocused({ timeout: 30_000 })
   const [download] = await Promise.all([
@@ -1470,9 +1480,13 @@ async function escolherImagem(
   await escolha.setFiles(imagem)
 }
 
-// Num traço do ponteiro, de um ponto a outro da página (em fração dela), com passos no meio.
-async function riscar(page: Page, pontos: (readonly [number, number])[]) {
-  const quadro = page.getByTestId('editar-pdf-quadro')
+// Num traço do ponteiro, de um ponto a outro da página (ou do quadro da assinatura, em fração dele),
+// com passos no meio.
+async function riscar(
+  page: Page,
+  pontos: (readonly [number, number])[],
+  quadro = page.getByTestId('editar-pdf-quadro'),
+) {
   await quadro.scrollIntoViewIfNeeded()
   const caixa = (await quadro.boundingBox())!
   const naTela = ([x, y]: readonly [number, number]) =>
@@ -1949,6 +1963,7 @@ test.describe('Editar PDF', () => {
         - button "Selecionar e mover" [pressed]
         - button "Texto" [pressed=false]
         - button "Imagem" [pressed=false]
+        - button "Assinatura" [pressed=false]
         - button "Desenhar" [pressed=false]
         - button "Retângulo" [pressed=false]
         - button "Elipse" [pressed=false]
@@ -1970,7 +1985,8 @@ test.describe('Editar PDF', () => {
       /^Num objeto escolhido, as setas movem 1 ponto/,
     )
 
-    // A barra é um ponto só no Tab; daí, o Tab passa pelo Desfazer e chega ao objeto, dentro do quadro.
+    // A barra é um ponto só no Tab; daí, o Tab passa pelo Desfazer e pela área da página (que rola pelas
+    // setas) e chega ao objeto, dentro do quadro.
     await page.getByRole('button', { name: 'Selecionar e mover' }).focus()
     const caminho: string[] = []
     for (
@@ -1990,6 +2006,7 @@ test.describe('Editar PDF', () => {
     }
     expect(caminho).toEqual([
       'Desfazer',
+      'Área da página 1',
       'Retângulo, em 50 por 40, 120 por 80 pontos',
     ])
     await expect(objeto).toBeFocused()
@@ -2238,29 +2255,1157 @@ test.describe('Editar PDF', () => {
       await expect(page.getByTestId('editar-pdf-explicacao')).toBeVisible()
       await expect(page.getByTestId('editar-pdf-resultado')).toBeVisible()
 
-      await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
-      const violacoes = await page.evaluate(async () => {
-        const { axe } = window as unknown as {
-          axe: {
-            run: (alvo: Element, opcoes: RunOptions) => Promise<AxeResults>
-          }
-        }
-        const { violations } = await axe.run(
-          document.querySelector('[data-testid="editar-pdf"]')!,
-          {
-            runOnly: {
-              type: 'tag',
-              values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'],
-            },
-          },
-        )
-        return violations
-          .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-          .map(
-            (v) =>
-              `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
-          )
-      })
-      expect(violacoes).toEqual([])
+      expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual(
+        [],
+      )
     })
+})
+
+// Fase 4: assinatura e formulário. Páginas de 400 × 500 pontos; as caixas dos campos são do PDF (origem
+// embaixo à esquerda), e na tela o y é 500 − y − altura.
+const CAMPO_NOME = { x: 40, y: 430, largura: 220, altura: 24 }
+const CAMPO_CIDADE = { x: 40, y: 430, largura: 200, altura: 24 }
+
+const NOME_TECNICO = 'topmostSubform[0].Page1[0].NomeCompletoDoContribuinte[0]'
+
+const naTela = (campo: typeof CAMPO_NOME) => ({
+  ...campo,
+  y: 500 - campo.y - campo.altura,
+})
+
+const rotular = (campo: { acroField: { dict: PDFDict } }, rotulo: string) =>
+  campo.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(rotulo))
+
+function xfaDe(documento: PDFDocument) {
+  const { context } = documento
+  const xml = (conteudo: string) => context.register(context.stream(conteudo))
+  return context.obj([
+    PDFString.of('template'),
+    xml('<template><field name="nome"/></template>'),
+    PDFString.of('datasets'),
+    xml('<xfa:datasets><nome>Maria</nome></xfa:datasets>'),
+  ])
+}
+
+// Duas páginas com um campo de cada tipo, na ordem de Tab. Na 1: o nome (obrigatório, com /TU e até 30
+// caracteres), a caixa de marcar, os botões de opção, a suspensa e a lista de escolha múltipla. Na 2: um
+// campo sem /TU (o rótulo é o nome técnico), um somente leitura e um de assinatura digital (/Sig). O
+// híbrido ganha o XFA num segundo save: o que gera as aparências passa pelo getForm(), que tira o XFA.
+// `preenchido` traz a caixa marcada e uma escolha em cada campo de opções; `nomesTecnicos` acrescenta na
+// página 2 dois obrigatórios sem /TU, com os nomes longos e sem espaço dos formulários do LiveCycle.
+async function pdfDoFormulario(
+  nome: string,
+  {
+    hibrido = false,
+    assinado = false,
+    preenchido = false,
+    nomesTecnicos = false,
+  } = {},
+) {
+  const documento = await PDFDocument.create()
+  const { context } = documento
+  const form = documento.getForm()
+  const [p1, p2] = [
+    documento.addPage([400, 500]),
+    documento.addPage([400, 500]),
+  ]
+  const caixa = (campo: typeof CAMPO_NOME) => ({
+    x: campo.x,
+    y: campo.y,
+    width: campo.largura,
+    height: campo.altura,
+  })
+
+  const pessoa = form.createTextField('pessoa.nome')
+  pessoa.enableRequired()
+  pessoa.setMaxLength(30)
+  rotular(pessoa, 'Nome completo')
+  pessoa.addToPage(p1, caixa(CAMPO_NOME))
+  const aceito = form.createCheckBox('aceito')
+  rotular(aceito, 'Aceito os termos')
+  aceito.addToPage(p1, { x: 40, y: 390, width: 16, height: 16 })
+  const plano = form.createRadioGroup('plano')
+  rotular(plano, 'Plano')
+  plano.addOptionToPage('Basico', p1, { x: 40, y: 350, width: 16, height: 16 })
+  plano.addOptionToPage('Completo', p1, {
+    x: 140,
+    y: 350,
+    width: 16,
+    height: 16,
+  })
+  const estado = form.createDropdown('estado')
+  rotular(estado, 'Estado')
+  estado.setOptions(['SP', 'RJ', 'MG'])
+  estado.addToPage(p1, { x: 40, y: 300, width: 100, height: 24 })
+  const cores = form.createOptionList('cores')
+  rotular(cores, 'Cores preferidas')
+  cores.setOptions(['Azul', 'Verde', 'Vermelho'])
+  cores.enableMultiselect()
+  cores.addToPage(p1, { x: 40, y: 200, width: 150, height: 60 })
+  if (preenchido) {
+    aceito.check()
+    plano.select('Completo')
+    estado.select('RJ')
+    cores.select(['Azul'])
+  }
+
+  form.createTextField('cidade').addToPage(p2, caixa(CAMPO_CIDADE))
+  const protocolo = form.createTextField('protocolo')
+  protocolo.setText('PROT-2026')
+  protocolo.enableReadOnly()
+  rotular(protocolo, 'Protocolo')
+  protocolo.addToPage(p2, { x: 40, y: 380, width: 120, height: 24 })
+  const assinatura = context.register(
+    context.obj({
+      FT: 'Sig',
+      T: PDFString.of('assinatura'),
+      TU: PDFHexString.fromText('Assinatura do responsável'),
+      Type: 'Annot',
+      Subtype: 'Widget',
+      Rect: [40, 60, 240, 110],
+      P: p2.ref,
+      F: 4,
+      ...(assinado
+        ? {
+            V: {
+              Type: 'Sig',
+              Filter: 'Adobe.PPKLite',
+              SubFilter: 'adbe.pkcs7.detached',
+              Contents: PDFHexString.of('00'),
+            },
+          }
+        : {}),
+    } as Parameters<typeof context.obj>[0]),
+  )
+  form.acroForm.addField(assinatura)
+  p2.node.addAnnot(assinatura)
+  if (nomesTecnicos) {
+    const contribuinte = form.createTextField(NOME_TECNICO)
+    contribuinte.enableRequired()
+    contribuinte.addToPage(p2, { x: 40, y: 300, width: 200, height: 24 })
+    const declaracao = form.createCheckBox(
+      'topmostSubform[0].Page1[0].DeclaracaoDeVeracidade[0]',
+    )
+    declaracao.enableRequired()
+    declaracao.addToPage(p2, { x: 40, y: 260, width: 16, height: 16 })
+  }
+
+  let bytes = await documento.save()
+  if (hibrido) {
+    const comXfa = await PDFDocument.load(bytes)
+    comXfa.catalog
+      .lookup(PDFName.of('AcroForm'), PDFDict)
+      .set(PDFName.of('XFA'), xfaDe(comXfa))
+    comXfa.catalog.set(PDFName.of('NeedsRendering'), PDFBool.True)
+    bytes = await comXfa.save({ updateFieldAppearances: false })
+  }
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(bytes),
+  }
+}
+
+// Formulário só XFA (dinâmico, do LiveCycle): o /AcroForm sem campo nenhum, só com o XML.
+async function pdfSoComXfa(nome: string) {
+  const documento = await PDFDocument.create()
+  documento.addPage([400, 500])
+  documento.catalog.set(
+    PDFName.of('AcroForm'),
+    documento.context.obj({ Fields: [], XFA: xfaDe(documento) }),
+  )
+  documento.catalog.set(PDFName.of('NeedsRendering'), PDFBool.True)
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(
+      await documento.save({ updateFieldAppearances: false }),
+    ),
+  }
+}
+
+// A foto de uma assinatura em papel: fundo branco e um traço escuro no meio.
+const RUBRICA = { largura: 240, altura: 80 }
+const rubricaEmPapel = () =>
+  pngDeTeste('rubrica.png', RUBRICA.largura, RUBRICA.altura, (x, y) =>
+    Math.abs(y - RUBRICA.altura / 2) < 4 &&
+    x >= RUBRICA.largura * 0.1 &&
+    x < RUBRICA.largura * 0.9
+      ? [20, 20, 70]
+      : [255, 255, 255],
+  )
+
+async function escolherFerramenta(page: Page, nome: string) {
+  await page
+    .getByTestId('editar-pdf-ferramentas')
+    .getByRole('button', { name: nome, exact: true })
+    .click()
+}
+
+async function desenharAssinatura(page: Page) {
+  await escolherFerramenta(page, 'Assinatura')
+  await expect(page.getByRole('radio', { name: 'Desenhar' })).toBeFocused()
+  await riscar(
+    page,
+    [
+      [0.1, 0.6],
+      [0.3, 0.3],
+      [0.5, 0.7],
+      [0.7, 0.3],
+      [0.9, 0.6],
+    ],
+    page.getByTestId('quadro-assinatura'),
+  )
+  await expect(page.getByTestId('quadro-assinatura-traco')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Usar esta assinatura' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Inserir no centro' }),
+  ).toBeFocused()
+}
+
+async function enviarAssinatura(
+  page: Page,
+  imagem: { name: string; mimeType: string; buffer: Buffer },
+) {
+  await page.getByRole('radio', { name: 'Enviar imagem' }).check()
+  await expect(
+    page.getByRole('checkbox', { name: 'Tirar o fundo branco' }),
+  ).toBeChecked()
+  const [escolha] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: 'Escolher imagem da assinatura' }).click(),
+  ])
+  await escolha.setFiles(imagem)
+  await expect(page.getByTestId('criar-assinatura-previa')).toBeVisible()
+  await page.getByRole('button', { name: 'Usar esta assinatura' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Inserir no centro' }),
+  ).toBeFocused()
+}
+
+// Com uma assinatura já pronta, a ferramenta mostra a pronta: `outra` passa por "Criar outra assinatura".
+async function digitarAssinatura(
+  page: Page,
+  nome: string,
+  { outra = false } = {},
+) {
+  await escolherFerramenta(page, 'Assinatura')
+  if (outra) {
+    await page.getByRole('button', { name: 'Criar outra assinatura' }).click()
+  }
+  await page.getByRole('radio', { name: 'Digitar o nome' }).check()
+  await page.getByRole('textbox', { name: 'Seu nome' }).fill(nome)
+  await expect(page.getByTestId('criar-assinatura-nome')).toHaveText(nome)
+  await expect(page.getByTestId('criar-assinatura-nome')).toHaveCSS(
+    'font-style',
+    'italic',
+  )
+  await page.getByRole('button', { name: 'Usar esta assinatura' }).click()
+  await expect(page.getByTestId('editar-pdf-assinatura-pronta')).toContainText(
+    `O nome ${nome}, em Times itálico.`,
+  )
+}
+
+// As imagens que a página desenha: os XObjects de imagem dos recursos dela.
+function imagensDaPagina(pdf: PDFDocument, indice: number): PDFRawStream[] {
+  const xobjetos = pdf
+    .getPage(indice)
+    .node.Resources()
+    ?.lookupMaybe(PDFName.of('XObject'), PDFDict)
+  return (xobjetos?.entries() ?? [])
+    .map(([, ref]) => pdf.context.lookup(ref))
+    .filter(
+      (objeto): objeto is PDFRawStream =>
+        objeto instanceof PDFRawStream &&
+        objeto.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'),
+    )
+}
+
+const fontesDaPagina = (pdf: PDFDocument, indice: number) => {
+  const fontes = pdf
+    .getPage(indice)
+    .node.Resources()
+    ?.lookupMaybe(PDFName.of('Font'), PDFDict)
+  return (fontes?.entries() ?? []).map(([, ref]) =>
+    String(pdf.context.lookup(ref, PDFDict).get(PDFName.of('BaseFont'))),
+  )
+}
+
+// O alfa da imagem, pela /SMask (cinza de 8 bits, uma linha de `Width` bytes por vez).
+function alfaDaImagem(pdf: PDFDocument, imagem: PDFRawStream) {
+  const mascara = pdf.context.lookup(imagem.dict.get(PDFName.of('SMask')))
+  if (!(mascara instanceof PDFRawStream)) {
+    throw new Error('A imagem não tem /SMask.')
+  }
+  const largura = mascara.dict.lookup(PDFName.of('Width'), PDFNumber).asNumber()
+  const bytes = decodePDFRawStream(mascara).decode()
+  return {
+    bytes,
+    em: (x: number, y: number) => bytes[y * largura + x],
+  }
+}
+
+async function violacoesDoAxe(page: Page, seletor: string) {
+  await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') })
+  return page.evaluate(async (alvo) => {
+    const { axe } = window as unknown as {
+      axe: { run: (alvo: Element, opcoes: RunOptions) => Promise<AxeResults> }
+    }
+    const { violations } = await axe.run(document.querySelector(alvo)!, {
+      runOnly: {
+        type: 'tag',
+        values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'],
+      },
+    })
+    return violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map(
+        (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
+      )
+  }, seletor)
+}
+
+// Os controles da tela menores que 44 px. Na caixa de marcar e no botão de opção, o alvo é o rótulo,
+// que também liga o controle.
+function alvosPequenos(seletor: string) {
+  const alvoDe = (el: HTMLElement): Element => {
+    if (
+      el instanceof HTMLInputElement &&
+      (el.type === 'checkbox' || el.type === 'radio')
+    ) {
+      return (
+        el.closest('label') ??
+        (el.id ? document.querySelector(`label[for="${el.id}"]`) : null) ??
+        el
+      )
+    }
+    return el
+  }
+  return [
+    ...document
+      .querySelector(seletor)!
+      .querySelectorAll<HTMLElement>(
+        'button, a[href], input, select, textarea',
+      ),
+  ]
+    .filter(
+      (el) =>
+        el.getClientRects().length > 0 &&
+        !el.classList.contains('sr-only') &&
+        !el.closest('[aria-hidden="true"]'),
+    )
+    .map((el) => {
+      const { width, height } = alvoDe(el).getBoundingClientRect()
+      return {
+        alvo:
+          el.getAttribute('aria-label') ??
+          el.closest('label')?.textContent?.trim() ??
+          (el.id
+            ? document.querySelector(`label[for="${el.id}"]`)?.textContent
+            : null) ??
+          el.textContent?.trim() ??
+          el.tagName,
+        largura: Math.round(width),
+        altura: Math.round(height),
+      }
+    })
+    .filter(({ largura, altura }) => largura < 44 || altura < 44)
+}
+
+test.describe('Assinar PDF', () => {
+  test('nenhum Worker antes de escolher o PDF; depois, o do pdf-lib e o do pdf.js, e gerar não cria outro', async ({
+    page,
+  }) => {
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await page.goto('/tools/pdf/assinar')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    expect(workers).toEqual([])
+
+    await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+    expect(workers).toHaveLength(2)
+    await page.getByRole('textbox', { name: 'cidade' }).fill('Recife')
+    await gerarEBaixar(page, 'Gerar PDF assinado')
+    expect(workers).toHaveLength(2)
+  })
+
+  test('preenche o formulário pelo teclado, na ordem de Tab do PDF, e baixa: os valores no getForm() do PDF baixado, e o híbrido sem o XFA', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { hibrido: true }),
+    )
+    await expect(page.getByTestId('editar-pdf-anuncio')).toContainText(
+      'Formulário com 8 campos em 2 páginas.',
+    )
+    await expect(page.getByTestId('formulario-aviso-hibrido')).toContainText(
+      'Ao gerar, a versão XFA sai',
+    )
+
+    const nome = page.getByRole('textbox', {
+      name: 'Nome completo (obrigatório)',
+    })
+    await nome.focus()
+    await page.keyboard.type('Maria da Silva')
+    const tab = async (controle: ReturnType<Page['getByRole']>) => {
+      await page.keyboard.press('Tab')
+      await expect(controle).toBeFocused()
+    }
+    await tab(page.getByRole('checkbox', { name: 'Aceito os termos' }))
+    await page.keyboard.press('Space')
+    await tab(page.getByRole('radio', { name: 'Basico' }))
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByRole('radio', { name: 'Completo' })).toBeChecked()
+    await tab(page.getByRole('button', { name: 'Limpar a escolha' }))
+    const estado = page.getByRole('combobox', { name: 'Estado' })
+    await tab(estado)
+    await estado.selectOption({ label: 'RJ' })
+    await tab(page.getByRole('checkbox', { name: 'Azul' }))
+    await page.keyboard.press('Space')
+    await tab(page.getByRole('checkbox', { name: 'Verde' }))
+    await tab(page.getByRole('checkbox', { name: 'Vermelho' }))
+    await page.keyboard.press('Space')
+    await tab(page.getByRole('textbox', { name: 'cidade' }))
+    await expect(page.getByTestId('editar-pdf-posicao')).toHaveText(
+      'Página 2 de 2',
+    )
+    await page.keyboard.type('São Paulo')
+    await tab(page.getByRole('textbox', { name: 'Protocolo' }))
+    // O /Sig não tem controle: o Tab sai do formulário para o Achatar.
+    await tab(page.getByRole('checkbox', { name: 'Achatar o formulário' }))
+    await expect(page.getByTestId('editar-pdf-obrigatorios')).toHaveCount(0)
+
+    const { nome: baixado, bytes } = await gerarEBaixar(
+      page,
+      'Gerar PDF assinado',
+    )
+    expect(baixado).toBe('cadastro-assinado.pdf')
+    const final = await PDFDocument.load(bytes)
+    // Antes do getForm(), que tira o XFA da cópia lida.
+    expect(
+      final.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(final.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    const form = final.getForm()
+    expect(form.getTextField('pessoa.nome').getText()).toBe('Maria da Silva')
+    expect(form.getCheckBox('aceito').isChecked()).toBe(true)
+    expect(form.getRadioGroup('plano').getSelected()).toBe('Completo')
+    expect(form.getDropdown('estado').getSelected()).toEqual(['RJ'])
+    expect(form.getOptionList('cores').getSelected()).toEqual([
+      'Azul',
+      'Vermelho',
+    ])
+    expect(form.getTextField('cidade').getText()).toBe('São Paulo')
+    expect(form.getTextField('protocolo').getText()).toBe('PROT-2026')
+    expect(form.getFields()).toHaveLength(8)
+  })
+
+  test('achatar: o PDF baixado fica só com o /Sig, e o texto preenchido vira desenho na caixa do campo', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+    await page
+      .getByRole('textbox', { name: 'Nome completo (obrigatório)' })
+      .fill('Maria')
+    await page.getByRole('checkbox', { name: 'Achatar o formulário' }).check()
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const final = await PDFDocument.load(bytes)
+    const widgets = final
+      .getPages()
+      .flatMap((pagina) => pagina.node.Annots()?.asArray() ?? [])
+      .map((ref) => final.context.lookup(ref, PDFDict))
+      .filter(
+        (anotacao) =>
+          anotacao.get(PDFName.of('Subtype')) === PDFName.of('Widget'),
+      )
+    expect(widgets).toHaveLength(1)
+    expect(
+      final
+        .getForm()
+        .getFields()
+        .map((campo) => campo.getName()),
+    ).toEqual(['assinatura'])
+
+    // Achatado, o valor é conteúdo da página (o pdf.js não lê o texto das anotações no getTextContent).
+    const [primeira] = await lerComPdfjs(bytes)
+    const lido = primeira.textos.find((t) => t.str === 'Maria')
+    expect(lido).toBeDefined()
+    const campo = naTela(CAMPO_NOME)
+    const [, , , , x, y] = lido!.matriz
+    expect(x).toBeGreaterThanOrEqual(campo.x)
+    expect(x).toBeLessThan(campo.x + campo.largura)
+    expect(y).toBeGreaterThan(campo.y)
+    expect(y).toBeLessThanOrEqual(campo.y + campo.altura)
+  })
+
+  test('desmarcar a caixa, Limpar a escolha e (nenhuma) também chegam ao PDF baixado', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { preenchido: true }),
+    )
+    const aceito = page.getByRole('checkbox', { name: 'Aceito os termos' })
+    await expect(aceito).toBeChecked()
+    await aceito.uncheck()
+    await expect(page.getByRole('radio', { name: 'Completo' })).toBeChecked()
+    await page.getByRole('button', { name: 'Limpar a escolha' }).click()
+    await expect(page.getByRole('radio', { name: 'Basico' })).toBeFocused()
+    await page
+      .getByRole('combobox', { name: 'Estado' })
+      .selectOption({ label: '(nenhuma)' })
+    await page.getByRole('checkbox', { name: 'Azul' }).uncheck()
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const form = (await PDFDocument.load(bytes)).getForm()
+    expect(form.getCheckBox('aceito').isChecked()).toBe(false)
+    expect(form.getRadioGroup('plano').getSelected()).toBeUndefined()
+    expect(form.getDropdown('estado').getSelected()).toEqual([])
+    expect(form.getOptionList('cores').getSelected()).toEqual([])
+  })
+
+  test('focar um campo da página 2 abre a página sem anúncio, e o destaque cobre a caixa do campo na tela', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+    const anuncio = page.getByTestId('editar-pdf-anuncio')
+    await expect(anuncio).toContainText('Formulário com 8 campos')
+    const antes = await anuncio.textContent()
+
+    const cidade = page.getByRole('textbox', { name: 'cidade' })
+    await cidade.focus()
+    await expect(page.getByTestId('editar-pdf-posicao')).toHaveText(
+      'Página 2 de 2',
+    )
+    await expect(page.getByTestId('editar-pdf-desenhando')).toHaveCount(0)
+    const destaque = page.getByTestId('editar-pdf-destaque-caixa')
+    await expect(destaque).toHaveCount(1)
+    await expect(page.getByTestId('editar-pdf-destaque')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
+    await expect(cidade).toBeFocused()
+    expect(await anuncio.textContent()).toBe(antes)
+
+    // O contorno fica 3 px por fora do campo, em pixels da tela.
+    const folha = (await page.getByTestId('editar-pdf-folha').boundingBox())!
+    const escala = folha.width / 400
+    const campo = naTela(CAMPO_CIDADE)
+    const caixa = (await destaque.boundingBox())!
+    conferirCaixa(
+      [caixa.x, caixa.y, caixa.x + caixa.width, caixa.y + caixa.height],
+      [
+        folha.x + campo.x * escala - 3,
+        folha.y + campo.y * escala - 3,
+        folha.x + (campo.x + campo.largura) * escala + 3,
+        folha.y + (campo.y + campo.altura) * escala + 3,
+      ],
+      1,
+    )
+    const area = (await page.getByTestId('editar-pdf-area').boundingBox())!
+    expect(caixa.y).toBeGreaterThanOrEqual(area.y)
+    expect(caixa.y + caixa.height).toBeLessThanOrEqual(area.y + area.height)
+  })
+
+  test('assinatura desenhada com o ponteiro: usa, insere no centro e move pelas setas; no PDF baixado, a imagem com transparência ocupa a caixa da tela', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfComTexto('contrato.pdf'))
+    await desenharAssinatura(page)
+    await expect(
+      page.getByTestId('editar-pdf-assinatura-pronta'),
+    ).toContainText('Desenhada no quadro.')
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    const objeto = page.getByTestId('editar-pdf-objeto')
+    await expect(objeto).toBeFocused()
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      /^Inserido: Imagem assinatura desenhada, em \d+ por \d+, 180 por \d+ pontos\.\s*$/,
+    )
+
+    const imagem = page.locator(
+      '[data-testid="editar-pdf-desenho"][data-tipo="imagem"] image',
+    )
+    const caixaNaTela = async () =>
+      Promise.all(
+        ['x', 'y', 'width', 'height'].map(async (atributo) =>
+          Number(await imagem.getAttribute(atributo)),
+        ),
+      )
+    const [x0, y0] = await caixaNaTela()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Shift+ArrowDown')
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      /^Em \d+ por \d+, 180 por \d+ pontos\.\s*$/,
+    )
+    await expect(objeto).toBeFocused()
+    const [x, y, largura, altura] = await caixaNaTela()
+    expect([x - x0, y - y0]).toEqual([2, 10])
+    conferirCaixa(
+      Object.values(await caixaDoPainel(page)),
+      [x, y, largura, altura],
+      0.051,
+    )
+
+    const { nome, bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    expect(nome).toBe('contrato-assinado.pdf')
+    const imagens = (await lerComPdfjs(bytes))[0].desenhos.filter(
+      (d) => d.tipo === 'imagem',
+    )
+    expect(imagens).toHaveLength(1)
+    conferirCaixa(imagens[0].caixa, [x, y, x + largura, y + altura], 0.05)
+    const final = await PDFDocument.load(bytes)
+    const [png] = imagensDaPagina(final, 0)
+    const { bytes: alfa } = alfaDaImagem(final, png)
+    expect(alfa.includes(0)).toBe(true)
+    expect(alfa.includes(255)).toBe(true)
+  })
+
+  test('nome digitado: sai em Times-Italic, com a linha de base onde a tela o desenhou', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfComTexto('contrato.pdf'))
+    await digitarAssinatura(page, 'Maria da Silva')
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    const objeto = page.getByTestId('editar-pdf-objeto')
+    await expect(objeto).toBeFocused()
+    await expect(objeto).toHaveAccessibleName(/^Texto 'Maria da Silva', em /)
+    await page.keyboard.press('Shift+ArrowUp')
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      /, letra de 28 pontos\.\s*$/,
+    )
+
+    const linha = page.locator(
+      '[data-testid="editar-pdf-desenho"][data-tipo="texto"] text',
+    )
+    await expect(linha).toHaveText('Maria da Silva')
+    await expect(linha).toHaveAttribute('font-style', 'italic')
+    const x = Number(await linha.getAttribute('x'))
+    const y = Number(await linha.getAttribute('y'))
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const lido = (await lerComPdfjs(bytes))[0].textos.find(
+      (t) => t.str === 'Maria da Silva',
+    )
+    expect(lido).toBeDefined()
+    conferirCaixa(lido!.matriz, [28, 0, 0, -28, x, y], 0.05)
+    expect(fontesDaPagina(await PDFDocument.load(bytes), 0)).toContain(
+      '/Times-Italic',
+    )
+  })
+
+  // Achado do Crivo no #121: sem mexer em campo, o XFA ficava, e o Reader mostraria a versão XFA no lugar
+  // da página, sem a assinatura.
+  test('híbrido só com a assinatura, sem mexer em campo: o PDF baixado sai sem o XFA, com o AcroForm', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { hibrido: true }),
+    )
+    await expect(page.getByTestId('formulario-aviso-hibrido')).toContainText(
+      'a versão XFA sai',
+    )
+    await digitarAssinatura(page, 'Maria da Silva')
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await expect(page.getByTestId('editar-pdf-objeto')).toBeFocused()
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const documento = await PDFDocument.load(bytes)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(documento.getForm().getFields().length).toBeGreaterThan(0)
+  })
+
+  test('imagem da assinatura com o fundo branco tirado: no PDF baixado, a /SMask é 0 no papel e 255 no traço', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfComTexto('contrato.pdf'))
+    await escolherFerramenta(page, 'Assinatura')
+    await enviarAssinatura(page, rubricaEmPapel())
+    await expect(
+      page.getByTestId('editar-pdf-assinatura-pronta'),
+    ).toContainText('Imagem rubrica.png.')
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await expect(page.getByTestId('editar-pdf-objeto')).toHaveAccessibleName(
+      /^Imagem assinatura rubrica\.png, em /,
+    )
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const final = await PDFDocument.load(bytes)
+    const imagens = imagensDaPagina(final, 0)
+    expect(imagens).toHaveLength(1)
+    expect(
+      imagens[0].dict.lookup(PDFName.of('Width'), PDFNumber).asNumber(),
+    ).toBe(RUBRICA.largura)
+    const { em } = alfaDaImagem(final, imagens[0])
+    const { largura, altura } = RUBRICA
+    expect([
+      em(0, 0),
+      em(largura - 1, altura - 1),
+      em(largura / 2, 5),
+      em(largura / 2, altura / 2),
+      em(largura * 0.2, altura / 2),
+    ]).toEqual([0, 0, 0, 255, 255])
+  })
+
+  test('formulário só XFA: a tela explica, sem formulário nem Achatar', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfSoComXfa('dinamico.pdf'))
+    await expect(page.getByTestId('editar-pdf-anuncio')).toContainText(
+      'Tem um formulário XFA, que não dá para preencher aqui.',
+    )
+    await expect(page.getByTestId('formulario-aviso-xfa')).toContainText(
+      'formulário XFA (dinâmico), que só o Adobe Acrobat e o Reader preenchem',
+    )
+    const painel = page.getByTestId('editar-pdf-formulario')
+    await expect(painel.getByRole('form')).toHaveCount(0)
+    await expect(painel.locator('input, select, textarea')).toHaveCount(0)
+    await expect(
+      page.getByRole('checkbox', { name: 'Achatar o formulário' }),
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: 'Gerar PDF assinado' }),
+    ).toBeDisabled()
+  })
+
+  test('o aviso de assinatura visual fica na tela sem arquivo, com arquivo e no painel da assinatura, e o /Sig aparece como não preenchível, com o motivo', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    const avisos = page.getByTestId('aviso-assinatura-visual')
+    await expect(avisos).toHaveCount(1)
+    await expect(avisos).toContainText(
+      'Assinatura visual não é assinatura digital',
+    )
+    await expect(avisos).toContainText('(ICP-Brasil, gov.br)')
+
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { assinado: true }),
+    )
+    await expect(avisos).toHaveCount(1)
+    await expect(page.getByTestId('formulario-aviso-assinado')).toContainText(
+      'essa assinatura ou certificação deixa de valer nele',
+    )
+    const sig = page
+      .getByTestId('formulario-campo')
+      .filter({ hasText: 'Assinatura do responsável' })
+    await expect(sig).toContainText(
+      'Campo de assinatura digital: não é preenchido aqui, porque pede um certificado',
+    )
+    await expect(sig.locator('input, select, textarea')).toHaveCount(0)
+
+    await escolherFerramenta(page, 'Assinatura')
+    await expect(avisos).toHaveCount(2)
+    await expect(
+      page
+        .getByTestId('criar-assinatura')
+        .getByTestId('aviso-assinatura-visual'),
+    ).toBeVisible()
+    await page.getByRole('radio', { name: 'Digitar o nome' }).check()
+    await page.getByRole('textbox', { name: 'Seu nome' }).fill('Maria')
+    await page.getByRole('button', { name: 'Usar esta assinatura' }).click()
+    await expect(
+      page
+        .getByTestId('editar-pdf-assinatura-pronta')
+        .getByTestId('aviso-assinatura-visual'),
+    ).toBeVisible()
+  })
+
+  test('teclado e leitor de tela: a barra, o formulário e a escolha do jeito de assinar com os papéis e os nomes certos', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+    await expect(page.getByTestId('editar-pdf-ferramentas'))
+      .toMatchAriaSnapshot(`
+      - toolbar "Ferramentas":
+        - /children: equal
+        - button "Selecionar e mover" [pressed]
+        - button "Assinatura" [pressed=false]
+        - button "Texto" [pressed=false]
+    `)
+    await expect(page.getByTestId('editar-pdf-formulario'))
+      .toMatchAriaSnapshot(`
+      - region "Formulário do PDF":
+        - heading "Formulário do PDF" [level=2]
+        - paragraph: 8 campos em 2 páginas.
+        - form "Formulário do PDF":
+          - group "Página 1":
+            - textbox "Nome completo (obrigatório)"
+            - paragraph: Na página 1.
+            - paragraph: 0 de 30 caracteres
+            - checkbox "Aceito os termos" [checked=false]
+            - radiogroup "Plano":
+              - radio "Basico" [checked=false]
+              - radio "Completo" [checked=false]
+            - combobox "Estado":
+              - option "(nenhuma)" [selected]
+              - option "SP"
+              - option "RJ"
+              - option "MG"
+            - group "Cores preferidas":
+              - checkbox "Azul" [checked=false]
+              - checkbox "Verde" [checked=false]
+              - checkbox "Vermelho" [checked=false]
+          - group "Página 2":
+            - textbox "cidade"
+            - textbox "Protocolo": PROT-2026
+            - paragraph: "Somente leitura: o PDF não deixa mudar este campo."
+            - paragraph: Assinatura do responsável
+            - paragraph: /^Campo de assinatura digital/
+    `)
+    const nome = page.getByRole('textbox', {
+      name: 'Nome completo (obrigatório)',
+    })
+    await expect(nome).toHaveAttribute('aria-required', 'true')
+    await expect(nome).toHaveAccessibleDescription(
+      'Na página 1. 0 de 30 caracteres',
+    )
+
+    // Na coluna da página, a página é mais alta que a área: sem objeto nela, é a área que recebe o foco,
+    // e as setas a rolam.
+    const area = page.getByRole('group', { name: 'Área da página 1' })
+    await area.focus()
+    await expect(area).toBeFocused()
+    expect(await area.evaluate((el) => el.scrollTop)).toBe(0)
+    await page.keyboard.press('ArrowDown')
+    await expect
+      .poll(() => area.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0)
+
+    await escolherFerramenta(page, 'Assinatura')
+    await expect(page.getByTestId('criar-assinatura')).toMatchAriaSnapshot(`
+      - group "Como assinar":
+        - radio "Desenhar" [checked]
+        - radio "Enviar imagem" [checked=false]
+        - radio "Digitar o nome" [checked=false]
+      - img "Quadro da assinatura"
+      - combobox "Cor da tinta"
+      - button "Limpar" [disabled]
+      - button "Usar esta assinatura" [disabled]
+    `)
+    await expect(
+      page.getByRole('img', { name: 'Quadro da assinatura' }),
+    ).toHaveAccessibleDescription(
+      'Desenhe com o dedo, o mouse ou a caneta. Sem ponteiro, use Digitar o nome.',
+    )
+    await expect(page.getByRole('radio', { name: 'Desenhar' })).toBeFocused()
+    // As setas trocam o jeito, como em todo grupo de botões de opção.
+    await page.keyboard.press('ArrowRight')
+    await expect(
+      page.getByRole('radio', { name: 'Enviar imagem' }),
+    ).toBeChecked()
+    await expect(
+      page.getByRole('button', { name: 'Escolher imagem da assinatura' }),
+    ).toBeVisible()
+  })
+
+  test('nada sai do aparelho no fluxo do assinar, e nada fica no localStorage, no sessionStorage nem no IndexedDB', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    const pedidos = vigiarPedidos(page)
+    await page.goto('/tools/pdf/assinar')
+    const origem = new URL(page.url()).origin
+    const guardado = () =>
+      page.evaluate(async () => ({
+        local: Object.entries(localStorage),
+        sessao: Object.entries(sessionStorage),
+        bancos: (await indexedDB.databases()).map((banco) => banco.name),
+      }))
+    const vazio = { local: [], sessao: [], bancos: [] }
+    expect(await guardado()).toEqual(vazio)
+
+    const pdf = await pdfDoFormulario('cadastro.pdf', { hibrido: true })
+    const imagem = rubricaEmPapel()
+    await abrirNoEditar(page, pdf)
+    await page.getByRole('textbox', { name: 'cidade' }).fill('Recife')
+    await page.getByRole('checkbox', { name: 'Aceito os termos' }).check()
+    await desenharAssinatura(page)
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await escolherFerramenta(page, 'Assinatura')
+    await page.getByRole('button', { name: 'Criar outra assinatura' }).click()
+    await enviarAssinatura(page, imagem)
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await digitarAssinatura(page, 'Maria da Silva', { outra: true })
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await expect(page.getByTestId('editar-pdf-objeto')).toHaveCount(3)
+    expect(await guardado()).toEqual(vazio)
+
+    await gerarEBaixar(page, 'Gerar PDF assinado')
+    expect(await guardado()).toEqual(vazio)
+    conferirQueNadaSaiu(pedidos, origem, [pdf.buffer, imagem.buffer])
+  })
+
+  test('a 320 px, nada rola para o lado, o quadro ocupa a largura, o formulário fica numa coluna e os controles têm 44 px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { nomesTecnicos: true }),
+    )
+    // Os rótulos sem /TU são os nomes técnicos, sem espaço para quebrar: no formulário, no aviso dos
+    // obrigatórios e no botão que leva ao primeiro deles.
+    await expect(
+      page.getByRole('textbox', { name: `${NOME_TECNICO} (obrigatório)` }),
+    ).toBeVisible()
+    await expect(page.getByTestId('editar-pdf-obrigatorios')).toContainText(
+      NOME_TECNICO,
+    )
+    await page.getByRole('radio', { name: 'Completo' }).check()
+    await expect(page.getByTestId('formulario-limpar-escolha')).toBeVisible()
+    await escolherFerramenta(page, 'Assinatura')
+    await riscar(
+      page,
+      [
+        [0.2, 0.5],
+        [0.8, 0.5],
+      ],
+      page.getByTestId('quadro-assinatura'),
+    )
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(320)
+    // O quadro vai de uma borda à outra do painel das opções, por dentro do espaçamento dele.
+    const quadro = await page
+      .getByTestId('quadro-assinatura')
+      .evaluate((el) => {
+        const painel = el.closest('[data-testid="editar-pdf-opcoes"]')!
+        const estilo = getComputedStyle(painel)
+        return {
+          largura: el.getBoundingClientRect().width,
+          doPainel:
+            painel.clientWidth -
+            parseFloat(estilo.paddingLeft) -
+            parseFloat(estilo.paddingRight),
+        }
+      })
+    expect(Math.abs(quadro.largura - quadro.doPainel)).toBeLessThanOrEqual(1)
+
+    // Uma coluna: o formulário vem depois da página, e os campos um embaixo do outro, alinhados.
+    const area = (await page.getByTestId('editar-pdf-area').boundingBox())!
+    const formulario = (await page
+      .getByTestId('editar-pdf-formulario')
+      .boundingBox())!
+    expect(formulario.y).toBeGreaterThanOrEqual(area.y + area.height)
+    const campos = await page
+      .getByTestId('formulario-campo')
+      .evaluateAll((elementos) =>
+        elementos.map((el) => {
+          const { left, top, height } = el.getBoundingClientRect()
+          return { x: left, y: top, altura: height }
+        }),
+      )
+    expect(campos).toHaveLength(10)
+    for (const [i, campo] of campos.entries()) {
+      expect(Math.abs(campo.x - campos[0].x)).toBeLessThanOrEqual(1)
+      if (i > 0) {
+        expect(campo.y).toBeGreaterThanOrEqual(
+          campos[i - 1].y + campos[i - 1].altura - 1,
+        )
+      }
+    }
+
+    expect(
+      await page.evaluate(alvosPequenos, '[data-testid="editar-pdf"]'),
+    ).toEqual([])
+    await page.getByRole('radio', { name: 'Enviar imagem' }).check()
+    await expect(
+      page.getByRole('checkbox', { name: 'Tirar o fundo branco' }),
+    ).toBeVisible()
+    expect(
+      await page.evaluate(alvosPequenos, '[data-testid="editar-pdf"]'),
+    ).toEqual([])
+  })
+
+  // O fundo do anel é a página do PDF (branca aqui), não o tema do site: 3:1, de componente gráfico.
+  for (const tema of ['light', 'dark'] as const)
+    test(`o anel do destaque passa de 3:1 contra a página no tema ${tema}`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf/assinar')
+      await abrirNoEditar(page, await pdfDoFormulario('cadastro.pdf'))
+      await page
+        .getByRole('textbox', { name: 'Nome completo (obrigatório)' })
+        .focus()
+      await expect(page.getByTestId('editar-pdf-destaque-caixa')).toHaveCount(1)
+      const { anel, pagina } = await page.evaluate(() => {
+        const caixa = document.querySelector(
+          '[data-testid="editar-pdf-destaque-caixa"]',
+        )!
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          '[data-testid="editar-pdf-canvas"]',
+        )!
+        const r = caixa.getBoundingClientRect()
+        const c = canvas.getBoundingClientRect()
+        const escala = canvas.width / c.width
+        const pixel = canvas
+          .getContext('2d')!
+          .getImageData(
+            Math.round((r.right + 8 - c.left) * escala),
+            Math.round((r.top + r.height / 2 - c.top) * escala),
+            1,
+            1,
+          ).data
+        return {
+          anel: getComputedStyle(caixa).boxShadow.match(
+            /rgba?\(([^)]*)\)\s+0px\s+0px\s+0px\s+3px/,
+          )?.[1],
+          pagina: [pixel[0], pixel[1], pixel[2]],
+        }
+      })
+      expect(pagina).toEqual([255, 255, 255])
+      expect(anel).toBeDefined()
+      const luminancia = (rgb: number[]) => {
+        const [r, g, b] = rgb.map((c) => {
+          const v = c / 255
+          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      const cor = anel!.split(',').slice(0, 3).map(Number)
+      expect(
+        (luminancia(pagina) + 0.05) / (luminancia(cor) + 0.05),
+      ).toBeGreaterThanOrEqual(3)
+    })
+
+  for (const tema of ['light', 'dark'] as const)
+    test(`todo texto do assinar passa de 4,5:1 no tema ${tema}, com os avisos, o formulário, o painel da assinatura e o PDF pronto`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf/assinar')
+      await abrirNoEditar(
+        page,
+        await pdfDoFormulario('cadastro.pdf', {
+          hibrido: true,
+          assinado: true,
+        }),
+      )
+      await page.getByRole('textbox', { name: 'cidade' }).fill('Recife')
+      await page.getByRole('radio', { name: 'Completo' }).check()
+      await page.getByRole('button', { name: 'Gerar PDF assinado' }).click()
+      await expect(page.getByTestId('editar-pdf-baixar')).toBeFocused({
+        timeout: 30_000,
+      })
+      await escolherFerramenta(page, 'Assinatura')
+      await page.getByRole('radio', { name: 'Digitar o nome' }).check()
+      await page
+        .getByRole('textbox', { name: 'Seu nome' })
+        .pressSequentially('Ana 😀')
+      await expect(page.getByTestId('criar-assinatura-winansi')).toBeVisible()
+      for (const parte of [
+        'formulario-aviso-hibrido',
+        'formulario-aviso-assinado',
+        'editar-pdf-obrigatorios',
+        'editar-pdf-resultado',
+      ]) {
+        await expect(page.getByTestId(parte)).toBeVisible()
+      }
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a instanceof CSSTransition)
+            .map((a) => a.finished),
+        ),
+      )
+
+      const medidas = await page.evaluate(
+        medirContrasteDoTexto,
+        '[data-testid="editar-pdf"]',
+      )
+      expect(medidas.length).toBeGreaterThan(40)
+      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+    })
+
+  for (const largura of [1280, 320])
+    test(`axe (WCAG 2.2 A e AA) sem violação séria a ${largura} px, com o formulário, o painel da assinatura e o PDF pronto`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: largura, height: 800 })
+      await page.goto('/tools/pdf/assinar')
+      await abrirNoEditar(
+        page,
+        await pdfDoFormulario('cadastro.pdf', {
+          hibrido: true,
+          assinado: true,
+        }),
+      )
+      await page.getByRole('textbox', { name: 'cidade' }).fill('Recife')
+      await page.getByRole('checkbox', { name: 'Aceito os termos' }).check()
+      await page.getByRole('radio', { name: 'Completo' }).check()
+      await page.getByRole('button', { name: 'Gerar PDF assinado' }).click()
+      await expect(page.getByTestId('editar-pdf-baixar')).toBeFocused({
+        timeout: 30_000,
+      })
+      await escolherFerramenta(page, 'Assinatura')
+      await riscar(
+        page,
+        [
+          [0.2, 0.5],
+          [0.8, 0.5],
+        ],
+        page.getByTestId('quadro-assinatura'),
+      )
+      await expect(page.getByTestId('editar-pdf-resultado')).toBeVisible()
+      await expect(page.getByTestId('editar-pdf-obrigatorios')).toBeVisible()
+
+      expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual(
+        [],
+      )
+    })
+
+  test('no editar, a Assinatura está na barra, e o nome digitado sai no PDF em Times-Italic', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfComTexto('contrato.pdf'))
+    await expect(page.getByTestId('aviso-assinatura-visual')).toHaveCount(0)
+    await expect(page.getByTestId('editar-pdf-formulario')).toHaveCount(0)
+    await digitarAssinatura(page, 'João Araújo')
+    await expect(page.getByTestId('aviso-assinatura-visual')).toHaveCount(1)
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    const linha = page.locator(
+      '[data-testid="editar-pdf-desenho"][data-tipo="texto"] text',
+    )
+    await expect(linha).toHaveText('João Araújo')
+    const x = Number(await linha.getAttribute('x'))
+    const y = Number(await linha.getAttribute('y'))
+
+    const { nome, bytes } = await gerarEBaixar(page)
+    expect(nome).toBe('contrato-editado.pdf')
+    const lido = (await lerComPdfjs(bytes))[0].textos.find(
+      (t) => t.str === 'João Araújo',
+    )
+    expect(lido).toBeDefined()
+    conferirCaixa(lido!.matriz, [28, 0, 0, -28, x, y], 0.05)
+    expect(fontesDaPagina(await PDFDocument.load(bytes), 0)).toContain(
+      '/Times-Italic',
+    )
+  })
 })

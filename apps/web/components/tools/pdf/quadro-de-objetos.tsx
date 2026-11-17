@@ -33,6 +33,7 @@ import {
   FAMILIAS_CSS,
   moverPara,
   mover,
+  pontoDoEvento,
   redimensionar,
   redimensionarAte,
   type EstiloDoTraco,
@@ -141,20 +142,8 @@ export function QuadroDeObjetos({
   }
 
   function pontoDo(evento: { clientX: number; clientY: number }): Ponto {
-    const caixa = medida()
-    if (!caixa) return { x: 0, y: 0 }
-    const limitar = (valor: number, maximo: number) =>
-      Math.min(Math.max(valor, 0), maximo)
-    return {
-      x: limitar(
-        ((evento.clientX - caixa.left) / caixa.width) * tamanho.largura,
-        tamanho.largura,
-      ),
-      y: limitar(
-        ((evento.clientY - caixa.top) / caixa.height) * tamanho.altura,
-        tamanho.altura,
-      ),
-    }
+    const [x, y] = pontoDoEvento(evento, medida(), tamanho)
+    return { x, y }
   }
 
   function andouDe(de: Ponto, ate: Ponto) {
@@ -205,18 +194,12 @@ export function QuadroDeObjetos({
     })
   }
 
-  function pontoDoTraco(evento: {
+  const pontoDoTraco = (evento: {
     clientX: number
     clientY: number
     pressure?: number
     pointerType?: string
-  }): PontoDoTraco {
-    const { x, y } = pontoDo(evento)
-    // Só a caneta mede a pressão; mouse e dedo mandam um valor fixo, e o perfect-freehand simula pela velocidade.
-    return evento.pointerType === 'pen' && evento.pressure
-      ? [x, y, evento.pressure]
-      : [x, y]
-  }
+  }): PontoDoTraco => pontoDoEvento(evento, medida(), tamanho)
 
   function aoApertar(evento: EventoDePonteiro<HTMLDivElement>) {
     if (!podeComecar(evento)) return

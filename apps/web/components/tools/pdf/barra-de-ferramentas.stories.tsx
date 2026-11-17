@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { expect, fn, userEvent } from 'storybook/test'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
+import { FERRAMENTAS_DO_MODO } from './objetos'
 
 const meta = {
   title: 'Tools/PDF/BarraDeFerramentas',
@@ -32,3 +33,23 @@ export const SetasEntreOsBotoes: Story = {
 }
 
 export const Desabilitada: Story = { args: { desabilitada: true } }
+
+export const ModoAssinar: Story = {
+  args: { ferramentas: FERRAMENTAS_DO_MODO.assinar },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getAllByRole('button').map((botao) => botao.textContent),
+    ).toEqual(['Selecionar e mover', 'Assinatura', 'Texto'])
+    canvas.getByRole('button', { name: 'Selecionar e mover' }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(
+      canvas.getByRole('button', { name: 'Assinatura' }),
+    ).toHaveFocus()
+    await userEvent.keyboard('{End}')
+    await expect(canvas.getByRole('button', { name: 'Texto' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(
+      canvas.getByRole('button', { name: 'Selecionar e mover' }),
+    ).toHaveFocus()
+  },
+}

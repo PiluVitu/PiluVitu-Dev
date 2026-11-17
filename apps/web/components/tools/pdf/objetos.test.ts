@@ -10,6 +10,11 @@ import {
   CENA_VAZIA,
   CORES,
   ESTILOS_PADRAO,
+  FERRAMENTAS,
+  FERRAMENTAS_DO_MODO,
+  LARGURA_DA_ASSINATURA_NA_PAGINA,
+  SUFIXO_DO_MODO,
+  TAMANHO_DA_ASSINATURA_DIGITADA,
   caixaDoTexto,
   cobrirDa,
   comApagarDeVerdade,
@@ -25,6 +30,7 @@ import {
   objetosDa,
   paginasMudadas,
   paginasParaApagar,
+  pontoDoEvento,
   redimensionarAte,
   temCobrir,
   tirarObjeto,
@@ -37,6 +43,28 @@ const A4 = { largura: 595, altura: 842 }
 
 // 10 px por caractere a 100 px: meio em por letra, fácil de conferir.
 const medir: MedirTexto = (texto) => texto.length * 50
+
+describe('o modo da tela', () => {
+  it('o editar tem as onze ferramentas, com a Assinatura depois da Imagem; o assinar, Selecionar e mover, Assinatura e Texto', () => {
+    expect(FERRAMENTAS_DO_MODO.editar).toEqual(FERRAMENTAS)
+    expect(FERRAMENTAS).toHaveLength(11)
+    expect(FERRAMENTAS.indexOf('assinatura')).toBe(
+      FERRAMENTAS.indexOf('imagem') + 1,
+    )
+    expect(FERRAMENTAS_DO_MODO.assinar).toEqual([
+      'selecionar',
+      'assinatura',
+      'texto',
+    ])
+    for (const ferramenta of FERRAMENTAS_DO_MODO.assinar) {
+      expect(FERRAMENTAS).toContain(ferramenta)
+    }
+  })
+
+  it('o sufixo do PDF gerado em cada modo', () => {
+    expect(SUFIXO_DO_MODO).toEqual({ editar: 'editado', assinar: 'assinado' })
+  })
+})
 
 describe('caixaDoTexto', () => {
   it('a largura é a da linha mais comprida, e a altura vem das métricas da fonte', () => {
@@ -229,6 +257,103 @@ describe('criarObjeto', () => {
   it('imagem sem arquivo é erro de programação', () => {
     expect(() =>
       criarObjeto('imagem', { centro: { x: 1, y: 1 } }, A4, ESTILOS_PADRAO),
+    ).toThrow(RangeError)
+  })
+
+  it(`assinatura em imagem no centro: ${LARGURA_DA_ASSINATURA_NA_PAGINA} pontos de largura, a altura pela proporção`, () => {
+    const assinatura = criarObjeto(
+      'assinatura',
+      { centro: { x: 297.5, y: 421 } },
+      A4,
+      ESTILOS_PADRAO,
+      {
+        assinatura: {
+          tipo: 'imagem',
+          imagem: { id: 'a', largura: 1200, altura: 400 },
+        },
+      },
+    )
+    expect(assinatura).toMatchObject({
+      tipo: 'imagem',
+      imagem: 'a',
+      largura: 180,
+      altura: 60,
+      x: 297.5 - 90,
+      y: 421 - 30,
+    })
+  })
+
+  it('assinatura em imagem numa página mais estreita que ela cabe na página', () => {
+    const assinatura = criarObjeto(
+      'assinatura',
+      { centro: { x: 50, y: 50 } },
+      { largura: 120, altura: 100 },
+      ESTILOS_PADRAO,
+      {
+        assinatura: {
+          tipo: 'imagem',
+          imagem: { id: 'a', largura: 600, altura: 200 },
+        },
+      },
+    )
+    expect(assinatura).toMatchObject({ x: 0, largura: 120, altura: 40 })
+  })
+
+  it('assinatura em imagem por arraste: cabe na caixa com a proporção, como a imagem', () => {
+    const assinatura = criarObjeto(
+      'assinatura',
+      { de: { x: 10, y: 10 }, ate: { x: 310, y: 310 } },
+      A4,
+      ESTILOS_PADRAO,
+      {
+        assinatura: {
+          tipo: 'imagem',
+          imagem: { id: 'a', largura: 600, altura: 200 },
+        },
+      },
+    )
+    expect(assinatura).toMatchObject({
+      x: 10,
+      y: 10,
+      largura: 300,
+      altura: 100,
+    })
+  })
+
+  it(`nome digitado vira texto em Times itálico de ${TAMANHO_DA_ASSINATURA_DIGITADA} pontos, na cor escolhida`, () => {
+    const centro = criarObjeto(
+      'assinatura',
+      { centro: { x: 297.5, y: 421 } },
+      A4,
+      ESTILOS_PADRAO,
+      {
+        assinatura: { tipo: 'texto', nome: 'Paulo Victor', cor: CORES.azul },
+        medir,
+      },
+    ) as ObjetoTexto
+    expect(centro).toMatchObject({
+      tipo: 'texto',
+      conteudo: 'Paulo Victor',
+      fonte: 'times',
+      italico: true,
+      negrito: false,
+      tamanho: 28,
+      cor: CORES.azul,
+    })
+    expect(centro.x + centro.largura / 2).toBeCloseTo(297.5)
+    const arrastada = criarObjeto(
+      'assinatura',
+      { de: { x: 40, y: 60 }, ate: { x: 200, y: 90 } },
+      A4,
+      ESTILOS_PADRAO,
+      { assinatura: { tipo: 'texto', nome: 'Ana', cor: CORES.preto }, medir },
+    )
+    expect(arrastada).toMatchObject({ x: 40, y: 60, tamanho: 28 })
+  })
+
+  it('assinatura sem conteúdo é erro de programação', () => {
+    expect(() =>
+      criarObjeto('assinatura', { centro: { x: 1, y: 1 } }, A4, ESTILOS_PADRAO),
     ).toThrow(RangeError)
   })
 
@@ -494,5 +619,45 @@ describe('a cena (os objetos de cada página)', () => {
       incluirObjeto(CENA_VAZIA, 0, retangulo),
     )
     expect(historico.passado).toEqual([CENA_VAZIA])
+  })
+})
+
+describe('pontoDoEvento (os dois quadros leem o ponteiro igual)', () => {
+  const caixa = { left: 100, top: 50, width: 300, height: 100 }
+  const quadro = { largura: 600, altura: 200 }
+
+  it('leva o ponto da tela para as unidades da área, sem sair dela', () => {
+    expect(
+      pontoDoEvento({ clientX: 250, clientY: 100 }, caixa, quadro),
+    ).toEqual([300, 100])
+    expect(pontoDoEvento({ clientX: 0, clientY: 900 }, caixa, quadro)).toEqual([
+      0, 200,
+    ])
+  })
+
+  it('só a caneta leva a pressão; mouse e dedo mandam valor fixo', () => {
+    const evento = { clientX: 100, clientY: 50, pressure: 0.7 }
+    expect(
+      pontoDoEvento({ ...evento, pointerType: 'pen' }, caixa, quadro),
+    ).toEqual([0, 0, 0.7])
+    expect(
+      pontoDoEvento({ ...evento, pointerType: 'mouse' }, caixa, quadro),
+    ).toEqual([0, 0])
+    expect(
+      pontoDoEvento({ ...evento, pointerType: 'touch' }, caixa, quadro),
+    ).toEqual([0, 0])
+  })
+
+  it('área sem medida dá a origem', () => {
+    expect(pontoDoEvento({ clientX: 10, clientY: 10 }, null, quadro)).toEqual([
+      0, 0,
+    ])
+    expect(
+      pontoDoEvento(
+        { clientX: 10, clientY: 10 },
+        { ...caixa, width: 0 },
+        quadro,
+      ),
+    ).toEqual([0, 0])
   })
 })

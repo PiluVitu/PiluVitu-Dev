@@ -1,4 +1,8 @@
-import { LADO_MAXIMO_DA_IMAGEM, tipoDaImagem } from '@piluvitu/tools/pdf-regras'
+import {
+  LADO_MAXIMO_DA_IMAGEM,
+  tipoDaImagem,
+  tirarFundoBranco as tirarOFundoBranco,
+} from '@piluvitu/tools/pdf-regras'
 
 export type ImagemPreparada = {
   /** O arquivo escolhido ou, quando precisou, a imagem desenhada de novo no tamanho e na orientação da tela. */
@@ -24,7 +28,9 @@ const QUALIDADE_DO_JPEG = 0.85
 
 const MIME = { png: 'image/png', jpeg: 'image/jpeg' } as const
 
-const falha = (motivo: FalhaDaImagem['motivo']): FalhaDaImagem => ({ motivo })
+export const falha = (motivo: FalhaDaImagem['motivo']): FalhaDaImagem => ({
+  motivo,
+})
 
 function orientacaoDoTiff(dados: DataView, inicio: number, fim: number) {
   if (inicio + 8 > fim) return 1
@@ -73,7 +79,7 @@ export function orientacaoDoJpeg(bytes: Uint8Array): number {
   return 1
 }
 
-function blobDo(
+export function blobDoCanvas(
   canvas: HTMLCanvasElement,
   tipo: string,
   qualidade?: number,
@@ -90,9 +96,14 @@ function blobDo(
 /**
  * Confere pelos bytes que é PNG ou JPEG e devolve a imagem pronta para o PDF: maior que
  * `LADO_MAXIMO_DA_IMAGEM` no lado maior, ou JPEG com o EXIF girando a foto, ela é desenhada de novo
- * (JPEG a 0,85; PNG continua PNG, com a transparência). Rejeita com {@link FalhaDaImagem}.
+ * (JPEG a 0,85; PNG continua PNG, com a transparência). Com `tirarFundoBranco` (a imagem da
+ * assinatura), é sempre desenhada de novo, o quase branco fica transparente e sai PNG. Rejeita com
+ * {@link FalhaDaImagem}.
  */
-export async function prepararImagem(arquivo: Blob): Promise<ImagemPreparada> {
+export async function prepararImagem(
+  arquivo: Blob,
+  { tirarFundoBranco = false }: { tirarFundoBranco?: boolean } = {},
+): Promise<ImagemPreparada> {
   let cabecalho: Uint8Array
   try {
     cabecalho = new Uint8Array(
@@ -117,7 +128,7 @@ export async function prepararImagem(arquivo: Blob): Promise<ImagemPreparada> {
     const escala = Math.min(1, LADO_MAXIMO_DA_IMAGEM / Math.max(width, height))
     // O pdf-lib embute o JPEG como veio, sem girar pelo EXIF: sem isto, a foto sairia deitada no PDF.
     const girada = tipo === 'jpeg' && orientacaoDoJpeg(cabecalho) !== 1
-    if (escala === 1 && !girada) {
+    if (escala === 1 && !girada && !tirarFundoBranco) {
       return { blob: arquivo, largura: width, altura: height, reduzida: false }
     }
     const largura = Math.max(1, Math.round(width * escala))
@@ -129,10 +140,16 @@ export async function prepararImagem(arquivo: Blob): Promise<ImagemPreparada> {
       const contexto = canvas.getContext('2d')
       if (!contexto) throw falha('falha_do_navegador')
       contexto.drawImage(bitmap, 0, 0, largura, altura)
-      const blob = await blobDo(
+      if (tirarFundoBranco) {
+        const pixels = contexto.getImageData(0, 0, largura, altura)
+        tirarOFundoBranco(pixels.data)
+        contexto.putImageData(pixels, 0, 0)
+      }
+      const saida = tirarFundoBranco ? 'png' : tipo
+      const blob = await blobDoCanvas(
         canvas,
-        MIME[tipo],
-        tipo === 'jpeg' ? QUALIDADE_DO_JPEG : undefined,
+        MIME[saida],
+        saida === 'jpeg' ? QUALIDADE_DO_JPEG : undefined,
       )
       return { blob, largura, altura, reduzida: escala < 1 }
     } finally {

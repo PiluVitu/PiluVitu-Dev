@@ -11,6 +11,7 @@ import {
   faLayerGroup,
   faPenToSquare,
   faQrcode,
+  faSignature,
   faTableCellsLarge,
 } from '@fortawesome/free-solid-svg-icons'
 
@@ -100,7 +101,7 @@ export const TOOLS: ToolMeta[] = [
   {
     slug: 'pdf',
     title: 'Editor de PDF',
-    description: 'Mesclar, organizar e editar páginas de PDF',
+    description: 'Mesclar, organizar, editar e assinar PDF',
     icon: faFilePdf,
     group: 'documentos',
     modos: [
@@ -122,6 +123,12 @@ export const TOOLS: ToolMeta[] = [
         description:
           'Escreve, desenha, põe imagens e cobre trechos por cima das páginas',
         icon: faPenToSquare,
+      },
+      {
+        slug: 'assinar',
+        title: 'Assinar PDF',
+        description: 'Põe sua assinatura e preenche formulários de PDF',
+        icon: faSignature,
       },
     ],
   },
