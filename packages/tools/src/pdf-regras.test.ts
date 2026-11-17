@@ -31,6 +31,7 @@ import {
   girar,
   historicoInicial,
   limitarAPagina,
+  limitarAoCanvas,
   linhaEntre,
   linhasDeBase,
   linhasDoTexto,
@@ -1057,4 +1058,46 @@ describe('pixelsDoFundo (o canvas da página que vai ser apagada de verdade)', (
     expect(largura).toBeLessThanOrEqual(LADO_MAXIMO_DO_CANVAS)
     expect(altura).toBeGreaterThan(0)
   })
+})
+
+describe('limitarAoCanvas (a página grande da tela)', () => {
+  it('cabendo, fica com a escala pedida', () => {
+    expect(limitarAoCanvas({ largura: 595, altura: 842 }, 2)).toEqual({
+      largura: 1190,
+      altura: 1684,
+      escala: 2,
+    })
+  })
+
+  it('A4 com zoom alto numa tela de densidade 3: reduz até o limite de pixels do Safari no iOS, sem deformar', () => {
+    const { largura, altura, escala } = limitarAoCanvas(
+      { largura: 595, altura: 842 },
+      10,
+    )
+    expect(largura * altura).toBeLessThanOrEqual(PIXELS_MAXIMOS_DO_CANVAS)
+    expect(largura * altura).toBeGreaterThan(PIXELS_MAXIMOS_DO_CANVAS * 0.99)
+    expect(escala).toBeLessThan(10)
+    expect(largura / altura).toBeCloseTo(595 / 842, 3)
+  })
+
+  it('página estreita e comprida: reduz até o lado caber', () => {
+    const { altura } = limitarAoCanvas({ largura: 50, altura: 14_400 }, 2)
+    expect(altura).toBeLessThanOrEqual(LADO_MAXIMO_DO_CANVAS)
+  })
+
+  it('nunca dá canvas vazio', () => {
+    expect(limitarAoCanvas({ largura: 0.1, altura: 0.1 }, 1)).toMatchObject({
+      largura: 1,
+      altura: 1,
+    })
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'recusa a escala %p',
+    (escala) => {
+      expect(() =>
+        limitarAoCanvas({ largura: 595, altura: 842 }, escala),
+      ).toThrow(RangeError)
+    },
+  )
 })

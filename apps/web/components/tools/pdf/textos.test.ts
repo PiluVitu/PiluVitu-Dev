@@ -92,3 +92,65 @@ it('o aviso de alcance diz que marcadores e links internos não passam', () => {
   expect(TEXTOS.alcance).toMatch(/marcadores/)
   expect(TEXTOS.alcance).toMatch(/links para outra página do mesmo PDF/)
 })
+
+describe('editar', () => {
+  const { falhaAoSalvar, anuncios, paginaAtual, zoom } = TEXTOS.editar
+
+  it('posição, zoom e anúncios pelo Intl', () => {
+    expect(paginaAtual(3, 1200)).toBe('Página 3 de 1.200')
+    expect(zoom.valor(1.25)).toBe('125%')
+    expect(anuncios.zoom(0.5)).toBe('Zoom em 50%.')
+    expect(anuncios.pagina(2, 5)).toBe('Página 2 de 5.')
+  })
+
+  it('texto fora das fontes do PDF: a página (contada de 1), os caracteres pelo Intl e o que fazer', () => {
+    expect(
+      falhaAoSalvar({
+        motivo: 'texto_fora_do_winansi',
+        pagina: 2,
+        objeto: 't1',
+        caracteres: ['😀'],
+      }),
+    ).toBe(
+      'Um texto da página 3 tem um caractere que as fontes do PDF não escrevem: 😀. Apague esse caractere e salve de novo.',
+    )
+    expect(
+      falhaAoSalvar({
+        motivo: 'texto_fora_do_winansi',
+        pagina: 0,
+        objeto: 't1',
+        caracteres: ['😀', '✓', '中'],
+      }),
+    ).toBe(
+      'Um texto da página 1 tem caracteres que as fontes do PDF não escrevem: 😀, ✓ e 中. Apague esses caracteres e salve de novo.',
+    )
+  })
+
+  it('imagem que não é PNG nem JPEG e imagem que não se deixa ler: a página e o que fazer', () => {
+    expect(
+      falhaAoSalvar({ motivo: 'imagem_nao_aceita', pagina: 0, objeto: 'i1' }),
+    ).toBe(
+      'Uma imagem da página 1 não é PNG nem JPEG. Troque por uma imagem PNG ou JPEG e salve de novo.',
+    )
+    expect(
+      falhaAoSalvar({ motivo: 'imagem_corrompida', pagina: 4, objeto: 'i1' }),
+    ).toMatch(/^Uma imagem da página 5 não pôde ser lida\. Ponha a imagem/)
+  })
+
+  it('erro do arquivo usa a mensagem do mesclar; o resto não acusa o arquivo', () => {
+    expect(falhaAoSalvar({ motivo: 'protegido' })).toBe(
+      `Não deu para salvar o PDF. ${ERROS_DO_ARQUIVO.protegido}`,
+    )
+    for (const motivo of ['inesperado', 'cancelado'] as const) {
+      expect(falhaAoSalvar({ motivo })).toMatch(
+        /^O navegador não conseguiu salvar o PDF/,
+      )
+    }
+  })
+
+  it('acima do teto, diz editar, não organizar', () => {
+    expect(
+      TEXTOS.editar.grandeDemais('scan.pdf', 80_000_000, 50_000_000),
+    ).toContain('que dá para editar no navegador')
+  })
+})

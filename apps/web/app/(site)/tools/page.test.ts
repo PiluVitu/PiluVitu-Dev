@@ -40,9 +40,13 @@ it.each(
   },
 )
 
-it('o Editor de PDF tem os modos mesclar e organizar', () => {
+it('o Editor de PDF tem os modos mesclar, organizar e editar', () => {
   const pdf = TOOLS.find(({ slug }) => slug === 'pdf')
-  expect(pdf?.modos?.map(({ slug }) => slug)).toEqual(['mesclar', 'organizar'])
+  expect(pdf?.modos?.map(({ slug }) => slug)).toEqual([
+    'mesclar',
+    'organizar',
+    'editar',
+  ])
 })
 
 // O caminho antigo responde pelo redirects() do next.config (308), conferido no E2E.

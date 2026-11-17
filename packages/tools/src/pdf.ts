@@ -589,8 +589,12 @@ async function desenharNaPagina(
   objetos: readonly ObjetoDaPagina[],
   recursos: Recursos,
   indice: number,
+  semCobrir = false,
 ): Promise<void> {
-  if (objetos.length === 0) return
+  const desenhados = [...objetos.entries()].filter(
+    ([, { tipo }]) => !(semCobrir && tipo === 'cobrir'),
+  )
+  if (desenhados.length === 0) return
   const { altura } = tamanhoNaTela(geometria)
   // O pdf-lib já põe o conteúdo antigo entre q e Q, então um cm que ele deixe aberto não chega até aqui.
   pagina.pushOperators(
@@ -598,7 +602,7 @@ async function desenharNaPagina(
     concatTransformationMatrix(...matrizDaTelaParaPdf(geometria)),
     concatTransformationMatrix(1, 0, 0, -1, 0, altura),
   )
-  for (const [posicao, objeto] of objetos.entries()) {
+  for (const [posicao, objeto] of desenhados) {
     await desenharObjeto(pagina, objeto, altura, recursos, indice, posicao)
   }
   pagina.pushOperators(popGraphicsState())
@@ -1000,13 +1004,7 @@ export async function aplicarEdicoes(
       unidade: 1,
     }
     pagina.drawImage(imagem, { x: 0, y: 0, width: largura, height: altura })
-    await desenharNaPagina(
-      pagina,
-      geometria,
-      objetos.filter(({ tipo }) => tipo !== 'cobrir'),
-      recursos,
-      indice,
-    )
+    await desenharNaPagina(pagina, geometria, objetos, recursos, indice, true)
     pagina.node.delete(PDFName.Annots)
   }
   if (apagadas.size > 0) {

@@ -1,6 +1,14 @@
 import { test, expect, type Page, type Request } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+import {
+  PDFDocument,
+  PDFName,
+  StandardFonts,
+  concatTransformationMatrix,
+  drawObject,
+  popGraphicsState,
+  pushGraphicsState,
+} from 'pdf-lib'
 import { contarPaginas } from '@piluvitu/tools/pdf'
 
 const UUID_V4_REGEX =
@@ -553,9 +561,10 @@ test.describe('Editor de PDF', () => {
       page.getByText('Seus arquivos não saem do aparelho'),
     ).toBeVisible()
     const modos = page.getByTestId('pdf-modo')
-    await expect(modos).toHaveCount(2)
+    await expect(modos).toHaveCount(3)
     await expect(modos.nth(0)).toHaveAttribute('href', '/tools/pdf/mesclar')
     await expect(modos.nth(1)).toHaveAttribute('href', '/tools/pdf/organizar')
+    await expect(modos.nth(2)).toHaveAttribute('href', '/tools/pdf/editar')
     for (const modo of await modos.all()) {
       const caixa = await modo.boundingBox()
       expect(caixa!.height).toBeGreaterThanOrEqual(44)
@@ -626,7 +635,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
   test('a 320 px, o hub não rola para o lado', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await page.goto('/tools/pdf')
-    await expect(page.getByTestId('pdf-modo')).toHaveCount(2)
+    await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
     const largura = await page.evaluate(
       () => document.documentElement.scrollWidth,
     )
@@ -639,7 +648,7 @@ test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
       await page.goto('/tools/pdf')
-      await expect(page.getByTestId('pdf-modo')).toHaveCount(2)
+      await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
 
       const medidas = await page.evaluate(medirContrasteDoTexto, 'main')
       expect(medidas.length).toBeGreaterThan(6)
@@ -931,6 +940,189 @@ test.describe('Organizar páginas de PDF', () => {
         '[data-testid="organizar-pdf"]',
       )
       expect(medidas.length).toBeGreaterThan(15)
+      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+    })
+})
+
+// Uma imagem 8×8 vermelha em JPEG 2000 (o codestream, sem a caixa JP2), gerada pelo sips do macOS. O
+// pdf.js só a decodifica com o openjpeg.wasm, servido da própria origem desde a fase 3.
+const J2K_VERMELHO = Buffer.from(
+  '/0//UQAvAAAAAAAIAAAACAAAAAAAAAAAAAAACAAAAAgAAAAAAAAAAAADBwEBBwEBBwEB/1IADAAAAAEBBQQEAAD/XAAjIncedup26na8bwBvAG7iZ0xnTGdkUANQA1BFV9JX0ldh/2QAEQABS2FrYWR1LXY1LjIuMf+QAAoAAAAAACsAAf+Tx/AGCdJvxwIFz7wIAGyAgICAgICAgICAgICAgID/2Q==',
+  'base64',
+)
+
+// Páginas de 300 pontos com a imagem no meio (de 50 a 250), ocupando o centro da página.
+async function pdfComJpeg2000(nome: string, paginas = 2) {
+  const documento = await PDFDocument.create()
+  const imagem = documento.context.register(
+    documento.context.stream(J2K_VERMELHO, {
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: 8,
+      Height: 8,
+      Filter: 'JPXDecode',
+    }),
+  )
+  for (let i = 0; i < paginas; i++) {
+    const pagina = documento.addPage([300, 300])
+    pagina.node.setXObject(PDFName.of('Im0'), imagem)
+    pagina.pushOperators(
+      pushGraphicsState(),
+      concatTransformationMatrix(200, 0, 0, 200, 50, 50),
+      drawObject('Im0'),
+      popGraphicsState(),
+    )
+  }
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+async function abrirNoEditar(
+  page: Page,
+  arquivo: { name: string; mimeType: string; buffer: Buffer },
+) {
+  await escolherPdfs(page, [arquivo])
+  await expect(page.getByTestId('editar-pdf-canvas')).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.getByTestId('editar-pdf-desenhando')).toHaveCount(0)
+}
+
+const ehVermelho = ([r, g, b]: number[]) => r > 200 && g < 40 && b < 40
+
+test.describe('Editar PDF', () => {
+  test('imagem em JPEG 2000 aparece na página grande e na miniatura, com o decodificador da própria origem, sem 404', async ({
+    page,
+  }) => {
+    const respostas: string[] = []
+    page.on('response', (resposta) => {
+      if (!resposta.url().startsWith('blob:')) {
+        respostas.push(
+          `${resposta.status()} ${new URL(resposta.url()).pathname}`,
+        )
+      }
+    })
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfComJpeg2000('escaneado.pdf'))
+
+    const centroDaPagina = await page
+      .getByTestId('editar-pdf-canvas')
+      .evaluate((canvas: HTMLCanvasElement) =>
+        Array.from(
+          canvas
+            .getContext('2d')!
+            .getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data,
+        ),
+      )
+    expect(ehVermelho(centroDaPagina)).toBe(true)
+    const miniatura = page.getByTestId('editar-pdf-miniatura-imagem').first()
+    await expect(miniatura).toBeVisible({ timeout: 30_000 })
+    const centroDaMiniatura = await miniatura.evaluate(
+      async (imagem: HTMLImageElement) => {
+        await imagem.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = imagem.naturalWidth
+        canvas.height = imagem.naturalHeight
+        const contexto = canvas.getContext('2d')!
+        contexto.drawImage(imagem, 0, 0)
+        return Array.from(
+          contexto.getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1)
+            .data,
+        )
+      },
+    )
+    expect(ehVermelho(centroDaMiniatura)).toBe(true)
+    expect(respostas).toContainEqual(
+      expect.stringMatching(/^200 \/pdfjs\/[\d.]+\/wasm\/openjpeg\.wasm$/),
+    )
+    expect(respostas.filter((r) => !/^[23]/.test(r))).toEqual([])
+  })
+
+  test('nenhum Worker antes de escolher o PDF; depois, o do pdf-lib e o do pdf.js', async ({
+    page,
+  }) => {
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await page.goto('/tools/pdf/editar')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    expect(workers).toEqual([])
+
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200]))
+    expect(workers).toHaveLength(2)
+  })
+
+  test('nada sai do aparelho: abrir, passar de página e mudar o zoom sem pedido de fora nem corpo com o PDF', async ({
+    page,
+  }) => {
+    const pedidos = vigiarPedidos(page)
+    await page.goto('/tools/pdf/editar')
+    const origem = new URL(page.url()).origin
+
+    const arquivo = await pdfComJpeg2000('a.pdf', 3)
+    await abrirNoEditar(page, arquivo)
+    await page.getByRole('button', { name: 'Próxima página' }).click()
+    await page.getByRole('button', { name: 'Aumentar o zoom' }).click()
+    await page.getByRole('button', { name: 'Página 3', exact: true }).click()
+    await expect(page.getByTestId('editar-pdf-posicao')).toHaveText(
+      'Página 3 de 3',
+    )
+    await expect(page.getByTestId('editar-pdf-desenhando')).toHaveCount(0)
+
+    conferirQueNadaSaiu(pedidos, origem, [arquivo.buffer])
+  })
+
+  test('a 320 px, nada rola para o lado, nem com zoom, e os controles têm 44 px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
+        [100, 200, 300],
+      ),
+    )
+    await page.getByRole('button', { name: 'Aumentar o zoom' }).click()
+    await page.getByRole('button', { name: 'Aumentar o zoom' }).click()
+    await expect(page.getByTestId('editar-pdf-zoom')).toHaveText('150%')
+
+    const largura = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    )
+    expect(largura).toBeLessThanOrEqual(320)
+    for (const nome of [
+      'Página 1',
+      'Página anterior',
+      'Próxima página',
+      'Diminuir o zoom',
+      'Aumentar o zoom',
+    ]) {
+      const caixa = await page
+        .getByRole('button', { name: nome, exact: true })
+        .boundingBox()
+      expect(caixa!.width).toBeGreaterThanOrEqual(44)
+      expect(caixa!.height).toBeGreaterThanOrEqual(44)
+    }
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    test(`todo texto do editar passa de 4,5:1 no tema ${tema}`, async ({
+      page,
+    }) => {
+      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+      await page.goto('/tools/pdf/editar')
+      await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200]))
+      await page.getByRole('button', { name: 'Próxima página' }).click()
+
+      const medidas = await page.evaluate(
+        medirContrasteDoTexto,
+        '[data-testid="editar-pdf"]',
+      )
+      expect(medidas.length).toBeGreaterThan(10)
       expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
     })
 })

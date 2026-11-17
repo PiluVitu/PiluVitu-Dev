@@ -3,6 +3,7 @@ import type {
   AndamentoDaMesclagem,
   FalhaDaOperacao,
   MotorDePdf,
+  PedidoDeEdicao,
   ResultadoDaAnalise,
 } from './motor'
 
@@ -14,6 +15,7 @@ type Opcoes = {
   atraso?: number
   mesclagem?: Desfecho
   organizacao?: Desfecho
+  edicao?: Desfecho
   /** Tamanho que o PDF entregue diz ter, para testar os tetos sem alocar o arquivo. */
   tamanhoDoResultado?: number
 }
@@ -33,6 +35,7 @@ export function criarMotorFalso({
   atraso = 0,
   mesclagem,
   organizacao,
+  edicao,
   tamanhoDoResultado,
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
@@ -66,6 +69,7 @@ export function criarMotorFalso({
     analisadas: [] as string[],
     mescladas: [] as string[][],
     organizadas: [] as { nome: string; plano: readonly PaginaDoPlano[] }[],
+    editadas: [] as ({ nome: string } & PedidoDeEdicao)[],
     encerrado: false,
     async analisar(arquivo: Blob) {
       motor.analisadas.push((arquivo as File).name)
@@ -90,6 +94,20 @@ export function criarMotorFalso({
     organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]) {
       motor.organizadas.push({ nome: (arquivo as File).name, plano })
       return operar(organizacao, [])
+    },
+    editar(
+      arquivo: Blob,
+      objetosPorPagina: PedidoDeEdicao['objetosPorPagina'],
+      imagens: PedidoDeEdicao['imagens'],
+      paginasRasterizadas: PedidoDeEdicao['paginasRasterizadas'],
+    ) {
+      motor.editadas.push({
+        nome: (arquivo as File).name,
+        objetosPorPagina,
+        imagens,
+        paginasRasterizadas,
+      })
+      return operar(edicao, [])
     },
     cancelar() {
       cancelar?.()

@@ -1452,6 +1452,37 @@ describe('aplicarEdicoes: apagar de verdade', () => {
     altura: 30,
   })
 
+  // Com o fundo, os cobrir não são desenhados de novo. O número do objeto culpado tem que continuar o da
+  // lista recebida, senão a tela (que traduz o número para o objeto) aponta para outro.
+  it('o objeto culpado é contado na lista recebida, com os cobrir', async () => {
+    const quebrado = new Uint8Array([...PNG_2X2.slice(0, 8), 1, 2, 3, 4, 5])
+    const erro = await erroNaEdicao(
+      aplicarEdicoes(await gerarPdf(1, 600), [
+        {
+          indice: 0,
+          objetos: [
+            cobrir(),
+            {
+              id: id(),
+              tipo: 'imagem',
+              x: 10,
+              y: 10,
+              largura: 40,
+              altura: 30,
+              bytes: quebrado,
+            },
+          ],
+          fundo: JPEG_8X8,
+        },
+      ]),
+    )
+    expect(erro).toMatchObject({
+      motivo: 'imagem_corrompida',
+      pagina: 0,
+      objeto: 1,
+    })
+  })
+
   it('o arquivo de teste tem mesmo os segredos em todo lugar', async () => {
     const conteudo = await todoOConteudo(await gerarPdfComSegredos())
     for (const segredo of SEGREDOS)

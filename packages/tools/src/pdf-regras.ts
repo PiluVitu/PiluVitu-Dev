@@ -812,7 +812,18 @@ export function pixelsDoFundo(
   pagina: Tamanho,
   dpi = DPI_DO_FUNDO,
 ): Tamanho & { escala: number } {
-  let escala = dpi / 72
+  return limitarAoCanvas(pagina, dpi / 72)
+}
+
+// A página (em pontos) vezes a escala, reduzida até caber nos limites de canvas dos navegadores.
+export function limitarAoCanvas(
+  pagina: Tamanho,
+  escalaPedida: number,
+): Tamanho & { escala: number } {
+  if (!(Number.isFinite(escalaPedida) && escalaPedida > 0)) {
+    throw new RangeError(`escala inválida: ${escalaPedida}`)
+  }
+  let escala = escalaPedida
   const area = pagina.largura * pagina.altura * escala * escala
   if (area > PIXELS_MAXIMOS_DO_CANVAS) {
     escala *= Math.sqrt(PIXELS_MAXIMOS_DO_CANVAS / area)

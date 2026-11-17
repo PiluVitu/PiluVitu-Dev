@@ -339,3 +339,145 @@ describe('organizar', () => {
     await expect(organizacao).rejects.toEqual({ motivo: 'inesperado' })
   })
 })
+
+describe('editar', () => {
+  type PedidoDeEditar = Extract<PedidoAoWorker, { tipo: 'editar' }>
+  const objetosPorPagina = new Map([
+    [
+      2,
+      [
+        {
+          id: 'o1',
+          tipo: 'imagem' as const,
+          imagem: 'logo',
+          x: 1,
+          y: 2,
+          largura: 3,
+          altura: 4,
+        },
+      ],
+    ],
+  ])
+  const imagens = new Map([['logo', new Blob(['png'])]])
+  const paginasRasterizadas = new Map([[2, new Blob(['jpeg'])]])
+
+  it('manda o arquivo, os objetos, as imagens e as páginas rasterizadas com id e entrega um Blob de PDF', async () => {
+    const motor = novoMotor()
+    const doc = arquivo('contrato.pdf')
+    const pronto = motor.editar(
+      doc,
+      objetosPorPagina,
+      imagens,
+      paginasRasterizadas,
+    )
+
+    const pedido = ultimo().recebidos[0] as PedidoDeEditar
+    expect(pedido).toEqual({
+      tipo: 'editar',
+      id: expect.any(Number),
+      arquivo: doc,
+      objetosPorPagina,
+      imagens,
+      paginasRasterizadas,
+    })
+    ultimo().responder({
+      tipo: 'pronto',
+      id: pedido.id,
+      bytes: new ArrayBuffer(6),
+    })
+
+    const pdf = await pronto
+    expect(pdf.type).toBe('application/pdf')
+    expect(pdf.size).toBe(6)
+  })
+
+  it('rejeita com o motivo, a página, o objeto e os caracteres da falha da edição', async () => {
+    const motor = novoMotor()
+    const pronto = motor.editar(
+      arquivo('a.pdf'),
+      objetosPorPagina,
+      new Map(),
+      new Map(),
+    )
+    const { id } = ultimo().recebidos[0] as PedidoDeEditar
+
+    ultimo().responder({
+      tipo: 'falhou',
+      id,
+      motivo: 'texto_fora_do_winansi',
+      pagina: 2,
+      objeto: 'o1',
+      caracteres: ['😀'],
+    })
+
+    await expect(pronto).rejects.toEqual({
+      motivo: 'texto_fora_do_winansi',
+      pagina: 2,
+      objeto: 'o1',
+      caracteres: ['😀'],
+    })
+  })
+
+  it('uma edição nova cancela a pendente, derruba o Worker e ignora a resposta velha', async () => {
+    const motor = novoMotor()
+    const primeira = motor.editar(
+      arquivo('a.pdf'),
+      objetosPorPagina,
+      imagens,
+      new Map(),
+    )
+    const antigo = ultimo()
+    const { id: idAntigo } = antigo.recebidos[0] as PedidoDeEditar
+
+    const segunda = motor.editar(
+      arquivo('a.pdf'),
+      new Map(),
+      new Map(),
+      paginasRasterizadas,
+    )
+
+    await expect(primeira).rejects.toEqual({ motivo: 'cancelado' })
+    expect(antigo.encerrado).toBe(true)
+    const novo = ultimo()
+    const { id: idNovo } = novo.recebidos[0] as PedidoDeEditar
+    novo.responder({ tipo: 'pronto', id: idAntigo, bytes: new ArrayBuffer(1) })
+    novo.responder({ tipo: 'pronto', id: idNovo, bytes: new ArrayBuffer(7) })
+
+    expect((await segunda).size).toBe(7)
+  })
+
+  it('organizar com uma edição pendente cancela a edição', async () => {
+    const motor = novoMotor()
+    const edicao = motor.editar(
+      arquivo('a.pdf'),
+      objetosPorPagina,
+      imagens,
+      new Map(),
+    )
+
+    void motor.organizar(arquivo('a.pdf'), [{ indice: 0, giro: 0 }])
+
+    await expect(edicao).rejects.toEqual({ motivo: 'cancelado' })
+  })
+
+  it('cancelar e Worker que quebra: a edição falha como cancelada e como inesperada', async () => {
+    const motor = novoMotor()
+    const cancelada = motor.editar(
+      arquivo('a.pdf'),
+      new Map(),
+      new Map(),
+      new Map(),
+    )
+    motor.cancelar()
+    await expect(cancelada).rejects.toEqual({ motivo: 'cancelado' })
+
+    const quebrada = motor.editar(
+      arquivo('a.pdf'),
+      new Map(),
+      new Map(),
+      new Map(),
+    )
+    ultimo().quebrar()
+    await expect(quebrada).rejects.toEqual({ motivo: 'inesperado' })
+  })
+})

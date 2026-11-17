@@ -909,11 +909,11 @@ describe('baixar e extrair', () => {
     )
   })
 
-  it('avisa que imagem em JPEG 2000 ou JBIG2 pode faltar na miniatura, mas vai inteira para o PDF', async () => {
+  // Desde a fase 3 o pdf.js recebe os decodificadores da própria origem (recursos-pdfjs.ts): o aviso
+  // da fase 2, de que essas imagens podiam faltar na miniatura, deixou de valer.
+  it('não avisa mais que imagem em JPEG 2000 ou JBIG2 pode faltar na miniatura', async () => {
     await abrir('a-2p.pdf')
 
-    expect(q('organizar-pdf-miniaturas-sem-imagem')!.textContent).toBe(
-      'Imagens em JPEG 2000 ou JBIG2, comuns em PDF escaneado, podem não aparecer nas miniaturas. No PDF final elas vão inteiras.',
-    )
+    expect(container.textContent).not.toMatch(/JPEG 2000|JBIG2/)
   })
 })

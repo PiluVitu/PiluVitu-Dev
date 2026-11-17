@@ -3,7 +3,7 @@ import type {
   MotivoDoErroDePdf,
   SentidoDoGiro,
 } from '@piluvitu/tools/pdf-regras'
-import type { MotivoDaRecusa } from './motor'
+import type { FalhaDaOperacao, MotivoDaRecusa } from './motor'
 
 // O site ainda não tem catálogo por idioma (WEB-17 em docs/auditoria-a11y-l10n.md): os textos das
 // ferramentas de PDF ficam juntos aqui, com chaves estáveis, para migrarem inteiros quando ele existir.
@@ -22,6 +22,11 @@ function contagem(n: number, um: string, varios: string): string {
 function concordar(n: number, um: string, varios: string): string {
   return plural.select(n) === 'one' ? um : varios
 }
+
+const lista = new Intl.ListFormat(IDIOMA, {
+  style: 'long',
+  type: 'conjunction',
+})
 
 const UNIDADES = [
   [1_000_000_000, 'gigabyte'],
@@ -68,6 +73,27 @@ export const ERROS_DO_ARQUIVO: Record<MotivoDaRecusa, string> = {
   sem_paginas: 'Não tem nenhuma página.',
   falha_do_navegador:
     'O navegador não conseguiu ler este arquivo, talvez por falta de memória. Feche outras abas ou tente com menos arquivos.',
+}
+
+// Erros da edição que a pessoa resolve na tela; o resto é do arquivo ou do navegador.
+function falhaAoSalvar(falha: FalhaDaOperacao): string {
+  const pagina = falha.pagina === undefined ? 0 : falha.pagina + 1
+  const caracteres = falha.caracteres ?? []
+  switch (falha.motivo) {
+    case 'texto_fora_do_winansi':
+      return `Um texto da página ${numero(pagina)} tem ${concordar(caracteres.length, 'um caractere', 'caracteres')} que as fontes do PDF não escrevem: ${lista.format(caracteres)}. Apague ${concordar(caracteres.length, 'esse caractere', 'esses caracteres')} e salve de novo.`
+    case 'imagem_nao_aceita':
+      return `Uma imagem da página ${numero(pagina)} não é PNG nem JPEG. Troque por uma imagem PNG ou JPEG e salve de novo.`
+    case 'imagem_corrompida':
+      return `Uma imagem da página ${numero(pagina)} não pôde ser lida. Ponha a imagem de novo e salve outra vez.`
+    case 'nao_e_pdf':
+    case 'protegido':
+    case 'corrompido':
+    case 'sem_paginas':
+      return `Não deu para salvar o PDF. ${ERROS_DO_ARQUIVO[falha.motivo]}`
+    default:
+      return 'O navegador não conseguiu salvar o PDF, talvez por falta de memória. Feche outras abas ou recarregue a página e tente de novo.'
+  }
 }
 
 const SENTIDOS: Record<SentidoDoGiro, string> = {
@@ -165,8 +191,6 @@ export const TEXTOS = {
   },
   organizar: {
     rotulo: 'Abrir PDF',
-    miniaturasSemImagem:
-      'Imagens em JPEG 2000 ou JBIG2, comuns em PDF escaneado, podem não aparecer nas miniaturas. No PDF final elas vão inteiras.',
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>
       `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,
@@ -263,6 +287,50 @@ export const TEXTOS = {
         `Página ${numero(numeroDaPagina)} solta na posição ${numero(posicao)}.`,
       cancelou: (numeroDaPagina: number) =>
         `A página ${numero(numeroDaPagina)} voltou para o lugar.`,
+    },
+  },
+  editar: {
+    rotulo: 'Abrir PDF',
+    limites: (tetoDeBytes: number, tetoDePaginas: number) =>
+      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
+    abrindo: (nome: string) => `Abrindo ${nome}…`,
+    aberto: (nome: string, totalDePaginas: number) =>
+      `${nome} · ${paginas(totalDePaginas)}`,
+    recusado: (nome: string, motivo: MotivoDaRecusa) =>
+      `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
+    grandeDemais: (nome: string, bytes: number, teto: number) =>
+      `${nome} tem ${formatarTamanho(bytes)}, mais que os ${formatarTamanho(teto)} que dá para editar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.`,
+    paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
+      `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
+    paginas: 'Páginas',
+    escolherPagina: (numeroDaPagina: number) =>
+      `Página ${numero(numeroDaPagina)}`,
+    numeroDaMiniatura: (numeroDaPagina: number) => numero(numeroDaPagina),
+    semMiniatura: 'Sem prévia',
+    atalhoDasPaginas:
+      'Nas miniaturas, as setas passam de uma página para outra, e Enter abre a página.',
+    paginaAtual: (numeroDaPagina: number, total: number) =>
+      `Página ${numero(numeroDaPagina)} de ${numero(total)}`,
+    anterior: 'Página anterior',
+    proxima: 'Próxima página',
+    zoom: {
+      rotulo: 'Zoom',
+      diminuir: 'Diminuir o zoom',
+      aumentar: 'Aumentar o zoom',
+      valor: (fracao: number) => formatarPorcentagem(fracao),
+      noMinimo: 'O zoom já está no mínimo.',
+      noMaximo: 'O zoom já está no máximo.',
+    },
+    pagina: (numeroDaPagina: number) => `Página ${numero(numeroDaPagina)}`,
+    desenhando: 'Desenhando a página…',
+    naoDesenhou: (numeroDaPagina: number) =>
+      `Não deu para desenhar a página ${numero(numeroDaPagina)}, talvez por falta de memória. Feche outras abas e tente de novo.`,
+    tentarDeNovo: 'Tentar de novo',
+    falhaAoSalvar,
+    anuncios: {
+      pagina: (numeroDaPagina: number, total: number) =>
+        `Página ${numero(numeroDaPagina)} de ${numero(total)}.`,
+      zoom: (fracao: number) => `Zoom em ${formatarPorcentagem(fracao)}.`,
     },
   },
   arrastar: {
