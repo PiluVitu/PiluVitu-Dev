@@ -366,28 +366,17 @@ function conferirEdicoes(edicoes: readonly EdicaoDaPagina[]): void {
 // Mesma leitura do pdf.js (Page.view, rotate e userUnit), para o desenho cair onde a tela mostrou.
 const CARTA = [0, 0, 612, 792]
 
-// Um array de `quantos` números finitos (/Rect, /BBox, /Matrix), ou null.
-function numerosDe(
-  contexto: PDFContext,
-  valor: PDFObject | undefined,
-  quantos: number,
-): number[] | null {
-  const array = contexto.lookup(valor)
-  if (!(array instanceof PDFArray) || array.size() !== quantos) return null
-  const numeros = array
-    .asArray()
-    .map((item) => contexto.lookup(item))
-    .map((item) => (item instanceof PDFNumber ? item.asNumber() : NaN))
-  return numeros.every(Number.isFinite) ? numeros : null
-}
-
 function caixaDaPagina(pagina: PDFPage, nome: string): number[] | null {
-  const numeros = numerosDe(
-    pagina.doc.context,
+  const { context } = pagina.doc
+  const valor = context.lookup(
     pagina.node.getInheritableAttribute(PDFName.of(nome)),
-    4,
   )
-  if (!numeros) return null
+  if (!(valor instanceof PDFArray) || valor.size() !== 4) return null
+  const numeros = valor
+    .asArray()
+    .map((item) => context.lookup(item))
+    .map((item) => (item instanceof PDFNumber ? item.asNumber() : NaN))
+  if (!numeros.every(Number.isFinite)) return null
   const [a, b, c, d] = numeros
   const caixa = [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)]
   return caixa[2] - caixa[0] > 0 && caixa[3] - caixa[1] > 0 ? caixa : null

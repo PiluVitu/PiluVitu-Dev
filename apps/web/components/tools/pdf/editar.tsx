@@ -474,27 +474,15 @@ export function EditarPdf({
     if (sobram.size !== imagens.size) setImagens(sobram)
   }
 
-  // As que algum passo do histórico usa e a que espera para entrar.
-  function imagensQueFicam(
-    novo: Historico<Cena>,
-    pendente: string | null,
-  ): Set<string> {
-    const ficam = imagensDoHistorico(novo)
-    if (pendente) ficam.add(pendente)
-    return ficam
-  }
-
-  function descartarResultado() {
-    if (resultado.estado === 'pronto' || resultado.estado === 'falhou') {
-      setResultado({ estado: 'parado' })
-    }
-  }
-
   function guardarHistorico(novo: Historico<Cena>, pendente = imagemPendente) {
     if (!documento) return
     setEdicao({ documento, historico: novo })
-    soltarImagens(imagensQueFicam(novo, pendente))
-    descartarResultado()
+    const ficam = imagensDoHistorico(novo)
+    if (pendente) ficam.add(pendente)
+    soltarImagens(ficam)
+    if (resultado.estado === 'pronto' || resultado.estado === 'falhou') {
+      setResultado({ estado: 'parado' })
+    }
   }
 
   function mudarCena(
@@ -732,7 +720,7 @@ export function EditarPdf({
     try {
       const pronta = await prepararImagem(escolhida)
       if (vez !== vezDaImagem.current) return
-      const ficam = imagensQueFicam(historico, null)
+      const ficam = imagensDoHistorico(historico)
       let usados = 0
       for (const [id, { blob }] of imagens) {
         if (ficam.has(id)) usados += blob.size
