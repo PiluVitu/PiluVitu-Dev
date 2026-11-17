@@ -31,6 +31,7 @@ import {
   FAMILIAS_DE_FONTE,
   GIROS,
   OPACIDADE_DO_MARCA_TEXTO,
+  TETO_DE_PAGINAS,
   TIPOS_DE_OBJETO,
   caracteresForaDoWinAnsi,
   componentesDaCor,
@@ -1562,6 +1563,11 @@ function conferirMontagem(
 ): void {
   if (!Array.isArray(plano) || plano.length === 0) {
     throw new RangeError('o plano não tem página')
+  }
+  if (plano.length > TETO_DE_PAGINAS) {
+    throw new RangeError(
+      `o plano passa do teto: ${plano.length} de ${TETO_DE_PAGINAS} páginas`,
+    )
   }
   const vistas = new Set<string>()
   plano.forEach(({ origem, giro, moldura }, posicao) => {

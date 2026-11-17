@@ -32,6 +32,7 @@ import { lerComPdfjs } from './pdf.leitor-pdfjs.cjs'
 import {
   FAMILIAS_DE_FONTE,
   METRICAS_DAS_FONTES,
+  TETO_DE_PAGINAS,
   apagar,
   extrair,
   geometriaDaVista,
@@ -3334,6 +3335,25 @@ describe('montarDocumento: plano ou edição errados são erro de programação 
         edicoes,
       ),
     ).rejects.toThrow(RangeError)
+  })
+
+  it('plano com mais páginas que o teto: RangeError antes de ler qualquer arquivo (defesa do Worker)', async () => {
+    const fonte = jest.fn(async () => gerarPdf(1, 100))
+    const demais = Array.from({ length: TETO_DE_PAGINAS + 1 }, () =>
+      branca(100, 100),
+    )
+    await expect(montarDocumento([fonte], demais, [])).rejects.toThrow(
+      RangeError,
+    )
+    expect(fonte).not.toHaveBeenCalled()
+  })
+
+  it('o plano no teto exato passa', async () => {
+    const noTeto = Array.from({ length: TETO_DE_PAGINAS }, () =>
+      branca(100, 100),
+    )
+    const pdf = await montarDocumento([], noTeto, [])
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(TETO_DE_PAGINAS)
   })
 
   it('o plano é conferido antes de ler qualquer arquivo', async () => {
