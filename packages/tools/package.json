@@ -26,19 +26,22 @@
     "./contato": "./src/contato.ts",
     "./ico": "./src/ico.ts",
     "./pdf": "./src/pdf.ts",
-    "./pdf-regras": "./src/pdf-regras.ts"
+    "./pdf-regras": "./src/pdf-regras.ts",
+    "./pdf-traco": "./src/pdf-traco.ts"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/qrcode": "^1.5.6",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
+    "pdfjs-dist": "6.3.289",
     "ts-jest": "^29.4.9",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@zxing/browser": "^0.2.0",
     "pdf-lib": "1.17.1",
+    "perfect-freehand": "1.2.3",
     "qrcode": "^1.5.4"
   },
   "scripts": {

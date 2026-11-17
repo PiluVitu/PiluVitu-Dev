@@ -40,10 +40,11 @@ export const ComPaginas: Story = {
   },
   parameters: { arquivoInicial: pdf('mesclado-girado-12p.pdf') },
   play: async ({ canvas }) => {
+    // O anúncio (role=status) repete o mesmo texto: a busca vai direto ao parágrafo do documento.
     await waitFor(() =>
-      expect(
-        canvas.getByText('mesclado-girado-12p.pdf · 12 páginas'),
-      ).toBeVisible(),
+      expect(canvas.getByTestId('organizar-pdf-documento')).toHaveTextContent(
+        'mesclado-girado-12p.pdf · 12 páginas',
+      ),
     )
     await expect(canvas.getByRole('toolbar')).toHaveAccessibleName(
       'Ações nas páginas selecionadas',

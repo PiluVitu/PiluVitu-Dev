@@ -1,12 +1,21 @@
 import {
   ErroDePdf,
+  ErroNaEdicao,
+  aplicarEdicoes,
   contarPaginas,
   mesclarPdfs,
   organizarPaginas,
+  type EdicaoDaPagina,
+  type ObjetoDaPagina,
   type PaginaDoPlano,
 } from '@piluvitu/tools/pdf'
 import { fracaoDaMesclagem } from '@piluvitu/tools/pdf-regras'
-import type { PedidoAoWorker, RespostaDoWorker } from './motor'
+import type {
+  ObjetoNaTela,
+  PedidoAoWorker,
+  PedidoDeEdicao,
+  RespostaDoWorker,
+} from './motor'
 
 const escopo = self as unknown as {
   onmessage: ((evento: MessageEvent<PedidoAoWorker>) => void) | null
@@ -84,6 +93,69 @@ async function organizar(
   }
 }
 
+// A imagem chega como o arquivo que a pessoa escolheu; cada um é lido uma vez, e os objetos que o
+// repetem levam os mesmos bytes, que o pdf-lib embute uma vez só.
+async function edicoesDo({
+  objetosPorPagina,
+  imagens,
+  paginasRasterizadas,
+}: PedidoDeEdicao): Promise<EdicaoDaPagina[]> {
+  const lidas = new Map<string, Promise<Uint8Array>>()
+  const bytesDaImagem = (id: string) => {
+    const arquivo = imagens.get(id)
+    if (!arquivo) throw new RangeError(`imagem que não veio: ${id}`)
+    if (!lidas.has(id)) lidas.set(id, bytesDe(arquivo))
+    return lidas.get(id)!
+  }
+  const comBytes = async (objeto: ObjetoNaTela): Promise<ObjetoDaPagina> => {
+    if (objeto.tipo !== 'imagem') return objeto
+    const { imagem, ...resto } = objeto
+    return { ...resto, bytes: await bytesDaImagem(imagem) }
+  }
+  const indices = [
+    ...new Set([...objetosPorPagina.keys(), ...paginasRasterizadas.keys()]),
+  ].sort((a, b) => a - b)
+  return Promise.all(
+    indices.map(async (indice) => {
+      const fundo = paginasRasterizadas.get(indice)
+      return {
+        indice,
+        objetos: await Promise.all(
+          (objetosPorPagina.get(indice) ?? []).map(comBytes),
+        ),
+        ...(fundo ? { fundo: await bytesDe(fundo) } : {}),
+      }
+    }),
+  )
+}
+
+async function editar(id: number, arquivo: Blob, pedido: PedidoDeEdicao) {
+  try {
+    entregar(
+      id,
+      await aplicarEdicoes(await bytesDe(arquivo), await edicoesDo(pedido)),
+    )
+  } catch (erro) {
+    if (!(erro instanceof ErroNaEdicao)) return falhar(id, erro)
+    const objetos = pedido.objetosPorPagina.get(erro.pagina) ?? []
+    const objeto =
+      erro.objeto === undefined ? undefined : objetos[erro.objeto]?.id
+    // Sem objeto, o culpado é o fundo do apagar de verdade, que a própria tela gera: não é erro da pessoa.
+    escopo.postMessage(
+      objeto === undefined
+        ? { tipo: 'falhou', id, motivo: 'inesperado' }
+        : {
+            tipo: 'falhou',
+            id,
+            motivo: erro.motivo,
+            pagina: erro.pagina,
+            objeto,
+            caracteres: [...erro.caracteres],
+          },
+    )
+  }
+}
+
 function atender(pedido: PedidoAoWorker): Promise<void> {
   switch (pedido.tipo) {
     case 'analisar':
@@ -92,6 +164,8 @@ function atender(pedido: PedidoAoWorker): Promise<void> {
       return mesclar(pedido.id, pedido.arquivos)
     case 'organizar':
       return organizar(pedido.id, pedido.arquivo, pedido.plano)
+    case 'editar':
+      return editar(pedido.id, pedido.arquivo, pedido)
   }
 }
 

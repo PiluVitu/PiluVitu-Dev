@@ -1,7 +1,26 @@
 import type {
   MotivoDoErroDePdf,
+  MotivoDoErroNaEdicao,
+  ObjetoDaPagina,
+  ObjetoImagem,
   PaginaDoPlano,
 } from '@piluvitu/tools/pdf-regras'
+
+/** A imagem aponta pelo id para o arquivo em `imagens`, para o histórico do desfazer não copiar os bytes. */
+export type ObjetoImagemNaTela = Omit<ObjetoImagem, 'bytes'> & {
+  readonly imagem: string
+}
+
+export type ObjetoNaTela =
+  | Exclude<ObjetoDaPagina, ObjetoImagem>
+  | ObjetoImagemNaTela
+
+export type PedidoDeEdicao = {
+  objetosPorPagina: ReadonlyMap<number, readonly ObjetoNaTela[]>
+  imagens: ReadonlyMap<string, Blob>
+  /** Apagar de verdade: o JPEG de cada página, com os retângulos de cobrir já pintados nele. */
+  paginasRasterizadas: ReadonlyMap<number, Blob>
+}
 
 export type PedidoAoWorker =
   | { tipo: 'analisar'; id: number; arquivo: Blob }
@@ -12,18 +31,16 @@ export type PedidoAoWorker =
       arquivo: Blob
       plano: readonly PaginaDoPlano[]
     }
+  | ({ tipo: 'editar'; id: number; arquivo: Blob } & PedidoDeEdicao)
 
 export type RespostaDoWorker =
   | { tipo: 'analisado'; id: number; paginas: number }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
   | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
   | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
-  | {
-      tipo: 'falhou'
-      id: number
-      motivo: MotivoDoErroDePdf | 'inesperado'
-      indice?: number
-    }
+  | ({ tipo: 'falhou'; id: number } & Omit<FalhaDaOperacao, 'motivo'> & {
+        motivo: Exclude<FalhaDaOperacao['motivo'], 'cancelado'>
+      })
 
 /** `falha_do_navegador`: o Worker caiu duas vezes lendo o arquivo (memória, script); não diz nada do PDF. */
 export type MotivoDaRecusa = MotivoDoErroDePdf | 'falha_do_navegador'
@@ -34,10 +51,16 @@ export type ResultadoDaAnalise =
 
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
-/** Como `mesclar` e `organizar` rejeitam. `indice` é o arquivo culpado, só na mesclagem. */
+/**
+ * Como as operações rejeitam. `indice` é o arquivo culpado, só na mesclagem; `pagina` (índice), `objeto`
+ * (o id) e `caracteres` vêm só da edição.
+ */
 export type FalhaDaOperacao = {
-  motivo: MotivoDoErroDePdf | 'inesperado' | 'cancelado'
+  motivo: MotivoDoErroDePdf | MotivoDoErroNaEdicao | 'inesperado' | 'cancelado'
   indice?: number
+  pagina?: number
+  objeto?: string
+  caracteres?: readonly string[]
 }
 
 export interface MotorDePdf {
@@ -49,6 +72,13 @@ export interface MotorDePdf {
   ): Promise<Blob>
   /** Rejeita com {@link FalhaDaOperacao}. */
   organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]): Promise<Blob>
+  /** Rejeita com {@link FalhaDaOperacao}. */
+  editar(
+    arquivo: Blob,
+    objetosPorPagina: PedidoDeEdicao['objetosPorPagina'],
+    imagens: PedidoDeEdicao['imagens'],
+    paginasRasterizadas: PedidoDeEdicao['paginasRasterizadas'],
+  ): Promise<Blob>
   cancelar(): void
   encerrar(): void
 }
@@ -101,9 +131,11 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         operacao?.resolver(new Blob([data.bytes], { type: 'application/pdf' }))
         operacao = null
         return
-      case 'falhou':
-        operacao?.rejeitar({ motivo: data.motivo, indice: data.indice })
+      case 'falhou': {
+        const { motivo, indice, pagina, objeto, caracteres } = data
+        operacao?.rejeitar({ motivo, indice, pagina, objeto, caracteres })
         operacao = null
+      }
     }
   }
 
@@ -181,6 +213,16 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     },
     organizar(arquivo, plano) {
       return comecar((id) => ({ tipo: 'organizar', id, arquivo, plano }))
+    },
+    editar(arquivo, objetosPorPagina, imagens, paginasRasterizadas) {
+      return comecar((id) => ({
+        tipo: 'editar',
+        id,
+        arquivo,
+        objetosPorPagina,
+        imagens,
+        paginasRasterizadas,
+      }))
     },
     cancelar,
     encerrar() {

@@ -22,7 +22,10 @@ const NENHUMA: Miniaturas = {
 // Entre uma miniatura e outra o navegador atende o toque e a rolagem: o desenho no canvas é na thread da página.
 const folga = () => new Promise((resolver) => setTimeout(resolver, 0))
 
-export function useMiniaturas(documento: DocumentoAberto | null) {
+export function useMiniaturas(
+  documento: DocumentoAberto | null,
+  larguraCss = LARGURA_DA_MINIATURA,
+) {
   const elementos = useRef(new Map<Element, number>())
   const observador = useRef<IntersectionObserver | null>(null)
   const sairDaFila = useRef<((indice: number) => void) | null>(null)
@@ -46,7 +49,7 @@ export function useMiniaturas(documento: DocumentoAberto | null) {
         for (let i = proxima(); i !== undefined; i = proxima()) {
           tentadas.add(i)
           try {
-            const jpeg = await documento!.miniatura(i, LARGURA_DA_MINIATURA)
+            const jpeg = await documento!.miniatura(i, larguraCss)
             if (!ativo) return
             urls.set(i, URL.createObjectURL(jpeg))
           } catch {
@@ -85,7 +88,7 @@ export function useMiniaturas(documento: DocumentoAberto | null) {
       sairDaFila.current = null
       for (const url of urls.values()) URL.revokeObjectURL(url)
     }
-  }, [documento])
+  }, [documento, larguraCss])
 
   const observar = useCallback((elemento: Element, indice: number) => {
     elementos.current.set(elemento, indice)

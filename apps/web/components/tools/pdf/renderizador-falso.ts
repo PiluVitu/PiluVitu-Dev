@@ -1,8 +1,14 @@
+import {
+  limitarAoCanvas,
+  type Caixa,
+  type Ponto,
+} from '@piluvitu/tools/pdf-regras'
 import { analiseDeExemplo } from './motor-falso'
-import type {
-  DocumentoAberto,
-  FalhaDaAbertura,
-  RenderizadorDePdf,
+import {
+  PaginaSuperada,
+  type DocumentoAberto,
+  type FalhaDaAbertura,
+  type RenderizadorDePdf,
 } from './renderizador'
 
 type Opcoes = {
@@ -10,9 +16,19 @@ type Opcoes = {
   atraso?: number
   /** Índices (a partir de 0) cuja miniatura falha. */
   miniaturasQueFalham?: readonly number[]
+  /** Índices (a partir de 0) cuja página grande falha, uma vez cada. */
+  paginasQueFalham?: readonly number[]
   /** Quantas páginas o pdf.js conta, quando ele discorda do pdf-lib (árvore de páginas com `/Count` errado). */
   paginas?: number
+  /** Índices (a partir de 0) cujo fundo do apagar de verdade falha. */
+  fundosQueFalham?: readonly number[]
 }
+
+// As linhas cinzas e o número da folha falsa: onde a página "tem texto" para a dica do editar.
+const temTextoNaFolhaFalsa = ({ y }: Ponto) => (y >= 60 && y <= 340) || y >= 680
+
+// Os bytes iniciais de um JPEG, que é o que o motor confere no fundo.
+const JPEG_FALSO = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0, 0x10)
 
 // Folha A4 com o número da página. SVG, não JPEG: o jsdom não tem canvas, e a story só precisa da imagem.
 function folha(numero: number, deitada: boolean): Blob {
@@ -34,17 +50,49 @@ function folha(numero: number, deitada: boolean): Blob {
   )
 }
 
+const A4 = { largura: 595, altura: 842 }
+
+// O jsdom não desenha em canvas (e reclama no console se pedirem); a story, no navegador, desenha.
+const desenhaEmCanvas = () =>
+  typeof navigator !== 'undefined' && !/jsdom/i.test(navigator.userAgent)
+
+function pintar(canvas: HTMLCanvasElement, numero: number) {
+  const contexto = desenhaEmCanvas() ? canvas.getContext('2d') : null
+  if (!contexto) return
+  const { width: l, height: a } = canvas
+  contexto.fillStyle = '#ffffff'
+  contexto.fillRect(0, 0, l, a)
+  contexto.fillStyle = '#d4d4d8'
+  for (let i = 0; i < 6; i++) {
+    const largura = l * (i % 3 === 2 ? 0.5 : 0.78)
+    contexto.fillRect(l * 0.11, a * (0.09 + i * 0.054), largura, a * 0.02)
+  }
+  contexto.fillStyle = '#18181b'
+  contexto.font = `${Math.round(l * 0.27)}px sans-serif`
+  contexto.textAlign = 'center'
+  contexto.fillText(String(numero), l / 2, a * 0.86)
+}
+
 // Para stories e testes: o nome do arquivo decide, como no motor falso. "-12p" dá 12 páginas,
 // "senha" vem protegido, "quebrado" vem corrompido e "girado" deita a miniatura das páginas pares, como um /Rotate 90.
 export function criarRenderizadorFalso({
   atraso = 0,
   miniaturasQueFalham = [],
+  paginasQueFalham = [],
   paginas,
+  fundosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   const renderizador = {
     abertos: [] as string[],
     miniaturas: [] as { indice: number; larguraCss: number }[],
+    /** Cada página grande pedida, com o canvas entregue (vazio quando a página foi superada ou soltou). */
+    paginasPedidas: [] as {
+      indice: number
+      larguraCss: number
+      canvas?: HTMLCanvasElement
+    }[],
+    fundos: [] as { indice: number; cobrir: readonly Caixa[] }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
@@ -60,8 +108,58 @@ export function criarRenderizadorFalso({
         (_, i) => /girado/i.test(nome) && i % 2 === 1,
       )
       let fechado = false
+      let vez = 0
+      let atual: HTMLCanvasElement | null = null
+      const falharam = new Set<number>()
       return {
         paginas: total,
+        async pagina(indice, larguraCss) {
+          const pedido = { indice, larguraCss } as {
+            indice: number
+            larguraCss: number
+            canvas?: HTMLCanvasElement
+          }
+          renderizador.paginasPedidas.push(pedido)
+          const minha = ++vez
+          await espera()
+          if (fechado) throw new Error('o documento já foi fechado')
+          if (minha !== vez) throw new PaginaSuperada()
+          if (paginasQueFalham.includes(indice) && !falharam.has(indice)) {
+            falharam.add(indice)
+            throw new Error('falta de memória')
+          }
+          const tamanho = deitadas[indice]
+            ? { largura: A4.altura, altura: A4.largura }
+            : A4
+          const densidade = Math.max(1, globalThis.devicePixelRatio || 1)
+          const { largura, altura } = limitarAoCanvas(
+            tamanho,
+            (larguraCss * densidade) / tamanho.largura,
+          )
+          const canvas = document.createElement('canvas')
+          canvas.width = largura
+          canvas.height = altura
+          pintar(canvas, indice + 1)
+          if (atual) {
+            atual.width = 0
+            atual.height = 0
+          }
+          atual = canvas
+          pedido.canvas = canvas
+          return { canvas, tamanho }
+        },
+        async fundo(indice, cobrir) {
+          renderizador.fundos.push({ indice, cobrir })
+          await espera()
+          if (fechado) throw new Error('o documento já foi fechado')
+          if (fundosQueFalham.includes(indice)) {
+            throw new Error('falta de memória')
+          }
+          return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
+        },
+        async textoNoPonto(_indice, ponto) {
+          return !fechado && temTextoNaFolhaFalsa(ponto)
+        },
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })
           await espera()
@@ -74,6 +172,10 @@ export function criarRenderizadorFalso({
         fechar() {
           if (fechado) return
           fechado = true
+          if (atual) {
+            atual.width = 0
+            atual.height = 0
+          }
           renderizador.fechados += 1
         },
       }

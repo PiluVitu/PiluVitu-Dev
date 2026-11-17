@@ -1,6 +1,14 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { criarRenderizadorComPdfjs } from './renderizador'
+import {
+  PIXELS_MAXIMOS_DO_CANVAS,
+  pixelsDoFundo,
+} from '@piluvitu/tools/pdf-regras'
+import {
+  PaginaSuperada,
+  criarRenderizadorComPdfjs,
+  pontoNoTexto,
+} from './renderizador'
 
 // O pdf.js de verdade só roda no E2E (precisa de canvas e Worker de navegador). Aqui ele é um
 // dublê, para conferir o que o renderizador pede a ele e como trata o que volta.
@@ -9,6 +17,7 @@ jest.mock('./novo-worker-pdfjs', () => ({ novoWorkerDoPdfjs: jest.fn() }))
 const mockPdfjs = {
   getDocument: jest.fn(),
   PDFWorker: { create: jest.fn() },
+  version: '6.3.289',
 }
 jest.mock('pdfjs-dist', () => mockPdfjs)
 
@@ -33,10 +42,12 @@ function paginaFalsa({ largura = 600, altura = 800, rotate = 0 } = {}) {
       width: largura * scale,
       height: altura * scale,
     })),
-    render: jest.fn(({ canvas }: { canvas: HTMLCanvasElement }) => {
-      canvases.push(canvas)
-      return { promise: Promise.resolve() }
-    }),
+    render: jest.fn(
+      ({ canvas }: { canvas: HTMLCanvasElement; viewport: unknown }) => {
+        canvases.push(canvas)
+        return { promise: Promise.resolve(), cancel: jest.fn() }
+      },
+    ),
     cleanup: jest.fn(),
   }
 }
@@ -114,8 +125,34 @@ describe('abrir', () => {
       enableXfa: false,
       disableAutoFetch: true,
       useSystemFonts: true,
+      useWorkerFetch: false,
+      BinaryDataFactory: expect.any(Function),
     })
     expect(new TextDecoder().decode(opcoes.data)).toBe('%PDF-1.7 conteudo')
+  })
+
+  it('os recursos (decodificadores e fontes) vêm da pasta da versão do pdf.js carregado, na própria origem', async () => {
+    prepararDocumento([paginaFalsa()])
+    await abrir()
+
+    const [{ BinaryDataFactory }] = mockPdfjs.getDocument.mock.calls[0]
+    const buscados: string[] = []
+    const fetchOriginal = globalThis.fetch
+    globalThis.fetch = jest.fn(async (url: string) => {
+      buscados.push(url)
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(3) }
+    }) as unknown as typeof fetch
+    try {
+      const fabrica = new BinaryDataFactory({})
+      const bytes = await fabrica.fetch({
+        kind: 'wasmUrl',
+        filename: 'openjpeg.wasm',
+      })
+      expect(bytes).toHaveLength(3)
+    } finally {
+      globalThis.fetch = fetchOriginal
+    }
+    expect(buscados).toEqual(['/pdfjs/6.3.289/wasm/openjpeg.wasm'])
   })
 
   it('abre só com a contagem: nenhuma página vai e volta do Worker antes da primeira miniatura', async () => {
@@ -240,7 +277,10 @@ describe('miniatura', () => {
     let terminarA!: () => void
     a.render.mockImplementationOnce(({ canvas }) => {
       a.canvases.push(canvas)
-      return { promise: new Promise<void>((r) => (terminarA = r)) }
+      return {
+        promise: new Promise<void>((r) => (terminarA = r)),
+        cancel: jest.fn(),
+      }
     })
     prepararDocumento([a, b])
     const documento = await abrir()
@@ -260,6 +300,7 @@ describe('miniatura', () => {
     const [a, b] = [paginaFalsa(), paginaFalsa()]
     a.render.mockImplementationOnce(() => ({
       promise: Promise.reject(new Error('Rendering cancelled')),
+      cancel: jest.fn(),
     }))
     prepararDocumento([a, b])
     const documento = await abrir()
@@ -274,6 +315,346 @@ describe('miniatura', () => {
 
     await expect(documento.miniatura(0, 0)).rejects.toThrow(RangeError)
     await expect(documento.miniatura(0, Number.NaN)).rejects.toThrow(RangeError)
+  })
+})
+
+describe('pagina (a página grande)', () => {
+  type Controle = { terminar: () => void; cancel: jest.Mock }
+
+  // Um desenho que só termina quando o teste manda, e que o cancel rejeita como o pdf.js faz.
+  function desenhoControlado(pagina: PaginaFalsa): Controle[] {
+    const controles: Controle[] = []
+    pagina.render.mockImplementation(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      let terminar!: () => void
+      let falhar!: (erro: Error) => void
+      const promise = new Promise<void>((r, f) => {
+        terminar = r
+        falhar = f
+      })
+      const cancel = jest.fn(() =>
+        falhar(
+          Object.assign(new Error('Rendering cancelled'), {
+            name: 'RenderingCancelledException',
+          }),
+        ),
+      )
+      controles.push({ terminar, cancel })
+      return { promise, cancel }
+    })
+    return controles
+  }
+
+  it('desenha na largura de exibição vezes o devicePixelRatio e devolve o canvas e o tamanho da página em pontos', async () => {
+    Object.defineProperty(window, 'devicePixelRatio', {
+      value: 2,
+      configurable: true,
+    })
+    const pagina = paginaFalsa({ largura: 600, altura: 800 })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+
+    const desenhada = await documento.pagina(0, 450)
+
+    expect(desenhada.tamanho).toEqual({ largura: 600, altura: 800 })
+    expect([desenhada.canvas.width, desenhada.canvas.height]).toEqual([
+      900, 1200,
+    ])
+    expect(pagina.render).toHaveBeenCalledWith({
+      canvas: desenhada.canvas,
+      viewport: { width: 900, height: 1200 },
+    })
+    expect(pagina.cleanup).toHaveBeenCalled()
+  })
+
+  it('com zoom alto numa tela densa, o canvas para no limite de pixels do Safari no iOS', async () => {
+    Object.defineProperty(window, 'devicePixelRatio', {
+      value: 3,
+      configurable: true,
+    })
+    prepararDocumento([paginaFalsa({ largura: 595, altura: 842 })])
+    const documento = await abrir()
+
+    const { canvas } = await documento.pagina(0, 3_200)
+
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(
+      PIXELS_MAXIMOS_DO_CANVAS,
+    )
+    expect(canvas.width * canvas.height).toBeGreaterThan(
+      PIXELS_MAXIMOS_DO_CANVAS * 0.99,
+    )
+  })
+
+  it('uma página por vez: o canvas da anterior só é esvaziado quando a nova fica pronta', async () => {
+    const [a, b] = [paginaFalsa(), paginaFalsa()]
+    prepararDocumento([a, b])
+    const documento = await abrir()
+    const primeira = await documento.pagina(0, 300)
+    const controles = desenhoControlado(b)
+
+    const segunda = documento.pagina(1, 300)
+    await umaVolta()
+    expect(primeira.canvas.width).toBe(300)
+
+    controles[0].terminar()
+    const { canvas } = await segunda
+    expect(canvas.width).toBe(300)
+    expect([primeira.canvas.width, primeira.canvas.height]).toEqual([0, 0])
+  })
+
+  it('um pedido novo cancela o desenho em curso e pula o que ainda esperava, que rejeitam como superados', async () => {
+    const [a, b, c] = [paginaFalsa(), paginaFalsa(), paginaFalsa()]
+    prepararDocumento([a, b, c])
+    const documento = await abrir()
+    const controles = desenhoControlado(a)
+
+    const primeira = documento.pagina(0, 300)
+    await umaVolta()
+    const segunda = documento.pagina(1, 300)
+    const terceira = documento.pagina(2, 300)
+
+    await expect(primeira).rejects.toBeInstanceOf(PaginaSuperada)
+    await expect(segunda).rejects.toBeInstanceOf(PaginaSuperada)
+    expect(controles[0].cancel).toHaveBeenCalled()
+    expect([a.canvases[0].width, a.canvases[0].height]).toEqual([0, 0])
+    expect(b.render).not.toHaveBeenCalled()
+    await expect(terceira).resolves.toMatchObject({
+      tamanho: { largura: 600, altura: 800 },
+    })
+  })
+
+  it('divide a fila com as miniaturas: uma coisa desenhada por vez', async () => {
+    const [a, b] = [paginaFalsa(), paginaFalsa()]
+    prepararDocumento([a, b])
+    const documento = await abrir()
+    const controles = desenhoControlado(a)
+
+    const miniatura = documento.miniatura(0, 160)
+    const grande = documento.pagina(1, 300)
+    await umaVolta()
+
+    expect(b.render).not.toHaveBeenCalled()
+    controles[0].terminar()
+    await miniatura
+    await grande
+    expect(b.render).toHaveBeenCalledTimes(1)
+  })
+
+  it('desenho que falha solta o canvas e rejeita com o erro, sem travar a fila', async () => {
+    const pagina = paginaFalsa()
+    pagina.render.mockImplementationOnce(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      return {
+        promise: Promise.reject(new Error('sem memória')),
+        cancel: jest.fn(),
+      }
+    })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+
+    await expect(documento.pagina(0, 300)).rejects.toThrow('sem memória')
+    expect(pagina.canvases[0].width).toBe(0)
+    await expect(documento.pagina(0, 300)).resolves.toBeDefined()
+  })
+
+  it('largura que não é número positivo é recusada', async () => {
+    prepararDocumento([paginaFalsa()])
+    const documento = await abrir()
+
+    await expect(documento.pagina(0, 0)).rejects.toThrow(RangeError)
+    await expect(documento.pagina(0, Number.NaN)).rejects.toThrow(RangeError)
+  })
+
+  it('fechar cancela o desenho em curso e esvazia o canvas da página na tela', async () => {
+    const [a, b] = [paginaFalsa(), paginaFalsa()]
+    prepararDocumento([a, b])
+    const documento = await abrir()
+    const { canvas } = await documento.pagina(0, 300)
+    const controles = desenhoControlado(b)
+    const emCurso = documento.pagina(1, 300)
+    await umaVolta()
+
+    documento.fechar()
+
+    expect(controles[0].cancel).toHaveBeenCalled()
+    expect([canvas.width, canvas.height]).toEqual([0, 0])
+    await expect(emCurso).rejects.toThrow()
+    await expect(documento.pagina(0, 300)).rejects.toThrow('fechado')
+  })
+})
+
+describe('fundo (apagar de verdade)', () => {
+  let pintados: { x: number; y: number; largura: number; altura: number }[]
+  let corDaTinta: string[]
+
+  beforeEach(() => {
+    pintados = []
+    corDaTinta = []
+    HTMLCanvasElement.prototype.getContext = jest.fn(() => {
+      const contexto = {
+        fillStyle: '',
+        fillRect: (x: number, y: number, largura: number, altura: number) => {
+          pintados.push({ x, y, largura, altura })
+          corDaTinta.push(contexto.fillStyle)
+        },
+      }
+      return contexto
+    }) as unknown as HTMLCanvasElement['getContext']
+  })
+
+  it('desenha a página a 200 dpi, pinta os cobrir de branco no canvas antes do JPEG e solta tudo', async () => {
+    const pagina = paginaFalsa({ largura: 600, altura: 800 })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+    const esperado = pixelsDoFundo({ largura: 600, altura: 800 })
+
+    const jpeg = await documento.fundo(0, [
+      { x: 10.2, y: 20.7, largura: 100, altura: 30.1 },
+    ])
+
+    expect(jpeg.type).toBe('image/jpeg')
+    expect(pagina.render).toHaveBeenCalledWith({
+      canvas: pagina.canvases[0],
+      viewport: {
+        width: 600 * esperado.escala,
+        height: 800 * esperado.escala,
+      },
+    })
+    expect(jpegs).toEqual([
+      {
+        largura: esperado.largura,
+        altura: esperado.altura,
+        tipo: 'image/jpeg',
+        q: 0.9,
+      },
+    ])
+    const e = esperado.escala
+    expect(pintados).toEqual([
+      {
+        x: Math.floor(10.2 * e),
+        y: Math.floor(20.7 * e),
+        largura: Math.ceil(110.2 * e) - Math.floor(10.2 * e),
+        altura: Math.ceil(50.8 * e) - Math.floor(20.7 * e),
+      },
+    ])
+    expect(corDaTinta).toEqual(['#ffffff'])
+    expect([pagina.canvases[0].width, pagina.canvases[0].height]).toEqual([
+      0, 0,
+    ])
+    expect(pagina.cleanup).toHaveBeenCalled()
+  })
+
+  // Arredondado para dentro, a borda do retângulo ficaria meio pintada, com um resto da letra embaixo.
+  it('os retângulos são arredondados para fora: cobrem pelo menos a caixa inteira', async () => {
+    prepararDocumento([paginaFalsa({ largura: 595, altura: 842 })])
+    const documento = await abrir()
+    const { escala } = pixelsDoFundo({ largura: 595, altura: 842 })
+    // Com 200 dpi, 10,3 e 44,5 pontos caem em 28,6 e 123,6 pixels: arredondar ao mais perto cortaria a borda.
+    const caixa = { x: 10.3, y: 44.5, largura: 55.5, altura: 6.6 }
+
+    await documento.fundo(0, [caixa])
+
+    const [pintado] = pintados
+    expect(pintado.x).toBeLessThanOrEqual(caixa.x * escala)
+    expect(pintado.y).toBeLessThanOrEqual(caixa.y * escala)
+    expect(pintado.x + pintado.largura).toBeGreaterThanOrEqual(
+      (caixa.x + caixa.largura) * escala,
+    )
+    expect(pintado.y + pintado.altura).toBeGreaterThanOrEqual(
+      (caixa.y + caixa.altura) * escala,
+    )
+  })
+
+  it('não mexe na página grande da tela: ela continua inteira, e nenhum pedido dela é superado', async () => {
+    prepararDocumento([paginaFalsa(), paginaFalsa()])
+    const documento = await abrir()
+    const naTela = await documento.pagina(0, 300)
+
+    await documento.fundo(1, [{ x: 0, y: 0, largura: 1, altura: 1 }])
+
+    expect(naTela.canvas.width).toBe(300)
+    await expect(documento.pagina(0, 300)).resolves.toBeDefined()
+  })
+
+  it('o desenho que falha solta o canvas e rejeita; depois de fechar, é recusado', async () => {
+    const pagina = paginaFalsa()
+    pagina.render.mockImplementation(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      return {
+        promise: Promise.reject(new Error('sem memória')),
+        cancel: jest.fn(),
+      }
+    })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+
+    await expect(documento.fundo(0, [])).rejects.toThrow('sem memória')
+    expect(pagina.canvases[0].width).toBe(0)
+
+    documento.fechar()
+    await expect(documento.fundo(0, [])).rejects.toThrow('fechado')
+  })
+})
+
+describe('textoNoPonto (a dica de cobrir e escrever por cima)', () => {
+  // Texto de 12 pt em (100, 700) no PDF, com 50 pt de largura: na tela de uma página de 800 pt de altura,
+  // a linha de base fica em y = 100.
+  const ITEM = {
+    str: 'Contrato',
+    transform: [12, 0, 0, 12, 100, 700],
+    width: 50,
+  }
+  const RETA = [1, 0, 0, -1, 0, 800]
+  const DEITADA = [0, 1, 1, 0, 0, 0]
+
+  it.each([
+    [{ x: 120, y: 95 }, true],
+    [{ x: 151, y: 92 }, true],
+    [{ x: 120, y: 110 }, false],
+    [{ x: 160, y: 95 }, false],
+    [{ x: 120, y: 80 }, false],
+  ])('página sem giro: %o está no texto? %s', (ponto, dentro) => {
+    expect(pontoNoTexto(RETA, [ITEM], ponto)).toBe(dentro)
+  })
+
+  it('página girada 90°: o texto corre para baixo e as letras sobem para a direita', () => {
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 705, y: 120 })).toBe(true)
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 690, y: 120 })).toBe(false)
+    expect(pontoNoTexto(DEITADA, [ITEM], { x: 705, y: 200 })).toBe(false)
+  })
+
+  it('trecho só de espaço, marcação de conteúdo e trecho sem largura não contam', () => {
+    const ponto = { x: 120, y: 95 }
+    expect(pontoNoTexto(RETA, [{ ...ITEM, str: '   ' }], ponto)).toBe(false)
+    expect(pontoNoTexto(RETA, [{}], ponto)).toBe(false)
+    expect(pontoNoTexto(RETA, [{ ...ITEM, width: 0 }], ponto)).toBe(false)
+  })
+
+  it('pergunta ao pdf.js pela camada de texto da página, na vista com escala 1', async () => {
+    const pagina = {
+      ...paginaFalsa(),
+      getViewport: jest.fn(() => ({
+        width: 600,
+        height: 800,
+        transform: RETA,
+      })),
+      getTextContent: jest.fn(async () => ({ items: [ITEM] })),
+    }
+    prepararDocumento([pagina as unknown as PaginaFalsa])
+    const documento = await abrir()
+
+    await expect(documento.textoNoPonto(0, { x: 120, y: 95 })).resolves.toBe(
+      true,
+    )
+    await expect(documento.textoNoPonto(0, { x: 400, y: 400 })).resolves.toBe(
+      false,
+    )
+    expect(pagina.getViewport).toHaveBeenCalledWith({ scale: 1 })
+
+    documento.fechar()
+    await expect(documento.textoNoPonto(0, { x: 120, y: 95 })).resolves.toBe(
+      false,
+    )
   })
 })
 

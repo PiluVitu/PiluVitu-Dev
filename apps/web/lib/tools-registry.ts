@@ -9,6 +9,7 @@ import {
   faIdCard,
   faKey,
   faLayerGroup,
+  faPenToSquare,
   faQrcode,
   faTableCellsLarge,
 } from '@fortawesome/free-solid-svg-icons'
@@ -99,7 +100,7 @@ export const TOOLS: ToolMeta[] = [
   {
     slug: 'pdf',
     title: 'Editor de PDF',
-    description: 'Mesclar e organizar páginas de PDF',
+    description: 'Mesclar, organizar e editar páginas de PDF',
     icon: faFilePdf,
     group: 'documentos',
     modos: [
@@ -114,6 +115,13 @@ export const TOOLS: ToolMeta[] = [
         title: 'Organizar páginas',
         description: 'Gira, apaga, reordena e extrai páginas de um PDF',
         icon: faTableCellsLarge,
+      },
+      {
+        slug: 'editar',
+        title: 'Editar PDF',
+        description:
+          'Escreve, desenha, põe imagens e cobre trechos por cima das páginas',
+        icon: faPenToSquare,
       },
     ],
   },

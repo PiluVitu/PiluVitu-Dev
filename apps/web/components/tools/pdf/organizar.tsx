@@ -65,6 +65,7 @@ import {
 } from '@piluvitu/tools/pdf-regras'
 import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import { useDocumentoPdf } from './documento-pdf'
+import { ehCampoDeTexto, podeTerFoco } from './foco'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
@@ -73,20 +74,15 @@ import {
 import { novoWorkerDePdf } from './novo-worker'
 import {
   criarRenderizadorComPdfjs,
-  ehFalhaDaAbertura,
   type DocumentoAberto,
   type RenderizadorDePdf,
 } from './renderizador'
 import { TEXTOS, formatarTamanho, paginas as textoDePaginas } from './textos'
+import { useAbrirPdf, type RecusaDaAbertura } from './use-abrir-pdf'
 import { useMiniaturas } from './use-miniaturas'
 import { AvisoDePrivacidade, ZonaDeArquivos } from './zona-de-arquivos'
 
 const T = TEXTOS.organizar
-
-type Leitura = { arquivo: File } & (
-  | { ok: true; documento: DocumentoAberto }
-  | { ok: false; mensagem: string }
-)
 
 type Passo = {
   plano: readonly PaginaDoPlano[]
@@ -178,34 +174,10 @@ const SUFIXOS: Record<TipoDoResultado, string> = {
 
 const idDaPagina = (indice: number) => `p${indice}`
 
-const TIPOS_SEM_TEXTO = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-])
-
-function podeTerFoco(
-  elemento: Element | null | undefined,
-): elemento is HTMLElement {
-  return (
-    elemento instanceof HTMLElement &&
-    elemento.isConnected &&
-    !(elemento as HTMLButtonElement).disabled
-  )
-}
-
-function ehCampoDeTexto(alvo: EventTarget | null): boolean {
-  if (!(alvo instanceof HTMLElement)) return false
-  if (alvo.isContentEditable || alvo instanceof HTMLTextAreaElement) {
-    return true
-  }
-  return alvo instanceof HTMLInputElement && !TIPOS_SEM_TEXTO.has(alvo.type)
+function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
+  return 'paginasDemais' in recusa
+    ? T.paginasDemais(nome, recusa.paginasDemais, TETO_DE_PAGINAS)
+    : T.recusado(nome, recusa.motivo)
 }
 
 // Só mouse e caneta: o toque fica com o TouchSensor, que espera 250 ms para arrastar não brigar com a rolagem.
@@ -256,15 +228,26 @@ export function OrganizarPdf({
   const botoesDaBarra = useRef(new Map<ChaveDaBarra, HTMLButtonElement>())
   const focoPendente = useRef<Foco | null>(null)
 
-  const [leitura, setLeitura] = useState<Leitura | null>(null)
   const [edicao, setEdicao] = useState<Edicao>(SEM_EDICAO)
   const [resultado, setResultado] = useState<Resultado>({ estado: 'parado' })
   const [anuncio, setAnuncio] = useState({ texto: '', vez: 0 })
 
-  const grandeDemais =
-    arquivo !== null && arquivo.size > TETO_DE_BYTES_COM_MINIATURAS
-  const atual = arquivo && leitura?.arquivo === arquivo ? leitura : null
-  const documento = atual?.ok ? atual.documento : null
+  const { atual, documento, grandeDemais } = useAbrirPdf(arquivo, {
+    motor,
+    renderizador: () =>
+      (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
+    aoAbrir(aberto, doArquivo) {
+      setEdicao({
+        documento: aberto,
+        plano: planoInicial(aberto.paginas),
+        selecionadas: new Set(),
+        passado: [],
+      })
+      setResultado({ estado: 'parado' })
+      anunciar(T.aberto(doArquivo.name, aberto.paginas))
+    },
+    aoRecusar: () => anunciar(''),
+  })
   const atualDaEdicao =
     documento && edicao.documento === documento ? edicao : SEM_EDICAO
   const { plano, selecionadas, passado } = atualDaEdicao
@@ -281,70 +264,6 @@ export function OrganizarPdf({
   const noFim = posicoes.every(
     (posicao, i) => posicao === plano.length - qtd + i,
   )
-
-  useEffect(() => {
-    if (!arquivo || arquivo.size > TETO_DE_BYTES_COM_MINIATURAS) return
-    motorRef.current ??= criarMotorComWorker(novoWorkerDePdf)
-    renderizadorRef.current ??= criarRenderizadorComPdfjs()
-    const motor = motorRef.current
-    const renderizador = renderizadorRef.current
-    let ativo = true
-    let aberto: DocumentoAberto | null = null
-
-    function recusar(mensagem: string) {
-      if (!ativo || !arquivo) return
-      setLeitura({ arquivo, ok: false, mensagem })
-      setAnuncio(({ vez }) => ({ texto: '', vez: vez + 1 }))
-    }
-
-    void (async () => {
-      const analise = await motor.analisar(arquivo)
-      if (!ativo) return
-      if (!analise.ok) {
-        return recusar(T.recusado(arquivo.name, analise.motivo))
-      }
-      if (analise.paginas > TETO_DE_PAGINAS) {
-        return recusar(
-          T.paginasDemais(arquivo.name, analise.paginas, TETO_DE_PAGINAS),
-        )
-      }
-      try {
-        const doPdfjs = await renderizador.abrir(arquivo)
-        if (!ativo) return doPdfjs.fechar()
-        // A tela mostra as páginas do pdf.js e o PDF sai com as do pdf-lib: se contam diferente (árvore
-        // de páginas com /Count errado), o arquivo gerado teria outras páginas no lugar das que a pessoa viu.
-        if (doPdfjs.paginas !== analise.paginas) {
-          doPdfjs.fechar()
-          return recusar(T.recusado(arquivo.name, 'corrompido'))
-        }
-        aberto = doPdfjs
-        setLeitura({ arquivo, ok: true, documento: doPdfjs })
-        setEdicao({
-          documento: doPdfjs,
-          plano: planoInicial(doPdfjs.paginas),
-          selecionadas: new Set(),
-          passado: [],
-        })
-        setResultado({ estado: 'parado' })
-        setAnuncio(({ vez }) => ({
-          texto: T.aberto(arquivo.name, doPdfjs.paginas),
-          vez: vez + 1,
-        }))
-      } catch (erro) {
-        recusar(
-          T.recusado(
-            arquivo.name,
-            ehFalhaDaAbertura(erro) ? erro.motivo : 'falha_do_navegador',
-          ),
-        )
-      }
-    })()
-
-    return () => {
-      ativo = false
-      aberto?.fechar()
-    }
-  }, [arquivo])
 
   useEffect(() => () => motorRef.current?.encerrar(), [])
 
@@ -666,7 +585,7 @@ export function OrganizarPdf({
     arquivo && grandeDemais
       ? T.grandeDemais(arquivo.name, arquivo.size, TETO_DE_BYTES_COM_MINIATURAS)
       : atual && !atual.ok
-        ? atual.mensagem
+        ? mensagemDaRecusa(atual.arquivo.name, atual.recusa)
         : null
   const textoDoAnuncio =
     !arquivo || grandeDemais
@@ -753,12 +672,6 @@ export function OrganizarPdf({
               data-testid="organizar-pdf-alcance"
             >
               {TEXTOS.alcance}
-            </p>
-            <p
-              className="text-muted-foreground text-xs leading-relaxed"
-              data-testid="organizar-pdf-miniaturas-sem-imagem"
-            >
-              {T.miniaturasSemImagem}
             </p>
 
             {montando ? (
