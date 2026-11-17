@@ -1814,7 +1814,10 @@ export function EditarPdf({
               >
                 <div
                   ref={areaRef}
-                  className="bg-muted/50 border-border relative max-h-[75vh] min-h-40 [scrollbar-gutter:stable] overflow-auto rounded-lg border p-2 sm:p-4"
+                  role="group"
+                  aria-label={T.areaDaPagina(pagina + 1)}
+                  tabIndex={0}
+                  className="bg-muted/50 border-border focus-visible:ring-ring relative max-h-[75vh] min-h-40 [scrollbar-gutter:stable] overflow-auto rounded-lg border p-2 focus-visible:ring-2 focus-visible:outline-hidden sm:p-4"
                   data-testid="editar-pdf-area"
                 >
                   {larguraCss !== null && (
@@ -2090,7 +2093,7 @@ export function EditarPdf({
                   />
                   <label
                     htmlFor={`${ids}-achatar`}
-                    className="py-2 text-sm font-medium"
+                    className="flex min-h-11 items-center text-sm font-medium"
                   >
                     {TEXTOS.assinar.gerar.achatar}
                   </label>

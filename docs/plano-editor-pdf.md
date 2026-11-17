@@ -472,6 +472,29 @@ Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o
 - **Peso:** o chunk do `/tools/pdf/assinar` (o mesmo `EditarPdf`), o Worker do pdf-lib (que já leva o código de formulário do pdf-lib) e nenhum dos três pesados no HTML de nenhuma página, comparados com os números da fase 3.
 - **Memória:** no teto do modo (49 MB, 20 páginas), com um campo de texto por página: abrir, preencher os 20, pôr a assinatura em 3 páginas e gerar, com e sem achatar. Método de "Medições do editar", no headless shell 1234 enquanto o Chromium 1217 não voltar ao cache.
 - **Docs:** "Feito na quarta etapa" aqui; "Medições do assinar" e os testes no `apps/web/CLAUDE.md`; o `packages/tools/CLAUDE.md`. No PR, o roteiro de leitor de tela (VoiceOver no macOS e no iOS, NVDA no Windows: o formulário pelo Tab, os rótulos, o destaque calado, os três jeitos de assinar) e a linha de segurança (sem dependência nova, nada guardado no navegador, imagem conferida pelos bytes).
+- **Feito na etapa 4**, com estes ajustes ao desenho:
+  - **E2E:** 17 casos no `describe('Assinar PDF')`, contra o build de produção, todos os da lista acima. Os PDFs saem do teste: `pdfDoFormulario` (páginas de 400 × 500, oito campos na ordem de Tab, com as opções `hibrido` e `assinado`), `pdfSoComXfa` e a foto de uma rubrica em papel, pelo `pngDeTeste`, que agora aceita a cor de cada pixel. O `tools.e2e.ts` inteiro passa com 78 casos.
+  - **A área da página entrou no Tab.** O axe a 1280 px acusou `scrollable-region-focusable`: na coluna do assinar, a página fica mais alta que a área, e, sem objeto na página, nada dentro dela recebia o foco, então quem usa o teclado não rolava até o resto da página. A área virou `role=group` "Área da página N", com `tabindex=0`, e as setas a rolam. Vale nos dois modos: no editar, o Tab passa por ela antes dos objetos (o E2E do teclado do editar mudou junto, e o `editar.test.tsx` ganhou o caso).
+  - **Três caixas de marcar tinham o rótulo com 36 px de altura:** "Aceito os termos" (a caixa do formulário), "Achatar o formulário" e "Tirar o fundo branco". O teste dos alvos de 44 px a 320 px as achou. O rótulo, que também liga a caixa, passou a ter 44 px.
+  - Com um `/Sig` no formulário, achatar deixa o `/Sig`, como o desenho manda. O E2E confere que só ele sobra, e não que nenhum campo sobra.
+  - No E2E do Tab, a suspensa é escolhida pelo `selectOption`, porque no Chromium do macOS as setas abrem a lista nativa em vez de trocar a opção. O resto é pelo teclado: Tab, Espaço e setas.
+  - **Peso** (build de 2026-11-17, KB de 1.000 bytes e gzip no nível 9, os números da fase 3):
+    - o Worker do pdf-lib foi de 442 KB (182 KB gzip) para 450 KB (184 KB gzip), com a leitura do formulário e o achatar;
+    - a tela do editar e do assinar, um chunk só (o mesmo `EditarPdf`), foi de 50 KB (15 KB gzip) para 79 KB (23 KB gzip), e só está no HTML desses dois modos;
+    - o chunk do pdf.js segue com 433 KB (128 KB gzip), e o Worker dele é o arquivo do pacote (mesmo sha256).
+
+    Nenhum dos três pesados está no HTML de nenhuma das 36 páginas. Os números de cada página estão em "Peso" no `apps/web/CLAUDE.md`.
+
+  - **Memória:** o pico do assinar é o da abertura, igual ao do organizar no mesmo PDF. Preencher os 20 campos, pôr a assinatura em 3 páginas e gerar (com e sem achatar) ficam abaixo dele. A tabela está em "Medições do assinar" no `apps/web/CLAUDE.md`.
+  - **Segurança** (skill `security-audit` em modo guia, partes CLIENT-SIDE e SUPPLY-CHAIN, sobre o diff da fase):
+    - nenhuma dependência, lock, workflow ou configuração mudou desde a fase 3;
+    - o código de produção da fase não tem sink de DOM (`innerHTML`, `dangerouslySetInnerHTML`, `eval`, URL montada com dado do PDF);
+    - o que vem do PDF (nome, rótulo, opções e caixas dos campos) chega à tela só como texto do React e como número;
+    - o Worker é dedicado, e só a página que o criou fala com ele;
+    - a imagem da assinatura é conferida pelos bytes (PNG ou JPEG, sem SVG);
+    - nada vai para `localStorage`, `sessionStorage` ou IndexedDB, conferido também no E2E.
+
+    Nenhum achado confirmado.
 
 **Fica de fora, de propósito:**
 
@@ -521,3 +544,4 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 - Na fase 4, o assinar é o `EditarPdf` com `modo="assinar"`: a barra só com Selecionar e mover, Assinatura e Texto, e o formulário só nesse modo. Preencher e assinar saem num carregar e salvar só.
 - Na fase 4, achatar é uma função própria, e não o `flatten()` do pdf-lib 1.17.1, que quebra com widget sem aparência, ignora a `/BBox` e deixa o widget no `/Annots`.
 - Na fase 4, a página grande mostra os campos como estão no arquivo, e os valores entram no PDF ao gerar.
+- Na fase 4, a área da página entra no Tab (`role=group`, "Área da página N"), nos dois modos, para o teclado rolar a página que não cabe nela (achado do axe).

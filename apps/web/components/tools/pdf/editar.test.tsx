@@ -554,6 +554,19 @@ describe('a página grande', () => {
     expect(renderizador.paginasPedidas.map((p) => p.indice)).toEqual([0, 1, 1])
   })
 
+  // Sem objeto na página, nada dentro da área recebe o foco: sem ela no Tab, quem usa o teclado não
+  // rola até o resto da página (no assinar, a coluna estreita deixa a página mais alta que a área).
+  it('a área da página entra no Tab, com o nome da página aberta, para o teclado rolar a página', async () => {
+    await abrir('livro-3p.pdf')
+    const area = q('editar-pdf-area')!
+    expect(area.tabIndex).toBe(0)
+    expect(area.getAttribute('role')).toBe('group')
+    expect(area.getAttribute('aria-label')).toBe('Área da página 1')
+
+    await clicar(miniaturas()[1])
+    expect(area.getAttribute('aria-label')).toBe('Área da página 2')
+  })
+
   it('a folha tem a proporção da página desenhada (página deitada também)', async () => {
     await abrir('mapa-girado-2p.pdf')
     const folha = q('editar-pdf-folha')!

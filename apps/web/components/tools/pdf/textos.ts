@@ -494,6 +494,8 @@ export const TEXTOS = {
       noMaximo: 'O zoom já está no máximo.',
     },
     pagina: (numeroDaPagina: number) => `Página ${numero(numeroDaPagina)}`,
+    areaDaPagina: (numeroDaPagina: number) =>
+      `Área da página ${numero(numeroDaPagina)}`,
     desenhando: 'Desenhando a página…',
     naoDesenhou: (numeroDaPagina: number) =>
       `Não deu para desenhar a página ${numero(numeroDaPagina)}, talvez por falta de memória. Feche outras abas e tente de novo.`,

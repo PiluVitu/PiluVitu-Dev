@@ -357,7 +357,7 @@ export function CriarAssinatura({
               />
               <label
                 htmlFor={`${ids}-fundo`}
-                className="py-2 text-sm font-medium"
+                className="flex min-h-11 items-center text-sm font-medium"
               >
                 {T.enviar.tirarFundo}
               </label>

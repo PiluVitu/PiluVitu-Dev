@@ -396,7 +396,10 @@ function ControleDoCampo({
               onFocus={() => focar()}
               className={MARCA}
             />
-            <label htmlFor={id} className="py-2 text-sm font-medium">
+            <label
+              htmlFor={id}
+              className="flex min-h-11 items-center text-sm font-medium"
+            >
               {rotulo}
             </label>
           </div>
