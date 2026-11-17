@@ -671,7 +671,7 @@ export const TEXTOS = {
       },
       achatar: 'Achatar o formulário',
       dicaDoAchatar:
-        'Os campos viram parte do desenho da página e deixam de ser editáveis, em qualquer leitor de PDF. Sem achatar, quem receber o PDF ainda pode mudar os valores.',
+        'Os campos viram parte do desenho da página e deixam de ser editáveis, em qualquer leitor de PDF. Sem achatar, quem receber o PDF ainda pode mudar os valores. Se um campo que veio preenchido de outro programa tiver um caractere que as fontes do PDF não escrevem (letras de outros alfabetos, emoji), o PDF não sai achatado: gere sem achatar ou mude esse campo.',
       obrigatoriosVazios: (rotulos: readonly string[]) => {
         const n = rotulos.length
         return `${concordar(n, 'O campo obrigatório', 'Os campos obrigatórios')} ${lista.format(rotulos.map(entreAspas))} ${concordar(n, 'ainda está sem resposta', 'ainda estão sem resposta')}. Dá para gerar assim mesmo.`
@@ -756,13 +756,13 @@ export const TEXTOS = {
     foraDoWinAnsi,
     semFormulario:
       'Este PDF não tem campos de formulário. Dá para pôr a assinatura e escrever por cima das páginas com as ferramentas acima.',
-    xfa: 'Este PDF tem um formulário XFA (dinâmico), que só o Adobe Acrobat e o Reader preenchem. Aqui dá para pôr a assinatura e escrever por cima das páginas, mas não para preencher os campos.',
+    xfa: 'Este PDF tem um formulário XFA (dinâmico), que só o Adobe Acrobat e o Reader preenchem. Aqui dá para pôr a assinatura e escrever por cima das páginas, mas não para preencher os campos. Como o Adobe desenha as páginas pelo XFA, a assinatura e o que você escrever por cima podem não aparecer no Adobe Acrobat e no Reader, só nos outros leitores.',
     hibrido:
-      'Este formulário tem também uma versão XFA, que alguns leitores (como o Adobe Reader) mostram no lugar dos campos. Ao gerar, a versão XFA sai, para todos os leitores mostrarem o que você preencheu aqui.',
+      'Este formulário tem também uma versão XFA, que alguns leitores (como o Adobe Reader) mostram no lugar da página. Ao gerar, a versão XFA sai, para todos os leitores mostrarem o que você preencheu e assinou aqui.',
     ilegivel:
       'Não deu para ler os campos do formulário deste PDF. Dá para pôr a assinatura e escrever por cima das páginas, mas não para preencher os campos aqui.',
     assinadoDigitalmente:
-      'Este PDF já tem uma assinatura digital. O PDF gerado aqui é um arquivo novo, e essa assinatura deixa de valer nele.',
+      'Este PDF já tem uma assinatura digital. O PDF gerado aqui é um arquivo novo, e essa assinatura ou certificação deixa de valer nele.',
     paginaMostraOriginal:
       'A página mostra os campos como estão no arquivo: o que você preencher aqui entra no PDF quando você gerar. Ao chegar num campo, a página mostra onde ele fica.',
     naoPreenchivel: NAO_PREENCHIVEL,

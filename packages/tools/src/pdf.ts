@@ -2009,14 +2009,25 @@ function achatarFormulario(
   else acroForm?.delete(PDFName.of('NeedAppearances'))
 }
 
-// Os recursos estendidos do Reader (/UR3, comuns em formulário de governo) são uma assinatura do arquivo
-// inteiro, que deixa de valer quando o pdf-lib o escreve de novo, e o Reader passaria a acusar o arquivo.
+// Os recursos estendidos do Reader (/UR3, comuns em formulário de governo) e a certificação (/DocMDP) são
+// assinaturas do arquivo inteiro, que deixam de valer quando o pdf-lib o escreve de novo.
 function tirarRecursosEstendidos({ context, catalog }: PDFDocument): void {
   const permissoes = dicionario(context, catalog.get(PDFName.of('Perms')))
   if (!permissoes) return
   permissoes.delete(PDFName.of('UR3'))
   permissoes.delete(PDFName.of('UR'))
+  permissoes.delete(PDFName.of('DocMDP'))
   if (permissoes.keys().length === 0) catalog.delete(PDFName.of('Perms'))
+}
+
+// No híbrido, o Reader mostra a versão XFA no lugar da página (o que foi posto por cima não aparece), e o
+// XML guarda o que foi digitado. Sem campo no AcroForm, a página sem o XFA seria só o aviso do LiveCycle.
+function tirarXfaDoHibrido({ context, catalog }: PDFDocument): void {
+  const acroForm = dicionario(context, catalog.get(ACROFORM))
+  const campos = context.lookup(acroForm?.get(PDFName.of('Fields')))
+  if (!acroForm || !(campos instanceof PDFArray) || campos.size() === 0) return
+  acroForm.delete(XFA)
+  catalog.delete(PDFName.of('NeedsRendering'))
 }
 
 export async function aplicarEdicoes(
@@ -2036,6 +2047,9 @@ export async function aplicarEdicoes(
     }
   }
   const recursos = new Recursos(documento)
+  if (edicoes.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
+    tirarXfaDoHibrido(documento)
+  }
   // A assinatura fica por cima do campo achatado.
   if (formulario) preencherFormulario(documento, formulario, recursos)
   const apagadas = new Set<PDFRef>()

@@ -508,6 +508,13 @@ Desenho de 2026-11-17, antes do código. Detalha, até o arquivo e a função, o
 - **Testes que faltavam:** desmarcar e limpar em todas as camadas (incluindo um E2E), a lista de escolha única, a tinta azul até o PNG e o nome, a rolagem até o destaque (com reduzir movimento), o cursor depois do caractere recusado, o Achatar que descarta o resultado, a falha num campo que não é o primeiro e está noutra página, o `GoToR` com um nome que saiu (o `/D` dele é do outro arquivo e não muda) e o texto formatado sem `/V`. Verificado por mutação: 22 mutantes no `pdf.ts` e 16 na tela, todos derrubados.
 - **Docs:** o `packages/tools/CLAUDE.md` dizia que os nomes de destino "saíam até a fase 3" (ficavam) e que a tela cita o marcador que leva para fora do documento (ela cita só os metadados e os anexos). Corrigido aqui também, na fase 3: o texto alternativo que fica não é dito na tela.
 
+**Revisão do Crivo no #121** (SHA 6b2a352), cada um com o teste que falhava antes:
+
+- **XFA híbrido só com a assinatura saía com o `/XFA`** (importante): o preenchimento só tirava o XFA com campo mudado ou achatar, e a tela só mandava o formulário nesses casos. No Reader, a versão XFA aparece no lugar da página (a assinatura não), e o XML guarda o que foi digitado. Agora o `aplicarEdicoes` tira o `/XFA` e o `/NeedsRendering` do híbrido (AcroForm com campos) sempre que alguma página ganha objeto ou fundo. No XFA puro o XFA fica, e o aviso da tela diz que a assinatura pode não aparecer no Adobe. Jest e E2E.
+- **O `/DocMDP` (certificação) sai do `/Perms`** junto com o `/UR3` e o `/UR`: ficava apontando para uma assinatura que o pdf-lib invalidou. O aviso do assinado digitalmente fala em assinatura ou certificação.
+- **Achatar com `/NeedAppearances` e um valor fora do WinAnsi** (cirílico, por exemplo) falha fechado com `aparencia_do_campo`: a dica do "Achatar" explica.
+- A11y: o código está certo; o teste com leitor de tela segue com o Paulo.
+
 **Fica de fora, de propósito:**
 
 - Os valores na página grande antes de gerar. O pdf.js desenha os campos com a aparência do arquivo; mostrar o que a pessoa digitou pediria o `annotationStorage` dele e um desenho novo a cada tecla, e a aparência sairia diferente da que o pdf-lib grava. A tela diz que os valores entram no PDF ao gerar.

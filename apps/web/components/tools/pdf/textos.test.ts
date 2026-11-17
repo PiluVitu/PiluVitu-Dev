@@ -343,9 +343,26 @@ describe('assinatura e formulário (fase 4)', () => {
       'somente_leitura',
     ])
     expect(formulario.naoPreenchivel.assinatura_digital).toMatch(/certificado/)
-    expect(formulario.assinadoDigitalmente).toMatch(
-      /essa assinatura deixa de valer/,
-    )
+    expect(formulario.assinadoDigitalmente).toMatch(/deixa de valer/)
     expect(formulario.hibrido).toMatch(/versão XFA sai/)
+  })
+
+  // Achados do Crivo no #121.
+  it('no XFA puro, a tela avisa que a assinatura pode não aparecer no Adobe', () => {
+    expect(formulario.xfa).toMatch(
+      /a assinatura e o que você escrever por cima podem não aparecer no Adobe/,
+    )
+  })
+
+  it('a dica do Achatar explica o caractere fora das fontes do PDF num campo que vem de outro programa', () => {
+    expect(TEXTOS.assinar.gerar.dicaDoAchatar).toMatch(
+      /caractere que as fontes do PDF não escrevem/,
+    )
+  })
+
+  it('o PDF assinado ou certificado avisa que a assinatura e a certificação deixam de valer', () => {
+    expect(formulario.assinadoDigitalmente).toMatch(
+      /assinatura ou certificação/,
+    )
   })
 })

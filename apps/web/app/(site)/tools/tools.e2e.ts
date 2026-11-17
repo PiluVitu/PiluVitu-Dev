@@ -2904,6 +2904,34 @@ test.describe('Assinar PDF', () => {
     )
   })
 
+  // Achado do Crivo no #121: sem mexer em campo, o XFA ficava, e o Reader mostraria a versão XFA no lugar
+  // da página, sem a assinatura.
+  test('híbrido só com a assinatura, sem mexer em campo: o PDF baixado sai sem o XFA, com o AcroForm', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf/assinar')
+    await abrirNoEditar(
+      page,
+      await pdfDoFormulario('cadastro.pdf', { hibrido: true }),
+    )
+    await expect(page.getByTestId('formulario-aviso-hibrido')).toContainText(
+      'a versão XFA sai',
+    )
+    await digitarAssinatura(page, 'Maria da Silva')
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await expect(page.getByTestId('editar-pdf-objeto')).toBeFocused()
+
+    const { bytes } = await gerarEBaixar(page, 'Gerar PDF assinado')
+    const documento = await PDFDocument.load(bytes)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(documento.getForm().getFields().length).toBeGreaterThan(0)
+  })
+
   test('imagem da assinatura com o fundo branco tirado: no PDF baixado, a /SMask é 0 no papel e 255 no traço', async ({
     page,
   }) => {
@@ -2976,7 +3004,7 @@ test.describe('Assinar PDF', () => {
     )
     await expect(avisos).toHaveCount(1)
     await expect(page.getByTestId('formulario-aviso-assinado')).toContainText(
-      'essa assinatura deixa de valer nele',
+      'essa assinatura ou certificação deixa de valer nele',
     )
     const sig = page
       .getByTestId('formulario-campo')

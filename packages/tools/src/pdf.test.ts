@@ -1846,13 +1846,14 @@ describe('aplicarEdicoes: apagar de verdade', () => {
     })
   })
 
-  it('sem apagar de verdade, o XFA, os marcadores e os textos da estrutura ficam como estavam', async () => {
+  // O XFA deste arquivo sai mesmo sem apagar de verdade: é um híbrido com a página editada (ver o teste
+  // "o híbrido com só um objeto por cima").
+  it('sem apagar de verdade, os marcadores, os nomes e os textos da estrutura ficam como estavam', async () => {
     const editado = await aplicarEdicoes(await gerarPdfComSegredos(), [
       { indice: 0, objetos: [cobrir()] },
     ])
     const conteudo = await todoOConteudo(editado)
     for (const fica of [
-      'SEGREDO-XFA',
       'SEGREDO-ALT-PAI',
       'SEGREDO-T-AVO',
       'SEGREDO-MARCADOR-PAI',
@@ -1861,10 +1862,10 @@ describe('aplicarEdicoes: apagar de verdade', () => {
     ]) {
       expect([fica, contem(conteudo, fica)]).toEqual([fica, true])
     }
+    expect(contem(conteudo, 'SEGREDO-XFA')).toBe(false)
     const documento = await PDFDocument.load(editado, {
       updateMetadata: false,
     })
-    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
     expect(
       documento.catalog
         .lookup(PDFName.of('OpenAction'), PDFDict)
@@ -3203,6 +3204,49 @@ describe('aplicarEdicoes: preencher o formulário', () => {
     expect(contem(await todoOConteudo(editado), 'xfa:datasets')).toBe(false)
     expect(console.warn).not.toHaveBeenCalled()
   })
+
+  // Achado do Crivo no #121: só a assinatura, sem mexer em campo, deixava o XFA. No Reader, a versão XFA
+  // aparece no lugar da página (a assinatura não), e o XML guarda o que foi digitado.
+  it('o híbrido com só um objeto por cima, sem formulário no pedido, sai sem o XFA e com o AcroForm', async () => {
+    const editado = await aplicarEdicoes(await gerarFormulario({ xfa: true }), [
+      { indice: 0, objetos: [objetoTexto({ conteudo: 'Assinado' })] },
+    ])
+    const documento = await PDFDocument.load(editado)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(contem(await todoOConteudo(editado), 'xfa:datasets')).toBe(false)
+    expect(documento.getForm().getTextField('pessoa.nome').getText()).toBe(
+      'Paulo',
+    )
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  // Sem campo no AcroForm, a página sem o XFA seria só o aviso do LiveCycle: o XFA fica, e a tela avisa
+  // que a assinatura pode não aparecer no Adobe.
+  it('só XFA (sem campo no AcroForm): o objeto por cima não tira o XFA', async () => {
+    const documento = await PDFDocument.create()
+    documento.addPage([600, 800])
+    documento.catalog.set(
+      PDFName.of('AcroForm'),
+      documento.context.obj({ Fields: [], XFA: XFA(documento) }),
+    )
+    documento.catalog.set(PDFName.of('NeedsRendering'), PDFBool.True)
+    const editado = await PDFDocument.load(
+      await aplicarEdicoes(await documento.save(), [
+        { indice: 0, objetos: [objetoTexto()] },
+      ]),
+    )
+    expect(
+      editado.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(true)
+    expect(editado.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
+  })
 })
 
 describe('aplicarEdicoes: formulários feitos por outros programas', () => {
@@ -3376,9 +3420,9 @@ describe('aplicarEdicoes: formulários feitos por outros programas', () => {
     }
   })
 
-  // Os recursos estendidos do Reader (comuns em formulário de governo) são uma assinatura do arquivo,
-  // que deixa de valer quando o pdf-lib o escreve de novo.
-  it('o /UR3 e o /UR saem do /Perms, que sai quando fica vazio; o resto do /Perms fica', async () => {
+  // Os recursos estendidos do Reader (comuns em formulário de governo) e a certificação (/DocMDP) são
+  // assinaturas do arquivo, que deixam de valer quando o pdf-lib o escreve de novo.
+  it('o /UR3, o /UR e o /DocMDP saem do /Perms, que sai quando fica vazio', async () => {
     const montar = async (perms: Record<string, boolean>) => {
       const documento = await PDFDocument.create()
       const { context } = documento
@@ -3420,9 +3464,12 @@ describe('aplicarEdicoes: formulários feitos por outros programas', () => {
     expect(await perms(await aplicarEdicoes(soUr3, [], preencher))).toBeNull()
     expect(await perms(await aplicarEdicoes(soUr3, []))).toBeNull()
     const comDocMdp = await montar({ UR: true, DocMDP: true })
-    expect(await perms(await aplicarEdicoes(comDocMdp, [], preencher))).toEqual(
-      ['/DocMDP'],
-    )
+    expect(await perms(comDocMdp)).toEqual(['/UR', '/DocMDP'])
+    expect(
+      await perms(await aplicarEdicoes(comDocMdp, [], preencher)),
+    ).toBeNull()
+    const soDocMdp = await montar({ DocMDP: true })
+    expect(await perms(await aplicarEdicoes(soDocMdp, []))).toBeNull()
   })
 })
 
