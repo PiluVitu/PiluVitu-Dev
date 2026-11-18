@@ -4510,12 +4510,15 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
           })
         }
 
+        // O JPEG veio da tela na moldura 90 (de pé, 100 × 200): a página dele tem esse tamanho, e o /Rotate
+        // a deixa como a tela mostra a outra posição. Com a moldura ignorada, ele sairia esticado e deitado
+        // numa página de 200 × 100, e o tamanho que aparece seria o mesmo.
         it.each([
-          ['giro 0', 0, ['200x100']],
-          ['giro 90', 90, ['100x200']],
+          ['giro 0', 0, ['200x100'], 270],
+          ['giro 90', 90, ['100x200'], 0],
         ] as const)(
           'o Extrair só da outra posição, com %s nela: ela sai como a tela a mostra, sem deitar',
-          async (_, giro, esperado) => {
+          async (_, giro, esperado, rotacao) => {
             const final = await montarComFora(
               [await comARepetidaDeitada()],
               [daMontagem(0, 2, { giro })],
@@ -4525,6 +4528,8 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
             )
 
             expect(await comoAparecem(final)).toEqual(esperado)
+            expect(await ladosDasPaginas(final)).toEqual([100])
+            expect(await rotacoesDasPaginas(final)).toEqual([rotacao])
             await semOSegredoESemNoRepetido(final)
           },
         )
@@ -4538,6 +4543,8 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
           )
 
           expect(await comoAparecem(final)).toEqual(['150x150', '200x100'])
+          expect(await ladosDasPaginas(final)).toEqual([150, 100])
+          expect(await rotacoesDasPaginas(final)).toEqual([0, 270])
           const outra = lerComPdfjs(final).paginas[1]
           expect(outra.textos.map(({ str }) => str)).toEqual(['NA-OUTRA'])
           expect(outra.textos[0].matriz[4]).toBeCloseTo(40, 2)
