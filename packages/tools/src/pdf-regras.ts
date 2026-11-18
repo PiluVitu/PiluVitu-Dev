@@ -202,6 +202,10 @@ export function tamanhoDaBranca(
   if (ultimaMarcada === null) return TAMANHO_A4
   const { tamanho, giro } = ultimaMarcada
   if (!tamanhoValido(tamanho)) {
+    const lados = [tamanho.largura, tamanho.altura]
+    if (lados.every((lado) => Number.isFinite(lado) && lado > 0)) {
+      return TAMANHO_A4
+    }
     throw new RangeError(
       `tamanho inválido: ${tamanho.largura} × ${tamanho.altura}`,
     )

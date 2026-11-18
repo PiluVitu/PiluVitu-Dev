@@ -9,6 +9,7 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
+  PDFPage,
   PDFRawStream,
   PDFRef,
   PDFStream,
@@ -24,7 +25,6 @@ import {
   type PDFFont,
   type PDFImage,
   type PDFObject,
-  type PDFPage,
 } from 'pdf-lib'
 import {
   CANTOS,
@@ -1445,10 +1445,55 @@ function conferirApagadasRepetidas(
   }
 }
 
+const HERDAVEIS = ['Resources', 'MediaBox', 'CropBox', 'Rotate'].map((nome) =>
+  PDFName.of(nome),
+)
+
+// O mesmo nó em duas posições do /Kids: o que se desenha nele aparece nas duas, e a tela mostra cada
+// posição com os seus objetos. O nó com apagar de verdade fica um só (ver "Nó repetido" no CLAUDE.md).
+function separarPaginasRepetidas(
+  documento: PDFDocument,
+  editadas: readonly PaginaEditada[],
+): void {
+  const paginas = documento.getPages()
+  const comObjetos = new Set<PDFRef>()
+  const apagadas = new Set<PDFRef>()
+  for (const { indice, objetos, fundo } of editadas) {
+    const { ref } = paginas[indice]
+    if (fundo !== undefined) apagadas.add(ref)
+    else if (objetos.length > 0) comObjetos.add(ref)
+  }
+  const vistas = new Set<PDFRef>()
+  paginas.forEach(({ ref, node }, indice) => {
+    if (!vistas.has(ref)) {
+      vistas.add(ref)
+      return
+    }
+    if (!comObjetos.has(ref) || apagadas.has(ref)) return
+    const propria = node.clone()
+    for (const nome of HERDAVEIS) {
+      const valor = node.getInheritableAttribute(nome)
+      if (valor !== undefined) propria.set(nome, valor)
+    }
+    for (const nome of [PDFName.of('Contents'), PDFName.Annots]) {
+      const lista = documento.context.lookup(node.get(nome))
+      if (lista instanceof PDFArray) {
+        propria.set(nome, documento.context.obj(lista.asArray()))
+      }
+    }
+    documento.removePage(indice)
+    documento.insertPage(
+      indice,
+      PDFPage.of(propria, documento.context.register(propria), documento),
+    )
+  })
+}
+
 async function editarNoLugar(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): Promise<void> {
+  separarPaginasRepetidas(documento, editadas)
   const paginas = documento.getPages()
   conferirApagadasRepetidas(paginas, editadas)
   const recursos = new Recursos(documento)

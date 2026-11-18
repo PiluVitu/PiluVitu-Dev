@@ -3770,6 +3770,187 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     )
   })
 
+  // Achado do Crivo no #128: com o mesmo nó em duas posições do /Kids, os objetos de uma posição eram
+  // desenhados no nó compartilhado e apareciam nas duas. A tela mostra cada posição com os seus objetos;
+  // cada posição com objeto ganha a sua página (sem apagar de verdade no nó, que segue as regras acima).
+  describe('PDF que repete a mesma página no /Kids: os objetos de uma posição não vão para a outra', () => {
+    async function comARepetida() {
+      const documento = await PDFDocument.load(await gerarPdf(2, 100))
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      documento.setTitle('TITULO-DO-ARQUIVO')
+      return documento.save()
+    }
+
+    const textosDe = (bytes: Uint8Array) =>
+      lerComPdfjs(bytes).paginas.map(({ textos }) =>
+        textos.map(({ str }) => str),
+      )
+
+    it('no lugar: AAA na posição 0 e BBB na 2 saem cada um na sua', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0], [1], [2]),
+        [
+          { posicao: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['BBB']])
+      expect(await ladosDasPaginas(final)).toEqual([100, 101, 100])
+      const documento = await PDFDocument.load(final, { updateMetadata: false })
+      expect(documento.getTitle()).toBe('TITULO-DO-ARQUIVO')
+    })
+
+    it('por cópia: AAA na posição 0 e BBB na 1 (plano [2, 0]) saem cada um na sua', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([2], [0]),
+        [
+          { posicao: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+          { posicao: 1, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([['AAA'], ['BBB']])
+      expect(await ladosDasPaginas(final)).toEqual([100, 100])
+    })
+
+    it.each([
+      ['no lugar', plano([0], [1], [2]), 0, [['AAA'], [], []]],
+      [
+        'no lugar, na segunda posição',
+        plano([0], [1], [2]),
+        2,
+        [[], [], ['AAA']],
+      ],
+      ['por cópia', plano([2], [0]), 1, [[], ['AAA']]],
+    ] as const)(
+      'só uma posição com objeto (%s): a outra fica sem ele',
+      async (_, oPlano, posicao, esperado) => {
+        const final = await montarDocumento([await comARepetida()], oPlano, [
+          { posicao, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+        ])
+
+        expect(textosDe(final)).toEqual(esperado)
+      },
+    )
+
+    it('no aplicarEdicoes (o Editar de um arquivo), também', async () => {
+      const final = await aplicarEdicoes(await comARepetida(), [
+        { indice: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+        { indice: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+      ])
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['BBB']])
+    })
+
+    it('com giro numa delas (sai por cópia), cada uma com o seu texto e o seu giro', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2]),
+        [
+          { posicao: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['BBB']])
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 0])
+    })
+
+    it('a página da outra posição guarda o link da original', async () => {
+      const documento = await PDFDocument.load(await comARepetida())
+      const link = documento.context.register(
+        documento.context.obj({
+          Type: 'Annot',
+          Subtype: 'Link',
+          Rect: [0, 0, 10, 10],
+          A: { S: 'URI', URI: PDFString.of('https://exemplo.com/') },
+        }),
+      )
+      documento
+        .getPage(0)
+        .node.set(PDFName.Annots, documento.context.obj([link]))
+      const bytes = await documento.save()
+
+      const final = await montarDocumento([bytes], plano([0], [1], [2]), [
+        { posicao: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+      ])
+
+      const anotacoes = (await PDFDocument.load(final))
+        .getPages()
+        .map(({ node }) => node.Annots()?.size() ?? 0)
+      expect(anotacoes).toEqual([1, 0, 1])
+      expect(textosDe(final)).toEqual([[], [], ['BBB']])
+    })
+
+    // Sem objeto no nó, nada a separar: o arquivo no lugar não muda além do pedido.
+    it('sem objeto no nó repetido, ele continua um só', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0], [1], [2]),
+        [{ posicao: 1, objetos: [objetoTexto({ conteudo: 'AAA' })] }],
+      )
+
+      const paginas = (await PDFDocument.load(final)).getPages()
+      expect(paginas[2].ref).toBe(paginas[0].ref)
+    })
+
+    // Com conteúdo, o /Contents do nó é uma lista; a página própria não pode dividi-la com a original.
+    it('a página que já tinha conteúdo: cada posição com o seu texto', async () => {
+      const documento = await PDFDocument.load(await gerarPdf(2, 100))
+      documento.getPage(0).drawRectangle({ x: 1, y: 1, width: 5, height: 5 })
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      const bytes = await documento.save()
+
+      const final = await montarDocumento([bytes], plano([0], [1], [2]), [
+        { posicao: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+        { posicao: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+      ])
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['BBB']])
+    })
+
+    // O nó repetido herda o /Rotate do pai dele; a página própria da outra posição pode entrar sob outro
+    // pai, então leva o que herdava.
+    it('a outra posição sob outro pai continua com o que herdava', async () => {
+      const documento = await PDFDocument.create()
+      documento.addPage([100, 100])
+      documento.addPage([101, 101])
+      const raiz = documento.catalog.Pages()
+      const raizRef = documento.catalog.get(PDFName.of('Pages')) as PDFRef
+      const [primeira, segunda] = raiz.Kids().asArray() as PDFRef[]
+      const meio = documento.context.obj({
+        Type: 'Pages',
+        Kids: [primeira],
+        Count: 1,
+        Rotate: 90,
+        Parent: raizRef,
+      })
+      const meioRef = documento.context.register(meio)
+      documento.getPage(0).node.set(PDFName.Parent, meioRef)
+      raiz.set(
+        PDFName.of('Kids'),
+        documento.context.obj([meioRef, segunda, primeira]),
+      )
+      raiz.set(PDFName.of('Count'), PDFNumber.of(3))
+      const bytes = await documento.save()
+
+      const final = await montarDocumento([bytes], plano([0], [1], [2]), [
+        { posicao: 0, objetos: [objetoTexto({ conteudo: 'AAA' })] },
+        { posicao: 2, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+      ])
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 90])
+      expect(textosDe(final)).toEqual([['AAA'], [], ['BBB']])
+    })
+  })
+
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {
     const origem = await gerarPdfComImagemCompartilhada()
     const organizado = apagar(

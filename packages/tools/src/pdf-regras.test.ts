@@ -1238,13 +1238,22 @@ describe('tamanhoDaBranca (P2: o tamanho da última marcada, como ela aparece)',
     expect(() => tamanhoDaBranca({ tamanho, giro: 0 })).toThrow(RangeError)
   })
 
-  it('recusa a marcada com lado acima do limite dos leitores de PDF', () => {
-    expect(() =>
-      tamanhoDaBranca({
-        tamanho: { largura: 600, altura: LADO_MAXIMO_DA_PAGINA + 1 },
-        giro: 90,
-      }),
-    ).toThrow(RangeError)
+  // Menor do Crivo no #126: uma página de verdade pode passar do limite (o pdf.js a mostra), e a branca
+  // copiada dela seria recusada pelo montarDocumento. Cai no A4, como sem marcada.
+  it.each([
+    { largura: 600, altura: LADO_MAXIMO_DA_PAGINA + 1 },
+    { largura: LADO_MAXIMO_DA_PAGINA + 0.5, altura: 800 },
+  ])(
+    'a marcada com lado acima do limite dos leitores de PDF (%p) dá A4',
+    (tamanho) => {
+      expect(tamanhoDaBranca({ tamanho, giro: 90 })).toEqual(TAMANHO_A4)
+      expect(tamanhoDaBranca({ tamanho, giro: 0 })).toEqual(TAMANHO_A4)
+    },
+  )
+
+  it('o lado no limite exato ainda vale', () => {
+    const noLimite = { largura: 600, altura: LADO_MAXIMO_DA_PAGINA }
+    expect(tamanhoDaBranca({ tamanho: noLimite, giro: 0 })).toEqual(noLimite)
   })
 })
 
