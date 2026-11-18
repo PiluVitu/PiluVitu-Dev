@@ -82,6 +82,11 @@ import {
 import { useBancadaLarga } from './bancada-larga'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import { CabecalhoDoDocumento } from './cabecalho-do-documento'
+import {
+  arquivosAlcancaveis,
+  doArquivo,
+  pedidoDeArquivos,
+} from './documento-do-editor'
 import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
@@ -137,11 +142,13 @@ import { PainelDoObjeto } from './painel-do-objeto'
 import { QuadroDeObjetos, type OrigemDaMudanca } from './quadro-de-objetos'
 import {
   criarRenderizadorComPdfjs,
-  type DocumentoAberto,
   type RenderizadorDePdf,
 } from './renderizador'
 import { TEXTOS } from './textos'
-import { useAbrirPdf, type RecusaDaAbertura } from './use-abrir-pdf'
+import {
+  useDocumentoDoEditor,
+  type RecusaDaAbertura,
+} from './use-documento-do-editor'
 import { useMiniaturas } from './use-miniaturas'
 import {
   AvisoDePrivacidade,
@@ -162,22 +169,23 @@ const JANELA_DA_JUNCAO_MS = 1_000
 // A posição só é falada quando a pessoa para de mexer, e não a cada passo.
 const PAUSA_DO_ANUNCIO_MS = 500
 
+// O estado da tela é guardado pela sessão do documento: adicionar outro PDF não o reinicia.
 type Vista = {
-  documento: DocumentoAberto | null
+  sessao: object | null
   /** O id da página aberta; `null` só antes de abrir. */
   aberta: string | null
   zoom: number
 }
 
-const SEM_VISTA: Vista = { documento: null, aberta: null, zoom: ZOOM_INICIAL }
+const SEM_VISTA: Vista = { sessao: null, aberta: null, zoom: ZOOM_INICIAL }
 
 type PaginasDoDocumento = {
-  documento: DocumentoAberto | null
+  sessao: object | null
   paginas: PaginasComDesfazer
 }
 
 const SEM_PAGINAS: PaginasDoDocumento = {
-  documento: null,
+  sessao: null,
   paginas: paginasIniciais(0),
 }
 
@@ -198,12 +206,12 @@ const ORDEM_DA_BARRA_DA_BANCADA: readonly ChaveDaBarra[] = [
 ]
 
 type Edicao = {
-  documento: DocumentoAberto | null
+  sessao: object | null
   historico: Historico<Cena>
 }
 
 const SEM_EDICAO: Edicao = {
-  documento: null,
+  sessao: null,
   historico: historicoInicial(CENA_VAZIA),
 }
 
@@ -335,7 +343,7 @@ export function EditarPdf({
     null,
   )
   const [dicaDoTexto, setDicaDoTexto] = useState<{
-    documento: DocumentoAberto
+    sessao: object
     pagina: string
   } | null>(null)
   const [confirmandoApagar, setConfirmandoApagar] = useState<string | null>(
@@ -347,45 +355,45 @@ export function EditarPdf({
   if (larga && folhaAberta) setFolhaAberta(false)
   useProtegerAJanela()
 
-  const { atual, documento, grandeDemais, avisos } = useAbrirPdf(arquivo, {
-    motor,
-    renderizador: () =>
-      (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
-    aoAbrir(aberto, doArquivo, avisosDoArquivo) {
-      setVista({ ...SEM_VISTA, documento: aberto, aberta: idDaPagina(0, 0) })
-      setEdicao({ documento: aberto, historico: historicoInicial(CENA_VAZIA) })
-      setPaginasDoDoc({
-        documento: aberto,
-        paginas: paginasIniciais(aberto.paginas),
-      })
-      setFerramenta('selecionar')
-      setSelecionado(null)
-      setImagemPendente(null)
-      setEstadoDaImagem(null)
-      setDicaDoTexto(null)
-      setConfirmandoApagar(null)
-      setResultado({ estado: 'parado' })
-      setFolhaAberta(false)
-      soltarImagens(new Set())
-      juncao.current = null
-      anunciar(
-        T.anuncios.aberto(doArquivo.name, aberto.paginas, avisosDoArquivo),
-      )
-    },
-    aoRecusar: () => anunciar(''),
-  })
+  const { atual, documento, grandeDemais, avisos, fecharInalcancaveis } =
+    useDocumentoDoEditor(arquivo, {
+      motor,
+      renderizador: () =>
+        (renderizadorRef.current ??= criarRenderizadorComPdfjs()),
+      aoAbrir(aberto, doArquivo, avisosDoArquivo) {
+        const { sessao } = aberto
+        const totalDoArquivo = aberto.arquivos[0]?.paginas ?? 0
+        setVista({ ...SEM_VISTA, sessao, aberta: idDaPagina(0, 0) })
+        setEdicao({ sessao, historico: historicoInicial(CENA_VAZIA) })
+        setPaginasDoDoc({ sessao, paginas: paginasIniciais(totalDoArquivo) })
+        setFerramenta('selecionar')
+        setSelecionado(null)
+        setImagemPendente(null)
+        setEstadoDaImagem(null)
+        setDicaDoTexto(null)
+        setConfirmandoApagar(null)
+        setResultado({ estado: 'parado' })
+        setFolhaAberta(false)
+        soltarImagens(new Set())
+        juncao.current = null
+        anunciar(
+          T.anuncios.aberto(doArquivo.name, totalDoArquivo, avisosDoArquivo),
+        )
+      },
+      aoRecusar: () => anunciar(''),
+    })
+  const sessao = documento?.sessao ?? null
+  const primeiro = documento?.arquivos[0] ?? null
   const miniaturasDaFaixa = useMiniaturas(
-    documento,
+    primeiro?.aberto ?? null,
     LARGURA_DA_MINIATURA_NA_FAIXA,
   )
-  const miniaturasDaLista = useMiniaturas(documento)
+  const miniaturasDaLista = useMiniaturas(primeiro?.aberto ?? null)
 
   const { zoom, aberta: abertaNaVista } =
-    documento && vista.documento === documento ? vista : SEM_VISTA
+    sessao && vista.sessao === sessao ? vista : SEM_VISTA
   const { paginas: estadoDasPaginas } =
-    documento && paginasDoDoc.documento === documento
-      ? paginasDoDoc
-      : SEM_PAGINAS
+    sessao && paginasDoDoc.sessao === sessao ? paginasDoDoc : SEM_PAGINAS
   const lista = estadoDasPaginas.lista
   const total = lista.length
   const ordem = useMemo(() => lista.map(({ id }) => id), [lista])
@@ -393,10 +401,12 @@ export function EditarPdf({
   const paginaAberta: PaginaDaBancada | undefined = lista[pagina]
   const aberta = paginaAberta?.id ?? idDaPagina(0, 0)
 
-  const { historico } =
-    documento && edicao.documento === documento ? edicao : SEM_EDICAO
+  const { historico } = sessao && edicao.sessao === sessao ? edicao : SEM_EDICAO
   const cena = historico.presente
   const moldura = molduraDa(cena, aberta, paginaAberta?.giro ?? 0)
+  const daAberta = documento
+    ? doArquivo(documento, paginaAberta?.origem ?? { arquivo: 0, indice: 0 })
+    : null
   const {
     larguraCss,
     desenhando,
@@ -405,8 +415,8 @@ export function EditarPdf({
     tamanhoDaPagina,
     tentarDeNovo,
   } = usePaginaDesenhada({
-    documento,
-    pagina: paginaAberta?.origem.indice ?? 0,
+    documento: daAberta?.aberto ?? null,
+    pagina: daAberta?.indice ?? 0,
     giro: moldura,
     zoom,
     areaRef,
@@ -486,7 +496,7 @@ export function EditarPdf({
 
   function guardarHistorico(novo: Historico<Cena>, pendente = imagemPendente) {
     if (!documento) return
-    setEdicao({ documento, historico: novo })
+    setEdicao({ sessao: documento.sessao, historico: novo })
     const ficam = imagensDoHistorico(novo)
     if (pendente) ficam.add(pendente)
     soltarImagens(ficam)
@@ -523,7 +533,7 @@ export function EditarPdf({
     if (!documento || indice === pagina || indice < 0 || indice >= total) {
       return
     }
-    setVista({ documento, aberta: ordem[indice], zoom })
+    setVista({ sessao: documento.sessao, aberta: ordem[indice], zoom })
     setSelecionado(null)
     setDicaDoTexto(null)
     setConfirmandoApagar(null)
@@ -542,7 +552,7 @@ export function EditarPdf({
   function mudarZoom(passo: -1 | 1) {
     const novo = zoom + passo
     if (!documento || novo < 0 || novo >= ZOOMS.length) return
-    setVista({ documento, aberta, zoom: novo })
+    setVista({ sessao: documento.sessao, aberta, zoom: novo })
     anunciar(T.anuncios.zoom(ZOOMS[novo]))
     if (novo === 0 || novo === ZOOMS.length - 1) {
       focar(() => (passo < 0 ? aumentarRef : diminuirRef).current)
@@ -674,11 +684,17 @@ export function EditarPdf({
     setSelecionado(null)
     if (!documento || !paginaAberta) return
     const vez = ++vezDoClique.current
-    const temTexto = await documento
-      .textoNoPonto(paginaAberta.origem.indice, ponto, moldura)
+    const { aberto: doArquivoAberto, indice } = doArquivo(
+      documento,
+      paginaAberta.origem,
+    )
+    const temTexto = await doArquivoAberto
+      .textoNoPonto(indice, ponto, moldura)
       .catch(() => false)
     if (vez !== vezDoClique.current) return
-    setDicaDoTexto(temTexto ? { documento, pagina: aberta } : null)
+    setDicaDoTexto(
+      temTexto ? { sessao: documento.sessao, pagina: aberta } : null,
+    )
     if (temTexto) anunciar(T.textoExistente)
   }
 
@@ -699,7 +715,7 @@ export function EditarPdf({
         ? ordem.indexOf(noDocumento[0])
         : null
     if (outra !== null) {
-      setVista({ documento, aberta: ordem[outra], zoom })
+      setVista({ sessao: documento.sessao, aberta: ordem[outra], zoom })
       setSelecionado(null)
     }
     const desfazendo = sentido === 'desfazer'
@@ -824,10 +840,14 @@ export function EditarPdf({
       const rasterizadas = new Map<string, Blob>()
       for (const id of paginasParaApagar(cenaDoPdf, idsDoPdf)) {
         const posicao = idsDoPdf.indexOf(id)
+        const { aberto, indice } = doArquivo(
+          documento,
+          paginasDoPdf[posicao].origem,
+        )
         rasterizadas.set(
           id,
-          await documento.fundo(
-            paginasDoPdf[posicao].origem.indice,
+          await aberto.fundo(
+            indice,
             cobrirDa(cenaDoPdf, id),
             montagem[posicao].moldura,
           ),
@@ -839,12 +859,13 @@ export function EditarPdf({
         const imagem = imagens.get(id)
         if (imagem) blobs.set(id, imagem.blob)
       }
-      const pdf = await motor().montar([origem], {
-        paginas: montagem,
+      const pedido = pedidoDeArquivos(documento, montagem)
+      const pdf = await motor().montar(pedido.arquivos, {
+        paginas: pedido.paginas,
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
         paginasRasterizadas: rasterizadas,
-        ...(tipo === 'extraido' && { porCopia: true }),
+        ...((tipo === 'extraido' || pedido.porCopia) && { porCopia: true }),
       })
       if (vez !== vezDaGeracao.current) return
       setResultado({
@@ -957,11 +978,11 @@ export function EditarPdf({
   ) {
     if (!documento) return
     setPaginasDoDoc({
-      documento,
+      sessao: documento.sessao,
       paginas: mudarPaginas(estadoDasPaginas, novo),
     })
     if (novaAberta !== aberta) {
-      setVista({ documento, aberta: novaAberta, zoom })
+      setVista({ sessao: documento.sessao, aberta: novaAberta, zoom })
       setSelecionado(null)
       setDicaDoTexto(null)
       setConfirmandoApagar(null)
@@ -973,7 +994,7 @@ export function EditarPdf({
 
   function trocarMarcadas(novas: PaginasComDesfazer) {
     if (!documento) return
-    setPaginasDoDoc({ documento, paginas: novas })
+    setPaginasDoDoc({ sessao: documento.sessao, paginas: novas })
     descartarResultado('extraido')
   }
 
@@ -1082,7 +1103,10 @@ export function EditarPdf({
   function desfazerAsPaginas() {
     if (montando || !documento || !estadoDasPaginas.passado.length) return
     const focadoAntes = document.activeElement
-    setPaginasDoDoc({ documento, paginas: desfazerPaginas(estadoDasPaginas) })
+    setPaginasDoDoc({
+      sessao: documento.sessao,
+      paginas: desfazerPaginas(estadoDasPaginas),
+    })
     descartarResultado()
     anunciar(P.desfeito)
     focar(() => {
@@ -1171,7 +1195,7 @@ export function EditarPdf({
   )
 
   useEffect(() => {
-    if (!documento) return
+    if (!sessao) return
     const nasPaginas = (alvo: EventTarget | null) =>
       alvo instanceof Node &&
       Boolean(regiaoDasPaginasRef.current?.contains(alvo))
@@ -1213,7 +1237,13 @@ export function EditarPdf({
       window.removeEventListener('focusin', lembrarGesto, true)
       window.removeEventListener('keydown', aoTeclar)
     }
-  }, [documento])
+  }, [sessao])
+
+  useEffect(() => {
+    if (sessao && paginasDoDoc.sessao === sessao) {
+      fecharInalcancaveis(arquivosAlcancaveis(paginasDoDoc.paginas))
+    }
+  }, [sessao, paginasDoDoc, fecharInalcancaveis])
 
   const idDoDocumento = `${ids}-documento`
   const idDoTitulo = `${ids}-paginas`
@@ -1253,9 +1283,9 @@ export function EditarPdf({
   const paginasComApagar = paginasParaApagar(cenaNoDocumento, ordem)
   const mudou =
     quantosObjetos > 0 ||
-    (documento !== null && mudouDoInicio(lista, documento.paginas))
+    (primeiro !== null && mudouDoInicio(lista, primeiro.paginas))
   const porCopia =
-    documento !== null && total > 0 && saiPorCopia(lista, documento.paginas)
+    primeiro !== null && total > 0 && saiPorCopia(lista, primeiro.paginas)
   const descricaoDoGerar =
     [mudou ? null : idSemMudancas, porCopia ? idDoAlcance : null]
       .filter(Boolean)
@@ -1263,7 +1293,7 @@ export function EditarPdf({
   const cobrirAqui = temCobrir(cena, aberta)
   const apagarAqui = cena.apagar.has(aberta)
   const mostrarDicaDoTexto =
-    dicaDoTexto?.documento === documento && dicaDoTexto?.pagina === aberta
+    dicaDoTexto?.sessao === sessao && dicaDoTexto?.pagina === aberta
   const giroDaAberta = paginaAberta?.giro ?? 0
   const diferencaDoGiro = cena.molduras.has(aberta)
     ? giroNormalizado(giroDaAberta - moldura)
@@ -1963,10 +1993,10 @@ export function EditarPdf({
                 </Sheet>
               )}
 
-              {documento && (
+              {primeiro && (
                 <div className="lg:hidden">
                   <FaixaDePaginas
-                    documento={documento}
+                    documento={primeiro.aberto}
                     paginas={paginasDaFaixa}
                     pagina={pagina}
                     rotulo={T.paginas}
