@@ -2373,7 +2373,7 @@ test.describe('Editar PDF: a Bancada', () => {
       folha.getByRole('button', { name: 'Girar a página 1 à direita' }),
       folha.getByRole('button', { name: 'Apagar a página 1' }),
       ...(await folha
-        .getByTestId('organizar-pdf-barra')
+        .getByTestId('editar-pdf-barra')
         .getByRole('button')
         .all()),
       folha.getByRole('button', { name: 'Fechar' }),
@@ -2426,7 +2426,7 @@ test.describe('Editar PDF: a Bancada', () => {
         coluna.getByRole('button', { name: 'Girar a página 1 à direita' }),
         coluna.getByRole('button', { name: 'Apagar a página 1' }),
         ...(await coluna
-          .getByTestId('organizar-pdf-barra')
+          .getByTestId('editar-pdf-barra')
           .getByRole('button')
           .all()),
       ]

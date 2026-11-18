@@ -408,6 +408,28 @@ describe('as miniaturas', () => {
     expect(todos('editar-pdf-miniatura-imagem')).toHaveLength(2)
   })
 
+  // Era do organizar.test, que saiu no PR 6 (achado da revisão): a falha de uma não para a fila das outras.
+  it('miniatura que falha mostra "Sem prévia" e a fila segue', async () => {
+    await abrir('livro-3p.pdf', {
+      renderizador: criarRenderizadorFalso({ miniaturasQueFalham: [0] }),
+    })
+    await esperarAte(() => todos('editar-pdf-miniatura-imagem').length === 2)
+
+    const [primeiro, segundo] = todos('editar-pdf-item')
+    expect(primeiro.textContent).toContain('Sem prévia')
+    expect(
+      segundo.querySelector('[data-testid="editar-pdf-miniatura-imagem"]'),
+    ).not.toBeNull()
+    await esperarAte(() => todos('editar-pdf-cartao-miniatura').length === 2)
+    const [primeiroCartao, segundoCartao] = todos('editar-pdf-pagina')
+    expect(primeiroCartao.textContent).toContain('Sem prévia')
+    expect(
+      segundoCartao.querySelector(
+        '[data-testid="editar-pdf-cartao-miniatura"]',
+      ),
+    ).not.toBeNull()
+  })
+
   it('a página aberta é a atual da lista (aria-current), com o nome "Página N"', async () => {
     await abrir('livro-4p.pdf')
 
@@ -1951,7 +1973,7 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
       colunaDePaginas.querySelector(
         '[role="toolbar"][aria-label="Ações nas páginas selecionadas"]',
       ),
-    ).not.toBeNull()
+    ).toBe(q('editar-pdf-barra'))
     expect(q('editar-pdf-edicao')!.contains(quadro())).toBe(true)
     expect(
       q('editar-pdf-coluna-do-objeto')!.contains(q('editar-pdf-painel-vazio')),
@@ -2370,6 +2392,37 @@ describe('a Bancada no celular: a folha Páginas', () => {
 
     expect(folha()).toBeNull()
     expect(document.activeElement).toBe(botao)
+  })
+
+  // Era do organizar.test, que saiu no PR 6 (achado da revisão). O unobserve não chama o callback do
+  // IntersectionObserver: sem tirar da fila o cartão que desmontou, a folha fechada seguiria desenhando.
+  // (A página apagada não serve de prova no editor: o desenhar dela já falha por estar fora da lista.)
+  it('fechar a folha tira da fila as miniaturas que ainda não foram desenhadas', async () => {
+    larga = false
+    ObservadorFalso.automatico = false
+    const renderizador = criarRenderizadorFalso()
+    await abrirParaEditar('livro-6p.pdf', { renderizador })
+    renderizador.prenderMiniaturas()
+    await abrirAFolha()
+    const observador = ObservadorFalso.todos.find((o) =>
+      [...o.observados].some((el) => folha()!.contains(el)),
+    )!
+    const naTela = [...observador.observados].filter((el) =>
+      folha()!.contains(el),
+    )
+    expect(naTela).toHaveLength(6)
+    await act(async () => {
+      observador.avisar(naTela.slice(0, 3))
+    })
+    expect(renderizador.miniaturas.map(({ indice }) => indice)).toEqual([0])
+
+    await teclar(document.activeElement!, 'Escape')
+    expect(folha()).toBeNull()
+    renderizador.soltarMiniaturas()
+    await esperar()
+    await esperar()
+
+    expect(renderizador.miniaturas.map(({ indice }) => indice)).toEqual([0])
   })
 
   it('girar, marcar e apagar pela folha deixam a folha aberta, com o foco dentro dela', async () => {
@@ -3446,6 +3499,11 @@ describe('a página em branco', () => {
     renderizador.prenderTamanhos()
 
     await criarBranca()
+    // Da revisão do PR 6: sem o aria-disabled, o clique ignorado não dava pista nenhuma ao leitor de tela.
+    expect(porNome('Adicionar PDF').getAttribute('aria-disabled')).toBe('true')
+    expect(porNome('Página em branco').getAttribute('aria-disabled')).toBe(
+      'true',
+    )
     await clicar(porNome('Adicionar PDF'))
     expect(escolher).not.toHaveBeenCalled()
     await adicionarPdf(pdf('b-2p.pdf'))
@@ -3454,6 +3512,8 @@ describe('a página em branco', () => {
     renderizador.soltarTamanhos()
     await esperarAte(() => idsDaLista().includes('b0'))
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'b0', 'a0p2'])
+    expect(porNome('Adicionar PDF').getAttribute('aria-disabled')).toBeNull()
+    expect(porNome('Página em branco').getAttribute('aria-disabled')).toBeNull()
     await clicar(porNome('Adicionar PDF'))
     expect(escolher).toHaveBeenCalledTimes(1)
   })

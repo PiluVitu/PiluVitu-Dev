@@ -152,6 +152,7 @@ function BarraComSelecao({
         botoesRef={botoesRef}
         idDaDica={(motivo) => `dica-${motivo}`}
         aoUsar={aoUsar}
+        prefixo="editar-pdf"
       />
       <ul className="text-muted-foreground text-xs">
         <li id="dica-noComeco">{TEXTOS.organizar.dicas.noComeco}</li>

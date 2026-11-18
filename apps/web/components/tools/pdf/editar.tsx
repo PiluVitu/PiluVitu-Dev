@@ -1631,7 +1631,7 @@ export function EditarPdf({
       variant="outline"
       className={classeDoBotao(onde)}
       disabled={montando}
-      aria-disabled={adicionando ? true : undefined}
+      aria-disabled={adicionando || esperandoTamanho ? true : undefined}
       aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={pedirOutroPdf}
       data-testid={
@@ -1661,7 +1661,7 @@ export function EditarPdf({
       variant="outline"
       className={classeDoBotao(onde)}
       disabled={montando}
-      aria-disabled={adicionando ? true : undefined}
+      aria-disabled={adicionando || esperandoTamanho ? true : undefined}
       aria-label={onde === 'barra' ? B.botao : undefined}
       aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={() => void criarPaginaEmBranco()}

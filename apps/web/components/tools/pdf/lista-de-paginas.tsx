@@ -107,7 +107,7 @@ export function BarraDaSelecao({
   botoesRef,
   idDaDica,
   aoUsar,
-  prefixo = 'organizar-pdf',
+  prefixo,
   soIcone = [],
   rotulos = {},
   descricoes = {},
@@ -117,8 +117,8 @@ export function BarraDaSelecao({
   botoesRef: RefObject<Map<ChaveDaBarra, HTMLButtonElement>>
   idDaDica: (motivo: MotivoDesabilitado) => string
   aoUsar: (chave: ChaveDaBarra) => void
-  /** Do `data-testid` de cada botão. */
-  prefixo?: string
+  /** Do `data-testid` da barra e de cada botão. */
+  prefixo: string
   /** Os botões que mostram só o ícone, com o nome no `aria-label` (a coluna estreita da Bancada). */
   soIcone?: readonly ChaveDaBarra[]
   rotulos?: Partial<Record<ChaveDaBarra, string>>
@@ -161,7 +161,7 @@ export function BarraDaSelecao({
           ? 'grid grid-cols-3 gap-1 min-[22rem]:grid-cols-4'
           : 'flex flex-wrap gap-1.5'
       }
-      data-testid="organizar-pdf-barra"
+      data-testid={`${prefixo}-barra`}
     >
       {botoes.map(({ chave, motivo }) => {
         const rotulo = rotulos[chave] ?? T.acoes[chave]
