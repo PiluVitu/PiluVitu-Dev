@@ -2725,6 +2725,7 @@ test.describe('Editar PDF: a Bancada', () => {
     page,
   }) => {
     const folha = await abrirAFolhaCom20(page)
+    await expect(folha.getByTestId('editar-pdf-pagina')).toHaveCount(20)
     const daFolha = (await folha.boundingBox())!
     expect(daFolha.y).toBeGreaterThanOrEqual(0)
     expect(Math.round(daFolha.y + daFolha.height)).toBe(568)
@@ -2747,7 +2748,8 @@ test.describe('Editar PDF: a Bancada', () => {
 
   // Achado do E2E pedido pelo Crivo: a 568 px de altura, os controles da folha passam de 450 px, a lista
   // começa abaixo da borda da tela e a própria folha também rola. Fica marcado como falha conhecida até a
-  // decisão de layout; quando a folha passar, o Playwright avisa e o test.fail sai.
+  // decisão de layout; quando a folha passar, o Playwright avisa e o test.fail sai. Abrir a folha e achar os
+  // 20 cartões é conferido no teste anterior, sem test.fail: se isso quebrar, ele reprova, e este não passa por engano.
   test('a 320 × 568 px, ao abrir a folha Páginas, a lista já aparece com uma página inteira, e só ela rola', async ({
     page,
   }) => {
