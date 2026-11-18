@@ -1166,7 +1166,7 @@ export function EditarPdf({
       qtd === 1
         ? O.anuncios.movida(posicoes[0] + 1, novasPosicoes[0] + 1, total)
         : O.anuncios.movidas(qtd, lado),
-      () => botoesDaBarra.current.get(naPonta ? outro : mesmo),
+      () => aVista(botoesDaBarra.current.get(naPonta ? outro : mesmo)),
     )
   }
 
@@ -1186,13 +1186,13 @@ export function EditarPdf({
   function selecionarTodas() {
     trocarMarcadas(marcarTodas(estadoDasPaginas))
     anunciar(O.anuncios.todasSelecionadas(total))
-    focar(() => botoesDaBarra.current.get('limparSelecao'))
+    focar(() => aVista(botoesDaBarra.current.get('limparSelecao')))
   }
 
   function limparSelecao() {
     trocarMarcadas(semMarcadas(estadoDasPaginas))
     anunciar(O.anuncios.selecaoLimpa)
-    focar(() => botoesDaBarra.current.get('selecionarTodas'))
+    focar(() => aVista(botoesDaBarra.current.get('selecionarTodas')))
   }
 
   function desfazerAsPaginas() {
