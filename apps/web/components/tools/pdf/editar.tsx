@@ -2115,7 +2115,6 @@ export function EditarPdf({
 
       <section aria-label={T.rotulo} className="space-y-3">
         <ZonaDeArquivos
-          multiplos={false}
           desabilitada={montando}
           aoEscolher={(lista) => {
             if (lista[0]) guardar(lista[0])

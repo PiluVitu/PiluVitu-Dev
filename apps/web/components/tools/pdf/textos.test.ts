@@ -1,7 +1,6 @@
 import {
   ERROS_DO_ARQUIVO,
   TEXTOS,
-  arquivos,
   formatarGraus,
   formatarPorcentagem,
   formatarTamanho,
@@ -27,7 +26,6 @@ it('plural pelo Intl.PluralRules do pt-BR', () => {
   expect(paginas(1)).toBe('1 página')
   expect(paginas(12)).toBe('12 páginas')
   expect(paginas(1500)).toBe('1.500 páginas')
-  expect(arquivos(2)).toBe('2 arquivos')
 })
 
 it('porcentagem pelo Intl', () => {
@@ -37,12 +35,6 @@ it('porcentagem pelo Intl', () => {
 it('o aviso de privacidade diz que nada sai do aparelho', () => {
   expect(TEXTOS.privacidade.titulo).toBe('Seus arquivos não saem do aparelho')
   expect(TEXTOS.privacidade.texto).toContain('Nenhum PDF é enviado')
-})
-
-it('o limite diz o teto e o porquê', () => {
-  const texto = TEXTOS.limites(100_000_000)
-  expect(texto).toContain('Até 100 MB somando todos os arquivos')
-  expect(texto).toContain('memória do seu aparelho')
 })
 
 it('todo erro de arquivo diz o que houve e, quando dá, o que fazer', () => {
@@ -75,17 +67,6 @@ it('organizar: plural e concordância das páginas pelo Intl', () => {
   expect(anuncios.apagadas(1)).toBe('1 página apagada.')
   expect(anuncios.apagadas(2)).toBe('2 páginas apagadas.')
   expect(anuncios.movidas(3, 'depois')).toBe('3 páginas movidas para depois.')
-})
-
-it('organizar: acima do teto, diz o tamanho, o teto e sugere dividir', () => {
-  expect(
-    TEXTOS.organizar.grandeDemais('scan.pdf', 180_000_000, 100_000_000),
-  ).toBe(
-    'scan.pdf tem 180 MB, mais que os 100 MB que dá para organizar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.',
-  )
-  expect(TEXTOS.organizar.paginasDemais('livro.pdf', 1200, 500)).toContain(
-    'livro.pdf tem 1.200 páginas, mais que as 500 que dá para organizar de uma vez. Divida o PDF',
-  )
 })
 
 it('o aviso de alcance diz que marcadores e links internos não passam', () => {
@@ -383,7 +364,7 @@ describe('editar', () => {
     )
   })
 
-  it('erro do arquivo usa a mensagem do mesclar; o resto não acusa o arquivo', () => {
+  it('erro do arquivo usa a mensagem de ERROS_DO_ARQUIVO; o resto não acusa o arquivo', () => {
     expect(falhaAoSalvar({ motivo: 'protegido' })).toBe(
       `Não deu para salvar o PDF. ${ERROS_DO_ARQUIVO.protegido}`,
     )
@@ -394,7 +375,7 @@ describe('editar', () => {
     }
   })
 
-  it('acima do teto, diz editar, não organizar', () => {
+  it('acima do teto, diz editar', () => {
     expect(
       TEXTOS.editar.grandeDemais('scan.pdf', 80_000_000, 50_000_000),
     ).toContain('que dá para editar no navegador')

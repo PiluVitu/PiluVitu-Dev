@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import {
@@ -3612,4 +3614,52 @@ describe('nada sai do aparelho', () => {
     expect(gravar).not.toHaveBeenCalled()
     gravar.mockRestore()
   })
+
+  it('sair da página encerra o motor', () => {
+    const { motor } = montar()
+
+    act(() => root.unmount())
+    root = createRoot(container)
+
+    expect(motor.encerrado).toBe(true)
+  })
+
+  it('as URLs das miniaturas são revogadas ao trocar de documento e ao sair', async () => {
+    const criadas = () =>
+      (URL.createObjectURL as jest.Mock).mock.results.map(
+        ({ value }) => value as string,
+      )
+    const revogadas = () =>
+      (URL.revokeObjectURL as jest.Mock).mock.calls.map(([url]) => url)
+    await abrir('a-2p.pdf')
+    await esperar(40)
+    const doPrimeiro = criadas()
+    expect(doPrimeiro.length).toBeGreaterThan(0)
+
+    await escolher(pdf('b-1p.pdf'))
+    await esperar(40)
+    expect(revogadas()).toEqual(expect.arrayContaining(doPrimeiro))
+    const doSegundo = criadas().filter((url) => !doPrimeiro.includes(url))
+    expect(doSegundo.length).toBeGreaterThan(0)
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    expect(revogadas()).toEqual(expect.arrayContaining(doSegundo))
+  })
+})
+
+// O pdf-lib só pode chegar pelo Worker: um import de '@piluvitu/tools/pdf' na UI o põe no bundle da página.
+it('só o Worker importa @piluvitu/tools/pdf', () => {
+  const pasta = __dirname
+  const fontes = readdirSync(pasta).filter(
+    (f) => /\.tsx?$/.test(f) && !/\.test\.|\.stories\.|\.worker\./.test(f),
+  )
+  expect(fontes.length).toBeGreaterThan(4)
+  for (const fonte of fontes) {
+    const codigo = readFileSync(join(pasta, fonte), 'utf8')
+    expect([fonte, /from '@piluvitu\/tools\/pdf'/.test(codigo)]).toEqual([
+      fonte,
+      false,
+    ])
+  }
 })

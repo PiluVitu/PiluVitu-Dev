@@ -2,12 +2,10 @@ import {
   ErroDePdf,
   ErroNaEdicao,
   analisarPdf,
-  mesclarPdfs,
   montarDocumento,
   type EdicaoNaMontagem,
   type ObjetoDaPagina,
 } from '@piluvitu/tools/pdf'
-import { fracaoDaMesclagem } from '@piluvitu/tools/pdf-regras'
 import type {
   ObjetoNaTela,
   PedidoAoWorker,
@@ -53,29 +51,6 @@ async function analisar(id: number, arquivo: Blob) {
       id,
       motivo: erro instanceof ErroDePdf ? erro.motivo : 'corrompido',
     })
-  }
-}
-
-async function mesclar(id: number, arquivos: Blob[]) {
-  const tamanhos = arquivos.map((a) => a.size)
-  try {
-    const pdf = await mesclarPdfs(
-      arquivos.map((arquivo) => () => bytesDe(arquivo)),
-      (etapa) =>
-        escopo.postMessage({
-          tipo: 'andamento',
-          id,
-          ...('salvando' in etapa
-            ? { fracao: fracaoDaMesclagem(tamanhos, 0, true), arquivo: null }
-            : {
-                fracao: fracaoDaMesclagem(tamanhos, etapa.arquivo),
-                arquivo: etapa.arquivo,
-              }),
-        }),
-    )
-    entregar(id, pdf)
-  } catch (erro) {
-    falhar(id, erro)
   }
 }
 
@@ -180,14 +155,12 @@ function atender(pedido: PedidoAoWorker): Promise<void> {
   switch (pedido.tipo) {
     case 'analisar':
       return analisar(pedido.id, pedido.arquivo)
-    case 'mesclar':
-      return mesclar(pedido.id, pedido.arquivos)
     case 'montar':
       return montar(pedido.id, pedido.arquivos, pedido)
   }
 }
 
-// Um pedido por vez: duas leituras de 100 MB em paralelo dobrariam o pico de memória.
+// Um pedido por vez: duas leituras de PDFs grandes em paralelo dobrariam o pico de memória.
 let fila = Promise.resolve()
 
 escopo.onmessage = ({ data }) => {

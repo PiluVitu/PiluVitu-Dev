@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { DocumentoAberto } from './renderizador'
 
 export const LARGURA_DA_MINIATURA = 160
 
@@ -24,17 +23,6 @@ const NENHUMA_FALHA: ReadonlySet<unknown> = new Set()
 
 // Entre uma miniatura e outra o navegador atende o toque e a rolagem: o desenho no canvas é na thread da página.
 const folga = () => new Promise((resolver) => setTimeout(resolver, 0))
-
-export function useMiniaturas(
-  documento: DocumentoAberto | null,
-  larguraCss = LARGURA_DA_MINIATURA,
-) {
-  return useMiniaturasDaSessao<number>(
-    documento,
-    (indice, largura) => documento!.miniatura(indice, largura),
-    larguraCss,
-  )
-}
 
 /**
  * As miniaturas de uma sessão, pela chave que a tela escolhe (a página do arquivo ou o id da página do

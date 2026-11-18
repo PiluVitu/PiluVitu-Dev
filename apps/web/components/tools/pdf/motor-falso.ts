@@ -1,6 +1,5 @@
 import type { AvisoDoPdf } from '@piluvitu/tools/pdf-regras'
 import type {
-  AndamentoDaMesclagem,
   FalhaDaOperacao,
   MotorDePdf,
   PedidoDeMontagem,
@@ -11,9 +10,8 @@ import type {
 type Desfecho = FalhaDaOperacao | 'nunca' | undefined
 
 type Opcoes = {
-  /** Milissegundos de cada leitura e de cada passo das operações. */
+  /** Milissegundos de cada leitura e da montagem. */
   atraso?: number
-  mesclagem?: Desfecho
   montagem?: Desfecho
   /** Tamanho que o PDF entregue diz ter, para testar os tetos sem alocar o arquivo. */
   tamanhoDoResultado?: number
@@ -38,7 +36,6 @@ export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
 
 export function criarMotorFalso({
   atraso = 0,
-  mesclagem,
   montagem,
   tamanhoDoResultado,
 }: Opcoes = {}) {
@@ -54,15 +51,11 @@ export function criarMotorFalso({
     return pdf
   }
 
-  function operar(desfecho: Desfecho, passos: (() => void)[]): Promise<Blob> {
+  function operar(desfecho: Desfecho): Promise<Blob> {
     cancelar?.()
     return new Promise<Blob>((resolver, rejeitar) => {
       cancelar = () => rejeitar({ motivo: 'cancelado' })
       void (async () => {
-        for (const passo of passos) {
-          passo()
-          await espera()
-        }
         if (desfecho === 'nunca') return
         await espera()
         if (desfecho) rejeitar(desfecho)
@@ -83,7 +76,6 @@ export function criarMotorFalso({
       portaoDasAnalises = null
     },
     analisadas: [] as string[],
-    mescladas: [] as string[][],
     montadas: [] as ({ nomes: string[] } & PedidoDeMontagem)[],
     encerrado: false,
     async analisar(arquivo: Blob) {
@@ -92,27 +84,12 @@ export function criarMotorFalso({
       await espera()
       return analiseDeExemplo(arquivo as File)
     },
-    mesclar(
-      arquivos: Blob[],
-      aoAndar: (andamento: AndamentoDaMesclagem) => void,
-    ) {
-      motor.mescladas.push(arquivos.map((a) => (a as File).name))
-      return operar(mesclagem, [
-        ...arquivos.map(
-          (_, i) => () =>
-            aoAndar({ fracao: (0.9 * i) / arquivos.length, arquivo: i }),
-        ),
-        ...(mesclagem === 'nunca'
-          ? []
-          : [() => aoAndar({ fracao: 0.9, arquivo: null })]),
-      ])
-    },
     montar(arquivos: readonly Blob[], pedido: PedidoDeMontagem) {
       motor.montadas.push({
         nomes: arquivos.map((a) => (a as File).name),
         ...pedido,
       })
-      return operar(montagem, [])
+      return operar(montagem)
     },
     cancelar() {
       cancelar?.()

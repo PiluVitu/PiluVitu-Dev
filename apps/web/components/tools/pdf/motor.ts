@@ -31,7 +31,6 @@ export type PedidoDeMontagem = {
 
 export type PedidoAoWorker =
   | { tipo: 'analisar'; id: number; arquivo: Blob }
-  | { tipo: 'mesclar'; id: number; arquivos: Blob[] }
   | ({
       tipo: 'montar'
       id: number
@@ -46,7 +45,6 @@ export type RespostaDoWorker =
       avisos: readonly AvisoDoPdf[]
     }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
-  | { tipo: 'andamento'; id: number; fracao: number; arquivo: number | null }
   | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
   | ({ tipo: 'falhou'; id: number } & Omit<FalhaDaOperacao, 'motivo'> & {
         motivo: Exclude<FalhaDaOperacao['motivo'], 'cancelado'>
@@ -58,8 +56,6 @@ export type MotivoDaRecusa = MotivoDoErroDePdf | 'falha_do_navegador'
 export type ResultadoDaAnalise =
   | { ok: true; paginas: number; avisos: readonly AvisoDoPdf[] }
   | { ok: false; motivo: MotivoDaRecusa }
-
-export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
 /**
  * Como as operações rejeitam. `indice` é o arquivo culpado; `pagina` (o id da página), `objeto` (o id) e
@@ -76,11 +72,6 @@ export type FalhaDaOperacao = {
 export interface MotorDePdf {
   analisar(arquivo: Blob): Promise<ResultadoDaAnalise>
   /** Rejeita com {@link FalhaDaOperacao}. */
-  mesclar(
-    arquivos: Blob[],
-    aoAndar: (andamento: AndamentoDaMesclagem) => void,
-  ): Promise<Blob>
-  /** Rejeita com {@link FalhaDaOperacao}. */
   montar(arquivos: readonly Blob[], pedido: PedidoDeMontagem): Promise<Blob>
   cancelar(): void
   encerrar(): void
@@ -94,7 +85,6 @@ type OperacaoPendente = {
   id: number
   resolver: (pdf: Blob) => void
   rejeitar: (falha: FalhaDaOperacao) => void
-  aoAndar?: (andamento: AndamentoDaMesclagem) => void
 }
 
 // O pdf-lib só é baixado quando o Worker nasce, na primeira análise: o resto do site não paga por ele.
@@ -127,9 +117,6 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         )
         return
       }
-      case 'andamento':
-        operacao?.aoAndar?.({ fracao: data.fracao, arquivo: data.arquivo })
-        return
       case 'pronto':
         operacao?.resolver(new Blob([data.bytes], { type: 'application/pdf' }))
         operacao = null
@@ -191,14 +178,11 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     worker.postMessage(pedido)
   }
 
-  function comecar(
-    pedido: (id: number) => PedidoAoWorker,
-    aoAndar?: (andamento: AndamentoDaMesclagem) => void,
-  ): Promise<Blob> {
+  function comecar(pedido: (id: number) => PedidoAoWorker): Promise<Blob> {
     return new Promise((resolver, rejeitar) => {
       cancelar()
       const id = proximoId++
-      operacao = { id, resolver, rejeitar, aoAndar }
+      operacao = { id, resolver, rejeitar }
       enviar(pedido(id))
     })
   }
@@ -210,9 +194,6 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         analises.set(id, { arquivo, quedas: 0, resolver })
         enviar({ tipo: 'analisar', id, arquivo })
       })
-    },
-    mesclar(arquivos, aoAndar) {
-      return comecar((id) => ({ tipo: 'mesclar', id, arquivos }), aoAndar)
     },
     montar(arquivos, pedido) {
       return comecar((id) => ({ ...pedido, tipo: 'montar', id, arquivos }))

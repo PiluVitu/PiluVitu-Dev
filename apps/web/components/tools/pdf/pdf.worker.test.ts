@@ -39,8 +39,7 @@ async function pedir(
 ): Promise<RespostaDoWorker[]> {
   const id = proximoId++
   escopo.onmessage!({ data: pedido(id) })
-  const final = (r: RespostaDoWorker) => r.id === id && r.tipo !== 'andamento'
-  for (let tentativa = 0; !respostas.some(final); tentativa++) {
+  for (let tentativa = 0; !respostas.some((r) => r.id === id); tentativa++) {
     if (tentativa > 400) throw new Error(`sem resposta para o pedido ${id}`)
     await new Promise((r) => setTimeout(r, 5))
   }
@@ -76,26 +75,6 @@ async function paginasDe(resposta: RespostaDoWorker) {
     rotacao: p.getRotation().angle,
   }))
 }
-
-it('mesclar segue mandando o andamento e entrega o PDF como pronto', async () => {
-  const arquivos = [await pdf([100]), await pdf([200, 201])]
-
-  const respostasDoPedido = await pedir((id) => ({
-    tipo: 'mesclar',
-    id,
-    arquivos,
-  }))
-
-  expect(respostasDoPedido.map((r) => r.tipo)).toEqual([
-    'andamento',
-    'andamento',
-    'andamento',
-    'pronto',
-  ])
-  expect(
-    (await paginasDe(respostasDoPedido.at(-1)!)).map((p) => p.lado),
-  ).toEqual([100, 200, 201])
-})
 
 it('analisar segue contando as páginas e recusando o que não é PDF ou está protegido', async () => {
   const [bom, vazio, comSenha] = [
