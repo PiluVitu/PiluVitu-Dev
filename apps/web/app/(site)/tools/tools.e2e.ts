@@ -408,14 +408,125 @@ function medirContrasteDoTexto(seletor: string) {
 
 // ---- Editor único, PR 6: a rota única ----
 
+// Saíram sem redirecionamento (P5): quem tinha o link vê o 404, e nada leva a elas.
+const ROTAS_QUE_SAIRAM = [
+  '/tools/pdf/mesclar',
+  '/tools/pdf/organizar',
+  '/tools/pdf/editar',
+  '/tools/mesclar-pdf',
+]
+
+// Uma mensagem do pdf.js que a minificação não toca: só o chunk dele a tem.
+const MARCA_DO_PDFJS = 'Setting up fake worker failed'
+
 test.describe('Editor de PDF: a rota única', () => {
+  for (const rota of ROTAS_QUE_SAIRAM)
+    test(`${rota} responde 404, sem redirecionamento, com a página de 404 do site e nada do editor`, async ({
+      page,
+    }) => {
+      const direto = await page.request.get(rota, { maxRedirects: 0 })
+      expect(direto.status()).toBe(404)
+
+      const resposta = await page.goto(rota)
+      expect(resposta!.status()).toBe(404)
+      await expect(page).toHaveURL(rota)
+      await expect(
+        page.getByRole('heading', { name: 'This page could not be found.' }),
+      ).toBeVisible()
+      await expect(page.getByTestId('pdf-zona')).toHaveCount(0)
+      await expect(page.getByTestId('editar-pdf')).toHaveCount(0)
+      await expect(page.getByText('Editor de PDF')).toHaveCount(0)
+    })
+
   // O Assinar saiu do site a pedido do dono: quem tinha o link cai no editor.
-  test('/tools/pdf/assinar responde 308 para /tools/pdf', async ({ page }) => {
-    const resposta = await page.request.get('/tools/pdf/assinar', {
+  test('/tools/pdf/assinar responde 308 para /tools/pdf, e seguindo abre o editor num salto só', async ({
+    page,
+  }) => {
+    const direto = await page.request.get('/tools/pdf/assinar', {
       maxRedirects: 0,
     })
-    expect(resposta.status()).toBe(308)
-    expect(resposta.headers()['location']).toBe('/tools/pdf')
+    expect(direto.status()).toBe(308)
+    expect(direto.headers()['location']).toBe('/tools/pdf')
+
+    const resposta = await page.goto('/tools/pdf/assinar')
+    expect(resposta!.status()).toBe(200)
+    await expect(page).toHaveURL('/tools/pdf')
+    const saltos: string[] = []
+    for (
+      let pedido = resposta!.request().redirectedFrom();
+      pedido;
+      pedido = pedido.redirectedFrom()
+    ) {
+      saltos.push(new URL(pedido.url()).pathname)
+    }
+    expect(saltos).toEqual(['/tools/pdf/assinar'])
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
+    ).toBeVisible()
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+  })
+
+  test('/tools tem um cartão só para PDF, o do Editor de PDF, e ele abre o editor em /tools/pdf', async ({
+    page,
+  }) => {
+    await page.goto('/tools')
+    const cartoes = page.locator('a[href^="/tools/pdf"]')
+    await expect(cartoes).toHaveCount(1)
+    await expect(cartoes).toHaveAttribute('href', '/tools/pdf')
+    await expect(cartoes).toContainText('Editor de PDF')
+    await expect(page.locator('a[href="/tools/mesclar-pdf"]')).toHaveCount(0)
+
+    await cartoes.click()
+    await expect(page).toHaveURL('/tools/pdf')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+  })
+
+  test('/tools/pdf sem arquivo: o editor com o aviso de privacidade, sem nenhum Worker e sem o pdf.js, que só chega com o PDF', async ({
+    page,
+  }) => {
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    const pedidosAoPdfjsDaOrigem: string[] = []
+    const scripts: { url: string; corpo: Promise<string> }[] = []
+    page.on('request', (pedido) => {
+      if (new URL(pedido.url()).pathname.startsWith('/pdfjs/')) {
+        pedidosAoPdfjsDaOrigem.push(pedido.url())
+      }
+    })
+    page.on('response', (resposta) => {
+      if (resposta.request().resourceType() === 'script') {
+        scripts.push({
+          url: resposta.url(),
+          corpo: resposta.text().catch(() => ''),
+        })
+      }
+    })
+    const scriptsComOPdfjs = async () =>
+      (
+        await Promise.all(
+          scripts.map(async ({ url, corpo }) =>
+            (await corpo).includes(MARCA_DO_PDFJS) ? [url] : [],
+          ),
+        )
+      ).flat()
+
+    await page.goto('/tools/pdf')
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Seus arquivos não saem do aparelho'),
+    ).toBeVisible()
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(workers).toEqual([])
+    expect(await scriptsComOPdfjs()).toEqual([])
+    expect(pedidosAoPdfjsDaOrigem).toEqual([])
+
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200]))
+    expect(workers).toHaveLength(2)
+    // A sonda acha o pdf.js quando ele chega: o vazio de antes vale.
+    expect(await scriptsComOPdfjs()).not.toEqual([])
   })
 
   test('PDF protegido e arquivo que não é PDF: o erro escrito num alerta, nenhuma página aberta, e o pdf.js nem nasce', async ({
@@ -2587,6 +2698,68 @@ test.describe('Editar PDF: a Bancada', () => {
       .getByRole('button', { name: 'Girar a página 1 à direita' })
       .click()
     await expect(miniaturas.first()).toHaveAttribute('style', /rotate\(90deg\)/)
+  })
+
+  // Menor 4 do Crivo no #129: altura de celular pequeno (e a de 200% de zoom), onde a folha mal cabe.
+  async function abrirAFolhaCom20(page: Page) {
+    await page.setViewportSize({ width: 320, height: 568 })
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'vinte.pdf',
+        Array.from({ length: 20 }, () => 100),
+      ),
+    )
+    await page.getByRole('button', { name: 'Páginas', exact: true }).click()
+    const folha = page.getByRole('dialog', { name: 'Páginas' })
+    await expect(folha).toBeVisible()
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((a) => a.finished)),
+    )
+    return folha
+  }
+
+  test('a 320 × 568 px, com 20 páginas, a folha Páginas cabe na tela, nada rola para o lado, e a lista guarda os 80 px dela e rola até a marcada', async ({
+    page,
+  }) => {
+    const folha = await abrirAFolhaCom20(page)
+    const daFolha = (await folha.boundingBox())!
+    expect(daFolha.y).toBeGreaterThanOrEqual(0)
+    expect(Math.round(daFolha.y + daFolha.height)).toBe(568)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(320)
+    expect(await folha.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    )
+    const rolagem = folha.getByTestId('editar-pdf-rolagem-da-folha')
+    expect((await rolagem.boundingBox())!.height).toBeGreaterThanOrEqual(80)
+
+    const marcada = folha.getByRole('checkbox', {
+      name: 'Selecionar página 12',
+    })
+    await marcada.check()
+    await expect(marcada).toBeInViewport()
+    expect(await rolagem.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  })
+
+  // Achado do E2E pedido pelo Crivo: a 568 px de altura, os controles da folha passam de 450 px, a lista
+  // começa abaixo da borda da tela e a própria folha também rola. Fica marcado como falha conhecida até a
+  // decisão de layout; quando a folha passar, o Playwright avisa e o test.fail sai.
+  test('a 320 × 568 px, ao abrir a folha Páginas, a lista já aparece com uma página inteira, e só ela rola', async ({
+    page,
+  }) => {
+    test.fail()
+    const folha = await abrirAFolhaCom20(page)
+    const primeira = (await folha
+      .getByTestId('editar-pdf-pagina')
+      .first()
+      .boundingBox())!
+    expect(primeira.y + primeira.height).toBeLessThanOrEqual(568)
+    expect(
+      await folha.evaluate((el) => el.scrollHeight <= el.clientHeight),
+    ).toBe(true)
   })
 })
 
