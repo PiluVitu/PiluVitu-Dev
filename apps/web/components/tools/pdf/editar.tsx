@@ -102,7 +102,6 @@ import {
   ultimaMarcada,
   type DocumentoDoEditor,
 } from './documento-do-editor'
-import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
 import {
@@ -316,14 +315,17 @@ type Props = {
   renderizador?: RenderizadorDePdf
   /** Injetável para story e teste; sem ele, o motor usa um Web Worker com o pdf-lib. */
   motor?: MotorDePdf
+  /** Para story e teste: o editor já aberto com um PDF. */
+  arquivoInicial?: File | null
 }
 
 export function EditarPdf({
   renderizador: renderizadorInjetado,
   motor: motorInjetado,
+  arquivoInicial = null,
 }: Props) {
   const ids = useId()
-  const { arquivo, guardar } = useDocumentoPdf()
+  const [arquivo, guardar] = useState<File | null>(arquivoInicial)
   const renderizadorRef = useRef<RenderizadorDePdf | null>(
     renderizadorInjetado ?? null,
   )

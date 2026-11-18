@@ -61,7 +61,7 @@ type Ferramentas = {
   brancas?: () => number
 }
 
-// O documento do editor: o primeiro arquivo (o do DocumentoPdfProvider) abre a sessão, e os adicionados
+// O documento do editor: o primeiro arquivo (o que a pessoa escolhe) abre a sessão, e os adicionados
 // entram nela sem trocá-la. Os documentos do pdf.js dividem o Worker do renderizador (M2).
 export function useDocumentoDoEditor(
   arquivo: File | null,

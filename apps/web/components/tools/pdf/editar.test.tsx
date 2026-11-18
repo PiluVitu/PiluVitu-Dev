@@ -1,11 +1,10 @@
-import { act, useEffect } from 'react'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import {
   TETO_DAS_IMAGENS_EM_BYTES,
   TETO_DE_BYTES_COM_MINIATURAS,
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
-import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { ZOOMS } from './area-da-pagina'
 import { CONSULTA_DA_BANCADA_LARGA } from './bancada-larga'
 import { EditarPdf } from './editar'
@@ -93,7 +92,6 @@ class MedidorFalso {
 
 let container: HTMLDivElement
 let root: Root
-let documentoAtual: File | null = null
 
 // A Bancada larga (a lista na coluna) ou estreita (a lista na folha) vem do matchMedia, que o teste escolhe.
 let larga = true
@@ -170,14 +168,6 @@ afterEach(() => {
   mockZona.semProtecao = false
 })
 
-function Espiao() {
-  const { arquivo } = useDocumentoPdf()
-  useEffect(() => {
-    documentoAtual = arquivo
-  })
-  return null
-}
-
 function montar({
   renderizador = criarRenderizadorFalso(),
   motor = criarMotorFalso(),
@@ -185,10 +175,11 @@ function montar({
 } = {}) {
   act(() =>
     root.render(
-      <DocumentoPdfProvider arquivoInicial={arquivoInicial}>
-        <EditarPdf renderizador={renderizador} motor={motor} />
-        <Espiao />
-      </DocumentoPdfProvider>,
+      <EditarPdf
+        renderizador={renderizador}
+        motor={motor}
+        arquivoInicial={arquivoInicial}
+      />,
     ),
   )
   return { renderizador, motor }
@@ -299,7 +290,7 @@ describe('abrir o PDF', () => {
     expect(q('editar-pdf-folha')).toBeNull()
   })
 
-  it('chegando de outro modo: o pdf-lib lê, o pdf.js abre e a primeira página aparece grande, na largura da área', async () => {
+  it('com o PDF já escolhido: o pdf-lib lê, o pdf.js abre e a primeira página aparece grande, na largura da área', async () => {
     const { renderizador, motor } = await abrir('contrato-3p.pdf')
 
     expect(motor.analisadas).toEqual(['contrato-3p.pdf'])
@@ -319,13 +310,15 @@ describe('abrir o PDF', () => {
     expect(anuncio()).toBe('contrato-3p.pdf · 3 páginas')
   })
 
-  it('escolher um PDF guarda no editor (para os outros modos) e abre', async () => {
+  it('escolher um PDF abre ele no editor', async () => {
     const { renderizador } = montar()
 
     await escolher(pdf('nota-2p.pdf'))
     await esperarAte(() => canvasNaFolha() !== null)
 
-    expect(documentoAtual?.name).toBe('nota-2p.pdf')
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'nota-2p.pdf · 2 páginas',
+    )
     expect(renderizador.abertos).toEqual(['nota-2p.pdf'])
     expect(miniaturas()).toHaveLength(2)
   })
@@ -3599,5 +3592,24 @@ describe('a página em branco', () => {
 
     expect(document.activeElement).toBe(q('editar-pdf-area'))
     expect(posicao()).toBe('Página 4 de 4')
+  })
+})
+
+// Guardas transversais do editor (antes no documento-pdf.test e no mesclar.test, que saíram no PR 6).
+describe('nada sai do aparelho', () => {
+  it('abrir, adicionar, criar a branca, escrever e gerar não gravam nada no armazenamento do navegador', async () => {
+    const gravar = jest.spyOn(Storage.prototype, 'setItem')
+    const { motor } = await abrirParaEditar('a-3p.pdf')
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    await criarBranca()
+    await inserirNoCentro('Texto')
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(motor.montadas).toHaveLength(1)
+    expect(gravar).not.toHaveBeenCalled()
+    gravar.mockRestore()
   })
 })
