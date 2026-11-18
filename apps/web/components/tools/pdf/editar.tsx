@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FocusEvent as EventoDeFoco,
@@ -38,6 +39,7 @@ import {
   desfazer as desfazerNoHistorico,
   historicoInicial,
   nomeDoPdfDerivado,
+  planoInicial,
   podeDesfazer,
   podeRefazer,
   refazer as refazerNoHistorico,
@@ -51,6 +53,7 @@ import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
+import { idDaPagina, montagemDoPlano } from './montagem'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
@@ -367,7 +370,12 @@ export function EditarPdf({
   const { historico } =
     documento && edicao.documento === documento ? edicao : SEM_EDICAO
   const cena = historico.presente
-  const objetosDaPagina = objetosDa(cena, pagina)
+  const ordem = useMemo(
+    () => Array.from({ length: total }, (_, indice) => idDaPagina(0, indice)),
+    [total],
+  )
+  const aberta = idDaPagina(0, pagina)
+  const objetosDaPagina = objetosDa(cena, aberta)
   const objetoEscolhido =
     (selecionado && objetosDaPagina.find((o) => o.id === selecionado)) || null
   const montando = resultado.estado === 'montando'
@@ -592,7 +600,7 @@ export function EditarPdf({
           : undefined,
     })
     mudarCena(
-      incluirObjeto(cena, pagina, objeto),
+      incluirObjeto(cena, aberta, objeto),
       undefined,
       ferramenta === 'imagem' ? null : imagemPendente,
     )
@@ -622,13 +630,13 @@ export function EditarPdf({
   function desenhar(pontos: PontoDoTraco[]) {
     if (!pontos.length) return
     const objeto = criarTraco(pontos, estilos.traco)
-    mudarCena(incluirObjeto(cena, pagina, objeto))
+    mudarCena(incluirObjeto(cena, aberta, objeto))
     anunciar(T.anuncios.inserido(objeto))
   }
 
   function mudarPeloQuadro(novo: ObjetoNaTela, origem: OrigemDaMudanca) {
     mudarCena(
-      trocarObjeto(cena, pagina, novo),
+      trocarObjeto(cena, aberta, novo),
       origem === 'ponteiro' ? undefined : `${origem}:${novo.id}`,
     )
     anunciarDepois(T.anuncios.posicao(novo))
@@ -638,7 +646,7 @@ export function EditarPdf({
     if (!objetoEscolhido || !tamanhoDaPagina) return
     const novo = comMudanca(objetoEscolhido, mudanca, tamanhoDaPagina)
     mudarCena(
-      trocarObjeto(cena, pagina, novo),
+      trocarObjeto(cena, aberta, novo),
       `painel:${mudanca.campo}:${novo.id}`,
     )
     setEstilos((atuais) => lembrarEstilo(atuais, novo))
@@ -649,7 +657,7 @@ export function EditarPdf({
     if (posicao < 0) return
     const vizinho =
       objetosDaPagina[posicao + 1] ?? objetosDaPagina[posicao - 1] ?? null
-    mudarCena(tirarObjeto(cena, pagina, id))
+    mudarCena(tirarObjeto(cena, aberta, id))
     setSelecionado(vizinho?.id ?? null)
     anunciar(T.anuncios.apagado(objetosDaPagina[posicao].tipo))
     focar(() =>
@@ -685,9 +693,11 @@ export function EditarPdf({
     juncao.current = null
     const focadoAntes = document.activeElement
     guardarHistorico(novo)
-    const mudadas = paginasMudadas(historico.presente, novo.presente)
+    const mudadas = paginasMudadas(historico.presente, novo.presente, ordem)
     const outra =
-      mudadas.length > 0 && !mudadas.includes(pagina) ? mudadas[0] : null
+      mudadas.length > 0 && !mudadas.includes(aberta)
+        ? ordem.indexOf(mudadas[0])
+        : null
     if (outra !== null) {
       setVista({ documento, pagina: outra, zoom })
       setSelecionado(null)
@@ -781,7 +791,7 @@ export function EditarPdf({
   }
 
   function mudarApagarDeVerdade(ligado: boolean) {
-    mudarCena(comApagarDeVerdade(cena, pagina, ligado))
+    mudarCena(comApagarDeVerdade(cena, aberta, ligado))
     setConfirmandoApagar(null)
     anunciar(
       T.anuncios[ligado ? 'apagarLigado' : 'apagarDesligado'](pagina + 1),
@@ -800,11 +810,11 @@ export function EditarPdf({
     anunciar(T.anuncios.montando)
     focar(() => cancelarRef.current)
     try {
-      const rasterizadas = new Map<number, Blob>()
-      for (const indice of paginasParaApagar(cenaDoPdf)) {
+      const rasterizadas = new Map<string, Blob>()
+      for (const id of paginasParaApagar(cenaDoPdf, ordem)) {
         rasterizadas.set(
-          indice,
-          await documento.fundo(indice, cobrirDa(cenaDoPdf, indice)),
+          id,
+          await documento.fundo(ordem.indexOf(id), cobrirDa(cenaDoPdf, id)),
         )
         if (vez !== vezDaGeracao.current) return
       }
@@ -813,7 +823,8 @@ export function EditarPdf({
         const imagem = imagens.get(id)
         if (imagem) blobs.set(id, imagem.blob)
       }
-      const pdf = await motor().editar(origem, {
+      const pdf = await motor().montar([origem], {
+        paginas: montagemDoPlano(planoInicial(documento.paginas)),
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
         paginasRasterizadas: rasterizadas,
@@ -830,20 +841,20 @@ export function EditarPdf({
       focar(() => baixarRef.current)
     } catch (erro) {
       if (vez !== vezDaGeracao.current) return
-      const recebida = ehFalhaDaOperacao(erro)
+      const falha = ehFalhaDaOperacao(erro)
         ? erro
         : { motivo: 'inesperado' as const }
-      const falha = {
-        ...recebida,
-        pagina:
-          typeof recebida.pagina === 'number' ? recebida.pagina : undefined,
-      }
+      const indice =
+        typeof falha.pagina === 'string' ? ordem.indexOf(falha.pagina) : -1
       setResultado({
         estado: 'falhou',
-        mensagem: T.falhaAoSalvar(falha),
+        mensagem: T.falhaAoSalvar({
+          ...falha,
+          pagina: indice < 0 ? undefined : indice,
+        }),
         objeto:
-          falha.pagina !== undefined && falha.objeto !== undefined
-            ? { pagina: falha.pagina, id: falha.objeto }
+          indice >= 0 && falha.objeto !== undefined
+            ? { pagina: indice, id: falha.objeto }
             : undefined,
       })
       anunciar('')
@@ -982,9 +993,9 @@ export function EditarPdf({
   const podeVoltar = podeDesfazer(historico)
   const podeAvancar = podeRefazer(historico)
   const quantosObjetos = totalDeObjetos(cena)
-  const paginasComApagar = paginasParaApagar(cena)
-  const cobrirAqui = temCobrir(cena, pagina)
-  const apagarAqui = cena.apagar.has(pagina)
+  const paginasComApagar = paginasParaApagar(cena, ordem)
+  const cobrirAqui = temCobrir(cena, aberta)
+  const apagarAqui = cena.apagar.has(aberta)
   const mostrarDicaDoTexto =
     dicaDoTexto?.documento === documento && dicaDoTexto?.pagina === pagina
   const corDoDesenho = nomeDaCor(estilos.traco.cor)
@@ -1682,7 +1693,9 @@ export function EditarPdf({
             )}
             {paginasComApagar.length > 0 && (
               <p className="text-sm" data-testid="editar-pdf-paginas-apagadas">
-                {T.gerar.apagando(paginasComApagar.map((p) => p + 1))}
+                {T.gerar.apagando(
+                  paginasComApagar.map((id) => ordem.indexOf(id) + 1),
+                )}
               </p>
             )}
             {montando ? (

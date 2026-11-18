@@ -1590,10 +1590,10 @@ describe('cobrir e apagar de verdade', () => {
         cobrir: [{ x: 217.5, y: 405, largura: 160, altura: 32 }],
       },
     ])
-    const [pedido] = motor.editadas
-    expect([...pedido.paginasRasterizadas.keys()]).toEqual([0])
-    expect(pedido.paginasRasterizadas.get(0)!.type).toBe('image/jpeg')
-    expect(pedido.objetosPorPagina.get(0)!.map((o) => o.tipo)).toEqual([
+    const [pedido] = motor.montadas
+    expect([...pedido.paginasRasterizadas.keys()]).toEqual(['a0p0'])
+    expect(pedido.paginasRasterizadas.get('a0p0')!.type).toBe('image/jpeg')
+    expect(pedido.objetosPorPagina.get('a0p0')!.map((o) => o.tipo)).toEqual([
       'cobrir',
       'texto',
     ])
@@ -1630,10 +1630,18 @@ describe('gerar o PDF editado', () => {
     await clicar(porNome('Gerar PDF editado'))
     await esperarAte(() => q('editar-pdf-baixar') !== null)
 
-    const [pedido] = motor.editadas
-    expect(pedido.nome).toBe('contrato-3p.pdf')
-    expect([...pedido.objetosPorPagina.keys()]).toEqual([0, 1])
-    const imagem = pedido.objetosPorPagina.get(0)![0] as Extract<
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['contrato-3p.pdf'])
+    expect(pedido.paginas).toEqual(
+      [0, 1, 2].map((indice) => ({
+        id: `a0p${indice}`,
+        origem: { arquivo: 0, indice },
+        giro: 0,
+        moldura: 0,
+      })),
+    )
+    expect([...pedido.objetosPorPagina.keys()]).toEqual(['a0p0', 'a0p1'])
+    const imagem = pedido.objetosPorPagina.get('a0p0')![0] as Extract<
       ObjetoNaTela,
       { tipo: 'imagem' }
     >
@@ -1658,7 +1666,7 @@ describe('gerar o PDF editado', () => {
   })
 
   it('Cancelar para a montagem, avisa e devolve o foco ao Gerar', async () => {
-    const motor = criarMotorFalso({ edicao: 'nunca' })
+    const motor = criarMotorFalso({ montagem: 'nunca' })
     await abrirParaEditar('contrato-3p.pdf', { motor })
     await inserirNoCentro('Retângulo')
 
@@ -1676,10 +1684,10 @@ describe('gerar o PDF editado', () => {
     await abrirParaEditar('contrato-3p.pdf', { motor })
     await inserirNoCentro('Texto')
     const id = objetos()[0].dataset.id!
-    motor.editar = jest.fn(() =>
+    motor.montar = jest.fn(() =>
       Promise.reject({
         motivo: 'texto_fora_do_winansi',
-        pagina: 0,
+        pagina: 'a0p0',
         objeto: id,
         caracteres: ['ŧ'],
       }),
@@ -1698,6 +1706,40 @@ describe('gerar o PDF editado', () => {
     expect(focado()).toBe('Gerar PDF editado')
     await clicar(porNome('Mostrar o objeto'))
     expect(document.activeElement).toBe(objetos()[0])
+  })
+
+  it('a falha vem com o id da página: o texto diz o número dela e o Mostrar leva até a página', async () => {
+    const motor = criarMotorFalso()
+    await abrirParaEditar('contrato-3p.pdf', { motor })
+    await clicar(porNome('Próxima página'))
+    await esperarAte(
+      () => q('editar-pdf-posicao')!.textContent === 'Página 2 de 3',
+    )
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    await inserirNoCentro('Retângulo')
+    const id = objetos()[0].dataset.id!
+    await clicar(porNome('Página anterior'))
+    await esperarAte(
+      () => q('editar-pdf-posicao')!.textContent === 'Página 1 de 3',
+    )
+    motor.montar = jest.fn(() =>
+      Promise.reject({
+        motivo: 'imagem_nao_aceita',
+        pagina: 'a0p1',
+        objeto: id,
+      }),
+    )
+
+    await clicar(porNome('Gerar PDF editado'))
+    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
+
+    expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
+      'Uma imagem da página 2 não é PNG nem JPEG.',
+    )
+    await clicar(porNome('Mostrar o objeto'))
+    expect(q('editar-pdf-posicao')!.textContent).toBe('Página 2 de 3')
+    await esperarAte(() => document.activeElement === objetos()[0])
+    expect(objetos()[0].dataset.id).toBe(id)
   })
 })
 
@@ -1774,8 +1816,8 @@ describe('os avisos do PDF aberto', () => {
     await clicar(porNome('Gerar PDF editado'))
     await esperarAte(() => q('editar-pdf-baixar') !== null)
 
-    expect(motor.editadas.map(({ nome }) => nome)).toEqual([
-      'contrato-assinado-2p.pdf',
+    expect(motor.montadas.map(({ nomes }) => nomes)).toEqual([
+      ['contrato-assinado-2p.pdf'],
     ])
     expect(avisos()).toEqual([TEXTOS.editar.avisos.assinatura_digital])
   })

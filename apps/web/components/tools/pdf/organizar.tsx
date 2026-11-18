@@ -66,6 +66,7 @@ import {
 import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
+import { montagemDoPlano } from './montagem'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
@@ -441,7 +442,12 @@ export function OrganizarPdf({
     anunciar(T.anuncios.montando)
     focar(() => cancelarRef.current)
     try {
-      const pdf = await motor().organizar(origem, planoDoPdf)
+      const pdf = await motor().montar([origem], {
+        paginas: montagemDoPlano(planoDoPdf),
+        objetosPorPagina: new Map(),
+        imagens: new Map(),
+        paginasRasterizadas: new Map(),
+      })
       setResultado({
         estado: 'pronto',
         tipo,
