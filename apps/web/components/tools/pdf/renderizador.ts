@@ -43,6 +43,8 @@ export type DocumentoAberto = {
   fundo(indice: number, cobrir: readonly Caixa[], giro?: Giro): Promise<Blob>
   /** Se há texto do próprio PDF no ponto (em pontos da tela), pela camada de texto do pdf.js. */
   textoNoPonto(indice: number, ponto: Ponto, giro?: Giro): Promise<boolean>
+  /** A página como o pdf.js a mostra (com o /Rotate dela), em pontos, sem desenhar: o P2 da página em branco. */
+  tamanho(indice: number): Promise<Tamanho>
   /**
    * Solta o documento no Worker do pdf.js (a cópia do arquivo, as fontes e o cache da página). O Worker,
    * que os documentos do renderizador dividem, só cai depois do último.
@@ -434,6 +436,19 @@ export function criarRenderizadorComPdfjs(
         )
       }
 
+      async function tamanhoDa(
+        documento: PDFDocumentProxy,
+        indice: number,
+      ): Promise<Tamanho> {
+        if (fechado) throw new Error('o documento já foi fechado')
+        const pagina = await Promise.race([
+          documento.getPage(indice + 1),
+          quebrou,
+        ])
+        const { width, height } = pagina.getViewport({ scale: 1 })
+        return { largura: width, altura: height }
+      }
+
       try {
         const documento = await Promise.race([tarefa.promise, quebrou])
         if (fechado) throw { motivo: 'falha_do_navegador' }
@@ -462,6 +477,9 @@ export function criarRenderizadorComPdfjs(
           },
           textoNoPonto(indice, ponto, giro = 0) {
             return textoEm(documento, indice, ponto, giro)
+          },
+          tamanho(indice) {
+            return tamanhoDa(documento, indice)
           },
           fechar,
         }

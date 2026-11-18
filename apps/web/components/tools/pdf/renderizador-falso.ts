@@ -123,7 +123,7 @@ export function criarRenderizadorFalso({
     /** Cada desenho e consulta pedidos, com o arquivo do documento que os recebeu. */
     pedidos: [] as {
       arquivo: string
-      tipo: 'miniatura' | 'pagina' | 'fundo' | 'texto'
+      tipo: 'miniatura' | 'pagina' | 'fundo' | 'texto' | 'tamanho'
       indice: number
     }[],
     miniaturas: [] as { indice: number; larguraCss: number }[],
@@ -221,6 +221,13 @@ export function criarRenderizadorFalso({
           renderizador.textosConsultados.push({ indice, ponto, giro })
           registrar('texto', indice)
           return !fechado && temTextoNaFolhaFalsa(ponto)
+        },
+        async tamanho(indice) {
+          registrar('tamanho', indice)
+          if (fechado) throw new Error('o documento já foi fechado')
+          return deitadas[indice]
+            ? { largura: A4.altura, altura: A4.largura }
+            : A4
         },
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })
