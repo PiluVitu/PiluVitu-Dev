@@ -204,6 +204,33 @@ const AVISOS_DO_PDF: Record<AvisoDoPdf, string> = {
 const documentoAberto = (nome: string, totalDePaginas: number) =>
   `${nome} · ${paginas(totalDePaginas)}`
 
+type Teto = { readonly bytes: number; readonly paginas: number }
+
+// O teto é somado (os PDFs abertos mais o novo): a mensagem diz o que ainda cabia.
+function passouDoTetoSomado(
+  nome: string,
+  {
+    passou,
+    bytes,
+    paginas: paginasDoNovo = 0,
+    restam,
+  }: { passou: keyof Teto; bytes: number; paginas?: number; restam: Teto },
+  teto: Teto,
+): string {
+  const porBytes = passou === 'bytes'
+  const tem = porBytes ? formatarTamanho(bytes) : paginas(paginasDoNovo)
+  const sobra = restam[passou]
+  const cabe =
+    sobra === 0
+      ? `não cabe mais ${porBytes ? 'nada' : 'nenhuma'}`
+      : `só cabem mais ${porBytes ? formatarTamanho(sobra) : paginas(sobra)}`
+  const limite = porBytes ? formatarTamanho(teto.bytes) : numero(teto.paginas)
+  const inicio = `Não deu para adicionar ${nome}: ele tem ${tem}, e ${cabe} (até ${limite} somando os PDFs abertos).`
+  return sobra === 0
+    ? inicio
+    : `${inicio} Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.`
+}
+
 const listaDePaginas = (numeros: readonly number[]) =>
   `${concordar(numeros.length, 'a página', 'as páginas')} ${lista.format(numeros.map(numero))}`
 
@@ -424,6 +451,11 @@ export const TEXTOS = {
     paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
       `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
     avisos: AVISOS_DO_PDF,
+    adicionar: {
+      recusado: (nome: string, motivo: MotivoDaRecusa) =>
+        `Não deu para adicionar ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
+      passouDoTeto: passouDoTetoSomado,
+    },
     paginas: 'Páginas',
     paginasDoDocumento: {
       rotulo: (posicao: number) => `Página ${numero(posicao)}`,

@@ -96,6 +96,77 @@ it('o aviso de alcance diz que marcadores e links internos não passam', () => {
 describe('editar', () => {
   const { falhaAoSalvar, anuncios, paginaAtual, zoom } = TEXTOS.editar
 
+  describe('adicionar outro PDF: a recusa não mexe no documento e diz o que ainda cabe', () => {
+    const { recusado, passouDoTeto } = TEXTOS.editar.adicionar
+    const tetos = { bytes: 50_000_000, paginas: 500 }
+
+    it('o motivo do arquivo, com as mensagens de sempre', () => {
+      expect(recusado('b.pdf', 'protegido')).toBe(
+        `Não deu para adicionar b.pdf. ${ERROS_DO_ARQUIVO.protegido}`,
+      )
+    })
+
+    it('os bytes somados: o tamanho dele, o que ainda cabe e o teto', () => {
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'bytes',
+            bytes: 30_000_000,
+            restam: { bytes: 12_400_000, paginas: 300 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 30 MB, e só cabem mais 12,4 MB (até 50 MB somando os PDFs abertos). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+      )
+    })
+
+    it('as páginas somadas, inclusive quando não cabe mais nenhuma', () => {
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'paginas',
+            bytes: 1,
+            paginas: 120,
+            restam: { bytes: 1, paginas: 40 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 120 páginas, e só cabem mais 40 páginas (até 500 somando os PDFs abertos). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+      )
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'paginas',
+            bytes: 1,
+            paginas: 1,
+            restam: { bytes: 1, paginas: 0 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 1 página, e não cabe mais nenhuma (até 500 somando os PDFs abertos).',
+      )
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'bytes',
+            bytes: 2_000_000,
+            restam: { bytes: 0, paginas: 3 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 2 MB, e não cabe mais nada (até 50 MB somando os PDFs abertos).',
+      )
+    })
+  })
+
   it('posição, zoom e anúncios pelo Intl', () => {
     expect(paginaAtual(3, 1200)).toBe('Página 3 de 1.200')
     expect(zoom.valor(1.25)).toBe('125%')
