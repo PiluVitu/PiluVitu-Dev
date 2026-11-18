@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
-import { DocumentoPdfProvider } from './documento-pdf'
 import { EditarPdf } from './editar'
 import { criarMotorFalso } from './motor-falso'
 import { criarRenderizadorFalso } from './renderizador-falso'
@@ -13,14 +12,15 @@ const meta = {
   tags: ['autodocs'],
   parameters: { layout: 'padded' },
   decorators: [
-    (Story, { parameters }) => (
-      <DocumentoPdfProvider arquivoInicial={parameters.arquivoInicial ?? null}>
-        <div className="max-w-6xl">
-          <Story />
-        </div>
-      </DocumentoPdfProvider>
+    (Story) => (
+      <div className="max-w-6xl">
+        <Story />
+      </div>
     ),
   ],
+  render: (args, { parameters }) => (
+    <EditarPdf {...args} arquivoInicial={parameters.arquivoInicial ?? null} />
+  ),
 } satisfies Meta<typeof EditarPdf>
 
 export default meta

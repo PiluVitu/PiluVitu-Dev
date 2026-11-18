@@ -296,7 +296,7 @@ export type AberturaDoArquivo<Recusa> =
   | { ok: true; arquivo: ArquivoDoEditor }
   | { ok: false; recusa: { motivo: MotivoDaRecusa } | Recusa }
 
-// O pdf-lib lê primeiro e decide os erros, com as mensagens do mesclar; o recusado (inclusive pelo teto
+// O pdf-lib lê primeiro e decide os erros (ERROS_DO_ARQUIVO); o recusado (inclusive pelo teto
 // de páginas, que só a contagem dele diz) não chega ao pdf.js. Se os dois contam páginas diferentes
 // (/Count errado na árvore), o PDF salvo teria outra página no lugar da que a pessoa viu: corrompido.
 export async function abrirArquivo<Recusa>(

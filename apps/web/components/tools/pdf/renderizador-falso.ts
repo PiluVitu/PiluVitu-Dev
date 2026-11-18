@@ -108,6 +108,8 @@ export function criarRenderizadorFalso({
   let abrirOPortao = () => {}
   let portaoDosTamanhos: Promise<void> | null = null
   let abrirOPortaoDosTamanhos = () => {}
+  let portaoDasMiniaturas: Promise<void> | null = null
+  let abrirOPortaoDasMiniaturas = () => {}
   const renderizador = {
     /** Daqui em diante, cada página grande pedida espera o `soltarPaginas()`, sem depender de relógio. */
     prenderPaginas() {
@@ -128,6 +130,16 @@ export function criarRenderizadorFalso({
     soltarTamanhos() {
       abrirOPortaoDosTamanhos()
       portaoDosTamanhos = null
+    },
+    /** Daqui em diante, cada miniatura pedida espera o `soltarMiniaturas()`. */
+    prenderMiniaturas() {
+      portaoDasMiniaturas = new Promise<void>((soltar) => {
+        abrirOPortaoDasMiniaturas = soltar
+      })
+    },
+    soltarMiniaturas() {
+      abrirOPortaoDasMiniaturas()
+      portaoDasMiniaturas = null
     },
     abertos: [] as string[],
     /** Quantos Workers do pdf.js nasceram: um por sessão, que acaba quando o último documento fecha. */
@@ -251,7 +263,9 @@ export function criarRenderizadorFalso({
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })
           registrar('miniatura', indice)
+          const portao = portaoDasMiniaturas
           await espera()
+          if (portao) await portao
           if (fechado) throw new Error('o documento já foi fechado')
           if (miniaturasQueFalham.includes(indice)) {
             throw new Error('Rendering cancelled')

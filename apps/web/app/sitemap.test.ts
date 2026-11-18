@@ -39,14 +39,19 @@ it('lista as rotas públicas, os posts publicados e os dois llms, na origem can�
     `${ORIGEM}/tools`,
     `${ORIGEM}/tasks`,
     `${ORIGEM}/privacidade`,
-    ...TOOLS.flatMap(({ slug, modos = [] }) => [
-      `${ORIGEM}/tools/${slug}`,
-      ...modos.map((modo) => `${ORIGEM}/tools/${slug}/${modo.slug}`),
-    ]),
+    ...TOOLS.map(({ slug }) => `${ORIGEM}/tools/${slug}`),
     `${ORIGEM}/posts/husky`,
     `${ORIGEM}/llms.txt`,
     `${ORIGEM}/llms-full.txt`,
   ])
+})
+
+it('o editor de PDF só em /tools/pdf: sem as rotas antigas nem o assinar', async () => {
+  const urls = (await sitemap()).map(({ url }) => url)
+  expect(urls.filter((url) => url.includes('/tools/pdf'))).toEqual([
+    `${ORIGEM}/tools/pdf`,
+  ])
+  expect(urls).not.toContain(`${ORIGEM}/tools/mesclar-pdf`)
 })
 
 it('a data só vem do post', async () => {

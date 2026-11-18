@@ -4,7 +4,6 @@ import type {
   FamiliaDaFonte,
   Giro,
   LadoDoMovimento,
-  MotivoDoErroDePdf,
   SentidoDoGiro,
   Tamanho,
   TipoDeObjeto,
@@ -65,10 +64,6 @@ export function formatarGraus(giro: number): string {
 
 export function paginas(n: number): string {
   return contagem(n, 'página', 'páginas')
-}
-
-export function arquivos(n: number): string {
-  return contagem(n, 'arquivo', 'arquivos')
 }
 
 export const ERROS_DO_ARQUIVO: Record<MotivoDaRecusa, string> = {
@@ -323,97 +318,14 @@ export const TEXTOS = {
       'Tudo roda no seu navegador. Nenhum PDF é enviado para servidor nenhum, nem para o piluvitu.com.br.',
   },
   zona: {
-    rotulo: 'Adicionar PDFs',
-    titulo: (multiplos: boolean) =>
-      multiplos ? 'Arraste os PDFs para cá' : 'Arraste o PDF para cá',
+    titulo: 'Arraste o PDF para cá',
     soltar: 'Solte para adicionar',
     ou: 'ou',
-    escolher: (multiplos: boolean) =>
-      multiplos ? 'Escolher PDFs' : 'Escolher PDF',
+    escolher: 'Escolher PDF',
   },
-  limites: (teto: number) =>
-    `Até ${formatarTamanho(teto)} somando todos os arquivos. O PDF é montado na memória do seu aparelho, que usa umas 4 vezes esse tamanho enquanto trabalha; acima disso, celulares costumam fechar a aba.`,
   alcance:
     'O conteúdo das páginas vai inteiro. Os marcadores (o índice lateral) não passam para o PDF final, os links para outra página do mesmo PDF deixam de funcionar, e campos de formulário podem deixar de ser editáveis.',
-  lista: {
-    titulo: 'Ordem dos arquivos',
-    resumo: (qtd: number, totalDePaginas: number, bytes: number) =>
-      `${arquivos(qtd)} · ${paginas(totalDePaginas)} · ${formatarTamanho(bytes)}`,
-    lendo: 'Lendo…',
-    posicao: (n: number) => `${n}.`,
-  },
-  acoes: {
-    subir: (nome: string) => `Subir ${nome}`,
-    descer: (nome: string) => `Descer ${nome}`,
-    remover: (nome: string) => `Remover ${nome}`,
-    limpar: 'Limpar lista',
-    mesclar: 'Mesclar PDFs',
-    mesclando: 'Mesclando…',
-    cancelar: 'Cancelar',
-    baixar: (nome: string) => `Baixar ${nome}`,
-    organizarResultado: 'Organizar as páginas deste PDF',
-    organizarForaDoTeto: (tetoDeBytes: number, tetoDePaginas: number) =>
-      `Para organizar as páginas, o PDF precisa ter até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)}, e este passou disso.`,
-  },
-  nome: {
-    rotulo: 'Nome do arquivo final',
-  },
-  dicas: {
-    minimo: 'Adicione pelo menos 2 PDFs para mesclar.',
-    aguarde: 'Espere terminar a leitura dos arquivos.',
-    remova: 'Remova os arquivos com erro para mesclar.',
-  },
-  teto: (nome: string, bytes: number, teto: number) =>
-    `${nome} (${formatarTamanho(bytes)}) não entrou: passaria de ${formatarTamanho(teto)} no total. Remova algum arquivo ou escolha um menor.`,
-  progresso: {
-    rotulo: 'Progresso da mesclagem',
-    lendo: (atual: number, total: number, nome: string) =>
-      `Lendo ${atual} de ${total}: ${nome}`,
-    salvando: 'Montando o PDF final…',
-  },
-  falha: {
-    arquivo: (nome: string, motivo: MotivoDoErroDePdf) =>
-      `Não deu para mesclar: ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
-    inesperada:
-      'O navegador não conseguiu terminar a mesclagem, talvez por falta de memória. Tente com menos arquivos ou recarregue a página.',
-  },
-  resultado: {
-    titulo: 'PDF pronto',
-    resumo: (totalDePaginas: number, bytes: number) =>
-      `${paginas(totalDePaginas)} · ${formatarTamanho(bytes)}`,
-  },
-  anuncios: {
-    adicionados: (qtd: number) =>
-      qtd === 1 ? '1 arquivo adicionado.' : `${arquivos(qtd)} adicionados.`,
-    recusado: (nome: string, motivo: MotivoDaRecusa) =>
-      `${nome}: ${ERROS_DO_ARQUIVO[motivo]}`,
-    movido: (nome: string, posicao: number, total: number) =>
-      `${nome} agora está na posição ${posicao} de ${total}.`,
-    removido: (nome: string) => `${nome} removido.`,
-    limpo: 'Lista limpa.',
-    comecou: 'Mesclagem começou.',
-    cancelado: 'Mesclagem cancelada.',
-    pronto: (totalDePaginas: number, bytes: number) =>
-      `PDF pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
-  },
-  editor: {
-    modos: 'O que você quer fazer?',
-  },
   organizar: {
-    rotulo: 'Abrir PDF',
-    limites: (tetoDeBytes: number, tetoDePaginas: number) =>
-      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
-    abrindo: (nome: string) => `Abrindo ${nome}…`,
-    aberto: (nome: string, totalDePaginas: number) =>
-      `${nome} · ${paginas(totalDePaginas)}`,
-    recusado: (nome: string, motivo: MotivoDaRecusa) =>
-      `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
-    grandeDemais: (nome: string, bytes: number, teto: number) =>
-      `${nome} tem ${formatarTamanho(bytes)}, mais que os ${formatarTamanho(teto)} que dá para organizar no navegador. Divida o PDF em partes menores no programa que o criou e abra uma de cada vez.`,
-    paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
-      `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para organizar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
-    titulo: 'Páginas',
-    pagina: (numeroDaPagina: number) => `Página ${numero(numeroDaPagina)}`,
     girada: (giro: number) => `girada ${formatarGraus(giro)}`,
     selecionar: (numeroDaPagina: number) =>
       `Selecionar página ${numero(numeroDaPagina)}`,
@@ -437,11 +349,7 @@ export const TEXTOS = {
       selecionarTodas: 'Selecionar todas',
       limparSelecao: 'Limpar seleção',
       desfazer: 'Desfazer',
-      gerar: 'Gerar PDF organizado',
-      cancelar: 'Cancelar',
-      baixar: (nome: string) => `Baixar ${nome}`,
     },
-    atalho: 'Ctrl+Z (⌘+Z no Mac) desfaz a última mudança.',
     dicas: {
       semSelecao:
         'Selecione uma ou mais páginas para girar, mover, apagar ou extrair.',
@@ -455,16 +363,8 @@ export const TEXTOS = {
       adicionando: 'Espere o PDF adicionado entrar para extrair.',
       criandoBranca: 'Espere a página em branco entrar para extrair.',
     },
-    montando: 'Montando o PDF…',
     resultado: {
-      organizado: 'PDF organizado pronto',
       extraido: 'PDF com as páginas extraídas pronto',
-    },
-    falha: {
-      arquivo: (motivo: MotivoDoErroDePdf) =>
-        `Não deu para montar o PDF. ${ERROS_DO_ARQUIVO[motivo]}`,
-      inesperada:
-        'O navegador não conseguiu montar o PDF, talvez por falta de memória. Feche outras abas ou recarregue a página e tente de novo.',
     },
     anuncios: {
       girada: (numeroDaPagina: number, giro: number) =>
@@ -482,9 +382,6 @@ export const TEXTOS = {
       todasSelecionadas: (qtd: number) =>
         `${paginas(qtd)} ${concordar(qtd, 'selecionada', 'selecionadas')}.`,
       selecaoLimpa: 'Seleção limpa.',
-      desfeito: 'Desfeito.',
-      montando: 'Montando o PDF…',
-      cancelado: 'Cancelado.',
       pronto: (totalDePaginas: number, bytes: number) =>
         `PDF pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
     },
@@ -749,16 +646,5 @@ export const TEXTOS = {
       pronto: (totalDePaginas: number, bytes: number) =>
         `PDF editado pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
     },
-  },
-  arrastar: {
-    alca: (nome: string) => `Arrastar ${nome}`,
-    instrucoes:
-      'Para mudar a ordem pelo teclado, use os botões Subir e Descer de cada arquivo.',
-    pegou: (nome: string) => `Pegou ${nome}.`,
-    sobre: (nome: string, posicao: number) =>
-      `${nome} sobre a posição ${posicao}.`,
-    soltou: (nome: string, posicao: number) =>
-      `${nome} solto na posição ${posicao}.`,
-    cancelou: (nome: string) => `${nome} voltou para o lugar.`,
   },
 } as const

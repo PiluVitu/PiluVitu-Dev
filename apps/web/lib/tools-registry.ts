@@ -8,20 +8,10 @@ import {
   faFingerprint,
   faIdCard,
   faKey,
-  faLayerGroup,
-  faPenToSquare,
   faQrcode,
-  faTableCellsLarge,
 } from '@fortawesome/free-solid-svg-icons'
 
 export type ToolGroup = 'qr' | 'geradores' | 'dev' | 'documentos'
-
-export type ModoDaFerramenta = {
-  slug: string
-  title: string
-  description: string
-  icon: IconDefinition
-}
 
 export type ToolMeta = {
   slug: string
@@ -29,8 +19,6 @@ export type ToolMeta = {
   description: string
   icon: IconDefinition
   group: ToolGroup
-  /** Cada modo tem página própria em /tools/<slug>/<modo>, com metadata, sitemap e llms.txt. */
-  modos?: readonly ModoDaFerramenta[]
 }
 
 export const TOOLS: ToolMeta[] = [
@@ -103,27 +91,6 @@ export const TOOLS: ToolMeta[] = [
     description: 'Mesclar, organizar e editar páginas de PDF',
     icon: faFilePdf,
     group: 'documentos',
-    modos: [
-      {
-        slug: 'mesclar',
-        title: 'Mesclar PDF',
-        description: 'Junta vários PDFs em um só arquivo',
-        icon: faLayerGroup,
-      },
-      {
-        slug: 'organizar',
-        title: 'Organizar páginas',
-        description: 'Gira, apaga, reordena e extrai páginas de um PDF',
-        icon: faTableCellsLarge,
-      },
-      {
-        slug: 'editar',
-        title: 'Editar PDF',
-        description:
-          'Organiza as páginas e escreve, desenha, põe imagens e cobre trechos por cima delas',
-        icon: faPenToSquare,
-      },
-    ],
   },
 ]
 

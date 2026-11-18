@@ -65,7 +65,6 @@ export type {
   ObjetoDaPagina,
   OrigemDaPagina,
   PaginaDaMontagem,
-  PaginaDoPlano,
 } from './pdf-regras'
 
 export class ErroDePdf extends Error {
@@ -129,49 +128,7 @@ async function abrir(bytes: Uint8Array): Promise<PDFDocument> {
   return documento
 }
 
-export async function contarPaginas(bytes: Uint8Array): Promise<number> {
-  return (await abrir(bytes)).getPageCount()
-}
-
-async function copiarPaginas(
-  destino: PDFDocument,
-  bytes: Uint8Array,
-): Promise<void> {
-  const origem = await abrir(bytes)
-  try {
-    // Uma chamada só por arquivo: cada copyPages tem o próprio cache, e copiar página a página
-    // duplicaria fontes e imagens compartilhadas.
-    const copiadas = await destino.copyPages(origem, origem.getPageIndices())
-    for (const pagina of copiadas) destino.addPage(pagina)
-  } catch {
-    throw new ErroDePdf('corrompido')
-  }
-}
-
 export type FonteDePdf = Uint8Array | (() => Promise<Uint8Array>)
-
-export type EtapaDaMesclagem = { arquivo: number } | { salvando: true }
-
-export async function mesclarPdfs(
-  fontes: readonly FonteDePdf[],
-  aoAvancar?: (etapa: EtapaDaMesclagem) => void,
-): Promise<Uint8Array> {
-  const destino = await PDFDocument.create({ updateMetadata: false })
-  for (const [indice, fonte] of fontes.entries()) {
-    aoAvancar?.({ arquivo: indice })
-    try {
-      await copiarPaginas(
-        destino,
-        typeof fonte === 'function' ? await fonte() : fonte,
-      )
-    } catch (erro) {
-      if (erro instanceof ErroDePdf) throw new ErroDePdf(erro.motivo, indice)
-      throw erro
-    }
-  }
-  aoAvancar?.({ salvando: true })
-  return destino.save({ objectsPerTick: Infinity })
-}
 
 // Como o pdf.js, que desenhou a miniatura: /Rotate que não é múltiplo de 90 vale 0.
 function rotacaoAtual(pagina: PDFPage): number {
@@ -1505,30 +1462,37 @@ function separarPaisRepetidos(documento: PDFDocument): void {
 }
 
 // O mesmo nó em duas posições do /Kids: o que se desenha nele aparece nas duas, e a tela mostra cada
-// posição com os seus objetos. O nó com apagar de verdade fica um só (ver "Nó repetido" no CLAUDE.md).
-function separarPaginasRepetidas(
-  documento: PDFDocument,
+// posição com os seus objetos. Com objeto fora da apagada de verdade, cada posição do nó ganha a sua
+// página, menos a que fica com ele: a apagada, ou a primeira. Devolve as outras pela que fica.
+function outrasPosicoesDoNo(
+  paginas: readonly PDFPage[],
   editadas: readonly PaginaEditada[],
-): void {
-  const paginas = documento.getPages()
+): Map<number, number[]> {
   const comObjetos = new Set<PDFRef>()
-  const apagadas = new Set<PDFRef>()
+  const fica = new Map<PDFRef, number>()
   for (const { indice, objetos, fundo } of editadas) {
     const { ref } = paginas[indice]
-    if (fundo !== undefined) apagadas.add(ref)
+    if (fundo !== undefined) fica.set(ref, indice)
     else if (objetos.length > 0) comObjetos.add(ref)
   }
-  const vistas = new Set<PDFRef>()
-  const aSeparar = paginas.flatMap(({ ref, node }, indice) => {
-    if (!vistas.has(ref)) {
-      vistas.add(ref)
-      return []
-    }
-    return comObjetos.has(ref) && !apagadas.has(ref) ? [{ node, indice }] : []
+  const outras = new Map<number, number[]>()
+  paginas.forEach(({ ref }, indice) => {
+    if (!comObjetos.has(ref)) return
+    const dona = fica.get(ref) ?? indice
+    fica.set(ref, dona)
+    if (dona !== indice) outras.set(dona, [...(outras.get(dona) ?? []), indice])
   })
-  if (aSeparar.length === 0) return
+  return outras
+}
+
+function separarPaginas(
+  documento: PDFDocument,
+  indices: readonly number[],
+): void {
+  if (indices.length === 0) return
   separarPaisRepetidos(documento)
-  for (const { node, indice } of aSeparar) {
+  for (const indice of indices) {
+    const { node } = documento.getPage(indice)
     const propria = node.clone()
     for (const nome of HERDAVEIS) {
       const valor = node.getInheritableAttribute(nome)
@@ -1552,9 +1516,18 @@ async function editarNoLugar(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): Promise<void> {
-  separarPaginasRepetidas(documento, editadas)
-  const paginas = documento.getPages()
-  conferirApagadasRepetidas(paginas, editadas)
+  conferirApagadasRepetidas(documento.getPages(), editadas)
+  const outras = outrasPosicoesDoNo(documento.getPages(), editadas)
+  const comFundo = new Set(
+    editadas.flatMap(({ indice, fundo }) => (fundo ? [indice] : [])),
+  )
+  // O nó com apagada só se separa depois do JPEG dela (ver "Nó repetido" no CLAUDE.md).
+  separarPaginas(
+    documento,
+    [...outras].flatMap(([dona, delas]) => (comFundo.has(dona) ? [] : delas)),
+  )
+  // As outras posições do nó apagado mudam de ref ao se separar, e descontam a moldura dela por este.
+  const refs = documento.getPages().map(({ ref }) => ref)
   const recursos = new Recursos(documento)
   if (
     editadas.some(
@@ -1574,13 +1547,13 @@ async function editarNoLugar(
   ]
   for (const editada of apagadasPrimeiro) {
     const { indice, rotulo, objetos, fundo } = editada
-    const pagina = paginas[indice]
+    const pagina = documento.getPage(indice)
     if (fundo === undefined) {
       await desenharEGirar(
         pagina,
         editada,
         recursos,
-        molduraDaApagada.get(pagina.ref),
+        molduraDaApagada.get(refs[indice]),
       )
       continue
     }
@@ -1604,6 +1577,14 @@ async function editarNoLugar(
     apagadas.add(pagina.ref)
     molduraDaApagada.set(pagina.ref, editada.moldura)
     pagina.drawImage(imagem, { x: 0, y: 0, width: largura, height: altura })
+    pagina.setRotation(degrees(daApagada))
+    pagina.node.delete(PDFName.Annots)
+    const delas = outras.get(indice) ?? []
+    if (delas.length > 0) {
+      separarPaginas(documento, delas)
+      // O fluxo do JPEG também é das outras: o resetPosition abre um novo, só desta, para os objetos.
+      pagina.resetPosition()
+    }
     await desenharNaPagina(
       pagina,
       { caixa: { x: 0, y: 0, largura, altura }, rotacao: 0, unidade: 1 },
@@ -1612,8 +1593,6 @@ async function editarNoLugar(
       rotulo,
       true,
     )
-    pagina.setRotation(degrees(daApagada))
-    pagina.node.delete(PDFName.Annots)
   }
   if (apagadas.size > 0) {
     soltarXObjectsDasApagadas(documento, xobjetosDasApagadas, apagadas)
@@ -1792,6 +1771,7 @@ export async function montarDocumento(
     primeiro = undefined
     const indices = paginas.map(({ indice }) => indice)
     conferirQueExistem(origem, indices, arquivo)
+    // Antes de editar: as outras posições do nó apagado, separadas no editarNoLugar, também descontam.
     const refs = indices.map((indice) => origem.getPage(indice).ref)
     const molduraDaApagada = new Map<PDFRef, Giro>()
     paginas.forEach(({ posicao }, i) => {

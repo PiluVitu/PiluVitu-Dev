@@ -19,16 +19,17 @@ const nextConfig = {
         destination: 'https://botai.pilutech.com.br/privacidade',
         permanent: true,
       },
-      {
-        source: '/tools/mesclar-pdf',
-        destination: '/tools/pdf/mesclar',
-        permanent: true,
-      },
-      {
-        source: '/tools/pdf/assinar',
+      ...[
+        '/tools/pdf/assinar',
+        '/tools/pdf/mesclar',
+        '/tools/pdf/organizar',
+        '/tools/pdf/editar',
+        '/tools/mesclar-pdf',
+      ].map((source) => ({
+        source,
         destination: '/tools/pdf',
         permanent: true,
-      },
+      })),
     ]
   },
   // mermaid + langium têm deep imports de vscode-jsonrpc/languageserver-* que

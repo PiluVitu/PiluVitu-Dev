@@ -145,6 +145,31 @@ describe('o primeiro arquivo', () => {
     expect(renderizador.workersVivos).toBe(0)
     root = createRoot(container)
   })
+
+  // Era do organizar.test, que saiu no PR 6 (achado da revisão): o documento atrasado ficava aberto no
+  // pdf.js, com a cópia do arquivo, sem nunca aparecer.
+  it('PDF que termina de abrir depois de a pessoa trocar de arquivo é fechado sem aparecer', async () => {
+    motor.prenderAnalises()
+    act(() => root.render(<Sonda arquivo={pdf('lento-9p.pdf')} />))
+    await esperarAte(() => motor.analisadas.includes('lento-9p.pdf'))
+
+    act(() => root.render(<Sonda arquivo={pdf('b-2p.pdf')} />))
+    await esperarAte(() => motor.analisadas.includes('b-2p.pdf'))
+    motor.soltarAnalises()
+    await esperarAte(
+      () =>
+        renderizador.abertos.length === 2 &&
+        ultimo.atual?.arquivo.name === 'b-2p.pdf',
+    )
+    await act(async () => {})
+
+    expect(renderizador.abertos).toEqual(['lento-9p.pdf', 'b-2p.pdf'])
+    expect(renderizador.fechados).toBe(1)
+    expect(abertos.map(({ nome }) => nome)).toEqual(['b-2p.pdf'])
+    expect(ultimo.documento?.arquivos.map((a) => a?.arquivo.name)).toEqual([
+      'b-2p.pdf',
+    ])
+  })
 })
 
 describe('adicionar outro PDF', () => {

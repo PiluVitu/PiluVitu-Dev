@@ -32,7 +32,6 @@ export function AvisoDePrivacidade() {
 
 type Props = {
   aoEscolher: (arquivos: FileList) => void
-  multiplos?: boolean
   desabilitada?: boolean
   botaoRef?: Ref<HTMLButtonElement>
 }
@@ -54,7 +53,6 @@ export function useProtegerAJanela() {
 
 export function ZonaDeArquivos({
   aoEscolher,
-  multiplos = true,
   desabilitada = false,
   botaoRef,
 }: Props) {
@@ -101,7 +99,7 @@ export function ZonaDeArquivos({
         aria-hidden
       />
       <p className="font-medium">
-        {sobre ? TEXTOS.zona.soltar : TEXTOS.zona.titulo(multiplos)}
+        {sobre ? TEXTOS.zona.soltar : TEXTOS.zona.titulo}
       </p>
       <p className="text-muted-foreground text-sm">{TEXTOS.zona.ou}</p>
       <Button
@@ -112,13 +110,12 @@ export function ZonaDeArquivos({
         onClick={() => inputRef.current?.click()}
         data-testid="pdf-escolher"
       >
-        {TEXTOS.zona.escolher(multiplos)}
+        {TEXTOS.zona.escolher}
       </Button>
       <input
         ref={inputRef}
         type="file"
         accept="application/pdf,.pdf"
-        multiple={multiplos}
         hidden
         tabIndex={-1}
         onChange={(evento) => {

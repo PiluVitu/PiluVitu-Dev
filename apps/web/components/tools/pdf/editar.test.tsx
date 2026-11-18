@@ -1,11 +1,12 @@
-import { act, useEffect } from 'react'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import {
   TETO_DAS_IMAGENS_EM_BYTES,
   TETO_DE_BYTES_COM_MINIATURAS,
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
-import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { ZOOMS } from './area-da-pagina'
 import { CONSULTA_DA_BANCADA_LARGA } from './bancada-larga'
 import { EditarPdf } from './editar'
@@ -93,7 +94,6 @@ class MedidorFalso {
 
 let container: HTMLDivElement
 let root: Root
-let documentoAtual: File | null = null
 
 // A Bancada larga (a lista na coluna) ou estreita (a lista na folha) vem do matchMedia, que o teste escolhe.
 let larga = true
@@ -170,14 +170,6 @@ afterEach(() => {
   mockZona.semProtecao = false
 })
 
-function Espiao() {
-  const { arquivo } = useDocumentoPdf()
-  useEffect(() => {
-    documentoAtual = arquivo
-  })
-  return null
-}
-
 function montar({
   renderizador = criarRenderizadorFalso(),
   motor = criarMotorFalso(),
@@ -185,10 +177,11 @@ function montar({
 } = {}) {
   act(() =>
     root.render(
-      <DocumentoPdfProvider arquivoInicial={arquivoInicial}>
-        <EditarPdf renderizador={renderizador} motor={motor} />
-        <Espiao />
-      </DocumentoPdfProvider>,
+      <EditarPdf
+        renderizador={renderizador}
+        motor={motor}
+        arquivoInicial={arquivoInicial}
+      />,
     ),
   )
   return { renderizador, motor }
@@ -299,7 +292,7 @@ describe('abrir o PDF', () => {
     expect(q('editar-pdf-folha')).toBeNull()
   })
 
-  it('chegando de outro modo: o pdf-lib lê, o pdf.js abre e a primeira página aparece grande, na largura da área', async () => {
+  it('com o PDF já escolhido: o pdf-lib lê, o pdf.js abre e a primeira página aparece grande, na largura da área', async () => {
     const { renderizador, motor } = await abrir('contrato-3p.pdf')
 
     expect(motor.analisadas).toEqual(['contrato-3p.pdf'])
@@ -319,13 +312,15 @@ describe('abrir o PDF', () => {
     expect(anuncio()).toBe('contrato-3p.pdf · 3 páginas')
   })
 
-  it('escolher um PDF guarda no editor (para os outros modos) e abre', async () => {
+  it('escolher um PDF abre ele no editor', async () => {
     const { renderizador } = montar()
 
     await escolher(pdf('nota-2p.pdf'))
     await esperarAte(() => canvasNaFolha() !== null)
 
-    expect(documentoAtual?.name).toBe('nota-2p.pdf')
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'nota-2p.pdf · 2 páginas',
+    )
     expect(renderizador.abertos).toEqual(['nota-2p.pdf'])
     expect(miniaturas()).toHaveLength(2)
   })
@@ -411,6 +406,28 @@ describe('as miniaturas', () => {
       { indice: 1, larguraCss: 64 },
     ])
     expect(todos('editar-pdf-miniatura-imagem')).toHaveLength(2)
+  })
+
+  // Era do organizar.test, que saiu no PR 6 (achado da revisão): a falha de uma não para a fila das outras.
+  it('miniatura que falha mostra "Sem prévia" e a fila segue', async () => {
+    await abrir('livro-3p.pdf', {
+      renderizador: criarRenderizadorFalso({ miniaturasQueFalham: [0] }),
+    })
+    await esperarAte(() => todos('editar-pdf-miniatura-imagem').length === 2)
+
+    const [primeiro, segundo] = todos('editar-pdf-item')
+    expect(primeiro.textContent).toContain('Sem prévia')
+    expect(
+      segundo.querySelector('[data-testid="editar-pdf-miniatura-imagem"]'),
+    ).not.toBeNull()
+    await esperarAte(() => todos('editar-pdf-cartao-miniatura').length === 2)
+    const [primeiroCartao, segundoCartao] = todos('editar-pdf-pagina')
+    expect(primeiroCartao.textContent).toContain('Sem prévia')
+    expect(
+      segundoCartao.querySelector(
+        '[data-testid="editar-pdf-cartao-miniatura"]',
+      ),
+    ).not.toBeNull()
   })
 
   it('a página aberta é a atual da lista (aria-current), com o nome "Página N"', async () => {
@@ -1956,7 +1973,7 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
       colunaDePaginas.querySelector(
         '[role="toolbar"][aria-label="Ações nas páginas selecionadas"]',
       ),
-    ).not.toBeNull()
+    ).toBe(q('editar-pdf-barra'))
     expect(q('editar-pdf-edicao')!.contains(quadro())).toBe(true)
     expect(
       q('editar-pdf-coluna-do-objeto')!.contains(q('editar-pdf-painel-vazio')),
@@ -2375,6 +2392,37 @@ describe('a Bancada no celular: a folha Páginas', () => {
 
     expect(folha()).toBeNull()
     expect(document.activeElement).toBe(botao)
+  })
+
+  // Era do organizar.test, que saiu no PR 6 (achado da revisão). O unobserve não chama o callback do
+  // IntersectionObserver: sem tirar da fila o cartão que desmontou, a folha fechada seguiria desenhando.
+  // (A página apagada não serve de prova no editor: o desenhar dela já falha por estar fora da lista.)
+  it('fechar a folha tira da fila as miniaturas que ainda não foram desenhadas', async () => {
+    larga = false
+    ObservadorFalso.automatico = false
+    const renderizador = criarRenderizadorFalso()
+    await abrirParaEditar('livro-6p.pdf', { renderizador })
+    renderizador.prenderMiniaturas()
+    await abrirAFolha()
+    const observador = ObservadorFalso.todos.find((o) =>
+      [...o.observados].some((el) => folha()!.contains(el)),
+    )!
+    const naTela = [...observador.observados].filter((el) =>
+      folha()!.contains(el),
+    )
+    expect(naTela).toHaveLength(6)
+    await act(async () => {
+      observador.avisar(naTela.slice(0, 3))
+    })
+    expect(renderizador.miniaturas.map(({ indice }) => indice)).toEqual([0])
+
+    await teclar(document.activeElement!, 'Escape')
+    expect(folha()).toBeNull()
+    renderizador.soltarMiniaturas()
+    await esperar()
+    await esperar()
+
+    expect(renderizador.miniaturas.map(({ indice }) => indice)).toEqual([0])
   })
 
   it('girar, marcar e apagar pela folha deixam a folha aberta, com o foco dentro dela', async () => {
@@ -3440,6 +3488,36 @@ describe('a página em branco', () => {
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'a1p0', 'a1p1'])
   })
 
+  // Menor 2 do Crivo no #129: o inverso do caso acima. O PDF que entrava enquanto o pdf.js dizia o tamanho
+  // da branca mudava a seleção, e a branca caía depois das páginas dele.
+  it('enquanto o pdf.js diz o tamanho da branca, o PDF espera: o Adicionar PDF não abre a escolha e nada entra', async () => {
+    const { motor, renderizador } = await abrirParaEditar('a-3p.pdf')
+    const escolher = jest
+      .spyOn(q('editar-pdf-input-pdf') as HTMLInputElement, 'click')
+      .mockImplementation(() => {})
+    await marcarPagina(2)
+    renderizador.prenderTamanhos()
+
+    await criarBranca()
+    // Da revisão do PR 6: sem o aria-disabled, o clique ignorado não dava pista nenhuma ao leitor de tela.
+    expect(porNome('Adicionar PDF').getAttribute('aria-disabled')).toBe('true')
+    expect(porNome('Página em branco').getAttribute('aria-disabled')).toBe(
+      'true',
+    )
+    await clicar(porNome('Adicionar PDF'))
+    expect(escolher).not.toHaveBeenCalled()
+    await adicionarPdf(pdf('b-2p.pdf'))
+    expect(motor.analisadas).toEqual(['a-3p.pdf'])
+
+    renderizador.soltarTamanhos()
+    await esperarAte(() => idsDaLista().includes('b0'))
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'b0', 'a0p2'])
+    expect(porNome('Adicionar PDF').getAttribute('aria-disabled')).toBeNull()
+    expect(porNome('Página em branco').getAttribute('aria-disabled')).toBeNull()
+    await clicar(porNome('Adicionar PDF'))
+    expect(escolher).toHaveBeenCalledTimes(1)
+  })
+
   // Da revisão: o tamanho que chegava durante a montagem punha a branca na tela, e o pronto oferecia um PDF
   // sem ela, como o PDF adicionado antes do PR 4.
   it('enquanto o pdf.js diz o tamanho da marcada, o Gerar e o Extrair esperam, com o motivo; depois, o Gerar leva a branca', async () => {
@@ -3577,4 +3655,71 @@ describe('a página em branco', () => {
     expect(document.activeElement).toBe(q('editar-pdf-area'))
     expect(posicao()).toBe('Página 4 de 4')
   })
+})
+
+// Guardas transversais do editor (antes no documento-pdf.test e no mesclar.test, que saíram no PR 6).
+describe('nada sai do aparelho', () => {
+  it('abrir, adicionar, criar a branca, escrever e gerar não gravam nada no armazenamento do navegador', async () => {
+    const gravar = jest.spyOn(Storage.prototype, 'setItem')
+    const { motor } = await abrirParaEditar('a-3p.pdf')
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    await criarBranca()
+    await inserirNoCentro('Texto')
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(motor.montadas).toHaveLength(1)
+    expect(gravar).not.toHaveBeenCalled()
+    gravar.mockRestore()
+  })
+
+  it('sair da página encerra o motor', () => {
+    const { motor } = montar()
+
+    act(() => root.unmount())
+    root = createRoot(container)
+
+    expect(motor.encerrado).toBe(true)
+  })
+
+  it('as URLs das miniaturas são revogadas ao trocar de documento e ao sair', async () => {
+    const criadas = () =>
+      (URL.createObjectURL as jest.Mock).mock.results.map(
+        ({ value }) => value as string,
+      )
+    const revogadas = () =>
+      (URL.revokeObjectURL as jest.Mock).mock.calls.map(([url]) => url)
+    await abrir('a-2p.pdf')
+    await esperar(40)
+    const doPrimeiro = criadas()
+    expect(doPrimeiro.length).toBeGreaterThan(0)
+
+    await escolher(pdf('b-1p.pdf'))
+    await esperar(40)
+    expect(revogadas()).toEqual(expect.arrayContaining(doPrimeiro))
+    const doSegundo = criadas().filter((url) => !doPrimeiro.includes(url))
+    expect(doSegundo.length).toBeGreaterThan(0)
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    expect(revogadas()).toEqual(expect.arrayContaining(doSegundo))
+  })
+})
+
+// O pdf-lib só pode chegar pelo Worker: um import de '@piluvitu/tools/pdf' na UI o põe no bundle da página.
+it('só o Worker importa @piluvitu/tools/pdf', () => {
+  const pasta = __dirname
+  const fontes = readdirSync(pasta).filter(
+    (f) => /\.tsx?$/.test(f) && !/\.test\.|\.stories\.|\.worker\./.test(f),
+  )
+  expect(fontes.length).toBeGreaterThan(4)
+  for (const fonte of fontes) {
+    const codigo = readFileSync(join(pasta, fonte), 'utf8')
+    expect([fonte, /from '@piluvitu\/tools\/pdf'/.test(codigo)]).toEqual([
+      fonte,
+      false,
+    ])
+  }
 })

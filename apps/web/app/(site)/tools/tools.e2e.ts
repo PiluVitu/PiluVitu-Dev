@@ -9,6 +9,7 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  type PDFPage,
   PDFRawStream,
   PDFString,
   StandardFonts,
@@ -27,7 +28,6 @@ import {
   setTextMatrix,
   showText,
 } from 'pdf-lib'
-import { contarPaginas } from '@piluvitu/tools/pdf'
 
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -407,569 +407,177 @@ function medirContrasteDoTexto(seletor: string) {
   })
 }
 
-test.describe('Mesclar PDF', () => {
-  test('mescla na ordem escolhida pelo teclado e baixa o PDF com as páginas certas', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/mesclar')
-    await expect(
-      page.getByText('Seus arquivos não saem do aparelho'),
-    ).toBeVisible()
+// ---- Editor único, PR 6: a rota única ----
 
-    await escolherPdfs(page, [
-      await pdfDeTeste('a.pdf', [100, 101]),
-      await pdfDeTeste('b.pdf', [200, 201, 202]),
-    ])
-    await expect(page.getByTestId('mesclar-pdf-resumo')).toHaveText(
-      /^2 arquivos · 5 páginas · /,
-    )
+// P5 (decidida pelo Paulo em 2026-11-18): quem tinha o link de um modo antigo, ou do Assinar, cai no editor.
+const ROTAS_ANTIGAS = [
+  '/tools/pdf/assinar',
+  '/tools/pdf/mesclar',
+  '/tools/pdf/organizar',
+  '/tools/pdf/editar',
+  '/tools/mesclar-pdf',
+]
 
-    await page.getByRole('button', { name: 'Subir b.pdf' }).focus()
-    await page.keyboard.press('Enter')
-    await expect(page.getByTestId('mesclar-pdf-nome-do-item')).toHaveText([
-      'b.pdf',
-      'a.pdf',
-    ])
-    await expect(
-      page.getByRole('button', { name: 'Descer b.pdf' }),
-    ).toBeFocused()
+// Uma mensagem do pdf.js que a minificação não toca: só o chunk dele a tem.
+const MARCA_DO_PDFJS = 'Setting up fake worker failed'
 
-    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
-    const baixar = page.getByRole('link', { name: 'Baixar mesclado.pdf' })
-    await expect(baixar).toBeFocused({ timeout: 30_000 })
-
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.keyboard.press('Enter'),
-    ])
-    expect(download.suggestedFilename()).toBe('mesclado.pdf')
-    const bytes = new Uint8Array(readFileSync((await download.path())!))
-    expect(await contarPaginas(bytes)).toBe(5)
-    const final = await PDFDocument.load(bytes)
-    expect(final.getPages().map((p) => p.getWidth())).toEqual([
-      200, 201, 202, 100, 101,
-    ])
-  })
-
-  test('nada sai do aparelho: nenhum pedido sai da origem e nenhum corpo leva o PDF', async ({
-    page,
-  }) => {
-    const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/mesclar')
-    const origem = new URL(page.url()).origin
-
-    const arquivos = [
-      await pdfDeTeste('a.pdf', [100]),
-      await pdfDeTeste('b.pdf', [200]),
-    ]
-    await escolherPdfs(page, arquivos)
-    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
-    await expect(
-      page.getByRole('link', { name: 'Baixar mesclado.pdf' }),
-    ).toBeVisible({ timeout: 30_000 })
-
-    conferirQueNadaSaiu(
-      pedidos,
-      origem,
-      arquivos.map((arquivo) => arquivo.buffer),
-    )
-  })
-
-  test('o pdf-lib só chega com o Worker, depois que a pessoa escolhe um arquivo', async ({
-    page,
-  }) => {
-    const workers: string[] = []
-    page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/pdf/mesclar')
-    await expect(page.getByTestId('pdf-zona')).toBeVisible()
-    expect(workers).toEqual([])
-
-    await escolherPdfs(page, [await pdfDeTeste('a.pdf', [100])])
-    await expect(page.getByTestId('mesclar-pdf-item')).toContainText('1 página')
-    expect(workers).toHaveLength(1)
-  })
-
-  test('PDF protegido e arquivo que não é PDF ficam com o erro escrito e travam o Mesclar', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/mesclar')
-    await escolherPdfs(page, [
-      await pdfDeTeste('ok.pdf', [100]),
-      await pdfProtegido('com-senha.pdf'),
-      { name: 'notas.txt', mimeType: 'text/plain', buffer: Buffer.from('oi') },
-    ])
-
-    await expect(page.getByTestId('mesclar-pdf-erro-do-item')).toHaveText([
-      /protegido por senha/,
-      /Não é um PDF/,
-    ])
-    await expect(
-      page.getByRole('button', { name: 'Mesclar PDFs' }),
-    ).toBeDisabled()
-    await expect(
-      page.getByText('Remova os arquivos com erro para mesclar.'),
-    ).toBeVisible()
-  })
-
-  test('a 320 px, nome comprido não faz a página rolar para o lado e os botões têm 44 px', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/mesclar')
-    await escolherPdfs(page, [
-      await pdfDeTeste(
-        'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
-        [100],
-      ),
-      await pdfDeTeste('b.pdf', [100]),
-    ])
-    await expect(page.getByTestId('mesclar-pdf-item').first()).toContainText(
-      '1 página',
-    )
-
-    const largura = await page.evaluate(
-      () => document.documentElement.scrollWidth,
-    )
-    expect(largura).toBeLessThanOrEqual(320)
-    for (const nome of ['Subir', 'Descer', 'Remover']) {
-      const caixa = await page
-        .getByRole('button', { name: `${nome} b.pdf` })
-        .boundingBox()
-      expect(caixa!.width).toBeGreaterThanOrEqual(44)
-      expect(caixa!.height).toBeGreaterThanOrEqual(44)
-    }
-  })
-
-  for (const tema of ['light', 'dark'] as const)
-    test(`todo texto da ferramenta passa de 4,5:1 no tema ${tema}, erros inclusos`, async ({
+test.describe('Editor de PDF: a rota única', () => {
+  for (const rota of ROTAS_ANTIGAS)
+    test(`${rota} responde 308 para /tools/pdf, e seguindo abre o editor num salto só`, async ({
       page,
     }) => {
-      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
-      await page.goto('/tools/pdf/mesclar')
-      await escolherPdfs(page, [
-        await pdfDeTeste('ok.pdf', [100]),
-        await pdfProtegido('com-senha.pdf'),
-      ])
-      await expect(page.getByTestId('mesclar-pdf-erro-do-item')).toBeVisible()
+      const direto = await page.request.get(rota, { maxRedirects: 0 })
+      expect(direto.status()).toBe(308)
+      expect(direto.headers()['location']).toBe('/tools/pdf')
 
-      const medidas = await page.evaluate(
-        medirContrasteDoTexto,
-        '[data-testid="mesclar-pdf"]',
-      )
-      expect(medidas.length).toBeGreaterThan(8)
-      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+      const resposta = await page.goto(rota)
+      expect(resposta!.status()).toBe(200)
+      await expect(page).toHaveURL('/tools/pdf')
+      const saltos: string[] = []
+      for (
+        let pedido = resposta!.request().redirectedFrom();
+        pedido;
+        pedido = pedido.redirectedFrom()
+      ) {
+        saltos.push(new URL(pedido.url()).pathname)
+      }
+      expect(saltos).toEqual([rota])
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
+      ).toBeVisible()
+      await expect(page.getByTestId('pdf-zona')).toBeVisible()
     })
-})
 
-test.describe('Editor de PDF', () => {
-  test('/tools/mesclar-pdf responde 308 para /tools/pdf/mesclar', async ({
+  test('/tools tem um cartão só para PDF, o do Editor de PDF, e ele abre o editor em /tools/pdf', async ({
     page,
   }) => {
-    const resposta = await page.request.get('/tools/mesclar-pdf', {
-      maxRedirects: 0,
-    })
-    expect(resposta.status()).toBe(308)
-    expect(resposta.headers()['location']).toBe('/tools/pdf/mesclar')
+    await page.goto('/tools')
+    const cartoes = page.locator('a[href^="/tools/pdf"]')
+    await expect(cartoes).toHaveCount(1)
+    await expect(cartoes).toHaveAttribute('href', '/tools/pdf')
+    await expect(cartoes).toContainText('Editor de PDF')
+    await expect(page.locator('a[href="/tools/mesclar-pdf"]')).toHaveCount(0)
+
+    await cartoes.click()
+    await expect(page).toHaveURL('/tools/pdf')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
   })
 
-  // O Assinar saiu do site a pedido do dono: quem tinha o link cai no hub.
-  test('/tools/pdf/assinar responde 308 para /tools/pdf', async ({ page }) => {
-    const resposta = await page.request.get('/tools/pdf/assinar', {
-      maxRedirects: 0,
-    })
-    expect(resposta.status()).toBe(308)
-    expect(resposta.headers()['location']).toBe('/tools/pdf')
-  })
-
-  test('/tools/pdf: aviso de privacidade e um cartão por modo, de 44 px, que o teclado alcança', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf')
-    await expect(
-      page.getByText('Seus arquivos não saem do aparelho'),
-    ).toBeVisible()
-    const modos = page.getByTestId('pdf-modo')
-    await expect(modos).toHaveCount(3)
-    await expect(modos.nth(0)).toHaveAttribute('href', '/tools/pdf/mesclar')
-    await expect(modos.nth(1)).toHaveAttribute('href', '/tools/pdf/organizar')
-    await expect(modos.nth(2)).toHaveAttribute('href', '/tools/pdf/editar')
-    await expect(page.locator('a[href="/tools/pdf/assinar"]')).toHaveCount(0)
-    for (const modo of await modos.all()) {
-      const caixa = await modo.boundingBox()
-      expect(caixa!.height).toBeGreaterThanOrEqual(44)
-    }
-
-    await modos.nth(1).focus()
-    await expect(modos.nth(1)).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(page).toHaveURL('/tools/pdf/organizar')
-  })
-
-  test('do mesclar para o organizar: o PDF passa pela memória, com as páginas, e o pdf.js só nasce no organizar', async ({
+  test('/tools/pdf sem arquivo: o editor com o aviso de privacidade, sem nenhum Worker e sem o pdf.js, que só chega com o PDF', async ({
     page,
   }) => {
     const workers: string[] = []
     page.on('worker', (w) => workers.push(w.url()))
-    const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/mesclar')
-    const origem = new URL(page.url()).origin
+    const pedidosAoPdfjsDaOrigem: string[] = []
+    const scripts: { url: string; corpo: Promise<string> }[] = []
+    page.on('request', (pedido) => {
+      if (new URL(pedido.url()).pathname.startsWith('/pdfjs/')) {
+        pedidosAoPdfjsDaOrigem.push(pedido.url())
+      }
+    })
+    page.on('response', (resposta) => {
+      if (resposta.request().resourceType() === 'script') {
+        scripts.push({
+          url: resposta.url(),
+          corpo: resposta.text().catch(() => ''),
+        })
+      }
+    })
+    const scriptsComOPdfjs = async () =>
+      (
+        await Promise.all(
+          scripts.map(async ({ url, corpo }) =>
+            (await corpo).includes(MARCA_DO_PDFJS) ? [url] : [],
+          ),
+        )
+      ).flat()
 
-    const arquivos = [
-      await pdfDeTeste('a.pdf', [100, 101]),
-      await pdfDeTeste('b.pdf', [200]),
-    ]
-    await escolherPdfs(page, arquivos)
-    await page.getByRole('button', { name: 'Mesclar PDFs' }).click()
+    await page.goto('/tools/pdf')
     await expect(
-      page.getByRole('link', { name: 'Baixar mesclado.pdf' }),
-    ).toBeVisible({ timeout: 30_000 })
-    expect(workers).toHaveLength(1)
+      page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Seus arquivos não saem do aparelho'),
+    ).toBeVisible()
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(workers).toEqual([])
+    expect(await scriptsComOPdfjs()).toEqual([])
+    expect(pedidosAoPdfjsDaOrigem).toEqual([])
 
-    await page
-      .getByRole('button', { name: 'Organizar as páginas deste PDF' })
-      .click()
-    await expect(page).toHaveURL('/tools/pdf/organizar')
-    await expect(page.getByTestId('organizar-pdf-documento')).toHaveText(
-      'mesclado.pdf · 3 páginas',
-      { timeout: 30_000 },
-    )
-    await expect(page.getByTestId('organizar-pdf-rotulo')).toHaveText([
-      'Página 1',
-      'Página 2',
-      'Página 3',
-    ])
-    // O do mesclar saiu com a página; o organizar lê pelo pdf-lib (um Worker) e desenha pelo pdf.js (outro).
-    expect(workers).toHaveLength(3)
-
-    conferirQueNadaSaiu(
-      pedidos,
-      origem,
-      arquivos.map((arquivo) => arquivo.buffer),
-    )
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200]))
+    expect(workers).toHaveLength(2)
+    // A sonda acha o pdf.js quando ele chega: o vazio de antes vale.
+    expect(await scriptsComOPdfjs()).not.toEqual([])
   })
 
-  test('organizar: abre um PDF escolhido ali mesmo, com o pdf.js de verdade', async ({
+  test('PDF protegido e arquivo que não é PDF: o erro escrito num alerta, nenhuma página aberta, e o pdf.js nem nasce', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/organizar')
-    await escolherPdfs(page, [await pdfDeTeste('contrato.pdf', [100, 200])])
-    await expect(page.getByTestId('organizar-pdf-documento')).toHaveText(
-      'contrato.pdf · 2 páginas',
-      { timeout: 30_000 },
-    )
-  })
-})
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await page.goto('/tools/pdf')
+    const erro = page.getByTestId('editar-pdf-erro')
 
-test.describe('Editor de PDF: o hub no celular e nos dois temas', () => {
-  test('a 320 px, o hub não rola para o lado', async ({ page }) => {
+    await escolherPdfs(page, [await pdfProtegido('com-senha.pdf')])
+    await expect(erro).toHaveText(
+      /^Não deu para abrir com-senha\.pdf\. Está protegido por senha/,
+    )
+    await expect(erro).toHaveAttribute('role', 'alert')
+    await expect(page.getByTestId('editar-pdf-canvas')).toHaveCount(0)
+    expect(workers).toHaveLength(1)
+
+    await escolherPdfs(page, [
+      { name: 'notas.txt', mimeType: 'text/plain', buffer: Buffer.from('oi') },
+    ])
+    await expect(erro).toHaveText(
+      'Não deu para abrir notas.txt. Não é um PDF. Escolha um arquivo .pdf.',
+    )
+    await expect(page.getByTestId('editar-pdf-canvas')).toHaveCount(0)
+    expect(workers).toHaveLength(1)
+  })
+
+  test('a 320 px, sem arquivo e com o erro de um nome comprido, nada rola para o lado e o Escolher tem 44 px', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 320, height: 720 })
     await page.goto('/tools/pdf')
-    await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
-    const largura = await page.evaluate(
-      () => document.documentElement.scrollWidth,
-    )
-    expect(largura).toBeLessThanOrEqual(320)
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    const larguraDaPagina = () =>
+      page.evaluate(() => document.documentElement.scrollWidth)
+    expect(await larguraDaPagina()).toBeLessThanOrEqual(320)
+
+    await escolherPdfs(page, [
+      await pdfProtegido(
+        'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
+      ),
+    ])
+    await expect(page.getByTestId('editar-pdf-erro')).toBeVisible()
+    expect(await larguraDaPagina()).toBeLessThanOrEqual(320)
+    const caixa = (await page.getByTestId('pdf-escolher').boundingBox())!
+    expect(caixa.width).toBeGreaterThanOrEqual(44)
+    expect(caixa.height).toBeGreaterThanOrEqual(44)
   })
 
   for (const tema of ['light', 'dark'] as const)
-    test(`todo texto do hub passa de 4,5:1 no tema ${tema}`, async ({
+    test(`todo texto de /tools/pdf passa de 4,5:1 no tema ${tema}, sem arquivo e com o erro de abertura`, async ({
       page,
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
       await page.goto('/tools/pdf')
-      await expect(page.getByTestId('pdf-modo')).toHaveCount(3)
+      await expect(page.getByTestId('pdf-zona')).toBeVisible()
 
-      const medidas = await page.evaluate(medirContrasteDoTexto, 'main')
-      expect(medidas.length).toBeGreaterThan(6)
-      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
-    })
-})
+      const semArquivo = await page.evaluate(medirContrasteDoTexto, 'main')
+      expect(semArquivo.length).toBeGreaterThan(6)
+      expect(semArquivo.filter((m) => m.razao < 4.5)).toEqual([])
 
-test.describe('Organizar páginas de PDF', () => {
-  async function abrirNoOrganizar(
-    page: Page,
-    arquivo: { name: string; mimeType: string; buffer: Buffer },
-    paginas: number,
-  ) {
-    await escolherPdfs(page, [arquivo])
-    await expect(page.getByTestId('organizar-pdf-documento')).toHaveText(
-      `${arquivo.name} · ${paginas} páginas`,
-      { timeout: 30_000 },
-    )
-  }
-
-  test('gira a página 2, apaga a 3, leva a 1 para o fim pelo teclado e baixa o PDF na ordem e com o /Rotate', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/organizar')
-    await abrirNoOrganizar(
-      page,
-      await pdfDeTeste('contrato.pdf', [100, 200, 300, 400]),
-      4,
-    )
-
-    await page
-      .getByRole('button', { name: 'Girar a página 2 à direita' })
-      .click()
-    await expect(page.getByTestId('organizar-pdf-anuncio')).toHaveText(
-      'Página 2 girada para 90°.',
-    )
-    await page.getByRole('button', { name: 'Apagar a página 3' }).click()
-    await expect(
-      page.getByRole('checkbox', { name: 'Selecionar página 4' }),
-    ).toBeFocused()
-
-    await page.getByRole('checkbox', { name: 'Selecionar página 1' }).focus()
-    await page.keyboard.press('Space')
-    const depois = page.getByRole('button', { name: 'Mover para depois' })
-    await depois.focus()
-    await page.keyboard.press('Enter')
-    await expect(depois).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(page.getByTestId('organizar-pdf-rotulo')).toHaveText([
-      'Página 2',
-      'Página 4',
-      'Página 1',
-    ])
-    await expect(
-      page.getByRole('button', { name: 'Mover para antes' }),
-    ).toBeFocused()
-
-    // A barra é um ponto só no Tab, e o Gerar vem logo depois dela, antes das páginas.
-    await page.keyboard.press('Tab')
-    await expect(
-      page.getByRole('button', { name: 'Gerar PDF organizado' }),
-    ).toBeFocused()
-    await page.keyboard.press('Enter')
-    const baixar = page.getByRole('link', {
-      name: 'Baixar contrato-organizado.pdf',
-    })
-    await expect(baixar).toBeFocused({ timeout: 30_000 })
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.keyboard.press('Enter'),
-    ])
-    expect(download.suggestedFilename()).toBe('contrato-organizado.pdf')
-    const final = await lerPdfBaixado(download)
-    expect(final.getPages().map((p) => p.getWidth())).toEqual([200, 400, 100])
-    expect(final.getPages().map((p) => p.getRotation().angle)).toEqual([
-      90, 0, 0,
-    ])
-  })
-
-  test('Desfazer pelo Ctrl+Z volta a página apagada', async ({ page }) => {
-    await page.goto('/tools/pdf/organizar')
-    await abrirNoOrganizar(page, await pdfDeTeste('a.pdf', [100, 200, 300]), 3)
-
-    await page.getByRole('button', { name: 'Apagar a página 2' }).click()
-    await expect(page.getByTestId('organizar-pdf-rotulo')).toHaveCount(2)
-    await page.keyboard.press('ControlOrMeta+z')
-
-    await expect(page.getByTestId('organizar-pdf-rotulo')).toHaveText([
-      'Página 1',
-      'Página 2',
-      'Página 3',
-    ])
-    await expect(page.getByTestId('organizar-pdf-anuncio')).toHaveText(
-      'Desfeito.',
-    )
-  })
-
-  test('extrai as páginas selecionadas num PDF novo, com o nome -paginas', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/organizar')
-    await abrirNoOrganizar(
-      page,
-      await pdfDeTeste('relatorio.pdf', [100, 200, 300]),
-      3,
-    )
-
-    await page.getByRole('checkbox', { name: 'Selecionar página 3' }).check()
-    await page.getByRole('checkbox', { name: 'Selecionar página 1' }).check()
-    await page.getByRole('button', { name: 'Girar à esquerda' }).click()
-    await page.getByRole('button', { name: 'Extrair as selecionadas' }).click()
-
-    const baixar = page.getByRole('link', {
-      name: 'Baixar relatorio-paginas.pdf',
-    })
-    await expect(baixar).toBeFocused({ timeout: 30_000 })
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      baixar.click(),
-    ])
-    expect(download.suggestedFilename()).toBe('relatorio-paginas.pdf')
-    const final = await lerPdfBaixado(download)
-    expect(final.getPages().map((p) => p.getWidth())).toEqual([100, 300])
-    expect(final.getPages().map((p) => p.getRotation().angle)).toEqual([
-      270, 270,
-    ])
-    await expect(page.getByTestId('organizar-pdf-rotulo')).toHaveCount(3)
-  })
-
-  test('as miniaturas aparecem, desenhadas pelo pdf.js de verdade', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/organizar')
-    await abrirNoOrganizar(page, await pdfDeTeste('a.pdf', [100, 200]), 2)
-
-    const miniaturas = page.getByTestId('organizar-pdf-miniatura')
-    await expect(miniaturas).toHaveCount(2, { timeout: 30_000 })
-    for (const miniatura of await miniaturas.all()) {
-      await expect
-        .poll(() =>
-          miniatura.evaluate(
-            (img: HTMLImageElement) => img.complete && img.naturalWidth,
-          ),
-        )
-        .toBeGreaterThan(0)
-      expect(await miniatura.getAttribute('alt')).toBe('')
-    }
-
-    await page
-      .getByRole('button', { name: 'Girar a página 1 à direita' })
-      .click()
-    await expect(miniaturas.first()).toHaveAttribute('style', /rotate\(90deg\)/)
-  })
-
-  // O pdf.js põe em document.fonts uma FontFace para cada fonte que desenha, e só as tira quando o
-  // Worker dele responde ao Terminate. Encerrado antes disso, as fontes ficavam na aba até recarregar.
-  test('trocar de PDF tira da página as fontes que o pdf.js carregou para o anterior', async ({
-    page,
-  }) => {
-    await page.goto('/tools/pdf/organizar')
-    await expect(page.getByTestId('pdf-zona')).toBeVisible()
-    const fontes = () => page.evaluate(() => document.fonts.size)
-    const antes = await fontes()
-
-    await abrirNoOrganizar(page, await pdfComTexto('contrato.pdf'), 2)
-    await expect(page.getByTestId('organizar-pdf-miniatura')).toHaveCount(2, {
-      timeout: 30_000,
-    })
-    await expect.poll(fontes).toBeGreaterThan(antes)
-
-    await abrirNoOrganizar(
-      page,
-      await pdfDeTeste('branco.pdf', [100, 200, 300]),
-      3,
-    )
-    await expect(page.getByTestId('organizar-pdf-miniatura')).toHaveCount(3, {
-      timeout: 30_000,
-    })
-    await expect.poll(fontes).toBe(antes)
-  })
-
-  test('nenhum Worker antes de escolher o PDF; depois, o do pdf-lib e o do pdf.js', async ({
-    page,
-  }) => {
-    const workers: string[] = []
-    page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/pdf/organizar')
-    await expect(page.getByTestId('pdf-zona')).toBeVisible()
-    expect(workers).toEqual([])
-
-    await abrirNoOrganizar(page, await pdfDeTeste('a.pdf', [100, 200]), 2)
-    expect(workers).toHaveLength(2)
-  })
-
-  test('PDF protegido: a mesma mensagem do mesclar, e o pdf.js nem nasce', async ({
-    page,
-  }) => {
-    const workers: string[] = []
-    page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/pdf/organizar')
-    await escolherPdfs(page, [await pdfProtegido('com-senha.pdf')])
-
-    await expect(page.getByTestId('organizar-pdf-erro')).toHaveText(
-      /^Não deu para abrir com-senha\.pdf\. Está protegido por senha/,
-    )
-    expect(workers).toHaveLength(1)
-  })
-
-  test('nada sai do aparelho: abrir, mexer, gerar e extrair sem pedido de fora nem corpo com o PDF', async ({
-    page,
-  }) => {
-    const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/organizar')
-    const origem = new URL(page.url()).origin
-
-    const arquivo = await pdfDeTeste('a.pdf', [100, 200, 300])
-    await abrirNoOrganizar(page, arquivo, 3)
-    await expect(page.getByTestId('organizar-pdf-miniatura')).toHaveCount(3, {
-      timeout: 30_000,
-    })
-    await page.getByRole('button', { name: 'Apagar a página 2' }).click()
-    await page.getByRole('button', { name: 'Gerar PDF organizado' }).click()
-    await expect(
-      page.getByRole('link', { name: 'Baixar a-organizado.pdf' }),
-    ).toBeVisible({ timeout: 30_000 })
-    await page.getByRole('checkbox', { name: 'Selecionar página 3' }).check()
-    await page.getByRole('button', { name: 'Extrair as selecionadas' }).click()
-    await expect(
-      page.getByRole('link', { name: 'Baixar a-paginas.pdf' }),
-    ).toBeVisible({ timeout: 30_000 })
-
-    conferirQueNadaSaiu(pedidos, origem, [arquivo.buffer])
-  })
-
-  test('a 320 px, nada rola para o lado e os controles têm 44 px', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/organizar')
-    await abrirNoOrganizar(
-      page,
-      await pdfDeTeste(
-        'relatorio-trimestral-consolidado-versao-final-revisada-2026.pdf',
-        [100, 200, 300],
-      ),
-      3,
-    )
-    await page.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
-
-    const largura = await page.evaluate(
-      () => document.documentElement.scrollWidth,
-    )
-    expect(largura).toBeLessThanOrEqual(320)
-    const alvos = [
-      page.getByTestId('organizar-pdf-selecao').first(),
-      page.getByRole('button', { name: 'Girar a página 1 à direita' }),
-      page.getByRole('button', { name: 'Apagar a página 1' }),
-      ...(await page
-        .getByTestId('organizar-pdf-barra')
-        .getByRole('button')
-        .all()),
-      page.getByRole('button', { name: 'Gerar PDF organizado' }),
-    ]
-    for (const alvo of alvos) {
-      const caixa = await alvo.boundingBox()
-      expect(caixa!.width).toBeGreaterThanOrEqual(44)
-      expect(caixa!.height).toBeGreaterThanOrEqual(44)
-    }
-  })
-
-  for (const tema of ['light', 'dark'] as const)
-    test(`todo texto do organizar passa de 4,5:1 no tema ${tema}`, async ({
-      page,
-    }) => {
-      await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
-      await page.goto('/tools/pdf/organizar')
-      await abrirNoOrganizar(page, await pdfDeTeste('a.pdf', [100, 200]), 2)
-      await page
-        .getByRole('button', { name: 'Girar a página 1 à direita' })
-        .click()
-      await page.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
-      await page.getByRole('button', { name: 'Gerar PDF organizado' }).click()
-      await expect(page.getByTestId('organizar-pdf-baixar')).toBeVisible({
-        timeout: 30_000,
-      })
-
-      const medidas = await page.evaluate(
-        medirContrasteDoTexto,
-        '[data-testid="organizar-pdf"]',
-      )
-      expect(medidas.length).toBeGreaterThan(15)
-      expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+      await escolherPdfs(page, [await pdfProtegido('com-senha.pdf')])
+      await expect(page.getByTestId('editar-pdf-erro')).toBeVisible()
+      const comErro = await page.evaluate(medirContrasteDoTexto, 'main')
+      expect(
+        comErro.some((m) => m.texto.startsWith('Não deu para abrir')),
+      ).toBe(true)
+      expect(comErro.filter((m) => m.razao < 4.5)).toEqual([])
     })
 })
 
@@ -1619,7 +1227,7 @@ test.describe('Editar PDF', () => {
         )
       }
     })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfComJpeg2000('escaneado.pdf'))
 
     const centroDaPagina = await page
@@ -1662,7 +1270,7 @@ test.describe('Editar PDF', () => {
   }) => {
     const workers: string[] = []
     page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await expect(page.getByTestId('pdf-zona')).toBeVisible()
     expect(workers).toEqual([])
 
@@ -1684,7 +1292,7 @@ test.describe('Editar PDF', () => {
     page,
   }) => {
     test.setTimeout(60_000)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
 
     const conteudos = ['Contrato Ação', 'Página girada', 'Recorte é aqui']
@@ -1741,7 +1349,7 @@ test.describe('Editar PDF', () => {
   test('imagem PNG numa página com CropBox deslocado: escolhe, põe no centro e salva; no PDF baixado, a imagem ocupa a caixa da tela', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
     await abrirPagina(page, 3, 3)
 
@@ -1777,7 +1385,7 @@ test.describe('Editar PDF', () => {
   test('marca-texto numa página com /Rotate 90: no PDF baixado, um retângulo amarelo com opacidade 0,35 e multiplicar, na caixa da tela', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
     await abrirPagina(page, 2, 3)
 
@@ -1806,7 +1414,7 @@ test.describe('Editar PDF', () => {
   test('desenho com o ponteiro: o traço fica onde o mouse passou, e o PDF baixado tem o mesmo traço, na cor do desenho', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
     await page.getByRole('button', { name: 'Diminuir o zoom' }).click()
     await page.getByRole('button', { name: 'Diminuir o zoom' }).click()
@@ -1858,7 +1466,7 @@ test.describe('Editar PDF', () => {
   test('cobrir sem apagar: o retângulo branco vai por cima, e o texto continua no arquivo', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
 
     await page
@@ -1905,7 +1513,7 @@ test.describe('Editar PDF', () => {
       )
     }
 
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, original)
     // Cobre o começo do CPF e o canto de cima à esquerda da tarja: a borda direita (x = 100) e a de
     // baixo (y = 120) caem no meio da tinta.
@@ -2001,7 +1609,7 @@ test.describe('Editar PDF', () => {
     const antes = await todoOConteudoDoPdf(original.buffer)
     for (const sentinela of sentinelas) expect(antes).toContain(sentinela)
 
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, original)
     await inserirNoCentro(page, 'Cobrir')
     await page
@@ -2035,7 +1643,7 @@ test.describe('Editar PDF', () => {
         .has(PDFName.of('XFA')),
     ).toBe(true)
 
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, original)
     await inserirNoCentro(page, 'Texto')
     await page.keyboard.type('Aprovado')
@@ -2088,7 +1696,7 @@ test.describe('Editar PDF', () => {
     test(`avisos ao abrir, ${caso}: ${avisos.length} na tela e no anúncio do aberto`, async ({
       page,
     }) => {
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(page, await gerar())
 
       await expect(page.getByTestId('editar-pdf-aviso')).toHaveCount(
@@ -2109,7 +1717,7 @@ test.describe('Editar PDF', () => {
   test('os avisos não bloqueiam: o certificado com XFA puro gera o PDF com o texto, e o XFA fica como antes', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfComAvisos('requerimento.pdf', {
@@ -2136,7 +1744,7 @@ test.describe('Editar PDF', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfComAvisos(
@@ -2161,7 +1769,7 @@ test.describe('Editar PDF', () => {
   for (const tema of ['light', 'dark'] as const)
     test(`os avisos passam de 4,5:1 no tema ${tema}`, async ({ page }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(
         page,
         await pdfComAvisos('b.pdf', { certificado: true, xfa: true }),
@@ -2182,7 +1790,7 @@ test.describe('Editar PDF', () => {
   test('texto com emoji: o caractere nem entra no campo, e um alerta diz qual é e o que fazer', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300]))
     await inserirNoCentro(page, 'Texto')
     const campo = page.getByTestId('editar-pdf-campo-texto')
@@ -2212,7 +1820,7 @@ test.describe('Editar PDF', () => {
   test('teclado e leitor de tela: a barra e o quadro com os papéis certos, o Tab chega ao objeto, e setas e Alt+setas mudam a posição e o tamanho anunciados', async ({
     page,
   }) => {
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
     await inserirNoCentro(page, 'Retângulo')
     await posicionar(page, { x: 50, y: 40 })
@@ -2302,7 +1910,7 @@ test.describe('Editar PDF', () => {
     // Alt+← é voltar no navegador: com o objeto focado, fica com o objeto.
     await page.keyboard.press('Alt+ArrowLeft')
     await expect(anuncio).toHaveText('Em 51 por 50, 120 por 90 pontos.')
-    await expect(page).toHaveURL('/tools/pdf/editar')
+    await expect(page).toHaveURL('/tools/pdf')
   })
 
   test('nada sai do aparelho no fluxo do editar: texto, imagem, desenho, marca-texto, cobrir e apagar de verdade, sem pedido de fora nem corpo com o PDF ou a imagem', async ({
@@ -2310,7 +1918,7 @@ test.describe('Editar PDF', () => {
   }) => {
     test.setTimeout(60_000)
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
 
     const pdf = await pdfDosTresFormatos('formatos.pdf')
@@ -2351,7 +1959,7 @@ test.describe('Editar PDF', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
     await inserirNoCentro(page, 'Retângulo')
     await inserirNoCentro(page, 'Cobrir')
@@ -2394,7 +2002,7 @@ test.describe('Editar PDF', () => {
     page,
   }) => {
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
 
     const arquivo = await pdfComJpeg2000('a.pdf', 3)
@@ -2414,7 +2022,7 @@ test.describe('Editar PDF', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfDeTeste(
@@ -2450,7 +2058,7 @@ test.describe('Editar PDF', () => {
       page,
     }) => {
       await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 300]))
       await page.getByRole('button', { name: 'Próxima página' }).click()
       await expect(page.getByTestId('editar-pdf-desenhando')).toHaveCount(0)
@@ -2494,7 +2102,7 @@ test.describe('Editar PDF', () => {
       page,
     }) => {
       await page.setViewportSize({ width: largura, height: 800 })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(page, await pdfDosTresFormatos('formatos.pdf'))
       await page
         .getByTestId('editar-pdf-ferramentas')
@@ -2568,7 +2176,7 @@ test.describe('Editar PDF: a Bancada', () => {
   }) => {
     test.setTimeout(90_000)
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
     // Quadradas e de lados diferentes: o lado diz de onde a página veio, e girar não muda o tamanho.
     const arquivo = await pdfDeTeste('bancada.pdf', [300, 320, 340])
@@ -2629,7 +2237,7 @@ test.describe('Editar PDF: a Bancada', () => {
   }) => {
     test.setTimeout(60_000)
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
     const original = await pdfDosTresFormatos('formatos.pdf')
     await abrirNoEditar(page, original)
@@ -2670,7 +2278,7 @@ test.describe('Editar PDF: a Bancada', () => {
       page,
     }) => {
       test.setTimeout(300_000)
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(
         page,
         await pdfDeTeste(
@@ -2704,7 +2312,7 @@ test.describe('Editar PDF: a Bancada', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfDeTeste(
@@ -2747,7 +2355,7 @@ test.describe('Editar PDF: a Bancada', () => {
       folha.getByRole('button', { name: 'Girar a página 1 à direita' }),
       folha.getByRole('button', { name: 'Apagar a página 1' }),
       ...(await folha
-        .getByTestId('organizar-pdf-barra')
+        .getByTestId('editar-pdf-barra')
         .getByRole('button')
         .all()),
       folha.getByRole('button', { name: 'Fechar' }),
@@ -2785,7 +2393,7 @@ test.describe('Editar PDF: a Bancada', () => {
       page,
     }) => {
       await page.setViewportSize({ width: largura, height: 800 })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(
         page,
         await pdfDeTeste('contrato-de-prestacao.pdf', [100, 200, 300]),
@@ -2800,7 +2408,7 @@ test.describe('Editar PDF: a Bancada', () => {
         coluna.getByRole('button', { name: 'Girar a página 1 à direita' }),
         coluna.getByRole('button', { name: 'Apagar a página 1' }),
         ...(await coluna
-          .getByTestId('organizar-pdf-barra')
+          .getByTestId('editar-pdf-barra')
           .getByRole('button')
           .all()),
       ]
@@ -2822,7 +2430,7 @@ test.describe('Editar PDF: a Bancada', () => {
       page,
     }) => {
       await page.setViewportSize({ width: largura, height: altura })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(
         page,
         await pdfDeTeste(
@@ -2866,7 +2474,7 @@ test.describe('Editar PDF: a Bancada', () => {
       page,
     }) => {
       await page.setViewportSize({ width: largura, height: 800 })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200, 300]))
       await inserirNoCentro(page, 'Retângulo')
       if (largura === 320) {
@@ -2899,7 +2507,7 @@ test.describe('Editar PDF: a Bancada', () => {
       }) => {
         await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
         await page.setViewportSize({ width: largura, height: 800 })
-        await page.goto('/tools/pdf/editar')
+        await page.goto('/tools/pdf')
         await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200, 300]))
         await inserirNoCentro(page, 'Retângulo')
         if (largura === 320) {
@@ -2940,6 +2548,203 @@ test.describe('Editar PDF: a Bancada', () => {
         ).toBe(true)
         expect(nota.filter((m) => m.razao < 4.5)).toEqual([])
       })
+
+  test('pelo teclado: gira a página 2, apaga a 3 e leva a 1 para o fim, com o anúncio e o foco a cada passo; no PDF baixado, a ordem e o /Rotate', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste('contrato.pdf', [100, 200, 300, 400]),
+    )
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    const anuncio = page.getByTestId('editar-pdf-anuncio')
+
+    await coluna
+      .getByRole('button', { name: 'Girar a página 2 à direita' })
+      .focus()
+    await page.keyboard.press('Enter')
+    await expect(anuncio).toHaveText(/^Página 2 girada para 90°\./)
+    await coluna.getByRole('button', { name: 'Apagar a página 3' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(anuncio).toHaveText(/^Página 3 apagada\./)
+    await expect(
+      coluna.getByRole('checkbox', { name: 'Selecionar página 3' }),
+    ).toBeFocused()
+
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 1' }).focus()
+    await page.keyboard.press('Space')
+    const depois = coluna.getByRole('button', { name: 'Mover para depois' })
+    await depois.focus()
+    await page.keyboard.press('Enter')
+    await expect(depois).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(coluna.getByTestId('editar-pdf-pagina')).toContainText([
+      'contrato.pdf, pág. 2',
+      'contrato.pdf, pág. 4',
+      'contrato.pdf, pág. 1',
+    ])
+    await expect(
+      coluna.getByRole('button', { name: 'Mover para antes' }),
+    ).toBeFocused()
+
+    const { nome, bytes } = await gerarEBaixar(page)
+    expect(nome).toBe('contrato-editado.pdf')
+    const final = await PDFDocument.load(bytes)
+    expect(final.getPages().map((p) => p.getWidth())).toEqual([200, 400, 100])
+    expect(final.getPages().map((p) => p.getRotation().angle)).toEqual([
+      90, 0, 0,
+    ])
+  })
+
+  test('Ctrl+Z com o foco nas páginas volta a página apagada', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200, 300]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    const cartoes = coluna.getByTestId('editar-pdf-pagina')
+
+    await coluna.getByRole('button', { name: 'Apagar a página 2' }).click()
+    await expect(cartoes).toHaveCount(2)
+    await page.keyboard.press('ControlOrMeta+z')
+
+    await expect(cartoes).toContainText([
+      'a.pdf, pág. 1',
+      'a.pdf, pág. 2',
+      'a.pdf, pág. 3',
+    ])
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      'Desfeito nas páginas.',
+    )
+  })
+
+  test('extrai as selecionadas, giradas pela barra, num PDF novo com o nome -paginas, e o documento fica com todas', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste('relatorio.pdf', [100, 200, 300]),
+    )
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 3' }).check()
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 1' }).check()
+    await coluna.getByRole('button', { name: 'Girar à esquerda' }).click()
+    await coluna
+      .getByRole('button', { name: 'Extrair as selecionadas' })
+      .click()
+
+    const baixar = page.getByTestId('editar-pdf-baixar')
+    await expect(baixar).toBeFocused({ timeout: 30_000 })
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      baixar.click(),
+    ])
+    expect(download.suggestedFilename()).toBe('relatorio-paginas.pdf')
+    const final = await lerPdfBaixado(download)
+    expect(final.getPages().map((p) => p.getWidth())).toEqual([100, 300])
+    expect(final.getPages().map((p) => p.getRotation().angle)).toEqual([
+      270, 270,
+    ])
+    await expect(coluna.getByTestId('editar-pdf-pagina')).toHaveCount(3)
+  })
+
+  test('as miniaturas aparecem, desenhadas pelo pdf.js de verdade, e giram com a página', async ({
+    page,
+  }) => {
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    // A miniatura só é desenhada perto da tela, e o Adicionar PDF empurra os cartões para baixo.
+    await coluna
+      .getByTestId('editar-pdf-pagina')
+      .last()
+      .scrollIntoViewIfNeeded()
+
+    const miniaturas = coluna.getByTestId('editar-pdf-cartao-miniatura')
+    await expect(miniaturas).toHaveCount(2, { timeout: 30_000 })
+    for (const miniatura of await miniaturas.all()) {
+      await expect
+        .poll(() =>
+          miniatura.evaluate(
+            (img: HTMLImageElement) => img.complete && img.naturalWidth,
+          ),
+        )
+        .toBeGreaterThan(0)
+      expect(await miniatura.getAttribute('alt')).toBe('')
+    }
+
+    await coluna
+      .getByRole('button', { name: 'Girar a página 1 à direita' })
+      .click()
+    await expect(miniaturas.first()).toHaveAttribute('style', /rotate\(90deg\)/)
+  })
+
+  // Menor 4 do Crivo no #129: altura de celular pequeno (e a de 200% de zoom), onde a folha mal cabe.
+  async function abrirAFolhaCom20(page: Page) {
+    await page.setViewportSize({ width: 320, height: 568 })
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'vinte.pdf',
+        Array.from({ length: 20 }, () => 100),
+      ),
+    )
+    await page.getByRole('button', { name: 'Páginas', exact: true }).click()
+    const folha = page.getByRole('dialog', { name: 'Páginas' })
+    await expect(folha).toBeVisible()
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((a) => a.finished)),
+    )
+    return folha
+  }
+
+  test('a 320 × 568 px, com 20 páginas, a folha Páginas cabe na tela, nada rola para o lado, e a lista guarda os 80 px dela e rola até a marcada', async ({
+    page,
+  }) => {
+    const folha = await abrirAFolhaCom20(page)
+    await expect(folha.getByTestId('editar-pdf-pagina')).toHaveCount(20)
+    const daFolha = (await folha.boundingBox())!
+    expect(daFolha.y).toBeGreaterThanOrEqual(0)
+    expect(Math.round(daFolha.y + daFolha.height)).toBe(568)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(320)
+    expect(await folha.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    )
+    const rolagem = folha.getByTestId('editar-pdf-rolagem-da-folha')
+    expect((await rolagem.boundingBox())!.height).toBeGreaterThanOrEqual(80)
+
+    const marcada = folha.getByRole('checkbox', {
+      name: 'Selecionar página 12',
+    })
+    await marcada.check()
+    await expect(marcada).toBeInViewport()
+    expect(await rolagem.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  })
+
+  // Achado do E2E pedido pelo Crivo: a 568 px de altura, os controles da folha passam de 450 px, a lista
+  // começa abaixo da borda da tela e a própria folha também rola. Fica marcado como falha conhecida até a
+  // decisão de layout; quando a folha passar, o Playwright avisa e o test.fail sai. Abrir a folha e achar os
+  // 20 cartões é conferido no teste anterior, sem test.fail: se isso quebrar, ele reprova, e este não passa por engano.
+  test('a 320 × 568 px, ao abrir a folha Páginas, a lista já aparece com uma página inteira, e só ela rola', async ({
+    page,
+  }) => {
+    test.fail()
+    const folha = await abrirAFolhaCom20(page)
+    const primeira = (await folha
+      .getByTestId('editar-pdf-pagina')
+      .first()
+      .boundingBox())!
+    expect(primeira.y + primeira.height).toBeLessThanOrEqual(568)
+    expect(
+      await folha.evaluate((el) => el.scrollHeight <= el.clientHeight),
+    ).toBe(true)
+  })
 })
 
 // ---- Editor único, PR 4: adicionar outro PDF ----
@@ -2963,8 +2768,22 @@ const anuncioDaAdicao = (nome: string, paginas: number, depoisDa: number) =>
 // cru do arquivo, para a busca por ele valer); a segunda, em branco.
 async function pdfComSegredo(nome: string, segredo: string) {
   const documento = await PDFDocument.create()
+  await escreverSegredo(documento, documento.addPage([300, 300]), segredo)
+  documento.addPage([300, 300])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+// Em 16 pontos, com a linha de base em (40, 150).
+async function escreverSegredo(
+  documento: PDFDocument,
+  pagina: PDFPage,
+  segredo: string,
+) {
   const fonte = await documento.embedFont(StandardFonts.Helvetica)
-  const pagina = documento.addPage([300, 300])
   const nomeDaFonte = pagina.node.newFontDictionary('F1', fonte.ref)
   pagina.pushOperators(
     beginText(),
@@ -2976,12 +2795,6 @@ async function pdfComSegredo(nome: string, segredo: string) {
     ),
     endText(),
   )
-  documento.addPage([300, 300])
-  return {
-    name: nome,
-    mimeType: 'application/pdf',
-    buffer: Buffer.from(await documento.save()),
-  }
 }
 
 test.describe('Editar PDF: adicionar outro PDF', () => {
@@ -2991,7 +2804,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     test.setTimeout(90_000)
     const workers: string[] = []
     page.on('worker', (w) => workers.push(w.url()))
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320, 340]))
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
     await expect(
@@ -3044,7 +2857,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
   }) => {
     test.setTimeout(90_000)
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
     const capa = await pdfDeTeste('capa.pdf', [300])
     const segredo = 'Segredo 987.654.321-00'
@@ -3099,7 +2912,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     page,
   }) => {
     test.setTimeout(60_000)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200, 300]))
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
     await coluna.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
@@ -3132,7 +2945,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     page,
   }) => {
     test.setTimeout(60_000)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await expect(page.getByTestId('pdf-zona')).toBeVisible()
     const fontes = () => page.evaluate(() => document.fonts.size)
     const antes = await fontes()
@@ -3157,7 +2970,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
   }) => {
     test.setTimeout(60_000)
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfDeTeste(
@@ -3230,7 +3043,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
         test.setTimeout(60_000)
         await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
         await page.setViewportSize({ width: largura, height: 800 })
-        await page.goto('/tools/pdf/editar')
+        await page.goto('/tools/pdf')
         await abrirNoEditar(
           page,
           await pdfComAvisos('requerimento.pdf', { xfa: true }),
@@ -3272,7 +3085,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     }) => {
       test.setTimeout(60_000)
       await page.setViewportSize({ width: largura, height: 800 })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(
         page,
         await pdfComAvisos('requerimento.pdf', { assinado: true }),
@@ -3408,10 +3221,12 @@ async function pdfComDeitada(nome: string) {
 }
 
 // O /Kids repete a primeira página no fim: três posições, dois nós (aceito pelo pdf.js e pelo pdf-lib).
-async function pdfComPaginaRepetida(nome: string) {
+// Com `segredo`, a repetida o mostra como o pdfComSegredo.
+async function pdfComPaginaRepetida(nome: string, segredo?: string) {
   const documento = await PDFDocument.create()
   documento.setTitle('Título do arquivo')
-  documento.addPage([300, 300])
+  const repetida = documento.addPage([300, 300])
+  if (segredo) await escreverSegredo(documento, repetida, segredo)
   documento.addPage([320, 320])
   const arvore = documento.catalog.Pages()
   arvore.Kids().push(documento.getPage(0).ref)
@@ -3432,7 +3247,7 @@ test.describe('Editar PDF: página em branco', () => {
   }) => {
     test.setTimeout(90_000)
     const pedidos = vigiarPedidos(page)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     const origem = new URL(page.url()).origin
     const arquivo = await pdfComDeitada('deitada.pdf')
     await abrirNoEditar(page, arquivo)
@@ -3495,7 +3310,7 @@ test.describe('Editar PDF: página em branco', () => {
     // A 1280 × 720, a lista da coluna fica abaixo da margem do IntersectionObserver e corta o segundo
     // cartão: as miniaturas que o teste conta não seriam desenhadas.
     await page.setViewportSize({ width: 1280, height: 1100 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
     await expect(coluna.getByTestId('editar-pdf-cartao-miniatura')).toHaveCount(
@@ -3555,7 +3370,7 @@ test.describe('Editar PDF: página em branco', () => {
     page,
   }) => {
     test.setTimeout(90_000)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
     await criarBrancaNoEditar(page, 2)
@@ -3595,7 +3410,7 @@ test.describe('Editar PDF: página em branco', () => {
     page,
   }) => {
     test.setTimeout(90_000)
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(page, await pdfComPaginaRepetida('repetida.pdf'))
     await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
       'repetida.pdf · 3 páginas',
@@ -3622,12 +3437,62 @@ test.describe('Editar PDF: página em branco', () => {
     expect(await textosDasPaginas(porCopia.bytes)).toEqual([['AAA'], ['BBB']])
   })
 
+  // Regressão do PR 6, pelo caminho que a recusa ensina: tirado o apagar de verdade de uma das posições,
+  // o cobrir dela fica como um retângulo comum, e o PDF baixado saía com o segredo no texto dessa posição.
+  test('o nó repetido no /Kids com o segredo coberto nas duas posições: a recusa, o apagar de verdade tirado de uma e, no PDF baixado, no lugar e por cópia, o segredo em página nenhuma', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    const arquivo = await pdfComPaginaRepetida(
+      'repetida.pdf',
+      'Segredo 987.654.321-00',
+    )
+    expect(await todoOConteudoDoPdf(arquivo.buffer)).toContain('987.654.321')
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(page, arquivo)
+    for (const numero of [1, 3]) {
+      await abrirPagina(page, numero, 3)
+      await inserirNoCentro(page, 'Cobrir')
+      await posicionar(page, { x: 30, y: 125, largura: 240, altura: 40 })
+      await page
+        .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Apagar de verdade nesta página' })
+        .click()
+      await expect(page.getByTestId('editar-pdf-apagar-ligado')).toBeVisible()
+    }
+
+    await page.getByRole('button', { name: 'Gerar PDF', exact: true }).click()
+    await expect(page.getByTestId('editar-pdf-falha-ao-gerar')).toContainText(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF',
+    )
+    await page.getByRole('button', { name: 'Só cobrir, sem apagar' }).click()
+    await expect(page.getByTestId('editar-pdf-apagar-ligado')).toHaveCount(0)
+
+    const semOSegredo = async (bytes: Uint8Array, paginas: number) => {
+      const lidas = await lerComPdfjs(bytes)
+      expect(lidas).toHaveLength(paginas)
+      expect(
+        lidas.flatMap(({ textos }) => textos.map(({ str }) => str)),
+      ).toEqual([])
+      expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
+    }
+    await semOSegredo((await gerarEBaixar(page)).bytes, 3)
+
+    await page
+      .getByTestId('editar-pdf-coluna-de-paginas')
+      .getByRole('button', { name: 'Apagar a página 2' })
+      .click()
+    await semOSegredo((await gerarEBaixar(page)).bytes, 2)
+  })
+
   test('a 320 px: o curto "Em branco" tem 44 px, criar abre a branca na faixa com o foco na área, a folha também tem o botão, e nada rola para o lado', async ({
     page,
   }) => {
     test.setTimeout(60_000)
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/tools/pdf/editar')
+    await page.goto('/tools/pdf')
     await abrirNoEditar(
       page,
       await pdfDeTeste(
@@ -3673,7 +3538,7 @@ test.describe('Editar PDF: página em branco', () => {
         test.setTimeout(60_000)
         await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
         await page.setViewportSize({ width: largura, height: 800 })
-        await page.goto('/tools/pdf/editar')
+        await page.goto('/tools/pdf')
         await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
         await criarBrancaNoEditar(page, 2)
         await inserirNoCentro(page, 'Cobrir')
@@ -3712,7 +3577,7 @@ test.describe('Editar PDF: página em branco', () => {
         test.setTimeout(60_000)
         await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
         await page.setViewportSize({ width: largura, height: 800 })
-        await page.goto('/tools/pdf/editar')
+        await page.goto('/tools/pdf')
         await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
         await criarBrancaNoEditar(page, 2)
         // O finished de uma animação cancelada rejeita; aqui só importa que nenhuma esteja rodando.
@@ -3736,7 +3601,7 @@ test.describe('Editar PDF: página em branco', () => {
     }) => {
       test.setTimeout(60_000)
       await page.setViewportSize({ width: largura, height: 800 })
-      await page.goto('/tools/pdf/editar')
+      await page.goto('/tools/pdf')
       await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
       await criarBrancaNoEditar(page, 2)
       await inserirNoCentro(page, 'Cobrir')

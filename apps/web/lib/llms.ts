@@ -18,7 +18,6 @@ import {
   PAGINA_PRIVACIDADE,
   PAGINAS_FIXAS,
   caminhoDaFerramenta,
-  caminhoDoModo,
   caminhoDoPost,
   descricaoDoPost,
   umaLinha,
@@ -122,20 +121,13 @@ function linhasDasFerramentas(
   ferramentas: readonly Ferramenta[],
   origem: string,
 ): string[] {
-  return ferramentas.flatMap(({ slug, title, description, modos = [] }) => [
+  return ferramentas.map(({ slug, title, description }) =>
     itemDaLista(
       title,
       urlAbsoluta(caminhoDaFerramenta(slug), origem),
       description,
     ),
-    ...modos.map((modo) =>
-      itemDaLista(
-        modo.title,
-        urlAbsoluta(caminhoDoModo(slug, modo.slug), origem),
-        modo.description,
-      ),
-    ),
-  ])
+  )
 }
 
 export function llmsTxt(dados: DadosPublicos, origem: string): string {

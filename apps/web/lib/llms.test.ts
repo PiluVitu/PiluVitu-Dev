@@ -263,18 +263,11 @@ describe('llms.txt: dados das páginas', () => {
       )
   })
 
-  it('Ferramentas: cada modo do Editor de PDF logo depois dele, com a rota própria', () => {
-    const editor = linhas.indexOf(
+  it('Ferramentas: o Editor de PDF numa linha só, sem as rotas antigas do editor', () => {
+    expect(linhas.filter((l) => l.includes('/tools/pdf'))).toEqual([
       '- [Editor de PDF](https://piluvitu.com.br/tools/pdf): Mesclar, organizar e editar páginas de PDF',
-    )
-    expect(editor).toBeGreaterThan(-1)
-    expect(linhas.slice(editor + 1, editor + 4)).toEqual([
-      '- [Mesclar PDF](https://piluvitu.com.br/tools/pdf/mesclar): Junta vários PDFs em um só arquivo',
-      '- [Organizar páginas](https://piluvitu.com.br/tools/pdf/organizar): Gira, apaga, reordena e extrai páginas de um PDF',
-      '- [Editar PDF](https://piluvitu.com.br/tools/pdf/editar): Organiza as páginas e escreve, desenha, põe imagens e cobre trechos por cima delas',
     ])
     expect(texto).not.toContain('/tools/mesclar-pdf')
-    expect(texto).not.toContain('/tools/pdf/assinar')
   })
 
   it('mudou a fonte, muda o llms.txt', () => {
@@ -434,17 +427,21 @@ describe('llms-full.txt', () => {
     expect(completo).not.toContain('Escondido')
   })
 
-  it('Ferramentas: a descrição da página e cada ferramenta, com os modos', () => {
+  it('Ferramentas: a descrição da página e cada ferramenta', () => {
     expect(completo).toContain(PAGINA_FERRAMENTAS.descricao)
-    for (const { slug, title, description, modos = [] } of TOOLS) {
+    for (const { slug, title, description } of TOOLS)
       expect(completo).toContain(
         `- [${title}](https://piluvitu.com.br/tools/${slug}): ${description}`,
       )
-      for (const modo of modos)
-        expect(completo).toContain(
-          `- [${modo.title}](https://piluvitu.com.br/tools/${slug}/${modo.slug}): ${modo.description}`,
-        )
-    }
+  })
+
+  it('Ferramentas: o Editor de PDF numa linha só, sem as rotas antigas do editor', () => {
+    expect(
+      completo.split('\n').filter((l) => l.includes('/tools/pdf')),
+    ).toEqual([
+      '- [Editor de PDF](https://piluvitu.com.br/tools/pdf): Mesclar, organizar e editar páginas de PDF',
+    ])
+    expect(completo).not.toContain('/tools/mesclar-pdf')
   })
 
   it('Posts: o índice com título, link, data (a do frontmatter) e descrição', () => {

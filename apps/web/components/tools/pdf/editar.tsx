@@ -102,7 +102,6 @@ import {
   ultimaMarcada,
   type DocumentoDoEditor,
 } from './documento-do-editor'
-import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
 import {
@@ -316,14 +315,17 @@ type Props = {
   renderizador?: RenderizadorDePdf
   /** Injetável para story e teste; sem ele, o motor usa um Web Worker com o pdf-lib. */
   motor?: MotorDePdf
+  /** Para story e teste: o editor já aberto com um PDF. */
+  arquivoInicial?: File | null
 }
 
 export function EditarPdf({
   renderizador: renderizadorInjetado,
   motor: motorInjetado,
+  arquivoInicial = null,
 }: Props) {
   const ids = useId()
-  const { arquivo, guardar } = useDocumentoPdf()
+  const [arquivo, guardar] = useState<File | null>(arquivoInicial)
   const renderizadorRef = useRef<RenderizadorDePdf | null>(
     renderizadorInjetado ?? null,
   )
@@ -1232,12 +1234,12 @@ export function EditarPdf({
   }
 
   function pedirOutroPdf() {
-    if (adicionando || montando) return
+    if (adicionando || montando || criandoBranca.current) return
     inputDoPdfRef.current?.click()
   }
 
   async function adicionarOutroPdf(novo: File) {
-    if (!documento || montando) return
+    if (!documento || montando || criandoBranca.current) return
     const { sessao: daSessao } = documento
     // O foco ainda está no botão que abriu a escolha do arquivo.
     const pelaBarra = document.activeElement === adicionarNaBarraRef.current
@@ -1629,7 +1631,7 @@ export function EditarPdf({
       variant="outline"
       className={classeDoBotao(onde)}
       disabled={montando}
-      aria-disabled={adicionando ? true : undefined}
+      aria-disabled={adicionando || esperandoTamanho ? true : undefined}
       aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={pedirOutroPdf}
       data-testid={
@@ -1659,7 +1661,7 @@ export function EditarPdf({
       variant="outline"
       className={classeDoBotao(onde)}
       disabled={montando}
-      aria-disabled={adicionando ? true : undefined}
+      aria-disabled={adicionando || esperandoTamanho ? true : undefined}
       aria-label={onde === 'barra' ? B.botao : undefined}
       aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={() => void criarPaginaEmBranco()}
@@ -2113,7 +2115,6 @@ export function EditarPdf({
 
       <section aria-label={T.rotulo} className="space-y-3">
         <ZonaDeArquivos
-          multiplos={false}
           desabilitada={montando}
           aoEscolher={(lista) => {
             if (lista[0]) guardar(lista[0])

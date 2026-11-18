@@ -24,34 +24,16 @@ it.each(TOOLS.map(({ slug }) => [slug]))(
   },
 )
 
-it.each(
-  TOOLS.flatMap(({ slug, modos = [] }) =>
-    modos.map((modo) => [slug, modo.slug]),
-  ),
-)(
-  '/tools/%s/%s: página do modo com a metadata do modo no registro',
-  (slug, modo) => {
-    const arquivo = join(__dirname, slug, modo, 'page.tsx')
-    expect(existsSync(arquivo)).toBe(true)
-    const fonte = readFileSync(arquivo, 'utf8')
-    expect(fonte).toContain(`TOOLS.find((t) => t.slug === '${slug}')`)
-    expect(fonte).toContain(`tool.modos!.find((m) => m.slug === '${modo}')`)
-    expect(fonte).toContain('metadata: Metadata = metadataDoModo(tool, modo)')
+// P5: as rotas antigas do editor não têm pasta; caem nele pelo redirects() do next.config (308 para /tools/pdf).
+it.each([['pdf/mesclar'], ['pdf/organizar'], ['pdf/editar'], ['mesclar-pdf']])(
+  '/tools/%s não tem pasta',
+  (caminho) => {
+    expect(existsSync(join(__dirname, ...caminho.split('/')))).toBe(false)
   },
 )
 
-it('o Editor de PDF tem os modos mesclar, organizar e editar', () => {
-  const pdf = TOOLS.find(({ slug }) => slug === 'pdf')
-  expect(pdf?.modos?.map(({ slug }) => slug)).toEqual([
-    'mesclar',
-    'organizar',
-    'editar',
-  ])
-})
-
-// O caminho antigo responde pelo redirects() do next.config (308), conferido no E2E.
-it('/tools/mesclar-pdf não tem mais página própria', () => {
-  expect(existsSync(join(__dirname, 'mesclar-pdf'))).toBe(false)
+it('/tools/pdf não tem layout próprio: o editor guarda o arquivo dele', () => {
+  expect(existsSync(join(__dirname, 'pdf', 'layout.tsx'))).toBe(false)
 })
 
 // O Assinar saiu a pedido do dono; o caminho antigo responde pelo redirects() do next.config (308 para /tools/pdf), conferido no E2E.

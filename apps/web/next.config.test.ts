@@ -21,15 +21,27 @@ function redirecionamentos(): Redirecionamento[] {
   return JSON.parse(saida) as Redirecionamento[]
 }
 
+// P5 (decidida pelo Paulo em 2026-11-18): as rotas antigas do editor caem nele, como o Assinar.
+const ROTAS_ANTIGAS = [
+  '/tools/pdf/assinar',
+  '/tools/pdf/mesclar',
+  '/tools/pdf/organizar',
+  '/tools/pdf/editar',
+  '/tools/mesclar-pdf',
+]
+
 describe('next.config.mjs: redirecionamentos do editor de PDF', () => {
   const todos = redirecionamentos()
 
-  it.each([
-    ['/tools/pdf/assinar', '/tools/pdf'],
-    ['/tools/mesclar-pdf', '/tools/pdf/mesclar'],
-  ])('%s vai para %s com 308', (origem, destino) => {
-    expect(todos.filter((r) => r.source === origem)).toEqual([
-      { source: origem, destination: destino, permanent: true },
+  it.each(ROTAS_ANTIGAS)('%s vai para /tools/pdf com 308', (rota) => {
+    expect(todos.filter((r) => r.source === rota)).toEqual([
+      { source: rota, destination: '/tools/pdf', permanent: true },
     ])
+  })
+
+  it('num salto só: /tools/pdf não redireciona, e nenhum destino é uma rota antiga', () => {
+    expect(todos.filter((r) => r.source === '/tools/pdf')).toEqual([])
+    for (const { destination } of todos)
+      expect(ROTAS_ANTIGAS).not.toContain(destination)
   })
 })

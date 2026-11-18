@@ -14,13 +14,11 @@ import {
   TAMANHO_MINIMO_DO_TEXTO,
   TETO_DE_BYTES_COM_MINIATURAS,
   TETO_DE_PAGINAS,
-  TETO_TOTAL_EM_BYTES,
   alturaDoTexto,
   apagar,
   aplicarMatriz,
   cabeNoDocumento,
   cabeNoWinAnsi,
-  cabemNoTeto,
   caracteresForaDoWinAnsi,
   comTamanhoDeFonte,
   componentesDaCor,
@@ -28,7 +26,6 @@ import {
   desfazer,
   extremosDaLinha,
   extrair,
-  fracaoDaMesclagem,
   geometriaDaSeta,
   geometriaDaVista,
   girar,
@@ -46,7 +43,6 @@ import {
   nomeDoPdfFinal,
   pdfParaTela,
   pixelsDoFundo,
-  planoInicial,
   podeDesfazer,
   podeRefazer,
   pontosDoTracoNaTela,
@@ -74,38 +70,13 @@ import {
   type Ponto,
 } from './pdf-regras'
 
+// O plano de um arquivo na ordem e sem giro, de onde os testes partem.
+const planoInicial = (totalDePaginas: number): PaginaDoPlano[] =>
+  Array.from({ length: totalDePaginas }, (_, indice) => ({ indice, giro: 0 }))
+
 // Os testes do organizar comparam só a ordem dos índices e os giros: é o que o PDF final recebe.
 const indices = (plano: readonly PaginaDoPlano[]) => plano.map((p) => p.indice)
 const giros = (plano: readonly PaginaDoPlano[]) => plano.map((p) => p.giro)
-
-describe('fracaoDaMesclagem', () => {
-  it('começa em 0 e anda pelo tamanho dos arquivos já lidos, até 90%', () => {
-    const tamanhos = [10, 30, 60]
-    expect(fracaoDaMesclagem(tamanhos, 0)).toBe(0)
-    expect(fracaoDaMesclagem(tamanhos, 1)).toBeCloseTo(0.09)
-    expect(fracaoDaMesclagem(tamanhos, 2)).toBeCloseTo(0.36)
-    expect(fracaoDaMesclagem(tamanhos, 3)).toBeCloseTo(0.9)
-  })
-
-  it('salvando fica em 90%; lista vazia fica em 0', () => {
-    expect(fracaoDaMesclagem([10], 1, true)).toBe(0.9)
-    expect(fracaoDaMesclagem([], 0)).toBe(0)
-  })
-})
-
-describe('cabemNoTeto', () => {
-  it('o teto é de 100 MB', () => {
-    expect(TETO_TOTAL_EM_BYTES).toBe(100_000_000)
-  })
-
-  it('aceita até somar o teto, inclusive', () => {
-    expect(cabemNoTeto(0, [60, 40], 100)).toEqual([true, true])
-  })
-
-  it('recusa o que passa e continua tentando os menores que vêm depois', () => {
-    expect(cabemNoTeto(50, [60, 30, 30], 100)).toEqual([false, true, false])
-  })
-})
 
 describe('nomeDoPdfFinal', () => {
   it('vazio ou só espaços: mesclado.pdf', () => {
@@ -168,31 +139,9 @@ describe('tetos do modo com miniaturas', () => {
     expect(TETO_DE_PAGINAS).toBe(500)
   })
 
-  it('TETO_DE_BYTES_COM_MINIATURAS é de 50 MB, metade do mesclar', () => {
+  it('TETO_DE_BYTES_COM_MINIATURAS é de 50 MB', () => {
     expect(TETO_DE_BYTES_COM_MINIATURAS).toBe(50_000_000)
-    expect(TETO_DE_BYTES_COM_MINIATURAS).toBeLessThan(TETO_TOTAL_EM_BYTES)
   })
-})
-
-describe('planoInicial', () => {
-  it('uma entrada por página, na ordem do arquivo e sem giro', () => {
-    expect(planoInicial(3)).toEqual([
-      { indice: 0, giro: 0 },
-      { indice: 1, giro: 0 },
-      { indice: 2, giro: 0 },
-    ])
-  })
-
-  it('documento sem página dá plano vazio', () => {
-    expect(planoInicial(0)).toEqual([])
-  })
-
-  it.each([-1, 2.5, Number.NaN, Number.POSITIVE_INFINITY])(
-    'recusa total %p com RangeError',
-    (total) => {
-      expect(() => planoInicial(total)).toThrow(RangeError)
-    },
-  )
 })
 
 describe('girar', () => {

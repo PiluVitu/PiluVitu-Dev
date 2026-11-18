@@ -13,9 +13,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const VariosArquivos: Story = {}
-
-export const UmArquivo: Story = { args: { multiplos: false } }
+export const UmArquivo: Story = {}
 
 export const Desabilitada: Story = { args: { desabilitada: true } }
 
