@@ -3534,6 +3534,129 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
 
       expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 90])
     })
+
+    // Menor do Crivo no #126: o /Rotate da apagada ia no nó compartilhado e girava a outra posição.
+    it('apagar de verdade com giro numa delas: a outra não gira', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2]),
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 0])
+    })
+
+    // A outra posição desconta a moldura em que o JPEG da apagada foi desenhado (revisão do PR 3).
+    it('apagar de verdade com a moldura diferente do giro (giro 0): a outra desconta a moldura', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        [
+          daMontagem(0, 0, { giro: 0, moldura: 90 }),
+          daMontagem(0, 1),
+          daMontagem(0, 2),
+        ],
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([270, 0, 270])
+    })
+
+    it('por cópia, só a repetida apagada e girada', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([2, 90], [0]),
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0])
+    })
+  })
+
+  // Revisão do PR 3: a apagada é desenhada na moldura, e o nó dela é o da outra posição. Com a moldura
+  // diferente de 0, a outra posição precisa descontá-la, ou sai deitada no PDF enquanto a tela a mostra
+  // em pé. A página é deitada (200 × 100) para a orientação aparecer no tamanho.
+  describe('PDF que repete a mesma página no /Kids: a apagada com moldura não deita a outra', () => {
+    async function comARepetidaDeitada() {
+      const documento = await PDFDocument.create()
+      documento.addPage([200, 100])
+      documento.addPage([150, 150])
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      return documento.save()
+    }
+
+    async function comoAparecem(bytes: Uint8Array): Promise<string[]> {
+      const documento = await PDFDocument.load(bytes)
+      return documento.getPages().map((pagina) => {
+        const { width, height } = pagina.getSize()
+        return pagina.getRotation().angle % 180 === 0
+          ? `${width}x${height}`
+          : `${height}x${width}`
+      })
+    }
+
+    it.each([
+      ['giro 0, moldura 90', 0, 90, ['200x100', '150x150', '200x100']],
+      [
+        'giro 90, moldura 90 (girou antes de cobrir)',
+        90,
+        90,
+        ['100x200', '150x150', '200x100'],
+      ],
+      ['giro 90, moldura 0', 90, 0, ['100x200', '150x150', '200x100']],
+      ['giro 180, moldura 90', 180, 90, ['200x100', '150x150', '200x100']],
+    ] as const)(
+      'o arquivo inteiro na ordem, %s',
+      async (_, giro, moldura, esperado) => {
+        const final = await montarDocumento(
+          [await comARepetidaDeitada()],
+          [
+            daMontagem(0, 0, { giro, moldura }),
+            daMontagem(0, 1),
+            daMontagem(0, 2),
+          ],
+          [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+        )
+
+        expect(await comoAparecem(final)).toEqual(esperado)
+      },
+    )
+
+    it.each([
+      ['giro 90, moldura 90', 90, 90, ['200x100', '100x200']],
+      ['giro 0, moldura 90', 0, 90, ['200x100', '200x100']],
+      ['giro 270, moldura 90', 270, 90, ['200x100', '100x200']],
+    ] as const)(
+      'por cópia, só a repetida apagada, %s',
+      async (_, giro, moldura, esperado) => {
+        const final = await montarDocumento(
+          [await comARepetidaDeitada()],
+          [daMontagem(0, 2), daMontagem(0, 0, { giro, moldura })],
+          [{ posicao: 1, objetos: [], fundo: JPEG_8X8 }],
+        )
+
+        expect(await comoAparecem(final)).toEqual(esperado)
+      },
+    )
+
+    it('a outra posição girada também sai como a tela a mostra', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaDeitada()],
+        [
+          daMontagem(0, 0, { giro: 90, moldura: 90 }),
+          daMontagem(0, 1),
+          daMontagem(0, 2, { giro: 90 }),
+        ],
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await comoAparecem(final)).toEqual([
+        '100x200',
+        '150x150',
+        '100x200',
+      ])
+    })
   })
 
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {

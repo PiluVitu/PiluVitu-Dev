@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs'
 import { expect, fn, userEvent } from 'storybook/test'
 import {
   BarraDaSelecao,
+  ListaDaBancada,
   ListaDePaginas,
   ORDEM_DA_BARRA,
   type ChaveDaBarra,
@@ -161,5 +162,109 @@ export const BarraDaSelecaoComSetas: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Mover para antes' }),
     ).toHaveAccessibleDescription(TEXTOS.organizar.dicas.noComeco)
+  },
+}
+
+// Editor único: o cartão da Bancada, com o rótulo pela posição e a origem embaixo.
+const daBancada = [
+  { id: 'a0p0', origem: { arquivo: 0, indice: 0 }, giro: 0 as const },
+  { id: 'a0p3', origem: { arquivo: 0, indice: 3 }, giro: 90 as const },
+  { id: 'a0p1', origem: { arquivo: 0, indice: 1 }, giro: 0 as const },
+  { id: 'a0p5', origem: { arquivo: 0, indice: 5 }, giro: 0 as const },
+]
+
+const aoAgirNaBancada = fn()
+
+function ColunaDaBancada({ marcadas }: { marcadas: string[] }) {
+  return (
+    <div className="w-60">
+      <ListaDaBancada
+        paginas={daBancada}
+        nomeDoArquivo="contrato.pdf"
+        marcadas={new Set(marcadas)}
+        aberta="a0p3"
+        miniaturas={miniaturas}
+        bloqueado={false}
+        idDoTitulo="titulo-paginas"
+        idDaDicaUnica="dica-unica"
+        aoAgir={aoAgirNaBancada}
+        aoMover={fn()}
+        registrarCaixa={fn()}
+      />
+    </div>
+  )
+}
+
+export const CartoesDaBancada: Story = {
+  render: () => <ColunaDaBancada marcadas={['a0p1']} />,
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole('button', { name: 'Abrir a página 2' }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(canvas.getByText('contrato.pdf, pág. 4')).toBeVisible()
+    await expect(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 3' }),
+    ).toBeChecked()
+    await expect(canvas.getByText(TEXTOS.organizar.semMiniatura)).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Abrir a página 4' }),
+    )
+    await expect(aoAgirNaBancada).toHaveBeenCalledWith({
+      tipo: 'abrir',
+      id: 'a0p5',
+    })
+  },
+}
+
+function BarraCompacta() {
+  const botoesRef = useRef(new Map<ChaveDaBarra, HTMLButtonElement>())
+  return (
+    <div className="w-60">
+      <BarraDaSelecao
+        botoes={(
+          [
+            'girarEsquerda',
+            'girarDireita',
+            'moverAntes',
+            'moverDepois',
+            'apagar',
+            'desfazer',
+            'extrair',
+            'selecionarTodas',
+          ] as const
+        ).map((chave) => ({
+          chave,
+          motivo: chave === 'desfazer' ? 'nadaParaDesfazer' : null,
+        }))}
+        botoesRef={botoesRef}
+        idDaDica={(motivo) => `dica-${motivo}`}
+        aoUsar={fn()}
+        prefixo="editar-pdf"
+        soIcone={[
+          'girarEsquerda',
+          'girarDireita',
+          'moverAntes',
+          'moverDepois',
+          'apagar',
+          'desfazer',
+        ]}
+        rotulos={{ desfazer: TEXTOS.editar.paginasDoDocumento.desfazer }}
+      />
+      <p id="dica-nadaParaDesfazer" className="text-muted-foreground text-xs">
+        {TEXTOS.organizar.dicas.nadaParaDesfazer}
+      </p>
+    </div>
+  )
+}
+
+export const BarraDaBancada: Story = {
+  render: () => <BarraCompacta />,
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole('button', { name: 'Desfazer nas páginas' }),
+    ).toHaveAccessibleDescription(TEXTOS.organizar.dicas.nadaParaDesfazer)
+    await expect(
+      canvas.getByRole('button', { name: 'Extrair as selecionadas' }),
+    ).toBeVisible()
   },
 }

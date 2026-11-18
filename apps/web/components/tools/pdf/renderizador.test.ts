@@ -38,10 +38,16 @@ function paginaFalsa({ largura = 600, altura = 800, rotate = 0 } = {}) {
   return {
     rotate,
     canvases,
-    getViewport: jest.fn(({ scale }: { scale: number }) => ({
-      width: largura * scale,
-      height: altura * scale,
-    })),
+    // Como o pdf.js: a rotação pedida substitui o /Rotate, e a de um quarto de volta troca os lados.
+    getViewport: jest.fn(
+      ({ scale, rotation = rotate }: { scale: number; rotation?: number }) => {
+        const deitada = (((rotation - rotate) % 180) + 180) % 180 === 90
+        return {
+          width: (deitada ? altura : largura) * scale,
+          height: (deitada ? largura : altura) * scale,
+        }
+      },
+    ),
     render: jest.fn(
       ({ canvas }: { canvas: HTMLCanvasElement; viewport: unknown }) => {
         canvases.push(canvas)
@@ -465,6 +471,31 @@ describe('pagina (a página grande)', () => {
     await expect(documento.pagina(0, Number.NaN)).rejects.toThrow(RangeError)
   })
 
+  it('com giro (a moldura), desenha a página girada a mais, por cima do /Rotate dela', async () => {
+    const pagina = paginaFalsa({ largura: 600, altura: 800, rotate: 90 })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+
+    const desenhada = await documento.pagina(0, 400, 90)
+
+    expect(pagina.getViewport).toHaveBeenCalledWith({
+      scale: 1,
+      rotation: 180,
+    })
+    expect(desenhada.tamanho).toEqual({ largura: 800, altura: 600 })
+    expect([desenhada.canvas.width, desenhada.canvas.height]).toEqual([
+      400, 300,
+    ])
+
+    const deCabeca = await documento.pagina(0, 400, 180)
+
+    expect(pagina.getViewport).toHaveBeenCalledWith({
+      scale: 1,
+      rotation: 270,
+    })
+    expect(deCabeca.tamanho).toEqual({ largura: 600, altura: 800 })
+  })
+
   it('fechar cancela o desenho em curso e esvazia o canvas da página na tela', async () => {
     const [a, b] = [paginaFalsa(), paginaFalsa()]
     prepararDocumento([a, b])
@@ -545,6 +576,23 @@ describe('fundo (apagar de verdade)', () => {
   })
 
   // Arredondado para dentro, a borda do retângulo ficaria meio pintada, com um resto da letra embaixo.
+  it('com giro (a moldura), o fundo sai como a tela mostra a página, onde os cobrir foram postos', async () => {
+    const pagina = paginaFalsa({ largura: 600, altura: 800 })
+    prepararDocumento([pagina])
+    const documento = await abrir()
+    const esperado = pixelsDoFundo({ largura: 800, altura: 600 })
+
+    await documento.fundo(0, [], 90)
+
+    expect(pagina.getViewport).toHaveBeenCalledWith({ scale: 1, rotation: 90 })
+    expect(jpegs).toEqual([
+      expect.objectContaining({
+        largura: esperado.largura,
+        altura: esperado.altura,
+      }),
+    ])
+  })
+
   it('os retângulos são arredondados para fora: cobrem pelo menos a caixa inteira', async () => {
     prepararDocumento([paginaFalsa({ largura: 595, altura: 842 })])
     const documento = await abrir()
@@ -655,6 +703,25 @@ describe('textoNoPonto (a dica de cobrir e escrever por cima)', () => {
     await expect(documento.textoNoPonto(0, { x: 120, y: 95 })).resolves.toBe(
       false,
     )
+  })
+
+  it('com giro (a moldura), a camada de texto é lida na vista girada que a tela mostra', async () => {
+    const pagina = {
+      ...paginaFalsa(),
+      getViewport: jest.fn(() => ({
+        width: 800,
+        height: 600,
+        transform: DEITADA,
+      })),
+      getTextContent: jest.fn(async () => ({ items: [ITEM] })),
+    }
+    prepararDocumento([pagina as unknown as PaginaFalsa])
+    const documento = await abrir()
+
+    await expect(
+      documento.textoNoPonto(0, { x: 705, y: 120 }, 90),
+    ).resolves.toBe(true)
+    expect(pagina.getViewport).toHaveBeenCalledWith({ scale: 1, rotation: 90 })
   })
 })
 

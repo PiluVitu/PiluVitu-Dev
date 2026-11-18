@@ -14,6 +14,7 @@ export default function EditarPdfPage() {
     <ToolPageShell
       tool={modo}
       voltar={{ href: caminhoDaFerramenta(tool.slug), rotulo: tool.title }}
+      larga
     >
       <EditarPdf />
     </ToolPageShell>

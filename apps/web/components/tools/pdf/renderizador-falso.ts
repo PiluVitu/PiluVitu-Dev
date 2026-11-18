@@ -1,6 +1,7 @@
 import {
   limitarAoCanvas,
   type Caixa,
+  type Giro,
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
 import { analiseDeExemplo } from './motor-falso'
@@ -83,16 +84,30 @@ export function criarRenderizadorFalso({
   fundosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
+  let portaoDasPaginas: Promise<void> | null = null
+  let abrirOPortao = () => {}
   const renderizador = {
+    /** Daqui em diante, cada página grande pedida espera o `soltarPaginas()`, sem depender de relógio. */
+    prenderPaginas() {
+      portaoDasPaginas = new Promise<void>((soltar) => {
+        abrirOPortao = soltar
+      })
+    },
+    soltarPaginas() {
+      abrirOPortao()
+      portaoDasPaginas = null
+    },
     abertos: [] as string[],
     miniaturas: [] as { indice: number; larguraCss: number }[],
     /** Cada página grande pedida, com o canvas entregue (vazio quando a página foi superada ou soltou). */
     paginasPedidas: [] as {
       indice: number
       larguraCss: number
+      giro: Giro
       canvas?: HTMLCanvasElement
     }[],
-    fundos: [] as { indice: number; cobrir: readonly Caixa[] }[],
+    fundos: [] as { indice: number; cobrir: readonly Caixa[]; giro: Giro }[],
+    textosConsultados: [] as { indice: number; ponto: Ponto; giro: Giro }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
@@ -113,24 +128,28 @@ export function criarRenderizadorFalso({
       const falharam = new Set<number>()
       return {
         paginas: total,
-        async pagina(indice, larguraCss) {
-          const pedido = { indice, larguraCss } as {
+        async pagina(indice, larguraCss, giro = 0) {
+          const pedido = { indice, larguraCss, giro } as {
             indice: number
             larguraCss: number
+            giro: Giro
             canvas?: HTMLCanvasElement
           }
           renderizador.paginasPedidas.push(pedido)
           const minha = ++vez
+          const portao = portaoDasPaginas
           await espera()
+          if (portao) await portao
           if (fechado) throw new Error('o documento já foi fechado')
           if (minha !== vez) throw new PaginaSuperada()
           if (paginasQueFalham.includes(indice) && !falharam.has(indice)) {
             falharam.add(indice)
             throw new Error('falta de memória')
           }
-          const tamanho = deitadas[indice]
-            ? { largura: A4.altura, altura: A4.largura }
-            : A4
+          const tamanho =
+            deitadas[indice] !== (giro === 90 || giro === 270)
+              ? { largura: A4.altura, altura: A4.largura }
+              : A4
           const densidade = Math.max(1, globalThis.devicePixelRatio || 1)
           const { largura, altura } = limitarAoCanvas(
             tamanho,
@@ -148,8 +167,8 @@ export function criarRenderizadorFalso({
           pedido.canvas = canvas
           return { canvas, tamanho }
         },
-        async fundo(indice, cobrir) {
-          renderizador.fundos.push({ indice, cobrir })
+        async fundo(indice, cobrir, giro = 0) {
+          renderizador.fundos.push({ indice, cobrir, giro })
           await espera()
           if (fechado) throw new Error('o documento já foi fechado')
           if (fundosQueFalham.includes(indice)) {
@@ -157,7 +176,8 @@ export function criarRenderizadorFalso({
           }
           return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
         },
-        async textoNoPonto(_indice, ponto) {
+        async textoNoPonto(indice, ponto, giro = 0) {
+          renderizador.textosConsultados.push({ indice, ponto, giro })
           return !fechado && temTextoNaFolhaFalsa(ponto)
         },
         async miniatura(indice, larguraCss) {

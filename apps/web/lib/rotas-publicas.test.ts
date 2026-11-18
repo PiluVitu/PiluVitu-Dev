@@ -198,7 +198,7 @@ describe('rotasPublicas', () => {
       caminho: '/tools/pdf/editar',
       nome: 'Editar PDF',
       descricao:
-        'Editar PDF: Escreve, desenha, põe imagens e cobre trechos por cima das páginas. Utilitário para desenvolvedores que roda direto no navegador.',
+        'Editar PDF: Organiza as páginas e escreve, desenha, põe imagens e cobre trechos por cima delas. Utilitário para desenvolvedores que roda direto no navegador.',
     })
   })
 

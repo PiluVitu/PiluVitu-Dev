@@ -174,13 +174,60 @@ describe('editar', () => {
     )
   })
 
-  it('o Gerar tem o botão, o motivo de ficar parado (semObjetos) e o anúncio do pronto', () => {
-    expect(TEXTOS.editar.gerar.botao).toBe('Gerar PDF editado')
-    expect(TEXTOS.editar.gerar.semObjetos).toBe(
-      'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
+  it('o Gerar tem o botão, o motivo de ficar parado (semMudancas) e o anúncio do pronto', () => {
+    expect(TEXTOS.editar.gerar.botao).toBe('Gerar PDF')
+    expect(TEXTOS.editar.gerar.semMudancas).toBe(
+      'Mude alguma página ou ponha um objeto numa página para gerar o PDF.',
     )
     expect(TEXTOS.editar.anuncios.pronto(1, 500)).toBe(
       'PDF editado pronto: 1 página, 500 bytes.',
+    )
+  })
+
+  it('as páginas da Bancada: o rótulo é a posição, com a origem embaixo, e o desfazer delas tem nome próprio', () => {
+    const P = TEXTOS.editar.paginasDoDocumento
+    expect(P.rotulo(3)).toBe('Página 3')
+    expect(P.origem('contrato.pdf', 2)).toBe('contrato.pdf, pág. 2')
+    expect(P.abrir(12)).toBe('Abrir a página 12')
+    expect(P.aberta).toBe('aberta')
+    expect(P.desfazer).toBe('Desfazer nas páginas')
+    expect(P.desfeito).toBe('Desfeito nas páginas.')
+    expect(P.naSelecao).toBe('Na seleção')
+  })
+
+  it('no celular, a folha Páginas; o pular; e o Ctrl+Z das páginas, que não tem refazer', () => {
+    const P = TEXTOS.editar.paginasDoDocumento
+    expect(P.abrirFolha).toBe('Páginas')
+    expect(P.titulo).toBe('Páginas')
+    expect(P.contagem(1)).toBe('1 página')
+    expect(P.contagem(7)).toBe('7 páginas')
+    expect(P.dicaDaFolha).toBe('Toque numa miniatura para abrir a página.')
+    expect(P.pular).toBe('Pular para a página aberta')
+    expect(P.atalho).toBe(
+      'Com o foco nas páginas, Ctrl+Z (⌘+Z no Mac) desfaz a última mudança nelas.',
+    )
+    expect(P.semRefazer).toBe('Nas páginas não há refazer.')
+  })
+
+  it('a nota da moldura diz como a página sai no PDF', () => {
+    const { notaDoGiro } = TEXTOS.editar
+    expect(notaDoGiro(90)).toBe(
+      'No PDF, esta página sai girada 90° à direita, com os objetos.',
+    )
+    expect(notaDoGiro(270)).toBe(
+      'No PDF, esta página sai girada 90° à esquerda, com os objetos.',
+    )
+    expect(notaDoGiro(180)).toBe(
+      'No PDF, esta página sai girada 180°, com os objetos.',
+    )
+  })
+
+  it('o desfazer dos objetos numa página apagada não navega e diz onde a mudança ficou', () => {
+    expect(TEXTOS.editar.anuncios.desfeitoNaApagada).toBe(
+      'Desfeito numa página que você apagou. Para ela voltar, use Desfazer nas páginas.',
+    )
+    expect(TEXTOS.editar.anuncios.refeitoNaApagada).toBe(
+      'Refeito numa página que você apagou. Para ela voltar, use Desfazer nas páginas.',
     )
   })
 })

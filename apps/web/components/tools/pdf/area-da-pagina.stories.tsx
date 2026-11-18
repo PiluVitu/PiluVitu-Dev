@@ -64,9 +64,13 @@ function PaginaAberta({
       </h2>
       <FaixaDePaginas
         documento={documento}
-        total={total}
+        paginas={Array.from({ length: total }, (_, indice) => ({
+          chave: `p${indice}`,
+          miniatura: indice,
+          giro: 0 as const,
+        }))}
         pagina={pagina}
-        idDoTitulo="titulo"
+        rotulo="Páginas"
         miniaturas={miniaturas}
         aoEscolher={aoEscolher}
       />

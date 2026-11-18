@@ -37,17 +37,8 @@ type Props = {
   botaoRef?: Ref<HTMLButtonElement>
 }
 
-export function ZonaDeArquivos({
-  aoEscolher,
-  multiplos = true,
-  desabilitada = false,
-  botaoRef,
-}: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const profundidade = useRef(0)
-  const [sobre, setSobre] = useState(false)
-
-  // Sem isto, soltar um PDF fora da zona faz o navegador abrir o arquivo e o trabalho se perde.
+// Sem isto, soltar um PDF fora da zona faz o navegador abrir o arquivo e o trabalho se perde.
+export function useProtegerAJanela() {
   useEffect(() => {
     const ignorar = (evento: globalThis.DragEvent) => {
       if (evento.dataTransfer?.types.includes('Files')) evento.preventDefault()
@@ -59,6 +50,18 @@ export function ZonaDeArquivos({
       window.removeEventListener('drop', ignorar)
     }
   }, [])
+}
+
+export function ZonaDeArquivos({
+  aoEscolher,
+  multiplos = true,
+  desabilitada = false,
+  botaoRef,
+}: Props) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const profundidade = useRef(0)
+  const [sobre, setSobre] = useState(false)
+  useProtegerAJanela()
 
   return (
     <div

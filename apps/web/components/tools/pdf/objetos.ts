@@ -15,6 +15,7 @@ import {
   type Cor,
   type Direcao,
   type FamiliaDaFonte,
+  type Giro,
   type ObjetoDaPagina,
   type ObjetoTexto,
   type Ponto,
@@ -581,13 +582,21 @@ export const DIRECAO_DA_TECLA: Readonly<Record<string, Direcao>> = {
   ArrowDown: 'baixo',
 }
 
-/** As edições de um documento, pelo id da página: os objetos de cada uma e as marcadas para apagar de verdade. */
+/**
+ * As edições de um documento, pelo id da página: os objetos de cada uma, as marcadas para apagar de verdade
+ * e a moldura (o giro da página quando o primeiro objeto entrou, como a tela a mostrava).
+ */
 export type Cena = {
   readonly objetos: ReadonlyMap<string, readonly ObjetoNaTela[]>
   readonly apagar: ReadonlySet<string>
+  readonly molduras: ReadonlyMap<string, Giro>
 }
 
-export const CENA_VAZIA: Cena = { objetos: new Map(), apagar: new Set() }
+export const CENA_VAZIA: Cena = {
+  objetos: new Map(),
+  apagar: new Set(),
+  molduras: new Map(),
+}
 
 const NENHUM: readonly ObjetoNaTela[] = []
 
@@ -595,23 +604,48 @@ export function objetosDa(cena: Cena, pagina: string): readonly ObjetoNaTela[] {
   return cena.objetos.get(pagina) ?? NENHUM
 }
 
+/** Sem objetos na página, a moldura é o giro que ela tem agora. */
+export function molduraDa(cena: Cena, pagina: string, giro: Giro): Giro {
+  return cena.molduras.get(pagina) ?? giro
+}
+
 function comObjetos(
   cena: Cena,
   pagina: string,
   objetos: readonly ObjetoNaTela[],
+  moldura: Giro = 0,
 ): Cena {
   const novos = new Map(cena.objetos)
-  if (objetos.length) novos.set(pagina, objetos)
-  else novos.delete(pagina)
-  return { ...cena, objetos: novos }
+  const molduras = new Map(cena.molduras)
+  if (objetos.length) {
+    novos.set(pagina, objetos)
+    if (!molduras.has(pagina)) molduras.set(pagina, moldura)
+  } else {
+    novos.delete(pagina)
+    molduras.delete(pagina)
+  }
+  return { ...cena, objetos: novos, molduras }
 }
 
+/** `moldura` só vale para o primeiro objeto da página: é o giro dela como a tela a mostra. */
 export function incluirObjeto(
   cena: Cena,
   pagina: string,
   objeto: ObjetoNaTela,
+  moldura: Giro = 0,
 ): Cena {
-  return comObjetos(cena, pagina, [...objetosDa(cena, pagina), objeto])
+  return comObjetos(cena, pagina, [...objetosDa(cena, pagina), objeto], moldura)
+}
+
+/** Só as edições das páginas pedidas: o Worker recusa objeto, fundo ou moldura de página fora do pedido. */
+export function cenaDasPaginas(cena: Cena, paginas: ReadonlySet<string>): Cena {
+  const so = <V>(mapa: ReadonlyMap<string, V>) =>
+    new Map([...mapa].filter(([pagina]) => paginas.has(pagina)))
+  return {
+    objetos: so(cena.objetos),
+    apagar: new Set([...cena.apagar].filter((pagina) => paginas.has(pagina))),
+    molduras: so(cena.molduras),
+  }
 }
 
 export function trocarObjeto(

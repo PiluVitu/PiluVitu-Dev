@@ -2,6 +2,7 @@ import type {
   AvisoDoPdf,
   Caixa,
   FamiliaDaFonte,
+  Giro,
   LadoDoMovimento,
   MotivoDoErroDePdf,
   SentidoDoGiro,
@@ -203,6 +204,17 @@ const documentoAberto = (nome: string, totalDePaginas: number) =>
 
 const listaDePaginas = (numeros: readonly number[]) =>
   `${concordar(numeros.length, 'a página', 'as páginas')} ${lista.format(numeros.map(numero))}`
+
+// A diferença entre o giro e a moldura: como a página sai no PDF, em relação à página grande da tela.
+function notaDoGiro(diferenca: Exclude<Giro, 0>): string {
+  const como =
+    diferenca === 180
+      ? formatarGraus(180)
+      : `${formatarGraus(90)} ${diferenca === 90 ? 'à direita' : 'à esquerda'}`
+  return `No PDF, esta página sai girada ${como}, com os objetos.`
+}
+
+const VOLTAR_PELAS_PAGINAS = 'Para ela voltar, use Desfazer nas páginas.'
 
 const SENTIDOS: Record<SentidoDoGiro, string> = {
   esquerda: 'para a esquerda',
@@ -411,6 +423,27 @@ export const TEXTOS = {
       `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
     avisos: AVISOS_DO_PDF,
     paginas: 'Páginas',
+    paginasDoDocumento: {
+      rotulo: (posicao: number) => `Página ${numero(posicao)}`,
+      origem: (nome: string, numeroNoArquivo: number) =>
+        `${nome}, pág. ${numero(numeroNoArquivo)}`,
+      abrir: (posicao: number) => `Abrir a página ${numero(posicao)}`,
+      aberta: 'aberta',
+      naSelecao: 'Na seleção',
+      desfazer: 'Desfazer nas páginas',
+      desfeito: 'Desfeito nas páginas.',
+      abrirFolha: 'Páginas',
+      titulo: 'Páginas',
+      contagem: (total: number) => paginas(total),
+      dicaDaFolha: 'Toque numa miniatura para abrir a página.',
+      pular: 'Pular para a página aberta',
+      atalho:
+        'Com o foco nas páginas, Ctrl+Z (⌘+Z no Mac) desfaz a última mudança nelas.',
+      semRefazer: 'Nas páginas não há refazer.',
+      alcanceDoExtrair:
+        'Extrair gera um PDF novo só com as selecionadas: os marcadores não passam, os links para outra página deixam de funcionar, e campos de formulário podem deixar de ser editáveis.',
+    },
+    notaDoGiro,
     escolherPagina: (numeroDaPagina: number) =>
       `Página ${numero(numeroDaPagina)}`,
     numeroDaMiniatura: (numeroDaPagina: number) => numero(numeroDaPagina),
@@ -525,13 +558,15 @@ export const TEXTOS = {
       aviso: AVISO_DO_COBRIR,
       apagarDeVerdade: 'Apagar de verdade o que está embaixo',
       antes: 'Antes de confirmar, o que muda nesta página:',
-      consequencias: [
+      consequencias: (porCopia: boolean) => [
         'A página vira uma imagem, com os retângulos de cobrir pintados nela: o que estava embaixo some do arquivo.',
         'O texto da página deixa de ser selecionável e de aparecer na busca.',
         'O PDF fica maior.',
         'Os links e os campos de formulário desta página saem, e também os marcadores que levam a ela.',
         'Se o PDF tiver um formulário XFA (comum em formulários de governo e de banco), ele sai do documento inteiro, porque guarda o que foi digitado. Os campos comuns continuam.',
-        'Continuam no arquivo, sem mudança: o título, o autor e as outras informações do documento, e os anexos. Se o dado estiver num deles, o apagar de verdade não o tira.',
+        porCopia
+          ? 'O PDF sai como um documento novo: o título, o autor e as outras informações do documento, e os anexos, não passam para ele.'
+          : 'Continuam no PDF gerado, sem mudança: o título, o autor e as outras informações do documento, e os anexos. Se o dado estiver num deles, o apagar de verdade não o tira. O PDF das páginas extraídas sai sem eles.',
       ],
       confirmar: 'Apagar de verdade nesta página',
       cancelar: 'Cancelar',
@@ -540,9 +575,9 @@ export const TEXTOS = {
       desligar: 'Só cobrir, sem apagar',
     },
     gerar: {
-      botao: 'Gerar PDF editado',
-      semObjetos:
-        'Ponha pelo menos um objeto numa página para gerar o PDF editado.',
+      botao: 'Gerar PDF',
+      semMudancas:
+        'Mude alguma página ou ponha um objeto numa página para gerar o PDF.',
       resumo: (objetos: number, paginasComObjetos: number) =>
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
       apagando: (numeros: readonly number[]) =>
@@ -579,6 +614,8 @@ export const TEXTOS = {
         `Desfeito na página ${numero(numeroDaPagina)}.`,
       refeitoNaPagina: (numeroDaPagina: number) =>
         `Refeito na página ${numero(numeroDaPagina)}.`,
+      desfeitoNaApagada: `Desfeito numa página que você apagou. ${VOLTAR_PELAS_PAGINAS}`,
+      refeitoNaApagada: `Refeito numa página que você apagou. ${VOLTAR_PELAS_PAGINAS}`,
       apagarLigado: (numeroDaPagina: number) =>
         `A página ${numero(numeroDaPagina)} vai ser apagada de verdade embaixo dos retângulos de cobrir.`,
       apagarDesligado: (numeroDaPagina: number) =>

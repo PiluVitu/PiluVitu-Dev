@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs'
-import { expect, userEvent, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { DocumentoPdfProvider } from './documento-pdf'
 import { EditarPdf } from './editar'
 import { criarMotorFalso } from './motor-falso'
@@ -15,7 +15,7 @@ const meta = {
   decorators: [
     (Story, { parameters }) => (
       <DocumentoPdfProvider arquivoInicial={parameters.arquivoInicial ?? null}>
-        <div className="max-w-3xl">
+        <div className="max-w-6xl">
           <Story />
         </div>
       </DocumentoPdfProvider>
@@ -28,6 +28,11 @@ type Story = StoryObj<typeof meta>
 
 const pdf = (nome: string) =>
   new File([new Uint8Array(240_000)], nome, { type: 'application/pdf' })
+
+// A coluna das páginas só aparece a partir de lg (1024 px): as stories da Bancada fixam a largura.
+const DESKTOP = { viewport: { value: '1280-900', isRotated: false } }
+// Abaixo de lg, a lista de páginas mora na folha que o botão "Páginas" abre pela borda de baixo.
+const CELULAR = { viewport: { value: '390-844', isRotated: false } }
 
 export const Vazio: Story = {
   args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
@@ -43,9 +48,6 @@ export const ComPaginas: Story = {
     await waitFor(() =>
       expect(canvas.getByText('Página 1 de 12')).toBeVisible(),
     )
-    await expect(
-      canvas.getByRole('button', { name: 'Página 1' }),
-    ).toHaveAttribute('aria-current', 'page')
     // A folha só aparece depois de a área ser medida, um pouco depois do "Página 1 de 12".
     await expect(
       await canvas.findByRole('img', { name: 'Página 1' }),
@@ -193,9 +195,136 @@ export const PdfEditadoPronto: Story = {
     await userEvent.click(
       canvas.getByRole('button', { name: 'Inserir no centro' }),
     )
-    await userEvent.click(
-      canvas.getByRole('button', { name: 'Gerar PDF editado' }),
+    await userEvent.click(canvas.getByRole('button', { name: 'Gerar PDF' }))
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('link', { name: 'Baixar contrato-3p-editado.pdf' }),
+      ).toHaveFocus(),
     )
+  },
+}
+
+// Editor único, PR 3: a Bancada, com as páginas à esquerda, a página no meio e o objeto à direita.
+export const BancadaComPaginas: Story = {
+  args: {
+    renderizador: criarRenderizadorFalso({ atraso: 80 }),
+    motor: criarMotorFalso(),
+  },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-girado-7p.pdf') },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('button', { name: 'Abrir a página 1' }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(
+      canvas.getByText('contrato-girado-7p.pdf, pág. 7'),
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Abrir a página 3' }),
+    )
+    await waitFor(() => expect(canvas.getByText('Página 3 de 7')).toBeVisible())
+    await expect(
+      canvas.getByRole('button', { name: 'Girar à direita' }),
+    ).toBeDisabled()
+  },
+}
+
+export const BancadaComSelecao: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-7p.pdf') },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('checkbox', { name: 'Selecionar página 4' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 2' }),
+    )
+    await expect(canvas.getByText('2 páginas selecionadas')).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Mover para antes' }),
+    )
+    await expect(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 1' }),
+    ).toBeChecked()
+    await expect(
+      canvas.getByRole('button', { name: 'Desfazer nas páginas' }),
+    ).toBeEnabled()
+    await expect(
+      canvas.getByText(/^O conteúdo das páginas vai inteiro/),
+    ).toBeVisible()
+  },
+}
+
+export const PaginaGiradaComObjetos: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Texto' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.keyboard('Recebido em 17/11/2026')
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Girar a página 1 à direita' }),
+    )
+    await expect(
+      canvas.getByText(
+        'No PDF, esta página sai girada 90° à direita, com os objetos.',
+      ),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: /^Texto 'Recebido em 17\/11\/2026'/ }),
+    ).toBeVisible()
+  },
+}
+
+// Etapa 2: no celular, a folha Páginas aberta, com uma página marcada e outra girada.
+export const FolhaDePaginasAberta: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: CELULAR,
+  parameters: { arquivoInicial: pdf('contrato-7p.pdf') },
+  play: async ({ canvas, canvasElement }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'Páginas' }),
+    )
+    const folha = await within(canvasElement.ownerDocument.body).findByRole(
+      'dialog',
+      { name: 'Páginas' },
+    )
+    await userEvent.click(
+      within(folha).getByRole('checkbox', { name: 'Selecionar página 3' }),
+    )
+    await userEvent.click(
+      within(folha).getByRole('button', { name: 'Girar a página 2 à direita' }),
+    )
+    await expect(within(folha).getByText('1 página selecionada')).toBeVisible()
+    await expect(
+      within(folha).getByText('Toque numa miniatura para abrir a página.'),
+    ).toBeVisible()
+  },
+}
+
+// O PDF pronto na Bancada: página girada e um objeto, com o link de baixar no cabeçalho.
+export const BancadaPronta: Story = {
+  args: {
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({ atraso: 150 }),
+  },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Retângulo' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Girar a página 2 à direita' }),
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Gerar PDF' }))
     await waitFor(() =>
       expect(
         canvas.getByRole('link', { name: 'Baixar contrato-3p-editado.pdf' }),

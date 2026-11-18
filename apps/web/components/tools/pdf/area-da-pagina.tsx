@@ -22,7 +22,7 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
 import { cn } from '@piluvitu/ui/cn'
-import type { Tamanho } from '@piluvitu/tools/pdf-regras'
+import type { Giro, Tamanho } from '@piluvitu/tools/pdf-regras'
 import type { DocumentoAberto } from './renderizador'
 import { TEXTOS } from './textos'
 
@@ -43,6 +43,7 @@ const PROPORCAO_DO_A4 = Math.SQRT2
 type Desenho = {
   documento: DocumentoAberto
   pagina: number
+  giro: Giro
   larguraCss: number
   tentativa: number
   ok: boolean
@@ -82,12 +83,16 @@ function useLarguraDaArea(
 export function usePaginaDesenhada({
   documento,
   pagina,
+  giro = 0,
   zoom,
   areaRef,
   folhaRef,
 }: {
   documento: DocumentoAberto | null
+  /** O índice no arquivo. */
   pagina: number
+  /** A moldura: a página é desenhada girada a mais, como os objetos dela foram postos. */
+  giro?: Giro
   zoom: number
   areaRef: RefObject<HTMLElement | null>
   folhaRef: RefObject<HTMLElement | null>
@@ -103,6 +108,7 @@ export function usePaginaDesenhada({
     desenho &&
     desenho.documento === documento &&
     desenho.pagina === pagina &&
+    desenho.giro === giro &&
     desenho.larguraCss === larguraCss &&
     desenho.tentativa === tentativa
       ? desenho
@@ -114,6 +120,7 @@ export function usePaginaDesenhada({
     desenho &&
     desenho.documento === documento &&
     desenho.pagina === pagina &&
+    desenho.giro === giro &&
     desenho.ok
       ? desenho.tamanho
       : null
@@ -121,8 +128,8 @@ export function usePaginaDesenhada({
   useEffect(() => {
     if (!documento || larguraCss === null) return
     let ativo = true
-    const pedido = { documento, pagina, larguraCss, tentativa }
-    documento.pagina(pagina, larguraCss).then(
+    const pedido = { documento, pagina, giro, larguraCss, tentativa }
+    documento.pagina(pagina, larguraCss, giro).then(
       ({ canvas, tamanho: daPagina }) => {
         if (!ativo) return
         canvas.className = 'block size-full'
@@ -143,7 +150,7 @@ export function usePaginaDesenhada({
     return () => {
       ativo = false
     }
-  }, [documento, pagina, larguraCss, tentativa, folhaRef])
+  }, [documento, pagina, giro, larguraCss, tentativa, folhaRef])
 
   return {
     larguraCss,
@@ -156,6 +163,7 @@ export function usePaginaDesenhada({
 }
 
 export function AreaDaPagina({
+  id,
   areaRef,
   folhaRef,
   numeroDaPagina,
@@ -166,6 +174,8 @@ export function AreaDaPagina({
   aoTentarDeNovo,
   children,
 }: {
+  /** O alvo do link "Pular para a página aberta". */
+  id?: string
   areaRef: RefObject<HTMLDivElement | null>
   folhaRef: RefObject<HTMLDivElement | null>
   numeroDaPagina: number
@@ -179,6 +189,7 @@ export function AreaDaPagina({
   return (
     <div
       ref={areaRef}
+      id={id}
       role="group"
       aria-label={T.areaDaPagina(numeroDaPagina)}
       tabIndex={0}
@@ -384,26 +395,35 @@ export function ControlesDaPagina({
   )
 }
 
+export type PaginaDaFaixa = {
+  readonly chave: string
+  /** O índice da miniatura (a página no arquivo). */
+  readonly miniatura: number
+  readonly giro: Giro
+}
+
 export function FaixaDePaginas({
   documento,
-  total,
+  paginas,
   pagina,
-  idDoTitulo,
+  rotulo,
   miniaturas,
   aoEscolher,
 }: {
   documento: DocumentoAberto
-  total: number
+  /** Na ordem do documento: o número de cada uma é a posição. */
+  paginas: readonly PaginaDaFaixa[]
   pagina: number
-  idDoTitulo: string
+  rotulo: string
   miniaturas: {
     urls: ReadonlyMap<number, string>
     falhas: ReadonlySet<number>
     observar: (elemento: Element, indice: number) => () => void
   }
-  /** Estável entre renderizações: as miniaturas são memorizadas. */
-  aoEscolher: (indice: number) => void
+  /** Estável entre renderizações: as miniaturas são memorizadas. Recebe a posição. */
+  aoEscolher: (posicao: number) => void
 }) {
+  const total = paginas.length
   const faixaRef = useRef<HTMLOListElement>(null)
   const botoesDasPaginas = useRef(new Map<number, HTMLButtonElement>())
   const [focoNaFaixa, setFocoNaFaixa] = useState<{
@@ -464,20 +484,22 @@ export function FaixaDePaginas({
     <div className="space-y-1">
       <ol
         ref={faixaRef}
-        aria-labelledby={idDoTitulo}
+        aria-label={rotulo}
         onKeyDown={aoTeclarNaFaixa}
         onBlur={aoSairDaFaixa}
         className="flex gap-2 overflow-x-auto p-1 pb-2"
         data-testid="editar-pdf-faixa"
       >
-        {Array.from({ length: total }, (_, indice) => (
+        {paginas.map(({ chave, miniatura, giro }, posicao) => (
           <MiniaturaDaPagina
-            key={indice}
-            indice={indice}
-            atual={indice === pagina}
-            focavel={indice === indiceFocavel}
-            url={miniaturas.urls.get(indice)}
-            falhou={miniaturas.falhas.has(indice)}
+            key={chave}
+            indice={posicao}
+            miniatura={miniatura}
+            giro={giro}
+            atual={posicao === pagina}
+            focavel={posicao === indiceFocavel}
+            url={miniaturas.urls.get(miniatura)}
+            falhou={miniaturas.falhas.has(miniatura)}
             aoEscolher={aoEscolher}
             aoFocar={aoFocarMiniatura}
             registrar={registrarBotao}
@@ -492,6 +514,8 @@ export function FaixaDePaginas({
 
 const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   indice,
+  miniatura,
+  giro,
   atual,
   focavel,
   url,
@@ -502,6 +526,8 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   observar,
 }: {
   indice: number
+  miniatura: number
+  giro: Giro
   atual: boolean
   focavel: boolean
   url: string | undefined
@@ -514,9 +540,9 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   const numero = indice + 1
   const refDoItem = useCallback(
     (no: HTMLLIElement | null) => {
-      if (no) return observar(no, indice)
+      if (no) return observar(no, miniatura)
     },
-    [observar, indice],
+    [observar, miniatura],
   )
   const refDoBotao = useCallback(
     (botao: HTMLButtonElement | null) => registrar(indice, botao),
@@ -549,6 +575,7 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
               alt=""
               draggable={false}
               className="max-h-full max-w-full"
+              style={giro ? { transform: `rotate(${giro}deg)` } : undefined}
               data-testid="editar-pdf-miniatura-imagem"
             />
           ) : falhou ? (
