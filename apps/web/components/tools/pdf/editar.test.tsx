@@ -2263,8 +2263,14 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
         },
       ],
     })
+    // Menor da revisão do PR B: com o cobrir conferido, desenhar a tirada sem os cobrir dela (o segredo
+    // legível no JPEG) reprova aqui, não só no Extrair.
     expect(renderizador.fundos).toEqual([
-      expect.objectContaining({ indice: 0, giro: 0 }),
+      {
+        indice: 0,
+        cobrir: [{ x: 217.5, y: 405, largura: 160, altura: 32 }],
+        giro: 0,
+      },
     ])
   })
 
@@ -2289,7 +2295,7 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
   // A proteção vem da cena, que guarda os objetos da página tirada mesmo depois que ela sai do desfazer das
   // páginas (o arquivo continua aberto, porque outra página dele está na lista).
   it('a apagada tirada da Bancada continua indo depois de sair do desfazer das páginas', async () => {
-    const { motor } = await abrirParaEditar('livro-3p.pdf')
+    const { renderizador, motor } = await abrirParaEditar('livro-3p.pdf')
     await inserirNoCentro('Cobrir')
     await clicar(porNome('Apagar de verdade o que está embaixo'))
     await clicar(porNome('Apagar de verdade nesta página'))
@@ -2308,6 +2314,13 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
     expect(motor.montadas[0]).toMatchObject({
       apagadasForaDoPlano: [{ origem: { arquivo: 0, indice: 0 }, moldura: 0 }],
     })
+    expect(renderizador.fundos).toEqual([
+      {
+        indice: 0,
+        cobrir: [{ x: 217.5, y: 405, largura: 160, altura: 32 }],
+        giro: 0,
+      },
+    ])
   }, 30_000)
 
   it('a explicação do apagar de verdade muda quando o PDF sai por cópia: o título, o autor e os anexos não passam', async () => {
