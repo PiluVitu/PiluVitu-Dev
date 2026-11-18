@@ -13,6 +13,7 @@ import { arrayMove } from '@dnd-kit/sortable'
 import {
   faArrowRotateLeft,
   faArrowRotateRight,
+  faChevronDown,
   faCircleExclamation,
   faCircleInfo,
   faCrosshairs,
@@ -26,6 +27,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
+import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import {
   Sheet,
@@ -81,7 +83,7 @@ import {
   type Paginas,
   type PaginasComDesfazer,
 } from './bancada'
-import { useBancadaLarga } from './bancada-larga'
+import { useBancadaLarga, useTelaBaixa } from './bancada-larga'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import {
   CabecalhoDoDocumento,
@@ -349,6 +351,7 @@ export function EditarPdf({
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const baixarRef = useRef<HTMLAnchorElement>(null)
   const botaoDasPaginasRef = useRef<HTMLButtonElement>(null)
+  const botaoDaSelecaoRef = useRef<HTMLButtonElement>(null)
   const inputDoPdfRef = useRef<HTMLInputElement>(null)
   const adicionarNaBarraRef = useRef<HTMLButtonElement>(null)
   // A coluna (larga) ou a folha (estreita): o Ctrl/⌘+Z dentro dela desfaz as páginas.
@@ -407,6 +410,10 @@ export function EditarPdf({
   } | null>(null)
   const larga = useBancadaLarga()
   if (larga && folhaAberta) setFolhaAberta(false)
+  // Na folha, a barra da seleção e as dicas recolhem; em tela baixa começam recolhidas, para a lista caber.
+  const telaBaixa = useTelaBaixa()
+  const [selecaoNaFolha, setSelecaoNaFolha] = useState<boolean | null>(null)
+  const selecaoAberta = selecaoNaFolha ?? !telaBaixa
   useProtegerAJanela()
 
   const {
@@ -1000,7 +1007,14 @@ export function EditarPdf({
 
   // Com a folha fechada, o Extrair não está na tela: o foco volta ao botão que a abre.
   function botaoDoExtrair() {
-    return botoesDaBarra.current.get('extrair') ?? botaoDasPaginasRef.current
+    return (
+      aVista(botoesDaBarra.current.get('extrair')) ?? botaoDasPaginasRef.current
+    )
+  }
+
+  // Com a seleção recolhida na folha, os botões dela estão escondidos e não pegam foco.
+  function aVista(botao: HTMLButtonElement | undefined) {
+    return botao?.closest('[hidden]') ? botaoDaSelecaoRef.current : botao
   }
 
   function fecharAFolha(alvo: Foco) {
@@ -1083,7 +1097,7 @@ export function EditarPdf({
     alvo ? caixas.current.get(alvo.id) : null
 
   const primeiroBotaoDaBarra = () =>
-    [...botoesDaBarra.current.values()].find((botao) => !botao.disabled)
+    aVista([...botoesDaBarra.current.values()].find((botao) => !botao.disabled))
 
   function agirNaPagina(acao: AcaoNaBancada) {
     if (montando) return
@@ -1152,7 +1166,7 @@ export function EditarPdf({
       qtd === 1
         ? O.anuncios.movida(posicoes[0] + 1, novasPosicoes[0] + 1, total)
         : O.anuncios.movidas(qtd, lado),
-      () => botoesDaBarra.current.get(naPonta ? outro : mesmo),
+      () => aVista(botoesDaBarra.current.get(naPonta ? outro : mesmo)),
     )
   }
 
@@ -1172,13 +1186,13 @@ export function EditarPdf({
   function selecionarTodas() {
     trocarMarcadas(marcarTodas(estadoDasPaginas))
     anunciar(O.anuncios.todasSelecionadas(total))
-    focar(() => botoesDaBarra.current.get('limparSelecao'))
+    focar(() => aVista(botoesDaBarra.current.get('limparSelecao')))
   }
 
   function limparSelecao() {
     trocarMarcadas(semMarcadas(estadoDasPaginas))
     anunciar(O.anuncios.selecaoLimpa)
-    focar(() => botoesDaBarra.current.get('selecionarTodas'))
+    focar(() => aVista(botoesDaBarra.current.get('selecionarTodas')))
   }
 
   function desfazerAsPaginas() {
@@ -1192,7 +1206,7 @@ export function EditarPdf({
     anunciar(P.desfeito)
     focar(() => {
       if (podeTerFoco(focadoAntes)) return focadoAntes
-      const botao = botoesDaBarra.current.get('desfazer')
+      const botao = aVista(botoesDaBarra.current.get('desfazer'))
       return podeTerFoco(botao) ? botao : primeiroBotaoDaBarra()
     })
   }
@@ -1487,6 +1501,7 @@ export function EditarPdf({
   const idDaBrancaEsperando = `${ids}-branca-esperando`
   const idDoAlcance = `${ids}-alcance`
   const idDoAlcanceDoExtrair = `${ids}-alcance-do-extrair`
+  const idDaSelecao = `${ids}-selecao`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const idDaDica = (motivo: MotivoDesabilitado) => `${ids}-dica-${motivo}`
@@ -1714,19 +1729,18 @@ export function EditarPdf({
       {alertaDaAdicao(!recusaVisivel?.naBarra)}
     </div>
   )
-  const acoesDasPaginas = (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <p className="text-muted-foreground font-mono text-xs font-semibold tracking-[0.2em] uppercase">
-          {P.naSelecao}
-        </p>
-        <p
-          className="text-sm font-medium"
-          data-testid="editar-pdf-selecionadas"
-        >
-          {O.selecionadas(qtd)}
-        </p>
-      </div>
+  const rotuloDaSelecao = (
+    <span className="text-muted-foreground font-mono text-xs font-semibold tracking-[0.2em] uppercase">
+      {P.naSelecao}
+    </span>
+  )
+  const contagemDaSelecao = (
+    <span className="text-sm font-medium" data-testid="editar-pdf-selecionadas">
+      {O.selecionadas(qtd)}
+    </span>
+  )
+  const barraEDicas = (
+    <>
       <BarraDaSelecao
         botoes={botoesDaSelecao}
         botoesRef={botoesDaBarra}
@@ -1752,8 +1766,46 @@ export function EditarPdf({
         )}
         <li>{P.atalho}</li>
       </ul>
-    </div>
+    </>
   )
+  const acoesDasPaginas = (onde: 'coluna' | 'folha') =>
+    onde === 'coluna' ? (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+          {rotuloDaSelecao}
+          {contagemDaSelecao}
+        </div>
+        {barraEDicas}
+      </div>
+    ) : (
+      <div className="space-y-2" data-testid="editar-pdf-bloco-da-selecao">
+        <button
+          ref={botaoDaSelecaoRef}
+          type="button"
+          aria-expanded={selecaoAberta}
+          aria-controls={idDaSelecao}
+          onClick={() => setSelecaoNaFolha(!selecaoAberta)}
+          className="focus-visible:ring-ring -mx-2 flex min-h-11 w-[calc(100%+1rem)] flex-wrap items-center gap-x-2 rounded-md px-2 text-left focus-visible:ring-2 focus-visible:outline-hidden"
+          data-testid="editar-pdf-recolher-selecao"
+        >
+          {rotuloDaSelecao}{' '}
+          <span className="ml-auto flex items-center gap-2">
+            {contagemDaSelecao}
+            <FontAwesomeIcon
+              icon={faChevronDown}
+              className={cn(
+                'size-3.5 shrink-0 transition-transform motion-reduce:transition-none',
+                selecaoAberta && 'rotate-180',
+              )}
+              aria-hidden
+            />
+          </span>
+        </button>
+        <div id={idDaSelecao} hidden={!selecaoAberta} className="space-y-2">
+          {barraEDicas}
+        </div>
+      </div>
+    )
   const pularParaAAberta = (
     <a
       href={`#${idDaArea}`}
@@ -2328,7 +2380,7 @@ export function EditarPdf({
                   </span>
                 </div>
                 {adicionarNaLista('coluna')}
-                {acoesDasPaginas}
+                {acoesDasPaginas('coluna')}
                 {pularParaAAberta}
                 <div
                   ref={rolagemDaColunaRef}
@@ -2388,7 +2440,7 @@ export function EditarPdf({
                           </span>
                         </div>
                         {adicionarNaLista('folha')}
-                        {acoesDasPaginas}
+                        {acoesDasPaginas('folha')}
                         <p className="text-muted-foreground text-sm">
                           {P.dicaDaFolha}
                         </p>

@@ -2350,6 +2350,11 @@ test.describe('Editar PDF: a Bancada', () => {
     await expect(folha).toBeVisible()
     await expect(folha.getByTestId('editar-pdf-pagina')).toHaveCount(3)
     await folha.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
+    // A 720 px de altura a seleção começa recolhida; aberta, os botões dela também entram na conta dos 44 px.
+    const daSelecao = folha.getByRole('button', { name: /^Na seleção/ })
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'false')
+    await daSelecao.click()
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'true')
     await page.evaluate(() =>
       Promise.all(document.getAnimations().map((a) => a.finished)),
     )
@@ -2363,15 +2368,18 @@ test.describe('Editar PDF: a Bancada', () => {
     expect(await folha.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     )
+    const daBarra = await folha
+      .getByTestId('editar-pdf-barra')
+      .getByRole('button')
+      .all()
+    expect(daBarra.length).toBeGreaterThan(0)
     const alvos = [
       folha.getByTestId('editar-pdf-selecao').first(),
       folha.getByRole('button', { name: 'Abrir a página 1' }),
       folha.getByRole('button', { name: 'Girar a página 1 à direita' }),
       folha.getByRole('button', { name: 'Apagar a página 1' }),
-      ...(await folha
-        .getByTestId('editar-pdf-barra')
-        .getByRole('button')
-        .all()),
+      daSelecao,
+      ...daBarra,
       folha.getByRole('button', { name: 'Fechar' }),
     ]
     for (const alvo of alvos) {
@@ -2436,11 +2444,11 @@ test.describe('Editar PDF: a Bancada', () => {
       ).toBe(true)
     })
 
-  for (const [largura, altura] of [
-    [390, 844],
-    [320, 720],
-  ])
-    test(`a ${largura} × ${altura} px, com 20 páginas, a lista rola dentro da folha: o título, o Fechar e as ações da seleção ficam à vista`, async ({
+  for (const [largura, altura, recolhida] of [
+    [390, 844, false],
+    [320, 720, true],
+  ] as const)
+    test(`a ${largura} × ${altura} px, com 20 páginas, a lista rola dentro da folha: o título, o Fechar e as ações da seleção ficam à vista (a seleção ${recolhida ? 'aberta pelo botão' : 'já aberta'})`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: largura, height: altura })
@@ -2455,6 +2463,12 @@ test.describe('Editar PDF: a Bancada', () => {
       await page.getByRole('button', { name: 'Páginas', exact: true }).click()
       const folha = page.getByRole('dialog', { name: 'Páginas' })
       await expect(folha).toBeVisible()
+      const daSelecao = folha.getByRole('button', { name: /^Na seleção/ })
+      await expect(daSelecao).toHaveAttribute(
+        'aria-expanded',
+        String(!recolhida),
+      )
+      if (recolhida) await daSelecao.click()
       await folha
         .getByRole('checkbox', { name: 'Selecionar página 12' })
         .check()
@@ -2741,20 +2755,91 @@ test.describe('Editar PDF: a Bancada', () => {
     expect(await rolagem.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
   })
 
-  // Achado do E2E pedido pelo Crivo: a 568 px de altura, os controles da folha passam de 450 px, a lista
-  // começa abaixo da borda da tela e a própria folha também rola. Fica marcado como falha conhecida até a
-  // decisão de layout; quando a folha passar, o Playwright avisa e o test.fail sai. Abrir a folha e achar os
-  // 20 cartões é conferido no teste anterior, sem test.fail: se isso quebrar, ele reprova, e este não passa por engano.
-  test('a 320 × 568 px, ao abrir a folha Páginas, a lista já aparece com uma página inteira, e só ela rola', async ({
+  // Achado do E2E pedido pelo Crivo no #129: a 568 px de altura, com a barra da seleção e as dicas abertas, a
+  // lista começava abaixo da borda da tela e a própria folha rolava. Decisão do Paulo (2026-11-18): em tela
+  // baixa, a seleção começa recolhida num bloco que abre pelo botão "Na seleção".
+  test('a 320 × 568 px, ao abrir a folha Páginas, a seleção vem recolhida, a lista já aparece com uma página inteira, e só ela rola', async ({
     page,
   }) => {
-    test.fail()
     const folha = await abrirAFolhaCom20(page)
+    const daSelecao = folha.getByRole('button', { name: /^Na seleção/ })
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'false')
+    await expect(
+      folha.getByRole('button', { name: 'Extrair as selecionadas' }),
+    ).toBeHidden()
     const primeira = (await folha
       .getByTestId('editar-pdf-pagina')
       .first()
       .boundingBox())!
     expect(primeira.y + primeira.height).toBeLessThanOrEqual(568)
+    expect(
+      await folha.evaluate((el) => el.scrollHeight <= el.clientHeight),
+    ).toBe(true)
+  })
+
+  test('a 320 × 568 px, o botão "Na seleção" diz quantas estão marcadas, abre a barra e as dicas e as recolhe de novo, com 44 px', async ({
+    page,
+  }) => {
+    const folha = await abrirAFolhaCom20(page)
+    await folha
+      .getByRole('checkbox', { name: 'Selecionar página 2', exact: true })
+      .check()
+    const daSelecao = folha.getByRole('button', {
+      name: 'Na seleção 1 página selecionada',
+    })
+    const caixa = (await daSelecao.boundingBox())!
+    expect(caixa.height).toBeGreaterThanOrEqual(44)
+    expect(caixa.width).toBeGreaterThanOrEqual(44)
+
+    await daSelecao.focus()
+    await page.keyboard.press('Enter')
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'true')
+    const extrair = folha.getByRole('button', {
+      name: 'Extrair as selecionadas',
+    })
+    await expect(extrair).toBeVisible()
+    await expect(
+      folha.getByTestId('editar-pdf-dicas-das-paginas'),
+    ).toBeVisible()
+    await expect(
+      folha.locator(`#${await daSelecao.getAttribute('aria-controls')}`),
+    ).toContainText('Extrair as selecionadas')
+
+    await page.keyboard.press('Space')
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'false')
+    await expect(extrair).toBeHidden()
+    await expect(daSelecao).toBeFocused()
+  })
+
+  test('a 390 × 844 px, a seleção começa aberta e a lista ainda mostra uma página inteira, sem a folha rolar', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'vinte.pdf',
+        Array.from({ length: 20 }, () => 100),
+      ),
+    )
+    await page.getByRole('button', { name: 'Páginas', exact: true }).click()
+    const folha = page.getByRole('dialog', { name: 'Páginas' })
+    await expect(folha).toBeVisible()
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((a) => a.finished)),
+    )
+    await expect(
+      folha.getByRole('button', { name: /^Na seleção/ }),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      folha.getByRole('button', { name: 'Extrair as selecionadas' }),
+    ).toBeVisible()
+    const primeira = (await folha
+      .getByTestId('editar-pdf-pagina')
+      .first()
+      .boundingBox())!
+    expect(primeira.y + primeira.height).toBeLessThanOrEqual(844)
     expect(
       await folha.evaluate((el) => el.scrollHeight <= el.clientHeight),
     ).toBe(true)

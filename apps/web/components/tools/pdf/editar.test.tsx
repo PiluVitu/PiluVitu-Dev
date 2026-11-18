@@ -8,7 +8,10 @@ import {
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
 import { ZOOMS } from './area-da-pagina'
-import { CONSULTA_DA_BANCADA_LARGA } from './bancada-larga'
+import {
+  CONSULTA_DA_BANCADA_LARGA,
+  CONSULTA_DA_TELA_BAIXA,
+} from './bancada-larga'
 import { EditarPdf } from './editar'
 import type { ObjetoNaTela } from './motor'
 import { criarMotorFalso } from './motor-falso'
@@ -98,6 +101,8 @@ let root: Root
 // A Bancada larga (a lista na coluna) ou estreita (a lista na folha) vem do matchMedia, que o teste escolhe.
 let larga = true
 const ouvintesDaLargura = new Set<() => void>()
+// A tela baixa (a folha abre com a seleção recolhida) também vem do matchMedia; fora dos testes dela, é alta.
+let baixa = false
 
 function mudarLargura(nova: boolean) {
   larga = nova
@@ -117,6 +122,7 @@ beforeAll(() => {
   window.matchMedia = ((consulta: string) => ({
     media: consulta,
     get matches() {
+      if (consulta === CONSULTA_DA_TELA_BAIXA) return baixa
       return consulta === CONSULTA_DA_BANCADA_LARGA && larga
     },
     addEventListener: (_: string, ouvinte: () => void) => {
@@ -147,6 +153,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   larga = true
+  baixa = false
   imagemDecodificada = { width: 400, height: 200 }
   ObservadorFalso.todos = []
   ObservadorFalso.automatico = true
@@ -2555,6 +2562,117 @@ describe('a Bancada no celular: a folha Páginas', () => {
       q('editar-pdf-coluna-de-paginas')!.contains(listasNoDocumento()[0]),
     ).toBe(true)
   })
+})
+
+// Decisão do Paulo (2026-11-18): em tela baixa, a barra "Na seleção" e as dicas começam recolhidas na folha.
+describe('a Bancada no celular: a seleção recolhível da folha', () => {
+  const daSelecao = () =>
+    folha()!.querySelector<HTMLButtonElement>(
+      '[data-testid="editar-pdf-recolher-selecao"]',
+    )!
+  const blocoDaSelecao = () =>
+    document.getElementById(daSelecao().getAttribute('aria-controls')!)!
+
+  it('em tela baixa, a folha abre com a seleção recolhida: o botão diz "Na seleção" e quantas estão marcadas, e a barra e as dicas ficam escondidas', async () => {
+    larga = false
+    baixa = true
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+    await clicar(naFolha<HTMLInputElement>('Selecionar página 2'))
+
+    const botao = daSelecao()
+    expect(botao.tagName).toBe('BUTTON')
+    expect(botao.type).toBe('button')
+    expect(botao.textContent).toBe('Na seleção 1 página selecionada')
+    expect(botao.getAttribute('aria-expanded')).toBe('false')
+    expect(botao.className).toContain('min-h-11')
+    const bloco = blocoDaSelecao()
+    expect(bloco.hidden).toBe(true)
+    expect(bloco.contains(naFolha('Extrair as selecionadas'))).toBe(true)
+    expect(
+      bloco.contains(
+        folha()!.querySelector('[data-testid="editar-pdf-dicas-das-paginas"]'),
+      ),
+    ).toBe(true)
+    // A lista e o resto da folha continuam à vista.
+    expect(cartoesNoDocumento()).toHaveLength(3)
+    expect(cartoesNoDocumento()[0].closest('[hidden]')).toBeNull()
+    expect(naFolha('Adicionar PDF').closest('[hidden]')).toBeNull()
+  })
+
+  it('o botão abre e recolhe a barra e as dicas, e o foco fica nele', async () => {
+    larga = false
+    baixa = true
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    await clicar(daSelecao())
+    expect(daSelecao().getAttribute('aria-expanded')).toBe('true')
+    expect(blocoDaSelecao().hidden).toBe(false)
+
+    await clicar(daSelecao())
+    expect(daSelecao().getAttribute('aria-expanded')).toBe('false')
+    expect(blocoDaSelecao().hidden).toBe(true)
+    expect(document.activeElement).toBe(daSelecao())
+  })
+
+  it('em tela alta, a folha abre com a seleção aberta; a escolha da pessoa vale ao fechar e abrir a folha de novo', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+    expect(daSelecao().getAttribute('aria-expanded')).toBe('true')
+    expect(blocoDaSelecao().hidden).toBe(false)
+
+    await clicar(daSelecao())
+    await teclar(document.activeElement!, 'Escape')
+    expect(folha()).toBeNull()
+    await abrirAFolha()
+
+    expect(daSelecao().getAttribute('aria-expanded')).toBe('false')
+    expect(blocoDaSelecao().hidden).toBe(true)
+  })
+
+  it('na coluna larga, a seleção não recolhe: sem o botão, com a barra à vista', async () => {
+    baixa = true
+    await abrirParaEditar('livro-3p.pdf')
+
+    expect(q('editar-pdf-recolher-selecao')).toBeNull()
+    expect(
+      q('editar-pdf-coluna-de-paginas')!.querySelector('[hidden]'),
+    ).toBeNull()
+    expect(porNome('Extrair as selecionadas')).toBeTruthy()
+  })
+
+  it.each([
+    ['recolhida', 'o botão "Na seleção", e não a um botão escondido', true],
+    [
+      'aberta',
+      'o primeiro botão ativo da barra (o Desfazer fica inativo)',
+      false,
+    ],
+  ])(
+    'com a seleção %s, o Ctrl/⌘+Z que tira a página com o foco leva o foco a %s',
+    async (_, __, recolhida) => {
+      larga = false
+      baixa = recolhida
+      await abrirParaEditar('a-3p.pdf')
+      await abrirAFolha()
+      await adicionarPdf(pdf('b-2p.pdf'))
+      await esperarAte(() => cartoesNoDocumento().length === 5)
+      expect(focado()).toBe('Selecionar página 4')
+
+      await tecla(document.activeElement!, 'z', { ctrlKey: true })
+
+      expect(cartoesNoDocumento().map((c) => c.dataset.id)).toEqual([
+        'a0p0',
+        'a0p1',
+        'a0p2',
+      ])
+      expect(document.activeElement).toBe(
+        recolhida ? daSelecao() : naFolha('Selecionar todas'),
+      )
+    },
+  )
 })
 
 describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
