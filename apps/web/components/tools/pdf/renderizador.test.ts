@@ -8,6 +8,7 @@ import {
   PaginaSuperada,
   criarRenderizadorComPdfjs,
   pontoNoTexto,
+  type RenderizadorDePdf,
 } from './renderizador'
 
 // O pdf.js de verdade só roda no E2E (precisa de canvas e Worker de navegador). Aqui ele é um
@@ -800,6 +801,276 @@ describe('fechar', () => {
     documento.fechar()
 
     await expect(documento.miniatura(0, 160)).rejects.toThrow('fechado')
+  })
+})
+
+// O editor abre vários PDFs (PR 4): um PDFWorker só para todos (M2, 2026-11-18: com 20 arquivos, +200 MB
+// contra +450 MB de um Worker por arquivo), com uma fila e uma página grande para a sessão inteira.
+describe('a sessão: um Worker do pdf.js para os documentos do mesmo renderizador', () => {
+  let workers: WorkerFalso[]
+  let pdfWorkers: { destroy: jest.Mock }[]
+  let sessao: RenderizadorDePdf
+
+  function proximaTarefa(paginas: PaginaFalsa[]) {
+    const documento = {
+      numPages: paginas.length,
+      getPage: jest.fn(async (n: number) => paginas[n - 1]),
+    }
+    const daTarefa = {
+      promise: Promise.resolve(documento),
+      destroy: jest.fn(async () => {}),
+    }
+    mockPdfjs.getDocument.mockReturnValueOnce(daTarefa)
+    return daTarefa
+  }
+
+  function desenhoPreso(pagina: PaginaFalsa) {
+    let terminar!: () => void
+    const cancel = jest.fn()
+    pagina.render.mockImplementationOnce(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      const promise = new Promise<void>((r, f) => {
+        terminar = r
+        cancel.mockImplementation(() =>
+          f(Object.assign(new Error('Rendering cancelled'), {})),
+        )
+      })
+      return { promise, cancel }
+    })
+    return { terminar: () => terminar(), cancel }
+  }
+
+  beforeEach(() => {
+    workers = []
+    pdfWorkers = []
+    mockPdfjs.PDFWorker.create.mockImplementation(() => {
+      const novo = { destroy: jest.fn() }
+      pdfWorkers.push(novo)
+      return novo
+    })
+    sessao = criarRenderizadorComPdfjs(() => {
+      const novo = new WorkerFalso()
+      workers.push(novo)
+      return novo as unknown as Worker
+    })
+  })
+
+  it('dois documentos dividem um Worker e um PDFWorker', async () => {
+    proximaTarefa([paginaFalsa()])
+    proximaTarefa([paginaFalsa(), paginaFalsa()])
+
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+
+    expect([a.paginas, b.paginas]).toEqual([1, 2])
+    expect(workers).toHaveLength(1)
+    expect(pdfWorkers).toHaveLength(1)
+    expect(mockPdfjs.PDFWorker.create).toHaveBeenCalledWith({
+      port: workers[0],
+    })
+    expect(
+      mockPdfjs.getDocument.mock.calls.map(([opcoes]) => opcoes.worker),
+    ).toEqual([pdfWorkers[0], pdfWorkers[0]])
+  })
+
+  it('a página grande é uma só: a do arquivo B, quando fica pronta, solta o canvas da do A', async () => {
+    const [paginaDoA, paginaDoB] = [paginaFalsa(), paginaFalsa()]
+    proximaTarefa([paginaDoA])
+    proximaTarefa([paginaDoB])
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+    const doA = await a.pagina(0, 300)
+    const preso = desenhoPreso(paginaDoB)
+
+    const doB = b.pagina(0, 300)
+    await umaVolta()
+    expect(doA.canvas.width).toBe(300)
+
+    preso.terminar()
+    expect((await doB).canvas.width).toBe(300)
+    expect([doA.canvas.width, doA.canvas.height]).toEqual([0, 0])
+  })
+
+  it('pedir a página do B cancela o desenho da do A em curso, que rejeita como superada', async () => {
+    const [paginaDoA, paginaDoB] = [paginaFalsa(), paginaFalsa()]
+    proximaTarefa([paginaDoA])
+    proximaTarefa([paginaDoB])
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+    const preso = desenhoPreso(paginaDoA)
+
+    const doA = a.pagina(0, 300)
+    await umaVolta()
+    const doB = b.pagina(0, 300)
+
+    await expect(doA).rejects.toBeInstanceOf(PaginaSuperada)
+    expect(preso.cancel).toHaveBeenCalled()
+    expect([paginaDoA.canvases[0].width, paginaDoA.canvases[0].height]).toEqual(
+      [0, 0],
+    )
+    await expect(doB).resolves.toBeDefined()
+  })
+
+  it('a fila é da sessão: a miniatura do B espera o desenho do A', async () => {
+    const [paginaDoA, paginaDoB] = [paginaFalsa(), paginaFalsa()]
+    proximaTarefa([paginaDoA])
+    proximaTarefa([paginaDoB])
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+    const preso = desenhoPreso(paginaDoA)
+
+    const miniaturaDoA = a.miniatura(0, 160)
+    const miniaturaDoB = b.miniatura(0, 160)
+    await umaVolta()
+    expect(paginaDoB.render).not.toHaveBeenCalled()
+
+    preso.terminar()
+    await Promise.all([miniaturaDoA, miniaturaDoB])
+    expect(paginaDoB.render).toHaveBeenCalledTimes(1)
+  })
+
+  it('fechar um documento não derruba o Worker: o outro continua desenhando, e a página grande dele fica', async () => {
+    const tarefaDoA = proximaTarefa([paginaFalsa()])
+    proximaTarefa([paginaFalsa()])
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+    const doB = await b.pagina(0, 300)
+
+    a.fechar()
+    await umaVolta()
+
+    expect(tarefaDoA.destroy).toHaveBeenCalledTimes(1)
+    expect(pdfWorkers[0].destroy).not.toHaveBeenCalled()
+    expect(workers[0].encerrado).toBe(false)
+    expect(doB.canvas.width).toBe(300)
+    await expect(b.miniatura(0, 160)).resolves.toBeInstanceOf(Blob)
+    await expect(a.miniatura(0, 160)).rejects.toThrow('fechado')
+  })
+
+  it('o último documento que fecha derruba o Worker depois do destroy, e o próximo abrir cria outro', async () => {
+    const tarefaDoA = proximaTarefa([paginaFalsa()])
+    const tarefaDoB = proximaTarefa([paginaFalsa()])
+    const a = await sessao.abrir(arquivo('a'))
+    const b = await sessao.abrir(arquivo('b'))
+    let terminar!: () => void
+    tarefaDoB.destroy.mockImplementation(
+      () => new Promise<void>((r) => (terminar = r)),
+    )
+
+    a.fechar()
+    b.fechar()
+    await umaVolta()
+    expect(tarefaDoA.destroy).toHaveBeenCalledTimes(1)
+    expect(workers[0].encerrado).toBe(false)
+
+    terminar()
+    await umaVolta()
+    expect(pdfWorkers[0].destroy).toHaveBeenCalledTimes(1)
+    expect(workers[0].encerrado).toBe(true)
+
+    proximaTarefa([paginaFalsa()])
+    await sessao.abrir(arquivo('c'))
+    expect(workers).toHaveLength(2)
+    expect(mockPdfjs.getDocument.mock.calls[2][0].worker).toBe(pdfWorkers[1])
+  })
+
+  it('encerrar fecha os documentos e derruba o Worker só depois dos destroy', async () => {
+    const tarefas = [
+      proximaTarefa([paginaFalsa()]),
+      proximaTarefa([paginaFalsa()]),
+    ]
+    const a = await sessao.abrir(arquivo('a'))
+    await sessao.abrir(arquivo('b'))
+    const doA = await a.pagina(0, 300)
+    const terminar: (() => void)[] = []
+    for (const daTarefa of tarefas) {
+      daTarefa.destroy.mockImplementation(
+        () => new Promise<void>((r) => terminar.push(r)),
+      )
+    }
+
+    sessao.encerrar()
+    await umaVolta()
+    expect(tarefas.map((t) => t.destroy.mock.calls.length)).toEqual([1, 1])
+    expect([doA.canvas.width, doA.canvas.height]).toEqual([0, 0])
+    expect(workers[0].encerrado).toBe(false)
+
+    terminar[0]()
+    await umaVolta()
+    expect(workers[0].encerrado).toBe(false)
+
+    terminar[1]()
+    await umaVolta()
+    expect(pdfWorkers[0].destroy).toHaveBeenCalledTimes(1)
+    expect(workers[0].encerrado).toBe(true)
+  })
+
+  it('encerrar com um destroy que nunca termina: o Worker cai em 2 s', async () => {
+    const tarefaTravada = proximaTarefa([paginaFalsa()])
+    proximaTarefa([paginaFalsa()])
+    await sessao.abrir(arquivo('a'))
+    await sessao.abrir(arquivo('b'))
+    tarefaTravada.destroy.mockImplementation(() => new Promise<void>(() => {}))
+    jest.useFakeTimers()
+    try {
+      sessao.encerrar()
+      await jest.advanceTimersByTimeAsync(1_999)
+      expect(workers[0].encerrado).toBe(false)
+
+      await jest.advanceTimersByTimeAsync(1)
+      expect(workers[0].encerrado).toBe(true)
+      expect(pdfWorkers[0].destroy).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('encerrar sem documento aberto não cria nem derruba nada, e a sessão continua abrindo', async () => {
+    sessao.encerrar()
+    expect(workers).toHaveLength(0)
+
+    proximaTarefa([paginaFalsa()])
+    await expect(sessao.abrir(arquivo('a'))).resolves.toBeDefined()
+    expect(workers).toHaveLength(1)
+  })
+
+  it('encerrar enquanto um documento abre: ele não chega aberto, e o Worker cai', async () => {
+    let entregar!: (documento: unknown) => void
+    const daTarefa = {
+      promise: new Promise((r) => (entregar = r)),
+      destroy: jest.fn(async () => {}),
+    }
+    mockPdfjs.getDocument.mockReturnValueOnce(daTarefa)
+
+    const abrindo = sessao.abrir(arquivo('a'))
+    await umaVolta()
+    sessao.encerrar()
+    entregar({ numPages: 1, getPage: jest.fn() })
+
+    await expect(abrindo).rejects.toEqual({ motivo: 'falha_do_navegador' })
+    await umaVolta()
+    expect(daTarefa.destroy).toHaveBeenCalledTimes(1)
+    expect(workers[0].encerrado).toBe(true)
+  })
+
+  it('o Worker que cai derruba os documentos dele, e o próximo abrir nasce num Worker novo', async () => {
+    const pagina = paginaFalsa()
+    proximaTarefa([pagina])
+    const a = await sessao.abrir(arquivo('a'))
+    pagina.render.mockImplementationOnce(({ canvas }) => {
+      pagina.canvases.push(canvas)
+      return { promise: new Promise<void>(() => {}), cancel: jest.fn() }
+    })
+
+    const miniatura = a.miniatura(0, 160)
+    await umaVolta()
+    workers[0].quebrar()
+
+    await expect(miniatura).rejects.toEqual({ motivo: 'falha_do_navegador' })
+    proximaTarefa([paginaFalsa()])
+    const b = await sessao.abrir(arquivo('b'))
+    expect(workers).toHaveLength(2)
+    await expect(b.miniatura(0, 160)).resolves.toBeInstanceOf(Blob)
   })
 })
 

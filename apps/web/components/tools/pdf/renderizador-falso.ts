@@ -76,6 +76,7 @@ function pintar(canvas: HTMLCanvasElement, numero: number) {
 
 // Para stories e testes: o nome do arquivo decide, como no motor falso. "-12p" dá 12 páginas,
 // "senha" vem protegido, "quebrado" vem corrompido e "girado" deita a miniatura das páginas pares, como um /Rotate 90.
+// Como o de verdade, os documentos dividem um Worker (contado em `workers`), e a página grande é uma só.
 export function criarRenderizadorFalso({
   atraso = 0,
   miniaturasQueFalham = [],
@@ -84,6 +85,22 @@ export function criarRenderizadorFalso({
   fundosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
+  let vivos = 0
+  let vez = 0
+  let grande: { dono: object; canvas: HTMLCanvasElement } | null = null
+  const soltarAGrande = (dono?: object) => {
+    if (!grande || (dono && grande.dono !== dono)) return
+    grande.canvas.width = 0
+    grande.canvas.height = 0
+    grande = null
+  }
+  const abertos = new Set<() => void>()
+  const entrar = () => {
+    if (vivos++ === 0) renderizador.workers += 1
+  }
+  const sair = () => {
+    vivos -= 1
+  }
   let portaoDasPaginas: Promise<void> | null = null
   let abrirOPortao = () => {}
   const renderizador = {
@@ -98,6 +115,17 @@ export function criarRenderizadorFalso({
       portaoDasPaginas = null
     },
     abertos: [] as string[],
+    /** Quantos Workers do pdf.js nasceram: um por sessão, que acaba quando o último documento fecha. */
+    workers: 0,
+    get workersVivos() {
+      return vivos > 0 ? 1 : 0
+    },
+    /** Cada desenho e consulta pedidos, com o arquivo do documento que os recebeu. */
+    pedidos: [] as {
+      arquivo: string
+      tipo: 'miniatura' | 'pagina' | 'fundo' | 'texto'
+      indice: number
+    }[],
     miniaturas: [] as { indice: number; larguraCss: number }[],
     /** Cada página grande pedida, com o canvas entregue (vazio quando a página foi superada ou soltou). */
     paginasPedidas: [] as {
@@ -112,9 +140,11 @@ export function criarRenderizadorFalso({
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
       renderizador.abertos.push(nome)
+      entrar()
       await espera()
       const analise = analiseDeExemplo(arquivo as File)
       if (!analise.ok) {
+        sair()
         throw { motivo: analise.motivo } satisfies FalhaDaAbertura
       }
       const total = paginas ?? analise.paginas
@@ -123,9 +153,21 @@ export function criarRenderizadorFalso({
         (_, i) => /girado/i.test(nome) && i % 2 === 1,
       )
       let fechado = false
-      let vez = 0
-      let atual: HTMLCanvasElement | null = null
+      const eu = {}
       const falharam = new Set<number>()
+      const registrar = (
+        tipo: (typeof renderizador.pedidos)[number]['tipo'],
+        indice: number,
+      ) => renderizador.pedidos.push({ arquivo: nome, tipo, indice })
+      function fechar() {
+        if (fechado) return
+        fechado = true
+        abertos.delete(fechar)
+        soltarAGrande(eu)
+        renderizador.fechados += 1
+        sair()
+      }
+      abertos.add(fechar)
       return {
         paginas: total,
         async pagina(indice, larguraCss, giro = 0) {
@@ -136,6 +178,7 @@ export function criarRenderizadorFalso({
             canvas?: HTMLCanvasElement
           }
           renderizador.paginasPedidas.push(pedido)
+          registrar('pagina', indice)
           const minha = ++vez
           const portao = portaoDasPaginas
           await espera()
@@ -159,16 +202,14 @@ export function criarRenderizadorFalso({
           canvas.width = largura
           canvas.height = altura
           pintar(canvas, indice + 1)
-          if (atual) {
-            atual.width = 0
-            atual.height = 0
-          }
-          atual = canvas
+          soltarAGrande()
+          grande = { dono: eu, canvas }
           pedido.canvas = canvas
           return { canvas, tamanho }
         },
         async fundo(indice, cobrir, giro = 0) {
           renderizador.fundos.push({ indice, cobrir, giro })
+          registrar('fundo', indice)
           await espera()
           if (fechado) throw new Error('o documento já foi fechado')
           if (fundosQueFalham.includes(indice)) {
@@ -178,10 +219,12 @@ export function criarRenderizadorFalso({
         },
         async textoNoPonto(indice, ponto, giro = 0) {
           renderizador.textosConsultados.push({ indice, ponto, giro })
+          registrar('texto', indice)
           return !fechado && temTextoNaFolhaFalsa(ponto)
         },
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })
+          registrar('miniatura', indice)
           await espera()
           if (fechado) throw new Error('o documento já foi fechado')
           if (miniaturasQueFalham.includes(indice)) {
@@ -189,16 +232,11 @@ export function criarRenderizadorFalso({
           }
           return folha(indice + 1, deitadas[indice])
         },
-        fechar() {
-          if (fechado) return
-          fechado = true
-          if (atual) {
-            atual.width = 0
-            atual.height = 0
-          }
-          renderizador.fechados += 1
-        },
+        fechar,
       }
+    },
+    encerrar() {
+      for (const fechar of [...abertos]) fechar()
     },
   } satisfies RenderizadorDePdf & Record<string, unknown>
   return renderizador
