@@ -2664,6 +2664,35 @@ describe('montarDocumento: no lugar (o primeiro arquivo inteiro, na ordem)', () 
     expect(matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
   })
 
+  it('com porCopia (o Extrair), o arquivo inteiro na ordem sai por cópia, sem o que é do documento', async () => {
+    const documento = await PDFDocument.create({ updateMetadata: false })
+    documento.setTitle('Contrato')
+    documento.addPage([300, 300])
+    documento.addPage([400, 400])
+    documento.catalog.set(
+      PDFName.of('Outlines'),
+      documento.context.register(
+        documento.context.obj({ Type: 'Outlines', Count: 0 }),
+      ),
+    )
+    const pdf = await documento.save()
+    const chamadas = contarChamadas()
+
+    const final = await montarDocumento(
+      [pdf],
+      [daMontagem(0, 0), daMontagem(0, 1, { giro: 90 })],
+      [],
+      { porCopia: true },
+    )
+
+    expect(chamadas()).toEqual({ load: 1, copyPages: 1, save: 1 })
+    const lido = await PDFDocument.load(final, { updateMetadata: false })
+    expect(lido.getTitle()).toBeUndefined()
+    expect(lido.catalog.has(PDFName.of('Outlines'))).toBe(false)
+    expect(await ladosDasPaginas(final)).toEqual([300, 400])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+  })
+
   it('o /UR3 e o /DocMDP saem, como no Editar', async () => {
     const documento = await PDFDocument.create()
     documento.addPage([300, 300])
@@ -3327,6 +3356,30 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     expect(rotacoesNoPdfjs(porCopia)).toEqual([270, 90, 90])
   })
 
+  it('por cópia, o /Rotate fora do padrão sai normalizado no arquivo, mesmo sem giro', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(4, 100))
+    const valores = [
+      PDFNumber.of(-90),
+      PDFNumber.of(450),
+      PDFNumber.of(45),
+      PDFName.of('Noventa'),
+    ]
+    valores.forEach((valor, i) =>
+      documento.getPage(i).node.set(PDFName.of('Rotate'), valor),
+    )
+
+    const final = await montarDocumento(
+      [await documento.save()],
+      plano([3], [0], [1], [2]),
+      [],
+    )
+
+    const lido = await PDFDocument.load(final)
+    expect(
+      lido.getPages().map(({ node }) => node.get(PDFName.of('Rotate'))),
+    ).toEqual([0, 270, 90, 0].map((graus) => PDFNumber.of(graus)))
+  })
+
   it('girar à esquerda a partir de 0 sai com /Rotate 270 no PDF', async () => {
     const final = await montarDocumento(
       [await gerarPdf(2, 100)],
@@ -3404,6 +3457,48 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     const final = await montarDocumento([bytes], plano([0], [1]), [])
 
     expect(await ladosDasPaginas(final)).toEqual([100, 101])
+  })
+
+  describe('PDF que repete a mesma página no /Kids: o giro de uma não gira a outra', () => {
+    async function comARepetida() {
+      const documento = await PDFDocument.load(await gerarPdf(2, 100))
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      return documento.save()
+    }
+
+    it('por cópia', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([2], [0, 90]),
+        [],
+      )
+
+      expect(await ladosDasPaginas(final)).toEqual([100, 100])
+      expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+    })
+
+    it('o arquivo inteiro na ordem, só com giro', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2]),
+        [],
+      )
+
+      expect(await ladosDasPaginas(final)).toEqual([100, 101, 100])
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 0])
+    })
+
+    it('as duas giradas: cada uma gira uma vez', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2, 90]),
+        [],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 90])
+    })
   })
 
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {

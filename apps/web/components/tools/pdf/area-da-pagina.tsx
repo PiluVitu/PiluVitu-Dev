@@ -79,7 +79,6 @@ function useLarguraDaArea(
   return typeof ResizeObserver === 'undefined' ? LARGURA_SEM_MEDIDA : largura
 }
 
-/** A página aberta desenhada na folha, na largura da área vezes o zoom. */
 export function usePaginaDesenhada({
   documento,
   pagina,
@@ -156,7 +155,6 @@ export function usePaginaDesenhada({
   }
 }
 
-/** A área com rolagem própria: a folha com o canvas, o quadro dos objetos por cima, e o desenho em curso ou a falha. */
 export function AreaDaPagina({
   areaRef,
   folhaRef,
@@ -176,7 +174,6 @@ export function AreaDaPagina({
   desenhando: boolean
   falhou: boolean
   aoTentarDeNovo: () => void
-  /** O quadro dos objetos, por cima da folha. */
   children?: ReactNode
 }) {
   return (
@@ -246,7 +243,6 @@ export function AreaDaPagina({
   )
 }
 
-/** Página anterior e próxima, com "Página N de M", e o zoom. */
 export function ControlesDaPagina({
   pagina,
   total,
@@ -388,7 +384,6 @@ export function ControlesDaPagina({
   )
 }
 
-/** A faixa de miniaturas: um ponto só no Tab, que volta para a página aberta quando o foco sai dela. */
 export function FaixaDePaginas({
   documento,
   total,

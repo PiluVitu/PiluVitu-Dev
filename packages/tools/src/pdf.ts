@@ -1575,10 +1575,27 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
+// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
+function giraPaginaRepetida(
+  documento: PDFDocument,
+  plano: readonly PaginaDaMontagem[],
+): boolean {
+  const paginas = documento.getPages()
+  const vezes = new Map<PDFRef, number>()
+  for (const { ref } of paginas) vezes.set(ref, (vezes.get(ref) ?? 0) + 1)
+  return plano.some(
+    ({ origem, giro }) =>
+      giro !== 0 &&
+      !('branca' in origem) &&
+      vezes.get(paginas[origem.indice].ref)! > 1,
+  )
+}
+
 export async function montarDocumento(
   fontes: readonly FonteDePdf[],
   plano: readonly PaginaDaMontagem[],
   edicoes: readonly EdicaoNaMontagem[],
+  { porCopia = false }: { readonly porCopia?: boolean } = {},
 ): Promise<Uint8Array> {
   conferirMontagem(plano, fontes.length)
   const edicaoDa = conferirEdicoesDaMontagem(plano, edicoes)
@@ -1610,9 +1627,12 @@ export async function montarDocumento(
 
   const doPrimeiro = porArquivo.get(0)
   let primeiro: PDFDocument | undefined
-  if (doPrimeiro?.length === plano.length) {
+  if (!porCopia && doPrimeiro?.length === plano.length) {
     primeiro = await carregar(0)
-    if (!saiPorCopia(plano, primeiro.getPageCount())) {
+    if (
+      !saiPorCopia(plano, primeiro.getPageCount()) &&
+      !giraPaginaRepetida(primeiro, plano)
+    ) {
       await editarNoLugar(primeiro, editadas(doPrimeiro))
       return salvarNoLugar(primeiro)
     }
@@ -1633,14 +1653,28 @@ export async function montarDocumento(
     } catch {
       throw new ErroDePdf('corrompido', arquivo)
     }
-    await editarNoLugar(origem, editadas(paginas))
+    // O giro vai na cópia: na origem, o nó repetido no /Kids levaria o giro às duas posições.
+    await editarNoLugar(
+      origem,
+      editadas(paginas).map((editada) =>
+        editada.fundo ? editada : { ...editada, giro: 0 as const },
+      ),
+    )
     let deste: PDFPage[]
     try {
       deste = await destino.copyPages(origem, indices)
     } catch {
       throw new ErroDePdf('corrompido', arquivo)
     }
-    paginas.forEach(({ posicao }, i) => copiadas.set(posicao, deste[i]))
+    paginas.forEach(({ posicao }, i) => {
+      const pagina = deste[i]
+      if (!edicaoDa.get(posicao)?.fundo) {
+        pagina.setRotation(
+          degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
+        )
+      }
+      copiadas.set(posicao, pagina)
+    })
   }
   const recursos = new Recursos(destino)
   for (const [posicao, { origem }] of plano.entries()) {

@@ -119,7 +119,6 @@ class SensorDeMouse extends PointerSensor {
   ]
 }
 
-/** A grade das páginas: os cartões e o arrastar para reordenar. */
 export function ListaDePaginas({
   plano,
   selecionadas,
@@ -142,7 +141,6 @@ export function ListaDePaginas({
   idDoTitulo: string
   idDaDicaUnica: string
   aoAgir: (acao: AcaoDaPagina) => void
-  /** Arrastou a página da posição `de` para a posição `para`. */
   aoMover: (de: number, para: number) => void
   registrarCaixa: (indice: number, caixa: HTMLInputElement | null) => void
 }) {
@@ -218,7 +216,6 @@ export function ListaDePaginas({
   )
 }
 
-/** "Ações nas páginas selecionadas": um ponto só no Tab, com ←/→, Home e End entre os habilitados. */
 export function BarraDaSelecao({
   botoes,
   botoesRef,

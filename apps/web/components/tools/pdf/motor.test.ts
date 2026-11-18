@@ -377,6 +377,17 @@ describe('montar', () => {
     expect(WorkerFalso.criados).toHaveLength(3)
   })
 
+  it('falha de outro id não rejeita a montagem em curso', async () => {
+    const motor = novoMotor()
+    const pronto = motor.montar([arquivo('a.pdf')], pedido)
+    const { id } = ultimo().recebidos[0] as PedidoDeMontar
+
+    ultimo().responder({ tipo: 'falhou', id: id + 7, motivo: 'corrompido' })
+    ultimo().responder({ tipo: 'pronto', id, bytes: new ArrayBuffer(3) })
+
+    expect((await pronto).size).toBe(3)
+  })
+
   it('cancelar rejeita a montagem e manda as leituras pendentes para um Worker novo', async () => {
     const motor = novoMotor()
     const leitura = motor.analisar(arquivo('b.pdf'))

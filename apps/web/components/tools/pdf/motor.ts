@@ -25,6 +25,8 @@ export type PedidoDeMontagem = {
   imagens: ReadonlyMap<string, Blob>
   /** Apagar de verdade: o JPEG de cada página, com os retângulos de cobrir já pintados nele. */
   paginasRasterizadas: ReadonlyMap<string, Blob>
+  /** Mesmo com o arquivo inteiro na ordem: o Extrair nunca leva o que é do documento. */
+  porCopia?: boolean
 }
 
 export type PedidoAoWorker =

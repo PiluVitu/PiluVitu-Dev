@@ -869,6 +869,25 @@ describe('baixar e extrair', () => {
     expect(ordem()).toHaveLength(4)
   })
 
+  it('Extrair sai sempre por cópia, mesmo com todas as páginas na ordem; o Gerar, não', async () => {
+    const { motor } = await abrir('contrato-4p.pdf')
+    await clicar('Selecionar todas')
+
+    await clicar('Extrair as selecionadas')
+    await clicar('Gerar PDF organizado')
+
+    expect(motor.montadas.map(({ porCopia }) => porCopia)).toEqual([
+      true,
+      undefined,
+    ])
+    expect(motor.montadas[0].paginas.map(({ id }) => id)).toEqual([
+      'a0p0',
+      'a0p1',
+      'a0p2',
+      'a0p3',
+    ])
+  })
+
   it('o nome do download passa pelo nomeDoPdfFinal', async () => {
     await abrir('rel:atório 3p.PDF')
 

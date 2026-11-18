@@ -263,6 +263,27 @@ describe('montar', () => {
     ])
   })
 
+  it('com porCopia (o Extrair), o arquivo inteiro na ordem sai por cópia, sem o título do arquivo', async () => {
+    const documento = await PDFDocument.create()
+    documento.setTitle('Contrato')
+    documento.addPage([100, 100])
+    documento.addPage([200, 200])
+    const arquivo = new Blob([new Uint8Array(await documento.save())])
+
+    const [resposta] = await montar([arquivo], {
+      paginas: [doArquivo(0, 0, 90), doArquivo(0, 1)],
+      porCopia: true,
+    })
+
+    if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
+    const final = await PDFDocument.load(resposta.bytes)
+    expect(final.getTitle()).toBeUndefined()
+    expect(await paginasDe(resposta)).toEqual([
+      { lado: 100, rotacao: 90 },
+      { lado: 200, rotacao: 0 },
+    ])
+  })
+
   it('os objetos vão pela página do id, também na do segundo arquivo, e cada imagem é lida uma vez', async () => {
     const logo = new Blob([PNG], { type: 'image/png' })
     const lerLogo = jest.spyOn(logo, 'arrayBuffer')

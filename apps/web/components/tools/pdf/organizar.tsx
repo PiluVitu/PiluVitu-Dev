@@ -350,6 +350,7 @@ export function OrganizarPdf({
         objetosPorPagina: new Map(),
         imagens: new Map(),
         paginasRasterizadas: new Map(),
+        ...(tipo === 'extraido' && { porCopia: true }),
       })
       setResultado({
         estado: 'pronto',

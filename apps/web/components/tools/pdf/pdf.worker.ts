@@ -142,6 +142,7 @@ async function montar(
         arquivos.map((arquivo) => () => bytesDe(arquivo)),
         pedido.paginas,
         edicoes,
+        { porCopia: pedido.porCopia },
       ),
     )
   } catch (erro) {
