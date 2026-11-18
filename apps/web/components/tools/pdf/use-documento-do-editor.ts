@@ -126,8 +126,13 @@ export function useDocumentoDoEditor(
   }, [arquivo])
 
   // Um por vez (D5): o pedido que chega enquanto outro abre devolve null, como o da sessão que acabou.
+  // O `aoEntrar` roda junto da emenda, no mesmo lote do React: a tela põe as páginas novas sem renderizar
+  // antes um documento com o arquivo e sem as páginas dele (que o fechar dos inalcançáveis fecharia).
   const adicionar = useCallback(
-    async (novo: File): Promise<Adicao | null> => {
+    async (
+      novo: File,
+      aoEntrar?: (documento: DocumentoDoEditor, arquivo: number) => void,
+    ): Promise<Adicao | null> => {
       const documento = documentoRef.current
       if (!documento || adicionandoRef.current) return null
       const peloTamanho = cabeNoEditor(documento, { bytes: novo.size })
@@ -175,6 +180,7 @@ export function useDocumentoDoEditor(
       if (!aberto.ok) return aberto
       const emendado = comArquivo(documentoRef.current!, aberto.arquivo)
       mudarDocumento(emendado.documento)
+      aoEntrar?.(emendado.documento, emendado.arquivo)
       return { ok: true, ...emendado }
     },
     [mudarDocumento],

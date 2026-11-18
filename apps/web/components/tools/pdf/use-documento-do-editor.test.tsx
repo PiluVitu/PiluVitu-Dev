@@ -171,6 +171,33 @@ describe('adicionar outro PDF', () => {
     expect(abertos).toHaveLength(1)
   })
 
+  it('quem pede recebe o documento emendado na hora da emenda, antes de renderizar: a tela põe as páginas no mesmo lote', async () => {
+    await abrir(pdf('a-3p.pdf'))
+    const recebidos: { arquivo: number; jaNaTela: boolean }[] = []
+
+    let emendado!: DocumentoDoEditor
+    await act(async () => {
+      await ultimo.adicionar(pdf('b-2p.pdf'), (documento, arquivo) => {
+        emendado = documento
+        recebidos.push({ arquivo, jaNaTela: ultimo.documento === documento })
+      })
+    })
+
+    expect(recebidos).toEqual([{ arquivo: 1, jaNaTela: false }])
+    expect(ultimo.documento).toBe(emendado)
+  })
+
+  it('a recusa não chama quem pediu', async () => {
+    await abrir(pdf('a-3p.pdf'))
+    const aoEntrar = jest.fn()
+
+    await act(async () => {
+      await ultimo.adicionar(pdf('b-senha.pdf'), aoEntrar)
+    })
+
+    expect(aoEntrar).not.toHaveBeenCalled()
+  })
+
   it('acima dos bytes somados: recusado com o que ainda cabe, sem ler o novo', async () => {
     await abrir(pdf('a-3p.pdf', 40_000_000))
 
