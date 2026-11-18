@@ -1580,7 +1580,7 @@ function conferirEdicoesDaMontagem(
 }
 
 // Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas. A apagada de verdade
-// gira o nó pela diferença entre o giro e a moldura.
+// com moldura também: o JPEG dela, desenhado na moldura, é o conteúdo do nó das duas.
 function giraPaginaRepetida(
   documento: PDFDocument,
   plano: readonly PaginaDaMontagem[],
@@ -1591,7 +1591,7 @@ function giraPaginaRepetida(
   for (const { ref } of paginas) vezes.set(ref, (vezes.get(ref) ?? 0) + 1)
   return plano.some(
     ({ origem, giro, moldura }, posicao) =>
-      (edicaoDa.get(posicao)?.fundo ? giro !== moldura : giro !== 0) &&
+      (giro !== 0 || (edicaoDa.get(posicao)?.fundo && moldura !== 0)) &&
       !('branca' in origem) &&
       vezes.get(paginas[origem.indice].ref)! > 1,
   )
@@ -1653,6 +1653,13 @@ export async function montarDocumento(
     primeiro = undefined
     const indices = paginas.map(({ indice }) => indice)
     conferirQueExistem(origem, indices, arquivo)
+    const refs = indices.map((indice) => origem.getPage(indice).ref)
+    const molduraDaApagada = new Map<PDFRef, Giro>()
+    paginas.forEach(({ posicao }, i) => {
+      if (edicaoDa.get(posicao)?.fundo) {
+        molduraDaApagada.set(refs[i], plano[posicao].moldura)
+      }
+    })
     // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
     try {
       esvaziarPaginasForaDoPlano(origem, indices)
@@ -1675,8 +1682,8 @@ export async function montarDocumento(
     }
     paginas.forEach(({ posicao }, i) => {
       const pagina = deste[i]
-      const { giro, moldura } = plano[posicao]
-      const jaGirada = edicaoDa.get(posicao)?.fundo ? moldura : 0
+      const { giro } = plano[posicao]
+      const jaGirada = molduraDaApagada.get(refs[i]) ?? 0
       pagina.setRotation(
         degrees(giroNormalizado(rotacaoAtual(pagina) + giro - jaGirada)),
       )
