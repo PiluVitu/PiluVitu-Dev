@@ -91,6 +91,11 @@ beforeAll(() => {
   window.IntersectionObserver =
     ObservadorFalso as unknown as typeof IntersectionObserver
   window.ResizeObserver = MedidorFalso as unknown as typeof ResizeObserver
+  window.matchMedia = (() => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  })) as unknown as typeof window.matchMedia
   // Sem canvas no jsdom: a largura do texto sai da média da fonte, e a imagem do bitmap falso.
   HTMLCanvasElement.prototype.getContext = jest.fn(
     () => null,
@@ -362,7 +367,9 @@ describe('as miniaturas', () => {
     const itens = todos('editar-pdf-item')
     expect(itens).toHaveLength(8)
     await act(async () => {
-      ObservadorFalso.todos.at(-1)!.avisar([itens[0], itens[1]])
+      ObservadorFalso.todos
+        .find((observador) => observador.observados.has(itens[0]))!
+        .avisar([itens[0], itens[1]])
     })
     await esperar()
 
@@ -814,7 +821,9 @@ const campo = (testId: string) => q(testId) as HTMLInputElement
 describe('a barra de ferramentas', () => {
   it('é uma toolbar com as dez ferramentas, uma ligada por vez (aria-pressed), começando em Selecionar e mover', async () => {
     await abrirParaEditar()
-    const barra = container.querySelector('[role="toolbar"]')!
+    const barra = container.querySelector(
+      '[role="toolbar"][aria-label="Ferramentas"]',
+    )!
 
     expect(barra.getAttribute('aria-label')).toBe('Ferramentas')
     expect(
@@ -842,7 +851,9 @@ describe('a barra de ferramentas', () => {
 
   it('um ponto só no Tab, e as setas, Home e End passam entre os botões', async () => {
     await abrirParaEditar()
-    const barra = container.querySelector('[role="toolbar"]')!
+    const barra = container.querySelector(
+      '[role="toolbar"][aria-label="Ferramentas"]',
+    )!
     const noTab = () =>
       Array.from(barra.querySelectorAll('button'))
         .filter((b) => b.tabIndex === 0)
@@ -1582,13 +1593,14 @@ describe('cobrir e apagar de verdade', () => {
     await clicar(porNome('Apagar de verdade o que está embaixo'))
     await clicar(porNome('Apagar de verdade nesta página'))
 
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-resultado') !== null)
 
     expect(renderizador.fundos).toEqual([
       {
         indice: 0,
         cobrir: [{ x: 217.5, y: 405, largura: 160, altura: 32 }],
+        giro: 0,
       },
     ])
     const [pedido] = motor.montadas
@@ -1602,14 +1614,16 @@ describe('cobrir e apagar de verdade', () => {
 })
 
 describe('gerar o PDF editado', () => {
-  it('sem objeto, o botão fica parado com o motivo escrito', async () => {
+  it('sem objeto e sem mudar página, o botão fica parado com o motivo escrito', async () => {
     await abrirParaEditar()
-    const gerar = porNome('Gerar PDF editado')
+    const gerar = porNome('Gerar PDF')
     expect(gerar.disabled).toBe(true)
     expect(
       document.getElementById(gerar.getAttribute('aria-describedby')!)!
         .textContent,
-    ).toBe('Ponha pelo menos um objeto numa página para gerar o PDF editado.')
+    ).toBe(
+      'Mude alguma página ou ponha um objeto numa página para gerar o PDF.',
+    )
   })
 
   it('monta pelo motor com os objetos de cada página e as imagens usadas, e oferece o download com o foco no link', async () => {
@@ -1628,7 +1642,7 @@ describe('gerar o PDF editado', () => {
     expect(q('editar-pdf-gerar-area')!.textContent).toContain(
       '3 objetos em 2 páginas.',
     )
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-baixar') !== null)
 
     const [pedido] = motor.montadas
@@ -1659,7 +1673,7 @@ describe('gerar o PDF editado', () => {
   it('mudar um objeto depois de pronto descarta o resultado', async () => {
     await abrirParaEditar()
     await inserirNoCentro('Retângulo')
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-baixar') !== null)
 
     await tecla(objetos()[0], 'ArrowLeft')
@@ -1671,12 +1685,12 @@ describe('gerar o PDF editado', () => {
     await abrirParaEditar('contrato-3p.pdf', { motor })
     await inserirNoCentro('Retângulo')
 
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     expect(focado()).toBe('Cancelar')
     await clicar(porNome('Cancelar'))
 
     expect(anuncio()).toBe('Cancelado.')
-    expect(focado()).toBe('Gerar PDF editado')
+    expect(focado()).toBe('Gerar PDF')
     expect(q('editar-pdf-resultado')).toBeNull()
   })
 
@@ -1696,7 +1710,7 @@ describe('gerar o PDF editado', () => {
     await tecla(q('editar-pdf-campo-texto')!, 'Escape')
     await tecla(objetos()[0], 'Escape')
 
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
 
     const falha = q('editar-pdf-falha-ao-gerar')!
@@ -1704,7 +1718,7 @@ describe('gerar o PDF editado', () => {
     expect(falha.textContent).toContain(
       'Um texto da página 1 tem um caractere que as fontes do PDF não escrevem: ŧ.',
     )
-    expect(focado()).toBe('Gerar PDF editado')
+    expect(focado()).toBe('Gerar PDF')
     await clicar(porNome('Mostrar o objeto'))
     expect(document.activeElement).toBe(objetos()[0])
   })
@@ -1731,7 +1745,7 @@ describe('gerar o PDF editado', () => {
       }),
     )
 
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
 
     expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
@@ -1749,7 +1763,7 @@ it('todo controle novo tem 44 px e nome', async () => {
   for (const botao of container.querySelectorAll<HTMLButtonElement>(
     '[role="toolbar"] button',
   )) {
-    expect(botao.className).toContain('h-11')
+    expect(botao.className).toMatch(/\b(h|size)-11\b/)
   }
   expect(porNome('Desfazer').className).toContain('h-11')
   expect(porNome('Refazer').className).toContain('h-11')
@@ -1814,7 +1828,7 @@ describe('os avisos do PDF aberto', () => {
     const { motor } = await abrirParaEditar('contrato-assinado-2p.pdf')
     await inserirNoCentro('Retângulo')
 
-    await clicar(porNome('Gerar PDF editado'))
+    await clicar(porNome('Gerar PDF'))
     await esperarAte(() => q('editar-pdf-baixar') !== null)
 
     expect(motor.montadas.map(({ nomes }) => nomes)).toEqual([
@@ -1835,5 +1849,300 @@ describe('os avisos do PDF aberto', () => {
     await escolher(pdf('extrato-senha.pdf'))
     await esperarAte(() => q('editar-pdf-erro') !== null)
     expect(q('editar-pdf-avisos')).toBeNull()
+  })
+})
+
+// ---- Editor único, PR 3: a Bancada (páginas e objetos na mesma tela) ----
+
+const cartoes = () => todos('editar-pdf-pagina')
+const rotulos = () =>
+  cartoes().map(
+    (c) => c.querySelector('[data-testid="editar-pdf-rotulo"]')!.textContent,
+  )
+const idsDaLista = () => cartoes().map((c) => c.dataset.id)
+const posicao = () => q('editar-pdf-posicao')!.textContent
+
+// Abre a página pela miniatura do cartão e espera o quadro dela, medido.
+async function abrirPagina(numero: number) {
+  await clicar(porNome(`Abrir a página ${numero}`))
+  await esperarAte(
+    () =>
+      posicao() === `Página ${numero} de ${cartoes().length}` &&
+      q('editar-pdf-quadro') !== null,
+  )
+  medirQuadro()
+}
+
+async function marcarPagina(numero: number) {
+  await clicar(porNome<HTMLInputElement>(`Selecionar página ${numero}`))
+}
+
+describe('a Bancada: páginas, página aberta e objeto', () => {
+  it('três colunas: páginas e seleção, a página com as ferramentas, o objeto; o Gerar no cabeçalho, antes da lista', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+
+    const colunaDePaginas = q('editar-pdf-coluna-de-paginas')!
+    expect(colunaDePaginas.tagName).toBe('ASIDE')
+    expect(colunaDePaginas.contains(q('editar-pdf-paginas'))).toBe(true)
+    expect(
+      colunaDePaginas.querySelector(
+        '[role="toolbar"][aria-label="Ações nas páginas selecionadas"]',
+      ),
+    ).not.toBeNull()
+    expect(q('editar-pdf-edicao')!.contains(quadro())).toBe(true)
+    expect(
+      q('editar-pdf-coluna-do-objeto')!.contains(q('editar-pdf-painel-vazio')),
+    ).toBe(true)
+    const gerar = q('editar-pdf-gerar')!
+    expect(
+      gerar.compareDocumentPosition(colunaDePaginas) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('cada cartão: caixa de seleção, miniatura que abre a página, rótulo pela posição e a origem embaixo', async () => {
+    const { renderizador } = await abrirParaEditar('livro-3p.pdf')
+
+    expect(rotulos()).toEqual(['Página 1aberta', 'Página 2', 'Página 3'])
+    expect(cartoes()[1].textContent).toContain('livro-3p.pdf, pág. 2')
+    expect(porNome('Abrir a página 1').getAttribute('aria-current')).toBe(
+      'page',
+    )
+    for (const nome of [
+      'Selecionar página 2',
+      'Abrir a página 2',
+      'Girar a página 2 à direita',
+      'Apagar a página 2',
+    ]) {
+      expect(porNome(nome)).toBeTruthy()
+    }
+
+    await abrirPagina(2)
+
+    expect(renderizador.paginasPedidas.at(-1)).toMatchObject({ indice: 1 })
+    expect(porNome('Abrir a página 2').getAttribute('aria-current')).toBe(
+      'page',
+    )
+    expect(anuncio()).toBe('Página 2 de 3.')
+    expect(focado()).toBe('Abrir a página 2')
+  })
+
+  it('o rótulo é a posição: mover muda o rótulo e a origem continua, com o anúncio pela posição', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await marcarPagina(3)
+
+    await clicar(porNome('Mover para antes'))
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p2', 'a0p1'])
+    expect(cartoes()[1].textContent).toContain('Página 2')
+    expect(cartoes()[1].textContent).toContain('livro-3p.pdf, pág. 3')
+    expect(anuncio()).toBe('Página 3 agora está na posição 2 de 3.')
+    expect(focado()).toBe('Mover para antes')
+  })
+
+  it('os objetos seguem a página movida, e o Gerar manda a ordem nova com os objetos pelo id da página', async () => {
+    const { motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await marcarPagina(1)
+
+    await clicar(porNome('Mover para depois'))
+
+    expect(idsDaLista()).toEqual(['a0p1', 'a0p0', 'a0p2'])
+    expect(posicao()).toBe('Página 2 de 3')
+    expect(objetos()).toHaveLength(1)
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+    const [pedido] = motor.montadas
+    expect(pedido.paginas.map((p) => p.id)).toEqual(['a0p1', 'a0p0', 'a0p2'])
+    expect([...pedido.objetosPorPagina.keys()]).toEqual(['a0p0'])
+    expect(pedido.porCopia).toBeUndefined()
+  })
+
+  it('apagar a página aberta abre a vizinha; desfazer as páginas a traz de volta com os objetos', async () => {
+    const { motor } = await abrirParaEditar('livro-3p.pdf')
+    await abrirPagina(2)
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Apagar a página 2'))
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p2'])
+    expect(posicao()).toBe('Página 2 de 2')
+    expect(anuncio()).toBe('Página 2 apagada.')
+    expect(focado()).toBe('Selecionar página 2')
+    expect(objetos()).toHaveLength(0)
+    expect(container.textContent).not.toContain('1 objeto em 1 página.')
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+    expect(motor.montadas[0].paginas.map((p) => p.id)).toEqual(['a0p0', 'a0p2'])
+    expect(motor.montadas[0].objetosPorPagina.size).toBe(0)
+
+    await clicar(porNome('Desfazer nas páginas'))
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(anuncio()).toBe('Desfeito nas páginas.')
+    expect(container.textContent).toContain('1 objeto em 1 página.')
+    expect(q('editar-pdf-resultado')).toBeNull()
+    await abrirPagina(2)
+    expect(objetos()).toHaveLength(1)
+  })
+
+  it('o desfazer dos objetos numa página apagada não navega e anuncia onde a mudança ficou', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirPagina(2)
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Apagar a página 2'))
+
+    await clicar(porNome('Desfazer'))
+
+    expect(posicao()).toBe('Página 2 de 2')
+    expect(anuncio()).toBe(
+      'Desfeito numa página que você apagou. Para ela voltar, use Desfazer nas páginas.',
+    )
+
+    await clicar(porNome('Refazer'))
+    expect(anuncio()).toBe(
+      'Refeito numa página que você apagou. Para ela voltar, use Desfazer nas páginas.',
+    )
+  })
+
+  it('girar uma página sem objetos: a página grande gira junto (a moldura é o giro)', async () => {
+    const { renderizador } = await abrirParaEditar('livro-3p.pdf')
+
+    await clicar(porNome('Girar a página 1 à direita'))
+    await esperarAte(() => renderizador.paginasPedidas.at(-1)?.giro === 90)
+
+    expect(anuncio()).toBe('Página 1 girada para 90°.')
+    expect(q('editar-pdf-nota-do-giro')).toBeNull()
+    expect(cartoes()[0].textContent).toContain('girada 90°')
+  })
+
+  it('girar uma página com objetos: os objetos giram junto, a página grande fica como estava, com a nota', async () => {
+    const { renderizador, motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    const pedidas = renderizador.paginasPedidas.length
+
+    await marcarPagina(1)
+    await clicar(porNome('Girar à direita'))
+    await esperar()
+
+    expect(renderizador.paginasPedidas).toHaveLength(pedidas)
+    expect(objetos()).toHaveLength(1)
+    const nota = 'No PDF, esta página sai girada 90° à direita, com os objetos.'
+    expect(q('editar-pdf-nota-do-giro')!.textContent).toBe(nota)
+    expect(anuncio()).toBe(`Página 1 girada para 90°. ${nota}`)
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+    expect(motor.montadas[0].paginas[0]).toMatchObject({
+      id: 'a0p0',
+      giro: 90,
+      moldura: 0,
+    })
+    expect(renderizador.fundos).toEqual([
+      expect.objectContaining({ indice: 0, giro: 0 }),
+    ])
+  })
+
+  it('objeto posto numa página já girada: a moldura é o giro, e o PDF sai como a tela mostra', async () => {
+    const { motor } = await abrirParaEditar('livro-3p.pdf')
+    await clicar(porNome('Girar a página 1 à direita'))
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    medirQuadro()
+
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(motor.montadas[0].paginas[0]).toMatchObject({
+      giro: 90,
+      moldura: 90,
+    })
+    expect(q('editar-pdf-nota-do-giro')).toBeNull()
+  })
+
+  it('o aviso de alcance só aparece quando o PDF sai por cópia, e fica ligado ao Gerar', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    const descricaoDoGerar = () =>
+      (porNome('Gerar PDF').getAttribute('aria-describedby') ?? '')
+        .split(' ')
+        .filter(Boolean)
+        .map((id) => document.getElementById(id)!.textContent)
+        .join(' ')
+
+    await clicar(porNome('Girar a página 2 à direita'))
+    expect(q('editar-pdf-alcance')).toBeNull()
+    expect(porNome('Gerar PDF').disabled).toBe(false)
+    expect(descricaoDoGerar()).toBe('')
+
+    await clicar(porNome('Apagar a página 3'))
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+    expect(descricaoDoGerar()).toBe(TEXTOS.alcance)
+  })
+
+  it('Extrair as selecionadas: só as páginas do pedido, com os objetos e o apagar de verdade delas, sempre por cópia', async () => {
+    const { renderizador, motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await abrirPagina(2)
+    await inserirNoCentro('Retângulo')
+    await marcarPagina(3)
+    await marcarPagina(1)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.paginas.map((p) => p.id)).toEqual(['a0p0', 'a0p2'])
+    expect(pedido.porCopia).toBe(true)
+    expect([...pedido.objetosPorPagina.keys()]).toEqual(['a0p0'])
+    expect([...pedido.paginasRasterizadas.keys()]).toEqual(['a0p0'])
+    expect(renderizador.fundos.map((f) => f.indice)).toEqual([0])
+    expect(q('editar-pdf-resultado')!.textContent).toContain(
+      'PDF com as páginas extraídas pronto',
+    )
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'livro-3p-paginas.pdf',
+    )
+    expect(anuncio()).toMatch(/^PDF pronto: 2 páginas, /)
+    expect(focado()).toBe('Baixar livro-3p-paginas.pdf')
+  })
+
+  it('a barra da seleção: ícones com nome, o desfazer das páginas com nome próprio, e o motivo de cada botão parado', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    const descricao = (nome: string) =>
+      document.getElementById(porNome(nome).getAttribute('aria-describedby')!)!
+        .textContent
+
+    for (const nome of [
+      'Girar à esquerda',
+      'Girar à direita',
+      'Mover para antes',
+      'Mover para depois',
+      'Apagar',
+      'Desfazer nas páginas',
+    ]) {
+      expect(porNome(nome).textContent).toBe('')
+      expect(porNome(nome).className).toContain('size-11')
+    }
+    expect(porNome('Girar à direita').disabled).toBe(true)
+    expect(descricao('Girar à direita')).toBe(TEXTOS.organizar.dicas.semSelecao)
+    expect(descricao('Desfazer nas páginas')).toBe(
+      TEXTOS.organizar.dicas.nadaParaDesfazer,
+    )
+    expect(q('editar-pdf-selecionadas')!.textContent).toBe(
+      'Nenhuma página selecionada',
+    )
+
+    await clicar(porNome('Selecionar todas'))
+    expect(q('editar-pdf-selecionadas')!.textContent).toBe(
+      '3 páginas selecionadas',
+    )
+    expect(descricao('Apagar')).toBe(TEXTOS.organizar.dicas.todasSelecionadas)
+    expect(focado()).toBe('Limpar seleção')
   })
 })
