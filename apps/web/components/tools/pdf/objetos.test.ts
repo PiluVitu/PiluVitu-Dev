@@ -456,22 +456,28 @@ describe('estilo dos objetos novos', () => {
   })
 })
 
-describe('a cena (os objetos de cada página)', () => {
+describe('a cena (os objetos de cada página, pelo id da página)', () => {
   it('incluir, trocar e tirar devolvem cenas novas, e a página sem objeto sai do mapa', () => {
-    const uma = incluirObjeto(CENA_VAZIA, 2, retangulo)
-    expect(objetosDa(uma, 2)).toEqual([retangulo])
-    expect(objetosDa(CENA_VAZIA, 2)).toEqual([])
+    const uma = incluirObjeto(CENA_VAZIA, 'a0p2', retangulo)
+    expect(objetosDa(uma, 'a0p2')).toEqual([retangulo])
+    expect(objetosDa(CENA_VAZIA, 'a0p2')).toEqual([])
     const movido = { ...retangulo, x: 5 }
-    const duas = trocarObjeto(uma, 2, movido)
-    expect(objetosDa(duas, 2)).toEqual([movido])
-    expect(trocarObjeto(duas, 2, movido)).toBe(duas)
-    expect(trocarObjeto(duas, 0, movido)).toBe(duas)
-    const vazia = tirarObjeto(duas, 2, 'r')
-    expect(vazia.objetos.has(2)).toBe(false)
-    expect(tirarObjeto(vazia, 2, 'r')).toBe(vazia)
+    const duas = trocarObjeto(uma, 'a0p2', movido)
+    expect(objetosDa(duas, 'a0p2')).toEqual([movido])
+    expect(trocarObjeto(duas, 'a0p2', movido)).toBe(duas)
+    expect(trocarObjeto(duas, 'a0p0', movido)).toBe(duas)
+    const vazia = tirarObjeto(duas, 'a0p2', 'r')
+    expect(vazia.objetos.has('a0p2')).toBe(false)
+    expect(tirarObjeto(vazia, 'a0p2', 'r')).toBe(vazia)
   })
 
-  it('páginas para apagar de verdade: só as marcadas que têm cobrir', () => {
+  it('a página de outro arquivo com o mesmo índice é outra página', () => {
+    const cena = incluirObjeto(CENA_VAZIA, 'a1p0', retangulo)
+    expect(objetosDa(cena, 'a0p0')).toEqual([])
+    expect(objetosDa(cena, 'a1p0')).toEqual([retangulo])
+  })
+
+  it('páginas para apagar de verdade: só as marcadas que têm cobrir, na ordem do documento', () => {
     const cobrir: ObjetoNaTela = {
       id: 'c',
       tipo: 'cobrir',
@@ -480,18 +486,29 @@ describe('a cena (os objetos de cada página)', () => {
       largura: 3,
       altura: 4,
     }
-    let cena = incluirObjeto(CENA_VAZIA, 1, cobrir)
-    cena = incluirObjeto(cena, 1, retangulo)
-    cena = comApagarDeVerdade(cena, 1, true)
-    cena = comApagarDeVerdade(cena, 3, true)
-    expect(comApagarDeVerdade(cena, 3, true)).toBe(cena)
-    expect(temCobrir(cena, 1)).toBe(true)
-    expect(paginasParaApagar(cena)).toEqual([1])
-    expect(cobrirDa(cena, 1)).toEqual([{ x: 1, y: 2, largura: 3, altura: 4 }])
-    expect(totalDeObjetos(cena)).toBe(2)
+    let cena = incluirObjeto(CENA_VAZIA, 'a0p1', cobrir)
+    cena = incluirObjeto(cena, 'a0p1', retangulo)
+    cena = incluirObjeto(cena, 'a0p4', cobrir)
+    cena = comApagarDeVerdade(cena, 'a0p4', true)
+    cena = comApagarDeVerdade(cena, 'a0p1', true)
+    cena = comApagarDeVerdade(cena, 'a0p3', true)
+    expect(comApagarDeVerdade(cena, 'a0p3', true)).toBe(cena)
+    expect(temCobrir(cena, 'a0p1')).toBe(true)
+    expect(paginasParaApagar(cena, ['a0p0', 'a0p1', 'a0p3', 'a0p4'])).toEqual([
+      'a0p1',
+      'a0p4',
+    ])
+    expect(paginasParaApagar(cena, ['a0p4', 'a0p3', 'a0p1'])).toEqual([
+      'a0p4',
+      'a0p1',
+    ])
+    expect(cobrirDa(cena, 'a0p1')).toEqual([
+      { x: 1, y: 2, largura: 3, altura: 4 },
+    ])
+    expect(totalDeObjetos(cena)).toBe(3)
   })
 
-  it('as imagens usadas e as páginas que mudaram entre duas cenas', () => {
+  it('as imagens usadas e as páginas que mudaram entre duas cenas, na ordem do documento', () => {
     const imagem: ObjetoNaTela = {
       id: 'i',
       tipo: 'imagem',
@@ -501,17 +518,39 @@ describe('a cena (os objetos de cada página)', () => {
       largura: 1,
       altura: 1,
     }
-    const antes = incluirObjeto(CENA_VAZIA, 0, retangulo)
-    const depois = comApagarDeVerdade(incluirObjeto(antes, 4, imagem), 2, true)
+    const antes = incluirObjeto(CENA_VAZIA, 'a0p0', retangulo)
+    const depois = comApagarDeVerdade(
+      incluirObjeto(antes, 'a0p4', imagem),
+      'a0p2',
+      true,
+    )
     expect([...imagensDa(depois)]).toEqual(['foto'])
-    expect(paginasMudadas(antes, depois)).toEqual([2, 4])
-    expect(paginasMudadas(depois, depois)).toEqual([])
+    expect(
+      paginasMudadas(antes, depois, ['a0p0', 'a0p1', 'a0p2', 'a0p3', 'a0p4']),
+    ).toEqual(['a0p2', 'a0p4'])
+    expect(paginasMudadas(antes, depois, ['a0p4', 'a0p2', 'a0p0'])).toEqual([
+      'a0p4',
+      'a0p2',
+    ])
+    expect(paginasMudadas(depois, depois, ['a0p0'])).toEqual([])
+  })
+
+  it('a página que mudou e não está na ordem vem depois das que estão', () => {
+    const depois = incluirObjeto(
+      incluirObjeto(CENA_VAZIA, 'a0p7', retangulo),
+      'a0p1',
+      retangulo,
+    )
+    expect(paginasMudadas(CENA_VAZIA, depois, ['a0p1'])).toEqual([
+      'a0p1',
+      'a0p7',
+    ])
   })
 
   it('a cena vive no histórico do pdf-regras como qualquer valor', () => {
     const historico = registrarNoHistorico(
       historicoInicial(CENA_VAZIA),
-      incluirObjeto(CENA_VAZIA, 0, retangulo),
+      incluirObjeto(CENA_VAZIA, 'a0p0', retangulo),
     )
     expect(historico.passado).toEqual([CENA_VAZIA])
   })

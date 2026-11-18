@@ -1,35 +1,27 @@
 'use client'
 
 import {
-  memo,
   useCallback,
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
-  type FocusEvent as EventoDeFoco,
-  type KeyboardEvent as EventoDeTeclado,
-  type RefObject,
 } from 'react'
 import {
   faArrowRotateLeft,
   faArrowRotateRight,
-  faChevronLeft,
-  faChevronRight,
   faCircleExclamation,
   faCircleInfo,
   faCrosshairs,
   faDownload,
   faFilePdf,
   faImage,
-  faMagnifyingGlassMinus,
-  faMagnifyingGlassPlus,
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
-import { cn } from '@piluvitu/ui/cn'
 import { Input } from '@piluvitu/ui/input'
 import {
   TETO_DAS_IMAGENS_EM_BYTES,
@@ -38,6 +30,7 @@ import {
   desfazer as desfazerNoHistorico,
   historicoInicial,
   nomeDoPdfDerivado,
+  planoInicial,
   podeDesfazer,
   podeRefazer,
   refazer as refazerNoHistorico,
@@ -47,10 +40,19 @@ import {
   type PontoDoTraco,
   type Tamanho,
 } from '@piluvitu/tools/pdf-regras'
+import {
+  AreaDaPagina,
+  ControlesDaPagina,
+  FaixaDePaginas,
+  ZOOMS,
+  ZOOM_INICIAL,
+  usePaginaDesenhada,
+} from './area-da-pagina'
 import { useDocumentoPdf } from './documento-pdf'
 import { ehCampoDeTexto, podeTerFoco } from './foco'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import { ehFalhaDaImagem, prepararImagem } from './imagem-inserida'
+import { idDaPagina, montagemDoPlano } from './montagem'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
@@ -102,18 +104,6 @@ import { AvisoDePrivacidade, ZonaDeArquivos } from './zona-de-arquivos'
 
 const T = TEXTOS.editar
 
-/** Frações da largura da área; 1 é a página na largura da área. */
-export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const
-
-const ZOOM_INICIAL = ZOOMS.indexOf(1)
-
-const LARGURA_SEM_MEDIDA = 600
-
-// Redimensionar a janela dispara a medida a cada quadro; a página só é desenhada de novo quando para.
-const ESPERA_DO_REDIMENSIONAR_MS = 150
-
-const PROPORCAO_DO_A4 = Math.SQRT2
-
 // A imagem da miniatura na faixa: 4,5rem do botão menos o respiro.
 const LARGURA_DA_MINIATURA_NA_FAIXA = 64
 
@@ -130,16 +120,6 @@ type Vista = {
 }
 
 const SEM_VISTA: Vista = { documento: null, pagina: 0, zoom: ZOOM_INICIAL }
-
-type Desenho = {
-  documento: DocumentoAberto
-  pagina: number
-  larguraCss: number
-  tentativa: number
-  ok: boolean
-  /** O da última página desenhada: até a nova chegar, a folha fica com a proporção dela. */
-  tamanho: Tamanho | null
-}
 
 type Edicao = {
   documento: DocumentoAberto | null
@@ -190,35 +170,6 @@ function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
     : T.recusado(nome, recusa.motivo)
 }
 
-function useLarguraDaArea(
-  area: RefObject<HTMLElement | null>,
-  ativa: boolean,
-): number | null {
-  const [largura, setLargura] = useState<number | null>(null)
-  useEffect(() => {
-    const elemento = area.current
-    if (!ativa || !elemento || typeof ResizeObserver === 'undefined') return
-    let espera: ReturnType<typeof setTimeout> | undefined
-    let primeira = true
-    const observador = new ResizeObserver(([entrada]) => {
-      const nova = Math.max(1, Math.floor(entrada.contentRect.width))
-      clearTimeout(espera)
-      if (primeira) {
-        primeira = false
-        setLargura(nova)
-      } else {
-        espera = setTimeout(() => setLargura(nova), ESPERA_DO_REDIMENSIONAR_MS)
-      }
-    })
-    observador.observe(elemento)
-    return () => {
-      clearTimeout(espera)
-      observador.disconnect()
-    }
-  }, [area, ativa])
-  return typeof ResizeObserver === 'undefined' ? LARGURA_SEM_MEDIDA : largura
-}
-
 // As imagens que algum passo do histórico usa: só essas ficam guardadas e contam no teto.
 function imagensDoHistorico(historico: Historico<Cena>): Set<string> {
   const usadas = new Set<string>()
@@ -252,7 +203,6 @@ export function EditarPdf({
   const areaRef = useRef<HTMLDivElement>(null)
   const folhaRef = useRef<HTMLDivElement>(null)
   const quadroRef = useRef<HTMLDivElement>(null)
-  const faixaRef = useRef<HTMLOListElement>(null)
   const barraRef = useRef<HTMLDivElement>(null)
   const anteriorRef = useRef<HTMLButtonElement>(null)
   const proximaRef = useRef<HTMLButtonElement>(null)
@@ -268,7 +218,6 @@ export function EditarPdf({
   const gerarRef = useRef<HTMLButtonElement>(null)
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const baixarRef = useRef<HTMLAnchorElement>(null)
-  const botoesDasPaginas = useRef(new Map<number, HTMLButtonElement>())
   const elementosDosObjetos = useRef(new Map<string, HTMLElement>())
   const focoPendente = useRef<Foco | null>(null)
   const juncao = useRef<{ chave: string; quando: number } | null>(null)
@@ -280,12 +229,6 @@ export function EditarPdf({
   const vezDaGeracao = useRef(0)
 
   const [vista, setVista] = useState<Vista>(SEM_VISTA)
-  const [desenho, setDesenho] = useState<Desenho | null>(null)
-  const [tentativa, setTentativa] = useState(0)
-  const [focoNaFaixa, setFocoNaFaixa] = useState<{
-    documento: DocumentoAberto
-    indice: number
-  } | null>(null)
   const [anuncio, setAnuncio] = useState({ texto: '', vez: 0 })
   const [edicao, setEdicao] = useState<Edicao>(SEM_EDICAO)
   const [ferramenta, setFerramenta] = useState<Ferramenta>('selecionar')
@@ -330,44 +273,28 @@ export function EditarPdf({
     aoRecusar: () => anunciar(''),
   })
   const miniaturas = useMiniaturas(documento, LARGURA_DA_MINIATURA_NA_FAIXA)
-  const larguraDaArea = useLarguraDaArea(areaRef, documento !== null)
 
   const { pagina, zoom } =
     documento && vista.documento === documento ? vista : SEM_VISTA
   const total = documento?.paginas ?? 0
-  const larguraCss =
-    larguraDaArea === null
-      ? null
-      : Math.max(1, Math.round(larguraDaArea * ZOOMS[zoom]))
-  const desenhoDaVez =
-    desenho &&
-    desenho.documento === documento &&
-    desenho.pagina === pagina &&
-    desenho.larguraCss === larguraCss &&
-    desenho.tentativa === tentativa
-      ? desenho
-      : null
-  const desenhando = documento !== null && desenhoDaVez === null
-  const tamanho =
-    desenho && desenho.documento === documento ? desenho.tamanho : null
-  const proporcao = tamanho ? tamanho.altura / tamanho.largura : PROPORCAO_DO_A4
-  // Os objetos só aparecem quando a página deles já foi desenhada: é o tamanho dela que os posiciona.
-  const tamanhoDaPagina =
-    desenho &&
-    desenho.documento === documento &&
-    desenho.pagina === pagina &&
-    desenho.ok
-      ? desenho.tamanho
-      : null
-  const indiceFocavel =
-    focoNaFaixa && focoNaFaixa.documento === documento
-      ? focoNaFaixa.indice
-      : pagina
+  const {
+    larguraCss,
+    desenhando,
+    falhou: naoDesenhou,
+    proporcao,
+    tamanhoDaPagina,
+    tentarDeNovo,
+  } = usePaginaDesenhada({ documento, pagina, zoom, areaRef, folhaRef })
 
   const { historico } =
     documento && edicao.documento === documento ? edicao : SEM_EDICAO
   const cena = historico.presente
-  const objetosDaPagina = objetosDa(cena, pagina)
+  const ordem = useMemo(
+    () => Array.from({ length: total }, (_, indice) => idDaPagina(0, indice)),
+    [total],
+  )
+  const aberta = idDaPagina(0, pagina)
+  const objetosDaPagina = objetosDa(cena, aberta)
   const objetoEscolhido =
     (selecionado && objetosDaPagina.find((o) => o.id === selecionado)) || null
   const montando = resultado.estado === 'montando'
@@ -395,47 +322,6 @@ export function EditarPdf({
     },
     [],
   )
-
-  useEffect(() => {
-    if (!documento || larguraCss === null) return
-    let ativo = true
-    const pedido = { documento, pagina, larguraCss, tentativa }
-    documento.pagina(pagina, larguraCss).then(
-      ({ canvas, tamanho: daPagina }) => {
-        if (!ativo) return
-        canvas.className = 'block size-full'
-        canvas.dataset.testid = 'editar-pdf-canvas'
-        folhaRef.current?.replaceChildren(canvas)
-        setDesenho({ ...pedido, ok: true, tamanho: daPagina })
-      },
-      () => {
-        // O pedido superado por outra página ou outro zoom já saiu daqui (ativo é false).
-        if (!ativo) return
-        setDesenho((anterior) => ({
-          ...pedido,
-          ok: false,
-          tamanho: anterior?.documento === documento ? anterior.tamanho : null,
-        }))
-      },
-    )
-    return () => {
-      ativo = false
-    }
-  }, [documento, pagina, larguraCss, tentativa])
-
-  // Só a faixa rola até a miniatura da página aberta: um scrollIntoView rolaria a página inteira junto.
-  useEffect(() => {
-    const faixa = faixaRef.current
-    const botao = botoesDasPaginas.current.get(pagina)
-    if (!faixa || !botao) return
-    const daFaixa = faixa.getBoundingClientRect()
-    const doBotao = botao.getBoundingClientRect()
-    if (doBotao.left < daFaixa.left) {
-      faixa.scrollLeft -= daFaixa.left - doBotao.left
-    } else if (doBotao.right > daFaixa.right) {
-      faixa.scrollLeft += doBotao.right - daFaixa.right
-    }
-  }, [pagina, documento])
 
   useEffect(() => {
     const alvo = focoPendente.current?.()
@@ -592,7 +478,7 @@ export function EditarPdf({
           : undefined,
     })
     mudarCena(
-      incluirObjeto(cena, pagina, objeto),
+      incluirObjeto(cena, aberta, objeto),
       undefined,
       ferramenta === 'imagem' ? null : imagemPendente,
     )
@@ -622,13 +508,13 @@ export function EditarPdf({
   function desenhar(pontos: PontoDoTraco[]) {
     if (!pontos.length) return
     const objeto = criarTraco(pontos, estilos.traco)
-    mudarCena(incluirObjeto(cena, pagina, objeto))
+    mudarCena(incluirObjeto(cena, aberta, objeto))
     anunciar(T.anuncios.inserido(objeto))
   }
 
   function mudarPeloQuadro(novo: ObjetoNaTela, origem: OrigemDaMudanca) {
     mudarCena(
-      trocarObjeto(cena, pagina, novo),
+      trocarObjeto(cena, aberta, novo),
       origem === 'ponteiro' ? undefined : `${origem}:${novo.id}`,
     )
     anunciarDepois(T.anuncios.posicao(novo))
@@ -638,7 +524,7 @@ export function EditarPdf({
     if (!objetoEscolhido || !tamanhoDaPagina) return
     const novo = comMudanca(objetoEscolhido, mudanca, tamanhoDaPagina)
     mudarCena(
-      trocarObjeto(cena, pagina, novo),
+      trocarObjeto(cena, aberta, novo),
       `painel:${mudanca.campo}:${novo.id}`,
     )
     setEstilos((atuais) => lembrarEstilo(atuais, novo))
@@ -649,7 +535,7 @@ export function EditarPdf({
     if (posicao < 0) return
     const vizinho =
       objetosDaPagina[posicao + 1] ?? objetosDaPagina[posicao - 1] ?? null
-    mudarCena(tirarObjeto(cena, pagina, id))
+    mudarCena(tirarObjeto(cena, aberta, id))
     setSelecionado(vizinho?.id ?? null)
     anunciar(T.anuncios.apagado(objetosDaPagina[posicao].tipo))
     focar(() =>
@@ -685,9 +571,11 @@ export function EditarPdf({
     juncao.current = null
     const focadoAntes = document.activeElement
     guardarHistorico(novo)
-    const mudadas = paginasMudadas(historico.presente, novo.presente)
+    const mudadas = paginasMudadas(historico.presente, novo.presente, ordem)
     const outra =
-      mudadas.length > 0 && !mudadas.includes(pagina) ? mudadas[0] : null
+      mudadas.length > 0 && !mudadas.includes(aberta)
+        ? ordem.indexOf(mudadas[0])
+        : null
     if (outra !== null) {
       setVista({ documento, pagina: outra, zoom })
       setSelecionado(null)
@@ -781,7 +669,7 @@ export function EditarPdf({
   }
 
   function mudarApagarDeVerdade(ligado: boolean) {
-    mudarCena(comApagarDeVerdade(cena, pagina, ligado))
+    mudarCena(comApagarDeVerdade(cena, aberta, ligado))
     setConfirmandoApagar(null)
     anunciar(
       T.anuncios[ligado ? 'apagarLigado' : 'apagarDesligado'](pagina + 1),
@@ -800,11 +688,11 @@ export function EditarPdf({
     anunciar(T.anuncios.montando)
     focar(() => cancelarRef.current)
     try {
-      const rasterizadas = new Map<number, Blob>()
-      for (const indice of paginasParaApagar(cenaDoPdf)) {
+      const rasterizadas = new Map<string, Blob>()
+      for (const id of paginasParaApagar(cenaDoPdf, ordem)) {
         rasterizadas.set(
-          indice,
-          await documento.fundo(indice, cobrirDa(cenaDoPdf, indice)),
+          id,
+          await documento.fundo(ordem.indexOf(id), cobrirDa(cenaDoPdf, id)),
         )
         if (vez !== vezDaGeracao.current) return
       }
@@ -813,7 +701,8 @@ export function EditarPdf({
         const imagem = imagens.get(id)
         if (imagem) blobs.set(id, imagem.blob)
       }
-      const pdf = await motor().editar(origem, {
+      const pdf = await motor().montar([origem], {
+        paginas: montagemDoPlano(planoInicial(documento.paginas)),
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
         paginasRasterizadas: rasterizadas,
@@ -833,12 +722,17 @@ export function EditarPdf({
       const falha = ehFalhaDaOperacao(erro)
         ? erro
         : { motivo: 'inesperado' as const }
+      const indice =
+        typeof falha.pagina === 'string' ? ordem.indexOf(falha.pagina) : -1
       setResultado({
         estado: 'falhou',
-        mensagem: T.falhaAoSalvar(falha),
+        mensagem: T.falhaAoSalvar({
+          ...falha,
+          pagina: indice < 0 ? undefined : indice,
+        }),
         objeto:
-          falha.pagina !== undefined && falha.objeto !== undefined
-            ? { pagina: falha.pagina, id: falha.objeto }
+          indice >= 0 && falha.objeto !== undefined
+            ? { pagina: indice, id: falha.objeto }
             : undefined,
       })
       anunciar('')
@@ -876,19 +770,6 @@ export function EditarPdf({
     (indice: number) => irParaRef.current(indice),
     [],
   )
-  const aoFocarMiniatura = useCallback(
-    (indice: number) => {
-      if (documento) setFocoNaFaixa({ documento, indice })
-    },
-    [documento],
-  )
-  const registrarBotao = useCallback(
-    (indice: number, botao: HTMLButtonElement | null) => {
-      if (botao) botoesDasPaginas.current.set(indice, botao)
-      else botoesDasPaginas.current.delete(indice)
-    },
-    [],
-  )
   const registrarObjeto = useCallback(
     (id: string, elemento: HTMLElement | null) => {
       if (elemento) elementosDosObjetos.current.set(id, elemento)
@@ -924,29 +805,7 @@ export function EditarPdf({
     return () => window.removeEventListener('keydown', aoTeclar)
   }, [documento])
 
-  function aoTeclarNaFaixa(evento: EventoDeTeclado<HTMLOListElement>) {
-    const destinos: Record<string, number> = {
-      ArrowRight: Math.min(total - 1, indiceFocavel + 1),
-      ArrowLeft: Math.max(0, indiceFocavel - 1),
-      Home: 0,
-      End: total - 1,
-    }
-    const destino = destinos[evento.key]
-    if (destino === undefined) return
-    evento.preventDefault()
-    botoesDasPaginas.current.get(destino)?.focus()
-  }
-
-  function aoSairDaFaixa(evento: EventoDeFoco<HTMLOListElement>) {
-    if (!evento.currentTarget.contains(evento.relatedTarget as Node | null)) {
-      setFocoNaFaixa(null)
-    }
-  }
-
   const idDoTitulo = `${ids}-paginas`
-  const idDaPosicao = `${ids}-posicao`
-  const idDoMinimo = `${ids}-zoom-minimo`
-  const idDoMaximo = `${ids}-zoom-maximo`
   const idDasInstrucoes = `${ids}-instrucoes`
   const idSemImagem = `${ids}-sem-imagem`
   const idSemDesfazer = `${ids}-sem-desfazer`
@@ -954,8 +813,6 @@ export function EditarPdf({
   const idSemObjetos = `${ids}-sem-objetos`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
-  const noMinimo = zoom === 0
-  const noMaximo = zoom === ZOOMS.length - 1
   const erro =
     arquivo && grandeDemais
       ? T.grandeDemais(arquivo.name, arquivo.size, TETO_DE_BYTES_COM_MINIATURAS)
@@ -977,9 +834,9 @@ export function EditarPdf({
   const podeVoltar = podeDesfazer(historico)
   const podeAvancar = podeRefazer(historico)
   const quantosObjetos = totalDeObjetos(cena)
-  const paginasComApagar = paginasParaApagar(cena)
-  const cobrirAqui = temCobrir(cena, pagina)
-  const apagarAqui = cena.apagar.has(pagina)
+  const paginasComApagar = paginasParaApagar(cena, ordem)
+  const cobrirAqui = temCobrir(cena, aberta)
+  const apagarAqui = cena.apagar.has(aberta)
   const mostrarDicaDoTexto =
     dicaDoTexto?.documento === documento && dicaDoTexto?.pagina === pagina
   const corDoDesenho = nomeDaCor(estilos.traco.cor)
@@ -1057,144 +914,28 @@ export function EditarPdf({
             )}
           </div>
 
-          <div className="space-y-1">
-            <ol
-              ref={faixaRef}
-              aria-labelledby={idDoTitulo}
-              onKeyDown={aoTeclarNaFaixa}
-              onBlur={aoSairDaFaixa}
-              className="flex gap-2 overflow-x-auto p-1 pb-2"
-              data-testid="editar-pdf-faixa"
-            >
-              {Array.from({ length: total }, (_, indice) => (
-                <MiniaturaDaPagina
-                  key={indice}
-                  indice={indice}
-                  atual={indice === pagina}
-                  focavel={indice === indiceFocavel}
-                  url={miniaturas.urls.get(indice)}
-                  falhou={miniaturas.falhas.has(indice)}
-                  aoEscolher={aoEscolherPagina}
-                  aoFocar={aoFocarMiniatura}
-                  registrar={registrarBotao}
-                  observar={miniaturas.observar}
-                />
-              ))}
-            </ol>
-            <p className="text-muted-foreground text-xs">
-              {T.atalhoDasPaginas}
-            </p>
-          </div>
+          {documento && (
+            <FaixaDePaginas
+              documento={documento}
+              total={total}
+              pagina={pagina}
+              idDoTitulo={idDoTitulo}
+              miniaturas={miniaturas}
+              aoEscolher={aoEscolherPagina}
+            />
+          )}
 
-          <div
-            className="flex flex-wrap items-center justify-between gap-2"
-            data-testid="editar-pdf-controles"
-          >
-            <div className="flex items-center gap-1">
-              <Button
-                ref={anteriorRef}
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11"
-                aria-label={T.anterior}
-                aria-describedby={idDaPosicao}
-                disabled={pagina === 0}
-                onClick={() => passar(-1)}
-                data-testid="editar-pdf-anterior"
-              >
-                <FontAwesomeIcon
-                  icon={faChevronLeft}
-                  className="size-4"
-                  aria-hidden
-                />
-              </Button>
-              <p
-                id={idDaPosicao}
-                className="min-w-28 px-1 text-center text-sm tabular-nums"
-                data-testid="editar-pdf-posicao"
-              >
-                {T.paginaAtual(pagina + 1, total)}
-              </p>
-              <Button
-                ref={proximaRef}
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11"
-                aria-label={T.proxima}
-                aria-describedby={idDaPosicao}
-                disabled={pagina === total - 1}
-                onClick={() => passar(1)}
-                data-testid="editar-pdf-proxima"
-              >
-                <FontAwesomeIcon
-                  icon={faChevronRight}
-                  className="size-4"
-                  aria-hidden
-                />
-              </Button>
-            </div>
-
-            <div
-              role="group"
-              aria-label={T.zoom.rotulo}
-              className="flex items-center gap-1"
-            >
-              <Button
-                ref={diminuirRef}
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11"
-                aria-label={T.zoom.diminuir}
-                aria-describedby={noMinimo ? idDoMinimo : undefined}
-                disabled={noMinimo}
-                onClick={() => mudarZoom(-1)}
-                data-testid="editar-pdf-diminuir"
-              >
-                <FontAwesomeIcon
-                  icon={faMagnifyingGlassMinus}
-                  className="size-4"
-                  aria-hidden
-                />
-              </Button>
-              <p
-                className="min-w-14 text-center text-sm tabular-nums"
-                data-testid="editar-pdf-zoom"
-              >
-                {T.zoom.valor(ZOOMS[zoom])}
-              </p>
-              <Button
-                ref={aumentarRef}
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11"
-                aria-label={T.zoom.aumentar}
-                aria-describedby={noMaximo ? idDoMaximo : undefined}
-                disabled={noMaximo}
-                onClick={() => mudarZoom(1)}
-                data-testid="editar-pdf-aumentar"
-              >
-                <FontAwesomeIcon
-                  icon={faMagnifyingGlassPlus}
-                  className="size-4"
-                  aria-hidden
-                />
-              </Button>
-              {noMinimo && (
-                <span id={idDoMinimo} className="sr-only">
-                  {T.zoom.noMinimo}
-                </span>
-              )}
-              {noMaximo && (
-                <span id={idDoMaximo} className="sr-only">
-                  {T.zoom.noMaximo}
-                </span>
-              )}
-            </div>
-          </div>
+          <ControlesDaPagina
+            pagina={pagina}
+            total={total}
+            zoom={zoom}
+            anteriorRef={anteriorRef}
+            proximaRef={proximaRef}
+            diminuirRef={diminuirRef}
+            aumentarRef={aumentarRef}
+            aoPassar={passar}
+            aoMudarZoom={mudarZoom}
+          />
 
           <div
             inert={montando || undefined}
@@ -1435,91 +1176,40 @@ export function EditarPdf({
               />
             </div>
 
-            <div
-              ref={areaRef}
-              role="group"
-              aria-label={T.areaDaPagina(pagina + 1)}
-              tabIndex={0}
-              className="bg-muted/50 border-border focus-visible:ring-ring relative max-h-[75vh] min-h-40 [scrollbar-gutter:stable] overflow-auto rounded-lg border p-2 focus-visible:ring-2 focus-visible:outline-hidden sm:p-4"
-              data-testid="editar-pdf-area"
+            <AreaDaPagina
+              areaRef={areaRef}
+              folhaRef={folhaRef}
+              numeroDaPagina={pagina + 1}
+              larguraCss={larguraCss}
+              proporcao={proporcao}
+              desenhando={desenhando}
+              falhou={naoDesenhou}
+              aoTentarDeNovo={tentarDeNovo}
             >
-              {larguraCss !== null && (
-                <div className="relative mx-auto w-fit">
-                  <div
-                    ref={folhaRef}
-                    role="img"
-                    aria-label={T.pagina(pagina + 1)}
-                    aria-busy={desenhando}
-                    className="bg-white shadow-sm"
-                    style={{
-                      width: larguraCss,
-                      height: Math.round(larguraCss * proporcao),
-                    }}
-                    data-testid="editar-pdf-folha"
-                  />
-                  {tamanhoDaPagina && (
-                    <QuadroDeObjetos
-                      numeroDaPagina={pagina + 1}
-                      tamanho={tamanhoDaPagina}
-                      objetos={objetosDaPagina}
-                      selecionado={objetoEscolhido?.id ?? null}
-                      ferramenta={ferramenta}
-                      urlsDasImagens={urlsDasImagens}
-                      nomesDasImagens={nomesDasImagens}
-                      estiloDoDesenho={estilos.traco}
-                      idDasInstrucoes={idDasInstrucoes}
-                      quadroRef={quadroRef}
-                      registrar={registrarObjeto}
-                      aoFocar={setSelecionado}
-                      aoMudar={mudarPeloQuadro}
-                      aoApagar={apagarObjeto}
-                      aoEditarTexto={() => textoRef.current?.focus()}
-                      aoSoltar={soltarObjeto}
-                      aoCriar={inserir}
-                      aoDesenhar={desenhar}
-                      aoClicarNaPagina={(ponto) => void clicarNaPagina(ponto)}
-                    />
-                  )}
-                </div>
+              {tamanhoDaPagina && (
+                <QuadroDeObjetos
+                  numeroDaPagina={pagina + 1}
+                  tamanho={tamanhoDaPagina}
+                  objetos={objetosDaPagina}
+                  selecionado={objetoEscolhido?.id ?? null}
+                  ferramenta={ferramenta}
+                  urlsDasImagens={urlsDasImagens}
+                  nomesDasImagens={nomesDasImagens}
+                  estiloDoDesenho={estilos.traco}
+                  idDasInstrucoes={idDasInstrucoes}
+                  quadroRef={quadroRef}
+                  registrar={registrarObjeto}
+                  aoFocar={setSelecionado}
+                  aoMudar={mudarPeloQuadro}
+                  aoApagar={apagarObjeto}
+                  aoEditarTexto={() => textoRef.current?.focus()}
+                  aoSoltar={soltarObjeto}
+                  aoCriar={inserir}
+                  aoDesenhar={desenhar}
+                  aoClicarNaPagina={(ponto) => void clicarNaPagina(ponto)}
+                />
               )}
-              {desenhando && (
-                <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
-                  <p
-                    className="bg-background text-foreground border-border rounded-full border px-3 py-1 text-sm shadow-sm"
-                    data-testid="editar-pdf-desenhando"
-                  >
-                    {T.desenhando}
-                  </p>
-                </div>
-              )}
-              {desenhoDaVez && !desenhoDaVez.ok && (
-                <div className="absolute inset-x-0 top-4 flex justify-center px-4">
-                  <div
-                    role="alert"
-                    data-testid="editar-pdf-falha"
-                    className="bg-card border-destructive flex max-w-md flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm shadow-sm"
-                  >
-                    <FontAwesomeIcon
-                      icon={faCircleExclamation}
-                      className="text-destructive size-4 shrink-0"
-                      aria-hidden
-                    />
-                    <p className="min-w-0 flex-1 basis-48">
-                      {T.naoDesenhou(pagina + 1)}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-11"
-                      onClick={() => setTentativa((n) => n + 1)}
-                      data-testid="editar-pdf-tentar-de-novo"
-                    >
-                      {T.tentarDeNovo}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            </AreaDaPagina>
             <p
               id={idDasInstrucoes}
               className="text-muted-foreground text-xs leading-relaxed"
@@ -1677,7 +1367,9 @@ export function EditarPdf({
             )}
             {paginasComApagar.length > 0 && (
               <p className="text-sm" data-testid="editar-pdf-paginas-apagadas">
-                {T.gerar.apagando(paginasComApagar.map((p) => p + 1))}
+                {T.gerar.apagando(
+                  paginasComApagar.map((id) => ordem.indexOf(id) + 1),
+                )}
               </p>
             )}
             {montando ? (
@@ -1791,78 +1483,3 @@ export function EditarPdf({
     </div>
   )
 }
-
-const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
-  indice,
-  atual,
-  focavel,
-  url,
-  falhou,
-  aoEscolher,
-  aoFocar,
-  registrar,
-  observar,
-}: {
-  indice: number
-  atual: boolean
-  focavel: boolean
-  url: string | undefined
-  falhou: boolean
-  aoEscolher: (indice: number) => void
-  aoFocar: (indice: number) => void
-  registrar: (indice: number, botao: HTMLButtonElement | null) => void
-  observar: (elemento: Element, indice: number) => () => void
-}) {
-  const numero = indice + 1
-  const refDoItem = useCallback(
-    (no: HTMLLIElement | null) => {
-      if (no) return observar(no, indice)
-    },
-    [observar, indice],
-  )
-  const refDoBotao = useCallback(
-    (botao: HTMLButtonElement | null) => registrar(indice, botao),
-    [registrar, indice],
-  )
-
-  return (
-    <li ref={refDoItem} className="shrink-0" data-testid="editar-pdf-item">
-      <button
-        ref={refDoBotao}
-        type="button"
-        tabIndex={focavel ? 0 : -1}
-        aria-current={atual ? 'page' : undefined}
-        aria-label={T.escolherPagina(numero)}
-        onClick={() => aoEscolher(indice)}
-        onFocus={() => aoFocar(indice)}
-        data-testid="editar-pdf-miniatura"
-        className={cn(
-          'bg-card focus-visible:ring-ring focus-visible:ring-offset-background flex w-[4.5rem] flex-col items-center gap-1 rounded-md border p-1 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-safe:transition-colors',
-          atual
-            ? 'border-primary ring-primary ring-2'
-            : 'border-border hover:bg-accent',
-        )}
-      >
-        <span className="bg-muted flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-sm">
-          {url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- miniatura num Blob gerado no aparelho, sem otimizador
-            <img
-              src={url}
-              alt=""
-              draggable={false}
-              className="max-h-full max-w-full"
-              data-testid="editar-pdf-miniatura-imagem"
-            />
-          ) : falhou ? (
-            <span className="text-foreground px-1 text-center text-[0.625rem] leading-tight">
-              {T.semMiniatura}
-            </span>
-          ) : null}
-        </span>
-        <span className={cn('text-xs', atual && 'font-semibold')}>
-          {T.numeroDaMiniatura(numero)}
-        </span>
-      </button>
-    </li>
-  )
-})

@@ -323,7 +323,7 @@ describe('abrir o PDF', () => {
     expect(q('organizar-pdf-paginas')).toBeNull()
     expect(renderizador.abertos).toEqual(['arvore-torta-4p.pdf'])
     expect(renderizador.fechados).toBe(1)
-    expect(motor.organizadas).toEqual([])
+    expect(motor.montadas).toEqual([])
   })
 
   it('trocar de PDF fecha o anterior, e sair da página fecha o aberto', async () => {
@@ -816,14 +816,32 @@ describe('baixar e extrair', () => {
 
     await clicar('Gerar PDF organizado')
 
-    expect(motor.organizadas).toEqual([
+    expect(motor.montadas).toEqual([
       {
-        nome: 'contrato-4p.pdf',
-        plano: [
-          { indice: 1, giro: 90 },
-          { indice: 3, giro: 0 },
-          { indice: 0, giro: 0 },
+        nomes: ['contrato-4p.pdf'],
+        paginas: [
+          {
+            id: 'a0p1',
+            origem: { arquivo: 0, indice: 1 },
+            giro: 90,
+            moldura: 90,
+          },
+          {
+            id: 'a0p3',
+            origem: { arquivo: 0, indice: 3 },
+            giro: 0,
+            moldura: 0,
+          },
+          {
+            id: 'a0p0',
+            origem: { arquivo: 0, indice: 0 },
+            giro: 0,
+            moldura: 0,
+          },
         ],
+        objetosPorPagina: new Map(),
+        imagens: new Map(),
+        paginasRasterizadas: new Map(),
       },
     ])
     const link = porNome<HTMLAnchorElement>('Baixar contrato-4p-organizado.pdf')
@@ -841,14 +859,33 @@ describe('baixar e extrair', () => {
 
     await clicar('Extrair as selecionadas')
 
-    expect(motor.organizadas.at(-1)!.plano).toEqual([
-      { indice: 1, giro: 90 },
-      { indice: 3, giro: 90 },
+    expect(motor.montadas.at(-1)!.paginas).toEqual([
+      { id: 'a0p1', origem: { arquivo: 0, indice: 1 }, giro: 90, moldura: 90 },
+      { id: 'a0p3', origem: { arquivo: 0, indice: 3 }, giro: 90, moldura: 90 },
     ])
     const link = porNome<HTMLAnchorElement>('Baixar contrato-4p-paginas.pdf')
     expect(link.getAttribute('download')).toBe('contrato-4p-paginas.pdf')
     expect(document.activeElement).toBe(link)
     expect(ordem()).toHaveLength(4)
+  })
+
+  it('Extrair sai sempre por cópia, mesmo com todas as páginas na ordem; o Gerar, não', async () => {
+    const { motor } = await abrir('contrato-4p.pdf')
+    await clicar('Selecionar todas')
+
+    await clicar('Extrair as selecionadas')
+    await clicar('Gerar PDF organizado')
+
+    expect(motor.montadas.map(({ porCopia }) => porCopia)).toEqual([
+      true,
+      undefined,
+    ])
+    expect(motor.montadas[0].paginas.map(({ id }) => id)).toEqual([
+      'a0p0',
+      'a0p1',
+      'a0p2',
+      'a0p3',
+    ])
   })
 
   it('o nome do download passa pelo nomeDoPdfFinal', async () => {
@@ -871,7 +908,7 @@ describe('baixar e extrair', () => {
   })
 
   it('enquanto monta, o foco vai para Cancelar e as ações esperam; Cancelar devolve o foco', async () => {
-    const motor = criarMotorFalso({ organizacao: 'nunca' })
+    const motor = criarMotorFalso({ montagem: 'nunca' })
     await abrir('a-2p.pdf', { motor })
 
     await clicar('Gerar PDF organizado')
@@ -888,7 +925,7 @@ describe('baixar e extrair', () => {
 
   it('falha ao montar: alerta com o que fazer e o foco volta ao botão', async () => {
     await abrir('a-2p.pdf', {
-      motor: criarMotorFalso({ organizacao: { motivo: 'inesperado' } }),
+      motor: criarMotorFalso({ montagem: { motivo: 'inesperado' } }),
     })
 
     await clicar('Gerar PDF organizado')

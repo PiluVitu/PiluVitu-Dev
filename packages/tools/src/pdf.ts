@@ -31,6 +31,7 @@ import {
   FAMILIAS_DE_FONTE,
   GIROS,
   OPACIDADE_DO_MARCA_TEXTO,
+  TETO_DE_PAGINAS,
   TIPOS_DE_OBJETO,
   caracteresForaDoWinAnsi,
   componentesDaCor,
@@ -52,7 +53,6 @@ import {
   type MotivoDoErroNaEdicao,
   type ObjetoDaPagina,
   type PaginaDaMontagem,
-  type PaginaDoPlano,
 } from './pdf-regras'
 import { caminhoDoTraco } from './pdf-traco'
 
@@ -172,21 +172,6 @@ export async function mesclarPdfs(
   return destino.save({ objectsPerTick: Infinity })
 }
 
-function conferirPlano(plano: readonly PaginaDoPlano[]): void {
-  if (plano.length === 0) throw new RangeError('o plano não tem página')
-  const vistos = new Set<number>()
-  for (const { indice, giro } of plano) {
-    if (!Number.isInteger(indice) || indice < 0) {
-      throw new RangeError(`índice de página inválido: ${indice}`)
-    }
-    if (vistos.has(indice)) {
-      throw new RangeError(`página repetida no plano: ${indice}`)
-    }
-    if (!GIROS.includes(giro)) throw new RangeError(`giro inválido: ${giro}`)
-    vistos.add(indice)
-  }
-}
-
 // Como o pdf.js, que desenhou a miniatura: /Rotate que não é múltiplo de 90 vale 0.
 function rotacaoAtual(pagina: PDFPage): number {
   let graus: number
@@ -212,41 +197,6 @@ function esvaziarPaginasForaDoPlano(
       if (chave !== PDFName.Type) node.delete(chave)
     }
   }
-}
-
-export async function organizarPaginas(
-  bytes: Uint8Array,
-  plano: readonly PaginaDoPlano[],
-): Promise<Uint8Array> {
-  conferirPlano(plano)
-  const origem = await abrir(bytes)
-  const total = origem.getPageCount()
-  for (const { indice } of plano) {
-    if (indice >= total) {
-      throw new RangeError(`página fora do documento: ${indice} de ${total}`)
-    }
-  }
-  const destino = await PDFDocument.create({ updateMetadata: false })
-  let copiadas: PDFPage[]
-  try {
-    esvaziarPaginasForaDoPlano(
-      origem,
-      plano.map(({ indice }) => indice),
-    )
-    copiadas = await destino.copyPages(
-      origem,
-      plano.map(({ indice }) => indice),
-    )
-  } catch {
-    throw new ErroDePdf('corrompido')
-  }
-  copiadas.forEach((pagina, posicao) => {
-    pagina.setRotation(
-      degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
-    )
-    destino.addPage(pagina)
-  })
-  return destino.save({ objectsPerTick: Infinity })
 }
 
 export type EdicaoDaPagina = {
@@ -1477,7 +1427,11 @@ async function editarNoLugar(
 ): Promise<void> {
   const paginas = documento.getPages()
   const recursos = new Recursos(documento)
-  if (editadas.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
+  if (
+    editadas.some(
+      ({ objetos, fundo, giro }) => objetos.length > 0 || fundo || giro !== 0,
+    )
+  ) {
     tirarXfaDoHibrido(documento)
   }
   const apagadas = new Set<PDFRef>()
@@ -1563,6 +1517,11 @@ function conferirMontagem(
   if (!Array.isArray(plano) || plano.length === 0) {
     throw new RangeError('o plano não tem página')
   }
+  if (plano.length > TETO_DE_PAGINAS) {
+    throw new RangeError(
+      `o plano passa do teto: ${plano.length} de ${TETO_DE_PAGINAS} páginas`,
+    )
+  }
   const vistas = new Set<string>()
   plano.forEach(({ origem, giro, moldura }, posicao) => {
     const falhar = (motivo: string): never => {
@@ -1620,10 +1579,27 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
+// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
+function giraPaginaRepetida(
+  documento: PDFDocument,
+  plano: readonly PaginaDaMontagem[],
+): boolean {
+  const paginas = documento.getPages()
+  const vezes = new Map<PDFRef, number>()
+  for (const { ref } of paginas) vezes.set(ref, (vezes.get(ref) ?? 0) + 1)
+  return plano.some(
+    ({ origem, giro }) =>
+      giro !== 0 &&
+      !('branca' in origem) &&
+      vezes.get(paginas[origem.indice].ref)! > 1,
+  )
+}
+
 export async function montarDocumento(
   fontes: readonly FonteDePdf[],
   plano: readonly PaginaDaMontagem[],
   edicoes: readonly EdicaoNaMontagem[],
+  { porCopia = false }: { readonly porCopia?: boolean } = {},
 ): Promise<Uint8Array> {
   conferirMontagem(plano, fontes.length)
   const edicaoDa = conferirEdicoesDaMontagem(plano, edicoes)
@@ -1655,9 +1631,12 @@ export async function montarDocumento(
 
   const doPrimeiro = porArquivo.get(0)
   let primeiro: PDFDocument | undefined
-  if (doPrimeiro?.length === plano.length) {
+  if (!porCopia && doPrimeiro?.length === plano.length) {
     primeiro = await carregar(0)
-    if (!saiPorCopia(plano, primeiro.getPageCount())) {
+    if (
+      !saiPorCopia(plano, primeiro.getPageCount()) &&
+      !giraPaginaRepetida(primeiro, plano)
+    ) {
       await editarNoLugar(primeiro, editadas(doPrimeiro))
       return salvarNoLugar(primeiro)
     }
@@ -1678,14 +1657,28 @@ export async function montarDocumento(
     } catch {
       throw new ErroDePdf('corrompido', arquivo)
     }
-    await editarNoLugar(origem, editadas(paginas))
+    // O giro vai na cópia: na origem, o nó repetido no /Kids levaria o giro às duas posições.
+    await editarNoLugar(
+      origem,
+      editadas(paginas).map((editada) =>
+        editada.fundo ? editada : { ...editada, giro: 0 as const },
+      ),
+    )
     let deste: PDFPage[]
     try {
       deste = await destino.copyPages(origem, indices)
     } catch {
       throw new ErroDePdf('corrompido', arquivo)
     }
-    paginas.forEach(({ posicao }, i) => copiadas.set(posicao, deste[i]))
+    paginas.forEach(({ posicao }, i) => {
+      const pagina = deste[i]
+      if (!edicaoDa.get(posicao)?.fundo) {
+        pagina.setRotation(
+          degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
+        )
+      }
+      copiadas.set(posicao, pagina)
+    })
   }
   const recursos = new Recursos(destino)
   for (const [posicao, { origem }] of plano.entries()) {

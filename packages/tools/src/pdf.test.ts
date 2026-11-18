@@ -23,7 +23,6 @@ import {
   contarPaginas,
   mesclarPdfs,
   montarDocumento,
-  organizarPaginas,
   temCabecalhoDePdf,
   type EdicaoDaPagina,
   type EdicaoNaMontagem,
@@ -32,6 +31,7 @@ import { lerComPdfjs } from './pdf.leitor-pdfjs.cjs'
 import {
   FAMILIAS_DE_FONTE,
   METRICAS_DAS_FONTES,
+  TETO_DE_PAGINAS,
   apagar,
   extrair,
   geometriaDaVista,
@@ -285,220 +285,6 @@ describe('mesclarPdfs', () => {
     const final = await mesclarPdfs([origem, await gerarPdf(1, 100)])
 
     expect(final.length).toBeLessThan(origem.length * 1.5)
-  })
-})
-
-describe('organizarPaginas', () => {
-  const plano = (...itens: [number, PaginaDoPlano['giro']?][]) =>
-    itens.map(([indice, giro = 0]) => ({ indice, giro }))
-
-  it('monta as páginas na ordem do plano', async () => {
-    const final = await organizarPaginas(
-      await gerarPdf(4, 100),
-      plano([3], [0], [2], [1]),
-    )
-
-    expect(await ladosDasPaginas(final)).toEqual([103, 100, 102, 101])
-    expect(await rotacoesDasPaginas(final)).toEqual([0, 0, 0, 0])
-  })
-
-  it('soma o giro à rotação que a página já tinha e dá a volta em 360', async () => {
-    const documento = await PDFDocument.load(await gerarPdf(3, 100))
-    documento.getPage(0).setRotation(degrees(90))
-    documento.getPage(1).setRotation(degrees(270))
-    const bytes = await documento.save()
-
-    const final = await organizarPaginas(bytes, plano([0, 90], [1, 180], [2]))
-
-    expect(await rotacoesDasPaginas(final)).toEqual([180, 90, 0])
-  })
-
-  it('a rotação herdada da árvore de páginas também conta', async () => {
-    const documento = await PDFDocument.load(await gerarPdf(2, 100))
-    documento.catalog.Pages().set(PDFName.of('Rotate'), PDFNumber.of(90))
-    const bytes = await documento.save()
-
-    const final = await organizarPaginas(bytes, plano([1, 90], [0]))
-
-    expect(await rotacoesDasPaginas(final)).toEqual([180, 90])
-  })
-
-  it('/Rotate fora do padrão: negativo e acima de 360 normalizam; o que não é múltiplo de 90 vale 0, como no pdf.js', async () => {
-    const documento = await PDFDocument.load(await gerarPdf(4, 100))
-    const valores = [
-      PDFNumber.of(-90),
-      PDFNumber.of(450),
-      PDFNumber.of(45),
-      PDFName.of('Noventa'),
-    ]
-    valores.forEach((valor, i) =>
-      documento.getPage(i).node.set(PDFName.of('Rotate'), valor),
-    )
-    const bytes = await documento.save()
-
-    const final = await organizarPaginas(
-      bytes,
-      plano([0], [1], [2, 90], [3, 90]),
-    )
-
-    expect(await rotacoesDasPaginas(final)).toEqual([270, 90, 90, 90])
-  })
-
-  it('girar à esquerda a partir de 0 sai com /Rotate 270 no PDF', async () => {
-    const final = await organizarPaginas(
-      await gerarPdf(2, 100),
-      girar(planoInicial(2), [0], 'esquerda'),
-    )
-
-    expect(await rotacoesDasPaginas(final)).toEqual([270, 0])
-  })
-
-  it('apagar: a página fora do plano não vai para o arquivo', async () => {
-    const final = await organizarPaginas(
-      await gerarPdf(3, 100),
-      apagar(planoInicial(3), [1]),
-    )
-
-    expect(await contarPaginas(final)).toBe(2)
-    expect(await ladosDasPaginas(final)).toEqual([100, 102])
-  })
-
-  it('extrair: só as escolhidas, na ordem em que estão no plano e com o giro', async () => {
-    const organizado = girar(
-      moverSelecionadas(planoInicial(4), [3], 'antes'),
-      [2],
-      'direita',
-    )
-
-    const final = await organizarPaginas(
-      await gerarPdf(4, 100),
-      extrair(organizado, [0, 2]),
-    )
-
-    expect(await ladosDasPaginas(final)).toEqual([100, 103])
-    expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
-  })
-
-  it('o conteúdo de uma página apagada não vai junto por um link interno que apontava para ela', async () => {
-    const documento = await PDFDocument.create()
-    const paginas = [0, 1, 2].map((i) => documento.addPage([100 + i, 100 + i]))
-    paginas[2].node.set(
-      PDFName.of('Contents'),
-      documento.context.register(
-        documento.context.stream('BT (SEGREDO-DA-PAGINA-3) Tj ET'),
-      ),
-    )
-    const link = documento.context.register(
-      documento.context.obj({
-        Type: 'Annot',
-        Subtype: 'Link',
-        Rect: [0, 0, 10, 10],
-        Dest: [paginas[2].ref, 'Fit'],
-      }),
-    )
-    paginas[0].node.set(PDFName.of('Annots'), documento.context.obj([link]))
-    const bytes = await documento.save()
-    expect(comoTexto(bytes)).toContain('SEGREDO-DA-PAGINA-3')
-
-    const semAPagina3 = await organizarPaginas(bytes, plano([0], [1]))
-    const comAPagina3 = await organizarPaginas(bytes, plano([2], [0]))
-
-    expect(comoTexto(semAPagina3)).not.toContain('SEGREDO-DA-PAGINA-3')
-    expect(await ladosDasPaginas(semAPagina3)).toEqual([100, 101])
-    expect(comoTexto(comAPagina3)).toContain('SEGREDO-DA-PAGINA-3')
-    expect(await ladosDasPaginas(comAPagina3)).toEqual([102, 100])
-  })
-
-  it('PDF que repete a mesma página no /Kids: apagar a repetida não esvazia a que fica', async () => {
-    const documento = await PDFDocument.load(await gerarPdf(2, 100))
-    const arvore = documento.catalog.Pages()
-    arvore.Kids().push(documento.getPage(0).ref)
-    arvore.set(PDFName.of('Count'), PDFNumber.of(3))
-    const bytes = await documento.save()
-    expect(await contarPaginas(bytes)).toBe(3)
-
-    const final = await organizarPaginas(bytes, plano([0], [1]))
-
-    expect(await ladosDasPaginas(final)).toEqual([100, 101])
-  })
-
-  it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {
-    const origem = await gerarPdfComImagemCompartilhada()
-    const organizado = apagar(
-      moverSelecionadas(planoInicial(10), [9], 'antes'),
-      [0, 5],
-    )
-
-    const final = await organizarPaginas(origem, organizado)
-
-    expect(await contarPaginas(final)).toBe(8)
-    expect(final.length).toBeLessThan(origem.length * 1.5)
-  })
-
-  it('o PDF novo não ganha os metadados do pdf-lib', async () => {
-    const final = await organizarPaginas(await gerarPdf(2, 100), plano([1]))
-    const documento = await PDFDocument.load(final, { updateMetadata: false })
-
-    expect(documento.getProducer()).toBeUndefined()
-    expect(documento.getCreator()).toBeUndefined()
-    expect(documento.getCreationDate()).toBeUndefined()
-  })
-
-  it('plano vazio: RangeError', async () => {
-    await expect(organizarPaginas(await gerarPdf(2, 100), [])).rejects.toThrow(
-      RangeError,
-    )
-  })
-
-  it.each([
-    ['depois da última página', 3],
-    ['negativo', -1],
-    ['não inteiro', 1.5],
-    ['NaN', Number.NaN],
-  ])('índice %s: RangeError', async (_nome, indice) => {
-    await expect(
-      organizarPaginas(await gerarPdf(3, 100), plano([0], [indice])),
-    ).rejects.toThrow(RangeError)
-  })
-
-  it('índice repetido: RangeError', async () => {
-    await expect(
-      organizarPaginas(await gerarPdf(3, 100), plano([0], [2], [0])),
-    ).rejects.toThrow(RangeError)
-  })
-
-  it.each([45, 360, -90])('giro %p: RangeError', async (giro) => {
-    const invalido = [{ indice: 0, giro }] as unknown as PaginaDoPlano[]
-    await expect(
-      organizarPaginas(await gerarPdf(1, 100), invalido),
-    ).rejects.toThrow(RangeError)
-  })
-
-  it.each([
-    ['tabela de xref', false],
-    ['object streams', true],
-  ])(
-    'PDF protegido (%s): recusado como protegido',
-    async (_nome, objectStreams) => {
-      const bytes = await gerarPdfProtegido(objectStreams)
-      expect(await motivo(organizarPaginas(bytes, plano([0])))).toEqual({
-        motivo: 'protegido',
-        indice: undefined,
-      })
-    },
-  )
-
-  it('arquivo que não é PDF ou corrompido: mesmas regras do contarPaginas', async () => {
-    expect(
-      (await motivo(organizarPaginas(texto('não é PDF'), plano([0])))).motivo,
-    ).toBe('nao_e_pdf')
-    expect(
-      (
-        await motivo(
-          organizarPaginas(texto('%PDF-1.7\nlixo lixo\n%%EOF\n'), plano([0])),
-        )
-      ).motivo,
-    ).toBe('corrompido')
   })
 })
 
@@ -2442,6 +2228,41 @@ describe('aplicarEdicoes: XFA híbrido e recursos estendidos', () => {
     expect(editado.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
   })
 
+  // Achado do Crivo no #126: o organizar que só gira sai no lugar, e o XFA do híbrido ficava. No Reader,
+  // a versão XFA aparece no lugar da página, e o giro some para quem abre no Acrobat.
+  it('o híbrido só girado, no lugar, sai sem o XFA, com o AcroForm e com o giro', async () => {
+    const final = await montarDocumento(
+      [await gerarHibrido()],
+      [daMontagem(0, 0, { giro: 90 })],
+      [],
+    )
+    const documento = await PDFDocument.load(final)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(contem(await todoOConteudo(final), 'xfa:datasets')).toBe(false)
+    expect(documento.getForm().getTextField('pessoa.nome').getText()).toBe(
+      'Paulo',
+    )
+    expect(await rotacoesDasPaginas(final)).toEqual([90])
+  })
+
+  it('o híbrido sem giro nem objeto, no lugar, continua com o XFA', async () => {
+    const final = await montarDocumento(
+      [await gerarHibrido()],
+      [daMontagem(0, 0)],
+      [],
+    )
+    expect(
+      (await PDFDocument.load(final)).catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(true)
+  })
+
   // Os recursos estendidos do Reader (comuns em formulário de governo) e a certificação (/DocMDP) são
   // assinaturas do arquivo, que deixam de valer quando o pdf-lib o escreve de novo.
   it('o /UR3, o /UR e o /DocMDP saem do /Perms, que sai quando fica vazio', async () => {
@@ -2878,6 +2699,35 @@ describe('montarDocumento: no lugar (o primeiro arquivo inteiro, na ordem)', () 
     expect(matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
   })
 
+  it('com porCopia (o Extrair), o arquivo inteiro na ordem sai por cópia, sem o que é do documento', async () => {
+    const documento = await PDFDocument.create({ updateMetadata: false })
+    documento.setTitle('Contrato')
+    documento.addPage([300, 300])
+    documento.addPage([400, 400])
+    documento.catalog.set(
+      PDFName.of('Outlines'),
+      documento.context.register(
+        documento.context.obj({ Type: 'Outlines', Count: 0 }),
+      ),
+    )
+    const pdf = await documento.save()
+    const chamadas = contarChamadas()
+
+    const final = await montarDocumento(
+      [pdf],
+      [daMontagem(0, 0), daMontagem(0, 1, { giro: 90 })],
+      [],
+      { porCopia: true },
+    )
+
+    expect(chamadas()).toEqual({ load: 1, copyPages: 1, save: 1 })
+    const lido = await PDFDocument.load(final, { updateMetadata: false })
+    expect(lido.getTitle()).toBeUndefined()
+    expect(lido.catalog.has(PDFName.of('Outlines'))).toBe(false)
+    expect(await ladosDasPaginas(final)).toEqual([300, 400])
+    expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+  })
+
   it('o /UR3 e o /DocMDP saem, como no Editar', async () => {
     const documento = await PDFDocument.create()
     documento.addPage([300, 300])
@@ -3294,6 +3144,7 @@ describe('montarDocumento: plano ou edição errados são erro de programação 
     ['branca com lado zero', [branca(0, 100)], []],
     ['branca com lado NaN', [branca(100, Number.NaN)], []],
     ['branca com lado negativo', [branca(-100, 100)], []],
+    ['branca com lado acima de 14.400 pontos', [branca(14_401, 100)], []],
     [
       'branca sem tamanho',
       [{ origem: { branca: {} }, giro: 0, moldura: 0 } as PaginaDaMontagem],
@@ -3305,6 +3156,8 @@ describe('montarDocumento: plano ou edição errados são erro de programação 
       [],
     ],
     ['giro inválido', [daMontagem(0, 0, { giro: 45 as 0 })], []],
+    ['giro 360', [daMontagem(0, 0, { giro: 360 as 0 })], []],
+    ['giro -90', [daMontagem(0, 0, { giro: -90 as 0 })], []],
     ['moldura inválida', [daMontagem(0, 0, { moldura: 360 as 0 })], []],
     ['edição fora do plano', [daMontagem(0, 0)], [{ posicao: 1, objetos: [] }]],
     ['edição negativa', [daMontagem(0, 0)], [{ posicao: -1, objetos: [] }]],
@@ -3334,6 +3187,25 @@ describe('montarDocumento: plano ou edição errados são erro de programação 
         edicoes,
       ),
     ).rejects.toThrow(RangeError)
+  })
+
+  it('plano com mais páginas que o teto: RangeError antes de ler qualquer arquivo (defesa do Worker)', async () => {
+    const fonte = jest.fn(async () => gerarPdf(1, 100))
+    const demais = Array.from({ length: TETO_DE_PAGINAS + 1 }, () =>
+      branca(100, 100),
+    )
+    await expect(montarDocumento([fonte], demais, [])).rejects.toThrow(
+      RangeError,
+    )
+    expect(fonte).not.toHaveBeenCalled()
+  })
+
+  it('o plano no teto exato passa', async () => {
+    const noTeto = Array.from({ length: TETO_DE_PAGINAS }, () =>
+      branca(100, 100),
+    )
+    const pdf = await montarDocumento([], noTeto, [])
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(TETO_DE_PAGINAS)
   })
 
   it('o plano é conferido antes de ler qualquer arquivo', async () => {
@@ -3439,7 +3311,7 @@ describe('montarDocumento: o erro diz o arquivo ou a posição', () => {
 })
 
 // Os mesmos casos do organizarPaginas, pelo montarDocumento com um arquivo só.
-describe('montarDocumento: os casos do organizarPaginas', () => {
+describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', () => {
   const plano = (...itens: [number, PaginaDoPlano['giro']?][]) =>
     deUmArquivo(itens.map(([indice, giro = 0]) => ({ indice, giro })))
 
@@ -3489,7 +3361,7 @@ describe('montarDocumento: os casos do organizarPaginas', () => {
     ])
   })
 
-  it('/Rotate fora do padrão: o que o pdf.js mostra é o mesmo do organizarPaginas, no lugar e por cópia', async () => {
+  it('/Rotate fora do padrão: o pdf.js mostra o mesmo que mostrava na miniatura, no lugar e por cópia', async () => {
     const documento = await PDFDocument.load(await gerarPdf(4, 100))
     const valores = [
       PDFNumber.of(-90),
@@ -3517,6 +3389,30 @@ describe('montarDocumento: os casos do organizarPaginas', () => {
 
     expect(rotacoesNoPdfjs(noLugar)).toEqual([270, 90, 90, 90])
     expect(rotacoesNoPdfjs(porCopia)).toEqual([270, 90, 90])
+  })
+
+  it('por cópia, o /Rotate fora do padrão sai normalizado no arquivo, mesmo sem giro', async () => {
+    const documento = await PDFDocument.load(await gerarPdf(4, 100))
+    const valores = [
+      PDFNumber.of(-90),
+      PDFNumber.of(450),
+      PDFNumber.of(45),
+      PDFName.of('Noventa'),
+    ]
+    valores.forEach((valor, i) =>
+      documento.getPage(i).node.set(PDFName.of('Rotate'), valor),
+    )
+
+    const final = await montarDocumento(
+      [await documento.save()],
+      plano([3], [0], [1], [2]),
+      [],
+    )
+
+    const lido = await PDFDocument.load(final)
+    expect(
+      lido.getPages().map(({ node }) => node.get(PDFName.of('Rotate'))),
+    ).toEqual([0, 270, 90, 0].map((graus) => PDFNumber.of(graus)))
   })
 
   it('girar à esquerda a partir de 0 sai com /Rotate 270 no PDF', async () => {
@@ -3596,6 +3492,48 @@ describe('montarDocumento: os casos do organizarPaginas', () => {
     const final = await montarDocumento([bytes], plano([0], [1]), [])
 
     expect(await ladosDasPaginas(final)).toEqual([100, 101])
+  })
+
+  describe('PDF que repete a mesma página no /Kids: o giro de uma não gira a outra', () => {
+    async function comARepetida() {
+      const documento = await PDFDocument.load(await gerarPdf(2, 100))
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      return documento.save()
+    }
+
+    it('por cópia', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([2], [0, 90]),
+        [],
+      )
+
+      expect(await ladosDasPaginas(final)).toEqual([100, 100])
+      expect(await rotacoesDasPaginas(final)).toEqual([0, 90])
+    })
+
+    it('o arquivo inteiro na ordem, só com giro', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2]),
+        [],
+      )
+
+      expect(await ladosDasPaginas(final)).toEqual([100, 101, 100])
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 0])
+    })
+
+    it('as duas giradas: cada uma gira uma vez', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2, 90]),
+        [],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 90])
+    })
   })
 
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {

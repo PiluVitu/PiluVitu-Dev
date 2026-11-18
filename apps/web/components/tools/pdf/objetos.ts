@@ -581,23 +581,23 @@ export const DIRECAO_DA_TECLA: Readonly<Record<string, Direcao>> = {
   ArrowDown: 'baixo',
 }
 
-/** As edições de um documento: os objetos de cada página e as páginas marcadas para apagar de verdade. */
+/** As edições de um documento, pelo id da página: os objetos de cada uma e as marcadas para apagar de verdade. */
 export type Cena = {
-  readonly objetos: ReadonlyMap<number, readonly ObjetoNaTela[]>
-  readonly apagar: ReadonlySet<number>
+  readonly objetos: ReadonlyMap<string, readonly ObjetoNaTela[]>
+  readonly apagar: ReadonlySet<string>
 }
 
 export const CENA_VAZIA: Cena = { objetos: new Map(), apagar: new Set() }
 
 const NENHUM: readonly ObjetoNaTela[] = []
 
-export function objetosDa(cena: Cena, pagina: number): readonly ObjetoNaTela[] {
+export function objetosDa(cena: Cena, pagina: string): readonly ObjetoNaTela[] {
   return cena.objetos.get(pagina) ?? NENHUM
 }
 
 function comObjetos(
   cena: Cena,
-  pagina: number,
+  pagina: string,
   objetos: readonly ObjetoNaTela[],
 ): Cena {
   const novos = new Map(cena.objetos)
@@ -608,7 +608,7 @@ function comObjetos(
 
 export function incluirObjeto(
   cena: Cena,
-  pagina: number,
+  pagina: string,
   objeto: ObjetoNaTela,
 ): Cena {
   return comObjetos(cena, pagina, [...objetosDa(cena, pagina), objeto])
@@ -616,7 +616,7 @@ export function incluirObjeto(
 
 export function trocarObjeto(
   cena: Cena,
-  pagina: number,
+  pagina: string,
   objeto: ObjetoNaTela,
 ): Cena {
   const objetos = objetosDa(cena, pagina)
@@ -629,7 +629,7 @@ export function trocarObjeto(
   )
 }
 
-export function tirarObjeto(cena: Cena, pagina: number, id: string): Cena {
+export function tirarObjeto(cena: Cena, pagina: string, id: string): Cena {
   const objetos = objetosDa(cena, pagina)
   if (!objetos.some((o) => o.id === id)) return cena
   return comObjetos(
@@ -641,7 +641,7 @@ export function tirarObjeto(cena: Cena, pagina: number, id: string): Cena {
 
 export function comApagarDeVerdade(
   cena: Cena,
-  pagina: number,
+  pagina: string,
   ligado: boolean,
 ): Cena {
   if (cena.apagar.has(pagina) === ligado) return cena
@@ -651,24 +651,40 @@ export function comApagarDeVerdade(
   return { ...cena, apagar }
 }
 
-export const temCobrir = (cena: Cena, pagina: number) =>
+export const temCobrir = (cena: Cena, pagina: string) =>
   objetosDa(cena, pagina).some((o) => o.tipo === 'cobrir')
 
-/** As páginas em que a cena mudou de uma para a outra (para o desfazer levar até a mudança). */
-export function paginasMudadas(antes: Cena, depois: Cena): number[] {
+function naOrdem(
+  paginas: Iterable<string>,
+  ordem: readonly string[],
+): string[] {
+  const posicao = (pagina: string) => {
+    const achada = ordem.indexOf(pagina)
+    return achada < 0 ? Infinity : achada
+  }
+  return [...paginas].sort((a, b) => posicao(a) - posicao(b))
+}
+
+/** As páginas em que a cena mudou de uma para a outra, na ordem do documento (para o desfazer levar até a mudança). */
+export function paginasMudadas(
+  antes: Cena,
+  depois: Cena,
+  ordem: readonly string[],
+): string[] {
   const paginas = new Set([
     ...antes.objetos.keys(),
     ...depois.objetos.keys(),
     ...antes.apagar,
     ...depois.apagar,
   ])
-  return [...paginas]
-    .filter(
+  return naOrdem(
+    [...paginas].filter(
       (pagina) =>
         antes.objetos.get(pagina) !== depois.objetos.get(pagina) ||
         antes.apagar.has(pagina) !== depois.apagar.has(pagina),
-    )
-    .sort((a, b) => a - b)
+    ),
+    ordem,
+  )
 }
 
 export function imagensDa(cena: Cena): Set<string> {
@@ -687,14 +703,18 @@ export function totalDeObjetos(cena: Cena): number {
   return total
 }
 
-/** As páginas que viram imagem ao salvar: marcadas e com algum retângulo de cobrir. */
-export function paginasParaApagar(cena: Cena): number[] {
-  return [...cena.apagar]
-    .filter((pagina) => temCobrir(cena, pagina))
-    .sort((a, b) => a - b)
+/** As páginas que viram imagem ao salvar: marcadas e com algum retângulo de cobrir, na ordem do documento. */
+export function paginasParaApagar(
+  cena: Cena,
+  ordem: readonly string[],
+): string[] {
+  return naOrdem(
+    [...cena.apagar].filter((pagina) => temCobrir(cena, pagina)),
+    ordem,
+  )
 }
 
-export function cobrirDa(cena: Cena, pagina: number): Caixa[] {
+export function cobrirDa(cena: Cena, pagina: string): Caixa[] {
   return objetosDa(cena, pagina)
     .filter((o) => o.tipo === 'cobrir')
     .map(({ x, y, largura, altura }) => ({ x, y, largura, altura }))
