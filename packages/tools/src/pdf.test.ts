@@ -3688,11 +3688,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     it('sem giro, com a apagada na moldura 90: sai no lugar, com o título do arquivo', async () => {
       const final = await montarDocumento(
         [await comARepetidaDeitada()],
-        [
-          daMontagem(0, 0, { moldura: 90 }),
-          daMontagem(0, 1),
-          daMontagem(0, 2),
-        ],
+        [daMontagem(0, 0, { moldura: 90 }), daMontagem(0, 1), daMontagem(0, 2)],
         [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
       )
 
@@ -3712,11 +3708,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     it('sem giro, a outra posição com texto: o texto sai onde a tela o pôs', async () => {
       const final = await montarDocumento(
         [await comARepetidaDeitada()],
-        [
-          daMontagem(0, 0, { moldura: 90 }),
-          daMontagem(0, 1),
-          daMontagem(0, 2),
-        ],
+        [daMontagem(0, 0, { moldura: 90 }), daMontagem(0, 1), daMontagem(0, 2)],
         [
           { posicao: 0, objetos: [], fundo: JPEG_8X8 },
           { posicao: 2, objetos: [objetoTexto({ conteudo: 'NA-OUTRA' })] },
