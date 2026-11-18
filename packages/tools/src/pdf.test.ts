@@ -3972,16 +3972,32 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   // cache, e [outra, p1, apagada, apagada] reprovava na última página ("circular reference").
   describe('PDF que repete a mesma página no /Kids: apagar de verdade numa posição e objetos em outra', () => {
     // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes); ela tem o texto SEGREDO.
-    async function comARepetida(vezes: 2 | 3 = 3) {
+    // Na forma 'meio', o que se repete é um /Pages do meio que só tem a página 0.
+    async function comARepetida(
+      vezes: 2 | 3 = 3,
+      forma: 'folha' | 'meio' = 'folha',
+    ) {
       const documento = await PDFDocument.create()
       const fonte = await documento.embedFont(StandardFonts.Helvetica)
-      documento
-        .addPage([300, 300])
-        .drawText('SEGREDO', { x: 20, y: 150, font: fonte, size: 20 })
+      const folha = documento.addPage([300, 300])
+      folha.drawText('SEGREDO', { x: 20, y: 150, font: fonte, size: 20 })
       documento.addPage([301, 301])
       const arvore = documento.catalog.Pages()
+      let repetido = folha.ref
+      if (forma === 'meio') {
+        repetido = documento.context.register(
+          documento.context.obj({
+            Type: 'Pages',
+            Kids: [folha.ref],
+            Count: 1,
+            Parent: documento.catalog.get(PDFName.of('Pages')) as PDFRef,
+          }),
+        )
+        folha.node.set(PDFName.Parent, repetido)
+        arvore.Kids().set(0, repetido)
+      }
       for (let vez = 1; vez < vezes; vez++) {
-        arvore.Kids().push(documento.getPage(0).ref)
+        arvore.Kids().push(repetido)
       }
       arvore.set(PDFName.of('Count'), PDFNumber.of(vezes + 1))
       documento.setTitle('TITULO-DO-ARQUIVO')
@@ -4150,6 +4166,84 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         await semOSegredoESemNoRepetido(final)
       },
     )
+
+    // Aqui a única separação é a do nó apagado, dentro do apagar: é ela que dá a cada vez a mais do /Pages
+    // do meio a sua cópia. Sem isso, o removePage tira a folha do meio que as posições dividem, e o Gerar
+    // falha ("corrupt page tree") ou troca a página.
+    it.each([
+      [
+        'no lugar, a apagada antes',
+        plano([0], [1], [2], [3]),
+        0,
+        2,
+        {},
+        [['AAA'], [], ['CCC'], []],
+        [300, 301, 300, 300],
+      ],
+      [
+        'no lugar, a apagada depois',
+        plano([0], [1], [2], [3]),
+        2,
+        0,
+        {},
+        [['CCC'], [], ['AAA'], []],
+        [300, 301, 300, 300],
+      ],
+      [
+        'por cópia, as quatro posições',
+        plano([0], [1], [2], [3]),
+        0,
+        2,
+        { porCopia: true },
+        [['AAA'], [], ['CCC'], []],
+        [300, 301, 300, 300],
+      ],
+      [
+        'no Extrair das duas posições',
+        plano([0], [2]),
+        0,
+        1,
+        { porCopia: true },
+        [['AAA'], ['CCC']],
+        [300, 300],
+      ],
+    ] as const)(
+      'um /Pages do meio repetido (%s): cada texto só na sua posição, e nenhuma com o SEGREDO',
+      async (_, oPlano, apagada, comCCC, opcoes, textos, lados) => {
+        const final = await montarDocumento(
+          [await comARepetida(3, 'meio')],
+          oPlano,
+          [
+            {
+              posicao: apagada,
+              objetos: [objetoTexto({ conteudo: 'AAA' })],
+              fundo: JPEG_8X8,
+            },
+            { posicao: comCCC, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          ],
+          opcoes,
+        )
+
+        expect(textosDe(final)).toEqual(textos)
+        expect(await ladosDasPaginas(final)).toEqual(lados)
+        await semOSegredoESemNoRepetido(final)
+      },
+    )
+
+    it('um /Pages do meio repetido, no aplicarEdicoes: cada texto só na sua posição, e nenhuma com o SEGREDO', async () => {
+      const final = await aplicarEdicoes(await comARepetida(3, 'meio'), [
+        {
+          indice: 0,
+          objetos: [objetoTexto({ conteudo: 'AAA' })],
+          fundo: JPEG_8X8,
+        },
+        { indice: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+      ])
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['CCC'], []])
+      expect(await ladosDasPaginas(final)).toEqual([300, 301, 300, 300])
+      await semOSegredoESemNoRepetido(final)
+    })
 
     // Cada posição sai como saía quando o nó era um só (antes do PR 6): sobre a base apagada, ela desconta
     // a moldura da apagada no desenho e no /Rotate.
