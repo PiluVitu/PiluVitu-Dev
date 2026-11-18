@@ -3973,10 +3973,10 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   // Nenhum nó fica repetido na saída: o pdf.js só lê o nó repetido quando a primeira vez dele já está no
   // cache, e [outra, p1, apagada, apagada] reprovava na última página ("circular reference").
   describe('PDF que repete a mesma página no /Kids: apagar de verdade numa posição e objetos em outra', () => {
-    // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes); ela tem o texto SEGREDO.
-    // Na forma 'meio', o que se repete é um /Pages do meio que só tem a página 0.
+    // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes, e na 4, com quatro); ela tem o
+    // texto SEGREDO. Na forma 'meio', o que se repete é um /Pages do meio que só tem a página 0.
     async function comARepetida(
-      vezes: 2 | 3 = 3,
+      vezes: 2 | 3 | 4 = 3,
       forma: 'folha' | 'meio' = 'folha',
     ) {
       const documento = await PDFDocument.create()
@@ -4694,10 +4694,36 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         expect(erro.pagina).toBe(1)
       })
 
+      // Menor da revisão do PR B: com duas apagadas fora, a recusa apontava a primeira posição do plano do
+      // nó, mesmo quando a apagada do plano era outra. O nó repete nas posições 0, 2, 3 e 4 do /Kids.
+      it.each([
+        [
+          'com a apagada do plano na segunda posição do nó: aponta a dela',
+          [{ posicao: 1, objetos: [], fundo: JPEG_8X8 }],
+          1,
+        ],
+        ['sem apagada no plano: aponta a primeira posição do nó', [], 0],
+      ] as const)(
+        'duas apagadas fora e duas posições do plano no mesmo nó, %s',
+        async (_, edicoes, rotulo) => {
+          const erro = await erroNaEdicao(
+            montarComFora([await comARepetida(4)], plano([4], [2]), edicoes, [
+              fora(0, 0),
+              fora(0, 3),
+            ]),
+          )
+
+          expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+          expect(erro.pagina).toBe(rotulo)
+        },
+      )
+
       // Chega ao Worker por postMessage: o que vier errado é erro do código da tela.
       it.each<[string, unknown, boolean]>([
         ['a lista que não é lista', { arquivo: 0, indice: 0 }, true],
         ['o item que não é objeto', [null], true],
+        // O forEach pulava o buraco, e a lista passava sem erro.
+        ['a lista com buraco', new Array<ApagadaForaDoPlano>(1), true],
         ['o arquivo inexistente', [fora(2, 0)], true],
         ['o arquivo negativo', [fora(-1, 0)], true],
         ['o arquivo não inteiro', [fora(0.5, 0)], true],

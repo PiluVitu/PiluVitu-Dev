@@ -1730,7 +1730,9 @@ function conferirApagadasForaDoPlano(
     ),
   )
   const vistas = new Set<string>()
-  apagadas.forEach((apagada, posicao) => {
+  // Por índice: o forEach pula o buraco de uma lista esparsa, que passaria sem erro.
+  for (let posicao = 0; posicao < apagadas.length; posicao++) {
+    const apagada = apagadas[posicao]
     const falhar = (motivo: string): never => {
       throw new RangeError(
         `apagada fora do plano inválida na posição ${posicao}: ${motivo}`,
@@ -1752,7 +1754,7 @@ function conferirApagadasForaDoPlano(
     if (doPlano.has(chave)) falhar(`página do plano (${chave})`)
     if (vistas.has(chave)) falhar(`página repetida (${chave})`)
     vistas.add(chave)
-  })
+  }
 }
 
 // Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
@@ -1811,9 +1813,9 @@ export async function montarDocumento(
     doArquivo.push({ posicao, indice: origem.indice })
     porArquivo.set(origem.arquivo, doArquivo)
   })
-  // A apagada fora do plano vale pelo nó: é editada como uma apagada sem objetos e com o rótulo da primeira
-  // posição do plano que tem o mesmo nó, onde a pessoa consegue agir; sem posição com o nó, nada muda. Vai
-  // antes das edições do plano, para a recusa de duas apagadas no mesmo nó apontar a do plano.
+  // A apagada fora do plano vale pelo nó: é editada como uma apagada sem objetos e com o rótulo de uma
+  // posição do plano que tem o mesmo nó, onde a pessoa consegue agir (a apagada, senão a primeira); sem
+  // posição com o nó, nada muda. Vai antes das edições do plano, para a recusa apontar a apagada do plano.
   const apagadasForaDe = (
     origem: PDFDocument,
     arquivo: number,
@@ -1827,10 +1829,18 @@ export async function montarDocumento(
       deste.map(({ indice }) => indice),
       arquivo,
     )
+    const apagadaNoPlano = (posicao: number) =>
+      edicaoDa.get(posicao)?.fundo !== undefined
     const posicaoDoNo = new Map<PDFRef, number>()
     for (const { posicao, indice } of paginas) {
       const { ref } = origem.getPage(indice)
-      if (!posicaoDoNo.has(ref)) posicaoDoNo.set(ref, posicao)
+      const atual = posicaoDoNo.get(ref)
+      if (
+        atual === undefined ||
+        (apagadaNoPlano(posicao) && !apagadaNoPlano(atual))
+      ) {
+        posicaoDoNo.set(ref, posicao)
+      }
     }
     return deste.flatMap(({ indice, moldura, fundo }) => {
       const rotulo = posicaoDoNo.get(origem.getPage(indice).ref)
