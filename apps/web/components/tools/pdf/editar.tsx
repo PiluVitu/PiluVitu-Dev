@@ -19,11 +19,18 @@ import {
   faDownload,
   faFilePdf,
   faImage,
+  faLayerGroup,
   faRotate,
 } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
 import { Input } from '@piluvitu/ui/input'
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@piluvitu/ui/sheet'
 import {
   TETO_DAS_IMAGENS_EM_BYTES,
   TETO_DE_BYTES_COM_MINIATURAS,
@@ -72,6 +79,7 @@ import {
   type Paginas,
   type PaginasComDesfazer,
 } from './bancada'
+import { useBancadaLarga } from './bancada-larga'
 import { BarraDeFerramentas } from './barra-de-ferramentas'
 import { CabecalhoDoDocumento } from './cabecalho-do-documento'
 import { useDocumentoPdf } from './documento-pdf'
@@ -135,7 +143,11 @@ import {
 import { TEXTOS } from './textos'
 import { useAbrirPdf, type RecusaDaAbertura } from './use-abrir-pdf'
 import { useMiniaturas } from './use-miniaturas'
-import { AvisoDePrivacidade, ZonaDeArquivos } from './zona-de-arquivos'
+import {
+  AvisoDePrivacidade,
+  ZonaDeArquivos,
+  useProtegerAJanela,
+} from './zona-de-arquivos'
 
 const T = TEXTOS.editar
 const O = TEXTOS.organizar
@@ -292,6 +304,10 @@ export function EditarPdf({
   const gerarRef = useRef<HTMLButtonElement>(null)
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const baixarRef = useRef<HTMLAnchorElement>(null)
+  const botaoDasPaginasRef = useRef<HTMLButtonElement>(null)
+  // A coluna (larga) ou a folha (estreita): o Ctrl/⌘+Z dentro dela desfaz as páginas.
+  const regiaoDasPaginasRef = useRef<HTMLElement | null>(null)
+  const focoAoFechar = useRef<Foco | null>(null)
   const elementosDosObjetos = useRef(new Map<string, HTMLElement>())
   const caixas = useRef(new Map<string, HTMLInputElement>())
   const botoesDaBarra = useRef(new Map<ChaveDaBarra, HTMLButtonElement>())
@@ -327,6 +343,10 @@ export function EditarPdf({
     null,
   )
   const [resultado, setResultado] = useState<Resultado>({ estado: 'parado' })
+  const [folhaAberta, setFolhaAberta] = useState(false)
+  const larga = useBancadaLarga()
+  if (larga && folhaAberta) setFolhaAberta(false)
+  useProtegerAJanela()
 
   const { atual, documento, grandeDemais, avisos } = useAbrirPdf(arquivo, {
     motor,
@@ -346,6 +366,7 @@ export function EditarPdf({
       setDicaDoTexto(null)
       setConfirmandoApagar(null)
       setResultado({ estado: 'parado' })
+      setFolhaAberta(false)
       soltarImagens(new Set())
       juncao.current = null
       anunciar(
@@ -796,9 +817,7 @@ export function EditarPdf({
     const montagem = montagemDaBancada(paginasDoPdf, cenaDoPdf)
     const vez = ++vezDaGeracao.current
     const voltar: Foco = () =>
-      tipo === 'editado'
-        ? gerarRef.current
-        : botoesDaBarra.current.get('extrair')
+      tipo === 'editado' ? gerarRef.current : botaoDoExtrair()
     setResultado({ estado: 'montando', tipo })
     anunciar(T.anuncios.montando)
     focar(() => cancelarRef.current)
@@ -875,11 +894,22 @@ export function EditarPdf({
     motor().cancelar()
     setResultado({ estado: 'parado' })
     anunciar(T.anuncios.cancelado)
-    focar(() =>
-      tipo === 'editado'
-        ? gerarRef.current
-        : botoesDaBarra.current.get('extrair'),
-    )
+    focar(() => (tipo === 'editado' ? gerarRef.current : botaoDoExtrair()))
+  }
+
+  // Com a folha fechada, o Extrair não está na tela: o foco volta ao botão que a abre.
+  function botaoDoExtrair() {
+    return botoesDaBarra.current.get('extrair') ?? botaoDasPaginasRef.current
+  }
+
+  function fecharAFolha(alvo: Foco) {
+    focoAoFechar.current = alvo
+    setFolhaAberta(false)
+  }
+
+  function pularParaAPagina() {
+    if (folhaAberta) fecharAFolha(() => areaRef.current)
+    else areaRef.current?.focus()
   }
 
   function mostrarObjeto({
@@ -965,6 +995,7 @@ export function EditarPdf({
     if (posicao < 0) return
     if (acao.tipo === 'abrir') {
       irPara(posicao)
+      if (folhaAberta) fecharAFolha(() => areaRef.current)
       return
     }
     if (acao.tipo === 'girar') {
@@ -1077,7 +1108,14 @@ export function EditarPdf({
       moverAntes: () => moverAsSelecionadas('antes'),
       moverDepois: () => moverAsSelecionadas('depois'),
       apagar: apagarSelecionadas,
-      extrair: () => void gerar('extraido', extrair(lista, posicoes)),
+      extrair: () => {
+        if (folhaAberta) {
+          fecharAFolha(
+            () => baixarRef.current ?? cancelarRef.current ?? gerarRef.current,
+          )
+        }
+        void gerar('extraido', extrair(lista, posicoes))
+      },
       selecionarTodas,
       limparSelecao,
       desfazer: desfazerAsPaginas,
@@ -1085,13 +1123,23 @@ export function EditarPdf({
     acoes[chave]()
   }
 
+  // Dentro das páginas, o atalho é o desfazer delas, que não tem refazer.
+  function atalhoNasPaginas(sentido: SentidoDoHistorico) {
+    if (sentido === 'refazer') anunciar(P.semRefazer)
+    else if (!estadoDasPaginas.passado.length)
+      anunciar(O.dicas.nadaParaDesfazer)
+    else desfazerAsPaginas()
+  }
+
   const irParaRef = useRef(irPara)
   const voltarRef = useRef(voltarNoHistorico)
+  const atalhoNasPaginasRef = useRef(atalhoNasPaginas)
   const agirRef = useRef(agirNaPagina)
   const usarRef = useRef(usarBotao)
   useLayoutEffect(() => {
     irParaRef.current = irPara
     voltarRef.current = voltarNoHistorico
+    atalhoNasPaginasRef.current = atalhoNasPaginas
     agirRef.current = agirNaPagina
     usarRef.current = usarBotao
   })
@@ -1107,6 +1155,9 @@ export function EditarPdf({
     (chave: ChaveDaBarra) => usarRef.current(chave),
     [],
   )
+  const registrarRegiao = useCallback((no: HTMLElement | null) => {
+    regiaoDasPaginasRef.current = no
+  }, [])
   const registrarCaixa = useCallback(
     (id: string, caixa: HTMLInputElement | null) => {
       if (caixa) caixas.current.set(id, caixa)
@@ -1143,7 +1194,11 @@ export function EditarPdf({
             : null
       if (!sentido) return
       evento.preventDefault()
-      voltarRef.current(sentido)
+      const nasPaginas =
+        evento.target instanceof Node &&
+        regiaoDasPaginasRef.current?.contains(evento.target)
+      if (nasPaginas) atalhoNasPaginasRef.current(sentido)
+      else voltarRef.current(sentido)
     }
     window.addEventListener('keydown', aoTeclar)
     return () => window.removeEventListener('keydown', aoTeclar)
@@ -1247,6 +1302,396 @@ export function EditarPdf({
   )
   if (total === 1) motivosDaSelecao.add('ultimaPagina')
   const tipoDoResultado = resultado.estado === 'parado' ? null : resultado.tipo
+
+  const idDaArea = `${ids}-area`
+  const acoesDasPaginas = (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <p className="text-muted-foreground font-mono text-xs font-semibold tracking-[0.2em] uppercase">
+          {P.naSelecao}
+        </p>
+        <p
+          className="text-sm font-medium"
+          data-testid="editar-pdf-selecionadas"
+        >
+          {O.selecionadas(qtd)}
+        </p>
+      </div>
+      <BarraDaSelecao
+        botoes={botoesDaSelecao}
+        botoesRef={botoesDaBarra}
+        idDaDica={idDaDica}
+        aoUsar={aoUsarNaBarra}
+        prefixo="editar-pdf"
+        soIcone={SO_ICONE}
+        rotulos={{ desfazer: P.desfazer }}
+      />
+      <ul
+        className="text-muted-foreground space-y-0.5 text-xs"
+        data-testid="editar-pdf-dicas-das-paginas"
+      >
+        {[...motivosDaSelecao].map((motivo) => (
+          <li key={motivo} id={idDaDica(motivo)}>
+            {O.dicas[motivo]}
+          </li>
+        ))}
+        <li>{P.atalho}</li>
+      </ul>
+    </div>
+  )
+  const pularParaAAberta = (
+    <a
+      href={`#${idDaArea}`}
+      onClick={(evento) => {
+        evento.preventDefault()
+        pularParaAPagina()
+      }}
+      className="focus-visible:ring-ring sr-only rounded-md text-sm font-medium underline underline-offset-4 focus:not-sr-only focus:inline-flex focus:min-h-11 focus:items-center focus:px-2 focus-visible:ring-2 focus-visible:outline-hidden"
+      data-testid="editar-pdf-pular"
+    >
+      {P.pular}
+    </a>
+  )
+  const listaDasPaginas = atual?.ok ? (
+    <ListaDaBancada
+      paginas={lista}
+      nomeDoArquivo={atual.arquivo.name}
+      marcadas={new Set(marcadas)}
+      aberta={aberta}
+      miniaturas={miniaturasDaLista}
+      bloqueado={montando}
+      idDoTitulo={idDoTitulo}
+      idDaDicaUnica={idDaDica('ultimaPagina')}
+      aoAgir={aoAgirNaPagina}
+      aoMover={moverArrastando}
+      registrarCaixa={registrarCaixa}
+    />
+  ) : null
+  const ferramentasDaPagina = (
+    <div key="ferramentas" className="space-y-4">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <div ref={barraRef} className="min-w-0">
+          <BarraDeFerramentas
+            ativa={ferramenta}
+            aoEscolher={escolherFerramenta}
+          />
+        </div>
+        <div
+          role="group"
+          aria-label={T.historico.rotulo}
+          className="flex gap-1.5"
+        >
+          <Button
+            ref={desfazerRef}
+            type="button"
+            variant="outline"
+            className="h-11 gap-2 px-3"
+            disabled={!podeVoltar}
+            aria-describedby={podeVoltar ? undefined : idSemDesfazer}
+            aria-keyshortcuts="Control+Z Meta+Z"
+            onClick={() => voltarNoHistorico('desfazer')}
+            data-testid="editar-pdf-desfazer"
+          >
+            <FontAwesomeIcon
+              icon={faArrowRotateLeft}
+              className="size-4"
+              aria-hidden
+            />
+            {T.historico.desfazer}
+          </Button>
+          <Button
+            ref={refazerRef}
+            type="button"
+            variant="outline"
+            className="h-11 gap-2 px-3"
+            disabled={!podeAvancar}
+            aria-describedby={podeAvancar ? undefined : idSemRefazer}
+            aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
+            onClick={() => voltarNoHistorico('refazer')}
+            data-testid="editar-pdf-refazer"
+          >
+            <FontAwesomeIcon
+              icon={faArrowRotateRight}
+              className="size-4"
+              aria-hidden
+            />
+            {T.historico.refazer}
+          </Button>
+        </div>
+      </div>
+      <ul className="text-muted-foreground space-y-0.5 text-xs">
+        {!podeVoltar && (
+          <li id={idSemDesfazer}>{T.historico.nadaParaDesfazer}</li>
+        )}
+        {!podeAvancar && (
+          <li id={idSemRefazer}>{T.historico.nadaParaRefazer}</li>
+        )}
+        <li>{T.historico.atalho}</li>
+      </ul>
+
+      <div
+        className="bg-card border-border space-y-3 rounded-lg border p-3"
+        data-testid="editar-pdf-opcoes"
+      >
+        {ferramenta === 'desenho' && (
+          <p
+            className="border-primary bg-accent-soft text-foreground rounded-md border px-3 py-2 text-sm font-medium"
+            data-testid="editar-pdf-desenho-ativo"
+          >
+            {T.ferramentas.desenhoAtivo}
+          </p>
+        )}
+        <p className="text-muted-foreground text-sm">{dicaDaFerramenta}</p>
+        {ferramenta === 'cobrir' && (
+          <p className="text-sm" data-testid="editar-pdf-aviso-cobrir">
+            {T.cobrir.aviso}
+          </p>
+        )}
+
+        {ferramenta === 'desenho' && (
+          <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+            <div className="min-w-0 space-y-1">
+              <label
+                htmlFor={`${ids}-cor-desenho`}
+                className="text-sm font-medium"
+              >
+                {T.ferramentas.corDoDesenho}
+              </label>
+              <select
+                id={`${ids}-cor-desenho`}
+                value={corDoDesenho ?? ''}
+                onChange={(evento) => {
+                  const cor = corDoNome(evento.target.value)
+                  if (cor) {
+                    setEstilos((atuais) => ({
+                      ...atuais,
+                      traco: { ...atuais.traco, cor },
+                    }))
+                  }
+                }}
+                className="border-input bg-background focus-visible:ring-ring h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-hidden"
+              >
+                {!corDoDesenho && (
+                  <option value="">{T.painel.personalizada}</option>
+                )}
+                {(Object.keys(CORES) as NomeDaCor[]).map((nome) => (
+                  <option key={nome} value={nome}>
+                    {T.painel.cores[nome]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-0 space-y-1">
+              <label
+                htmlFor={`${ids}-espessura-desenho`}
+                className="text-sm font-medium"
+              >
+                {T.ferramentas.espessuraDoDesenho}
+              </label>
+              <Input
+                id={`${ids}-espessura-desenho`}
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={ESPESSURA_MINIMA}
+                max={ESPESSURA_MAXIMA}
+                defaultValue={estilos.traco.espessura}
+                onChange={(evento) => {
+                  const valor = Number(evento.target.value)
+                  if (
+                    evento.target.value.trim() !== '' &&
+                    valor >= ESPESSURA_MINIMA &&
+                    valor <= ESPESSURA_MAXIMA
+                  ) {
+                    setEstilos((atuais) => ({
+                      ...atuais,
+                      traco: { ...atuais.traco, espessura: valor },
+                    }))
+                  }
+                }}
+                className="h-11 tabular-nums focus-visible:ring-2"
+              />
+            </div>
+          </div>
+        )}
+
+        {ferramenta === 'imagem' && (
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 px-4"
+              onClick={() => inputDaImagemRef.current?.click()}
+              data-testid="editar-pdf-escolher-imagem"
+            >
+              <FontAwesomeIcon icon={faImage} className="size-4" aria-hidden />
+              {imagemParaPor ? T.imagem.outra : T.imagem.escolher}
+            </Button>
+            {estadoDaImagem &&
+              (estadoDaImagem.tipo === 'aviso' ? (
+                <p
+                  role="alert"
+                  className="bg-card border-destructive rounded-md border px-3 py-2 text-sm [overflow-wrap:anywhere]"
+                  data-testid="editar-pdf-aviso-imagem"
+                >
+                  {estadoDaImagem.texto}
+                </p>
+              ) : (
+                <p
+                  className="text-sm [overflow-wrap:anywhere]"
+                  data-testid="editar-pdf-estado-imagem"
+                >
+                  {estadoDaImagem.texto}
+                </p>
+              ))}
+          </div>
+        )}
+
+        {criaPorClique && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 gap-2 px-4"
+            disabled={!tamanhoDaPagina}
+            aria-disabled={
+              ferramenta === 'imagem' && !imagemParaPor ? true : undefined
+            }
+            aria-describedby={
+              ferramenta === 'imagem' && !imagemParaPor
+                ? idSemImagem
+                : undefined
+            }
+            onClick={() => {
+              if (tamanhoDaPagina) {
+                inserir({ centro: centroVisivel(tamanhoDaPagina) })
+              }
+            }}
+            data-testid="editar-pdf-inserir-no-centro"
+          >
+            <FontAwesomeIcon
+              icon={faCrosshairs}
+              className="size-4"
+              aria-hidden
+            />
+            {T.ferramentas.inserirNoCentro}
+          </Button>
+        )}
+        {ferramenta === 'imagem' && !imagemParaPor && (
+          <p id={idSemImagem} className="sr-only">
+            {T.ferramentas.semImagem}
+          </p>
+        )}
+        <input
+          ref={inputDaImagemRef}
+          type="file"
+          accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(evento) => {
+            const escolhida = evento.target.files?.[0]
+            evento.target.value = ''
+            if (escolhida) void escolherImagem(escolhida)
+          }}
+          data-testid="editar-pdf-input-imagem"
+        />
+      </div>
+    </div>
+  )
+  const paginaNaBancada = (
+    <div key="pagina" className="space-y-4">
+      {diferencaDoGiro !== 0 && (
+        <p
+          className="bg-card border-border flex gap-2 rounded-md border px-3 py-2 text-sm"
+          data-testid="editar-pdf-nota-do-giro"
+        >
+          <FontAwesomeIcon
+            icon={faRotate}
+            className="text-primary mt-0.5 size-4 shrink-0"
+            aria-hidden
+          />
+          <span className="min-w-0">{T.notaDoGiro(diferencaDoGiro)}</span>
+        </p>
+      )}
+
+      <AreaDaPagina
+        id={idDaArea}
+        areaRef={areaRef}
+        folhaRef={folhaRef}
+        numeroDaPagina={pagina + 1}
+        larguraCss={larguraCss}
+        proporcao={proporcao}
+        desenhando={desenhando}
+        falhou={naoDesenhou}
+        aoTentarDeNovo={tentarDeNovo}
+      >
+        {tamanhoDaPagina && (
+          <QuadroDeObjetos
+            numeroDaPagina={pagina + 1}
+            tamanho={tamanhoDaPagina}
+            objetos={objetosDaPagina}
+            selecionado={objetoEscolhido?.id ?? null}
+            ferramenta={ferramenta}
+            urlsDasImagens={urlsDasImagens}
+            nomesDasImagens={nomesDasImagens}
+            estiloDoDesenho={estilos.traco}
+            idDasInstrucoes={idDasInstrucoes}
+            quadroRef={quadroRef}
+            registrar={registrarObjeto}
+            aoFocar={setSelecionado}
+            aoMudar={mudarPeloQuadro}
+            aoApagar={apagarObjeto}
+            aoEditarTexto={() => textoRef.current?.focus()}
+            aoSoltar={soltarObjeto}
+            aoCriar={inserir}
+            aoDesenhar={desenhar}
+            aoClicarNaPagina={(ponto) => void clicarNaPagina(ponto)}
+          />
+        )}
+      </AreaDaPagina>
+
+      <ControlesDaPagina
+        pagina={pagina}
+        total={total}
+        zoom={zoom}
+        anteriorRef={anteriorRef}
+        proximaRef={proximaRef}
+        diminuirRef={diminuirRef}
+        aumentarRef={aumentarRef}
+        aoPassar={passar}
+        aoMudarZoom={mudarZoom}
+      />
+      <p
+        id={idDasInstrucoes}
+        className="text-muted-foreground text-xs leading-relaxed"
+      >
+        {T.objetos.instrucoes}
+      </p>
+
+      {mostrarDicaDoTexto && (
+        <div
+          className="bg-card border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm"
+          data-testid="editar-pdf-dica-texto"
+        >
+          <FontAwesomeIcon
+            icon={faCircleInfo}
+            className="text-primary size-4 shrink-0"
+            aria-hidden
+          />
+          <p className="min-w-0 flex-1 basis-56">{T.textoExistente}</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => escolherFerramenta('cobrir')}
+            data-testid="editar-pdf-usar-cobrir"
+          >
+            {T.usarCobrir}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="space-y-8" data-testid="editar-pdf">
@@ -1416,413 +1861,100 @@ export function EditarPdf({
             className="space-y-6 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_15rem] lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-[17rem_minmax(0,1fr)_17rem]"
             data-testid="editar-pdf-bancada"
           >
-            <aside
-              aria-labelledby={idDoTitulo}
-              className="bg-card border-border hidden flex-col gap-3 rounded-lg border p-3 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-2rem)]"
-              data-testid="editar-pdf-coluna-de-paginas"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <h3 id={idDoTitulo} className="font-semibold">
-                  {T.paginas}
-                </h3>
-                <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                  {total}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                  <p className="text-muted-foreground font-mono text-xs font-semibold tracking-[0.2em] uppercase">
-                    {P.naSelecao}
-                  </p>
-                  <p
-                    className="text-sm font-medium"
-                    data-testid="editar-pdf-selecionadas"
-                  >
-                    {O.selecionadas(qtd)}
-                  </p>
+            {larga && (
+              <aside
+                ref={registrarRegiao}
+                aria-labelledby={idDoTitulo}
+                className="bg-card border-border flex flex-col gap-3 rounded-lg border p-3 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)]"
+                data-testid="editar-pdf-coluna-de-paginas"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 id={idDoTitulo} className="font-semibold">
+                    {T.paginas}
+                  </h3>
+                  <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                    {total}
+                  </span>
                 </div>
-                <BarraDaSelecao
-                  botoes={botoesDaSelecao}
-                  botoesRef={botoesDaBarra}
-                  idDaDica={idDaDica}
-                  aoUsar={aoUsarNaBarra}
-                  prefixo="editar-pdf"
-                  soIcone={SO_ICONE}
-                  rotulos={{ desfazer: P.desfazer }}
-                />
-                <ul
-                  className="text-muted-foreground space-y-0.5 text-xs"
-                  data-testid="editar-pdf-dicas-das-paginas"
-                >
-                  {[...motivosDaSelecao].map((motivo) => (
-                    <li key={motivo} id={idDaDica(motivo)}>
-                      {O.dicas[motivo]}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 py-1">
-                <ListaDaBancada
-                  paginas={lista}
-                  nomeDoArquivo={atual.arquivo.name}
-                  marcadas={new Set(marcadas)}
-                  aberta={aberta}
-                  miniaturas={miniaturasDaLista}
-                  bloqueado={montando}
-                  idDoTitulo={idDoTitulo}
-                  idDaDicaUnica={idDaDica('ultimaPagina')}
-                  aoAgir={aoAgirNaPagina}
-                  aoMover={moverArrastando}
-                  registrarCaixa={registrarCaixa}
-                />
-              </div>
-            </aside>
+                {acoesDasPaginas}
+                {pularParaAAberta}
+                <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 py-1">
+                  {listaDasPaginas}
+                </div>
+              </aside>
+            )}
 
             <div
               inert={montando || undefined}
               className="min-w-0 space-y-4"
               data-testid="editar-pdf-edicao"
             >
+              {!larga && (
+                <Sheet open={folhaAberta} onOpenChange={setFolhaAberta}>
+                  <SheetTrigger asChild>
+                    <Button
+                      ref={botaoDasPaginasRef}
+                      type="button"
+                      variant="outline"
+                      className="h-11 gap-2 px-4"
+                      data-testid="editar-pdf-botao-paginas"
+                    >
+                      <FontAwesomeIcon
+                        icon={faLayerGroup}
+                        className="size-4"
+                        aria-hidden
+                      />
+                      {P.abrirFolha}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    ref={registrarRegiao}
+                    side="bottom"
+                    aria-describedby={undefined}
+                    onCloseAutoFocus={(evento) => {
+                      const alvo = focoAoFechar.current
+                      if (!alvo) return
+                      focoAoFechar.current = null
+                      evento.preventDefault()
+                      alvo()?.focus()
+                    }}
+                    className="flex max-h-[85dvh] flex-col gap-3 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center"
+                    data-testid="editar-pdf-folha-de-paginas"
+                  >
+                    <div className="flex flex-wrap items-baseline gap-x-2 pr-12">
+                      <SheetTitle>
+                        <span id={idDoTitulo}>{P.titulo}</span>
+                      </SheetTitle>
+                      <span className="text-muted-foreground text-sm">
+                        {P.contagem(total)}
+                      </span>
+                    </div>
+                    {acoesDasPaginas}
+                    <p className="text-muted-foreground text-sm">
+                      {P.dicaDaFolha}
+                    </p>
+                    {pularParaAAberta}
+                    {listaDasPaginas}
+                  </SheetContent>
+                </Sheet>
+              )}
+
               {documento && (
                 <div className="lg:hidden">
                   <FaixaDePaginas
                     documento={documento}
                     paginas={paginasDaFaixa}
                     pagina={pagina}
-                    idDoTitulo={idDoTitulo}
+                    rotulo={T.paginas}
                     miniaturas={miniaturasDaFaixa}
                     aoEscolher={aoEscolherPagina}
                   />
                 </div>
               )}
 
-              <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                <div ref={barraRef} className="min-w-0">
-                  <BarraDeFerramentas
-                    ativa={ferramenta}
-                    aoEscolher={escolherFerramenta}
-                  />
-                </div>
-                <div
-                  role="group"
-                  aria-label={T.historico.rotulo}
-                  className="flex gap-1.5"
-                >
-                  <Button
-                    ref={desfazerRef}
-                    type="button"
-                    variant="outline"
-                    className="h-11 gap-2 px-3"
-                    disabled={!podeVoltar}
-                    aria-describedby={podeVoltar ? undefined : idSemDesfazer}
-                    aria-keyshortcuts="Control+Z Meta+Z"
-                    onClick={() => voltarNoHistorico('desfazer')}
-                    data-testid="editar-pdf-desfazer"
-                  >
-                    <FontAwesomeIcon
-                      icon={faArrowRotateLeft}
-                      className="size-4"
-                      aria-hidden
-                    />
-                    {T.historico.desfazer}
-                  </Button>
-                  <Button
-                    ref={refazerRef}
-                    type="button"
-                    variant="outline"
-                    className="h-11 gap-2 px-3"
-                    disabled={!podeAvancar}
-                    aria-describedby={podeAvancar ? undefined : idSemRefazer}
-                    aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
-                    onClick={() => voltarNoHistorico('refazer')}
-                    data-testid="editar-pdf-refazer"
-                  >
-                    <FontAwesomeIcon
-                      icon={faArrowRotateRight}
-                      className="size-4"
-                      aria-hidden
-                    />
-                    {T.historico.refazer}
-                  </Button>
-                </div>
-              </div>
-              <ul className="text-muted-foreground space-y-0.5 text-xs">
-                {!podeVoltar && (
-                  <li id={idSemDesfazer}>{T.historico.nadaParaDesfazer}</li>
-                )}
-                {!podeAvancar && (
-                  <li id={idSemRefazer}>{T.historico.nadaParaRefazer}</li>
-                )}
-                <li>{T.historico.atalho}</li>
-              </ul>
-
-              <div
-                className="bg-card border-border space-y-3 rounded-lg border p-3"
-                data-testid="editar-pdf-opcoes"
-              >
-                {ferramenta === 'desenho' && (
-                  <p
-                    className="border-primary bg-accent-soft text-foreground rounded-md border px-3 py-2 text-sm font-medium"
-                    data-testid="editar-pdf-desenho-ativo"
-                  >
-                    {T.ferramentas.desenhoAtivo}
-                  </p>
-                )}
-                <p className="text-muted-foreground text-sm">
-                  {dicaDaFerramenta}
-                </p>
-                {ferramenta === 'cobrir' && (
-                  <p className="text-sm" data-testid="editar-pdf-aviso-cobrir">
-                    {T.cobrir.aviso}
-                  </p>
-                )}
-
-                {ferramenta === 'desenho' && (
-                  <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
-                    <div className="min-w-0 space-y-1">
-                      <label
-                        htmlFor={`${ids}-cor-desenho`}
-                        className="text-sm font-medium"
-                      >
-                        {T.ferramentas.corDoDesenho}
-                      </label>
-                      <select
-                        id={`${ids}-cor-desenho`}
-                        value={corDoDesenho ?? ''}
-                        onChange={(evento) => {
-                          const cor = corDoNome(evento.target.value)
-                          if (cor) {
-                            setEstilos((atuais) => ({
-                              ...atuais,
-                              traco: { ...atuais.traco, cor },
-                            }))
-                          }
-                        }}
-                        className="border-input bg-background focus-visible:ring-ring h-11 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-hidden"
-                      >
-                        {!corDoDesenho && (
-                          <option value="">{T.painel.personalizada}</option>
-                        )}
-                        {(Object.keys(CORES) as NomeDaCor[]).map((nome) => (
-                          <option key={nome} value={nome}>
-                            {T.painel.cores[nome]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <label
-                        htmlFor={`${ids}-espessura-desenho`}
-                        className="text-sm font-medium"
-                      >
-                        {T.ferramentas.espessuraDoDesenho}
-                      </label>
-                      <Input
-                        id={`${ids}-espessura-desenho`}
-                        type="number"
-                        inputMode="decimal"
-                        step="any"
-                        min={ESPESSURA_MINIMA}
-                        max={ESPESSURA_MAXIMA}
-                        defaultValue={estilos.traco.espessura}
-                        onChange={(evento) => {
-                          const valor = Number(evento.target.value)
-                          if (
-                            evento.target.value.trim() !== '' &&
-                            valor >= ESPESSURA_MINIMA &&
-                            valor <= ESPESSURA_MAXIMA
-                          ) {
-                            setEstilos((atuais) => ({
-                              ...atuais,
-                              traco: { ...atuais.traco, espessura: valor },
-                            }))
-                          }
-                        }}
-                        className="h-11 tabular-nums focus-visible:ring-2"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {ferramenta === 'imagem' && (
-                  <div className="space-y-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-11 gap-2 px-4"
-                      onClick={() => inputDaImagemRef.current?.click()}
-                      data-testid="editar-pdf-escolher-imagem"
-                    >
-                      <FontAwesomeIcon
-                        icon={faImage}
-                        className="size-4"
-                        aria-hidden
-                      />
-                      {imagemParaPor ? T.imagem.outra : T.imagem.escolher}
-                    </Button>
-                    {estadoDaImagem &&
-                      (estadoDaImagem.tipo === 'aviso' ? (
-                        <p
-                          role="alert"
-                          className="bg-card border-destructive rounded-md border px-3 py-2 text-sm [overflow-wrap:anywhere]"
-                          data-testid="editar-pdf-aviso-imagem"
-                        >
-                          {estadoDaImagem.texto}
-                        </p>
-                      ) : (
-                        <p
-                          className="text-sm [overflow-wrap:anywhere]"
-                          data-testid="editar-pdf-estado-imagem"
-                        >
-                          {estadoDaImagem.texto}
-                        </p>
-                      ))}
-                  </div>
-                )}
-
-                {criaPorClique && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 gap-2 px-4"
-                    disabled={!tamanhoDaPagina}
-                    aria-disabled={
-                      ferramenta === 'imagem' && !imagemParaPor
-                        ? true
-                        : undefined
-                    }
-                    aria-describedby={
-                      ferramenta === 'imagem' && !imagemParaPor
-                        ? idSemImagem
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (tamanhoDaPagina) {
-                        inserir({ centro: centroVisivel(tamanhoDaPagina) })
-                      }
-                    }}
-                    data-testid="editar-pdf-inserir-no-centro"
-                  >
-                    <FontAwesomeIcon
-                      icon={faCrosshairs}
-                      className="size-4"
-                      aria-hidden
-                    />
-                    {T.ferramentas.inserirNoCentro}
-                  </Button>
-                )}
-                {ferramenta === 'imagem' && !imagemParaPor && (
-                  <p id={idSemImagem} className="sr-only">
-                    {T.ferramentas.semImagem}
-                  </p>
-                )}
-                <input
-                  ref={inputDaImagemRef}
-                  type="file"
-                  accept="image/png,image/jpeg,.png,.jpg,.jpeg"
-                  className="sr-only"
-                  tabIndex={-1}
-                  aria-hidden
-                  onChange={(evento) => {
-                    const escolhida = evento.target.files?.[0]
-                    evento.target.value = ''
-                    if (escolhida) void escolherImagem(escolhida)
-                  }}
-                  data-testid="editar-pdf-input-imagem"
-                />
-              </div>
-
-              {diferencaDoGiro !== 0 && (
-                <p
-                  className="bg-card border-border flex gap-2 rounded-md border px-3 py-2 text-sm"
-                  data-testid="editar-pdf-nota-do-giro"
-                >
-                  <FontAwesomeIcon
-                    icon={faRotate}
-                    className="text-primary mt-0.5 size-4 shrink-0"
-                    aria-hidden
-                  />
-                  <span className="min-w-0">
-                    {T.notaDoGiro(diferencaDoGiro)}
-                  </span>
-                </p>
-              )}
-
-              <AreaDaPagina
-                areaRef={areaRef}
-                folhaRef={folhaRef}
-                numeroDaPagina={pagina + 1}
-                larguraCss={larguraCss}
-                proporcao={proporcao}
-                desenhando={desenhando}
-                falhou={naoDesenhou}
-                aoTentarDeNovo={tentarDeNovo}
-              >
-                {tamanhoDaPagina && (
-                  <QuadroDeObjetos
-                    numeroDaPagina={pagina + 1}
-                    tamanho={tamanhoDaPagina}
-                    objetos={objetosDaPagina}
-                    selecionado={objetoEscolhido?.id ?? null}
-                    ferramenta={ferramenta}
-                    urlsDasImagens={urlsDasImagens}
-                    nomesDasImagens={nomesDasImagens}
-                    estiloDoDesenho={estilos.traco}
-                    idDasInstrucoes={idDasInstrucoes}
-                    quadroRef={quadroRef}
-                    registrar={registrarObjeto}
-                    aoFocar={setSelecionado}
-                    aoMudar={mudarPeloQuadro}
-                    aoApagar={apagarObjeto}
-                    aoEditarTexto={() => textoRef.current?.focus()}
-                    aoSoltar={soltarObjeto}
-                    aoCriar={inserir}
-                    aoDesenhar={desenhar}
-                    aoClicarNaPagina={(ponto) => void clicarNaPagina(ponto)}
-                  />
-                )}
-              </AreaDaPagina>
-
-              <ControlesDaPagina
-                pagina={pagina}
-                total={total}
-                zoom={zoom}
-                anteriorRef={anteriorRef}
-                proximaRef={proximaRef}
-                diminuirRef={diminuirRef}
-                aumentarRef={aumentarRef}
-                aoPassar={passar}
-                aoMudarZoom={mudarZoom}
-              />
-              <p
-                id={idDasInstrucoes}
-                className="text-muted-foreground text-xs leading-relaxed"
-              >
-                {T.objetos.instrucoes}
-              </p>
-
-              {mostrarDicaDoTexto && (
-                <div
-                  className="bg-card border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-3 text-sm"
-                  data-testid="editar-pdf-dica-texto"
-                >
-                  <FontAwesomeIcon
-                    icon={faCircleInfo}
-                    className="text-primary size-4 shrink-0"
-                    aria-hidden
-                  />
-                  <p className="min-w-0 flex-1 basis-56">{T.textoExistente}</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11"
-                    onClick={() => escolherFerramenta('cobrir')}
-                    data-testid="editar-pdf-usar-cobrir"
-                  >
-                    {T.usarCobrir}
-                  </Button>
-                </div>
-              )}
+              {larga
+                ? [ferramentasDaPagina, paginaNaBancada]
+                : [paginaNaBancada, ferramentasDaPagina]}
             </div>
 
             <div

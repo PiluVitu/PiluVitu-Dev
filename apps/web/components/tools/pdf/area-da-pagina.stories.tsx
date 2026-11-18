@@ -70,7 +70,7 @@ function PaginaAberta({
           giro: 0 as const,
         }))}
         pagina={pagina}
-        idDoTitulo="titulo"
+        rotulo="Páginas"
         miniaturas={miniaturas}
         aoEscolher={aoEscolher}
       />

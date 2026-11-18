@@ -163,6 +163,7 @@ export function usePaginaDesenhada({
 }
 
 export function AreaDaPagina({
+  id,
   areaRef,
   folhaRef,
   numeroDaPagina,
@@ -173,6 +174,8 @@ export function AreaDaPagina({
   aoTentarDeNovo,
   children,
 }: {
+  /** O alvo do link "Pular para a página aberta". */
+  id?: string
   areaRef: RefObject<HTMLDivElement | null>
   folhaRef: RefObject<HTMLDivElement | null>
   numeroDaPagina: number
@@ -186,6 +189,7 @@ export function AreaDaPagina({
   return (
     <div
       ref={areaRef}
+      id={id}
       role="group"
       aria-label={T.areaDaPagina(numeroDaPagina)}
       tabIndex={0}
@@ -402,7 +406,7 @@ export function FaixaDePaginas({
   documento,
   paginas,
   pagina,
-  idDoTitulo,
+  rotulo,
   miniaturas,
   aoEscolher,
 }: {
@@ -411,7 +415,7 @@ export function FaixaDePaginas({
   paginas: readonly PaginaDaFaixa[]
   /** A posição da página aberta. */
   pagina: number
-  idDoTitulo: string
+  rotulo: string
   miniaturas: {
     urls: ReadonlyMap<number, string>
     falhas: ReadonlySet<number>
@@ -481,7 +485,7 @@ export function FaixaDePaginas({
     <div className="space-y-1">
       <ol
         ref={faixaRef}
-        aria-labelledby={idDoTitulo}
+        aria-label={rotulo}
         onKeyDown={aoTeclarNaFaixa}
         onBlur={aoSairDaFaixa}
         className="flex gap-2 overflow-x-auto p-1 pb-2"

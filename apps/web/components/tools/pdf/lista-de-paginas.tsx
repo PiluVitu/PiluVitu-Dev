@@ -290,9 +290,7 @@ export function BarraDaSelecao({
             disabled={motivo !== null}
             aria-describedby={motivo ? idDaDica(motivo) : undefined}
             aria-keyshortcuts={
-              chave === 'desfazer' && prefixo === 'organizar-pdf'
-                ? 'Control+Z Meta+Z'
-                : undefined
+              chave === 'desfazer' ? 'Control+Z Meta+Z' : undefined
             }
             onFocus={() => setAtivo(chave)}
             onClick={() => aoUsar(chave)}

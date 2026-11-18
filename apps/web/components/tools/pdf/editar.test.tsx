@@ -7,6 +7,7 @@ import {
 } from '@piluvitu/tools/pdf-regras'
 import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { ZOOMS } from './area-da-pagina'
+import { CONSULTA_DA_BANCADA_LARGA } from './bancada-larga'
 import { EditarPdf } from './editar'
 import type { ObjetoNaTela } from './motor'
 import { criarMotorFalso } from './motor-falso'
@@ -81,6 +82,15 @@ let container: HTMLDivElement
 let root: Root
 let documentoAtual: File | null = null
 
+// A Bancada larga (a lista na coluna) ou estreita (a lista na folha) vem do matchMedia, que o teste escolhe.
+let larga = true
+const ouvintesDaLargura = new Set<() => void>()
+
+function mudarLargura(nova: boolean) {
+  larga = nova
+  act(() => ouvintesDaLargura.forEach((ouvinte) => ouvinte()))
+}
+
 // O tamanho natural (em pixels) que o createImageBitmap falso dá a toda imagem.
 let imagemDecodificada = { width: 400, height: 200 }
 
@@ -91,10 +101,16 @@ beforeAll(() => {
   window.IntersectionObserver =
     ObservadorFalso as unknown as typeof IntersectionObserver
   window.ResizeObserver = MedidorFalso as unknown as typeof ResizeObserver
-  window.matchMedia = (() => ({
-    matches: false,
-    addEventListener() {},
-    removeEventListener() {},
+  window.matchMedia = ((consulta: string) => ({
+    media: consulta,
+    get matches() {
+      return consulta === CONSULTA_DA_BANCADA_LARGA && larga
+    },
+    addEventListener: (_: string, ouvinte: () => void) => {
+      if (consulta === CONSULTA_DA_BANCADA_LARGA) ouvintesDaLargura.add(ouvinte)
+    },
+    removeEventListener: (_: string, ouvinte: () => void) =>
+      ouvintesDaLargura.delete(ouvinte),
   })) as unknown as typeof window.matchMedia
   // Sem canvas no jsdom: a largura do texto sai da média da fonte, e a imagem do bitmap falso.
   HTMLCanvasElement.prototype.getContext = jest.fn(
@@ -117,6 +133,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  larga = true
   imagemDecodificada = { width: 400, height: 200 }
   ObservadorFalso.todos = []
   ObservadorFalso.automatico = true
@@ -663,7 +680,8 @@ it('todo controle da tela tem nome e alvo de 44 px', async () => {
   ]) {
     expect(porNome(nome).className).toContain('size-11')
   }
-  expect(q('editar-pdf-faixa')!.getAttribute('aria-labelledby')).toBeTruthy()
+  // A faixa tem nome próprio: no celular, a coluna com o título "Páginas" não existe.
+  expect(q('editar-pdf-faixa')!.getAttribute('aria-label')).toBe('Páginas')
 })
 
 // ---- Fase 3: as ferramentas e os objetos sobre a página ----
@@ -2144,5 +2162,258 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
     )
     expect(descricao('Apagar')).toBe(TEXTOS.organizar.dicas.todasSelecionadas)
     expect(focado()).toBe('Limpar seleção')
+  })
+})
+
+// ---- Editor único, PR 3, etapa 2: o celular, o Ctrl/⌘+Z por região, o pular e a janela ----
+
+// A folha é um portal do Radix no body, fora do container.
+const folha = () => document.body.querySelector<HTMLElement>('[role="dialog"]')
+const listasNoDocumento = () =>
+  document.body.querySelectorAll('[data-testid="editar-pdf-paginas"]')
+const cartoesNoDocumento = () =>
+  Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '[data-testid="editar-pdf-pagina"]',
+    ),
+  )
+
+function naFolha<T extends HTMLElement = HTMLButtonElement>(nome: string): T {
+  const achado = Array.from(
+    folha()!.querySelectorAll<HTMLElement>('button, a, input'),
+  ).find(
+    (el) =>
+      el.getAttribute('aria-label') === nome || el.textContent?.trim() === nome,
+  )
+  if (!achado) throw new Error(`nada na folha com o nome "${nome}"`)
+  return achado as T
+}
+
+const segue = (antes: Node, depois: Node) =>
+  Boolean(
+    antes.compareDocumentPosition(depois) & Node.DOCUMENT_POSITION_FOLLOWING,
+  )
+
+async function abrirAFolha() {
+  await clicar(porNome('Páginas'))
+  await esperarAte(() => folha() !== null)
+}
+
+describe('a Bancada no celular: a folha Páginas', () => {
+  it('sem a coluna; o botão Páginas abre a folha pela borda de baixo, com a lista uma vez só; Esc fecha e o foco volta ao botão', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+
+    expect(q('editar-pdf-coluna-de-paginas')).toBeNull()
+    expect(listasNoDocumento()).toHaveLength(0)
+    const botao = porNome('Páginas')
+    expect(botao.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(botao.getAttribute('aria-expanded')).toBe('false')
+    expect(botao.className).toContain('h-11')
+
+    await abrirAFolha()
+
+    const dialogo = folha()!
+    expect(dialogo.dataset.testid).toBe('editar-pdf-folha-de-paginas')
+    expect(dialogo.className).toContain('bottom-0')
+    expect(
+      document.getElementById(dialogo.getAttribute('aria-labelledby')!)!
+        .textContent,
+    ).toBe('Páginas')
+    expect(dialogo.textContent).toContain('3 páginas')
+    expect(dialogo.textContent).toContain(
+      'Toque numa miniatura para abrir a página.',
+    )
+    expect(listasNoDocumento()).toHaveLength(1)
+    expect(dialogo.contains(listasNoDocumento()[0])).toBe(true)
+    expect(cartoesNoDocumento()).toHaveLength(3)
+    expect(dialogo.contains(document.activeElement)).toBe(true)
+    expect(botao.getAttribute('aria-expanded')).toBe('true')
+
+    await teclar(document.activeElement!, 'Escape')
+
+    expect(folha()).toBeNull()
+    expect(document.activeElement).toBe(botao)
+  })
+
+  it('girar, marcar e apagar pela folha deixam a folha aberta, com o foco dentro dela', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    await clicar(naFolha('Girar a página 2 à direita'))
+    await clicar(naFolha<HTMLInputElement>('Selecionar página 3'))
+    expect(folha()!.textContent).toContain('1 página selecionada')
+    await clicar(naFolha('Apagar a página 2'))
+
+    expect(folha()).not.toBeNull()
+    expect(cartoesNoDocumento().map((c) => c.dataset.id)).toEqual([
+      'a0p0',
+      'a0p2',
+    ])
+    expect(anuncio()).toBe('Página 2 apagada.')
+    expect(folha()!.contains(document.activeElement)).toBe(true)
+  })
+
+  it('abrir uma página pela folha fecha a folha, abre a página, anuncia e leva o foco à área da página', async () => {
+    larga = false
+    const { renderizador } = await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    await clicar(naFolha('Abrir a página 3'))
+    await esperarAte(() => posicao() === 'Página 3 de 3')
+
+    expect(folha()).toBeNull()
+    expect(renderizador.paginasPedidas.at(-1)).toMatchObject({ indice: 2 })
+    expect(anuncio()).toBe('Página 3 de 3.')
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+  })
+
+  it('pular para a página aberta, pela folha, fecha a folha e leva o foco à área da página', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    await clicar(naFolha<HTMLAnchorElement>('Pular para a página aberta'))
+
+    expect(folha()).toBeNull()
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+  })
+
+  it('no celular, a página vem antes das ferramentas, no fluxo, e a faixa numerada se chama Páginas; no largo, as ferramentas vêm antes', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+
+    const ferramentas = () => q('editar-pdf-ferramentas')!
+    expect(segue(q('editar-pdf-area')!, ferramentas())).toBe(true)
+    expect(segue(porNome('Páginas'), q('editar-pdf-faixa')!)).toBe(true)
+    expect(segue(q('editar-pdf-faixa')!, q('editar-pdf-area')!)).toBe(true)
+    for (
+      let no: HTMLElement | null = ferramentas();
+      no && no !== container;
+      no = no.parentElement
+    ) {
+      expect(no.className).not.toMatch(/\bfixed\b/)
+    }
+    expect(q('editar-pdf-faixa')!.getAttribute('aria-label')).toBe('Páginas')
+    expect(segue(ferramentas(), q('editar-pdf-coluna-do-objeto')!)).toBe(true)
+
+    mudarLargura(true)
+    await esperar()
+
+    expect(segue(ferramentas(), q('editar-pdf-area')!)).toBe(true)
+    expect(q('editar-pdf-coluna-de-paginas')).not.toBeNull()
+    expect(() => porNome('Páginas')).toThrow()
+  })
+
+  it('a janela que passa a larga com a folha aberta leva a lista para a coluna, ainda uma vez só', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    mudarLargura(true)
+    await esperar()
+
+    expect(folha()).toBeNull()
+    expect(listasNoDocumento()).toHaveLength(1)
+    expect(
+      q('editar-pdf-coluna-de-paginas')!.contains(listasNoDocumento()[0]),
+    ).toBe(true)
+  })
+})
+
+describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
+  it('nas páginas, Ctrl/⌘+Z desfaz as páginas e não os objetos; fora delas, desfaz os objetos', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Apagar a página 3'))
+    await clicar(porNome('Girar a página 2 à direita'))
+    const caixa = porNome<HTMLInputElement>('Selecionar página 1')
+    caixa.focus()
+
+    expect(await tecla(caixa, 'z', { ctrlKey: true })).toBe(true)
+    expect(cartoes()[1].textContent).not.toContain('girada')
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1'])
+    expect(objetos()).toHaveLength(1)
+    expect(anuncio()).toBe('Desfeito nas páginas.')
+    expect(document.activeElement).toBe(caixa)
+
+    expect(await tecla(caixa, 'z', { metaKey: true })).toBe(true)
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(objetos()).toHaveLength(1)
+
+    await tecla(quadro(), 'z', { ctrlKey: true })
+    expect(objetos()).toHaveLength(0)
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(anuncio()).toBe('Desfeito.')
+  })
+
+  it('nas páginas, Ctrl/⌘+Shift+Z não refaz os objetos: diz que as páginas não têm refazer', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Desfazer'))
+    expect(objetos()).toHaveLength(0)
+    const caixa = porNome<HTMLInputElement>('Selecionar página 2')
+
+    await tecla(caixa, 'z', { ctrlKey: true, shiftKey: true })
+
+    expect(objetos()).toHaveLength(0)
+    expect(anuncio()).toBe('Nas páginas não há refazer.')
+  })
+
+  it('na folha do celular, Ctrl/⌘+Z também desfaz as páginas', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await abrirAFolha()
+    await clicar(naFolha('Apagar a página 2'))
+
+    await tecla(document.activeElement!, 'z', { ctrlKey: true })
+
+    expect(cartoesNoDocumento()).toHaveLength(3)
+    expect(objetos()).toHaveLength(1)
+    expect(anuncio()).toBe('Desfeito nas páginas.')
+  })
+
+  it('o Desfazer nas páginas diz o atalho, e a coluna explica o Ctrl+Z dela', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+
+    expect(
+      porNome('Desfazer nas páginas').getAttribute('aria-keyshortcuts'),
+    ).toBe('Control+Z Meta+Z')
+    expect(q('editar-pdf-coluna-de-paginas')!.textContent).toContain(
+      TEXTOS.editar.paginasDoDocumento.atalho,
+    )
+  })
+
+  it('o link Pular para a página aberta vem antes da lista e leva o foco à área da página aberta', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirPagina(2)
+    const link = porNome<HTMLAnchorElement>('Pular para a página aberta')
+
+    expect(link.tagName).toBe('A')
+    expect(q('editar-pdf-coluna-de-paginas')!.contains(link)).toBe(true)
+    expect(segue(link, q('editar-pdf-paginas')!)).toBe(true)
+    expect(link.getAttribute('href')).toBe(`#${q('editar-pdf-area')!.id}`)
+
+    await clicar(link)
+
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+    expect(q('editar-pdf-area')!.getAttribute('aria-label')).toBe(
+      'Área da página 2',
+    )
+  })
+
+  it('com o PDF aberto, soltar um arquivo fora da zona não deixa o navegador abrir o arquivo', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    const evento = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(evento, 'dataTransfer', {
+      value: { types: ['Files'], files: [] },
+    })
+
+    quadro().dispatchEvent(evento)
+
+    expect(evento.defaultPrevented).toBe(true)
+    expect(q('editar-pdf-documento')).not.toBeNull()
   })
 })
