@@ -227,6 +227,8 @@ export function BarraDaSelecao({
   prefixo = 'organizar-pdf',
   soIcone = [],
   rotulos = {},
+  descricoes = {},
+  empilhada = false,
 }: {
   botoes: BotaoDaBarra[]
   botoesRef: RefObject<Map<ChaveDaBarra, HTMLButtonElement>>
@@ -237,6 +239,10 @@ export function BarraDaSelecao({
   /** Os botões que mostram só o ícone, com o nome no `aria-label` (a coluna estreita da Bancada). */
   soIcone?: readonly ChaveDaBarra[]
   rotulos?: Partial<Record<ChaveDaBarra, string>>
+  /** O `aria-describedby` do botão habilitado (o parado aponta para o motivo). */
+  descricoes?: Partial<Record<ChaveDaBarra, string>>
+  /** Grade de botões com o ícone em cima e o nome embaixo (a folha do celular). */
+  empilhada?: boolean
 }) {
   const [ativo, setAtivo] = useState<ChaveDaBarra | null>(null)
   const habilitados = botoes.filter((botao) => !botao.motivo)
@@ -267,7 +273,11 @@ export function BarraDaSelecao({
       role="toolbar"
       aria-label={T.barra}
       onKeyDown={aoTeclar}
-      className="flex flex-wrap gap-1.5"
+      className={
+        empilhada
+          ? 'grid grid-cols-3 gap-1 min-[22rem]:grid-cols-4'
+          : 'flex flex-wrap gap-1.5'
+      }
       data-testid="organizar-pdf-barra"
     >
       {botoes.map(({ chave, motivo }) => {
@@ -282,13 +292,19 @@ export function BarraDaSelecao({
             }}
             type="button"
             variant="outline"
-            className={icone ? 'size-11' : 'h-11 gap-2 px-3'}
+            className={
+              icone
+                ? 'size-11'
+                : empilhada
+                  ? 'h-15 flex-col gap-1 px-1 text-[0.6875rem] leading-tight whitespace-normal'
+                  : 'h-11 gap-2 px-3'
+            }
             size={icone ? 'icon' : undefined}
             aria-label={icone ? rotulo : undefined}
             title={icone ? rotulo : undefined}
             tabIndex={chave === noTab ? 0 : -1}
             disabled={motivo !== null}
-            aria-describedby={motivo ? idDaDica(motivo) : undefined}
+            aria-describedby={motivo ? idDaDica(motivo) : descricoes[chave]}
             aria-keyshortcuts={
               chave === 'desfazer' ? 'Control+Z Meta+Z' : undefined
             }
@@ -300,7 +316,9 @@ export function BarraDaSelecao({
               icon={ICONES[chave]}
               className={cn(
                 'size-4',
-                chave === 'apagar' && icone && 'text-destructive',
+                chave === 'apagar' &&
+                  (icone || empilhada) &&
+                  'text-destructive',
               )}
               aria-hidden
             />
@@ -737,12 +755,12 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
         {giro !== 0 && (
           <p className="text-muted-foreground text-xs">{T.girada(giro)}</p>
         )}
-        <div className="flex">
+        <div className="flex flex-wrap">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-11"
+            className="size-11 shrink-0"
             aria-label={T.girarPagina(posicao)}
             disabled={bloqueado}
             onClick={() => aoAgir({ tipo: 'girar', id })}
@@ -758,7 +776,7 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-11"
+            className="size-11 shrink-0"
             aria-label={T.apagarPagina(posicao)}
             aria-describedby={unica ? idDaDicaUnica : undefined}
             disabled={bloqueado || unica}

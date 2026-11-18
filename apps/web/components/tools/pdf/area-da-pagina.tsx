@@ -413,7 +413,6 @@ export function FaixaDePaginas({
   documento: DocumentoAberto
   /** Na ordem do documento: o número de cada uma é a posição. */
   paginas: readonly PaginaDaFaixa[]
-  /** A posição da página aberta. */
   pagina: number
   rotulo: string
   miniaturas: {
@@ -526,7 +525,6 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   registrar,
   observar,
 }: {
-  /** A posição no documento. */
   indice: number
   miniatura: number
   giro: Giro

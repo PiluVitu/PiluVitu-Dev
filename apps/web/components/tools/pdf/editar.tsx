@@ -181,7 +181,6 @@ const SEM_PAGINAS: PaginasDoDocumento = {
   paginas: paginasIniciais(0),
 }
 
-// Na coluna estreita, os botões de um ícone só; o nome fica no aria-label.
 const SO_ICONE: readonly ChaveDaBarra[] = [
   'girarEsquerda',
   'girarDireita',
@@ -938,7 +937,6 @@ export function EditarPdf({
     return diferenca ? `${texto} ${T.notaDoGiro(diferenca)}` : texto
   }
 
-  // A página aberta que sai dá lugar à seguinte que ficou (ou à anterior, no fim).
   function abertaDepois(novaLista: readonly PaginaDaBancada[]): string {
     const ficam = new Set(novaLista.map(({ id }) => id))
     if (ficam.has(aberta)) return aberta
@@ -1123,7 +1121,6 @@ export function EditarPdf({
     acoes[chave]()
   }
 
-  // Dentro das páginas, o atalho é o desfazer delas, que não tem refazer.
   function atalhoNasPaginas(sentido: SentidoDoHistorico) {
     if (sentido === 'refazer') anunciar(P.semRefazer)
     else if (!estadoDasPaginas.passado.length)
@@ -1175,6 +1172,14 @@ export function EditarPdf({
 
   useEffect(() => {
     if (!documento) return
+    const nasPaginas = (alvo: EventTarget | null) =>
+      alvo instanceof Node &&
+      Boolean(regiaoDasPaginasRef.current?.contains(alvo))
+    // Pelo último gesto, não só pelo foco: desenhar com o mouse não tira o foco da coluna.
+    let gestoNasPaginas: boolean | null = null
+    const lembrarGesto = (evento: Event) => {
+      gestoNasPaginas = nasPaginas(evento.target)
+    }
     function aoTeclar(evento: KeyboardEvent) {
       if (
         !(evento.ctrlKey || evento.metaKey) ||
@@ -1194,14 +1199,20 @@ export function EditarPdf({
             : null
       if (!sentido) return
       evento.preventDefault()
-      const nasPaginas =
-        evento.target instanceof Node &&
-        regiaoDasPaginasRef.current?.contains(evento.target)
-      if (nasPaginas) atalhoNasPaginasRef.current(sentido)
-      else voltarRef.current(sentido)
+      if (gestoNasPaginas ?? nasPaginas(evento.target)) {
+        atalhoNasPaginasRef.current(sentido)
+      } else {
+        voltarRef.current(sentido)
+      }
     }
+    window.addEventListener('pointerdown', lembrarGesto, true)
+    window.addEventListener('focusin', lembrarGesto, true)
     window.addEventListener('keydown', aoTeclar)
-    return () => window.removeEventListener('keydown', aoTeclar)
+    return () => {
+      window.removeEventListener('pointerdown', lembrarGesto, true)
+      window.removeEventListener('focusin', lembrarGesto, true)
+      window.removeEventListener('keydown', aoTeclar)
+    }
   }, [documento])
 
   const idDoDocumento = `${ids}-documento`
@@ -1212,6 +1223,7 @@ export function EditarPdf({
   const idSemRefazer = `${ids}-sem-refazer`
   const idSemMudancas = `${ids}-sem-mudancas`
   const idDoAlcance = `${ids}-alcance`
+  const idDoAlcanceDoExtrair = `${ids}-alcance-do-extrair`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
   const idDasConsequencias = `${ids}-consequencias`
   const idDaDica = (motivo: MotivoDesabilitado) => `${ids}-dica-${motivo}`
@@ -1323,8 +1335,10 @@ export function EditarPdf({
         idDaDica={idDaDica}
         aoUsar={aoUsarNaBarra}
         prefixo="editar-pdf"
-        soIcone={SO_ICONE}
+        soIcone={larga ? SO_ICONE : []}
+        empilhada={!larga}
         rotulos={{ desfazer: P.desfazer }}
+        descricoes={{ extrair: idDoAlcanceDoExtrair }}
       />
       <ul
         className="text-muted-foreground space-y-0.5 text-xs"
@@ -1335,6 +1349,9 @@ export function EditarPdf({
             {O.dicas[motivo]}
           </li>
         ))}
+        {!motivoDe.extrair && (
+          <li id={idDoAlcanceDoExtrair}>{P.alcanceDoExtrair}</li>
+        )}
         <li>{P.atalho}</li>
       </ul>
     </div>
@@ -1780,7 +1797,9 @@ export function EditarPdf({
                 {T.gerar.semMudancas}
               </p>
             )}
-            {porCopia && (
+            {(porCopia ||
+              (resultado.estado === 'pronto' &&
+                resultado.tipo === 'extraido')) && (
               <p
                 id={idDoAlcance}
                 className="text-muted-foreground text-xs leading-relaxed"
@@ -1858,7 +1877,7 @@ export function EditarPdf({
           </CabecalhoDoDocumento>
 
           <div
-            className="space-y-6 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)_15rem] lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-[17rem_minmax(0,1fr)_17rem]"
+            className="space-y-6 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)_15rem] lg:items-start lg:gap-5 lg:space-y-0 xl:grid-cols-[17rem_minmax(0,1fr)_17rem]"
             data-testid="editar-pdf-bancada"
           >
             {larga && (
@@ -1934,7 +1953,12 @@ export function EditarPdf({
                       {P.dicaDaFolha}
                     </p>
                     {pularParaAAberta}
-                    {listaDasPaginas}
+                    <div
+                      className="-mx-1 min-h-32 flex-1 overflow-y-auto px-1 py-1"
+                      data-testid="editar-pdf-rolagem-da-folha"
+                    >
+                      {listaDasPaginas}
+                    </div>
                   </SheetContent>
                 </Sheet>
               )}
@@ -2031,9 +2055,11 @@ export function EditarPdf({
                         id={idDasConsequencias}
                         className="list-disc space-y-1 pl-5 text-sm"
                       >
-                        {T.cobrir.consequencias.map((consequencia) => (
-                          <li key={consequencia}>{consequencia}</li>
-                        ))}
+                        {T.cobrir
+                          .consequencias(porCopia)
+                          .map((consequencia) => (
+                            <li key={consequencia}>{consequencia}</li>
+                          ))}
                       </ul>
                       <div className="flex flex-wrap gap-2">
                         <Button

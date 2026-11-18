@@ -440,6 +440,8 @@ export const TEXTOS = {
       atalho:
         'Com o foco nas páginas, Ctrl+Z (⌘+Z no Mac) desfaz a última mudança nelas.',
       semRefazer: 'Nas páginas não há refazer.',
+      alcanceDoExtrair:
+        'Extrair gera um PDF novo só com as selecionadas: os marcadores não passam, os links para outra página deixam de funcionar, e campos de formulário podem deixar de ser editáveis.',
     },
     notaDoGiro,
     escolherPagina: (numeroDaPagina: number) =>
@@ -556,13 +558,15 @@ export const TEXTOS = {
       aviso: AVISO_DO_COBRIR,
       apagarDeVerdade: 'Apagar de verdade o que está embaixo',
       antes: 'Antes de confirmar, o que muda nesta página:',
-      consequencias: [
+      consequencias: (porCopia: boolean) => [
         'A página vira uma imagem, com os retângulos de cobrir pintados nela: o que estava embaixo some do arquivo.',
         'O texto da página deixa de ser selecionável e de aparecer na busca.',
         'O PDF fica maior.',
         'Os links e os campos de formulário desta página saem, e também os marcadores que levam a ela.',
         'Se o PDF tiver um formulário XFA (comum em formulários de governo e de banco), ele sai do documento inteiro, porque guarda o que foi digitado. Os campos comuns continuam.',
-        'Continuam no arquivo, sem mudança: o título, o autor e as outras informações do documento, e os anexos. Se o dado estiver num deles, o apagar de verdade não o tira.',
+        porCopia
+          ? 'O PDF sai como um documento novo: o título, o autor e as outras informações do documento, e os anexos, não passam para ele.'
+          : 'Continuam no PDF gerado, sem mudança: o título, o autor e as outras informações do documento, e os anexos. Se o dado estiver num deles, o apagar de verdade não o tira. O PDF das páginas extraídas sai sem eles.',
       ],
       confirmar: 'Apagar de verdade nesta página',
       cancelar: 'Cancelar',

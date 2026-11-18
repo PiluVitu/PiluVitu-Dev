@@ -16,6 +16,19 @@ import { ERROS_DO_ARQUIVO, TEXTOS } from './textos'
 
 // O motor e o renderizador reais criam Workers com import.meta; aqui os dois vêm injetados.
 jest.mock('./novo-worker', () => ({ novoWorkerDePdf: jest.fn() }))
+// Para provar que a proteção da janela vive com o editor: com o interruptor ligado, a zona não protege.
+const mockZona = { semProtecao: false }
+jest.mock('./zona-de-arquivos', () => {
+  const real = jest.requireActual('./zona-de-arquivos')
+  const { createElement } = jest.requireActual('react')
+  return {
+    ...real,
+    ZonaDeArquivos: (props: object) =>
+      mockZona.semProtecao
+        ? createElement('div', { 'data-testid': 'pdf-zona' })
+        : createElement(real.ZonaDeArquivos, props),
+  }
+})
 jest.mock('./novo-worker-pdfjs', () => ({ novoWorkerDoPdfjs: jest.fn() }))
 
 // O jsdom não tem IntersectionObserver: o falso diz "apareceu" assim que observa, ou só quando o
@@ -154,6 +167,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  mockZona.semProtecao = false
 })
 
 function Espiao() {
@@ -1586,8 +1600,9 @@ describe('cobrir e apagar de verdade', () => {
       'Os links e os campos de formulário desta página saem, e também os marcadores que levam a ela',
       'formulário XFA',
       'sai do documento inteiro',
-      'Continuam no arquivo, sem mudança: o título, o autor e as outras informações do documento',
+      'Continuam no PDF gerado, sem mudança: o título, o autor e as outras informações do documento',
       'o apagar de verdade não o tira',
+      'O PDF das páginas extraídas sai sem eles.',
     ]) {
       expect(explicacao).toContain(trecho)
     }
@@ -2144,6 +2159,97 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
     expect(focado()).toBe('Baixar livro-3p-paginas.pdf')
   })
 
+  it('a explicação do apagar de verdade muda quando o PDF sai por cópia: o título, o autor e os anexos não passam', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await clicar(porNome('Apagar a página 3'))
+    await abrirPagina(1)
+    await inserirNoCentro('Cobrir')
+
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+
+    const explicacao = q('editar-pdf-explicacao')!.textContent!
+    expect(explicacao).toContain(
+      'O PDF sai como um documento novo: o título, o autor e as outras informações do documento, e os anexos, não passam para ele.',
+    )
+    expect(explicacao).not.toContain('Continuam no PDF gerado')
+  })
+
+  it('o Extrair sai sempre por cópia: o aviso fica ligado a ele, e aparece com o PDF extraído, mesmo sem mudar a ordem', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await marcarPagina(1)
+    const extrair = porNome('Extrair as selecionadas')
+    const descricaoDoExtrair = (extrair.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)!.textContent)
+      .join(' ')
+    expect(descricaoDoExtrair).toBe(
+      'Extrair gera um PDF novo só com as selecionadas: os marcadores não passam, os links para outra página deixam de funcionar, e campos de formulário podem deixar de ser editáveis.',
+    )
+    expect(q('editar-pdf-alcance')).toBeNull()
+
+    await clicar(extrair)
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+    expect(
+      porNome('Gerar PDF').getAttribute('aria-describedby') ?? '',
+    ).not.toContain('alcance')
+  })
+
+  it('girar pelo cartão uma página com objetos anuncia a nota do giro', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Girar a página 1 à direita'))
+
+    expect(anuncio()).toBe(
+      'Página 1 girada para 90°. No PDF, esta página sai girada 90° à direita, com os objetos.',
+    )
+  })
+
+  it('marcar ou desmarcar descarta só o resultado do Extrair; o PDF gerado continua', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    await marcarPagina(2)
+    expect(q('editar-pdf-resultado')!.dataset.tipo).toBe('editado')
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(
+      () => q('editar-pdf-resultado')?.dataset.tipo === 'extraido',
+    )
+    await marcarPagina(3)
+    expect(q('editar-pdf-resultado')).toBeNull()
+  })
+
+  it('a dica do texto do PDF consulta o ponto na moldura da página aberta, não no giro', async () => {
+    const { renderizador } = await abrirParaEditar('livro-3p.pdf')
+    await clicar(porNome('Girar a página 1 à direita'))
+    await esperarAte(() => renderizador.paginasPedidas.at(-1)?.giro === 90)
+    medirQuadro()
+
+    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
+    await ponteiro(quadro(), 'pointerup', { x: 100, y: 100 })
+    await esperar()
+    expect(renderizador.textosConsultados.at(-1)).toMatchObject({
+      indice: 0,
+      giro: 90,
+    })
+
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Girar a página 1 à direita'))
+    await ponteiro(quadro(), 'pointerdown', { x: 20, y: 20 })
+    await ponteiro(quadro(), 'pointerup', { x: 20, y: 20 })
+    await esperar()
+    expect(renderizador.textosConsultados.at(-1)).toMatchObject({
+      indice: 0,
+      giro: 90,
+    })
+  })
+
   it('a barra da seleção: ícones com nome, o desfazer das páginas com nome próprio, e o motivo de cada botão parado', async () => {
     await abrirParaEditar('livro-3p.pdf')
     const descricao = (nome: string) =>
@@ -2283,6 +2389,52 @@ describe('a Bancada no celular: a folha Páginas', () => {
     expect(document.activeElement).toBe(q('editar-pdf-area'))
   })
 
+  it('Extrair pela folha fecha a folha e leva o foco ao Baixar do PDF extraído', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+    await clicar(naFolha<HTMLInputElement>('Selecionar página 2'))
+
+    await clicar(naFolha('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(folha()).toBeNull()
+    expect(focado()).toBe('Baixar livro-3p-paginas.pdf')
+  })
+
+  it('Extrair pela folha: enquanto monta, o foco fica no Cancelar; cancelado, volta ao botão Páginas', async () => {
+    larga = false
+    const motor = criarMotorFalso({ montagem: 'nunca' })
+    await abrirParaEditar('livro-3p.pdf', { motor })
+    await abrirAFolha()
+    await clicar(naFolha<HTMLInputElement>('Selecionar página 2'))
+
+    await clicar(naFolha('Extrair as selecionadas'))
+
+    expect(folha()).toBeNull()
+    expect(focado()).toBe('Cancelar')
+    await clicar(porNome('Cancelar'))
+    expect(document.activeElement).toBe(porNome('Páginas'))
+  })
+
+  it('na folha, as ações da seleção têm o nome escrito, como no desenho do celular', async () => {
+    larga = false
+    await abrirParaEditar('livro-3p.pdf')
+    await abrirAFolha()
+
+    for (const nome of [
+      'Girar à esquerda',
+      'Girar à direita',
+      'Mover para antes',
+      'Mover para depois',
+      'Apagar',
+      'Desfazer nas páginas',
+    ]) {
+      expect(naFolha(nome).textContent!.trim()).toBe(nome)
+      expect(naFolha(nome).getAttribute('aria-label')).toBeNull()
+    }
+  })
+
   it('pular para a página aberta, pela folha, fecha a folha e leva o foco à área da página', async () => {
     larga = false
     await abrirParaEditar('livro-3p.pdf')
@@ -2356,10 +2508,49 @@ describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
     expect(objetos()).toHaveLength(1)
 
+    act(() => quadro().focus())
     await tecla(quadro(), 'z', { ctrlKey: true })
     expect(objetos()).toHaveLength(0)
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
     expect(anuncio()).toBe('Desfeito.')
+  })
+
+  it('a região é a do último gesto: desenhar com o mouse depois de abrir a página pela coluna, Ctrl/⌘+Z desfaz o traço', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Apagar a página 3'))
+    await clicar(ferramenta('Desenhar'))
+    act(() => porNome('Abrir a página 1').focus())
+
+    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
+    await ponteiro(quadro(), 'pointermove', { x: 150, y: 130 })
+    await ponteiro(quadro(), 'pointerup', { x: 200, y: 160 })
+    await esperar()
+    expect(objetos()).toHaveLength(2)
+
+    await tecla(document.activeElement!, 'z', { ctrlKey: true })
+
+    expect(objetos()).toHaveLength(1)
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1'])
+    expect(anuncio()).toBe('Desfeito.')
+  })
+
+  it('clicar numa parte da coluna que não pega foco também conta como estar nas páginas', async () => {
+    await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Apagar a página 2'))
+    act(() => (document.activeElement as HTMLElement | null)?.blur())
+
+    await ponteiro(
+      q('editar-pdf-coluna-de-paginas')!.querySelector('h3')!,
+      'pointerdown',
+      { x: 10, y: 10 },
+    )
+    await tecla(document.body, 'z', { ctrlKey: true })
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(objetos()).toHaveLength(1)
+    expect(anuncio()).toBe('Desfeito nas páginas.')
   })
 
   it('nas páginas, Ctrl/⌘+Shift+Z não refaz os objetos: diz que as páginas não têm refazer', async () => {
@@ -2368,6 +2559,7 @@ describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
     await clicar(porNome('Desfazer'))
     expect(objetos()).toHaveLength(0)
     const caixa = porNome<HTMLInputElement>('Selecionar página 2')
+    act(() => caixa.focus())
 
     await tecla(caixa, 'z', { ctrlKey: true, shiftKey: true })
 
@@ -2418,7 +2610,8 @@ describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
     )
   })
 
-  it('com o PDF aberto, soltar um arquivo fora da zona não deixa o navegador abrir o arquivo', async () => {
+  it('com o PDF aberto, soltar um arquivo fora da zona não deixa o navegador abrir o arquivo, mesmo sem a proteção da zona', async () => {
+    mockZona.semProtecao = true
     await abrirParaEditar('livro-3p.pdf')
     const evento = new Event('drop', { bubbles: true, cancelable: true })
     Object.defineProperty(evento, 'dataTransfer', {

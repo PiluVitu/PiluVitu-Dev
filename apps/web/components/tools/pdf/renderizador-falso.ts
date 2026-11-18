@@ -95,6 +95,7 @@ export function criarRenderizadorFalso({
       canvas?: HTMLCanvasElement
     }[],
     fundos: [] as { indice: number; cobrir: readonly Caixa[]; giro: Giro }[],
+    textosConsultados: [] as { indice: number; ponto: Ponto; giro: Giro }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
@@ -161,7 +162,8 @@ export function criarRenderizadorFalso({
           }
           return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
         },
-        async textoNoPonto(_indice, ponto) {
+        async textoNoPonto(indice, ponto, giro = 0) {
+          renderizador.textosConsultados.push({ indice, ponto, giro })
           return !fechado && temTextoNaFolhaFalsa(ponto)
         },
         async miniatura(indice, larguraCss) {
