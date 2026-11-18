@@ -24,7 +24,7 @@ it.each(TOOLS.map(({ slug }) => [slug]))(
   },
 )
 
-// P5: as rotas antigas do editor saem sem redirecionamento (404); o editor mora em /tools/pdf.
+// P5: as rotas antigas do editor não têm pasta; caem nele pelo redirects() do next.config (308 para /tools/pdf).
 it.each([['pdf/mesclar'], ['pdf/organizar'], ['pdf/editar'], ['mesclar-pdf']])(
   '/tools/%s não tem pasta',
   (caminho) => {

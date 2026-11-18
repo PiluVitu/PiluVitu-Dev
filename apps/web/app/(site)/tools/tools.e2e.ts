@@ -409,8 +409,9 @@ function medirContrasteDoTexto(seletor: string) {
 
 // ---- Editor único, PR 6: a rota única ----
 
-// Saíram sem redirecionamento (P5): quem tinha o link vê o 404, e nada leva a elas.
-const ROTAS_QUE_SAIRAM = [
+// P5 (decidida pelo Paulo em 2026-11-18): quem tinha o link de um modo antigo, ou do Assinar, cai no editor.
+const ROTAS_ANTIGAS = [
+  '/tools/pdf/assinar',
   '/tools/pdf/mesclar',
   '/tools/pdf/organizar',
   '/tools/pdf/editar',
@@ -421,51 +422,31 @@ const ROTAS_QUE_SAIRAM = [
 const MARCA_DO_PDFJS = 'Setting up fake worker failed'
 
 test.describe('Editor de PDF: a rota única', () => {
-  for (const rota of ROTAS_QUE_SAIRAM)
-    test(`${rota} responde 404, sem redirecionamento, com a página de 404 do site e nada do editor`, async ({
+  for (const rota of ROTAS_ANTIGAS)
+    test(`${rota} responde 308 para /tools/pdf, e seguindo abre o editor num salto só`, async ({
       page,
     }) => {
       const direto = await page.request.get(rota, { maxRedirects: 0 })
-      expect(direto.status()).toBe(404)
+      expect(direto.status()).toBe(308)
+      expect(direto.headers()['location']).toBe('/tools/pdf')
 
       const resposta = await page.goto(rota)
-      expect(resposta!.status()).toBe(404)
-      await expect(page).toHaveURL(rota)
+      expect(resposta!.status()).toBe(200)
+      await expect(page).toHaveURL('/tools/pdf')
+      const saltos: string[] = []
+      for (
+        let pedido = resposta!.request().redirectedFrom();
+        pedido;
+        pedido = pedido.redirectedFrom()
+      ) {
+        saltos.push(new URL(pedido.url()).pathname)
+      }
+      expect(saltos).toEqual([rota])
       await expect(
-        page.getByRole('heading', { name: 'This page could not be found.' }),
+        page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
       ).toBeVisible()
-      await expect(page.getByTestId('pdf-zona')).toHaveCount(0)
-      await expect(page.getByTestId('editar-pdf')).toHaveCount(0)
-      await expect(page.getByText('Editor de PDF')).toHaveCount(0)
+      await expect(page.getByTestId('pdf-zona')).toBeVisible()
     })
-
-  // O Assinar saiu do site a pedido do dono: quem tinha o link cai no editor.
-  test('/tools/pdf/assinar responde 308 para /tools/pdf, e seguindo abre o editor num salto só', async ({
-    page,
-  }) => {
-    const direto = await page.request.get('/tools/pdf/assinar', {
-      maxRedirects: 0,
-    })
-    expect(direto.status()).toBe(308)
-    expect(direto.headers()['location']).toBe('/tools/pdf')
-
-    const resposta = await page.goto('/tools/pdf/assinar')
-    expect(resposta!.status()).toBe(200)
-    await expect(page).toHaveURL('/tools/pdf')
-    const saltos: string[] = []
-    for (
-      let pedido = resposta!.request().redirectedFrom();
-      pedido;
-      pedido = pedido.redirectedFrom()
-    ) {
-      saltos.push(new URL(pedido.url()).pathname)
-    }
-    expect(saltos).toEqual(['/tools/pdf/assinar'])
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Editor de PDF' }),
-    ).toBeVisible()
-    await expect(page.getByTestId('pdf-zona')).toBeVisible()
-  })
 
   test('/tools tem um cartão só para PDF, o do Editor de PDF, e ele abre o editor em /tools/pdf', async ({
     page,
