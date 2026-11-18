@@ -4,8 +4,10 @@
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import type {
   ObjetoNaTela,
+  PaginaParaMontar,
   PedidoAoWorker,
   PedidoDeEdicao,
+  PedidoDeMontagem,
   RespostaDoWorker,
 } from './motor'
 
@@ -385,5 +387,191 @@ describe('editar', () => {
     })
 
     expect(resposta).toMatchObject({ tipo: 'falhou', motivo: 'protegido' })
+  })
+})
+
+describe('montar', () => {
+  const deBase64 = (texto: string) =>
+    Uint8Array.from(atob(texto), (c) => c.charCodeAt(0))
+  const PNG = deBase64(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mP4z8DwHwgbGIA0CDAAAEPTCHl4ziHMAAAAAElFTkSuQmCC',
+  )
+  const caixa = { x: 20, y: 20, largura: 40, altura: 30 }
+  const texto = (id: string, conteudo: string): ObjetoNaTela => ({
+    ...caixa,
+    id,
+    tipo: 'texto',
+    conteudo,
+    fonte: 'helvetica',
+    negrito: false,
+    italico: false,
+    tamanho: 12,
+    cor: '#000000',
+  })
+  const imagem = (id: string, arquivo: string): ObjetoNaTela => ({
+    ...caixa,
+    id,
+    tipo: 'imagem',
+    imagem: arquivo,
+  })
+  const doArquivo = (
+    arquivo: number,
+    indice: number,
+    giro: 0 | 90 = 0,
+  ): PaginaParaMontar => ({
+    id: `a${arquivo}p${indice}`,
+    origem: { arquivo, indice },
+    giro,
+    moldura: 0,
+  })
+
+  function montar(arquivos: Blob[], pedido: Partial<PedidoDeMontagem>) {
+    return pedir((id) => ({
+      tipo: 'montar',
+      id,
+      arquivos,
+      paginas: [],
+      objetosPorPagina: new Map(),
+      imagens: new Map(),
+      paginasRasterizadas: new Map(),
+      ...pedido,
+    }))
+  }
+
+  async function imagensDe(resposta: RespostaDoWorker) {
+    if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
+    const documento = await PDFDocument.load(resposta.bytes)
+    return documento.context
+      .enumerateIndirectObjects()
+      .map(([, objeto]) => objeto)
+      .filter(
+        (objeto) =>
+          objeto instanceof PDFRawStream &&
+          objeto.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'),
+      )
+  }
+
+  it('junta as páginas de dois arquivos na ordem pedida, com o giro de cada uma', async () => {
+    const [resposta] = await montar([await pdf([100, 200]), await pdf([300])], {
+      paginas: [doArquivo(1, 0, 90), doArquivo(0, 1), doArquivo(0, 0)],
+    })
+
+    expect(await paginasDe(resposta)).toEqual([
+      { lado: 300, rotacao: 90 },
+      { lado: 200, rotacao: 0 },
+      { lado: 100, rotacao: 0 },
+    ])
+  })
+
+  it('o arquivo inteiro, na ordem, só com giro: sai no lugar, com o título do arquivo', async () => {
+    const documento = await PDFDocument.create()
+    documento.setTitle('Contrato')
+    documento.addPage([100, 100])
+    documento.addPage([200, 200])
+    const arquivo = new Blob([new Uint8Array(await documento.save())])
+
+    const [resposta] = await montar([arquivo], {
+      paginas: [doArquivo(0, 0, 90), doArquivo(0, 1)],
+    })
+
+    if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
+    const final = await PDFDocument.load(resposta.bytes)
+    expect(final.getTitle()).toBe('Contrato')
+    expect(await paginasDe(resposta)).toEqual([
+      { lado: 100, rotacao: 90 },
+      { lado: 200, rotacao: 0 },
+    ])
+  })
+
+  it('os objetos vão pela página do id, também na do segundo arquivo, e cada imagem é lida uma vez', async () => {
+    const logo = new Blob([PNG], { type: 'image/png' })
+    const lerLogo = jest.spyOn(logo, 'arrayBuffer')
+
+    const [resposta] = await montar([await pdf([300]), await pdf([400])], {
+      paginas: [doArquivo(1, 0), doArquivo(0, 0)],
+      objetosPorPagina: new Map([
+        ['a1p0', [imagem('i1', 'logo'), texto('t1', 'OLA')]],
+        ['a0p0', [imagem('i2', 'logo')]],
+      ]),
+      imagens: new Map([['logo', logo]]),
+    })
+
+    expect(resposta.tipo).toBe('pronto')
+    expect(lerLogo).toHaveBeenCalledTimes(1)
+    // Uma vez por arquivo de origem (efeito aceito no plano): o PNG com transparência é a imagem e a máscara.
+    expect(await imagensDe(resposta)).toHaveLength(4)
+  })
+
+  it('texto fora do WinAnsi numa página do segundo arquivo: falha com o id da página e o do objeto', async () => {
+    const respostasDoPedido = await montar(
+      [await pdf([300]), await pdf([400])],
+      {
+        paginas: [doArquivo(0, 0), doArquivo(1, 0)],
+        objetosPorPagina: new Map([
+          ['a1p0', [texto('t1', 'ok'), texto('t2', 'oi 😀')]],
+        ]),
+      },
+    )
+
+    expect(respostasDoPedido).toEqual([
+      {
+        tipo: 'falhou',
+        id: respostasDoPedido[0].id,
+        motivo: 'texto_fora_do_winansi',
+        pagina: 'a1p0',
+        objeto: 't2',
+        caracteres: ['😀'],
+      },
+    ])
+  })
+
+  it('o arquivo protegido falha com o motivo e o índice do arquivo', async () => {
+    const [resposta] = await montar([await pdf([300]), await protegido()], {
+      paginas: [doArquivo(0, 0), doArquivo(1, 0)],
+    })
+
+    expect(resposta).toEqual({
+      tipo: 'falhou',
+      id: resposta.id,
+      motivo: 'protegido',
+      indice: 1,
+    })
+  })
+
+  // O pedido chega por postMessage: id que não está nas páginas, id repetido e plano errado são erro do
+  // código da tela, não do arquivo nem da pessoa.
+  it.each<[string, Partial<PedidoDeMontagem>]>([
+    [
+      'objetos de uma página que não está no pedido',
+      {
+        paginas: [doArquivo(0, 0)],
+        objetosPorPagina: new Map([['a0p9', [texto('t1', 'oi')]]]),
+      },
+    ],
+    [
+      'fundo de uma página que não está no pedido',
+      {
+        paginas: [doArquivo(0, 0)],
+        paginasRasterizadas: new Map([['a0p9', new Blob([PNG])]]),
+      },
+    ],
+    [
+      'id de página repetido',
+      { paginas: [doArquivo(0, 0), { ...doArquivo(0, 1), id: 'a0p0' }] },
+    ],
+    ['página fora do arquivo', { paginas: [doArquivo(0, 5)] }],
+    [
+      'imagem que não veio',
+      {
+        paginas: [doArquivo(0, 0)],
+        objetosPorPagina: new Map([['a0p0', [imagem('i1', 'sumiu')]]]),
+      },
+    ],
+  ])('%s: inesperado', async (_, pedido) => {
+    const respostasDoPedido = await montar([await pdf([300, 400])], pedido)
+
+    expect(respostasDoPedido).toEqual([
+      { tipo: 'falhou', id: respostasDoPedido[0].id, motivo: 'inesperado' },
+    ])
   })
 })

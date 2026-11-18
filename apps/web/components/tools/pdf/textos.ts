@@ -81,7 +81,9 @@ export const ERROS_DO_ARQUIVO: Record<MotivoDaRecusa, string> = {
 }
 
 // Erros da edição que a pessoa resolve na tela; o resto é do arquivo ou do navegador.
-function falhaAoSalvar(falha: FalhaDaOperacao): string {
+function falhaAoSalvar(
+  falha: Omit<FalhaDaOperacao, 'pagina'> & { pagina?: number },
+): string {
   const pagina = falha.pagina === undefined ? 0 : falha.pagina + 1
   const caracteres = falha.caracteres ?? []
   switch (falha.motivo) {

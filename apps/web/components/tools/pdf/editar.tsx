@@ -830,9 +830,14 @@ export function EditarPdf({
       focar(() => baixarRef.current)
     } catch (erro) {
       if (vez !== vezDaGeracao.current) return
-      const falha = ehFalhaDaOperacao(erro)
+      const recebida = ehFalhaDaOperacao(erro)
         ? erro
         : { motivo: 'inesperado' as const }
+      const falha = {
+        ...recebida,
+        pagina:
+          typeof recebida.pagina === 'number' ? recebida.pagina : undefined,
+      }
       setResultado({
         estado: 'falhou',
         mensagem: T.falhaAoSalvar(falha),

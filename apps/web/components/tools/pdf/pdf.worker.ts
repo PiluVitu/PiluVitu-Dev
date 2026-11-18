@@ -4,8 +4,10 @@ import {
   analisarPdf,
   aplicarEdicoes,
   mesclarPdfs,
+  montarDocumento,
   organizarPaginas,
   type EdicaoDaPagina,
+  type EdicaoNaMontagem,
   type ObjetoDaPagina,
   type PaginaDoPlano,
 } from '@piluvitu/tools/pdf'
@@ -14,6 +16,7 @@ import type {
   ObjetoNaTela,
   PedidoAoWorker,
   PedidoDeEdicao,
+  PedidoDeMontagem,
   RespostaDoWorker,
 } from './motor'
 
@@ -156,6 +159,92 @@ async function editar(id: number, arquivo: Blob, pedido: PedidoDeEdicao) {
   }
 }
 
+function leitorDeImagens(imagens: ReadonlyMap<string, Blob>) {
+  const lidas = new Map<string, Promise<Uint8Array>>()
+  const bytesDaImagem = (id: string) => {
+    const arquivo = imagens.get(id)
+    if (!arquivo) throw new RangeError(`imagem que não veio: ${id}`)
+    if (!lidas.has(id)) lidas.set(id, bytesDe(arquivo))
+    return lidas.get(id)!
+  }
+  return async (objeto: ObjetoNaTela): Promise<ObjetoDaPagina> => {
+    if (objeto.tipo !== 'imagem') return objeto
+    const { imagem, ...resto } = objeto
+    return { ...resto, bytes: await bytesDaImagem(imagem) }
+  }
+}
+
+async function edicoesDaMontagem({
+  paginas,
+  objetosPorPagina,
+  imagens,
+  paginasRasterizadas,
+}: PedidoDeMontagem): Promise<EdicaoNaMontagem[]> {
+  const posicoes = new Map(paginas.map(({ id }, posicao) => [id, posicao]))
+  if (posicoes.size !== paginas.length) {
+    throw new RangeError('id de página repetido')
+  }
+  const comBytes = leitorDeImagens(imagens)
+  const ids = new Set([
+    ...objetosPorPagina.keys(),
+    ...paginasRasterizadas.keys(),
+  ])
+  return Promise.all(
+    [...ids].map(async (id) => {
+      const posicao = posicoes.get(id)
+      if (posicao === undefined) {
+        throw new RangeError(`página que não está no pedido: ${id}`)
+      }
+      const fundo = paginasRasterizadas.get(id)
+      return {
+        posicao,
+        objetos: await Promise.all(
+          (objetosPorPagina.get(id) ?? []).map(comBytes),
+        ),
+        ...(fundo ? { fundo: await bytesDe(fundo) } : {}),
+      }
+    }),
+  )
+}
+
+async function montar(
+  id: number,
+  arquivos: readonly Blob[],
+  pedido: PedidoDeMontagem,
+) {
+  try {
+    const edicoes = await edicoesDaMontagem(pedido)
+    entregar(
+      id,
+      await montarDocumento(
+        arquivos.map((arquivo) => () => bytesDe(arquivo)),
+        pedido.paginas,
+        edicoes,
+      ),
+    )
+  } catch (erro) {
+    if (!(erro instanceof ErroNaEdicao)) return falhar(id, erro)
+    const pagina = pedido.paginas[erro.pagina]?.id
+    const objetos =
+      (pagina !== undefined && pedido.objetosPorPagina.get(pagina)) || []
+    const objeto =
+      erro.objeto === undefined ? undefined : objetos[erro.objeto]?.id
+    // Sem objeto, o culpado é o fundo do apagar de verdade, que a própria tela gera: não é erro da pessoa.
+    escopo.postMessage(
+      objeto === undefined
+        ? { tipo: 'falhou', id, motivo: 'inesperado' }
+        : {
+            tipo: 'falhou',
+            id,
+            motivo: erro.motivo,
+            pagina,
+            objeto,
+            caracteres: [...erro.caracteres],
+          },
+    )
+  }
+}
+
 function atender(pedido: PedidoAoWorker): Promise<void> {
   switch (pedido.tipo) {
     case 'analisar':
@@ -166,6 +255,8 @@ function atender(pedido: PedidoAoWorker): Promise<void> {
       return organizar(pedido.id, pedido.arquivo, pedido.plano)
     case 'editar':
       return editar(pedido.id, pedido.arquivo, pedido)
+    case 'montar':
+      return montar(pedido.id, pedido.arquivos, pedido)
   }
 }
 
