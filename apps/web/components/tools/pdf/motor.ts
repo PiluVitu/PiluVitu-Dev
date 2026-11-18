@@ -5,7 +5,6 @@ import type {
   ObjetoDaPagina,
   ObjetoImagem,
   PaginaDaMontagem,
-  PaginaDoPlano,
 } from '@piluvitu/tools/pdf-regras'
 
 /** A imagem aponta pelo id para o arquivo em `imagens`, para o histórico do desfazer não copiar os bytes. */
@@ -16,13 +15,6 @@ export type ObjetoImagemNaTela = Omit<ObjetoImagem, 'bytes'> & {
 export type ObjetoNaTela =
   | Exclude<ObjetoDaPagina, ObjetoImagem>
   | ObjetoImagemNaTela
-
-export type PedidoDeEdicao = {
-  objetosPorPagina: ReadonlyMap<number, readonly ObjetoNaTela[]>
-  imagens: ReadonlyMap<string, Blob>
-  /** Apagar de verdade: o JPEG de cada página, com os retângulos de cobrir já pintados nele. */
-  paginasRasterizadas: ReadonlyMap<number, Blob>
-}
 
 export type PaginaParaMontar = PaginaDaMontagem & { readonly id: string }
 
@@ -38,13 +30,6 @@ export type PedidoDeMontagem = {
 export type PedidoAoWorker =
   | { tipo: 'analisar'; id: number; arquivo: Blob }
   | { tipo: 'mesclar'; id: number; arquivos: Blob[] }
-  | {
-      tipo: 'organizar'
-      id: number
-      arquivo: Blob
-      plano: readonly PaginaDoPlano[]
-    }
-  | ({ tipo: 'editar'; id: number; arquivo: Blob } & PedidoDeEdicao)
   | ({
       tipo: 'montar'
       id: number
@@ -75,13 +60,13 @@ export type ResultadoDaAnalise =
 export type AndamentoDaMesclagem = { fracao: number; arquivo: number | null }
 
 /**
- * Como as operações rejeitam. `indice` é o arquivo culpado, na mesclagem e na montagem; `pagina` (o índice
- * na edição, o id na montagem), `objeto` (o id) e `caracteres` vêm só da falha de um objeto.
+ * Como as operações rejeitam. `indice` é o arquivo culpado; `pagina` (o id da página), `objeto` (o id) e
+ * `caracteres` vêm só da falha de um objeto na montagem.
  */
 export type FalhaDaOperacao = {
   motivo: MotivoDoErroDePdf | MotivoDoErroNaEdicao | 'inesperado' | 'cancelado'
   indice?: number
-  pagina?: number | string
+  pagina?: string
   objeto?: string
   caracteres?: readonly string[]
 }
@@ -93,10 +78,6 @@ export interface MotorDePdf {
     arquivos: Blob[],
     aoAndar: (andamento: AndamentoDaMesclagem) => void,
   ): Promise<Blob>
-  /** Rejeita com {@link FalhaDaOperacao}. */
-  organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]): Promise<Blob>
-  /** Rejeita com {@link FalhaDaOperacao}. */
-  editar(arquivo: Blob, pedido: PedidoDeEdicao): Promise<Blob>
   /** Rejeita com {@link FalhaDaOperacao}. */
   montar(arquivos: readonly Blob[], pedido: PedidoDeMontagem): Promise<Blob>
   cancelar(): void
@@ -230,12 +211,6 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     },
     mesclar(arquivos, aoAndar) {
       return comecar((id) => ({ tipo: 'mesclar', id, arquivos }), aoAndar)
-    },
-    organizar(arquivo, plano) {
-      return comecar((id) => ({ tipo: 'organizar', id, arquivo, plano }))
-    },
-    editar(arquivo, pedido) {
-      return comecar((id) => ({ ...pedido, tipo: 'editar', id, arquivo }))
     },
     montar(arquivos, pedido) {
       return comecar((id) => ({ ...pedido, tipo: 'montar', id, arquivos }))

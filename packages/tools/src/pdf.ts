@@ -53,7 +53,6 @@ import {
   type MotivoDoErroNaEdicao,
   type ObjetoDaPagina,
   type PaginaDaMontagem,
-  type PaginaDoPlano,
 } from './pdf-regras'
 import { caminhoDoTraco } from './pdf-traco'
 
@@ -173,21 +172,6 @@ export async function mesclarPdfs(
   return destino.save({ objectsPerTick: Infinity })
 }
 
-function conferirPlano(plano: readonly PaginaDoPlano[]): void {
-  if (plano.length === 0) throw new RangeError('o plano não tem página')
-  const vistos = new Set<number>()
-  for (const { indice, giro } of plano) {
-    if (!Number.isInteger(indice) || indice < 0) {
-      throw new RangeError(`índice de página inválido: ${indice}`)
-    }
-    if (vistos.has(indice)) {
-      throw new RangeError(`página repetida no plano: ${indice}`)
-    }
-    if (!GIROS.includes(giro)) throw new RangeError(`giro inválido: ${giro}`)
-    vistos.add(indice)
-  }
-}
-
 // Como o pdf.js, que desenhou a miniatura: /Rotate que não é múltiplo de 90 vale 0.
 function rotacaoAtual(pagina: PDFPage): number {
   let graus: number
@@ -213,41 +197,6 @@ function esvaziarPaginasForaDoPlano(
       if (chave !== PDFName.Type) node.delete(chave)
     }
   }
-}
-
-export async function organizarPaginas(
-  bytes: Uint8Array,
-  plano: readonly PaginaDoPlano[],
-): Promise<Uint8Array> {
-  conferirPlano(plano)
-  const origem = await abrir(bytes)
-  const total = origem.getPageCount()
-  for (const { indice } of plano) {
-    if (indice >= total) {
-      throw new RangeError(`página fora do documento: ${indice} de ${total}`)
-    }
-  }
-  const destino = await PDFDocument.create({ updateMetadata: false })
-  let copiadas: PDFPage[]
-  try {
-    esvaziarPaginasForaDoPlano(
-      origem,
-      plano.map(({ indice }) => indice),
-    )
-    copiadas = await destino.copyPages(
-      origem,
-      plano.map(({ indice }) => indice),
-    )
-  } catch {
-    throw new ErroDePdf('corrompido')
-  }
-  copiadas.forEach((pagina, posicao) => {
-    pagina.setRotation(
-      degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
-    )
-    destino.addPage(pagina)
-  })
-  return destino.save({ objectsPerTick: Infinity })
 }
 
 export type EdicaoDaPagina = {

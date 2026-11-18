@@ -1,9 +1,8 @@
-import type { AvisoDoPdf, PaginaDoPlano } from '@piluvitu/tools/pdf-regras'
+import type { AvisoDoPdf } from '@piluvitu/tools/pdf-regras'
 import type {
   AndamentoDaMesclagem,
   FalhaDaOperacao,
   MotorDePdf,
-  PedidoDeEdicao,
   PedidoDeMontagem,
   ResultadoDaAnalise,
 } from './motor'
@@ -15,8 +14,6 @@ type Opcoes = {
   /** Milissegundos de cada leitura e de cada passo das operações. */
   atraso?: number
   mesclagem?: Desfecho
-  organizacao?: Desfecho
-  edicao?: Desfecho
   montagem?: Desfecho
   /** Tamanho que o PDF entregue diz ter, para testar os tetos sem alocar o arquivo. */
   tamanhoDoResultado?: number
@@ -42,8 +39,6 @@ export function analiseDeExemplo(arquivo: File): ResultadoDaAnalise {
 export function criarMotorFalso({
   atraso = 0,
   mesclagem,
-  organizacao,
-  edicao,
   montagem,
   tamanhoDoResultado,
 }: Opcoes = {}) {
@@ -77,8 +72,6 @@ export function criarMotorFalso({
   const motor = {
     analisadas: [] as string[],
     mescladas: [] as string[][],
-    organizadas: [] as { nome: string; plano: readonly PaginaDoPlano[] }[],
-    editadas: [] as ({ nome: string } & PedidoDeEdicao)[],
     montadas: [] as ({ nomes: string[] } & PedidoDeMontagem)[],
     encerrado: false,
     async analisar(arquivo: Blob) {
@@ -100,14 +93,6 @@ export function criarMotorFalso({
           ? []
           : [() => aoAndar({ fracao: 0.9, arquivo: null })]),
       ])
-    },
-    organizar(arquivo: Blob, plano: readonly PaginaDoPlano[]) {
-      motor.organizadas.push({ nome: (arquivo as File).name, plano })
-      return operar(organizacao, [])
-    },
-    editar(arquivo: Blob, pedido: PedidoDeEdicao) {
-      motor.editadas.push({ nome: (arquivo as File).name, ...pedido })
-      return operar(edicao, [])
     },
     montar(arquivos: readonly Blob[], pedido: PedidoDeMontagem) {
       motor.montadas.push({
