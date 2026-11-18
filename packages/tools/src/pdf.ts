@@ -133,45 +133,7 @@ export async function contarPaginas(bytes: Uint8Array): Promise<number> {
   return (await abrir(bytes)).getPageCount()
 }
 
-async function copiarPaginas(
-  destino: PDFDocument,
-  bytes: Uint8Array,
-): Promise<void> {
-  const origem = await abrir(bytes)
-  try {
-    // Uma chamada só por arquivo: cada copyPages tem o próprio cache, e copiar página a página
-    // duplicaria fontes e imagens compartilhadas.
-    const copiadas = await destino.copyPages(origem, origem.getPageIndices())
-    for (const pagina of copiadas) destino.addPage(pagina)
-  } catch {
-    throw new ErroDePdf('corrompido')
-  }
-}
-
 export type FonteDePdf = Uint8Array | (() => Promise<Uint8Array>)
-
-export type EtapaDaMesclagem = { arquivo: number } | { salvando: true }
-
-export async function mesclarPdfs(
-  fontes: readonly FonteDePdf[],
-  aoAvancar?: (etapa: EtapaDaMesclagem) => void,
-): Promise<Uint8Array> {
-  const destino = await PDFDocument.create({ updateMetadata: false })
-  for (const [indice, fonte] of fontes.entries()) {
-    aoAvancar?.({ arquivo: indice })
-    try {
-      await copiarPaginas(
-        destino,
-        typeof fonte === 'function' ? await fonte() : fonte,
-      )
-    } catch (erro) {
-      if (erro instanceof ErroDePdf) throw new ErroDePdf(erro.motivo, indice)
-      throw erro
-    }
-  }
-  aoAvancar?.({ salvando: true })
-  return destino.save({ objectsPerTick: Infinity })
-}
 
 // Como o pdf.js, que desenhou a miniatura: /Rotate que não é múltiplo de 90 vale 0.
 function rotacaoAtual(pagina: PDFPage): number {

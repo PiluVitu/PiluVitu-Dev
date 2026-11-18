@@ -21,7 +21,6 @@ import {
   analisarPdf,
   aplicarEdicoes,
   contarPaginas,
-  mesclarPdfs,
   montarDocumento,
   temCabecalhoDePdf,
   type EdicaoDaPagina,
@@ -39,7 +38,6 @@ import {
   giroNormalizado,
   linhaEntre,
   moverSelecionadas,
-  planoInicial,
   tamanhoNaTela,
   tracoDosPontos,
   type ObjetoDaPagina,
@@ -47,6 +45,10 @@ import {
   type PaginaDaMontagem,
   type PaginaDoPlano,
 } from './pdf-regras'
+
+// O plano de um arquivo na ordem e sem giro, de onde os testes partem.
+const planoInicial = (totalDePaginas: number): PaginaDoPlano[] =>
+  Array.from({ length: totalDePaginas }, (_, indice) => ({ indice, giro: 0 }))
 
 // Cada página sai com um lado diferente (base + índice): é o que permite conferir a ordem no PDF final.
 async function gerarPdf(paginas: number, base: number): Promise<Uint8Array> {
@@ -196,95 +198,6 @@ describe('contarPaginas', () => {
       await PDFDocument.create()
     ).save({ addDefaultPage: false })
     expect((await motivo(contarPaginas(bytes))).motivo).toBe('sem_paginas')
-  })
-})
-
-describe('mesclarPdfs', () => {
-  it('junta as páginas na ordem dos arquivos', async () => {
-    const a = await gerarPdf(2, 100)
-    const b = await gerarPdf(3, 200)
-    const c = await gerarPdf(1, 300)
-
-    const final = await mesclarPdfs([a, b, c])
-
-    expect(await contarPaginas(final)).toBe(6)
-    expect(await ladosDasPaginas(final)).toEqual([100, 101, 200, 201, 202, 300])
-  })
-
-  it('a ordem da lista manda: invertida, as páginas saem invertidas por arquivo', async () => {
-    const a = await gerarPdf(2, 100)
-    const b = await gerarPdf(2, 200)
-
-    const final = await mesclarPdfs([b, a])
-
-    expect(await ladosDasPaginas(final)).toEqual([200, 201, 100, 101])
-  })
-
-  it('o PDF final abre sem senha e não carrega a marca de criptografia', async () => {
-    const final = await mesclarPdfs([
-      await gerarPdf(1, 100),
-      await gerarPdf(1, 200),
-    ])
-    const documento = await PDFDocument.load(final)
-    expect(documento.isEncrypted).toBe(false)
-  })
-
-  it('diz qual arquivo falhou e por quê', async () => {
-    const valido = await gerarPdf(1, 100)
-    const protegido = await gerarPdfProtegido(false)
-
-    expect(await motivo(mesclarPdfs([valido, protegido, valido]))).toEqual({
-      motivo: 'protegido',
-      indice: 1,
-    })
-    expect(
-      await motivo(mesclarPdfs([valido, valido, texto('não é PDF')])),
-    ).toEqual({ motivo: 'nao_e_pdf', indice: 2 })
-  })
-
-  it('lê as fontes preguiçosas uma de cada vez, na ordem, e avisa cada etapa', async () => {
-    const lidas: string[] = []
-    const etapas: unknown[] = []
-    const fonte = (nome: string, base: number) => async () => {
-      lidas.push(nome)
-      return gerarPdf(1, base)
-    }
-
-    const final = await mesclarPdfs(
-      [fonte('a', 100), fonte('b', 200)],
-      (etapa) => etapas.push({ ...etapa, lidasAteAqui: lidas.length }),
-    )
-
-    expect(lidas).toEqual(['a', 'b'])
-    expect(etapas).toEqual([
-      { arquivo: 0, lidasAteAqui: 0 },
-      { arquivo: 1, lidasAteAqui: 1 },
-      { salvando: true, lidasAteAqui: 2 },
-    ])
-    expect(await ladosDasPaginas(final)).toEqual([100, 200])
-  })
-
-  it('para no primeiro arquivo com erro, sem ler os seguintes nem salvar', async () => {
-    const etapas: unknown[] = []
-    const depois = jest.fn(async () => gerarPdf(1, 300))
-
-    const falha = await motivo(
-      mesclarPdfs([await gerarPdf(1, 100), texto('nada'), depois], (etapa) =>
-        etapas.push(etapa),
-      ),
-    )
-
-    expect(falha).toEqual({ motivo: 'nao_e_pdf', indice: 1 })
-    expect(depois).not.toHaveBeenCalled()
-    expect(etapas).toEqual([{ arquivo: 0 }, { arquivo: 1 }])
-  })
-
-  it('não duplica a imagem que várias páginas do mesmo arquivo compartilham', async () => {
-    const origem = await gerarPdfComImagemCompartilhada()
-
-    const final = await mesclarPdfs([origem, await gerarPdf(1, 100)])
-
-    expect(final.length).toBeLessThan(origem.length * 1.5)
   })
 })
 
