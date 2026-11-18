@@ -2696,7 +2696,8 @@ test.describe('Editar PDF: a Bancada', () => {
         description: `${total} páginas: sem o link ${semOLink}, com o link ${ateOLink} + Enter`,
       })
       expect(semOLink).toBeGreaterThanOrEqual(total * 4)
-      expect(ateOLink).toBeLessThanOrEqual(3)
+      // O "Adicionar PDF" (PR 4) e o "Página em branco" (PR 5) ficam antes da barra.
+      expect(ateOLink).toBeLessThanOrEqual(4)
     })
 
   test('a 320 px, a folha Páginas abre pela borda de baixo, prende o foco, fecha no Esc com o foco de volta no botão, e abrir uma página por ela leva à página', async ({
@@ -2995,7 +2996,9 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
     await expect(
       coluna.getByRole('button', { name: 'Adicionar PDF' }),
-    ).toHaveAccessibleDescription('Entra no fim, depois da página 3.')
+    ).toHaveAccessibleDescription(
+      'Entra no fim, depois da página 3. A página em branco sai em A4.',
+    )
 
     await adicionarNoEditar(page, await pdfDeTeste('b.pdf', [400, 420]))
     await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
@@ -3018,7 +3021,7 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
     await expect(
       coluna.getByRole('button', { name: 'Adicionar PDF' }),
     ).toHaveAccessibleDescription(
-      'Entra depois da página 1, a que você marcou.',
+      'Entra depois da página 1, a que você marcou. A página em branco sai do tamanho dela.',
     )
     await adicionarNoEditar(page, await pdfDeTeste('c.pdf', [500]))
     await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
@@ -3291,6 +3294,65 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
 
 // ---- Editor único, PR 5: a página em branco ----
 
+// A fronteira da folha em branco contra o que está em volta: a borda dela ou a própria folha (o maior dos
+// dois contrastes). A grande tem a borda no outline; a miniatura, no traço do SVG (currentColor).
+function medirBordasDasBrancas() {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const rgba = (cor: string) => {
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillStyle = cor
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+    return [r, g, b, a / 255]
+  }
+  const sobre = (de: number[], fundo: number[]) =>
+    [0, 1, 2].map((i) => de[i] * de[3] + fundo[i] * (1 - de[3]))
+  const fundoDe = (el: Element) => {
+    const camadas: number[][] = []
+    for (let no: Element | null = el; no; no = no.parentElement) {
+      const cor = rgba(getComputedStyle(no).backgroundColor)
+      if (cor[3] > 0) camadas.push(cor)
+      if (cor[3] >= 1) break
+    }
+    return camadas.reduceRight((f, c) => sobre(c, f), [255, 255, 255])
+  }
+  const luminancia = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((c) => {
+      const v = c / 255
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const razao = (a: number[], b: number[]) => {
+    const [claro, escuro] = [luminancia(a), luminancia(b)].sort((x, y) => y - x)
+    return Math.round(((claro + 0.05) / (escuro + 0.05)) * 100) / 100
+  }
+  const visivel = (el: Element) => el.getClientRects().length > 0
+  const medir = (onde: string, el: Element, borda: string) => {
+    const fora = fundoDe(el.parentElement!)
+    const comBorda = sobre(rgba(borda), fora)
+    return {
+      onde,
+      razao: Math.max(razao(comBorda, fora), razao([255, 255, 255], fora)),
+    }
+  }
+  const grande = document.querySelector('[data-testid="editar-pdf-folha"]')!
+  const estilo = getComputedStyle(grande)
+  const miniatura = [
+    ...document.querySelectorAll('[data-testid="editar-pdf-folha-branca"]'),
+  ].find(visivel)!
+  return [
+    medir(
+      'folha grande',
+      grande,
+      estilo.outlineStyle === 'none' ? 'transparent' : estilo.outlineColor,
+    ),
+    medir('miniatura', miniatura, getComputedStyle(miniatura).color),
+  ]
+}
+
 // Pelo botão que está na tela (o da coluna no largo, o curto ao lado de PDF no celular).
 async function criarBrancaNoEditar(page: Page, depoisDa: number) {
   await page.getByRole('button', { name: 'Página em branco' }).click()
@@ -3379,7 +3441,7 @@ test.describe('Editar PDF: página em branco', () => {
     await expect(
       coluna.getByRole('button', { name: 'Página em branco' }),
     ).toHaveAccessibleDescription(
-      'Entra depois da página 2, a que você marcou.',
+      'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
     )
 
     await criarBrancaNoEditar(page, 2)
@@ -3430,6 +3492,9 @@ test.describe('Editar PDF: página em branco', () => {
     const workers: string[] = []
     page.on('worker', (w) => workers.push(w.url()))
     await contarPedidosAoPdfjs(page)
+    // A 1280 × 720, a lista da coluna fica abaixo da margem do IntersectionObserver e corta o segundo
+    // cartão: as miniaturas que o teste conta não seriam desenhadas.
+    await page.setViewportSize({ width: 1280, height: 1100 })
     await page.goto('/tools/pdf/editar')
     await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
     const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
@@ -3635,6 +3700,34 @@ test.describe('Editar PDF: página em branco', () => {
           ).toBe(true)
         }
         expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+      })
+
+  // Da revisão: no tema claro, a folha branca sobre o fundo claro da área quase sumia (1,09:1), e na branca
+  // a borda é a única pista de onde clicar ou pôr o objeto (WCAG 1.4.11, 3:1).
+  for (const tema of ['light', 'dark'] as const)
+    for (const largura of [1280, 320])
+      test(`a borda da folha em branco, grande e na miniatura, passa de 3:1 contra o fundo no tema ${tema} a ${largura} px`, async ({
+        page,
+      }) => {
+        test.setTimeout(60_000)
+        await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+        await page.setViewportSize({ width: largura, height: 800 })
+        await page.goto('/tools/pdf/editar')
+        await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
+        await criarBrancaNoEditar(page, 2)
+        // O finished de uma animação cancelada rejeita; aqui só importa que nenhuma esteja rodando.
+        await page.evaluate(() =>
+          Promise.all(
+            document.getAnimations().map((a) => a.finished.catch(() => null)),
+          ),
+        )
+
+        const medidas = await page.evaluate(medirBordasDasBrancas)
+        expect(medidas.map(({ onde }) => onde)).toEqual([
+          'folha grande',
+          'miniatura',
+        ])
+        expect(medidas.filter(({ razao }) => razao < 3)).toEqual([])
       })
 
   for (const largura of [1280, 320])

@@ -233,15 +233,17 @@ function tamanhoDaFolha({ largura, altura }: Tamanho): string {
 const avisoDoArquivo = (nome: string, aviso: AvisoDoPdf) =>
   `${nome}: ${AVISOS_DO_PDF[aviso]}`
 
-// P3 e D4: o que entra vai depois da última página marcada, e a tela diz qual é.
+// P3 e D4: o que entra vai depois da última página marcada, e a tela diz qual é; P2: a branca sai do tamanho dela.
 function ondeEntra(
   total: number,
   marcada: { pagina: number; marcadas: number } | null,
 ): string {
-  if (!marcada) return `Entra no fim, depois da página ${numero(total)}.`
+  if (!marcada) {
+    return `Entra no fim, depois da página ${numero(total)}. A página em branco sai em A4.`
+  }
   const qual =
     marcada.marcadas === 1 ? 'a que você marcou' : 'a última que você marcou'
-  return `Entra depois da página ${numero(marcada.pagina)}, ${qual}.`
+  return `Entra depois da página ${numero(marcada.pagina)}, ${qual}. A página em branco sai do tamanho dela.`
 }
 
 function paginasAdicionadas(
@@ -451,6 +453,7 @@ export const TEXTOS = {
       ultimaPagina: 'O PDF precisa de pelo menos uma página.',
       montando: 'Espere o PDF ficar pronto.',
       adicionando: 'Espere o PDF adicionado entrar para extrair.',
+      criandoBranca: 'Espere a página em branco entrar para extrair.',
     },
     montando: 'Montando o PDF…',
     resultado: {
@@ -702,6 +705,7 @@ export const TEXTOS = {
       apagando: (numeros: readonly number[]) =>
         `Para apagar de verdade, ${listaDePaginas(numeros)} ${concordar(numeros.length, 'vai virar imagem', 'vão virar imagem')}.`,
       adicionando: (nome: string) => `Espere ${nome} entrar para gerar o PDF.`,
+      criandoBranca: 'Espere a página em branco entrar para gerar o PDF.',
       montando: 'Montando o PDF…',
       cancelar: 'Cancelar',
       pronto: 'PDF editado pronto',

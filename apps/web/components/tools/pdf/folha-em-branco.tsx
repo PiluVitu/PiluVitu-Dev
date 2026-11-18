@@ -24,7 +24,7 @@ export function FolhaEmBranco({
       viewBox={`0 0 ${largura} ${altura}`}
       preserveAspectRatio="xMidYMid meet"
       aria-hidden
-      className={cn('text-border block overflow-visible', className)}
+      className={cn('text-muted-foreground block overflow-visible', className)}
       data-testid="editar-pdf-folha-branca"
       data-deitada={largura > altura || undefined}
     >

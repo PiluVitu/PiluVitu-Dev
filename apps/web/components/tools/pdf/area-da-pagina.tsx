@@ -231,7 +231,7 @@ export function AreaDaPagina({
             aria-busy={desenhando}
             className={cn(
               'bg-white shadow-sm',
-              emBranco && '[&>canvas]:hidden',
+              emBranco && 'outline-muted-foreground outline [&>canvas]:hidden',
             )}
             data-branca={emBranco || undefined}
             style={{

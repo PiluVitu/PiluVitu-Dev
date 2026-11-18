@@ -225,6 +225,15 @@ describe('editar', () => {
       )
     })
 
+    it('enquanto a branca espera o tamanho, o Gerar e o Extrair dizem por que esperam', () => {
+      expect(TEXTOS.editar.gerar.criandoBranca).toBe(
+        'Espere a página em branco entrar para gerar o PDF.',
+      )
+      expect(TEXTOS.organizar.dicas.criandoBranca).toBe(
+        'Espere a página em branco entrar para extrair.',
+      )
+    })
+
     it('o cobrir numa página em branco diz que não há nada embaixo para apagar', () => {
       expect(TEXTOS.editar.cobrir.naBranca).toBe(
         'Esta página é em branco: não há nada embaixo do cobrir para apagar, ele só pinta por cima.',
@@ -287,13 +296,15 @@ describe('editar', () => {
       expect(A.adicionando('b.pdf')).toBe('Adicionando b.pdf…')
     })
 
-    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada', () => {
-      expect(A.onde(7, null)).toBe('Entra no fim, depois da página 7.')
+    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada; e o tamanho da branca (P2)', () => {
+      expect(A.onde(7, null)).toBe(
+        'Entra no fim, depois da página 7. A página em branco sai em A4.',
+      )
       expect(A.onde(7, { pagina: 2, marcadas: 1 })).toBe(
-        'Entra depois da página 2, a que você marcou.',
+        'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
       )
       expect(A.onde(7, { pagina: 4, marcadas: 3 })).toBe(
-        'Entra depois da página 4, a última que você marcou.',
+        'Entra depois da página 4, a última que você marcou. A página em branco sai do tamanho dela.',
       )
     })
 

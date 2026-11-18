@@ -273,6 +273,8 @@ type Resultado =
 
 type Foco = () => HTMLElement | null | undefined
 
+type OndeDoBotao = 'coluna' | 'folha' | 'barra'
+
 type SentidoDoHistorico = 'desfazer' | 'refazer'
 
 function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
@@ -352,6 +354,7 @@ export function EditarPdf({
   const focoAoFechar = useRef<Foco | null>(null)
   const elementosDosObjetos = useRef(new Map<string, HTMLElement>())
   const caixas = useRef(new Map<string, HTMLInputElement>())
+  const rolagemDaColunaRef = useRef<HTMLDivElement>(null)
   const botoesDaBarra = useRef(new Map<ChaveDaBarra, HTMLButtonElement>())
   const focoPendente = useRef<Foco | null>(null)
   const juncao = useRef<{ chave: string; quando: number } | null>(null)
@@ -391,7 +394,11 @@ export function EditarPdf({
     sessao: object
     texto: string
     naBarra: boolean
+    vez: number
   } | null>(null)
+  const vezDaRecusa = useRef(0)
+  // A sessão cuja branca espera o tamanho da marcada (P2): o Gerar e o Extrair esperam com ela.
+  const [brancaEsperando, setBrancaEsperando] = useState<object | null>(null)
   const [revelarNaFaixa, setRevelarNaFaixa] = useState<{
     sessao: object
     posicao: number
@@ -437,6 +444,7 @@ export function EditarPdf({
     brancas: () => brancasAlcancaveis(paginasDoDoc.paginas),
   })
   const sessao = documento?.sessao ?? null
+  const esperandoTamanho = sessao !== null && brancaEsperando === sessao
   const primeiro = documento?.arquivos[0] ?? null
 
   const { zoom, aberta: abertaNaVista } =
@@ -1247,6 +1255,7 @@ export function EditarPdf({
         brancasRef.current() > 0,
       ),
       naBarra: alertaNaBarraRef.current,
+      vez: ++vezDaRecusa.current,
     })
     anunciar('')
   }
@@ -1256,6 +1265,7 @@ export function EditarPdf({
       sessao: sessaoDaRecusa,
       texto,
       naBarra: alertaNaBarraRef.current,
+      vez: ++vezDaRecusa.current,
     })
     anunciar('')
   }
@@ -1275,12 +1285,14 @@ export function EditarPdf({
       return
     }
     criandoBranca.current = true
+    setBrancaEsperando(daSessao)
     let tamanho: Tamanho
     try {
       tamanho = await tamanhoDaNovaBranca(documento, estadoDasPaginas)
     } catch {
       const marcada = ultimaMarcada(estadoDasPaginas)
       criandoBranca.current = false
+      setBrancaEsperando(null)
       if (marcada && sessaoRef.current === daSessao) {
         recusarBranca(
           daSessao,
@@ -1290,6 +1302,7 @@ export function EditarPdf({
       return
     }
     criandoBranca.current = false
+    setBrancaEsperando(null)
     brancaRef.current(daSessao, tamanho)
   }
 
@@ -1308,7 +1321,25 @@ export function EditarPdf({
     descartarResultado()
     anunciar(B.adicionada(feita.posicao))
     if (folhaAberta) fecharAFolha(() => areaRef.current)
-    else focar(() => areaRef.current)
+    else
+      focar(() => {
+        rolarNaColunaAte(feita.id)
+        return areaRef.current
+      })
+  }
+
+  // Só a coluna rola até o cartão: um scrollIntoView rolaria a página inteira junto.
+  function rolarNaColunaAte(id: string) {
+    const coluna = rolagemDaColunaRef.current
+    const cartao = coluna?.querySelector<HTMLElement>(`[data-id="${id}"]`)
+    if (!coluna || !cartao) return
+    const daColuna = coluna.getBoundingClientRect()
+    const doCartao = cartao.getBoundingClientRect()
+    if (doCartao.top < daColuna.top) {
+      coluna.scrollTop -= daColuna.top - doCartao.top
+    } else if (doCartao.bottom > daColuna.bottom) {
+      coluna.scrollTop += doCartao.bottom - daColuna.bottom
+    }
   }
 
   function entrarNoDocumento(
@@ -1451,6 +1482,7 @@ export function EditarPdf({
   const idSemRefazer = `${ids}-sem-refazer`
   const idSemMudancas = `${ids}-sem-mudancas`
   const idDoAdicionando = `${ids}-adicionando`
+  const idDaBrancaEsperando = `${ids}-branca-esperando`
   const idDoAlcance = `${ids}-alcance`
   const idDoAlcanceDoExtrair = `${ids}-alcance-do-extrair`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
@@ -1488,6 +1520,7 @@ export function EditarPdf({
     [
       mudou ? null : idSemMudancas,
       adicionando ? idDoAdicionando : null,
+      esperandoTamanho ? idDaBrancaEsperando : null,
       porCopia ? idDoAlcance : null,
     ]
       .filter(Boolean)
@@ -1559,7 +1592,9 @@ export function EditarPdf({
     moverAntes: motivoDoLote(noComeco ? 'noComeco' : null),
     moverDepois: motivoDoLote(noFim ? 'noFim' : null),
     apagar: motivoDoLote(todasSelecionadas ? 'todasSelecionadas' : null),
-    extrair: motivoDoLote(adicionando ? 'adicionando' : null),
+    extrair: motivoDoLote(
+      adicionando ? 'adicionando' : esperandoTamanho ? 'criandoBranca' : null,
+    ),
     selecionarTodas: soMontando,
     limparSelecao: soMontando,
     desfazer:
@@ -1580,20 +1615,27 @@ export function EditarPdf({
   const idDaArea = `${ids}-area`
   const idDoOnde = `${ids}-onde`
   const idDoOndeNaBarra = `${ids}-onde-na-barra`
-  const botaoDeAdicionar = (naBarra: boolean) => (
+  // Na folha do celular os dois botões ficam lado a lado, como no desenho: empilhados, a lista não cabia.
+  const classeDoBotao = (onde: OndeDoBotao) =>
+    onde === 'barra'
+      ? 'h-11 gap-2 px-3'
+      : onde === 'folha'
+        ? 'h-11 w-full gap-1.5 px-2 text-[13px] leading-tight whitespace-normal'
+        : 'h-11 w-full justify-start gap-2 px-3'
+  const botaoDeAdicionar = (onde: OndeDoBotao) => (
     <Button
-      ref={naBarra ? adicionarNaBarraRef : undefined}
+      ref={onde === 'barra' ? adicionarNaBarraRef : undefined}
       type="button"
       variant="outline"
-      className={
-        naBarra ? 'h-11 gap-2 px-3' : 'h-11 w-full justify-start gap-2 px-3'
-      }
+      className={classeDoBotao(onde)}
       disabled={montando}
       aria-disabled={adicionando ? true : undefined}
-      aria-describedby={naBarra ? idDoOndeNaBarra : idDoOnde}
+      aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={pedirOutroPdf}
       data-testid={
-        naBarra ? 'editar-pdf-adicionar-na-barra' : 'editar-pdf-adicionar'
+        onde === 'barra'
+          ? 'editar-pdf-adicionar-na-barra'
+          : 'editar-pdf-adicionar'
       }
     >
       <FontAwesomeIcon
@@ -1601,7 +1643,7 @@ export function EditarPdf({
         className="text-primary size-4"
         aria-hidden
       />
-      {naBarra ? (
+      {onde === 'barra' ? (
         <span>
           <span className="sr-only">{A.botao.slice(0, -A.curto.length)}</span>
           {A.curto}
@@ -1611,32 +1653,34 @@ export function EditarPdf({
       )}
     </Button>
   )
-  const botaoDaBranca = (naBarra: boolean) => (
+  const botaoDaBranca = (onde: OndeDoBotao) => (
     <Button
       type="button"
       variant="outline"
-      className={
-        naBarra ? 'h-11 gap-2 px-3' : 'h-11 w-full justify-start gap-2 px-3'
-      }
+      className={classeDoBotao(onde)}
       disabled={montando}
       aria-disabled={adicionando ? true : undefined}
-      aria-label={naBarra ? B.botao : undefined}
-      aria-describedby={naBarra ? idDoOndeNaBarra : idDoOnde}
+      aria-label={onde === 'barra' ? B.botao : undefined}
+      aria-describedby={onde === 'barra' ? idDoOndeNaBarra : idDoOnde}
       onClick={() => void criarPaginaEmBranco()}
-      data-testid={naBarra ? 'editar-pdf-branca-na-barra' : 'editar-pdf-branca'}
+      data-testid={
+        onde === 'barra' ? 'editar-pdf-branca-na-barra' : 'editar-pdf-branca'
+      }
     >
       <FontAwesomeIcon
         icon={faFile}
         className="text-primary size-4"
         aria-hidden
       />
-      {naBarra ? B.curto : B.botao}
+      {onde === 'barra' ? B.curto : B.botao}
     </Button>
   )
   // A recusa é anunciada só onde apareceu: a cópia que entra ao abrir ou fechar a folha não a repete.
+  // A chave muda a cada recusa e quando a cópia passa a alerta: o leitor de tela só ouve um nó novo.
   const alertaDaAdicao = (anuncia: boolean) =>
     recusaVisivel && (
       <div
+        key={`${recusaVisivel.vez}-${anuncia}`}
         role={anuncia ? 'alert' : undefined}
         data-testid="editar-pdf-recusa-da-adicao"
         className="bg-card border-destructive flex gap-2 rounded-md border px-3 py-3 text-sm"
@@ -1651,10 +1695,14 @@ export function EditarPdf({
         </p>
       </div>
     )
-  const adicionarNaLista = (
+  const adicionarNaLista = (onde: 'coluna' | 'folha') => (
     <div className="space-y-2" data-testid="editar-pdf-bloco-adicionar">
-      {botaoDeAdicionar(false)}
-      {botaoDaBranca(false)}
+      <div
+        className={onde === 'folha' ? 'grid grid-cols-2 gap-2' : 'space-y-2'}
+      >
+        {botaoDeAdicionar(onde)}
+        {botaoDaBranca(onde)}
+      </div>
       <p
         id={idDoOnde}
         className="text-muted-foreground text-xs leading-relaxed"
@@ -2132,7 +2180,7 @@ export function EditarPdf({
                 ref={gerarRef}
                 type="button"
                 className="h-11 gap-2 px-6"
-                disabled={!mudou || adicionando !== null}
+                disabled={!mudou || adicionando !== null || esperandoTamanho}
                 aria-describedby={descricaoDoGerar}
                 onClick={() => void gerar('editado', lista)}
                 data-testid="editar-pdf-gerar"
@@ -2156,6 +2204,14 @@ export function EditarPdf({
                 className="text-muted-foreground text-xs [overflow-wrap:anywhere]"
               >
                 {T.gerar.adicionando(adicionando.name)}
+              </p>
+            )}
+            {esperandoTamanho && (
+              <p
+                id={idDaBrancaEsperando}
+                className="text-muted-foreground text-xs"
+              >
+                {T.gerar.criandoBranca}
               </p>
             )}
             {(porCopia ||
@@ -2270,10 +2326,14 @@ export function EditarPdf({
                     {total}
                   </span>
                 </div>
-                {adicionarNaLista}
+                {adicionarNaLista('coluna')}
                 {acoesDasPaginas}
                 {pularParaAAberta}
-                <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 py-1">
+                <div
+                  ref={rolagemDaColunaRef}
+                  className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 py-1"
+                  data-testid="editar-pdf-rolagem-da-coluna"
+                >
                   {listaDasPaginas}
                 </div>
               </aside>
@@ -2315,7 +2375,7 @@ export function EditarPdf({
                           evento.preventDefault()
                           alvo()?.focus()
                         }}
-                        className="flex max-h-[85dvh] flex-col gap-3 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center"
+                        className="flex max-h-[calc(100dvh-4rem)] flex-col gap-3 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center"
                         data-testid="editar-pdf-folha-de-paginas"
                       >
                         <div className="flex flex-wrap items-baseline gap-x-2 pr-12">
@@ -2326,22 +2386,22 @@ export function EditarPdf({
                             {P.contagem(total)}
                           </span>
                         </div>
-                        {adicionarNaLista}
+                        {adicionarNaLista('folha')}
                         {acoesDasPaginas}
                         <p className="text-muted-foreground text-sm">
                           {P.dicaDaFolha}
                         </p>
                         {pularParaAAberta}
                         <div
-                          className="-mx-1 min-h-32 flex-1 overflow-y-auto px-1 py-1"
+                          className="-mx-1 min-h-20 flex-1 overflow-y-auto px-1 py-1"
                           data-testid="editar-pdf-rolagem-da-folha"
                         >
                           {listaDasPaginas}
                         </div>
                       </SheetContent>
                     </Sheet>
-                    {botaoDeAdicionar(true)}
-                    {botaoDaBranca(true)}
+                    {botaoDeAdicionar('barra')}
+                    {botaoDaBranca('barra')}
                   </div>
                   <p
                     id={idDoOndeNaBarra}

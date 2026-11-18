@@ -356,7 +356,7 @@ export const DoisArquivos: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Adicionar PDF' }),
     ).toHaveAccessibleDescription(
-      'Entra depois da página 2, a que você marcou.',
+      'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
     )
     entregarPdf(canvasElement, pdf('anexo-rg-assinado-2p.pdf'))
     await waitFor(() =>
@@ -465,7 +465,7 @@ export const PaginaEmBrancoDeitada: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Página em branco' }),
     ).toHaveAccessibleDescription(
-      'Entra depois da página 2, a que você marcou.',
+      'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
     )
     await userEvent.click(
       canvas.getByRole('button', { name: 'Página em branco' }),

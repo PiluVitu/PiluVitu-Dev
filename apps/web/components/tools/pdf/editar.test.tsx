@@ -3424,17 +3424,127 @@ describe('a página em branco', () => {
   })
 
   it('enquanto um PDF entra, a branca espera: o botão fica aria-disabled e não cria nada', async () => {
-    const motor = criarMotorFalso({ atraso: 60 })
+    const motor = criarMotorFalso()
     await abrirParaEditar('a-3p.pdf', { motor })
     const botao = porNome('Página em branco')
+    motor.prenderAnalises()
 
     comecarAAdicionar(pdf('b-2p.pdf'))
     expect(botao.getAttribute('aria-disabled')).toBe('true')
     await criarBranca(botao)
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
 
+    motor.soltarAnalises()
     await esperarAte(() => cartoesNoDocumento().length === 5)
     expect(botao.getAttribute('aria-disabled')).toBeNull()
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'a1p0', 'a1p1'])
+  })
+
+  // Da revisão: o tamanho que chegava durante a montagem punha a branca na tela, e o pronto oferecia um PDF
+  // sem ela, como o PDF adicionado antes do PR 4.
+  it('enquanto o pdf.js diz o tamanho da marcada, o Gerar e o Extrair esperam, com o motivo; depois, o Gerar leva a branca', async () => {
+    const { motor, renderizador } = await abrirParaEditar('a-3p.pdf')
+    await clicar(porNome('Girar a página 1 à direita'))
+    await marcarPagina(2)
+    renderizador.prenderTamanhos()
+
+    await criarBranca()
+    const gerar = porNome('Gerar PDF')
+    const extrair = porNome('Extrair as selecionadas')
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(gerar.disabled).toBe(true)
+    expect(descricaoDe(gerar)).toContain(TEXTOS.editar.gerar.criandoBranca)
+    expect(extrair.disabled).toBe(true)
+    expect(descricaoDe(extrair)).toBe(TEXTOS.organizar.dicas.criandoBranca)
+    await clicar(gerar)
+    expect(motor.montadas).toHaveLength(0)
+
+    renderizador.soltarTamanhos()
+    await esperarAte(() => idsDaLista().includes('b0'))
+    expect(gerar.disabled).toBe(false)
+    expect(descricaoDe(gerar)).not.toContain(TEXTOS.editar.gerar.criandoBranca)
+    await clicar(gerar)
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(motor.montadas[0].paginas.map(({ id }) => id)).toEqual([
+      'a0p0',
+      'a0p1',
+      'b0',
+      'a0p2',
+    ])
+  })
+
+  // Da revisão: com a mesma recusa gravada de novo, o React não mexia no nó, e o leitor de tela não ouvia nada.
+  it('a recusa no teto repetida é um alerta novo a cada clique', async () => {
+    ObservadorFalso.automatico = false
+    await abrirParaEditar('a-500p.pdf')
+    const botao = porNome('Página em branco')
+    await criarBranca(botao)
+    const primeiro = alertaDaAdicao()!
+
+    await criarBranca(botao)
+
+    expect(alertaDaAdicao()).not.toBe(primeiro)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+    expect(alertaDaAdicao()!.textContent).toBe(B.passouDoTeto(500))
+  })
+
+  it('no celular, a recusa feita na barra e repetida na folha vira um alerta novo na folha', async () => {
+    larga = false
+    ObservadorFalso.automatico = false
+    await abrirParaEditar('a-500p.pdf')
+    await criarBranca(porNome('Página em branco'))
+    await abrirAFolha()
+    const copia = alertaDaAdicao()!
+    expect(copia.getAttribute('role')).toBeNull()
+
+    await criarBranca(naFolha('Página em branco'))
+
+    expect(alertaDaAdicao()).not.toBe(copia)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+  })
+
+  // Da revisão: o foco vai para a área, e o cartão novo ficava fora de vista no fim da coluna.
+  it('no largo, a coluna rola até o cartão da branca nova, sem rolar a página inteira', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    const rolagem = q('editar-pdf-rolagem-da-coluna')!
+    let rolado = 0
+    Object.defineProperty(rolagem, 'scrollTop', {
+      configurable: true,
+      get: () => rolado,
+      set: (valor: number) => {
+        rolado = valor
+      },
+    })
+    const caixa = (top: number, bottom: number) =>
+      ({
+        top,
+        bottom,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: bottom - top,
+      }) as DOMRect
+    const medir = jest
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this === rolagem) return caixa(100, 300)
+        if (this.dataset.id === 'b0') return caixa(900, 1000)
+        return caixa(0, 0)
+      })
+    const rolarAPagina = jest.fn()
+    const original = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = rolarAPagina
+
+    try {
+      await criarBranca()
+    } finally {
+      medir.mockRestore()
+      HTMLElement.prototype.scrollIntoView = original
+    }
+
+    expect(rolado).toBe(700)
+    expect(rolarAPagina).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
   })
 
   it('no celular: o curto "Em branco" ao lado do PDF, com o nome inteiro e a mesma descrição; criar abre a branca e leva o foco à área', async () => {

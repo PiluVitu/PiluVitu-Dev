@@ -106,6 +106,8 @@ export function criarRenderizadorFalso({
   }
   let portaoDasPaginas: Promise<void> | null = null
   let abrirOPortao = () => {}
+  let portaoDosTamanhos: Promise<void> | null = null
+  let abrirOPortaoDosTamanhos = () => {}
   const renderizador = {
     /** Daqui em diante, cada página grande pedida espera o `soltarPaginas()`, sem depender de relógio. */
     prenderPaginas() {
@@ -116,6 +118,16 @@ export function criarRenderizadorFalso({
     soltarPaginas() {
       abrirOPortao()
       portaoDasPaginas = null
+    },
+    /** Daqui em diante, cada tamanho pedido (P2 da página em branco) espera o `soltarTamanhos()`. */
+    prenderTamanhos() {
+      portaoDosTamanhos = new Promise<void>((soltar) => {
+        abrirOPortaoDosTamanhos = soltar
+      })
+    },
+    soltarTamanhos() {
+      abrirOPortaoDosTamanhos()
+      portaoDosTamanhos = null
     },
     abertos: [] as string[],
     /** Quantos Workers do pdf.js nasceram: um por sessão, que acaba quando o último documento fecha. */
@@ -227,6 +239,7 @@ export function criarRenderizadorFalso({
         },
         async tamanho(indice) {
           registrar('tamanho', indice)
+          await portaoDosTamanhos
           if (fechado) throw new Error('o documento já foi fechado')
           if (tamanhosQueFalham.includes(indice)) {
             throw new Error('falta de memória')
