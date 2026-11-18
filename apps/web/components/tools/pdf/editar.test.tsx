@@ -291,7 +291,9 @@ describe('abrir o PDF', () => {
     )
     expect(q('pdf-escolher')!.textContent).toBe('Escolher PDF')
     expect((q('pdf-input') as HTMLInputElement).multiple).toBe(false)
-    expect(container.textContent).toContain('Até 50 MB e 500 páginas por PDF.')
+    expect(container.textContent).toContain(
+      'Até 50 MB e 500 páginas, somando os PDFs que você abrir e adicionar.',
+    )
     expect(motor.analisadas).toEqual([])
     expect(renderizador.abertos).toEqual([])
     expect(q('editar-pdf-folha')).toBeNull()

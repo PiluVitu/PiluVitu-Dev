@@ -167,6 +167,52 @@ describe('editar', () => {
     })
   })
 
+  describe('adicionar outro PDF: o botão, onde entra e o anúncio', () => {
+    const A = TEXTOS.editar.adicionar
+
+    it('o botão tem o nome do desenho, e o curto do celular cabe nele', () => {
+      expect(A.botao).toBe('Adicionar PDF')
+      expect(A.curto).toBe('PDF')
+      expect(A.botao.endsWith(A.curto)).toBe(true)
+      expect(A.adicionando('b.pdf')).toBe('Adicionando b.pdf…')
+    })
+
+    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada', () => {
+      expect(A.onde(7, null)).toBe('Entra no fim, depois da página 7.')
+      expect(A.onde(7, { pagina: 2, marcadas: 1 })).toBe(
+        'Entra depois da página 2, a que você marcou.',
+      )
+      expect(A.onde(7, { pagina: 4, marcadas: 3 })).toBe(
+        'Entra depois da página 4, a última que você marcou.',
+      )
+    })
+
+    it('o anúncio diz quantas, de qual arquivo, depois de qual página, que ficam marcadas, e os avisos do arquivo com o nome', () => {
+      expect(A.adicionadas('b.pdf', 3, 2, [])).toBe(
+        '3 páginas de b.pdf adicionadas depois da página 2, já selecionadas.',
+      )
+      expect(A.adicionadas('b.pdf', 1, 1_000, ['assinatura_digital'])).toBe(
+        `1 página de b.pdf adicionada depois da página 1.000, já selecionada. b.pdf: ${TEXTOS.editar.avisos.assinatura_digital}`,
+      )
+    })
+  })
+
+  it('com mais de um arquivo: o cabeçalho junta os nomes, e cada aviso diz de qual arquivo é', () => {
+    expect(TEXTOS.editar.abertos(['a.pdf', 'b.pdf'], 7)).toBe(
+      'a.pdf + b.pdf · 7 páginas',
+    )
+    expect(TEXTOS.editar.abertos(['a.pdf'], 1)).toBe('a.pdf · 1 página')
+    expect(TEXTOS.editar.avisoDoArquivo('b.pdf', 'xfa_puro')).toBe(
+      `b.pdf: ${TEXTOS.editar.avisos.xfa_puro}`,
+    )
+  })
+
+  it('os limites do editar são somados: valem para os PDFs abertos juntos', () => {
+    expect(TEXTOS.editar.limites(50_000_000, 500)).toMatch(
+      /^Até 50 MB e 500 páginas, somando os PDFs que você abrir e adicionar\. /,
+    )
+  })
+
   it('posição, zoom e anúncios pelo Intl', () => {
     expect(paginaAtual(3, 1200)).toBe('Página 3 de 1.200')
     expect(zoom.valor(1.25)).toBe('125%')

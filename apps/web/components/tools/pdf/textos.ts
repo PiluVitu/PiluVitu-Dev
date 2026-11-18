@@ -204,6 +204,34 @@ const AVISOS_DO_PDF: Record<AvisoDoPdf, string> = {
 const documentoAberto = (nome: string, totalDePaginas: number) =>
   `${nome} · ${paginas(totalDePaginas)}`
 
+const avisoDoArquivo = (nome: string, aviso: AvisoDoPdf) =>
+  `${nome}: ${AVISOS_DO_PDF[aviso]}`
+
+// P3 e D4: o que entra vai depois da última página marcada, e a tela diz qual é.
+function ondeEntra(
+  total: number,
+  marcada: { pagina: number; marcadas: number } | null,
+): string {
+  if (!marcada) return `Entra no fim, depois da página ${numero(total)}.`
+  const qual =
+    marcada.marcadas === 1 ? 'a que você marcou' : 'a última que você marcou'
+  return `Entra depois da página ${numero(marcada.pagina)}, ${qual}.`
+}
+
+function paginasAdicionadas(
+  nome: string,
+  quantas: number,
+  depoisDa: number,
+  avisos: readonly AvisoDoPdf[],
+): string {
+  const adicionadas = concordar(quantas, 'adicionada', 'adicionadas')
+  const selecionadas = concordar(quantas, 'selecionada', 'selecionadas')
+  return [
+    `${paginas(quantas)} de ${nome} ${adicionadas} depois da página ${numero(depoisDa)}, já ${selecionadas}.`,
+    ...avisos.map((aviso) => avisoDoArquivo(nome, aviso)),
+  ].join(' ')
+}
+
 type Teto = { readonly bytes: number; readonly paginas: number }
 
 // O teto é somado (os PDFs abertos mais o novo): a mensagem diz o que ainda cabia.
@@ -441,9 +469,12 @@ export const TEXTOS = {
   editar: {
     rotulo: 'Abrir PDF',
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>
-      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
+      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)}, somando os PDFs que você abrir e adicionar. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,
     aberto: documentoAberto,
+    abertos: (nomes: readonly string[], totalDePaginas: number) =>
+      documentoAberto(nomes.join(' + '), totalDePaginas),
+    avisoDoArquivo,
     recusado: (nome: string, motivo: MotivoDaRecusa) =>
       `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
     grandeDemais: (nome: string, bytes: number, teto: number) =>
@@ -452,6 +483,11 @@ export const TEXTOS = {
       `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
     avisos: AVISOS_DO_PDF,
     adicionar: {
+      botao: 'Adicionar PDF',
+      curto: 'PDF',
+      adicionando: (nome: string) => `Adicionando ${nome}…`,
+      onde: ondeEntra,
+      adicionadas: paginasAdicionadas,
       recusado: (nome: string, motivo: MotivoDaRecusa) =>
         `Não deu para adicionar ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
       passouDoTeto: passouDoTetoSomado,
