@@ -195,6 +195,20 @@ describe('editar', () => {
     expect(P.naSelecao).toBe('Na seleção')
   })
 
+  it('no celular, a folha Páginas; o pular; e o Ctrl+Z das páginas, que não tem refazer', () => {
+    const P = TEXTOS.editar.paginasDoDocumento
+    expect(P.abrirFolha).toBe('Páginas')
+    expect(P.titulo).toBe('Páginas')
+    expect(P.contagem(1)).toBe('1 página')
+    expect(P.contagem(7)).toBe('7 páginas')
+    expect(P.dicaDaFolha).toBe('Toque numa miniatura para abrir a página.')
+    expect(P.pular).toBe('Pular para a página aberta')
+    expect(P.atalho).toBe(
+      'Com o foco nas páginas, Ctrl+Z (⌘+Z no Mac) desfaz a última mudança nelas.',
+    )
+    expect(P.semRefazer).toBe('Nas páginas não há refazer.')
+  })
+
   it('a nota da moldura diz como a página sai no PDF', () => {
     const { notaDoGiro } = TEXTOS.editar
     expect(notaDoGiro(90)).toBe(

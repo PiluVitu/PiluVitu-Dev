@@ -432,6 +432,14 @@ export const TEXTOS = {
       naSelecao: 'Na seleção',
       desfazer: 'Desfazer nas páginas',
       desfeito: 'Desfeito nas páginas.',
+      abrirFolha: 'Páginas',
+      titulo: 'Páginas',
+      contagem: (total: number) => paginas(total),
+      dicaDaFolha: 'Toque numa miniatura para abrir a página.',
+      pular: 'Pular para a página aberta',
+      atalho:
+        'Com o foco nas páginas, Ctrl+Z (⌘+Z no Mac) desfaz a última mudança nelas.',
+      semRefazer: 'Nas páginas não há refazer.',
     },
     notaDoGiro,
     escolherPagina: (numeroDaPagina: number) =>
