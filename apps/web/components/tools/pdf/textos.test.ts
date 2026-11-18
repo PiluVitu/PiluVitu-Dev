@@ -137,6 +137,14 @@ describe('editar', () => {
     ).toMatch(/^Uma imagem da página 5 não pôde ser lida\. Ponha a imagem/)
   })
 
+  it('apagar de verdade em duas posições da mesma página do arquivo: diz qual e o que fazer', () => {
+    expect(
+      falhaAoSalvar({ motivo: 'apagar_na_pagina_repetida', pagina: 2 }),
+    ).toBe(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
+    )
+  })
+
   it('erro do arquivo usa a mensagem do mesclar; o resto não acusa o arquivo', () => {
     expect(falhaAoSalvar({ motivo: 'protegido' })).toBe(
       `Não deu para salvar o PDF. ${ERROS_DO_ARQUIVO.protegido}`,

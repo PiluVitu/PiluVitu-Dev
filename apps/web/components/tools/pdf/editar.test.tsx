@@ -1806,6 +1806,22 @@ describe('gerar o PDF editado', () => {
     await esperarAte(() => document.activeElement === objetos()[0])
     expect(objetos()[0].dataset.id).toBe(id)
   })
+
+  it('apagar de verdade duas vezes na mesma página do arquivo: diz o número dela, sem objeto para mostrar', async () => {
+    const motor = criarMotorFalso({
+      montagem: { motivo: 'apagar_na_pagina_repetida', pagina: 'a0p2' },
+    })
+    await abrirParaEditar('contrato-3p.pdf', { motor })
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
+
+    expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF',
+    )
+    expect(() => porNome('Mostrar o objeto')).toThrow()
+  })
 })
 
 it('todo controle novo tem 44 px e nome', async () => {

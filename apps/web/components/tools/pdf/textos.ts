@@ -94,6 +94,8 @@ function falhaAoSalvar(
       return `Uma imagem da página ${numero(pagina)} não é PNG nem JPEG. Troque por uma imagem PNG ou JPEG e salve de novo.`
     case 'imagem_corrompida':
       return `Uma imagem da página ${numero(pagina)} não pôde ser lida. Ponha a imagem de novo e salve outra vez.`
+    case 'apagar_na_pagina_repetida':
+      return `A página ${numero(pagina)} é a mesma página do arquivo que outra página deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.`
     case 'nao_e_pdf':
     case 'protegido':
     case 'corrompido':

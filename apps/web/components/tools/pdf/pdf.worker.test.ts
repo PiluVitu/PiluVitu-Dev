@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib'
 import type {
   ObjetoNaTela,
   PaginaParaMontar,
@@ -377,6 +377,35 @@ describe('montar', () => {
         pagina: 'a1p0',
         objeto: 't2',
         caracteres: ['😀'],
+      },
+    ])
+  })
+
+  // Menor 1 do Crivo no #127: o mesmo nó em duas posições do /Kids, as duas apagadas de verdade. A
+  // pessoa resolve na tela (tira uma), então a falha diz a página e não é "inesperado".
+  it('dois apagar de verdade no mesmo nó repetido do /Kids: falha com o id da segunda, sem objeto', async () => {
+    const documento = await PDFDocument.load(
+      new Uint8Array(await (await pdf([300, 400])).arrayBuffer()),
+    )
+    const arvore = documento.catalog.Pages()
+    arvore.Kids().push(documento.getPage(0).ref)
+    arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+    const repetida = new Blob([new Uint8Array(await documento.save())])
+
+    const respostasDoPedido = await montar([repetida], {
+      paginas: [doArquivo(0, 0), doArquivo(0, 1), doArquivo(0, 2)],
+      paginasRasterizadas: new Map([
+        ['a0p0', new Blob([JPEG])],
+        ['a0p2', new Blob([JPEG])],
+      ]),
+    })
+
+    expect(respostasDoPedido).toEqual([
+      {
+        tipo: 'falhou',
+        id: respostasDoPedido[0].id,
+        motivo: 'apagar_na_pagina_repetida',
+        pagina: 'a0p2',
       },
     ])
   })

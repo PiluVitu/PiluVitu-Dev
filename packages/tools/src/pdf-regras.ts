@@ -489,6 +489,7 @@ export type MotivoDoErroNaEdicao =
   | 'imagem_nao_aceita'
   | 'imagem_corrompida'
   | 'texto_fora_do_winansi'
+  | 'apagar_na_pagina_repetida'
 
 const COR = /^#[0-9a-f]{6}$/i
 

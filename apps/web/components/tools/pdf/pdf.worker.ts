@@ -148,6 +148,14 @@ async function montar(
   } catch (erro) {
     if (!(erro instanceof ErroNaEdicao)) return falhar(id, erro)
     const pagina = pedido.paginas[erro.pagina]?.id
+    if (erro.motivo === 'apagar_na_pagina_repetida' && pagina !== undefined) {
+      return escopo.postMessage({
+        tipo: 'falhou',
+        id,
+        motivo: erro.motivo,
+        pagina,
+      })
+    }
     const objetos =
       (pagina !== undefined && pedido.objetosPorPagina.get(pagina)) || []
     const objeto =
