@@ -8,6 +8,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFNumber,
   PDFRawStream,
   PDFString,
   StandardFonts,
@@ -3281,6 +3282,371 @@ test.describe('Editar PDF: adicionar outro PDF', () => {
       await expect(
         page.getByTestId('editar-pdf-recusa-da-adicao'),
       ).toBeVisible()
+
+      expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual(
+        [],
+      )
+    })
+})
+
+// ---- Editor único, PR 5: a página em branco ----
+
+// Pelo botão que está na tela (o da coluna no largo, o curto ao lado de PDF no celular).
+async function criarBrancaNoEditar(page: Page, depoisDa: number) {
+  await page.getByRole('button', { name: 'Página em branco' }).click()
+  await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+    `Página em branco adicionada depois da página ${depoisDa}, já selecionada.`,
+  )
+}
+
+// Os pedidos da página ao Worker do pdf.js (o MessageHandler dele põe sourceName em toda mensagem).
+function contarPedidosAoPdfjs(page: Page) {
+  return page.addInitScript(() => {
+    const janela = window as unknown as { pedidosAoPdfjs: string[] }
+    janela.pedidosAoPdfjs = []
+    const original = Worker.prototype.postMessage
+    Worker.prototype.postMessage = function (
+      this: Worker,
+      mensagem: unknown,
+      ...resto: [StructuredSerializeOptions?]
+    ) {
+      if (
+        mensagem &&
+        typeof mensagem === 'object' &&
+        'sourceName' in mensagem
+      ) {
+        const { action, stream } = mensagem as {
+          action?: string
+          stream?: number
+        }
+        janela.pedidosAoPdfjs.push(String(action ?? stream))
+      }
+      return original.call(this, mensagem, ...resto)
+    } as typeof Worker.prototype.postMessage
+  })
+}
+
+const pedidosAoPdfjs = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { pedidosAoPdfjs: string[] }).pedidosAoPdfjs.length,
+  )
+
+// Três páginas: a do meio é de pé (300 × 500) com /Rotate 90, então aparece deitada (500 × 300).
+async function pdfComDeitada(nome: string) {
+  const documento = await PDFDocument.create()
+  documento.addPage([300, 300])
+  documento.addPage([300, 500]).setRotation(degrees(90))
+  documento.addPage([340, 340])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+// O /Kids repete a primeira página no fim: três posições, dois nós (aceito pelo pdf.js e pelo pdf-lib).
+async function pdfComPaginaRepetida(nome: string) {
+  const documento = await PDFDocument.create()
+  documento.setTitle('Título do arquivo')
+  documento.addPage([300, 300])
+  documento.addPage([320, 320])
+  const arvore = documento.catalog.Pages()
+  arvore.Kids().push(documento.getPage(0).ref)
+  arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+const textosDasPaginas = async (bytes: Uint8Array) =>
+  (await lerComPdfjs(bytes)).map(({ textos }) => textos.map(({ str }) => str))
+
+test.describe('Editar PDF: página em branco', () => {
+  test('com a página deitada marcada (P2 e P3): a branca entra deitada logo depois dela, aberta e selecionada; no PDF baixado, o MediaBox deitado sem /Rotate e o texto onde a tela mostrou, sem nada sair do aparelho', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const pedidos = vigiarPedidos(page)
+    await page.goto('/tools/pdf/editar')
+    const origem = new URL(page.url()).origin
+    const arquivo = await pdfComDeitada('deitada.pdf')
+    await abrirNoEditar(page, arquivo)
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
+    await expect(
+      coluna.getByRole('button', { name: 'Página em branco' }),
+    ).toHaveAccessibleDescription(
+      'Entra depois da página 2, a que você marcou.',
+    )
+
+    await criarBrancaNoEditar(page, 2)
+    await expect(page.getByTestId('editar-pdf-posicao')).toHaveText(
+      'Página 3 de 4',
+    )
+    await expect(page.getByTestId('editar-pdf-area')).toBeFocused()
+    await expect(
+      coluna.getByRole('checkbox', { name: 'Selecionar página 3' }),
+    ).toBeChecked()
+    await expect(coluna.getByTestId('editar-pdf-origem').nth(2)).toHaveText(
+      'Página em branco, 17,6 × 10,6 cm',
+    )
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'deitada.pdf + 1 página em branco · 4 páginas',
+    )
+    const folha = page.getByRole('img', { name: 'Página 3, em branco' })
+    const caixa = (await folha.boundingBox())!
+    expect(caixa.width / caixa.height).toBeCloseTo(500 / 300, 1)
+    await expect(page.getByTestId('editar-pdf-canvas')).toBeHidden()
+    const escrito = await escreverTexto(page, 'Na branca', { x: 40, y: 60 })
+
+    const { nome, bytes } = await gerarEBaixar(page)
+    expect(nome).toBe('deitada-editado.pdf')
+    const final = await PDFDocument.load(bytes)
+    expect(
+      final.getPages().map((p) => {
+        const { width, height } = p.getSize()
+        return [width, height, p.getRotation().angle]
+      }),
+    ).toEqual([
+      [300, 300, 0],
+      [300, 500, 90],
+      [500, 300, 0],
+      [340, 340, 0],
+    ])
+    const lidas = await lerComPdfjs(bytes)
+    const lido = lidas[2].textos.find((t) => t.str === 'Na branca')
+    expect(lido).toBeDefined()
+    conferirCaixa(lido!.matriz, [16, 0, 0, -16, escrito.x, escrito.y], 0.05)
+    conferirQueNadaSaiu(pedidos, origem, [arquivo.buffer])
+  })
+
+  test('sem marcada, A4 no fim e nenhum pedido ao pdf.js para ela; com dois arquivos e duas brancas, a ordem e os tamanhos no PDF baixado, e dois Workers no total', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await contarPedidosAoPdfjs(page)
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await expect(coluna.getByTestId('editar-pdf-cartao-miniatura')).toHaveCount(
+      2,
+    )
+    // A abertura e as miniaturas terminaram quando a contagem para de mudar.
+    let antes = -1
+    await expect
+      .poll(async () => {
+        const agora = await pedidosAoPdfjs(page)
+        const parou = agora === antes
+        antes = agora
+        return parou
+      })
+      .toBe(true)
+
+    await criarBrancaNoEditar(page, 2)
+    await expect(
+      page.getByRole('img', { name: 'Página 3, em branco' }),
+    ).toBeVisible()
+    await expect(coluna.getByTestId('editar-pdf-folha-branca')).toHaveCount(1)
+    await expect(coluna.getByTestId('editar-pdf-origem').nth(2)).toHaveText(
+      'Página em branco, A4',
+    )
+    await page.waitForTimeout(1_000)
+    expect(await pedidosAoPdfjs(page)).toBe(antes)
+
+    await adicionarNoEditar(page, await pdfDeTeste('b.pdf', [400]))
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      anuncioDaAdicao('b.pdf', 1, 3),
+    )
+    await criarBrancaNoEditar(page, 4)
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'a.pdf + b.pdf + 2 páginas em branco · 5 páginas',
+    )
+    await expect(page.getByTestId('editar-pdf-alcance')).toBeVisible()
+
+    const { nome, bytes } = await gerarEBaixar(page)
+    expect(nome).toBe('a-editado.pdf')
+    const final = await PDFDocument.load(bytes)
+    expect(
+      final.getPages().map((p) => {
+        const { width, height } = p.getSize()
+        return [Math.round(width * 100) / 100, Math.round(height * 100) / 100]
+      }),
+    ).toEqual([
+      [300, 300],
+      [320, 320],
+      [595.28, 841.89],
+      [400, 400],
+      [400, 400],
+    ])
+    expect(workers).toHaveLength(2)
+  })
+
+  test('Extrair com a branca: sai na ordem do documento, com o aviso de alcance; só a branca sai com o nome das páginas em branco', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await criarBrancaNoEditar(page, 2)
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
+
+    const extrairEBaixar = async () => {
+      await coluna
+        .getByRole('button', { name: 'Extrair as selecionadas' })
+        .click()
+      const baixar = page.getByTestId('editar-pdf-baixar')
+      await expect(baixar).toBeFocused({ timeout: 30_000 })
+      await expect(page.getByTestId('editar-pdf-alcance')).toBeVisible()
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        baixar.click(),
+      ])
+      return {
+        nome: download.suggestedFilename(),
+        pdf: await lerPdfBaixado(download),
+      }
+    }
+    const lados = (pdf: PDFDocument) =>
+      pdf.getPages().map((p) => Math.round(p.getSize().width * 100) / 100)
+
+    const duas = await extrairEBaixar()
+    expect(duas.nome).toBe('a-paginas.pdf')
+    expect(lados(duas.pdf)).toEqual([320, 595.28])
+
+    await coluna.getByRole('button', { name: 'Limpar seleção' }).click()
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 3' }).check()
+    const so = await extrairEBaixar()
+    expect(so.nome).toBe('paginas-em-branco-paginas.pdf')
+    expect(lados(so.pdf)).toEqual([595.28])
+  })
+
+  test('o nó repetido no /Kids com objetos nas duas posições: no PDF baixado, no lugar e por cópia, cada posição só com o seu', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfComPaginaRepetida('repetida.pdf'))
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'repetida.pdf · 3 páginas',
+    )
+    await escreverTexto(page, 'AAA', { x: 40, y: 60 })
+    await abrirPagina(page, 3, 3)
+    await escreverTexto(page, 'BBB', { x: 40, y: 120 })
+
+    const noLugar = await gerarEBaixar(page)
+    expect(await textosDasPaginas(noLugar.bytes)).toEqual([
+      ['AAA'],
+      [],
+      ['BBB'],
+    ])
+    expect((await PDFDocument.load(noLugar.bytes)).getTitle()).toBe(
+      'Título do arquivo',
+    )
+
+    await page
+      .getByTestId('editar-pdf-coluna-de-paginas')
+      .getByRole('button', { name: 'Apagar a página 2' })
+      .click()
+    const porCopia = await gerarEBaixar(page)
+    expect(await textosDasPaginas(porCopia.bytes)).toEqual([['AAA'], ['BBB']])
+  })
+
+  test('a 320 px: o curto "Em branco" tem 44 px, criar abre a branca na faixa com o foco na área, a folha também tem o botão, e nada rola para o lado', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'relatorio-trimestral-consolidado-versao-final-2026.pdf',
+        Array.from({ length: 8 }, () => 100),
+      ),
+    )
+    const botao = page.getByRole('button', { name: 'Página em branco' })
+    await expect(botao).toHaveText('Em branco')
+    const caixa = (await botao.boundingBox())!
+    expect(caixa.width).toBeGreaterThanOrEqual(44)
+    expect(caixa.height).toBeGreaterThanOrEqual(44)
+
+    await criarBrancaNoEditar(page, 8)
+    await expect(page.getByTestId('editar-pdf-area')).toBeFocused()
+    await expect(
+      page.getByRole('button', { name: 'Página 9', exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(
+      page.getByRole('img', { name: 'Página 9, em branco' }),
+    ).toBeVisible()
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(320)
+
+    await page.getByRole('button', { name: 'Páginas', exact: true }).click()
+    const folha = page.getByRole('dialog', { name: 'Páginas' })
+    await expect(folha.getByText('Página em branco, A4')).toBeVisible()
+    const naFolha = (await folha
+      .getByRole('button', { name: 'Página em branco' })
+      .boundingBox())!
+    expect(naFolha.height).toBeGreaterThanOrEqual(44)
+    expect(await folha.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    )
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    for (const largura of [1280, 320])
+      test(`com a branca aberta e um cobrir nela, o botão, a origem, o cabeçalho e o aviso do cobrir passam de 4,5:1 no tema ${tema} a ${largura} px`, async ({
+        page,
+      }) => {
+        test.setTimeout(60_000)
+        await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+        await page.setViewportSize({ width: largura, height: 800 })
+        await page.goto('/tools/pdf/editar')
+        await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
+        await criarBrancaNoEditar(page, 2)
+        await inserirNoCentro(page, 'Cobrir')
+        await expect(page.getByTestId('editar-pdf-cobrir')).toContainText(
+          'Esta página é em branco',
+        )
+        await page.evaluate(() =>
+          Promise.all(document.getAnimations().map((a) => a.finished)),
+        )
+
+        const medidas = await page.evaluate(
+          medirContrasteDoTexto,
+          '[data-testid="editar-pdf"]',
+        )
+        // O texto medido vem cortado em 30 caracteres.
+        for (const texto of [
+          largura === 320 ? 'Em branco' : 'Página em branco',
+          'a.pdf + 1 página em branco',
+          'Esta página é em branco',
+        ]) {
+          expect(
+            medidas.some((m) => m.texto.startsWith(texto)),
+            texto,
+          ).toBe(true)
+        }
+        expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+      })
+
+  for (const largura of [1280, 320])
+    test(`axe (WCAG 2.2 A e AA) sem violação séria a ${largura} px, com a branca aberta, selecionada e com um cobrir`, async ({
+      page,
+    }) => {
+      test.setTimeout(60_000)
+      await page.setViewportSize({ width: largura, height: 800 })
+      await page.goto('/tools/pdf/editar')
+      await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320]))
+      await criarBrancaNoEditar(page, 2)
+      await inserirNoCentro(page, 'Cobrir')
 
       expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual(
         [],
