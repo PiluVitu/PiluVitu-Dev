@@ -42,7 +42,6 @@ import {
   giroNormalizado,
   historicoInicial,
   moverSelecionadas,
-  nomeDoPdfDerivado,
   podeDesfazer,
   posicaoDeInsercao,
   podeRefazer,
@@ -90,7 +89,10 @@ import {
 import {
   adicionarPaginas,
   arquivosAlcancaveis,
+  brancasAlcancaveis,
   doArquivo,
+  ehBranca,
+  nomeDoPdfBaixado,
   paginasDoArquivo,
   pedidoDeArquivos,
   type DocumentoDoEditor,
@@ -419,6 +421,7 @@ export function EditarPdf({
       )
     },
     aoRecusar: () => anunciar(''),
+    brancas: () => brancasAlcancaveis(paginasDoDoc.paginas),
   })
   const sessao = documento?.sessao ?? null
   const primeiro = documento?.arquivos[0] ?? null
@@ -874,11 +877,7 @@ export function EditarPdf({
     paginasDoPdf: readonly PaginaDaBancada[],
   ) {
     if (!atual?.ok || !documento || !paginasDoPdf.length) return
-    const primeiroNoPdf = Math.min(
-      ...paginasDoPdf.map(({ origem }) => origem.arquivo),
-    )
-    const nomeDaOrigem =
-      documento.arquivos[primeiroNoPdf]?.arquivo.name ?? atual.arquivo.name
+    const nome = nomeDoPdfBaixado(documento, paginasDoPdf, SUFIXOS[tipo])
     const idsDoPdf = paginasDoPdf.map(({ id }) => id)
     // O Worker é estrito: objeto, fundo ou moldura de página fora do pedido é erro.
     const cenaDoPdf = cenaDasPaginas(cena, new Set(idsDoPdf))
@@ -925,7 +924,7 @@ export function EditarPdf({
         estado: 'pronto',
         tipo,
         url: URL.createObjectURL(pdf),
-        nome: nomeDoPdfDerivado(nomeDaOrigem, SUFIXOS[tipo]),
+        nome,
         paginas: paginasDoPdf.length,
         bytes: pdf.size,
       })
@@ -1427,7 +1426,9 @@ export function EditarPdf({
     (aberto) => aberto?.arquivo.name ?? '',
   )
   const arquivosNaLista = [
-    ...new Set(lista.map(({ origem }) => origem.arquivo)),
+    ...new Set(
+      lista.flatMap(({ origem }) => (ehBranca(origem) ? [] : [origem.arquivo])),
+    ),
   ].sort((a, b) => a - b)
   const comVariosArquivos = arquivosNaLista.length > 1
   const avisosNoCabecalho: AvisoNoCabecalho[] = arquivosNaLista.flatMap(

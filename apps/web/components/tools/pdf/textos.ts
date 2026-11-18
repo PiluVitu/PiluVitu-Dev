@@ -493,11 +493,18 @@ export const TEXTOS = {
         `Não deu para adicionar ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
       passouDoTeto: passouDoTetoSomado,
     },
+    branca: {
+      /** A base do nome do PDF baixado quando nenhuma página de arquivo vai nele. */
+      nomeDoPdf: 'paginas-em-branco.pdf',
+      passouDoTeto: (teto: number) =>
+        `Não deu para criar a página em branco: não cabe mais nenhuma página (até ${numero(teto)} somando os PDFs abertos e as páginas em branco).`,
+    },
     paginas: 'Páginas',
     paginasDoDocumento: {
       rotulo: (posicao: number) => `Página ${numero(posicao)}`,
       origem: (nome: string, numeroNoArquivo: number) =>
         `${nome}, pág. ${numero(numeroNoArquivo)}`,
+      origemDaBranca: 'Página em branco',
       abrir: (posicao: number) => `Abrir a página ${numero(posicao)}`,
       aberta: 'aberta',
       naSelecao: 'Na seleção',

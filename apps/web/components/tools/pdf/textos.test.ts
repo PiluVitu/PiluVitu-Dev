@@ -167,6 +167,16 @@ describe('editar', () => {
     })
   })
 
+  describe('a página em branco: a recusa pelo teto diz o que ainda cabe', () => {
+    const { passouDoTeto } = TEXTOS.editar.branca
+
+    it('com o documento cheio, não cabe mais nenhuma', () => {
+      expect(passouDoTeto(500)).toBe(
+        'Não deu para criar a página em branco: não cabe mais nenhuma página (até 500 somando os PDFs abertos e as páginas em branco).',
+      )
+    })
+  })
+
   describe('adicionar outro PDF: o botão, onde entra e o anúncio', () => {
     const A = TEXTOS.editar.adicionar
 

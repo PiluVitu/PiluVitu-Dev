@@ -1,11 +1,16 @@
-import { apagar, type Giro } from '@piluvitu/tools/pdf-regras'
+import {
+  apagar,
+  type Giro,
+  type OrigemDaPagina,
+} from '@piluvitu/tools/pdf-regras'
 import { idDaPagina } from './montagem'
 import type { PaginaParaMontar } from './motor'
 import { molduraDa, type Cena } from './objetos'
 
+/** `a<arquivo>p<índice>` para a página de um arquivo, `b<n>` para a página em branco. */
 export type PaginaDaBancada = {
   readonly id: string
-  readonly origem: { readonly arquivo: number; readonly indice: number }
+  readonly origem: OrigemDaPagina
   readonly giro: Giro
 }
 
@@ -17,6 +22,8 @@ export type Paginas = {
 
 export type PaginasComDesfazer = Paginas & {
   readonly passado: readonly Paginas[]
+  /** Fora do desfazer: o id da branca nova (`b<n>`) nunca repete o de uma desfeita, cujos objetos a cena guarda. */
+  readonly brancasCriadas: number
 }
 
 export const LIMITE_DO_DESFAZER_DAS_PAGINAS = 100
@@ -30,6 +37,7 @@ export function paginasIniciais(total: number): PaginasComDesfazer {
     })),
     marcadas: [],
     passado: [],
+    brancasCriadas: 0,
   }
 }
 
@@ -39,17 +47,24 @@ export function mudarPaginas(
 ): PaginasComDesfazer {
   const { lista, marcadas } = atual
   return {
-    ...novo,
+    lista: novo.lista,
+    marcadas: novo.marcadas,
     passado: [...atual.passado, { lista, marcadas }].slice(
       -LIMITE_DO_DESFAZER_DAS_PAGINAS,
     ),
+    brancasCriadas: atual.brancasCriadas,
   }
 }
 
 export function desfazerPaginas(atual: PaginasComDesfazer): PaginasComDesfazer {
   const anterior = atual.passado.at(-1)
   if (!anterior) return atual
-  return { ...anterior, passado: atual.passado.slice(0, -1) }
+  return {
+    lista: anterior.lista,
+    marcadas: anterior.marcadas,
+    passado: atual.passado.slice(0, -1),
+    brancasCriadas: atual.brancasCriadas,
+  }
 }
 
 export function marcar(
@@ -106,7 +121,10 @@ export function mudouDoInicio(
     lista.length !== total ||
     lista.some(
       ({ origem, giro }, posicao) =>
-        giro !== 0 || origem.arquivo !== 0 || origem.indice !== posicao,
+        giro !== 0 ||
+        'branca' in origem ||
+        origem.arquivo !== 0 ||
+        origem.indice !== posicao,
     )
   )
 }

@@ -20,6 +20,7 @@ let motor: ReturnType<typeof criarMotorFalso>
 let renderizador: ReturnType<typeof criarRenderizadorFalso>
 let abertos: { documento: DocumentoDoEditor; nome: string }[]
 let recusados: number
+let brancas: number
 
 function Sonda({ arquivo }: { arquivo: File | null }) {
   const retorno = useDocumentoDoEditor(arquivo, {
@@ -30,6 +31,7 @@ function Sonda({ arquivo }: { arquivo: File | null }) {
     aoRecusar: () => {
       recusados += 1
     },
+    brancas: () => brancas,
   })
   useEffect(() => {
     ultimo = retorno
@@ -77,6 +79,7 @@ beforeEach(() => {
   renderizador = criarRenderizadorFalso()
   abertos = []
   recusados = 0
+  brancas = 0
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -231,6 +234,21 @@ describe('adicionar outro PDF', () => {
       },
     })
     expect(renderizador.abertos).toEqual(['a-450p.pdf'])
+  })
+
+  // PR 5: as páginas em branco que existem (na lista ou no desfazer) contam no teto somado.
+  it('as páginas em branco contam no teto de páginas, na hora da contagem', async () => {
+    await abrir(pdf('a-450p.pdf'))
+    brancas = 3
+
+    const recusada = await adicionar(pdf('b-48p.pdf'))
+    const aceita = await adicionar(pdf('c-47p.pdf'))
+
+    expect(recusada).toMatchObject({
+      ok: false,
+      recusa: { passou: 'paginas', paginas: 48, restam: { paginas: 47 } },
+    })
+    expect(aceita).toMatchObject({ ok: true, arquivo: 1 })
   })
 
   it.each([

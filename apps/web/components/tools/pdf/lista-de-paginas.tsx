@@ -589,7 +589,11 @@ export function ListaDaBancada({
               key={pagina.id}
               pagina={pagina}
               posicao={posicao + 1}
-              nomeDoArquivo={nomesDosArquivos[pagina.origem.arquivo] ?? ''}
+              nomeDoArquivo={
+                'branca' in pagina.origem
+                  ? ''
+                  : (nomesDosArquivos[pagina.origem.arquivo] ?? '')
+              }
               selecionada={marcadas.has(pagina.id)}
               aberta={pagina.id === aberta}
               url={miniaturas.urls.get(pagina.id)}
@@ -755,7 +759,9 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
           className="text-muted-foreground text-xs [overflow-wrap:anywhere]"
           data-testid="editar-pdf-origem"
         >
-          {P.origem(nomeDoArquivo, origem.indice + 1)}
+          {'branca' in origem
+            ? P.origemDaBranca
+            : P.origem(nomeDoArquivo, origem.indice + 1)}
         </p>
         {giro !== 0 && (
           <p className="text-muted-foreground text-xs">{T.girada(giro)}</p>
