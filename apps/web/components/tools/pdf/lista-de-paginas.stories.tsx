@@ -16,7 +16,7 @@ const miniatura = (numero: number) =>
   )}`
 
 const miniaturas = {
-  urls: new Map(Array.from({ length: 6 }, (_, i) => [i, miniatura(i + 1)])),
+  urls: new Map(Array.from({ length: 5 }, (_, i) => [i, miniatura(i + 1)])),
   falhas: new Set([5]),
   observar: () => () => {},
 }
