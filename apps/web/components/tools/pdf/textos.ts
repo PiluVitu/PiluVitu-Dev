@@ -6,6 +6,7 @@ import type {
   LadoDoMovimento,
   MotivoDoErroDePdf,
   SentidoDoGiro,
+  Tamanho,
   TipoDeObjeto,
 } from '@piluvitu/tools/pdf-regras'
 import type { FalhaDaOperacao, MotivoDaRecusa, ObjetoNaTela } from './motor'
@@ -204,6 +205,31 @@ const AVISOS_DO_PDF: Record<AvisoDoPdf, string> = {
 const documentoAberto = (nome: string, totalDePaginas: number) =>
   `${nome} · ${paginas(totalDePaginas)}`
 
+function documentosAbertos(
+  nomes: readonly string[],
+  totalDePaginas: number,
+  brancas = 0,
+): string {
+  const partes = brancas ? [...nomes, `${paginas(brancas)} em branco`] : nomes
+  return documentoAberto(partes.join(' + '), totalDePaginas)
+}
+
+const PONTOS_POR_CM = 72 / 2.54
+
+const centimetros = new Intl.NumberFormat(IDIOMA, { maximumFractionDigits: 1 })
+
+// O A4 tem 595,28 × 841,89 pontos; o pdf.js mede uma página A4 de arquivo como 595 × 842.
+const ehA4 = (menor: number, maior: number) =>
+  Math.abs(menor - 595.28) < 1 && Math.abs(maior - 841.89) < 1
+
+function tamanhoDaFolha({ largura, altura }: Tamanho): string {
+  if (ehA4(Math.min(largura, altura), Math.max(largura, altura))) {
+    return largura > altura ? 'A4 deitada' : 'A4'
+  }
+  const cm = (pontos: number) => centimetros.format(pontos / PONTOS_POR_CM)
+  return `${cm(largura)} × ${cm(altura)} cm`
+}
+
 const avisoDoArquivo = (nome: string, aviso: AvisoDoPdf) =>
   `${nome}: ${AVISOS_DO_PDF[aviso]}`
 
@@ -244,6 +270,7 @@ function passouDoTetoSomado(
     restam,
   }: { passou: keyof Teto; bytes: number; paginas?: number; restam: Teto },
   teto: Teto,
+  comBrancas = false,
 ): string {
   const porBytes = passou === 'bytes'
   const tem = porBytes ? formatarTamanho(bytes) : paginas(paginasDoNovo)
@@ -253,7 +280,11 @@ function passouDoTetoSomado(
       ? `não cabe mais ${porBytes ? 'nada' : 'nenhuma'}`
       : `só cabem mais ${porBytes ? formatarTamanho(sobra) : paginas(sobra)}`
   const limite = porBytes ? formatarTamanho(teto.bytes) : numero(teto.paginas)
-  const inicio = `Não deu para adicionar ${nome}: ele tem ${tem}, e ${cabe} (até ${limite} somando os PDFs abertos).`
+  const somando =
+    comBrancas && !porBytes
+      ? 'os PDFs abertos e as páginas em branco'
+      : 'os PDFs abertos'
+  const inicio = `Não deu para adicionar ${nome}: ele tem ${tem}, e ${cabe} (até ${limite} somando ${somando}).`
   return sobra === 0
     ? inicio
     : `${inicio} Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.`
@@ -473,8 +504,7 @@ export const TEXTOS = {
       `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)}, somando os PDFs que você abrir e adicionar. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,
     aberto: documentoAberto,
-    abertos: (nomes: readonly string[], totalDePaginas: number) =>
-      documentoAberto(nomes.join(' + '), totalDePaginas),
+    abertos: documentosAbertos,
     avisoDoArquivo,
     recusado: (nome: string, motivo: MotivoDaRecusa) =>
       `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
@@ -494,6 +524,12 @@ export const TEXTOS = {
       passouDoTeto: passouDoTetoSomado,
     },
     branca: {
+      botao: 'Página em branco',
+      curto: 'Em branco',
+      adicionada: (depoisDa: number) =>
+        `Página em branco adicionada depois da página ${numero(depoisDa)}, já selecionada.`,
+      semTamanho: (numeroDaPagina: number) =>
+        `Não deu para criar a página em branco: não deu para ler o tamanho da página ${numero(numeroDaPagina)}, talvez por falta de memória. Feche outras abas e tente de novo.`,
       /** A base do nome do PDF baixado quando nenhuma página de arquivo vai nele. */
       nomeDoPdf: 'paginas-em-branco.pdf',
       passouDoTeto: (teto: number) =>
@@ -504,7 +540,8 @@ export const TEXTOS = {
       rotulo: (posicao: number) => `Página ${numero(posicao)}`,
       origem: (nome: string, numeroNoArquivo: number) =>
         `${nome}, pág. ${numero(numeroNoArquivo)}`,
-      origemDaBranca: 'Página em branco',
+      origemDaBranca: (tamanho: Tamanho) =>
+        `Página em branco, ${tamanhoDaFolha(tamanho)}`,
       abrir: (posicao: number) => `Abrir a página ${numero(posicao)}`,
       aberta: 'aberta',
       naSelecao: 'Na seleção',
@@ -541,6 +578,8 @@ export const TEXTOS = {
       noMaximo: 'O zoom já está no máximo.',
     },
     pagina: (numeroDaPagina: number) => `Página ${numero(numeroDaPagina)}`,
+    paginaEmBranco: (numeroDaPagina: number) =>
+      `Página ${numero(numeroDaPagina)}, em branco`,
     areaDaPagina: (numeroDaPagina: number) =>
       `Área da página ${numero(numeroDaPagina)}`,
     desenhando: 'Desenhando a página…',
@@ -634,6 +673,8 @@ export const TEXTOS = {
     cobrir: {
       titulo: 'Cobrir nesta página',
       aviso: AVISO_DO_COBRIR,
+      naBranca:
+        'Esta página é em branco: não há nada embaixo do cobrir para apagar, ele só pinta por cima.',
       apagarDeVerdade: 'Apagar de verdade o que está embaixo',
       antes: 'Antes de confirmar, o que muda nesta página:',
       consequencias: (porCopia: boolean) => [
