@@ -541,13 +541,16 @@ describe('a página grande', () => {
   })
 
   it('mostra que está desenhando, e um pedido superado não aparece nem dá erro', async () => {
-    const renderizador = criarRenderizadorFalso({ atraso: 30 })
+    // As páginas esperam o portão, não um relógio: com um atraso fixo, o CI lento terminava o desenho antes da asserção.
+    const renderizador = criarRenderizadorFalso()
     await abrir('livro-4p.pdf', { renderizador })
+    renderizador.prenderPaginas()
 
     await act(async () => miniaturas()[1].click())
     expect(q('editar-pdf-desenhando')!.textContent).toBe('Desenhando a página…')
     expect(q('editar-pdf-folha')!.getAttribute('aria-busy')).toBe('true')
     await act(async () => miniaturas()[3].click())
+    renderizador.soltarPaginas()
     await esperarAte(() => q('editar-pdf-desenhando') === null)
 
     const pedidas = renderizador.paginasPedidas.map((p) => p.indice)
