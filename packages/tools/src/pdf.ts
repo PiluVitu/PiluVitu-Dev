@@ -1427,7 +1427,11 @@ async function editarNoLugar(
 ): Promise<void> {
   const paginas = documento.getPages()
   const recursos = new Recursos(documento)
-  if (editadas.some(({ objetos, fundo }) => objetos.length > 0 || fundo)) {
+  if (
+    editadas.some(
+      ({ objetos, fundo, giro }) => objetos.length > 0 || fundo || giro !== 0,
+    )
+  ) {
     tirarXfaDoHibrido(documento)
   }
   const apagadas = new Set<PDFRef>()

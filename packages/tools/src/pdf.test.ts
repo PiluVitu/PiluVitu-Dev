@@ -2228,6 +2228,41 @@ describe('aplicarEdicoes: XFA híbrido e recursos estendidos', () => {
     expect(editado.catalog.has(PDFName.of('NeedsRendering'))).toBe(true)
   })
 
+  // Achado do Crivo no #126: o organizar que só gira sai no lugar, e o XFA do híbrido ficava. No Reader,
+  // a versão XFA aparece no lugar da página, e o giro some para quem abre no Acrobat.
+  it('o híbrido só girado, no lugar, sai sem o XFA, com o AcroForm e com o giro', async () => {
+    const final = await montarDocumento(
+      [await gerarHibrido()],
+      [daMontagem(0, 0, { giro: 90 })],
+      [],
+    )
+    const documento = await PDFDocument.load(final)
+    expect(
+      documento.catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(false)
+    expect(documento.catalog.has(PDFName.of('NeedsRendering'))).toBe(false)
+    expect(contem(await todoOConteudo(final), 'xfa:datasets')).toBe(false)
+    expect(documento.getForm().getTextField('pessoa.nome').getText()).toBe(
+      'Paulo',
+    )
+    expect(await rotacoesDasPaginas(final)).toEqual([90])
+  })
+
+  it('o híbrido sem giro nem objeto, no lugar, continua com o XFA', async () => {
+    const final = await montarDocumento(
+      [await gerarHibrido()],
+      [daMontagem(0, 0)],
+      [],
+    )
+    expect(
+      (await PDFDocument.load(final)).catalog
+        .lookup(PDFName.of('AcroForm'), PDFDict)
+        .has(PDFName.of('XFA')),
+    ).toBe(true)
+  })
+
   // Os recursos estendidos do Reader (comuns em formulário de governo) e a certificação (/DocMDP) são
   // assinaturas do arquivo, que deixam de valer quando o pdf-lib o escreve de novo.
   it('o /UR3, o /UR e o /DocMDP saem do /Perms, que sai quando fica vazio', async () => {
