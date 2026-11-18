@@ -271,7 +271,7 @@ describe('llms.txt: dados das páginas', () => {
     expect(linhas.slice(editor + 1, editor + 4)).toEqual([
       '- [Mesclar PDF](https://piluvitu.com.br/tools/pdf/mesclar): Junta vários PDFs em um só arquivo',
       '- [Organizar páginas](https://piluvitu.com.br/tools/pdf/organizar): Gira, apaga, reordena e extrai páginas de um PDF',
-      '- [Editar PDF](https://piluvitu.com.br/tools/pdf/editar): Escreve, desenha, põe imagens e cobre trechos por cima das páginas',
+      '- [Editar PDF](https://piluvitu.com.br/tools/pdf/editar): Organiza as páginas e escreve, desenha, põe imagens e cobre trechos por cima delas',
     ])
     expect(texto).not.toContain('/tools/mesclar-pdf')
     expect(texto).not.toContain('/tools/pdf/assinar')

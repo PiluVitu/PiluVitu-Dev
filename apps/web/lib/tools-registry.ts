@@ -120,7 +120,7 @@ export const TOOLS: ToolMeta[] = [
         slug: 'editar',
         title: 'Editar PDF',
         description:
-          'Escreve, desenha, põe imagens e cobre trechos por cima das páginas',
+          'Organiza as páginas e escreve, desenha, põe imagens e cobre trechos por cima delas',
         icon: faPenToSquare,
       },
     ],
