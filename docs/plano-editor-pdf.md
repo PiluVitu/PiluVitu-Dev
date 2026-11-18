@@ -18,7 +18,7 @@ Registro das decisões do editor de PDF do piluvitu.com.br. Pedido do Paulo em 2
 
   Nenhum deles entra no bundle das outras páginas do site. Cada PR confere no `.next` do build e registra no `apps/web/CLAUDE.md`.
 
-- **Teto:** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1. O pdf-lib usa umas 3,5 vezes a entrada e o Blob do resultado soma mais uma, por isso a tela fala em "umas 4 vezes esse tamanho". Essa medida vale só para o pdf-lib sozinho. Nos modos com miniatura (fase 2 em diante), o mesmo documento fica na memória em até três lugares ao mesmo tempo: o provider do layout, a cópia que o pdf.js recebe em `data` e o pico do pdf-lib ao salvar. Por isso o teto de bytes foi medido de novo na fase 2, com o pdf.js aberto: com 98 MB o pico passou de 7 vezes o arquivo (+690 a +740 MB), e **nos modos com miniatura o teto é de 50 MB** (`TETO_DE_BYTES_COM_MINIATURAS`), que fica perto de +300 MB, dentro do que o teto do mesclar aceita. O mesclar segue com 100 MB. As fases que desenham páginas também têm um teto de páginas e de canvas, descrito em cada uma.
+- **Teto (histórico até o PR 6 do editor único, que tirou o mesclar e o teto de 100 MB; hoje vale só o de 50 MB e 500 páginas, somando, ver "Editor único"):** 100 MB por documento (ou somando os arquivos, no mesclar), pelo motivo medido no PR 1. O pdf-lib usa umas 3,5 vezes a entrada e o Blob do resultado soma mais uma, por isso a tela fala em "umas 4 vezes esse tamanho". Essa medida vale só para o pdf-lib sozinho. Nos modos com miniatura (fase 2 em diante), o mesmo documento fica na memória em até três lugares ao mesmo tempo: o provider do layout, a cópia que o pdf.js recebe em `data` e o pico do pdf-lib ao salvar. Por isso o teto de bytes foi medido de novo na fase 2, com o pdf.js aberto: com 98 MB o pico passou de 7 vezes o arquivo (+690 a +740 MB), e **nos modos com miniatura o teto é de 50 MB** (`TETO_DE_BYTES_COM_MINIATURAS`), que fica perto de +300 MB, dentro do que o teto do mesclar aceitava. O mesclar seguiu com 100 MB até sair, no PR 6. As fases que desenham páginas também têm um teto de páginas e de canvas, descrito em cada uma.
 - **pdf.js com a configuração segura:**
   - a versão 6 já não tem o caminho com `eval` do CVE-2024-4367: a opção `isEvalSupported` saiu da biblioteca, e o `pdf.mjs` e o worker do 6.3.289 não têm `new Function` (conferido em 2026-11-16);
   - `enableXfa: false`;
@@ -204,7 +204,7 @@ A fase 4 (assinatura e formulário AcroForm, #121, commit 6367482) entrou em 202
 - o formulário AcroForm, no `packages/tools` e na tela: a leitura dos campos (`lerFormulario`), o painel, o destaque do campo, o preenchimento, o achatar e os tipos dele no `pdf-regras`;
 - o que só servia a esse modo: o `modo` do `EditarPdf` (`FERRAMENTAS_DO_MODO`, `SUFIXO_DO_MODO`, `TEXTOS_DO_MODO`), o `larga` do `ToolPageShell` e as duas colunas, o `tirarFundoBranco`, a `escalaDaAssinatura`, o `caixaDosTracos` e os testes, as stories e os E2E de tudo isso. O `package.json` não mudou: o pdf-lib e o perfect-freehand ficam, porque o Editar usa.
 
-**A URL antiga:** `/tools/pdf/assinar` responde 308 para `/tools/pdf` pelos `redirects()` do `next.config.mjs`, como o `/tools/mesclar-pdf`. O destino é fixo, sem parâmetro.
+**A URL antiga:** `/tools/pdf/assinar` responde 308 para `/tools/pdf` pelos `redirects()` do `next.config.mjs`, como o `/tools/mesclar-pdf` fazia até o PR 6 do editor único (que o tirou: hoje ele dá 404). O destino é fixo, sem parâmetro.
 
 **O que ficou, porque o Editar e o apagar de verdade usam** (cada um com teste próprio):
 
@@ -345,13 +345,13 @@ Cada PR: revisão do Crivo no SHA exato, CI verde, merge com `--match-head-commi
 
 - pdf-lib 1.17.1 (parado desde 2021, mas maduro) em vez do fork `@cantoo/pdf-lib`, que pede faixas abertas de versão.
 - pdfjs-dist 6.3.289, a mesma versão do `apps/financas`, em vez da 6.5. A troca para uma mais nova vale para os dois apps juntos, num PR próprio.
-- Teto de 100 MB por documento no mesclar (medido) e, nos modos com miniatura, de 50 MB e 500 páginas (medidos na fase 2).
+- Teto de 100 MB por documento no mesclar (medido) e, nos modos com miniatura, de 50 MB e 500 páginas (medidos na fase 2). Histórico: desde o PR 6 do editor único, sem o mesclar, vale só o de 50 MB e 500 páginas.
 - Só as fontes padrão do PDF; sem fontkit.
 - perfect-freehand para o traço; sem signature_pad.
 - Editar o texto existente fica fora; o caminho é cobrir e escrever. Cobrir avisa que não apaga, e "apagar de verdade" transforma a página em imagem com os retângulos queimados nela e sem as anotações da página.
 - Teto de bytes medido de novo na fase 2, com o pdf.js aberto: 50 MB nos modos com miniatura.
 - O quadro de objetos é `role=application`, com teste manual em VoiceOver e NVDA.
-- Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`.
+- Rotas por modo debaixo de `/tools/pdf`, com 308 do `/tools/mesclar-pdf`. Histórico: desde o PR 6 do editor único, `/tools/pdf` é o editor e as rotas dos modos e o `/tools/mesclar-pdf` dão 404 (P5).
 - Um Worker do pdf.js por documento aberto (`PDFWorker.create({ port })`), não o `GlobalWorkerOptions.workerPort` global, para fechar o documento soltar a memória dele. Desde o PR 4 do editor único, pela M2, é um Worker por **sessão** do renderizador (os documentos do editor dividem um), que cai quando o último documento fecha.
 - No organizar, as páginas que saem do plano são esvaziadas antes da cópia, para o conteúdo delas não ir junto por um link interno; e mover com seleção não contígua deixa a que encostou na ponta parada e leva as outras até ela.
 - No organizar, o pdf-lib lê o arquivo antes do pdf.js abrir: os erros têm as mesmas mensagens do mesclar, e um PDF recusado ou com páginas demais não chega ao pdf.js. Se os dois contam um número diferente de páginas, o arquivo é recusado como corrompido.
