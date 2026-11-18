@@ -21,15 +21,34 @@ function redirecionamentos(): Redirecionamento[] {
   return JSON.parse(saida) as Redirecionamento[]
 }
 
+// P5: as quatro rotas antigas do editor saem sem redirecionamento e dão 404.
+const QUATRO_ROTAS = [
+  '/tools/pdf/mesclar',
+  '/tools/pdf/organizar',
+  '/tools/pdf/editar',
+  '/tools/mesclar-pdf',
+]
+
 describe('next.config.mjs: redirecionamentos do editor de PDF', () => {
   const todos = redirecionamentos()
 
-  it.each([
-    ['/tools/pdf/assinar', '/tools/pdf'],
-    ['/tools/mesclar-pdf', '/tools/pdf/mesclar'],
-  ])('%s vai para %s com 308', (origem, destino) => {
-    expect(todos.filter((r) => r.source === origem)).toEqual([
-      { source: origem, destination: destino, permanent: true },
+  it('/tools/pdf/assinar vai para /tools/pdf com 308, num salto só', () => {
+    expect(todos.filter((r) => r.source === '/tools/pdf/assinar')).toEqual([
+      {
+        source: '/tools/pdf/assinar',
+        destination: '/tools/pdf',
+        permanent: true,
+      },
     ])
+    expect(todos.filter((r) => r.source === '/tools/pdf')).toEqual([])
+  })
+
+  it.each(QUATRO_ROTAS)('%s não tem redirecionamento', (rota) => {
+    expect(todos.filter((r) => r.source === rota)).toEqual([])
+  })
+
+  it('nenhum redirecionamento aponta para as quatro: nunca há cadeia até um 404', () => {
+    for (const { destination } of todos)
+      expect(QUATRO_ROTAS).not.toContain(destination)
   })
 })

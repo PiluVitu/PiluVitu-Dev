@@ -20,11 +20,6 @@ const nextConfig = {
         permanent: true,
       },
       {
-        source: '/tools/mesclar-pdf',
-        destination: '/tools/pdf/mesclar',
-        permanent: true,
-      },
-      {
         source: '/tools/pdf/assinar',
         destination: '/tools/pdf',
         permanent: true,
