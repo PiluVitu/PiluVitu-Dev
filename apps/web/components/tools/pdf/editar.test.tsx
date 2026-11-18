@@ -6,7 +6,8 @@ import {
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
 import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
-import { EditarPdf, ZOOMS } from './editar'
+import { ZOOMS } from './area-da-pagina'
+import { EditarPdf } from './editar'
 import type { ObjetoNaTela } from './motor'
 import { criarMotorFalso } from './motor-falso'
 import { criarRenderizadorFalso } from './renderizador-falso'
