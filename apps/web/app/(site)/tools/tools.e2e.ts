@@ -9,6 +9,7 @@ import {
   PDFDocument,
   PDFName,
   PDFNumber,
+  type PDFPage,
   PDFRawStream,
   PDFString,
   StandardFonts,
@@ -2784,8 +2785,22 @@ const anuncioDaAdicao = (nome: string, paginas: number, depoisDa: number) =>
 // cru do arquivo, para a busca por ele valer); a segunda, em branco.
 async function pdfComSegredo(nome: string, segredo: string) {
   const documento = await PDFDocument.create()
+  await escreverSegredo(documento, documento.addPage([300, 300]), segredo)
+  documento.addPage([300, 300])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+// Em 16 pontos, com a linha de base em (40, 150).
+async function escreverSegredo(
+  documento: PDFDocument,
+  pagina: PDFPage,
+  segredo: string,
+) {
   const fonte = await documento.embedFont(StandardFonts.Helvetica)
-  const pagina = documento.addPage([300, 300])
   const nomeDaFonte = pagina.node.newFontDictionary('F1', fonte.ref)
   pagina.pushOperators(
     beginText(),
@@ -2797,12 +2812,6 @@ async function pdfComSegredo(nome: string, segredo: string) {
     ),
     endText(),
   )
-  documento.addPage([300, 300])
-  return {
-    name: nome,
-    mimeType: 'application/pdf',
-    buffer: Buffer.from(await documento.save()),
-  }
 }
 
 test.describe('Editar PDF: adicionar outro PDF', () => {
@@ -3229,10 +3238,12 @@ async function pdfComDeitada(nome: string) {
 }
 
 // O /Kids repete a primeira página no fim: três posições, dois nós (aceito pelo pdf.js e pelo pdf-lib).
-async function pdfComPaginaRepetida(nome: string) {
+// Com `segredo`, a repetida o mostra como o pdfComSegredo.
+async function pdfComPaginaRepetida(nome: string, segredo?: string) {
   const documento = await PDFDocument.create()
   documento.setTitle('Título do arquivo')
-  documento.addPage([300, 300])
+  const repetida = documento.addPage([300, 300])
+  if (segredo) await escreverSegredo(documento, repetida, segredo)
   documento.addPage([320, 320])
   const arvore = documento.catalog.Pages()
   arvore.Kids().push(documento.getPage(0).ref)
@@ -3441,6 +3452,56 @@ test.describe('Editar PDF: página em branco', () => {
       .click()
     const porCopia = await gerarEBaixar(page)
     expect(await textosDasPaginas(porCopia.bytes)).toEqual([['AAA'], ['BBB']])
+  })
+
+  // Regressão do PR 6, pelo caminho que a recusa ensina: tirado o apagar de verdade de uma das posições,
+  // o cobrir dela fica como um retângulo comum, e o PDF baixado saía com o segredo no texto dessa posição.
+  test('o nó repetido no /Kids com o segredo coberto nas duas posições: a recusa, o apagar de verdade tirado de uma e, no PDF baixado, no lugar e por cópia, o segredo em página nenhuma', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    const arquivo = await pdfComPaginaRepetida(
+      'repetida.pdf',
+      'Segredo 987.654.321-00',
+    )
+    expect(await todoOConteudoDoPdf(arquivo.buffer)).toContain('987.654.321')
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(page, arquivo)
+    for (const numero of [1, 3]) {
+      await abrirPagina(page, numero, 3)
+      await inserirNoCentro(page, 'Cobrir')
+      await posicionar(page, { x: 30, y: 125, largura: 240, altura: 40 })
+      await page
+        .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Apagar de verdade nesta página' })
+        .click()
+      await expect(page.getByTestId('editar-pdf-apagar-ligado')).toBeVisible()
+    }
+
+    await page.getByRole('button', { name: 'Gerar PDF', exact: true }).click()
+    await expect(page.getByTestId('editar-pdf-falha-ao-gerar')).toContainText(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF',
+    )
+    await page.getByRole('button', { name: 'Só cobrir, sem apagar' }).click()
+    await expect(page.getByTestId('editar-pdf-apagar-ligado')).toHaveCount(0)
+
+    const semOSegredo = async (bytes: Uint8Array, paginas: number) => {
+      const lidas = await lerComPdfjs(bytes)
+      expect(lidas).toHaveLength(paginas)
+      expect(
+        lidas.flatMap(({ textos }) => textos.map(({ str }) => str)),
+      ).toEqual([])
+      expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
+    }
+    await semOSegredo((await gerarEBaixar(page)).bytes, 3)
+
+    await page
+      .getByTestId('editar-pdf-coluna-de-paginas')
+      .getByRole('button', { name: 'Apagar a página 2' })
+      .click()
+    await semOSegredo((await gerarEBaixar(page)).bytes, 2)
   })
 
   test('a 320 px: o curto "Em branco" tem 44 px, criar abre a branca na faixa com o foco na área, a folha também tem o botão, e nada rola para o lado', async ({
