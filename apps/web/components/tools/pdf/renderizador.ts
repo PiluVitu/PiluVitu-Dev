@@ -1,8 +1,10 @@
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist'
 import {
+  giroNormalizado,
   limitarAoCanvas,
   pixelsDoFundo,
   type Caixa,
+  type Giro,
   type Ponto,
   type Tamanho,
 } from '@piluvitu/tools/pdf-regras'
@@ -26,15 +28,20 @@ export type DocumentoAberto = {
   /**
    * A página grande, uma por vez. Um pedido novo cancela o anterior (o que ainda espera nem desenha), e
    * o canvas da página anterior só é esvaziado quando o novo fica pronto, para a tela não piscar.
+   * `giro` (a moldura) gira a página a mais, por cima do /Rotate dela.
    */
-  pagina(indice: number, larguraCss: number): Promise<PaginaDesenhada>
+  pagina(
+    indice: number,
+    larguraCss: number,
+    giro?: Giro,
+  ): Promise<PaginaDesenhada>
   /**
    * Apagar de verdade: a página a 200 dpi (`pixelsDoFundo`) num canvas, com os retângulos de cobrir (em
    * pontos da tela) pintados de branco nele antes do JPEG. Na mesma fila, sem mexer na página grande.
    */
-  fundo(indice: number, cobrir: readonly Caixa[]): Promise<Blob>
+  fundo(indice: number, cobrir: readonly Caixa[], giro?: Giro): Promise<Blob>
   /** Se há texto do próprio PDF no ponto (em pontos da tela), pela camada de texto do pdf.js. */
-  textoNoPonto(indice: number, ponto: Ponto): Promise<boolean>
+  textoNoPonto(indice: number, ponto: Ponto, giro?: Giro): Promise<boolean>
   /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo, depois de o pdf.js limpar a página (fontes e cache). */
   fechar(): void
 }
@@ -73,6 +80,14 @@ function soltar(canvas: HTMLCanvasElement) {
 }
 
 const densidade = () => Math.max(1, globalThis.devicePixelRatio || 1)
+
+function vista(pagina: PDFPageProxy, scale: number, giro: Giro) {
+  return pagina.getViewport(
+    giro
+      ? { scale, rotation: giroNormalizado(pagina.rotate + giro) }
+      : { scale },
+  )
+}
 
 function conferirLargura(larguraCss: number) {
   if (!(Number.isFinite(larguraCss) && larguraCss > 0)) {
@@ -259,6 +274,7 @@ export function criarRenderizadorComPdfjs(
         documento: PDFDocumentProxy,
         indice: number,
         larguraCss: number,
+        giro: Giro,
         vez: number,
       ): Promise<PaginaDesenhada> {
         if (fechado) throw new Error('o documento já foi fechado')
@@ -268,7 +284,7 @@ export function criarRenderizadorComPdfjs(
           quebrou,
         ])
         if (vez !== pedidoDaPagina) throw new PaginaSuperada()
-        const natural = pagina.getViewport({ scale: 1 })
+        const natural = vista(pagina, 1, giro)
         const tamanho = { largura: natural.width, altura: natural.height }
         const { largura, altura, escala } = limitarAoCanvas(
           tamanho,
@@ -279,7 +295,7 @@ export function criarRenderizadorComPdfjs(
         canvas.height = altura
         const desenho = pagina.render({
           canvas,
-          viewport: pagina.getViewport({ scale: escala }),
+          viewport: vista(pagina, escala, giro),
         })
         desenhoDaPagina = desenho
         try {
@@ -307,13 +323,14 @@ export function criarRenderizadorComPdfjs(
         documento: PDFDocumentProxy,
         indice: number,
         cobrir: readonly Caixa[],
+        giro: Giro,
       ): Promise<Blob> {
         if (fechado) throw new Error('o documento já foi fechado')
         const pagina = await Promise.race([
           documento.getPage(indice + 1),
           quebrou,
         ])
-        const natural = pagina.getViewport({ scale: 1 })
+        const natural = vista(pagina, 1, giro)
         const { largura, altura, escala } = pixelsDoFundo({
           largura: natural.width,
           altura: natural.height,
@@ -325,7 +342,7 @@ export function criarRenderizadorComPdfjs(
           await Promise.race([
             pagina.render({
               canvas,
-              viewport: pagina.getViewport({ scale: escala }),
+              viewport: vista(pagina, escala, giro),
             }).promise,
             quebrou,
           ])
@@ -341,6 +358,7 @@ export function criarRenderizadorComPdfjs(
         documento: PDFDocumentProxy,
         indice: number,
         ponto: Ponto,
+        giro: Giro,
       ): Promise<boolean> {
         if (fechado) return false
         const pagina = await Promise.race([
@@ -349,7 +367,7 @@ export function criarRenderizadorComPdfjs(
         ])
         const { items } = await Promise.race([pagina.getTextContent(), quebrou])
         return pontoNoTexto(
-          pagina.getViewport({ scale: 1 }).transform,
+          vista(pagina, 1, giro).transform,
           items as ItemDeTexto[],
           ponto,
         )
@@ -371,7 +389,7 @@ export function criarRenderizadorComPdfjs(
           miniatura(indice, larguraCss) {
             return naFila(() => desenhar(documento, indice, larguraCss))
           },
-          pagina(indice, larguraCss) {
+          pagina(indice, larguraCss, giro = 0) {
             try {
               conferirLargura(larguraCss)
             } catch (erro) {
@@ -380,14 +398,14 @@ export function criarRenderizadorComPdfjs(
             const vez = ++pedidoDaPagina
             desenhoDaPagina?.cancel()
             return naFila(() =>
-              desenharPagina(documento, indice, larguraCss, vez),
+              desenharPagina(documento, indice, larguraCss, giro, vez),
             )
           },
-          fundo(indice, cobrir) {
-            return naFila(() => desenharFundo(documento, indice, cobrir))
+          fundo(indice, cobrir, giro = 0) {
+            return naFila(() => desenharFundo(documento, indice, cobrir, giro))
           },
-          textoNoPonto(indice, ponto) {
-            return textoEm(documento, indice, ponto)
+          textoNoPonto(indice, ponto, giro = 0) {
+            return textoEm(documento, indice, ponto, giro)
           },
           fechar,
         }

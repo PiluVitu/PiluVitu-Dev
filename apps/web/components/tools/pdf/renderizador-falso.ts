@@ -1,6 +1,7 @@
 import {
   limitarAoCanvas,
   type Caixa,
+  type Giro,
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
 import { analiseDeExemplo } from './motor-falso'
@@ -90,9 +91,10 @@ export function criarRenderizadorFalso({
     paginasPedidas: [] as {
       indice: number
       larguraCss: number
+      giro: Giro
       canvas?: HTMLCanvasElement
     }[],
-    fundos: [] as { indice: number; cobrir: readonly Caixa[] }[],
+    fundos: [] as { indice: number; cobrir: readonly Caixa[]; giro: Giro }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
       const nome = (arquivo as File).name
@@ -113,10 +115,11 @@ export function criarRenderizadorFalso({
       const falharam = new Set<number>()
       return {
         paginas: total,
-        async pagina(indice, larguraCss) {
-          const pedido = { indice, larguraCss } as {
+        async pagina(indice, larguraCss, giro = 0) {
+          const pedido = { indice, larguraCss, giro } as {
             indice: number
             larguraCss: number
+            giro: Giro
             canvas?: HTMLCanvasElement
           }
           renderizador.paginasPedidas.push(pedido)
@@ -128,9 +131,10 @@ export function criarRenderizadorFalso({
             falharam.add(indice)
             throw new Error('falta de memória')
           }
-          const tamanho = deitadas[indice]
-            ? { largura: A4.altura, altura: A4.largura }
-            : A4
+          const tamanho =
+            deitadas[indice] !== (giro === 90 || giro === 270)
+              ? { largura: A4.altura, altura: A4.largura }
+              : A4
           const densidade = Math.max(1, globalThis.devicePixelRatio || 1)
           const { largura, altura } = limitarAoCanvas(
             tamanho,
@@ -148,8 +152,8 @@ export function criarRenderizadorFalso({
           pedido.canvas = canvas
           return { canvas, tamanho }
         },
-        async fundo(indice, cobrir) {
-          renderizador.fundos.push({ indice, cobrir })
+        async fundo(indice, cobrir, giro = 0) {
+          renderizador.fundos.push({ indice, cobrir, giro })
           await espera()
           if (fechado) throw new Error('o documento já foi fechado')
           if (fundosQueFalham.includes(indice)) {
