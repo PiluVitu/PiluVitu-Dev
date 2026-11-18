@@ -3962,14 +3962,17 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   })
 
   // Menor 1 do Crivo no #129: com apagar de verdade numa posição do nó, os objetos de outra posição iam
-  // para o nó apagado e saíam em todas ([AAA, CCC] nas posições 0, 2 e 3). Agora o nó fica com a apagada
-  // e cada outra posição ganha a sua página, com o conteúdo de antes do JPEG, como a tela a mostra. Sem
-  // objeto fora da apagada, nada muda: o nó continua um só e o segredo coberto some de todas (o #127).
+  // para o nó apagado e saíam em todas ([AAA, CCC] nas posições 0, 2 e 3). O nó fica com a apagada, e
+  // cada outra posição ganha a sua página. Regressão achada no PR 6: o clone nascia com o conteúdo de
+  // antes do JPEG, e o SEGREDO que a apagada cobriu voltava nas outras posições, até pelo caminho que a
+  // recusa das duas apagadas ensina. Agora cada clone nasce da base apagada (o JPEG) e recebe só os seus
+  // objetos: o segredo coberto some de todas as posições, como no #127, e cada uma sai com o giro que o
+  // nó compartilhado dava. Sem objeto fora da apagada, o nó continua um só.
   // Nenhum nó fica repetido na saída: o pdf.js só lê o nó repetido quando a primeira vez dele já está no
   // cache, e [outra, p1, apagada, apagada] reprovava na última página ("circular reference").
   describe('PDF que repete a mesma página no /Kids: apagar de verdade numa posição e objetos em outra', () => {
-    // O /Kids repete a página 0 nas posições 0, 2 e 3; ela tem o texto SEGREDO.
-    async function comARepetidaTresVezes() {
+    // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes); ela tem o texto SEGREDO.
+    async function comARepetida(vezes: 2 | 3 = 3) {
       const documento = await PDFDocument.create()
       const fonte = await documento.embedFont(StandardFonts.Helvetica)
       documento
@@ -3977,9 +3980,10 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         .drawText('SEGREDO', { x: 20, y: 150, font: fonte, size: 20 })
       documento.addPage([301, 301])
       const arvore = documento.catalog.Pages()
-      arvore.Kids().push(documento.getPage(0).ref)
-      arvore.Kids().push(documento.getPage(0).ref)
-      arvore.set(PDFName.of('Count'), PDFNumber.of(4))
+      for (let vez = 1; vez < vezes; vez++) {
+        arvore.Kids().push(documento.getPage(0).ref)
+      }
+      arvore.set(PDFName.of('Count'), PDFNumber.of(vezes + 1))
       documento.setTitle('TITULO-DO-ARQUIVO')
       return documento.save()
     }
@@ -3988,10 +3992,86 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
       lerComPdfjs(bytes).paginas.map(({ textos }) =>
         textos.map(({ str }) => str),
       )
+    const desenhosDe = (bytes: Uint8Array) =>
+      lerComPdfjs(bytes).paginas.map(({ desenhos }) =>
+        desenhos.map(({ tipo }) => tipo),
+      )
 
-    it('no lugar (a sonda do Crivo): cada posição com o que a tela mostra, e o título fica', async () => {
+    // O SEGREDO não fica em lugar nenhum do arquivo, e cada posição tem o seu nó (o pdf.js do textosDe
+    // lê até a última página).
+    async function semOSegredoESemNoRepetido(bytes: Uint8Array) {
+      expect(contem(await todoOConteudo(bytes), 'SEGREDO')).toBe(false)
+      const paginas = (await PDFDocument.load(bytes)).getPages()
+      expect(new Set(paginas.map(({ ref }) => ref)).size).toBe(paginas.length)
+    }
+
+    const cobrirOSegredo = (): ObjetoDaPagina => ({
+      id: id(),
+      tipo: 'cobrir',
+      x: 10,
+      y: 120,
+      largura: 200,
+      altura: 50,
+    })
+
+    // A regressão, pelo caminho que a tela ensina: o SEGREDO coberto nas duas posições com apagar de
+    // verdade é recusado (apagar_na_pagina_repetida), a pessoa tira o apagar de uma, e o cobrir dela fica
+    // como um retângulo comum. O SEGREDO continuava no texto dessa posição, embaixo do retângulo.
+    it.each([
+      [
+        'no lugar (o Gerar)',
+        plano([0], [1], [2]),
+        2,
+        {},
+        [['imagem'], [], ['imagem', 'caminho']],
+      ],
+      [
+        'por cópia',
+        plano([0], [1], [2]),
+        2,
+        { porCopia: true },
+        [['imagem'], [], ['imagem', 'caminho']],
+      ],
+      [
+        'no Extrair das duas posições',
+        plano([0], [2]),
+        1,
+        { porCopia: true },
+        [['imagem'], ['imagem', 'caminho']],
+      ],
+    ] as const)(
+      'cobrir nas duas e apagar de verdade numa só (%s): o SEGREDO não fica em posição nenhuma, e o retângulo só na sua',
+      async (_, oPlano, outra, opcoes, desenhos) => {
+        const final = await montarDocumento(
+          [await comARepetida(2)],
+          oPlano,
+          [
+            { posicao: 0, objetos: [cobrirOSegredo()], fundo: JPEG_8X8 },
+            { posicao: outra, objetos: [cobrirOSegredo()] },
+          ],
+          opcoes,
+        )
+
+        expect(textosDe(final).flat()).toEqual([])
+        expect(desenhosDe(final)).toEqual(desenhos)
+        await semOSegredoESemNoRepetido(final)
+      },
+    )
+
+    it('cobrir nas duas e apagar de verdade numa só, no aplicarEdicoes (o Editar de um arquivo): o SEGREDO não fica', async () => {
+      const final = await aplicarEdicoes(await comARepetida(2), [
+        { indice: 0, objetos: [cobrirOSegredo()], fundo: JPEG_8X8 },
+        { indice: 2, objetos: [cobrirOSegredo()] },
+      ])
+
+      expect(textosDe(final).flat()).toEqual([])
+      expect(desenhosDe(final)).toEqual([['imagem'], [], ['imagem', 'caminho']])
+      await semOSegredoESemNoRepetido(final)
+    })
+
+    it('no lugar (a sonda do Crivo): AAA só na apagada, CCC só na sua, a 3 sem texto, e o título fica', async () => {
       const final = await montarDocumento(
-        [await comARepetidaTresVezes()],
+        [await comARepetida()],
         plano([0], [1], [2], [3]),
         [
           {
@@ -4003,70 +4083,103 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         ],
       )
 
-      expect(textosDe(final)).toEqual([
-        ['AAA'],
+      expect(textosDe(final)).toEqual([['AAA'], [], ['CCC'], []])
+      expect(desenhosDe(final)).toEqual([
+        ['imagem'],
         [],
-        ['SEGREDO', 'CCC'],
-        ['SEGREDO'],
+        ['imagem'],
+        ['imagem'],
       ])
       expect(await ladosDasPaginas(final)).toEqual([300, 301, 300, 300])
+      await semOSegredoESemNoRepetido(final)
       const documento = await PDFDocument.load(final, { updateMetadata: false })
       expect(documento.getTitle()).toBe('TITULO-DO-ARQUIVO')
     })
 
-    it('por cópia (plano [0, 2]): cada posição com o seu texto', async () => {
-      const final = await montarDocumento(
-        [await comARepetidaTresVezes()],
-        plano([0], [2]),
-        [
-          {
-            posicao: 0,
-            objetos: [objetoTexto({ conteudo: 'AAA' })],
-            fundo: JPEG_8X8,
-          },
-          { posicao: 1, objetos: [objetoTexto({ conteudo: 'BBB' })] },
-        ],
-      )
-
-      expect(textosDe(final)).toEqual([['AAA'], ['SEGREDO', 'BBB']])
-    })
-
-    it('a apagada depois da posição com objetos (no lugar)', async () => {
-      const final = await montarDocumento(
-        [await comARepetidaTresVezes()],
-        plano([0], [1], [2], [3]),
-        [
-          { posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] },
-          {
-            posicao: 2,
-            objetos: [objetoTexto({ conteudo: 'AAA' })],
-            fundo: JPEG_8X8,
-          },
-        ],
-      )
-
-      expect(textosDe(final)).toEqual([
-        ['SEGREDO', 'CCC'],
-        [],
-        ['AAA'],
-        ['SEGREDO'],
-      ])
-    })
-
-    // A página própria tem o conteúdo de antes do JPEG: não desconta a moldura da apagada.
     it.each([
-      ['no lugar', plano([0], [1], [2], [3]), 2, [270, 0, 0, 0]],
-      ['por cópia', plano([0], [2]), 1, [270, 0]],
+      ['plano [0, 2]', plano([0], [2]), 1, [['AAA'], ['CCC']]],
+      [
+        'as quatro posições',
+        plano([0], [1], [2], [3]),
+        2,
+        [['AAA'], [], ['CCC'], []],
+      ],
     ] as const)(
-      'com a apagada na moldura 90 (%s), a posição com objetos não gira',
-      async (_, oPlano, comObjeto, rotacoes) => {
+      'por cópia (a sonda do Crivo, %s): AAA só na apagada, CCC só na sua, e nenhuma com o SEGREDO',
+      async (_, oPlano, comCCC, esperado) => {
         const final = await montarDocumento(
-          [await comARepetidaTresVezes()],
+          [await comARepetida()],
+          oPlano,
+          [
+            {
+              posicao: 0,
+              objetos: [objetoTexto({ conteudo: 'AAA' })],
+              fundo: JPEG_8X8,
+            },
+            { posicao: comCCC, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          ],
+          { porCopia: true },
+        )
+
+        expect(textosDe(final)).toEqual(esperado)
+        await semOSegredoESemNoRepetido(final)
+      },
+    )
+
+    it.each([
+      ['no lugar', {}],
+      ['por cópia', { porCopia: true }],
+    ] as const)(
+      'a apagada depois da posição com objetos (%s): cada texto só na sua, e nenhuma com o SEGREDO',
+      async (_, opcoes) => {
+        const final = await montarDocumento(
+          [await comARepetida()],
+          plano([0], [1], [2], [3]),
+          [
+            { posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+            {
+              posicao: 2,
+              objetos: [objetoTexto({ conteudo: 'AAA' })],
+              fundo: JPEG_8X8,
+            },
+          ],
+          opcoes,
+        )
+
+        expect(textosDe(final)).toEqual([['CCC'], [], ['AAA'], []])
+        await semOSegredoESemNoRepetido(final)
+      },
+    )
+
+    // Cada posição sai como saía quando o nó era um só (antes do PR 6): sobre a base apagada, ela desconta
+    // a moldura da apagada no desenho e no /Rotate.
+    it.each([
+      [
+        'no lugar, a apagada antes',
+        plano([0], [1], [2], [3]),
+        0,
+        2,
+        [270, 0, 270, 270],
+      ],
+      [
+        'no lugar, a apagada depois',
+        plano([0], [1], [2], [3]),
+        2,
+        0,
+        [270, 0, 270, 270],
+      ],
+      ['por cópia, a apagada antes', plano([0], [2]), 0, 1, [270, 270]],
+      ['por cópia, a apagada depois', plano([0], [2]), 1, 0, [270, 270]],
+    ] as const)(
+      'com a apagada na moldura 90 (%s), a posição com objetos desconta a moldura dela',
+      async (_, oPlano, apagada, comObjeto, rotacoes) => {
+        const final = await montarDocumento(
+          [await comARepetida()],
           oPlano.map((pagina, posicao) =>
-            posicao === 0 ? { ...pagina, moldura: 90 as const } : pagina,
+            posicao === apagada ? { ...pagina, moldura: 90 as const } : pagina,
           ),
           [
-            { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+            { posicao: apagada, objetos: [], fundo: JPEG_8X8 },
             {
               posicao: comObjeto,
               objetos: [objetoTexto({ conteudo: 'CCC' })],
@@ -4075,13 +4188,44 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         )
 
         expect(await rotacoesDasPaginas(final)).toEqual(rotacoes)
-        expect(textosDe(final)[comObjeto]).toEqual(['SEGREDO', 'CCC'])
+        const textos = lerComPdfjs(final).paginas.map(({ textos }) => textos)
+        expect(textos.flat().map(({ str }) => str)).toEqual(['CCC'])
+        expect(textos[comObjeto][0].matriz[4]).toBeCloseTo(40, 2)
+        expect(textos[comObjeto][0].matriz[5]).toBeCloseTo(
+          60 + 20 * ASCENDENTE,
+          2,
+        )
+        await semOSegredoESemNoRepetido(final)
       },
     )
 
+    // Com giro numa posição repetida, o plano sai por cópia (giraPaginaRepetida).
+    it('com giro na apagada e na outra (sai por cópia), cada posição com o seu giro, descontada a moldura da apagada', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        [
+          daMontagem(0, 0, { giro: 90, moldura: 90 }),
+          daMontagem(0, 1),
+          daMontagem(0, 2, { giro: 90 }),
+          daMontagem(0, 3),
+        ],
+        [
+          { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+        ],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([0, 0, 0, 270])
+      const outra = lerComPdfjs(final, [0, 0, 90, 0]).paginas[2]
+      expect(outra.textos.map(({ str }) => str)).toEqual(['CCC'])
+      expect(outra.textos[0].matriz[4]).toBeCloseTo(40, 2)
+      expect(outra.textos[0].matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+      await semOSegredoESemNoRepetido(final)
+    })
+
     it('sem objeto fora da apagada, o nó continua um só e o segredo some de todas as posições', async () => {
       const final = await montarDocumento(
-        [await comARepetidaTresVezes()],
+        [await comARepetida()],
         plano([0], [1], [2], [3]),
         [
           {
@@ -4101,7 +4245,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     // O nó fica com a apagada mesmo quando ela não é a primeira posição: o que apontava para ele (aqui um
     // destino nomeado) descrevia o conteúdo coberto e sai, como saía antes.
     it('o nó fica com a apagada: o destino nomeado que apontava para ele sai', async () => {
-      const documento = await PDFDocument.load(await comARepetidaTresVezes())
+      const documento = await PDFDocument.load(await comARepetida())
       documento.catalog.set(
         PDFName.of('Dests'),
         documento.context.obj({
@@ -4120,20 +4264,16 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
 
       const lido = await PDFDocument.load(final)
       expect(lido.catalog.get(PDFName.of('Dests'))).toBeUndefined()
-      expect(textosDe(final)).toEqual([['SEGREDO', 'CCC'], [], [], ['SEGREDO']])
+      expect(textosDe(final)).toEqual([['CCC'], [], [], []])
     })
 
     it('duas apagadas no mesmo nó continuam recusadas, mesmo com objetos em outra posição', async () => {
       const erro = await erroNaEdicao(
-        montarDocumento(
-          [await comARepetidaTresVezes()],
-          plano([0], [1], [2], [3]),
-          [
-            { posicao: 0, objetos: [], fundo: JPEG_8X8 },
-            { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
-            { posicao: 3, objetos: [], fundo: JPEG_8X8 },
-          ],
-        ),
+        montarDocumento([await comARepetida()], plano([0], [1], [2], [3]), [
+          { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          { posicao: 3, objetos: [], fundo: JPEG_8X8 },
+        ]),
       )
 
       expect(erro.motivo).toBe('apagar_na_pagina_repetida')
