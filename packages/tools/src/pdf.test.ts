@@ -20,7 +20,6 @@ import {
   ErroNaEdicao,
   analisarPdf,
   aplicarEdicoes,
-  contarPaginas,
   montarDocumento,
   temCabecalhoDePdf,
   type EdicaoDaPagina,
@@ -45,6 +44,10 @@ import {
   type PaginaDaMontagem,
   type PaginaDoPlano,
 } from './pdf-regras'
+
+// A contagem de páginas do resultado, pela mesma leitura (e as mesmas recusas) do Worker ao abrir.
+const contarPaginas = async (bytes: Uint8Array) =>
+  (await analisarPdf(bytes)).paginas
 
 // O plano de um arquivo na ordem e sem giro, de onde os testes partem.
 const planoInicial = (totalDePaginas: number): PaginaDoPlano[] =>
@@ -145,7 +148,7 @@ describe('temCabecalhoDePdf', () => {
   })
 })
 
-describe('contarPaginas', () => {
+describe('a leitura ao abrir (analisarPdf): as recusas', () => {
   it('conta as páginas de um PDF válido', async () => {
     expect(await contarPaginas(await gerarPdf(3, 100))).toBe(3)
   })
@@ -841,7 +844,7 @@ describe('aplicarEdicoes: o documento', () => {
     expect(await contarPaginas(editado)).toBe(1)
   })
 
-  it('o arquivo segue as regras de leitura do mesclar', async () => {
+  it('o arquivo segue as regras da leitura ao abrir', async () => {
     expect(await motivo(aplicarEdicoes(texto('não é PDF'), []))).toEqual({
       motivo: 'nao_e_pdf',
       indice: undefined,
@@ -2292,7 +2295,7 @@ describe('analisarPdf: os avisos do editar', () => {
     })
   })
 
-  it('as recusas são as do contarPaginas', async () => {
+  it('as recusas são as da leitura ao abrir', async () => {
     expect(await motivo(analisarPdf(new Uint8Array([1, 2, 3])))).toEqual({
       motivo: 'nao_e_pdf',
       indice: undefined,
@@ -4251,7 +4254,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     },
   )
 
-  it('arquivo que não é PDF ou corrompido: mesmas regras do contarPaginas', async () => {
+  it('arquivo que não é PDF ou corrompido: mesmas regras da leitura ao abrir', async () => {
     expect(
       (await motivo(montarDocumento([texto('não é PDF')], plano([0]), [])))
         .motivo,

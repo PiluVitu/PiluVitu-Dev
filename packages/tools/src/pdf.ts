@@ -65,7 +65,6 @@ export type {
   ObjetoDaPagina,
   OrigemDaPagina,
   PaginaDaMontagem,
-  PaginaDoPlano,
 } from './pdf-regras'
 
 export class ErroDePdf extends Error {
@@ -127,10 +126,6 @@ async function abrir(bytes: Uint8Array): Promise<PDFDocument> {
   }
   if (paginas === 0) throw new ErroDePdf('sem_paginas')
   return documento
-}
-
-export async function contarPaginas(bytes: Uint8Array): Promise<number> {
-  return (await abrir(bytes)).getPageCount()
 }
 
 export type FonteDePdf = Uint8Array | (() => Promise<Uint8Array>)
