@@ -419,6 +419,7 @@ export const TEXTOS = {
       nadaParaDesfazer: 'Ainda não há nada para desfazer.',
       ultimaPagina: 'O PDF precisa de pelo menos uma página.',
       montando: 'Espere o PDF ficar pronto.',
+      adicionando: 'Espere o PDF adicionado entrar para extrair.',
     },
     montando: 'Montando o PDF…',
     resultado: {
@@ -652,6 +653,7 @@ export const TEXTOS = {
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
       apagando: (numeros: readonly number[]) =>
         `Para apagar de verdade, ${listaDePaginas(numeros)} ${concordar(numeros.length, 'vai virar imagem', 'vão virar imagem')}.`,
+      adicionando: (nome: string) => `Espere ${nome} entrar para gerar o PDF.`,
       montando: 'Montando o PDF…',
       cancelar: 'Cancelar',
       pronto: 'PDF editado pronto',

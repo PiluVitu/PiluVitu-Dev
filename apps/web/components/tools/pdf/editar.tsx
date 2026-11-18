@@ -375,6 +375,7 @@ export function EditarPdf({
   const [recusaDaAdicao, setRecusaDaAdicao] = useState<{
     sessao: object
     texto: string
+    naBarra: boolean
   } | null>(null)
   const [revelarNaFaixa, setRevelarNaFaixa] = useState<{
     sessao: object
@@ -873,7 +874,11 @@ export function EditarPdf({
     paginasDoPdf: readonly PaginaDaBancada[],
   ) {
     if (!atual?.ok || !documento || !paginasDoPdf.length) return
-    const origem = atual.arquivo
+    const primeiroNoPdf = Math.min(
+      ...paginasDoPdf.map(({ origem }) => origem.arquivo),
+    )
+    const nomeDaOrigem =
+      documento.arquivos[primeiroNoPdf]?.arquivo.name ?? atual.arquivo.name
     const idsDoPdf = paginasDoPdf.map(({ id }) => id)
     // O Worker é estrito: objeto, fundo ou moldura de página fora do pedido é erro.
     const cenaDoPdf = cenaDasPaginas(cena, new Set(idsDoPdf))
@@ -920,7 +925,7 @@ export function EditarPdf({
         estado: 'pronto',
         tipo,
         url: URL.createObjectURL(pdf),
-        nome: nomeDoPdfDerivado(origem.name, SUFIXOS[tipo]),
+        nome: nomeDoPdfDerivado(nomeDaOrigem, SUFIXOS[tipo]),
         paginas: paginasDoPdf.length,
         bytes: pdf.size,
       })
@@ -1219,6 +1224,7 @@ export function EditarPdf({
     setRecusaDaAdicao({
       sessao: daSessao,
       texto: mensagemDaAdicaoRecusada(novo.name, adicao.recusa),
+      naBarra: alertaNaBarraRef.current,
     })
     anunciar('')
   }
@@ -1251,6 +1257,7 @@ export function EditarPdf({
   }
 
   const entrarRef = useRef(entrarNoDocumento)
+  const alertaNaBarraRef = useRef(false)
   const irParaRef = useRef(irPara)
   const voltarRef = useRef(voltarNoHistorico)
   const atalhoNasPaginasRef = useRef(atalhoNasPaginas)
@@ -1258,6 +1265,7 @@ export function EditarPdf({
   const usarRef = useRef(usarBotao)
   useLayoutEffect(() => {
     entrarRef.current = entrarNoDocumento
+    alertaNaBarraRef.current = !larga && !folhaAberta
     irParaRef.current = irPara
     voltarRef.current = voltarNoHistorico
     atalhoNasPaginasRef.current = atalhoNasPaginas
@@ -1352,6 +1360,7 @@ export function EditarPdf({
   const idSemDesfazer = `${ids}-sem-desfazer`
   const idSemRefazer = `${ids}-sem-refazer`
   const idSemMudancas = `${ids}-sem-mudancas`
+  const idDoAdicionando = `${ids}-adicionando`
   const idDoAlcance = `${ids}-alcance`
   const idDoAlcanceDoExtrair = `${ids}-alcance-do-extrair`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
@@ -1386,7 +1395,11 @@ export function EditarPdf({
   const mudou = quantosObjetos > 0 || mudouDoInicio(lista, paginasDoPrimeiro)
   const porCopia = total > 0 && saiPorCopia(lista, paginasDoPrimeiro)
   const descricaoDoGerar =
-    [mudou ? null : idSemMudancas, porCopia ? idDoAlcance : null]
+    [
+      mudou ? null : idSemMudancas,
+      adicionando ? idDoAdicionando : null,
+      porCopia ? idDoAlcance : null,
+    ]
       .filter(Boolean)
       .join(' ') || undefined
   const cobrirAqui = temCobrir(cena, aberta)
@@ -1428,7 +1441,7 @@ export function EditarPdf({
   const revelar =
     revelarNaFaixa?.sessao === sessao && revelarNaFaixa ? revelarNaFaixa : null
   const recusaVisivel =
-    recusaDaAdicao?.sessao === sessao ? recusaDaAdicao.texto : null
+    recusaDaAdicao?.sessao === sessao ? recusaDaAdicao : null
   const ondeEntra = adicionando
     ? A.adicionando(adicionando.name)
     : A.onde(
@@ -1452,7 +1465,7 @@ export function EditarPdf({
     moverAntes: motivoDoLote(noComeco ? 'noComeco' : null),
     moverDepois: motivoDoLote(noFim ? 'noFim' : null),
     apagar: motivoDoLote(todasSelecionadas ? 'todasSelecionadas' : null),
-    extrair: motivoDoLote(),
+    extrair: motivoDoLote(adicionando ? 'adicionando' : null),
     selecionarTodas: soMontando,
     limparSelecao: soMontando,
     desfazer:
@@ -1504,20 +1517,24 @@ export function EditarPdf({
       )}
     </Button>
   )
-  const alertaDaAdicao = recusaVisivel && (
-    <div
-      role="alert"
-      data-testid="editar-pdf-recusa-da-adicao"
-      className="bg-card border-destructive flex gap-2 rounded-md border px-3 py-3 text-sm"
-    >
-      <FontAwesomeIcon
-        icon={faCircleExclamation}
-        className="text-destructive mt-0.5 size-4 shrink-0"
-        aria-hidden
-      />
-      <p className="min-w-0 [overflow-wrap:anywhere]">{recusaVisivel}</p>
-    </div>
-  )
+  // A recusa é anunciada só onde apareceu: a cópia que entra ao abrir ou fechar a folha não a repete.
+  const alertaDaAdicao = (anuncia: boolean) =>
+    recusaVisivel && (
+      <div
+        role={anuncia ? 'alert' : undefined}
+        data-testid="editar-pdf-recusa-da-adicao"
+        className="bg-card border-destructive flex gap-2 rounded-md border px-3 py-3 text-sm"
+      >
+        <FontAwesomeIcon
+          icon={faCircleExclamation}
+          className="text-destructive mt-0.5 size-4 shrink-0"
+          aria-hidden
+        />
+        <p className="min-w-0 [overflow-wrap:anywhere]">
+          {recusaVisivel.texto}
+        </p>
+      </div>
+    )
   const adicionarNaLista = (
     <div className="space-y-2" data-testid="editar-pdf-bloco-adicionar">
       {botaoDeAdicionar(false)}
@@ -1527,7 +1544,7 @@ export function EditarPdf({
       >
         {ondeEntra}
       </p>
-      {alertaDaAdicao}
+      {alertaDaAdicao(!recusaVisivel?.naBarra)}
     </div>
   )
   const acoesDasPaginas = (
@@ -1996,7 +2013,7 @@ export function EditarPdf({
                 ref={gerarRef}
                 type="button"
                 className="h-11 gap-2 px-6"
-                disabled={!mudou}
+                disabled={!mudou || adicionando !== null}
                 aria-describedby={descricaoDoGerar}
                 onClick={() => void gerar('editado', lista)}
                 data-testid="editar-pdf-gerar"
@@ -2012,6 +2029,14 @@ export function EditarPdf({
             {!mudou && (
               <p id={idSemMudancas} className="text-muted-foreground text-xs">
                 {T.gerar.semMudancas}
+              </p>
+            )}
+            {adicionando && (
+              <p
+                id={idDoAdicionando}
+                className="text-muted-foreground text-xs [overflow-wrap:anywhere]"
+              >
+                {T.gerar.adicionando(adicionando.name)}
               </p>
             )}
             {(porCopia ||
@@ -2204,7 +2229,8 @@ export function EditarPdf({
                   >
                     {ondeEntra}
                   </p>
-                  {!folhaAberta && alertaDaAdicao}
+                  {!folhaAberta &&
+                    alertaDaAdicao(recusaVisivel?.naBarra ?? false)}
                 </div>
               )}
 

@@ -2994,3 +2994,142 @@ describe('adicionar outro PDF', () => {
     )
   })
 })
+
+describe('adicionar outro PDF: o Gerar, a recusa, o nome e as miniaturas', () => {
+  it('enquanto o PDF entra, o Gerar e o Extrair esperam, com o motivo; depois, o Gerar leva as páginas novas', async () => {
+    const motor = criarMotorFalso({ atraso: 60 })
+    await abrirParaEditar('a-3p.pdf', { motor })
+    await clicar(porNome('Girar a página 1 à direita'))
+    await marcarPagina(2)
+
+    comecarAAdicionar(pdf('b-2p.pdf'))
+    const gerar = porNome('Gerar PDF')
+    const extrair = porNome('Extrair as selecionadas')
+    expect(gerar.disabled).toBe(true)
+    expect(descricaoDe(gerar)).toContain(
+      TEXTOS.editar.gerar.adicionando('b-2p.pdf'),
+    )
+    expect(extrair.disabled).toBe(true)
+    expect(descricaoDe(extrair)).toBe(TEXTOS.organizar.dicas.adicionando)
+
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(gerar.disabled).toBe(false)
+    expect(descricaoDe(gerar)).not.toContain(
+      TEXTOS.editar.gerar.adicionando('b-2p.pdf'),
+    )
+    await clicar(gerar)
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(motor.montadas[0].paginas.map(({ id }) => id)).toEqual([
+      'a0p0',
+      'a0p1',
+      'a1p0',
+      'a1p1',
+      'a0p2',
+    ])
+  })
+
+  it('a recusa feita na folha não é anunciada de novo quando a folha fecha', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    await abrirAFolha()
+    act(() => naFolha('Adicionar PDF').focus())
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+
+    await teclar(document.activeElement!, 'Escape')
+    expect(folha()).toBeNull()
+
+    // A mesma recusa continua à vista embaixo da linha do celular, sem um alerta novo para o leitor de tela.
+    expect(alertaDaAdicao()!.textContent).toBe(
+      A.recusado('b-senha.pdf', 'protegido'),
+    )
+    expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(0)
+  })
+
+  it('a recusa feita pela linha do celular não é anunciada de novo quando a folha abre', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    act(() => porNome('Adicionar PDF').focus())
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+
+    await abrirAFolha()
+
+    expect(folha()!.contains(alertaDaAdicao())).toBe(true)
+    expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(0)
+  })
+
+  it('o nome do PDF baixado vem do primeiro arquivo que tem página no PDF, como o cabeçalho', async () => {
+    await abrirParaEditar('contrato-1p.pdf')
+    await adicionarPdf(pdf('anexo-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'anexo-2p-paginas.pdf',
+    )
+
+    await clicar(porNome('Apagar a página 1'))
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'anexo-2p.pdf · 2 páginas',
+    )
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'anexo-2p-editado.pdf',
+    )
+  })
+
+  // O desfazer das páginas guarda 100 passos: com o apagar fora dele, nenhuma página alcança o
+  // primeiro arquivo, e ele fecha. O documento continua mudado, e o Gerar sai por cópia só com o segundo.
+  it('o primeiro arquivo que fecha: o Gerar continua ligado e sai por cópia só com o segundo', async () => {
+    const { renderizador, motor } = await abrirParaEditar('a-1p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+    await clicar(porNome('Apagar a página 1'))
+    for (let i = 0; i < 101; i++) {
+      await act(async () => {
+        porNome('Girar a página 1 à direita').click()
+      })
+    }
+    await esperar(50)
+
+    expect(renderizador.fechados).toBe(1)
+    expect(q('editar-pdf-documento')!.textContent).toBe('b-2p.pdf · 2 páginas')
+    expect(porNome('Gerar PDF').disabled).toBe(false)
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['b-2p.pdf'])
+    expect(pedido.porCopia).toBe(true)
+  })
+
+  it('adicionar não desenha de novo as miniaturas que já estavam na tela', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    const doPrimeiro = () =>
+      renderizador.pedidos.filter(
+        (p) => p.tipo === 'miniatura' && p.arquivo === 'a-3p.pdf',
+      ).length
+    await esperar(50)
+    const antes = doPrimeiro()
+    expect(antes).toBeGreaterThan(0)
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    await esperar(50)
+
+    expect(doPrimeiro()).toBe(antes)
+    expect(
+      renderizador.pedidos.some(
+        (p) => p.tipo === 'miniatura' && p.arquivo === 'b-2p.pdf',
+      ),
+    ).toBe(true)
+  })
+})

@@ -3600,6 +3600,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   describe('PDF que repete a mesma página no /Kids: a apagada com moldura não deita a outra', () => {
     async function comARepetidaDeitada() {
       const documento = await PDFDocument.create()
+      documento.setTitle('TITULO-DO-ARQUIVO')
       documento.addPage([200, 100])
       documento.addPage([150, 150])
       const arvore = documento.catalog.Pages()
@@ -3680,10 +3681,34 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
       ])
     })
 
-    // Menor 2 do Crivo no #127: o arquivo inteiro na ordem, sem giro, com a apagada na moldura 90 e um
-    // texto na outra posição. A tela mostra a outra posição como ela é (200 × 100), e o texto vai onde ela
-    // o pôs. Mandar esse plano por cópia (a cláusula "fundo && moldura !== 0" do giraPaginaRepetida)
-    // desenhava o texto na página já deitada pela apagada e depois a girava de volta, com o texto junto.
+    // Menor 2 do Crivo no #127: o arquivo inteiro na ordem, sem giro, com a apagada na moldura 90. Sem
+    // giro, girar no lugar não mexe na outra posição, então o plano sai no lugar e guarda o título, os
+    // marcadores e os links; a tela não mostra o aviso de alcance para ele (saiPorCopia é falso). A
+    // cláusula "fundo && moldura !== 0" do giraPaginaRepetida o mandava por cópia e perdia o título.
+    it('sem giro, com a apagada na moldura 90: sai no lugar, com o título do arquivo', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaDeitada()],
+        [
+          daMontagem(0, 0, { moldura: 90 }),
+          daMontagem(0, 1),
+          daMontagem(0, 2),
+        ],
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      const documento = await PDFDocument.load(final, {
+        updateMetadata: false,
+      })
+      expect(documento.getTitle()).toBe('TITULO-DO-ARQUIVO')
+      expect(await comoAparecem(final)).toEqual([
+        '200x100',
+        '150x150',
+        '200x100',
+      ])
+    })
+
+    // O mesmo plano com um texto na outra posição: a tela a mostra como ela é (200 × 100), e o texto vai
+    // onde ela o pôs.
     it('sem giro, a outra posição com texto: o texto sai onde a tela o pôs', async () => {
       const final = await montarDocumento(
         [await comARepetidaDeitada()],
