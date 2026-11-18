@@ -1505,26 +1505,30 @@ function separarPaisRepetidos(documento: PDFDocument): void {
 }
 
 // O mesmo nó em duas posições do /Kids: o que se desenha nele aparece nas duas, e a tela mostra cada
-// posição com os seus objetos. O nó com apagar de verdade fica um só (ver "Nó repetido" no CLAUDE.md).
+// posição com os seus objetos. O nó fica com a apagada de verdade, ou com a primeira posição, e cada
+// outra ganha a sua página; sem objeto fora da apagada, ele continua um só (ver "Nó repetido" no CLAUDE.md).
 function separarPaginasRepetidas(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): void {
   const paginas = documento.getPages()
   const comObjetos = new Set<PDFRef>()
-  const apagadas = new Set<PDFRef>()
+  const apagadaDe = new Map<PDFRef, number>()
   for (const { indice, objetos, fundo } of editadas) {
     const { ref } = paginas[indice]
-    if (fundo !== undefined) apagadas.add(ref)
+    if (fundo !== undefined) apagadaDe.set(ref, indice)
     else if (objetos.length > 0) comObjetos.add(ref)
   }
   const vistas = new Set<PDFRef>()
   const aSeparar = paginas.flatMap(({ ref, node }, indice) => {
+    if (!comObjetos.has(ref)) return []
+    const fica = apagadaDe.get(ref)
+    if (fica !== undefined) return indice === fica ? [] : [{ node, indice }]
     if (!vistas.has(ref)) {
       vistas.add(ref)
       return []
     }
-    return comObjetos.has(ref) && !apagadas.has(ref) ? [{ node, indice }] : []
+    return [{ node, indice }]
   })
   if (aSeparar.length === 0) return
   separarPaisRepetidos(documento)
@@ -1552,9 +1556,9 @@ async function editarNoLugar(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): Promise<void> {
+  conferirApagadasRepetidas(documento.getPages(), editadas)
   separarPaginasRepetidas(documento, editadas)
   const paginas = documento.getPages()
-  conferirApagadasRepetidas(paginas, editadas)
   const recursos = new Recursos(documento)
   if (
     editadas.some(
@@ -1792,13 +1796,6 @@ export async function montarDocumento(
     primeiro = undefined
     const indices = paginas.map(({ indice }) => indice)
     conferirQueExistem(origem, indices, arquivo)
-    const refs = indices.map((indice) => origem.getPage(indice).ref)
-    const molduraDaApagada = new Map<PDFRef, Giro>()
-    paginas.forEach(({ posicao }, i) => {
-      if (edicaoDa.get(posicao)?.fundo) {
-        molduraDaApagada.set(refs[i], plano[posicao].moldura)
-      }
-    })
     // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
     try {
       esvaziarPaginasForaDoPlano(origem, indices)
@@ -1813,6 +1810,14 @@ export async function montarDocumento(
         giro: editada.fundo ? editada.moldura : 0,
       })),
     )
+    // Depois de editar: a posição que ganhou a sua página não tem o JPEG da apagada.
+    const refs = indices.map((indice) => origem.getPage(indice).ref)
+    const molduraDaApagada = new Map<PDFRef, Giro>()
+    paginas.forEach(({ posicao }, i) => {
+      if (edicaoDa.get(posicao)?.fundo) {
+        molduraDaApagada.set(refs[i], plano[posicao].moldura)
+      }
+    })
     let deste: PDFPage[]
     try {
       deste = await destino.copyPages(origem, indices)

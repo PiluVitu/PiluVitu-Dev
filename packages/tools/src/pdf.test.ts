@@ -4045,6 +4045,186 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
     })
   })
 
+  // Menor 1 do Crivo no #129: com apagar de verdade numa posição do nó, os objetos de outra posição iam
+  // para o nó apagado e saíam em todas ([AAA, CCC] nas posições 0, 2 e 3). Agora o nó fica com a apagada
+  // e cada outra posição ganha a sua página, com o conteúdo de antes do JPEG, como a tela a mostra. Sem
+  // objeto fora da apagada, nada muda: o nó continua um só e o segredo coberto some de todas (o #127).
+  // Nenhum nó fica repetido na saída: o pdf.js só lê o nó repetido quando a primeira vez dele já está no
+  // cache, e [outra, p1, apagada, apagada] reprovava na última página ("circular reference").
+  describe('PDF que repete a mesma página no /Kids: apagar de verdade numa posição e objetos em outra', () => {
+    // O /Kids repete a página 0 nas posições 0, 2 e 3; ela tem o texto SEGREDO.
+    async function comARepetidaTresVezes() {
+      const documento = await PDFDocument.create()
+      const fonte = await documento.embedFont(StandardFonts.Helvetica)
+      documento
+        .addPage([300, 300])
+        .drawText('SEGREDO', { x: 20, y: 150, font: fonte, size: 20 })
+      documento.addPage([301, 301])
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(4))
+      documento.setTitle('TITULO-DO-ARQUIVO')
+      return documento.save()
+    }
+
+    const textosDe = (bytes: Uint8Array) =>
+      lerComPdfjs(bytes).paginas.map(({ textos }) =>
+        textos.map(({ str }) => str),
+      )
+
+    it('no lugar (a sonda do Crivo): cada posição com o que a tela mostra, e o título fica', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaTresVezes()],
+        plano([0], [1], [2], [3]),
+        [
+          {
+            posicao: 0,
+            objetos: [objetoTexto({ conteudo: 'AAA' })],
+            fundo: JPEG_8X8,
+          },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([
+        ['AAA'],
+        [],
+        ['SEGREDO', 'CCC'],
+        ['SEGREDO'],
+      ])
+      expect(await ladosDasPaginas(final)).toEqual([300, 301, 300, 300])
+      const documento = await PDFDocument.load(final, { updateMetadata: false })
+      expect(documento.getTitle()).toBe('TITULO-DO-ARQUIVO')
+    })
+
+    it('por cópia (plano [0, 2]): cada posição com o seu texto', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaTresVezes()],
+        plano([0], [2]),
+        [
+          {
+            posicao: 0,
+            objetos: [objetoTexto({ conteudo: 'AAA' })],
+            fundo: JPEG_8X8,
+          },
+          { posicao: 1, objetos: [objetoTexto({ conteudo: 'BBB' })] },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([['AAA'], ['SEGREDO', 'BBB']])
+    })
+
+    it('a apagada depois da posição com objetos (no lugar)', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaTresVezes()],
+        plano([0], [1], [2], [3]),
+        [
+          { posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          {
+            posicao: 2,
+            objetos: [objetoTexto({ conteudo: 'AAA' })],
+            fundo: JPEG_8X8,
+          },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([
+        ['SEGREDO', 'CCC'],
+        [],
+        ['AAA'],
+        ['SEGREDO'],
+      ])
+    })
+
+    // A página própria tem o conteúdo de antes do JPEG: não desconta a moldura da apagada.
+    it.each([
+      ['no lugar', plano([0], [1], [2], [3]), 2, [270, 0, 0, 0]],
+      ['por cópia', plano([0], [2]), 1, [270, 0]],
+    ] as const)(
+      'com a apagada na moldura 90 (%s), a posição com objetos não gira',
+      async (_, oPlano, comObjeto, rotacoes) => {
+        const final = await montarDocumento(
+          [await comARepetidaTresVezes()],
+          oPlano.map((pagina, posicao) =>
+            posicao === 0 ? { ...pagina, moldura: 90 as const } : pagina,
+          ),
+          [
+            { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+            {
+              posicao: comObjeto,
+              objetos: [objetoTexto({ conteudo: 'CCC' })],
+            },
+          ],
+        )
+
+        expect(await rotacoesDasPaginas(final)).toEqual(rotacoes)
+        expect(textosDe(final)[comObjeto]).toEqual(['SEGREDO', 'CCC'])
+      },
+    )
+
+    it('sem objeto fora da apagada, o nó continua um só e o segredo some de todas as posições', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaTresVezes()],
+        plano([0], [1], [2], [3]),
+        [
+          {
+            posicao: 0,
+            objetos: [objetoTexto({ conteudo: 'AAA' })],
+            fundo: JPEG_8X8,
+          },
+        ],
+      )
+
+      expect(textosDe(final)).toEqual([['AAA'], [], ['AAA'], ['AAA']])
+      const paginas = (await PDFDocument.load(final)).getPages()
+      expect(paginas[2].ref).toBe(paginas[0].ref)
+      expect(paginas[3].ref).toBe(paginas[0].ref)
+    })
+
+    // O nó fica com a apagada mesmo quando ela não é a primeira posição: o que apontava para ele (aqui um
+    // destino nomeado) descrevia o conteúdo coberto e sai, como saía antes.
+    it('o nó fica com a apagada: o destino nomeado que apontava para ele sai', async () => {
+      const documento = await PDFDocument.load(await comARepetidaTresVezes())
+      documento.catalog.set(
+        PDFName.of('Dests'),
+        documento.context.obj({
+          'SEGREDO-DESTINO': [documento.getPage(0).ref, PDFName.of('Fit')],
+        }),
+      )
+
+      const final = await montarDocumento(
+        [await documento.save()],
+        plano([0], [1], [2], [3]),
+        [
+          { posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          { posicao: 2, objetos: [], fundo: JPEG_8X8 },
+        ],
+      )
+
+      const lido = await PDFDocument.load(final)
+      expect(lido.catalog.get(PDFName.of('Dests'))).toBeUndefined()
+      expect(textosDe(final)).toEqual([['SEGREDO', 'CCC'], [], [], ['SEGREDO']])
+    })
+
+    it('duas apagadas no mesmo nó continuam recusadas, mesmo com objetos em outra posição', async () => {
+      const erro = await erroNaEdicao(
+        montarDocumento(
+          [await comARepetidaTresVezes()],
+          plano([0], [1], [2], [3]),
+          [
+            { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+            { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+            { posicao: 3, objetos: [], fundo: JPEG_8X8 },
+          ],
+        ),
+      )
+
+      expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+      expect(erro.pagina).toBe(3)
+    })
+  })
+
   // O que se repete no /Kids é um /Pages do meio (a raiz com /Kids [meio, meio]), não a folha.
   describe('PDF que repete um /Pages do meio no /Kids: as páginas e os objetos de cada posição', () => {
     async function comOMeioRepetido() {
