@@ -500,7 +500,21 @@ test.describe('Editor de PDF: a rota única', () => {
       page.getByText('Seus arquivos não saem do aparelho'),
     ).toBeVisible()
     await expect(page.getByTestId('pdf-zona')).toBeVisible()
-    await page.waitForLoadState('networkidle')
+    // Contra piluvitu.com.br o networkidle não chega, nem sem pedido aberto: espera a página parar de baixar.
+    let recursos = -1
+    await expect
+      .poll(
+        async () => {
+          const agora = await page.evaluate(
+            () => performance.getEntriesByType('resource').length,
+          )
+          const parou = agora === recursos
+          recursos = agora
+          return parou
+        },
+        { intervals: [1000] },
+      )
+      .toBe(true)
     expect(workers).toEqual([])
     expect(await scriptsComOPdfjs()).toEqual([])
     expect(pedidosAoPdfjsDaOrigem).toEqual([])
