@@ -3133,3 +3133,338 @@ describe('adicionar outro PDF: o Gerar, a recusa, o nome e as miniaturas', () =>
     ).toBe(true)
   })
 })
+
+// ---- Editor único, PR 5: a página em branco ----
+
+const B = TEXTOS.editar.branca
+const A4_DA_BRANCA = { largura: 595.28, altura: 841.89 }
+
+async function criarBranca(botao: HTMLElement = porNome('Página em branco')) {
+  await clicar(botao)
+  await esperar()
+}
+
+const cartaoDe = (id: string) =>
+  cartoesNoDocumento().find((c) => c.dataset.id === id)!
+
+// O que o renderizador recebeu depois de um ponto: a branca não pede nada ao pdf.js.
+const pedidosDesde = (
+  renderizador: ReturnType<typeof criarRenderizadorFalso>,
+  antes: number,
+) => renderizador.pedidos.slice(antes)
+
+describe('a página em branco', () => {
+  it('o botão Página em branco fica na coluna, logo depois do Adicionar PDF, com 44 px, e o mesmo texto de onde entra', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    const botao = porNome('Página em branco')
+    const coluna = q('editar-pdf-coluna-de-paginas')!
+
+    expect(coluna.contains(botao)).toBe(true)
+    expect(botao.className).toContain('h-11')
+    expect(segue(porNome('Adicionar PDF'), botao)).toBe(true)
+    expect(
+      segue(
+        botao,
+        coluna.querySelector('[aria-label="Ações nas páginas selecionadas"]')!,
+      ),
+    ).toBe(true)
+    expect(descricaoDe(botao)).toBe(A.onde(3, null))
+
+    await marcarPagina(2)
+    expect(descricaoDe(botao)).toBe(A.onde(3, { pagina: 2, marcadas: 1 }))
+  })
+
+  it('sem marcada (P2 e P3): uma A4 entra no fim, abre na área da página, fica marcada (D3), com o foco na área e o anúncio', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+
+    await criarBranca()
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'b0'])
+    expect(marcadasNaLista()).toEqual(['b0'])
+    expect(posicao()).toBe('Página 4 de 4')
+    expect(cartaoDe('b0').dataset.aberta).toBe('true')
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+    expect(anuncio()).toBe(B.adicionada(3))
+    expect(origens()[3]).toBe('Página em branco, A4')
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'a-3p.pdf + 1 página em branco · 4 páginas',
+    )
+    // Sem marcada, o A4 não precisa do tamanho de página nenhuma.
+    expect(renderizador.pedidos.some((p) => p.tipo === 'tamanho')).toBe(false)
+  })
+
+  it('sem pdf.js: a página grande é uma folha branca na proporção da branca, com o quadro dos objetos, e a miniatura também', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await esperar(50)
+    const antes = renderizador.pedidos.length
+
+    await criarBranca()
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    await esperar(50)
+
+    expect(pedidosDesde(renderizador, antes)).toEqual([])
+    const folhaGrande = q('editar-pdf-folha')!
+    expect(folhaGrande.getAttribute('aria-label')).toBe('Página 4, em branco')
+    expect(folhaGrande.getAttribute('aria-busy')).toBe('false')
+    expect(folhaGrande.style.width).toBe('500px')
+    expect(folhaGrande.style.height).toBe(
+      `${Math.round((500 * A4_DA_BRANCA.altura) / A4_DA_BRANCA.largura)}px`,
+    )
+    expect(folhaGrande.dataset.branca).toBe('true')
+    expect(q('editar-pdf-desenhando')).toBeNull()
+    const doCartao = cartaoDe('b0')
+    expect(doCartao.querySelector('img')).toBeNull()
+    expect(
+      doCartao.querySelector('[data-testid="editar-pdf-folha-branca"]'),
+    ).not.toBeNull()
+    const naFaixa = miniaturas()[3]
+    expect(naFaixa.querySelector('img')).toBeNull()
+    expect(
+      naFaixa.querySelector('[data-testid="editar-pdf-folha-branca"]'),
+    ).not.toBeNull()
+  })
+
+  it('voltar da branca para uma página de arquivo desenha a página dele de novo', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+    expect(q('editar-pdf-folha')!.dataset.branca).toBe('true')
+
+    await abrirPagina(2)
+
+    expect(q('editar-pdf-folha')!.dataset.branca).toBeUndefined()
+    expect(
+      renderizador.pedidos.filter((p) => p.tipo === 'pagina').at(-1),
+    ).toEqual({ arquivo: 'a-3p.pdf', tipo: 'pagina', indice: 1 })
+    expect(q('editar-pdf-folha')!.getAttribute('aria-label')).toBe('Página 2')
+  })
+
+  it('com uma página deitada marcada (P2): a branca sai deitada, logo depois dela; e a próxima entra depois da branca (D3)', async () => {
+    const { renderizador } = await abrirParaEditar('a-girado-3p.pdf')
+    await marcarPagina(2)
+
+    await criarBranca()
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'b0', 'a0p2'])
+    expect(origens()[2]).toBe('Página em branco, A4 deitada')
+    expect(anuncio()).toBe(B.adicionada(2))
+    expect(renderizador.pedidos.filter((p) => p.tipo === 'tamanho')).toEqual([
+      { arquivo: 'a-girado-3p.pdf', tipo: 'tamanho', indice: 1 },
+    ])
+    expect(q('editar-pdf-folha')!.style.height).toBe(
+      `${Math.round((500 * 595) / 842)}px`,
+    )
+    expect(descricaoDe(porNome('Página em branco'))).toBe(
+      A.onde(4, { pagina: 3, marcadas: 1 }),
+    )
+
+    await criarBranca()
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'b0', 'b1', 'a0p2'])
+    expect(marcadasNaLista()).toEqual(['b1'])
+    expect(origens()[3]).toBe('Página em branco, A4 deitada')
+  })
+
+  it('a última marcada (D4) girada 90°: a branca sai deitada pelo giro, mesmo de uma página de pé', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    await marcarPagina(3)
+    await marcarPagina(1)
+    await clicar(porNome('Girar a página 1 à direita'))
+
+    await criarBranca()
+
+    expect(idsDaLista()).toEqual(['a0p0', 'b0', 'a0p1', 'a0p2'])
+    expect(origens()[1]).toBe('Página em branco, A4 deitada')
+  })
+
+  it('objetos na branca: o texto entra no centro, e o Gerar leva a branca com o objeto, sem fundo, por cópia', async () => {
+    const { motor } = await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    medirQuadro()
+
+    await inserirNoCentro('Texto')
+    expect(nomesDosObjetos()).toHaveLength(1)
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['a-3p.pdf'])
+    expect(pedido.paginas.at(-1)).toEqual({
+      id: 'b0',
+      origem: { branca: A4_DA_BRANCA },
+      giro: 0,
+      moldura: 0,
+    })
+    expect([...pedido.objetosPorPagina.keys()]).toEqual(['b0'])
+    expect(pedido.paginasRasterizadas.size).toBe(0)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'a-3p-editado.pdf',
+    )
+  })
+
+  it('na branca: clicar na página não pergunta ao pdf.js se há texto, e o cobrir não oferece o apagar de verdade', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    medirQuadro()
+
+    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
+    await ponteiro(quadro(), 'pointerup', { x: 100, y: 100 })
+    await esperar()
+    expect(renderizador.textosConsultados).toEqual([])
+    expect(q('editar-pdf-dica-texto')).toBeNull()
+
+    await clicar(ferramenta('Cobrir'))
+    expect(q('editar-pdf-aviso-cobrir')!.textContent).toBe(
+      TEXTOS.editar.cobrir.naBranca,
+    )
+    await clicar(porNome('Inserir no centro'))
+
+    const grupo = q('editar-pdf-cobrir')!
+    expect(grupo.textContent).toContain(TEXTOS.editar.cobrir.naBranca)
+    expect(grupo.textContent).not.toContain(TEXTOS.editar.cobrir.aviso)
+    expect(q('editar-pdf-apagar-de-verdade')).toBeNull()
+  })
+
+  it('Extrair só a branca: sai por cópia, sem arquivo, com o nome que diz que são páginas em branco', async () => {
+    const { motor } = await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual([])
+    expect(pedido.porCopia).toBe(true)
+    expect(pedido.paginas.map(({ id }) => id)).toEqual(['b0'])
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'paginas-em-branco-paginas.pdf',
+    )
+  })
+
+  it('só com brancas: o cabeçalho conta só elas, e o PDF gerado leva o nome das páginas em branco', async () => {
+    await abrirParaEditar('a-1p.pdf')
+    await criarBranca()
+
+    await clicar(porNome('Apagar a página 1'))
+
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      '1 página em branco · 1 página',
+    )
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'paginas-em-branco-editado.pdf',
+    )
+  })
+
+  it('Desfazer nas páginas tira a branca, e a próxima ganha outro id, sem os objetos da desfeita', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+    await esperarAte(() => q('editar-pdf-quadro') !== null)
+    medirQuadro()
+    await inserirNoCentro('Retângulo')
+    expect(objetos()).toHaveLength(1)
+
+    await clicar(porNome('Desfazer nas páginas'))
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+
+    await criarBranca()
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'b1'])
+    expect(objetos()).toHaveLength(0)
+  })
+
+  it('no teto de 500 páginas: um alerta diz que não cabe mais nenhuma, o documento fica como estava, e o foco fica no botão', async () => {
+    ObservadorFalso.automatico = false
+    await abrirParaEditar('a-500p.pdf')
+    const botao = porNome('Página em branco')
+
+    await criarBranca(botao)
+
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+    expect(alertaDaAdicao()!.textContent).toBe(B.passouDoTeto(500))
+    expect(cartoesNoDocumento()).toHaveLength(500)
+    expect(posicao()).toBe('Página 1 de 500')
+    expect(document.activeElement).toBe(botao)
+  })
+
+  it('o tamanho da marcada que o pdf.js não lê: um alerta diz qual página, e nada muda', async () => {
+    await abrirParaEditar('a-3p.pdf', {
+      renderizador: criarRenderizadorFalso({ tamanhosQueFalham: [1] }),
+    })
+    await marcarPagina(2)
+
+    await criarBranca()
+
+    expect(alertaDaAdicao()!.textContent).toBe(B.semTamanho(2))
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+  })
+
+  it('a recusa do PDF adicionado pelo teto de páginas diz que as brancas também somam', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    await criarBranca()
+
+    await adicionarPdf(pdf('b-497p.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+
+    expect(alertaDaAdicao()!.textContent).toBe(
+      A.passouDoTeto(
+        'b-497p.pdf',
+        {
+          passou: 'paginas',
+          bytes: pdf('b-497p.pdf').size,
+          paginas: 497,
+          restam: { bytes: 50_000_000 - pdf('a-3p.pdf').size, paginas: 496 },
+        },
+        { bytes: 50_000_000, paginas: 500 },
+        true,
+      ),
+    )
+  })
+
+  it('enquanto um PDF entra, a branca espera: o botão fica aria-disabled e não cria nada', async () => {
+    const motor = criarMotorFalso({ atraso: 60 })
+    await abrirParaEditar('a-3p.pdf', { motor })
+    const botao = porNome('Página em branco')
+
+    comecarAAdicionar(pdf('b-2p.pdf'))
+    expect(botao.getAttribute('aria-disabled')).toBe('true')
+    await criarBranca(botao)
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(botao.getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('no celular: o curto "Em branco" ao lado do PDF, com o nome inteiro e a mesma descrição; criar abre a branca e leva o foco à área', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    const botao = porNome('Página em branco')
+
+    expect(botao.textContent).toBe(B.curto)
+    expect(botao.className).toContain('h-11')
+    expect(segue(porNome('Adicionar PDF'), botao)).toBe(true)
+    expect(descricaoDe(botao)).toBe(A.onde(3, null))
+
+    await criarBranca(botao)
+
+    expect(miniaturas()).toHaveLength(4)
+    expect(atual()).toBe(3)
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+    expect(anuncio()).toBe(B.adicionada(3))
+  })
+
+  it('na folha do celular: o botão também está lá; criar fecha a folha e leva o foco à área da branca', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    await abrirAFolha()
+
+    await criarBranca(naFolha('Página em branco'))
+    await esperarAte(() => folha() === null)
+    await esperar()
+
+    expect(document.activeElement).toBe(q('editar-pdf-area'))
+    expect(posicao()).toBe('Página 4 de 4')
+  })
+})

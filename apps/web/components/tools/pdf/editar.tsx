@@ -17,6 +17,7 @@ import {
   faCircleInfo,
   faCrosshairs,
   faDownload,
+  faFile,
   faFileCirclePlus,
   faFilePdf,
   faImage,
@@ -87,14 +88,18 @@ import {
   type AvisoNoCabecalho,
 } from './cabecalho-do-documento'
 import {
+  adicionarBranca,
   adicionarPaginas,
   arquivosAlcancaveis,
   brancasAlcancaveis,
+  cabeNoEditor,
   doArquivo,
   ehBranca,
   nomeDoPdfBaixado,
   paginasDoArquivo,
   pedidoDeArquivos,
+  tamanhoDaNovaBranca,
+  ultimaMarcada,
   type DocumentoDoEditor,
 } from './documento-do-editor'
 import { useDocumentoPdf } from './documento-pdf'
@@ -171,6 +176,7 @@ const T = TEXTOS.editar
 const O = TEXTOS.organizar
 const P = TEXTOS.editar.paginasDoDocumento
 const A = TEXTOS.editar.adicionar
+const B = TEXTOS.editar.branca
 
 // A imagem da miniatura na faixa: 4,5rem do botão menos o respiro.
 const LARGURA_DA_MINIATURA_NA_FAIXA = 64
@@ -275,13 +281,19 @@ function mensagemDaRecusa(nome: string, recusa: RecusaDaAbertura): string {
     : T.recusado(nome, recusa.motivo)
 }
 
-function mensagemDaAdicaoRecusada(nome: string, recusa: RecusaDaAdicao) {
+function mensagemDaAdicaoRecusada(
+  nome: string,
+  recusa: RecusaDaAdicao,
+  comBrancas: boolean,
+) {
   return 'motivo' in recusa
     ? A.recusado(nome, recusa.motivo)
-    : A.passouDoTeto(nome, recusa, {
-        bytes: TETO_DE_BYTES_COM_MINIATURAS,
-        paginas: TETO_DE_PAGINAS,
-      })
+    : A.passouDoTeto(
+        nome,
+        recusa,
+        { bytes: TETO_DE_BYTES_COM_MINIATURAS, paginas: TETO_DE_PAGINAS },
+        comBrancas,
+      )
 }
 
 // As imagens que algum passo do histórico usa: só essas ficam guardadas e contam no teto.
@@ -349,6 +361,7 @@ export function EditarPdf({
   const vezDaImagem = useRef(0)
   const vezDoClique = useRef(0)
   const vezDaGeracao = useRef(0)
+  const criandoBranca = useRef(false)
 
   const [vista, setVista] = useState<Vista>(SEM_VISTA)
   const [anuncio, setAnuncio] = useState({ texto: '', vez: 0 })
@@ -456,9 +469,10 @@ export function EditarPdf({
   const { historico } = sessao && edicao.sessao === sessao ? edicao : SEM_EDICAO
   const cena = historico.presente
   const moldura = molduraDa(cena, aberta, paginaAberta?.giro ?? 0)
-  const daAberta = documento
-    ? doArquivo(documento, paginaAberta?.origem ?? { arquivo: 0, indice: 0 })
-    : null
+  const origemDaAberta = paginaAberta?.origem ?? { arquivo: 0, indice: 0 }
+  const brancaAberta = ehBranca(origemDaAberta) ? origemDaAberta.branca : null
+  const daAberta =
+    documento && !brancaAberta ? doArquivo(documento, origemDaAberta) : null
   const {
     larguraCss,
     desenhando,
@@ -469,6 +483,7 @@ export function EditarPdf({
   } = usePaginaDesenhada({
     documento: daAberta?.aberto ?? null,
     pagina: daAberta?.indice ?? 0,
+    branca: brancaAberta,
     giro: moldura,
     zoom,
     areaRef,
@@ -734,8 +749,11 @@ export function EditarPdf({
 
   async function clicarNaPagina(ponto: Ponto) {
     setSelecionado(null)
-    if (!documento || !paginaAberta) return
     const vez = ++vezDoClique.current
+    if (!documento || !paginaAberta || brancaAberta) {
+      setDicaDoTexto(null)
+      return
+    }
     const { aberto: doArquivoAberto, indice } = doArquivo(
       documento,
       paginaAberta.origem,
@@ -862,6 +880,7 @@ export function EditarPdf({
   }
 
   function mudarApagarDeVerdade(ligado: boolean) {
+    if (brancaAberta) return
     mudarCena(comApagarDeVerdade(cena, aberta, ligado))
     setConfirmandoApagar(null)
     anunciar(
@@ -1222,10 +1241,74 @@ export function EditarPdf({
     if (!adicao || adicao.ok) return
     setRecusaDaAdicao({
       sessao: daSessao,
-      texto: mensagemDaAdicaoRecusada(novo.name, adicao.recusa),
+      texto: mensagemDaAdicaoRecusada(
+        novo.name,
+        adicao.recusa,
+        brancasRef.current() > 0,
+      ),
       naBarra: alertaNaBarraRef.current,
     })
     anunciar('')
+  }
+
+  function recusarBranca(sessaoDaRecusa: object, texto: string) {
+    setRecusaDaAdicao({
+      sessao: sessaoDaRecusa,
+      texto,
+      naBarra: alertaNaBarraRef.current,
+    })
+    anunciar('')
+  }
+
+  // P2 pede o tamanho da última marcada ao pdf.js; enquanto ele responde, outro clique não cria outra.
+  async function criarPaginaEmBranco() {
+    if (!documento || montando || adicionando || criandoBranca.current) return
+    const { sessao: daSessao } = documento
+    setRecusaDaAdicao(null)
+    const cabe = cabeNoEditor(
+      documento,
+      { bytes: 0, paginas: 1 },
+      brancasAlcancaveis(estadoDasPaginas),
+    )
+    if (!cabe.cabe) {
+      recusarBranca(daSessao, B.passouDoTeto(TETO_DE_PAGINAS))
+      return
+    }
+    criandoBranca.current = true
+    let tamanho: Tamanho
+    try {
+      tamanho = await tamanhoDaNovaBranca(documento, estadoDasPaginas)
+    } catch {
+      const marcada = ultimaMarcada(estadoDasPaginas)
+      criandoBranca.current = false
+      if (marcada && sessaoRef.current === daSessao) {
+        recusarBranca(
+          daSessao,
+          B.semTamanho(ordemRef.current.indexOf(marcada.id) + 1),
+        )
+      }
+      return
+    }
+    criandoBranca.current = false
+    brancaRef.current(daSessao, tamanho)
+  }
+
+  function entrarABranca(daSessao: object, tamanho: Tamanho) {
+    if (!documento || documento.sessao !== daSessao) return
+    const feita = adicionarBranca(documento, estadoDasPaginas, tamanho)
+    if (!feita.ok) {
+      recusarBranca(daSessao, B.passouDoTeto(TETO_DE_PAGINAS))
+      return
+    }
+    setPaginasDoDoc({ sessao: daSessao, paginas: feita.paginas })
+    setVista({ sessao: daSessao, aberta: feita.id, zoom })
+    setSelecionado(null)
+    setDicaDoTexto(null)
+    setConfirmandoApagar(null)
+    descartarResultado()
+    anunciar(B.adicionada(feita.posicao))
+    if (folhaAberta) fecharAFolha(() => areaRef.current)
+    else focar(() => areaRef.current)
   }
 
   function entrarNoDocumento(
@@ -1256,6 +1339,10 @@ export function EditarPdf({
   }
 
   const entrarRef = useRef(entrarNoDocumento)
+  const brancaRef = useRef(entrarABranca)
+  const brancasRef = useRef(() => brancasAlcancaveis(estadoDasPaginas))
+  const sessaoRef = useRef(sessao)
+  const ordemRef = useRef(ordem)
   const alertaNaBarraRef = useRef(false)
   const irParaRef = useRef(irPara)
   const voltarRef = useRef(voltarNoHistorico)
@@ -1264,6 +1351,10 @@ export function EditarPdf({
   const usarRef = useRef(usarBotao)
   useLayoutEffect(() => {
     entrarRef.current = entrarNoDocumento
+    brancaRef.current = entrarABranca
+    brancasRef.current = () => brancasAlcancaveis(estadoDasPaginas)
+    sessaoRef.current = sessao
+    ordemRef.current = ordem
     alertaNaBarraRef.current = !larga && !folhaAberta
     irParaRef.current = irPara
     voltarRef.current = voltarNoHistorico
@@ -1418,9 +1509,10 @@ export function EditarPdf({
     ferramenta === 'desenho'
       ? T.ferramentas.dicas[ferramenta]
       : T.ferramentas.dicas.forma
-  const paginasDaFaixa: PaginaDaFaixa[] = lista.map(({ id, giro }) => ({
+  const paginasDaFaixa: PaginaDaFaixa[] = lista.map(({ id, giro, origem }) => ({
     chave: id,
     giro,
+    ...(ehBranca(origem) && { branca: origem.branca }),
   }))
   const nomesDosArquivos = (documento?.arquivos ?? []).map(
     (aberto) => aberto?.arquivo.name ?? '',
@@ -1430,6 +1522,7 @@ export function EditarPdf({
       lista.flatMap(({ origem }) => (ehBranca(origem) ? [] : [origem.arquivo])),
     ),
   ].sort((a, b) => a - b)
+  const brancasNaLista = lista.filter(({ origem }) => ehBranca(origem)).length
   const comVariosArquivos = arquivosNaLista.length > 1
   const avisosNoCabecalho: AvisoNoCabecalho[] = arquivosNaLista.flatMap(
     (numero) =>
@@ -1518,6 +1611,28 @@ export function EditarPdf({
       )}
     </Button>
   )
+  const botaoDaBranca = (naBarra: boolean) => (
+    <Button
+      type="button"
+      variant="outline"
+      className={
+        naBarra ? 'h-11 gap-2 px-3' : 'h-11 w-full justify-start gap-2 px-3'
+      }
+      disabled={montando}
+      aria-disabled={adicionando ? true : undefined}
+      aria-label={naBarra ? B.botao : undefined}
+      aria-describedby={naBarra ? idDoOndeNaBarra : idDoOnde}
+      onClick={() => void criarPaginaEmBranco()}
+      data-testid={naBarra ? 'editar-pdf-branca-na-barra' : 'editar-pdf-branca'}
+    >
+      <FontAwesomeIcon
+        icon={faFile}
+        className="text-primary size-4"
+        aria-hidden
+      />
+      {naBarra ? B.curto : B.botao}
+    </Button>
+  )
   // A recusa é anunciada só onde apareceu: a cópia que entra ao abrir ou fechar a folha não a repete.
   const alertaDaAdicao = (anuncia: boolean) =>
     recusaVisivel && (
@@ -1539,6 +1654,7 @@ export function EditarPdf({
   const adicionarNaLista = (
     <div className="space-y-2" data-testid="editar-pdf-bloco-adicionar">
       {botaoDeAdicionar(false)}
+      {botaoDaBranca(false)}
       <p
         id={idDoOnde}
         className="text-muted-foreground text-xs leading-relaxed"
@@ -1693,7 +1809,7 @@ export function EditarPdf({
         <p className="text-muted-foreground text-sm">{dicaDaFerramenta}</p>
         {ferramenta === 'cobrir' && (
           <p className="text-sm" data-testid="editar-pdf-aviso-cobrir">
-            {T.cobrir.aviso}
+            {brancaAberta ? T.cobrir.naBranca : T.cobrir.aviso}
           </p>
         )}
 
@@ -1873,6 +1989,7 @@ export function EditarPdf({
         desenhando={desenhando}
         falhou={naoDesenhou}
         aoTentarDeNovo={tentarDeNovo}
+        emBranco={brancaAberta !== null}
       >
         {tamanhoDaPagina && (
           <QuadroDeObjetos
@@ -1980,6 +2097,7 @@ export function EditarPdf({
             titulo={T.abertos(
               arquivosNaLista.map((numero) => nomesDosArquivos[numero]),
               total,
+              brancasNaLista,
             )}
             avisos={avisosNoCabecalho}
           >
@@ -2223,6 +2341,7 @@ export function EditarPdf({
                       </SheetContent>
                     </Sheet>
                     {botaoDeAdicionar(true)}
+                    {botaoDaBranca(true)}
                   </div>
                   <p
                     id={idDoOndeNaBarra}
@@ -2295,9 +2414,9 @@ export function EditarPdf({
                     {T.cobrir.titulo}
                   </h3>
                   <p id={idDoAvisoDoCobrir} className="text-sm">
-                    {T.cobrir.aviso}
+                    {brancaAberta ? T.cobrir.naBranca : T.cobrir.aviso}
                   </p>
-                  {apagarAqui ? (
+                  {brancaAberta ? null : apagarAqui ? (
                     <div className="space-y-2">
                       <p
                         className="text-sm font-medium"

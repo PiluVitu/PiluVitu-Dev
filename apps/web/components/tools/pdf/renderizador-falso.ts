@@ -23,6 +23,8 @@ type Opcoes = {
   paginas?: number
   /** Índices (a partir de 0) cujo fundo do apagar de verdade falha. */
   fundosQueFalham?: readonly number[]
+  /** Índices (a partir de 0) cujo tamanho (P2 da página em branco) o pdf.js não lê. */
+  tamanhosQueFalham?: readonly number[]
 }
 
 // As linhas cinzas e o número da folha falsa: onde a página "tem texto" para a dica do editar.
@@ -83,6 +85,7 @@ export function criarRenderizadorFalso({
   paginasQueFalham = [],
   paginas,
   fundosQueFalham = [],
+  tamanhosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let vivos = 0
@@ -225,6 +228,9 @@ export function criarRenderizadorFalso({
         async tamanho(indice) {
           registrar('tamanho', indice)
           if (fechado) throw new Error('o documento já foi fechado')
+          if (tamanhosQueFalham.includes(indice)) {
+            throw new Error('falta de memória')
+          }
           return deitadas[indice]
             ? { largura: A4.altura, altura: A4.largura }
             : A4

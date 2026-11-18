@@ -45,6 +45,7 @@ import { cn } from '@piluvitu/ui/cn'
 import type { PaginaDoPlano } from '@piluvitu/tools/pdf-regras'
 import { useReduzirMovimento } from '@/hooks/use-reduzir-movimento'
 import type { PaginaDaBancada } from './bancada'
+import { FolhaEmBranco } from './folha-em-branco'
 import { TEXTOS } from './textos'
 
 const T = TEXTOS.organizar
@@ -644,6 +645,7 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
 }) {
   const reduzir = useReduzirMovimento()
   const { id, origem, giro } = pagina
+  const branca = 'branca' in origem ? origem.branca : null
   const {
     setNodeRef,
     setActivatorNodeRef,
@@ -662,13 +664,14 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
     (no: HTMLLIElement | null) => {
       setNodeRef(no)
       if (!no) return
-      const parar = observar(no, id)
+      // A página em branco não tem miniatura para o pdf.js desenhar.
+      const parar = branca ? () => {} : observar(no, id)
       return () => {
         parar()
         setNodeRef(null)
       }
     },
-    [setNodeRef, observar, id],
+    [setNodeRef, observar, id, branca],
   )
   const refDaCaixa = useCallback(
     (caixa: HTMLInputElement | null) => registrarCaixa(id, caixa),
@@ -726,7 +729,9 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
         )}
         data-testid="editar-pdf-abrir-pagina"
       >
-        {url ? (
+        {branca ? (
+          <FolhaEmBranco tamanho={branca} giro={giro} className="size-[85%]" />
+        ) : url ? (
           // eslint-disable-next-line @next/next/no-img-element -- miniatura num Blob gerado no aparelho, sem otimizador
           <img
             src={url}
@@ -760,7 +765,7 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
           data-testid="editar-pdf-origem"
         >
           {'branca' in origem
-            ? P.origemDaBranca
+            ? P.origemDaBranca(origem.branca)
             : P.origem(nomeDoArquivo, origem.indice + 1)}
         </p>
         {giro !== 0 && (

@@ -23,6 +23,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { Button } from '@piluvitu/ui/button'
 import { cn } from '@piluvitu/ui/cn'
 import type { Giro, Tamanho } from '@piluvitu/tools/pdf-regras'
+import { FolhaEmBranco, tamanhoGirado } from './folha-em-branco'
 import type { DocumentoAberto } from './renderizador'
 import { TEXTOS } from './textos'
 
@@ -83,6 +84,7 @@ function useLarguraDaArea(
 export function usePaginaDesenhada({
   documento,
   pagina,
+  branca = null,
   giro = 0,
   zoom,
   areaRef,
@@ -91,6 +93,8 @@ export function usePaginaDesenhada({
   documento: DocumentoAberto | null
   /** O índice no arquivo. */
   pagina: number
+  /** A página em branco aberta (de pé, como nasceu): a folha fica vazia, sem pedido ao pdf.js. */
+  branca?: Tamanho | null
   /** A moldura: a página é desenhada girada a mais, como os objetos dela foram postos. */
   giro?: Giro
   zoom: number
@@ -99,7 +103,10 @@ export function usePaginaDesenhada({
 }) {
   const [desenho, setDesenho] = useState<Desenho | null>(null)
   const [tentativa, setTentativa] = useState(0)
-  const larguraDaArea = useLarguraDaArea(areaRef, documento !== null)
+  const larguraDaArea = useLarguraDaArea(
+    areaRef,
+    documento !== null || branca !== null,
+  )
   const larguraCss =
     larguraDaArea === null
       ? null
@@ -152,13 +159,25 @@ export function usePaginaDesenhada({
     }
   }, [documento, pagina, giro, larguraCss, tentativa, folhaRef])
 
+  const tentarDeNovo = () => setTentativa((n) => n + 1)
+  if (branca) {
+    const naTela = tamanhoGirado(branca, giro)
+    return {
+      larguraCss,
+      desenhando: false,
+      falhou: false,
+      proporcao: naTela.altura / naTela.largura,
+      tamanhoDaPagina: naTela,
+      tentarDeNovo,
+    }
+  }
   return {
     larguraCss,
     desenhando: documento !== null && desenhoDaVez === null,
     falhou: desenhoDaVez !== null && !desenhoDaVez.ok,
     proporcao: tamanho ? tamanho.altura / tamanho.largura : PROPORCAO_DO_A4,
     tamanhoDaPagina,
-    tentarDeNovo: () => setTentativa((n) => n + 1),
+    tentarDeNovo,
   }
 }
 
@@ -172,6 +191,7 @@ export function AreaDaPagina({
   desenhando,
   falhou,
   aoTentarDeNovo,
+  emBranco = false,
   children,
 }: {
   /** O alvo do link "Pular para a página aberta". */
@@ -184,6 +204,8 @@ export function AreaDaPagina({
   desenhando: boolean
   falhou: boolean
   aoTentarDeNovo: () => void
+  /** A folha da página em branco fica vazia: o canvas da última página de arquivo fica escondido nela. */
+  emBranco?: boolean
   children?: ReactNode
 }) {
   return (
@@ -201,9 +223,17 @@ export function AreaDaPagina({
           <div
             ref={folhaRef}
             role="img"
-            aria-label={T.pagina(numeroDaPagina)}
+            aria-label={
+              emBranco
+                ? T.paginaEmBranco(numeroDaPagina)
+                : T.pagina(numeroDaPagina)
+            }
             aria-busy={desenhando}
-            className="bg-white shadow-sm"
+            className={cn(
+              'bg-white shadow-sm',
+              emBranco && '[&>canvas]:hidden',
+            )}
+            data-branca={emBranco || undefined}
             style={{
               width: larguraCss,
               height: Math.round(larguraCss * proporcao),
@@ -398,6 +428,8 @@ export function ControlesDaPagina({
 export type PaginaDaFaixa = {
   readonly chave: string
   readonly giro: Giro
+  /** A página em branco: a miniatura é a folha, sem pdf.js. */
+  readonly branca?: Tamanho
 }
 
 export function FaixaDePaginas({
@@ -496,12 +528,13 @@ export function FaixaDePaginas({
         className="flex gap-2 overflow-x-auto p-1 pb-2"
         data-testid="editar-pdf-faixa"
       >
-        {paginas.map(({ chave, giro }, posicao) => (
+        {paginas.map(({ chave, giro, branca }, posicao) => (
           <MiniaturaDaPagina
             key={chave}
             indice={posicao}
             chave={chave}
             giro={giro}
+            branca={branca}
             atual={posicao === pagina}
             focavel={posicao === indiceFocavel}
             url={miniaturas.urls.get(chave)}
@@ -522,6 +555,7 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   indice,
   chave,
   giro,
+  branca,
   atual,
   focavel,
   url,
@@ -534,6 +568,7 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   indice: number
   chave: string
   giro: Giro
+  branca?: Tamanho
   atual: boolean
   focavel: boolean
   url: string | undefined
@@ -546,9 +581,9 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   const numero = indice + 1
   const refDoItem = useCallback(
     (no: HTMLLIElement | null) => {
-      if (no) return observar(no, chave)
+      if (no && !branca) return observar(no, chave)
     },
-    [observar, chave],
+    [observar, chave, branca],
   )
   const refDoBotao = useCallback(
     (botao: HTMLButtonElement | null) => registrar(indice, botao),
@@ -574,7 +609,13 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
         )}
       >
         <span className="bg-muted flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-sm">
-          {url ? (
+          {branca ? (
+            <FolhaEmBranco
+              tamanho={branca}
+              giro={giro}
+              className="size-[85%]"
+            />
+          ) : url ? (
             // eslint-disable-next-line @next/next/no-img-element -- miniatura num Blob gerado no aparelho, sem otimizador
             <img
               src={url}
