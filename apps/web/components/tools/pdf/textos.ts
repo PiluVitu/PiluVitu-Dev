@@ -94,6 +94,8 @@ function falhaAoSalvar(
       return `Uma imagem da página ${numero(pagina)} não é PNG nem JPEG. Troque por uma imagem PNG ou JPEG e salve de novo.`
     case 'imagem_corrompida':
       return `Uma imagem da página ${numero(pagina)} não pôde ser lida. Ponha a imagem de novo e salve outra vez.`
+    case 'apagar_na_pagina_repetida':
+      return `A página ${numero(pagina)} é a mesma página do arquivo que outra página deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.`
     case 'nao_e_pdf':
     case 'protegido':
     case 'corrompido':
@@ -201,6 +203,61 @@ const AVISOS_DO_PDF: Record<AvisoDoPdf, string> = {
 
 const documentoAberto = (nome: string, totalDePaginas: number) =>
   `${nome} · ${paginas(totalDePaginas)}`
+
+const avisoDoArquivo = (nome: string, aviso: AvisoDoPdf) =>
+  `${nome}: ${AVISOS_DO_PDF[aviso]}`
+
+// P3 e D4: o que entra vai depois da última página marcada, e a tela diz qual é.
+function ondeEntra(
+  total: number,
+  marcada: { pagina: number; marcadas: number } | null,
+): string {
+  if (!marcada) return `Entra no fim, depois da página ${numero(total)}.`
+  const qual =
+    marcada.marcadas === 1 ? 'a que você marcou' : 'a última que você marcou'
+  return `Entra depois da página ${numero(marcada.pagina)}, ${qual}.`
+}
+
+function paginasAdicionadas(
+  nome: string,
+  quantas: number,
+  depoisDa: number,
+  avisos: readonly AvisoDoPdf[],
+): string {
+  const adicionadas = concordar(quantas, 'adicionada', 'adicionadas')
+  const selecionadas = concordar(quantas, 'selecionada', 'selecionadas')
+  return [
+    `${paginas(quantas)} de ${nome} ${adicionadas} depois da página ${numero(depoisDa)}, já ${selecionadas}.`,
+    ...avisos.map((aviso) => avisoDoArquivo(nome, aviso)),
+  ].join(' ')
+}
+
+type Teto = { readonly bytes: number; readonly paginas: number }
+
+// O teto é somado (os PDFs abertos mais o novo): a mensagem diz o que ainda cabia.
+function passouDoTetoSomado(
+  nome: string,
+  {
+    passou,
+    bytes,
+    paginas: paginasDoNovo = 0,
+    restam,
+  }: { passou: keyof Teto; bytes: number; paginas?: number; restam: Teto },
+  teto: Teto,
+): string {
+  const porBytes = passou === 'bytes'
+  const tem = porBytes ? formatarTamanho(bytes) : paginas(paginasDoNovo)
+  const sobra = restam[passou]
+  const cabe =
+    sobra === 0
+      ? `não cabe mais ${porBytes ? 'nada' : 'nenhuma'}`
+      : `só cabem mais ${porBytes ? formatarTamanho(sobra) : paginas(sobra)}`
+  const limite = porBytes ? formatarTamanho(teto.bytes) : numero(teto.paginas)
+  const inicio = `Não deu para adicionar ${nome}: ele tem ${tem}, e ${cabe} (até ${limite} somando os PDFs abertos).`
+  return sobra === 0
+    ? inicio
+    : `${inicio} Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.`
+}
 
 const listaDePaginas = (numeros: readonly number[]) =>
   `${concordar(numeros.length, 'a página', 'as páginas')} ${lista.format(numeros.map(numero))}`
@@ -362,6 +419,7 @@ export const TEXTOS = {
       nadaParaDesfazer: 'Ainda não há nada para desfazer.',
       ultimaPagina: 'O PDF precisa de pelo menos uma página.',
       montando: 'Espere o PDF ficar pronto.',
+      adicionando: 'Espere o PDF adicionado entrar para extrair.',
     },
     montando: 'Montando o PDF…',
     resultado: {
@@ -412,9 +470,12 @@ export const TEXTOS = {
   editar: {
     rotulo: 'Abrir PDF',
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>
-      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)} por PDF. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
+      `Até ${formatarTamanho(tetoDeBytes)} e ${paginas(tetoDePaginas)}, somando os PDFs que você abrir e adicionar. Para desenhar as páginas e montar o PDF final, o seu aparelho chega a usar umas 6 a 8 vezes o tamanho do arquivo na memória; acima disso, celulares costumam fechar a aba.`,
     abrindo: (nome: string) => `Abrindo ${nome}…`,
     aberto: documentoAberto,
+    abertos: (nomes: readonly string[], totalDePaginas: number) =>
+      documentoAberto(nomes.join(' + '), totalDePaginas),
+    avisoDoArquivo,
     recusado: (nome: string, motivo: MotivoDaRecusa) =>
       `Não deu para abrir ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
     grandeDemais: (nome: string, bytes: number, teto: number) =>
@@ -422,6 +483,16 @@ export const TEXTOS = {
     paginasDemais: (nome: string, totalDePaginas: number, teto: number) =>
       `${nome} tem ${paginas(totalDePaginas)}, mais que as ${numero(teto)} que dá para editar de uma vez. Divida o PDF em partes de até ${paginas(teto)} no programa que o criou e abra uma de cada vez.`,
     avisos: AVISOS_DO_PDF,
+    adicionar: {
+      botao: 'Adicionar PDF',
+      curto: 'PDF',
+      adicionando: (nome: string) => `Adicionando ${nome}…`,
+      onde: ondeEntra,
+      adicionadas: paginasAdicionadas,
+      recusado: (nome: string, motivo: MotivoDaRecusa) =>
+        `Não deu para adicionar ${nome}. ${ERROS_DO_ARQUIVO[motivo]}`,
+      passouDoTeto: passouDoTetoSomado,
+    },
     paginas: 'Páginas',
     paginasDoDocumento: {
       rotulo: (posicao: number) => `Página ${numero(posicao)}`,
@@ -582,6 +653,7 @@ export const TEXTOS = {
         `${contagem(objetos, 'objeto', 'objetos')} em ${paginas(paginasComObjetos)}.`,
       apagando: (numeros: readonly number[]) =>
         `Para apagar de verdade, ${listaDePaginas(numeros)} ${concordar(numeros.length, 'vai virar imagem', 'vão virar imagem')}.`,
+      adicionando: (nome: string) => `Espere ${nome} entrar para gerar o PDF.`,
       montando: 'Montando o PDF…',
       cancelar: 'Cancelar',
       pronto: 'PDF editado pronto',

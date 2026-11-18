@@ -504,7 +504,7 @@ export type AcaoNaBancada =
 
 export function ListaDaBancada({
   paginas,
-  nomeDoArquivo,
+  nomesDosArquivos,
   marcadas,
   aberta,
   miniaturas,
@@ -516,13 +516,15 @@ export function ListaDaBancada({
   registrarCaixa,
 }: {
   paginas: readonly PaginaDaBancada[]
-  nomeDoArquivo: string
+  /** Pela posição do arquivo na sessão (o `arquivo` da origem): a origem do cartão diz de onde a página veio. */
+  nomesDosArquivos: readonly string[]
   marcadas: ReadonlySet<string>
   aberta: string
+  /** Pelo id da página: páginas de arquivos diferentes não dividem miniatura. */
   miniaturas: {
-    urls: ReadonlyMap<number, string>
-    falhas: ReadonlySet<number>
-    observar: (elemento: Element, indice: number) => () => void
+    urls: ReadonlyMap<string, string>
+    falhas: ReadonlySet<string>
+    observar: (elemento: Element, id: string) => () => void
   }
   bloqueado: boolean
   idDoTitulo: string
@@ -587,11 +589,11 @@ export function ListaDaBancada({
               key={pagina.id}
               pagina={pagina}
               posicao={posicao + 1}
-              nomeDoArquivo={nomeDoArquivo}
+              nomeDoArquivo={nomesDosArquivos[pagina.origem.arquivo] ?? ''}
               selecionada={marcadas.has(pagina.id)}
               aberta={pagina.id === aberta}
-              url={miniaturas.urls.get(pagina.origem.indice)}
-              falhou={miniaturas.falhas.has(pagina.origem.indice)}
+              url={miniaturas.urls.get(pagina.id)}
+              falhou={miniaturas.falhas.has(pagina.id)}
               bloqueado={bloqueado}
               unica={unica}
               idDaDicaUnica={idDaDicaUnica}
@@ -634,7 +636,7 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
   idDaDicaUnica: string
   aoAgir: (acao: AcaoNaBancada) => void
   registrarCaixa: (id: string, caixa: HTMLInputElement | null) => void
-  observar: (elemento: Element, indice: number) => () => void
+  observar: (elemento: Element, id: string) => () => void
 }) {
   const reduzir = useReduzirMovimento()
   const { id, origem, giro } = pagina
@@ -656,13 +658,13 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
     (no: HTMLLIElement | null) => {
       setNodeRef(no)
       if (!no) return
-      const parar = observar(no, origem.indice)
+      const parar = observar(no, id)
       return () => {
         parar()
         setNodeRef(null)
       }
     },
-    [setNodeRef, observar, origem.indice],
+    [setNodeRef, observar, id],
   )
   const refDaCaixa = useCallback(
     (caixa: HTMLInputElement | null) => registrarCaixa(id, caixa),
@@ -749,7 +751,10 @@ export const CartaoDaBancada = memo(function CartaoDaBancada({
             </span>
           )}
         </p>
-        <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
+        <p
+          className="text-muted-foreground text-xs [overflow-wrap:anywhere]"
+          data-testid="editar-pdf-origem"
+        >
           {P.origem(nomeDoArquivo, origem.indice + 1)}
         </p>
         {giro !== 0 && (

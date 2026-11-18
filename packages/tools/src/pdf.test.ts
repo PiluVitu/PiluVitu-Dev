@@ -3561,6 +3561,28 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
       expect(await rotacoesDasPaginas(final)).toEqual([270, 0, 270])
     })
 
+    // Menor 1 do Crivo no #127: o segundo esvaziar do mesmo nó derrubava o drawImage com
+    // UnexpectedObjectTypeError. Cada JPEG tem só os cobrir da sua posição, e juntar os dois não dá sem
+    // desenhar de novo (o segundo JPEG por cima do primeiro mostraria o que o primeiro cobriu).
+    it.each([
+      ['no lugar', plano([0], [1], [2]), 0, 2],
+      ['por cópia', plano([2], [0]), 0, 1],
+    ] as const)(
+      'dois apagar de verdade no mesmo nó (%s) são recusados, apontando a segunda posição',
+      async (_, oPlano, primeira, segunda) => {
+        const erro = await erroNaEdicao(
+          montarDocumento([await comARepetida()], oPlano, [
+            { posicao: primeira, objetos: [], fundo: JPEG_8X8 },
+            { posicao: segunda, objetos: [], fundo: JPEG_8X8 },
+          ]),
+        )
+
+        expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+        expect(erro.pagina).toBe(segunda)
+        expect(erro.objeto).toBeUndefined()
+      },
+    )
+
     it('por cópia, só a repetida apagada e girada', async () => {
       const final = await montarDocumento(
         [await comARepetida()],
@@ -3578,6 +3600,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   describe('PDF que repete a mesma página no /Kids: a apagada com moldura não deita a outra', () => {
     async function comARepetidaDeitada() {
       const documento = await PDFDocument.create()
+      documento.setTitle('TITULO-DO-ARQUIVO')
       documento.addPage([200, 100])
       documento.addPage([150, 150])
       const arvore = documento.catalog.Pages()
@@ -3657,6 +3680,94 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         '100x200',
       ])
     })
+
+    // Menor 2 do Crivo no #127: o arquivo inteiro na ordem, sem giro, com a apagada na moldura 90. Sem
+    // giro, girar no lugar não mexe na outra posição, então o plano sai no lugar e guarda o título, os
+    // marcadores e os links; a tela não mostra o aviso de alcance para ele (saiPorCopia é falso). A
+    // cláusula "fundo && moldura !== 0" do giraPaginaRepetida o mandava por cópia e perdia o título.
+    it('sem giro, com a apagada na moldura 90: sai no lugar, com o título do arquivo', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaDeitada()],
+        [daMontagem(0, 0, { moldura: 90 }), daMontagem(0, 1), daMontagem(0, 2)],
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      const documento = await PDFDocument.load(final, {
+        updateMetadata: false,
+      })
+      expect(documento.getTitle()).toBe('TITULO-DO-ARQUIVO')
+      expect(await comoAparecem(final)).toEqual([
+        '200x100',
+        '150x150',
+        '200x100',
+      ])
+    })
+
+    // O mesmo plano com um texto na outra posição: a tela a mostra como ela é (200 × 100), e o texto vai
+    // onde ela o pôs.
+    it('sem giro, a outra posição com texto: o texto sai onde a tela o pôs', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaDeitada()],
+        [daMontagem(0, 0, { moldura: 90 }), daMontagem(0, 1), daMontagem(0, 2)],
+        [
+          { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+          { posicao: 2, objetos: [objetoTexto({ conteudo: 'NA-OUTRA' })] },
+        ],
+      )
+
+      expect(await comoAparecem(final)).toEqual([
+        '200x100',
+        '150x150',
+        '200x100',
+      ])
+      const outra = lerComPdfjs(final).paginas[2]
+      expect(outra.textos.map(({ str }) => str)).toEqual(['NA-OUTRA'])
+      expect(outra.textos[0].matriz[4]).toBeCloseTo(40, 2)
+      expect(outra.textos[0].matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+    })
+
+    // O mesmo caso por cópia, que é o caminho de todo Gerar com dois arquivos (PR 4) e do Extrair: a
+    // apagada sai da origem sem giro, então a outra posição desconta a moldura dela ao desenhar.
+    it('por cópia, a outra posição com texto: o texto sai onde a tela o pôs', async () => {
+      const final = await montarDocumento(
+        [await comARepetidaDeitada()],
+        [daMontagem(0, 0, { moldura: 90 }), daMontagem(0, 2)],
+        [
+          { posicao: 0, objetos: [], fundo: JPEG_8X8 },
+          { posicao: 1, objetos: [objetoTexto({ conteudo: 'NA-OUTRA' })] },
+        ],
+        { porCopia: true },
+      )
+
+      expect(await comoAparecem(final)).toEqual(['200x100', '200x100'])
+      const outra = lerComPdfjs(final).paginas[1]
+      expect(outra.textos.map(({ str }) => str)).toEqual(['NA-OUTRA'])
+      expect(outra.textos[0].matriz[4]).toBeCloseTo(40, 2)
+      expect(outra.textos[0].matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+    })
+
+    // A apagada esvazia o nó: o texto da posição que vem antes dela no plano não pode ir junto.
+    it.each([
+      ['no lugar', {}],
+      ['por cópia', { porCopia: true }],
+    ] as const)(
+      'a outra posição vem antes da apagada (%s): o texto dela fica',
+      async (_, opcoes) => {
+        const final = await montarDocumento(
+          [await comARepetidaDeitada()],
+          [daMontagem(0, 0), daMontagem(0, 1), daMontagem(0, 2)],
+          [
+            { posicao: 0, objetos: [objetoTexto({ conteudo: 'ANTES' })] },
+            { posicao: 2, objetos: [], fundo: JPEG_8X8 },
+          ],
+          opcoes,
+        )
+
+        const primeira = lerComPdfjs(final).paginas[0]
+        expect(primeira.textos.map(({ str }) => str)).toEqual(['ANTES'])
+        expect(primeira.textos[0].matriz[4]).toBeCloseTo(40, 2)
+      },
+    )
   })
 
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {

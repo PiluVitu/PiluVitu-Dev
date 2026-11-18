@@ -1404,13 +1404,20 @@ function giros(
   }
 }
 
+// `molduraDaApagada`: o nó já virou o JPEG de outra posição, desenhado na moldura dela; a tela mostrava
+// esta posição na sua própria moldura, sobre a página de antes.
 async function desenharEGirar(
   pagina: PDFPage,
   editada: Omit<PaginaEditada, 'indice'>,
   recursos: Recursos,
+  molduraDaApagada?: Giro,
 ): Promise<void> {
   const geometria = geometriaDaPagina(pagina)
-  const { doDesenho, final } = giros(geometria.rotacao, editada)
+  const { final, ...outros } = giros(geometria.rotacao, editada)
+  const doDesenho =
+    molduraDaApagada === undefined
+      ? outros.doDesenho
+      : giroNormalizado(editada.moldura - molduraDaApagada)
   await desenharNaPagina(
     pagina,
     { ...geometria, rotacao: doDesenho },
@@ -1421,11 +1428,29 @@ async function desenharEGirar(
   if (editada.giro !== 0) pagina.setRotation(degrees(final))
 }
 
+// Cada JPEG traz só os cobrir da sua posição: com o mesmo nó em duas posições do /Kids, um por cima do
+// outro mostraria o que o primeiro cobriu.
+function conferirApagadasRepetidas(
+  paginas: readonly PDFPage[],
+  editadas: readonly PaginaEditada[],
+): void {
+  const apagadas = new Set<PDFRef>()
+  for (const { indice, rotulo, fundo } of editadas) {
+    if (fundo === undefined) continue
+    const { ref } = paginas[indice]
+    if (apagadas.has(ref)) {
+      throw new ErroNaEdicao('apagar_na_pagina_repetida', rotulo)
+    }
+    apagadas.add(ref)
+  }
+}
+
 async function editarNoLugar(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): Promise<void> {
   const paginas = documento.getPages()
+  conferirApagadasRepetidas(paginas, editadas)
   const recursos = new Recursos(documento)
   if (
     editadas.some(
@@ -1435,13 +1460,24 @@ async function editarNoLugar(
     tirarXfaDoHibrido(documento)
   }
   const apagadas = new Set<PDFRef>()
+  const molduraDaApagada = new Map<PDFRef, Giro>()
   const anotacoesRemovidas = new Set<PDFRef>()
   const xobjetosDasApagadas = new Set<PDFRef>()
-  for (const editada of editadas) {
+  // As apagadas antes: esvaziar o nó repetido no /Kids levaria junto o que outra posição já desenhou nele.
+  const apagadasPrimeiro = [
+    ...editadas.filter(({ fundo }) => fundo !== undefined),
+    ...editadas.filter(({ fundo }) => fundo === undefined),
+  ]
+  for (const editada of apagadasPrimeiro) {
     const { indice, rotulo, objetos, fundo } = editada
     const pagina = paginas[indice]
     if (fundo === undefined) {
-      await desenharEGirar(pagina, editada, recursos)
+      await desenharEGirar(
+        pagina,
+        editada,
+        recursos,
+        molduraDaApagada.get(pagina.ref),
+      )
       continue
     }
     const imagem = await recursos.imagem(fundo, rotulo)
@@ -1462,6 +1498,7 @@ async function editarNoLugar(
     }
     esvaziarPagina(pagina, largura, altura)
     apagadas.add(pagina.ref)
+    molduraDaApagada.set(pagina.ref, editada.moldura)
     pagina.drawImage(imagem, { x: 0, y: 0, width: largura, height: altura })
     await desenharNaPagina(
       pagina,
@@ -1579,19 +1616,17 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
-// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas. A apagada de verdade
-// com moldura também: o JPEG dela, desenhado na moldura, é o conteúdo do nó das duas.
+// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
 function giraPaginaRepetida(
   documento: PDFDocument,
   plano: readonly PaginaDaMontagem[],
-  edicaoDa: ReadonlyMap<number, EdicaoNaMontagem>,
 ): boolean {
   const paginas = documento.getPages()
   const vezes = new Map<PDFRef, number>()
   for (const { ref } of paginas) vezes.set(ref, (vezes.get(ref) ?? 0) + 1)
   return plano.some(
-    ({ origem, giro, moldura }, posicao) =>
-      (giro !== 0 || (edicaoDa.get(posicao)?.fundo && moldura !== 0)) &&
+    ({ origem, giro }) =>
+      giro !== 0 &&
       !('branca' in origem) &&
       vezes.get(paginas[origem.indice].ref)! > 1,
   )
@@ -1637,7 +1672,7 @@ export async function montarDocumento(
     primeiro = await carregar(0)
     if (
       !saiPorCopia(plano, primeiro.getPageCount()) &&
-      !giraPaginaRepetida(primeiro, plano, edicaoDa)
+      !giraPaginaRepetida(primeiro, plano)
     ) {
       await editarNoLugar(primeiro, editadas(doPrimeiro))
       return salvarNoLugar(primeiro)

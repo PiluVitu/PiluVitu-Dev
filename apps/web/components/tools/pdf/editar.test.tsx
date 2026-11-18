@@ -291,7 +291,9 @@ describe('abrir o PDF', () => {
     )
     expect(q('pdf-escolher')!.textContent).toBe('Escolher PDF')
     expect((q('pdf-input') as HTMLInputElement).multiple).toBe(false)
-    expect(container.textContent).toContain('Até 50 MB e 500 páginas por PDF.')
+    expect(container.textContent).toContain(
+      'Até 50 MB e 500 páginas, somando os PDFs que você abrir e adicionar.',
+    )
     expect(motor.analisadas).toEqual([])
     expect(renderizador.abertos).toEqual([])
     expect(q('editar-pdf-folha')).toBeNull()
@@ -1806,6 +1808,22 @@ describe('gerar o PDF editado', () => {
     await esperarAte(() => document.activeElement === objetos()[0])
     expect(objetos()[0].dataset.id).toBe(id)
   })
+
+  it('apagar de verdade duas vezes na mesma página do arquivo: diz o número dela, sem objeto para mostrar', async () => {
+    const motor = criarMotorFalso({
+      montagem: { motivo: 'apagar_na_pagina_repetida', pagina: 'a0p2' },
+    })
+    await abrirParaEditar('contrato-3p.pdf', { motor })
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
+
+    expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF',
+    )
+    expect(() => porNome('Mostrar o objeto')).toThrow()
+  })
 })
 
 it('todo controle novo tem 44 px e nome', async () => {
@@ -2625,5 +2643,493 @@ describe('a Bancada: Ctrl/⌘+Z por região, o pular e a janela', () => {
 
     expect(evento.defaultPrevented).toBe(true)
     expect(q('editar-pdf-documento')).not.toBeNull()
+  })
+})
+
+// ---- Editor único, PR 4: adicionar outro PDF ----
+
+const A = TEXTOS.editar.adicionar
+
+// Só o começo: o arquivo escolhido chega ao input, e a abertura segue fora do act.
+function comecarAAdicionar(arquivo: File) {
+  const input = q('editar-pdf-input-pdf') as HTMLInputElement
+  Object.defineProperty(input, 'files', {
+    value: Object.assign([arquivo], { item: () => arquivo }),
+    configurable: true,
+  })
+  act(() => {
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function adicionarPdf(arquivo: File) {
+  comecarAAdicionar(arquivo)
+  await esperar()
+}
+
+const descricaoDe = (el: HTMLElement) =>
+  (el.getAttribute('aria-describedby') ?? '')
+    .split(' ')
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+
+const marcadasNaLista = () =>
+  cartoesNoDocumento()
+    .filter((c) => c.dataset.selecionada)
+    .map((c) => c.dataset.id)
+
+const origens = () =>
+  cartoesNoDocumento().map(
+    (c) => c.querySelector('[data-testid="editar-pdf-origem"]')!.textContent,
+  )
+
+const alertaDaAdicao = () =>
+  document.body.querySelector<HTMLElement>(
+    '[data-testid="editar-pdf-recusa-da-adicao"]',
+  )
+
+describe('adicionar outro PDF', () => {
+  it('o botão Adicionar PDF fica na coluna, antes da seleção, aceita um PDF só e diz onde o PDF entra', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    const botao = porNome('Adicionar PDF')
+    const coluna = q('editar-pdf-coluna-de-paginas')!
+
+    expect(coluna.contains(botao)).toBe(true)
+    expect(botao.className).toContain('h-11')
+    expect(
+      segue(
+        botao,
+        coluna.querySelector('[aria-label="Ações nas páginas selecionadas"]')!,
+      ),
+    ).toBe(true)
+    const input = q('editar-pdf-input-pdf') as HTMLInputElement
+    expect(input.type).toBe('file')
+    expect(input.multiple).toBe(false)
+    expect(input.accept).toContain('application/pdf')
+    expect(descricaoDe(botao)).toBe(A.onde(3, null))
+
+    await marcarPagina(3)
+    await marcarPagina(1)
+    expect(descricaoDe(botao)).toBe(A.onde(3, { pagina: 1, marcadas: 2 }))
+  })
+
+  it('sem marcada: entra no fim, as páginas novas ficam marcadas, o foco vai à caixa da primeira e o anúncio diz onde', async () => {
+    const { renderizador, motor } = await abrirParaEditar('a-3p.pdf')
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'a1p0', 'a1p1'])
+    expect(origens()).toEqual([
+      'a-3p.pdf, pág. 1',
+      'a-3p.pdf, pág. 2',
+      'a-3p.pdf, pág. 3',
+      'b-2p.pdf, pág. 1',
+      'b-2p.pdf, pág. 2',
+    ])
+    expect(marcadasNaLista()).toEqual(['a1p0', 'a1p1'])
+    expect(focado()).toBe('Selecionar página 4')
+    expect(anuncio()).toBe(A.adicionadas('b-2p.pdf', 2, 3, []))
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'a-3p.pdf + b-2p.pdf · 5 páginas',
+    )
+    expect(motor.analisadas).toEqual(['a-3p.pdf', 'b-2p.pdf'])
+    expect(renderizador.abertos).toEqual(['a-3p.pdf', 'b-2p.pdf'])
+    expect(renderizador.workers).toBe(1)
+    // A página aberta não muda.
+    expect(posicao()).toBe('Página 1 de 5')
+  })
+
+  it('com marcadas: entra depois da última marcada (D4), e a próxima adição entra depois das que acabaram de entrar (D3)', async () => {
+    await abrirParaEditar('a-3p.pdf')
+    await marcarPagina(3)
+    await marcarPagina(1)
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(idsDaLista()).toEqual(['a0p0', 'a1p0', 'a1p1', 'a0p1', 'a0p2'])
+    expect(anuncio()).toBe(A.adicionadas('b-2p.pdf', 2, 1, []))
+    expect(descricaoDe(porNome('Adicionar PDF'))).toBe(
+      A.onde(5, { pagina: 3, marcadas: 2 }),
+    )
+
+    await adicionarPdf(pdf('c-1p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 6)
+    expect(idsDaLista()).toEqual([
+      'a0p0',
+      'a1p0',
+      'a1p1',
+      'a2p0',
+      'a0p1',
+      'a0p2',
+    ])
+    expect(marcadasNaLista()).toEqual(['a2p0'])
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'a-3p.pdf + b-2p.pdf + c-1p.pdf · 6 páginas',
+    )
+  })
+
+  it('acima do teto somado de páginas: um alerta diz o que ainda cabe, e o documento fica como estava, sem o pdf.js abrir o novo', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await marcarPagina(2)
+    const antes = idsDaLista()
+    const botao = porNome('Adicionar PDF')
+    act(() => botao.focus())
+
+    await adicionarPdf(pdf('b-498p.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+    expect(alertaDaAdicao()!.textContent).toBe(
+      A.passouDoTeto(
+        'b-498p.pdf',
+        {
+          passou: 'paginas',
+          bytes: pdf('b-498p.pdf').size,
+          paginas: 498,
+          restam: { bytes: 50_000_000 - pdf('a-3p.pdf').size, paginas: 497 },
+        },
+        { bytes: 50_000_000, paginas: 500 },
+      ),
+    )
+    expect(idsDaLista()).toEqual(antes)
+    expect(marcadasNaLista()).toEqual(['a0p1'])
+    expect(renderizador.abertos).toEqual(['a-3p.pdf'])
+    expect(q('editar-pdf-documento')!.textContent).toBe('a-3p.pdf · 3 páginas')
+    expect(document.activeElement).toBe(botao)
+  })
+
+  it('acima do teto somado de bytes: nem lê o arquivo, e o alerta diz quanto ainda cabe', async () => {
+    const { motor } = await abrirParaEditar('a-3p.pdf')
+    const grande = pdf('b-2p.pdf')
+    Object.defineProperty(grande, 'size', { value: 49_999_999 })
+
+    await adicionarPdf(grande)
+    await esperarAte(() => alertaDaAdicao() !== null)
+
+    expect(alertaDaAdicao()!.textContent).toContain(
+      'Não deu para adicionar b-2p.pdf: ele tem 50 MB, e só cabem mais',
+    )
+    expect(motor.analisadas).toEqual(['a-3p.pdf'])
+    expect(cartoesNoDocumento()).toHaveLength(3)
+  })
+
+  it('PDF protegido no lugar do novo: alerta com a mensagem de sempre, nada muda, e o próximo que dá certo tira o alerta', async () => {
+    await abrirParaEditar('a-3p.pdf')
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(alertaDaAdicao()!.textContent).toBe(
+      A.recusado('b-senha.pdf', 'protegido'),
+    )
+    expect(cartoesNoDocumento()).toHaveLength(3)
+
+    await adicionarPdf(pdf('c-1p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 4)
+    expect(alertaDaAdicao()).toBeNull()
+  })
+
+  it('um por vez (D5): enquanto um abre, o botão diz que está adicionando e não pede outro', async () => {
+    const motor = criarMotorFalso({ atraso: 60 })
+    await abrirParaEditar('a-3p.pdf', { motor })
+    const botao = porNome('Adicionar PDF')
+    const clicado = jest.fn()
+    const input = q('editar-pdf-input-pdf') as HTMLInputElement
+    input.addEventListener('click', clicado)
+
+    comecarAAdicionar(pdf('b-2p.pdf'))
+    expect(botao.getAttribute('aria-disabled')).toBe('true')
+    expect(descricaoDe(botao)).toContain(A.adicionando('b-2p.pdf'))
+    await clicar(botao)
+    expect(clicado).not.toHaveBeenCalled()
+
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(botao.getAttribute('aria-disabled')).toBeNull()
+    await clicar(botao)
+    expect(clicado).toHaveBeenCalledTimes(1)
+  })
+
+  it('a página do segundo arquivo: a página grande, a miniatura e a dica do texto vêm do documento dele', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+
+    await abrirPagina(5)
+    await ponteiro(quadro(), 'pointerdown', { x: 100, y: 100 })
+    await ponteiro(quadro(), 'pointerup', { x: 100, y: 100 })
+    await esperar()
+
+    expect(
+      renderizador.pedidos.filter((p) => p.tipo === 'pagina').at(-1),
+    ).toEqual({ arquivo: 'b-2p.pdf', tipo: 'pagina', indice: 1 })
+    expect(
+      renderizador.pedidos.filter((p) => p.tipo === 'texto').at(-1),
+    ).toEqual({ arquivo: 'b-2p.pdf', tipo: 'texto', indice: 1 })
+    expect(
+      renderizador.pedidos.filter(
+        (p) => p.tipo === 'miniatura' && p.arquivo === 'b-2p.pdf',
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(
+      renderizador.pedidos.some(
+        (p) =>
+          p.tipo === 'miniatura' && p.arquivo === 'a-3p.pdf' && p.indice === 3,
+      ),
+    ).toBe(false)
+  })
+
+  it('Gerar com dois arquivos: o motor recebe os dois, com o objeto e o apagar de verdade na página do segundo, e o aviso de alcance aparece', async () => {
+    const { motor, renderizador } = await abrirParaEditar('a-3p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    await abrirPagina(4)
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['a-3p.pdf', 'b-2p.pdf'])
+    // Com outro arquivo no plano, o montarDocumento sai por cópia sozinho; o pedido não precisa forçar.
+    expect(pedido.paginas.map(({ id, origem }) => [id, origem])).toEqual([
+      ['a0p0', { arquivo: 0, indice: 0 }],
+      ['a0p1', { arquivo: 0, indice: 1 }],
+      ['a0p2', { arquivo: 0, indice: 2 }],
+      ['a1p0', { arquivo: 1, indice: 0 }],
+      ['a1p1', { arquivo: 1, indice: 1 }],
+    ])
+    expect([...pedido.objetosPorPagina.keys()]).toEqual(['a1p0'])
+    expect([...pedido.paginasRasterizadas.keys()]).toEqual(['a1p0'])
+    expect(renderizador.pedidos.filter((p) => p.tipo === 'fundo')).toEqual([
+      { arquivo: 'b-2p.pdf', tipo: 'fundo', indice: 0 },
+    ])
+    expect((q('editar-pdf-baixar') as HTMLAnchorElement).download).toBe(
+      'a-3p-editado.pdf',
+    )
+  })
+
+  it('desfazer a adição (Desfazer nas páginas) tira as páginas, fecha o arquivo que nenhuma página alcança e o cabeçalho volta', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+
+    await clicar(porNome('Desfazer nas páginas'))
+
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2'])
+    expect(renderizador.fechados).toBe(1)
+    expect(q('editar-pdf-documento')!.textContent).toBe('a-3p.pdf · 3 páginas')
+  })
+
+  it('o cabeçalho junta só os arquivos com página na lista: apagar as do primeiro deixa só o nome do segundo', async () => {
+    await abrirParaEditar('a-1p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+
+    await clicar(porNome('Apagar a página 1'))
+
+    expect(q('editar-pdf-documento')!.textContent).toBe('b-2p.pdf · 2 páginas')
+    expect(porNome('Gerar PDF').disabled).toBe(false)
+  })
+
+  it('os avisos do #124 com dois arquivos: cada aviso leva o nome do arquivo, e o anúncio da adição diz os do novo', async () => {
+    await abrirParaEditar('a-xfa-1p.pdf')
+    expect(todos('editar-pdf-aviso').map((a) => a.textContent)).toEqual([
+      TEXTOS.editar.avisos.xfa_puro,
+    ])
+
+    await adicionarPdf(pdf('b-assinado-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+
+    expect(todos('editar-pdf-aviso').map((a) => a.textContent)).toEqual([
+      TEXTOS.editar.avisoDoArquivo('a-xfa-1p.pdf', 'xfa_puro'),
+      TEXTOS.editar.avisoDoArquivo('b-assinado-2p.pdf', 'assinatura_digital'),
+    ])
+    expect(anuncio()).toBe(
+      A.adicionadas('b-assinado-2p.pdf', 2, 1, ['assinatura_digital']),
+    )
+  })
+
+  it('no celular: o botão curto ao lado de Páginas tem o nome inteiro e a descrição; adicionar por ele deixa o foco nele', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    const botao = porNome('Adicionar PDF')
+
+    expect(botao.textContent).toBe(A.botao)
+    expect(botao.className).toContain('h-11')
+    expect(segue(porNome('Páginas'), botao)).toBe(true)
+    expect(descricaoDe(botao)).toBe(A.onde(3, null))
+    act(() => botao.focus())
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(
+      () =>
+        cartoesNoDocumento().length === 0 &&
+        q('editar-pdf-documento')!.textContent!.includes('b-2p.pdf'),
+    )
+
+    expect(document.activeElement).toBe(botao)
+    expect(anuncio()).toBe(A.adicionadas('b-2p.pdf', 2, 3, []))
+    expect(miniaturas()).toHaveLength(5)
+  })
+
+  it('na folha do celular: o Adicionar PDF também está lá; o foco vai à caixa da primeira página nova, e a recusa aparece na folha', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    await abrirAFolha()
+    const botao = naFolha('Adicionar PDF')
+    act(() => botao.focus())
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(folha()!.contains(alertaDaAdicao())).toBe(true)
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(folha()).not.toBeNull()
+    expect(document.activeElement).toBe(
+      naFolha<HTMLInputElement>('Selecionar página 4'),
+    )
+  })
+})
+
+describe('adicionar outro PDF: o Gerar, a recusa, o nome e as miniaturas', () => {
+  it('enquanto o PDF entra, o Gerar e o Extrair esperam, com o motivo; depois, o Gerar leva as páginas novas', async () => {
+    const motor = criarMotorFalso({ atraso: 60 })
+    await abrirParaEditar('a-3p.pdf', { motor })
+    await clicar(porNome('Girar a página 1 à direita'))
+    await marcarPagina(2)
+
+    comecarAAdicionar(pdf('b-2p.pdf'))
+    const gerar = porNome('Gerar PDF')
+    const extrair = porNome('Extrair as selecionadas')
+    expect(gerar.disabled).toBe(true)
+    expect(descricaoDe(gerar)).toContain(
+      TEXTOS.editar.gerar.adicionando('b-2p.pdf'),
+    )
+    expect(extrair.disabled).toBe(true)
+    expect(descricaoDe(extrair)).toBe(TEXTOS.organizar.dicas.adicionando)
+
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    expect(gerar.disabled).toBe(false)
+    expect(descricaoDe(gerar)).not.toContain(
+      TEXTOS.editar.gerar.adicionando('b-2p.pdf'),
+    )
+    await clicar(gerar)
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(motor.montadas[0].paginas.map(({ id }) => id)).toEqual([
+      'a0p0',
+      'a0p1',
+      'a1p0',
+      'a1p1',
+      'a0p2',
+    ])
+  })
+
+  it('a recusa feita na folha não é anunciada de novo quando a folha fecha', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    await abrirAFolha()
+    act(() => naFolha('Adicionar PDF').focus())
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+
+    await teclar(document.activeElement!, 'Escape')
+    expect(folha()).toBeNull()
+
+    // A mesma recusa continua à vista embaixo da linha do celular, sem um alerta novo para o leitor de tela.
+    expect(alertaDaAdicao()!.textContent).toBe(
+      A.recusado('b-senha.pdf', 'protegido'),
+    )
+    expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(0)
+  })
+
+  it('a recusa feita pela linha do celular não é anunciada de novo quando a folha abre', async () => {
+    larga = false
+    await abrirParaEditar('a-3p.pdf')
+    act(() => porNome('Adicionar PDF').focus())
+
+    await adicionarPdf(pdf('b-senha.pdf'))
+    await esperarAte(() => alertaDaAdicao() !== null)
+    expect(alertaDaAdicao()!.getAttribute('role')).toBe('alert')
+
+    await abrirAFolha()
+
+    expect(folha()!.contains(alertaDaAdicao())).toBe(true)
+    expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(0)
+  })
+
+  it('o nome do PDF baixado vem do primeiro arquivo que tem página no PDF, como o cabeçalho', async () => {
+    await abrirParaEditar('contrato-1p.pdf')
+    await adicionarPdf(pdf('anexo-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'anexo-2p-paginas.pdf',
+    )
+
+    await clicar(porNome('Apagar a página 1'))
+    expect(q('editar-pdf-documento')!.textContent).toBe(
+      'anexo-2p.pdf · 2 páginas',
+    )
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    expect(q('editar-pdf-baixar')!.getAttribute('download')).toBe(
+      'anexo-2p-editado.pdf',
+    )
+  })
+
+  // O desfazer das páginas guarda 100 passos: com o apagar fora dele, nenhuma página alcança o
+  // primeiro arquivo, e ele fecha. O documento continua mudado, e o Gerar sai por cópia só com o segundo.
+  it('o primeiro arquivo que fecha: o Gerar continua ligado e sai por cópia só com o segundo', async () => {
+    const { renderizador, motor } = await abrirParaEditar('a-1p.pdf')
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 3)
+    await clicar(porNome('Apagar a página 1'))
+    for (let i = 0; i < 101; i++) {
+      await act(async () => {
+        porNome('Girar a página 1 à direita').click()
+      })
+    }
+    await esperar(50)
+
+    expect(renderizador.fechados).toBe(1)
+    expect(q('editar-pdf-documento')!.textContent).toBe('b-2p.pdf · 2 páginas')
+    expect(porNome('Gerar PDF').disabled).toBe(false)
+    expect(q('editar-pdf-alcance')!.textContent).toBe(TEXTOS.alcance)
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['b-2p.pdf'])
+    expect(pedido.porCopia).toBe(true)
+  })
+
+  it('adicionar não desenha de novo as miniaturas que já estavam na tela', async () => {
+    const { renderizador } = await abrirParaEditar('a-3p.pdf')
+    const doPrimeiro = () =>
+      renderizador.pedidos.filter(
+        (p) => p.tipo === 'miniatura' && p.arquivo === 'a-3p.pdf',
+      ).length
+    await esperar(50)
+    const antes = doPrimeiro()
+    expect(antes).toBeGreaterThan(0)
+
+    await adicionarPdf(pdf('b-2p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 5)
+    await esperar(50)
+
+    expect(doPrimeiro()).toBe(antes)
+    expect(
+      renderizador.pedidos.some(
+        (p) => p.tipo === 'miniatura' && p.arquivo === 'b-2p.pdf',
+      ),
+    ).toBe(true)
   })
 })

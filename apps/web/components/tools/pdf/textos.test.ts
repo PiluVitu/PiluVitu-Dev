@@ -96,6 +96,123 @@ it('o aviso de alcance diz que marcadores e links internos não passam', () => {
 describe('editar', () => {
   const { falhaAoSalvar, anuncios, paginaAtual, zoom } = TEXTOS.editar
 
+  describe('adicionar outro PDF: a recusa não mexe no documento e diz o que ainda cabe', () => {
+    const { recusado, passouDoTeto } = TEXTOS.editar.adicionar
+    const tetos = { bytes: 50_000_000, paginas: 500 }
+
+    it('o motivo do arquivo, com as mensagens de sempre', () => {
+      expect(recusado('b.pdf', 'protegido')).toBe(
+        `Não deu para adicionar b.pdf. ${ERROS_DO_ARQUIVO.protegido}`,
+      )
+    })
+
+    it('os bytes somados: o tamanho dele, o que ainda cabe e o teto', () => {
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'bytes',
+            bytes: 30_000_000,
+            restam: { bytes: 12_400_000, paginas: 300 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 30 MB, e só cabem mais 12,4 MB (até 50 MB somando os PDFs abertos). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+      )
+    })
+
+    it('as páginas somadas, inclusive quando não cabe mais nenhuma', () => {
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'paginas',
+            bytes: 1,
+            paginas: 120,
+            restam: { bytes: 1, paginas: 40 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 120 páginas, e só cabem mais 40 páginas (até 500 somando os PDFs abertos). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+      )
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'paginas',
+            bytes: 1,
+            paginas: 1,
+            restam: { bytes: 1, paginas: 0 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 1 página, e não cabe mais nenhuma (até 500 somando os PDFs abertos).',
+      )
+      expect(
+        passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'bytes',
+            bytes: 2_000_000,
+            restam: { bytes: 0, paginas: 3 },
+          },
+          tetos,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 2 MB, e não cabe mais nada (até 50 MB somando os PDFs abertos).',
+      )
+    })
+  })
+
+  describe('adicionar outro PDF: o botão, onde entra e o anúncio', () => {
+    const A = TEXTOS.editar.adicionar
+
+    it('o botão tem o nome do desenho, e o curto do celular cabe nele', () => {
+      expect(A.botao).toBe('Adicionar PDF')
+      expect(A.curto).toBe('PDF')
+      expect(A.botao.endsWith(A.curto)).toBe(true)
+      expect(A.adicionando('b.pdf')).toBe('Adicionando b.pdf…')
+    })
+
+    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada', () => {
+      expect(A.onde(7, null)).toBe('Entra no fim, depois da página 7.')
+      expect(A.onde(7, { pagina: 2, marcadas: 1 })).toBe(
+        'Entra depois da página 2, a que você marcou.',
+      )
+      expect(A.onde(7, { pagina: 4, marcadas: 3 })).toBe(
+        'Entra depois da página 4, a última que você marcou.',
+      )
+    })
+
+    it('o anúncio diz quantas, de qual arquivo, depois de qual página, que ficam marcadas, e os avisos do arquivo com o nome', () => {
+      expect(A.adicionadas('b.pdf', 3, 2, [])).toBe(
+        '3 páginas de b.pdf adicionadas depois da página 2, já selecionadas.',
+      )
+      expect(A.adicionadas('b.pdf', 1, 1_000, ['assinatura_digital'])).toBe(
+        `1 página de b.pdf adicionada depois da página 1.000, já selecionada. b.pdf: ${TEXTOS.editar.avisos.assinatura_digital}`,
+      )
+    })
+  })
+
+  it('com mais de um arquivo: o cabeçalho junta os nomes, e cada aviso diz de qual arquivo é', () => {
+    expect(TEXTOS.editar.abertos(['a.pdf', 'b.pdf'], 7)).toBe(
+      'a.pdf + b.pdf · 7 páginas',
+    )
+    expect(TEXTOS.editar.abertos(['a.pdf'], 1)).toBe('a.pdf · 1 página')
+    expect(TEXTOS.editar.avisoDoArquivo('b.pdf', 'xfa_puro')).toBe(
+      `b.pdf: ${TEXTOS.editar.avisos.xfa_puro}`,
+    )
+  })
+
+  it('os limites do editar são somados: valem para os PDFs abertos juntos', () => {
+    expect(TEXTOS.editar.limites(50_000_000, 500)).toMatch(
+      /^Até 50 MB e 500 páginas, somando os PDFs que você abrir e adicionar\. /,
+    )
+  })
+
   it('posição, zoom e anúncios pelo Intl', () => {
     expect(paginaAtual(3, 1200)).toBe('Página 3 de 1.200')
     expect(zoom.valor(1.25)).toBe('125%')
@@ -135,6 +252,14 @@ describe('editar', () => {
     expect(
       falhaAoSalvar({ motivo: 'imagem_corrompida', pagina: 4, objeto: 'i1' }),
     ).toMatch(/^Uma imagem da página 5 não pôde ser lida\. Ponha a imagem/)
+  })
+
+  it('apagar de verdade em duas posições da mesma página do arquivo: diz qual e o que fazer', () => {
+    expect(
+      falhaAoSalvar({ motivo: 'apagar_na_pagina_repetida', pagina: 2 }),
+    ).toBe(
+      'A página 3 é a mesma página do arquivo que outra página deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
+    )
   })
 
   it('erro do arquivo usa a mensagem do mesclar; o resto não acusa o arquivo', () => {

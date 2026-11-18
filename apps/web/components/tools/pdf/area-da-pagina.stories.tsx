@@ -11,7 +11,7 @@ import {
 } from './area-da-pagina'
 import type { DocumentoAberto } from './renderizador'
 import { criarRenderizadorFalso } from './renderizador-falso'
-import { useMiniaturas } from './use-miniaturas'
+import { useMiniaturasDaSessao } from './use-miniaturas'
 
 // As peças da página aberta do Editar, sem os objetos: a faixa, os controles e a área com a folha.
 function PaginaAberta({
@@ -45,7 +45,11 @@ function PaginaAberta({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- abre uma vez por story
   }, [nome])
 
-  const miniaturas = useMiniaturas(documento, 64)
+  const miniaturas = useMiniaturasDaSessao<string>(
+    documento,
+    (chave, largura) => documento!.miniatura(Number(chave.slice(1)), largura),
+    64,
+  )
   const desenho = usePaginaDesenhada({
     documento,
     pagina,
@@ -63,10 +67,9 @@ function PaginaAberta({
         Páginas
       </h2>
       <FaixaDePaginas
-        documento={documento}
+        sessao={documento}
         paginas={Array.from({ length: total }, (_, indice) => ({
           chave: `p${indice}`,
-          miniatura: indice,
           giro: 0 as const,
         }))}
         pagina={pagina}

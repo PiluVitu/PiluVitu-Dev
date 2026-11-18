@@ -23,11 +23,12 @@ export type PaginaDesenhada = {
 
 export type DocumentoAberto = {
   paginas: number
-  /** Desenha uma página por vez (a fila é daqui, não de quem chama) e solta o canvas depois do JPEG. */
+  /** Desenha uma página por vez (a fila é do renderizador, não de quem chama) e solta o canvas depois do JPEG. */
   miniatura(indice: number, larguraCss: number): Promise<Blob>
   /**
-   * A página grande, uma por vez. Um pedido novo cancela o anterior (o que ainda espera nem desenha), e
-   * o canvas da página anterior só é esvaziado quando o novo fica pronto, para a tela não piscar.
+   * A página grande, uma por vez em todo o renderizador. Um pedido novo, de qualquer documento, cancela o
+   * anterior (o que ainda espera nem desenha), e o canvas da página anterior só é esvaziado quando o novo
+   * fica pronto, para a tela não piscar.
    * `giro` (a moldura) gira a página a mais, por cima do /Rotate dela.
    */
   pagina(
@@ -42,13 +43,18 @@ export type DocumentoAberto = {
   fundo(indice: number, cobrir: readonly Caixa[], giro?: Giro): Promise<Blob>
   /** Se há texto do próprio PDF no ponto (em pontos da tela), pela camada de texto do pdf.js. */
   textoNoPonto(indice: number, ponto: Ponto, giro?: Giro): Promise<boolean>
-  /** Derruba o Worker do pdf.js, que guarda a cópia do arquivo, depois de o pdf.js limpar a página (fontes e cache). */
+  /**
+   * Solta o documento no Worker do pdf.js (a cópia do arquivo, as fontes e o cache da página). O Worker,
+   * que os documentos do renderizador dividem, só cai depois do último.
+   */
   fechar(): void
 }
 
 export interface RenderizadorDePdf {
-  /** Rejeita com {@link FalhaDaAbertura}. */
+  /** Rejeita com {@link FalhaDaAbertura}. Os documentos dividem um Worker, uma fila e a página grande. */
   abrir(arquivo: Blob): Promise<DocumentoAberto>
+  /** Fecha todos os documentos; o Worker cai depois dos destroy, em no máximo 2 s. Dá para abrir de novo. */
+  encerrar(): void
 }
 
 export function ehFalhaDaAbertura(erro: unknown): erro is FalhaDaAbertura {
@@ -176,13 +182,71 @@ function pintarCobrir(
   }
 }
 
+type Pdfjs = typeof import('pdfjs-dist')
+
+// O Worker do pdf.js que os documentos de um renderizador dividem (M2).
+type Sessao = {
+  worker: Worker
+  pdfWorker: InstanceType<Pdfjs['PDFWorker']>
+  quebrou: Promise<never>
+  /** Documentos abertos ou abrindo cujo destroy ainda não terminou. */
+  vivos: number
+}
+
+type PaginaGrande = {
+  dono: object
+  desenho: RenderTask | null
+  canvas: HTMLCanvasElement | null
+}
+
 // O pdf.js só desce no modo que mostra página: o import() abre um chunk próprio.
 export function criarRenderizadorComPdfjs(
   novoWorker: () => Worker = novoWorkerDoPdfjs,
 ): RenderizadorDePdf {
+  let atual: Sessao | null = null
+  const abertos = new Set<() => void>()
+  let fila: Promise<unknown> = Promise.resolve()
+  const naFila = <T>(desenho: () => Promise<T>): Promise<T> => {
+    const vez = fila.then(desenho)
+    fila = vez.catch(() => {})
+    return vez
+  }
+  let pedidoDaPagina = 0
+  const grande: PaginaGrande = { dono: {}, desenho: null, canvas: null }
+
+  function sessaoPara(pdfjs: Pdfjs): Sessao {
+    if (atual) return atual
+    const worker = novoWorker()
+    const quebrou = new Promise<never>((_, rejeitar) =>
+      worker.addEventListener('error', () => {
+        if (atual === sessao) atual = null
+        rejeitar({ motivo: 'falha_do_navegador' } satisfies FalhaDaAbertura)
+      }),
+    )
+    quebrou.catch(() => {})
+    const sessao: Sessao = {
+      worker,
+      pdfWorker: pdfjs.PDFWorker.create({ port: worker }),
+      quebrou,
+      vivos: 0,
+    }
+    atual = sessao
+    return sessao
+  }
+
+  // O fechar de um documento não derruba o Worker (M2): só o destroy da tarefa, que solta as fontes e o
+  // transporte daquele documento. O Worker cai quando o último documento dele termina o destroy.
+  function soltarDaSessao(sessao: Sessao) {
+    sessao.vivos -= 1
+    if (sessao.vivos > 0) return
+    if (atual === sessao) atual = null
+    sessao.pdfWorker.destroy()
+    sessao.worker.terminate()
+  }
+
   return {
     async abrir(arquivo) {
-      let pdfjs: typeof import('pdfjs-dist')
+      let pdfjs: Pdfjs
       let data: Uint8Array
       try {
         pdfjs = await import('pdfjs-dist')
@@ -190,37 +254,33 @@ export function criarRenderizadorComPdfjs(
       } catch {
         throw { motivo: 'falha_do_navegador' } satisfies FalhaDaAbertura
       }
-      const worker = novoWorker()
-      const quebrou = new Promise<never>((_, rejeitar) =>
-        worker.addEventListener('error', () =>
-          rejeitar({ motivo: 'falha_do_navegador' } satisfies FalhaDaAbertura),
-        ),
-      )
-      quebrou.catch(() => {})
-      const pdfWorker = pdfjs.PDFWorker.create({ port: worker })
+      const sessao = sessaoPara(pdfjs)
+      sessao.vivos += 1
+      const { quebrou } = sessao
       // useWorkerFetch false: quem busca os recursos é a página, pela fábrica, e só os da lista.
       const tarefa = pdfjs.getDocument({
         data,
-        worker: pdfWorker,
+        worker: sessao.pdfWorker,
         enableXfa: false,
         disableAutoFetch: true,
         useSystemFonts: true,
         useWorkerFetch: false,
         BinaryDataFactory: criarFabricaDeRecursos(pdfjs.version),
       })
+      const eu = {}
       let fechado = false
-      let pedidoDaPagina = 0
-      let desenhoDaPagina: RenderTask | null = null
-      let canvasDaPagina: HTMLCanvasElement | null = null
 
       // O destroy da tarefa só limpa a página (as FontFace em document.fonts) quando o Worker responde ao
       // Terminate; encerrado antes, a resposta não vem. O prazo cobre o Worker que caiu ou travou.
       function fechar() {
         if (fechado) return
         fechado = true
-        desenhoDaPagina?.cancel()
-        if (canvasDaPagina) soltar(canvasDaPagina)
-        canvasDaPagina = null
+        abertos.delete(fechar)
+        if (grande.dono === eu) {
+          grande.desenho?.cancel()
+          if (grande.canvas) soltar(grande.canvas)
+          grande.canvas = null
+        }
         let prazo: ReturnType<typeof setTimeout> | undefined
         void Promise.race([
           tarefa.destroy(),
@@ -231,10 +291,10 @@ export function criarRenderizadorComPdfjs(
           .catch(() => {})
           .finally(() => {
             clearTimeout(prazo)
-            pdfWorker.destroy()
-            worker.terminate()
+            soltarDaSessao(sessao)
           })
       }
+      abertos.add(fechar)
 
       async function desenhar(
         documento: PDFDocumentProxy,
@@ -297,14 +357,14 @@ export function criarRenderizadorComPdfjs(
           canvas,
           viewport: vista(pagina, escala, giro),
         })
-        desenhoDaPagina = desenho
+        grande.desenho = desenho
         try {
           await Promise.race([desenho.promise, quebrou])
         } catch (erro) {
           soltar(canvas)
           throw vez === pedidoDaPagina ? erro : new PaginaSuperada()
         } finally {
-          if (desenhoDaPagina === desenho) desenhoDaPagina = null
+          if (grande.desenho === desenho) grande.desenho = null
           pagina.cleanup()
         }
         if (fechado || vez !== pedidoDaPagina) {
@@ -313,8 +373,9 @@ export function criarRenderizadorComPdfjs(
             ? new Error('o documento já foi fechado')
             : new PaginaSuperada()
         }
-        const anterior = canvasDaPagina
-        canvasDaPagina = canvas
+        const anterior = grande.canvas
+        grande.canvas = canvas
+        grande.dono = eu
         if (anterior) soltar(anterior)
         return { canvas, tamanho }
       }
@@ -375,14 +436,9 @@ export function criarRenderizadorComPdfjs(
 
       try {
         const documento = await Promise.race([tarefa.promise, quebrou])
+        if (fechado) throw { motivo: 'falha_do_navegador' }
         if (documento.numPages === 0) {
           throw { motivo: 'sem_paginas' } satisfies FalhaDaAbertura
-        }
-        let fila: Promise<unknown> = Promise.resolve()
-        const naFila = <T>(desenho: () => Promise<T>): Promise<T> => {
-          const vez = fila.then(desenho)
-          fila = vez.catch(() => {})
-          return vez
         }
         return {
           paginas: documento.numPages,
@@ -396,7 +452,7 @@ export function criarRenderizadorComPdfjs(
               return Promise.reject(erro)
             }
             const vez = ++pedidoDaPagina
-            desenhoDaPagina?.cancel()
+            grande.desenho?.cancel()
             return naFila(() =>
               desenharPagina(documento, indice, larguraCss, giro, vez),
             )
@@ -413,6 +469,9 @@ export function criarRenderizadorComPdfjs(
         fechar()
         throw { motivo: motivoDoErro(erro) } satisfies FalhaDaAbertura
       }
+    },
+    encerrar() {
+      for (const fechar of [...abertos]) fechar()
     },
   }
 }

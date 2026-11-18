@@ -4,6 +4,12 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { AvisoDoPdf } from '@piluvitu/tools/pdf-regras'
 import { TEXTOS } from './textos'
 
+export type AvisoNoCabecalho = {
+  readonly aviso: AvisoDoPdf
+  /** Com mais de um arquivo no documento, o nome do arquivo que tem o aviso. */
+  readonly arquivo?: string
+}
+
 /** O nome e as páginas do documento, os avisos dele e, ao lado, o Gerar (antes da lista, para o Tab chegar logo nele). */
 export function CabecalhoDoDocumento({
   idDoTitulo,
@@ -13,7 +19,7 @@ export function CabecalhoDoDocumento({
 }: {
   idDoTitulo: string
   titulo: string
-  avisos: readonly AvisoDoPdf[]
+  avisos: readonly AvisoNoCabecalho[]
   children: ReactNode
 }) {
   return (
@@ -31,9 +37,9 @@ export function CabecalhoDoDocumento({
         </h2>
         {avisos.length > 0 && (
           <ul className="space-y-2" data-testid="editar-pdf-avisos">
-            {avisos.map((aviso) => (
+            {avisos.map(({ aviso, arquivo }, i) => (
               <li
-                key={aviso}
+                key={`${i}-${aviso}`}
                 className="bg-background border-border flex gap-2 rounded-md border px-3 py-3 text-sm"
                 data-testid="editar-pdf-aviso"
               >
@@ -43,7 +49,9 @@ export function CabecalhoDoDocumento({
                   aria-hidden
                 />
                 <p className="min-w-0 [overflow-wrap:anywhere]">
-                  {TEXTOS.editar.avisos[aviso]}
+                  {arquivo === undefined
+                    ? TEXTOS.editar.avisos[aviso]
+                    : TEXTOS.editar.avisoDoArquivo(arquivo, aviso)}
                 </p>
               </li>
             ))}

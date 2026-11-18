@@ -1631,6 +1631,8 @@ test.describe('Editar PDF', () => {
         ),
       )
     expect(ehVermelho(centroDaPagina)).toBe(true)
+    // A miniatura só é desenhada perto da tela; com o Adicionar PDF na coluna (PR 4), o cartão passou da margem.
+    await page.getByTestId('editar-pdf-pagina').first().scrollIntoViewIfNeeded()
     const miniatura = page.getByTestId('editar-pdf-cartao-miniatura').first()
     await expect(miniatura).toBeVisible({ timeout: 30_000 })
     const centroDaMiniatura = await miniatura.evaluate(
@@ -2502,9 +2504,9 @@ test.describe('Editar PDF', () => {
         [0.3, 0.2],
       ])
       await inserirNoCentro(page, 'Seta')
-      // O objeto fica onde a pessoa o pôs (exceção "essencial" do 2.5.8). Seta, cobrir e texto no mesmo
-      // ponto deixam, a 320 px, algum deles sem 24 px livres para o ponteiro, em qualquer ordem de camadas;
-      // aqui a seta desce para fora do cobrir, e o axe confere os controles do editor.
+      // O axe roda sem a sobreposição de propósito: a seta desce para fora do cobrir antes dele. Objetos
+      // postos um sobre o outro são aceitos pela exceção "essencial" do 2.5.8 (a posição é a que a pessoa
+      // escolheu; cada objeto tem 24 px de alvo e o Tab chega a todos), e aqui o axe confere o editor.
       for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowDown')
       await inserirNoCentro(page, 'Cobrir')
       await inserirNoCentro(page, 'Texto')
@@ -2936,4 +2938,352 @@ test.describe('Editar PDF: a Bancada', () => {
         ).toBe(true)
         expect(nota.filter((m) => m.razao < 4.5)).toEqual([])
       })
+})
+
+// ---- Editor único, PR 4: adicionar outro PDF ----
+
+// Pelo botão Adicionar PDF que está na tela (o da coluna no largo, o curto ao lado de Páginas no celular).
+async function adicionarNoEditar(
+  page: Page,
+  arquivo: { name: string; mimeType: string; buffer: Buffer },
+) {
+  const [escolha] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: 'Adicionar PDF' }).click(),
+  ])
+  await escolha.setFiles(arquivo)
+}
+
+const anuncioDaAdicao = (nome: string, paginas: number, depoisDa: number) =>
+  `${paginas} ${paginas === 1 ? 'página' : 'páginas'} de ${nome} ${paginas === 1 ? 'adicionada' : 'adicionadas'} depois da página ${depoisDa}, já ${paginas === 1 ? 'selecionada' : 'selecionadas'}.`
+
+// Duas páginas de 300 pontos: na primeira, um segredo escrito como string literal (aparece no conteúdo
+// cru do arquivo, para a busca por ele valer); a segunda, em branco.
+async function pdfComSegredo(nome: string, segredo: string) {
+  const documento = await PDFDocument.create()
+  const fonte = await documento.embedFont(StandardFonts.Helvetica)
+  const pagina = documento.addPage([300, 300])
+  const nomeDaFonte = pagina.node.newFontDictionary('F1', fonte.ref)
+  pagina.pushOperators(
+    beginText(),
+    setFontAndSize(nomeDaFonte, 16),
+    setTextMatrix(1, 0, 0, 1, 40, 150),
+    // O tipo pede hex, mas o Tj aceita a string literal, que é o que deixa o segredo legível no arquivo.
+    showText(
+      PDFString.of(segredo) as unknown as Parameters<typeof showText>[0],
+    ),
+    endText(),
+  )
+  documento.addPage([300, 300])
+  return {
+    name: nome,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(await documento.save()),
+  }
+}
+
+test.describe('Editar PDF: adicionar outro PDF', () => {
+  test('sem marcada, o segundo entra no fim; com uma marcada, o terceiro entra depois dela; no PDF baixado, a ordem; e dois Workers no total', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const workers: string[] = []
+    page.on('worker', (w) => workers.push(w.url()))
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [300, 320, 340]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await expect(
+      coluna.getByRole('button', { name: 'Adicionar PDF' }),
+    ).toHaveAccessibleDescription('Entra no fim, depois da página 3.')
+
+    await adicionarNoEditar(page, await pdfDeTeste('b.pdf', [400, 420]))
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      anuncioDaAdicao('b.pdf', 2, 3),
+    )
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'a.pdf + b.pdf · 5 páginas',
+    )
+    const cartoes = coluna.getByTestId('editar-pdf-pagina')
+    await expect(cartoes.nth(3)).toContainText('b.pdf, pág. 1')
+    await expect(
+      coluna.getByRole('checkbox', { name: 'Selecionar página 4' }),
+    ).toBeFocused()
+    await expect(
+      coluna.getByRole('checkbox', { name: 'Selecionar página 5' }),
+    ).toBeChecked()
+
+    await coluna.getByRole('button', { name: 'Limpar seleção' }).click()
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 1' }).check()
+    await expect(
+      coluna.getByRole('button', { name: 'Adicionar PDF' }),
+    ).toHaveAccessibleDescription(
+      'Entra depois da página 1, a que você marcou.',
+    )
+    await adicionarNoEditar(page, await pdfDeTeste('c.pdf', [500]))
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      anuncioDaAdicao('c.pdf', 1, 1),
+    )
+    await expect(cartoes.nth(1)).toContainText('c.pdf, pág. 1')
+
+    const { nome, bytes } = await gerarEBaixar(page)
+    expect(nome).toBe('a-editado.pdf')
+    const final = await PDFDocument.load(bytes)
+    expect(final.getPages().map((p) => p.getSize().width)).toEqual([
+      300, 500, 320, 340, 400, 420,
+    ])
+    // O do pdf-lib e o da sessão do pdf.js: os documentos dos três arquivos dividem o mesmo.
+    expect(workers).toHaveLength(2)
+  })
+
+  test('texto numa página do segundo arquivo fica onde a tela mostrou, o segredo apagado de verdade no segundo some do PDF, e nada sai do aparelho com dois arquivos e uma imagem', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const pedidos = vigiarPedidos(page)
+    await page.goto('/tools/pdf/editar')
+    const origem = new URL(page.url()).origin
+    const capa = await pdfDeTeste('capa.pdf', [300])
+    const segredo = 'Segredo 987.654.321-00'
+    const dados = await pdfComSegredo('dados.pdf', segredo)
+    expect(await todoOConteudoDoPdf(dados.buffer)).toContain('987.654.321')
+    const imagem = pngDeTeste('logo.png', 40, 20)
+    await abrirNoEditar(page, capa)
+    await escolherImagem(page, imagem)
+    await page.getByRole('button', { name: 'Inserir no centro' }).click()
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      /^Inserido: /,
+    )
+
+    await adicionarNoEditar(page, dados)
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      anuncioDaAdicao('dados.pdf', 2, 1),
+    )
+    await abrirPagina(page, 2, 3)
+    await inserirNoCentro(page, 'Cobrir')
+    await posicionar(page, { x: 30, y: 125, largura: 240, altura: 40 })
+    await page
+      .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+      .click()
+    await page
+      .getByRole('button', { name: 'Apagar de verdade nesta página' })
+      .click()
+    await expect(page.getByTestId('editar-pdf-apagar-ligado')).toBeVisible()
+    await abrirPagina(page, 3, 3)
+    const escrito = await escreverTexto(page, 'Segundo arquivo', {
+      x: 50,
+      y: 90,
+    })
+    await expect(page.getByTestId('editar-pdf-alcance')).toBeVisible()
+
+    const { bytes } = await gerarEBaixar(page)
+    const lidas = await lerComPdfjs(bytes)
+    expect(lidas).toHaveLength(3)
+    expect(lidas[1].textos).toEqual([])
+    expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
+    const lido = lidas[2].textos.find((t) => t.str === 'Segundo arquivo')
+    expect(lido).toBeDefined()
+    conferirCaixa(lido!.matriz, [16, 0, 0, -16, escrito.x, escrito.y], 0.05)
+    expect(lidas[0].desenhos.filter((d) => d.tipo === 'imagem')).toHaveLength(1)
+    conferirQueNadaSaiu(pedidos, origem, [
+      capa.buffer,
+      dados.buffer,
+      imagem.buffer,
+    ])
+  })
+
+  test('acima do teto somado de páginas: o alerta diz o que ainda cabe, e o documento fica como estava', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(page, await pdfDeTeste('a.pdf', [100, 200, 300]))
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
+
+    await adicionarNoEditar(
+      page,
+      await pdfDeTeste(
+        'grande.pdf',
+        Array.from({ length: 498 }, () => 100),
+      ),
+    )
+    const alerta = page.getByTestId('editar-pdf-recusa-da-adicao')
+    await expect(alerta).toHaveText(
+      'Não deu para adicionar grande.pdf: ele tem 498 páginas, e só cabem mais 497 páginas (até 500 somando os PDFs abertos). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+    )
+    await expect(alerta).toHaveAttribute('role', 'alert')
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'a.pdf · 3 páginas',
+    )
+    await expect(coluna.getByTestId('editar-pdf-pagina')).toHaveCount(3)
+    await expect(
+      coluna.getByRole('checkbox', { name: 'Selecionar página 2' }),
+    ).toBeChecked()
+    await expect(
+      coluna.getByRole('button', { name: 'Adicionar PDF' }),
+    ).toBeFocused()
+  })
+
+  test('trocar de documento depois de adicionar tira da página as fontes que o pdf.js carregou para os dois arquivos', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.goto('/tools/pdf/editar')
+    await expect(page.getByTestId('pdf-zona')).toBeVisible()
+    const fontes = () => page.evaluate(() => document.fonts.size)
+    const antes = await fontes()
+
+    await abrirNoEditar(page, await pdfComTexto('contrato.pdf'))
+    await expect.poll(fontes).toBeGreaterThan(antes)
+    await adicionarNoEditar(page, await pdfComTexto('anexo.pdf'))
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'contrato.pdf + anexo.pdf · 4 páginas',
+    )
+    await abrirPagina(page, 3, 4)
+
+    await abrirNoEditar(page, await pdfDeTeste('branco.pdf', [100, 200]))
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'branco.pdf · 2 páginas',
+    )
+    await expect.poll(fontes).toBe(antes)
+  })
+
+  test('a 320 px, com dois arquivos de nome comprido: o botão curto tem 44 px e fica com o foco, a primeira página nova aparece na faixa, e nada rola para o lado', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/tools/pdf/editar')
+    await abrirNoEditar(
+      page,
+      await pdfDeTeste(
+        'relatorio-trimestral-consolidado-versao-final-2026.pdf',
+        Array.from({ length: 8 }, () => 100),
+      ),
+    )
+    const botao = page.getByRole('button', { name: 'Adicionar PDF' })
+    await expect(botao).toHaveText('Adicionar PDF')
+    const caixa = (await botao.boundingBox())!
+    expect(caixa.width).toBeGreaterThanOrEqual(44)
+    expect(caixa.height).toBeGreaterThanOrEqual(44)
+
+    await adicionarNoEditar(
+      page,
+      await pdfDeTeste(
+        'anexo-com-os-documentos-pessoais-do-contratante.pdf',
+        [200, 300],
+      ),
+    )
+    await expect(page.getByTestId('editar-pdf-anuncio')).toHaveText(
+      anuncioDaAdicao(
+        'anexo-com-os-documentos-pessoais-do-contratante.pdf',
+        2,
+        8,
+      ),
+    )
+    await expect(botao).toBeFocused()
+    await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+      'relatorio-trimestral-consolidado-versao-final-2026.pdf + anexo-com-os-documentos-pessoais-do-contratante.pdf · 10 páginas',
+    )
+    const faixa = page.getByTestId('editar-pdf-faixa')
+    const daFaixa = (await faixa.boundingBox())!
+    await expect
+      .poll(async () => {
+        const nova = (await page
+          .getByRole('button', { name: 'Página 9', exact: true })
+          .boundingBox())!
+        return (
+          nova.x >= daFaixa.x - 1 &&
+          nova.x + nova.width <= daFaixa.x + daFaixa.width + 1
+        )
+      })
+      .toBe(true)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(320)
+
+    await page.getByRole('button', { name: 'Páginas', exact: true }).click()
+    const folha = page.getByRole('dialog', { name: 'Páginas' })
+    await expect(
+      folha.getByText(
+        'anexo-com-os-documentos-pessoais-do-contratante.pdf, pág. 1',
+      ),
+    ).toBeVisible()
+    expect(await folha.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    )
+    const naFolha = (await folha
+      .getByRole('button', { name: 'Adicionar PDF' })
+      .boundingBox())!
+    expect(naFolha.height).toBeGreaterThanOrEqual(44)
+  })
+
+  for (const tema of ['light', 'dark'] as const)
+    for (const largura of [1280, 320])
+      test(`com dois arquivos e uma recusa, o Adicionar PDF, o alerta, os avisos e o cabeçalho passam de 4,5:1 no tema ${tema} a ${largura} px`, async ({
+        page,
+      }) => {
+        test.setTimeout(60_000)
+        await page.addInitScript((t) => localStorage.setItem('theme', t), tema)
+        await page.setViewportSize({ width: largura, height: 800 })
+        await page.goto('/tools/pdf/editar')
+        await abrirNoEditar(
+          page,
+          await pdfComAvisos('requerimento.pdf', { xfa: true }),
+        )
+        await adicionarNoEditar(page, await pdfDeTeste('b.pdf', [100, 200]))
+        await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+          'requerimento.pdf + b.pdf · 3 páginas',
+        )
+        await adicionarNoEditar(page, await pdfProtegido('cofre.pdf'))
+        await expect(
+          page.getByTestId('editar-pdf-recusa-da-adicao'),
+        ).toBeVisible()
+        await page.evaluate(() =>
+          Promise.all(document.getAnimations().map((a) => a.finished)),
+        )
+
+        const medidas = await page.evaluate(
+          medirContrasteDoTexto,
+          '[data-testid="editar-pdf"]',
+        )
+        // O texto medido vem cortado em 30 caracteres.
+        for (const texto of [
+          'Adicionar PDF',
+          'Não deu para adicionar cofre',
+          'requerimento.pdf: Este PDF é',
+          'requerimento.pdf + b.pdf',
+        ]) {
+          expect(
+            medidas.some((m) => m.texto.startsWith(texto)),
+            texto,
+          ).toBe(true)
+        }
+        expect(medidas.filter((m) => m.razao < 4.5)).toEqual([])
+      })
+
+  for (const largura of [1280, 320])
+    test(`axe (WCAG 2.2 A e AA) sem violação séria a ${largura} px, com dois arquivos, a seleção das páginas novas e o alerta de uma recusa`, async ({
+      page,
+    }) => {
+      test.setTimeout(60_000)
+      await page.setViewportSize({ width: largura, height: 800 })
+      await page.goto('/tools/pdf/editar')
+      await abrirNoEditar(
+        page,
+        await pdfComAvisos('requerimento.pdf', { assinado: true }),
+      )
+      await adicionarNoEditar(page, await pdfDeTeste('b.pdf', [100, 200]))
+      await expect(page.getByTestId('editar-pdf-documento')).toHaveText(
+        'requerimento.pdf + b.pdf · 3 páginas',
+      )
+      await adicionarNoEditar(page, await pdfProtegido('cofre.pdf'))
+      await expect(
+        page.getByTestId('editar-pdf-recusa-da-adicao'),
+      ).toBeVisible()
+
+      expect(await violacoesDoAxe(page, '[data-testid="editar-pdf"]')).toEqual(
+        [],
+      )
+    })
 })
