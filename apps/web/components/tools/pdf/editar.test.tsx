@@ -3440,6 +3440,29 @@ describe('a página em branco', () => {
     expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'a0p2', 'a1p0', 'a1p1'])
   })
 
+  // Menor 2 do Crivo no #129: o inverso do caso acima. O PDF que entrava enquanto o pdf.js dizia o tamanho
+  // da branca mudava a seleção, e a branca caía depois das páginas dele.
+  it('enquanto o pdf.js diz o tamanho da branca, o PDF espera: o Adicionar PDF não abre a escolha e nada entra', async () => {
+    const { motor, renderizador } = await abrirParaEditar('a-3p.pdf')
+    const escolher = jest
+      .spyOn(q('editar-pdf-input-pdf') as HTMLInputElement, 'click')
+      .mockImplementation(() => {})
+    await marcarPagina(2)
+    renderizador.prenderTamanhos()
+
+    await criarBranca()
+    await clicar(porNome('Adicionar PDF'))
+    expect(escolher).not.toHaveBeenCalled()
+    await adicionarPdf(pdf('b-2p.pdf'))
+    expect(motor.analisadas).toEqual(['a-3p.pdf'])
+
+    renderizador.soltarTamanhos()
+    await esperarAte(() => idsDaLista().includes('b0'))
+    expect(idsDaLista()).toEqual(['a0p0', 'a0p1', 'b0', 'a0p2'])
+    await clicar(porNome('Adicionar PDF'))
+    expect(escolher).toHaveBeenCalledTimes(1)
+  })
+
   // Da revisão: o tamanho que chegava durante a montagem punha a branca na tela, e o pronto oferecia um PDF
   // sem ela, como o PDF adicionado antes do PR 4.
   it('enquanto o pdf.js diz o tamanho da marcada, o Gerar e o Extrair esperam, com o motivo; depois, o Gerar leva a branca', async () => {

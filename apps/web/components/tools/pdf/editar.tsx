@@ -1232,12 +1232,12 @@ export function EditarPdf({
   }
 
   function pedirOutroPdf() {
-    if (adicionando || montando) return
+    if (adicionando || montando || criandoBranca.current) return
     inputDoPdfRef.current?.click()
   }
 
   async function adicionarOutroPdf(novo: File) {
-    if (!documento || montando) return
+    if (!documento || montando || criandoBranca.current) return
     const { sessao: daSessao } = documento
     // O foco ainda está no botão que abriu a escolha do arquivo.
     const pelaBarra = document.activeElement === adicionarNaBarraRef.current
