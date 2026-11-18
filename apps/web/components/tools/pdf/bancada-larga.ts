@@ -6,7 +6,8 @@ import { useSyncExternalStore } from 'react'
 export const CONSULTA_DA_BANCADA_LARGA = '(min-width: 64rem)'
 
 function consulta(): MediaQueryList | null {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  return typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function'
     ? window.matchMedia(CONSULTA_DA_BANCADA_LARGA)
     : null
 }
