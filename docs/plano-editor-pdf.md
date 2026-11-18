@@ -309,7 +309,26 @@ Decisão do Paulo em 2026-11-17: a variante A ("Bancada") do editor único. No d
      - **A rota:** `app/(site)/tools/pdf/page.tsx` é a Bancada, com `metadataDaFerramenta(tool)`, a tela larga e o "voltar" para `/tools`. Saíram as pastas `pdf/mesclar`, `pdf/organizar` e `pdf/editar`, o `pdf/layout.tsx` (o `DocumentoPdfProvider`: o editor passa a guardar o arquivo dele) e o 308 do `/tools/mesclar-pdf`, num commit próprio (se o Paulo pedir redirecionamento, só ele muda). Fica o 308 do `/tools/pdf/assinar`, que cai no editor num salto só. Testes escritos antes e vistos vermelhos: o `next.config.test` (nenhum `source` para as quatro, nenhum `destination` apontando para elas, o assinar com destino `/tools/pdf`), o `page.test` de `tools/` (as quatro sem pasta, sem layout), o `pdf/page.test` (a página larga, o voltar e a metadata), o `rotas-publicas.test`, o `llms.test` (o `llms.txt` e o `llms-full.txt`) e o `sitemap.test` (o editor só em `/tools/pdf`).
      - **A limpeza:** o suporte a `modos` no registro, nas rotas públicas, no `llms` e no sitemap (`ModoDaFerramenta`, `ModoPublico`, `metadataDoModo`, `caminhoDoModo`, `ModosDoEditor`); `mesclar.tsx`, `organizar.tsx`, `documento-pdf.tsx`, `use-abrir-pdf.ts` e os testes e stories deles; a operação `mesclar` do Worker, do motor e do motor falso; `ListaDePaginas`, `CartaoDaPagina`, `ORDEM_DA_BARRA`, `montagemDoPlano`, `useMiniaturas`, o `multiplos` da zona e os textos órfãos; e, no `packages/tools`, `mesclarPdfs`, `TETO_TOTAL_EM_BYTES`, `cabemNoTeto`, `fracaoDaMesclagem` e `planoInicial`. As guardas transversais dos testes que saíram foram para o `editar.test.tsx` (nada no armazenamento do navegador, o motor encerrado ao sair, as URLs das miniaturas revogadas e só o Worker importando `@piluvitu/tools/pdf`).
      - **Os menores do Crivo no #129:** (1) apagar de verdade numa posição de um nó repetido no `/Kids` com objetos em outra posição: o nó fica com a apagada e cada outra posição ganha a sua página, com o conteúdo de antes do JPEG, como a tela mostra (ver "Nó repetido" no `packages/tools/CLAUDE.md`); (2) o "Adicionar PDF" espera a página em branco que pede o tamanho ao pdf.js; (3) a M5 vale até 20 páginas apagadas (no `apps/web/CLAUDE.md`).
-   - **Etapa 2: o E2E e a verificação final** (as quatro URLs com 404 no build de produção, o 308 do assinar, os E2E dos modos virando os do editor em `/tools/pdf`, a folha "Páginas" a 320 × 568 px, o menor 4 do Crivo, e os pesos).
+   - **Etapa 2 (feita): o E2E e a verificação final.**
+     - **Os E2E dos modos:** dos 26 testes do Mesclar, do hub e do Organizar, 12 viraram testes do editor em `/tools/pdf`, com as conferências do PDF baixado (o protegido e o não-PDF, o 308 do assinar, os 320 px e o contraste sem arquivo e com o erro; na Bancada, girar, apagar e mover pelo teclado, o Ctrl+Z, extrair as selecionadas giradas pela barra e as miniaturas giradas). 11 já tinham gêmeo nos grupos do editar, e 3 testavam o que deixou de existir: o 308 do `/tools/mesclar-pdf`, os cartões dos modos e o caminho do mesclar ao organizar. O "mescla na ordem" tem o gêmeo no "Adicionar PDF", que confere a ordem no PDF baixado. Os grupos do editar passaram para `/tools/pdf`. O `tools.e2e.ts` foi de 115 a 106 casos.
+     - **Os E2E novos** (vermelhos contra o build de a17fa7a e verdes contra o deste branch):
+       - as quatro URLs com 404, sem redirecionamento, com a página de 404 do site e nada do editor;
+       - o `/tools/pdf/assinar` com 308 para `/tools/pdf` e, seguindo, o editor num salto só;
+       - o `/tools` com um cartão só para PDF, que abre o editor;
+       - nenhum Worker e nenhum script com o pdf.js antes do arquivo.
+     - **Menor 4 do Crivo no #129, a folha "Páginas" a 320 × 568 px:**
+       - O que vale está num teste verde: a folha dentro da tela, nenhuma rolagem lateral, e a lista com os 80 px dela, rolando até a marcada.
+       - **O E2E achou uma falha.** Ao abrir a folha, a lista começa abaixo da borda da tela: o primeiro cartão termina a 690 px. A própria folha também rola: são 623 px de conteúdo em 502 sem marcada, e 639 com uma.
+       - A causa: o título, os botões de adicionar, a barra com as dicas e a dica da folha somam uns 480 px.
+       - Ficou guardada com `test.fail()`, à espera da decisão de layout, que é pergunta para o Paulo.
+     - **Os pesos:**
+       - O Worker do pdf-lib foi a 446,7 KB (183,0 KB gzip).
+       - O pdf.js e o Worker dele não mudaram.
+       - Os três ficam fora do HTML das 38 páginas.
+       - O `/tools/pdf` carrega 332 KB gzip de JS (ver "Peso" no `apps/web/CLAUDE.md`).
+     - **A verificação:**
+       - o `tools.e2e.ts` inteiro e o E2E de SEO verdes contra o build de produção;
+       - o Storybook com 8 títulos do PDF, sem os do Mesclar, dos Modos e do Organizar.
 
 ## Ordem e entrega
 
