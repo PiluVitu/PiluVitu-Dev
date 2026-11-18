@@ -1174,6 +1174,20 @@ describe('mover e redimensionar pelo ponteiro e pelo toque', () => {
     expect(nomesDosObjetos()[0]).toContain('em 248 por 381')
   })
 
+  it('o objeto menor fica por cima para o ponteiro (uma seta sobre o retângulo de cobrir), sem mudar a ordem do Tab', async () => {
+    await abrirParaEditar()
+    await inserirNoCentro('Seta')
+    await inserirNoCentro('Cobrir')
+    await teclar(objetos()[1], 'Escape')
+    expect(q('editar-pdf-painel-vazio')).not.toBeNull()
+
+    const [seta, cobrir] = objetos()
+    expect(seta.getAttribute('aria-label')).toMatch(/^Seta/)
+    expect(Number(seta.style.zIndex)).toBeGreaterThan(
+      Number(cobrir.style.zIndex),
+    )
+  })
+
   it('com outra ferramenta ligada, o ponteiro atravessa os objetos (o desenho passa por cima)', async () => {
     await abrirParaEditar()
     await inserirNoCentro('Retângulo')

@@ -78,7 +78,24 @@ const LIMIAR_DO_ARRASTE = 4
 // Em pixels da tela, em volta de cada objeto: linha reta e traço fino também dão para pegar.
 const FOLGA = 4
 
-const pct = (valor: number, total: number) => `${(valor / total) * 100}%`
+// O alvo de cada objeto tem pelo menos 24 × 24 px (WCAG 2.5.8), centrado nele: uma seta deitada
+// teria 8 px de alto. As medidas são do quadro (`container-type: size`), também dentro do objeto.
+const ALVO_MINIMO = 24
+
+function eixoDoAlvo(
+  inicio: number,
+  medida: number,
+  total: number,
+  unidade: 'cqw' | 'cqh',
+) {
+  const real = `${(medida / total) * 100}${unidade}`
+  const folga = `max(${FOLGA}px, calc((${ALVO_MINIMO}px - ${real}) / 2))`
+  return {
+    inicio: `calc(${(inicio / total) * 100}${unidade} - ${folga})`,
+    medida: `calc(${real} + 2 * ${folga})`,
+    folga,
+  }
+}
 
 type Props = {
   numeroDaPagina: number
@@ -336,6 +353,13 @@ export function QuadroDeObjetos({
     ? objetos.map((objeto) => (objeto.id === emArraste.id ? emArraste : objeto))
     : objetos
 
+  // Para o ponteiro, o menor fica por cima (uma seta sobre um cobrir continua pegável); o Tab segue o DOM.
+  const camadas = new Map(
+    [...visiveis]
+      .sort((a, b) => b.largura * b.altura - a.largura * a.altura)
+      .map((objeto, posicao) => [objeto.id, posicao + 1]),
+  )
+
   return (
     <div
       ref={quadroRef}
@@ -354,7 +378,7 @@ export function QuadroDeObjetos({
           evento.preventDefault()
       }}
       className={cn(
-        'absolute inset-0 outline-none select-none [-webkit-touch-callout:none]',
+        '[container-type:size] absolute inset-0 isolate outline-none select-none [-webkit-touch-callout:none]',
         ferramenta === 'desenho' && 'touch-none',
         !selecionando && 'cursor-crosshair',
       )}
@@ -401,6 +425,8 @@ export function QuadroDeObjetos({
 
       {visiveis.map((objeto) => {
         const escolhido = objeto.id === selecionado
+        const x = eixoDoAlvo(objeto.x, objeto.largura, tamanho.largura, 'cqw')
+        const y = eixoDoAlvo(objeto.y, objeto.altura, tamanho.altura, 'cqh')
         return (
           <div
             key={objeto.id}
@@ -425,14 +451,15 @@ export function QuadroDeObjetos({
               'focus-visible:ring-ring absolute rounded-sm outline-none focus-visible:ring-2',
               selecionando ? 'cursor-move touch-none' : 'pointer-events-none',
               escolhido
-                ? 'ring-primary z-10 ring-2 ring-offset-1 ring-offset-white'
+                ? 'ring-primary ring-2 ring-offset-1 ring-offset-white'
                 : selecionando && 'hover:ring-primary/70 hover:ring-1',
             )}
             style={{
-              left: `calc(${pct(objeto.x, tamanho.largura)} - ${FOLGA}px)`,
-              top: `calc(${pct(objeto.y, tamanho.altura)} - ${FOLGA}px)`,
-              width: `calc(${pct(objeto.largura, tamanho.largura)} + ${2 * FOLGA}px)`,
-              height: `calc(${pct(objeto.altura, tamanho.altura)} + ${2 * FOLGA}px)`,
+              left: x.inicio,
+              top: y.inicio,
+              width: x.medida,
+              height: y.medida,
+              zIndex: escolhido ? visiveis.length + 1 : camadas.get(objeto.id),
             }}
           >
             {escolhido && selecionando && (
@@ -442,7 +469,7 @@ export function QuadroDeObjetos({
                   pegarObjeto(evento, objeto, 'redimensionar')
                 }
                 className="absolute flex size-5 translate-x-1/2 translate-y-1/2 cursor-nwse-resize touch-none items-center justify-center pointer-coarse:size-11"
-                style={{ right: FOLGA, bottom: FOLGA }}
+                style={{ right: x.folga, bottom: y.folga }}
                 data-testid="editar-pdf-alca"
               >
                 <span className="bg-primary size-3 rounded-full border-2 border-white shadow-sm" />
