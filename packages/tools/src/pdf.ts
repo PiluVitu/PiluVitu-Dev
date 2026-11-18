@@ -1579,17 +1579,19 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
-// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
+// Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas. A apagada de verdade
+// gira o nó pela diferença entre o giro e a moldura.
 function giraPaginaRepetida(
   documento: PDFDocument,
   plano: readonly PaginaDaMontagem[],
+  edicaoDa: ReadonlyMap<number, EdicaoNaMontagem>,
 ): boolean {
   const paginas = documento.getPages()
   const vezes = new Map<PDFRef, number>()
   for (const { ref } of paginas) vezes.set(ref, (vezes.get(ref) ?? 0) + 1)
   return plano.some(
-    ({ origem, giro }) =>
-      giro !== 0 &&
+    ({ origem, giro, moldura }, posicao) =>
+      (edicaoDa.get(posicao)?.fundo ? giro !== moldura : giro !== 0) &&
       !('branca' in origem) &&
       vezes.get(paginas[origem.indice].ref)! > 1,
   )
@@ -1635,7 +1637,7 @@ export async function montarDocumento(
     primeiro = await carregar(0)
     if (
       !saiPorCopia(plano, primeiro.getPageCount()) &&
-      !giraPaginaRepetida(primeiro, plano)
+      !giraPaginaRepetida(primeiro, plano, edicaoDa)
     ) {
       await editarNoLugar(primeiro, editadas(doPrimeiro))
       return salvarNoLugar(primeiro)
@@ -1660,9 +1662,10 @@ export async function montarDocumento(
     // O giro vai na cópia: na origem, o nó repetido no /Kids levaria o giro às duas posições.
     await editarNoLugar(
       origem,
-      editadas(paginas).map((editada) =>
-        editada.fundo ? editada : { ...editada, giro: 0 as const },
-      ),
+      editadas(paginas).map((editada) => ({
+        ...editada,
+        giro: editada.fundo ? editada.moldura : 0,
+      })),
     )
     let deste: PDFPage[]
     try {
@@ -1672,11 +1675,11 @@ export async function montarDocumento(
     }
     paginas.forEach(({ posicao }, i) => {
       const pagina = deste[i]
-      if (!edicaoDa.get(posicao)?.fundo) {
-        pagina.setRotation(
-          degrees(giroNormalizado(rotacaoAtual(pagina) + plano[posicao].giro)),
-        )
-      }
+      const { giro, moldura } = plano[posicao]
+      const jaGirada = edicaoDa.get(posicao)?.fundo ? moldura : 0
+      pagina.setRotation(
+        degrees(giroNormalizado(rotacaoAtual(pagina) + giro - jaGirada)),
+      )
       copiadas.set(posicao, pagina)
     })
   }

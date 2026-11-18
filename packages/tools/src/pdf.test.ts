@@ -3534,6 +3534,41 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
 
       expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 90])
     })
+
+    // Menor do Crivo no #126: o /Rotate da apagada ia no nó compartilhado e girava a outra posição.
+    it('apagar de verdade com giro numa delas: a outra não gira', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([0, 90], [1], [2]),
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0, 0])
+    })
+
+    it('apagar de verdade com a moldura diferente do giro (giro 0): a outra não gira', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        [
+          daMontagem(0, 0, { giro: 0, moldura: 90 }),
+          daMontagem(0, 1),
+          daMontagem(0, 2),
+        ],
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([270, 0, 0])
+    })
+
+    it('por cópia, só a repetida apagada e girada', async () => {
+      const final = await montarDocumento(
+        [await comARepetida()],
+        plano([2, 90], [0]),
+        [{ posicao: 0, objetos: [], fundo: JPEG_8X8 }],
+      )
+
+      expect(await rotacoesDasPaginas(final)).toEqual([90, 0])
+    })
   })
 
   it('não duplica a imagem que as páginas compartilham, nem reordenadas e com páginas a menos', async () => {
