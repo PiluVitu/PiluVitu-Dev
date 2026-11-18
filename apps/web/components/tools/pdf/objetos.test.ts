@@ -8,6 +8,8 @@ import {
 import type { ObjetoNaTela } from './motor'
 import {
   CENA_VAZIA,
+  cenaDasPaginas,
+  molduraDa,
   CORES,
   ESTILOS_PADRAO,
   FERRAMENTAS,
@@ -545,6 +547,44 @@ describe('a cena (os objetos de cada página, pelo id da página)', () => {
       'a0p1',
       'a0p7',
     ])
+  })
+
+  it('a moldura: o giro da página quando o primeiro objeto entrou; sem objetos, é o giro de agora', () => {
+    expect(molduraDa(CENA_VAZIA, 'a0p0', 90)).toBe(90)
+    const uma = incluirObjeto(CENA_VAZIA, 'a0p0', retangulo, 90)
+    expect(uma.molduras.get('a0p0')).toBe(90)
+    expect(molduraDa(uma, 'a0p0', 180)).toBe(90)
+    const duas = incluirObjeto(uma, 'a0p0', { ...retangulo, id: 's' }, 180)
+    expect(molduraDa(duas, 'a0p0', 180)).toBe(90)
+    const umaSo = tirarObjeto(duas, 'a0p0', 's')
+    expect(molduraDa(umaSo, 'a0p0', 180)).toBe(90)
+    const vazia = tirarObjeto(umaSo, 'a0p0', 'r')
+    expect(vazia.molduras.has('a0p0')).toBe(false)
+    expect(molduraDa(vazia, 'a0p0', 180)).toBe(180)
+    expect(
+      incluirObjeto(CENA_VAZIA, 'a0p1', retangulo).molduras.get('a0p1'),
+    ).toBe(0)
+  })
+
+  it('a cena só das páginas pedidas (o Worker recusa objeto de página que não está no pedido)', () => {
+    const cobrir: ObjetoNaTela = {
+      id: 'c',
+      tipo: 'cobrir',
+      x: 1,
+      y: 2,
+      largura: 3,
+      altura: 4,
+    }
+    let cena = incluirObjeto(CENA_VAZIA, 'a0p0', retangulo, 90)
+    cena = incluirObjeto(cena, 'a0p2', cobrir)
+    cena = comApagarDeVerdade(cena, 'a0p2', true)
+    cena = comApagarDeVerdade(cena, 'a0p0', true)
+
+    const so = cenaDasPaginas(cena, new Set(['a0p2', 'a0p5']))
+
+    expect([...so.objetos.keys()]).toEqual(['a0p2'])
+    expect([...so.apagar]).toEqual(['a0p2'])
+    expect([...so.molduras.keys()]).toEqual(['a0p2'])
   })
 
   it('a cena vive no histórico do pdf-regras como qualquer valor', () => {
