@@ -2463,15 +2463,15 @@ test.describe('Editar PDF: a Bancada', () => {
       await page.getByRole('button', { name: 'Páginas', exact: true }).click()
       const folha = page.getByRole('dialog', { name: 'Páginas' })
       await expect(folha).toBeVisible()
-      await folha
-        .getByRole('checkbox', { name: 'Selecionar página 12' })
-        .check()
       const daSelecao = folha.getByRole('button', { name: /^Na seleção/ })
       await expect(daSelecao).toHaveAttribute(
         'aria-expanded',
         String(!recolhida),
       )
       if (recolhida) await daSelecao.click()
+      await folha
+        .getByRole('checkbox', { name: 'Selecionar página 12' })
+        .check()
       await page.evaluate(() =>
         Promise.all(document.getAnimations().map((a) => a.finished)),
       )
@@ -2781,7 +2781,9 @@ test.describe('Editar PDF: a Bancada', () => {
     page,
   }) => {
     const folha = await abrirAFolhaCom20(page)
-    await folha.getByRole('checkbox', { name: 'Selecionar página 2' }).check()
+    await folha
+      .getByRole('checkbox', { name: 'Selecionar página 2', exact: true })
+      .check()
     const daSelecao = folha.getByRole('button', {
       name: 'Na seleção 1 página selecionada',
     })
