@@ -23,6 +23,8 @@ type Opcoes = {
   paginas?: number
   /** Índices (a partir de 0) cujo fundo do apagar de verdade falha. */
   fundosQueFalham?: readonly number[]
+  /** Índices (a partir de 0) cujo tamanho (P2 da página em branco) o pdf.js não lê. */
+  tamanhosQueFalham?: readonly number[]
 }
 
 // As linhas cinzas e o número da folha falsa: onde a página "tem texto" para a dica do editar.
@@ -83,6 +85,7 @@ export function criarRenderizadorFalso({
   paginasQueFalham = [],
   paginas,
   fundosQueFalham = [],
+  tamanhosQueFalham = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let vivos = 0
@@ -103,6 +106,8 @@ export function criarRenderizadorFalso({
   }
   let portaoDasPaginas: Promise<void> | null = null
   let abrirOPortao = () => {}
+  let portaoDosTamanhos: Promise<void> | null = null
+  let abrirOPortaoDosTamanhos = () => {}
   const renderizador = {
     /** Daqui em diante, cada página grande pedida espera o `soltarPaginas()`, sem depender de relógio. */
     prenderPaginas() {
@@ -114,6 +119,16 @@ export function criarRenderizadorFalso({
       abrirOPortao()
       portaoDasPaginas = null
     },
+    /** Daqui em diante, cada tamanho pedido (P2 da página em branco) espera o `soltarTamanhos()`. */
+    prenderTamanhos() {
+      portaoDosTamanhos = new Promise<void>((soltar) => {
+        abrirOPortaoDosTamanhos = soltar
+      })
+    },
+    soltarTamanhos() {
+      abrirOPortaoDosTamanhos()
+      portaoDosTamanhos = null
+    },
     abertos: [] as string[],
     /** Quantos Workers do pdf.js nasceram: um por sessão, que acaba quando o último documento fecha. */
     workers: 0,
@@ -123,7 +138,7 @@ export function criarRenderizadorFalso({
     /** Cada desenho e consulta pedidos, com o arquivo do documento que os recebeu. */
     pedidos: [] as {
       arquivo: string
-      tipo: 'miniatura' | 'pagina' | 'fundo' | 'texto'
+      tipo: 'miniatura' | 'pagina' | 'fundo' | 'texto' | 'tamanho'
       indice: number
     }[],
     miniaturas: [] as { indice: number; larguraCss: number }[],
@@ -221,6 +236,17 @@ export function criarRenderizadorFalso({
           renderizador.textosConsultados.push({ indice, ponto, giro })
           registrar('texto', indice)
           return !fechado && temTextoNaFolhaFalsa(ponto)
+        },
+        async tamanho(indice) {
+          registrar('tamanho', indice)
+          await portaoDosTamanhos
+          if (fechado) throw new Error('o documento já foi fechado')
+          if (tamanhosQueFalham.includes(indice)) {
+            throw new Error('falta de memória')
+          }
+          return deitadas[indice]
+            ? { largura: A4.altura, altura: A4.largura }
+            : A4
         },
         async miniatura(indice, larguraCss) {
           renderizador.miniaturas.push({ indice, larguraCss })

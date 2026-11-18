@@ -139,3 +139,45 @@ describe('as páginas da Bancada', () => {
     ])
   })
 })
+
+describe('a página em branco na Bancada', () => {
+  const branca: PaginaDaBancada = {
+    id: 'b0',
+    origem: { branca: { largura: 595.28, altura: 841.89 } },
+    giro: 0,
+  }
+
+  it('mudou do início: uma branca no documento é mudança', () => {
+    const inicio = paginasIniciais(2)
+    expect(mudouDoInicio([...inicio.lista, branca], 2)).toBe(true)
+    expect(mudouDoInicio([branca], 0)).toBe(true)
+  })
+
+  it('a montagem leva a branca com o tamanho dela, o giro e a moldura da cena', () => {
+    const cena = incluirObjeto(CENA_VAZIA, 'b0', retangulo, 90)
+
+    expect(montagemDaBancada([{ ...branca, giro: 90 }], cena)).toEqual([
+      { ...branca, giro: 90, moldura: 90 },
+    ])
+  })
+
+  // O id da branca nova vem dessa conta: desfazer não a volta, senão a próxima branca herdaria os objetos
+  // que a cena ainda guarda da desfeita.
+  it('a conta das brancas criadas não volta com o desfazer, nem muda com marcar', () => {
+    const inicio = paginasIniciais(1)
+    expect(inicio.brancasCriadas).toBe(0)
+    const comBranca = {
+      ...mudarPaginas(inicio, {
+        lista: [...inicio.lista, branca],
+        marcadas: [],
+      }),
+      brancasCriadas: 1,
+    }
+
+    expect(marcar(comBranca, 'b0', true).brancasCriadas).toBe(1)
+    expect(
+      mudarPaginas(comBranca, apagarPaginas(comBranca, [1])).brancasCriadas,
+    ).toBe(1)
+    expect(desfazerPaginas(comBranca).brancasCriadas).toBe(1)
+  })
+})

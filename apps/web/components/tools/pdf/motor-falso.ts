@@ -44,6 +44,8 @@ export function criarMotorFalso({
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let cancelar: (() => void) | null = null
+  let portaoDasAnalises: Promise<void> | null = null
+  let abrirOPortao = () => {}
   const resultado = () => {
     const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
     if (tamanhoDoResultado !== undefined) {
@@ -70,12 +72,23 @@ export function criarMotorFalso({
   }
 
   const motor = {
+    /** Daqui em diante, cada leitura espera o `soltarAnalises()`, sem depender de relógio. */
+    prenderAnalises() {
+      portaoDasAnalises = new Promise<void>((soltar) => {
+        abrirOPortao = soltar
+      })
+    },
+    soltarAnalises() {
+      abrirOPortao()
+      portaoDasAnalises = null
+    },
     analisadas: [] as string[],
     mescladas: [] as string[][],
     montadas: [] as ({ nomes: string[] } & PedidoDeMontagem)[],
     encerrado: false,
     async analisar(arquivo: Blob) {
       motor.analisadas.push((arquivo as File).name)
+      await portaoDasAnalises
       await espera()
       return analiseDeExemplo(arquivo as File)
     },

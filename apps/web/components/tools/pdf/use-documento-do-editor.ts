@@ -57,6 +57,8 @@ type Ferramentas = {
     avisos: readonly AvisoDoPdf[],
   ) => void
   aoRecusar?: () => void
+  /** As páginas em branco que existem agora (na lista ou no desfazer): somam no teto de páginas. */
+  brancas?: () => number
 }
 
 // O documento do editor: o primeiro arquivo (o do DocumentoPdfProvider) abre a sessão, e os adicionados
@@ -135,7 +137,12 @@ export function useDocumentoDoEditor(
     ): Promise<Adicao | null> => {
       const documento = documentoRef.current
       if (!documento || adicionandoRef.current) return null
-      const peloTamanho = cabeNoEditor(documento, { bytes: novo.size })
+      const brancas = () => ferramentasRef.current.brancas?.() ?? 0
+      const peloTamanho = cabeNoEditor(
+        documento,
+        { bytes: novo.size },
+        brancas(),
+      )
       if (!peloTamanho.cabe) {
         return {
           ok: false,
@@ -157,10 +164,11 @@ export function useDocumentoDoEditor(
           renderizador: ferramentasRef.current.renderizador(),
         },
         (paginas): RecusaDaAdicao | null => {
-          const cabe = cabeNoEditor(documentoRef.current ?? documento, {
-            bytes: novo.size,
-            paginas,
-          })
+          const cabe = cabeNoEditor(
+            documentoRef.current ?? documento,
+            { bytes: novo.size, paginas },
+            brancas(),
+          )
           return cabe.cabe
             ? null
             : {

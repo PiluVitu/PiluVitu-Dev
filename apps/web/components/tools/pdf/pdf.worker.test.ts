@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib'
 import type {
   ObjetoNaTela,
   PaginaParaMontar,
@@ -420,6 +420,110 @@ describe('montar', () => {
       id: resposta.id,
       motivo: 'protegido',
       indice: 1,
+    })
+  })
+
+  // PR 5: a página em branco vai ao Worker como o PR 1 previu, `{ branca: tamanho }` na origem, com o
+  // id `b<n>` e os objetos pelo id.
+  describe('a página em branco', () => {
+    const branca = (
+      id: string,
+      largura: number,
+      altura: number,
+      giro: 0 | 90 = 0,
+    ): PaginaParaMontar => ({
+      id,
+      origem: { branca: { largura, altura } },
+      giro,
+      moldura: giro,
+    })
+
+    // Só a página com texto ganha uma fonte nos recursos.
+    async function fontesDe(resposta: RespostaDoWorker) {
+      if (resposta.tipo !== 'pronto') throw new Error(`veio ${resposta.tipo}`)
+      const documento = await PDFDocument.load(resposta.bytes)
+      return documento
+        .getPages()
+        .map(
+          ({ node }) =>
+            node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict)?.keys()
+              .length ?? 0,
+        )
+    }
+
+    it('entra entre as páginas dos arquivos, com o tamanho, o giro e os objetos dela', async () => {
+      const [resposta] = await montar([await pdf([300]), await pdf([400])], {
+        paginas: [
+          doArquivo(1, 0),
+          branca('b0', 500, 700),
+          doArquivo(0, 0),
+          branca('b1', 842, 595, 90),
+        ],
+        objetosPorPagina: new Map([['b1', [texto('t1', 'NA-BRANCA')]]]),
+      })
+
+      expect(resposta.tipo).toBe('pronto')
+      if (resposta.tipo !== 'pronto') return
+      const documento = await PDFDocument.load(resposta.bytes)
+      expect(
+        documento.getPages().map((p) => ({
+          ...p.getSize(),
+          rotacao: p.getRotation().angle,
+        })),
+      ).toEqual([
+        { width: 400, height: 400, rotacao: 0 },
+        { width: 500, height: 700, rotacao: 0 },
+        { width: 300, height: 300, rotacao: 0 },
+        { width: 842, height: 595, rotacao: 90 },
+      ])
+      expect(await fontesDe(resposta)).toEqual([0, 0, 0, 1])
+    })
+
+    it('só brancas, sem arquivo nenhum: o PDF sai com elas', async () => {
+      const [resposta] = await montar([], {
+        paginas: [branca('b0', 595.28, 841.89), branca('b1', 300, 200)],
+      })
+
+      expect(await paginasDe(resposta)).toEqual([
+        { lado: 595.28, rotacao: 0 },
+        { lado: 300, rotacao: 0 },
+      ])
+    })
+
+    it('texto fora do WinAnsi numa branca: falha com o id dela e o do objeto', async () => {
+      const [resposta] = await montar([], {
+        paginas: [branca('b3', 595, 842)],
+        objetosPorPagina: new Map([['b3', [texto('t9', 'oi 😀')]]]),
+      })
+
+      expect(resposta).toMatchObject({
+        tipo: 'falhou',
+        motivo: 'texto_fora_do_winansi',
+        pagina: 'b3',
+        objeto: 't9',
+      })
+    })
+
+    // Na branca não há o que apagar: a tela não oferece, e o Worker estrito recusa.
+    it.each<[string, Partial<PedidoDeMontagem>]>([
+      [
+        'apagar de verdade numa branca',
+        {
+          paginas: [branca('b0', 595, 842)],
+          paginasRasterizadas: new Map([['b0', new Blob([JPEG])]]),
+        },
+      ],
+      [
+        'branca acima do limite dos leitores de PDF',
+        { paginas: [branca('b0', 595, 14_401)] },
+      ],
+      ['branca sem área', { paginas: [branca('b0', 0, 842)] }],
+    ])('%s: inesperado', async (_, pedido) => {
+      const respostasDoPedido = await montar([], pedido)
+
+      expect(respostasDoPedido).toEqual([
+        { tipo: 'falhou', id: respostasDoPedido[0].id, motivo: 'inesperado' },
+      ])
     })
   })
 

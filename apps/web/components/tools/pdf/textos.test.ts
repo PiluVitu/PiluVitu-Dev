@@ -167,6 +167,125 @@ describe('editar', () => {
     })
   })
 
+  describe('a página em branco: a recusa pelo teto diz o que ainda cabe', () => {
+    const { passouDoTeto } = TEXTOS.editar.branca
+
+    it('com o documento cheio, não cabe mais nenhuma', () => {
+      expect(passouDoTeto(500)).toBe(
+        'Não deu para criar a página em branco: não cabe mais nenhuma página (até 500 somando os PDFs abertos e as páginas em branco).',
+      )
+    })
+  })
+
+  describe('a página em branco: o botão, o anúncio, a origem e o cabeçalho', () => {
+    const B = TEXTOS.editar.branca
+    const P = TEXTOS.editar.paginasDoDocumento
+
+    it('o botão tem o nome do desenho, e o curto do celular cabe no nome', () => {
+      expect(B.botao).toBe('Página em branco')
+      expect(B.curto).toBe('Em branco')
+      expect(B.botao.toLowerCase().endsWith(B.curto.toLowerCase())).toBe(true)
+    })
+
+    it('o anúncio diz depois de qual página ela entrou e que fica marcada (D3)', () => {
+      expect(B.adicionada(3)).toBe(
+        'Página em branco adicionada depois da página 3, já selecionada.',
+      )
+      expect(B.adicionada(1_000)).toBe(
+        'Página em branco adicionada depois da página 1.000, já selecionada.',
+      )
+    })
+
+    it('a origem no cartão diz o tamanho: A4 de pé ou deitada pelo nome, os outros em centímetros', () => {
+      expect(P.origemDaBranca({ largura: 595.28, altura: 841.89 })).toBe(
+        'Página em branco, A4',
+      )
+      expect(P.origemDaBranca({ largura: 841.89, altura: 595.28 })).toBe(
+        'Página em branco, A4 deitada',
+      )
+      // O A4 que o pdf.js mede numa página de arquivo (595 × 842) também é A4.
+      expect(P.origemDaBranca({ largura: 842, altura: 595 })).toBe(
+        'Página em branco, A4 deitada',
+      )
+      expect(P.origemDaBranca({ largura: 612, altura: 792 })).toBe(
+        'Página em branco, 21,6 × 27,9 cm',
+      )
+      expect(P.origemDaBranca({ largura: 300, altura: 300 })).toBe(
+        'Página em branco, 10,6 × 10,6 cm',
+      )
+    })
+
+    it('a folha da página grande diz que ela é em branco', () => {
+      expect(TEXTOS.editar.paginaEmBranco(4)).toBe('Página 4, em branco')
+    })
+
+    it('o tamanho que não deu para ler diz qual página e o que fazer', () => {
+      expect(B.semTamanho(4)).toBe(
+        'Não deu para criar a página em branco: não deu para ler o tamanho da página 4, talvez por falta de memória. Feche outras abas e tente de novo.',
+      )
+    })
+
+    it('enquanto a branca espera o tamanho, o Gerar e o Extrair dizem por que esperam', () => {
+      expect(TEXTOS.editar.gerar.criandoBranca).toBe(
+        'Espere a página em branco entrar para gerar o PDF.',
+      )
+      expect(TEXTOS.organizar.dicas.criandoBranca).toBe(
+        'Espere a página em branco entrar para extrair.',
+      )
+    })
+
+    it('o cobrir numa página em branco diz que não há nada embaixo para apagar', () => {
+      expect(TEXTOS.editar.cobrir.naBranca).toBe(
+        'Esta página é em branco: não há nada embaixo do cobrir para apagar, ele só pinta por cima.',
+      )
+    })
+
+    it('o cabeçalho conta as páginas em branco depois dos nomes dos arquivos', () => {
+      expect(TEXTOS.editar.abertos(['a.pdf'], 4, 1)).toBe(
+        'a.pdf + 1 página em branco · 4 páginas',
+      )
+      expect(TEXTOS.editar.abertos(['a.pdf', 'b.pdf'], 9, 2)).toBe(
+        'a.pdf + b.pdf + 2 páginas em branco · 9 páginas',
+      )
+      expect(TEXTOS.editar.abertos([], 2, 2)).toBe(
+        '2 páginas em branco · 2 páginas',
+      )
+      expect(TEXTOS.editar.abertos(['a.pdf'], 3, 0)).toBe('a.pdf · 3 páginas')
+    })
+
+    it('a recusa do PDF adicionado pelo teto de páginas diz que as brancas também somam, quando há alguma', () => {
+      const A = TEXTOS.editar.adicionar
+      const tetos = { bytes: 50_000_000, paginas: 500 }
+      const recusa = {
+        passou: 'paginas' as const,
+        bytes: 1_000,
+        paginas: 4,
+        restam: { bytes: 49_000_000, paginas: 2 },
+      }
+      expect(A.passouDoTeto('b.pdf', recusa, tetos, true)).toBe(
+        'Não deu para adicionar b.pdf: ele tem 4 páginas, e só cabem mais 2 páginas (até 500 somando os PDFs abertos e as páginas em branco). Divida o PDF em partes menores no programa que o criou e adicione uma de cada vez.',
+      )
+      expect(A.passouDoTeto('b.pdf', recusa, tetos)).toContain(
+        '(até 500 somando os PDFs abertos).',
+      )
+      // O teto de bytes é só dos arquivos: as brancas não pesam nele.
+      expect(
+        A.passouDoTeto(
+          'b.pdf',
+          {
+            passou: 'bytes',
+            bytes: 2_000_000,
+            restam: { bytes: 0, paginas: 3 },
+          },
+          tetos,
+          true,
+        ),
+      ).toBe(
+        'Não deu para adicionar b.pdf: ele tem 2 MB, e não cabe mais nada (até 50 MB somando os PDFs abertos).',
+      )
+    })
+  })
+
   describe('adicionar outro PDF: o botão, onde entra e o anúncio', () => {
     const A = TEXTOS.editar.adicionar
 
@@ -177,13 +296,15 @@ describe('editar', () => {
       expect(A.adicionando('b.pdf')).toBe('Adicionando b.pdf…')
     })
 
-    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada', () => {
-      expect(A.onde(7, null)).toBe('Entra no fim, depois da página 7.')
+    it('onde entra (P3 e D4): sem marcada, no fim; com marcadas, depois da última marcada, nomeada; e o tamanho da branca (P2)', () => {
+      expect(A.onde(7, null)).toBe(
+        'Entra no fim, depois da página 7. A página em branco sai em A4.',
+      )
       expect(A.onde(7, { pagina: 2, marcadas: 1 })).toBe(
-        'Entra depois da página 2, a que você marcou.',
+        'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
       )
       expect(A.onde(7, { pagina: 4, marcadas: 3 })).toBe(
-        'Entra depois da página 4, a última que você marcou.',
+        'Entra depois da página 4, a última que você marcou. A página em branco sai do tamanho dela.',
       )
     })
 

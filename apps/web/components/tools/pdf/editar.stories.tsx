@@ -356,7 +356,7 @@ export const DoisArquivos: Story = {
     await expect(
       canvas.getByRole('button', { name: 'Adicionar PDF' }),
     ).toHaveAccessibleDescription(
-      'Entra depois da página 2, a que você marcou.',
+      'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
     )
     entregarPdf(canvasElement, pdf('anexo-rg-assinado-2p.pdf'))
     await waitFor(() =>
@@ -414,5 +414,103 @@ export const RecusaPorTeto: Story = {
       'Não deu para adicionar livro-498p.pdf: ele tem 498 páginas, e só cabem mais 497 páginas (até 500 somando os PDFs abertos).',
     )
     await expect(canvas.getByText('contrato-3p.pdf · 3 páginas')).toBeVisible()
+  },
+}
+
+// Editor único, PR 5: a página em branco. Sem marcada, entra no fim em A4; a página grande é a folha
+// branca, sem o pdf.js, e os objetos entram nela como nas outras.
+export const PaginaEmBrancoComObjetos: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Página em branco' }),
+    )
+    await expect(
+      await canvas.findByRole('img', { name: 'Página 4, em branco' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('group', { name: 'Área da página 4' }),
+    ).toHaveFocus()
+    await expect(canvas.getByText('Página em branco, A4')).toBeVisible()
+    await expect(
+      canvas.getByText('contrato-3p.pdf + 1 página em branco · 4 páginas'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Texto' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.keyboard('Anotações da reunião')
+    await userEvent.click(canvas.getByRole('button', { name: 'Retângulo' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: /^Texto 'Anotações da reunião'/ }),
+    ).toBeVisible()
+  },
+}
+
+// P2: com uma página deitada marcada ("girado" deita as pares no renderizador falso), a branca sai deitada.
+export const PaginaEmBrancoDeitada: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-girado-4p.pdf') },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('checkbox', { name: 'Selecionar página 2' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: 'Página em branco' }),
+    ).toHaveAccessibleDescription(
+      'Entra depois da página 2, a que você marcou. A página em branco sai do tamanho dela.',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Página em branco' }),
+    )
+    await expect(
+      await canvas.findByRole('img', { name: 'Página 3, em branco' }),
+    ).toBeVisible()
+    await expect(canvas.getByText('Página em branco, A4 deitada')).toBeVisible()
+    await expect(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 3' }),
+    ).toBeChecked()
+  },
+}
+
+// No celular, o curto "Em branco" ao lado de "Páginas" e "PDF", com o nome inteiro para o leitor de tela.
+export const PaginaEmBrancoNoCelular: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: CELULAR,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    const botao = await canvas.findByRole('button', {
+      name: 'Página em branco',
+    })
+    await expect(botao).toHaveTextContent('Em branco')
+    await userEvent.click(botao)
+    await expect(
+      await canvas.findByRole('img', { name: 'Página 4, em branco' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: 'Página 4' }),
+    ).toHaveAttribute('aria-current', 'page')
+  },
+}
+
+// O teto somado: com 500 páginas, a branca é recusada com o alerta, e nada muda.
+export const PaginaEmBrancoNoTeto: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('livro-500p.pdf') },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'Página em branco' }),
+    )
+    await expect(await canvas.findByRole('alert')).toHaveTextContent(
+      'Não deu para criar a página em branco: não cabe mais nenhuma página (até 500 somando os PDFs abertos e as páginas em branco).',
+    )
   },
 }

@@ -9,6 +9,8 @@ import {
   PDFHexString,
   PDFName,
   PDFNumber,
+  PDFPage,
+  PDFPageTree,
   PDFRawStream,
   PDFRef,
   PDFStream,
@@ -24,7 +26,6 @@ import {
   type PDFFont,
   type PDFImage,
   type PDFObject,
-  type PDFPage,
 } from 'pdf-lib'
 import {
   CANTOS,
@@ -1445,10 +1446,113 @@ function conferirApagadasRepetidas(
   }
 }
 
+const HERDAVEIS = ['Resources', 'MediaBox', 'CropBox', 'Rotate'].map((nome) =>
+  PDFName.of(nome),
+)
+
+function herdado(
+  context: PDFContext,
+  no: PDFDict,
+  nome: PDFName,
+): PDFObject | undefined {
+  const vistos = new Set<PDFDict>()
+  let atual: PDFObject | undefined = no
+  while (atual instanceof PDFDict && !vistos.has(atual)) {
+    vistos.add(atual)
+    const valor = atual.get(nome)
+    if (valor !== undefined) return valor
+    atual = context.lookup(atual.get(PDFName.Parent))
+  }
+  return undefined
+}
+
+// Um /Pages do meio repetido no /Kids leva as mesmas folhas às duas posições: tirar ou pôr uma folha nele
+// mexeria nas duas. Cada vez a mais ganha o seu, com o que herdava.
+function separarPaisRepetidos(documento: PDFDocument): void {
+  const { context, catalog } = documento
+  const vistos = new Set<PDFPageTree>()
+  const visitar = (
+    no: PDFPageTree,
+    ref: PDFRef,
+    caminho: ReadonlySet<PDFPageTree>,
+  ) => {
+    const filhos = no.Kids()
+    filhos.asArray().forEach((filhoRef, posicao) => {
+      const filho = context.lookup(filhoRef)
+      if (!(filho instanceof PDFPageTree) || caminho.has(filho)) return
+      if (!vistos.has(filho)) {
+        vistos.add(filho)
+        visitar(filho, filhoRef as PDFRef, new Set([...caminho, filho]))
+        return
+      }
+      const proprio = PDFPageTree.fromMapWithContext(
+        new Map(filho.entries()),
+        context,
+      )
+      for (const nome of HERDAVEIS) {
+        const valor = herdado(context, filho, nome)
+        if (valor !== undefined) proprio.set(nome, valor)
+      }
+      proprio.set(PDFName.of('Kids'), context.obj(filho.Kids().asArray()))
+      proprio.set(PDFName.Parent, ref)
+      const proprioRef = context.register(proprio)
+      filhos.set(posicao, proprioRef)
+      visitar(proprio, proprioRef, new Set([...caminho, proprio]))
+    })
+  }
+  const raiz = catalog.Pages()
+  visitar(raiz, catalog.get(PDFName.of('Pages')) as PDFRef, new Set([raiz]))
+}
+
+// O mesmo nó em duas posições do /Kids: o que se desenha nele aparece nas duas, e a tela mostra cada
+// posição com os seus objetos. O nó com apagar de verdade fica um só (ver "Nó repetido" no CLAUDE.md).
+function separarPaginasRepetidas(
+  documento: PDFDocument,
+  editadas: readonly PaginaEditada[],
+): void {
+  const paginas = documento.getPages()
+  const comObjetos = new Set<PDFRef>()
+  const apagadas = new Set<PDFRef>()
+  for (const { indice, objetos, fundo } of editadas) {
+    const { ref } = paginas[indice]
+    if (fundo !== undefined) apagadas.add(ref)
+    else if (objetos.length > 0) comObjetos.add(ref)
+  }
+  const vistas = new Set<PDFRef>()
+  const aSeparar = paginas.flatMap(({ ref, node }, indice) => {
+    if (!vistas.has(ref)) {
+      vistas.add(ref)
+      return []
+    }
+    return comObjetos.has(ref) && !apagadas.has(ref) ? [{ node, indice }] : []
+  })
+  if (aSeparar.length === 0) return
+  separarPaisRepetidos(documento)
+  for (const { node, indice } of aSeparar) {
+    const propria = node.clone()
+    for (const nome of HERDAVEIS) {
+      const valor = node.getInheritableAttribute(nome)
+      if (valor !== undefined) propria.set(nome, valor)
+    }
+    for (const nome of [PDFName.of('Contents'), PDFName.Annots]) {
+      const lista = documento.context.lookup(node.get(nome))
+      if (lista instanceof PDFArray) {
+        propria.set(nome, documento.context.obj(lista.asArray()))
+      }
+    }
+    documento.removePage(indice)
+    documento.insertPage(
+      indice,
+      PDFPage.of(propria, documento.context.register(propria), documento),
+    )
+  }
+}
+
 async function editarNoLugar(
   documento: PDFDocument,
   editadas: readonly PaginaEditada[],
 ): Promise<void> {
+  separarPaginasRepetidas(documento, editadas)
   const paginas = documento.getPages()
   conferirApagadasRepetidas(paginas, editadas)
   const recursos = new Recursos(documento)

@@ -726,6 +726,49 @@ describe('textoNoPonto (a dica de cobrir e escrever por cima)', () => {
   })
 })
 
+describe('tamanho (P2: a página em branco copia o tamanho da marcada)', () => {
+  it('é o da página como o pdf.js a mostra, com o /Rotate dela, em pontos', async () => {
+    const pagina = paginaFalsa({ largura: 300, altura: 500, rotate: 90 })
+    prepararDocumento([paginaFalsa(), pagina])
+    const documento = await abrir()
+
+    await expect(documento.tamanho(1)).resolves.toEqual({
+      largura: 300,
+      altura: 500,
+    })
+    expect(pagina.getViewport).toHaveBeenCalledWith({ scale: 1 })
+    expect(pagina.render).not.toHaveBeenCalled()
+  })
+
+  // Só lê a página, sem desenhar: não espera a miniatura que está na fila.
+  it('não entra na fila dos desenhos', async () => {
+    const [a, b] = [paginaFalsa(), paginaFalsa({ largura: 100, altura: 200 })]
+    prepararDocumento([a, b])
+    const documento = await abrir()
+    a.render.mockImplementation(() => ({
+      promise: new Promise<void>(() => {}),
+      cancel: jest.fn(),
+    }))
+
+    void documento.miniatura(0, 160)
+    await umaVolta()
+
+    await expect(documento.tamanho(1)).resolves.toEqual({
+      largura: 100,
+      altura: 200,
+    })
+  })
+
+  it('depois de fechar, é recusado', async () => {
+    prepararDocumento([paginaFalsa()])
+    const documento = await abrir()
+
+    documento.fechar()
+
+    await expect(documento.tamanho(0)).rejects.toThrow('fechado')
+  })
+})
+
 describe('fechar', () => {
   it('derruba o Worker do pdf.js e a tarefa, uma vez só', async () => {
     prepararDocumento([paginaFalsa()])
