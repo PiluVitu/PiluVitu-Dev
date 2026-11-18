@@ -320,7 +320,8 @@ Decisão do Paulo em 2026-11-17: a variante A ("Bancada") do editor único. No d
        - O que vale está num teste verde: a folha dentro da tela, nenhuma rolagem lateral, e a lista com os 80 px dela, rolando até a marcada.
        - **O E2E achou uma falha.** Ao abrir a folha, a lista começa abaixo da borda da tela: o primeiro cartão termina a 690 px. A própria folha também rola: são 623 px de conteúdo em 502 sem marcada, e 639 com uma.
        - A causa: o título, os botões de adicionar, a barra com as dicas e a dica da folha somam uns 480 px.
-       - Ficou guardada com `test.fail()`, à espera da decisão de layout, que é pergunta para o Paulo.
+       - Ficou guardada com `test.fail()`, à espera da decisão de layout, que foi pergunta para o Paulo.
+       - **Decidida em 2026-11-18 (o Paulo seguiu a recomendação do Maestro):** na folha, a barra "Na seleção" e as dicas viram um bloco recolhível, fechado por padrão em tela baixa (abaixo de 800 px de altura), e a lista fica à vista. O `test.fail()` virou teste verde, no PR da folha recolhível (ver "Celular" no `apps/web/CLAUDE.md`).
      - **Os pesos:**
        - O Worker do pdf-lib foi a 446,7 KB (183,0 KB gzip).
        - O pdf.js e o Worker dele não mudaram.

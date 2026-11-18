@@ -33,6 +33,8 @@ const pdf = (nome: string) =>
 const DESKTOP = { viewport: { value: '1280-900', isRotated: false } }
 // Abaixo de lg, a lista de páginas mora na folha que o botão "Páginas" abre pela borda de baixo.
 const CELULAR = { viewport: { value: '390-844', isRotated: false } }
+// Celular baixo: abaixo de 800 px de altura, a folha abre com a seleção recolhida, para a lista caber.
+const CELULAR_BAIXO = { viewport: { value: '320-568', isRotated: false } }
 
 export const Vazio: Story = {
   args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
@@ -380,6 +382,35 @@ export const DoisArquivos: Story = {
     await expect(
       canvas.getByRole('checkbox', { name: 'Selecionar página 4' }),
     ).toBeChecked()
+  },
+}
+
+// Decisão do Paulo (2026-11-18): a barra "Na seleção" e as dicas recolhem, e o botão diz quantas estão marcadas.
+export const FolhaDePaginasNoCelularBaixo: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: CELULAR_BAIXO,
+  parameters: { arquivoInicial: pdf('contrato-20p.pdf') },
+  play: async ({ canvas, canvasElement }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'Páginas' }),
+    )
+    const folha = await within(canvasElement.ownerDocument.body).findByRole(
+      'dialog',
+      { name: 'Páginas' },
+    )
+    await userEvent.click(
+      within(folha).getByRole('checkbox', { name: 'Selecionar página 2' }),
+    )
+    const daSelecao = within(folha).getByRole('button', {
+      name: 'Na seleção 1 página selecionada',
+    })
+    await expect(daSelecao).toHaveAttribute('aria-expanded', 'false')
+    await expect(
+      within(folha).queryByRole('button', { name: 'Extrair as selecionadas' }),
+    ).toBeNull()
+    await expect(
+      within(folha).getByRole('button', { name: 'Abrir a página 1' }),
+    ).toBeVisible()
   },
 }
 
