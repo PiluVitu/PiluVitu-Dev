@@ -193,6 +193,7 @@ describe('montar', () => {
       objetosPorPagina: new Map(),
       imagens: new Map(),
       paginasRasterizadas: new Map(),
+      apagadasForaDoPlano: [],
       ...pedido,
     }))
   }
@@ -389,6 +390,59 @@ describe('montar', () => {
     ])
   })
 
+  // Decisão do Paulo em 2026-11-18: a página com apagar de verdade que fica fora do pedido vai pelo arquivo
+  // do pedido, e a outra posição do mesmo nó sai apagada também.
+  describe('a apagada de verdade fora do plano', () => {
+    async function repetida(): Promise<Blob> {
+      const documento = await PDFDocument.load(
+        new Uint8Array(await (await pdf([300, 400])).arrayBuffer()),
+      )
+      const arvore = documento.catalog.Pages()
+      arvore.Kids().push(documento.getPage(0).ref)
+      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      return new Blob([new Uint8Array(await documento.save())])
+    }
+    const fora = (arquivo: number, indice: number) => ({
+      origem: { arquivo, indice },
+      moldura: 0 as const,
+      fundo: new Blob([JPEG]),
+    })
+
+    it('a outra posição do nó repetido sai com o JPEG da apagada, também no segundo arquivo', async () => {
+      const [resposta] = await montar([await pdf([500]), await repetida()], {
+        paginas: [doArquivo(0, 0), doArquivo(1, 2)],
+        apagadasForaDoPlano: [fora(1, 0)],
+      })
+
+      expect(await paginasDe(resposta)).toEqual([
+        { lado: 500, rotacao: 0 },
+        { lado: 300, rotacao: 0 },
+      ])
+      expect(
+        (await imagensDe(resposta)).map((i) =>
+          (i as PDFRawStream).dict.get(PDFName.of('Width'))!.toString(),
+        ),
+      ).toEqual(['8'])
+    })
+
+    it('com uma apagada do pedido no mesmo nó: falha com o id da página do pedido, sem objeto', async () => {
+      const respostasDoPedido = await montar([await repetida()], {
+        paginas: [doArquivo(0, 1), doArquivo(0, 2)],
+        paginasRasterizadas: new Map([['a0p2', new Blob([JPEG])]]),
+        apagadasForaDoPlano: [fora(0, 0)],
+      })
+
+      expect(respostasDoPedido).toEqual([
+        {
+          tipo: 'falhou',
+          id: respostasDoPedido[0].id,
+          motivo: 'apagar_na_pagina_repetida',
+          pagina: 'a0p2',
+        },
+      ])
+    })
+  })
+
   it('o arquivo protegido falha com o motivo e o índice do arquivo', async () => {
     const [resposta] = await montar([await pdf([300]), await protegido()], {
       paginas: [doArquivo(0, 0), doArquivo(1, 0)],
@@ -540,6 +594,69 @@ describe('montar', () => {
       {
         paginas: [doArquivo(0, 0)],
         objetosPorPagina: new Map([['a0p0', [imagem('i1', 'sumiu')]]]),
+      },
+    ],
+    [
+      'apagadas fora do plano que não são lista',
+      { paginas: [doArquivo(0, 0)], apagadasForaDoPlano: {} as never },
+    ],
+    [
+      'apagada fora do plano nula',
+      { paginas: [doArquivo(0, 0)], apagadasForaDoPlano: [null as never] },
+    ],
+    [
+      'apagada fora do plano sem origem',
+      {
+        paginas: [doArquivo(0, 0)],
+        apagadasForaDoPlano: [{ moldura: 0, fundo: new Blob([JPEG]) } as never],
+      },
+    ],
+    [
+      'apagada fora do plano sem fundo',
+      {
+        paginas: [doArquivo(0, 0)],
+        apagadasForaDoPlano: [
+          { origem: { arquivo: 0, indice: 1 }, moldura: 0 } as never,
+        ],
+      },
+    ],
+    [
+      'apagada fora do plano com fundo que não é JPEG',
+      {
+        paginas: [doArquivo(0, 0)],
+        apagadasForaDoPlano: [
+          {
+            origem: { arquivo: 0, indice: 1 },
+            moldura: 0,
+            fundo: new Blob([PNG]),
+          },
+        ],
+      },
+    ],
+    [
+      'apagada fora do plano numa página do pedido',
+      {
+        paginas: [doArquivo(0, 0)],
+        apagadasForaDoPlano: [
+          {
+            origem: { arquivo: 0, indice: 0 },
+            moldura: 0,
+            fundo: new Blob([JPEG]),
+          },
+        ],
+      },
+    ],
+    [
+      'apagada fora do plano depois da última página do arquivo',
+      {
+        paginas: [doArquivo(0, 0)],
+        apagadasForaDoPlano: [
+          {
+            origem: { arquivo: 0, indice: 5 },
+            moldura: 0,
+            fundo: new Blob([JPEG]),
+          },
+        ],
       },
     ],
   ])('%s: inesperado', async (_, pedido) => {

@@ -102,6 +102,7 @@ it('se o Worker quebra, as leituras pendentes vão uma vez para um Worker novo e
     objetosPorPagina: new Map(),
     imagens: new Map(),
     paginasRasterizadas: new Map(),
+    apagadasForaDoPlano: [],
   })
   const primeiro = ultimo()
 
@@ -193,9 +194,22 @@ describe('montar', () => {
   ])
   const imagens = new Map([['logo', new Blob(['png'])]])
   const paginasRasterizadas = new Map([['a0p2', new Blob(['jpeg'])]])
-  const pedido = { paginas, objetosPorPagina, imagens, paginasRasterizadas }
+  const apagadasForaDoPlano = [
+    {
+      origem: { arquivo: 0, indice: 0 },
+      moldura: 90 as const,
+      fundo: new Blob(['jpeg']),
+    },
+  ]
+  const pedido = {
+    paginas,
+    objetosPorPagina,
+    imagens,
+    paginasRasterizadas,
+    apagadasForaDoPlano,
+  }
 
-  it('manda os arquivos, as páginas por id, os objetos, as imagens e os fundos com id e entrega um Blob de PDF', async () => {
+  it('manda os arquivos, as páginas por id, os objetos, as imagens, os fundos com id e as apagadas fora do plano, e entrega um Blob de PDF', async () => {
     const motor = novoMotor()
     const arquivos = [arquivo('contrato.pdf'), arquivo('anexo.pdf')]
     const pronto = motor.montar(arquivos, pedido)
@@ -209,6 +223,7 @@ describe('montar', () => {
       objetosPorPagina,
       imagens,
       paginasRasterizadas,
+      apagadasForaDoPlano,
     })
     ultimo().responder({
       tipo: 'pronto',

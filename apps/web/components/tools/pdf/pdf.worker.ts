@@ -3,10 +3,13 @@ import {
   ErroNaEdicao,
   analisarPdf,
   montarDocumento,
+  type ApagadaForaDoPlano,
   type EdicaoNaMontagem,
+  type Giro,
   type ObjetoDaPagina,
 } from '@piluvitu/tools/pdf'
 import type {
+  ApagadaForaDoPedido,
   ObjetoNaTela,
   PedidoAoWorker,
   PedidoDeMontagem,
@@ -104,6 +107,34 @@ async function edicoesDaMontagem({
   )
 }
 
+// O montarDocumento confere o resto (arquivo, índice, moldura, JPEG): o malformado é erro, nunca ignorado.
+async function apagadasForaDoPlano(
+  apagadas: PedidoDeMontagem['apagadasForaDoPlano'],
+): Promise<ApagadaForaDoPlano[]> {
+  if (!Array.isArray(apagadas)) {
+    throw new RangeError('apagadas fora do plano inválidas')
+  }
+  return Promise.all(
+    apagadas.map(async (apagada: unknown) => {
+      const { origem, moldura, fundo } = (apagada ??
+        {}) as Partial<ApagadaForaDoPedido>
+      if (
+        typeof origem !== 'object' ||
+        origem === null ||
+        !(fundo instanceof Blob)
+      ) {
+        throw new RangeError('apagada fora do plano inválida')
+      }
+      return {
+        arquivo: origem.arquivo,
+        indice: origem.indice,
+        moldura: moldura as Giro,
+        fundo: await bytesDe(fundo),
+      }
+    }),
+  )
+}
+
 async function montar(
   id: number,
   arquivos: readonly Blob[],
@@ -117,7 +148,12 @@ async function montar(
         arquivos.map((arquivo) => () => bytesDe(arquivo)),
         pedido.paginas,
         edicoes,
-        { porCopia: pedido.porCopia },
+        {
+          porCopia: pedido.porCopia,
+          apagadasForaDoPlano: await apagadasForaDoPlano(
+            pedido.apagadasForaDoPlano,
+          ),
+        },
       ),
     )
   } catch (erro) {

@@ -3,12 +3,14 @@ import {
   TAMANHO_A4,
   TETO_DE_BYTES_COM_MINIATURAS,
   TETO_DE_PAGINAS,
+  type Giro,
   type Tamanho,
 } from '@piluvitu/tools/pdf-regras'
 import {
   apagarPaginas,
   desfazerPaginas,
   marcar,
+  montagemDaBancada,
   mudarPaginas,
   paginasIniciais,
   type PaginaDaBancada,
@@ -18,6 +20,7 @@ import {
   abrirArquivo,
   adicionarBranca,
   adicionarPaginas,
+  apagadasForaDoPdf,
   arquivosAlcancaveis,
   brancasAlcancaveis,
   cabeNoEditor,
@@ -33,8 +36,14 @@ import {
   type ArquivoDoEditor,
   type DocumentoDoEditor,
 } from './documento-do-editor'
-import type { PaginaParaMontar } from './motor'
+import type { ObjetoNaTela, PaginaParaMontar } from './motor'
 import { criarMotorFalso } from './motor-falso'
+import {
+  CENA_VAZIA,
+  comApagarDeVerdade,
+  incluirObjeto,
+  type Cena,
+} from './objetos'
 import type { DocumentoAberto } from './renderizador'
 import { criarRenderizadorFalso } from './renderizador-falso'
 
@@ -347,6 +356,108 @@ describe('o pedido ao motor: os arquivos que o plano usa', () => {
       { arquivo: 0, indice: 1 },
     ])
     expect(pedido.porCopia).toBe(true)
+  })
+})
+
+// Decisão do Paulo em 2026-11-18: o /Kids pode repetir a mesma página do arquivo em duas posições, e a
+// tela não sabe. A página com apagar de verdade que não vai no PDF vai ao motor mesmo assim, se o arquivo
+// dela vai: o montarDocumento apaga o nó dela, e a outra posição sai sem o que foi coberto.
+describe('as apagadas de verdade que ficam fora do PDF', () => {
+  const pagina = (arquivo: number, indice: number): PaginaDaBancada => ({
+    id: `a${arquivo}p${indice}`,
+    origem: { arquivo, indice },
+    giro: 0,
+  })
+  const cobrir = (id: string): ObjetoNaTela => ({
+    id,
+    tipo: 'cobrir',
+    x: 10,
+    y: 10,
+    largura: 50,
+    altura: 20,
+  })
+  // O cobrir, com a moldura da página quando ele entrou, e o apagar de verdade ligado.
+  const comApagada = (cena: Cena, id: string, moldura: Giro = 0): Cena =>
+    comApagarDeVerdade(
+      incluirObjeto(cena, id, cobrir(`cobrir-${id}`), moldura),
+      id,
+      true,
+    )
+  const fora = (
+    arquivo: number,
+    indice: number,
+    noPedido = arquivo,
+    moldura: Giro = 0,
+  ) => ({
+    id: `a${arquivo}p${indice}`,
+    origem: { arquivo, indice },
+    noPedido: { arquivo: noPedido, indice },
+    moldura,
+  })
+
+  it('o Extrair só da outra página leva a apagada que ficou de fora, com a moldura dela', () => {
+    const cena = comApagada(CENA_VAZIA, 'a0p0', 90)
+
+    expect(apagadasForaDoPdf(cena, [pagina(0, 2)])).toEqual([fora(0, 0, 0, 90)])
+  })
+
+  it('a apagada tirada da Bancada também vai: a cena guarda os objetos dela', () => {
+    const cena = comApagada(CENA_VAZIA, 'a0p0')
+    const { lista } = apagarPaginas(
+      { lista: paginasIniciais(3).lista, marcadas: [] },
+      [0],
+    )
+
+    expect(ids(lista)).toEqual(['a0p1', 'a0p2'])
+    expect(apagadasForaDoPdf(cena, lista)).toEqual([fora(0, 0)])
+  })
+
+  it('a apagada que está no PDF não vai como fora: vai como edição da página dela', () => {
+    const cena = comApagada(comApagada(CENA_VAZIA, 'a0p0'), 'a0p1')
+
+    expect(apagadasForaDoPdf(cena, [pagina(0, 0), pagina(0, 2)])).toEqual([
+      fora(0, 1),
+    ])
+  })
+
+  it('com o apagar de verdade desligado, ou ligado sem cobrir, a página não vira imagem e não vai', () => {
+    const soCobrir = incluirObjeto(CENA_VAZIA, 'a0p0', cobrir('c1'))
+    const semCobrir = comApagarDeVerdade(CENA_VAZIA, 'a0p1', true)
+
+    expect(apagadasForaDoPdf(soCobrir, [pagina(0, 2)])).toEqual([])
+    expect(apagadasForaDoPdf(semCobrir, [pagina(0, 2)])).toEqual([])
+  })
+
+  it('a apagada de um arquivo que não está no PDF não vai', () => {
+    const cena = comApagada(CENA_VAZIA, 'a1p0')
+
+    expect(apagadasForaDoPdf(cena, [pagina(0, 0), pagina(2, 1)])).toEqual([])
+  })
+
+  it('a página em branco nunca vai: não tem arquivo nem nó para proteger', () => {
+    const cena = comApagada(CENA_VAZIA, 'b0')
+
+    expect(apagadasForaDoPdf(cena, [pagina(0, 0)])).toEqual([])
+  })
+
+  it('o arquivo vai renumerado como no pedidoDeArquivos, também com o primeiro arquivo fora do PDF', () => {
+    let documento = documentoInicial(arquivoDoEditor('a.pdf', 2))
+    documento = comArquivo(documento, arquivoDoEditor('b.pdf', 2)).documento
+    documento = comArquivo(documento, arquivoDoEditor('c.pdf', 2)).documento
+    const cena = comApagada(comApagada(CENA_VAZIA, 'a2p0'), 'a1p1')
+
+    const soDoTerceiro = [pagina(2, 1)]
+    expect(apagadasForaDoPdf(cena, soDoTerceiro)).toEqual([fora(2, 0, 0)])
+    expect(
+      pedidoDeArquivos(documento, montagemDaBancada(soDoTerceiro, cena))
+        .paginas[0].origem,
+    ).toEqual({ arquivo: 0, indice: 1 })
+
+    const doSegundoEDoTerceiro = [pagina(1, 0), pagina(2, 1)]
+    expect(apagadasForaDoPdf(cena, doSegundoEDoTerceiro)).toEqual([
+      fora(1, 1, 0),
+      fora(2, 0, 1),
+    ])
   })
 })
 

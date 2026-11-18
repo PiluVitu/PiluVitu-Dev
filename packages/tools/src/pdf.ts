@@ -1699,6 +1699,64 @@ function conferirEdicoesDaMontagem(
   return new Map(edicoes.map((edicao) => [edicao.posicao, edicao]))
 }
 
+/**
+ * Apagar de verdade numa página de arquivo que não está no plano (o Extrair só de outra posição, ou a
+ * apagada tirada da Bancada). Ela não sai no documento, mas o /Kids pode repetir o nó dela numa posição do
+ * plano, e o nó sai apagado (ver "A apagada fora do plano" no CLAUDE.md).
+ */
+export type ApagadaForaDoPlano = {
+  readonly arquivo: number
+  readonly indice: number
+  readonly moldura: Giro
+  readonly fundo: Uint8Array
+}
+
+function conferirApagadasForaDoPlano(
+  apagadas: readonly ApagadaForaDoPlano[],
+  plano: readonly PaginaDaMontagem[],
+  quantosArquivos: number,
+): void {
+  if (!Array.isArray(apagadas)) {
+    throw new RangeError('apagadas fora do plano inválidas')
+  }
+  if (apagadas.length > TETO_DE_PAGINAS) {
+    throw new RangeError(
+      `as apagadas fora do plano passam do teto: ${apagadas.length} de ${TETO_DE_PAGINAS}`,
+    )
+  }
+  const doPlano = new Set(
+    plano.flatMap(({ origem }) =>
+      'branca' in origem ? [] : [`${origem.arquivo}:${origem.indice}`],
+    ),
+  )
+  const vistas = new Set<string>()
+  // Por índice: o forEach pula o buraco de uma lista esparsa, que passaria sem erro.
+  for (let posicao = 0; posicao < apagadas.length; posicao++) {
+    const apagada = apagadas[posicao]
+    const falhar = (motivo: string): never => {
+      throw new RangeError(
+        `apagada fora do plano inválida na posição ${posicao}: ${motivo}`,
+      )
+    }
+    if (typeof apagada !== 'object' || apagada === null) falhar('item')
+    const { arquivo, indice, moldura, fundo } = apagada
+    if (
+      !Number.isInteger(arquivo) ||
+      arquivo < 0 ||
+      arquivo >= quantosArquivos
+    ) {
+      falhar(`arquivo ${arquivo}`)
+    }
+    if (!Number.isInteger(indice) || indice < 0) falhar(`índice ${indice}`)
+    if (!GIROS.includes(moldura)) falhar(`moldura ${moldura}`)
+    if (!ehBytes(fundo) || tipoDaImagem(fundo) !== 'jpeg') falhar('fundo')
+    const chave = `${arquivo}:${indice}`
+    if (doPlano.has(chave)) falhar(`página do plano (${chave})`)
+    if (vistas.has(chave)) falhar(`página repetida (${chave})`)
+    vistas.add(chave)
+  }
+}
+
 // Com o mesmo nó em duas posições do /Kids, girar uma no lugar giraria as duas.
 function giraPaginaRepetida(
   documento: PDFDocument,
@@ -1719,10 +1777,17 @@ export async function montarDocumento(
   fontes: readonly FonteDePdf[],
   plano: readonly PaginaDaMontagem[],
   edicoes: readonly EdicaoNaMontagem[],
-  { porCopia = false }: { readonly porCopia?: boolean } = {},
+  {
+    porCopia = false,
+    apagadasForaDoPlano = [],
+  }: {
+    readonly porCopia?: boolean
+    readonly apagadasForaDoPlano?: readonly ApagadaForaDoPlano[]
+  } = {},
 ): Promise<Uint8Array> {
   conferirMontagem(plano, fontes.length)
   const edicaoDa = conferirEdicoesDaMontagem(plano, edicoes)
+  conferirApagadasForaDoPlano(apagadasForaDoPlano, plano, fontes.length)
   const edicaoDe = (posicao: number): Omit<PaginaEditada, 'indice'> => ({
     rotulo: posicao,
     objetos: edicaoDa.get(posicao)?.objetos ?? [],
@@ -1748,6 +1813,42 @@ export async function montarDocumento(
     doArquivo.push({ posicao, indice: origem.indice })
     porArquivo.set(origem.arquivo, doArquivo)
   })
+  // A apagada fora do plano vale pelo nó: é editada como uma apagada sem objetos e com o rótulo de uma
+  // posição do plano que tem o mesmo nó, onde a pessoa consegue agir (a apagada, senão a primeira); sem
+  // posição com o nó, nada muda.
+  const apagadasForaDe = (
+    origem: PDFDocument,
+    arquivo: number,
+    paginas: readonly { posicao: number; indice: number }[],
+  ): PaginaEditada[] => {
+    const deste = apagadasForaDoPlano.filter(
+      (apagada) => apagada.arquivo === arquivo,
+    )
+    conferirQueExistem(
+      origem,
+      deste.map(({ indice }) => indice),
+      arquivo,
+    )
+    const apagadaNoPlano = (posicao: number) =>
+      edicaoDa.get(posicao)?.fundo !== undefined
+    const posicaoDoNo = new Map<PDFRef, number>()
+    for (const { posicao, indice } of paginas) {
+      const { ref } = origem.getPage(indice)
+      const atual = posicaoDoNo.get(ref)
+      if (
+        atual === undefined ||
+        (apagadaNoPlano(posicao) && !apagadaNoPlano(atual))
+      ) {
+        posicaoDoNo.set(ref, posicao)
+      }
+    }
+    return deste.flatMap(({ indice, moldura, fundo }) => {
+      const rotulo = posicaoDoNo.get(origem.getPage(indice).ref)
+      return rotulo === undefined
+        ? []
+        : [{ indice, rotulo, objetos: [], fundo, giro: 0, moldura }]
+    })
+  }
 
   const doPrimeiro = porArquivo.get(0)
   let primeiro: PDFDocument | undefined
@@ -1757,7 +1858,10 @@ export async function montarDocumento(
       !saiPorCopia(plano, primeiro.getPageCount()) &&
       !giraPaginaRepetida(primeiro, plano)
     ) {
-      await editarNoLugar(primeiro, editadas(doPrimeiro))
+      await editarNoLugar(primeiro, [
+        ...apagadasForaDe(primeiro, 0, doPrimeiro),
+        ...editadas(doPrimeiro),
+      ])
       return salvarNoLugar(primeiro)
     }
   }
@@ -1779,6 +1883,10 @@ export async function montarDocumento(
         molduraDaApagada.set(refs[i], plano[posicao].moldura)
       }
     })
+    const foraDoPlano = apagadasForaDe(origem, arquivo, paginas)
+    for (const { indice, moldura } of foraDoPlano) {
+      molduraDaApagada.set(origem.getPage(indice).ref, moldura)
+    }
     // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
     try {
       esvaziarPaginasForaDoPlano(origem, indices)
@@ -1788,7 +1896,7 @@ export async function montarDocumento(
     // O giro vai na cópia: na origem, o nó repetido no /Kids levaria o giro às duas posições.
     await editarNoLugar(
       origem,
-      editadas(paginas).map((editada) => ({
+      [...foraDoPlano, ...editadas(paginas)].map((editada) => ({
         ...editada,
         giro: editada.fundo ? editada.moldura : 0,
       })),

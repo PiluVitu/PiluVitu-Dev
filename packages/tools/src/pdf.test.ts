@@ -22,6 +22,7 @@ import {
   aplicarEdicoes,
   montarDocumento,
   temCabecalhoDePdf,
+  type ApagadaForaDoPlano,
   type EdicaoDaPagina,
   type EdicaoNaMontagem,
 } from './pdf'
@@ -39,6 +40,7 @@ import {
   moverSelecionadas,
   tamanhoNaTela,
   tracoDosPontos,
+  type Giro,
   type ObjetoDaPagina,
   type ObjetoTexto,
   type PaginaDaMontagem,
@@ -3971,10 +3973,10 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
   // Nenhum nó fica repetido na saída: o pdf.js só lê o nó repetido quando a primeira vez dele já está no
   // cache, e [outra, p1, apagada, apagada] reprovava na última página ("circular reference").
   describe('PDF que repete a mesma página no /Kids: apagar de verdade numa posição e objetos em outra', () => {
-    // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes); ela tem o texto SEGREDO.
-    // Na forma 'meio', o que se repete é um /Pages do meio que só tem a página 0.
+    // O /Kids repete a página 0 nas posições 0 e 2 (e na 3, com três vezes, e na 4, com quatro); ela tem o
+    // texto SEGREDO. Na forma 'meio', o que se repete é um /Pages do meio que só tem a página 0.
     async function comARepetida(
-      vezes: 2 | 3 = 3,
+      vezes: 2 | 3 | 4 = 3,
       forma: 'folha' | 'meio' = 'folha',
     ) {
       const documento = await PDFDocument.create()
@@ -4372,6 +4374,399 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
 
       expect(erro.motivo).toBe('apagar_na_pagina_repetida')
       expect(erro.pagina).toBe(3)
+    })
+
+    // Decisão do Paulo em 2026-11-18: o apagar de verdade numa posição protege todas as posições do mesmo
+    // nó, também quando a apagada fica fora do plano (o Extrair só da outra posição, ou o Gerar depois de
+    // tirá-la da Bancada). A tela manda a apagada em `apagadasForaDoPlano`: ela não sai no documento, e o
+    // nó vira a base apagada, como se ela estivesse no plano sem objetos. Antes, o SEGREDO saía na outra.
+    describe('a apagada fora do plano protege as outras posições do mesmo nó', () => {
+      const fora = (
+        arquivo: number,
+        indice: number,
+        extra: Partial<ApagadaForaDoPlano> = {},
+      ): ApagadaForaDoPlano => ({
+        arquivo,
+        indice,
+        moldura: 0,
+        fundo: JPEG_8X8,
+        ...extra,
+      })
+
+      function montarComFora(
+        fontes: Parameters<typeof montarDocumento>[0],
+        oPlano: readonly PaginaDaMontagem[],
+        edicoes: readonly EdicaoNaMontagem[],
+        apagadasForaDoPlano: readonly ApagadaForaDoPlano[],
+        porCopia = false,
+      ) {
+        const opcoes = { porCopia, apagadasForaDoPlano }
+        return montarDocumento(fontes, oPlano, edicoes, opcoes)
+      }
+
+      it.each([
+        [
+          'o Extrair só da outra posição (plano [2], por cópia)',
+          plano([2]),
+          true,
+          [['imagem']],
+          [300],
+        ],
+        [
+          'o Gerar com a apagada tirada da Bancada (plano [1, 2])',
+          plano([1], [2]),
+          false,
+          [[], ['imagem']],
+          [301, 300],
+        ],
+      ] as const)(
+        '%s: a outra posição sai com a base apagada, sem o SEGREDO no texto nem no arquivo',
+        async (_, oPlano, porCopia, desenhos, lados) => {
+          const final = await montarComFora(
+            [await comARepetida(2)],
+            oPlano,
+            [],
+            [fora(0, 0)],
+            porCopia,
+          )
+
+          expect(textosDe(final).flat()).toEqual([])
+          expect(desenhosDe(final)).toEqual(desenhos)
+          expect(await ladosDasPaginas(final)).toEqual(lados)
+          await semOSegredoESemNoRepetido(final)
+        },
+      )
+
+      it.each([
+        [
+          'uma delas com texto, plano [2, 3]',
+          plano([2], [3]),
+          [{ posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] }],
+          [['CCC'], []],
+          [['imagem'], ['imagem']],
+        ],
+        [
+          'as duas com texto, plano [1, 2, 3]',
+          plano([1], [2], [3]),
+          [
+            { posicao: 1, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+            { posicao: 2, objetos: [objetoTexto({ conteudo: 'DDD' })] },
+          ],
+          [[], ['CCC'], ['DDD']],
+          [[], ['imagem'], ['imagem']],
+        ],
+      ] as const)(
+        'as outras posições com objetos (%s): cada objeto só na sua, sobre a base apagada',
+        async (_, oPlano, edicoes, textos, desenhos) => {
+          const final = await montarComFora(
+            [await comARepetida()],
+            oPlano,
+            edicoes,
+            [fora(0, 0)],
+          )
+
+          expect(textosDe(final)).toEqual(textos)
+          expect(desenhosDe(final)).toEqual(desenhos)
+          await semOSegredoESemNoRepetido(final)
+        },
+      )
+
+      it('a outra posição com um cobrir comum: o retângulo sai, o SEGREDO não', async () => {
+        const final = await montarComFora(
+          [await comARepetida(2)],
+          plano([2]),
+          [{ posicao: 0, objetos: [cobrirOSegredo()] }],
+          [fora(0, 0)],
+          true,
+        )
+
+        expect(textosDe(final).flat()).toEqual([])
+        expect(desenhosDe(final)).toEqual([['imagem', 'caminho']])
+        await semOSegredoESemNoRepetido(final)
+      })
+
+      // A página é deitada (200 × 100) para a orientação aparecer no tamanho, lido com o /Rotate, como em
+      // "a apagada com moldura não deita a outra".
+      describe('com a apagada fora na moldura 90', () => {
+        async function comARepetidaDeitada() {
+          const documento = await PDFDocument.create()
+          const fonte = await documento.embedFont(StandardFonts.Helvetica)
+          const folha = documento.addPage([200, 100])
+          folha.drawText('SEGREDO', { x: 20, y: 40, font: fonte, size: 20 })
+          documento.addPage([150, 150])
+          const arvore = documento.catalog.Pages()
+          arvore.Kids().push(folha.ref)
+          arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+          return documento.save()
+        }
+
+        async function comoAparecem(bytes: Uint8Array): Promise<string[]> {
+          const documento = await PDFDocument.load(bytes)
+          return documento.getPages().map((pagina) => {
+            const { width, height } = pagina.getSize()
+            return pagina.getRotation().angle % 180 === 0
+              ? `${width}x${height}`
+              : `${height}x${width}`
+          })
+        }
+
+        // O JPEG veio da tela na moldura 90 (de pé, 100 × 200): a página dele tem esse tamanho, e o /Rotate
+        // a deixa como a tela mostra a outra posição. Com a moldura ignorada, ele sairia esticado e deitado
+        // numa página de 200 × 100, e o tamanho que aparece seria o mesmo.
+        it.each([
+          ['giro 0', 0, ['200x100'], 270],
+          ['giro 90', 90, ['100x200'], 0],
+        ] as const)(
+          'o Extrair só da outra posição, com %s nela: ela sai como a tela a mostra, sem deitar',
+          async (_, giro, esperado, rotacao) => {
+            const final = await montarComFora(
+              [await comARepetidaDeitada()],
+              [daMontagem(0, 2, { giro })],
+              [],
+              [fora(0, 0, { moldura: 90 })],
+              true,
+            )
+
+            expect(await comoAparecem(final)).toEqual(esperado)
+            expect(await ladosDasPaginas(final)).toEqual([100])
+            expect(await rotacoesDasPaginas(final)).toEqual([rotacao])
+            await semOSegredoESemNoRepetido(final)
+          },
+        )
+
+        it('o Gerar sem ela, com texto na outra: o texto sai onde a tela o pôs', async () => {
+          const final = await montarComFora(
+            [await comARepetidaDeitada()],
+            [daMontagem(0, 1), daMontagem(0, 2)],
+            [{ posicao: 1, objetos: [objetoTexto({ conteudo: 'NA-OUTRA' })] }],
+            [fora(0, 0, { moldura: 90 })],
+          )
+
+          expect(await comoAparecem(final)).toEqual(['150x150', '200x100'])
+          expect(await ladosDasPaginas(final)).toEqual([150, 100])
+          expect(await rotacoesDasPaginas(final)).toEqual([0, 270])
+          const outra = lerComPdfjs(final).paginas[1]
+          expect(outra.textos.map(({ str }) => str)).toEqual(['NA-OUTRA'])
+          expect(outra.textos[0].matriz[4]).toBeCloseTo(40, 2)
+          expect(outra.textos[0].matriz[5]).toBeCloseTo(60 + 20 * ASCENDENTE, 2)
+          await semOSegredoESemNoRepetido(final)
+        })
+      })
+
+      it.each([
+        [
+          'o Extrair só da outra posição',
+          plano([2]),
+          true,
+          [{ posicao: 0, objetos: [objetoTexto({ conteudo: 'CCC' })] }],
+          [['CCC']],
+          [300],
+        ],
+        [
+          'o Gerar sem ela',
+          plano([1], [2], [3]),
+          false,
+          [{ posicao: 1, objetos: [objetoTexto({ conteudo: 'CCC' })] }],
+          [[], ['CCC'], []],
+          [301, 300, 300],
+        ],
+      ] as const)(
+        'um /Pages do meio repetido (%s): cada texto só na sua posição, e nenhuma com o SEGREDO',
+        async (_, oPlano, porCopia, edicoes, textos, lados) => {
+          const final = await montarComFora(
+            [await comARepetida(3, 'meio')],
+            oPlano,
+            edicoes,
+            [fora(0, 0)],
+            porCopia,
+          )
+
+          expect(textosDe(final)).toEqual(textos)
+          expect(await ladosDasPaginas(final)).toEqual(lados)
+          await semOSegredoESemNoRepetido(final)
+        },
+      )
+
+      it('a apagada fora no segundo arquivo: a outra posição dele sai com a base apagada', async () => {
+        const final = await montarComFora(
+          [await gerarPdf(1, 500), await comARepetida(2)],
+          [daMontagem(0, 0), daMontagem(1, 2)],
+          [],
+          [fora(1, 0)],
+        )
+
+        expect(textosDe(final).flat()).toEqual([])
+        expect(desenhosDe(final)).toEqual([[], ['imagem']])
+        expect(await ladosDasPaginas(final)).toEqual([500, 300])
+        await semOSegredoESemNoRepetido(final)
+      })
+
+      it('a apagada fora cujo nó não tem posição no plano é ignorada: a saída é a mesma de sem ela', async () => {
+        const arquivo = await comARepetida(2)
+
+        const sem = await montarDocumento([arquivo], plano([1]), [], {
+          porCopia: true,
+        })
+        const com = await montarComFora(
+          [arquivo],
+          plano([1]),
+          [],
+          [fora(0, 0)],
+          true,
+        )
+
+        expect(Buffer.from(com)).toEqual(Buffer.from(sem))
+      })
+
+      // O caminho no lugar pede o arquivo 0 inteiro na ordem: a apagada fora dele seria uma página do plano.
+      it('o arquivo inteiro na ordem (no lugar) e a apagada fora num arquivo sem página no plano: sai no lugar, igual, sem ler esse arquivo', async () => {
+        const arquivo = await comARepetida(2)
+        const outro = jest.fn(async () => gerarPdf(1, 500))
+
+        const sem = await montarDocumento(
+          [arquivo, outro],
+          plano([0], [1], [2]),
+          [],
+        )
+        const com = await montarComFora(
+          [arquivo, outro],
+          plano([0], [1], [2]),
+          [],
+          [fora(1, 0)],
+        )
+
+        expect(Buffer.from(com)).toEqual(Buffer.from(sem))
+        expect(outro).not.toHaveBeenCalled()
+        const lido = await PDFDocument.load(com, { updateMetadata: false })
+        expect(lido.getTitle()).toBe('TITULO-DO-ARQUIVO')
+      })
+
+      it.each([
+        ['numa página dele, que está no plano', 0],
+        ['depois da última página dele', 3],
+      ])(
+        'o arquivo inteiro na ordem (no lugar) com a apagada fora %s: RangeError',
+        async (_, indice) => {
+          await expect(
+            montarComFora(
+              [await comARepetida(2)],
+              plano([0], [1], [2]),
+              [],
+              [fora(0, indice)],
+            ),
+          ).rejects.toThrow(RangeError)
+        },
+      )
+
+      it.each([
+        ['a apagada do plano depois da outra posição', plano([2], [3]), 1],
+        ['a apagada do plano antes da outra posição', plano([3], [2]), 0],
+        ['só a apagada do plano no nó', plano([1], [3]), 1],
+      ] as const)(
+        'com uma apagada do plano no mesmo nó (%s): recusada, apontando a posição dela no plano',
+        async (_, oPlano, apagada) => {
+          const erro = await erroNaEdicao(
+            montarComFora(
+              [await comARepetida()],
+              oPlano,
+              [{ posicao: apagada, objetos: [], fundo: JPEG_8X8 }],
+              [fora(0, 0)],
+            ),
+          )
+
+          expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+          expect(erro.pagina).toBe(apagada)
+          expect(erro.objeto).toBeUndefined()
+        },
+      )
+
+      it('duas apagadas fora no mesmo nó: recusadas, apontando a posição do plano que é desse nó', async () => {
+        const erro = await erroNaEdicao(
+          montarComFora(
+            [await comARepetida()],
+            plano([1], [2]),
+            [],
+            [fora(0, 0), fora(0, 3)],
+          ),
+        )
+
+        expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+        expect(erro.pagina).toBe(1)
+      })
+
+      // Menor da revisão do PR B: com duas apagadas fora, a recusa apontava a primeira posição do plano do
+      // nó, mesmo quando a apagada do plano era outra. O nó repete nas posições 0, 2, 3 e 4 do /Kids.
+      it.each([
+        [
+          'com a apagada do plano na segunda posição do nó: aponta a dela',
+          [{ posicao: 1, objetos: [], fundo: JPEG_8X8 }],
+          1,
+        ],
+        ['sem apagada no plano: aponta a primeira posição do nó', [], 0],
+      ] as const)(
+        'duas apagadas fora e duas posições do plano no mesmo nó, %s',
+        async (_, edicoes, rotulo) => {
+          const erro = await erroNaEdicao(
+            montarComFora([await comARepetida(4)], plano([4], [2]), edicoes, [
+              fora(0, 0),
+              fora(0, 3),
+            ]),
+          )
+
+          expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+          expect(erro.pagina).toBe(rotulo)
+        },
+      )
+
+      // Chega ao Worker por postMessage: o que vier errado é erro do código da tela.
+      it.each<[string, unknown, boolean]>([
+        ['a lista que não é lista', { arquivo: 0, indice: 0 }, true],
+        ['o item que não é objeto', [null], true],
+        // O forEach pulava o buraco, e a lista passava sem erro.
+        ['a lista com buraco', new Array<ApagadaForaDoPlano>(1), true],
+        ['o arquivo inexistente', [fora(2, 0)], true],
+        ['o arquivo negativo', [fora(-1, 0)], true],
+        ['o arquivo não inteiro', [fora(0.5, 0)], true],
+        ['o índice negativo', [fora(0, -1)], true],
+        ['o índice não inteiro', [fora(0, 1.5)], true],
+        ['o índice NaN', [fora(0, Number.NaN)], true],
+        ['a moldura inválida', [fora(0, 0, { moldura: 45 as Giro })], true],
+        [
+          'o fundo que não é bytes',
+          [fora(0, 0, { fundo: [...JPEG_8X8] as unknown as Uint8Array })],
+          true,
+        ],
+        ['o fundo que não é JPEG', [fora(0, 0, { fundo: PNG_2X2 })], true],
+        ['a mesma página duas vezes', [fora(0, 0), fora(0, 0)], true],
+        ['a página que está no plano', [fora(0, 2)], true],
+        [
+          'mais apagadas que o teto de páginas',
+          Array.from({ length: TETO_DE_PAGINAS + 1 }, (_, i) => fora(0, 3 + i)),
+          true,
+        ],
+        ['o índice depois da última página', [fora(0, 3)], false],
+        [
+          'o índice depois da última página do segundo arquivo',
+          [fora(1, 1)],
+          false,
+        ],
+      ])('%s: RangeError', async (_, apagadas, antesDeLer) => {
+        const primeiro = jest.fn(async () => comARepetida(2))
+        const segundo = jest.fn(async () => gerarPdf(1, 500))
+
+        await expect(
+          montarComFora(
+            [primeiro, segundo],
+            [daMontagem(0, 2), daMontagem(1, 0)],
+            [],
+            apagadas as readonly ApagadaForaDoPlano[],
+          ),
+        ).rejects.toThrow(RangeError)
+        if (antesDeLer) {
+          expect(primeiro).not.toHaveBeenCalled()
+          expect(segundo).not.toHaveBeenCalled()
+        }
+      })
     })
   })
 

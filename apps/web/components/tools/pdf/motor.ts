@@ -1,5 +1,6 @@
 import type {
   AvisoDoPdf,
+  Giro,
   MotivoDoErroDePdf,
   MotivoDoErroNaEdicao,
   ObjetoDaPagina,
@@ -18,6 +19,13 @@ export type ObjetoNaTela =
 
 export type PaginaParaMontar = PaginaDaMontagem & { readonly id: string }
 
+/** Apagar de verdade numa página de arquivo que não vai no PDF, com o arquivo numerado como no pedido. */
+export type ApagadaForaDoPedido = {
+  readonly origem: { readonly arquivo: number; readonly indice: number }
+  readonly moldura: Giro
+  readonly fundo: Blob
+}
+
 /** O documento final: as páginas na ordem, e o resto da tela indexado pelo id de cada página. */
 export type PedidoDeMontagem = {
   paginas: readonly PaginaParaMontar[]
@@ -25,6 +33,11 @@ export type PedidoDeMontagem = {
   imagens: ReadonlyMap<string, Blob>
   /** Apagar de verdade: o JPEG de cada página, com os retângulos de cobrir já pintados nele. */
   paginasRasterizadas: ReadonlyMap<string, Blob>
+  /**
+   * As apagadas de verdade que ficam fora do PDF, de um arquivo que vai: o /Kids pode repetir o nó de uma
+   * delas numa página do PDF, e o Worker o apaga ali também.
+   */
+  apagadasForaDoPlano: readonly ApagadaForaDoPedido[]
   /** Mesmo com o arquivo inteiro na ordem: o Extrair nunca leva o que é do documento. */
   porCopia?: boolean
 }

@@ -92,6 +92,7 @@ import {
 import {
   adicionarBranca,
   adicionarPaginas,
+  apagadasForaDoPdf,
   arquivosAlcancaveis,
   brancasAlcancaveis,
   cabeNoEditor,
@@ -118,6 +119,7 @@ import { idDaPagina } from './montagem'
 import {
   criarMotorComWorker,
   ehFalhaDaOperacao,
+  type ApagadaForaDoPedido,
   type MotorDePdf,
   type ObjetoNaTela,
 } from './motor'
@@ -942,6 +944,16 @@ export function EditarPdf({
         )
         if (vez !== vezDaGeracao.current) return
       }
+      const foraDoPlano: ApagadaForaDoPedido[] = []
+      for (const { id, origem, noPedido, moldura } of apagadasForaDoPdf(
+        cena,
+        paginasDoPdf,
+      )) {
+        const { aberto, indice } = doArquivo(documento, origem)
+        const fundo = await aberto.fundo(indice, cobrirDa(cena, id), moldura)
+        if (vez !== vezDaGeracao.current) return
+        foraDoPlano.push({ origem: noPedido, moldura, fundo })
+      }
       const blobs = new Map<string, Blob>()
       for (const id of imagensDa(cenaDoPdf)) {
         const imagem = imagens.get(id)
@@ -953,6 +965,7 @@ export function EditarPdf({
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
         paginasRasterizadas: rasterizadas,
+        apagadasForaDoPlano: foraDoPlano,
         ...((tipo === 'extraido' || pedido.porCopia) && { porCopia: true }),
       })
       if (vez !== vezDaGeracao.current) return
