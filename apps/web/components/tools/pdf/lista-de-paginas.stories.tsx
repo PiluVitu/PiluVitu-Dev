@@ -280,3 +280,56 @@ export const BarraDaBancada: Story = {
     ).toBeVisible()
   },
 }
+
+// Editor único, PR 5: a página em branco no cartão, sem miniatura do pdf.js, com o tamanho na origem.
+const comBrancas = [
+  daBancada[0],
+  {
+    id: 'b0',
+    origem: { branca: { largura: 595.28, altura: 841.89 } },
+    giro: 0 as const,
+  },
+  {
+    id: 'b1',
+    origem: { branca: { largura: 841.89, altura: 595.28 } },
+    giro: 0 as const,
+  },
+  {
+    id: 'b2',
+    origem: { branca: { largura: 612, altura: 792 } },
+    giro: 90 as const,
+  },
+]
+
+export const CartaoDaPaginaEmBranco: Story = {
+  render: () => (
+    <div className="w-60">
+      <ListaDaBancada
+        paginas={comBrancas}
+        nomesDosArquivos={['contrato.pdf']}
+        marcadas={new Set(['b1'])}
+        aberta="b1"
+        miniaturas={miniaturasDaBancada}
+        bloqueado={false}
+        idDoTitulo="titulo-paginas"
+        idDaDicaUnica="dica-unica"
+        aoAgir={aoAgirNaBancada}
+        aoMover={fn()}
+        registrarCaixa={fn()}
+      />
+    </div>
+  ),
+  play: async ({ canvas, canvasElement }) => {
+    await expect(canvas.getByText('Página em branco, A4')).toBeVisible()
+    await expect(canvas.getByText('Página em branco, A4 deitada')).toBeVisible()
+    await expect(
+      canvas.getByText('Página em branco, 21,6 × 27,9 cm'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 3' }),
+    ).toBeChecked()
+    await expect(
+      canvasElement.querySelectorAll('[data-testid="editar-pdf-folha-branca"]'),
+    ).toHaveLength(3)
+  },
+}
