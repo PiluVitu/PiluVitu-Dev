@@ -6,6 +6,7 @@ import {
   tamanhoDaBranca,
   type AvisoDoPdf,
   type Cabimento,
+  type Giro,
   type Ocupacao,
   type OrigemDaPagina,
   type Tamanho,
@@ -16,8 +17,9 @@ import {
   type Paginas,
   type PaginasComDesfazer,
 } from './bancada'
-import { idDaPagina } from './montagem'
+import { idDaPagina, origemDoId } from './montagem'
 import type { MotivoDaRecusa, MotorDePdf, PaginaParaMontar } from './motor'
+import { molduraDa, temCobrir, type Cena } from './objetos'
 import {
   ehFalhaDaAbertura,
   type DocumentoAberto,
@@ -255,6 +257,20 @@ export function semInalcancaveis(
   }
 }
 
+/** O número de cada arquivo usado pelo plano no pedido ao Worker, na ordem da sessão. */
+function numeracaoDoPedido(
+  paginas: readonly { readonly origem: OrigemDaPagina }[],
+): Map<number, number> {
+  const usados = [
+    ...new Set(
+      paginas.flatMap(({ origem }) =>
+        ehBranca(origem) ? [] : [origem.arquivo],
+      ),
+    ),
+  ].sort((a, b) => a - b)
+  return new Map(usados.map((arquivo, i) => [arquivo, i]))
+}
+
 /**
  * Os arquivos que o plano usa, renumerados na ordem da sessão (os ids das páginas ficam). Sem o primeiro
  * arquivo, sai por cópia: renumerado, outro arquivo viraria o 0 e poderia sair no lugar.
@@ -263,14 +279,8 @@ export function pedidoDeArquivos(
   documento: DocumentoDoEditor,
   paginas: readonly PaginaParaMontar[],
 ): { arquivos: File[]; paginas: PaginaParaMontar[]; porCopia: boolean } {
-  const usados = [
-    ...new Set(
-      paginas.flatMap(({ origem }) =>
-        ehBranca(origem) ? [] : [origem.arquivo],
-      ),
-    ),
-  ].sort((a, b) => a - b)
-  const novoNumero = new Map(usados.map((arquivo, i) => [arquivo, i]))
+  const novoNumero = numeracaoDoPedido(paginas)
+  const usados = [...novoNumero.keys()]
   return {
     arquivos: usados.map((arquivo) => {
       const aberto = documento.arquivos[arquivo]
@@ -290,6 +300,48 @@ export function pedidoDeArquivos(
     ),
     porCopia: usados[0] !== 0,
   }
+}
+
+export type ApagadaForaDoPdf = {
+  readonly id: string
+  /** Na sessão: é por ela que o pdf.js desenha o fundo. */
+  readonly origem: { readonly arquivo: number; readonly indice: number }
+  /** Com o arquivo renumerado como no `pedidoDeArquivos`: é a que vai ao Worker. */
+  readonly noPedido: { readonly arquivo: number; readonly indice: number }
+  readonly moldura: Giro
+}
+
+/**
+ * As páginas de arquivo que viram imagem ao salvar (apagar de verdade com cobrir) e ficam fora do PDF, de um
+ * arquivo que está nele, na ordem da sessão. O /Kids pode repetir o nó de uma delas numa página do PDF, e o
+ * Worker apaga o nó ali também (ver "A apagada fora do plano" no CLAUDE.md do packages/tools).
+ */
+export function apagadasForaDoPdf(
+  cena: Cena,
+  paginasDoPdf: readonly Pick<PaginaDaBancada, 'id' | 'origem'>[],
+): ApagadaForaDoPdf[] {
+  const noPdf = new Set(paginasDoPdf.map(({ id }) => id))
+  const novoNumero = numeracaoDoPedido(paginasDoPdf)
+  return [...cena.apagar]
+    .filter((id) => !noPdf.has(id) && temCobrir(cena, id))
+    .flatMap((id) => {
+      const origem = origemDoId(id)
+      const arquivo = origem ? novoNumero.get(origem.arquivo) : undefined
+      if (!origem || arquivo === undefined) return []
+      return [
+        {
+          id,
+          origem,
+          noPedido: { arquivo, indice: origem.indice },
+          moldura: molduraDa(cena, id, 0),
+        },
+      ]
+    })
+    .sort(
+      (a, b) =>
+        a.origem.arquivo - b.origem.arquivo ||
+        a.origem.indice - b.origem.indice,
+    )
 }
 
 export type AberturaDoArquivo<Recusa> =

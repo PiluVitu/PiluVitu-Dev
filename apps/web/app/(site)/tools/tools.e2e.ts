@@ -3586,6 +3586,59 @@ test.describe('Editar PDF: página em branco', () => {
     await semOSegredo((await gerarEBaixar(page)).bytes, 2)
   })
 
+  // Decisão do Paulo em 2026-11-18: o apagar de verdade numa posição protege todas as posições do mesmo
+  // nó, também quando a apagada fica fora do PDF. Antes, a outra posição saía com o segredo no texto.
+  for (const caminho of ['extrair', 'gerar'] as const)
+    test(`o nó repetido no /Kids com o segredo apagado de verdade na posição 1: ${caminho === 'extrair' ? 'o Extrair só da 3' : 'o Gerar depois de tirar a 1 da Bancada'} sai sem o segredo`, async ({
+      page,
+    }) => {
+      test.setTimeout(90_000)
+      const arquivo = await pdfComPaginaRepetida(
+        'repetida.pdf',
+        'Segredo 987.654.321-00',
+      )
+      await page.goto('/tools/pdf')
+      await abrirNoEditar(page, arquivo)
+      await abrirPagina(page, 1, 3)
+      await inserirNoCentro(page, 'Cobrir')
+      await posicionar(page, { x: 30, y: 125, largura: 240, altura: 40 })
+      await page
+        .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Apagar de verdade nesta página' })
+        .click()
+      await expect(page.getByTestId('editar-pdf-apagar-ligado')).toBeVisible()
+      const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+
+      let bytes: Uint8Array
+      if (caminho === 'extrair') {
+        await coluna
+          .getByRole('checkbox', { name: 'Selecionar página 3' })
+          .check()
+        await coluna
+          .getByRole('button', { name: 'Extrair as selecionadas' })
+          .click()
+        const baixar = page.getByTestId('editar-pdf-baixar')
+        await expect(baixar).toBeFocused({ timeout: 30_000 })
+        const [download] = await Promise.all([
+          page.waitForEvent('download'),
+          baixar.click(),
+        ])
+        bytes = new Uint8Array(readFileSync((await download.path())!))
+      } else {
+        await coluna.getByRole('button', { name: 'Apagar a página 1' }).click()
+        bytes = (await gerarEBaixar(page)).bytes
+      }
+
+      const lidas = await lerComPdfjs(bytes)
+      expect(lidas).toHaveLength(caminho === 'extrair' ? 1 : 2)
+      expect(
+        lidas.flatMap(({ textos }) => textos.map(({ str }) => str)),
+      ).toEqual([])
+      expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
+    })
+
   test('a 320 px: o curto "Em branco" tem 44 px, criar abre a branca na faixa com o foco na área, a folha também tem o botão, e nada rola para o lado', async ({
     page,
   }) => {

@@ -8,6 +8,7 @@ import {
   type Ponto,
 } from '@piluvitu/tools/pdf-regras'
 import { ZOOMS } from './area-da-pagina'
+import { LIMITE_DO_DESFAZER_DAS_PAGINAS } from './bancada'
 import {
   CONSULTA_DA_BANCADA_LARGA,
   CONSULTA_DA_TELA_BAIXA,
@@ -2204,6 +2205,111 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
     expect(focado()).toBe('Baixar livro-3p-paginas.pdf')
   })
 
+  // Decisão do Paulo em 2026-11-18: o /Kids pode repetir a mesma página do arquivo em duas posições, e a
+  // tela não sabe. A página com apagar de verdade que não vai no PDF vai ao motor desenhada, fora do plano,
+  // para a outra posição do mesmo nó sair sem o que foi coberto.
+  it('Extrair só outra página: a apagada de verdade que ficou de fora vai ao motor, desenhada com os cobrir dela', async () => {
+    const { renderizador, motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await marcarPagina(3)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.paginas.map((p) => p.id)).toEqual(['a0p2'])
+    expect(pedido.objetosPorPagina.size).toBe(0)
+    expect(pedido.paginasRasterizadas.size).toBe(0)
+    expect(pedido).toMatchObject({
+      apagadasForaDoPlano: [
+        {
+          origem: { arquivo: 0, indice: 0 },
+          moldura: 0,
+          fundo: expect.any(Blob),
+        },
+      ],
+    })
+    expect(renderizador.fundos).toEqual([
+      {
+        indice: 0,
+        cobrir: [{ x: 217.5, y: 405, largura: 160, altura: 32 }],
+        giro: 0,
+      },
+    ])
+  })
+
+  it('Gerar depois de tirar da Bancada a página com apagar de verdade: ela vai ao motor fora do plano', async () => {
+    const { renderizador, motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await clicar(porNome('Apagar a página 1'))
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.paginas.map((p) => p.id)).toEqual(['a0p1', 'a0p2'])
+    expect(pedido.objetosPorPagina.size).toBe(0)
+    expect(pedido.paginasRasterizadas.size).toBe(0)
+    expect(pedido).toMatchObject({
+      apagadasForaDoPlano: [
+        {
+          origem: { arquivo: 0, indice: 0 },
+          moldura: 0,
+          fundo: expect.any(Blob),
+        },
+      ],
+    })
+    expect(renderizador.fundos).toEqual([
+      expect.objectContaining({ indice: 0, giro: 0 }),
+    ])
+  })
+
+  it('Cancelar enquanto desenha a apagada que ficou de fora: o motor nem recebe o pedido', async () => {
+    const renderizador = criarRenderizadorFalso({ atraso: 80 })
+    const { motor } = await abrirParaEditar('livro-3p.pdf', { renderizador })
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await clicar(porNome('Apagar a página 1'))
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => renderizador.fundos.length === 1)
+    await clicar(porNome('Cancelar'))
+    await esperar(200)
+
+    expect(motor.montadas).toHaveLength(0)
+    expect(q('editar-pdf-resultado')).toBeNull()
+    expect(anuncio()).toBe('Cancelado.')
+  })
+
+  // A proteção vem da cena, que guarda os objetos da página tirada mesmo depois que ela sai do desfazer das
+  // páginas (o arquivo continua aberto, porque outra página dele está na lista).
+  it('a apagada tirada da Bancada continua indo depois de sair do desfazer das páginas', async () => {
+    const { motor } = await abrirParaEditar('livro-3p.pdf')
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await clicar(porNome('Apagar a página 1'))
+    for (let vez = 0; vez <= LIMITE_DO_DESFAZER_DAS_PAGINAS; vez++) {
+      await clicar(porNome('Girar a página 1 à direita'))
+    }
+    for (let vez = 0; vez <= LIMITE_DO_DESFAZER_DAS_PAGINAS; vez++) {
+      await clicar(porNome('Desfazer nas páginas'))
+    }
+    expect(cartoes().map((c) => c.dataset.id)).toEqual(['a0p1', 'a0p2'])
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(motor.montadas[0]).toMatchObject({
+      apagadasForaDoPlano: [{ origem: { arquivo: 0, indice: 0 }, moldura: 0 }],
+    })
+  }, 30_000)
+
   it('a explicação do apagar de verdade muda quando o PDF sai por cópia: o título, o autor e os anexos não passam', async () => {
     await abrirParaEditar('livro-3p.pdf')
     await clicar(porNome('Apagar a página 3'))
@@ -3075,6 +3181,39 @@ describe('adicionar outro PDF', () => {
     expect((q('editar-pdf-baixar') as HTMLAnchorElement).download).toBe(
       'a-3p-editado.pdf',
     )
+  })
+
+  it('Extrair só outra página do segundo arquivo: a apagada de verdade dele que ficou de fora vai com o arquivo renumerado', async () => {
+    const { motor, renderizador } = await abrirParaEditar('a-3p.pdf')
+    await adicionarPdf(pdf('b-3p.pdf'))
+    await esperarAte(() => cartoesNoDocumento().length === 6)
+    await abrirPagina(4)
+    await inserirNoCentro('Cobrir')
+    await clicar(porNome('Apagar de verdade o que está embaixo'))
+    await clicar(porNome('Apagar de verdade nesta página'))
+    await clicar(porNome('Limpar seleção'))
+    await marcarPagina(6)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    const [pedido] = motor.montadas
+    expect(pedido.nomes).toEqual(['b-3p.pdf'])
+    expect(pedido.paginas.map(({ id, origem }) => [id, origem])).toEqual([
+      ['a1p2', { arquivo: 0, indice: 2 }],
+    ])
+    expect(pedido).toMatchObject({
+      apagadasForaDoPlano: [
+        {
+          origem: { arquivo: 0, indice: 0 },
+          moldura: 0,
+          fundo: expect.any(Blob),
+        },
+      ],
+    })
+    expect(renderizador.pedidos.filter((p) => p.tipo === 'fundo')).toEqual([
+      { arquivo: 'b-3p.pdf', tipo: 'fundo', indice: 0 },
+    ])
   })
 
   it('desfazer a adição (Desfazer nas páginas) tira as páginas, fecha o arquivo que nenhuma página alcança e o cabeçalho volta', async () => {
