@@ -1815,7 +1815,7 @@ export async function montarDocumento(
   })
   // A apagada fora do plano vale pelo nó: é editada como uma apagada sem objetos e com o rótulo de uma
   // posição do plano que tem o mesmo nó, onde a pessoa consegue agir (a apagada, senão a primeira); sem
-  // posição com o nó, nada muda. Vai antes das edições do plano, para a recusa apontar a apagada do plano.
+  // posição com o nó, nada muda.
   const apagadasForaDe = (
     origem: PDFDocument,
     arquivo: number,
