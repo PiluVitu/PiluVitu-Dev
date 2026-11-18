@@ -396,9 +396,6 @@ export const TEXTOS = {
     pronto: (totalDePaginas: number, bytes: number) =>
       `PDF pronto: ${paginas(totalDePaginas)}, ${formatarTamanho(bytes)}.`,
   },
-  editor: {
-    modos: 'O que você quer fazer?',
-  },
   organizar: {
     rotulo: 'Abrir PDF',
     limites: (tetoDeBytes: number, tetoDePaginas: number) =>

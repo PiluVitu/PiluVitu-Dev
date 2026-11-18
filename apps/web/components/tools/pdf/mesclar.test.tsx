@@ -2,7 +2,6 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { caminhoDoModo } from '@/lib/rotas-publicas'
 import { DocumentoPdfProvider, useDocumentoPdf } from './documento-pdf'
 import { MesclarPdf } from './mesclar'
 import { criarMotorFalso } from './motor-falso'
@@ -324,7 +323,7 @@ it('pronto o PDF, Organizar as páginas leva o resultado, com o nome final, para
   expect(documentoDoEditor!.name).toBe('contrato.pdf')
   expect(documentoDoEditor!.type).toBe('application/pdf')
   expect(documentoDoEditor!.size).toBe(8)
-  expect(mockPush).toHaveBeenCalledWith(caminhoDoModo('pdf', 'organizar'))
+  expect(mockPush).toHaveBeenCalledWith('/tools/pdf/organizar')
 })
 
 it('PDF mesclado com mais de 500 páginas: sem o botão de organizar, com o porquê', async () => {
