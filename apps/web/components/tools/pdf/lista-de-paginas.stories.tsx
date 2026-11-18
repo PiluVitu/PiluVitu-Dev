@@ -165,13 +165,24 @@ export const BarraDaSelecaoComSetas: Story = {
   },
 }
 
-// Editor único: o cartão da Bancada, com o rótulo pela posição e a origem embaixo.
+// Editor único: o cartão da Bancada, com o rótulo pela posição e a origem (arquivo e página) embaixo.
 const daBancada = [
   { id: 'a0p0', origem: { arquivo: 0, indice: 0 }, giro: 0 as const },
   { id: 'a0p3', origem: { arquivo: 0, indice: 3 }, giro: 90 as const },
+  { id: 'a1p0', origem: { arquivo: 1, indice: 0 }, giro: 0 as const },
   { id: 'a0p1', origem: { arquivo: 0, indice: 1 }, giro: 0 as const },
   { id: 'a0p5', origem: { arquivo: 0, indice: 5 }, giro: 0 as const },
 ]
+
+const miniaturasDaBancada = {
+  urls: new Map(
+    daBancada
+      .filter(({ id }) => id !== 'a0p5')
+      .map(({ id }, i) => [id, miniatura(i + 1)]),
+  ),
+  falhas: new Set(['a0p5']),
+  observar: () => () => {},
+}
 
 const aoAgirNaBancada = fn()
 
@@ -180,10 +191,10 @@ function ColunaDaBancada({ marcadas }: { marcadas: string[] }) {
     <div className="w-60">
       <ListaDaBancada
         paginas={daBancada}
-        nomeDoArquivo="contrato.pdf"
+        nomesDosArquivos={['contrato.pdf', 'anexo-rg.pdf']}
         marcadas={new Set(marcadas)}
         aberta="a0p3"
-        miniaturas={miniaturas}
+        miniaturas={miniaturasDaBancada}
         bloqueado={false}
         idDoTitulo="titulo-paginas"
         idDaDicaUnica="dica-unica"
@@ -202,12 +213,13 @@ export const CartoesDaBancada: Story = {
       canvas.getByRole('button', { name: 'Abrir a página 2' }),
     ).toHaveAttribute('aria-current', 'page')
     await expect(canvas.getByText('contrato.pdf, pág. 4')).toBeVisible()
+    await expect(canvas.getByText('anexo-rg.pdf, pág. 1')).toBeVisible()
     await expect(
-      canvas.getByRole('checkbox', { name: 'Selecionar página 3' }),
+      canvas.getByRole('checkbox', { name: 'Selecionar página 4' }),
     ).toBeChecked()
     await expect(canvas.getByText(TEXTOS.organizar.semMiniatura)).toBeVisible()
     await userEvent.click(
-      canvas.getByRole('button', { name: 'Abrir a página 4' }),
+      canvas.getByRole('button', { name: 'Abrir a página 5' }),
     )
     await expect(aoAgirNaBancada).toHaveBeenCalledWith({
       tipo: 'abrir',

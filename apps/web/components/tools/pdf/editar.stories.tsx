@@ -332,3 +332,87 @@ export const BancadaPronta: Story = {
     )
   },
 }
+
+// Editor único, PR 4: adicionar outro PDF. O input do arquivo fica escondido atrás do botão; a story
+// entrega o arquivo direto a ele, como a janela de escolher arquivo, sem tirar o foco do botão.
+function entregarPdf(canvasElement: HTMLElement, arquivo: File) {
+  const input = canvasElement.querySelector<HTMLInputElement>(
+    '[data-testid="editar-pdf-input-pdf"]',
+  )!
+  const escolhidos = new DataTransfer()
+  escolhidos.items.add(arquivo)
+  input.files = escolhidos.files
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+export const DoisArquivos: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-5p.pdf') },
+  play: async ({ canvas, canvasElement }) => {
+    await userEvent.click(
+      await canvas.findByRole('checkbox', { name: 'Selecionar página 2' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: 'Adicionar PDF' }),
+    ).toHaveAccessibleDescription(
+      'Entra depois da página 2, a que você marcou.',
+    )
+    entregarPdf(canvasElement, pdf('anexo-rg-assinado-2p.pdf'))
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('checkbox', { name: 'Selecionar página 3' }),
+      ).toHaveFocus(),
+    )
+    await expect(
+      canvas.getByText(
+        'contrato-5p.pdf + anexo-rg-assinado-2p.pdf · 7 páginas',
+      ),
+    ).toBeVisible()
+    await expect(
+      canvas.getByText('anexo-rg-assinado-2p.pdf, pág. 1'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByText(
+        'anexo-rg-assinado-2p.pdf: Este PDF tem assinatura digital. Editar invalida a assinatura.',
+      ),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('checkbox', { name: 'Selecionar página 4' }),
+    ).toBeChecked()
+  },
+}
+
+export const DoisArquivosNoCelular: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: CELULAR,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas, canvasElement }) => {
+    const botao = await canvas.findByRole('button', { name: 'Adicionar PDF' })
+    await expect(botao).toHaveTextContent('Adicionar PDF')
+    botao.focus()
+    entregarPdf(canvasElement, pdf('anexo-2p.pdf'))
+    await waitFor(() =>
+      expect(
+        canvas.getByText('contrato-3p.pdf + anexo-2p.pdf · 5 páginas'),
+      ).toBeVisible(),
+    )
+    await expect(botao).toHaveFocus()
+    await expect(canvas.getByRole('button', { name: 'Página 4' })).toBeVisible()
+  },
+}
+
+// O teto é somado: 3 páginas abertas e um PDF de 498 passam das 500, e nada muda no documento.
+export const RecusaPorTeto: Story = {
+  args: { renderizador: criarRenderizadorFalso(), motor: criarMotorFalso() },
+  globals: DESKTOP,
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole('button', { name: 'Abrir a página 1' })
+    entregarPdf(canvasElement, pdf('livro-498p.pdf'))
+    await expect(await canvas.findByRole('alert')).toHaveTextContent(
+      'Não deu para adicionar livro-498p.pdf: ele tem 498 páginas, e só cabem mais 497 páginas (até 500 somando os PDFs abertos).',
+    )
+    await expect(canvas.getByText('contrato-3p.pdf · 3 páginas')).toBeVisible()
+  },
+}

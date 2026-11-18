@@ -397,28 +397,30 @@ export function ControlesDaPagina({
 
 export type PaginaDaFaixa = {
   readonly chave: string
-  /** O índice da miniatura (a página no arquivo). */
-  readonly miniatura: number
   readonly giro: Giro
 }
 
 export function FaixaDePaginas({
-  documento,
+  sessao,
   paginas,
   pagina,
+  revelar = null,
   rotulo,
   miniaturas,
   aoEscolher,
 }: {
-  documento: DocumentoAberto
-  /** Na ordem do documento: o número de cada uma é a posição. */
+  /** Trocar de sessão (outro PDF) devolve o ponto do Tab à página aberta. */
+  sessao: object
+  /** Na ordem do documento: o número de cada uma é a posição, e a miniatura vem pela chave. */
   paginas: readonly PaginaDaFaixa[]
   pagina: number
+  /** Uma posição para a faixa mostrar sem abrir a página (as que acabaram de entrar); cada objeto novo rola uma vez. */
+  revelar?: { readonly posicao: number } | null
   rotulo: string
   miniaturas: {
-    urls: ReadonlyMap<number, string>
-    falhas: ReadonlySet<number>
-    observar: (elemento: Element, indice: number) => () => void
+    urls: ReadonlyMap<string, string>
+    falhas: ReadonlySet<string>
+    observar: (elemento: Element, chave: string) => () => void
   }
   /** Estável entre renderizações: as miniaturas são memorizadas. Recebe a posição. */
   aoEscolher: (posicao: number) => void
@@ -427,18 +429,16 @@ export function FaixaDePaginas({
   const faixaRef = useRef<HTMLOListElement>(null)
   const botoesDasPaginas = useRef(new Map<number, HTMLButtonElement>())
   const [focoNaFaixa, setFocoNaFaixa] = useState<{
-    documento: DocumentoAberto
+    sessao: object
     indice: number
   } | null>(null)
   const indiceFocavel =
-    focoNaFaixa && focoNaFaixa.documento === documento
-      ? focoNaFaixa.indice
-      : pagina
+    focoNaFaixa && focoNaFaixa.sessao === sessao ? focoNaFaixa.indice : pagina
 
-  // Só a faixa rola até a miniatura da página aberta: um scrollIntoView rolaria a página inteira junto.
-  useEffect(() => {
+  // Só a faixa rola até a miniatura: um scrollIntoView rolaria a página inteira junto.
+  const rolarAte = useCallback((posicao: number) => {
     const faixa = faixaRef.current
-    const botao = botoesDasPaginas.current.get(pagina)
+    const botao = botoesDasPaginas.current.get(posicao)
     if (!faixa || !botao) return
     const daFaixa = faixa.getBoundingClientRect()
     const doBotao = botao.getBoundingClientRect()
@@ -447,11 +447,17 @@ export function FaixaDePaginas({
     } else if (doBotao.right > daFaixa.right) {
       faixa.scrollLeft += doBotao.right - daFaixa.right
     }
-  }, [pagina, documento])
+  }, [])
+
+  useEffect(() => rolarAte(pagina), [pagina, sessao, rolarAte])
+
+  useEffect(() => {
+    if (revelar) rolarAte(revelar.posicao)
+  }, [revelar, rolarAte])
 
   const aoFocarMiniatura = useCallback(
-    (indice: number) => setFocoNaFaixa({ documento, indice }),
-    [documento],
+    (indice: number) => setFocoNaFaixa({ sessao, indice }),
+    [sessao],
   )
   const registrarBotao = useCallback(
     (indice: number, botao: HTMLButtonElement | null) => {
@@ -490,16 +496,16 @@ export function FaixaDePaginas({
         className="flex gap-2 overflow-x-auto p-1 pb-2"
         data-testid="editar-pdf-faixa"
       >
-        {paginas.map(({ chave, miniatura, giro }, posicao) => (
+        {paginas.map(({ chave, giro }, posicao) => (
           <MiniaturaDaPagina
             key={chave}
             indice={posicao}
-            miniatura={miniatura}
+            chave={chave}
             giro={giro}
             atual={posicao === pagina}
             focavel={posicao === indiceFocavel}
-            url={miniaturas.urls.get(miniatura)}
-            falhou={miniaturas.falhas.has(miniatura)}
+            url={miniaturas.urls.get(chave)}
+            falhou={miniaturas.falhas.has(chave)}
             aoEscolher={aoEscolher}
             aoFocar={aoFocarMiniatura}
             registrar={registrarBotao}
@@ -514,7 +520,7 @@ export function FaixaDePaginas({
 
 const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   indice,
-  miniatura,
+  chave,
   giro,
   atual,
   focavel,
@@ -526,7 +532,7 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   observar,
 }: {
   indice: number
-  miniatura: number
+  chave: string
   giro: Giro
   atual: boolean
   focavel: boolean
@@ -535,14 +541,14 @@ const MiniaturaDaPagina = memo(function MiniaturaDaPagina({
   aoEscolher: (indice: number) => void
   aoFocar: (indice: number) => void
   registrar: (indice: number, botao: HTMLButtonElement | null) => void
-  observar: (elemento: Element, indice: number) => () => void
+  observar: (elemento: Element, chave: string) => () => void
 }) {
   const numero = indice + 1
   const refDoItem = useCallback(
     (no: HTMLLIElement | null) => {
-      if (no) return observar(no, miniatura)
+      if (no) return observar(no, chave)
     },
-    [observar, miniatura],
+    [observar, chave],
   )
   const refDoBotao = useCallback(
     (botao: HTMLButtonElement | null) => registrar(indice, botao),
