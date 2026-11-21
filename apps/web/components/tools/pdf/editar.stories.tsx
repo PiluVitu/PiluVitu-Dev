@@ -226,7 +226,7 @@ export const PdfProntoComARepetidaApagada: Story = {
     })
     await waitFor(() => expect(baixar).toHaveFocus())
     await expect(baixar).toHaveAccessibleDescription(
-      'A página 3 saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.',
+      'A página 3 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
     )
   },
 }
@@ -251,7 +251,7 @@ export const RecusaComAApagadaForaDoPdf: Story = {
     )
     await userEvent.click(canvas.getByRole('button', { name: 'Gerar PDF' }))
     await expect(await canvas.findByRole('alert')).toHaveTextContent(
-      'A página 3 é a mesma página do arquivo que uma página que ficou fora deste PDF',
+      'A página 3 e uma página que ficou fora deste PDF vêm da mesma página do arquivo',
     )
   },
 }

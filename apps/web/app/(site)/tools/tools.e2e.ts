@@ -3581,7 +3581,7 @@ test.describe('Editar PDF: página em branco', () => {
     // Decisão do Paulo em 2026-11-20: a tela diz que a 3 saiu como a imagem apagada da 1.
     const aviso = page.getByTestId('editar-pdf-repetem-apagada')
     await expect(aviso).toHaveText(
-      'A página 3 saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.',
+      'A página 3 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
     )
 
     await page
@@ -3590,7 +3590,7 @@ test.describe('Editar PDF: página em branco', () => {
       .click()
     await semOSegredo((await gerarEBaixar(page)).bytes, 2)
     await expect(aviso).toHaveText(
-      'A página 2 saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.',
+      'A página 2 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
     )
   })
 
@@ -3625,7 +3625,7 @@ test.describe('Editar PDF: página em branco', () => {
       .click()
 
     await expect(page.getByTestId('editar-pdf-falha-ao-gerar')).toHaveText(
-      'A página 3 é a mesma página do arquivo que uma página que ficou fora deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
+      'A página 3 e uma página que ficou fora deste PDF vêm da mesma página do arquivo, e as duas estão marcadas para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
       { timeout: 30_000 },
     )
     await expect(page.getByTestId('editar-pdf-baixar')).toHaveCount(0)
@@ -3686,7 +3686,7 @@ test.describe('Editar PDF: página em branco', () => {
       // dela na lista (a 3 no Extrair; a 2 depois de tirar a 1).
       const naLista = caminho === 'extrair' ? 3 : 2
       await expect(page.getByTestId('editar-pdf-repetem-apagada')).toHaveText(
-        `A página ${naLista} saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.`,
+        `A página ${naLista} saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.`,
       )
       await expect(page.getByTestId('editar-pdf-baixar')).toHaveAttribute(
         'aria-describedby',

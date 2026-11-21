@@ -1854,11 +1854,11 @@ describe('gerar o PDF editado', () => {
   it.each([
     [
       'apagar_na_pagina_repetida_fora_do_pdf',
-      'A página 2 é a mesma página do arquivo que uma página que ficou fora deste PDF',
+      'A página 2 e uma página que ficou fora deste PDF vêm da mesma página do arquivo',
     ],
     [
       'apagar_duas_vezes_fora_do_pdf',
-      'Se você apagou as duas da lista, use Desfazer nas páginas para uma voltar.',
+      'Se você tirou as duas da lista, use Desfazer nas páginas para trazer uma de volta.',
     ],
   ] as const)(
     '%s: a recusa com o texto próprio, o número da página na lista e nenhum objeto para mostrar',

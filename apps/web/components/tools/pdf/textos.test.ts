@@ -373,7 +373,7 @@ describe('editar', () => {
         pagina: 2,
       }),
     ).toBe(
-      'A página 3 é a mesma página do arquivo que uma página que ficou fora deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
+      'A página 3 e uma página que ficou fora deste PDF vêm da mesma página do arquivo, e as duas estão marcadas para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
     )
   })
 
@@ -381,7 +381,7 @@ describe('editar', () => {
     expect(
       falhaAoSalvar({ motivo: 'apagar_duas_vezes_fora_do_pdf', pagina: 0 }),
     ).toBe(
-      'A página 1 é a mesma página do arquivo que duas páginas que ficaram fora deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo. Se você apagou as duas da lista, use Desfazer nas páginas para uma voltar.',
+      'A página 1 vem da mesma página do arquivo que duas páginas que ficaram fora deste PDF, e essas duas estão marcadas para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo. Se você tirou as duas da lista, use Desfazer nas páginas para trazer uma de volta.',
     )
   })
 
@@ -389,10 +389,10 @@ describe('editar', () => {
   // diz isso numa linha, junto do PDF pronto.
   it('as páginas que saíram como a imagem de outra apagada: uma linha, no singular e no plural', () => {
     expect(TEXTOS.editar.gerar.repetemApagada([3])).toBe(
-      'A página 3 saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.',
+      'A página 3 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
     )
     expect(TEXTOS.editar.gerar.repetemApagada([2, 4, 7])).toBe(
-      'As páginas 2, 4 e 7 saíram como imagem, apagadas: no arquivo, cada uma é a mesma página que outra com apagar de verdade.',
+      'As páginas 2, 4 e 7 saíram como imagem, apagadas, porque cada uma vem da mesma página do arquivo que outra marcada para apagar de verdade.',
     )
   })
 
