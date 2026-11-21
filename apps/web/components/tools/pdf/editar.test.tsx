@@ -2374,18 +2374,22 @@ describe('a Bancada: páginas, página aberta e objeto', () => {
     ])
   })
 
+  // Sem relógio: o fundo fica preso até o Cancelar, e a asserção espera ele voltar à tela. Com os 80 ms de
+  // antes, a máquina carregada deixava o fundo e o motor falso terminarem antes do clique, e o Cancelar sumia.
   it('Cancelar enquanto desenha a apagada que ficou de fora: o motor nem recebe o pedido', async () => {
-    const renderizador = criarRenderizadorFalso({ atraso: 80 })
+    const renderizador = criarRenderizadorFalso()
     const { motor } = await abrirParaEditar('livro-3p.pdf', { renderizador })
     await inserirNoCentro('Cobrir')
     await clicar(porNome('Apagar de verdade o que está embaixo'))
     await clicar(porNome('Apagar de verdade nesta página'))
     await clicar(porNome('Apagar a página 1'))
+    renderizador.prenderFundos()
 
     await clicar(porNome('Gerar PDF'))
     await esperarAte(() => renderizador.fundos.length === 1)
     await clicar(porNome('Cancelar'))
-    await esperar(200)
+    renderizador.soltarFundos()
+    await esperarAte(() => renderizador.fundosEntregues === 1)
 
     expect(motor.montadas).toHaveLength(0)
     expect(q('editar-pdf-resultado')).toBeNull()

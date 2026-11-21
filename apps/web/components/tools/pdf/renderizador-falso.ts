@@ -110,6 +110,8 @@ export function criarRenderizadorFalso({
   let abrirOPortaoDosTamanhos = () => {}
   let portaoDasMiniaturas: Promise<void> | null = null
   let abrirOPortaoDasMiniaturas = () => {}
+  let portaoDosFundos: Promise<void> | null = null
+  let abrirOPortaoDosFundos = () => {}
   const renderizador = {
     /** Daqui em diante, cada página grande pedida espera o `soltarPaginas()`, sem depender de relógio. */
     prenderPaginas() {
@@ -141,6 +143,16 @@ export function criarRenderizadorFalso({
       abrirOPortaoDasMiniaturas()
       portaoDasMiniaturas = null
     },
+    /** Daqui em diante, cada fundo do apagar de verdade pedido espera o `soltarFundos()`. */
+    prenderFundos() {
+      portaoDosFundos = new Promise<void>((soltar) => {
+        abrirOPortaoDosFundos = soltar
+      })
+    },
+    soltarFundos() {
+      abrirOPortaoDosFundos()
+      portaoDosFundos = null
+    },
     abertos: [] as string[],
     /** Quantos Workers do pdf.js nasceram: um por sessão, que acaba quando o último documento fecha. */
     workers: 0,
@@ -162,6 +174,8 @@ export function criarRenderizadorFalso({
       canvas?: HTMLCanvasElement
     }[],
     fundos: [] as { indice: number; cobrir: readonly Caixa[]; giro: Giro }[],
+    /** Quantos fundos já voltaram à tela, com o JPEG ou com a falha. */
+    fundosEntregues: 0,
     textosConsultados: [] as { indice: number; ponto: Ponto; giro: Giro }[],
     fechados: 0,
     async abrir(arquivo: Blob): Promise<DocumentoAberto> {
@@ -237,12 +251,18 @@ export function criarRenderizadorFalso({
         async fundo(indice, cobrir, giro = 0) {
           renderizador.fundos.push({ indice, cobrir, giro })
           registrar('fundo', indice)
-          await espera()
-          if (fechado) throw new Error('o documento já foi fechado')
-          if (fundosQueFalham.includes(indice)) {
-            throw new Error('falta de memória')
+          const portao = portaoDosFundos
+          try {
+            await espera()
+            if (portao) await portao
+            if (fechado) throw new Error('o documento já foi fechado')
+            if (fundosQueFalham.includes(indice)) {
+              throw new Error('falta de memória')
+            }
+            return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
+          } finally {
+            renderizador.fundosEntregues += 1
           }
-          return new Blob([JPEG_FALSO], { type: 'image/jpeg' })
         },
         async textoNoPonto(indice, ponto, giro = 0) {
           renderizador.textosConsultados.push({ indice, ponto, giro })
