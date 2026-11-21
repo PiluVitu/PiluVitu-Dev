@@ -2,6 +2,7 @@ import type { AvisoDoPdf } from '@piluvitu/tools/pdf-regras'
 import type {
   FalhaDaOperacao,
   MotorDePdf,
+  PdfMontado,
   PedidoDeMontagem,
   ResultadoDaAnalise,
 } from './motor'
@@ -15,6 +16,8 @@ type Opcoes = {
   montagem?: Desfecho
   /** Tamanho que o PDF entregue diz ter, para testar os tetos sem alocar o arquivo. */
   tamanhoDoResultado?: number
+  /** Os ids das páginas que o motor diz terem saído como a imagem de outra apagada. */
+  repetemApagada?: readonly string[]
 }
 
 // Para stories e testes: o nome do arquivo decide o resultado da leitura. "assinado" e "certificado"
@@ -38,22 +41,23 @@ export function criarMotorFalso({
   atraso = 0,
   montagem,
   tamanhoDoResultado,
+  repetemApagada = [],
 }: Opcoes = {}) {
   const espera = () => new Promise((r) => setTimeout(r, atraso))
   let cancelar: (() => void) | null = null
   let portaoDasAnalises: Promise<void> | null = null
   let abrirOPortao = () => {}
-  const resultado = () => {
+  const resultado = (): PdfMontado => {
     const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
     if (tamanhoDoResultado !== undefined) {
       Object.defineProperty(pdf, 'size', { value: tamanhoDoResultado })
     }
-    return pdf
+    return { pdf, repetemApagada }
   }
 
-  function operar(desfecho: Desfecho): Promise<Blob> {
+  function operar(desfecho: Desfecho): Promise<PdfMontado> {
     cancelar?.()
-    return new Promise<Blob>((resolver, rejeitar) => {
+    return new Promise<PdfMontado>((resolver, rejeitar) => {
       cancelar = () => rejeitar({ motivo: 'cancelado' })
       void (async () => {
         if (desfecho === 'nunca') return

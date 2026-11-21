@@ -209,7 +209,7 @@ describe('montar', () => {
     apagadasForaDoPlano,
   }
 
-  it('manda os arquivos, as páginas por id, os objetos, as imagens, os fundos com id e as apagadas fora do plano, e entrega um Blob de PDF', async () => {
+  it('manda os arquivos, as páginas por id, os objetos, as imagens, os fundos com id e as apagadas fora do plano, e entrega um Blob de PDF com as páginas que repetem uma apagada', async () => {
     const motor = novoMotor()
     const arquivos = [arquivo('contrato.pdf'), arquivo('anexo.pdf')]
     const pronto = motor.montar(arquivos, pedido)
@@ -229,11 +229,13 @@ describe('montar', () => {
       tipo: 'pronto',
       id: recebido.id,
       bytes: new ArrayBuffer(6),
+      repetemApagada: ['a1p0'],
     })
 
-    const pdf = await pronto
+    const { pdf, repetemApagada } = await pronto
     expect(pdf.type).toBe('application/pdf')
     expect(pdf.size).toBe(6)
+    expect(repetemApagada).toEqual(['a1p0'])
   })
 
   it('rejeita com o motivo, o id da página, o id do objeto e os caracteres da falha', async () => {
@@ -284,10 +286,20 @@ describe('montar', () => {
     const novo = ultimo()
     expect(novo).not.toBe(antigo)
     const { id: idNovo } = novo.recebidos[0] as PedidoDeMontar
-    novo.responder({ tipo: 'pronto', id: idAntigo, bytes: new ArrayBuffer(1) })
-    novo.responder({ tipo: 'pronto', id: idNovo, bytes: new ArrayBuffer(7) })
+    novo.responder({
+      tipo: 'pronto',
+      id: idAntigo,
+      bytes: new ArrayBuffer(1),
+      repetemApagada: [],
+    })
+    novo.responder({
+      tipo: 'pronto',
+      id: idNovo,
+      bytes: new ArrayBuffer(7),
+      repetemApagada: [],
+    })
 
-    expect((await segunda).size).toBe(7)
+    expect((await segunda).pdf.size).toBe(7)
   })
 
   it('falha de outro id não rejeita a montagem em curso', async () => {
@@ -296,9 +308,14 @@ describe('montar', () => {
     const { id } = ultimo().recebidos[0] as PedidoDeMontar
 
     ultimo().responder({ tipo: 'falhou', id: id + 7, motivo: 'corrompido' })
-    ultimo().responder({ tipo: 'pronto', id, bytes: new ArrayBuffer(3) })
+    ultimo().responder({
+      tipo: 'pronto',
+      id,
+      bytes: new ArrayBuffer(3),
+      repetemApagada: [],
+    })
 
-    expect((await pronto).size).toBe(3)
+    expect((await pronto).pdf.size).toBe(3)
   })
 
   it('cancelar rejeita a montagem e manda as leituras pendentes para um Worker novo', async () => {

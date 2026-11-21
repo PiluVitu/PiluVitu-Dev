@@ -58,7 +58,12 @@ export type RespostaDoWorker =
       avisos: readonly AvisoDoPdf[]
     }
   | { tipo: 'recusado'; id: number; motivo: MotivoDoErroDePdf }
-  | { tipo: 'pronto'; id: number; bytes: ArrayBuffer }
+  | {
+      tipo: 'pronto'
+      id: number
+      bytes: ArrayBuffer
+      repetemApagada: readonly string[]
+    }
   | ({ tipo: 'falhou'; id: number } & Omit<FalhaDaOperacao, 'motivo'> & {
         motivo: Exclude<FalhaDaOperacao['motivo'], 'cancelado'>
       })
@@ -82,10 +87,22 @@ export type FalhaDaOperacao = {
   caracteres?: readonly string[]
 }
 
+/**
+ * O PDF e os ids das páginas que saíram como a imagem da apagada de outra página: o arquivo repete a
+ * mesma página no /Kids, e a tela não sabe quais.
+ */
+export type PdfMontado = {
+  readonly pdf: Blob
+  readonly repetemApagada: readonly string[]
+}
+
 export interface MotorDePdf {
   analisar(arquivo: Blob): Promise<ResultadoDaAnalise>
   /** Rejeita com {@link FalhaDaOperacao}. */
-  montar(arquivos: readonly Blob[], pedido: PedidoDeMontagem): Promise<Blob>
+  montar(
+    arquivos: readonly Blob[],
+    pedido: PedidoDeMontagem,
+  ): Promise<PdfMontado>
   cancelar(): void
   encerrar(): void
 }
@@ -96,7 +113,7 @@ export function ehFalhaDaOperacao(erro: unknown): erro is FalhaDaOperacao {
 
 type OperacaoPendente = {
   id: number
-  resolver: (pdf: Blob) => void
+  resolver: (montado: PdfMontado) => void
   rejeitar: (falha: FalhaDaOperacao) => void
 }
 
@@ -131,7 +148,10 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
         return
       }
       case 'pronto':
-        operacao?.resolver(new Blob([data.bytes], { type: 'application/pdf' }))
+        operacao?.resolver({
+          pdf: new Blob([data.bytes], { type: 'application/pdf' }),
+          repetemApagada: data.repetemApagada,
+        })
         operacao = null
         return
       case 'falhou': {
@@ -191,7 +211,9 @@ export function criarMotorComWorker(novoWorker: () => Worker): MotorDePdf {
     worker.postMessage(pedido)
   }
 
-  function comecar(pedido: (id: number) => PedidoAoWorker): Promise<Blob> {
+  function comecar(
+    pedido: (id: number) => PedidoAoWorker,
+  ): Promise<PdfMontado> {
     return new Promise((resolver, rejeitar) => {
       cancelar()
       const id = proximoId++

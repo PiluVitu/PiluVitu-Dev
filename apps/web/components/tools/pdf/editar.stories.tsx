@@ -206,6 +206,56 @@ export const PdfEditadoPronto: Story = {
   },
 }
 
+// Decisão do Paulo em 2026-11-20: o arquivo repete a página 1 na posição 3 (o motor falso diz qual), e a
+// linha junto do PDF pronto avisa que a 3 saiu como a imagem apagada da 1.
+export const PdfProntoComARepetidaApagada: Story = {
+  args: {
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({ atraso: 150, repetemApagada: ['a0p2'] }),
+  },
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Cobrir' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Gerar PDF' }))
+    const baixar = await canvas.findByRole('link', {
+      name: 'Baixar contrato-3p-editado.pdf',
+    })
+    await waitFor(() => expect(baixar).toHaveFocus())
+    await expect(baixar).toHaveAccessibleDescription(
+      'A página 3 saiu como imagem, apagada: no arquivo, ela é a mesma página que outra com apagar de verdade.',
+    )
+  },
+}
+
+// A recusa quando a outra apagada da mesma página do arquivo ficou fora do PDF.
+export const RecusaComAApagadaForaDoPdf: Story = {
+  args: {
+    renderizador: criarRenderizadorFalso(),
+    motor: criarMotorFalso({
+      montagem: {
+        motivo: 'apagar_na_pagina_repetida_fora_do_pdf',
+        pagina: 'a0p2',
+      },
+    }),
+  },
+  parameters: { arquivoInicial: pdf('contrato-3p.pdf') },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('application', { name: 'Objetos da página 1' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Cobrir' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Inserir no centro' }),
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Gerar PDF' }))
+    await expect(await canvas.findByRole('alert')).toHaveTextContent(
+      'A página 3 é a mesma página do arquivo que uma página que ficou fora deste PDF',
+    )
+  },
+}
+
 // Editor único, PR 3: a Bancada, com as páginas à esquerda, a página no meio e o objeto à direita.
 export const BancadaComPaginas: Story = {
   args: {

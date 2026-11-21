@@ -1849,6 +1849,106 @@ describe('gerar o PDF editado', () => {
     )
     expect(() => porNome('Mostrar o objeto')).toThrow()
   })
+
+  // Decisão do Paulo em 2026-11-20: a recusa diz quando a outra apagada ficou fora do PDF.
+  it.each([
+    [
+      'apagar_na_pagina_repetida_fora_do_pdf',
+      'A página 2 é a mesma página do arquivo que uma página que ficou fora deste PDF',
+    ],
+    [
+      'apagar_duas_vezes_fora_do_pdf',
+      'Se você apagou as duas da lista, use Desfazer nas páginas para uma voltar.',
+    ],
+  ] as const)(
+    '%s: a recusa com o texto próprio, o número da página na lista e nenhum objeto para mostrar',
+    async (motivo, texto) => {
+      const motor = criarMotorFalso({ montagem: { motivo, pagina: 'a0p1' } })
+      await abrirParaEditar('contrato-3p.pdf', { motor })
+      await inserirNoCentro('Retângulo')
+
+      await clicar(porNome('Gerar PDF'))
+      await esperarAte(() => q('editar-pdf-falha-ao-gerar') !== null)
+
+      expect(q('editar-pdf-falha-ao-gerar')!.textContent).toContain(texto)
+      expect(() => porNome('Mostrar o objeto')).toThrow()
+    },
+  )
+})
+
+// Decisão do Paulo em 2026-11-20: a outra posição de uma página repetida no arquivo sai como a imagem
+// apagada, e a tela, que não sabe quais páginas se repetem, diz numa linha as que o motor contou.
+describe('as páginas que saíram como a imagem de outra apagada', () => {
+  const aviso = () => q('editar-pdf-repetem-apagada')
+
+  it('Gerar: a linha junto do PDF pronto, no anúncio e na descrição do link de baixar', async () => {
+    const motor = criarMotorFalso({ repetemApagada: ['a0p2'] })
+    await abrirParaEditar('contrato-3p.pdf', { motor })
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    const texto = TEXTOS.editar.gerar.repetemApagada([3])
+    expect(aviso()!.textContent).toBe(texto)
+    expect(q('editar-pdf-resultado')!.contains(aviso())).toBe(true)
+    const baixar = q('editar-pdf-baixar')!
+    expect(baixar.getAttribute('aria-describedby')).toBe(aviso()!.id)
+    expect(anuncio()).toMatch(/^PDF editado pronto: 3 páginas, .+\. /)
+    expect(anuncio().endsWith(` ${texto}`)).toBe(true)
+  })
+
+  it('Extrair: o número é o da página na lista, e as várias saem em ordem', async () => {
+    const motor = criarMotorFalso({ repetemApagada: ['a0p2', 'a0p0'] })
+    await abrirParaEditar('livro-3p.pdf', { motor })
+    await marcarPagina(3)
+    await marcarPagina(1)
+
+    await clicar(porNome('Extrair as selecionadas'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(aviso()!.textContent).toBe(
+      TEXTOS.editar.gerar.repetemApagada([1, 3]),
+    )
+    expect(anuncio()).toMatch(/^PDF pronto: 2 páginas, /)
+    expect(anuncio()).toContain(TEXTOS.editar.gerar.repetemApagada([1, 3]))
+  })
+
+  it('com a página 1 tirada da lista, a página que era a 3 é a 2', async () => {
+    const motor = criarMotorFalso({ repetemApagada: ['a0p2'] })
+    await abrirParaEditar('livro-3p.pdf', { motor })
+    await clicar(porNome('Apagar a página 1'))
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-resultado') !== null)
+
+    expect(aviso()!.textContent).toBe(TEXTOS.editar.gerar.repetemApagada([2]))
+  })
+
+  it('sem página repetida, nenhuma linha, e o link sem descrição', async () => {
+    await abrirParaEditar('contrato-3p.pdf')
+    await inserirNoCentro('Retângulo')
+
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => q('editar-pdf-baixar') !== null)
+
+    expect(aviso()).toBeNull()
+    expect(q('editar-pdf-baixar')!.hasAttribute('aria-describedby')).toBe(false)
+    expect(anuncio()).toMatch(/^PDF editado pronto: 3 páginas, [^.]+\.$/)
+  })
+
+  it('a linha sai com o resultado: mudar um objeto depois de pronto leva as duas', async () => {
+    const motor = criarMotorFalso({ repetemApagada: ['a0p2'] })
+    await abrirParaEditar('contrato-3p.pdf', { motor })
+    await inserirNoCentro('Retângulo')
+    await clicar(porNome('Gerar PDF'))
+    await esperarAte(() => aviso() !== null)
+
+    await tecla(objetos()[0], 'ArrowLeft')
+
+    expect(q('editar-pdf-resultado')).toBeNull()
+    expect(aviso()).toBeNull()
+  })
 })
 
 it('todo controle novo tem 44 px e nome', async () => {

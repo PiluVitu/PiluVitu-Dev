@@ -453,6 +453,8 @@ export type MotivoDoErroNaEdicao =
   | 'imagem_corrompida'
   | 'texto_fora_do_winansi'
   | 'apagar_na_pagina_repetida'
+  | 'apagar_na_pagina_repetida_fora_do_pdf'
+  | 'apagar_duas_vezes_fora_do_pdf'
 
 const COR = /^#[0-9a-f]{6}$/i
 

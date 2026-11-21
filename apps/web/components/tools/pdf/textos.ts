@@ -92,6 +92,10 @@ function falhaAoSalvar(
       return `Uma imagem da página ${numero(pagina)} não pôde ser lida. Ponha a imagem de novo e salve outra vez.`
     case 'apagar_na_pagina_repetida':
       return `A página ${numero(pagina)} é a mesma página do arquivo que outra página deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.`
+    case 'apagar_na_pagina_repetida_fora_do_pdf':
+      return `A página ${numero(pagina)} é a mesma página do arquivo que uma página que ficou fora deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.`
+    case 'apagar_duas_vezes_fora_do_pdf':
+      return `A página ${numero(pagina)} é a mesma página do arquivo que duas páginas que ficaram fora deste PDF, e as duas estão para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo. Se você apagou as duas da lista, use Desfazer nas páginas para uma voltar.`
     case 'nao_e_pdf':
     case 'protegido':
     case 'corrompido':
@@ -609,6 +613,10 @@ export const TEXTOS = {
       resumoDoPronto: (totalDePaginas: number, bytes: number) =>
         `${paginas(totalDePaginas)} · ${formatarTamanho(bytes)}`,
       baixar: (nome: string) => `Baixar ${nome}`,
+      repetemApagada: (numeros: readonly number[]) => {
+        const quais = listaDePaginas(numeros)
+        return `${quais[0].toUpperCase()}${quais.slice(1)} ${concordar(numeros.length, 'saiu como imagem, apagada: no arquivo, ela é', 'saíram como imagem, apagadas: no arquivo, cada uma é')} a mesma página que outra com apagar de verdade.`
+      },
       mostrarObjeto: 'Mostrar o objeto',
     },
     anuncios: {

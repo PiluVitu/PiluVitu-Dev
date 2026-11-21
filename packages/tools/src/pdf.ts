@@ -1347,6 +1347,8 @@ type PaginaEditada = {
   readonly fundo?: Uint8Array
   readonly giro: Giro
   readonly moldura: Giro
+  // A apagada fora do plano: o rótulo é de outra posição, do mesmo nó.
+  readonly foraDoPlano?: true
 }
 
 // A moldura (D2): os objetos foram postos na página como a tela a mostrava, com o /Rotate e a moldura, e
@@ -1388,18 +1390,30 @@ async function desenharEGirar(
 
 // Cada JPEG traz só os cobrir da sua posição: com o mesmo nó em duas posições do /Kids, um por cima do
 // outro mostraria o que o primeiro cobriu.
+// A recusa aponta onde a pessoa age: com duas apagadas no plano, a segunda; com uma, ela; sem nenhuma, a
+// posição do plano que repete as de fora.
 function conferirApagadasRepetidas(
   paginas: readonly PDFPage[],
   editadas: readonly PaginaEditada[],
 ): void {
-  const apagadas = new Set<PDFRef>()
-  for (const { indice, rotulo, fundo } of editadas) {
-    if (fundo === undefined) continue
-    const { ref } = paginas[indice]
-    if (apagadas.has(ref)) {
-      throw new ErroNaEdicao('apagar_na_pagina_repetida', rotulo)
+  const porNo = new Map<PDFRef, PaginaEditada[]>()
+  for (const editada of editadas) {
+    if (editada.fundo === undefined) continue
+    const { ref } = paginas[editada.indice]
+    porNo.set(ref, [...(porNo.get(ref) ?? []), editada])
+  }
+  for (const apagadas of porNo.values()) {
+    if (apagadas.length < 2) continue
+    const noPlano = apagadas.filter(({ foraDoPlano }) => !foraDoPlano)
+    if (noPlano.length > 1) {
+      throw new ErroNaEdicao('apagar_na_pagina_repetida', noPlano[1].rotulo)
     }
-    apagadas.add(ref)
+    throw noPlano.length === 1
+      ? new ErroNaEdicao(
+          'apagar_na_pagina_repetida_fora_do_pdf',
+          noPlano[0].rotulo,
+        )
+      : new ErroNaEdicao('apagar_duas_vezes_fora_do_pdf', apagadas[0].rotulo)
   }
 }
 
@@ -1773,7 +1787,31 @@ function giraPaginaRepetida(
   )
 }
 
-export async function montarDocumento(
+// O apagar de verdade vale pelo nó: as outras posições do plano com o mesmo nó saem como a imagem da
+// apagada, que é de outra posição ou de fora do plano.
+function repetemApagada(
+  origem: PDFDocument,
+  paginas: readonly { posicao: number; indice: number }[],
+  editadas: readonly PaginaEditada[],
+): number[] {
+  const daApagada = new Map<PDFRef, number | undefined>()
+  for (const { indice, rotulo, fundo, foraDoPlano } of editadas) {
+    if (fundo === undefined) continue
+    daApagada.set(origem.getPage(indice).ref, foraDoPlano ? undefined : rotulo)
+  }
+  return paginas.flatMap(({ posicao, indice }) => {
+    const { ref } = origem.getPage(indice)
+    return daApagada.has(ref) && daApagada.get(ref) !== posicao ? [posicao] : []
+  })
+}
+
+export type DocumentoMontado = {
+  readonly bytes: Uint8Array
+  /** As posições do plano que saem como a imagem da apagada de outra posição: o /Kids repete o nó. */
+  readonly repetemApagada: readonly number[]
+}
+
+export async function montarDocumentoDetalhado(
   fontes: readonly FonteDePdf[],
   plano: readonly PaginaDaMontagem[],
   edicoes: readonly EdicaoNaMontagem[],
@@ -1784,7 +1822,7 @@ export async function montarDocumento(
     readonly porCopia?: boolean
     readonly apagadasForaDoPlano?: readonly ApagadaForaDoPlano[]
   } = {},
-): Promise<Uint8Array> {
+): Promise<DocumentoMontado> {
   conferirMontagem(plano, fontes.length)
   const edicaoDa = conferirEdicoesDaMontagem(plano, edicoes)
   conferirApagadasForaDoPlano(apagadasForaDoPlano, plano, fontes.length)
@@ -1846,9 +1884,20 @@ export async function montarDocumento(
       const rotulo = posicaoDoNo.get(origem.getPage(indice).ref)
       return rotulo === undefined
         ? []
-        : [{ indice, rotulo, objetos: [], fundo, giro: 0, moldura }]
+        : [
+            {
+              indice,
+              rotulo,
+              objetos: [],
+              fundo,
+              giro: 0 as const,
+              moldura,
+              foraDoPlano: true as const,
+            },
+          ]
     })
   }
+  const repetem: number[] = []
 
   const doPrimeiro = porArquivo.get(0)
   let primeiro: PDFDocument | undefined
@@ -1858,11 +1907,13 @@ export async function montarDocumento(
       !saiPorCopia(plano, primeiro.getPageCount()) &&
       !giraPaginaRepetida(primeiro, plano)
     ) {
-      await editarNoLugar(primeiro, [
+      const lista = [
         ...apagadasForaDe(primeiro, 0, doPrimeiro),
         ...editadas(doPrimeiro),
-      ])
-      return salvarNoLugar(primeiro)
+      ]
+      repetem.push(...repetemApagada(primeiro, doPrimeiro, lista))
+      await editarNoLugar(primeiro, lista)
+      return { bytes: await salvarNoLugar(primeiro), repetemApagada: repetem }
     }
   }
 
@@ -1887,6 +1938,12 @@ export async function montarDocumento(
     for (const { indice, moldura } of foraDoPlano) {
       molduraDaApagada.set(origem.getPage(indice).ref, moldura)
     }
+    repetem.push(
+      ...repetemApagada(origem, paginas, [
+        ...foraDoPlano,
+        ...editadas(paginas),
+      ]),
+    )
     // Antes de editar: a página que sai não pode contar como usuária do que a apagada desenhava.
     try {
       esvaziarPaginasForaDoPlano(origem, indices)
@@ -1929,8 +1986,17 @@ export async function montarDocumento(
     ])
     await desenharEGirar(pagina, edicaoDe(posicao), recursos)
   }
-  return destino.save({
-    objectsPerTick: Infinity,
-    updateFieldAppearances: false,
-  })
+  return {
+    bytes: await destino.save({
+      objectsPerTick: Infinity,
+      updateFieldAppearances: false,
+    }),
+    repetemApagada: repetem.sort((a, b) => a - b),
+  }
+}
+
+export async function montarDocumento(
+  ...argumentos: Parameters<typeof montarDocumentoDetalhado>
+): Promise<Uint8Array> {
+  return (await montarDocumentoDetalhado(...argumentos)).bytes
 }

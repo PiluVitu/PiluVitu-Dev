@@ -2,10 +2,12 @@ import {
   ErroDePdf,
   ErroNaEdicao,
   analisarPdf,
-  montarDocumento,
+  montarDocumentoDetalhado,
   type ApagadaForaDoPlano,
+  type DocumentoMontado,
   type EdicaoNaMontagem,
   type Giro,
+  type MotivoDoErroNaEdicao,
   type ObjetoDaPagina,
 } from '@piluvitu/tools/pdf'
 import type {
@@ -25,13 +27,32 @@ async function bytesDe(arquivo: Blob): Promise<Uint8Array> {
   return new Uint8Array(await arquivo.arrayBuffer())
 }
 
-function entregar(id: number, pdf: Uint8Array) {
+function entregar(
+  id: number,
+  { bytes: pdf, repetemApagada }: DocumentoMontado,
+  { paginas }: PedidoDeMontagem,
+) {
   const bytes =
     pdf.byteOffset === 0 && pdf.byteLength === pdf.buffer.byteLength
       ? (pdf.buffer as ArrayBuffer)
       : pdf.slice().buffer
-  escopo.postMessage({ tipo: 'pronto', id, bytes }, [bytes])
+  escopo.postMessage(
+    {
+      tipo: 'pronto',
+      id,
+      bytes,
+      repetemApagada: repetemApagada.map((posicao) => paginas[posicao].id),
+    },
+    [bytes],
+  )
 }
+
+// A pessoa resolve na tela, tirando um apagar de verdade: a falha diz a página e não é "inesperado".
+const RECUSAS_DA_PAGINA_REPETIDA: ReadonlySet<MotivoDoErroNaEdicao> = new Set([
+  'apagar_na_pagina_repetida',
+  'apagar_na_pagina_repetida_fora_do_pdf',
+  'apagar_duas_vezes_fora_do_pdf',
+])
 
 function falhar(id: number, erro: unknown) {
   escopo.postMessage(
@@ -144,7 +165,7 @@ async function montar(
     const edicoes = await edicoesDaMontagem(pedido)
     entregar(
       id,
-      await montarDocumento(
+      await montarDocumentoDetalhado(
         arquivos.map((arquivo) => () => bytesDe(arquivo)),
         pedido.paginas,
         edicoes,
@@ -155,11 +176,12 @@ async function montar(
           ),
         },
       ),
+      pedido,
     )
   } catch (erro) {
     if (!(erro instanceof ErroNaEdicao)) return falhar(id, erro)
     const pagina = pedido.paginas[erro.pagina]?.id
-    if (erro.motivo === 'apagar_na_pagina_repetida' && pagina !== undefined) {
+    if (RECUSAS_DA_PAGINA_REPETIDA.has(erro.motivo) && pagina !== undefined) {
       return escopo.postMessage({
         tipo: 'falhou',
         id,
