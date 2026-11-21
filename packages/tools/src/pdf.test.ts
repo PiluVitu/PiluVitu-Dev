@@ -21,6 +21,7 @@ import {
   analisarPdf,
   aplicarEdicoes,
   montarDocumento,
+  montarDocumentoDetalhado,
   temCabecalhoDePdf,
   type ApagadaForaDoPlano,
   type EdicaoDaPagina,
@@ -4663,7 +4664,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
         ['a apagada do plano antes da outra posição', plano([3], [2]), 0],
         ['só a apagada do plano no nó', plano([1], [3]), 1],
       ] as const)(
-        'com uma apagada do plano no mesmo nó (%s): recusada, apontando a posição dela no plano',
+        'com uma apagada do plano no mesmo nó (%s): recusada com o motivo da apagada fora do PDF, apontando a posição dela no plano',
         async (_, oPlano, apagada) => {
           const erro = await erroNaEdicao(
             montarComFora(
@@ -4674,13 +4675,13 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
             ),
           )
 
-          expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+          expect(erro.motivo).toBe('apagar_na_pagina_repetida_fora_do_pdf')
           expect(erro.pagina).toBe(apagada)
           expect(erro.objeto).toBeUndefined()
         },
       )
 
-      it('duas apagadas fora no mesmo nó: recusadas, apontando a posição do plano que é desse nó', async () => {
+      it('duas apagadas fora no mesmo nó: recusadas com o motivo das duas fora do PDF, apontando a posição do plano que é desse nó', async () => {
         const erro = await erroNaEdicao(
           montarComFora(
             [await comARepetida()],
@@ -4690,22 +4691,30 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
           ),
         )
 
-        expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+        expect(erro.motivo).toBe('apagar_duas_vezes_fora_do_pdf')
         expect(erro.pagina).toBe(1)
       })
 
       // Menor da revisão do PR B: com duas apagadas fora, a recusa apontava a primeira posição do plano do
       // nó, mesmo quando a apagada do plano era outra. O nó repete nas posições 0, 2, 3 e 4 do /Kids.
+      // Decisão do Paulo em 2026-11-20: a recusa diz quando a outra apagada ficou fora do PDF. Com uma
+      // apagada no plano, vale a dela (a pessoa age nela); sem nenhuma, a das duas fora.
       it.each([
         [
-          'com a apagada do plano na segunda posição do nó: aponta a dela',
+          'com a apagada do plano na segunda posição do nó: o motivo da apagada fora, apontando a dela',
           [{ posicao: 1, objetos: [], fundo: JPEG_8X8 }],
+          'apagar_na_pagina_repetida_fora_do_pdf',
           1,
         ],
-        ['sem apagada no plano: aponta a primeira posição do nó', [], 0],
+        [
+          'sem apagada no plano: o motivo das duas fora, apontando a primeira posição do nó',
+          [],
+          'apagar_duas_vezes_fora_do_pdf',
+          0,
+        ],
       ] as const)(
         'duas apagadas fora e duas posições do plano no mesmo nó, %s',
-        async (_, edicoes, rotulo) => {
+        async (_, edicoes, motivo, rotulo) => {
           const erro = await erroNaEdicao(
             montarComFora([await comARepetida(4)], plano([4], [2]), edicoes, [
               fora(0, 0),
@@ -4713,7 +4722,7 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
             ]),
           )
 
-          expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+          expect(erro.motivo).toBe(motivo)
           expect(erro.pagina).toBe(rotulo)
         },
       )
@@ -4766,6 +4775,170 @@ describe('montarDocumento: os casos do organizar (antes no organizarPaginas)', (
           expect(primeiro).not.toHaveBeenCalled()
           expect(segundo).not.toHaveBeenCalled()
         }
+      })
+
+      it('com duas apagadas do plano e uma fora no mesmo nó: o motivo de sempre, as duas estão no PDF', async () => {
+        const erro = await erroNaEdicao(
+          montarComFora(
+            [await comARepetida()],
+            plano([1], [2], [3]),
+            [
+              { posicao: 1, objetos: [], fundo: JPEG_8X8 },
+              { posicao: 2, objetos: [], fundo: JPEG_8X8 },
+            ],
+            [fora(0, 0)],
+          ),
+        )
+
+        expect(erro.motivo).toBe('apagar_na_pagina_repetida')
+        expect(erro.pagina).toBe(2)
+      })
+    })
+
+    // Decisão do Paulo em 2026-11-20: a tela avisa, numa linha, que a outra posição do nó sai como a imagem
+    // apagada. Ela não sabe quais páginas dividem o nó, então o montar diz quais posições do plano saíram
+    // assim: as que repetem o nó de uma apagada de outra posição, dentro ou fora do plano.
+    describe('montarDocumentoDetalhado: as posições que saem como a imagem de outra apagada', () => {
+      const apagadaEm = (posicao: number): EdicaoNaMontagem => ({
+        posicao,
+        objetos: [],
+        fundo: JPEG_8X8,
+      })
+      const fora = (arquivo: number, indice: number): ApagadaForaDoPlano => ({
+        arquivo,
+        indice,
+        moldura: 0,
+        fundo: JPEG_8X8,
+      })
+
+      it.each([
+        [
+          'a apagada na primeira posição do nó (no lugar)',
+          plano([0], [1], [2], [3]),
+          [apagadaEm(0)],
+          [],
+          false,
+          [2, 3],
+        ],
+        [
+          'a apagada no meio do nó (no lugar)',
+          plano([0], [1], [2], [3]),
+          [apagadaEm(2)],
+          [],
+          false,
+          [0, 3],
+        ],
+        [
+          'a apagada, com objetos na outra posição',
+          plano([0], [1], [2], [3]),
+          [
+            apagadaEm(0),
+            { posicao: 2, objetos: [objetoTexto({ conteudo: 'CCC' })] },
+          ],
+          [],
+          false,
+          [2, 3],
+        ],
+        [
+          'a apagada por cópia, fora da ordem',
+          plano([3], [1], [0]),
+          [apagadaEm(2)],
+          [],
+          false,
+          [0],
+        ],
+        [
+          'o Extrair só da outra posição, com a apagada fora',
+          plano([2]),
+          [],
+          [fora(0, 0)],
+          true,
+          [0],
+        ],
+        [
+          'o Gerar com a apagada tirada da Bancada',
+          plano([1], [2]),
+          [],
+          [fora(0, 0)],
+          false,
+          [1],
+        ],
+        [
+          'a apagada fora num nó sem posição no plano',
+          plano([1]),
+          [],
+          [fora(0, 0)],
+          false,
+          [],
+        ],
+        ['sem apagada', plano([0], [1], [2], [3]), [], [], false, []],
+        [
+          'a apagada na página que não se repete',
+          plano([0], [1], [2], [3]),
+          [apagadaEm(1)],
+          [],
+          false,
+          [],
+        ],
+      ] as const)(
+        '%s',
+        async (_, oPlano, edicoes, apagadasForaDoPlano, porCopia, repetem) => {
+          const detalhado = await montarDocumentoDetalhado(
+            [await comARepetida()],
+            oPlano,
+            edicoes,
+            { porCopia, apagadasForaDoPlano },
+          )
+
+          expect(detalhado.repetemApagada).toEqual(repetem)
+          expect(Buffer.from(detalhado.bytes)).toEqual(
+            Buffer.from(
+              await montarDocumento([await comARepetida()], oPlano, edicoes, {
+                porCopia,
+                apagadasForaDoPlano,
+              }),
+            ),
+          )
+        },
+      )
+
+      it('com dois arquivos e a página em branco: as posições contam no plano inteiro', async () => {
+        const detalhado = await montarDocumentoDetalhado(
+          [await gerarPdf(1, 500), await comARepetida()],
+          [
+            daMontagem(0, 0),
+            branca(200, 200),
+            daMontagem(1, 3),
+            daMontagem(1, 1),
+            daMontagem(1, 0),
+            daMontagem(1, 2),
+          ],
+          [apagadaEm(4)],
+        )
+
+        expect(detalhado.repetemApagada).toEqual([2, 5])
+      })
+
+      it('num PDF sem nó repetido, a apagada não faz nenhuma outra posição sair apagada', async () => {
+        const detalhado = await montarDocumentoDetalhado(
+          [await gerarPdf(3, 100)],
+          plano([0], [1], [2]),
+          [apagadaEm(0)],
+        )
+
+        expect(detalhado.repetemApagada).toEqual([])
+      })
+
+      it('a recusa continua: duas apagadas do plano no mesmo nó', async () => {
+        const erro = await erroNaEdicao(
+          montarDocumentoDetalhado(
+            [await comARepetida()],
+            plano([0], [1], [2]),
+            [apagadaEm(0), apagadaEm(2)],
+          ),
+        )
+
+        expect(erro.motivo).toBe('apagar_na_pagina_repetida')
       })
     })
   })

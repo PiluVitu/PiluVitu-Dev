@@ -221,6 +221,7 @@ describe('montar', () => {
       { lado: 200, rotacao: 0 },
       { lado: 100, rotacao: 0 },
     ])
+    expect(resposta).toMatchObject({ tipo: 'pronto', repetemApagada: [] })
   })
 
   it('o arquivo inteiro, na ordem, só com giro: sai no lugar, com o título do arquivo', async () => {
@@ -393,13 +394,16 @@ describe('montar', () => {
   // Decisão do Paulo em 2026-11-18: a página com apagar de verdade que fica fora do pedido vai pelo arquivo
   // do pedido, e a outra posição do mesmo nó sai apagada também.
   describe('a apagada de verdade fora do plano', () => {
-    async function repetida(): Promise<Blob> {
+    // O /Kids repete a página 0 no fim: [0, 1, 0], ou [0, 1, 0, 0] com três vezes.
+    async function repetida(vezes: 2 | 3 = 2): Promise<Blob> {
       const documento = await PDFDocument.load(
         new Uint8Array(await (await pdf([300, 400])).arrayBuffer()),
       )
       const arvore = documento.catalog.Pages()
-      arvore.Kids().push(documento.getPage(0).ref)
-      arvore.set(PDFName.of('Count'), PDFNumber.of(3))
+      for (let vez = 1; vez < vezes; vez++) {
+        arvore.Kids().push(documento.getPage(0).ref)
+      }
+      arvore.set(PDFName.of('Count'), PDFNumber.of(vezes + 1))
       return new Blob([new Uint8Array(await documento.save())])
     }
     const fora = (arquivo: number, indice: number) => ({
@@ -423,9 +427,42 @@ describe('montar', () => {
           (i as PDFRawStream).dict.get(PDFName.of('Width'))!.toString(),
         ),
       ).toEqual(['8'])
+      // Decisão do Paulo em 2026-11-20: a tela avisa que essa posição saiu como a imagem apagada.
+      expect(resposta).toMatchObject({
+        tipo: 'pronto',
+        repetemApagada: ['a1p2'],
+      })
     })
 
-    it('com uma apagada do pedido no mesmo nó: falha com o id da página do pedido, sem objeto', async () => {
+    it('a apagada do pedido: o id da outra posição do mesmo nó vem em repetemApagada', async () => {
+      const [resposta] = await montar([await repetida()], {
+        paginas: [doArquivo(0, 0), doArquivo(0, 1), doArquivo(0, 2)],
+        paginasRasterizadas: new Map([['a0p0', new Blob([JPEG])]]),
+      })
+
+      expect(resposta).toMatchObject({
+        tipo: 'pronto',
+        repetemApagada: ['a0p2'],
+      })
+    })
+
+    it('com duas apagadas fora no mesmo nó: falha com o motivo das duas fora e o id da página do pedido', async () => {
+      const respostasDoPedido = await montar([await repetida(3)], {
+        paginas: [doArquivo(0, 1), doArquivo(0, 3)],
+        apagadasForaDoPlano: [fora(0, 0), fora(0, 2)],
+      })
+
+      expect(respostasDoPedido).toEqual([
+        {
+          tipo: 'falhou',
+          id: respostasDoPedido[0].id,
+          motivo: 'apagar_duas_vezes_fora_do_pdf',
+          pagina: 'a0p3',
+        },
+      ])
+    })
+
+    it('com uma apagada do pedido no mesmo nó: falha com o motivo da apagada fora e o id da página do pedido, sem objeto', async () => {
       const respostasDoPedido = await montar([await repetida()], {
         paginas: [doArquivo(0, 1), doArquivo(0, 2)],
         paginasRasterizadas: new Map([['a0p2', new Blob([JPEG])]]),
@@ -436,7 +473,7 @@ describe('montar', () => {
         {
           tipo: 'falhou',
           id: respostasDoPedido[0].id,
-          motivo: 'apagar_na_pagina_repetida',
+          motivo: 'apagar_na_pagina_repetida_fora_do_pdf',
           pagina: 'a0p2',
         },
       ])

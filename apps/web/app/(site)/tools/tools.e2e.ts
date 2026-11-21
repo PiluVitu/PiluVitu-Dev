@@ -3578,12 +3578,57 @@ test.describe('Editar PDF: página em branco', () => {
       expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
     }
     await semOSegredo((await gerarEBaixar(page)).bytes, 3)
+    // Decisão do Paulo em 2026-11-20: a tela diz que a 3 saiu como a imagem apagada da 1.
+    const aviso = page.getByTestId('editar-pdf-repetem-apagada')
+    await expect(aviso).toHaveText(
+      'A página 3 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
+    )
 
     await page
       .getByTestId('editar-pdf-coluna-de-paginas')
       .getByRole('button', { name: 'Apagar a página 2' })
       .click()
     await semOSegredo((await gerarEBaixar(page)).bytes, 2)
+    await expect(aviso).toHaveText(
+      'A página 2 saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.',
+    )
+  })
+
+  // Decisão do Paulo em 2026-11-20: a recusa diz quando a outra apagada ficou fora do PDF. Antes, o
+  // Extrair só da 3 dizia "outra página deste PDF", e o PDF extraído só tinha a 3.
+  test('o nó repetido no /Kids com o segredo coberto nas duas posições: o Extrair só da 3 recusa dizendo que a outra ficou fora do PDF', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    await page.goto('/tools/pdf')
+    await abrirNoEditar(
+      page,
+      await pdfComPaginaRepetida('repetida.pdf', 'Segredo 987.654.321-00'),
+    )
+    for (const numero of [1, 3]) {
+      await abrirPagina(page, numero, 3)
+      await inserirNoCentro(page, 'Cobrir')
+      await posicionar(page, { x: 30, y: 125, largura: 240, altura: 40 })
+      await page
+        .getByRole('button', { name: 'Apagar de verdade o que está embaixo' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Apagar de verdade nesta página' })
+        .click()
+      await expect(page.getByTestId('editar-pdf-apagar-ligado')).toBeVisible()
+    }
+    const coluna = page.getByTestId('editar-pdf-coluna-de-paginas')
+    await coluna.getByRole('checkbox', { name: 'Selecionar página 3' }).check()
+
+    await coluna
+      .getByRole('button', { name: 'Extrair as selecionadas' })
+      .click()
+
+    await expect(page.getByTestId('editar-pdf-falha-ao-gerar')).toHaveText(
+      'A página 3 e uma página que ficou fora deste PDF vêm da mesma página do arquivo, e as duas estão marcadas para apagar de verdade. Tire o apagar de verdade de uma delas e salve de novo.',
+      { timeout: 30_000 },
+    )
+    await expect(page.getByTestId('editar-pdf-baixar')).toHaveCount(0)
   })
 
   // Decisão do Paulo em 2026-11-18: o apagar de verdade numa posição protege todas as posições do mesmo
@@ -3637,6 +3682,18 @@ test.describe('Editar PDF: página em branco', () => {
         lidas.flatMap(({ textos }) => textos.map(({ str }) => str)),
       ).toEqual([])
       expect(await todoOConteudoDoPdf(bytes)).not.toContain('987.654.321')
+      // Decisão do Paulo em 2026-11-20: a tela diz que a página saiu como a imagem apagada, com o número
+      // dela na lista (a 3 no Extrair; a 2 depois de tirar a 1).
+      const naLista = caminho === 'extrair' ? 3 : 2
+      await expect(page.getByTestId('editar-pdf-repetem-apagada')).toHaveText(
+        `A página ${naLista} saiu como imagem, apagada, porque vem da mesma página do arquivo que outra marcada para apagar de verdade.`,
+      )
+      await expect(page.getByTestId('editar-pdf-baixar')).toHaveAttribute(
+        'aria-describedby',
+        (await page
+          .getByTestId('editar-pdf-repetem-apagada')
+          .getAttribute('id'))!,
+      )
     })
 
   test('a 320 px: o curto "Em branco" tem 44 px, criar abre a branca na faixa com o foco na área, a folha também tem o botão, e nada rola para o lado', async ({

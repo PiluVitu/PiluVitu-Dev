@@ -266,6 +266,8 @@ type Resultado =
       nome: string
       paginas: number
       bytes: number
+      /** Os números, na lista, das páginas que saíram como a imagem de outra apagada. */
+      repetem: readonly number[]
     }
   | {
       estado: 'falhou'
@@ -960,7 +962,7 @@ export function EditarPdf({
         if (imagem) blobs.set(id, imagem.blob)
       }
       const pedido = pedidoDeArquivos(documento, montagem)
-      const pdf = await motor().montar(pedido.arquivos, {
+      const { pdf, repetemApagada } = await motor().montar(pedido.arquivos, {
         paginas: pedido.paginas,
         objetosPorPagina: cenaDoPdf.objetos,
         imagens: blobs,
@@ -969,6 +971,10 @@ export function EditarPdf({
         ...((tipo === 'extraido' || pedido.porCopia) && { porCopia: true }),
       })
       if (vez !== vezDaGeracao.current) return
+      const repetem = repetemApagada
+        .map((id) => ordem.indexOf(id) + 1)
+        .filter((numero) => numero > 0)
+        .sort((a, b) => a - b)
       setResultado({
         estado: 'pronto',
         tipo,
@@ -976,12 +982,16 @@ export function EditarPdf({
         nome,
         paginas: paginasDoPdf.length,
         bytes: pdf.size,
+        repetem,
       })
       anunciar(
-        (tipo === 'editado' ? T.anuncios.pronto : O.anuncios.pronto)(
-          paginasDoPdf.length,
-          pdf.size,
-        ),
+        [
+          (tipo === 'editado' ? T.anuncios.pronto : O.anuncios.pronto)(
+            paginasDoPdf.length,
+            pdf.size,
+          ),
+          ...(repetem.length ? [T.gerar.repetemApagada(repetem)] : []),
+        ].join(' '),
       )
       focar(() => baixarRef.current)
     } catch (erro) {
@@ -1513,6 +1523,7 @@ export function EditarPdf({
   const idDoAdicionando = `${ids}-adicionando`
   const idDaBrancaEsperando = `${ids}-branca-esperando`
   const idDoAlcance = `${ids}-alcance`
+  const idDasRepetidas = `${ids}-repetem-apagada`
   const idDoAlcanceDoExtrair = `${ids}-alcance-do-extrair`
   const idDaSelecao = `${ids}-selecao`
   const idDoAvisoDoCobrir = `${ids}-aviso-cobrir`
@@ -2337,12 +2348,24 @@ export function EditarPdf({
                   <p className="text-muted-foreground text-sm">
                     {T.gerar.resumoDoPronto(resultado.paginas, resultado.bytes)}
                   </p>
+                  {resultado.repetem.length > 0 && (
+                    <p
+                      id={idDasRepetidas}
+                      className="pt-1 text-sm [overflow-wrap:anywhere]"
+                      data-testid="editar-pdf-repetem-apagada"
+                    >
+                      {T.gerar.repetemApagada(resultado.repetem)}
+                    </p>
+                  )}
                 </div>
                 <Button asChild className="h-11 gap-2 px-5">
                   <a
                     ref={baixarRef}
                     href={resultado.url}
                     download={resultado.nome}
+                    aria-describedby={
+                      resultado.repetem.length > 0 ? idDasRepetidas : undefined
+                    }
                     data-testid="editar-pdf-baixar"
                   >
                     <FontAwesomeIcon
